@@ -350,7 +350,59 @@ impl SizeClasses {
     /// documented contract, not this function's.
     #[must_use]
     pub(crate) const fn class_for(size: usize, align: usize) -> Option<usize> {
-        SC.class_for(size, align)
+        debug_assert!(
+            align.is_power_of_two(),
+            "class_for: align must be a power of two (the Layout contract)"
+        );
+        if align <= MIN_BLOCK {
+            Self::class_for_small_align(size)
+        } else {
+            SC.class_for(size, align)
+        }
+    }
+
+    /// Constant-folded fast path of [`class_for`](Self::class_for) for
+    /// `align <= MIN_BLOCK` (wave B4: the generic crate path loaded
+    /// `min_block_shift` and the derived fields out of the `static SC` and
+    /// kept the align-divisibility slow path alive on the hot alloc/free
+    /// sites; here `MIN_BLOCK_SHIFT`, `S2C_LEN` and `SIZE2CLASS` are all
+    /// compile-time constants, so the shift, the `seed_idx >= S2C_LEN - 1`
+    /// guard and the bounds check fold away with no `unsafe`).
+    ///
+    /// Equivalence with `class_for(size, align)` for ANY `size` and any
+    /// power-of-two `align <= MIN_BLOCK`:
+    /// - the original computes `need = max(size, align)`. For `align <=
+    ///   MIN_BLOCK = 16` and any `size`, `need <= 16` implies
+    ///   `seed_idx = (need - 1) >> 4 == 0`, and `size >= 17` implies
+    ///   `need = size`; the fast path therefore only has to reproduce
+    ///   `seed_idx = (need - 1) >> 4` with `need = max(size, align)` folded
+    ///   to `size`, which the case split above shows is lossless.
+    /// - `size = 0`: `align` is a power of two in contract, hence
+    ///   `align >= 1` and `need = align <= 16` gives `seed_idx = 0`; the
+    ///   fast path's `size.max(1) - 1` also yields `0` (and avoids the
+    ///   wrapping `(0 - 1) >> 4` release-mode underflow the naive fold
+    ///   would have).
+    /// - huge `size`: both paths take `seed_idx >= S2C_LEN - 1 -> None`
+    ///   (the crate's own index-space guard; the fast path uses the same
+    ///   const `S2C_LEN`).
+    /// - the slow divisibility walk is unreachable: every class block size
+    ///   is a multiple of `MIN_BLOCK >= align`, so with
+    ///   `align <= (1 << MIN_BLOCK_SHIFT)` the original always returned
+    ///   `Some(seed)` immediately.
+    #[must_use]
+    #[inline(always)]
+    pub(crate) const fn class_for_small_align(size: usize) -> Option<usize> {
+        // `const fn`-safe `max(size, 1)` (`Ord::max` is not const-stable):
+        // `0usize.wrapping_sub(1) >> MIN_BLOCK_SHIFT` would be huge.
+        let seed_idx = if size == 0 {
+            0
+        } else {
+            (size - 1) >> MIN_BLOCK_SHIFT
+        };
+        if seed_idx >= S2C_LEN - 1 {
+            return None;
+        }
+        Some(SIZE2CLASS[seed_idx] as usize)
     }
 
     /// The checked twin of [`class_for`](Self::class_for): rejects a

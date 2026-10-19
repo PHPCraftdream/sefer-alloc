@@ -366,7 +366,145 @@ fn route_to_large_free(core: &mut HeapCore, block: *mut u8, layout: Layout, root
     };
 }
 
+/// B4-hot2 step 2: the LOCAL_REJECT_FREES bump is a cold, reject-only side
+/// effect; kept out of the hot inline body so the Accept+push arm does not pay
+/// register pressure for it. Gated exactly like the former inline `fetch_add`, so
+/// under builds without the counter the arm is the same bare `return` as before.
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#[cfg(any(feature = "internals", feature = "bench-internals"))]
+#[cold]
+#[inline(never)]
+fn cold_reject_noop_local() {
+    crate::alloc_core::LOCAL_REJECT_FREES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
+
 impl HeapCore {
+    /// B4-hot2 step 2: everything past the free-side byte-budget cap
+    /// (`cnt >= cap`) is cold relative to the hot Accept+push arm — either the
+    /// class's park budget is below `TCACHE_CAP` (one-element substrate flush)
+    /// or the magazine is physically full (half-flush + compact + push).
+    /// Extracted into one `#[cold] #[inline(never)]` method so the hot
+    /// magazine-push body does not carry their register/spill cost. Behaviour
+    /// is byte-identical: same checks, same order, `SegmentMeta::new(root)`
+    /// re-derived here (same value the caller previously materialised).
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cold]
+    #[inline(never)]
+    fn tcache_park_overflow_slow(
+        &mut self,
+        c: usize,
+        block: *mut u8,
+        root: *mut u8,
+        off: u32,
+        cap: usize,
+    ) {
+        use crate::alloc_core::segment_header::SegmentMeta;
+        use crate::registry::heap_core::state::tcache::{FLUSH_N, TCACHE_CAP};
+        // ── R1-01: free-side byte-budget cap reached ───────────
+        // `cnt == cap < TCACHE_CAP`: this class's per-refill byte
+        // budget (`FREE_PARK_CAP`) is exhausted, but the physical
+        // magazine array is not — do NOT grow past `cap` (that
+        // would re-open the D3 gap: parking more bytes on the
+        // free side than a refill ever would). Hand the block
+        // straight to the substrate instead of parking it. The
+        // M2 oracles (`small_free_guard`) already ran above; the
+        // block never entered the magazine, so no bitmap/slot
+        // bookkeeping to undo.
+        if cap < TCACHE_CAP {
+            // SAFETY (R6-MS-3): `block` is a valid, currently-live
+            // small-class-`c` allocation owned by this heap — the
+            // same guarantee `small_free_guard`'s `Accept` arm
+            // already established for the ordinary push path
+            // above; freed exactly once here via a one-element
+            // batch.
+            #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+            unsafe {
+                self.core
+                    .flush_class_internal(c, core::slice::from_ref(&block));
+            }
+            return;
+        }
+        // ── Magazine overflow (cnt == TCACHE_CAP) ──────────
+        // P3 (task #147): the P7 dealloc-side bulk-mode bypass is
+        // RETIRED together with the alloc-side bypass and the
+        // `alloc_streak` counter. That branch fired only when the
+        // alloc side had advanced the streak past BULK_THRESHOLD;
+        // with the counter gone it could never fire, so keeping it
+        // would be dead code guarded by a stuck-at-0 condition.
+        // The always-taken half-flush + compact + push below is the
+        // sole overflow policy now. D1/M2 unchanged: `flush_class`
+        // returns blocks to the substrate via `dealloc_small`
+        // (mark_free + dec_live) exactly as before.
+        //
+        // RAD-5: the FLUSH_N blocks about to be flushed leave the
+        // magazine — clear their bit BEFORE calling `flush_class`
+        // (mirrors "flush = clear_magazine + mark_free": the
+        // AllocBitmap side of `mark_free` happens inside
+        // `flush_class`/`flush_run`; this bitmap's clear happens
+        // here since `AllocCore` has no magazine concept).
+        for &flushed in &self.tcache.classes[c].slots[0..FLUSH_N] {
+            // Allocator-issued magazine pointers preserve provenance: Small/Primordial roots are exact; Large is excluded.
+            let fbase = crate::alloc_core::os::segment_base_of_ptr(flushed);
+            debug_assert_eq!(
+                self.core.canonical_root_for(flushed),
+                Some(fbase),
+                "overflow magazine block must map to its segment base"
+            );
+            let foff = (flushed.addr() - fbase.addr()) as u32;
+            SegmentMeta::new(fbase)
+                .magazine_bitmap()
+                .clear_magazine(foff);
+        }
+        // Normal overflow: half-flush, then push.
+        // SAFETY (R6-MS-3): every slot in `slots[0..FLUSH_N]` is a
+        // valid live small-class-`c` allocation owned by this core's
+        // magazine (just freed into it under the alloc-xthread/fastbin
+        // path); each is returned to the substrate exactly once here.
+        #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+        unsafe {
+            self.core
+                .flush_class_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
+        };
+        // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
+        let remaining = TCACHE_CAP - FLUSH_N;
+        for i in 0..remaining {
+            self.tcache.classes[c].slots[i] = self.tcache.classes[c].slots[i + FLUSH_N];
+        }
+        // R13-3 (task #273): the virgin mask must undergo the
+        // IDENTICAL shift as `slots` — bit `i` of the compacted
+        // mask is bit `i + FLUSH_N` of the pre-compaction mask
+        // (byte-identical to the `slots[i] = slots[i + FLUSH_N]`
+        // loop just above, just on the bitmask instead of the
+        // pointer array). The flushed low half (`slots[0..FLUSH_N]`,
+        // now returned to the substrate via `flush_class`) is
+        // dropped entirely, not merely cleared-and-kept.
+        #[cfg(feature = "virgin-zero-skip")]
+        {
+            self.tcache.classes[c].virgin_mask >>= FLUSH_N;
+        }
+        // Push (Э6: NO key stamp, NO block-body write). The oracles
+        // above already ran before this overflow branch, so a
+        // double-free is caught even when the magazine is full.
+        // RAD-5: mark the newly-pushed block magazine-resident.
+        let meta = SegmentMeta::new(root);
+        meta.magazine_bitmap().mark_magazine(off);
+        self.tcache.classes[c].slots[remaining] = block;
+        self.tcache.classes[c].count = (remaining + 1) as u8;
+        // R13-3: the newly-pushed block is a freed (previously
+        // issued) block — never virgin (dispatch conjunct), same
+        // reasoning as the non-overflow push arm above. Clear bit
+        // `remaining` explicitly: after the `>>= FLUSH_N` shift
+        // above, that bit holds whatever was at pre-shift index
+        // `remaining + FLUSH_N` (`== TCACHE_CAP`, i.e. always 0 by
+        // the mask invariant since no valid slot index reaches
+        // `TCACHE_CAP`) — so this is defensive, not load-bearing,
+        // matching the non-overflow arm's identical comment.
+        #[cfg(feature = "virgin-zero-skip")]
+        {
+            self.tcache.classes[c].virgin_mask &= !(1u16 << remaining);
+        }
+    }
+
     /// Own-thread free consumes a table-derived root/block witness without
     /// repeating the mutable canonical lookup. The allocation stays live
     /// until this call; magazine and bitmap guards are unchanged.
@@ -379,7 +517,7 @@ impl HeapCore {
         debug_assert_eq!(self.core.canonical_root_for(block), Some(root));
         {
             use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
-            use crate::registry::heap_core::state::tcache::{FLUSH_N, FREE_PARK_CAP, TCACHE_CAP};
+            use crate::registry::heap_core::state::tcache::{FREE_PARK_CAP, TCACHE_CAP};
             let size = layout.size().max(MIN_BLOCK);
             let align = layout.align();
             // C1 (0.3.0): gate removed — see the matching comment in `alloc`'s
@@ -432,9 +570,12 @@ impl HeapCore {
                             // not the public foreign/unroutable stat. The
                             // guard's Large-interior cases surface HERE, so
                             // this is one increment per rejected free.
+                            // B4-hot2: the bump lives in a `#[cold]`
+                            // `#[inline(never)]` fn so the hot Accept+push
+                            // body does not pay its register cost; cfg-gated
+                            // identically to the former inline `fetch_add`.
                             #[cfg(any(feature = "internals", feature = "bench-internals"))]
-                            crate::alloc_core::LOCAL_REJECT_FREES
-                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                            cold_reject_noop_local();
                             return;
                         }
                         SmallFreeGuard::RouteToLargeFree => {
@@ -481,123 +622,25 @@ impl HeapCore {
                         }
                         return;
                     }
-                    // ── R1-01: free-side byte-budget cap reached ───────
-                    // `cnt == cap < TCACHE_CAP`: this class's per-refill byte
-                    // budget (`FREE_PARK_CAP`) is exhausted, but the physical
-                    // magazine array is not — do NOT grow past `cap` (that
-                    // would re-open the D3 gap: parking more bytes on the
-                    // free side than a refill ever would). Hand the block
-                    // straight to the substrate instead of parking it. The
-                    // M2 oracles (`small_free_guard`) already ran above; the
-                    // block never entered the magazine, so no bitmap/slot
-                    // bookkeeping to undo.
-                    if cap < TCACHE_CAP {
-                        // SAFETY (R6-MS-3): `block` is a valid, currently-live
-                        // small-class-`c` allocation owned by this heap — the
-                        // same guarantee `small_free_guard`'s `Accept` arm
-                        // already established for the ordinary push path
-                        // above; freed exactly once here via a one-element
-                        // batch.
-                        #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
-                        unsafe {
-                            self.core
-                                .flush_class_internal(c, core::slice::from_ref(&block));
-                        }
-                        return;
-                    }
-                    // ── Magazine overflow (cnt == TCACHE_CAP) ──────────
-                    // P3 (task #147): the P7 dealloc-side bulk-mode bypass is
-                    // RETIRED together with the alloc-side bypass and the
-                    // `alloc_streak` counter. That branch fired only when the
-                    // alloc side had advanced the streak past BULK_THRESHOLD;
-                    // with the counter gone it could never fire, so keeping it
-                    // would be dead code guarded by a stuck-at-0 condition.
-                    // The always-taken half-flush + compact + push below is the
-                    // sole overflow policy now. D1/M2 unchanged: `flush_class`
-                    // returns blocks to the substrate via `dealloc_small`
-                    // (mark_free + dec_live) exactly as before.
-                    //
-                    // RAD-5: the FLUSH_N blocks about to be flushed leave the
-                    // magazine — clear their bit BEFORE calling `flush_class`
-                    // (mirrors "flush = clear_magazine + mark_free": the
-                    // AllocBitmap side of `mark_free` happens inside
-                    // `flush_class`/`flush_run`; this bitmap's clear happens
-                    // here since `AllocCore` has no magazine concept).
-                    for &flushed in &self.tcache.classes[c].slots[0..FLUSH_N] {
-                        // Allocator-issued magazine pointers preserve provenance: Small/Primordial roots are exact; Large is excluded.
-                        let fbase = crate::alloc_core::os::segment_base_of_ptr(flushed);
-                        debug_assert_eq!(
-                            self.core.canonical_root_for(flushed),
-                            Some(fbase),
-                            "overflow magazine block must map to its segment base"
-                        );
-                        let foff = (flushed.addr() - fbase.addr()) as u32;
-                        SegmentMeta::new(fbase)
-                            .magazine_bitmap()
-                            .clear_magazine(foff);
-                    }
-                    // Normal overflow: half-flush, then push.
-                    // SAFETY (R6-MS-3): every slot in `slots[0..FLUSH_N]` is a
-                    // valid live small-class-`c` allocation owned by this core's
-                    // magazine (just freed into it under the alloc-xthread/fastbin
-                    // path); each is returned to the substrate exactly once here.
-                    #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
-                    unsafe {
-                        self.core
-                            .flush_class_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
-                    };
-                    // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
-                    let remaining = TCACHE_CAP - FLUSH_N;
-                    for i in 0..remaining {
-                        self.tcache.classes[c].slots[i] = self.tcache.classes[c].slots[i + FLUSH_N];
-                    }
-                    // R13-3 (task #273): the virgin mask must undergo the
-                    // IDENTICAL shift as `slots` — bit `i` of the compacted
-                    // mask is bit `i + FLUSH_N` of the pre-compaction mask
-                    // (byte-identical to the `slots[i] = slots[i + FLUSH_N]`
-                    // loop just above, just on the bitmask instead of the
-                    // pointer array). The flushed low half (`slots[0..FLUSH_N]`,
-                    // now returned to the substrate via `flush_class`) is
-                    // dropped entirely, not merely cleared-and-kept.
-                    #[cfg(feature = "virgin-zero-skip")]
-                    {
-                        self.tcache.classes[c].virgin_mask >>= FLUSH_N;
-                    }
-                    // Push (Э6: NO key stamp, NO block-body write). The oracles
-                    // above already ran before this overflow branch, so a
-                    // double-free is caught even when the magazine is full.
-                    // RAD-5: mark the newly-pushed block magazine-resident.
-                    meta.magazine_bitmap().mark_magazine(off);
-                    self.tcache.classes[c].slots[remaining] = block;
-                    self.tcache.classes[c].count = (remaining + 1) as u8;
-                    // R13-3: the newly-pushed block is a freed (previously
-                    // issued) block — never virgin (dispatch conjunct), same
-                    // reasoning as the non-overflow push arm above. Clear bit
-                    // `remaining` explicitly: after the `>>= FLUSH_N` shift
-                    // above, that bit holds whatever was at pre-shift index
-                    // `remaining + FLUSH_N` (`== TCACHE_CAP`, i.e. always 0 by
-                    // the mask invariant since no valid slot index reaches
-                    // `TCACHE_CAP`) — so this is defensive, not load-bearing,
-                    // matching the non-overflow arm's identical comment.
-                    #[cfg(feature = "virgin-zero-skip")]
-                    {
-                        self.tcache.classes[c].virgin_mask &= !(1u16 << remaining);
-                    }
+                    // ── R1-01 cap reached / magazine overflow: cold ────
+                    // B4-hot2 step 2: both post-cap outcomes (one-element
+                    // substrate flush when `cap < TCACHE_CAP`; half-flush +
+                    // compact + push at `cnt == TCACHE_CAP`) moved verbatim
+                    // into `tcache_park_overflow_slow` (`#[cold]
+                    // #[inline(never)]`) — the hot push arm above keeps the
+                    // inline body, the spill-heavy slow path does not.
+                    self.tcache_park_overflow_slow(c, block, root, off, cap);
                     return;
                 }
             }
         }
         // Large / non-small / non-fastbin: free directly at the witness root.
-        // PF-10: `root` is the table-derived canonical root from the
-        // `OwnedBlock` witness; do not re-resolve it in the substrate.
-        // SAFETY: dealloc/realloc callers keep the witnessed allocation live
-        // and bind its block/layout to the free contract. The magazine guards
-        // returned above for small fastbin blocks. The entry
-        // `debug_assert_eq!(canonical_root_for(block), Some(root))` proves the
-        // precondition.
-        #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc_at_base`.
-        unsafe {
-            self.core.dealloc_at_base(block, layout, root)
-        };
+        // B4-hot2 step 2: routed through the SAME `#[cold] #[inline(never)]`
+        // `route_to_large_free` the `RouteToLargeFree` guard arm uses — its
+        // body is byte-identical to the former inline tail (`unsafe {
+        // self.core.dealloc_at_base(block, layout, root) }`), so behaviour is
+        // unchanged while the hot small body no longer inlines the substrate
+        // free's register pressure.
+        route_to_large_free(self, block, layout, root);
     }
 }
