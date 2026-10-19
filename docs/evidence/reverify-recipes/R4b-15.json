@@ -25,5 +25,24 @@
       }
     }
   ],
-  "mutant": null
+  "mutant": {
+    "file": "tests/loom_r11_ph4b_publish_recycle_drain.rs",
+    "find": "        return; // the loser must never enter the drain",
+    "replace": "        // mutant L3: losing claimant continues into drain",
+    "steps": [
+      {
+        "name": "compile L3 loom model mutant",
+        "env": {"RUSTFLAGS": "--cfg loom"},
+        "argv": ["cargo", "test", "--release", "--features", "alloc-global,alloc-xthread,internals,tagged-index-stack/loom", "--test", "loom_r11_ph4b_publish_recycle_drain", "--no-run"],
+        "expect": {"exit": 0, "stdoutRegex": ["Finished"]}
+      },
+      {
+        "name": "L3 CAS loser authority guard loom runtime",
+        "env": {"RUSTFLAGS": "--cfg loom"},
+        "argv": ["cargo", "test", "--release", "--features", "alloc-global,alloc-xthread,internals,tagged-index-stack/loom", "--test", "loom_r11_ph4b_publish_recycle_drain", "--", "--nocapture"],
+        "expect": {"exitNonZero": true, "stdoutRegex": ["Exactly one mutator|assertion.*active|assertion failed"]}
+      }
+    ],
+    "expect": {"exitNonZero": true, "stdoutRegex": ["Exactly one mutator|assertion.*active|assertion failed"]}
+  }
 }

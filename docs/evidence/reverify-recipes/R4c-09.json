@@ -25,5 +25,24 @@
       }
     }
   ],
-  "mutant": null
+  "mutant": {
+    "file": "tests/loom_r11_ph4a_heap_lease.rs",
+    "find": "const DROP_ORDERING: Ordering = Ordering::Release;",
+    "replace": "const DROP_ORDERING: Ordering = Ordering::Relaxed;",
+    "steps": [
+      {
+        "name": "compile Ph4c mutant 1 loom model",
+        "env": {"RUSTFLAGS": "--cfg loom"},
+        "argv": ["cargo", "test", "--release", "--features", "alloc-global,alloc-xthread,internals,tagged-index-stack/loom", "--test", "loom_r11_ph4a_heap_lease", "--no-run"],
+        "expect": {"exit": 0, "stdoutRegex": ["Finished"]}
+      },
+      {
+        "name": "Ph4c mutant 1 loom runtime",
+        "env": {"RUSTFLAGS": "--cfg loom"},
+        "argv": ["cargo", "test", "--release", "--features", "alloc-global,alloc-xthread,internals,tagged-index-stack/loom", "--test", "loom_r11_ph4a_heap_lease", "--", "--nocapture"],
+        "expect": {"exitNonZero": true, "stdoutRegex": ["Causality violation|Concurrent write accesses to UnsafeCell"]}
+      }
+    ],
+    "expect": {"exitNonZero": true, "stdoutRegex": ["Causality violation|Concurrent write accesses to UnsafeCell"]}
+  }
 }

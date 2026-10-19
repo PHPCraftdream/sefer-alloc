@@ -23,5 +23,59 @@
       }
     }
   ],
-  "mutant": null
+  "mutant": {
+    "file": "src/registry/heap_registry/claim.rs",
+    "find": "        if !slot.initialised.load(Ordering::Acquire) {\n            return None;\n        }",
+    "replace": "        if false {\n            return None;\n        }",
+    "steps": [
+      {
+        "name": "compile initialized-gate mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals bench-internals",
+          "--test",
+          "r8_maintenance_registry",
+          "--no-run"
+        ],
+        "expect": {
+          "exit": 0,
+          "stdoutRegex": [
+            "Finished"
+          ]
+        }
+      },
+      {
+        "name": "initialized-gate runtime crash mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals bench-internals",
+          "--test",
+          "r8_maintenance_registry",
+          "--",
+          "--nocapture"
+        ],
+        "expect": {
+          "mutant": "signal",
+          "stdoutRegex": [
+            "running [1-9][0-9]* test",
+            "process (?:did not|didn't) exit successfully[^\n]*(STATUS_ACCESS_VIOLATION|0xc0000005|signal: (?:11|7|6), SIG(SEGV|BUS|ABRT))"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "signal": true,
+      "stdoutRegex": [
+        "STATUS_ACCESS_VIOLATION|0xc0000005|signal: (?:11|7|6), SIG(SEGV|BUS|ABRT)"
+      ]
+    }
+  }
 }
