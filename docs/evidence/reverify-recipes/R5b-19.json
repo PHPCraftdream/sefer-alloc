@@ -1,0 +1,26 @@
+{
+  "id": "R5b-19",
+    "registryActivationHash": "ef4264c89aafc5893c2d7c7693de65551dece08cea517e2084d8a6193881fa5e",
+    "steps": [
+    {
+      "name": "fallback OOM baseline",
+      "env": {},
+      "argv": ["cargo", "test", "--locked", "--features", "production alloc-global alloc-xthread alloc-decommit internals bench-internals", "--test", "r11_ph5b_c6_fallback_oom"],
+      "expect": {"exit": 0, "stdoutRegex": ["fallback_oom_injection_nulls_alloc_and_recovers_when_disarmed", "test result: ok"]}
+    }
+  ],
+  "mutant": {
+    "file": "src/global/fallback.rs",
+    "find": "            let forced_oom = dbg_forced_oom();\n            let new_heap = if forced_oom {\n                None",
+    "replace": "            let forced_oom = false;\n            let new_heap = if forced_oom {\n                None",
+    "steps": [
+      {
+        "name": "fallback injector bypass mutant",
+        "env": {},
+        "argv": ["cargo", "test", "--locked", "--features", "production alloc-global alloc-xthread alloc-decommit internals bench-internals", "--test", "r11_ph5b_c6_fallback_oom"],
+        "expect": {"exitNonZero": true, "stdoutRegex": ["fallback alloc with the OOM injector armed returned"]}
+      }
+    ],
+    "expect": {"exitNonZero": true, "stdoutRegex": ["fallback alloc with the OOM injector armed returned"]}
+  }
+}
