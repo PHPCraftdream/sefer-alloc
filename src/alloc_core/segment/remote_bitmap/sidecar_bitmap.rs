@@ -13,6 +13,10 @@ use super::{AtomicPtr, AtomicU64, AtomicU8, BitmapScan, Ordering};
 #[cfg_attr(test, allow(dead_code))]
 mod leaf_classes;
 pub(crate) use leaf_classes::ClassLeaves;
+// Batch-issue seam re-export (B4-R3); consumed by route_slots, so it is
+// unused in source-include test units that compile this file alone.
+#[allow(unused_imports)]
+pub(crate) use leaf_classes::LeafCursor;
 
 use crate::alloc_core::os::SEGMENT;
 use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;

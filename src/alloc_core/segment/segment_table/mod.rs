@@ -62,7 +62,6 @@ mod harness;
 mod hash;
 
 mod issue_transaction;
-pub(crate) use issue_transaction::IssueTransaction;
 
 #[cfg(feature = "alloc-global")]
 mod route_slots;

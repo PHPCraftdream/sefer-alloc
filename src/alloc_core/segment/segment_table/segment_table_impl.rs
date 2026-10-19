@@ -1,4 +1,4 @@
-use super::issue_transaction::IssueTransaction;
+use super::issue_transaction::{IssueRun, IssueTransaction};
 #[cfg(feature = "alloc-global")]
 use super::route_slots::RouteSlots;
 use super::*;
@@ -354,6 +354,27 @@ impl SegmentTable {
         }
         let _ = (base, offset, class_idx);
         Some(IssueTransaction::unrouted(base, offset))
+    }
+
+    /// Run-level twin of `prepare_small_issue` for whole-batch refills: the
+    /// fatal route guards (live slot, matching root, Small sidecar) run once
+    /// per run. Infallible; per-block OOM moves to `IssueRun::prepare_for`
+    /// (leaf changes).
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(crate) fn prepare_small_issue_run(&self, base: *mut u8, class_idx: usize) -> IssueRun<'_> {
+        #[cfg(feature = "alloc-global")]
+        if let Some(routes) = &self.routes {
+            let class = u8::try_from(class_idx)
+                .unwrap_or_else(|_| fatal(b"segment_table: small class index exceeds u8\n"));
+            let index = SegmentHeader::segment_id_at(base) as usize;
+            if self.base_at(index) != base {
+                fatal(b"segment_table: prepare base is not the segment base\n");
+            }
+            let inner = routes.prepare_small_issue_run(base, class);
+            return IssueRun::routed(index, base, inner);
+        }
+        let _ = (base, class_idx);
+        IssueRun::unrouted(base)
     }
 
     /// R6-T05 (SEC-1): free-side class-identity check against the owner route
