@@ -94,10 +94,18 @@ fn routed_negative_fallback_prefers_local_and_unknown_before_foreign() {
     unsafe { core.dealloc(local_ptr, small) };
     assert!(core.dbg_directory_force_clear_bit(class, foreign_slot as usize));
     assert!(core.dbg_directory_force_clear_bit(class, local_slot as usize));
+    // B4 §11: the first scan recorded its (foreign fallback) hit as the
+    // class cursor, so this scan starts one slot after it and reaches the
+    // local segment after examining only `unknown` and `local` — the local
+    // preference is unchanged, only the scan start moved.
+    assert_eq!(
+        core.dbg_class_cursor_slot(class),
+        Some(foreign_slot as usize)
+    );
     let probes_before = AllocCore::dbg_full_scan_slots_examined();
     let chosen = core.dbg_find_segment_with_free(class).unwrap();
     assert_eq!(core.dbg_segment_id_of(chosen), local_slot);
-    assert_eq!(AllocCore::dbg_full_scan_slots_examined() - probes_before, 4);
+    assert_eq!(AllocCore::dbg_full_scan_slots_examined() - probes_before, 2);
 
     // SAFETY: unknown_ptr is live and distinct from the prior victims.
     unsafe { core.dealloc(unknown_ptr, small) };
