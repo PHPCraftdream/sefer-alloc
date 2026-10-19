@@ -1,11 +1,106 @@
-E0_METADATA {"id":"R4c-16","head":"b0923a3cfc41c92f575a94a6184679ae367c86cd","tree":"62fe326c5cfd8ea42a009331ade6d40f98558c27","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4c-16","head":"b0923a3cfc41c92f575a94a6184679ae367c86cd","tree":"62fe326c5cfd8ea42a009331ade6d40f98558c27","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4c-16.json","recipe_sha256":"0d4470afd2fe5872ccb32e8cfd6c99d7af45100404c71679eaa191f60559320f","registry_activation_hash":"ef38d37742035c53b718c488cb054b41bd5e2edc6cfee313691f1be1db49eaf7"}
+E0_METADATA {"id":"R4c-16","head":"810c018a27e329b6403e7d36c7bf9be5c387c913","tree":"91a2460d3ab8804bf0f798cdb4751de41afcacc6","setup":""}
+E0_METADATA {"id":"R4c-16","head":"810c018a27e329b6403e7d36c7bf9be5c387c913","tree":"91a2460d3ab8804bf0f798cdb4751de41afcacc6","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4c-16.json","recipe_sha256":"563eb53e08baf0787294be1cc62561834d1664ec74410dedc46f5d8356f7b987","registry_activation_hash":"ef38d37742035c53b718c488cb054b41bd5e2edc6cfee313691f1be1db49eaf7"}
 
 E0_STEP {"id":"R4c-16","kind":"baseline","name":"r8 maintenance registry baseline","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r8_maintenance_registry"],"env":{},"expect":{"exit":0,"stdoutRegex":["test bounded_scan_skips_uninitialized_busy_and_absent_slots \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m proc-macro2 v1.0.106
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m quote v1.0.46
+[1m[92m   Compiling[0m libc v0.2.186
+[1m[92m   Compiling[0m cfg-if v1.0.4
+[1m[92m   Compiling[0m serde_core v1.0.228
+[1m[92m   Compiling[0m zerocopy v0.8.52
+[1m[92m   Compiling[0m zmij v1.0.21
+[1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m serde v1.0.228
+[1m[92m   Compiling[0m syn v2.0.118
+[1m[92m   Compiling[0m serde_json v1.0.150
+[1m[92m   Compiling[0m autocfg v1.5.1
+[1m[92m   Compiling[0m crossbeam-utils v0.8.21
+[1m[92m   Compiling[0m libm v0.2.16
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m   Compiling[0m memchr v2.8.2
+[1m[92m   Compiling[0m itoa v1.0.18
+[1m[92m   Compiling[0m crossbeam-epoch v0.9.20
+[1m[92m   Compiling[0m rustix v1.1.4
+[1m[92m   Compiling[0m rand_core v0.9.5
+[1m[92m   Compiling[0m version_check v0.9.5
+[1m[92m   Compiling[0m bitflags v2.13.0
+[1m[92m   Compiling[0m once_cell v1.21.4
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m   Compiling[0m find-msvc-tools v0.1.9
+[1m[92m   Compiling[0m regex-syntax v0.8.11
+[1m[92m   Compiling[0m linux-raw-sys v0.12.1
+[1m[92m   Compiling[0m cc v1.2.65
+[1m[92m   Compiling[0m serde_derive v1.0.228
+[1m[92m   Compiling[0m zerocopy-derive v0.8.52
+[1m[92m   Compiling[0m derive_more-impl v2.1.1
+[1m[92m   Compiling[0m slotmap v1.1.1
+[1m[92m   Compiling[0m rayon-core v1.13.0
+[1m[92m   Compiling[0m fastrand v2.4.1
+[1m[92m   Compiling[0m either v1.16.0
+[1m[92m   Compiling[0m tempfile v3.27.0
+[1m[92m   Compiling[0m libmimalloc-sys v0.1.49
+[1m[92m   Compiling[0m crossbeam-deque v0.8.6
+[1m[92m   Compiling[0m wait-timeout v0.2.1
+[1m[92m   Compiling[0m proc-macro-error-attr2 v2.0.0
+[1m[92m   Compiling[0m iai-callgrind-runner v0.14.2
+[1m[92m   Compiling[0m plotters-backend v0.3.7
+[1m[92m   Compiling[0m ciborium-io v0.2.2
+[1m[92m   Compiling[0m clap_lex v1.1.0
+[1m[92m   Compiling[0m anstyle v1.0.14
+[1m[92m   Compiling[0m quick-error v1.2.3
+[1m[92m   Compiling[0m fnv v1.0.7
+[1m[92m   Compiling[0m bit-vec v0.8.0
+[1m[92m   Compiling[0m clap_builder v4.6.0
+[1m[92m   Compiling[0m bit-set v0.8.0
+[1m[92m   Compiling[0m rusty-fork v0.3.1
+[1m[92m   Compiling[0m plotters-svg v0.3.7
+[1m[92m   Compiling[0m proc-macro-error2 v2.0.1
+[1m[92m   Compiling[0m half v2.7.1
+[1m[92m   Compiling[0m ppv-lite86 v0.2.21
+[1m[92m   Compiling[0m ciborium-ll v0.2.2
+[1m[92m   Compiling[0m rand_chacha v0.9.0
+[1m[92m   Compiling[0m itertools v0.10.5
+[1m[92m   Compiling[0m derive_more v2.1.1
+[1m[92m   Compiling[0m regex-automata v0.4.14
+[1m[92m   Compiling[0m rand v0.9.4
+[1m[92m   Compiling[0m rand_xorshift v0.4.0
+[1m[92m   Compiling[0m unarray v0.1.4
+[1m[92m   Compiling[0m iai-callgrind v0.14.2
+[1m[92m   Compiling[0m same-file v1.0.6
+[1m[92m   Compiling[0m cast v0.3.0
+[1m[92m   Compiling[0m walkdir v2.5.0
+[1m[92m   Compiling[0m criterion-plot v0.5.0
+[1m[92m   Compiling[0m tinytemplate v1.2.1
+[1m[92m   Compiling[0m regex v1.12.4
+[1m[92m   Compiling[0m proptest v1.11.0
+[1m[92m   Compiling[0m iai-callgrind-macros v0.5.1
+[1m[92m   Compiling[0m ciborium v0.2.2
+[1m[92m   Compiling[0m sefer-region v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/sefer-region)
+[1m[92m   Compiling[0m clap v4.6.1
+[1m[92m   Compiling[0m rayon v1.12.0
+[1m[92m   Compiling[0m plotters v0.3.7
+[1m[92m   Compiling[0m bincode v1.3.3
+[1m[92m   Compiling[0m tokio-macros v2.7.0
+[1m[92m   Compiling[0m is-terminal v0.4.17
+[1m[92m   Compiling[0m pin-project-lite v0.2.17
+[1m[92m   Compiling[0m oorandom v11.1.5
+[1m[92m   Compiling[0m size-classes v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/size-classes)
+[1m[92m   Compiling[0m aligned-vmem v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/aligned-vmem)
+[1m[92m   Compiling[0m proc-memstat v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/proc-memstat)
+[1m[92m   Compiling[0m once-ptr-cell v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/once-ptr-cell)
+[1m[92m   Compiling[0m anes v0.1.6
+[1m[92m   Compiling[0m proc-probe v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/proc-probe)
+[1m[92m   Compiling[0m globalalloc-model v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/globalalloc-model)
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+[1m[92m   Compiling[0m criterion v0.5.1
+[1m[92m   Compiling[0m tokio v1.52.3
+[1m[92m   Compiling[0m mimalloc v0.1.52
+[1m[92m   Compiling[0m malloc-bench-rs v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/malloc-bench-rs)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 14.68s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r8_maintenance_registry.rs (target/debug/deps/r8_maintenance_registry-49afb31d16b421af)
@@ -17,3 +112,52 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBwcm9jLW1hY3JvMiB2MS4wLjEwNgobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHVuaWNvZGUtaWRlbnQgdjEuMC4yNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHF1b3RlIHYxLjAuNDYKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBsaWJjIHYwLjIuMTg2ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY2ZnLWlmIHYxLjAuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlcmRlX2NvcmUgdjEuMC4yMjgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB6ZXJvY29weSB2MC44LjUyChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gem1paiB2MS4wLjIxChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gZ2V0cmFuZG9tIHYwLjMuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlcmRlIHYxLjAuMjI4ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc3luIHYyLjAuMTE4ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VyZGVfanNvbiB2MS4wLjE1MAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGF1dG9jZmcgdjEuNS4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY3Jvc3NiZWFtLXV0aWxzIHYwLjguMjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBsaWJtIHYwLjIuMTYKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBudW0tdHJhaXRzIHYwLjIuMTkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBnZXRyYW5kb20gdjAuNC4zChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gbWVtY2hyIHYyLjguMgobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGl0b2EgdjEuMC4xOAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGNyb3NzYmVhbS1lcG9jaCB2MC45LjIwChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcnVzdGl4IHYxLjEuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJhbmRfY29yZSB2MC45LjUKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB2ZXJzaW9uX2NoZWNrIHYwLjkuNQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGJpdGZsYWdzIHYyLjEzLjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBvbmNlX2NlbGwgdjEuMjEuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNobGV4IHYyLjAuMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGZpbmQtbXN2Yy10b29scyB2MC4xLjkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSByZWdleC1zeW50YXggdjAuOC4xMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGxpbnV4LXJhdy1zeXMgdjAuMTIuMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGNjIHYxLjIuNjUKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZXJkZV9kZXJpdmUgdjEuMC4yMjgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB6ZXJvY29weS1kZXJpdmUgdjAuOC41MgobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGRlcml2ZV9tb3JlLWltcGwgdjIuMS4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2xvdG1hcCB2MS4xLjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSByYXlvbi1jb3JlIHYxLjEzLjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBmYXN0cmFuZCB2Mi40LjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBlaXRoZXIgdjEuMTYuMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHRlbXBmaWxlIHYzLjI3LjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBsaWJtaW1hbGxvYy1zeXMgdjAuMS40OQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGNyb3NzYmVhbS1kZXF1ZSB2MC44LjYKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB3YWl0LXRpbWVvdXQgdjAuMi4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcHJvYy1tYWNyby1lcnJvci1hdHRyMiB2Mi4wLjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBpYWktY2FsbGdyaW5kLXJ1bm5lciB2MC4xNC4yChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcGxvdHRlcnMtYmFja2VuZCB2MC4zLjcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjaWJvcml1bS1pbyB2MC4yLjIKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjbGFwX2xleCB2MS4xLjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBhbnN0eWxlIHYxLjAuMTQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBxdWljay1lcnJvciB2MS4yLjMKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBmbnYgdjEuMC43ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gYml0LXZlYyB2MC44LjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjbGFwX2J1aWxkZXIgdjQuNi4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gYml0LXNldCB2MC44LjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBydXN0eS1mb3JrIHYwLjMuMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHBsb3R0ZXJzLXN2ZyB2MC4zLjcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBoYWxmIHYyLjcuMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHBwdi1saXRlODYgdjAuMi4yMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGNpYm9yaXVtLWxsIHYwLjIuMgobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJhbmRfY2hhY2hhIHYwLjkuMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGl0ZXJ0b29scyB2MC4xMC41ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gZGVyaXZlX21vcmUgdjIuMS4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmVnZXgtYXV0b21hdGEgdjAuNC4xNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJhbmQgdjAuOS40ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmFuZF94b3JzaGlmdCB2MC40LjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB1bmFycmF5IHYwLjEuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGlhaS1jYWxsZ3JpbmQgdjAuMTQuMgobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNhbWUtZmlsZSB2MS4wLjYKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjYXN0IHYwLjMuMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHdhbGtkaXIgdjIuNS4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY3JpdGVyaW9uLXBsb3QgdjAuNS4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gdGlueXRlbXBsYXRlIHYxLjIuMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJlZ2V4IHYxLjEyLjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBwcm9wdGVzdCB2MS4xMS4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gaWFpLWNhbGxncmluZC1tYWNyb3MgdjAuNS4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY2lib3JpdW0gdjAuMi4yChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VmZXItcmVnaW9uIHYwLjIuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvY3JhdGVzL3NlZmVyLXJlZ2lvbikKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjbGFwIHY0LjYuMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJheW9uIHYxLjEyLjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBwbG90dGVycyB2MC4zLjcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBiaW5jb2RlIHYxLjMuMwobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHRva2lvLW1hY3JvcyB2Mi43LjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBpcy10ZXJtaW5hbCB2MC40LjE3ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcGluLXByb2plY3QtbGl0ZSB2MC4yLjE3ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gb29yYW5kb20gdjExLjEuNQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNpemUtY2xhc3NlcyB2MC4xLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jL2NyYXRlcy9zaXplLWNsYXNzZXMpChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gYWxpZ25lZC12bWVtIHYwLjIuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvY3JhdGVzL2FsaWduZWQtdm1lbSkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBwcm9jLW1lbXN0YXQgdjAuMS4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvcHJvYy1tZW1zdGF0KQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIG9uY2UtcHRyLWNlbGwgdjAuMS4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvb25jZS1wdHItY2VsbCkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBhbmVzIHYwLjEuNgobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHByb2MtcHJvYmUgdjAuMS4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvcHJvYy1wcm9iZSkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBnbG9iYWxhbGxvYy1tb2RlbCB2MC4xLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jL2NyYXRlcy9nbG9iYWxhbGxvYy1tb2RlbCkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGNyaXRlcmlvbiB2MC41LjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB0b2tpbyB2MS41Mi4zChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gbWltYWxsb2MgdjAuMS41MgobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIG1hbGxvYy1iZW5jaC1ycyB2MC4xLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jL2NyYXRlcy9tYWxsb2MtYmVuY2gtcnMpChtbMW0bWzkybSAgICBGaW5pc2hlZBtbMG0gYHRlc3RgIHByb2ZpbGUgW3Vub3B0aW1pemVkICsgZGVidWdpbmZvXSB0YXJnZXQocykgaW4gMTQuNjhzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yOF9tYWludGVuYW5jZV9yZWdpc3RyeS5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcjhfbWFpbnRlbmFuY2VfcmVnaXN0cnktNDlhZmIzMWQxNmI0MjFhZikKCnJ1bm5pbmcgMSB0ZXN0CnRlc3QgYm91bmRlZF9zY2FuX3NraXBzX3VuaW5pdGlhbGl6ZWRfYnVzeV9hbmRfYWJzZW50X3Nsb3RzIC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDFzCgo=
+
+E0_STEP {"id":"R4c-16","kind":"mutant","name":"compile initialized-gate mutant","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r8_maintenance_registry","--no-run"],"env":{},"expect":{"exit":0,"stdoutRegex":["Finished"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.96s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m  Executable[0m tests/r8_maintenance_registry.rs (target/debug/deps/r8_maintenance_registry-49afb31d16b421af)
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuOTZzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICBFeGVjdXRhYmxlG1swbSB0ZXN0cy9yOF9tYWludGVuYW5jZV9yZWdpc3RyeS5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcjhfbWFpbnRlbmFuY2VfcmVnaXN0cnktNDlhZmIzMWQxNmI0MjFhZikK
+
+E0_STEP {"id":"R4c-16","kind":"mutant","name":"initialized-gate runtime crash mutant","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r8_maintenance_registry","--","--nocapture"],"env":{},"expect":{"mutant":"signal","stdoutRegex":["running [1-9][0-9]* test","process (?:did not|didn't) exit successfully[^\n]*(STATUS_ACCESS_VIOLATION|0xc0000005|signal: (?:11|7|6), SIG(SEGV|BUS|ABRT))"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r8_maintenance_registry.rs (target/debug/deps/r8_maintenance_registry-49afb31d16b421af)
+
+running 1 test
+[1m[91merror[0m: test failed, to rerun pass `--test r8_maintenance_registry`
+
+Caused by:
+  process didn't exit successfully: `/home/runner/work/sefer-alloc/sefer-alloc/target/debug/deps/r8_maintenance_registry-49afb31d16b421af --nocapture` (signal: 11, SIGSEGV: invalid memory reference)
+
+E0_STEP_END {"code":101,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAwLjA1cwobWzFtG1szM213YXJuaW5nG1swbTogdGhlIGZvbGxvd2luZyBwYWNrYWdlcyBjb250YWluIGNvZGUgdGhhdCB3aWxsIGJlIHJlamVjdGVkIGJ5IGEgZnV0dXJlIHZlcnNpb24gb2YgUnVzdDogcHJvYy1tYWNyby1lcnJvcjIgdjIuMC4xChtbMW0bWzkybW5vdGUbWzBtOiB0byBzZWUgd2hhdCB0aGUgcHJvYmxlbXMgd2VyZSwgdXNlIHRoZSBvcHRpb24gYC0tZnV0dXJlLWluY29tcGF0LXJlcG9ydGAsIG9yIHJ1biBgY2FyZ28gcmVwb3J0IGZ1dHVyZS1pbmNvbXBhdGliaWxpdGllcyAtLWlkIDFgChtbMW0bWzkybSAgICAgUnVubmluZxtbMG0gdGVzdHMvcjhfbWFpbnRlbmFuY2VfcmVnaXN0cnkucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL3I4X21haW50ZW5hbmNlX3JlZ2lzdHJ5LTQ5YWZiMzFkMTZiNDIxYWYpCgpydW5uaW5nIDEgdGVzdAobWzFtG1s5MW1lcnJvchtbMG06IHRlc3QgZmFpbGVkLCB0byByZXJ1biBwYXNzIGAtLXRlc3QgcjhfbWFpbnRlbmFuY2VfcmVnaXN0cnlgCgpDYXVzZWQgYnk6CiAgcHJvY2VzcyBkaWRuJ3QgZXhpdCBzdWNjZXNzZnVsbHk6IGAvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy90YXJnZXQvZGVidWcvZGVwcy9yOF9tYWludGVuYW5jZV9yZWdpc3RyeS00OWFmYjMxZDE2YjQyMWFmIC0tbm9jYXB0dXJlYCAoc2lnbmFsOiAxMSwgU0lHU0VHVjogaW52YWxpZCBtZW1vcnkgcmVmZXJlbmNlKQo=
+E0_METADATA {"id":"R4c-16","kind":"restored","sha256":"d6919ff926aa1a6711dc8ab85c5bb787fae7df37c1b73529d444900343221fff"}
+
+E0_STEP {"id":"R4c-16","kind":"restored-baseline","name":"r8 maintenance registry baseline","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r8_maintenance_registry"],"env":{},"expect":{"exit":0,"stdoutRegex":["test bounded_scan_skips_uninitialized_busy_and_absent_slots \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.98s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r8_maintenance_registry.rs (target/debug/deps/r8_maintenance_registry-49afb31d16b421af)
+
+running 1 test
+test bounded_scan_skips_uninitialized_busy_and_absent_slots ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuOThzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yOF9tYWludGVuYW5jZV9yZWdpc3RyeS5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcjhfbWFpbnRlbmFuY2VfcmVnaXN0cnktNDlhZmIzMWQxNmI0MjFhZikKCnJ1bm5pbmcgMSB0ZXN0CnRlc3QgYm91bmRlZF9zY2FuX3NraXBzX3VuaW5pdGlhbGl6ZWRfYnVzeV9hbmRfYWJzZW50X3Nsb3RzIC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDFzCgo=

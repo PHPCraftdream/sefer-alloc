@@ -22,7 +22,7 @@
 | R4c-09 | мутант №1 Release->Relaxed (tests/loom_r11_ph4a_heap_lease.rs) | PASS | рецептура валидна |
 | R4c-19 | мутант №11 MaintenanceLease::drop Release->Relaxed (tests/loom_r8_maintenance_lease.rs) | PASS | рецептура валидна |
 | R4c-16 | мутант №8 без initialised-гейта (src/registry/heap_registry/claim.rs) | PASS | маркер сделан платформонезависимым (п.3) |
-| R5b-19 | C6 fallback OOM (src/global/fallback.rs) | NOT_RUN | registry NOT_RUN сохраняется до CI; свежий оракул не запускался локально |
+| R5b-19 | C6 fallback OOM (src/global/fallback.rs) | PASS | впервые прогнан на CI (r20-gates 39239743215): baseline ok, мутант убит; метаданные строки исправлены по рецепту (features, scope crate-internal), добавлена строка source_scope |
 | R4a-09 | нет | PASS (исторический) | мутанта/рецепта нет: файла docs/evidence/reverify-recipes/R4a-09.json в worktree не существует (проверено ls — файл отсутствует), stale-recycler сценарий недоступен; исторический PASS сохраняется без перепроверки |
 | R4b-13 | нет | INCONCLUSIVE | loom-оракул Ph4b явно не наблюдал S2 HB-ребро (нет S2-оракула) — не обновлять |
 | R4b-14 | нет | INCONCLUSIVE | та же причина, что R4b-13 |
@@ -53,10 +53,13 @@
 | scripts/ev1_receipt_fixture.mjs | 4 | ok |
 | tests/evidence_reverify_support_selftest.mjs | 209 | ok |
 
-## 5. Ограничения и риски
+## 5. CI-перепроверка
 
-- Loom и Miri локально не гонялись; все лоом-рецепты (R4a-05, R4b-15, R4c-09, R4c-19) проверены только dry-run-валидацией схемы и фрагментов мутаций — реальный оракул остаётся за CI.
+r20-gates run 39239743215 (HEAD 810c018a, tree 91a2460d): E0 PASS по шести строкам R4a-05, R4b-15, R4c-09, R4c-19, R4c-16, R5b-19; у всех `mutant_rejected=true`. Receipts — `docs/evidence/_raw_reverify_<id>.log`.
+
+## 6. Ограничения и риски
+
+- Loom и Miri локально не гонялись; loom-рецепты подтверждены на CI (§5).
 - Linux crash-форма (`signal: 11, SIGSEGV: invalid memory reference` и родственные SIGBUS/SIGABRT) не наблюдалась нативно: regression-покрытие — синтетические selftest-строки в tests/evidence_reverify_runner_selftest.mjs; нативный прогон возможен только в Linux CI.
 - ev1_native_cycle.mjs Windows-специфичен (0xc0000005/3221225477-форма и CARGO_TARGET_DIR под .rush); на Linux этот помощник неприменим.
-- R5b-19 остаётся NOT_RUN в реестре до CI-прогона; его оракул не запускался локально.
 - Scratch-каталоги самотестов — строго внутри worktree (`.rush/e0-selftest-*`, `.rush/evidence-reverify-runner-selftest-*`, `.rush/scratch-*`) с очисткой; вне worktree ничего не пишется.
