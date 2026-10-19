@@ -1,1 +1,0 @@
-{"runner":"scripts/r20_r6_ab_iai_run.mjs","stages":"prepare,build,oracle,measure","outDir":"target/r20r6ab-b4hot2-run2","benchTarget":"perf_gate_iai","features":"production bench-internals internals","note":"B4-hot2 run 2: class_for fast path only (cold free extraction reverted); main vs branch"}

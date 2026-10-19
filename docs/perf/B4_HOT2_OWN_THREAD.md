@@ -5,7 +5,7 @@
 ## 0. Резюме
 
 - Baseline: **w_alloc 63 Ir/op / w_free 119 Ir/op** (mimalloc: 51 / 23).
-- Шаг 1 (const-folded fast path `class_for`) — оставлен.
+- Шаг 1 (const-folded fast path `class_for`) — **GO по iai** (run 2, §1.3): growth16 −0.61…−1.19 %, 19 ячеек лучше, ни одной хуже более чем на 3 Ir.
 - Шаг 2 (cold-вынос веток free) — **NO-GO по iai, откачен**: локальная проба «только аллокатор» показала w_free 119 → 112, но iai A/B (run 1, §1.2) — регрессия на пакетных free (+0.9…+1.3 %), потому что переполнение magazine в этих нагрузках не холодное.
 - Шаг 3 — обоснованный отказ; шаг 4 (refill-буфер) — измерен и откачен как отрицательный результат.
 
@@ -46,9 +46,23 @@ cells: 106; delta > 0: 43; delta < 0: 13; delta = 0: 50.
 
 Механизм: одиночный free в пределах magazine не изменился (`n1…n16` ±3 Ir), каждое переполнение (`n17`, `n32`: +33 / +64 Ir — по ~+31 Ir на событие) подорожало: вынесенный `#[inline(never)]` `tcache_park_overflow_slow` теряет константы и регистры вызывающего кода. В пакетных нагрузках (cold/recycle `256×`, `n1024`) переполнение происходит каждые `FLUSH_N` free, то есть ветка горячая. Вынос Large-хвоста в `route_to_large_free` дал `large_cache_*` +0.2…+0.56 %. Шаг 2 откачен целиком (`dealloc_own_base.rs` = main), включая `cold_reject_noop_local` (действует только под `internals`/`bench-internals`, на production не влияет). Проба prof_ao не ловила этот эффект: её larson-churn почти не переполняет magazine.
 
-### 1.3 iai A/B run 2 (только s1)
+### 1.3 iai A/B run 2 (только s1) — GO
 
-Ожидается после отката шага 2; результат — §1.3 обновляется по CI.
+A = `e522300339728a78328d688413dd2bf90cd1c640` (main), B = `48fc52d8cdc13f716ba3acbcd753d52c3fbe7cc1` (s1), GitHub Actions run 39199876658, rustc 1.99.1, Linux 6.17.0-1022-azure. Сырые данные: [`_raw_b4_hot2_iai_run2.log`](_raw_b4_hot2_iai_run2.log), [`B4_HOT2_OWN_THREAD_run2_summary.csv`](B4_HOT2_OWN_THREAD_run2_summary.csv). Таблица — `node scripts/r6_gate_table.mjs docs/perf/B4_HOT2_OWN_THREAD_run2_summary.csv <cells>`:
+
+| cell | A Ir | B Ir | delta Ir | delta / A |
+|---|---:|---:|---:|---:|
+| `growth16_n` | 14998235 | 14820049 | -178186 | -178186 / 14998235 = -1.19 % |
+| `growth16_2n` | 39389533 | 39033171 | -356362 | -356362 / 39389533 = -0.90 % |
+| `growth16_4n` | 116483828 | 115771114 | -712714 | -712714 / 116483828 = -0.61 % |
+| `cold_alloc_free_256x16b` | 106718 | 106718 | 0 | 0 / 106718 = 0.00 % |
+| `recycle_alloc_free_256x16b` | 171412 | 171412 | 0 | 0 / 171412 = 0.00 % |
+| `dealloc_free_only_1088_16b_n1024` | 304428 | 304428 | 0 | 0 / 304428 = 0.00 % |
+| `large_cache_eviction_hit_only_41x4mib` | 233172 | 233090 | -82 | -82 / 233172 = -0.04 % |
+| `r19_prf01_publication` | 143065 | 143002 | -63 | -63 / 143065 = -0.04 % |
+| `r19_prf01_joined_producer_same_word` | 1445925 | 1445928 | +3 | +3 / 1445925 = 0.00 % |
+
+cells: 106; delta > 0: 1; delta < 0: 19; delta = 0: 86. Пакетные free-ячейки, регрессировавшие в run 1, вернулись к main ровно (0 Ir); выигрыш — на путях с runtime-`Layout` (growth16 −0.61…−1.19 %), в ячейках с константным `Layout` `class_for` и так сворачивался компилятором.
 
 ## 2. Реализовано
 
@@ -91,4 +105,4 @@ cells: 106; delta > 0: 43; delta < 0: 13; delta = 0: 50.
 
 ## 7. Коммит
 
-Префикс: `perf(runtime)` — только при GO по iai run 2 (§1.3).
+Префикс: `perf(runtime)` — GO по iai run 2 (§1.3).
