@@ -5,7 +5,7 @@
 
 mod alloc;
 mod core;
-mod diag;
+pub(crate) mod diag;
 // Plain `mod` (reorg step 3): the flat `heap_core_diag.rs` sibling whose
 // `HARDENED_LARGE_NOOP_COUNT` load needed this widened has itself moved into
 // this tree (`diag/`), so nothing outside the subtree paths through `free`

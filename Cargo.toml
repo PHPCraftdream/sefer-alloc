@@ -1036,6 +1036,14 @@ harness = false
 test = false
 required-features = ["alloc-global", "internals", "bench-internals"]
 
+# R1-01 cap-branch Box/Drop Miri witness (fastbin magazine); same explicit
+# selection model as `miri_global_box_acceptance`.
+[[test]]
+name = "miri_r1_01_cap_frame"
+harness = false
+test = false
+required-features = ["alloc-global", "fastbin", "internals", "bench-internals"]
+
 # PG-1 W0: MODEL-LIMIT probe — Box tcache reuse while the freeing by-value
 # frame is still live, vs after return, vs a same-frame control. Selector =
 # first argument, one scenario per process; `test = false` keeps ordinary

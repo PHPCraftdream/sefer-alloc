@@ -165,6 +165,19 @@ impl SeferAlloc {
     pub fn dbg_background_ingress_step_calls(&self) -> u64 {
         crate::alloc_core::BACKGROUND_INGRESS_STEP_CALLS.load(core::sync::atomic::Ordering::Relaxed)
     }
+
+    /// R1-01 (P1-box / item 164) test-only path-activation oracle: how many
+    /// frees hit the `cnt == cap < TCACHE_CAP` branch of the small-free
+    /// tcache route (the O(1) swap-top: magazine-top block flushed, current
+    /// block parked in its slot). See `R1_01_CAP_ROUTE_FREES` in
+    /// `registry::heap_core::diag::counters`. Process-global, monotone,
+    /// measurement-only (relaxed); `#[doc(hidden)]` — not public API.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_r1_01_cap_route_frees() -> u64 {
+        crate::registry::heap_core::diag::R1_01_CAP_ROUTE_FREES
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 impl SeferAlloc {
