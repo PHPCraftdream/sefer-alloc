@@ -1,0 +1,79 @@
+== b4_collapse_probe args=Args { sweep: [1, 2, 4], steps: 400000, workload: "larson", working_set: 768, mstress_blocks: 512, window_ms: 100, seed: 11400714819323198485 } seed=0x9e3779b97f4a7c15 ==
+WIN t=1 k=1 ms=100 ops_per_sec=3.98M
+PASS t=1 ops=400000 secs=0.016 ops_per_sec=24.91M
+CNT t=1 b4_find_segment_calls=+60
+CNT t=1 b4_scan_calls=+60
+CNT t=1 b4_scan_words=+68883
+CNT t=1 claims_bump=+1
+CNT t=1 heaps_claimed_high_water=+1
+CNT t=1 proc_cycles=+37944582
+CNT t=1 proc_page_faults=+530
+CNT t=1 proc_user_ms=+15
+CNT t=1 proc_working_set_bytes=+2142208
+CNT t=1 segments_reserved_total=+1
+CNT t=1 sidecar_ingress_drain_calls=+1
+WIN t=2 k=1 ms=100 ops_per_sec=7.47M
+WIN t=2 k=2 ms=200 ops_per_sec=3.80M
+WIN t=2 k=3 ms=300 ops_per_sec=2.61M
+WIN t=2 k=4 ms=400 ops_per_sec=2.09M
+PASS t=2 ops=838997 secs=0.373 ops_per_sec=2.25M
+CNT t=2 b4_directory_lookups=+50000
+CNT t=2 b4_find_segment_calls=+17938
+CNT t=2 b4_foreign_publish_ok=+50000
+CNT t=2 b4_scan_calls=+18112
+CNT t=2 b4_scan_words=+69625239
+CNT t=2 claims_bump=+1
+CNT t=2 claims_hint=+1
+CNT t=2 heaps_claimed_high_water=+1
+CNT t=2 proc_cycles=+933141556
+CNT t=2 proc_page_faults=+1636
+CNT t=2 proc_user_ms=+422
+CNT t=2 proc_working_set_bytes=+6246400
+CNT t=2 segments_reserved_total=+2
+CNT t=2 sidecar_ingress_drain_calls=+3
+CNT t=2 sidecar_ingress_records_consumed=+279
+WIN t=4 k=1 ms=100 ops_per_sec=13.52M
+WIN t=4 k=2 ms=200 ops_per_sec=6.85M
+WIN t=4 k=3 ms=300 ops_per_sec=4.59M
+WIN t=4 k=4 ms=400 ops_per_sec=3.45M
+WIN t=4 k=5 ms=500 ops_per_sec=2.78M
+WIN t=4 k=6 ms=600 ops_per_sec=2.32M
+WIN t=4 k=7 ms=700 ops_per_sec=2.00M
+WIN t=4 k=8 ms=800 ops_per_sec=1.76M
+WIN t=4 k=9 ms=901 ops_per_sec=1.57M
+WIN t=4 k=10 ms=1000 ops_per_sec=1.42M
+WIN t=4 k=11 ms=1100 ops_per_sec=1.29M
+WIN t=4 k=12 ms=1200 ops_per_sec=1.19M
+WIN t=4 k=13 ms=1300 ops_per_sec=1.10M
+WIN t=4 k=14 ms=1401 ops_per_sec=1.06M
+WIN t=4 k=15 ms=1500 ops_per_sec=0.99M
+WIN t=4 k=16 ms=1600 ops_per_sec=0.93M
+WIN t=4 k=17 ms=1700 ops_per_sec=0.88M
+WIN t=4 k=18 ms=1800 ops_per_sec=0.84M
+WIN t=4 k=19 ms=1900 ops_per_sec=0.81M
+WIN t=4 k=20 ms=2000 ops_per_sec=0.79M
+WIN t=4 k=21 ms=2100 ops_per_sec=0.75M
+WIN t=4 k=22 ms=2200 ops_per_sec=0.72M
+WIN t=4 k=23 ms=2300 ops_per_sec=0.69M
+WIN t=4 k=24 ms=2400 ops_per_sec=0.68M
+WIN t=4 k=25 ms=2500 ops_per_sec=0.67M
+WIN t=4 k=26 ms=2601 ops_per_sec=0.64M
+PASS t=4 ops=1677196 secs=2.505 ops_per_sec=0.67M
+CNT t=4 b4_directory_lookups=+100000
+CNT t=4 b4_find_segment_calls=+119875
+CNT t=4 b4_foreign_publish_ok=+100000
+CNT t=4 b4_scan_calls=+132546
+CNT t=4 b4_scan_words=+517956323
+CNT t=4 b4_shard_lock_spins=+1493
+CNT t=4 claims_bump=+2
+CNT t=4 claims_free_set=+1
+CNT t=4 claims_hint=+1
+CNT t=4 heaps_claimed_high_water=+2
+CNT t=4 proc_cycles=+6108615518
+CNT t=4 proc_page_faults=+2463
+CNT t=4 proc_user_ms=+2641
+CNT t=4 proc_working_set_bytes=+9359360
+CNT t=4 segments_reserved_total=+3
+CNT t=4 sidecar_ingress_drain_calls=+6
+CNT t=4 sidecar_ingress_records_consumed=+11408
+RESULT_JSON {"workload":"larson","seed":11400714819323198485,"passes":[{"threads":1,"ops":400000,"secs":16,"ops_per_sec":2490970233,"windows":[[100,400000000]],"counters_delta":{"b4_find_segment_calls":60,"b4_scan_calls":60,"b4_scan_words":68883,"claims_bump":1,"heaps_claimed_high_water":1,"proc_cycles":37944582,"proc_page_faults":530,"proc_user_ms":15,"proc_working_set_bytes":2142208,"segments_reserved_total":1,"sidecar_ingress_drain_calls":1}},{"threads":2,"ops":838997,"secs":373,"ops_per_sec":224644891,"windows":[[100,752341000],[200,381290500],[300,261703000],[400,209749250]],"counters_delta":{"b4_directory_lookups":50000,"b4_find_segment_calls":17938,"b4_foreign_publish_ok":50000,"b4_scan_calls":18112,"b4_scan_words":69625239,"claims_bump":1,"claims_hint":1,"heaps_claimed_high_water":1,"proc_cycles":933141556,"proc_page_faults":1636,"proc_user_ms":422,"proc_working_set_bytes":6246400,"segments_reserved_total":2,"sidecar_ingress_drain_calls":3,"sidecar_ingress_records_consumed":279}},{"threads":4,"ops":1677196,"secs":2504,"ops_per_sec":66961096,"windows":[[100,1361164000],[200,685190000],[300,459182667],[400,345923000],[500,277967200],[600,232663333],[700,200157143],[800,175777500],[901,156755161],[1000,141748400],[1100,129420727],[1200,119062333],[1300,110218769],[1401,105562027],[1500,99209333],[1600,93456750],[1700,88441176],[1800,84039778],[1900,80640632],[2000,78912600],[2100,75349905],[2200,72204182],[2300,69510087],[2400,67552500],[2500,66857440],[2601,64482737]],"counters_delta":{"b4_directory_lookups":100000,"b4_find_segment_calls":119875,"b4_foreign_publish_ok":100000,"b4_scan_calls":132546,"b4_scan_words":517956323,"b4_shard_lock_spins":1493,"claims_bump":2,"claims_free_set":1,"claims_hint":1,"heaps_claimed_high_water":2,"proc_cycles":6108615518,"proc_page_faults":2463,"proc_user_ms":2641,"proc_working_set_bytes":9359360,"segments_reserved_total":3,"sidecar_ingress_drain_calls":6,"sidecar_ingress_records_consumed":11408}}],"counters_end":{"foreign_or_unroutable_frees":0,"config_conflicts":0,"decommit_calls":0,"heaps_claimed_high_water":4,"large_xthread_reclaimed":0,"segments_released_total":0,"segments_reserved_total":6,"fallback_lock_acquisitions":0,"exit_lock_giveups":0,"claims_bump":4,"claims_cap_scan":0,"claims_free_set":1,"claims_hint":2,"claims_recovery":0,"sidecar_ingress_drain_calls":10,"sidecar_ingress_records_consumed":11687,"background_ingress_step_calls":0,"b4_find_segment_calls":137873,"b4_scan_calls":150718,"b4_scan_words":587650445,"b4_foreign_publish_ok":150000,"b4_directory_lookups":150000,"b4_shard_lock_spins":1493,"b4_shard_lock_yields":0,"proc_cycles":7092468180,"proc_kernel_ms":15,"proc_page_faults":5431,"proc_user_ms":3078,"proc_working_set_bytes":20860928}}

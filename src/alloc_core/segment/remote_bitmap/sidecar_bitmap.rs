@@ -132,7 +132,12 @@ impl<'a> SidecarBitmap<'a> {
     /// or waiting for paused producers. An in-flight producer after a word's
     /// cut belongs to a later scan.
     // R6-T16: reached only through the internals/oracle `SmallSidecar::scan`.
-    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    // `SmallSidecar` lives in `registry`, which compiles only under
+    // `alloc-global`; without it this scan has no in-tree caller either.
+    #[cfg_attr(
+        any(not(feature = "internals"), not(feature = "alloc-global")),
+        allow(dead_code)
+    )]
     pub(crate) fn scan(&self, high_water: usize) -> Option<BitmapScan<'a>> {
         self.scan_from(high_water, 0)
     }

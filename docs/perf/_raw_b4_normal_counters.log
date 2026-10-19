@@ -1,0 +1,52 @@
+== b4_collapse_probe args=Args { sweep: [1, 2, 4], steps: 400000, workload: "larson", working_set: 768, mstress_blocks: 512, window_ms: 100, seed: 11400714819323198485 } seed=0x9e3779b97f4a7c15 ==
+WIN t=1 k=1 ms=100 ops_per_sec=3.99M
+PASS t=1 ops=400000 secs=0.016 ops_per_sec=25.77M
+CNT t=1 b4_find_segment_calls=+60
+CNT t=1 b4_scan_calls=+60
+CNT t=1 b4_scan_words=+68883
+CNT t=1 claims_bump=+1
+CNT t=1 heaps_claimed_high_water=+1
+CNT t=1 proc_cycles=+36252288
+CNT t=1 proc_page_faults=+532
+CNT t=1 proc_user_ms=+15
+CNT t=1 proc_working_set_bytes=+2150400
+CNT t=1 segments_reserved_total=+1
+CNT t=1 sidecar_ingress_drain_calls=+1
+WIN t=2 k=1 ms=100 ops_per_sec=8.40M
+PASS t=2 ops=846935 secs=0.036 ops_per_sec=23.74M
+CNT t=2 b4_directory_lookups=+50000
+CNT t=2 b4_find_segment_calls=+374
+CNT t=2 b4_foreign_publish_ok=+50000
+CNT t=2 b4_scan_calls=+374
+CNT t=2 b4_scan_words=+761566
+CNT t=2 claims_bump=+1
+CNT t=2 claims_hint=+1
+CNT t=2 heaps_claimed_high_water=+1
+CNT t=2 proc_cycles=+157380300
+CNT t=2 proc_kernel_ms=+15
+CNT t=2 proc_page_faults=+759
+CNT t=2 proc_user_ms=+78
+CNT t=2 proc_working_set_bytes=+2998272
+CNT t=2 segments_reserved_total=+1
+CNT t=2 sidecar_ingress_drain_calls=+3
+CNT t=2 sidecar_ingress_records_consumed=+280
+WIN t=4 k=1 ms=101 ops_per_sec=16.80M
+PASS t=4 ops=1698319 secs=0.054 ops_per_sec=31.50M
+CNT t=4 b4_directory_lookups=+100000
+CNT t=4 b4_find_segment_calls=+588
+CNT t=4 b4_foreign_publish_ok=+100000
+CNT t=4 b4_scan_calls=+588
+CNT t=4 b4_scan_words=+1132197
+CNT t=4 b4_shard_lock_spins=+359
+CNT t=4 claims_bump=+2
+CNT t=4 claims_free_set=+1
+CNT t=4 claims_hint=+1
+CNT t=4 heaps_claimed_high_water=+2
+CNT t=4 proc_cycles=+485043646
+CNT t=4 proc_page_faults=+1081
+CNT t=4 proc_user_ms=+188
+CNT t=4 proc_working_set_bytes=+4329472
+CNT t=4 segments_reserved_total=+2
+CNT t=4 sidecar_ingress_drain_calls=+6
+CNT t=4 sidecar_ingress_records_consumed=+5567
+RESULT_JSON {"workload":"larson","seed":11400714819323198485,"passes":[{"threads":1,"ops":400000,"secs":15,"ops_per_sec":2576821491,"windows":[[100,400000000]],"counters_delta":{"b4_find_segment_calls":60,"b4_scan_calls":60,"b4_scan_words":68883,"claims_bump":1,"heaps_claimed_high_water":1,"proc_cycles":36252288,"proc_page_faults":532,"proc_user_ms":15,"proc_working_set_bytes":2150400,"segments_reserved_total":1,"sidecar_ingress_drain_calls":1}},{"threads":2,"ops":846935,"secs":35,"ops_per_sec":2374162532,"windows":[[100,846935000]],"counters_delta":{"b4_directory_lookups":50000,"b4_find_segment_calls":374,"b4_foreign_publish_ok":50000,"b4_scan_calls":374,"b4_scan_words":761566,"claims_bump":1,"claims_hint":1,"heaps_claimed_high_water":1,"proc_cycles":157380300,"proc_kernel_ms":15,"proc_page_faults":759,"proc_user_ms":78,"proc_working_set_bytes":2998272,"segments_reserved_total":1,"sidecar_ingress_drain_calls":3,"sidecar_ingress_records_consumed":280}},{"threads":4,"ops":1698319,"secs":53,"ops_per_sec":3150110363,"windows":[[101,1681503960]],"counters_delta":{"b4_directory_lookups":100000,"b4_find_segment_calls":588,"b4_foreign_publish_ok":100000,"b4_scan_calls":588,"b4_scan_words":1132197,"b4_shard_lock_spins":359,"claims_bump":2,"claims_free_set":1,"claims_hint":1,"heaps_claimed_high_water":2,"proc_cycles":485043646,"proc_page_faults":1081,"proc_user_ms":188,"proc_working_set_bytes":4329472,"segments_reserved_total":2,"sidecar_ingress_drain_calls":6,"sidecar_ingress_records_consumed":5567}}],"counters_end":{"foreign_or_unroutable_frees":0,"config_conflicts":0,"decommit_calls":0,"heaps_claimed_high_water":4,"large_xthread_reclaimed":0,"segments_released_total":0,"segments_reserved_total":4,"fallback_lock_acquisitions":0,"exit_lock_giveups":0,"claims_bump":4,"claims_cap_scan":0,"claims_free_set":1,"claims_hint":2,"claims_recovery":0,"sidecar_ingress_drain_calls":10,"sidecar_ingress_records_consumed":5847,"background_ingress_step_calls":0,"b4_find_segment_calls":1022,"b4_scan_calls":1022,"b4_scan_words":1962646,"b4_foreign_publish_ok":150000,"b4_directory_lookups":150000,"b4_shard_lock_spins":359,"b4_shard_lock_yields":0,"proc_cycles":686076962,"proc_kernel_ms":15,"proc_page_faults":3169,"proc_user_ms":281,"proc_working_set_bytes":12570624}}

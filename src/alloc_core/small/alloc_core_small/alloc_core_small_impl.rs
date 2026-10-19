@@ -1,7 +1,13 @@
 use core::ptr::NonNull;
 
 use crate::alloc_core::node::{Node, NODE_SIZE};
-use crate::alloc_core::os::{self, SEGMENT};
+#[cfg(any(
+    feature = "alloc-decommit",
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
+use crate::alloc_core::os;
+use crate::alloc_core::os::SEGMENT;
 // R7-A2: `SegmentHeader::segment_id_at` is consulted here by the
 // `alloc-segment-directory`-gated directory-bitmap maintenance arms of
 // `pop_free`/`drain_freelist_batch` and by the `hardened` freelist
@@ -167,34 +173,18 @@ impl AllocCore {
             Err(()) => return core::ptr::null_mut(),
             Ok(None) => {}
         }
-        // 2. Current segment's class free list is empty: scan the OTHER owned
-        //    segments for one with a non-empty class free list. A freed block
-        //    may live in any segment we own (Phase 12.1 segment-centric free
-        //    state); without this scan those blocks would leak. O(segments)
-        //    only on a free-list miss — acceptable for 12.1 (per-class
-        //    segment queues are a Phase 13 speed optimisation, not a 12.1
-        //    deliverable). M5-safe: pure arithmetic + head reads via `Node`,
-        //    no allocation.
-        // Scalar and refill discovery share the same physical metadata guards.
-        // Terminal consumption cannot link a free or magazine-resident block
-        // onto the substrate a second time.
-        if let Some(seg) = self.find_segment_with_free(class_idx) {
-            let ptr = match self.pop_free(seg, class_idx) {
-                Ok(Some(ptr)) => ptr,
-                Err(()) => return core::ptr::null_mut(),
-                Ok(None) => core::ptr::null_mut(),
-            };
-            if !ptr.is_null() {
-                debug_assert!(
-                    {
-                        let base = os::segment_base_of_ptr(ptr);
-                        let off = (ptr as usize - base as usize) as u32;
-                        !SegmentMeta::new(base).magazine_bitmap().is_in_magazine(off)
-                    },
-                    "alloc_small: canonical discovery returned a magazine-resident block",
-                );
-                return ptr;
-            }
+        // 2. Current segment's class free list is empty: probe the per-class
+        //    discovery cursor, then scan the OTHER owned segments for one
+        //    with a non-empty class free list (B4 §11: the scan starts after
+        //    the cursor's slot and wraps; see
+        //    docs/perf/B4_MT_COLLAPSE_DIAGNOSIS.md §11). Scalar and refill
+        //    discovery share the same physical metadata guards; terminal
+        //    consumption cannot link a free or magazine-resident block onto
+        //    the substrate a second time.
+        match self.alloc_small_via_discovery(class_idx) {
+            Err(()) => return core::ptr::null_mut(),
+            Ok(Some(ptr)) => return ptr,
+            Ok(None) => {}
         }
         // 3. No free block anywhere: carve a FRESH block. On the cold carve
         //    path we also carve a refill batch (Phase 9 amortisation) so the
@@ -297,14 +287,13 @@ impl AllocCore {
             Err(()) => return (core::ptr::null_mut(), false),
             Ok(None) => {}
         }
-        // 2. Other owned segments' free lists — never virgin. Use the same
-        // metadata-guarded canonical discovery as ordinary scalar allocation.
-        if let Some(seg) = self.find_segment_with_free(class_idx) {
-            match self.pop_free(seg, class_idx) {
-                Ok(Some(ptr)) => return (ptr, false),
-                Err(()) => return (core::ptr::null_mut(), false),
-                Ok(None) => {}
-            }
+        // 2. Other owned segments' free lists — never virgin (a popped block
+        //    was carved and issued earlier). Same cursor-aware discovery step
+        //    as `alloc_small` (B4 §11).
+        match self.alloc_small_via_discovery(class_idx) {
+            Err(()) => return (core::ptr::null_mut(), false),
+            Ok(Some(ptr)) => return (ptr, false),
+            Ok(None) => {}
         }
         // 3. No free block anywhere: carve a FRESH block from the CURRENT
         //    segment. Read the lifetime-virginity bit before carving — the
@@ -419,7 +408,11 @@ impl AllocCore {
     /// Pop a free block; `Err` is an uncommitted class-spill OOM, leaving
     /// the class head and bitmap unchanged. Hardened corruption aborts.
     #[inline(always)]
-    fn pop_free(&mut self, segment: *mut u8, class_idx: usize) -> Result<Option<*mut u8>, ()> {
+    pub(in crate::alloc_core) fn pop_free(
+        &mut self,
+        segment: *mut u8,
+        class_idx: usize,
+    ) -> Result<Option<*mut u8>, ()> {
         let mut meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
         let head_off = bt.head(class_idx);

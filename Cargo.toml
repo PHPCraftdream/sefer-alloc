@@ -1154,6 +1154,15 @@ required-features = ["alloc-global"]
 name = "global_allocator"
 required-features = ["alloc-global"]
 
+# B4 collapse diagnosis: bimodal larson collapse probe (SeferAlloc-only, per-
+# window throughput + perf counters + Windows process metrics). Described in
+# the B4 report (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS.md). Needs `alloc-xthread`
+# for the cross-thread routing path the probe exercises (bare `alloc-global`
+# already implies it via `alloc-core`, but the doc/command line names both).
+[[example]]
+name = "b4_collapse_probe"
+required-features = ["alloc-global", "alloc-xthread"]
+
 # RAD-1 / Phase 0(a): process-per-sample first-alloc RSS + latency probe — the
 # E1 registry-bootstrap judge. Measures the ~16 MiB first-touch cost of the
 # registry `next_free` materialisation, which is invisible to Criterion/iai (they
@@ -1716,7 +1725,7 @@ required-features = ["alloc-core", "internals"]
 # R6-OPT-A4 (radical_optimization_review §4 P1-6 measurement plan / §5.5 item
 # 7 / §6 Stage A.5): deterministic multi-segment directory-scan JUDGE for
 # `AllocCore::find_segment_with_free_impl`'s O(segments) scan
-# (`src/alloc_core/small/alloc_core_small/find_segment.rs`). Three prior optimisation attempts
+# (`src/alloc_core/small/alloc_core_small/find_segment/scan.rs`). Three prior optimisation attempts
 # (X5, T10, R5-R1) measured ~zero improvement because the only existing judge
 # that exercises this scan, `perf_gate_iai.rs`'s `multiseg_cold_256k`, builds
 # only 3 segments — deep in the flat region of any O(S) curve. This harness

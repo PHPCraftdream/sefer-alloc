@@ -1,0 +1,48 @@
+== s7_cold_01.log ==
+PASS t=4 ops=1699499 secs=0.033 ops_per_sec=51.01M
+== s7_cold_02.log ==
+PASS t=4 ops=1693132 secs=0.033 ops_per_sec=50.64M
+== s7_cold_03.log ==
+PASS t=4 ops=1690658 secs=0.034 ops_per_sec=50.38M
+== s7_cold_04.log ==
+PASS t=4 ops=1699001 secs=0.033 ops_per_sec=51.29M
+== s7_cold_05.log ==
+PASS t=4 ops=1698821 secs=0.034 ops_per_sec=50.42M
+== s7_cold_06.log ==
+PASS t=4 ops=1699255 secs=0.033 ops_per_sec=51.83M
+== s7_cold_07.log ==
+PASS t=4 ops=1697363 secs=0.028 ops_per_sec=61.03M
+== s7_cold_08.log ==
+PASS t=4 ops=1699485 secs=0.033 ops_per_sec=51.72M
+== s7_cold_09.log ==
+PASS t=4 ops=1699039 secs=0.036 ops_per_sec=47.77M
+== s7_cold_10.log ==
+PASS t=4 ops=1699540 secs=0.033 ops_per_sec=51.85M
+== s7_cold_11.log ==
+PASS t=4 ops=1695092 secs=0.034 ops_per_sec=50.53M
+== s7_cold_12.log ==
+PASS t=4 ops=1692288 secs=0.032 ops_per_sec=52.35M
+== s7_cold_13.log ==
+PASS t=4 ops=1696871 secs=0.032 ops_per_sec=52.55M
+== s7_cold_14.log ==
+PASS t=4 ops=1697373 secs=0.031 ops_per_sec=55.36M
+== s7_cold_15.log ==
+PASS t=4 ops=1698334 secs=0.035 ops_per_sec=48.00M
+== s7_cold_16.log ==
+PASS t=4 ops=1698177 secs=0.030 ops_per_sec=57.32M
+== s7_cold_17.log ==
+PASS t=4 ops=1699030 secs=0.034 ops_per_sec=49.97M
+== s7_cold_18.log ==
+PASS t=4 ops=1699465 secs=0.032 ops_per_sec=52.59M
+== s7_cold_19.log ==
+PASS t=4 ops=1698014 secs=0.037 ops_per_sec=46.47M
+== s7_cold_20.log ==
+PASS t=4 ops=1696546 secs=0.028 ops_per_sec=59.72M
+== s7_cold_21.log ==
+PASS t=4 ops=1699038 secs=0.035 ops_per_sec=49.07M
+== s7_cold_22.log ==
+PASS t=4 ops=1697720 secs=0.029 ops_per_sec=58.15M
+== s7_cold_23.log ==
+PASS t=4 ops=1698544 secs=0.035 ops_per_sec=48.21M
+== s7_cold_24.log ==
+PASS t=4 ops=1699207 secs=0.034 ops_per_sec=50.63M

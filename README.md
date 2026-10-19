@@ -773,7 +773,7 @@ item-scoped regions.
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs) | 1 | `dbg_stamp_kind_byte` (raw metadata write) — `unsafe fn` boundary |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs) | 1 | `dbg_rebuild_directory` — internal call-site block into `sidecar::deref_mut` (R14-9, task #294) |
 | [`src/alloc_core/large/alloc_core_large_cache.rs`](src/alloc_core/large/alloc_core_large_cache.rs) | 5 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_find_free_slot` / `large_cache_slot_set` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286 — the sidecar deref functions became `unsafe fn` item boundaries) |
-| [`src/alloc_core/small/alloc_core_small/find_segment.rs`](src/alloc_core/small/alloc_core_small/find_segment.rs) | 1 | `find_segment_with_free_impl` — calls the `unsafe fn`s `os::read_directory_node_bucket` / `os::read_directory_class_words` (R17-2, task #319) |
+| [`src/alloc_core/small/alloc_core_small/find_segment/scan.rs`](src/alloc_core/small/alloc_core_small/find_segment/scan.rs) | 1 | `find_segment_with_free_impl` — calls the `unsafe fn`s `os::read_directory_node_bucket` / `os::read_directory_class_words` (R17-2, task #319) |
 | [`src/alloc_core/small/alloc_core_small/directory.rs`](src/alloc_core/small/alloc_core_small/directory.rs) | 3 | `maybe_materialize_directory` / `directory` / `directory_mut` — internal call-site blocks into `sidecar::deref[_mut]` (R14-9, task #294) |
 | [`src/alloc_core/small/alloc_core_small_diag.rs`](src/alloc_core/small/alloc_core_small_diag.rs) | 5 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_alloc_bitmap_bytes_for` / `dbg_magazine_bitmap_bytes_for` / `dbg_payload_start_for` — `unsafe fn` declarations |
 | [`src/alloc_core/small/alloc_core_small_magazine.rs`](src/alloc_core/small/alloc_core_small_magazine.rs) | 2 | `flush_class` test boundary and `flush_class_internal` crate-private production implementation; both are `unsafe fn` boundaries with caller-pointer contracts. |
@@ -797,7 +797,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **27** tier-1 module-level seams (21 in
-`src/`, 6 in `crates/`) plus **97** tier-2 item-scoped allows across **31**
+`src/`, 6 in `crates/`) plus **98** tier-2 item-scoped allows across **31**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1418,8 +1418,8 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **425 integration test files**,
-**96 example binaries**, **33 benches**, and **19 root Loom models**
+needs its acceptance run. The present tree contains **433 integration test files**,
+**97 example binaries**, **33 benches**, and **20 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1428,11 +1428,11 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (425 files) |
-| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (96 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (433 files) |
+| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (97 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (33 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (19 files):** `tests/loom_active_kind_index.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
+| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (20 files):** `tests/loom_active_kind_index.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri-matrix.mjs` is the single manifest of Miri targets (GREEN, EXPECTED-RED with its card, WAIVED); `scripts/miri.mjs` runs it and `scripts/verify-miri-target-wiring.mjs` checks that every Miri test file is classified and wired in CI; it includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
 | ThreadSanitizer | Real cross-thread races in selected binaries | `scripts/tsan.mjs` / CI; old ring-era results are not cutover acceptance |

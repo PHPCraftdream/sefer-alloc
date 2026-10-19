@@ -39,7 +39,7 @@ struct DirectoryCandidateContext {
 }
 
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use super::sidecar_drain_outcome::SidecarDrainOutcome;
+use super::super::sidecar_drain_outcome::SidecarDrainOutcome;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::alloc_core::{DiscoverySummaryObserver, DrainEnd};
 
@@ -55,7 +55,7 @@ impl AllocCore {
     /// Returns the first carved block (for the caller), or `None` if the
     /// current segment cannot fit even one block (caller reserves a fresh
     /// segment and retries).
-    pub(super) fn carve_block_with_refill(
+    pub(in super::super) fn carve_block_with_refill(
         &mut self,
         class_idx: usize,
         block_size: usize,
@@ -66,20 +66,10 @@ impl AllocCore {
         // `carve_block` returns None when the current segment is full; we stop
         // the batch there (the next alloc will reserve a fresh segment).
         //
-        // Size chosen by measurement (Phase 13.5, task #29). Swept
-        // {31, 63, 127, 255, 511} over the MT macro-bench (larson + mstress,
-        // T=1/2/4 ops/sec — the load where refill actually bites) and the
-        // single-threaded fixed-size churn micro-bench. Result: 31 is the
-        // throughput winner. Larger batches do NOT help — they monotonically
-        // HURT larson (working-set churn): T1/T2 larson fell from ~21–25 M to
-        // ~14–18 M at 127–511, because a free-list miss now does up to 8×–16×
-        // more upfront carve work (page faults, page-map writes) that the
-        // steady-state churn never amortises. mstress was within noise and the
-        // single-threaded churn was flat (~23–24 µs at every value — it pops
-        // from the free list and never re-enters the cold carve). The §3.5
-        // "raise toward a page of blocks (256–512)" hypothesis did not hold
-        // under measurement; 31 stays. (Bigger upfront carve = worse locality
-        // for the churn pattern, not better.)
+        // Size chosen by measurement (Phase 13.5, task #29): swept
+        // {31..511} over the MT macro-bench and churn micro-bench; 31 won —
+        // larger batches monotonically HURT larson (working-set churn pays
+        // 8×–16× more upfront carve work per miss) and never helped the rest.
         const REFILL_BATCH: usize = 31;
         for _ in 0..REFILL_BATCH {
             let Some(extra) = self.carve_block(class_idx, block_size) else {
@@ -97,20 +87,21 @@ impl AllocCore {
     /// non-current segments (Phase 12.1: free state lives in per-segment
     /// `BinTable`s).
     ///
-    /// **Large segments are excluded:** a large segment has no `BinTable`
-    /// (only a header), so reading its `bin_table()` would dereference
-    /// garbage and could return a bogus non-null head — leading `pop_free`
-    /// to read a junk block and compute an out-of-segment `next` pointer
-    /// (overflow/UAF). We read each candidate's header `kind` and skip
-    /// non-small/primordial segments.
+    /// **Large segments are excluded:** a large segment has no `BinTable`,
+    /// so reading its `bin_table()` would dereference garbage — a bogus
+    /// non-null head would make `pop_free` read a junk block (overflow/UAF).
+    /// Each candidate's header `kind` is read and non-small/primordial
+    /// segments are skipped.
     ///
     /// Returns `None` if no owned small segment has a free block of this
     /// class.
     ///
-    /// Each terminal route cut ends before this reservation can be finalized.
-    /// Logical retirement checks physical free/magazine state inside the owner
-    /// primitive; callers do not supply a second residency oracle.
+    /// Each terminal route cut ends before this reservation can be finalized;
+    /// logical retirement checks free/magazine state inside the owner primitive.
     pub(crate) fn find_segment_with_free(&mut self, class_idx: usize) -> Option<*mut u8> {
+        #[cfg(feature = "bench-internals")]
+        crate::alloc_core::B4_FIND_SEGMENT_CALLS
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         self.find_segment_with_free_impl(class_idx, FindSegmentScanContext::default())
     }
 
@@ -122,15 +113,11 @@ impl AllocCore {
         self.find_segment_with_free(class_idx)
     }
 
-    /// R9-8 (task #230): forced "rescue scan" — runs the full O(S) linear
-    /// scan BYPASSING the R8-2 directory-trust fast path, so a stale-negative
-    /// directory bit cannot hide a real free block. Self-heals any bit the
-    /// scan finds the directory had wrongly cleared (same mechanism as the
-    /// periodic re-validation path). Called as a last resort from the
-    /// small-allocation OOM path (where `reserve_small_segment` returned
-    /// `None`) to avoid a spurious OOM a directory bug could otherwise cause.
-    /// Available under the directory feature without NUMA. The explicit rescue
-    /// mode bypasses standalone negative trust and repairs missing directory bits.
+    /// R9-8 (task #230): forced "rescue scan" — full O(S) linear scan
+    /// BYPASSING the R8-2 directory-trust fast path (a stale-negative bit
+    /// cannot hide a real free block) and self-healing wrongly cleared bits.
+    /// Last resort on the small-allocation OOM path, to avoid a spurious OOM
+    /// a directory bug could otherwise cause. Directory feature, no NUMA.
     #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
     pub(crate) fn find_segment_with_free_forced(&mut self, class_idx: usize) -> Option<*mut u8> {
         self.find_segment_with_free_impl(
@@ -162,7 +149,7 @@ impl AllocCore {
     /// on actual free-list/refill misses, never on a magazine hit.
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     #[inline]
-    pub(super) fn drain_segment_sidecar(&mut self, base: *mut u8) -> SidecarDrainOutcome {
+    pub(in super::super) fn drain_segment_sidecar(&mut self, base: *mut u8) -> SidecarDrainOutcome {
         if !self.table.is_routed() {
             return SidecarDrainOutcome::Skipped;
         }
@@ -171,6 +158,14 @@ impl AllocCore {
         // Patch S: start at the payload's first word, not word 0.
         let end_word = high_water.div_ceil(SIDECAR_WORD_BYTES);
         let start_word = Self::sidecar_payload_start_word(base).min(end_word);
+        #[cfg(feature = "bench-internals")]
+        {
+            crate::alloc_core::B4_SCAN_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::alloc_core::B4_SCAN_WORDS.fetch_add(
+                (end_word - start_word) as u64,
+                core::sync::atomic::Ordering::Relaxed,
+            );
+        }
         let (changed_classes, _reclaimed) = {
             let scan = self.scan_small_route_or_fatal(
                 index,
@@ -205,17 +200,12 @@ impl AllocCore {
         class_idx: usize,
         _context: FindSegmentScanContext,
     ) -> Option<*mut u8> {
-        // R8-2 (task #215): set to `true` ONLY when the periodic
-        // re-validation branch below actually runs (directory feature ON,
-        // sidecar materialised, streak hit the period). The linear-scan
-        // success paths read it to decide whether to self-heal a directory
-        // bit — distinguishing "scan ran as periodic re-validation" (heal)
-        // from "scan ran because the directory feature is OFF / sidecar not
-        // materialised" (no heal, since there is no directory miss to repair).
-        // The directory-driven block is gated only on `alloc-segment-directory`
-        // and remains active under `numa-aware`, using node-bucket preference.
-        // It can set this binding to `true` in either configuration; only the
-        // forced rescue wrapper is excluded under `numa-aware`.
+        // R8-2 (task #215): `true` ONLY when the periodic re-validation
+        // branch below actually runs; the linear-scan success paths read it
+        // to decide whether to self-heal a directory bit. The directory-driven
+        // block (alloc-segment-directory only) can also set it — under either
+        // configuration; only the forced rescue wrapper is excluded under
+        // `numa-aware`.
         #[cfg(feature = "alloc-segment-directory")]
         let mut periodic_revalidation_active = false;
         // Round 12 O-4 (data only): set when this call is a routed
@@ -236,6 +226,8 @@ impl AllocCore {
                 #[cfg(feature = "numa-aware")]
                 my_node,
             ) {
+                // B4 §11: remember the directory-served segment as cursor.
+                self.record_class_cursor(class_idx, base);
                 return Some(base);
             }
             // R12-03 characterization: keep the trusted-negative path disabled
@@ -275,7 +267,7 @@ impl AllocCore {
                     .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             }
         }
-        self.linear_scan(
+        let found = self.linear_scan(
             class_idx,
             _context,
             #[cfg(feature = "numa-aware")]
@@ -286,7 +278,12 @@ impl AllocCore {
                 #[cfg(feature = "alloc-stats")]
                 routed_miss_scan,
             },
-        )
+        );
+        if let Some(base) = found {
+            // B4 §11: remember the serving segment as this class's cursor.
+            self.record_class_cursor(class_idx, base);
+        }
+        found
     }
 
     #[cfg(feature = "alloc-segment-directory")]
@@ -307,47 +304,26 @@ impl AllocCore {
         #[cfg(feature = "numa-aware")] my_node: u32,
     ) -> Option<*mut u8> {
         //
-        // When `alloc-segment-directory` is compiled in AND the sidecar is
-        // materialised (table.count() >= threshold), query the per-class
-        // bitmap for set bits. Each set bit is a CANDIDATE segment whose
-        // BinTable *was* non-empty for `class_idx` at the last transition
-        // event. Because the bitmap can lag (a drain that empties the class
-        // between the set and our read), every candidate is VALIDATED:
-        //   1. base_at(slot) != null
-        //   2. kind is Small/Primordial
-        //   3. BinTable head for class_idx is STILL non-null
+        // Query the materialised sidecar's per-class bitmap for set bits:
+        // each set bit is a CANDIDATE segment whose BinTable *was* non-empty
+        // for `class_idx` at the last transition event. The bitmap can lag,
+        // so every candidate is VALIDATED: (1) base_at(slot) != null,
+        // (2) kind is Small/Primordial, (3) BinTable head STILL non-null.
+        // Routed candidates consume terminal sidecar cuts before the BinTable
+        // read; route borrows end before decommit/pool finalization; a valid
+        // hit calls `unpool_if_present(base)`.
         //
-        // Before inspecting the BinTable, routed candidates consume terminal
-        // sidecar cuts. Route borrows end before decommit/pool finalization.
-        // On a valid hit, `unpool_if_present(base)` is called.
+        // On a directory MISS, R8-2 (task #215) makes the directory
+        // AUTHORITATIVE in the common case: return `None` immediately (no
+        // O(S) scan); every `DIRECTORY_MISS_FULL_SCAN_PERIOD` misses a
+        // periodic re-validation full scan still runs as a safety net (and
+        // self-heals drift — see the linear-scan success path).
         //
-        // On a directory MISS (no set bit yields a valid hit), R8-2 (task
-        // #215) makes the directory AUTHORITATIVE in the common case: the
-        // miss is trusted and we return `None` immediately (no O(S) scan),
-        // so the caller carves a fresh segment as if the directory's "empty
-        // for this class" were the truth. Every
-        // `DIRECTORY_MISS_FULL_SCAN_PERIOD` misses a periodic re-validation
-        // full scan still runs as a safety net (and self-heals any drift it
-        // finds — see the success path of the linear scan below).
-        //
-        // P2 (NUMA two-pass preference) — R11-6 UPDATE: the paragraph that
-        // used to be here (pre-R11-6) said the directory-driven lookup is
-        // DISABLED under `numa-aware` and that the directory was a
-        // write-only index until a future round added node-aware queries.
-        // That round happened: R11-6 (task #234) added the node-indexed
-        // `class_nonempty_by_node` bitmap and wired the per-bucket scan below
-        // (`buckets`/`n_buckets`, built from `os::read_directory_node_bucket`)
-        // so the directory-driven lookup IS active under `numa-aware` too —
-        // it visits the caller's own node bucket first, then the shared
-        // unknown bucket, then every foreign real-node bucket in ascending
-        // order, implementing the same local-first / foreign-fallback
-        // two-pass preference the linear-scan fallback below independently
-        // provides for when the directory is not materialised (below the
-        // threshold) or misses. Both paths honour the preference; they are
-        // not "directory disabled, linear scan does NUMA" as this comment
-        // used to claim — they are two independently NUMA-aware
-        // implementations of the same preference, used depending on whether
-        // the directory sidecar is materialised.
+        // R11-6 (task #234): the node-indexed `class_nonempty_by_node` bitmap
+        // makes this lookup active under `numa-aware` too — own node bucket
+        // first, then shared unknown, then foreign real-node buckets, the
+        // same local-first preference the linear-scan fallback implements
+        // independently when the sidecar is not materialised or misses.
 
         #[cfg(feature = "alloc-segment-directory")]
         if !self.directory_sidecar.is_null() {
@@ -488,159 +464,161 @@ impl AllocCore {
         let periodic_revalidation_active = _scan_context.periodic_revalidation_active;
         #[cfg(feature = "alloc-stats")]
         let routed_miss_scan = _scan_context.routed_miss_scan;
-        // Guarded fallback covers routed negative-directory and rescue paths,
-        // as well as no-directory mode. Enumerate numeric active-Small slots;
-        // each canonical root is read fresh before a possible recycle. No
-        // iterator, root snapshot, or table borrow survives a drain.
-        // R6-T32: a cold trim releases the directory sidecar; without this, a
-        // non-growing heap would stay on the linear scan forever (the only
-        // rebuild trigger was reserve_small_segment). Rebuild lazily here —
-        // this fallback scan is already the cold path, and
-        // `maybe_materialize_directory` is a no-op when already materialised
-        // or below DIRECTORY_MATERIALIZE_THRESHOLD.
+        // Guarded fallback covers routed negative-directory, rescue, and
+        // no-directory modes. Enumerate active-Small slots; each canonical
+        // root is read fresh before a possible recycle; no iterator, root
+        // snapshot, or table borrow survives a drain.
+        // R6-T32: a cold trim releases the directory sidecar; without this a
+        // non-growing heap would stay on the linear scan forever. Rebuild
+        // lazily here (already the cold path); no-op when already materialised.
         #[cfg(feature = "alloc-segment-directory")]
         self.maybe_materialize_directory();
         let n = self.table.count() as usize;
 
-        // Phase C (numa-aware): on the first pass we prefer segments whose
-        // node_id matches the calling thread's NUMA node; we collect segments
-        // from foreign nodes in `fallback` and return the first one only if
-        // the first pass found nothing.
-        //
-        // Strategy (a) — "ignore migration": we consult the cached
-        // current_node() value (R11-5: see `current_node_cached` and
-        // `PHASE_NUMA_DESIGN.md` §4.1) on every find_segment_with_free
-        // invocation. Only the FIRST call after a slot claim queries the OS;
-        // subsequent calls on the same claim return the cached value. If the
-        // thread migrated between nodes mid-claim, we may prefer a now-wrong
-        // segment — that is the accepted MVP trade-off (§4 / §4.1 of
-        // PHASE_NUMA_DESIGN.md), a small extension of the per-segment lag
-        // §4 already documents to a per-claim lag on the query itself.
-        //
-        // R11-6: `my_node` is now computed at the top of this function (before
-        // the directory-driven lookup) and reused here — see the binding above.
-        // A single fallback slot: the first segment from a foreign node that has
-        // a free block.  On a single-NUMA machine (or when numa-aware is off)
-        // this path is never taken — all segments have node_id == my_node (or
-        // NO_NODE_RAW, which is treated as "acceptable" / unknown).
+        // Phase C (numa-aware): first pass prefers segments whose node_id
+        // matches the caller's node (cached per claim, R11-5 "ignore
+        // migration" strategy (a) — see PHASE_NUMA_DESIGN.md §4.1 for the
+        // accepted staleness trade-off); foreign-node segments with a free
+        // block are remembered in `fallback` (single slot) and used only if
+        // the first pass found nothing. With numa-aware off this path is
+        // never taken. `my_node` is computed at the top of this function.
         #[cfg(feature = "numa-aware")]
         let mut fallback: Option<usize> = None;
         #[cfg(all(feature = "numa-aware", feature = "alloc-stats"))]
         let mut fallback_was_nonempty = false;
 
-        let mut from = 0;
-        while let Some(i) = self.table.next_active(SegmentKind::Small, from) {
-            if i >= n {
-                break;
-            }
-            // Advance before a sidecar drain can recycle this candidate.
-            from = i + 1;
-            #[cfg(feature = "alloc-stats")]
-            crate::alloc_core::directory_stats::FULL_SCAN_SLOTS_EXAMINED
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            let base = self.table.base_at(i);
-            if base.is_null()
-                || !matches!(
-                    SegmentHeader::kind_at(base),
-                    SegmentKind::Small | SegmentKind::Primordial
-                )
-            {
-                // This is an invariant violation in the active-Small table:
-                // unlike a directory bit, a linear-scan entry is expected to
-                // name a live small segment. Abort rather than continue with
-                // corrupted table state.
-                fatal(b"find_segment: drained segment is not a live small segment\n");
-            }
-            // Stats only: the class bin before the drain, to tell a drain-created
-            // free block from directory lag.
-            #[cfg(feature = "alloc-stats")]
-            let was_nonempty = routed_miss_scan
-                && SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
-            // Consume only this canonical candidate before inspecting its bins.
-            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-            match self.drain_segment_sidecar(base) {
-                // Decommitted+released: `base` is unmapped — skip the
-                // BinTable check for it in THIS scan. Decommitted+pooled:
-                // `base` is still live/registered/committed (R1-03, src
-                // review round 1) — fall through to the SAME BinTable check
-                // every other live segment gets below, so a segment that just
-                // emptied (and therefore has every one of its blocks free)
-                // can be reused as a hit in this very scan, not only on a
-                // later call (see `SidecarDrainOutcome::Decommitted`'s doc).
-                #[cfg(feature = "alloc-decommit")]
-                SidecarDrainOutcome::Decommitted { pooled: false } => continue,
-                #[cfg(feature = "alloc-decommit")]
-                SidecarDrainOutcome::Decommitted { pooled: true } => {}
-                SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
-            }
-            let meta = SegmentMeta::new(base);
-            let bt = meta.bin_table();
-            if bt.head(class_idx) != FREE_LIST_NULL {
-                // Phase C (numa-aware): check whether this segment belongs to
-                // our NUMA node.  Segments with node_id == NO_NODE_RAW are
-                // "unknown" — treat them as local (no penalty, and on platforms
-                // without NUMA they all carry NO_NODE_RAW so this degrades
-                // gracefully to the pre-NUMA single-pass behaviour).
-                #[cfg(feature = "numa-aware")]
-                {
-                    let seg_node = meta.node_id_of();
-                    if seg_node != my_node
-                        && seg_node != crate::alloc_core::segment_header::NO_NODE_RAW
-                    {
-                        // Foreign-node segment with a free block.  Remember as
-                        // fallback if we find nothing local, then keep scanning.
-                        if fallback.is_none_or(|slot| self.table.base_at(slot).is_null()) {
-                            fallback = Some(i);
-                            #[cfg(feature = "alloc-stats")]
-                            {
-                                fallback_was_nonempty = was_nonempty;
-                            }
-                        }
-                        continue;
-                    }
-                    // Local or unknown node — use it immediately.
-                    self.finalize_hit(
-                        base,
-                        class_idx,
-                        DirectoryCandidateContext {
-                            #[cfg(feature = "alloc-stats")]
-                            routed_scan_was_nonempty: routed_miss_scan.then_some(was_nonempty),
-                            #[cfg(feature = "alloc-segment-directory")]
-                            periodic_revalidation_active,
-                            #[cfg(feature = "alloc-segment-directory")]
-                            rescue: _context.rescue,
-                        },
-                    );
-                    return Some(base);
+        // B4 §11: enumerate [start, n) then [0, start), start = one slot after
+        // this class's cursor, so every active slot is still visited exactly
+        // once; without a cursor start = 0 and the second leg is empty.
+        let start = self.class_cursor_scan_start(class_idx, n).unwrap_or(0);
+        for (lo, hi) in [(start, n), (0, start)] {
+            let mut from = lo;
+            while from < hi {
+                let Some(i) = self.table.next_active(SegmentKind::Small, from) else {
+                    break;
+                };
+                if i >= hi {
+                    break;
                 }
-                // Without numa-aware: same as before — return the first match.
-                #[cfg(not(feature = "numa-aware"))]
+                // Advance before a sidecar drain can recycle this candidate.
+                from = i + 1;
+                #[cfg(feature = "alloc-stats")]
+                crate::alloc_core::directory_stats::FULL_SCAN_SLOTS_EXAMINED
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                let base = self.table.base_at(i);
+                if base.is_null()
+                    || !matches!(
+                        SegmentHeader::kind_at(base),
+                        SegmentKind::Small | SegmentKind::Primordial
+                    )
                 {
-                    self.finalize_hit(
-                        base,
-                        class_idx,
-                        DirectoryCandidateContext {
-                            #[cfg(feature = "alloc-stats")]
-                            routed_scan_was_nonempty: routed_miss_scan.then_some(was_nonempty),
-                            #[cfg(feature = "alloc-segment-directory")]
-                            periodic_revalidation_active,
-                            #[cfg(feature = "alloc-segment-directory")]
-                            rescue: _context.rescue,
-                        },
-                    );
-                    return Some(base);
+                    // Invariant violation in the active-Small table: a linear-scan
+                    // entry must name a live small segment. Abort rather than
+                    // continue with corrupted table state.
+                    fatal(b"find_segment: drained segment is not a live small segment\n");
+                }
+                // B4 (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): ONE pre-drain bin read
+                // serving both purposes — it decides whether the sidecar walk is
+                // needed and (alloc-stats) classifies the hit as pre-nonempty.
+                // A publication only reaches the bins through a drain, so a
+                // non-empty bin makes the drain pure overhead for this lookup
+                // (storm runs: most discoveries hit blocks already in the bins);
+                // when the bin is empty the drain is required and stays as it
+                // was. Pending bits of a skipped drain remain pending for a later
+                // drain/strict trim — release is credit-gated
+                // (`dec_live_and_maybe_decommit`), nothing is lost. Event shift
+                // vs pre-B4: a nonempty segment is no longer drained at all, so
+                // drain-outcome counters see fewer Drained events (the
+                // "was_nonempty" hit classification is unchanged — same pre-drain
+                // read as before).
+                #[cfg(any(
+                    feature = "alloc-stats",
+                    all(feature = "alloc-global", feature = "alloc-xthread")
+                ))]
+                let pre_nonempty =
+                    SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
+                #[cfg(feature = "alloc-stats")]
+                let was_nonempty = routed_miss_scan && pre_nonempty;
+                // Consume only this canonical candidate before inspecting its bins.
+                #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+                if !pre_nonempty {
+                    match self.drain_segment_sidecar(base) {
+                        // Decommitted+released: `base` is unmapped — skip the
+                        // BinTable check in THIS scan. Decommitted+pooled: `base`
+                        // is still live/registered/committed (R1-03) — fall
+                        // through to the SAME BinTable check every other live
+                        // segment gets, so a just-emptied segment can be reused
+                        // in this very scan (see `SidecarDrainOutcome`'s doc).
+                        #[cfg(feature = "alloc-decommit")]
+                        SidecarDrainOutcome::Decommitted { pooled: false } => continue,
+                        #[cfg(feature = "alloc-decommit")]
+                        SidecarDrainOutcome::Decommitted { pooled: true } => {}
+                        SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
+                    }
+                }
+                let meta = SegmentMeta::new(base);
+                let bt = meta.bin_table();
+                if bt.head(class_idx) != FREE_LIST_NULL {
+                    // Phase C (numa-aware): NO_NODE_RAW segments count as local,
+                    // degrading gracefully to the pre-NUMA single-pass behaviour.
+                    #[cfg(feature = "numa-aware")]
+                    {
+                        let seg_node = meta.node_id_of();
+                        if seg_node != my_node
+                            && seg_node != crate::alloc_core::segment_header::NO_NODE_RAW
+                        {
+                            // Foreign-node segment with a free block.  Remember as
+                            // fallback if we find nothing local, then keep scanning.
+                            if fallback.is_none_or(|slot| self.table.base_at(slot).is_null()) {
+                                fallback = Some(i);
+                                #[cfg(feature = "alloc-stats")]
+                                {
+                                    fallback_was_nonempty = was_nonempty;
+                                }
+                            }
+                            continue;
+                        }
+                        // Local or unknown node — use it immediately.
+                        self.finalize_hit(
+                            base,
+                            class_idx,
+                            DirectoryCandidateContext {
+                                #[cfg(feature = "alloc-stats")]
+                                routed_scan_was_nonempty: routed_miss_scan.then_some(was_nonempty),
+                                #[cfg(feature = "alloc-segment-directory")]
+                                periodic_revalidation_active,
+                                #[cfg(feature = "alloc-segment-directory")]
+                                rescue: _context.rescue,
+                            },
+                        );
+                        return Some(base);
+                    }
+                    // Without numa-aware: same as before — return the first match.
+                    #[cfg(not(feature = "numa-aware"))]
+                    {
+                        self.finalize_hit(
+                            base,
+                            class_idx,
+                            DirectoryCandidateContext {
+                                #[cfg(feature = "alloc-stats")]
+                                routed_scan_was_nonempty: routed_miss_scan.then_some(was_nonempty),
+                                #[cfg(feature = "alloc-segment-directory")]
+                                periodic_revalidation_active,
+                                #[cfg(feature = "alloc-segment-directory")]
+                                rescue: _context.rescue,
+                            },
+                        );
+                        return Some(base);
+                    }
                 }
             }
         }
-        // First pass found no local segment with a free block; fall back to
-        // the first foreign-node segment we recorded (or None if everything is
-        // empty / all recycled).
+        // No local segment had a free block; use the recorded foreign-node
+        // fallback (or None if everything is empty / all recycled).
         #[cfg(feature = "numa-aware")]
         {
-            // A saved NUMA fallback can become invalid while later candidates
-            // are drained/recycled. Revalidation is deliberately non-fatal:
-            // this is an optional candidate, so invalid state here means no
-            // usable fallback remains for this scan.
+            // A saved fallback can be drained/recycled meanwhile; invalid
+            // state here just means no usable fallback remains this scan.
             let fallback = fallback.and_then(|slot| {
                 let base = self.table.base_at(slot);
                 if base.is_null()

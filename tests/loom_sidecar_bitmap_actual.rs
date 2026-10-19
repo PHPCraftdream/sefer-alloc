@@ -8,8 +8,10 @@
 //!
 //! Reduced geometry: 3 pending words (`SEGMENT = 3 * 64 * MIN_BLOCK`). The
 //! protocol is CURRENT production code: producer terminal `fetch_or(AcqRel)`
-//! (`SidecarBitmap::publish`) and owner plain `swap(0, AcqRel)` per word
-//! (`BitmapScan::next_cut`; the bench feature is off). In particular this is
+//! (`SidecarBitmap::publish`) and the owner's B4 guarded cut per word
+//! (`BitmapScan::next_cut`: plain `load(Acquire)` then `swap(0, AcqRel)` only
+//! when the word is nonzero — the bench feature is off, so the guarded
+//! production arm compiles, not the bench baseline). In particular this is
 //! not the load-before-swap shadow in `tests/loom_sidecar_bitmap.rs`.
 //!
 //! Negative shadow controls demonstrate the load+store and masking loss

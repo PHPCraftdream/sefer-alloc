@@ -5,7 +5,7 @@
 //! Counterfactual — what is NOT usable as evidence: on the broken (null
 //! sidecar) code path the DIRECTORY_FALLBACK_SCANS counter is useless as a
 //! red oracle, because its increment lives INSIDE the non-null-sidecar block
-//! (src/alloc_core/small/alloc_core_small/find_segment.rs ~:441-446) — with a
+//! (src/alloc_core/small/alloc_core_small/find_segment/scan.rs, `linear_scan`) — with a
 //! null sidecar it stays at zero on BOTH old and fixed code. The oracles
 //! actually asserted here are:
 //!   * FULL_SCAN_SLOTS_EXAMINED — on the broken code the sidecar stays null

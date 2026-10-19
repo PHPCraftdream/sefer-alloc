@@ -1,12 +1,12 @@
-E0_METADATA {"id":"R-Ph3a-native","head":"ec24b8709f3bfbc8a095ac7295c6b65a93e3e582","tree":"093bde7e02412cde2d6ab80daf5c790041a3524d","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R-Ph3a-native","head":"ec24b8709f3bfbc8a095ac7295c6b65a93e3e582","tree":"093bde7e02412cde2d6ab80daf5c790041a3524d","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R-Ph3a-native.json","recipe_sha256":"3aa4a0afed638fa5be21de917112ea213339096fbf4f7c6b9a82a1ed62443ee9","registry_activation_hash":"47b3a1c460cf7d4d47f6460d115c1477555da7709f2bfb49c230b1e8097a789a"}
+E0_METADATA {"id":"R-Ph3a-native","head":"00d309f9ed462f2e2922a3a720f6bd17e5c3eedc","tree":"c5214efff0f3cc3f5b860841755a333ef3becc2a","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R-Ph3a-native","head":"00d309f9ed462f2e2922a3a720f6bd17e5c3eedc","tree":"c5214efff0f3cc3f5b860841755a333ef3becc2a","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R-Ph3a-native.json","recipe_sha256":"3aa4a0afed638fa5be21de917112ea213339096fbf4f7c6b9a82a1ed62443ee9","registry_activation_hash":"47b3a1c460cf7d4d47f6460d115c1477555da7709f2bfb49c230b1e8097a789a"}
 
 E0_STEP {"id":"R-Ph3a-native","kind":"baseline","name":"issue transaction witnesses baseline","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r11_ph3a_issue_transaction_scalar","--test","r11_ph3a_issue_transaction_batch","--test","r11_ph3a_magazine_refill_partial","--test","r11_ph3a_reserve_promotion_fault"],"env":{},"expect":{"exit":0,"stdoutRegex":["tests/r11_ph3a_issue_transaction_scalar.rs","tests/r11_ph3a_issue_transaction_batch.rs","tests/r11_ph3a_magazine_refill_partial.rs","tests/r11_ph3a_reserve_promotion_fault.rs","test result: ok. [0-9]+ passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m aligned-vmem v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/aligned-vmem)
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.13s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.58s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph3a_issue_transaction_batch.rs (target/debug/deps/r11_ph3a_issue_transaction_batch-fe6d46995aa5f80d)
@@ -35,7 +35,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test promotion_faults_roll_back_the_exhausted_segment_and_retry_promotes ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
@@ -44,7 +44,7 @@ E0_STEP {"id":"R-Ph3a-native","kind":"mutant","name":"batch carve over-counts li
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.95s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.35s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph3a_issue_transaction_batch.rs (target/debug/deps/r11_ph3a_issue_transaction_batch-fe6d46995aa5f80d)
@@ -56,7 +56,7 @@ failures:
 
 ---- batch_issue_transactions_commit_only_the_prepared_run stdout ----
 
-thread 'batch_issue_transactions_commit_only_the_prepared_run' (9331) panicked at tests/r11_ph3a_issue_transaction_batch.rs:155:5:
+thread 'batch_issue_transactions_commit_only_the_prepared_run' (9542) panicked at tests/r11_ph3a_issue_transaction_batch.rs:155:5:
 assertion `left == right` failed: live credits grow by exactly n
   left: Some(125537)
  right: Some(125536)
@@ -71,13 +71,13 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 [1m[91merror[0m: test failed, to rerun pass `--test r11_ph3a_issue_transaction_batch`
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R-Ph3a-native","kind":"restored","sha256":"68f1fcfd18359bc575c3e1bb36b0ff3225487352cea2b3fd753c0ead732b4afa"}
+E0_METADATA {"id":"R-Ph3a-native","kind":"restored","sha256":"3e8b45ffd9e2c0c9dcd9c6036733fb2d11f72fca391263357a7eb41eb013352e"}
 
 E0_STEP {"id":"R-Ph3a-native","kind":"restored-baseline","name":"issue transaction witnesses baseline","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r11_ph3a_issue_transaction_scalar","--test","r11_ph3a_issue_transaction_batch","--test","r11_ph3a_magazine_refill_partial","--test","r11_ph3a_reserve_promotion_fault"],"env":{},"expect":{"exit":0,"stdoutRegex":["tests/r11_ph3a_issue_transaction_scalar.rs","tests/r11_ph3a_issue_transaction_batch.rs","tests/r11_ph3a_magazine_refill_partial.rs","tests/r11_ph3a_reserve_promotion_fault.rs","test result: ok. [0-9]+ passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.03s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.46s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph3a_issue_transaction_batch.rs (target/debug/deps/r11_ph3a_issue_transaction_batch-fe6d46995aa5f80d)
@@ -106,7 +106,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test promotion_faults_roll_back_the_exhausted_segment_and_retry_promotes ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}

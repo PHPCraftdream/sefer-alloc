@@ -236,6 +236,10 @@ impl AllocCore {
             self.clear_segment_directory(slot_idx);
         }
         Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+        // B4 §11: the slot is about to be recycled — drop any class cursor
+        // naming it (a released segment must never stay a discovery hint).
+        let cursor_slot = SegmentHeader::segment_id_at(base) as usize;
+        self.invalidate_class_cursor_for_slot(cursor_slot);
         self.table.recycle(base);
         false // released — base is gone/unmapped
     }
@@ -488,6 +492,10 @@ impl AllocCore {
             self.clear_segment_directory(slot_idx);
         }
         Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+        // B4 §11: the slot is about to be recycled — drop any class cursor
+        // naming it (a released segment must never stay a discovery hint).
+        let cursor_slot = SegmentHeader::segment_id_at(base) as usize;
+        self.invalidate_class_cursor_for_slot(cursor_slot);
         self.table.recycle(base);
     }
 
@@ -580,6 +588,10 @@ impl AllocCore {
                 self.clear_segment_directory(slot_idx);
             }
             Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+            // B4 §11: the slot is about to be recycled — drop any class cursor
+            // naming it (a released segment must never stay a discovery hint).
+            let cursor_slot = SegmentHeader::segment_id_at(base) as usize;
+            self.invalidate_class_cursor_for_slot(cursor_slot);
             self.table.recycle(base);
             drained += 1;
         }
@@ -610,6 +622,10 @@ impl AllocCore {
         #[cfg(feature = "alloc-segment-directory")]
         self.clear_segment_directory(SegmentHeader::segment_id_at(base) as usize);
         Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+        // B4 §11: the slot is about to be recycled — drop any class cursor
+        // naming it (a released segment must never stay a discovery hint).
+        let cursor_slot = SegmentHeader::segment_id_at(base) as usize;
+        self.invalidate_class_cursor_for_slot(cursor_slot);
         self.table.recycle(base);
     }
 

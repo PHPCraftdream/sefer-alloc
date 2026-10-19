@@ -1,0 +1,36 @@
+== s7_cnt_01.log ==
+PASS t=4 ops=1687373 secs=0.065 ops_per_sec=25.91M
+== s7_cnt_02.log ==
+PASS t=4 ops=1691582 secs=0.061 ops_per_sec=27.92M
+== s7_cnt_03.log ==
+PASS t=4 ops=1698559 secs=0.067 ops_per_sec=25.24M
+== s7_cnt_04.log ==
+PASS t=4 ops=1691846 secs=0.056 ops_per_sec=30.05M
+== s7_cnt_05.log ==
+PASS t=4 ops=1686873 secs=0.071 ops_per_sec=23.82M
+== s7_cnt_06.log ==
+PASS t=4 ops=1695358 secs=0.059 ops_per_sec=28.53M
+== s7_cnt_07.log ==
+PASS t=4 ops=1689619 secs=0.060 ops_per_sec=28.15M
+== s7_cnt_08.log ==
+PASS t=4 ops=1692975 secs=0.064 ops_per_sec=26.46M
+== s7_cnt_09.log ==
+PASS t=4 ops=1681477 secs=0.062 ops_per_sec=27.14M
+== s7_cnt_10.log ==
+PASS t=4 ops=1687085 secs=0.062 ops_per_sec=27.35M
+== s7_cnt_11.log ==
+PASS t=4 ops=1693200 secs=0.070 ops_per_sec=24.07M
+== s7_cnt_12.log ==
+PASS t=4 ops=1685086 secs=0.073 ops_per_sec=23.03M
+== s7_cnt_13.log ==
+== s7_cnt_14.log ==
+== s7_cnt_15.log ==
+== s7_cnt_16.log ==
+== s7_cnt_17.log ==
+== s7_cnt_18.log ==
+== s7_cnt_19.log ==
+== s7_cnt_20.log ==
+== s7_cnt_21.log ==
+== s7_cnt_22.log ==
+== s7_cnt_23.log ==
+== s7_cnt_24.log ==
