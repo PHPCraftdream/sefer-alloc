@@ -1,18 +1,18 @@
-//! Audited System-backed route-directory seam. No pointer derived from a
-//! lookup address is dereferenced; allocator-origin roots stay in entries.
+//! Audited System-backed route-directory seam: no lookup-derived pointer is
+//! dereferenced, and allocator-origin roots stay in entries.
 #![allow(unsafe_code)]
 
 use core::cell::Cell;
 use core::marker::PhantomData;
 use core::mem;
 use core::ptr;
-use core::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
 
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::os::SEGMENT;
 
-use super::shard_lock::ShardLock;
+use super::{shard_lock::ShardLock, AtomicBool, AtomicUsize};
 use super::{LargeState, RouteError, RouteKind, RoutePin, RouteRegistration, SmallSidecar};
 
 const SHARDS: usize = 64;
@@ -22,20 +22,21 @@ std::thread_local! {
     static FAIL_NEXT_REGISTRATION: Cell<usize> = const { Cell::new(0) };
 }
 
-struct Entry {
-    key: usize,
-    end: usize,
-    payload: usize,
-    root: AtomicPtr<u8>,
-    owner: usize,
-    kind: RouteKind,
-    incarnation: u64,
-    refs: AtomicUsize,
-    sidecar: AtomicPtr<u8>,
+pub(super) struct Entry {
+    pub(super) key: usize,
+    pub(super) end: usize,
+    pub(super) payload: usize,
+    pub(super) root: AtomicPtr<u8>,
+    pub(super) owner: usize,
+    pub(super) kind: RouteKind,
+    pub(super) incarnation: u64,
+    pub(super) refs: AtomicUsize,
+    pub(super) sidecar: AtomicPtr<u8>,
+    pub(super) linked: AtomicBool,
 }
 
-/// One counted reference to a stable System allocation. There is no borrowed
-/// `&mut Entry` after publication; all shared mutation is atomic.
+/// One counted reference to a stable System allocation; there is no borrowed
+/// `&mut Entry` after publication — all shared mutation is atomic.
 pub(super) struct EntryHandle {
     ptr: AtomicPtr<Entry>,
 }
@@ -100,6 +101,7 @@ impl EntryHandle {
                 incarnation,
                 refs: AtomicUsize::new(1),
                 sidecar: AtomicPtr::new(sidecar),
+                linked: AtomicBool::new(true),
             });
         }
         Ok(Self {
@@ -129,7 +131,7 @@ impl EntryHandle {
         }
     }
 
-    fn entry(&self) -> &Entry {
+    pub(super) fn entry(&self) -> &Entry {
         // SAFETY: this handle owns one counted reference to a fully
         // initialized, non-moving Entry; final free occurs after its Drop.
         unsafe { &*self.ptr.load(Ordering::Relaxed) }
@@ -236,8 +238,7 @@ const BLOCK_CAP: usize = 64;
 const BLOCK_HALF: usize = BLOCK_CAP / 2;
 const INITIAL_INDEX_CAP: usize = 8;
 
-/// Fixed-capacity sorted run of non-owning entry pointers. A block linked in
-/// a shard index is never empty.
+/// Fixed-capacity sorted run of non-owning entry pointers; a linked block is never empty.
 struct Block {
     len: usize,
     slots: [AtomicPtr<Entry>; BLOCK_CAP],
@@ -357,8 +358,7 @@ impl Block {
     }
 }
 
-/// Sorted index of owned `Block`s by their first key. Capacity is retained
-/// after removals; the blocks themselves are released by `Shard`.
+/// Sorted index of owned `Block`s by first key; capacity is retained after removals.
 struct BlockIndex {
     ptr: AtomicPtr<AtomicPtr<Block>>,
     len: usize,
@@ -508,8 +508,7 @@ struct Surplus {
     _index: Option<BlockIndex>,
 }
 
-/// Blocks displaced by a shard removal, released after the shard lock is
-/// dropped (`System.dealloc` must not run under the lock).
+/// Blocks displaced by removal, released after the lock; `System.dealloc` never runs under it.
 struct Retired {
     blocks: [Option<SpareBlock>; 2],
 }
@@ -524,9 +523,8 @@ impl Retired {
     }
 }
 
-/// Two-level sorted shard: an index of blocks, each at most `BLOCK_CAP`
-/// pointers. Updates shift within one block (plus the short block index on
-/// split/merge), never the whole shard. All access is under the shard lock.
+/// Two-level sorted shard: an index of blocks, each at most `BLOCK_CAP` pointers. Updates
+/// shift within one block (plus the short block index on split/merge), all under the shard lock.
 struct Shard {
     index: BlockIndex,
     /// One retained empty block, so splits after removals never allocate.
@@ -724,8 +722,8 @@ impl Drop for Shard {
     }
 }
 
-/// Process-stable directory; route count is limited by System memory, not
-/// a fixed slot table. Lookup is O(log routes-in-shard) under one mutex.
+/// Process-stable directory; route count limited by System memory, O(log n) lookup
+/// under one shard mutex.
 pub struct RouteDirectory {
     shards: [ShardLock<Shard>; SHARDS],
     next_incarnation: AtomicU64,
@@ -980,13 +978,14 @@ impl RouteDirectory {
         ) else {
             return false;
         };
-        // The caller drops the owner reference after this lock is released.
-        // Displaced blocks are plain System allocations whose Drop never
-        // re-enters the directory, so `_retired` dropping first is safe.
+        // `_retired` (plain System blocks, Drop never re-enters) and the owner
+        // ref drop after the lock; Release `linked = false` publishes the unlink.
         let _retired = guard.remove(key, entry.ptr());
+        entry.entry().linked.store(false, Ordering::Release);
         drop(guard);
         true
     }
+
     const fn shard_index(key: usize) -> usize {
         let value = key / SEGMENT;
         (value ^ (value >> 13) ^ (value >> 26)) % SHARDS

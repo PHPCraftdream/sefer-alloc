@@ -1036,6 +1036,13 @@ harness = false
 test = false
 required-features = ["alloc-global", "internals", "bench-internals"]
 
+# b4-r1 pin-cache Miri cell: no libtest (its teardown frees a by-value Box on
+# the main thread, which hits the accepted P1-box defect on non-fastbin rows).
+[[test]]
+name = "b4_r1_pin_cache_miri"
+harness = false
+test = false
+required-features = ["alloc-global", "internals", "bench-internals"]
 # R1-01 cap-branch Box/Drop Miri witness (fastbin magazine); same explicit
 # selection model as `miri_global_box_acceptance`.
 [[test]]

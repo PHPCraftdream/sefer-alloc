@@ -32,6 +32,9 @@ enum Scenario {
     Shard(usize),
     ShardRealloc(usize),
     OwnOom,
+    // Constructed only under `exact-object-proto` (see the match arm below);
+    // dead under the narrower feature sets clippy runs with.
+    #[cfg_attr(not(feature = "exact-object-proto"), allow(dead_code))]
     ExactShard(usize),
     Fallback,
     Init,

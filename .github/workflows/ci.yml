@@ -3045,6 +3045,26 @@ jobs:
           cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-tree.log"
           grep -F "[miri_global_box_acceptance] COMPLETE narrow_two_rounds" "$RUNNER_TEMP/miri-installed-box-tree.log"
         shell: bash
+      # b4-r1 round 2 (P2): pin-cache cell under narrow provenance. REAL Box
+      # ownership via a Send wrapper; activation oracle = PIN_CACHE_HITS
+      # delta >= 1 (reds a "publish_cached always returns Miss" mutant);
+      # gated pending-bit delivery via TerminalPublicationGate and TLS
+      # thread-exit release (PIN_CACHE_THREAD_RELEASES delta >= 2).
+      - name: b4-r1 pin cache narrow provenance (miss, same-base hit, delivery, TLS release)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+        run: |
+          set -o pipefail
+          cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
+          grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
+        shell: bash
+      - name: b4-r1 pin cache narrow provenance under TreeBorrows
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+        run: |
+          set -o pipefail
+          cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
+          grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
       - name: installed Box R1-01 cap-frame flush witness (SB)
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
@@ -3300,13 +3320,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
-      # Retained concurrent allocator regressions. Full owner and sidecar-miss
-      # workloads stay native; the tiny owner-credit invariant runs separately.
+      # Retained concurrent allocator regressions, plus the b4-r1 cached-pin
+      # fast path (miss then same-base hit, TLS exit release). Full owner and
+      # sidecar-miss workloads stay native; the tiny owner-credit invariant
+      # runs separately.
       - run: >-
           cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals"
           --test regression_xthread_large_free_no_leak
           --test regression_xthread_thread_free_alias_miri
           --test regression_xthread_small_ring_miri
+          --test b4_r1_pin_cache_miri
       # VER-03: inherit plain provenance, Stacked Borrows and preemption=0.5.
       - name: regression_r2_06_header_race_miri
         run: cargo miri test --locked --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test regression_r2_06_header_race_miri
@@ -3403,6 +3426,7 @@ jobs:
             --test loom_sidecar_bitmap_actual \
             --test loom_sidecar_summary \
             --test loom_route_pin_unlink \
+            --test loom_b4_r1_pin_cache \
             --test loom_terminal_owner_drain \
             --test loom_terminal_large \
             --test loom_b4_scan_skip_empty_publish 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
@@ -3414,6 +3438,17 @@ jobs:
           grep -F "test loom_actual_leaves_two_producers_same_leaf_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test route_pin_under_lock_never_resurrects_unlinked_route ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test negative_pin_without_lock_resurrects_freed_route - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          # loom_b4_r1_pin_cache is the ACTUAL-SOURCE model of the b4-r1
+          # cached-pin fast path (production route_pin_cache.rs / pin.rs /
+          # directory.rs / small_sidecar.rs compiled onto loom atomics); the
+          # should_panic rows are its negative shadow controls (gate
+          # skip — M-A; relaxed/acquire gate false-read pair — the M-B
+          # atomic mechanism, see the model header: production ordering
+          # is NOT claimed necessary).
+          grep -F "test loom_actual_cached_pin_publish_delivery_survives_unlink_race ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_negative_skip_linked_gate_writes_zombie_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_shadow_relaxed_gate_false_read_misses_index_unlink - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_shadow_acquire_gate_false_read_sees_index_unlink ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_negative_cut_via_load_store_loses_concurrent_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_negative_masked_cut_drops_pending_bits - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_negative_class_after_terminal_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
