@@ -1,0 +1,27 @@
+MARGINAL Ir/op (sefer larson T=1): 358
+--- by source file (Ir/op)
+  358.3	PROGRAM TOTALS
+  213.2	events annotated
+   87.0	lv-svrl/crates/malloc-bench-rs/src/lib.rs
+   63.4	lv-svrl/src/registry/heap_core/free/dealloc_own_base.rs
+   25.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/mod.rs
+   19.8	lv-svrl/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   19.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/list.rs
+   13.8	lv-svrl/src/registry/heap_core/alloc/hot.rs
+   12.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   12.0	slots[idx] = Some(unsafe { alloc_block(a &mut rng) });
+   12.0	let cnt = self.tcache.classes[c].count as usize;
+   11.7	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   11.5	(bit >> 3 1u8 << (bit & 7))
+   10.3	lv-svrl/src/alloc_core/segment/segment_table/segment_table_impl.rs
+   10.0	lv-svrl/src/alloc_core/platform/size_classes.rs
+    9.4	}
+    9.0	unsafe fn alloc_block<A
+    9.0	let (off meta c) = match small_free_guard(
+    9.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs
+    8.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs
+    7.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs
+    7.0	<counts for unidentified lines in lv-svrl/src/registry/heap_core/free/dealloc_own_base.rs>
+    6.8	let bit = (off >> MIN_BLOCK_SHIFT) as usize;
+    6.8	16 + (r >> 8) as usize % (512 - 16)
+    6.0	x ^= x >> 27;
