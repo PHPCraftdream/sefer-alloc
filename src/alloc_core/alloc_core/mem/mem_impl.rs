@@ -45,11 +45,6 @@ impl AllocCore {
         // (never 0), so null always misses -> `None`, and every miss tail
         // (e.g. `publish_foreign`) null-checks before any action.
         let candidate = os::segment_base_of_ptr(ptr);
-        // B4-M (P1-2): X-span branch-activation oracle — every call counts;
-        // the non-Large (mask) branch counts separately below.
-        #[cfg(feature = "bench-internals")]
-        crate::alloc_core::alloc_core::XSPAN_MASK_BRANCH_CALLS
-            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let base = self.table.canonical_base_of_mut(candidate)?;
         // X-span (T22): for non-Large segments the offset is just the low
         // SEGMENT bits of the address. Non-Large roots are registered under
@@ -68,10 +63,6 @@ impl AllocCore {
             }
             off
         } else {
-            // B4-M (P1-2): the mask branch fired (see XSPAN_MASK_BRANCH_CALLS).
-            #[cfg(feature = "bench-internals")]
-            crate::alloc_core::alloc_core::XSPAN_MASK_BRANCH_TAKEN
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             debug_assert_eq!(
                 base.addr(),
                 candidate.addr(),

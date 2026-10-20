@@ -120,13 +120,6 @@ unsafe impl GlobalAlloc for SeferAlloc {
 
     #[inline(always)]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        // B4-M (P1-2): X-null entry-side null-free count (see
-        // `XNULL_NULL_TAIL_GUARD` for the tail-side complement).
-        #[cfg(feature = "bench-internals")]
-        if ptr.is_null() {
-            crate::alloc_core::XNULL_NULL_DEALLOC_TOTAL
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        }
         // X-null: no hot null check. Null's memo/own_cache key is 0 and never
         // matches a stored segment base or `LAST_EMPTY_KEY`, so null always
         // misses into `publish_foreign`, whose first line null-checks before

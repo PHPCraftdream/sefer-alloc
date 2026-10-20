@@ -615,12 +615,6 @@ impl AllocCore {
                 // B4 (в)/S1: issue = commit `issue_state` (LIVE, or MAG when
                 // the caller parks the batch in a magazine).
                 meta.state_byte().write(head_off, class_idx, issue_state);
-                // B4-M (P1-2): per-block MAG write count (drain branch).
-                #[cfg(feature = "bench-internals")]
-                if issue_state == StateByte::MAG {
-                    crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
-                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                }
                 run.commit(head_off);
                 out[k] = block_ptr;
                 k += 1;
@@ -633,6 +627,12 @@ impl AllocCore {
             }
             // Write the new head ONCE: the first un-popped node, or NULL.
             bt.set_head(class_idx, head_off);
+            // B4-M (P1-2): MAG state-byte writes of this drain, one add per batch.
+            #[cfg(feature = "bench-internals")]
+            if issue_state == StateByte::MAG {
+                crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
+                    .fetch_add(k as u64, core::sync::atomic::Ordering::Relaxed);
+            }
             // R7-A2: directory bitmap maintenance — the old head was non-null
             // (early return above), so the only transition is non-empty→empty
             // when the drain exhausted the chain (head_off == FREE_LIST_NULL);
@@ -987,13 +987,13 @@ impl AllocCore {
             run.commit(off as u32);
             // B4 (в)/S1: freshly carved blocks commit `issue_state` (see doc).
             meta.state_byte().write(off as u32, class_idx, issue_state);
-            // B4-M (P1-2): per-block MAG write count (carve branch).
-            #[cfg(feature = "bench-internals")]
-            if issue_state == StateByte::MAG {
-                crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
-                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            }
             *slot = ptr;
+        }
+        // B4-M (P1-2): MAG state-byte writes of this carve, one add per batch.
+        #[cfg(feature = "bench-internals")]
+        if issue_state == StateByte::MAG {
+            crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
+                .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
         }
         Ok(n)
     }

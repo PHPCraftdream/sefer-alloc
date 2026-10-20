@@ -226,7 +226,7 @@ impl HeapCore {
     }
 
     // --- B4-M (P1-2): thin process-wide delegations to the `AllocCore`
-    // --- bench-internals observer counters (S1 / X-null / X-span), so
+    // --- bench-internals observer counters (S1 / X-null), so
     // --- macro-bench/test workloads driven through `HeapCore` can read them
     // --- (same pattern as `dbg_contains_base_tier1_hits` above).
 
@@ -255,19 +255,6 @@ impl HeapCore {
     }
 
     /// MEASUREMENT-ONLY (B4-M P1-2): see
-    /// [`AllocCore::dbg_xnull_null_dealloc_total`].
-    #[doc(hidden)]
-    #[cfg(all(
-        feature = "alloc-global",
-        feature = "bench-internals",
-        feature = "internals"
-    ))]
-    #[must_use]
-    pub fn dbg_xnull_null_dealloc_total() -> u64 {
-        crate::alloc_core::AllocCore::dbg_xnull_null_dealloc_total()
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): see
     /// [`AllocCore::dbg_xnull_null_tail_guard`].
     #[doc(hidden)]
     #[cfg(all(
@@ -278,32 +265,6 @@ impl HeapCore {
     #[must_use]
     pub fn dbg_xnull_null_tail_guard() -> u64 {
         crate::alloc_core::AllocCore::dbg_xnull_null_tail_guard()
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): see
-    /// [`AllocCore::dbg_xspan_mask_branch_calls`].
-    #[doc(hidden)]
-    #[cfg(all(
-        feature = "alloc-global",
-        feature = "bench-internals",
-        feature = "internals"
-    ))]
-    #[must_use]
-    pub fn dbg_xspan_mask_branch_calls() -> u64 {
-        crate::alloc_core::AllocCore::dbg_xspan_mask_branch_calls()
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): see
-    /// [`AllocCore::dbg_xspan_mask_branch_taken`].
-    #[doc(hidden)]
-    #[cfg(all(
-        feature = "alloc-global",
-        feature = "bench-internals",
-        feature = "internals"
-    ))]
-    #[must_use]
-    pub fn dbg_xspan_mask_branch_taken() -> u64 {
-        crate::alloc_core::AllocCore::dbg_xspan_mask_branch_taken()
     }
 
     /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to

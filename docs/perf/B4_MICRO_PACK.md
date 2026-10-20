@@ -19,6 +19,15 @@
 сырые логи N9 остаются как доказательство вердикта. В production уходят только
 S1, X-null и X-span; окончательная приёмка — точный iai A/B и mt-bench на CI.
 
+**Наблюдатели после замера.** Счётчики `XSPAN_MASK_BRANCH_{CALLS,TAKEN}` (на каждом
+`canonical_block_of`) и `XNULL_NULL_DEALLOC_TOTAL` (вход `SeferAlloc::dealloc`)
+нужны были только оракулу §10; в PR они убраны, т. к. стандартный iai-судья
+собирается с `bench-internals`, и они навсегда добавляли бы B-only инструкции на
+горячий free (CI iai A/B на `bed33681`: +1 Ir на чужой free в
+`r19_prf01_joined_producer_same_word`, 8 192 free → +8 192 Ir — артефакт
+входного счётчика). `S1_MAG_BYTE_WRITES` теперь прибавляется один раз на
+drain/carve, а не на блок (та же сумма). Оракул §10 воспроизводится с `14ce71eb`.
+
 ## 0. Методика
 
 - Все Ir-числа — **callgrind**, маржинальная стоимость на op/блок; wall-clock

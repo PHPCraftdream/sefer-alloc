@@ -213,8 +213,8 @@ impl AllocCore {
             .store(0, core::sync::atomic::Ordering::Relaxed);
     }
 
-    // --- B4-M (P1-2) bench-internals observer counters (S1 / X-null /
-    // --- X-span). All process-wide, Relaxed, `bench-internals`-gated
+    // --- B4-M (P1-2) bench-internals observer counters (S1 / X-null).
+    // --- All process-wide, Relaxed, `bench-internals`-gated
     // --- (see each counter's doc in `alloc_core/counters.rs`).
 
     /// MEASUREMENT-ONLY (B4-M P1-2): magazine-refill events — see
@@ -238,17 +238,6 @@ impl AllocCore {
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 
-    /// MEASUREMENT-ONLY (B4-M P1-2): null frees at the `dealloc` entry — see
-    /// `counters::XNULL_NULL_DEALLOC_TOTAL`. Reads 0 unless
-    /// `bench-internals` is on.
-    #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
-    #[must_use]
-    pub fn dbg_xnull_null_dealloc_total() -> u64 {
-        crate::alloc_core::alloc_core::counters::XNULL_NULL_DEALLOC_TOTAL
-            .load(core::sync::atomic::Ordering::Relaxed)
-    }
-
     /// MEASUREMENT-ONLY (B4-M P1-2): null frees stopped at
     /// `publish_foreign`'s tail guard — see `counters::XNULL_NULL_TAIL_GUARD`.
     /// Reads 0 unless `bench-internals` is on.
@@ -257,28 +246,6 @@ impl AllocCore {
     #[must_use]
     pub fn dbg_xnull_null_tail_guard() -> u64 {
         crate::alloc_core::alloc_core::counters::XNULL_NULL_TAIL_GUARD
-            .load(core::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): `canonical_block_of` calls — see
-    /// `counters::XSPAN_MASK_BRANCH_CALLS`. Reads 0 unless
-    /// `bench-internals` is on.
-    #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
-    #[must_use]
-    pub fn dbg_xspan_mask_branch_calls() -> u64 {
-        crate::alloc_core::alloc_core::counters::XSPAN_MASK_BRANCH_CALLS
-            .load(core::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): non-Large (mask) branch activations in
-    /// `canonical_block_of` — see `counters::XSPAN_MASK_BRANCH_TAKEN`. Reads
-    /// 0 unless `bench-internals` is on.
-    #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
-    #[must_use]
-    pub fn dbg_xspan_mask_branch_taken() -> u64 {
-        crate::alloc_core::alloc_core::counters::XSPAN_MASK_BRANCH_TAKEN
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 
