@@ -1,0 +1,27 @@
+MARGINAL Ir/op (sefer larson T=1): 384
+--- by source file (Ir/op)
+  384.3	PROGRAM TOTALS
+  242.9	events annotated
+   88.0	lv-u1b2l/crates/malloc-bench-rs/src/lib.rs
+   58.4	lv-u1b2l/src/registry/heap_core/free/dealloc_own_base.rs
+   28.0	lv-u1b2l/src/alloc_core/alloc_core/mem/mem_impl.rs
+   25.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/mod.rs
+   19.4	lv-u1b2l/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   19.3	lv-u1b2l/src/alloc_core/segment/segment_table/segment_table_impl.rs
+   19.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/list.rs
+   16.9	(bit >> 3 1u8 << (bit & 7))
+   16.4	}
+   15.0	let cnt = self.tcache.classes[c].count as usize;
+   14.0	lv-u1b2l/src/alloc_core/platform/size_classes.rs
+   13.8	lv-u1b2l/src/registry/heap_core/alloc/hot.rs
+   12.7	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   12.0	slots[idx] = Some(unsafe { alloc_block(a &mut rng) });
+   11.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   11.0	let auth = self.core.small_class_authority(root block c);
+   10.0	<counts for unidentified lines in lv-u1b2l/src/registry/heap_core/free/dealloc_own_base.rs>
+    9.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs
+    9.0	unsafe fn alloc_block<A
+    8.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs
+    7.0	pub(crate) fn small_class_authority(
+    7.0	let entry = self.own_cache[Self
+    6.8	16 + (r >> 8) as usize % (512 - 16)

@@ -1,0 +1,27 @@
+MARGINAL Ir/op (sefer larson T=1): 334
+--- by source file (Ir/op)
+  334.3	PROGRAM TOTALS
+  193.9	events annotated
+   87.0	math-h1-l/crates/malloc-bench-rs/src/lib.rs
+   35.4	math-h1-l/src/registry/heap_core/free/dealloc_own_base.rs
+   28.4	math-h1-l/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   25.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/mod.rs
+   22.9	(bit >> 3 1u8 << (bit & 7))
+   19.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/list.rs
+   17.0	math-h1-l/src/alloc_core/platform/size_classes.rs
+   14.0	let cnt = self.tcache.classes[c].count as usize;
+   13.8	math-h1-l/src/registry/heap_core/alloc/hot.rs
+   12.0	slots[idx] = Some(unsafe { alloc_block(a &mut rng) });
+   11.7	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   10.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   10.3	math-h1-l/src/alloc_core/segment/segment_table/segment_table_impl.rs
+   10.0	<counts for unidentified lines in math-h1-l/src/registry/heap_core/free/dealloc_own_base.rs>
+    9.0	unsafe fn alloc_block<A
+    8.4	}
+    8.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs
+    7.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs
+    6.8	16 + (r >> 8) as usize % (512 - 16)
+    6.6	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+    6.0	x ^= x >> 27;
+    6.0	x ^= x >> 12;
+    6.0	x ^= x << 25;
