@@ -1,0 +1,9 @@
+split-a1b: diff-sha256: 4c3a608e92c3f7374b743cad6f4c0318eb532545d7d460bf3d23654e5be2dc78  -
+ M src/global/sefer_alloc/global_alloc.rs
+ M src/global/tls_heap.rs
+ M src/registry/heap_core/alloc/hot.rs
+?? docs/perf/_raw_b4_frame_split-a1.state
+?? docs/perf/_raw_b4_frame_split-a1b.state
+?? docs/perf/_raw_b4_frame_split-base-b2.state
+?? docs/perf/_raw_b4_frame_split-n1.state
+?? docs/perf/_raw_b4_frame_split-n6.state

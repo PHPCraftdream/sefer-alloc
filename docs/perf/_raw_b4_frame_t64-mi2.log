@@ -1,0 +1,54 @@
+== activation: [thrash64] distinct 16B-window segments: 1
+== mimalloc w_alloc marginal Ir/op: 212
+  61.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_malloc_generic [tgt64-release/examples/zz_thrash64]
+  44.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_theap_malloc_zero_aligned_at_generic [tgt64-release/examples/zz_thrash64]
+  16.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_bin
+  16.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_theap_malloc_aligned [tgt64-release/examples/zz_thrash64]
+  12.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c | {
+  12.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c | return (wsize <= 1 ? 1 : (wsize+1)&~1); // round to double word sizes
+  12.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_good_size [tgt64-release/examples/zz_thrash64]
+  12.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c:_mi_page_malloc_zero [tgt64-release/examples/zz_thrash64]
+  11.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_malloc_generic
+  10.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c | {
+  10.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h | return (size + sizeof(uintptr_t) - 1) / sizeof(uintptr_t);
+   9.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c | }
+   8.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c | }
+   8.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c:_mi_theap_malloc_zero [tgt64-release/examples/zz_thrash64]
+   7.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c | return _mi_theap_malloc_zero(theap, size, zero, usable);
+   6.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c | void* const p = _mi_page_malloc_zero(theap,page,size,zero);
+   6.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_malloc_aligned [tgt64-release/examples/zz_thrash64]
+   6.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_bin [tgt64-release/examples/zz_thrash64]
+   5.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c | if mi_unlikely(++theap->generic_count >= 1000) {
+   5.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c | mi_decl_nodiscard mi_decl_export size_t mi_good_size(size_t size) mi_attr_noexcept {
+   5.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c | const bool ok = (bsize <= MI_PAGE_MAX_START_BLOCK_ALIGN2 && _mi_is_power_of_two(bsize)) ||             // power-of-two under N
+   5.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h | mi_page_queue_t* const pq = &((mi_theap_t*)theap)->pages[_mi_bin(size)];
+   5.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:_mi_bin_size [tgt64-release/examples/zz_thrash64]
+   4.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c | if mi_likely(wsize <= 8) {
+   4.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c | if mi_unlikely(block == NULL) {
+   4.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c | return mi_theap_malloc_zero_aligned_at_generic(theap, size, alignment, offset, zero, usable);
+   4.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c | return mi_theap_malloc_aligned(_mi_theap_default(), size, alignment);
+   4.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c | if mi_unlikely(size > (MI_MAX_ALLOC_SIZE - MI_PADDING_SIZE)) {
+   4.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c | if mi_unlikely(alignment == 0 || !_mi_is_power_of_two(alignment)) { // require power-of-two (see <https://en.cppreference.com/w/c/memory/aligned_alloc>)
+   4.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c | if mi_likely(size <= MI_SMALL_SIZE_MAX && alignment <= size) {
+== mimalloc w_alloc cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=212.4
+== mimalloc w_free marginal Ir/op: 23
+  11.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_free
+  10.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free [tgt64-release/examples/zz_thrash64]
+   2.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c | void mi_free(void* p) mi_attr_noexcept {
+   2.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c | if mi_unlikely(page==NULL) return;  // page will be NULL if p==NULL
+   2.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c | if mi_unlikely(--page->used == 0) {
+   2.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c | if mi_likely(xtid == 0) {                        // `tid == mi_page_thread_id(page) && mi_page_flags(page) == 0`
+   2.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h | return mi_atomic_load_ptr_relaxed(mi_page_t*, &_mi_page_map[idx]);
+   2.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h | return (u / MI_PAGE_MAP_SUB_COUNT);
+   2.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h | const size_t u = (size_t)((uintptr_t)p / MI_ARENA_SLICE_SIZE);
+   2.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h | block->next = (mi_encoded_t)next;
+   1.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs | mi_free(ptr as *mut c_void);
+   1.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c | }
+   1.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c | page->local_free = block;
+   1.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h | return (uintptr_t)__builtin_thread_pointer();
+   1.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h | return mi_atomic_load_relaxed(&((mi_page_t*)page)->xthread_id);
+   1.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h | return (_mi_page_map_at(idx))[sub_idx];  // NULL if p==NULL
+   1.0	~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h | if (sub_idx != NULL) { *sub_idx = u % MI_PAGE_MAP_SUB_COUNT; }
+   1.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:zz_thrash64::w_free::<mimalloc::MiMalloc> [tgt64-release/examples/zz_thrash64]
+   1.0	 | ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_free
+== mimalloc w_free cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=23.0

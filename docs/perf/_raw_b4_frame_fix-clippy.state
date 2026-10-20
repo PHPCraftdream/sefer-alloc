@@ -1,0 +1,3 @@
+initial: git status --porcelain (clean-ish, only src mods from accepted steps + untracked state files); git diff | sha256sum = a0daba8c4ddcbd09830c9cc9314f04ce9d96faac286b6da426ccc13a490b4448
+a0daba8c4ddcbd09830c9cc9314f04ce9d96faac286b6da426ccc13a490b4448  -
+note: tests/bitmap_word_boundaries.rs is untracked, so git diff sha unchanged (a0daba8c...). file sha256: 3afe06470fc2b5653bacecbb30485324071ff414dfa937cea6ac5a4d8cf2bae4  tests/bitmap_word_boundaries.rs

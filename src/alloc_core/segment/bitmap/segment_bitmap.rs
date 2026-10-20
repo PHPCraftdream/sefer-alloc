@@ -77,42 +77,98 @@ impl SegmentBitmap {
     }
 
     /// Whether the bit for the `MIN_BLOCK`-slot at segment offset `off` is set.
-    /// O(1): one byte load + one mask. The generic mechanism primitive; each
-    /// wrapper gives it a domain name (`is_free` / `is_in_magazine`).
+    /// O(1): one `u64` word load + one mask (N4: whole-word access instead of a
+    /// single byte — same memory representation, wider access width). The
+    /// generic mechanism primitive; each wrapper gives it a domain name
+    /// (`is_free` / `is_in_magazine`).
     #[inline(always)]
     pub(super) fn test(&self, off: u32) -> bool {
-        let (byte_idx, mask) = Self::locate(off);
-        let byte = Node::read_u8(Node::offset(self.bits, byte_idx));
-        (byte & mask) != 0
+        let (word, mask) = Self::locate(off);
+        Self::from_le(Node::read_struct(Self::offset_word(self.bits, word))) & mask != 0
     }
 
-    /// Set the bit for the slot at segment offset `off`. O(1): byte load + OR +
+    /// Set the bit for the slot at segment offset `off`. O(1): word load + OR +
     /// store. Domain-named wrappers: `mark_free` / `mark_magazine`.
     #[inline(always)]
     pub(super) fn set(&mut self, off: u32) {
-        let (byte_idx, mask) = Self::locate(off);
-        let p = Node::offset(self.bits, byte_idx);
-        let byte = Node::read_u8(p);
-        Node::write_u8(p, byte | mask);
+        let (word, mask) = Self::locate(off);
+        let p = Self::offset_word(self.bits, word);
+        let w = Self::from_le(Node::read_struct(p)) | mask;
+        Node::write_struct(p, Self::to_le(w));
     }
 
-    /// Clear the bit for the slot at segment offset `off`. O(1): byte load +
+    /// Clear the bit for the slot at segment offset `off`. O(1): word load +
     /// AND + store. Domain-named wrappers: `mark_alloc` / `clear_magazine`.
     #[inline(always)]
     pub(super) fn clear(&mut self, off: u32) {
-        let (byte_idx, mask) = Self::locate(off);
-        let p = Node::offset(self.bits, byte_idx);
-        let byte = Node::read_u8(p);
-        Node::write_u8(p, byte & !mask);
+        let (word, mask) = Self::locate(off);
+        let p = Self::offset_word(self.bits, word);
+        let w = Self::from_le(Node::read_struct(p)) & !mask;
+        Node::write_struct(p, Self::to_le(w));
     }
 
-    /// Map a segment offset to `(byte_index, bit_mask)` within the bitmap. The
+    /// Map a segment offset to `(word_index, bit_mask)` within the bitmap. The
     /// bit index is `off >> MIN_BLOCK_SHIFT` (the `MIN_BLOCK`-slot number);
-    /// byte = bit / 8, mask = 1 << (bit % 8). Pure arithmetic.
+    /// word = bit / 64, mask = 1 << (bit % 64). Pure arithmetic.
+    ///
+    /// Bit-numbering compatibility: the byte layout is unchanged from the
+    /// byte-addressed predecessor (bit `b` lived in byte `b >> 3` at bit
+    /// `b & 7`). On little-endian a `u64` load/store of word `b / 64` addresses
+    /// exactly those bytes in that order, so the in-memory representation is
+    /// byte-for-byte identical (dump hooks and `init_in_place` — both still
+    /// byte-wise — see the same layout). On big-endian the byte-to-bit mapping
+    /// inside a loaded word is reversed, so the LE conversion helpers
+    /// [`Self::from_le`] / [`Self::to_le`] / [`Self::offset_word`] restore the
+    /// identical byte layout. Compile-time guard below pins this.
     #[inline(always)]
-    fn locate(off: u32) -> (usize, u8) {
+    fn locate(off: u32) -> (usize, u64) {
         let bit = (off >> MIN_BLOCK_SHIFT) as usize;
         debug_assert!(bit < Self::FOOTPRINT * 8, "bitmap bit index out of range");
-        (bit >> 3, 1u8 << (bit & 7))
+        (bit >> 6, 1u64 << (bit & 63))
+    }
+
+    /// Byte offset of word `w` inside the bitmap (= `w * 8`); on big-endian
+    /// `u64` scalars must not be stored raw (their byte order differs), so the
+    /// word index is adjusted to address the same 8-byte group — which for a
+    /// pure `w * 8` stride is the same offset on both endiannesses; the LE
+    /// conversions on the VALUE (not the address) do the real work.
+    #[inline(always)]
+    fn offset_word(bits: *mut u8, word: usize) -> *mut u64 {
+        // SAFETY-free arithmetic via Node::offset: `bits + word * 8`, within
+        // the same allocation (word < FOOTPRINT / 8).
+        Node::offset(bits, word * 8) as *mut u64
+    }
+
+    /// Load-side byte-order normalisation (identity on LE; byte-reverses the
+    /// raw scalar on BE so bit `i` of the result is byte `i / 8`, bit `i % 8`).
+    #[inline(always)]
+    #[cfg(target_endian = "little")]
+    fn from_le(w: u64) -> u64 {
+        w
+    }
+    #[inline(always)]
+    #[cfg(target_endian = "big")]
+    fn from_le(w: u64) -> u64 {
+        u64::from_le(w)
+    }
+
+    /// Store-side byte-order normalisation (inverse of [`Self::from_le`]).
+    #[inline(always)]
+    #[cfg(target_endian = "little")]
+    fn to_le(w: u64) -> u64 {
+        w
+    }
+    #[inline(always)]
+    #[cfg(target_endian = "big")]
+    fn to_le(w: u64) -> u64 {
+        u64::to_le(w)
     }
 }
+
+// N4 compile-time guards: the word access is only byte-layout-compatible with
+// the byte-addressed predecessor when the endianness handling above is intact.
+// (u64::from_le/to_le handle BE; this assert documents the LE fast path.)
+const _: () = assert!(
+    cfg!(target_endian = "little") || cfg!(target_endian = "big"),
+    "unsupported target endianness for SegmentBitmap word access"
+);

@@ -1,0 +1,27 @@
+MARGINAL Ir/op (sefer larson T=1): 311
+--- by source file (Ir/op)
+  311.1	PROGRAM TOTALS
+  178.1	events annotated
+   79.0	split-n8-fin/crates/malloc-bench-rs/src/lib.rs
+   33.4	split-n8-fin/src/registry/heap_core/free/dealloc_own_base.rs
+   25.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/mod.rs
+   19.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/list.rs
+   18.4	split-n8-fin/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   17.0	split-n8-fin/src/alloc_core/platform/size_classes.rs
+   15.9	(bit >> 3 1u8 << (bit & 7))
+   13.8	split-n8-fin/src/registry/heap_core/alloc/hot.rs
+   12.0	slots[idx] = Some(unsafe { alloc_block(a &mut rng) });
+   12.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   11.0	let cnt = self.tcache.classes[c].count as usize;
+   10.3	split-n8-fin/src/alloc_core/segment/segment_table/segment_table_impl.rs
+    8.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+    7.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs
+    6.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+    6.8	16 + (r >> 8) as usize % (512 - 16)
+    6.0	x ^= x >> 27;
+    6.0	x ^= x >> 12;
+    6.0	x ^= x << 25;
+    6.0	Some(SIZE2CLASS[seed_idx] as usize)
+    6.0	<counts for unidentified lines in split-n8-fin/src/registry/heap_core/free/dealloc_own_base.rs>
+    6.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs
+    5.0	unsafe fn alloc_block<A
