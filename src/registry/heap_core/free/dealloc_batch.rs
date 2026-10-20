@@ -70,11 +70,11 @@ impl HeapCore {
     /// `BlockKind`/`SegmentHeader::kind_at(base) == SegmentKind::Large`
     /// check, plus its `hardened` layout-consistency defence), (2)
     /// [`hardened`] H1 interior-pointer guard (`off % block_size(c) != 0`),
-    /// (3) in-magazine-residency bitmap, (4) [under `alloc-decommit`]
-    /// stale-free `off >= bump`, (5) flushed alloc-bitmap `is_free` —
+    /// (3) state-byte state/zero check, (4) [under `alloc-decommit`]
+    /// stale-free `off >= bump` —
     /// calling the identical `pub(crate)` accessors (`SegmentHeader::kind_at`,
-    /// `SizeClasses::block_size`, `magazine_bitmap().is_in_magazine`,
-    /// `meta.bump_of()`, `alloc_bitmap().is_free`) in the identical order,
+    /// `SizeClasses::block_size`, `meta.state_byte().read`,
+    /// `meta.bump_of()`) in the identical order,
     /// NOT a redesigned oracle. A block that fails any guard is a benign
     /// no-op (double-free / interior-pointer / Large-in-small-layout /
     /// stale-free all degrade safely), matching the scalar contract exactly.
@@ -318,6 +318,11 @@ impl HeapCore {
                         .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     continue;
                 }
+                // F4: the base's wrong-class Accept-branch reject did not
+                // bump the counter — same no-op, no increment.
+                SmallFreeGuard::RejectNoOpSilent => {
+                    continue;
+                }
                 SmallFreeGuard::RouteToLargeFree => {
                     // SAFETY: caller upholds the dealloc-batch contract for
                     // `p`; `base`/`block` were just resolved from THIS heap's
@@ -343,7 +348,9 @@ impl HeapCore {
             let cnt = self.tcache.classes[c].count as usize;
             let cap = FREE_PARK_CAP[c] as usize;
             if cnt < cap {
-                meta.magazine_bitmap().mark_magazine(off);
+                // B4 (в): MAG in the state byte (was RAD-5 bitmap set).
+                meta.state_byte()
+                    .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
                 self.tcache.classes[c].slots[cnt] = block;
                 self.tcache.classes[c].count = (cnt + 1) as u8;
                 // R13-3 (task #273): a batched-freed block is, like the

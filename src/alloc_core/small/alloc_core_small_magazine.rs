@@ -37,9 +37,9 @@ impl AllocCore {
     /// else `> 0` and `<= want`).
     ///
     /// Each pulled block undergoes EXACTLY the same transition as a single
-    /// `alloc_small`: bitmap `mark_alloc` + `inc_live` (under alloc-decommit).
-    /// So a magazine-resident block will be "live + bitmap-allocated",
-    /// identical to a handed-out block.
+    /// `alloc_small`: state-byte issue (commit LIVE) + `inc_live` (under
+    /// alloc-decommit). So a magazine-resident block is "live + state-byte
+    /// issued", identical to a handed-out block.
     #[doc(hidden)]
     #[inline]
     #[cfg(feature = "internals")]
@@ -71,9 +71,9 @@ impl AllocCore {
     }
 
     /// Э1 (task #147) — **bump-direct batched carve**. Fill `out` with up to
-    /// `out.len()` live, bitmap-allocated blocks of class `class_idx`, producing
+    /// `out.len()` live, state-byte-issued blocks of class `class_idx`, producing
     /// the IDENTICAL end-state as `refill_class` (each block: `live_count += 1`,
-    /// bitmap "allocated", handed to the magazine) but SKIPPING the BinTable
+    /// byte committed LIVE, handed to the magazine) but SKIPPING the BinTable
     /// round-trip for freshly-carved blocks. Returns the number of slots filled
     /// (0 on true OOM, else `> 0` and `<= out.len()`).
     ///
@@ -89,10 +89,9 @@ impl AllocCore {
     ///   2. For the remaining slots, bump-carve DIRECTLY into `out` via
     ///      `carve_block` — no `dealloc_small`, no BinTable push, no subsequent
     ///      `pop_free`. `carve_block` already does `inc_live` + bump + page-map +
-    ///      recommit (under `alloc-decommit`) and leaves the alloc bitmap UNSET
-    ///      (= "allocated", the M2 convention), so a carved block is already in
-    ///      the exact "live, allocated" state a handed-out block must be in
-    ///      (see `carve_block` ~1783: it never touches `alloc_bitmap()`).
+    ///      recommit (under `alloc-decommit`) and commits the block's state
+    ///      byte to LIVE (the issue convention), so a carved block is already
+    ///      in the exact issued state a handed-out block must be in.
     ///      On `carve_block` → `None` (current segment full) we
     ///      `reserve_small_segment` and continue; if reserve fails we stop and
     ///      return the count filled so far (graceful — the caller treats `0` as
@@ -109,13 +108,13 @@ impl AllocCore {
     /// extra, then `pop_free` +1 when later re-popped); collapsing it changes
     /// nothing about the final count, only the intermediate churn.
     ///
-    /// ## M2 (double-free bitmap) — byte-identical
+    /// ## M2 (double-free guard) — byte-identical
     ///
-    /// Carved blocks keep their bitmap bit UNSET (allocated). They are returned
+    /// Carved blocks carry a LIVE state byte. They are returned
     /// to the substrate later via `flush_class` → `dealloc_small`, which
-    /// `mark_free`s them THEN — the identical lifecycle as `refill_class`, minus
+    /// commits FREE THEN — the identical lifecycle as `refill_class`, minus
     /// the redundant intermediate set-free-then-clear. A double-free of such a
-    /// block still hits `dealloc_small`'s `is_free` guard exactly as before.
+    /// block still hits `dealloc_small`'s exact-byte guard exactly as before.
     #[doc(hidden)]
     #[inline]
     #[cfg(feature = "internals")]
@@ -402,14 +401,14 @@ impl AllocCore {
     /// `segment_base_of_ptr` (ONE mask-compare per block, NO sorting) yields
     /// long runs; a scattered magazine degrades to runs of length 1 — still
     /// correct. For each run (all sharing one `base`) we hoist the metadata
-    /// views (`SegmentMeta::new`, `bin_table`, `alloc_bitmap`, and the
+    /// views (`SegmentMeta::new`, `bin_table`, `state_byte`, and the
     /// `bump_of` load) ONCE and write the freelist head ONCE,
     /// instead of once per block.
     ///
     /// ### Current-state guards remain per-block
     ///
-    /// `flush_run` checks the payload lower bound, `off >= bump`, and
-    /// `is_free(off)` before linking each block. The bump load is hoisted:
+    /// `flush_run` checks the payload lower bound, `off >= bump`, and the
+    /// state byte before linking each block. The bump load is hoisted:
     /// a flush does not carve, and pool/release policy runs after the run.
     /// `reclaim_sidecar_record` returns false for an already-free or magazine-
     /// resident record before payload writes; it does not mark a resident
@@ -448,7 +447,7 @@ impl AllocCore {
     /// `# Safety` contract — the same reasoning that made `dealloc`/`realloc`
     /// `unsafe fn` in R6-MS-1/2 applies here: the method derives each block's
     /// segment `base` arithmetically (`os::segment_base_of_ptr`) and reads/writes
-    /// that segment's `SegmentMeta`/`BinTable`/alloc-bitmap/`bump`/`kind` with NO
+    /// that segment's `SegmentMeta`/`BinTable`/state-byte/`bump`/`kind` with NO
     /// `contains_base` membership check before the raw access, so a safe entry
     /// point accepting caller-controlled raw pointers was a soundness gap (round5
     /// `memory_safety_review` R5-MS-3). Concretely:
@@ -464,7 +463,7 @@ impl AllocCore {
     ///   pass a valid index.)
     /// - each entry is freed **at most once** within this call (and not re-freed
     ///   afterwards). A duplicate entry within the slice, or a block already on
-    ///   the free list, is contract UB; the per-block M2 `is_free` /
+    ///   the free list, is contract UB; the per-block M2 state-byte /
     ///   `off >= bump` guards degrade several such cases benignly *at runtime*,
     ///   but they are defence-in-depth, NOT a substitute for honouring the
     ///   contract.
@@ -513,7 +512,7 @@ impl AllocCore {
         // table slot; `base` is then an UNMAPPED address. The SECOND run for
         // the same `base` would still call `flush_run`, which unconditionally
         // reads/writes that segment's metadata (`SegmentMeta::new(base)`,
-        // `bin_table()`, `alloc_bitmap()`, `bump_of()`, `kind_at(base)`) —
+        // `bin_table()`, `state_byte()`, `bump_of()`, `kind_at(base)`) —
         // metadata-level use-after-free.
         //
         // Even on the POOL leg (no OS release), the segment's `bump`/
@@ -597,7 +596,8 @@ impl AllocCore {
     fn flush_run(&mut self, class_idx: usize, base: *mut u8, run: &[*mut u8]) -> bool {
         let meta = SegmentMeta::new(base);
         let mut bt = meta.bin_table();
-        let mut bm = meta.alloc_bitmap();
+        // B4 (в): the alloc-bitmap hoist is gone — flush_run now guards and
+        // commits via the per-granule state byte.
         // Hoist the `bump` LOAD once (the COMPARE stays per-block). A flush
         // never carves, so `bump` cannot advance during this run.
         let bump = meta.bump_of();
@@ -649,8 +649,14 @@ impl AllocCore {
             if (off as usize).wrapping_sub(payload_start) >= span {
                 continue;
             }
-            // Guard 2 (per-block): skip a block whose current bitmap state is free.
-            if bm.is_free(off) {
+            // Guard 2 (per-block): accept only a currently-issued block of
+            // this class — its byte must carry this class's class field and
+            // a LIVE or MAG state (B4 (в); the zero/unissued byte, a foreign
+            // class, and an already-FREE block are all rejected/skipped).
+            let sb = meta.state_byte().read(off);
+            if sb & 0x3F != class_idx as u8 + 1
+                || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE
+            {
                 continue;
             }
             // `ptr` identifies the offset only. Link through the stored
@@ -664,7 +670,12 @@ impl AllocCore {
             // for the first accepted). Byte-identical to the LIFO push each
             // sequential `dealloc_small` performs.
             Node::write_next(block_nn, prev_ptr);
-            bm.mark_free(off);
+            // B4 (в): commit the accepted block (LIVE or MAG) to FREE.
+            meta.state_byte().write(
+                off,
+                class_idx,
+                crate::alloc_core::state_byte::StateByte::FREE,
+            );
             prev_ptr = block_nn.as_ptr();
             last_accepted = Some(off);
             accepted_count += 1;

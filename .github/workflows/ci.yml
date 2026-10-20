@@ -2208,6 +2208,12 @@ jobs:
           grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test batch_large_cross_thread_free_high_water_bounded ... ok" "$RUNNER_TEMP/global-production.log"
+          # B4 state byte: the unaligned-interior and counter-parity guards are
+          # production (non-hardened) properties and need batch-api, so no
+          # generic test row reaches this file (--all-features carries hardened).
+          cargo test --locked --features "production batch-api internals bench-internals" --test state_byte_misaligned_free 2>&1 | tee "$RUNNER_TEMP/state-byte-misaligned.log"
+          grep -F "test f1_misaligned_interior_frees_are_noops ... ok" "$RUNNER_TEMP/state-byte-misaligned.log"
+          grep -F "test f4_wrong_class_free_counter_semantics ... ok" "$RUNNER_TEMP/state-byte-misaligned.log"
           # Re-execs itself with inherited stdout; its child libtest lines split the
           # parent harness lines grepped above, so it runs alone (exit status only).
           cargo test --locked --features "production batch-api internals bench-internals" --test r8_terminal_global -- fallback_direct_free_before_service_and_busy_terminal_publication

@@ -24,6 +24,7 @@ use crate::alloc_core::segment_header::Layout as SegLayout;
 use crate::alloc_core::size_classes::SizeClasses;
 
 use crate::alloc_core::alloc_core::AllocCore;
+use crate::alloc_core::state_byte::StateByte;
 
 /// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
 /// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
@@ -152,17 +153,16 @@ impl AllocCore {
     /// Allocate a small block of the given class. Routes through the current
     /// small segment's free list (pop); on a miss, scans ALL owned segments for
     /// one with a non-empty class free list (Phase 12.1: free state lives in
-    /// per-segment `BinTable`s, so a freed block in a non-current segment must
-    /// be reusable — otherwise non-current segments leak unboundedly); only
-    /// then carves a fresh block / reserves a fresh segment. When carving, also
-    /// carves a refill batch (Phase 9 amortisation), pushing each extra block
-    /// into its OWN segment's `BinTable` via `segment_base_of` (defect A fix:
+    /// per-segment `BinTable`s — a freed block in a non-current segment must
+    /// stay reusable); only then carves a fresh block / reserves a fresh
+    /// segment, plus a refill batch (Phase 9 amortisation) pushed into each
+    /// block's OWN segment's `BinTable` via `segment_base_of` (defect A fix:
     /// never a captured "current" pointer).
     ///
-    /// Phase 12.5 (shard model): a heap owns its segments exclusively — there
-    /// is no adoption hook. On a free-list miss it carves/reserves from its
-    /// OWN segments only. Foreign frees publish to pinned route sidecars;
-    /// owner-side discovery and reclamation run on allocation miss paths.
+    /// Phase 12.5 (shard model): a heap owns its segments exclusively — no
+    /// adoption hook; carves/reserves from its OWN segments only. Foreign
+    /// frees publish to pinned route sidecars; owner-side discovery and
+    /// reclamation run on allocation miss paths.
     #[inline(always)]
     pub(in crate::alloc_core) fn alloc_small(&mut self, class_idx: usize) -> *mut u8 {
         let block_size = SizeClasses::block_size(class_idx);
@@ -191,9 +191,7 @@ impl AllocCore {
         //    next allocs pop from the free list instead of carving one-by-one.
         //    Each refilled block is pushed into its OWN segment's BinTable
         //    (via `segment_base_of(ptr)`), never a captured "current" pointer
-        //    — defect A fix: `small_cur` may shift mid-batch when a segment
-        //    fills, and a captured pointer would then target the wrong
-        //    segment, corrupting its BinTable head.
+        //    (defect A fix: `small_cur` may shift mid-batch when a segment fills).
         if !self.prepare_current_carve(class_idx, block_size) {
             return core::ptr::null_mut();
         }
@@ -377,8 +375,7 @@ impl AllocCore {
             && offset
                 .checked_add(size)
                 .is_some_and(|end| end <= meta.bump_of() && end <= SEGMENT)
-            && meta.alloc_bitmap().is_free(off)
-            && !meta.magazine_bitmap().is_in_magazine(off)
+            && meta.state_byte().read(off) == StateByte::encode(class_idx, StateByte::FREE)
     }
 
     #[cfg(feature = "hardened")]
@@ -450,10 +447,16 @@ impl AllocCore {
             let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
             self.publish_empty(segment, class_idx, slot_idx);
         }
-        // Phase 13.4a: clear the block's bitmap bit — it leaves the free list
-        // and is handed to the caller, so a subsequent free must NOT see it as
-        // already-free (and the next legitimate free must be able to re-mark it).
-        meta.alloc_bitmap().mark_alloc(head_off);
+        // B4 (в) F3-fix: assert the byte's PRIOR value BEFORE the issue
+        // commits LIVE.
+        debug_assert_eq!(
+            meta.state_byte().read(head_off),
+            StateByte::encode(class_idx, StateByte::FREE),
+            "pop_free: free-list head must carry its exact class FREE byte",
+        );
+        // B4 (в): issue = commit FREE → LIVE in the state byte.
+        meta.state_byte()
+            .write(head_off, class_idx, StateByte::LIVE);
         // Phase 35 (M6): a block left the free list and is handed to the caller
         // → one more live block in this segment. Owner-only counter. A popped
         // block always comes from a COMMITTED payload (a decommitted segment was
@@ -604,7 +607,7 @@ impl AllocCore {
                 }
                 probed += 1;
             }
-            let mut bm = meta.alloc_bitmap();
+            // B4 (в): the state byte is written per block below.
             let mut k = 0usize;
             while k < out.len() && head_off != FREE_LIST_NULL {
                 let block_ptr = Node::deref(segment, head_off as usize);
@@ -618,9 +621,9 @@ impl AllocCore {
                 // block body is never written on the pop path, so this is race-free
                 // against ourselves.
                 let next = Node::read_next(block_nn);
-                // Clear this block's bitmap bit — it leaves the free list and is
-                // handed out (per-block, byte-identical to `pop_free`).
-                bm.mark_alloc(head_off);
+                // B4 (в): issue = commit FREE → LIVE (per-block, like `pop_free`).
+                meta.state_byte()
+                    .write(head_off, class_idx, StateByte::LIVE);
                 run.commit(head_off);
                 out[k] = block_ptr;
                 k += 1;
@@ -798,6 +801,9 @@ impl AllocCore {
         }
         let ptr = Node::deref(segment, aligned_bump);
         tx.commit(&self.table);
+        // B4 (в): a freshly carved block is issued LIVE at first touch.
+        meta.state_byte()
+            .write(aligned_bump as u32, class_idx, StateByte::LIVE);
         Some(ptr)
     }
 
@@ -984,6 +990,9 @@ impl AllocCore {
             }
             let ptr = Node::deref(segment, off);
             run.commit(off as u32);
+            // B4 (в): freshly carved blocks are issued LIVE at first touch.
+            meta.state_byte()
+                .write(off as u32, class_idx, StateByte::LIVE);
             *slot = ptr;
         }
         Ok(n)

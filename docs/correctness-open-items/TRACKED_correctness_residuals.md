@@ -227,3 +227,28 @@ split the same day.)
     - **Evidence:** fix tests `tests/r6_t06_freelist_continuation_bounds.rs`
       and `tests/r6_t33_t05_own_free_kind_and_class.rs` (landed with the
       R6-T05/T06/T33 fixes).
+
+---
+248. **[T, filed 2026-10-20, b4-sbyte] Cross-heap free of a magazine-resident block — reclaim MAG rejection is checked through safe diagnostic observers; ABA after reissue remains the separate item-246 residual.**
+
+    - **Status:** OPEN, residual — not a proven bug. The cross-heap
+      (foreign) free of an owner-magazine-resident block is handled by the
+      owner-side reclaim rejection, tested with the existing synthetic-record
+      seam and observed through safe `dbg_*` hooks. This does not establish
+      general stale-publication safety after block reissue; that remains item
+      246's ABA residual.
+    - **Current-number-or-verdict:** the synthetic MAG record is rejected
+      without changing state byte, magazine residency, bin/live accounting;
+      b4-sbyte adds probes in `tests/state_byte_heap_magazine.rs` for scalar,
+      batch, and refill-retained paths. Safe `dbg_*` observers are present.
+    - **Next trigger:** reopen if the MAG-reject ordering or sidecar reclaim
+      semantics change; preserve the safe diagnostic and regression coverage.
+    - **Related residual:** item 246(a) remains OPEN: the separate owner state
+      byte uses its own bit 7 for FREE, while the remote `ClassLeaves` entries
+      remain class+1 and retain bit 7 for the existing ABA/epoch candidate.
+      The ABA residual remains: MAG is rejected before a hit, but a stale
+      publication can be indistinguishable from LIVE after reissue. This is
+      not an unobservability claim; safe `dbg_*` observers exist. No double-
+      issue guarantee is inferred beyond these checks.
+    - **Evidence:** branch `b4-sbyte`, tests above; mutant runs recorded in
+      the b4-sbyte chunk-3 report.

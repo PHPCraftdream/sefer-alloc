@@ -194,10 +194,12 @@ impl AllocCore {
                 let initial_commit =
                     SegLayout::lazy_initial_commit(meta_end, aligned_vmem::page_size());
                 // `initial_commit <= SEGMENT` by construction: the tight sum is
-                // 335872 B (328 KiB, non-hardened) or 598016 B (584 KiB,
-                // hardened), and the round-up adds less than one
-                // MAX_REALISTIC_PAGE_SIZE (64 KiB) — the const-assert at the
-                // top of this file pins the sum PLUS that slack within SEGMENT.
+                // 270336 B (264 KiB) — IDENTICAL for the plain and hardened
+                // layouts under the B4 state-byte geometry (the removed dead
+                // bitmaps were the only plain/hardened difference) — and the
+                // round-up adds less than one MAX_REALISTIC_PAGE_SIZE
+                // (64 KiB) — the const-assert at the top of this file pins
+                // the sum PLUS that slack within SEGMENT.
                 debug_assert!(initial_commit <= SEGMENT);
                 // oxx R2-05: `Segment::reserve_small_lazy` is the accounting
                 // seam (mirrors primordial's `Segment::reserve_lazy`) — it
@@ -392,25 +394,21 @@ impl AllocCore {
         #[cfg(feature = "page-map-diag")]
         PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages);
         BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32);
-        // Initialise the per-segment alloc-bitmap (Phase 13.4a double-free
-        // guard) to all-zeros; bits flip to FREE as blocks are pushed.
-        //
-        // PERF-PASS-2 (G5/C1, task #50): under `cfg(not(miri))` this init is
-        // SKIPPED — `base` is a segment JUST reserved fresh from the OS via
+        // B4 (в): the former `AllocBitmap`/`MagazineBitmap` inits
+        // (PERF-PASS-2, G5/C1, task #50 virgin-skip) are gone with the bitmaps
+        // themselves — the per-granule state byte replaced them. The same
+        // virgin-skip discipline applies to the state-byte region: the "never
+        // issued" encoding IS zero, so under `cfg(not(miri))` NO init is
+        // needed. `base` is a segment JUST reserved fresh from the OS via
         // `Segment::reserve`/`numa::reserve_aligned_on_node` a few lines above
         // (never carved, never decommit-reset), and the OS guarantees fresh
         // pages read as zero (Windows `MEM_COMMIT` demand-zero; POSIX
-        // anonymous `mmap` zero-fill — see `crates/aligned-vmem/src/lib.rs`'s reserve
-        // paths). `AllocBitmap::init_in_place`'s target state is ALL ZEROS
-        // (see its doc comment), so writing zero over memory the OS already
-        // handed back as zero is a tautology. Skipping it avoids dirtying
-        // `AllocBitmap::FOOTPRINT` (32 KiB / 8 pages for the default
-        // SEGMENT/MIN_BLOCK pair) of metadata pages that would otherwise fault
-        // in eagerly instead of lazily.
-        //
-        // Under `miri` this is NOT skipped: `crates/aligned-vmem/src/lib.rs`'s miri
-        // fallback aperture is `std::alloc::alloc`, which is NOT guaranteed
-        // zeroed — so miri keeps the explicit zero-init, exactly as before.
+        // anonymous `mmap` zero-fill — see `crates/aligned-vmem/src/lib.rs`'s
+        // reserve paths; the same argument
+        // `tests/regression_virgin_bitmap_skip.rs`'s header documents for the
+        // former bitmaps). Under `miri` this is NOT skipped: the vmem miri
+        // fallback aperture (`std::alloc::alloc`) is NOT guaranteed zeroed, so
+        // miri keeps an explicit zero-init.
         //
         // This is NOT the rejected P4(b) `alloc_zeroed` virgin-skip (that NO-GO
         // was about *user-visible payload* virginity, where macOS
@@ -419,23 +417,33 @@ impl AllocCore {
         // signal is exact — this function only ever runs immediately after a
         // fresh OS reservation, never on a decommit-reused segment (that path
         // is `decommit_empty_segment_impl`'s `release_follows=false` full
-        // reset, which keeps its own explicit `AllocBitmap::init_in_place`
-        // call unconditionally — see PERF-PASS-2 report / task #50) — and it
-        // is metadata, not payload the user could have observed/mutated.
+        // reset, which performs its own SCOPED state-byte zeroing, F7/B4) —
+        // and it is metadata, not payload the user could have
+        // observed/mutated.
+        //
+        // F7 entering-path audit (state-byte zero coverage on EVERY re-entry
+        // into Small/Primordial):
+        //   (a) THIS site — fresh `reserve_small_segment`: OS demand-zero
+        //       (argument above); explicit init only under `miri`.
+        //   (b) `bootstrap::primordial` — same fresh-reserve argument
+        //       (`bootstrap.rs`, miri-only explicit init).
+        //   (c) retain-decommit reuse — `decommit_empty_segment_impl` zeroes
+        //       the SCOPED granule range `[payload_start, bump_before_reset)`.
+        //   (d) release → re-reserve — the whole reservation is released to
+        //       the OS, so the next reservation of that address range is a
+        //       fresh OS commit → path (a).
+        //   (e) pooled-segment reuse (`find_segment_with_free`) — NO init is
+        //       needed and none happens: pool admission keeps bump/free
+        //       lists/state bytes EXACTLY as they were at empty time, every
+        //       block the pool hands out already carries its valid FREE state
+        //       byte, the bump never recedes so no new granule is ever carved
+        //       from a pooled segment, and there is NO Large→Small page
+        //       reuse: Large spans live in the Large kind/cache and are
+        //       released to the OS (`reservation_state::release_*`), never
+        //       re-entering as Small segments (Small memory always enters via
+        //       path (a)/(b)/(c)/(d)).
         #[cfg(miri)]
-        crate::alloc_core::alloc_bitmap::AllocBitmap::init_in_place(base_add(
-            base,
-            SegLayout::alloc_bitmap_off(),
-        ));
-        // RAD-5 (E4) GO/NO-GO EXPERIMENT: same virgin-skip discipline extended
-        // to the second (magazine-residency) bitmap — see
-        // `magazine_bitmap.rs`'s module doc. Skipped under `cfg(not(miri))`
-        // for the identical reason as the line above.
-        #[cfg(miri)]
-        crate::alloc_core::magazine_bitmap::MagazineBitmap::init_in_place(base_add(
-            base,
-            SegLayout::magazine_bitmap_off(),
-        ));
+        crate::alloc_core::state_byte::StateByte::new(base).init_in_place();
         // R7-A1: check whether the segment count has crossed the directory
         // materialisation threshold. If so, materialize the sidecar and do
         // the one-time rebuild. This is a lazy, one-shot operation: once the

@@ -124,10 +124,10 @@ fn unrounded_lazy_sums_remain_discriminable_at_every_supported_page_size() {
     let meta_ends = [
         SegmentLayout::SMALL_META_END,
         SegmentLayout::PRIMORDIAL_META_END,
-        73728,  // plain SMALL_META_END (measured, task #1074)
-        192512, // plain PRIMORDIAL_META_END
-        335872, // hardened SMALL_META_END
-        454656, // hardened PRIMORDIAL_META_END
+        270336, // plain SMALL_META_END (measured, B4 state-byte layout)
+        389120, // plain PRIMORDIAL_META_END (B4 state-byte layout)
+        270336, // hardened SMALL_META_END (coincides with plain under B4)
+        389120, // hardened PRIMORDIAL_META_END (coincides with plain under B4)
     ];
     for &meta_end in &meta_ends {
         let raw_sum = meta_end + LAZY_FIRST_CHUNK;

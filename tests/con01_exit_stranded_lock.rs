@@ -28,6 +28,7 @@ static HELD: AtomicBool = AtomicBool::new(false);
 static RELEASE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)] // `ExactShard` is a reserved scenario (pre-existing clippy -D failure surfaced by this chunk's verification sweep)
 enum Scenario {
     Shard(usize),
     ShardRealloc(usize),

@@ -21,15 +21,13 @@ impl AllocCore {
     /// list. `ptr` identifies the block address; `base` is the allocator's
     /// stored segment root.
     ///
-    /// **Double-free guard (M2 — Phase 13.4a):** before pushing, we test the
-    /// segment's [`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap) bit for this
-    /// block. If it is already FREE (`is_free` true → the block is on some free
-    /// list of this segment), this is a double-free: we no-op (never corrupt the
-    /// free list — no self-loop, no duplicate). Otherwise we set the bit
-    /// (`mark_free`) and push. This replaces the Phase 8 O(free-list-length)
-    /// `free_list_contains` walk — which made own-thread free O(N²) under churn
-    /// (#41) — with an O(1) exact bit test. The bitmap is single-writer (owner
-    /// only), so the read/modify/write needs no atomics.
+    /// **Free guard (M2 — Phase 13.4a history, B4 (в) state-byte form):**
+    /// before pushing, we test the segment's per-granule STATE byte for this
+    /// block; see the guard body below for the exact compare (the former
+    /// per-granule bitmap bit — and before that the Phase 8 O(free-list-
+    /// length) `free_list_contains` walk that made own-thread free O(N²)
+    /// under churn, #41 — are gone; the byte is the single-writer owner-
+    /// private record, so the read/compare needs no atomics).
     #[inline(always)]
     pub(in crate::alloc_core) fn dealloc_small(
         &mut self,
@@ -49,8 +47,8 @@ impl AllocCore {
         // of class `class_idx` sits at an `off` that is a whole multiple of
         // `block_size(class_idx)` (carve aligns the bump to `block_size`); an
         // INTERIOR pointer has `off % block_size != 0` and would otherwise slip
-        // past the 16 B-granular `is_free` bitmap oracle below (it maps to a
-        // DIFFERENT bit that reads "allocated") → `write_next` into mid-block →
+        // past the 16 B-granular state-byte oracle below (it indexes the START
+        // granule, whose byte reads "issued") → `write_next` into mid-block →
         // free-list corruption. Rejected here as a no-op. A `%` by a
         // non-power-of-two `block_size` per small free — a paid check, so
         // `hardened`-gated (default OFF), never on the production hot path.
@@ -66,8 +64,8 @@ impl AllocCore {
         // payload. A caller passing a foreign/corrupt `ptr` whose computed
         // `off` happens to be small and `block_size`-aligned (e.g. `0`) would
         // otherwise sail past every guard below and `write_next` clobbers
-        // live segment metadata in place — corrupting the header, bitmap, or
-        // bin table. `payload_start` is the compile-time metadata footprint;
+        // live segment metadata in place — corrupting the header, state bytes,
+        // or bin table. `payload_start` is the compile-time metadata footprint;
         // primordial segments carry the extra registry/hash/free-list
         // regions on top of the small footprint, so they use the larger
         // `primordial_meta_end()`.
@@ -82,9 +80,9 @@ impl AllocCore {
         }
         // Phase 35 (M6 decommit) — the post-decommit stale-free guard. When a
         // segment empties it is decommitted AND reset: `bump` returns to
-        // `small_meta_end()` and the alloc bitmap is zeroed. A late free / a
+        // `small_meta_end()` and the state bytes are zeroed. A late free / a
         // legitimate double-free of a block that lived in the now-decommitted
-        // payload would (a) pass the zeroed bitmap `is_free` check and (b)
+        // payload would (a) pass the zeroed state-byte guard and (b)
         // `write_next` into a DECOMMITTED / unmapped page — a UAF. Every block
         // that was ever carved has `off >= bump` ONLY after such a reset (a live
         // block in a committed segment always has `off < bump`); so rejecting
@@ -98,10 +96,37 @@ impl AllocCore {
         if (off as usize) >= meta.bump_of() {
             return;
         }
-        // O(1) exact double-free guard via the alloc bitmap.
-        let mut bm = meta.alloc_bitmap();
-        if bm.is_free(off) {
-            return; // Already on a free list (M2 double-free): no-op.
+        // B4 (в) + F2/F15 (review): O(1) EXACT substrate free guard via the
+        // state byte. EVERY internal caller of `dealloc_small` passes a
+        // currently-issued block START of exactly `class_idx`:
+        // `mem_impl.rs::dealloc_at_base` (the user free face — the block
+        // reads `encode(class, LIVE)`) and `find_segment/scan.rs`'s
+        // `carve_block_with_refill` (freshly carved refill blocks —
+        // `carve_block` commits `encode(class_idx, LIVE)` at first issue).
+        // The guard therefore requires the exact issued byte
+        // `encode(class_idx, LIVE)` plus a 16 B START alignment
+        // (`off & (MIN_BLOCK - 1) == 0`; the byte region is indexed
+        // `off >> 4`, so an interior offset `p+1..p+15` indexes the START
+        // granule and would otherwise read the start's LIVE byte — the same
+        // blind spot F1 closed on the magazine guard). This closes, in the
+        // non-route-checked substrate core: the M2 double-free (FREE/MAG
+        // state), the interior-pointer free (misalignment or the interior
+        // granule's И1-zero byte), the never-issued free (zero byte) and the
+        // wrong-class free (class-field mismatch) — all benign no-ops. The
+        // former state-only-FREE decode (`byte != 0 && byte >> 6 == FREE`,
+        // the `dbg_is_free_for` mold) still accepted zero-byte and
+        // wrong-class-LIVE operands; the exact compare is strictly stronger,
+        // and the accept path is unchanged for every legitimate free.
+        let byte = meta.state_byte().read(off);
+        let aligned = (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) == 0;
+        if !aligned
+            || byte
+                != crate::alloc_core::state_byte::StateByte::encode(
+                    class_idx,
+                    crate::alloc_core::state_byte::StateByte::LIVE,
+                )
+        {
+            return; // Not the caller's issued block start: no-op.
         }
         // The user pointer supplied only the numeric offset. The table-owned
         // root covers the physical block, including its free-list word even
@@ -118,7 +143,12 @@ impl AllocCore {
         };
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off);
-        bm.mark_free(off);
+        // B4 (в): commit LIVE → FREE in the state byte (was bitmap mark_free).
+        meta.state_byte().write(
+            off,
+            class_idx,
+            crate::alloc_core::state_byte::StateByte::FREE,
+        );
         SegmentMeta::new(base).dec_live();
         // R7-A2: directory bitmap maintenance — the new head is always non-null
         // (we just pushed `off`), so the only transition is empty→non-empty

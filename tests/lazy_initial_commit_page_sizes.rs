@@ -15,11 +15,10 @@
 //! `reserve_aligned_lazy` returns `None` and `AllocCore::new()` fails
 //! wholesale.
 //!
-//! Measured values at the time of the bug (non-hardened / `production`):
-//! `SMALL_META_END = 73728`, `PRIMORDIAL_META_END = 192512`;
-//! `initial_commit` = 335872 / 454656 — multiples of 4 KiB, but
-//! 335872 % 16384 = 8192 and 454656 % 16384 = 12288. Hardened:
-//! 598016 % 16384 = 8192 and 716800 % 16384 = 12288.
+//! Measured values (B4 state-byte layout; plain == hardened — the removed
+//! dead bitmaps were the only difference): `SMALL_META_END = 270336`,
+//! `PRIMORDIAL_META_END = 389120`; `initial_commit` = 532480 / 651264 —
+//! multiples of 4 KiB, but 532480 % 16384 = 8192 and 651264 % 16384 = 12288.
 //!
 //! ## Why a table test, not a host test
 //!

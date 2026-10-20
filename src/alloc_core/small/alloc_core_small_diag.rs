@@ -97,12 +97,13 @@ impl AllocCore {
         SegmentMeta::new(base).bin_table().head(class_idx)
     }
 
-    /// TEST-ONLY (Э7, task #161): whether `ptr`'s block is currently marked FREE
-    /// (on a free list) in its segment's alloc bitmap — the M2 double-free bit.
-    /// For Small/Primordial blocks, `false` means the bit is not marked FREE.
-    /// Foreign and Large pointers also return `false`; this is not a Large
-    /// allocation-status query. Lets the batch-drain test assert every drained
-    /// block ends bitmap-allocated, exactly as `pop_free` leaves it.
+    /// TEST-ONLY (Э7, task #161): whether `ptr`'s block's state byte is in
+    /// the FREE state (on a free list) — the M2 double-free oracle, B4 (в)
+    /// edition. State-only: any FREE byte (regardless of class field) is
+    /// "free"; zero/LIVE/MAG bytes are "not free". Foreign and Large
+    /// pointers also return `false`; this is not a Large allocation-status
+    /// query. Lets the batch-drain test assert every drained block ends
+    /// state-issued (not FREE), exactly as `pop_free` leaves it.
     ///
     /// R2-05 (independent src review round 2, task #2007): reads through the
     /// table's own STORED (canonical) pointer, not `ptr`'s caller-derived
@@ -121,7 +122,11 @@ impl AllocCore {
             return false;
         }
         let off = (ptr as usize - base as usize) as u32;
-        SegmentMeta::new(base).alloc_bitmap().is_free(off)
+        // B4 (в): decode the state byte by STATE only (`byte != 0 &&
+        // byte >> 6 == FREE`); class-field mismatches are not this probe's
+        // concern.
+        let byte = SegmentMeta::new(base).state_byte().read(off);
+        byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::FREE
     }
 
     /// TEST-ONLY (UBFIX-7, M-3 counterfactual): overwrite the CURRENT freelist
@@ -195,7 +200,7 @@ impl AllocCore {
     /// undefined behaviour.
     /// `ptr` must retain allocator-issued provenance and access permission for
     /// the mapped Small/Primordial segment's initialized header, BinTable,
-    /// allocation bitmap, and every free-list node the drain may visit. These
+    /// state-byte region, and every free-list node the drain may visit. These
     /// regions must remain readable/writable through the derived base for the
     /// call, without conflicting aliases or accesses. A payload-only tag from
     /// a reference/slice or `Box` reborrow is insufficient unless it still
@@ -215,76 +220,36 @@ impl AllocCore {
         self.drain_freelist_batch(base, class_idx, out)
     }
 
-    /// TEST-ONLY (PERF-PASS-2, task #50): read `out.len()` raw bytes starting
-    /// at `ptr`'s segment's `AllocBitmap` base, byte-for-byte, with NO
-    /// interpretation (unlike `dbg_is_free_for`, which decodes a single bit
-    /// for a specific block offset). Exists for the sub-part 2 (G5/C1)
-    /// virgin-init-elision poison-then-assert counterfactual
-    /// (`tests/regression_virgin_bitmap_skip.rs`): the test needs to inspect
-    /// the WHOLE bitmap footprint of a freshly-reserved segment (including
-    /// byte ranges no `alloc`/`dealloc` call has touched) to prove the OS
-    /// handed back genuinely zeroed pages, not just that one class's bit
-    /// happens to read as allocated (which `dbg_is_free_for` alone cannot
-    /// distinguish from "never written" vs "explicitly zeroed").
-    ///
-    /// `out.len()` MUST be `<= AllocBitmap::FOOTPRINT` (release-asserted); the
-    /// caller is responsible for not reading past the bitmap's own footprint
-    /// (reading further would spill into the next metadata region, which this
-    /// accessor does not guard against — test-only, not a production API).
+    /// TEST-ONLY (B4 variant (в)): raw byte-for-byte read of the per-granule
+    /// STATE-BYTE region at `Layout::state_byte_off()` — the authoritative
+    /// state record (the former bitmap dump hooks were removed with the dead
+    /// bitmaps). Lets tests poison-then-assert that a bogus free leaves the
+    /// state bytes pristine, assert granule↔byte-index mapping at the
+    /// region's word boundaries, and inspect the metadata region snapshot.
     ///
     /// # Safety
     ///
-    /// `ptr` MUST be a valid, live, exclusively-owned allocation pointer whose
-    /// segment is owned by this `AllocCore`. The callee computes `base` from
-    /// `ptr` and reads raw bitmap bytes WITHOUT a membership check.
-    /// `ptr` must retain allocator-issued provenance and read permission for
-    /// the mapped Small/Primordial segment's initialized AllocBitmap prefix
-    /// of `out.len()` bytes, reached through the derived base, for the call.
+    /// `ptr` MUST be a valid, live, exclusively-owned allocation pointer
+    /// whose segment is owned by this `AllocCore` and retains
+    /// allocator-issued provenance and read permission for the mapped
+    /// Small/Primordial segment's initialized STATE-BYTE prefix of
+    /// `out.len()` bytes, reached through the derived base, for the call.
     /// A payload-only reference/slice or `Box` reborrow tag is insufficient
-    /// unless it still authorizes that metadata extent. Address equality does
-    /// not grant access. No conflicting metadata writes may occur during the
-    /// copy, and `out` must not alias the source bitmap. The prefix must not
-    /// exceed `AllocBitmap::FOOTPRINT`.
+    /// unless it still authorizes that metadata extent; address equality
+    /// does not grant access. No conflicting metadata writes may occur
+    /// during the copy, `out` must not alias that source, and the prefix
+    /// must not exceed `StateByte::FOOTPRINT`.
     #[doc(hidden)]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
-    pub unsafe fn dbg_alloc_bitmap_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
+    pub unsafe fn dbg_state_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
         assert!(
-            out.len() <= crate::alloc_core::alloc_bitmap::AllocBitmap::FOOTPRINT,
-            "dbg_alloc_bitmap_bytes_for: out.len() exceeds AllocBitmap::FOOTPRINT"
+            out.len() <= crate::alloc_core::state_byte::StateByte::FOOTPRINT,
+            "dbg_state_bytes_for: out.len() exceeds StateByte::FOOTPRINT"
         );
         let base = os::segment_base_of_ptr(ptr);
-        let bitmap_base = Node::offset(base, SegLayout::alloc_bitmap_off());
+        let state_base = Node::offset(base, SegLayout::state_byte_off());
         for (i, byte) in out.iter_mut().enumerate() {
-            *byte = Node::read_u8(Node::offset(bitmap_base, i));
-        }
-    }
-
-    /// RAD-5 (E4) GO/NO-GO EXPERIMENT, TEST-ONLY: same byte-for-byte raw read
-    /// as `dbg_alloc_bitmap_bytes_for`, over the second (magazine-residency)
-    /// bitmap instead. Exists for the poison-then-assert counterfactual
-    /// extension (`tests/regression_virgin_bitmap_skip.rs`) that proves the
-    /// virgin-init skip is sound for this bitmap too, not just `AllocBitmap`.
-    ///
-    /// # Safety
-    ///
-    /// Same ownership, lifetime, provenance and non-conflicting read-access
-    /// requirements as
-    /// [`dbg_alloc_bitmap_bytes_for`](Self::dbg_alloc_bitmap_bytes_for#safety),
-    /// but `ptr`'s allocator-issued tag must authorize the initialized
-    /// MagazineBitmap prefix of `out.len()` bytes through the derived base.
-    /// The segment must be mapped Small/Primordial, `out` must not alias that
-    /// source, and the prefix must not exceed `MagazineBitmap::FOOTPRINT`.
-    #[doc(hidden)]
-    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
-    pub unsafe fn dbg_magazine_bitmap_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
-        assert!(
-            out.len() <= crate::alloc_core::magazine_bitmap::MagazineBitmap::FOOTPRINT,
-            "dbg_magazine_bitmap_bytes_for: out.len() exceeds MagazineBitmap::FOOTPRINT"
-        );
-        let base = os::segment_base_of_ptr(ptr);
-        let bitmap_base = Node::offset(base, SegLayout::magazine_bitmap_off());
-        for (i, byte) in out.iter_mut().enumerate() {
-            *byte = Node::read_u8(Node::offset(bitmap_base, i));
+            *byte = Node::read_u8(Node::offset(state_base, i));
         }
     }
 
@@ -428,5 +393,29 @@ impl AllocCore {
         } else {
             SegLayout::small_meta_end()
         }
+    }
+
+    /// TEST-ONLY (B4 (в), F11): the raw STATE nibble (`byte >> 6`) of
+    /// `ptr`'s block's state byte — `Some(LIVE|MAG|FREE)` for a granule
+    /// whose byte is nonzero, `Some(0)`-mapped as `None`-adjacent zero is
+    /// returned as `Some(0)` (never-issued/interior granule); `None` for a
+    /// foreign or non-Small/Primordial pointer. Read-only safe observer in
+    /// the `dbg_is_free_for` mold: resolves the segment through the table's
+    /// STORED canonical root (never the caller-derived address) and reads
+    /// ONE byte through the existing `Node::read_u8` seam.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_state_byte_state_for(&self, ptr: *mut u8) -> Option<u8> {
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self.table.canonical_base_of(candidate)?;
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
+            return None;
+        }
+        let off = (ptr as usize - base as usize) as u32;
+        let byte = SegmentMeta::new(base).state_byte().read(off);
+        Some(byte >> 6)
     }
 }
