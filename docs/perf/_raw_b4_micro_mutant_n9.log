@@ -1,0 +1,24 @@
+CARGO_TARGET_DIR=$REPO/.rush/cargo-target-C timeout 600 cargo test --locked --features "production batch-api internals bench-internals" --test b4_micro_n9_memo_fill_policy   # cwd: worktrees/b4-micro (mutant: won-probe memo fill restored in segment_table_impl.rs canonical_base_of_mut; RC=101 RED)
+   Compiling sefer-alloc v0.3.0 ($REPO\worktrees\b4-micro)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.41s
+     Running tests\b4_micro_n9_memo_fill_policy.rs (<repo>/.rush/cargo-target-C\debug\deps\b4_micro_n9_memo_fill_policy-277d5942d0661265.exe)
+
+running 1 test
+test won_probe_does_not_arm_memo_own_cache_hit_does ... FAILED
+
+failures:
+
+---- won_probe_does_not_arm_memo_own_cache_hit_does stdout ----
+
+thread 'won_probe_does_not_arm_memo_own_cache_hit_does' (18012) panicked at tests\b4_micro_n9_memo_fill_policy.rs:73:5:
+N9-v3: a won hash_find probe (full Tier-1 miss) must NOT arm the last-segment memo — if this fails, the pre-v3 won-probe fill is back
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    won_probe_does_not_arm_memo_own_cache_hit_does
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test b4_micro_n9_memo_fill_policy`
+RC=101

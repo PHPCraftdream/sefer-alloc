@@ -1,0 +1,30 @@
+CARGO_TARGET_DIR=$REPO/.rush/cargo-target-C timeout 600 cargo test --locked --features "production batch-api internals bench-internals exact-span-large" --test b4_micro_xspan_small_primordial_mask
+EXPECTED: RED — LOCAL_REJECT 1!=0 in xspan_large_span_bound_untouched (exact Large free rejected: 1 vs 0).
+---
+   Compiling sefer-alloc v0.3.0 ($REPO\worktrees\b4-micro)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.82s
+     Running tests\b4_micro_xspan_small_primordial_mask.rs ($REPO/.rush/cargo-target-C\debug\deps\b4_micro_xspan_small_primordial_mask-f2e98b5916632cea.exe)
+
+running 2 tests
+test xspan_large_span_bound_untouched ... FAILED
+test xspan_small_and_primordial_deeps_free_exactly ... ok
+
+failures:
+
+---- xspan_large_span_bound_untouched stdout ----
+
+thread 'xspan_large_span_bound_untouched' (50252) panicked at tests\b4_micro_xspan_small_primordial_mask.rs:191:5:
+assertion `left == right` failed: exact Large free must not be rejected
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    xspan_large_span_bound_untouched
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--test b4_micro_xspan_small_primordial_mask`
+---
+CARGO_EXIT_CODE=101

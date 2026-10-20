@@ -1,0 +1,34 @@
+label: mc-n9v1-larson
+judge: larson
+out-file date: 2026-10-20
+source: regenerated from callgrind out-files in ~/ab
+formula: marginal Ir/op = (TOTALS@100k - TOTALS@50k) / 50000 (callgrind_annotate)
+
+MARGINAL Ir/op (sefer larson T=1): 279  [t1=15370408 t2=29349269]
+
+--- by source file (Ir/op)
+  279.6	PROGRAM TOTALS
+  146.2	events annotated
+   78.0	crates/malloc-bench-rs/src/lib.rs
+   30.4	src/registry/heap_core/free/dealloc_own_base.rs
+   25.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/mod.rs
+   19.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/list.rs
+   14.0	src/alloc_core/platform/size_classes.rs
+   13.6	src/registry/heap_core/alloc/hot.rs
+   12.0	slots[idx] = Some(unsafe { alloc_block(a &mut rng) });
+   12.0	let cnt = self.tcache.classes[c].count as usize;
+   11.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+    7.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs
+    7.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+    7.0	<counts for unidentified lines in src/registry/heap_core/free/dealloc_own_base.rs>
+    7.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs
+    6.8	16 + (r >> 8) as usize % (512 - 16)
+    6.0	x ^= x >> 27;
+    6.0	x ^= x >> 12;
+    6.0	x ^= x << 25;
+    6.0	Some(SIZE2CLASS[seed_idx] as usize)
+    6.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs
+    5.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+    5.0	unsafe fn alloc_block<A
+    5.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs
+    5.0	src/alloc_core/small/alloc_core_small_magazine.rs

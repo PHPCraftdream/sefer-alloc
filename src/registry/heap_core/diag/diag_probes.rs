@@ -225,6 +225,137 @@ impl HeapCore {
         crate::alloc_core::AllocCore::dbg_reset_contains_base_tier1_counters();
     }
 
+    // --- B4-M (P1-2): thin process-wide delegations to the `AllocCore`
+    // --- bench-internals observer counters (S1 / X-null / X-span / N9), so
+    // --- macro-bench/test workloads driven through `HeapCore` can read them
+    // --- (same pattern as `dbg_contains_base_tier1_hits` above).
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): see [`AllocCore::dbg_s1_refill_events`].
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_s1_refill_events() -> u64 {
+        crate::alloc_core::AllocCore::dbg_s1_refill_events()
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): see [`AllocCore::dbg_s1_mag_byte_writes`].
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_s1_mag_byte_writes() -> u64 {
+        crate::alloc_core::AllocCore::dbg_s1_mag_byte_writes()
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): see
+    /// [`AllocCore::dbg_xnull_null_dealloc_total`].
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_xnull_null_dealloc_total() -> u64 {
+        crate::alloc_core::AllocCore::dbg_xnull_null_dealloc_total()
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): see
+    /// [`AllocCore::dbg_xnull_null_tail_guard`].
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_xnull_null_tail_guard() -> u64 {
+        crate::alloc_core::AllocCore::dbg_xnull_null_tail_guard()
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): see
+    /// [`AllocCore::dbg_xspan_mask_branch_calls`].
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_xspan_mask_branch_calls() -> u64 {
+        crate::alloc_core::AllocCore::dbg_xspan_mask_branch_calls()
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): see
+    /// [`AllocCore::dbg_xspan_mask_branch_taken`].
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_xspan_mask_branch_taken() -> u64 {
+        crate::alloc_core::AllocCore::dbg_xspan_mask_branch_taken()
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): see [`AllocCore::dbg_n9_memo_hits`].
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_n9_memo_hits() -> u64 {
+        crate::alloc_core::AllocCore::dbg_n9_memo_hits()
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): see [`AllocCore::dbg_n9_owncache_hits`].
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_n9_owncache_hits() -> u64 {
+        crate::alloc_core::AllocCore::dbg_n9_owncache_hits()
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): see
+    /// [`AllocCore::dbg_n9_memo_fills_owncache_hit`].
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_n9_memo_fills_owncache_hit() -> u64 {
+        crate::alloc_core::AllocCore::dbg_n9_memo_fills_owncache_hit()
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): see
+    /// [`AllocCore::dbg_n9_won_probe_exact`].
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_n9_won_probe_exact() -> u64 {
+        crate::alloc_core::AllocCore::dbg_n9_won_probe_exact()
+    }
+
     /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to
     /// [`dealloc_own_thread_with_base`](crate::registry::heap_core::HeapCore::dealloc_own_thread_with_base),
     /// exposed so `benches/perf_gate_iai.rs` can isolate the free path's

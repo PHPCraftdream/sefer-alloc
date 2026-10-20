@@ -140,9 +140,10 @@ impl HeapCore {
     #[inline(always)]
     #[allow(unsafe_code)] // R6-MS-1/2: `unsafe fn` boundary (caller-pointer contract).
     pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        if ptr.is_null() {
-            return;
-        }
+        // X-null: no hot null check. Null's key (0) never matches a stored
+        // segment base or the memo's `LAST_EMPTY_KEY`, so it always misses
+        // into `dealloc_routing` -> `publish_foreign`, whose first line
+        // null-checks before any counter or action.
         self.dealloc_routing(ptr, layout);
     }
 

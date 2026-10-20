@@ -1,0 +1,84 @@
+== mc_counter_probe: B4-M counter oracle ==
+== S1 magazine refill ==
+class0 park cap (== refill_n) = 16
+round 0: refill events +1, MAG writes +16 (== refill_n 16), retained (n-1) = 15
+round 1: refill events +1, MAG writes +16 (== refill_n 16), retained (n-1) = 15
+round 2: refill events +1, MAG writes +16 (== refill_n 16), retained (n-1) = 15
+S1_REFILL_EVENTS = 3
+S1_MAG_BYTE_WRITES = 48
+S1 numerator (writes - events, retained MAG writes) = 45
+S1 denominator (retained_sum = sum n_i-1) = 45
+S1 share = numerator / denominator = 100.00%
+== N9 memo / own_cache ==
+dealloc class0 #0: dm=+0 do=+0 df=+0 dp=+1
+dealloc class0 #1: dm=+0 do=+1 df=+1 dp=+0
+dealloc class0 #2: dm=+1 do=+0 df=+0 dp=+0
+dealloc class1 #0: dm=+1 do=+0 df=+0 dp=+0
+dealloc class1 #1: dm=+1 do=+0 df=+0 dp=+0
+dealloc class1 #2: dm=+1 do=+0 df=+0 dp=+0
+dealloc class2 #0: dm=+1 do=+0 df=+0 dp=+0
+dealloc class2 #1: dm=+1 do=+0 df=+0 dp=+0
+dealloc class2 #2: dm=+1 do=+0 df=+0 dp=+0
+dealloc class3 #0: dm=+1 do=+0 df=+0 dp=+0
+dealloc class3 #1: dm=+1 do=+0 df=+0 dp=+0
+dealloc class3 #2: dm=+1 do=+0 df=+0 dp=+0
+N9_MEMO_HITS (delta) = 10
+N9_OWNCACHE_HITS (delta) = 1
+N9_MEMO_FILLS_OWNCACHE_HIT (delta) = 1
+N9_WON_PROBE_EXACT (delta) = 1
+layout memo:own_cache = 10:1
+N9 fill share = fills / (fills + won_probe_exact) = 1 / 2 = 50.00%
+memo-hit share = memo / (memo + own) = 90.91%
+NOTE: the per-dealloc trace shows all 4 probed small classes (16/32/64/128 B) resolve to the SAME segment base on a fresh primordial AllocCore, so the rotation collapsed to one segment: dealloc #0 = won probe (fills own_cache, dp=+1, no hit counter), #1 = own_cache HIT + the only memo fill (df=+1 at do=+1), #2.. = memo hits. Segment rotation (more own_cache hits) needs distinct segments, which a fresh primordial core does not offer across these classes.
+== X-null null dealloc ==
+XNULL_NULL_DEALLOC_TOTAL (delta) = 64 (issued 64)
+XNULL_NULL_TAIL_GUARD (delta) = 64
+X-null share = tail/total = 100.00%
+== X-span mask branch ==
+XSPAN_MASK_BRANCH_CALLS (delta) = 516 (small 512 + Large 4)
+XSPAN_MASK_BRANCH_TAKEN (delta) = 512
+X-span share = taken/calls = 99.22% (calls includes Large calls; for small-only load share == share of non-Large)
+== done ==
+
+-- run 2 (determinism check) --
+== mc_counter_probe: B4-M counter oracle ==
+== S1 magazine refill ==
+class0 park cap (== refill_n) = 16
+round 0: refill events +1, MAG writes +16 (== refill_n 16), retained (n-1) = 15
+round 1: refill events +1, MAG writes +16 (== refill_n 16), retained (n-1) = 15
+round 2: refill events +1, MAG writes +16 (== refill_n 16), retained (n-1) = 15
+S1_REFILL_EVENTS = 3
+S1_MAG_BYTE_WRITES = 48
+S1 numerator (writes - events, retained MAG writes) = 45
+S1 denominator (retained_sum = sum n_i-1) = 45
+S1 share = numerator / denominator = 100.00%
+== N9 memo / own_cache ==
+dealloc class0 #0: dm=+0 do=+0 df=+0 dp=+1
+dealloc class0 #1: dm=+0 do=+1 df=+1 dp=+0
+dealloc class0 #2: dm=+1 do=+0 df=+0 dp=+0
+dealloc class1 #0: dm=+1 do=+0 df=+0 dp=+0
+dealloc class1 #1: dm=+1 do=+0 df=+0 dp=+0
+dealloc class1 #2: dm=+1 do=+0 df=+0 dp=+0
+dealloc class2 #0: dm=+1 do=+0 df=+0 dp=+0
+dealloc class2 #1: dm=+1 do=+0 df=+0 dp=+0
+dealloc class2 #2: dm=+1 do=+0 df=+0 dp=+0
+dealloc class3 #0: dm=+1 do=+0 df=+0 dp=+0
+dealloc class3 #1: dm=+1 do=+0 df=+0 dp=+0
+dealloc class3 #2: dm=+1 do=+0 df=+0 dp=+0
+N9_MEMO_HITS (delta) = 10
+N9_OWNCACHE_HITS (delta) = 1
+N9_MEMO_FILLS_OWNCACHE_HIT (delta) = 1
+N9_WON_PROBE_EXACT (delta) = 1
+layout memo:own_cache = 10:1
+N9 fill share = fills / (fills + won_probe_exact) = 1 / 2 = 50.00%
+memo-hit share = memo / (memo + own) = 90.91%
+NOTE: the per-dealloc trace shows all 4 probed small classes (16/32/64/128 B) resolve to the SAME segment base on a fresh primordial AllocCore, so the rotation collapsed to one segment: dealloc #0 = won probe (fills own_cache, dp=+1, no hit counter), #1 = own_cache HIT + the only memo fill (df=+1 at do=+1), #2.. = memo hits. Segment rotation (more own_cache hits) needs distinct segments, which a fresh primordial core does not offer across these classes.
+== X-null null dealloc ==
+XNULL_NULL_DEALLOC_TOTAL (delta) = 64 (issued 64)
+XNULL_NULL_TAIL_GUARD (delta) = 64
+X-null share = tail/total = 100.00%
+== X-span mask branch ==
+XSPAN_MASK_BRANCH_CALLS (delta) = 516 (small 512 + Large 4)
+XSPAN_MASK_BRANCH_TAKEN (delta) = 512
+X-span share = taken/calls = 99.22% (calls includes Large calls; for small-only load share == share of non-Large)
+== done ==

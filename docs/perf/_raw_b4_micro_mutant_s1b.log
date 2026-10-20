@@ -1,0 +1,18 @@
+CARGO_TARGET_DIR=$REPO/.rush/cargo-target-C timeout 600 cargo test --locked --features "production batch-api internals bench-internals" --test b4_micro_s1_refill_mag_bytes
+EXPECTED: RED — full mutant (drain issues LIVE + HEAD finish_magazine_refill tail): counter assert (dbg_s1_mag_byte_writes delta == refill_n) fails. OBSERVED: RED via abnormal test-process abort (0xc0000409) — debug-path panic in the mutated refill tail, counter assert never reached.
+---
+   Compiling sefer-alloc v0.3.0 ($REPO\worktrees\b4-micro)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.41s
+     Running tests\b4_micro_s1_refill_mag_bytes.rs ($REPO/.rush/cargo-target-C\debug\deps\b4_micro_s1_refill_mag_bytes-49efa0064edaac3f.exe)
+
+running 2 tests
+test s1_batch_api_paths_stay_live ... ok
+claim: heap lease dropped while panicking
+error: test failed, to rerun pass `--test b4_micro_s1_refill_mag_bytes`
+
+Caused by:
+  process didn't exit successfully: `$REPO/.rush/cargo-target-C\debug\deps\b4_micro_s1_refill_mag_bytes-49efa0064edaac3f.exe` (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.
+---
+CARGO_EXIT_CODE=127  # timeout wrapper RC; test process terminated abnormally before cargo could report RC=101
+TEST_PROCESS_EXIT=0xc0000409 (STATUS_STACK_BUFFER_OVERRUN)

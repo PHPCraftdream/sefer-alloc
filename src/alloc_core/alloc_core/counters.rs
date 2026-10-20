@@ -578,3 +578,97 @@ pub(crate) static LOCAL_REJECT_FREES: core::sync::atomic::AtomicU64 =
 // oxx R2-07), planted when the active lease binds. See `HeapSlot::large_cache_hits`.
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) type LargeCacheHitCounter = core::sync::atomic::AtomicU64;
+
+/// B4-M (P1-2): magazine-refill event counter — bumped once per
+/// `AllocCore::refill_class_bump_impl` call whose `issue_state` is
+/// [`StateByte::MAG`](crate::alloc_core::state_byte::StateByte::MAG)
+/// (i.e. only magazine refills; batch-API refills commit LIVE and are not
+/// counted). Companion of [`S1_MAG_BYTE_WRITES`]. Read via
+/// `AllocCore::dbg_s1_refill_events`. `bench-internals`-gated (the
+/// `CONTAINS_BASE_TIER1_HITS` convention): never reachable in a plain
+/// production build. Relaxed: diagnostic only.
+#[cfg(feature = "bench-internals")]
+pub(crate) static S1_REFILL_EVENTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): count of MAG state-byte writes performed by the substrate
+/// refill itself — bumped per written block in `try_drain_freelist_batch` and
+/// `try_carve_batch` when `issue_state == MAG` (one per committed block, next
+/// to each `meta.state_byte().write(.., issue_state)`). Under S1 the retained
+/// magazine blocks' MAG bytes are written HERE; the full-revert mutant (drain
+/// LIVE + the old `finish_magazine_refill` MAG loop) drives this to 0 for the
+/// same end-state bytes, which is what
+/// `tests/b4_micro_s1_refill_mag_bytes.rs` pins. Companion of
+/// [`S1_REFILL_EVENTS`]. Same gating/ordering convention.
+#[cfg(feature = "bench-internals")]
+pub(crate) static S1_MAG_BYTE_WRITES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): null frees observed at the `SeferAlloc::dealloc` entry
+/// (`GlobalAlloc::dealloc` with `ptr.is_null()`), before any routing — the
+/// X-null contract's entry-side no-op oracle. Companion of
+/// [`XNULL_NULL_TAIL_GUARD`] (the tail-side count in `publish_foreign`'s null
+/// branch): a healthy X-null path satisfies entry == tail for every null
+/// free. Same gating/ordering convention.
+#[cfg(feature = "bench-internals")]
+pub(crate) static XNULL_NULL_DEALLOC_TOTAL: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): null frees that reached `HeapCore::publish_foreign`'s null
+/// tail guard (`if ptr.is_null() { return; }`) — see
+/// [`XNULL_NULL_DEALLOC_TOTAL`]. Same gating/ordering convention.
+#[cfg(feature = "bench-internals")]
+pub(crate) static XNULL_NULL_TAIL_GUARD: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): calls of `AllocCore::canonical_block_of` — bumped before the
+/// Large/non-Large branch, counting every routed lookup (the file is hot in
+/// production; the increment is `bench-internals`-gated so a plain production
+/// build never executes it). Companion of [`XSPAN_MASK_BRANCH_TAKEN`]: the
+/// taken/calls ratio is the mask-branch activation oracle for the X-span
+/// offset-mask coverage check. Relaxed: diagnostic only.
+#[cfg(feature = "bench-internals")]
+pub(crate) static XSPAN_MASK_BRANCH_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): `canonical_block_of` lookups that took the non-Large branch
+/// (`off = ptr.addr() & (SEGMENT - 1)`, the X-span mask) — see
+/// [`XSPAN_MASK_BRANCH_CALLS`]. Same gating/ordering convention.
+#[cfg(feature = "bench-internals")]
+pub(crate) static XSPAN_MASK_BRANCH_TAKEN: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): `SegmentTable::canonical_base_of_mut` lookups served by the
+/// single-entry memo (`last_key` hit) — counted IN ADDITION TO
+/// [`CONTAINS_BASE_TIER1_HITS`] (which groups memo and `own_cache` hits
+/// together as "Tier-1"); N9 splits the two hit kinds. Companion of
+/// [`N9_OWNCACHE_HITS`]. Same gating/ordering convention.
+#[cfg(feature = "bench-internals")]
+pub(crate) static N9_MEMO_HITS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): `SegmentTable::canonical_base_of_mut` lookups served by the
+/// direct-mapped `own_cache` (Tier-1 hit, memo missed) — see
+/// [`N9_MEMO_HITS`]. Same gating/ordering convention.
+#[cfg(feature = "bench-internals")]
+pub(crate) static N9_OWNCACHE_HITS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): N9-v3 memo fills performed on the `own_cache`-hit path (the
+/// `cached_root.addr() == key.addr()` exact-base guard passed and
+/// `last_key`/`last_root` were re-armed) — see
+/// `canonical_base_of_mut`'s N9-v3 comment. Same gating/ordering convention.
+#[cfg(feature = "bench-internals")]
+pub(crate) static N9_MEMO_FILLS_OWNCACHE_HIT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): events where the pre-v3 policy would have memo-filled from a
+/// won exact-base probe — the honest denominator of the N9 fill-share oracle.
+/// Bumped in `canonical_base_of_mut` after a won `hash_find` whose returned
+/// root is the exact base (`root.addr() == key.addr()`); the numerator is
+/// [`N9_MEMO_FILLS_OWNCACHE_HIT`], so `fills / (fills + won_probe_exact)` is
+/// the share of old-policy fill events the new policy still covers. Companion
+/// of [`N9_MEMO_FILLS_OWNCACHE_HIT`]. Same gating/ordering convention.
+#[cfg(feature = "bench-internals")]
+pub(crate) static N9_WON_PROBE_EXACT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);

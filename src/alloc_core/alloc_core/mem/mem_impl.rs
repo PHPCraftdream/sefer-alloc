@@ -40,24 +40,46 @@ impl AllocCore {
     /// by the allocation/layout contract; membership alone is not enough.
     #[inline]
     pub(crate) fn canonical_block_of(&mut self, ptr: *mut u8) -> Option<(*mut u8, *mut u8)> {
-        if ptr.is_null() {
-            return None;
-        }
+        // X-null: no hot null check. Null's key is 0; the memo stores only
+        // real bases or `LAST_EMPTY_KEY` and the table only segment bases
+        // (never 0), so null always misses -> `None`, and every miss tail
+        // (e.g. `publish_foreign`) null-checks before any action.
         let candidate = os::segment_base_of_ptr(ptr);
+        // B4-M (P1-2): X-span branch-activation oracle — every call counts;
+        // the non-Large (mask) branch counts separately below.
+        #[cfg(feature = "bench-internals")]
+        crate::alloc_core::alloc_core::XSPAN_MASK_BRANCH_CALLS
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let base = self.table.canonical_base_of_mut(candidate)?;
-        // R6-MS-1 (T22): bound the caller-derived offset BEFORE `Node::deref`'s
-        // `add` — a foreign address sharing the 4 MiB key window (exact-span-
-        // large / biased Large) must reject without forming an out-of-bounds
-        // witness pointer.
-        let off = ptr.addr().wrapping_sub(base.addr());
-        let span = if SegmentHeader::kind_at(base) == SegmentKind::Large {
-            SegmentHeader::span_usable_at(base)
+        // X-span (T22): for non-Large segments the offset is just the low
+        // SEGMENT bits of the address. The stored reservation roots are
+        // SEGMENT-aligned (they are what `segment_base_of_ptr` yields and
+        // registers), so `ptr - root == ptr & (SEGMENT - 1)` without a
+        // subtraction. Safety: `block = root + off` with `off < SEGMENT`
+        // always lies inside `root`'s reservation (Small/Primordial
+        // reservations are >= SEGMENT); even if hypothetically root !=
+        // candidate, the block stays inside its own segment and is rejected
+        // by the byte/bitmap checks — the guard's strength is unchanged.
+        let off = if SegmentHeader::kind_at(base) == SegmentKind::Large {
+            // R6-MS-1 (T22): bound the caller-derived offset BEFORE
+            // `Node::deref`'s `add` — a foreign address sharing the 4 MiB key
+            // window must reject without forming an out-of-bounds witness.
+            let off = ptr.addr().wrapping_sub(base.addr());
+            if off >= SegmentHeader::span_usable_at(base) {
+                return None;
+            }
+            off
         } else {
-            os::SEGMENT
+            // B4-M (P1-2): the mask branch fired (see XSPAN_MASK_BRANCH_CALLS).
+            #[cfg(feature = "bench-internals")]
+            crate::alloc_core::alloc_core::XSPAN_MASK_BRANCH_TAKEN
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            ptr.addr() & (os::SEGMENT - 1)
         };
-        if off >= span {
-            return None;
-        }
+        // NOTE: no `base == segment_base_of_ptr(ptr)` assert here — the
+        // registered root need NOT equal the raw key-window base (Large
+        // registrations can differ by a page); the `off >= span` guard
+        // above and the byte/bitmap checks below are what keep this safe.
         let block = Node::deref(base, off);
         Some((base, block))
     }
