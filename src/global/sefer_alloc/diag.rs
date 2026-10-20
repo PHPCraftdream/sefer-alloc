@@ -602,3 +602,37 @@ impl SeferAlloc {
         }
     }
 }
+
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+impl SeferAlloc {
+    /// B4 X-mix diagnosis (worktree b4-judges): snapshot of the magazine
+    /// slow-path event counters, each split into a ≤512 B and a >512 B
+    /// bucket. Positional layout (10 entries, pairs in bucket order
+    /// `[≤512, >512]`):
+    /// `[0..2]` refill events, `[2..4]` refill blocks, `[4..6]` overflow
+    /// (half-flush) events, `[6..8]` flushed blocks (overflow FLUSH_N plus
+    /// R1-01 single-block flushes), `[8..10]` R1-01 events. See the `JX_*` statics in
+    /// `alloc_core::alloc_core::counters` for the exact increment sites.
+    /// Diagnostic only (Relaxed loads).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_xmix_counters() -> [u64; 10] {
+        use crate::alloc_core::{
+            JX_FLUSH_BLOCKS, JX_OVERFLOW_EVENTS, JX_R101_EVENTS, JX_REFILL_BLOCKS, JX_REFILL_EVENTS,
+        };
+        use core::sync::atomic::Ordering;
+        let load = |arr: &[core::sync::atomic::AtomicU64; 2]| {
+            [
+                arr[0].load(Ordering::Relaxed),
+                arr[1].load(Ordering::Relaxed),
+            ]
+        };
+        let mut out = [0u64; 10];
+        out[0..2].copy_from_slice(&load(&JX_REFILL_EVENTS));
+        out[2..4].copy_from_slice(&load(&JX_REFILL_BLOCKS));
+        out[4..6].copy_from_slice(&load(&JX_OVERFLOW_EVENTS));
+        out[6..8].copy_from_slice(&load(&JX_FLUSH_BLOCKS));
+        out[8..10].copy_from_slice(&load(&JX_R101_EVENTS));
+        out
+    }
+}

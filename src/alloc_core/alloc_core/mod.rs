@@ -48,6 +48,15 @@ mod bootstrap;
 mod counters;
 #[cfg(feature = "alloc-global")]
 pub(crate) use counters::LARGE_REMOTE_RETIREMENTS;
+// B4 X-mix diagnosis (worktree b4-judges): magazine slow-path event pairs,
+// re-exported for their registry-side increment sites (`heap_core`'s
+// `hot.rs` / `dealloc_own_base.rs` / `heap_core_xthread/routing.rs`) and
+// `SeferAlloc::dbg_xmix_counters` — same discipline as the `B4_*` bank.
+#[cfg(feature = "bench-internals")]
+pub(crate) use counters::{
+    jx_bump, JX_FLUSH_BLOCKS, JX_OVERFLOW_EVENTS, JX_R101_EVENTS, JX_REFILL_BLOCKS,
+    JX_REFILL_EVENTS,
+};
 
 /// M-C oracle (Ph4c, receipt open question M-C) numeric observers of the
 /// strict trim-path sidecar ingress drain — see `sidecar_drain.rs` and

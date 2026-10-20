@@ -578,3 +578,64 @@ pub(crate) static LOCAL_REJECT_FREES: core::sync::atomic::AtomicU64 =
 // oxx R2-07), planted when the active lease binds. See `HeapSlot::large_cache_hits`.
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) type LargeCacheHitCounter = core::sync::atomic::AtomicU64;
+
+// ── B4 X-mix diagnosis (worktree b4-judges): magazine slow-path event pairs ──
+//
+// Five process-wide event counters, each split into TWO size buckets by the
+// block's byte size: index 0 = block size ≤ 512 B (the ~97 % bulk of the
+// larson X-mix), index 1 = block size > 512 B (the ~3 % 512 B–8 KiB tail
+// that `crates/malloc-bench-rs/src/lib.rs::pick_size` adds and that the
+// earlier `alloc_only_probe` (16..512 B) never exercised). The split is the
+// X-mix §5 experiment's measurement target: it isolates how much of the
+// unexplained ~25–40 Ir/step the rare-large tail contributes via the
+// R1-01 / overflow / refill slow paths (see `sol_ox.md` §3.3 candidate (a)).
+//
+// Conventions match the `B4_*` bank above: `bench-internals`-gated statics
+// (a plain `production` build never compiles the increments, so real
+// allocator behavior is untouched), `AtomicU64` + `Relaxed` (diagnostic
+// count, no ordering obligation), read back via
+// `SeferAlloc::dbg_xmix_counters()`. Never read by policy.
+//
+//   JX_REFILL_EVENTS   — magazine refill slow-path firings
+//                        (`HeapCore::finish_magazine_refill`, both the plain
+//                        and the virgin-tracking sibling);
+//   JX_REFILL_BLOCKS   — blocks a refill wrote into the magazine (n, incl.
+//                        the one popped for the caller);
+//   JX_OVERFLOW_EVENTS — magazine-overflow half-flush firings
+//                        (`dealloc_own_base.rs`, cnt == TCACHE_CAP arm);
+//   JX_FLUSH_BLOCKS    — blocks handed to the substrate by those half-flushes
+//                        (FLUSH_N per event) plus the 1-block R1-01 flushes;
+//   JX_R101_EVENTS     — R1-01 free-side byte-budget firings (cap reached,
+//                        cap < TCACHE_CAP: block flushed straight through).
+// Free-path `own_cache` misses are NOT bucketed here: that would need a hook
+// on every free; the unbucketed `CONTAINS_BASE_TIER1_MISSES` covers them.
+#[cfg(feature = "bench-internals")]
+pub(crate) static JX_REFILL_EVENTS: [core::sync::atomic::AtomicU64; 2] =
+    [const { core::sync::atomic::AtomicU64::new(0) }; 2];
+#[cfg(feature = "bench-internals")]
+pub(crate) static JX_REFILL_BLOCKS: [core::sync::atomic::AtomicU64; 2] =
+    [const { core::sync::atomic::AtomicU64::new(0) }; 2];
+#[cfg(feature = "bench-internals")]
+pub(crate) static JX_OVERFLOW_EVENTS: [core::sync::atomic::AtomicU64; 2] =
+    [const { core::sync::atomic::AtomicU64::new(0) }; 2];
+#[cfg(feature = "bench-internals")]
+pub(crate) static JX_FLUSH_BLOCKS: [core::sync::atomic::AtomicU64; 2] =
+    [const { core::sync::atomic::AtomicU64::new(0) }; 2];
+#[cfg(feature = "bench-internals")]
+pub(crate) static JX_R101_EVENTS: [core::sync::atomic::AtomicU64; 2] =
+    [const { core::sync::atomic::AtomicU64::new(0) }; 2];
+
+/// Bucket index for a block byte size: 0 = ≤ 512 B, 1 = > 512 B (the X-mix
+/// small/large split; see the `JX_*` bank's doc comment above).
+#[cfg(feature = "bench-internals")]
+#[inline(always)]
+pub(crate) fn jx_bucket(size: usize) -> usize {
+    usize::from(size > 512)
+}
+
+/// Relaxed bump of `arr[jx_bucket(size)]` by `n` (X-mix counter convention).
+#[cfg(feature = "bench-internals")]
+#[inline(always)]
+pub(crate) fn jx_bump(arr: &[core::sync::atomic::AtomicU64; 2], size: usize, n: u64) {
+    arr[jx_bucket(size)].fetch_add(n, core::sync::atomic::Ordering::Relaxed);
+}

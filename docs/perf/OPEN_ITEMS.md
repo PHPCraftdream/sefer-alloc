@@ -171,6 +171,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** владелец требует безусловный GO по wall-clock → повтор на нативной Windows или на тихом хосте с судьёй, сравнивающим каждую ячейку со СВОЕЙ полосой/мощностью (не с глобальным max по ячейкам) и 60+ прогонами на ячейку; либо новое подозрение на регрессию churn/1024B/MT T=8 из iai-атрибуции.
    > - **Evidence:** `docs/perf/PH6B_COST_AB.md` §3.2/§3.3/§7/§9; `docs/perf/PH6B_COST_AB_summary.csv`; `scripts/ph6b_cost_ab_table.mjs`, `scripts/ph6b_mt_rerun_table.mjs`, `scripts/ph6b_bt_rerun_table.mjs`; сырьё `docs/perf/_raw_ph6b_*.log`.
 
+103. **[A] B4 judges — разрыв larson T=1 с mimalloc сидит в hit/push, refill — дорогое редкое событие.** (Filed 2026-10-20, `docs/perf/B4_JUDGES_LARSON.md`.)
+
+   > **Current state**
+   > - **Status:** open (диагностика готова, правки не начаты).
+   > - **Current:** с честным полом харнесса собственная часть larson T=1 — sefer 182 против mimalloc 75 Ir/step; баланс объясняет 98.4 %: hit+push 179, refill 0.00882/step × ≈1587 Ir ≈ 14, flush 0.01756/step × ≈456 Ir ≈ 8. Гипотеза «хвост размеров 512 Б–8 КиБ» отвергнута (+1 Ir/op). mstress: события — 41 % собственной части (refill 101, flush 60 Ir/step).
+   > - **Next trigger:** правки hit/push (байт состояния (в), микроприёмы X-null/X-span/X-c1) и удешевление события refill (три прохода: probe, commit, MAG-маркировка) — каждая со своим callgrind-замером; цель larson own ≤ 1.0× mimalloc.
+   > - **Evidence:** `docs/perf/B4_JUDGES_LARSON.md`; `docs/perf/B4_JUDGES_LARSON_summary.csv`; `scripts/b4_judges_table.mjs`; сырьё `docs/perf/_raw_b4_judges_{floor,uniconst,xmix,balance}.log`.
+
 **Placement note (2026-10-06, src-review round 14 remediation R14-05):** item 40 below was physically listed inside the `[D]` tier while carrying an `[A]` active label; moved here into the `[A]` tier per its existing label. Status, verdict, and trigger unchanged.
 
 40. **R30_7 CSV-naming mismatch — `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`

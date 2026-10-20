@@ -1,0 +1,257 @@
+# raw log: b4-judges step 4 inclusive balance
+base: main f93c1b52, worktree b4-judges
+Tue Oct 20 01:44:56 CEST 2026
+git-diff-sha256: c3ad2ba1e92eba38c9cc69139d025ae232223131ae6b8c03d8f5494240ececa9  -
+ M Cargo.toml
+ M src/alloc_core/alloc_core/counters.rs
+ M src/alloc_core/alloc_core/mod.rs
+ M src/alloc_core/mod.rs
+ M src/global/sefer_alloc/diag.rs
+ M src/registry/heap_core/alloc/hot.rs
+ M src/registry/heap_core/free/dealloc_own_base.rs
+ M src/registry/heap_core_xthread/routing.rs
+?? examples/zz_xmix_counters.rs
+?? tests/b4_judges_xmix_counters.rs
+INC sefer larson totals: k50= k100=
+INCFUNC 8 ( 0.00%)      pub(crate) fn trim_for_recycle(&mut self) { marginal Ir/op: 387.412
+INCFUNC 17405612 (100.0%)  PROGRAM TOTALS marginal Ir/op: 319.433
+INCFUNC 408 ( 0.00%)          let slot = self.small_class_cursor[class_idx]; marginal Ir/op: 295.966
+INCFUNC 510 ( 0.00%)          if slot == CLASS_CURSOR_NONE { marginal Ir/op: 207.762
+INCFUNC 19 ( 0.00%)      pub(crate) fn claim_lease_with_config( marginal Ir/op: 32.241
+INCFUNC 4 ( 0.00%)    if (vbits < MI_PAGE_MAP_SUB_SHIFT + MI_ARENA_SLICE_SHIFT) { marginal Ir/op: 24.000
+INCFUNC 756 ( 0.00%)  mi_decl_nodiscard long mi_option_get(mi_option_t option) { marginal Ir/op: 12.077
+INCFUNC 1178 ( 0.01%)          if from >= MAX_SEGMENTS { marginal Ir/op: 12.053
+INCFUNC 3762 ( 0.02%)          if k == 0 { marginal Ir/op: 10.002
+INCFUNC 2 ( 0.00%)    if (!mi_page_map_memid.initially_zero) {     // initialize low addresses with NULL marginal Ir/op: 8.206
+INCFUNC 102510 ( 0.59%)  <counts for unidentified lines in j-incl-sefer/src/registry/heap_core/alloc/hot.rs> marginal Ir/op: 8.072
+INCFUNC 6 ( 0.00%)      if v == PAGE_SIZE_QUERY_FAILED { marginal Ir/op: 8.061
+INCFUNC 11 ( 0.00%)  void _mi_arenas_collect(bool force_purge bool visit_all mi_tld_t* tld) { marginal Ir/op: 8.061
+INCFUNC 1 ( 0.00%)    mi_page_t** const sub0 = (mi_page_t**)((uint8_t*)_mi_page_map + page_map_size);  // we reserved a submap part at the end already marginal Ir/op: 8.061
+INCFUNC 124531 ( 0.72%)          if self.next_word == self.end_word { marginal Ir/op: 7.586
+INCFUNC 204 ( 0.00%)          if next.is_some_and(|i| i >= self.count() as usize) { marginal Ir/op: 6.042
+INCFUNC 126 ( 0.00%)    return desc->value; marginal Ir/op: 4.065
+INCFUNC 7 ( 0.00%)      if v <= 0 { marginal Ir/op: 4.031
+INCFUNC 2 ( 0.00%)    if (!mi_page_map_memid.initially_committed) { marginal Ir/op: 4.031
+INCFUNC 11 ( 0.00%)  } marginal Ir/op: 4.030
+INCFUNC 3 ( 0.00%)      let v = unsafe { sysconf(_SC_PAGESIZE) }; marginal Ir/op: 4.015
+INCFUNC 504 ( 0.00%)    if mi_unlikely(desc->init == MI_OPTION_UNINIT) { marginal Ir/op: 3.984
+INCFUNC 100562 ( 0.58%)                          let issued = self.tcache.classes[c].slots[new_cnt & (TCACHE_CAP - 1)]; marginal Ir/op: 3.942
+INCFUNC 152304 ( 0.88%)      if (off as usize) < payload_start { marginal Ir/op: 3.172
+INCFUNC 1 ( 0.00%)      _mi_auto_process_init(); marginal Ir/op: 2.676
+INCFUNC 1 ( 0.00%)      _mi_auto_process_done(); marginal Ir/op: 2.674
+INCFUNC 1 ( 0.00%)    static void mi_attr_destructor mi_process_detach(void) { marginal Ir/op: 2.672
+INCFUNC 1 ( 0.00%)    return true; marginal Ir/op: 2.091
+INCFUNC 2 ( 0.00%)              if entry.is_null() { marginal Ir/op: 2.015
+INCFUNC 126 ( 0.00%)    if (option < 0 || option >= _mi_option_last) return 0; marginal Ir/op: 2.013
+INCFUNC 2839 ( 0.02%)          if live != 0 || base == small_cur || meta.is_decommitted() { marginal Ir/op: 1.959
+INCFUNC 124428 ( 0.71%)  <counts for unidentified lines in j-incl-sefer/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs> marginal Ir/op: 1.542
+INCFUNC 1 ( 0.00%)  <counts for unidentified lines in j-incl-sefer/src/alloc_core/alloc_core/bootstrap.rs> marginal Ir/op: 1.454
+INCFUNC 2 ( 0.00%)      addr.checked_add(mask).map(|sum| sum & !mask) marginal Ir/op: 1.101
+INCFUNC 4 ( 0.00%)    _mi_stats_merge_into(&heap->subproc->stats &heap->stats); marginal Ir/op: 1.017
+INCFUNC 150215 ( 0.86%)                          self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block; marginal Ir/op: 0.996
+INCFUNC 152304 ( 0.88%)      Block { ptr layout } marginal Ir/op: 0.985
+INCFUNC 27071 ( 0.16%)              while run_end < blocks.len() { marginal Ir/op: 0.913
+INCFUNC 4 ( 0.00%)  } marginal Ir/op: 0.843
+INCFUNC 3 ( 0.00%)  void mi_heap_stats_merge_to_subproc(mi_heap_t* heap) { marginal Ir/op: 0.833
+INCFILE  marginal Ir/op: 1512.744
+INCFILE ~/ab/tgti-j-incl-sefer/release/examples/zz_larson_probe marginal Ir/op: 1462.042
+INCFILE /usr/lib/x86_64-linux-gnu/libc.so.6 marginal Ir/op: 319.433
+SELFFILE  marginal Ir/op: 700.420
+SELFFILE ~/ab/tgti-j-incl-sefer/release/examples/zz_larson_probe marginal Ir/op: 111.977
+
+## rerun with full debug info (function names resolve)
+Tue Oct 20 01:46:12 CEST 2026
+git-diff-sha256: c3ad2ba1e92eba38c9cc69139d025ae232223131ae6b8c03d8f5494240ececa9  -
+INC sefer larson totals: k50= k100=
+INCFUNC 2 ( 0.00%)  void mi_free(void* p) mi_attr_noexcept { marginal Ir/op: 387.412
+INCFUNC 17405609 (100.0%)  PROGRAM TOTALS marginal Ir/op: 319.434
+INCFUNC 304608 ( 1.75%)                      let cnt = self.tcache.classes[c].count as usize; marginal Ir/op: 289.882
+INCFUNC 100562 ( 0.58%)                          let issued = self.tcache.classes[c].slots[new_cnt & (TCACHE_CAP - 1)]; marginal Ir/op: 205.761
+INCFUNC 48 ( 0.00%)  bool mi_decl_noinline _mi_preloading(void) { marginal Ir/op: 32.240
+INCFUNC 11 ( 0.00%)  void _mi_arenas_collect(bool force_purge bool visit_all mi_tld_t* tld) { marginal Ir/op: 12.092
+INCFUNC 14061 ( 0.08%)          unsafe { &*cursor.leaf.as_ptr().add(granule % LEAF_GRANULES) } marginal Ir/op: 11.796
+INCFUNC 4 ( 0.00%)                      match init() { marginal Ir/op: 10.122
+INCFUNC 6 ( 0.00%)          a != 0 && a != SENTINEL_INITIALIZING marginal Ir/op: 10.077
+INCFUNC 2 ( 0.00%)    if (heap==NULL) { heap = mi_heap_main(); } marginal Ir/op: 10.077
+INCFUNC 7 ( 0.00%)      if v <= 0 { marginal Ir/op: 8.206
+INCFUNC 6 ( 0.00%)      if v == PAGE_SIZE_QUERY_FAILED { marginal Ir/op: 8.061
+INCFUNC 2 ( 0.00%)    stats->size = sizeof(*stats); marginal Ir/op: 8.061
+INCFUNC 2 ( 0.00%)          let chunk_idx = idx / CHUNK_SLOTS; marginal Ir/op: 6.218
+INCFUNC 100000 ( 0.57%)  <counts for unidentified lines in j-incl2-sefer/src/registry/heap_core_xthread/routing.rs> marginal Ir/op: 6.061
+INCFUNC 3 ( 0.00%)  void mi_heap_stats_merge_to_subproc(mi_heap_t* heap) { marginal Ir/op: 6.046
+INCFUNC 1 ( 0.00%)              match self.ptr.compare_exchange( marginal Ir/op: 5.953
+INCFUNC 3 ( 0.00%)      if queried >= PAGE && queried.is_power_of_two() { marginal Ir/op: 4.067
+INCFUNC 4 ( 0.00%)    _mi_stats_merge_into(&heap->subproc->stats &heap->stats); marginal Ir/op: 4.031
+INCFUNC 3 ( 0.00%)      let v = unsafe { sysconf(_SC_PAGESIZE) }; marginal Ir/op: 4.031
+INCFUNC 2 ( 0.00%)    if mi_unlikely(!mi_page_map_is_committed(idx &bit_idx)) { marginal Ir/op: 4.031
+INCFUNC 1 ( 0.00%)  } marginal Ir/op: 4.031
+INCFUNC 116 ( 0.00%)    return ((uint32_t)p[i+0] | (uint32_t)p[i+1] << 8 | (uint32_t)p[i+2] << 16 | (uint32_t)p[i+3] << 24); marginal Ir/op: 3.992
+INCFUNC 2152 ( 0.01%)          if leaf != 0 { marginal Ir/op: 3.957
+INCFUNC 10044 ( 0.06%)      if (_mi_strnicmp(name s len) == 0 && s[len] == '=') { // case insensitive marginal Ir/op: 3.830
+INCFUNC 10206 ( 0.06%)    for (int i = 0; i < 10000 && env[i] != NULL; i++) { marginal Ir/op: 3.811
+INCFUNC 11366 ( 0.07%)          if granule >= LEAVES * LEAF_GRANULES { marginal Ir/op: 3.803
+INCFUNC 3 ( 0.00%)          let pct = match self.decay_rate_percent { marginal Ir/op: 2.676
+INCFUNC 1 ( 0.00%)          self.pool marginal Ir/op: 2.674
+INCFUNC 7 ( 0.00%)          let clamped = if pct < 1 { marginal Ir/op: 2.672
+INCFUNC 3 ( 0.00%)    if (message != NULL) { *message = NULL; } marginal Ir/op: 2.091
+INCFUNC 4 ( 0.00%)          self.init_slow(init) marginal Ir/op: 2.015
+INCFUNC 11 ( 0.00%)  } marginal Ir/op: 2.015
+INCFUNC 395 ( 0.00%)  <counts for unidentified lines in j-incl2-sefer/src/registry/heap_core/state/tcache.rs> marginal Ir/op: 2.007
+INCFUNC 18663 ( 0.11%)          off.wrapping_sub(self.lo) < self.span && off & (MIN_BLOCK - 1) == 0 marginal Ir/op: 1.642
+INCFUNC 1 ( 0.00%)    mi_bfield_t commit = mi_atomic_load_relaxed(&mi_page_map_commit); marginal Ir/op: 1.257
+INCFUNC 1 ( 0.00%)          self.large_cache_hits_sink = Some(counter); marginal Ir/op: 1.017
+INCFUNC 7 ( 0.00%)  } marginal Ir/op: 0.776
+INCFUNC 1 ( 0.00%)  void mi_theap_collect(mi_theap_t* theap bool force) mi_attr_noexcept { marginal Ir/op: 0.584
+INCFUNC 3 ( 0.00%)          let ms = match self.decay_interval_ms { marginal Ir/op: 0.552
+INCFILE  marginal Ir/op: 1512.745
+INCFILE ~/ab/tgti-j-incl2-sefer/release/examples/zz_larson_probe marginal Ir/op: 1462.042
+INCFILE /usr/lib/x86_64-linux-gnu/libc.so.6 marginal Ir/op: 319.433
+SELFFILE  marginal Ir/op: 700.421
+SELFFILE ~/ab/tgti-j-incl2-sefer/release/examples/zz_larson_probe marginal Ir/op: 111.977
+
+## toggle-collect rerun
+Tue Oct 20 01:48:21 CEST 2026
+git-diff-sha256: c3ad2ba1e92eba38c9cc69139d025ae232223131ae6b8c03d8f5494240ececa9  -
+TOGGLE sefer larson refill_magazine_slow marginal Ir/op: 14
+<repo>/.rush/wsl/prof_j_incl.sh: line 25: .PROGRAMTOTALS: syntax error: operand expected (error token is ".PROGRAMTOTALS")
+FULLTOTAAL sefer larson marginal Ir/op: 319
+SELFFILE  marginal Ir/op: 638.868
+SELFFILE j-inc3-sefer/src/alloc_core/segment/segment_header/descriptors.rs marginal Ir/op: 387.413
+SELFFILE j-inc3-sefer/crates/malloc-bench-rs/src/lib.rs marginal Ir/op: 86.977
+SELFFILE j-inc3-sefer/src/registry/heap_core/free/dealloc_own_base.rs marginal Ir/op: 31.509
+SELFFILE j-inc3-sefer/src/alloc_core/segment/segment_table/segment_table_impl.rs marginal Ir/op: 20.497
+SELFFILE j-inc3-sefer/src/alloc_core/platform/size_classes.rs marginal Ir/op: 20.000
+SELFFILE j-inc3-sefer/src/alloc_core/segment/bitmap/segment_bitmap.rs marginal Ir/op: 18.391
+SELFFILE j-inc3-sefer/src/registry/heap_core/alloc/hot.rs marginal Ir/op: 13.756
+SELFFILE j-inc3-sefer/src/alloc_core/small/alloc_core_small_magazine.rs marginal Ir/op: 10.702
+SELFFILE j-inc3-sefer/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs marginal Ir/op: 3.180
+SELFFILE j-inc3-sefer/src/alloc_core/segment/segment_header/segment_header_views.rs marginal Ir/op: 3.077
+SELFFILE j-inc3-sefer/src/alloc_core/alloc_core/mem/mem_impl.rs marginal Ir/op: 2.061
+SELFFILE j-inc3-sefer/src/global/tls_heap.rs marginal Ir/op: 2.016
+SELFFILE j-inc3-sefer/src/registry/heap_core_xthread/routing.rs marginal Ir/op: 1.939
+SELFFILE j-inc3-sefer/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs marginal Ir/op: 1.421
+SELFFILE j-inc3-sefer/src/alloc_core/segment/segment_table/route_slots.rs marginal Ir/op: 1.358
+SELFFILE j-inc3-sefer/src/alloc_core/config/continuation_bounds.rs marginal Ir/op: 0.749
+SELFFILE j-inc3-sefer/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs marginal Ir/op: 0.557
+SELFFILE j-inc3-sefer/src/alloc_core/alloc_core/sidecar_drain.rs marginal Ir/op: 0.401
+SELFFILE j-inc3-sefer/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs marginal Ir/op: 0.252
+SELFFILE j-inc3-sefer/src/alloc_core/segment/segment_table/active_kind_index.rs marginal Ir/op: 0.162
+SELFFILE j-inc3-sefer/src/registry/heap_core_xthread/sidecar_drain.rs marginal Ir/op: 0.128
+SELFFILE j-inc3-sefer/src/registry/segment_route/directory.rs marginal Ir/op: 0.045
+SELFFILE j-inc3-sefer/src/alloc_core/platform/os.rs marginal Ir/op: 0.034
+SELFFILE j-inc3-sefer/src/registry/segment_route/small_sidecar.rs marginal Ir/op: 0.026
+<repo>/.rush/wsl/prof_j_incl.sh: line 25: .PROGRAMTOTALS: syntax error: operand expected (error token is ".PROGRAMTOTALS")
+FULLTOTAAL mimalloc larson marginal Ir/op: 212
+SELFFILE  marginal Ir/op: 424.931
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/prim.c marginal Ir/op: 264.082
+SELFFILE j-inc3-mi/crates/malloc-bench-rs/src/lib.rs marginal Ir/op: 100.363
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c marginal Ir/op: 58.356
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h marginal Ir/op: 17.482
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c marginal Ir/op: 12.447
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c marginal Ir/op: 10.013
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c marginal Ir/op: 8.657
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs marginal Ir/op: 8.000
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c marginal Ir/op: 2.889
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h marginal Ir/op: 2.000
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.c marginal Ir/op: 0.632
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c marginal Ir/op: 0.021
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/random.c marginal Ir/op: 0.018
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/theap.c marginal Ir/op: 0.006
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c marginal Ir/op: 0.005
+SELFFILE /usr/include/x86_64-linux-gnu/bits/string_fortified.h marginal Ir/op: 0.002
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/os.c marginal Ir/op: 0.002
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/bits.h marginal Ir/op: 0.002
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/atomic.h marginal Ir/op: 0.000
+
+## toggle rerun (fixed TOTALS parse)
+Tue Oct 20 01:50:22 CEST 2026
+git-diff-sha256: c3ad2ba1e92eba38c9cc69139d025ae232223131ae6b8c03d8f5494240ececa9  -
+TOGGLE sefer larson refill_magazine_slow marginal Ir/op: 14
+<repo>/.rush/wsl/prof_j_incl.sh: line 25: .: syntax error: operand expected (error token is ".")
+FULLTOTAAL sefer larson marginal Ir/op: 319
+SELFFILE  marginal Ir/op: 638.868
+SELFFILE j-inc4-sefer/src/alloc_core/segment/segment_table/active_kind_index.rs marginal Ir/op: 387.575
+SELFFILE j-inc4-sefer/crates/malloc-bench-rs/src/lib.rs marginal Ir/op: 86.977
+SELFFILE j-inc4-sefer/src/alloc_core/segment/bitmap/segment_bitmap.rs marginal Ir/op: 37.321
+SELFFILE j-inc4-sefer/src/registry/heap_core/free/dealloc_own_base.rs marginal Ir/op: 31.509
+SELFFILE j-inc4-sefer/src/alloc_core/platform/size_classes.rs marginal Ir/op: 20.000
+SELFFILE j-inc4-sefer/src/registry/heap_core/alloc/hot.rs marginal Ir/op: 13.756
+SELFFILE j-inc4-sefer/src/alloc_core/segment/segment_table/segment_table_impl.rs marginal Ir/op: 10.257
+SELFFILE j-inc4-sefer/src/alloc_core/small/alloc_core_small_magazine.rs marginal Ir/op: 4.995
+SELFFILE j-inc4-sefer/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs marginal Ir/op: 3.180
+SELFFILE j-inc4-sefer/src/alloc_core/segment/segment_header/segment_header_views.rs marginal Ir/op: 3.077
+SELFFILE j-inc4-sefer/src/registry/heap_core_xthread/routing.rs marginal Ir/op: 2.000
+SELFFILE j-inc4-sefer/src/alloc_core/alloc_core/mem/mem_impl.rs marginal Ir/op: 2.000
+SELFFILE j-inc4-sefer/src/alloc_core/segment/segment_table/route_slots.rs marginal Ir/op: 1.358
+SELFFILE j-inc4-sefer/src/global/tls_heap.rs marginal Ir/op: 1.000
+SELFFILE j-inc4-sefer/src/alloc_core/config/continuation_bounds.rs marginal Ir/op: 0.749
+SELFFILE j-inc4-sefer/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs marginal Ir/op: 0.638
+SELFFILE j-inc4-sefer/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs marginal Ir/op: 0.557
+SELFFILE j-inc4-sefer/src/alloc_core/alloc_core/sidecar_drain.rs marginal Ir/op: 0.187
+SELFFILE j-inc4-sefer/src/registry/heap_core_xthread/sidecar_drain.rs marginal Ir/op: 0.128
+SELFFILE j-inc4-sefer/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs marginal Ir/op: 0.120
+SELFFILE j-inc4-sefer/src/registry/segment_route/small_sidecar.rs marginal Ir/op: 0.051
+SELFFILE j-inc4-sefer/src/alloc_core/platform/os.rs marginal Ir/op: 0.034
+SELFFILE j-inc4-sefer/src/alloc_core/segment/segment_header/segment_header_meta_fields.rs marginal Ir/op: 0.026
+SELFFILE j-inc4-sefer/src/registry/segment_route/directory.rs marginal Ir/op: 0.017
+<repo>/.rush/wsl/prof_j_incl.sh: line 25: .: syntax error: operand expected (error token is ".")
+FULLTOTAAL mimalloc larson marginal Ir/op: 212
+SELFFILE  marginal Ir/op: 424.929
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/types.h marginal Ir/op: 264.083
+SELFFILE j-inc4-mi/crates/malloc-bench-rs/src/lib.rs marginal Ir/op: 98.184
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c marginal Ir/op: 58.263
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h marginal Ir/op: 35.635
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs marginal Ir/op: 12.580
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c marginal Ir/op: 12.447
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c marginal Ir/op: 10.013
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c marginal Ir/op: 3.946
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c marginal Ir/op: 2.183
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h marginal Ir/op: 2.000
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c marginal Ir/op: 0.386
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c marginal Ir/op: 0.060
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.c marginal Ir/op: 0.040
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/arena.c marginal Ir/op: 0.036
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/random.c marginal Ir/op: 0.023
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c marginal Ir/op: 0.021
+SELFFILE /usr/include/x86_64-linux-gnu/bits/string_fortified.h marginal Ir/op: 0.002
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.h marginal Ir/op: 0.002
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/bits.h marginal Ir/op: 0.002
+SELFFILE j-inc4-mi/examples/zz_larson_probe.rs marginal Ir/op: 0.001
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/heap.c marginal Ir/op: 0.000
+SELFFILE ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/atomic.h marginal Ir/op: 0.000
+TOGGLE sefer mstress refill_magazine_slow marginal Ir/op: 101
+<repo>/.rush/wsl/prof_j_incl.sh: line 25: .: syntax error: operand expected (error token is ".")
+FULLTOTAAL sefer mstress marginal Ir/op: 494
+SELFFILE  marginal Ir/op: 988.228
+SELFFILE j-inc4-sefer-mstress/src/registry/heap_core_xthread/routing.rs marginal Ir/op: 651.737
+SELFFILE j-inc4-sefer-mstress/crates/malloc-bench-rs/src/lib.rs marginal Ir/op: 184.328
+SELFFILE j-inc4-sefer-mstress/src/registry/heap_core/free/dealloc_own_base.rs marginal Ir/op: 104.015
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/small/alloc_core_small_magazine.rs marginal Ir/op: 75.107
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/platform/size_classes.rs marginal Ir/op: 54.746
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/segment/bitmap/segment_bitmap.rs marginal Ir/op: 46.482
+SELFFILE j-inc4-sefer-mstress/src/registry/heap_core/alloc/hot.rs marginal Ir/op: 23.819
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs marginal Ir/op: 23.730
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/segment/segment_table/segment_table_impl.rs marginal Ir/op: 16.892
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/config/continuation_bounds.rs marginal Ir/op: 11.024
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/segment/segment_table/route_slots.rs marginal Ir/op: 10.095
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/alloc_core/mem/mem_impl.rs marginal Ir/op: 9.588
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/segment/segment_header/segment_header_views.rs marginal Ir/op: 5.162
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs marginal Ir/op: 4.702
+SELFFILE j-inc4-sefer-mstress/src/global/tls_heap.rs marginal Ir/op: 1.399
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/alloc_core/sidecar_drain.rs marginal Ir/op: 1.393
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/segment/segment_table/active_kind_index.rs marginal Ir/op: 1.204
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs marginal Ir/op: 0.994
+SELFFILE j-inc4-sefer-mstress/src/registry/heap_core_xthread/sidecar_drain.rs marginal Ir/op: 0.950
+SELFFILE j-inc4-sefer-mstress/examples/zz_larson_probe.rs marginal Ir/op: 0.911
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs marginal Ir/op: 0.445
+SELFFILE j-inc4-sefer-mstress/src/alloc_core/platform/os.rs marginal Ir/op: 0.253
+SELFFILE j-inc4-sefer-mstress/src/registry/segment_route/small_sidecar.rs marginal Ir/op: 0.190
+SELFFILE j-inc4-sefer-mstress/src/registry/segment_route/directory.rs marginal Ir/op: 0.127
+
+## toggle-only rerun (flush, guarded)
+Tue Oct 20 01:53:03 CEST 2026
+git-diff-sha256: c3ad2ba1e92eba38c9cc69139d025ae232223131ae6b8c03d8f5494240ececa9  -
+TOGGLE sefer larson flush_class_internal marginal Ir/op: 8
+TOGGLE sefer larson refill_magazine_slow marginal Ir/op: 14
+TOGGLE sefer mstress flush_class_internal marginal Ir/op: 60
+TOGGLE sefer mstress refill_magazine_slow marginal Ir/op: 101

@@ -2624,3 +2624,11 @@ name = "r6_t40_sidecar_system_alloc"
 path = "tests/r6_t40_sidecar_system_alloc.rs"
 required-features = ["production", "internals", "bench-internals"]
 
+
+# B4 X-mix diagnosis (worktree b4-judges): X-mix churn (exact larson pick_size
+# distribution) through the real #[global_allocator], then a per-step readout
+# of the bench-internals magazine slow-path counters
+# (`SeferAlloc::dbg_xmix_counters`). Not a timing probe.
+[[example]]
+name = "zz_xmix_counters"
+required-features = ["alloc-global", "fastbin", "internals", "bench-internals"]

@@ -492,6 +492,16 @@ impl HeapCore {
                     // block never entered the magazine, so no bitmap/slot
                     // bookkeeping to undo.
                     if cap < TCACHE_CAP {
+                        // B4 X-mix diagnosis: R1-01 fired — the per-class
+                        // free-side byte budget (`cap` < TCACHE_CAP) is
+                        // exhausted; this block is flushed straight through
+                        // to the substrate (one flush block).
+                        #[cfg(feature = "bench-internals")]
+                        {
+                            let bs = SizeClasses::block_size(c);
+                            crate::alloc_core::jx_bump(&crate::alloc_core::JX_R101_EVENTS, bs, 1);
+                            crate::alloc_core::jx_bump(&crate::alloc_core::JX_FLUSH_BLOCKS, bs, 1);
+                        }
                         // SAFETY (R6-MS-3): `block` is a valid, currently-live
                         // small-class-`c` allocation owned by this heap — the
                         // same guarantee `small_free_guard`'s `Accept` arm
@@ -535,6 +545,19 @@ impl HeapCore {
                         SegmentMeta::new(fbase)
                             .magazine_bitmap()
                             .clear_magazine(foff);
+                    }
+                    // B4 X-mix diagnosis: magazine-overflow half-flush —
+                    // count the event and the FLUSH_N blocks it returns to the
+                    // substrate, bucketed by block size (≤512 B / >512 B).
+                    #[cfg(feature = "bench-internals")]
+                    {
+                        let bs = SizeClasses::block_size(c);
+                        crate::alloc_core::jx_bump(&crate::alloc_core::JX_OVERFLOW_EVENTS, bs, 1);
+                        crate::alloc_core::jx_bump(
+                            &crate::alloc_core::JX_FLUSH_BLOCKS,
+                            bs,
+                            FLUSH_N as u64,
+                        );
                     }
                     // Normal overflow: half-flush, then push.
                     // SAFETY (R6-MS-3): every slot in `slots[0..FLUSH_N]` is a

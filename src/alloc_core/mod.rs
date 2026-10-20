@@ -208,6 +208,16 @@ pub(crate) use alloc_core::LOCAL_REJECT_FREES;
 /// static itself stays always-compiled.
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
 pub(crate) use alloc_core::SMALL_ZERO_PASS_CALLS;
+/// B4 X-mix diagnosis (worktree b4-judges): magazine slow-path event pairs
+/// (refill / overflow / R1-01 / own_cache miss, each split into a
+/// ≤512 B and a >512 B bucket), re-exported crate-wide for their increment
+/// sites and `SeferAlloc::dbg_xmix_counters` — same discipline as the `B4_*`
+/// bank above.
+#[cfg(feature = "bench-internals")]
+pub(crate) use alloc_core::{
+    jx_bump, JX_FLUSH_BLOCKS, JX_OVERFLOW_EVENTS, JX_R101_EVENTS, JX_REFILL_BLOCKS,
+    JX_REFILL_EVENTS,
+};
 /// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): slow-path observer
 /// counters, re-exported crate-wide for their increment sites and
 /// `SeferAlloc::dbg_b4_collapse_counters`.

@@ -68,6 +68,16 @@ impl HeapCore {
             n >= 1,
             "finish_magazine_refill requires n >= 1 (OOM is the caller's job)"
         );
+        // B4 X-mix diagnosis: count this refill event and the n blocks it
+        // wrote into the magazine, bucketed by the class's block size
+        // (≤512 B / >512 B). `bench-internals`-only: compiles out of every
+        // production build, so the hot path is unchanged without the feature.
+        #[cfg(feature = "bench-internals")]
+        {
+            let bs = crate::alloc_core::size_classes::SizeClasses::block_size(c);
+            crate::alloc_core::jx_bump(&crate::alloc_core::JX_REFILL_EVENTS, bs, 1);
+            crate::alloc_core::jx_bump(&crate::alloc_core::JX_REFILL_BLOCKS, bs, n as u64);
+        }
         // Pop the top, leave n-1 in the magazine. (Task #2002: the refill
         // tail is mark_magazine / count bookkeeping only — no stamp pass.)
         let new_cnt = n - 1;
