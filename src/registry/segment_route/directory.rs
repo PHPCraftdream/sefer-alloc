@@ -22,19 +22,20 @@ std::thread_local! {
     static FAIL_NEXT_REGISTRATION: Cell<usize> = const { Cell::new(0) };
 }
 
+/// X-pin (b): `refs` ALONE in the second 64-B line; protocol UNCHANGED (pin.rs test).
+#[repr(C, align(64))]
 pub(super) struct Entry {
     pub(super) key: usize,
     pub(super) end: usize,
     pub(super) payload: usize,
     pub(super) root: AtomicPtr<u8>,
-    pub(super) owner: usize,
-    pub(super) kind: RouteKind,
     pub(super) incarnation: u64,
-    pub(super) refs: AtomicUsize,
     pub(super) sidecar: AtomicPtr<u8>,
+    pub(super) kind: RouteKind,
     pub(super) linked: AtomicBool,
+    pub(super) owner: usize,
+    pub(super) refs: AtomicUsize,
 }
-
 /// One counted reference to a stable System allocation; there is no borrowed
 /// `&mut Entry` after publication — all shared mutation is atomic.
 pub(super) struct EntryHandle {
@@ -96,12 +97,12 @@ impl EntryHandle {
                 end,
                 payload,
                 root: AtomicPtr::new(root),
-                owner,
-                kind,
                 incarnation,
-                refs: AtomicUsize::new(1),
                 sidecar: AtomicPtr::new(sidecar),
+                kind,
                 linked: AtomicBool::new(true),
+                owner,
+                refs: AtomicUsize::new(1),
             });
         }
         Ok(Self {

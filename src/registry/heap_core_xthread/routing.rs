@@ -16,8 +16,44 @@ impl HeapCore {
             self.dealloc_own_thread(owned.block(), layout, owned.root());
             return;
         }
-        // SAFETY: reached only from the allocator's unique current-instance free.
-        unsafe { Self::publish_foreign(ptr, layout) };
+        // X-pin (а): the owner's `&mut self` is in hand — probe THIS heap's
+        // direct-mapped pin cache (no TLS resolution, no `RefCell`, no
+        // linear scan; see `heap_route_pin_cache.rs`'s module doc for the
+        // ~6-8 Ir TLS-path comparison). The whole foreign leg stays in ONE
+        // `#[cold]` call so the inlined own-thread body of `dealloc_routing`
+        // keeps its original shape (mt-xp2: the inline probe arm cost the
+        // own free ~+4 Ir in mstress / +3 Ir in thrash64 via code bloat).
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        {
+            self.publish_foreign_heap(ptr, layout);
+        }
+        #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]
+        {
+            // SAFETY: reached only from the allocator's unique current-instance free.
+            unsafe { Self::publish_foreign(ptr, layout) };
+        }
+    }
+
+    /// X-pin (а): the heap-owner foreign-free leg, cold exactly like the
+    /// static `publish_foreign` (same rationale — keep it out of the inlined
+    /// own-free body). Hit path probes this heap's direct-mapped cache; a
+    /// miss inserts into the SAME cache via `PinSink::Heap`.
+    #[cold]
+    #[allow(unsafe_code)]
+    fn publish_foreign_heap(&mut self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: reached only from the allocator's unique current-instance
+        // free (the `dealloc_routing` contract); the unique ownership is
+        // forwarded verbatim to `publish_cached`.
+        if let CachedPublication::Published(published) =
+            unsafe { self.route_pins.publish_cached(ptr) }
+        {
+            Self::publish_count_tail(published);
+            return;
+        }
+        let mut sink = PinSink::Heap(self);
+        // SAFETY: caller transfers the current allocation once.
+        let published = unsafe { Self::publish_foreign_uncached(&mut sink, ptr, layout) };
+        Self::publish_count_tail(published);
     }
 
     /// # Safety
@@ -37,19 +73,12 @@ impl HeapCore {
         let published = match unsafe { route_pin_cache::publish_cached(ptr) } {
             CachedPublication::Published(published) => published,
             CachedPublication::Miss => {
+                let mut sink = PinSink::Tls;
                 // SAFETY: caller transfers the current allocation once.
-                unsafe { Self::publish_foreign_uncached(ptr, layout) }
+                unsafe { Self::publish_foreign_uncached(&mut sink, ptr, layout) }
             }
         };
-        #[cfg(feature = "bench-internals")]
-        if published {
-            crate::alloc_core::B4_FOREIGN_PUBLISH_OK
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        }
-        if !published {
-            crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        }
+        Self::publish_count_tail(published);
         #[cfg(all(miri, feature = "internals", feature = "bench-internals"))]
         if published {
             // Only the independent, pre-initialized static test gate is touched.
@@ -60,17 +89,42 @@ impl HeapCore {
         }
     }
 
+    /// Shared counter tail of the foreign publication paths (X-pin (а):
+    /// factored out so the heap-cache hit arm and the static TLS path count
+    /// identically).
+    #[inline]
+    #[allow(unsafe_code)]
+    fn publish_count_tail(published: bool) {
+        #[cfg(feature = "bench-internals")]
+        if published {
+            crate::alloc_core::B4_FOREIGN_PUBLISH_OK
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
+        if !published {
+            crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     /// Slow path: full directory lookup and (possibly cached) publication.
+    /// The freshly looked-up cacheable pin is inserted into the caller's
+    /// [`PinSink`]: the owning heap's direct-mapped cache (X-pin (а)) or the
+    /// ForeignNoBind thread's TLS cache — the storage move only; the protocol
+    /// is unchanged.
     ///
     /// # Safety
     /// `ptr` and `layout` name one current issued allocation, transferred once.
     #[cold]
     #[allow(unsafe_code)]
-    unsafe fn publish_foreign_uncached(ptr: *mut u8, layout: Layout) -> bool {
+    unsafe fn publish_foreign_uncached(
+        sink: &mut PinSink<'_>,
+        ptr: *mut u8,
+        layout: Layout,
+    ) -> bool {
         let Some(pin) = RouteDirectory::global().lookup(ptr) else {
             // The shared tail in `publish_foreign` counts this miss exactly
             // once via `published == false`.
-            route_pin_cache::cache_evict(ptr.addr() & !(os::SEGMENT - 1));
+            sink.evict(ptr.addr() & !(os::SEGMENT - 1));
             return false;
         };
         // Lookup has released its shard lock. A ready, idle fallback can
@@ -110,13 +164,46 @@ impl HeapCore {
                 // The pin is borrowed, not consumed, so it can be cached below.
                 let published = unsafe { pin.publish_small_borrowed(offset) };
                 if cacheable {
-                    // Retaining the pin (refs +1) until eviction or thread
-                    // exit is the design: the descriptor and sidecar survive
-                    // the segment reservation's release.
-                    route_pin_cache::cache_insert(pin, key, incarnation);
+                    // Retaining the pin (refs +1) until eviction, trim, or
+                    // thread exit is the design: the descriptor and sidecar
+                    // survive the segment reservation's release. The sink
+                    // decides the storage (owner heap cache vs TLS cache).
+                    sink.insert(pin, key, incarnation);
                 }
                 published
             }
+        }
+    }
+}
+
+/// X-pin (а): where `publish_foreign_uncached` stores a freshly looked-up
+/// cacheable pin. `Heap` = the owning thread's `HeapCore`-resident direct-
+/// mapped cache (the `&mut HeapCore` is already held by `dealloc_routing`);
+/// `Tls` = the `ForeignNoBind` thread's TLS cache (unchanged behavior).
+pub(crate) enum PinSink<'a> {
+    Heap(&'a mut HeapCore),
+    Tls,
+}
+
+impl PinSink<'_> {
+    fn insert(
+        &mut self,
+        pin: crate::registry::segment_route::RoutePin,
+        base: usize,
+        incarnation: u64,
+    ) {
+        match self {
+            PinSink::Heap(heap) => heap.route_pins.insert(pin, base, incarnation),
+            PinSink::Tls => route_pin_cache::cache_insert(pin, base, incarnation),
+        }
+    }
+
+    fn evict(&mut self, base: usize) {
+        match self {
+            // The heap cache is the owner's: evict the same slot the TLS
+            // path would (a failed lookup means the route is gone).
+            PinSink::Heap(heap) => heap.route_pins.evict_base(base),
+            PinSink::Tls => route_pin_cache::cache_evict(base),
         }
     }
 }

@@ -127,6 +127,22 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** после байта состояния (`b4-sbyte`) — по одному: слияние probe/commit drain (нужна формальная проверка «validate-всё-до-мутации»), run-детекция во flush по соседству вместо `segment_base_of_ptr`, условный store байта `ClassLeaves` (Loom + MT-замер), вынос сегмента из MAG-маркировки; каждое — callgrind mstress/larson и порог из отчёта.
    > - **Evidence:** `docs/perf/B4_EVENTS_COST.md`; `docs/perf/B4_EVENTS_COST_summary.csv`; `scripts/b4_events_table.mjs`; сырьё `docs/perf/_raw_b4_events_*.log(.gz)`.
 
+105. **[A] B4-MT X-notown — 256-битный notown-фильтр SegmentTable: NO-GO (thrash64 w_free +5 Ir > +2), src откачен.** (Filed 2026-10-20, `docs/perf/B4_MT_PIN_NOTOWN.md` §4.)
+
+   > **Current state**
+   > - **Status:** closed — NO-GO (история: итерация mt-xn → mt-xn2, обе мимо thrash64-гейта; `src/`-правки полностью откачены, остался только сырой лог и этот отчёт).
+   > - **Current:** foreign free −7 Ir (136→129, −5.1% ИЗМЕРЕНО) и notown-оракул 100000/100000 = 1.0 (≥95% PASS) — механизм работает; единственный драйвер NO-GO — thrash64 w_free 108 против 103 (+5 ИЗМЕРЕНО > +2 допуска), чисто инструкционная цена гейта на OWN Tier-1-промахе (D1m без изменений); mt-xn2 (независимые битовые диапазоны) не изменил число.
+   > - **Next trigger (дизайн-триггер):** редизайн «гейтить только не-владельца региона адресного пространства» (per-heap foreign-bias flag), убирающий per-miss работу гейта с OWN-пути — вне одной итерации; переоткрывать только с новым замером полного судейского набора.
+   > - **Evidence:** `docs/perf/B4_MT_PIN_NOTOWN.md` §3/§4; `docs/perf/B4_MT_PIN_NOTOWN_summary.csv`; `scripts/b4_mt_pin_notown_table.mjs`; сырьё `docs/perf/_raw_b4_mt_xn.log` (diff-хэши `43c72c4f…`, mt-xn2 `003391ac…`).
+
+106. **[A] B4-MT X-pin — heap-route-pin-cache (16 direct-mapped слотов, MAX_LIVE_PINS=4): GO.** (Filed 2026-10-20, `docs/perf/B4_MT_PIN_NOTOWN.md` §5.)
+
+   > **Current state**
+   > - **Status:** closed — GO (финал mt-xp2, (a)+(б); `src/`-состояние worktree — это и есть X-pin).
+   > - **Current:** foreign free 136→122 (−14 Ir, −10.3% ИЗМЕРЕНО), fcap 952→122 (−830, hit_frac 0.9999), own 166→167 (ровно на гейте ≤ +1), larson/mstress/thrash64 flat; RSS-удержание ≈1.16 МиБ (ОЦЕНКА) ≤ +1 МиБ; итерация 1 (mstress +0.96%, thrash64 +3 FAIL) исправлена выносом foreign-ноги в `#[cold] publish_foreign_heap` (`routing.rs:41`).
+   > - **Next trigger:** CI-хвост оркестратора (iai A/B, mt-bench wall-clock T=1/2/4 ×2 Linux+Windows, Miri `b4_r1_pin_cache_miri`); loom-gap heap-ветки — `docs/CORRECTNESS_OPEN_ITEMS.md` item 248; own-гейт без запаса — перепроверять при каждом изменении routing.
+   > - **Evidence:** `docs/perf/B4_MT_PIN_NOTOWN.md` §3/§5/§7–§9; `docs/perf/B4_MT_PIN_NOTOWN_summary.csv`; `scripts/b4_mt_pin_notown_table.mjs`; сырьё `docs/perf/_raw_b4_mt_{base,xn,xp}.log` (финальные diff-хэши `d43222b0…` (a), `445ade2b…` (ab)); `tests/b4_xp_heap_pin_cache.rs`; `src/registry/heap_core_xthread/heap_route_pin_cache.rs`.
+
 1. **`contains_base`'s share of a real free's `Ir` — region judged likely
    exhausted (current share 8.8%, supersedes the original 18.6%).**
 

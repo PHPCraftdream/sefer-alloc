@@ -172,6 +172,20 @@ pub struct HeapCore {
     /// observed on an alloc path).
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub(crate) tcache_hits: Option<&'static TcacheHitCounter>,
+
+    /// X-pin (а) (`sol_ox.md` §6): owner-private direct-mapped route pin
+    /// cache for the foreign-free terminal-publication hit path. The pins
+    /// (counted `RoutePin`s) live HERE instead of the TLS cache so the owner's
+    /// hit path (`dealloc_routing`, which already holds `&mut self`) probes
+    /// one slot directly — no TLS resolution, no `RefCell` borrow flag, no
+    /// linear scan (see `heap_route_pin_cache.rs`'s module doc for the
+    /// ~6–8 Ir TLS-path comparison and the `MAX_LIVE_PINS` RSS bound).
+    /// Single-writer: touched only by the owning thread (free/trim), never
+    /// by a foreign thread. The TLS cache stays for ForeignNoBind threads.
+    /// Released in `trim_for_recycle` BEFORE the lease `LIVE → FREE` CAS.
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) route_pins:
+        crate::registry::heap_core_xthread::heap_route_pin_cache::HeapRoutePinCache,
 }
 
 // R34-18 (task #537, F-6 [low]) — compile-time stack-pressure budget pin.
@@ -245,7 +259,18 @@ pub struct HeapCore {
 // Fixed by freeing each non-primordial segment inline during the walk instead
 // of buffering reservations first — see `Drop for AllocCore` in
 // `src/alloc_core/alloc_core/lifecycle.rs`.)
-const _: () = assert!(size_of::<HeapCore>() <= 9216);
+// BUDGET BUMP 9216 → 10240 (X-pin (а), `sol_ox.md` §6, deliberate decision):
+// `route_pins: HeapRoutePinCache` adds 16 × 32 B slots + 16 B cursors =
+// 528 B to every composition with `alloc-global ∧ alloc-xthread` (including
+// plain `production` and `--all-features`). The previous measured maximum
+// was 8840 B (`--all-features`); the new measured maximum is 9368 B, which
+// no longer fit 9216. 10 240 B (10 KiB) keeps ~870 B headroom over the new
+// measured maximum. Stack-pressure implication, recorded honestly: one
+// `HeapCore` temporary is now 61 % of a 16 KiB thread stack (was ~56 %);
+// the "two back-to-back temporaries do not fit a 16 KiB stack" property is
+// unchanged (it already did not hold at 9 KiB). The unconditional assert
+// below still enforces the budget across any future change.
+const _: () = assert!(size_of::<HeapCore>() <= 10240);
 
 impl HeapCore {
     /// Construct a fresh heap value bound to slot `id`. Bootstraps the
@@ -282,6 +307,9 @@ impl HeapCore {
             // any alloc path — alloc runs only after claim_lease planted it).
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache_hits: None,
+            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+            route_pins:
+                crate::registry::heap_core_xthread::heap_route_pin_cache::HeapRoutePinCache::EMPTY,
         })
     }
 
@@ -317,6 +345,9 @@ impl HeapCore {
             // any alloc path — alloc runs only after claim_lease planted it).
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache_hits: None,
+            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+            route_pins:
+                crate::registry::heap_core_xthread::heap_route_pin_cache::HeapRoutePinCache::EMPTY,
         })
     }
 

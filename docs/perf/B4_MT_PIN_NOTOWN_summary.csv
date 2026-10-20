@@ -1,0 +1,31 @@
+metric,value,status,source_log
+base_foreign_free_Ir,136,ИЗМЕРЕНО,_raw_b4_mt_base.log
+base_foreign_capacity_Ir,952,ИЗМЕРЕНО,_raw_b4_mt_base.log
+base_own_free_Ir,166,ИЗМЕРЕНО,_raw_b4_mt_base.log
+base_larson_T1_Ir_per_op,300,ИЗМЕРЕНО,_raw_b4_mt_base.log
+base_mstress_T1_Ir_per_op,415,ИЗМЕРЕНО,_raw_b4_mt_base.log
+base_thrash64_w_alloc_Ir_per_op,26,ИЗМЕРЕНО,_raw_b4_mt_base.log
+base_thrash64_w_free_Ir_per_op,103,ИЗМЕРЕНО,_raw_b4_mt_base.log
+xn_foreign_free_Ir,129,ИЗМЕРЕНО,_raw_b4_mt_xn.log
+xn_own_free_Ir,166,ИЗМЕРЕНО,_raw_b4_mt_xn.log
+xn_larson_T1_Ir_per_op,300,ИЗМЕРЕНО,_raw_b4_mt_xn.log
+xn_mstress_T1_Ir_per_op,415,ИЗМЕРЕНО,_raw_b4_mt_xn.log
+xn_thrash64_w_free_Ir_per_op,108,ИЗМЕРЕНО,_raw_b4_mt_xn.log
+xn_notown_rejects,100000/100000,ИЗМЕРЕНО,_raw_b4_mt_xn.log
+xp2_foreign_free_Ir,122,ИЗМЕРЕНО,_raw_b4_mt_xp.log
+xp2_foreign_capacity_Ir,122,ИЗМЕРЕНО,_raw_b4_mt_xp.log
+xp2_own_free_Ir,167,ИЗМЕРЕНО,_raw_b4_mt_xp.log
+xp2_larson_T1_Ir_per_op,300,ИЗМЕРЕНО,_raw_b4_mt_xp.log
+xp2_mstress_T1_Ir_per_op,415,ИЗМЕРЕНО,_raw_b4_mt_xp.log
+xp2_thrash64_w_alloc_Ir_per_op,26,ИЗМЕРЕНО,_raw_b4_mt_xp.log
+xp2_thrash64_w_free_Ir_per_op,103,ИЗМЕРЕНО,_raw_b4_mt_xp.log
+xp2_pin_hit_frac_foreign,0.9999,ИЗМЕРЕНО,_raw_b4_mt_xp.log
+iter1_mstress_T1_Ir_per_op,419,ИЗМЕРЕНО,_raw_b4_mt_xp.log (superseded)
+iter1_thrash64_w_free_Ir_per_op,106,ИЗМЕРЕНО,_raw_b4_mt_xp.log (superseded)
+xn_delta_foreign_free_Ir,-7,ИЗМЕРЕНО (вычислено),вычислено
+xp2_delta_foreign_free_Ir,-14,ИЗМЕРЕНО (вычислено),вычислено
+xp2_delta_own_free_Ir,1,ИЗМЕРЕНО (вычислено),вычислено
+xp2_delta_thrash64_w_free_Ir,0,ИЗМЕРЕНО (вычислено),вычислено
+xn_delta_thrash64_w_free_Ir,5,ИЗМЕРЕНО (вычислено),вычислено
+verdict_x_notown,NO-GO,ИЗМЕРЕНО (вычислено),thrash64 w_free 5 Ir > +2
+verdict_x_pin,GO,ИЗМЕРЕНО (вычислено),все гейты пройдены

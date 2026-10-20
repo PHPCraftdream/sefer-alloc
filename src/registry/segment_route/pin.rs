@@ -157,3 +157,31 @@ impl RoutePin {
         }
     }
 }
+
+// X-pin (b) layout pin (non-loom): `Entry::refs` must sit ALONE in the second
+// 64-byte cache line — every per-hit-read field (key/end/payload/root/
+// incarnation/sidecar/kind/linked) in line 0, insert-only `owner` at 56..64,
+// `refs` at 64, size rounded to 128 by the align(64). Sibling visibility
+// reaches `Entry` (`pub(super)` in `directory.rs`).
+#[cfg(all(test, not(loom)))]
+mod entry_layout_tests {
+    use crate::registry::segment_route::directory::Entry;
+    use core::mem;
+
+    #[test]
+    fn entry_layout() {
+        assert_eq!(mem::size_of::<Entry>(), 128);
+        assert_eq!(mem::offset_of!(Entry, key), 0);
+        assert_eq!(mem::offset_of!(Entry, end), 8);
+        assert_eq!(mem::offset_of!(Entry, payload), 16);
+        assert_eq!(mem::offset_of!(Entry, root), 24);
+        assert_eq!(mem::offset_of!(Entry, incarnation), 32);
+        assert_eq!(mem::offset_of!(Entry, sidecar), 40);
+        assert_eq!(mem::offset_of!(Entry, kind), 48);
+        assert_eq!(mem::offset_of!(Entry, linked), 49);
+        assert!(mem::offset_of!(Entry, linked) < 64);
+        assert!(mem::offset_of!(Entry, sidecar) < 64);
+        assert_eq!(mem::offset_of!(Entry, owner), 56);
+        assert_eq!(mem::offset_of!(Entry, refs), 64);
+    }
+}

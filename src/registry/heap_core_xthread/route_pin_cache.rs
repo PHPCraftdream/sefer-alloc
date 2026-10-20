@@ -75,6 +75,15 @@ macro_rules! count {
 macro_rules! count {
     ($counter:expr) => {};
 }
+// X-pin (а): the HeapCore-resident cache (heap_route_pin_cache.rs) shares
+// these counters as the subsystem totals; export the counting macro to it.
+// The import is used only in the counting configuration (the no-op macro arm
+// never names it), hence the conditional allow — the established pattern.
+#[cfg_attr(
+    not(all(feature = "internals", feature = "bench-internals")),
+    allow(unused_imports)
+)]
+pub(crate) use count;
 
 impl PinCache {
     /// Drop every cached pin whose route has been unlinked (`linked ==
