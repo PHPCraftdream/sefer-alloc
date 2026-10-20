@@ -92,7 +92,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
         // rejects on any host whose real page size exceeds 4 KiB — this was
         // the macOS ARM64 (16 KiB-page) release blocker that made
         // `AllocCore::new()` return `None` (CI run 32083383999, job `test
-        // macos (production)`: 454656 % 16384 = 12288 ≠ 0).
+        // macos (production)`; B4 layout: 651264 % 16384 = 12288 ≠ 0).
         let initial_commit =
             Layout::lazy_initial_commit(Layout::primordial_meta_end(), aligned_vmem::page_size());
         // Uphold `reserve_lazy`'s full documented contract (non-zero, RUNTIME
@@ -148,36 +148,13 @@ pub(crate) fn primordial() -> Option<Primordial> {
     #[cfg(feature = "page-map-diag")]
     super::super::segment_header::PageMap::init_in_place(base_plus(base, pm_off), meta_pages);
     super::super::segment_header::BinTable::init_in_place(base_plus(base, bt_off) as *mut u32);
-    // Initialise the per-segment alloc-bitmap (Phase 13.4a O(1) double-free
-    // guard) to all-zeros ("everything allocated / not-a-block"). Carved at the
-    // fixed `alloc_bitmap_off`; the bits are flipped to FREE as blocks are
-    // pushed onto free lists.
-    //
-    // PERF-PASS-2 (G5/C1, task #50): under `cfg(not(miri))` this explicit
-    // zero-init is SKIPPED — `base` is the PRIMORDIAL segment, reserved a few
-    // lines above via `Segment::reserve` (the ONLY OS allocation primitive on
-    // this bootstrap path — see the module doc), never carved or decommitted
-    // before this point. The OS guarantees fresh pages are zero (see the
-    // matching comment at `AllocCore::reserve_small_segment`'s identical skip,
-    // `alloc_core.rs`), so re-zeroing here is a tautology. Under `miri` the
-    // fallback aperture (`std::alloc::alloc`) is NOT guaranteed zeroed, so
-    // miri keeps the explicit init unconditionally.
+    // B4 (в): the former `AllocBitmap`/`MagazineBitmap` inits (PERF-PASS-2,
+    // G5/C1, task #50 virgin-skip) are gone with the bitmaps themselves — the
+    // per-granule state byte replaced them as the authoritative state record.
+    // Same virgin-skip discipline for the state-byte region — the
+    // "never issued" encoding IS zero, so fresh OS zero pages need no init.
     #[cfg(miri)]
-    super::super::alloc_bitmap::AllocBitmap::init_in_place(base_plus(
-        base,
-        Layout::alloc_bitmap_off(),
-    ));
-    // RAD-5 (E4) GO/NO-GO EXPERIMENT: same virgin-skip discipline extended to
-    // the second (magazine-residency) bitmap — see
-    // `magazine_bitmap.rs`'s module doc and `MagazineBitmap::init_in_place`'s
-    // doc comment. Skipped under `cfg(not(miri))` for the identical reason as
-    // the line above (fresh OS pages read zero; the target init state is
-    // all-zeros).
-    #[cfg(miri)]
-    super::super::magazine_bitmap::MagazineBitmap::init_in_place(base_plus(
-        base,
-        Layout::magazine_bitmap_off(),
-    ));
+    crate::alloc_core::state_byte::StateByte::new(base).init_in_place();
     // 4. Lay down the registry array at `reg_off`. Slot 0 is the primordial
     //    segment's own base (self-reference). The write goes through `Node`.
     let reg_slots = base_plus(base, reg_off) as *mut *mut u8;
@@ -198,8 +175,9 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // before this point, so the OS guarantees these pages read zero
     // (`mmap`/`VirtualAlloc`) — exactly the all-`null_mut()` "empty" state
     // the loop would write; re-zeroing is a tautology. This is the SAME
-    // virgin-page skip the neighbouring `AllocBitmap`/`MagazineBitmap` init
-    // (PERF-PASS-2, G5/C1, task #50) and the page-map/bin-table init already
+    // virgin-page skip the neighbouring state-byte (former
+    // `AllocBitmap`/`MagazineBitmap`) init (PERF-PASS-2, G5/C1, task #50)
+    // and the page-map/bin-table init already
     // apply to the OTHER primordial regions. R14-7's `MAX_SEGMENTS`
     // 1024→4096 raise quadrupled this loop's trip count (LLVM lowers it to a
     // `memset` of `HASH_CAPACITY * 8 = 2 * MAX_SEGMENTS * 8` bytes); R16-4

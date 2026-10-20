@@ -62,6 +62,15 @@ pub(super) enum SmallFreeGuard {
     /// caller does nothing further for this pointer. (R6-T55: the callers
     /// bump the `LOCAL_REJECT_FREES` diagnostic here.)
     RejectNoOp,
+    /// F4 (review): identical no-op handling to [`SmallFreeGuard::RejectNoOp`]
+    /// (the block is not freed, nothing else happens) but the callers do NOT
+    /// bump `LOCAL_REJECT_FREES` — this is the base's wrong-class
+    /// Accept-branch reject (`divides`-passing, `small_class_matches`-failing
+    /// / the state byte's class-field mismatch at an aligned LIVE granule),
+    /// which returned without a counter increment. Reason classification
+    /// happens only on this cold reject path; the hot accept path is
+    /// untouched.
+    RejectNoOpSilent,
     /// F7 branch (A) / the Ph3b pre-route: `ptr` is a LEGITIMATE
     /// promoted-and-grown Large block (`medium-classes` promotion). The
     /// caller MUST route `ptr`/`layout` to the REAL substrate free
@@ -155,27 +164,29 @@ pub(super) enum SmallFreeGuard {
 /// 3. **H1** (task #167, `hardened`): a block start of class `c` always
 ///    sits at a segment offset that is a whole multiple of `block_size(c)`
 ///    (carve aligns the bump to `block_size`) — an INTERIOR pointer
-///    (`off % block_size(c) != 0`) is BLIND to the M2 oracles below (the
-///    alloc bitmap is indexed at 16 B granularity, so an interior offset
-///    that is still 16 B-aligned can map to a DIFFERENT bit that reads
-///    "allocated", falling through to a push that later hands out a
-///    mid-block address — silent aliasing). Rejected as a no-op. Costs a
+///    (`off % block_size(c) != 0`) is BLIND to the M2 byte oracle below
+///    (the state byte is indexed at 16 B granularity, so an interior
+///    offset that is still 16 B-aligned reads the START granule's
+///    `encode(c, LIVE)` byte, falling through to a push that later hands
+///    out a mid-block address — silent aliasing). Rejected as a no-op. Costs a
 ///    real `%` by a non-power-of-two divisor (~tens of cycles) on every
 ///    small free, so `hardened`-gated (never on the production hot path).
 /// 4. **M2 oracle 1 — in-magazine double-free** (Э6, P6.1; always): an O(1)
-///    probe of the magazine-residency bitmap (RAD-5/E4), replacing the
+///    scan of the magazine's resident slots (the former RAD-5/E4 residency
+///    bitmap became the per-granule state byte with B4 (в)), replacing the
 ///    pre-Э6 per-heap-key-stamped-into-the-block-body filter design, which
 ///    was UNSOUND under user writes (a user write to the stamped bytes made
 ///    a later double-free skip the oracle and double-issue the pointer).
-///    `off`/`meta` computed here are reused by oracle 2 below.
+///    `off`/`meta` computed here are reused by the byte oracle below.
 /// 5. **M2 oracle 1.5** (always): uncarved/stale-free (`off >= bump`) — a
 ///    block carved into a segment later decommitted+reset has `off >= bump`
-///    (the reset zeroed the alloc bitmap, so oracle 2 below would NOT catch
-///    it); parity with `dealloc_small` (`alloc_core.rs`).
-/// 6. **M2 oracle 2 — flushed-then-double-freed** (always): the BinTable
-///    alloc-bitmap `is_free` check, catching a block already flushed to a
-///    free list. Order 4-then-6 is load-bearing (unflushed resting place
-///    first, flushed resting place second) — do NOT reorder.
+///    (the reset zeroed the state bytes, so the byte oracle below would NOT
+///    catch it); parity with `dealloc_small` (`alloc_core.rs`).
+/// 6. **M2 oracle 2 — the state byte** (always): the exact
+///    `encode(class, LIVE)` compare, catching an in-magazine OR
+///    flushed-then-double-freed block (any non-LIVE byte — MAG, FREE or
+///    zero — rejects). Order 4-then-6 is load-bearing (unflushed resting
+///    place first, flushed resting place second) — do NOT reorder.
 ///
 /// **Residual M2 limit:** these guards recognize current magazine residency
 /// and free-list state, not an earlier allocation instance. They do not
@@ -279,8 +290,8 @@ pub(super) fn small_free_guard(
     // `BlockKind::Unknown`. The substrate free (`mem_impl.rs`) treats the same
     // case as a no-op (reject-not-guess); the magazine path must not run the
     // M2 oracles below against a segment whose real kind it cannot trust —
-    // they would read the bitmaps and `bump` as if Small and hand the block
-    // to the magazine. One compare on the already-read `kind`.
+    // they would read the state bytes and `bump` as if Small and hand the
+    // block to the magazine. One compare on the already-read `kind`.
     if matches!(&kind, BlockKind::Unknown) {
         return SmallFreeGuard::RejectNoOp;
     }
@@ -309,13 +320,52 @@ pub(super) fn small_free_guard(
     if (off as usize) < payload_start {
         return SmallFreeGuard::RejectNoOp;
     }
-    if meta.magazine_bitmap().is_in_magazine(off) {
+    // B4 variant (в): the M2 double-free oracles collapse into ONE check on
+    // the authoritative STATE BYTE. The alignment check above (H1, hardened)
+    // plus the byte's class field (encoded at every issue site) subsume the
+    // former `divides`/`small_class_matches` class-identity precursor; the
+    // single reject below covers both the in-magazine and the stale-free
+    // double-free cases (state MAG or FREE ⇒ not the caller's LIVE block).
+    // F1 (review, B4 state-byte): an UNCONDITIONAL misalignment reject. The
+    // byte is indexed `off >> 4`, so an interior offset `p+1..p+15` (without
+    // `hardened`'s H1 stride check) indexes the START granule `p` and reads
+    // `encode(c, LIVE)` — it would sail into the magazine push with `p+8`.
+    // The base rejected these via `SizeClasses::divides` in the Accept
+    // branch; here the reject collapses into the same single hot branch as
+    // the byte compare (one OR / one branch — the hot path does not grow).
+    // With invariant И1 (zero at every non-start granule) the alignment check
+    // plus the exact byte compare is equivalent to the former `divides` +
+    // class-identity pair.
+    // F4 (review): the reject-reason split lives ONLY on this cold path.
+    // `MAG`/`FREE`/zero (state) rejects and the remaining former
+    // `RejectNoOp` sources reject with the base's increment
+    // (`RejectNoOp`). MISALIGNED rejects match the base exactly: it
+    // classified them via `divides` in the Accept branch and returned
+    // WITHOUT bumping `LOCAL_REJECT_FREES`. The same holds for an ALIGNED
+    // byte whose state is LIVE but whose CLASS field differs — the base's
+    // wrong-class Accept-branch reject. Both surface as
+    // `RejectNoOpSilent` (callers treat it identically minus the counter).
+    let byte = meta.state_byte().read(off);
+    let expected = crate::alloc_core::state_byte::StateByte::encode(
+        c,
+        crate::alloc_core::state_byte::StateByte::LIVE,
+    );
+    if (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) != 0 {
+        return SmallFreeGuard::RejectNoOpSilent;
+    }
+    if byte != expected {
+        if byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::LIVE {
+            return SmallFreeGuard::RejectNoOpSilent;
+        }
+        if byte == 0 {
+            if (off as usize) < meta.bump_of() {
+                return SmallFreeGuard::RejectNoOpSilent;
+            }
+            return SmallFreeGuard::RejectNoOp;
+        }
         return SmallFreeGuard::RejectNoOp;
     }
     if (off as usize) >= meta.bump_of() {
-        return SmallFreeGuard::RejectNoOp;
-    }
-    if meta.alloc_bitmap().is_free(off) {
         return SmallFreeGuard::RejectNoOp;
     }
 
@@ -410,21 +460,11 @@ impl HeapCore {
                     // cover — task #164/X7).
                     let (off, meta) = match small_free_guard(root, block, c, layout) {
                         SmallFreeGuard::Accept { off } => {
-                            // Ordinary builds reject offsets not divisible by
-                            // the supplied stride; aligned wrong-class pointers
-                            // can pass. Exact owner identity costs ~33 Ir/free
-                            // per PR57's owner decision, so it stays hardened-only.
-                            #[cfg(feature = "hardened")]
-                            if !self.core.small_class_matches(root, off, c) {
-                                return;
-                            }
-                            #[cfg(not(feature = "hardened"))]
-                            if !crate::alloc_core::size_classes::SizeClasses::divides(
-                                c,
-                                off as usize,
-                            ) {
-                                return;
-                            }
+                            // B4 variant (в): the state byte encodes the class
+                            // at every issue site, and `small_free_guard`
+                            // requires an exact LIVE match on (class, state) —
+                            // the former `small_class_matches`/`divides`
+                            // class-identity re-check is subsumed.
                             (off, SegmentMeta::new(root))
                         }
                         SmallFreeGuard::RejectNoOp => {
@@ -435,6 +475,11 @@ impl HeapCore {
                             #[cfg(any(feature = "internals", feature = "bench-internals"))]
                             crate::alloc_core::LOCAL_REJECT_FREES
                                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                            return;
+                        }
+                        // F4: the base's wrong-class Accept-branch reject did
+                        // not bump the counter — same no-op, no increment.
+                        SmallFreeGuard::RejectNoOpSilent => {
                             return;
                         }
                         SmallFreeGuard::RouteToLargeFree => {
@@ -451,14 +496,13 @@ impl HeapCore {
                     if cnt < cap {
                         // Legit free → push. NO key stamp, NO block-body write.
                         //
-                        // RAD-5 (E4) GO/NO-GO EXPERIMENT: mark this block
-                        // magazine-resident in the second bitmap. `meta`/`off`
-                        // are already computed above for the M2 bitmap read —
-                        // this reuses them, paying only the new bitmap's own
-                        // read-modify-write. See `magazine_bitmap.rs`'s module
-                        // doc; `docs/perf/IAI_BASELINE.md`'s RAD-5 entry has
-                        // the measured verdict on whether this is worth it.
-                        meta.magazine_bitmap().mark_magazine(off);
+                        // B4 variant (в): mark this block MAG in the state
+                        // byte (was RAD-5's magazine-bitmap set).
+                        meta.state_byte().write(
+                            off,
+                            c,
+                            crate::alloc_core::state_byte::StateByte::MAG,
+                        );
                         // R6-T13: identity mask (`cnt < cap <= TCACHE_CAP`); skips bounds check.
                         self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block;
                         self.tcache.classes[c].count = (cnt + 1) as u8;
@@ -501,28 +545,22 @@ impl HeapCore {
                     // already ran above; their order is unchanged.
                     if cap < TCACHE_CAP {
                         let evicted = self.tcache.classes[c].slots[cnt - 1];
-                        // RAD-5 analogue (cf. overflow path below): the
-                        // evicted block LEAVES the magazine — clear its bit
-                        // BEFORE the flush ("flush = clear_magazine +
-                        // mark_free"; the AllocBitmap side happens inside
-                        // `flush_class`, this bitmap's clear happens here).
-                        let ebase = crate::alloc_core::os::segment_base_of_ptr(evicted);
+                        // B4 (в): the evicted block LEAVES the magazine; its
+                        // MAG → FREE state-byte transition is committed by
+                        // `flush_run` inside the flush below (as on the
+                        // overflow path), so no separate clear happens here.
                         debug_assert_eq!(
                             self.core.canonical_root_for(evicted),
-                            Some(ebase),
+                            Some(crate::alloc_core::os::segment_base_of_ptr(evicted)),
                             "evicted magazine block must map to its segment base"
                         );
-                        let eoff = (evicted.addr() - ebase.addr()) as u32;
-                        SegmentMeta::new(ebase)
-                            .magazine_bitmap()
-                            .clear_magazine(eoff);
                         // SAFETY (R6-MS-3): `evicted` is a valid,
                         // currently-live small-class-`c` allocation owned by
                         // this heap's magazine (parked there by an earlier
-                        // free; its magazine bit cleared just above) — freed
-                        // exactly once here via a one-element batch, same
-                        // guarantee as the overflow path's flush of resident
-                        // slots below.
+                        // free; its state byte reads MAG) — freed exactly
+                        // once here via a one-element batch, same guarantee
+                        // as the overflow path's flush of resident slots
+                        // below.
                         #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
                         unsafe {
                             self.core
@@ -532,10 +570,15 @@ impl HeapCore {
                         // is unchanged — the magazine still holds exactly
                         // `cap` blocks (byte budget preserved).
                         self.tcache.classes[c].slots[cnt - 1] = block;
-                        // RAD-5: the current block ENTERS the magazine —
-                        // mark it (as on the push path above; `meta`/`off`
-                        // were already computed for the M2 bitmap read).
-                        meta.magazine_bitmap().mark_magazine(off);
+                        // B4 (в): the current block ENTERS the magazine —
+                        // commit LIVE → MAG (as on the push path above;
+                        // `meta`/`off` come from the guard). Metadata only:
+                        // the block body is not touched (R1-01).
+                        meta.state_byte().write(
+                            off,
+                            c,
+                            crate::alloc_core::state_byte::StateByte::MAG,
+                        );
                         // R13-3 analogue: like the push path above, both the
                         // current block (being FREED right now) and the
                         // evicted block (previously issued from the
@@ -563,25 +606,9 @@ impl HeapCore {
                     // returns blocks to the substrate via `dealloc_small`
                     // (mark_free + dec_live) exactly as before.
                     //
-                    // RAD-5: the FLUSH_N blocks about to be flushed leave the
-                    // magazine — clear their bit BEFORE calling `flush_class`
-                    // (mirrors "flush = clear_magazine + mark_free": the
-                    // AllocBitmap side of `mark_free` happens inside
-                    // `flush_class`/`flush_run`; this bitmap's clear happens
-                    // here since `AllocCore` has no magazine concept).
-                    for &flushed in &self.tcache.classes[c].slots[0..FLUSH_N] {
-                        // Allocator-issued magazine pointers preserve provenance: Small/Primordial roots are exact; Large is excluded.
-                        let fbase = crate::alloc_core::os::segment_base_of_ptr(flushed);
-                        debug_assert_eq!(
-                            self.core.canonical_root_for(flushed),
-                            Some(fbase),
-                            "overflow magazine block must map to its segment base"
-                        );
-                        let foff = (flushed.addr() - fbase.addr()) as u32;
-                        SegmentMeta::new(fbase)
-                            .magazine_bitmap()
-                            .clear_magazine(foff);
-                    }
+                    // B4 variant (в): the former FLUSH_N magazine-bitmap
+                    // clear pre-pass is gone — `flush_class` itself commits
+                    // the LIVE/MAG → FREE transition via the state byte.
                     // Normal overflow: half-flush, then push.
                     // SAFETY (R6-MS-3): every slot in `slots[0..FLUSH_N]` is a
                     // valid live small-class-`c` allocation owned by this core's
@@ -613,7 +640,9 @@ impl HeapCore {
                     // above already ran before this overflow branch, so a
                     // double-free is caught even when the magazine is full.
                     // RAD-5: mark the newly-pushed block magazine-resident.
-                    meta.magazine_bitmap().mark_magazine(off);
+                    // B4 (в): MAG in the state byte.
+                    meta.state_byte()
+                        .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
                     self.tcache.classes[c].slots[remaining] = block;
                     self.tcache.classes[c].count = (remaining + 1) as u8;
                     // R13-3: the newly-pushed block is a freed (previously

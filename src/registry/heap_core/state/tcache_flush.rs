@@ -9,9 +9,6 @@
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use ::core::sync::atomic::Ordering;
 
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-use crate::alloc_core::segment_header::SegmentMeta;
-
 use crate::registry::heap_core::HeapCore;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::registry::heap_core::TcacheHitCounter;
@@ -86,22 +83,8 @@ impl HeapCore {
             if n == 0 {
                 continue;
             }
-            // RAD-5 (E4) GO/NO-GO EXPERIMENT: clear every flushed block's
-            // magazine-residency bit BEFORE the flush, mirroring the
-            // production overflow-flush site in `dealloc_own_thread_with_base`.
-            for &flushed in &self.tcache.classes[c].slots[0..n] {
-                // Allocator-issued magazine pointers preserve provenance: Small/Primordial roots are exact; Large is excluded.
-                let fbase = crate::alloc_core::os::segment_base_of_ptr(flushed);
-                debug_assert_eq!(
-                    self.core.canonical_root_for(flushed),
-                    Some(fbase),
-                    "flush-all magazine block must map to its segment base"
-                );
-                let foff = (flushed.addr() - fbase.addr()) as u32;
-                SegmentMeta::new(fbase)
-                    .magazine_bitmap()
-                    .clear_magazine(foff);
-            }
+            // B4 (в): the former magazine-bitmap clear pre-pass is gone —
+            // `flush_class` itself commits LIVE/MAG → FREE via the state byte.
             // SAFETY (R6-MS-3): every slot in `slots[0..n]` is a valid live
             // small-class-`c` allocation owned by this core's magazine; the
             // teardown trim returns each to the substrate exactly once.

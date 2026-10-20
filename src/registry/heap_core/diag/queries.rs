@@ -759,4 +759,17 @@ impl HeapCore {
     pub fn dbg_is_free_for(&self, ptr: *mut u8) -> bool {
         self.core.dbg_is_free_for(ptr)
     }
+
+    /// B4 (в) F11: the raw STATE nibble (`byte >> 6`: 0 = LIVE, 1 = MAG,
+    /// 2 = FREE) of `ptr`'s block's state byte, read through the delegated
+    /// [`AllocCore::dbg_state_byte_state_for`] — a read-only safe observer
+    /// in the [`Self::dbg_is_free_for`] mold (canonical-root resolution,
+    /// one `Node::read_u8` read, no mutation). `None` for foreign or
+    /// non-Small/Primordial pointers. `internals`-gated like its delegate.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "internals"))]
+    #[must_use]
+    pub fn dbg_state_byte_state_for(&self, ptr: *mut u8) -> Option<u8> {
+        self.core.dbg_state_byte_state_for(ptr)
+    }
 }

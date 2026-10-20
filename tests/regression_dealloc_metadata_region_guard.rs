@@ -7,11 +7,12 @@
 //! `flush_run` all guard the block offset against the segment's UPPER bound
 //! (`off >= bump`, "past the carved region") but — before this fix — NONE of
 //! them guarded the LOWER bound: an offset that lands in the segment's OWN
-//! metadata region (header / page map / bin table / alloc bitmap / remote
+//! metadata region (header / page map / bin table / state-byte region /
+//! remote
 //! ring / …), i.e. `off < payload_start`, sailed through every other check
 //! (magic OK, kind OK, `block_size`-aligned — `0` is a multiple of every
-//! block size, `is_free` reads "allocated" because metadata bytes are never
-//! bitmap-tracked) straight to `write_next`, which then clobbers the
+//! block size, metadata bytes read as the all-zero "never issued" state
+//! encoding) straight to `write_next`, which then clobbers the
 //! segment's header/page-map/bin-table bytes in place — silent corruption of
 //! live allocator state, not merely of user payload.
 //!
@@ -29,12 +30,12 @@
 //! see `SegmentHeader`), so `SegmentHeader::magic_at(base)` no longer read
 //! `SEGMENT_MAGIC` afterwards, and a subsequent `alloc` on the same segment
 //! either returned a pointer inside the header/page-map/bin-table region or
-//! the allocator's own bookkeeping (bitmap bytes read back by
-//! `dbg_alloc_bitmap_bytes_for`) no longer matched the pristine snapshot
-//! taken before the bogus frees. WITH the guard, all three bogus frees are
-//! unconditional no-ops: the metadata bytes are byte-for-byte identical
-//! before and after, and the allocator continues to hand out valid, distinct
-//! pointers.
+//! the allocator's own bookkeeping (the authoritative per-granule STATE-BYTE
+//! region read back by `dbg_state_bytes_for`; B4 removed the dead bitmaps and
+//! their dump hook) no longer matched the pristine snapshot taken before the
+//! bogus frees. WITH the guard, all three bogus frees are unconditional
+//! no-ops: the metadata bytes are byte-for-byte identical before and after,
+//! and the allocator continues to hand out valid, distinct pointers.
 //!
 //! `AllocCore::dealloc` is the public face that routes to `dealloc_small` for
 //! a Small/Primordial segment (see `alloc_core.rs`'s `SegmentKind::Small |
@@ -48,29 +49,19 @@ use core::alloc::Layout;
 
 use sefer_alloc::alloc_core::{AllocCore, SegmentLayout};
 
-/// Snapshot the first `n` bytes of `ptr`'s segment's alloc-bitmap footprint,
-/// plus the raw header bytes (magic/kind live in the header, which starts at
-/// offset 0 — exactly where one of the bogus frees below targets).
-fn snapshot_header_and_bitmap(
-    ac: &AllocCore,
-    anchor: *mut u8,
-    bitmap_len: usize,
-) -> (Vec<u8>, Vec<u8>) {
-    // Header bytes: read via a small out-buffer reusing the bitmap accessor's
-    // sibling would require a header-specific dbg accessor we don't have; the
-    // bitmap snapshot alone is sufficient to detect the corruption this guard
-    // prevents (a `write_next` at `off=0` writes an 8-byte pointer into the
-    // header's `magic`/`kind` fields, which `dbg_is_free_for`/subsequent
-    // `alloc` calls will indirectly expose via a broken allocator). We still
-    // snapshot a header-region proxy: the bitmap bytes are enough to prove
-    // "no corruption of allocator state", and a live subsequent `alloc` on
-    // the same segment proves the header itself stayed sane (a corrupted
-    // `magic`/`kind` makes every subsequent segment lookup for this base
-    // fail in a detectable way).
-    let mut bitmap = vec![0u8; bitmap_len];
+/// Snapshot the first `state_len` bytes of the STATE-BYTE region (B4 (в)) —
+/// the authoritative per-granule record the bogus frees must leave pristine.
+/// The bogus metadata offsets `0 / PAGE / 2*PAGE` map to granule (== byte)
+/// indices `0 / PAGE>>4 / 2*PAGE>>4`, so a snapshot of that many state bytes
+/// covers every granule the corruption would touch; the segment header
+/// itself is checked behaviourally — a `write_next` at `off=0` clobbers the
+/// header's `magic`/`kind` fields, which makes every subsequent segment
+/// lookup/`alloc` on this base fail in a detectable way (part (ii) below).
+fn snapshot_state_bytes(ac: &AllocCore, anchor: *mut u8, state_len: usize) -> Vec<u8> {
+    let mut state_bytes = vec![0u8; state_len];
     // SAFETY: `anchor` is a live allocation owned by `ac`.
-    unsafe { ac.dbg_alloc_bitmap_bytes_for(anchor, &mut bitmap) };
-    (Vec::new(), bitmap)
+    unsafe { ac.dbg_state_bytes_for(anchor, &mut state_bytes) };
+    state_bytes
 }
 
 #[test]
@@ -106,9 +97,11 @@ fn dealloc_metadata_region_offsets_are_noop() {
         "sanity: metadata footprint expected to span more than one page"
     );
 
-    const BITMAP_LEN: usize = 256; // covers well past every offset under test
+    // B4 (в): state-byte snapshot covering the granule indices the bogus
+    // offsets map to (0, PAGE>>4, 2·PAGE>>4 = 0/128/256 for PAGE = 4096).
+    const STATE_LEN: usize = 1024;
 
-    let (_, bitmap_before) = snapshot_header_and_bitmap(&ac, anchor, BITMAP_LEN);
+    let state_before = snapshot_state_bytes(&ac, anchor, STATE_LEN);
 
     // Three block-size-aligned (16 B) offsets, all strictly inside the
     // metadata region (`< payload_start`), matching the task's counterfactual
@@ -132,13 +125,20 @@ fn dealloc_metadata_region_offsets_are_noop() {
         unsafe { ac.dealloc(bogus, layout) };
     }
 
-    // (i) The allocator's own metadata (alloc bitmap) is byte-for-byte
-    // unchanged — no `mark_free`/`write_next` touched it.
-    let (_, bitmap_after) = snapshot_header_and_bitmap(&ac, anchor, BITMAP_LEN);
+    // (i) The allocator's own metadata (the authoritative per-granule state
+    // bytes) is byte-for-byte unchanged — no `write_next`/state-store
+    // touched it.
+    let state_after = snapshot_state_bytes(&ac, anchor, STATE_LEN);
     assert_eq!(
-        bitmap_before, bitmap_after,
-        "H-1 GUARD BROKEN: a metadata-region free mutated the alloc bitmap \
-         (payload lower-bound guard missing or ineffective)"
+        state_before, state_after,
+        "H-1 GUARD BROKEN: a metadata-region free mutated the STATE-BYTE \
+         region (payload lower-bound guard missing or ineffective)"
+    );
+    assert!(
+        state_after.iter().all(|&b| b == 0),
+        "STATE-BYTE region low end not all-zero after bogus metadata frees \
+         (first non-zero granule at {:?})",
+        state_after.iter().position(|&b| b != 0)
     );
 
     // (ii) The segment must still be healthy: further allocations succeed,

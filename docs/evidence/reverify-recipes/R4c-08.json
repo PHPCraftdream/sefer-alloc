@@ -1,0 +1,32 @@
+{
+  "id": "R4c-08",
+  "registryActivationHash": "f6ca8709da9575466f91881b975af77e5d10f9a0fbeabb67c88bf9254747048c",
+  "steps": [
+    {
+      "name": "decommit miri cycle under strict provenance",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-core alloc-decommit internals",
+        "--test",
+        "decommit_miri_cycle"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test dbg_is_decommitted_for_sound_under_provenance_less_input \\.\\.\\.[\\s\\S]*?\\bok\\s*\\n",
+          "test decommit_recommit_cycle_bookkeeping \\.\\.\\.[\\s\\S]*?\\bok\\s*\\n",
+          "test result: ok\\. 2 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

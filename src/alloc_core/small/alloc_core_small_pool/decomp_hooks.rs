@@ -334,11 +334,11 @@ impl AllocCore {
     /// `small_decommit_start()`, not the tight `small_meta_end()` — the same
     /// R8-6 (task #219) rule the production decommit call sites in this same
     /// file already follow. `small_meta_end()` is a `const fn` aligned only to
-    /// the compile-time `PAGE` (4 KiB; non-hardened value 73728), and
+    /// the compile-time `PAGE` (4 KiB; measured tight value 270336), and
     /// `os::decommit_pages`'s contract ("offsets MUST be page-aligned", per
     /// `aligned_vmem::decommit`'s range-contract `debug_assert!`, task #1072)
     /// is checked against the RUNTIME `page_size()` — so on a 16/64 KiB-page
-    /// host the old value panicked the hook (73728 % 16384 == 8192). Task
+    /// host the old value panicked the hook (270336 % 16384 == 8192). Task
     /// #1074 converted this hook's two neighbours to the runtime query and
     /// missed this pair; task #1072 then made the previously-silent violation
     /// loud — neither commit considered the combination. `SEGMENT` (4 MiB, the

@@ -33,9 +33,9 @@ pub(crate) mod segment_header_views;
 // `AllocStats::stats()` backing, `alloc_core_small.rs`) are NOT
 // feature-gated, so the module must stay compiled in every config exactly
 // as when it lived directly in `alloc_core`. Only its FILE moved.
-/// Group module: the shared per-segment bitmap mechanism
-/// (`segment_bitmap`) and its two wrappers (`alloc_bitmap`,
-/// `magazine_bitmap`).
+/// Group module: the per-granule STATE BYTE (B4 variant (в)) — the
+/// authoritative small-segment state record (the former bitmap family is
+/// removed).
 pub(crate) mod bitmap;
 /// R7-A0 diagnostic counters for the per-class segment directory
 /// (observability phase). Storage is always compiled; per-event increments

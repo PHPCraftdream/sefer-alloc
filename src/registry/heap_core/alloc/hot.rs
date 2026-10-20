@@ -40,9 +40,11 @@ impl HeapCore {
             "small magazine block must map to its segment base"
         );
         let off = issued.addr() - base.addr();
+        // B4 (в): flip the state byte MAG → LIVE at issue, preserving the
+        // class field (written by the block's own MAG/FREE store).
         SegmentMeta::new(base)
-            .magazine_bitmap()
-            .clear_magazine(off as u32);
+            .state_byte()
+            .set_state(off as u32, crate::alloc_core::state_byte::StateByte::LIVE);
     }
 
     /// Task #2002: the shared tail of [`refill_magazine_slow`](Self::refill_magazine_slow)
@@ -72,18 +74,22 @@ impl HeapCore {
         // tail is mark_magazine / count bookkeeping only — no stamp pass.)
         let new_cnt = n - 1;
         self.tcache.classes[c].count = new_cnt as u8;
-        // RAD-5: mark the n-1 blocks REMAINING in the magazine as
-        // magazine-resident (refill = existing `mark_alloc`/leave-unset on
-        // `AllocBitmap` inside the caller's substrate refill call, unchanged,
-        // PLUS this `mark_magazine` for every block landing in the
-        // magazine). The block at `new_cnt` is popped to the caller below and
-        // must NOT be marked (it is being issued, not retained).
+        // B4 (в): mark the n-1 blocks REMAINING in the magazine as MAG in
+        // the state byte. The block at `new_cnt` is popped to the caller
+        // below and must NOT be marked (it is being issued, not retained);
+        // the drain/pop already committed its LIVE byte (FREE → LIVE in
+        // `pop_free`, or fresh-carve LIVE in `carve_block`), so the refill
+        // itself performs NO state-byte write on the issued block — a later
+        // MAG→LIVE `clear_magazine_on_issue` flip applies only to magazine
+        // HIT issues of previously-parked blocks, never to this one.
         for &p in &self.tcache.classes[c].slots[0..new_cnt] {
             let pbase = os::segment_base_of_ptr(p);
             let poff = (p as usize - pbase as usize) as u32;
-            SegmentMeta::new(pbase)
-                .magazine_bitmap()
-                .mark_magazine(poff);
+            SegmentMeta::new(pbase).state_byte().write(
+                poff,
+                c,
+                crate::alloc_core::state_byte::StateByte::MAG,
+            );
         }
         self.tcache.classes[c].slots[new_cnt]
     }

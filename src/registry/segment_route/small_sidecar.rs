@@ -117,20 +117,6 @@ impl SmallSidecar {
             && self.classes.prepared(offset / granule, class)
     }
 
-    /// R6-T05 (SEC-1): free-side class-identity read against the owner class
-    /// map. `class + 1` is the owner's issue encoding (`ClassLeaves::issue`);
-    /// an encoded `0` marks a granule that was never an issued block start
-    /// (segment metadata, the interior of a live block, or the uncarved
-    /// tail), so it never matches. One Acquire load of the class byte plus
-    /// the leaf-pointer Acquire load.
-    #[cfg(all(feature = "fastbin", feature = "hardened"))]
-    #[inline(always)]
-    pub(crate) fn class_matches(&self, offset: u32, class: u8) -> bool {
-        let offset = offset as usize;
-        offset < SEGMENT
-            && usize::from(self.classes.encoded(offset / MIN_BLOCK)) == usize::from(class) + 1
-    }
-
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn class_at_for_test(&self, offset: u32) -> Option<u8> {

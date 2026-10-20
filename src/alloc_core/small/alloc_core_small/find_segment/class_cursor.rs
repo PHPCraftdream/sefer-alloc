@@ -2,7 +2,6 @@
 //! §11): remember the segment the last discovery served each class from,
 //! probe it before the next scan, and start that scan after it.
 
-use crate::alloc_core::os;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
 
 use crate::alloc_core::alloc_core::{AllocCore, CLASS_CURSOR_NONE};
@@ -205,17 +204,7 @@ impl AllocCore {
             return Ok(None);
         };
         match self.pop_free(seg, class_idx) {
-            Ok(Some(ptr)) => {
-                debug_assert!(
-                    {
-                        let base = os::segment_base_of_ptr(ptr);
-                        let off = (ptr as usize - base as usize) as u32;
-                        !SegmentMeta::new(base).magazine_bitmap().is_in_magazine(off)
-                    },
-                    "alloc_small: canonical discovery returned a magazine-resident block",
-                );
-                Ok(Some(ptr))
-            }
+            Ok(Some(ptr)) => Ok(Some(ptr)),
             Ok(None) => Ok(None),
             Err(()) => Err(()),
         }

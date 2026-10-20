@@ -25,6 +25,9 @@ pub(crate) use counters::FOREIGN_OR_UNROUTABLE_FREES;
 // the crate-root re-export in `alloc_core/mod.rs` carries the same predicate.
 #[cfg(any(feature = "internals", feature = "bench-internals"))]
 pub(crate) use counters::LOCAL_REJECT_FREES;
+// B4 state-byte activation oracle: same path-parity shape — the increment
+// sites (small_free_guard, clear_magazine_on_issue) and the `dbg_` accessor
+// are all `bench-internals`-gated.
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
 pub(crate) use counters::SMALL_ZERO_PASS_CALLS;
 // B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): slow-path observers,

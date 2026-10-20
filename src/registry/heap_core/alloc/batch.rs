@@ -148,9 +148,9 @@ impl HeapCore {
         // `clear_magazine`). The drained blocks tend to cluster by segment
         // (consecutive pops from one magazine class, which was typically
         // filled by a same-segment refill), so a further word-merge
-        // (accumulate masks per bitmap byte → one RMW per byte instead of
+        // (accumulate masks per state-byte → one RMW per byte instead of
         // per block) is the natural follow-up — but it needs a new
-        // `SegmentBitmap` primitive and is more API surface than this
+        // bulk-write primitive and is more API surface than this
         // bug fix warrants. The deferred-clear design itself does not
         // regress: this loop does exactly the same number of RMWs the
         // old per-pop clear did, just batched at the end.

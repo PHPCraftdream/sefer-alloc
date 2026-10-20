@@ -1,0 +1,105 @@
+E0_METADATA {"id":"R4c-08","head":"801d84bc2ee00b4f8f84df0207357b91f2a6be39","tree":"99c36e9042060825854084aedeb2dcfcd61b2cbd","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (07e526db9 2026-10-19)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-20 for version 1.101.0-nightly (07e526db9 2026-10-19)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4c-08","head":"801d84bc2ee00b4f8f84df0207357b91f2a6be39","tree":"99c36e9042060825854084aedeb2dcfcd61b2cbd","os":"linux x64","toolchain":"rustc 1.101.0-nightly (07e526db9 2026-10-19)\nbinary: rustc\ncommit-hash: 07e526db9df34143c99ec8064acc8ad543f69b30\ncommit-date: 2026-10-19\nhost: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4","profile":"Miri SB strict-provenance","recipe":"docs/evidence/reverify-recipes/R4c-08.json","recipe_sha256":"e1ec8ad1aeb32ffe90113ca0e3eb331a48960d761829e794289641676c0faeed","registry_activation_hash":"f6ca8709da9575466f91881b975af77e5d10f9a0fbeabb67c88bf9254747048c"}
+
+E0_STEP {"id":"R4c-08","kind":"baseline","name":"decommit miri cycle under strict provenance","argv":["cargo","+nightly","miri","test","--locked","--features","alloc-core alloc-decommit internals","--test","decommit_miri_cycle"],"env":{"MIRIFLAGS":"-Zmiri-strict-provenance -Zmiri-disable-isolation"},"expect":{"exit":0,"stdoutRegex":["test dbg_is_decommitted_for_sound_under_provenance_less_input \\.\\.\\.[\\s\\S]*?\\bok\\s*\\n","test decommit_recommit_cycle_bookkeeping \\.\\.\\.[\\s\\S]*?\\bok\\s*\\n","test result: ok\\. 2 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/proc-probe/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+[1m[94m29[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-probe` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/globalalloc-model/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+[1m[94m75[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `globalalloc-model` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: `package.homepage` is redundant with `package.repository`[0m
+  [1m[94m--> [0mCargo.toml:13:12
+   [1m[94m|[0m
+[1m[94m12[0m [1m[94m|[0m repository = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m              [1m[94m----------------------------------------------[0m
+[1m[94m13[0m [1m[94m|[0m homepage = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m            [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `cargo::redundant_homepage` is set to `warn` by default
+[1m[96mhelp[0m: consider removing `package.homepage`
+[1m[33mwarning[0m: `sefer-alloc` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/malloc-bench-rs/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+[1m[94m22[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `malloc-bench-rs` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/proc-memstat/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+[1m[94m26[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-memstat` (manifest) generated 1 warning
+[1m[92m   Compiling[0m aligned-vmem v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/aligned-vmem)
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[33mwarning[0m[1m: associated constant `MAG` is never used[0m
+  [1m[94m--> [0msrc/alloc_core/segment/bitmap/state_byte.rs:80:22
+   [1m[94m|[0m
+[1m[94m76[0m [1m[94m|[0m impl StateByte {
+   [1m[94m|[0m [1m[94m--------------[0m [1m[94massociated constant in this implementation[0m
+[1m[94m...[0m
+[1m[94m80[0m [1m[94m|[0m     pub(crate) const MAG: u8 = 1;
+   [1m[94m|[0m                      [1m[33m^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.56s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/decommit_miri_cycle.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/sefer-alloc/20fdf04a144a8cd5/out/decommit_miri_cycle-20fdf04a144a8cd5)
+
+running 2 tests
+test dbg_is_decommitted_for_sound_under_provenance_less_input ... ok
+test decommit_recommit_cycle_bookkeeping ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 82.22s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBtaXNzaW5nIGBbbGludHNdYCB0byBpbmhlcml0IGBbd29ya3NwYWNlLmxpbnRzXWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1jcmF0ZXMvcHJvYy1wcm9iZS9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNxtbMG0gG1s5Mm1+IBtbMG1wcm9jLW1lbXN0YXQgPSB7IHBhdGggPSAiLi4vcHJvYy1tZW1zdGF0IiwgdmVyc2lvbiA9ICIwLjEiLCBvcHRpb25hbCA9IHRydWUgfQobWzFtG1s5NG0yOBtbMG0gG1s5Mm0rIFtsaW50c10bWzBtChtbMW0bWzk0bTI5G1swbSAbWzkybSsgd29ya3NwYWNlID0gdHJ1ZRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTZtaGVscBtbMG06IHRvIGNsYXJpZnkgeW91ciBpbnRlbnQgdG8gbm90IGluaGVyaXQsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjcbWzBtIBtbOTJtfiAbWzBtcHJvYy1tZW1zdGF0ID0geyBwYXRoID0gIi4uL3Byb2MtbWVtc3RhdCIsIHZlcnNpb24gPSAiMC4xIiwgb3B0aW9uYWwgPSB0cnVlIH0KG1sxbRtbOTRtMjgbWzBtIBtbOTJtKyBbbGludHNdG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1szM213YXJuaW5nG1swbTogYHByb2MtcHJvYmVgIChtYW5pZmVzdCkgZ2VuZXJhdGVkIDEgd2FybmluZwobWzFtG1szM213YXJuaW5nG1swbRtbMW06IG1pc3NpbmcgYFtsaW50c11gIHRvIGluaGVyaXQgYFt3b3Jrc3BhY2UubGludHNdYBtbMG0KICAbWzFtG1s5NG0tLT4gG1swbWNyYXRlcy9nbG9iYWxhbGxvYy1tb2RlbC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KG1sxbRtbOTRtNzUbWzBtIBtbOTJtKyB3b3Jrc3BhY2UgPSB0cnVlG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1s5Nm1oZWxwG1swbTogdG8gY2xhcmlmeSB5b3VyIGludGVudCB0byBub3QgaW5oZXJpdCwgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbMzNtd2FybmluZxtbMG06IGBnbG9iYWxhbGxvYy1tb2RlbGAgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogYHBhY2thZ2UuaG9tZXBhZ2VgIGlzIHJlZHVuZGFudCB3aXRoIGBwYWNrYWdlLnJlcG9zaXRvcnlgG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtQ2FyZ28udG9tbDoxMzoxMgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0xMhtbMG0gG1sxbRtbOTRtfBtbMG0gcmVwb3NpdG9yeSA9ICJodHRwczovL2dpdGh1Yi5jb20vUEhQQ3JhZnRkcmVhbS9zZWZlci1hbGxvYyIKICAgG1sxbRtbOTRtfBtbMG0gICAgICAgICAgICAgIBtbMW0bWzk0bS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0bWzBtChtbMW0bWzk0bTEzG1swbSAbWzFtG1s5NG18G1swbSBob21lcGFnZSA9ICJodHRwczovL2dpdGh1Yi5jb20vUEhQQ3JhZnRkcmVhbS9zZWZlci1hbGxvYyIKICAgG1sxbRtbOTRtfBtbMG0gICAgICAgICAgICAbWzFtG1szM21eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eG1swbQogICAbWzFtG1s5NG18G1swbQogICAbWzFtG1s5NG09IBtbMG0bWzFtbm90ZRtbMG06IGBjYXJnbzo6cmVkdW5kYW50X2hvbWVwYWdlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IGNvbnNpZGVyIHJlbW92aW5nIGBwYWNrYWdlLmhvbWVwYWdlYAobWzFtG1szM213YXJuaW5nG1swbTogYHNlZmVyLWFsbG9jYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBtaXNzaW5nIGBbbGludHNdYCB0byBpbmhlcml0IGBbd29ya3NwYWNlLmxpbnRzXWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1jcmF0ZXMvbWFsbG9jLWJlbmNoLXJzL0NhcmdvLnRvbWwKICAgG1sxbRtbOTRtPSAbWzBtG1sxbW5vdGUbWzBtOiBgY2FyZ286Om1pc3NpbmdfbGludHNfaW5oZXJpdGFuY2VgIGlzIHNldCB0byBgd2FybmAgYnkgZGVmYXVsdAobWzFtG1s5Nm1oZWxwG1swbTogdG8gaW5oZXJpdCBgd29ya3NwYWNlLmxpbnRzLCBhZGQ6CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTIwG1swbSAbWzkybX4gG1swbW1pbWFsbG9jID0gIjAuMSIKG1sxbRtbOTRtMjEbWzBtIBtbOTJtKyBbbGludHNdG1swbQobWzFtG1s5NG0yMhtbMG0gG1s5Mm0rIHdvcmtzcGFjZSA9IHRydWUbWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk2bWhlbHAbWzBtOiB0byBjbGFyaWZ5IHlvdXIgaW50ZW50IHRvIG5vdCBpbmhlcml0LCBhZGQ6CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTIwG1swbSAbWzkybX4gG1swbW1pbWFsbG9jID0gIjAuMSIKG1sxbRtbOTRtMjEbWzBtIBtbOTJtKyBbbGludHNdG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1szM213YXJuaW5nG1swbTogYG1hbGxvYy1iZW5jaC1yc2AgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3Byb2MtbWVtc3RhdC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNBtbMG0gG1s5Mm1+IBtbMG1oYXJuZXNzID0gZmFsc2UKG1sxbRtbOTRtMjUbWzBtIBtbOTJtKyBbbGludHNdG1swbQobWzFtG1s5NG0yNhtbMG0gG1s5Mm0rIHdvcmtzcGFjZSA9IHRydWUbWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk2bWhlbHAbWzBtOiB0byBjbGFyaWZ5IHlvdXIgaW50ZW50IHRvIG5vdCBpbmhlcml0LCBhZGQ6CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTI0G1swbSAbWzkybX4gG1swbWhhcm5lc3MgPSBmYWxzZQobWzFtG1s5NG0yNRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgcHJvYy1tZW1zdGF0YCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBhbGlnbmVkLXZtZW0gdjAuMi4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvYWxpZ25lZC12bWVtKQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlZmVyLWFsbG9jIHYwLjMuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MpChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogYXNzb2NpYXRlZCBjb25zdGFudCBgTUFHYCBpcyBuZXZlciB1c2VkG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtc3JjL2FsbG9jX2NvcmUvc2VnbWVudC9iaXRtYXAvc3RhdGVfYnl0ZS5yczo4MDoyMgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03NhtbMG0gG1sxbRtbOTRtfBtbMG0gaW1wbCBTdGF0ZUJ5dGUgewogICAbWzFtG1s5NG18G1swbSAbWzFtG1s5NG0tLS0tLS0tLS0tLS0tLRtbMG0gG1sxbRtbOTRtYXNzb2NpYXRlZCBjb25zdGFudCBpbiB0aGlzIGltcGxlbWVudGF0aW9uG1swbQobWzFtG1s5NG0uLi4bWzBtChtbMW0bWzk0bTgwG1swbSAbWzFtG1s5NG18G1swbSAgICAgcHViKGNyYXRlKSBjb25zdCBNQUc6IHU4ID0gMTsKICAgG1sxbRtbOTRtfBtbMG0gICAgICAgICAgICAgICAgICAgICAgG1sxbRtbMzNtXl5eG1swbQogICAbWzFtG1s5NG18G1swbQogICAbWzFtG1s5NG09IBtbMG0bWzFtbm90ZRtbMG06IGAjW3dhcm4oZGVhZF9jb2RlKV1gIChwYXJ0IG9mIGAjW3dhcm4odW51c2VkKV1gKSBvbiBieSBkZWZhdWx0CgobWzFtG1szM213YXJuaW5nG1swbTogYHNlZmVyLWFsbG9jYCAobGliKSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzkybSAgICBGaW5pc2hlZBtbMG0gYHRlc3RgIHByb2ZpbGUgW3Vub3B0aW1pemVkICsgZGVidWdpbmZvXSB0YXJnZXQocykgaW4gMC41NnMKG1sxbRtbMzNtd2FybmluZxtbMG06IHRoZSBmb2xsb3dpbmcgcGFja2FnZXMgY29udGFpbiBjb2RlIHRoYXQgd2lsbCBiZSByZWplY3RlZCBieSBhIGZ1dHVyZSB2ZXJzaW9uIG9mIFJ1c3Q6IHByb2MtbWFjcm8tZXJyb3IyIHYyLjAuMQobWzFtG1s5Mm1ub3RlG1swbTogdG8gc2VlIHdoYXQgdGhlIHByb2JsZW1zIHdlcmUsIHVzZSB0aGUgb3B0aW9uIGAtLWZ1dHVyZS1pbmNvbXBhdC1yZXBvcnRgLCBvciBydW4gYGNhcmdvIHJlcG9ydCBmdXR1cmUtaW5jb21wYXRpYmlsaXRpZXMgLS1pZCAxYAobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2RlY29tbWl0X21pcmlfY3ljbGUucnMgKHRhcmdldC9taXJpL3g4Nl82NC11bmtub3duLWxpbnV4LWdudS9kZWJ1Zy9idWlsZC9zZWZlci1hbGxvYy8yMGZkZjA0YTE0NGE4Y2Q1L291dC9kZWNvbW1pdF9taXJpX2N5Y2xlLTIwZmRmMDRhMTQ0YThjZDUpCgpydW5uaW5nIDIgdGVzdHMKdGVzdCBkYmdfaXNfZGVjb21taXR0ZWRfZm9yX3NvdW5kX3VuZGVyX3Byb3ZlbmFuY2VfbGVzc19pbnB1dCAuLi4gb2sKdGVzdCBkZWNvbW1pdF9yZWNvbW1pdF9jeWNsZV9ib29ra2VlcGluZyAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gMiBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiA4Mi4yMnMKCg==

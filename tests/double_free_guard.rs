@@ -131,3 +131,171 @@ fn many_double_frees_keep_free_list_consistent() {
         );
     }
 }
+
+/// F2 (review, B4 state-byte): the substrate double-free guard must reject a
+/// FREE state byte REGARDLESS of the block's class field. The base rejected
+/// the class-independent `bm.is_free(off)` bit; the class-dependent rewrite
+/// (`byte == encode(class_idx, FREE)`) accepted free(p, 64) followed by
+/// free(p, 16) — re-pushing `p` onto the 16 B bin with a rewritten `next` and
+/// a second `live_count` decrement. Mutant: restore the class-dependent
+/// compare in `alloc_core_small/dealloc.rs` → this test goes RED (the first
+/// 16 B alloc reissues the already-free `p`).
+#[test]
+fn wrong_class_free_of_free_block_is_a_noop() {
+    let mut ac = AllocCore::new().expect("primordial");
+    let l64 = Layout::from_size_align(64, 16).unwrap();
+    let l16 = Layout::from_size_align(16, 16).unwrap();
+
+    // Live anchor keeps the segment's bin state non-trivial.
+    let anchor = ac.alloc(l16);
+    assert!(!anchor.is_null());
+    let p = ac.alloc(l64);
+    assert!(!p.is_null());
+
+    // Legitimate free: `p` is FREE (its byte carries the 64 B class field).
+    // SAFETY (R6-MS-1/2): live, matching layout, freed exactly once here.
+    unsafe { ac.dealloc(p, l64) };
+
+    // Wrong-class free of the already-FREE block: MUST be a no-op (state
+    // decode is class-independent), NOT a second push onto the 16 B bin.
+    // SAFETY (R6-MS-1/2): `p` is already free — the guard must reject this
+    // as a benign no-op; the call itself stays within the dealloc contract
+    // being probed (address inside this core's segment, small layout).
+    unsafe { ac.dealloc(p, l16) };
+
+    // Behavior: the 16 B class must NOT hand out `p` (it was never freed to
+    // the 16 B class).
+    for i in 0..64 {
+        let q = ac.alloc(l16);
+        assert!(!q.is_null(), "16 B alloc {i} null after wrong-class free");
+        assert_ne!(
+            q, p,
+            "wrong-class free re-pushed the FREE block onto the 16 B bin \
+             (class-dependent double-free guard)"
+        );
+    }
+
+    // The block must still be recoverable EXACTLY once, via its own class
+    // (LIFO head).
+    let r = ac.alloc(l64);
+    assert_eq!(r, p, "block lost after rejected wrong-class free");
+    // SAFETY (R6-MS-1/2): live, matching layout, freed exactly once here.
+    unsafe { ac.dealloc(r, l64) };
+    // The live 16 B anchor frees cleanly at the end.
+    // SAFETY (R6-MS-1/2): live, matching layout, freed exactly once here.
+    unsafe { ac.dealloc(anchor, l16) };
+}
+
+/// F2 (chunk 3): BOTH wrong-class orders at the substrate double-free guard,
+/// each with the state-byte and bin-exactness oracles:
+///   * alloc(32) → free(32) → free(16): the stale free(16) of the already-
+///     FREE block must be a no-op (state decode is class-INDEPENDENT) — the
+///     block's byte is unchanged (still `encode(c32, FREE)`) and the 16 B bin
+///     never gains it (a 16 B storm never reissues `p`).
+///   * alloc(16) → free(16) → free(32): the mirror order — the free(32) of
+///     the FREE 16 B block must be a no-op; the 32 B storm never reissues it.
+///
+/// Mutant (restore the class-dependent compare
+/// `byte == encode(class_idx, FREE)` in `alloc_core_small/dealloc.rs`): in
+/// order (a) the free(16) of `p` reads `encode(c32, FREE) != encode(c16,
+/// FREE)` and re-pushes `p` onto the 16 B bin → the 16 B storm reissues `p`
+/// → RED (same for the mirror order (b)).
+#[test]
+fn both_wrong_class_free_orders_are_noops() {
+    // ── order (a): alloc(32) → free(32) → free(16) ────────────────────────
+    {
+        let mut ac = AllocCore::new().expect("primordial");
+        let l16 = Layout::from_size_align(16, 16).unwrap();
+        let l32 = Layout::from_size_align(32, 16).unwrap();
+
+        let anchor16 = ac.alloc(l16);
+        assert!(!anchor16.is_null());
+        let p = ac.alloc(l32);
+        assert!(!p.is_null());
+
+        // Legitimate free: `p` reads encode(c32, FREE).
+        // SAFETY (R6-MS-1/2): live, matching layout, freed exactly once here.
+        unsafe { ac.dealloc(p, l32) };
+        let state_after_legit = ac.dbg_state_byte_state_for(p);
+        assert_eq!(state_after_legit, Some(2), "legit free must commit FREE");
+
+        // Wrong-class stale free — MUST be a no-op.
+        // SAFETY (R6-MS-1/2): `p` is already free; this is the deliberate
+        // wrong-class no-op probe under test.
+        unsafe { ac.dealloc(p, l16) };
+        assert_eq!(
+            ac.dbg_state_byte_state_for(p),
+            state_after_legit,
+            "wrong-class stale free rewrote the block's state byte"
+        );
+        // The 16 B storm must never reissue `p`.
+        let mut got16 = Vec::new();
+        for _ in 0..64 {
+            let q = ac.alloc(l16);
+            assert!(!q.is_null());
+            assert_ne!(
+                q, p,
+                "free(16) re-pushed the FREE 32B block (class-dependent guard)"
+            );
+            got16.push(q);
+        }
+        // The 32 B class still reissues `p` exactly once.
+        let r = ac.alloc(l32);
+        assert_eq!(r, p, "the block was lost to the rejected wrong-class free");
+        // SAFETY (R6-MS-1/2): live, matching layout, freed exactly once here.
+        unsafe { ac.dealloc(r, l32) };
+        for q in got16 {
+            // SAFETY (R6-MS-1/2): live, matching layout, freed exactly once here.
+            unsafe { ac.dealloc(q, l16) };
+        }
+        // SAFETY (R6-MS-1/2): live anchor, matching layout, freed exactly once here.
+        unsafe { ac.dealloc(anchor16, l16) };
+    }
+
+    // ── order (b): alloc(16) → free(16) → free(32) ────────────────────────
+    {
+        let mut ac = AllocCore::new().expect("primordial");
+        let l16 = Layout::from_size_align(16, 16).unwrap();
+        let l32 = Layout::from_size_align(32, 16).unwrap();
+
+        let anchor32 = ac.alloc(l32);
+        assert!(!anchor32.is_null());
+        let p = ac.alloc(l16);
+        assert!(!p.is_null());
+
+        // SAFETY (R6-MS-1/2): live, matching layout, freed exactly once here.
+        unsafe { ac.dealloc(p, l16) };
+        let state_after_legit = ac.dbg_state_byte_state_for(p);
+        assert_eq!(state_after_legit, Some(2), "legit free must commit FREE");
+
+        // SAFETY (R6-MS-1/2): deliberate wrong-class no-op probe on the
+        // already-FREE block.
+        unsafe { ac.dealloc(p, l32) };
+        assert_eq!(
+            ac.dbg_state_byte_state_for(p),
+            state_after_legit,
+            "wrong-class stale free rewrote the block's state byte"
+        );
+        // The 32 B storm must never reissue `p`.
+        let mut got32 = Vec::new();
+        for _ in 0..64 {
+            let q = ac.alloc(l32);
+            assert!(!q.is_null());
+            assert_ne!(
+                q, p,
+                "free(32) re-pushed the FREE 16B block (class-dependent guard)"
+            );
+            got32.push(q);
+        }
+        let r = ac.alloc(l16);
+        assert_eq!(r, p, "the block was lost to the rejected wrong-class free");
+        // SAFETY (R6-MS-1/2): live, matching layout, freed exactly once here.
+        unsafe { ac.dealloc(r, l16) };
+        for q in got32 {
+            // SAFETY (R6-MS-1/2): live, matching layout, freed exactly once here.
+            unsafe { ac.dealloc(q, l32) };
+        }
+        // SAFETY (R6-MS-1/2): live anchor, matching layout, freed exactly once here.
+        unsafe { ac.dealloc(anchor32, l32) };
+    }
+}

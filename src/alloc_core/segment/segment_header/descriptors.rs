@@ -278,27 +278,13 @@ impl SegmentMeta {
         BinTable::new(Node::offset(self.base, Layout::bin_table_off()) as *mut u32)
     }
 
-    /// The alloc-bitmap view (the Phase 13.4a O(1) double-free guard). The
-    /// bitmap bytes are carved at [`Layout::alloc_bitmap_off`] and zeroed at
-    /// bootstrap; this returns the typed view over them.
+    /// B4 variant (в): the per-granule STATE BYTE view over this segment's
+    /// metadata (one byte per `MIN_BLOCK`, carved at
+    /// [`Layout::state_byte_off`]). The authoritative state record — the
+    /// former `AllocBitmap`/`MagazineBitmap` pair was removed with B4; see
+    /// [`StateByte`](crate::alloc_core::segment::bitmap::state_byte::StateByte).
     #[inline(always)]
-    pub(crate) fn alloc_bitmap(&self) -> crate::alloc_core::alloc_bitmap::AllocBitmap {
-        crate::alloc_core::alloc_bitmap::AllocBitmap::new(Node::offset(
-            self.base,
-            Layout::alloc_bitmap_off(),
-        ))
-    }
-
-    /// RAD-5 (E4) GO/NO-GO EXPERIMENT — the magazine-residency bitmap view.
-    /// The bitmap bytes are carved at [`Layout::magazine_bitmap_off`] and
-    /// zeroed at bootstrap (mirroring `alloc_bitmap`); this returns the typed
-    /// view over them. See `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
-    /// measured verdict.
-    #[inline(always)]
-    pub(crate) fn magazine_bitmap(&self) -> crate::alloc_core::magazine_bitmap::MagazineBitmap {
-        crate::alloc_core::magazine_bitmap::MagazineBitmap::new(Node::offset(
-            self.base,
-            Layout::magazine_bitmap_off(),
-        ))
+    pub(crate) fn state_byte(&self) -> crate::alloc_core::segment::bitmap::state_byte::StateByte {
+        crate::alloc_core::segment::bitmap::state_byte::StateByte::new(self.base)
     }
 }

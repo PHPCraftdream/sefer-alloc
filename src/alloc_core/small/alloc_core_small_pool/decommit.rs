@@ -207,6 +207,9 @@ impl AllocCore {
         // reject already-free or magazine-resident records. These checks do not
         // guarantee detection of all late/double/stale frees after reissue;
         // such misuse remains outside the unsafe caller contract.
+        // F7 (B4): read the bump BEFORE the reset — the pre-reset bump bound is
+        // exactly the granule range that can carry non-zero state bytes.
+        let bump_before_reset = meta.bump_of();
         meta.set_bump(payload_start);
         // 2b. Empty every class free list.
         let mut bt = meta.bin_table();
@@ -229,24 +232,27 @@ impl AllocCore {
                 pm.set_free(p);
             }
         }
-        // 2d. Zero the alloc bitmap (every slot "allocated / not-a-block" — the
-        //     init state; with no live blocks and an empty free list this is the
-        //     correct clean state). Re-init in place over the bitmap bytes.
-        crate::alloc_core::alloc_bitmap::AllocBitmap::init_in_place(Node::offset(
-            base,
-            SegLayout::alloc_bitmap_off(),
-        ));
-        // RAD-5 (E4) GO/NO-GO EXPERIMENT: the second (magazine-residency)
-        // bitmap must also be reset on a full decommit — a stale "resident"
-        // bit surviving decommit would misreport magazine membership for a
-        // future carve at the same offset. This full-reset path is NOT the
-        // virgin-skip elision (the segment is being reused, not freshly
-        // reserved), so this call stays UNCONDITIONAL, mirroring the
-        // `AllocBitmap` re-init immediately above.
-        crate::alloc_core::magazine_bitmap::MagazineBitmap::init_in_place(Node::offset(
-            base,
-            SegLayout::magazine_bitmap_off(),
-        ));
+        // 2d. F7 (B4): clear only state-byte indexes that may contain stale state.
+        // A state-byte index g addresses the granule at SEGMENT offset g*16;
+        // therefore the used interval is `[payload_start/16, old_bump/16)`.
+        // The prefix g < payload_start/16 has never represented payload, and
+        // the suffix g >= old_bump/16 has not been written since the preceding
+        // reset because the bump only advanced. The state bytes live in
+        // committed metadata pages, independent of payload decommit. Zero the
+        // exact used interval through Node::zero; no full-array init is needed.
+        {
+            let start_byte = payload_start >> 4;
+            let end_byte = bump_before_reset >> 4;
+            debug_assert!(
+                end_byte <= crate::alloc_core::segment::bitmap::state_byte::StateByte::FOOTPRINT
+            );
+            if end_byte > start_byte {
+                Node::zero(
+                    Node::offset(base, SegLayout::state_byte_off() + start_byte),
+                    end_byte - start_byte,
+                );
+            }
+        }
         // 3. Flag the segment decommitted so the next `carve_block` recommits.
         meta.set_decommitted(true);
         // R12-10 (task #261, `virgin-zero-skip`): defensively clear the
