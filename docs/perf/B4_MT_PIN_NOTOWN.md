@@ -152,7 +152,7 @@ steps=100000/поток и T — ИЗ ЛОГА (конфигурационная
 
 ## 8. Риски
 
-- **Loom-gap (закрыт: бывший item 248, повествование в `docs/correctness-open-items/RESOLVED.md`; lookup в `docs/CORRECTNESS_OPEN_ITEMS.md`):** модель `loom_b4_r1_pin_cache` покрывает TLS-путь pin-кэша; heap-ветка (`heap_route_pin_cache.rs`) loom-модели НЕ имела и была удалена вместе с X-pin-откатом.
+- **Loom-gap (закрыт: бывший item 249, повествование в `docs/correctness-open-items/RESOLVED.md`; lookup в `docs/CORRECTNESS_OPEN_ITEMS.md`):** модель `loom_b4_r1_pin_cache` покрывает TLS-путь pin-кэша; heap-ветка (`heap_route_pin_cache.rs`) loom-модели НЕ имела и была удалена вместе с X-pin-откатом.
 - **own = 167 ровно на гейте** (+1 Ir, допуск исчерпан): любой будущий own-путь-прирост в `dealloc_routing`-хвосте, смежном с publish-гвардией, формально валит гейт — перепроверять при каждом изменении routing.rs.
 - **RSS-оценка 1.16 МиБ — ОЦЕНКА** (производная от оценки retention 0.29 МиБ/pin, не прямой RSS-замер); wall-clock/RSS-ось не измерена (п. 7).
 - `directory.rs` стоит ровно на 1000 строк (лимит структуры) — любое добавление требует либо переноса, либо отступа.
@@ -173,7 +173,7 @@ steps=100000/поток и T — ИЗ ЛОГА (конфигурационная
 
 ## 10. Open items
 
-Перф-исход: оба пункта (X-notown NO-GO с дизайн-триггером «гейтить только не-владельца региона»; X-pin NO-GO — потолок выгоды, §11) закрыты карточками 105/106 в `docs/perf/OPEN_ITEMS.md` (полная история закрытия 106 — в `docs/perf/OPEN_ITEMS_ARCHIVE.md`, секция A106). Verification-gap heap-ветки — карточка 248 закрыта, повествование в `docs/correctness-open-items/RESOLVED.md`.
+Перф-исход: оба пункта (X-notown NO-GO с дизайн-триггером «гейтить только не-владельца региона»; X-pin NO-GO — потолок выгоды, §11) закрыты карточками 105/106 (указатели — `docs/perf/OPEN_ITEMS.md` «Recently resolved»; полная история закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md`, секции A105/A106). Verification-gap heap-ветки — карточка 249 закрыта, повествование в `docs/correctness-open-items/RESOLVED.md`.
 
 
 ## 11. Исправления по ревью: СТОП-находка второго ревью и NO-GO X-pin (mt-xp4, 2026-10-20)
