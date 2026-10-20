@@ -1,0 +1,4 @@
+== sefer w_alloc16 marginal Ir/op: 26 | cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=26.0
+== sefer w_free16 marginal Ir/op: 66 | cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=66.0
+== sefer w_alloc64 marginal Ir/op: 26 | cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=26.0
+== sefer w_free64 marginal Ir/op: 66 | cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=66.0

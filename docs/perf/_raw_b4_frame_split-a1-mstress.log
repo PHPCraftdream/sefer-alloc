@@ -1,0 +1,27 @@
+MARGINAL Ir/op (sefer mstress T=1): 449
+--- by source file (Ir/op)
+  449.6	PROGRAM TOTALS
+  279.7	events annotated
+   54.0	split-a1/src/registry/heap_core/free/dealloc_own_base.rs
+   49.1	split-a1/crates/malloc-bench-rs/src/lib.rs
+   46.3	split-a1/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   38.3	(bit >> 3 1u8 << (bit & 7))
+   37.2	split-a1/src/alloc_core/small/alloc_core_small_magazine.rs
+   28.0	split-a1/src/alloc_core/platform/size_classes.rs
+   23.7	split-a1/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+   23.7	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   23.3	split-a1/src/registry/heap_core/alloc/hot.rs
+   16.6	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   15.9	split-a1/src/alloc_core/segment/segment_table/segment_table_impl.rs
+   15.4	let cnt = self.tcache.classes[c].count as usize;
+   14.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+   12.8	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+   12.7	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs
+   12.5	<counts for unidentified lines in split-a1/src/registry/heap_core/free/dealloc_own_base.rs>
+   10.8	16 + (r >> 8) as usize % (512 - 16)
+   10.1	split-a1/src/alloc_core/segment/segment_table/route_slots.rs
+    9.3	if (off as usize) < payload_start {
+    9.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs
+    8.4	Some(SIZE2CLASS[seed_idx] as usize)
+    8.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs
+    8.1	head_off = if next.is_null() {

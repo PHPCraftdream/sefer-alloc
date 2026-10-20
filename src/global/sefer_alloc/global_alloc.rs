@@ -32,6 +32,27 @@ fn exit_escape_alloc(layout: Layout, zeroed: bool) -> *mut u8 {
     }
 }
 
+/// Outlined `CurrentHeap::Fallback` arm of [`GlobalAlloc::alloc`] so the hot
+/// own-heap path stays a leaf: every non-hit arm is a tail call with ≤ 4
+/// register arguments (Win64). Behaviour is byte-identical to the former
+/// inline match (including the shared null + process-exit escape check that
+/// followed the match — it stays here, on the cold arm, unchanged).
+#[inline(never)]
+fn alloc_via_fallback(sefer: &SeferAlloc, layout: Layout) -> *mut u8 {
+    let ptr = match sefer.with_fallback_heap(|h| h.alloc(layout)) {
+        Some(ptr) => ptr,
+        None => core::ptr::null_mut(),
+    };
+    if ptr.is_null() && crate::global::process_exit_in_progress() {
+        // Cold null path only: the route is unavailable because a lock
+        // holder was terminated by `ExitProcess`. Owner decision: escape
+        // to System, never abort (docs/reviews/2026-10-11, question 7).
+        // SAFETY: `layout` is the caller's valid GlobalAlloc layout.
+        return exit_escape_alloc(layout, false);
+    }
+    ptr
+}
+
 /// Exit-path `realloc` for a block this allocator can no longer route:
 /// fresh `System` storage plus a copy of `min(old, new)` bytes; the old
 /// block is never handed to `System.dealloc` and leaks at exit.
@@ -80,10 +101,7 @@ unsafe impl GlobalAlloc for SeferAlloc {
             return ExactNarrow::alloc(layout, false);
         }
         let ptr = match self.current_heap() {
-            CurrentHeap::Fallback => match self.with_fallback_heap(|h| h.alloc(layout)) {
-                Some(ptr) => ptr,
-                None => core::ptr::null_mut(),
-            },
+            CurrentHeap::Fallback => return alloc_via_fallback(self, layout),
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in
             // a registry slot. `current_heap` returned it for THIS thread;
             // the single-writer invariant (the CAS-won slot owner) makes

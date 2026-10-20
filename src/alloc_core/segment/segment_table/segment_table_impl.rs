@@ -172,6 +172,7 @@ pub(crate) const OWN_CACHE_SIZE: usize = 16;
 /// SEGMENT-aligned addresses); a hit is therefore a single key comparison,
 /// with no separate `!is_null()` root check.
 const OWN_CACHE_EMPTY_KEY: usize = usize::MAX;
+const LAST_EMPTY_KEY: usize = usize::MAX;
 
 const _: () = assert!(
     OWN_CACHE_SIZE.is_power_of_two(),
@@ -224,6 +225,20 @@ pub(crate) struct SegmentTable {
     /// immediately after `hash_remove`. You cannot drop a base from the table
     /// without passing through code that also evicts it from the cache.
     own_cache: [(usize, *mut u8); OWN_CACHE_SIZE],
+    /// N9 — a ONE-entry "last resolved segment" memo consulted BEFORE
+    /// `own_cache`/hash lookup. Holds `(key.addr(), root)` for the most
+    /// recent exact-base `hash_find` win (root.addr() == key.addr() only —
+    /// biased Large payload keys are NEVER cached here, unlike `own_cache`).
+    /// Hit cost is a single address compare; miss cost is unchanged. Filled
+    /// ONLY from a won probe with an exact root match; invalidated in
+    /// `own_cache_clear`, i.e. in lockstep with `own_cache` on every
+    /// `unregister`/`recycle`, so a stale hit is structurally impossible.
+    /// EMPTY is encoded as `last_key == LAST_EMPTY_KEY` (usize::MAX): real
+    /// segment bases are SEGMENT-aligned and a null lookup key is 0, so an
+    /// EMPTY entry can never be hit — with a SINGLE compare, no extra branch.
+    last_key: usize,
+    last_root: *mut u8,
+
     /// High-water mark: the number of slots that have EVER been written
     /// (including currently-NULL recyclable slots). Segments 0 (the
     /// primordial) is always at index 0 and is never recycled.
@@ -240,11 +255,11 @@ pub(crate) struct SegmentTable {
     /// (= `MAX_SEGMENTS`) `u32` entries; only `[0, free_top)` are meaningful.
     /// `unregister`/`recycle` push the just-vacated index here (O(1));
     /// `register` pops from here first (O(1)) before falling back to append.
-    free_list: *mut u32,
+    pub(super) free_list: *mut u32,
     /// Pointer to the free-list's top-of-stack counter (a single `u32` carved
     /// right after `free_list`'s `FREE_LIST_CAPACITY` entries). The number of
     /// valid (push-order) entries currently on the free-list stack.
-    free_top: *mut u32,
+    pub(super) free_top: *mut u32,
 }
 
 impl SegmentTable {
@@ -279,6 +294,10 @@ impl SegmentTable {
             // keys `OWN_CACHE_EMPTY_KEY`). It only ever fills from a won
             // `hash_contains` probe.
             own_cache: [(OWN_CACHE_EMPTY_KEY, core::ptr::null_mut()); OWN_CACHE_SIZE],
+            // N9: the last-segment memo starts EMPTY (never matches — see
+            // LAST_EMPTY_KEY above).
+            last_key: LAST_EMPTY_KEY,
+            last_root: core::ptr::null_mut(),
             count,
             hash_slots,
             free_list,
@@ -787,6 +806,19 @@ impl SegmentTable {
     /// Owner lookup with cache fill; the cache retains only allocator roots.
     #[inline(always)]
     pub(crate) fn canonical_base_of_mut(&mut self, key: *mut u8) -> Option<*mut u8> {
+        // N9: single-entry memo FIRST — one address compare on the hit path,
+        // nothing new on the miss path. The stored root carries the table's
+        // own provenance (same guarantee as `own_cache`), never the lookup
+        // key. Eviction is co-located with `own_cache` in `own_cache_clear`.
+        // Single compare: `last_key == LAST_EMPTY_KEY` encodes EMPTY, which
+        // neither a real SEGMENT-aligned base nor a null key can match.
+        if self.last_key == key.addr() {
+            // The memo is part of Tier-1: count its hits with the own_cache hits.
+            #[cfg(feature = "bench-internals")]
+            crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return Some(self.last_root);
+        }
         let index = Self::cache_index(key);
         let (cached_key, cached_root) = self.own_cache[index];
         if cached_key == key.addr() {
@@ -800,6 +832,12 @@ impl SegmentTable {
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let root = self.hash_find(key)?;
         self.own_cache[index] = (key.addr(), root);
+        // N9: memoize ONLY exact-base wins (root.addr() == key.addr());
+        // biased Large payload keys (root != key) are never memoized.
+        if root.addr() == key.addr() {
+            self.last_key = key.addr();
+            self.last_root = root;
+        }
         Some(root)
     }
     /// R2-05 (independent src review round 2, task #2007): like
@@ -836,6 +874,12 @@ impl SegmentTable {
     /// This remains true after a caller-derived fill, hit, or collision.
     #[inline(always)]
     pub(crate) fn canonical_base_of(&self, base: *mut u8) -> Option<*mut u8> {
+        // N9: same read-only memo check as `canonical_base_of_mut` (no fill
+        // possible under `&self`; the miss path is unchanged).
+        // Single compare: EMPTY encoding can never match (see mut variant).
+        if self.last_key == base.addr() {
+            return Some(self.last_root);
+        }
         let idx = Self::cache_index(base);
         let (cached_key, cached_root) = self.own_cache[idx];
         if cached_key == base.addr() {
@@ -873,6 +917,14 @@ impl SegmentTable {
             if self.own_cache[i].1 == base {
                 self.own_cache[i] = (OWN_CACHE_EMPTY_KEY, core::ptr::null_mut());
             }
+        }
+        // N9: the last-segment memo is invalidated in lockstep with
+        // `own_cache` — it only ever holds an exact-base (root == key)
+        // entry, so comparing the stored root against the evicted `base`
+        // is exact, never over-broad.
+        if self.last_root == base {
+            self.last_key = LAST_EMPTY_KEY;
+            self.last_root = core::ptr::null_mut();
         }
     }
 
@@ -940,59 +992,5 @@ impl SegmentTable {
     fn slot_ptr(slots: *mut *mut u8, i: usize) -> *mut *mut u8 {
         crate::alloc_core::node::Node::offset(slots as *mut u8, i * core::mem::size_of::<*mut u8>())
             as *mut *mut u8
-    }
-
-    // -------------------------------------------------------------------
-    // Task #135 (Part 1) — O(1) free-list of recycled slot indices.
-    //
-    // A plain stack (LIFO) of `u32` slot indices, carved in the primordial
-    // segment right after the hash table. Invariant: an index is on the
-    // free-list IF AND ONLY IF the corresponding `slots[index]` is currently
-    // NULL. `unregister`/`recycle` push (after NULLing the slot); `register`
-    // pops (before writing the new base into the slot). Both call sites are
-    // guarded so an index is pushed at most once per NULL transition (see
-    // their `current == base` / `current != base` checks), so the free-list
-    // never holds a duplicate entry and never holds an index whose slot is
-    // actually live.
-    // -------------------------------------------------------------------
-
-    /// Address of free-list entry `i`. Pure pointer arithmetic through the
-    /// `node` seam.
-    #[inline(always)]
-    fn free_list_slot_ptr(&self, i: usize) -> *mut u32 {
-        crate::alloc_core::node::Node::offset(
-            self.free_list as *mut u8,
-            i * core::mem::size_of::<u32>(),
-        ) as *mut u32
-    }
-
-    /// Push `idx` onto the free-list stack. Caller's invariant: `idx`'s slot
-    /// was just NULLed (transitioned live → recyclable) and is not already on
-    /// the free-list — see the guarded call sites in `unregister`/`recycle`.
-    #[inline]
-    fn free_list_push(&mut self, idx: u32) {
-        let top = crate::alloc_core::node::Node::read_u32(self.free_top as *const u32);
-        debug_assert!(
-            (top as usize) < FREE_LIST_CAPACITY,
-            "free-list overflow — more recycled slots than MAX_SEGMENTS"
-        );
-        let slot = self.free_list_slot_ptr(top as usize);
-        crate::alloc_core::node::Node::write_u32(slot, idx);
-        crate::alloc_core::node::Node::write_u32(self.free_top, top + 1);
-    }
-
-    /// Pop the most-recently-recycled index off the free-list, or `None` if
-    /// it is empty. O(1).
-    #[inline]
-    fn free_list_pop(&mut self) -> Option<u32> {
-        let top = crate::alloc_core::node::Node::read_u32(self.free_top as *const u32);
-        if top == 0 {
-            return None;
-        }
-        let new_top = top - 1;
-        let slot = self.free_list_slot_ptr(new_top as usize);
-        let idx = crate::alloc_core::node::Node::read_u32(slot);
-        crate::alloc_core::node::Node::write_u32(self.free_top, new_top);
-        Some(idx)
     }
 }

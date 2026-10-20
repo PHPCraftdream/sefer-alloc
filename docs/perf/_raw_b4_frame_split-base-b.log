@@ -1,0 +1,62 @@
+== sefer w_alloc marginal Ir/op: 35056
+5622.0	 | src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [tgtao-split-base-b/release/examples/zz_batch_probe]
+3981.0	src/alloc_core/segment/bitmap/segment_bitmap.rs | (bit >> 3, 1u8 << (bit & 7))
+3976.0	examples/zz_batch_probe.rs | fn w_alloc<A: GlobalAlloc>(a: &A, l: Layout) -> *mut u8 { unsafe { a.alloc(l) } }
+3976.0	 | examples/zz_batch_probe.rs:zz_batch_probe::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> [tgtao-split-base-b/release/examples/zz_batch_probe]
+3373.0	 | src/registry/heap_core/alloc/hot.rs:zz_batch_probe::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+1965.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+1920.0	src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs | head_off = if next.is_null() {
+1800.0	 | src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+1792.0	 | src/alloc_core/platform/size_classes.rs:zz_batch_probe::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+1687.0	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:zz_batch_probe::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+1575.0	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+1536.0	src/registry/heap_core/alloc/hot.rs | let cnt = self.tcache.classes[c].count as usize;
+1440.0	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+1335.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+1330.0	 | src/alloc_core/config/continuation_bounds.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+ 986.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+ 975.0	src/alloc_core/segment/segment_table/route_slots.rs | <counts for unidentified lines in split-base-b/src/alloc_core/segment/segment_table/route_slots.rs>
+ 930.0	src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs | while k < out.len() && head_off != FREE_LIST_NULL {
+ 795.0	 | src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [tgtao-split-base-b/release/examples/zz_batch_probe]
+ 768.0	src/alloc_core/platform/size_classes.rs | Some(SIZE2CLASS[seed_idx] as usize)
+ 768.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:zz_batch_probe::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 735.0	src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs | <counts for unidentified lines in split-base-b/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs>
+ 721.0	src/alloc_core/segment/bitmap/segment_bitmap.rs | Node::write_u8(p, byte & !mask);
+ 720.0	src/alloc_core/segment/segment_table/route_slots.rs | if off >= SEGMENT || !off.is_multiple_of(MIN_BLOCK) {
+ 717.0	src/alloc_core/config/continuation_bounds.rs | off.wrapping_sub(self.lo) < self.span && off & (MIN_BLOCK - 1) == 0
+ 542.0	src/registry/heap_core/alloc/hot.rs | <counts for unidentified lines in split-base-b/src/registry/heap_core/alloc/hot.rs>
+ 538.0	src/alloc_core/config/continuation_bounds.rs | <counts for unidentified lines in split-base-b/src/alloc_core/config/continuation_bounds.rs>
+ 512.0	src/alloc_core/platform/size_classes.rs | let seed_idx = if size == 0 {
+ 512.0	src/alloc_core/platform/size_classes.rs | if seed_idx >= S2C_LEN - 1 {
+ 512.0	 | src/global/tls_heap.rs:zz_batch_probe::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+== sefer w_free marginal Ir/op: 44450
+8312.0	 | src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [tgtao-split-base-b/release/examples/zz_batch_probe]
+8310.0	 | src/registry/heap_core/free/dealloc_own_base.rs:zz_batch_probe::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+4432.0	src/alloc_core/segment/bitmap/segment_bitmap.rs | (bit >> 3, 1u8 << (bit & 7))
+4322.0	 | examples/zz_batch_probe.rs:zz_batch_probe::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> [tgtao-split-base-b/release/examples/zz_batch_probe]
+3840.0	examples/zz_batch_probe.rs | fn w_free<A: GlobalAlloc>(a: &A, p: *mut u8, l: Layout) { unsafe { a.dealloc(p, l) } }
+3428.0	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:zz_batch_probe::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+3072.0	 | src/alloc_core/platform/size_classes.rs:zz_batch_probe::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+2560.0	 | src/alloc_core/segment/segment_table/segment_table_impl.rs:zz_batch_probe::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+1680.0	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+1440.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+1294.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:zz_batch_probe::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+1280.0	src/registry/heap_core/free/dealloc_own_base.rs | let cnt = self.tcache.classes[c].count as usize;
+1280.0	src/registry/heap_core/free/dealloc_own_base.rs | if meta.magazine_bitmap().is_in_magazine(off) {
+1260.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+1248.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:zz_batch_probe::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+1200.0	src/alloc_core/small/alloc_core_small_magazine.rs | let next_ptr = if prev_off == FREE_LIST_NULL {
+1200.0	src/alloc_core/small/alloc_core_small_magazine.rs | if bm.is_free(off) {
+1200.0	src/alloc_core/small/alloc_core_small_magazine.rs | if (off as usize) < payload_start {
+1144.0	src/alloc_core/segment/segment_table/segment_table_impl.rs | (base.addr() >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)
+1024.0	src/alloc_core/segment/segment_table/segment_table_impl.rs | let (cached_key, cached_root) = self.own_cache[index];
+1024.0	 | src/global/sefer_alloc/global_alloc.rs:zz_batch_probe::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 858.0	src/alloc_core/segment/segment_header/segment_header_views.rs | match b {
+ 840.0	src/alloc_core/small/alloc_core_small_magazine.rs | while run_end < blocks.len() {
+ 840.0	src/alloc_core/small/alloc_core_small_magazine.rs | if q.is_null() || os::segment_base_of_ptr(q) != candidate {
+ 781.0	src/alloc_core/small/alloc_core_small_magazine.rs | <counts for unidentified lines in split-base-b/src/alloc_core/small/alloc_core_small_magazine.rs>
+ 768.0	src/registry/heap_core/free/dealloc_own_base.rs | if (off as usize) < payload_start {
+ 768.0	src/registry/heap_core/free/dealloc_own_base.rs | <counts for unidentified lines in split-base-b/src/registry/heap_core/free/dealloc_own_base.rs>
+ 768.0	src/alloc_core/platform/size_classes.rs | Some(SIZE2CLASS[seed_idx] as usize)
+ 768.0	 | src/alloc_core/segment/segment_header/segment_header_views.rs:zz_batch_probe::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 768.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:zz_batch_probe::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
