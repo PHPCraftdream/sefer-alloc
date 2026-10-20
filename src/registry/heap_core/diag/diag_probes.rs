@@ -290,6 +290,28 @@ impl HeapCore {
         self.dealloc_own_thread_with_base(owned, layout);
     }
 
+    /// B4 У1 (`small-class-authority`) retain-pin test seam (ADR §8 T9):
+    /// forwards [`AllocCore::dbg_force_decommit_retain_for`] for a routed
+    /// HeapCore. Under `small-class-authority` a routed core makes the hook
+    /// FATAL (retain would drop the pages whose class bytes the free path
+    /// treats as authoritative); unrouted standalone cores keep it. The
+    /// retain-pin test drives THIS routed shape through a subprocess.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "internals",
+        feature = "alloc-global",
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "small-class-authority"
+    ))]
+    #[inline(always)]
+    #[allow(unsafe_code)] // Forwards the AllocCore hook's live_count==0 contract.
+    pub unsafe fn dbg_force_decommit_retain_for(&self, ptr: *mut u8) -> bool {
+        // SAFETY: identical `# Safety` contract, forwarded to THIS caller
+        // verbatim (live_count == 0 precondition upheld by the caller).
+        unsafe { self.core.dbg_force_decommit_retain_for(ptr) }
+    }
+
     /// R28-1 (task #430) MEASUREMENT-ONLY: run `AllocCore::flush_class`
     /// standalone on `blocks`, exposing the ONE overflow sub-cost R24-2 §5.1
     /// flagged as "NOT cleanly isolable without a hook that calls

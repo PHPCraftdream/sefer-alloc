@@ -2,6 +2,8 @@ use super::issue_transaction::{IssueRun, IssueTransaction};
 #[cfg(feature = "alloc-global")]
 use super::route_slots::RouteSlots;
 use super::*;
+#[cfg(all(feature = "alloc-global", feature = "small-class-authority"))]
+use crate::alloc_core::remote_bitmap::ClassLeaves;
 #[cfg(feature = "alloc-global")]
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
@@ -173,6 +175,50 @@ pub(crate) const OWN_CACHE_SIZE: usize = 16;
 /// with no separate `!is_null()` root check.
 const OWN_CACHE_EMPTY_KEY: usize = usize::MAX;
 
+/// B4 У1 cached-handle transport (ADR `adr_v2_r4.md` §4.1 variant (в)): one
+/// `own_cache` entry. Without `small-class-authority` this is exactly the
+/// historical `(key, root)` pair. Under the feature the entry grows a third
+/// field — `leaves`, the owner-route's `ClassLeaves` pointer captured at the
+/// same won-probe fill that writes `key`/`root` — and the whole entry is
+/// 32-byte aligned so that an authority hit reads EXACTLY ONE cache line (the
+/// same line `free` already touches for `key`/`root`); the table grows by
+/// 16 × 32 = 512 B total (16 × 16 B of that is the pre-existing pair).
+///
+/// # Invariant (extends the `own_cache` keystone below)
+///
+/// `entry.leaves` is either null or points into the `SmallSidecar` of the
+/// route registered for `entry.root`'s segment. It is written together with
+/// `key`/`root` (the only fill site) and cleared together with them (the only
+/// clear site, `own_cache_clear`). The teardown order in `unregister`/`recycle`
+/// — `routes.remove(slot)` → `hash_remove(base)` → `own_cache_clear(base)` —
+/// is owner-only (`&mut self`) and non-interleavable, so no code can observe
+/// an entry whose `key` matches while its `leaves` dangles: the entry is
+/// zeroed in the SAME function that drops the route. Hence "entry valid
+/// (key matches) ⇔ route alive ⇔ `leaves` deref valid". A matched entry with
+/// null `leaves` means the route has no Small sidecar (Primordial/Large kind)
+/// — the caller falls back to the authoritative lookup (case (а)/(в)).
+#[derive(Clone, Copy)]
+#[cfg_attr(feature = "small-class-authority", repr(align(32)))]
+struct OwnCacheEntry {
+    key: usize,
+    root: *mut u8,
+    /// Cached-handle transport (ADR §4.1 (в)); see the invariant above.
+    #[cfg(feature = "small-class-authority")]
+    leaves: *const ClassLeaves,
+}
+
+impl OwnCacheEntry {
+    #[inline]
+    const fn empty() -> Self {
+        Self {
+            key: OWN_CACHE_EMPTY_KEY,
+            root: core::ptr::null_mut(),
+            #[cfg(feature = "small-class-authority")]
+            leaves: core::ptr::null_mut(),
+        }
+    }
+}
+
 const _: () = assert!(
     OWN_CACHE_SIZE.is_power_of_two(),
     "OWN_CACHE_SIZE must be a power of two -- SegmentTable::cache_index masks with OWN_CACHE_SIZE - 1"
@@ -211,8 +257,8 @@ pub(crate) struct SegmentTable {
     ///
     /// ## Invariant (the correctness keystone — a stale hit is UB / M2 breach)
     ///
-    /// Each `own_cache[i]` entry is a `(key, root)` pair: an EMPTY slot is
-    /// `(OWN_CACHE_EMPTY_KEY, null_mut())`; a filled slot is a biased Large
+    /// Each `own_cache[i]` entry is an [`OwnCacheEntry`]: an EMPTY slot is
+    /// `key == OWN_CACHE_EMPTY_KEY`; a filled slot is a biased Large
     /// payload key (which need not equal its reservation root) paired with
     /// an allocator-origin pointer CURRENTLY registered and live in the hash
     /// table. A matching entry carries the same live-membership guarantee as
@@ -223,7 +269,11 @@ pub(crate) struct SegmentTable {
     /// `recycle`) clear the matching cache slot in the SAME function,
     /// immediately after `hash_remove`. You cannot drop a base from the table
     /// without passing through code that also evicts it from the cache.
-    own_cache: [(usize, *mut u8); OWN_CACHE_SIZE],
+    /// Under `small-class-authority` the entry additionally caches the live
+    /// route's `ClassLeaves` pointer (see [`OwnCacheEntry`]'s invariant);
+    /// the same structural argument extends to it because `routes.remove`
+    /// precedes `own_cache_clear` in the same owner-only teardown.
+    own_cache: [OwnCacheEntry; OWN_CACHE_SIZE],
     /// High-water mark: the number of slots that have EVER been written
     /// (including currently-NULL recyclable slots). Segments 0 (the
     /// primordial) is always at index 0 and is never recycled.
@@ -278,7 +328,7 @@ impl SegmentTable {
             // PERF-P2: the direct-mapped own-segment cache starts EMPTY (all
             // keys `OWN_CACHE_EMPTY_KEY`). It only ever fills from a won
             // `hash_contains` probe.
-            own_cache: [(OWN_CACHE_EMPTY_KEY, core::ptr::null_mut()); OWN_CACHE_SIZE],
+            own_cache: [OwnCacheEntry::empty(); OWN_CACHE_SIZE],
             count,
             hash_slots,
             free_list,
@@ -389,6 +439,25 @@ impl SegmentTable {
             return routes.small_class_matches(base, offset, class_idx);
         }
         true
+    }
+
+    /// B4 У1 (`small-class-authority`): whether terminal route descriptors are
+    /// attached to this table — i.e. whether the free path may consult a live
+    /// Small sidecar as class authority (ADR §4.2 case (а) split). The same
+    /// `routes.is_some()` predicate the retain-fatal gate uses
+    /// (`decommit.rs`'s `dbg_force_decommit_retain_for`).
+    #[cfg(feature = "small-class-authority")]
+    #[cfg(feature = "alloc-core")]
+    #[inline]
+    pub(crate) fn class_authority_routes_attached(&self) -> bool {
+        #[cfg(feature = "alloc-global")]
+        {
+            self.routes.is_some()
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        {
+            false
+        }
     }
 
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
@@ -788,18 +857,34 @@ impl SegmentTable {
     #[inline(always)]
     pub(crate) fn canonical_base_of_mut(&mut self, key: *mut u8) -> Option<*mut u8> {
         let index = Self::cache_index(key);
-        let (cached_key, cached_root) = self.own_cache[index];
-        if cached_key == key.addr() {
+        let entry = self.own_cache[index];
+        if entry.key == key.addr() {
             #[cfg(feature = "bench-internals")]
             crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            return Some(cached_root);
+            return Some(entry.root);
         }
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let root = self.hash_find(key)?;
-        self.own_cache[index] = (key.addr(), root);
+        // B4 У1 cached-handle fill (ADR §4.1 (в)): capture the live route's
+        // `ClassLeaves` pointer in the SAME write that stores key/root, so the
+        // entry can never hold a key without its authority handle. The
+        // capture is safe-code (`ptr::from_ref` on an already-validated route
+        // sidecar); dereferencing is confined to the authority transport.
+        #[cfg(feature = "small-class-authority")]
+        let leaves = self
+            .routes
+            .as_ref()
+            .and_then(|routes| routes.small_leaves_ptr(root))
+            .unwrap_or(core::ptr::null_mut());
+        self.own_cache[index] = OwnCacheEntry {
+            key: key.addr(),
+            root,
+            #[cfg(feature = "small-class-authority")]
+            leaves,
+        };
         Some(root)
     }
     /// R2-05 (independent src review round 2, task #2007): like
@@ -837,11 +922,34 @@ impl SegmentTable {
     #[inline(always)]
     pub(crate) fn canonical_base_of(&self, base: *mut u8) -> Option<*mut u8> {
         let idx = Self::cache_index(base);
-        let (cached_key, cached_root) = self.own_cache[idx];
-        if cached_key == base.addr() {
-            return Some(cached_root);
+        let entry = self.own_cache[idx];
+        if entry.key == base.addr() {
+            return Some(entry.root);
         }
         self.hash_find(base)
+    }
+
+    /// B4 У1 cached-handle transport (ADR §4.1 (в)): the `ClassLeaves`
+    /// pointer cached for `base`'s own_cache entry, if that entry currently
+    /// holds `base`'s key. `None` = key mismatch (empty slot or a
+    /// direct-mapped conflict from another segment) — NOT a liveness
+    /// verdict; the caller must fall back to the authoritative lookup.
+    /// `Some(null)` = the entry matches but its route carries no Small
+    /// sidecar (Primordial/Large kind) or was filled during the
+    /// owner-only window between `routes.remove` and `own_cache_clear`.
+    /// The returned pointer is dereferenceable ONLY under the
+    /// [`OwnCacheEntry`] invariant documented on the struct (see also
+    /// `AllocCore::small_class_authority`'s `# Safety` block).
+    #[cfg(feature = "small-class-authority")]
+    #[cfg(feature = "alloc-core")]
+    #[inline(always)]
+    pub(crate) fn cached_class_leaves(&self, base: *mut u8) -> Option<*const ClassLeaves> {
+        let entry = self.own_cache[Self::cache_index(base)];
+        if entry.key == base.addr() {
+            Some(entry.leaves)
+        } else {
+            None
+        }
     }
 
     /// PERF-P2 (Э3): direct-mapped cache index for `base`. Segments are
@@ -870,8 +978,8 @@ impl SegmentTable {
     #[inline]
     pub(super) fn own_cache_clear(&mut self, base: *mut u8) {
         for i in 0..OWN_CACHE_SIZE {
-            if self.own_cache[i].1 == base {
-                self.own_cache[i] = (OWN_CACHE_EMPTY_KEY, core::ptr::null_mut());
+            if self.own_cache[i].root == base {
+                self.own_cache[i] = OwnCacheEntry::empty();
             }
         }
     }

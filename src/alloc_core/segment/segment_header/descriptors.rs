@@ -301,4 +301,14 @@ impl SegmentMeta {
             Layout::magazine_bitmap_off(),
         ))
     }
+
+    /// B4 Шаг S-v (`small-state-byte`): the per-granule owner-private STATE
+    /// byte array view. The bytes live at [`Layout::state_byte_off`]
+    /// (behind both bitmaps); fresh segments inherit the OS's zero fill,
+    /// which is the "never issued" encoding.
+    #[cfg(feature = "small-state-byte")]
+    #[inline(always)]
+    pub(crate) fn state_byte(&self) -> crate::alloc_core::state_byte::StateByte {
+        crate::alloc_core::state_byte::StateByte::new(self.base)
+    }
 }

@@ -13,3 +13,10 @@ mod realloc_fastpath;
 
 #[cfg(feature = "alloc-global")]
 pub(crate) use owned_block::OwnedBlock;
+// B4 У1 (`small-class-authority`): tri-state free-path class-authority
+// verdict defined in `mem_impl.rs` (next to its producer,
+// `AllocCore::small_class_authority`); consumed by the registry's
+// `small_free_guard` callers via `alloc_core::alloc_core::ClassAuthority`.
+#[cfg(feature = "small-class-authority")]
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+pub(crate) use mem_impl::ClassAuthority;

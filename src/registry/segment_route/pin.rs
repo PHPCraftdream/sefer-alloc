@@ -1,4 +1,7 @@
 use super::directory::EntryHandle;
+// `SmallSidecar` is named only by the У1 free-path authority accessor below.
+#[cfg(feature = "small-class-authority")]
+use super::SmallSidecar;
 use super::RouteKind;
 
 /// Counted descriptor and sidecar capability, not a reservation credit.
@@ -27,6 +30,16 @@ impl RoutePin {
     /// Capacity validation reads only the independent immutable descriptor.
     pub fn contains_payload(&self, ptr: *mut u8, size: usize) -> bool {
         self.entry.contains_payload(ptr.addr(), size)
+    }
+    /// B4 У1 (`small-class-authority`): read-only sidecar access for the
+    /// free-path class authority (`AllocCore::small_class_authority` →
+    /// `SmallSidecar::class_matches`). Safe: same counted-handle discipline as
+    /// `RouteRegistration::small_sidecar` — only atomic fields are read
+    /// through the shared reference, and the pin retains the System
+    /// allocation for the borrow's lifetime.
+    #[cfg(feature = "small-class-authority")]
+    pub fn small_sidecar(&self) -> Option<&SmallSidecar> {
+        self.entry.small_sidecar()
     }
     /// Read-only terminal-publication oracle; does not grant owner mutation.
     #[cfg(feature = "internals")]

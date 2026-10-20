@@ -94,6 +94,16 @@ pub(super) enum SmallFreeGuard {
         allow(dead_code)
     )]
     RouteToLargeFree,
+    /// B4 У1 (`small-class-authority`, ADR §4.5): rejected by the NEW
+    /// strengthening — either the alignment conjunct
+    /// (`off & (MIN_BLOCK-1) != 0`) or the class-byte authority
+    /// (`encoded(off >> 4) != c + 1`, including encoded `0` = metadata /
+    /// live-interior / never-issued start granule, ADR case (б)). These frees
+    /// were accepted before this feature; the callers bump the SEPARATE
+    /// `LOCAL_REJECT_STRONGER_FREES` diagnostic here so the three ADR
+    /// counter categories stay disjoint.
+    #[cfg(any(feature = "small-class-authority", feature = "small-state-byte"))]
+    RejectStronger,
 }
 
 /// Task #2002: the shared F7/H1/M2 guard chain both
@@ -191,6 +201,8 @@ pub(super) fn small_free_guard(
     ptr: *mut u8,
     c: usize,
     layout: Layout,
+    #[cfg(all(feature = "small-class-authority", not(feature = "small-state-byte")))]
+    auth: crate::alloc_core::ClassAuthority,
 ) -> SmallFreeGuard {
     #[cfg(feature = "hardened")]
     use crate::alloc_core::size_classes::SizeClasses;
@@ -300,26 +312,125 @@ pub(super) fn small_free_guard(
     // rationale (order is load-bearing: in-magazine, THEN stale-free, THEN
     // flushed-bitmap).
     let off = (ptr as usize - base as usize) as u32;
+
+    // ── B4 У1 (`small-class-authority`, ADR §4.2/§4.5): the class-byte
+    // authority REPLACES `payload_start` + (in the scalar caller) production
+    // `divides` for routed Small/Primordial blocks. The checks stay
+    // SEQUENTIAL early returns in the ADR's order — (1) alignment, (2) class
+    // byte — and are NOT merged into one condition (merged builds measured
+    // +6 Ir, NO-GO). Unrouted cores / segments without a live Small sidecar
+    // (case (а)) fall through to the ENTIRE legacy path below unchanged.
+    // Every reject here is a strengthening: the old path accepted these
+    // frees, so they surface as `RejectStronger`, NOT `RejectNoOp`.
+    #[cfg(all(feature = "small-class-authority", not(feature = "small-state-byte")))]
+    if !matches!(auth, crate::alloc_core::ClassAuthority::Unrouted) {
+        use crate::alloc_core::size_classes::MIN_BLOCK;
+        // (1) Alignment. Closes the item-209 gap: without this conjunct a
+        // `free(start + 8)` would pass the class byte (the start granule's
+        // encoding), miss the magazine bit (indexed at `off >> 4`), pass
+        // bump/is_free, and push an UNALIGNED block into the magazine.
+        if off & (MIN_BLOCK as u32 - 1) != 0 {
+            return SmallFreeGuard::RejectStronger;
+        }
+        // (2) Class byte of the start granule (ADR case (б): a zero/foreign
+        // encoding — metadata region, interior of a live block, never-issued
+        // granule — is REJECT, matching hardened SEC-1, not a fallback).
+        if matches!(auth, crate::alloc_core::ClassAuthority::Mismatch) {
+            return SmallFreeGuard::RejectStronger;
+        }
+        // `byte == c + 1 ∧ aligned ⇒ divides(c, off)` (the byte is written
+        // only into the start granule of an issued block, whose start is an
+        // absolute multiple of `block_size`), so both `payload_start` and
+        // `divides` are subsumed on this path (no weakening: every offset
+        // they reject has no class byte / a foreign one here).
+    }
+
     let meta = SegmentMeta::new(base);
     let payload_start = if matches!(&kind, BlockKind::Primordial) {
         SegmentLayout::primordial_meta_end()
     } else {
         SegmentLayout::small_meta_end()
     };
+    // У1: the class-byte check above subsumes the metadata-window check for
+    // routed blocks (payload bytes have no issued class byte); case (а)
+    // keeps it verbatim. S-v: the owner verdict is that the payload-window
+    // check stays EXPLICIT on the byte path (its removal is not proven), so
+    // under `small-state-byte` it runs for every kind unconditionally.
+    #[cfg(not(any(feature = "small-class-authority", feature = "small-state-byte")))]
     if (off as usize) < payload_start {
         return SmallFreeGuard::RejectNoOp;
     }
+    #[cfg(all(feature = "small-class-authority", not(feature = "small-state-byte")))]
+    if matches!(auth, crate::alloc_core::ClassAuthority::Unrouted) && (off as usize) < payload_start
+    {
+        return SmallFreeGuard::RejectNoOp;
+    }
+    #[cfg(feature = "small-state-byte")]
+    if (off as usize) < payload_start {
+        return SmallFreeGuard::RejectNoOp;
+    }
+    let _ = payload_start;
+    // S-v ordering (ADR v2 r4 §4.5, sequential early returns, not merged):
+    // kind-branches → Unknown → H1 → payload → bump → STATE-BYTE. The byte
+    // check therefore sits AFTER the explicit bump check; the magazine
+    // bitmap check of the legacy path stays where it is under
+    // `not(small-state-byte)` (a magazine-resident block is issued, hence
+    // `off < bump`, so the S-v reordering cannot change any verdict).
+    #[cfg(not(feature = "small-state-byte"))]
     if meta.magazine_bitmap().is_in_magazine(off) {
         return SmallFreeGuard::RejectNoOp;
     }
     if (off as usize) >= meta.bump_of() {
         return SmallFreeGuard::RejectNoOp;
     }
-    if meta.alloc_bitmap().is_free(off) {
-        return SmallFreeGuard::RejectNoOp;
+    // ── B4 Шаг S-v (`small-state-byte`): ONE state-byte load replaces
+    // `is_in_magazine` + `is_free` AND the U1 class-byte formula (strict
+    // form: the byte's class field must equal `class_for(Layout) + 1`).
+    // Applied to BOTH small-class kinds (Small and Primordial — variant (в)'s
+    // "one implementation for routed and unrouted": the state protocol is
+    // maintained by the SHARED substrate writers (`pop_free`/`drain`/
+    // `carve`/`dealloc_small`/`flush_run`/`reclaim`, `state_byte.rs` module
+    // doc), which serve the primordial carve target identically). By this
+    // point `kind` can only be Small or Primordial (Large/Unknown returned
+    // above). Bitmap oracles are NOT consulted on this path; the bitmaps
+    // keep being WRITTEN for their other readers (drain / reclaim /
+    // `class_cursor` scans).
+    //   expected (`c+1 | LIVE`)  → accept;
+    //   `c+1 | MAG` / `c+1 | FREE` → the OLD reject categories (G4
+    //     double-free in magazine / stale-free after flush) → `RejectNoOp`;
+    //   anything else (zero, foreign class, foreign state) → strengthening
+    //     reject (`RejectStronger` — the old path accepted these frees).
+    #[cfg(feature = "small-state-byte")]
+    {
+        use crate::alloc_core::size_classes::MIN_BLOCK;
+        use crate::alloc_core::state_byte::StateByte;
+        // Alignment conjunct (the U1 item-209 term): without it a
+        // `free(start + 8)` reads the START granule's state byte and would
+        // push an unaligned block into the magazine.
+        if off & (MIN_BLOCK as u32 - 1) != 0 {
+            return SmallFreeGuard::RejectStronger;
+        }
+        let byte = meta.state_byte().read(off);
+        // Strict form (S-v): the byte's class field must equal
+        // `class_for(Layout) + 1`.
+        if byte != StateByte::encode(c, StateByte::LIVE) {
+            if byte == StateByte::encode(c, StateByte::MAG)
+                || byte == StateByte::encode(c, StateByte::FREE)
+            {
+                return SmallFreeGuard::RejectNoOp;
+            }
+            return SmallFreeGuard::RejectStronger;
+        }
+        SmallFreeGuard::Accept { off }
     }
-
-    SmallFreeGuard::Accept { off }
+    // (Under `small-state-byte` the byte block above returns on every path.)
+    #[cfg(not(feature = "small-state-byte"))]
+    {
+        if meta.alloc_bitmap().is_free(off) {
+            return SmallFreeGuard::RejectNoOp;
+        }
+        SmallFreeGuard::Accept { off }
+    }
 }
 
 // `HARDENED_LARGE_NOOP_COUNT` stayed in the sibling `dealloc` module with
@@ -392,199 +503,254 @@ impl HeapCore {
             // below needs it, but it NO LONGER decides Small-vs-Large —
             // `small_free_guard` does, from the segment header's `kind` byte
             // via `BlockKind` (see its F7 branch and the pre-route above it).
-            {
-                if let Some(c) = SizeClasses::class_for(size, align) {
-                    let cnt = self.tcache.classes[c].count as usize;
-
-                    // Task #2002: F7 (task #25; R17-4/task #321; R18-3/task
-                    // #330) Large-kind routing, H1 (task #167) interior-pointer
-                    // guard, and the M2 (Э6, P6.1) double-free oracle pair —
-                    // now the shared `small_free_guard` this file defines
-                    // above, called identically from `dealloc_batch_small`
-                    // (`free/dealloc_batch.rs`). See that function's doc
-                    // comment for the full guard-by-guard rationale (case
-                    // split for F7's legitimate-promotion vs. contract-
-                    // violation branches, H1's interior-pointer blind spot in
-                    // the M2 oracles, the Э6 double-free-oracle redesign
-                    // history, and the RESIDUAL M2 LIMIT this pair does NOT
-                    // cover — task #164/X7).
-                    let (off, meta) = match small_free_guard(root, block, c, layout) {
-                        SmallFreeGuard::Accept { off } => {
-                            // Ordinary builds reject offsets not divisible by
-                            // the supplied stride; aligned wrong-class pointers
-                            // can pass. Exact owner identity costs ~33 Ir/free
-                            // per PR57's owner decision, so it stays hardened-only.
-                            #[cfg(feature = "hardened")]
-                            if !self.core.small_class_matches(root, off, c) {
-                                return;
-                            }
-                            #[cfg(not(feature = "hardened"))]
-                            if !crate::alloc_core::size_classes::SizeClasses::divides(
+            if let Some(c) = SizeClasses::class_for(size, align) {
+                let cnt = self.tcache.classes[c].count as usize;
+                // Task #2002: F7 (task #25; R17-4/task #321; R18-3/task
+                // #330) Large-kind routing, H1 (task #167) interior-pointer
+                // guard, and the M2 (Э6, P6.1) double-free oracle pair —
+                // now the shared `small_free_guard` this file defines
+                // above, called identically from `dealloc_batch_small`
+                // (`free/dealloc_batch.rs`). See that function's doc
+                // comment for the full guard-by-guard rationale (case
+                // split for F7's legitimate-promotion vs. contract-
+                // violation branches, H1's interior-pointer blind spot in
+                // the M2 oracles, the Э6 double-free-oracle redesign
+                // history, and the RESIDUAL M2 LIMIT this pair does NOT
+                // cover — task #164/X7).
+                //
+                // B4 У1: the `small-class-authority` verdict is resolved
+                // ONCE per free here (routed path: `ClassLeaves` class
+                // byte; unrouted: legacy) and handed to the shared guard.
+                // S-v: when `small-state-byte` is ALSO on, the guard's
+                // state-byte check SUBSUMES the U1 verdict, so the U1
+                // handle is NOT read on the hot path (the read compiles
+                // out entirely).
+                #[cfg(all(feature = "small-class-authority", not(feature = "small-state-byte")))]
+                let auth = self.core.small_class_authority(root, block, c);
+                let (off, meta) = match small_free_guard(
+                    root,
+                    block,
+                    c,
+                    layout,
+                    #[cfg(all(
+                        feature = "small-class-authority",
+                        not(feature = "small-state-byte")
+                    ))]
+                    auth,
+                ) {
+                    SmallFreeGuard::Accept { off } => {
+                        // Ordinary builds reject offsets not divisible by
+                        // the supplied stride; aligned wrong-class pointers
+                        // can pass. Exact owner identity costs ~33 Ir/free
+                        // per PR57's owner decision, so it stays hardened-only.
+                        #[cfg(feature = "hardened")]
+                        if !self.core.small_class_matches(root, off, c) {
+                            return;
+                        }
+                        // B4 У1: on a routed block the class-byte authority
+                        // subsumes `divides` (`byte == c+1 ∧ aligned ⇒
+                        // divides`); case (а) (unrouted) keeps it verbatim.
+                        #[cfg(all(
+                            not(feature = "hardened"),
+                            not(feature = "small-class-authority")
+                        ))]
+                        if !crate::alloc_core::size_classes::SizeClasses::divides(c, off as usize) {
+                            return;
+                        }
+                        #[cfg(all(
+                            not(feature = "hardened"),
+                            feature = "small-class-authority",
+                            not(feature = "small-state-byte")
+                        ))]
+                        if matches!(auth, crate::alloc_core::ClassAuthority::Unrouted)
+                            && !crate::alloc_core::size_classes::SizeClasses::divides(
                                 c,
                                 off as usize,
-                            ) {
-                                return;
-                            }
-                            (off, SegmentMeta::new(root))
-                        }
-                        SmallFreeGuard::RejectNoOp => {
-                            // R6-T55: local no-op reject — internal counter,
-                            // not the public foreign/unroutable stat. The
-                            // guard's Large-interior cases surface HERE, so
-                            // this is one increment per rejected free.
-                            #[cfg(any(feature = "internals", feature = "bench-internals"))]
-                            crate::alloc_core::LOCAL_REJECT_FREES
-                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                            return;
-                        }
-                        SmallFreeGuard::RouteToLargeFree => {
-                            route_to_large_free(self, block, layout, root);
-                            return;
-                        }
-                    };
-
-                    // R1-01: free-side byte budget. `cap` is `TCACHE_CAP` for
-                    // small classes (unchanged behaviour) and smaller for
-                    // large small-classes, mirroring D3's refill-side budget
-                    // — see `FREE_PARK_CAP`'s doc comment.
-                    let cap = FREE_PARK_CAP[c] as usize;
-                    if cnt < cap {
-                        // Legit free → push. NO key stamp, NO block-body write.
-                        //
-                        // RAD-5 (E4) GO/NO-GO EXPERIMENT: mark this block
-                        // magazine-resident in the second bitmap. `meta`/`off`
-                        // are already computed above for the M2 bitmap read —
-                        // this reuses them, paying only the new bitmap's own
-                        // read-modify-write. See `magazine_bitmap.rs`'s module
-                        // doc; `docs/perf/IAI_BASELINE.md`'s RAD-5 entry has
-                        // the measured verdict on whether this is worth it.
-                        meta.magazine_bitmap().mark_magazine(off);
-                        // R6-T13: identity mask (`cnt < cap <= TCACHE_CAP`); skips bounds check.
-                        self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block;
-                        self.tcache.classes[c].count = (cnt + 1) as u8;
-                        // R13-3 (task #273): a pushed-back block was
-                        // previously issued (it is being FREED right now) —
-                        // by the dispatch conjunct (§2 of both virgin-skip
-                        // design docs) it is NEVER virgin, regardless of the
-                        // bit any earlier occupant of physical slot `cnt`
-                        // left behind. `PerClass::virgin_mask`'s own
-                        // invariant ("bits >= count are 0") already
-                        // guarantees bit `cnt` reads 0 here (it was `>=
-                        // count` the instant before this push bumped
-                        // `count`) — this is a defensive no-op AND, not a
-                        // load-bearing clear, kept explicit so the invariant
-                        // is visibly re-asserted at every mutation site
-                        // rather than relying on readers to re-derive it.
-                        #[cfg(feature = "virgin-zero-skip")]
+                            )
                         {
-                            self.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
+                            return;
                         }
+                        (off, SegmentMeta::new(root))
+                    }
+                    SmallFreeGuard::RejectNoOp => {
+                        // R6-T55: local no-op reject — internal counter,
+                        // not the public foreign/unroutable stat. The
+                        // guard's Large-interior cases surface HERE, so
+                        // this is one increment per rejected free.
+                        #[cfg(any(feature = "internals", feature = "bench-internals"))]
+                        crate::alloc_core::LOCAL_REJECT_FREES
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         return;
                     }
-                    // ── R1-01: free-side byte-budget cap reached ───────
-                    // `cnt == cap < TCACHE_CAP`: this class's per-refill byte
-                    // budget (`FREE_PARK_CAP`) is exhausted, but the physical
-                    // magazine array is not — do NOT grow past `cap` (that
-                    // would re-open the D3 gap: parking more bytes on the
-                    // free side than a refill ever would). Hand the block
-                    // straight to the substrate instead of parking it. The
-                    // M2 oracles (`small_free_guard`) already ran above; the
-                    // block never entered the magazine, so no bitmap/slot
-                    // bookkeeping to undo.
-                    if cap < TCACHE_CAP {
-                        // SAFETY (R6-MS-3): `block` is a valid, currently-live
-                        // small-class-`c` allocation owned by this heap — the
-                        // same guarantee `small_free_guard`'s `Accept` arm
-                        // already established for the ordinary push path
-                        // above; freed exactly once here via a one-element
-                        // batch.
-                        #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
-                        unsafe {
-                            self.core
-                                .flush_class_internal(c, core::slice::from_ref(&block));
-                        }
+                    // B4 У1: strengthening reject — separate counter so
+                    // the ADR §4.5 three counter categories stay disjoint
+                    // (`divides`/SEC-1 stay silent; category 2 unchanged).
+                    #[cfg(any(feature = "small-class-authority", feature = "small-state-byte"))]
+                    SmallFreeGuard::RejectStronger => {
+                        #[cfg(any(feature = "internals", feature = "bench-internals"))]
+                        crate::alloc_core::LOCAL_REJECT_STRONGER_FREES
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         return;
                     }
-                    // ── Magazine overflow (cnt == TCACHE_CAP) ──────────
-                    // P3 (task #147): the P7 dealloc-side bulk-mode bypass is
-                    // RETIRED together with the alloc-side bypass and the
-                    // `alloc_streak` counter. That branch fired only when the
-                    // alloc side had advanced the streak past BULK_THRESHOLD;
-                    // with the counter gone it could never fire, so keeping it
-                    // would be dead code guarded by a stuck-at-0 condition.
-                    // The always-taken half-flush + compact + push below is the
-                    // sole overflow policy now. D1/M2 unchanged: `flush_class`
-                    // returns blocks to the substrate via `dealloc_small`
-                    // (mark_free + dec_live) exactly as before.
+                    SmallFreeGuard::RouteToLargeFree => {
+                        route_to_large_free(self, block, layout, root);
+                        return;
+                    }
+                };
+
+                // R1-01: free-side byte budget. `cap` is `TCACHE_CAP` for
+                // small classes (unchanged behaviour) and smaller for
+                // large small-classes, mirroring D3's refill-side budget
+                // — see `FREE_PARK_CAP`'s doc comment.
+                let cap = FREE_PARK_CAP[c] as usize;
+                if cnt < cap {
+                    // Legit free → push. NO key stamp, NO block-body write.
                     //
-                    // RAD-5: the FLUSH_N blocks about to be flushed leave the
-                    // magazine — clear their bit BEFORE calling `flush_class`
-                    // (mirrors "flush = clear_magazine + mark_free": the
-                    // AllocBitmap side of `mark_free` happens inside
-                    // `flush_class`/`flush_run`; this bitmap's clear happens
-                    // here since `AllocCore` has no magazine concept).
-                    for &flushed in &self.tcache.classes[c].slots[0..FLUSH_N] {
-                        // Allocator-issued magazine pointers preserve provenance: Small/Primordial roots are exact; Large is excluded.
-                        let fbase = crate::alloc_core::os::segment_base_of_ptr(flushed);
-                        debug_assert_eq!(
-                            self.core.canonical_root_for(flushed),
-                            Some(fbase),
-                            "overflow magazine block must map to its segment base"
-                        );
-                        let foff = (flushed.addr() - fbase.addr()) as u32;
-                        SegmentMeta::new(fbase)
-                            .magazine_bitmap()
-                            .clear_magazine(foff);
-                    }
-                    // Normal overflow: half-flush, then push.
-                    // SAFETY (R6-MS-3): every slot in `slots[0..FLUSH_N]` is a
-                    // valid live small-class-`c` allocation owned by this core's
-                    // magazine (just freed into it under the alloc-xthread/fastbin
-                    // path); each is returned to the substrate exactly once here.
-                    #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
-                    unsafe {
-                        self.core
-                            .flush_class_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
-                    };
-                    // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
-                    let remaining = TCACHE_CAP - FLUSH_N;
-                    for i in 0..remaining {
-                        self.tcache.classes[c].slots[i] = self.tcache.classes[c].slots[i + FLUSH_N];
-                    }
-                    // R13-3 (task #273): the virgin mask must undergo the
-                    // IDENTICAL shift as `slots` — bit `i` of the compacted
-                    // mask is bit `i + FLUSH_N` of the pre-compaction mask
-                    // (byte-identical to the `slots[i] = slots[i + FLUSH_N]`
-                    // loop just above, just on the bitmask instead of the
-                    // pointer array). The flushed low half (`slots[0..FLUSH_N]`,
-                    // now returned to the substrate via `flush_class`) is
-                    // dropped entirely, not merely cleared-and-kept.
-                    #[cfg(feature = "virgin-zero-skip")]
-                    {
-                        self.tcache.classes[c].virgin_mask >>= FLUSH_N;
-                    }
-                    // Push (Э6: NO key stamp, NO block-body write). The oracles
-                    // above already ran before this overflow branch, so a
-                    // double-free is caught even when the magazine is full.
-                    // RAD-5: mark the newly-pushed block magazine-resident.
+                    // RAD-5 (E4) GO/NO-GO EXPERIMENT: mark this block
+                    // magazine-resident in the second bitmap. `meta`/`off`
+                    // are already computed above for the M2 bitmap read —
+                    // this reuses them, paying only the new bitmap's own
+                    // read-modify-write. See `magazine_bitmap.rs`'s module
+                    // doc; `docs/perf/IAI_BASELINE.md`'s RAD-5 entry has
+                    // the measured verdict on whether this is worth it.
                     meta.magazine_bitmap().mark_magazine(off);
-                    self.tcache.classes[c].slots[remaining] = block;
-                    self.tcache.classes[c].count = (remaining + 1) as u8;
-                    // R13-3: the newly-pushed block is a freed (previously
-                    // issued) block — never virgin (dispatch conjunct), same
-                    // reasoning as the non-overflow push arm above. Clear bit
-                    // `remaining` explicitly: after the `>>= FLUSH_N` shift
-                    // above, that bit holds whatever was at pre-shift index
-                    // `remaining + FLUSH_N` (`== TCACHE_CAP`, i.e. always 0 by
-                    // the mask invariant since no valid slot index reaches
-                    // `TCACHE_CAP`) — so this is defensive, not load-bearing,
-                    // matching the non-overflow arm's identical comment.
+                    // B4 Шаг S-v: the block just became MAGAZINE-resident —
+                    // record MAG in its state byte (alongside the bitmap,
+                    // which keeps its other readers: drain / reclaim /
+                    // `class_cursor` scans).
+                    #[cfg(feature = "small-state-byte")]
+                    meta.state_byte()
+                        .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
+                    // R6-T13: identity mask (`cnt < cap <= TCACHE_CAP`); skips bounds check.
+                    self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block;
+                    self.tcache.classes[c].count = (cnt + 1) as u8;
+                    // R13-3 (task #273): a pushed-back block was
+                    // previously issued (it is being FREED right now) —
+                    // by the dispatch conjunct (§2 of both virgin-skip
+                    // design docs) it is NEVER virgin, regardless of the
+                    // bit any earlier occupant of physical slot `cnt`
+                    // left behind. `PerClass::virgin_mask`'s own
+                    // invariant ("bits >= count are 0") already
+                    // guarantees bit `cnt` reads 0 here (it was `>=
+                    // count` the instant before this push bumped
+                    // `count`) — this is a defensive no-op AND, not a
+                    // load-bearing clear, kept explicit so the invariant
+                    // is visibly re-asserted at every mutation site
+                    // rather than relying on readers to re-derive it.
                     #[cfg(feature = "virgin-zero-skip")]
                     {
-                        self.tcache.classes[c].virgin_mask &= !(1u16 << remaining);
+                        self.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
                     }
                     return;
                 }
+                // ── R1-01: free-side byte-budget cap reached ───────
+                // `cnt == cap < TCACHE_CAP`: this class's per-refill byte
+                // budget (`FREE_PARK_CAP`) is exhausted, but the physical
+                // magazine array is not — do NOT grow past `cap` (that
+                // would re-open the D3 gap: parking more bytes on the
+                // free side than a refill ever would). Hand the block
+                // straight to the substrate instead of parking it. The
+                // M2 oracles (`small_free_guard`) already ran above; the
+                // block never entered the magazine, so no bitmap/slot
+                // bookkeeping to undo.
+                if cap < TCACHE_CAP {
+                    // SAFETY (R6-MS-3): `block` is a valid, currently-live
+                    // small-class-`c` allocation owned by this heap — the
+                    // same guarantee `small_free_guard`'s `Accept` arm
+                    // already established for the ordinary push path
+                    // above; freed exactly once here via a one-element
+                    // batch.
+                    #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+                    unsafe {
+                        self.core
+                            .flush_class_internal(c, core::slice::from_ref(&block));
+                    }
+                    return;
+                }
+                // ── Magazine overflow (cnt == TCACHE_CAP) ──────────
+                // P3 (task #147): the P7 dealloc-side bulk-mode bypass is
+                // RETIRED together with the alloc-side bypass and the
+                // `alloc_streak` counter. That branch fired only when the
+                // alloc side had advanced the streak past BULK_THRESHOLD;
+                // with the counter gone it could never fire, so keeping it
+                // would be dead code guarded by a stuck-at-0 condition.
+                // The always-taken half-flush + compact + push below is the
+                // sole overflow policy now. D1/M2 unchanged: `flush_class`
+                // returns blocks to the substrate via `dealloc_small`
+                // (mark_free + dec_live) exactly as before.
+                //
+                // RAD-5: the FLUSH_N blocks about to be flushed leave the
+                // magazine — clear their bit BEFORE calling `flush_class`
+                // (mirrors "flush = clear_magazine + mark_free": the
+                // AllocBitmap side of `mark_free` happens inside
+                // `flush_class`/`flush_run`; this bitmap's clear happens
+                // here since `AllocCore` has no magazine concept).
+                for &flushed in &self.tcache.classes[c].slots[0..FLUSH_N] {
+                    // Allocator-issued magazine pointers preserve provenance: Small/Primordial roots are exact; Large is excluded.
+                    let fbase = crate::alloc_core::os::segment_base_of_ptr(flushed);
+                    debug_assert_eq!(
+                        self.core.canonical_root_for(flushed),
+                        Some(fbase),
+                        "overflow magazine block must map to its segment base"
+                    );
+                    let foff = (flushed.addr() - fbase.addr()) as u32;
+                    SegmentMeta::new(fbase)
+                        .magazine_bitmap()
+                        .clear_magazine(foff);
+                }
+                // Normal overflow: half-flush, then push.
+                // SAFETY (R6-MS-3): every slot in `slots[0..FLUSH_N]` is a
+                // valid live small-class-`c` allocation owned by this core's
+                // magazine (just freed into it under the alloc-xthread/fastbin
+                // path); each is returned to the substrate exactly once here.
+                #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+                unsafe {
+                    self.core
+                        .flush_class_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
+                };
+                // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
+                let remaining = TCACHE_CAP - FLUSH_N;
+                for i in 0..remaining {
+                    self.tcache.classes[c].slots[i] = self.tcache.classes[c].slots[i + FLUSH_N];
+                }
+                // R13-3 (task #273): the virgin mask must undergo the
+                // IDENTICAL shift as `slots` — bit `i` of the compacted
+                // mask is bit `i + FLUSH_N` of the pre-compaction mask
+                // (byte-identical to the `slots[i] = slots[i + FLUSH_N]`
+                // loop just above, just on the bitmask instead of the
+                // pointer array). The flushed low half (`slots[0..FLUSH_N]`,
+                // now returned to the substrate via `flush_class`) is
+                // dropped entirely, not merely cleared-and-kept.
+                #[cfg(feature = "virgin-zero-skip")]
+                {
+                    self.tcache.classes[c].virgin_mask >>= FLUSH_N;
+                }
+                // Push (Э6: NO key stamp, NO block-body write). The oracles
+                // above already ran before this overflow branch, so a
+                // double-free is caught even when the magazine is full.
+                // RAD-5: mark the newly-pushed block magazine-resident.
+                meta.magazine_bitmap().mark_magazine(off);
+                // B4 Шаг S-v: MAG in the state byte — same protocol as
+                // the non-overflow push arm above.
+                #[cfg(feature = "small-state-byte")]
+                meta.state_byte()
+                    .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
+                self.tcache.classes[c].slots[remaining] = block;
+                self.tcache.classes[c].count = (remaining + 1) as u8;
+                // R13-3: the newly-pushed block is a freed (previously
+                // issued) block — never virgin (dispatch conjunct), same
+                // reasoning as the non-overflow push arm above. Clear bit
+                // `remaining` explicitly: after the `>>= FLUSH_N` shift
+                // above, that bit holds whatever was at pre-shift index
+                // `remaining + FLUSH_N` (`== TCACHE_CAP`, i.e. always 0 by
+                // the mask invariant since no valid slot index reaches
+                // `TCACHE_CAP`) — so this is defensive, not load-bearing,
+                // matching the non-overflow arm's identical comment.
+                #[cfg(feature = "virgin-zero-skip")]
+                {
+                    self.tcache.classes[c].virgin_mask &= !(1u16 << remaining);
+                }
+                return;
             }
         }
         // Large / non-small / non-fastbin: free directly at the witness root.

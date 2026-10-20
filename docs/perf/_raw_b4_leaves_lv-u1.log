@@ -1,0 +1,62 @@
+== sefer w_alloc marginal Ir/op: 63
+  15.9	examples/zz_alloc_only.rs | fn w_alloc<A: GlobalAlloc>(a: &A, l: Layout) -> *mut u8 { unsafe { a.alloc(l) } }
+  15.9	 | examples/zz_alloc_only.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> [tgtao-lv-u1/release/examples/zz_alloc_only]
+  13.0	 | src/registry/heap_core/alloc/hot.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   7.4	src/alloc_core/segment/bitmap/segment_bitmap.rs | (bit >> 3, 1u8 << (bit & 7))
+   6.9	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   6.0	src/registry/heap_core/alloc/hot.rs | let cnt = self.tcache.classes[c].count as usize;
+   5.0	 | src/alloc_core/platform/size_classes.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   3.2	 | src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [tgtao-lv-u1/release/examples/zz_alloc_only]
+   3.0	src/alloc_core/platform/size_classes.rs | Some(SIZE2CLASS[seed_idx] as usize)
+   2.0	src/registry/heap_core/alloc/hot.rs | let issued = self.tcache.classes[c].slots[new_cnt & (TCACHE_CAP - 1)];
+   2.0	src/registry/heap_core/alloc/hot.rs | <counts for unidentified lines in lv-u1/src/registry/heap_core/alloc/hot.rs>
+   2.0	src/alloc_core/platform/size_classes.rs | let seed_idx = if size == 0 {
+   2.0	 | src/global/tls_heap.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   2.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   1.5	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   1.4	 | src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   1.3	src/alloc_core/segment/bitmap/segment_bitmap.rs | Node::write_u8(p, byte & !mask);
+   1.1	src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs | head_off = if next.is_null() {
+   1.0	src/registry/heap_core/alloc/hot.rs | self.tcache.classes[c].count = new_cnt as u8;
+   1.0	src/registry/heap_core/alloc/hot.rs | let new_cnt = cnt - 1;
+   1.0	src/registry/heap_core/alloc/hot.rs | if cnt > 0 {
+   1.0	src/global/sefer_alloc/global_alloc.rs | if ptr.is_null() && crate::global::process_exit_in_progress() {
+   1.0	 | src/global/sefer_alloc/global_alloc.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   1.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   1.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   1.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   1.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:zz_alloc_only::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   0.9	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+   0.8	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   0.8	 | src/alloc_core/config/continuation_bounds.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+== sefer w_free marginal Ir/op: 433
+ 122.0	 | src/registry/segment_route/directory.rs:<sefer_alloc::registry::segment_route::directory::Shard>::locate [tgtao-lv-u1/release/examples/zz_alloc_only]
+  54.0	 | src/registry/segment_route/directory.rs:<sefer_alloc::registry::segment_route::directory::RouteDirectory>::lookup [tgtao-lv-u1/release/examples/zz_alloc_only]
+  42.4	 | src/registry/heap_core/free/dealloc_own_base.rs:zz_alloc_only::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  38.0	 | src/registry/segment_route/directory.rs:<sefer_alloc::registry::segment_route::directory::Shard>::find [tgtao-lv-u1/release/examples/zz_alloc_only]
+  24.0	src/registry/segment_route/directory.rs | if index >= self.len {
+  21.0	src/registry/segment_route/directory.rs | <counts for unidentified lines in lv-u1/src/registry/segment_route/directory.rs>
+  18.0	src/registry/segment_route/directory.rs | }
+  17.0	 | examples/zz_alloc_only.rs:zz_alloc_only::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> [tgtao-lv-u1/release/examples/zz_alloc_only]
+  16.0	src/registry/segment_route/directory.rs | let mid = lo + (hi - lo) / 2;
+  16.0	 | src/alloc_core/alloc_core/mem/mem_impl.rs:zz_alloc_only::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  15.0	examples/zz_alloc_only.rs | fn w_free<A: GlobalAlloc>(a: &A, p: *mut u8, l: Layout) { unsafe { a.dealloc(p, l) } }
+  14.0	src/registry/segment_route/directory.rs | if index >= self.cap {
+  14.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::segment_route::directory::Shard>::locate
+  14.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::segment_route::directory::RouteDirectory>::lookup
+  12.0	src/registry/segment_route/directory.rs | while lo < hi {
+  12.0	src/registry/segment_route/directory.rs | self.slots[index].load(Ordering::Relaxed)
+  10.0	src/registry/segment_route/directory.rs | if lo < self.len && self.key_at(lo) == key {
+  10.0	src/registry/segment_route/directory.rs | fn find(&self, key: usize) -> Option<*mut Entry> {
+  10.0	 | src/alloc_core/segment/segment_table/segment_table_impl.rs:zz_alloc_only::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   9.0	src/registry/segment_route/directory.rs | pub fn lookup(&self, ptr: *mut u8) -> Option<RoutePin> {
+   9.0	src/registry/segment_route/directory.rs | (value ^ (value >> 13) ^ (value >> 26)) % SHARDS
+   9.0	 | src/registry/segment_route/small_sidecar.rs:zz_alloc_only::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   9.0	 | src/alloc_core/platform/size_classes.rs:zz_alloc_only::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   8.8	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:zz_alloc_only::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   8.5	src/alloc_core/segment/bitmap/segment_bitmap.rs | (bit >> 3, 1u8 << (bit & 7))
+   8.0	src/registry/heap_core/free/dealloc_own_base.rs | let cnt = self.tcache.classes[c].count as usize;
+   8.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::segment_route::directory::Shard>::find
+   8.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::registry::segment_route::directory::Shard>::find
+   7.0	src/registry/heap_core/free/dealloc_own_base.rs | <counts for unidentified lines in lv-u1/src/registry/heap_core/free/dealloc_own_base.rs>
+   7.0	src/alloc_core/alloc_core/mem/mem_impl.rs | let Some(pin) = crate::registry::segment_route::RouteDirectory::global().lookup(ptr)

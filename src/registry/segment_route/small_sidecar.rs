@@ -123,6 +123,11 @@ impl SmallSidecar {
     /// (segment metadata, the interior of a live block, or the uncarved
     /// tail), so it never matches. One Acquire load of the class byte plus
     /// the leaf-pointer Acquire load.
+    // The U1 verdict wrapper (`AllocCore::small_class_authority`) reads the
+    // raw byte itself and applies the same comparison inline, so this SEC-1
+    // predicate's only remaining consumer is the hardened
+    // `small_class_matches` route (`route_slots.rs`) — the cfg below is
+    // exactly that consumer's gate.
     #[cfg(all(feature = "fastbin", feature = "hardened"))]
     #[inline(always)]
     pub(crate) fn class_matches(&self, offset: u32, class: u8) -> bool {

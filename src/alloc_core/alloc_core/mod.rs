@@ -91,6 +91,12 @@ mod mem;
 // `alloc_core::OwnedBlock` re-export (`fastbin` implies `alloc-global`).
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub(crate) use mem::OwnedBlock;
+// B4 У1 (`small-class-authority`): tri-state free-path class-authority
+// verdict, consumed by the shared `small_free_guard` callers in the registry
+// (`free/dealloc_own_base.rs`, `free/dealloc_batch.rs`).
+#[cfg(feature = "small-class-authority")]
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+pub(crate) use mem::ClassAuthority;
 
 /// Group module: NUMA-node caching, the registry-walk/membership accessors
 /// (`segment_bases`/`contains_base`/`small_cur`), and `(size, align)`

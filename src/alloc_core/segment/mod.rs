@@ -37,6 +37,11 @@ pub(crate) mod segment_header_views;
 /// (`segment_bitmap`) and its two wrappers (`alloc_bitmap`,
 /// `magazine_bitmap`).
 pub(crate) mod bitmap;
+/// B4 Шаг S-v (`small-state-byte`): the per-granule owner-private STATE
+/// byte array living in segment metadata
+/// (`Layout::state_byte_off()` + `(off >> 4)`), the variant-(в) transport.
+#[cfg(feature = "small-state-byte")]
+pub(crate) mod state_byte;
 /// R7-A0 diagnostic counters for the per-class segment directory
 /// (observability phase). Storage is always compiled; per-event increments
 /// are gated behind `alloc-stats`. See the module doc for the counter

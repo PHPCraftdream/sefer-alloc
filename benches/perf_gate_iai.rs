@@ -313,6 +313,101 @@ fn dealloc_free_only_16b() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// B4 (rtl cells): RUNTIME-Layout twins of the free-decomposition cells above.
+// The `Layout` is handed through `black_box`, so the compiler cannot
+// const-fold `class_for`/`divides`/the scalar classification inside the
+// dealloc path: these cells measure the free path AS A CALLER WITH A RUNTIME
+// (non-constant) Layout pays it. The rtl pairing works via prefix subtraction
+// against its OWN rtl prefix cell (free_only_rtl - prealloc_only_rtl),
+// mirroring the const pair above.
+// ---------------------------------------------------------------------------
+
+// Runtime-Layout shared prefix: alloc CHURN_OPS 16-byte blocks (same shape as
+// `dealloc_prealloc_only_16b`), free 0.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_prealloc_only_16b_rtl() {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    let layout = black_box(Layout::from_size_align(16, 8).unwrap());
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        *slot = (*heap).alloc(Layout::from_size_align(16, 8).unwrap());
+    }
+    black_box(&ptrs);
+    let _ = layout;
+}
+
+// Runtime-Layout free-only: same loop as `dealloc_free_only_16b`, but the
+// `Layout` passed to `dealloc` comes through `black_box` -- `class_for` and
+// `divides` must be computed from runtime values on every free.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_16b_rtl() {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    let layout = black_box(Layout::from_size_align(16, 8).unwrap());
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        *slot = (*heap).alloc(Layout::from_size_align(16, 8).unwrap());
+    }
+    black_box(&ptrs);
+
+    // Timed region: free-only with a runtime (black-boxed) Layout.
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the pre-allocation pass above with
+            // an equal layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// Runtime-Layout shared prefix at the R25-3 op count (alloc PREFIX_OPS, free
+// 0) -- see `dealloc_prealloc_only_1088_16b`.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_prealloc_only_1088_16b_rtl() {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    let layout = black_box(Layout::from_size_align(16, 8).unwrap());
+
+    let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
+    for slot in ptrs.iter_mut() {
+        *slot = (*heap).alloc(Layout::from_size_align(16, 8).unwrap());
+    }
+    black_box(&ptrs);
+    let _ = layout;
+}
+
+// Runtime-Layout free-only at the R25-3 op count: frees all PREFIX_OPS
+// blocks with a black-boxed Layout (runtime classification on every free).
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_1088_16b_rtl() {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    let layout = black_box(Layout::from_size_align(16, 8).unwrap());
+
+    let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
+    for slot in ptrs.iter_mut() {
+        *slot = (*heap).alloc(Layout::from_size_align(16, 8).unwrap());
+    }
+    black_box(&ptrs);
+
+    // Timed region: free-only with a runtime (black-boxed) Layout.
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the pre-allocation pass above with
+            // an equal layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
 // Isolates JUST the `contains_base` probe (see the module note above): same
 // pre-allocation shape as `dealloc_free_only_16b`, but the "timed" loop calls
 // `dbg_contains_base` directly instead of a real `dealloc` -- so the blocks
@@ -3553,6 +3648,10 @@ library_benchmark_group!(
         small_churn_16b_2n,
         dealloc_prealloc_only_16b,
         dealloc_free_only_16b,
+        dealloc_prealloc_only_16b_rtl,
+        dealloc_free_only_16b_rtl,
+        dealloc_prealloc_only_1088_16b_rtl,
+        dealloc_free_only_1088_16b_rtl,
         dealloc_contains_base_probe_only_16b,
         dealloc_segment_base_of_ptr_probe_only_16b,
         alloc_magazine_prefill_only_16b,

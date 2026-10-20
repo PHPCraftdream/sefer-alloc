@@ -25,6 +25,16 @@ pub(crate) use counters::FOREIGN_OR_UNROUTABLE_FREES;
 // the crate-root re-export in `alloc_core/mod.rs` carries the same predicate.
 #[cfg(any(feature = "internals", feature = "bench-internals"))]
 pub(crate) use counters::LOCAL_REJECT_FREES;
+// B4 У1 (`small-class-authority`): the strengthening-reject counter and the
+// activation-oracle counters (never in a measured build), same path-parity
+// shape as `LOCAL_REJECT_FREES` above.
+#[cfg(all(
+    any(feature = "small-class-authority", feature = "small-state-byte"),
+    any(feature = "internals", feature = "bench-internals")
+))]
+pub(crate) use counters::LOCAL_REJECT_STRONGER_FREES;
+#[cfg(feature = "small-class-authority-activation")]
+pub(crate) use counters::{AUTHORITY_CACHED_CHECKS, AUTHORITY_FALLBACK_CHECKS, AUTHORITY_UNROUTED_FREES};
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
 pub(crate) use counters::SMALL_ZERO_PASS_CALLS;
 // B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): slow-path observers,

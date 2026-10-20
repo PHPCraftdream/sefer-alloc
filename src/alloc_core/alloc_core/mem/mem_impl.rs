@@ -22,6 +22,27 @@ use crate::alloc_core::os;
 use crate::alloc_core::segment_header::{BlockKind, SegmentHeader, SegmentKind, SegmentMeta};
 use crate::alloc_core::size_classes::AllocKind;
 
+/// B4 У1 (`small-class-authority`) free-path class authority verdict — see
+/// [`AllocCore::small_class_authority`].
+#[cfg(feature = "small-class-authority")]
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+// S-v: with `small-state-byte` also on, the sole consumer
+// (`small_class_authority`) is itself dead — exact-cfg allow.
+#[cfg_attr(feature = "small-state-byte", allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ClassAuthority {
+    /// The authority check ran on a live Small sidecar and ACCEPTED
+    /// (`encoded(off >> 4) == c + 1`).
+    Match,
+    /// The authority check ran and REJECTED (wrong class, or encoded `0` —
+    /// metadata / interior / never-issued start granule; ADR case (б)).
+    Mismatch,
+    /// No authority exists (unrouted core, no directory descriptor, or no
+    /// Small sidecar; ADR case (а)) — the caller keeps the full legacy path.
+    Unrouted,
+}
+
+
 impl AllocCore {
     /// Address-only read-only identity resolution; no cache or metadata write.
     // R6-T16: consumers are the fastbin magazine/free debug-assert paths and
@@ -77,6 +98,187 @@ impl AllocCore {
     #[inline(always)]
     pub(crate) fn small_class_matches(&self, base: *mut u8, offset: u32, class_idx: usize) -> bool {
         self.table.small_class_matches(base, offset, class_idx)
+    }
+
+    /// B4 У1 (`small-class-authority`, `adr_v2_r4.md` §4.2): tri-state
+    /// free-path class authority for `ptr` (a Small/Primordial block of
+    /// segment `base`).
+    ///
+    /// - [`ClassAuthority::Mismatch`] — a live Small sidecar read the start
+    ///   granule's encoded class byte and it is NOT `c + 1`. This covers ALL
+    ///   three zero-leaf shapes (metadata region, interior of a live block,
+    ///   never-issued/un-issued granule): encoded `0` never matches (ADR
+    ///   case (б) → REJECT).
+    /// - [`ClassAuthority::Match`] — the authority check ran and accepted.
+    /// - [`ClassAuthority::Unrouted`] — no authority exists (ADR case (а)):
+    ///   unrouted core, no directory descriptor for `ptr`, or a descriptor
+    ///   without a Small sidecar. The caller keeps the ENTIRE legacy path.
+    ///
+    /// The verdict is `encoded == class_idx + 1` on a routed segment,
+    /// exactly the comparison `SmallSidecar::class_matches` performed
+    /// before U1b, issued through the cached-handle transport below.
+    ///
+    /// # Cached-handle safety invariant (the new `unsafe`)
+    ///
+    /// The ONLY unsafe operation introduced by this transport is the
+    /// dereference `(*leaves).encoded(granule)` in the cached-hit branch
+    /// below. It is sound because the following invariant holds at every
+    /// execution of that line:
+    ///
+    /// 1. **Validity ⇔ route alive.** `leaves` is written by
+    ///    `SegmentTable::canonical_base_of_mut`'s fill — the ONLY fill site —
+    ///    as `ptr::from_ref(sidecar.classes())` of the route registered for
+    ///    the very segment whose key/root are stored in the same entry. It is
+    ///    zeroed by `own_cache_clear` — the ONLY clear site — which
+    ///    `unregister`/`recycle` call AFTER `routes.remove(slot)` and
+    ///    `hash_remove(base)` in the SAME owner-only `&mut self` teardown
+    ///    (`segment_table_impl.rs`, `unregister`/`recycle`). The sidecar
+    ///    backing is a System allocation owned by the route entry and
+    ///    released only by that `routes.remove`. Therefore: `entry.key`
+    ///    matches ⇒ the entry was filled from a won hash probe of a live
+    ///    hash member ⇒ the teardown that would drop the sidecar has not
+    ///    executed (it nulls this entry before returning) ⇒ `leaves` points
+    ///    into a live, fully initialized `ClassLeaves` (`initialize_at`
+    ///    published it before the route; `encoded`'s own internal safety
+    ///    argument covers the leaf deref, with the leaf System allocation
+    ///    retained until the route's last pin).
+    /// 2. **Single-threaded owner access.** `own_cache` lives inside the
+    ///    heap-private `SegmentTable`, reachable only through `&mut self` of
+    ///    the owning `AllocCore`/`HeapCore` (owner thread). No other thread
+    ///    reads or writes the entry; `encoded` itself performs atomic
+    ///    Acquire loads, exactly as the safe pin-based transport did.
+    /// 3. **Read-only.** The transport only READS the class byte; it never
+    ///    forms a reference outliving the call and never mutates sidecar
+    ///    state.
+    ///
+    /// Liveness `debug_assert` + recovery: if the entry matches but carries a
+    /// null handle while the route nonetheless HAS a Small sidecar, that is
+    /// an invariant breach (stale handle) — `debug_assert!(false)` plus
+    /// recovery through the authoritative `RouteDirectory` lookup, which is
+    /// exactly the pre-У1b transport and no weaker than SEC-1. A key
+    /// mismatch (empty slot or a direct-mapped conflict from another
+    /// segment) is NOT a breach: it silently falls back to the same
+    /// authoritative lookup, counted as the case-(в) fallback numerator.
+    ///
+    #[cfg(feature = "small-class-authority")]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline]
+    // S-v: with `small-state-byte` also on, the guard's state-byte check
+    // subsumes this verdict and the free paths stop calling it — the
+    // allow is exact-cfg, not a blanket lint pardon.
+    #[cfg_attr(feature = "small-state-byte", allow(dead_code))]
+    // The single `unsafe` below is the cached-handle deref; the invariant is
+    // documented in the method's `# Cached-handle safety invariant` section.
+    #[allow(unsafe_code)]
+    pub(crate) fn small_class_authority(
+        &self,
+        base: *mut u8,
+        ptr: *mut u8,
+        class_idx: usize,
+    ) -> ClassAuthority {
+        let class = u8::try_from(class_idx).unwrap_or(u8::MAX);
+        use crate::alloc_core::size_classes::MIN_BLOCK;
+        if !self.table.class_authority_routes_attached() {
+            #[cfg(feature = "small-class-authority-activation")]
+            crate::alloc_core::AUTHORITY_UNROUTED_FREES
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return ClassAuthority::Unrouted;
+        }
+        // Cached-handle transport (ADR §4.1 (в)). `base` (the segment base
+        // the caller resolved through this heap's own table) keys the entry;
+        // the free path has already filled it via `canonical_base_of_mut`, so
+        // the key compare below is a hit on the SAME line that resolution
+        // touched.
+        let cached = self.table.cached_class_leaves(base);
+        if let Some(leaves) = cached {
+            if !leaves.is_null() {
+                #[cfg(feature = "small-class-authority-activation")]
+                crate::alloc_core::AUTHORITY_CACHED_CHECKS
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                // Mirror `SmallSidecar::class_matches` EXACTLY (SEC-1
+                // encoding): bounds-checked offset, byte read at the start
+                // granule; encoded 0 (never an issued start granule)
+                // surfaces verbatim so EVERY consumer applies the same
+                // zero-reject rule (ADR case (б)).
+                let offset = ptr.addr().wrapping_sub(base.addr()) as u32;
+                let encoded = if offset < crate::alloc_core::os::SEGMENT as u32 {
+                    // SAFETY: the cached-handle invariant documented on this
+                    // method: (1) `leaves` was captured by the own_cache fill
+                    // from the route registered for THIS entry's key/root and
+                    // is zeroed in the same owner-only teardown that drops
+                    // that route (`routes.remove` → `hash_remove` →
+                    // `own_cache_clear`), so a matching, non-null entry key
+                    // implies the route — and its System-backed `ClassLeaves`
+                    // — is still alive and fully initialized; (2) the entry
+                    // lives in the heap-private `SegmentTable`, accessed only
+                    // by the owner thread through `&mut self`; (3) this is a
+                    // read-only, call-scoped dereference of atomic fields
+                    // (`ClassLeaves::encoded` performs Acquire loads only).
+                    unsafe { (*leaves).encoded(offset as usize / MIN_BLOCK) }
+                } else {
+                    // Out-of-segment offset: `class_matches` would reject the
+                    // free outright; encode the same verdict as a zero byte.
+                    0
+                };
+                return if encoded == class.wrapping_add(1) {
+                    ClassAuthority::Match
+                } else {
+                    ClassAuthority::Mismatch
+                };
+            }
+        }
+        // ── Fallback: authoritative route lookup (ADR §4.2 case (в), plus the
+        // no-Small-sidecar route shapes that are semantically case (а)). Not
+        // weaker than SEC-1: this IS the pre-У1b transport, byte-identical.
+        // The case-(в) numerator is bumped ONLY when the route carries a
+        // Small sidecar (below); sidecar-less routes count as case (а).
+        // `ptr` (not `base`) keys the lookup: the directory range-checks the
+        // address against the descriptor's payload window, and `base` itself
+        // sits in the metadata region below `payload`. A valid Small/Primordial
+        // block address is inside the payload by construction; an invalid one
+        // falls back to the (stronger-or-equal) legacy path below.
+        let Some(pin) = crate::registry::segment_route::RouteDirectory::global().lookup(ptr)
+        else {
+            #[cfg(feature = "small-class-authority-activation")]
+            crate::alloc_core::AUTHORITY_UNROUTED_FREES
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return ClassAuthority::Unrouted;
+        };
+        let Some(sidecar) = pin.small_sidecar() else {
+            // Route without a Small sidecar (Primordial/Large kind): the
+            // cached null-handle entry was CORRECT, not stale. No assert.
+            #[cfg(feature = "small-class-authority-activation")]
+            crate::alloc_core::AUTHORITY_UNROUTED_FREES
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return ClassAuthority::Unrouted;
+        };
+        // The route DOES carry a Small sidecar, so a matched entry was
+        // obliged to hold its non-null handle (matched-null = stale handle,
+        // an `OwnCacheEntry` invariant breach). A key mismatch (cached ==
+        // None) is a benign direct-mapped conflict and asserts nothing.
+        debug_assert!(
+            cached.is_none(),
+            "stale cached ClassLeaves handle: matched own_cache entry with null leaves \
+             while the route has a live Small sidecar (ADR §4.2 case (в)) — \
+             recovered via the authoritative route lookup"
+        );
+        #[cfg(feature = "small-class-authority-activation")]
+        crate::alloc_core::AUTHORITY_FALLBACK_CHECKS
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        let offset = (ptr.addr().wrapping_sub(base.addr())) as u32;
+        // Same encoding `SmallSidecar::class_matches` reads: the start
+        // granule's byte, with an out-of-payload-window offset forced to the
+        // always-rejecting encoded `0`.
+        let encoded = if offset < crate::alloc_core::os::SEGMENT as u32 {
+            sidecar.classes().encoded(offset as usize / MIN_BLOCK)
+        } else {
+            0
+        };
+        if encoded == class.wrapping_add(1) {
+            ClassAuthority::Match
+        } else {
+            ClassAuthority::Mismatch
+        }
     }
 
     /// Allocate `layout.size()` bytes satisfying `layout.align()`.

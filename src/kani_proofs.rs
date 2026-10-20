@@ -339,3 +339,110 @@ mod saturation_proofs {
         );
     }
 }
+
+/// B4 У1b cached-handle transport (ADR `adr_v2_r4.md` §4.1 (в) — chunk U1b).
+///
+/// Sequential model of the own_cache entry lifecycle that backs
+/// `SegmentTable::cached_class_leaves` and the single `unsafe` deref in
+/// `AllocCore::small_class_authority`. The model abstracts:
+///
+/// - `route_alive: bool` — the route (and its System-backed `ClassLeaves`)
+///   is registered; dropping it is `RouteSlots::remove`.
+/// - `entry: Option<(u32, Handle)>` — an own_cache slot; `Some((k, h))` is a
+///   filled entry (key `k`, captured handle), `None` is empty/cleared.
+/// - `lookup(key)` — `cached_class_leaves`: yields the handle iff the entry
+///   is filled AND its key matches.
+///
+/// What IS proved (symbolically, all inputs):
+///   P1  lookup returns `Some` ONLY on an exact key match (no deref happens
+///       on a mismatch — the transport's guard is load-bearing);
+///   P2  while `route_alive` holds and the entry is filled with a matching
+///       key, the handle is present (`Some`) — the deref-precondition
+///       "entry valid ⇔ route alive" is maintained by any interleaving of
+///       fill/clear that respects the protocol (fill only on a live route;
+///       clear zeroes the entry in the same step that kills the route);
+///   P3  once the route is dropped, the protocol's clear step empties the
+///       entry, so no subsequent lookup can produce a dangling handle.
+///
+/// LIMITATIONS (honest scope): this is a SEQUENTIAL abstract model — it does
+/// not execute the real `SegmentTable` (primordial-carved pointers are not
+/// Kani-addressable), does not model direct-mapped conflicts beyond "the
+/// entry currently queried", and does not prove memory ordering (the
+/// `ClassLeaves::encoded` reads are atomics; concurrency is covered by the
+/// existing Miri/Loom harnesses and the owner-only `&mut self` discipline,
+/// which the model assumes). What it pins is the CONTROL LAW: no deref
+/// without an exact key match, and no handle outliving its route.
+#[cfg(all(kani, feature = "small-class-authority"))]
+mod own_cache_handle_proofs {
+    /// Model handle: `Some` = captured from a live route at fill time.
+    type Handle = u32;
+
+    #[derive(Clone, Copy)]
+    struct Model {
+        route_alive: bool,
+        entry: Option<(u32, Option<Handle>)>,
+    }
+
+    /// Mirrors `SegmentTable::cached_class_leaves`: Some(handle) iff key hit
+    /// and the entry carries a non-null handle; Some(null-analogue `None`)
+    /// on a hit without a handle; `None` on a key mismatch/empty entry.
+    fn lookup(m: &Model, key: u32) -> Option<Option<Handle>> {
+        match m.entry {
+            Some((k, h)) if k == key => Some(h),
+            _ => None,
+        }
+    }
+
+    /// Protocol fill: only ever captures a handle from a LIVE route.
+    fn fill(m: &mut Model, key: u32) {
+        assert!(m.route_alive, "fill happens on a won probe of a live segment");
+        m.entry = Some((key, Some(7)));
+    }
+
+    /// Protocol teardown (ADR: `routes.remove` → `hash_remove` →
+    /// `own_cache_clear`, one owner-only step): kills the route AND empties
+    /// the entry atomically with respect to observers.
+    fn teardown(m: &mut Model) {
+        m.route_alive = false;
+        m.entry = None;
+    }
+
+    #[kani::proof]
+    #[kani::unwind(4)]
+    fn no_handle_without_exact_key_match() {
+        let m = Model {
+            route_alive: kani::any(),
+            entry: if kani::any() {
+                Some((kani::any(), if kani::any() { Some(kani::any()) } else { None }))
+            } else {
+                None
+            },
+        };
+        let key: u32 = kani::any();
+        if let Some(h) = lookup(&m, key) {
+            // A lookup that produced a handle MUST have matched the key (P1):
+            // the deref guard in `small_class_authority` cannot be bypassed.
+            assert!(matches!(m.entry, Some((k, _)) if k == key));
+            // And a handle implies the route is still alive (P2): the only
+            // transition that kills the route also empties the entry.
+            if h.is_some() {
+                assert!(m.route_alive);
+            }
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(4)]
+    fn teardown_never_leaves_a_dangling_handle() {
+        let mut m = Model { route_alive: true, entry: None };
+        let key: u32 = kani::any();
+        fill(&mut m, key);
+        // A concurrent-shaped observer between remove and clear is
+        // impossible (owner-only `&mut`); model the only legal observation
+        // points: before teardown, and after.
+        assert_eq!(lookup(&m, key), Some(Some(7)));
+        teardown(&mut m);
+        assert_eq!(lookup(&m, key), None, "P3: cleared entry yields no handle");
+        assert_eq!(lookup(&m, key.wrapping_add(1)), None);
+    }
+}

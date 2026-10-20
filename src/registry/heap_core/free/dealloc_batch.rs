@@ -308,13 +308,49 @@ impl HeapCore {
             // whose `small_free_guard` now routes it to the substrate free
             // anyway. Handing it to `AllocCore` directly keeps the batch and
             // scalar outcomes byte-identical and one hop shorter.
-            let (off, meta) = match small_free_guard(base, p, c, layout) {
+            // B4 У1: the class-authority verdict is resolved per block exactly
+            // like the scalar caller (`dealloc_own_thread_with_base`) — batch
+            // goes through the SAME `small_free_guard`, so the alignment +
+            // class-byte conjunct (and item 247(b)'s closure) applies here
+            // automatically.
+            //
+            // S-v: with `small-state-byte` also on, the guard's state-byte
+            // check SUBSUMES the U1 verdict — the U1 handle is not read here.
+            #[cfg(all(
+                feature = "small-class-authority",
+                not(feature = "small-state-byte")
+            ))]
+            let auth = self.core.small_class_authority(base, p, c);
+            let (off, meta) = match small_free_guard(
+                base,
+                p,
+                c,
+                layout,
+                #[cfg(all(
+                    feature = "small-class-authority",
+                    not(feature = "small-state-byte")
+                ))]
+                auth,
+            ) {
                 SmallFreeGuard::Accept { off } => (off, SegmentMeta::new(base)),
                 SmallFreeGuard::RejectNoOp => {
                     // R6-T55: same single increment per rejected free as the
                     // scalar consumer — internal counter, not the public stat.
                     #[cfg(any(feature = "internals", feature = "bench-internals"))]
                     crate::alloc_core::LOCAL_REJECT_FREES
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    continue;
+                }
+                // B4 У1: strengthening reject (batch has NO `divides` of its
+                // own, so EVERY class-byte rejection outside the payload
+                // window is a strengthening — ADR §4.5 category 3).
+                #[cfg(any(
+                    feature = "small-class-authority",
+                    feature = "small-state-byte"
+                ))]
+                SmallFreeGuard::RejectStronger => {
+                    #[cfg(any(feature = "internals", feature = "bench-internals"))]
+                    crate::alloc_core::LOCAL_REJECT_STRONGER_FREES
                         .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     continue;
                 }
@@ -344,6 +380,14 @@ impl HeapCore {
             let cap = FREE_PARK_CAP[c] as usize;
             if cnt < cap {
                 meta.magazine_bitmap().mark_magazine(off);
+                // B4 Шаг S-v: MAG in the state byte — the same protocol as
+                // the scalar push (`dealloc_own_thread_with_base`).
+                #[cfg(feature = "small-state-byte")]
+                meta.state_byte().write(
+                    off,
+                    c,
+                    crate::alloc_core::state_byte::StateByte::MAG,
+                );
                 self.tcache.classes[c].slots[cnt] = block;
                 self.tcache.classes[c].count = (cnt + 1) as u8;
                 // R13-3 (task #273): a batched-freed block is, like the

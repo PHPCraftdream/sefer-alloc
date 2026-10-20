@@ -270,6 +270,34 @@ impl RouteSlots {
         route.claim_large_pending().is_some()
     }
 
+    /// B4 У1 cached-handle transport (ADR §4.1 (в)): address of the live
+    /// route's `ClassLeaves` map for the segment whose route root is `base`.
+    /// Pure address capture (`ptr::from_ref` on an already-published sidecar)
+    /// — NO dereference happens here. The pointer's validity window is the
+    /// route's own lifetime: `RouteSlots::remove` drops the route (and the
+    /// System-backed sidecar with it) BEFORE the caller's `own_cache_clear`
+    /// nulls the cache entry carrying this pointer, both inside one
+    /// owner-only `&mut self` teardown — so "cache key matches ⇒ route alive
+    /// ⇒ deref valid" (see `OwnCacheEntry`'s invariant in
+    /// `segment_table_impl.rs`).
+    #[cfg(feature = "small-class-authority")]
+    #[cfg(feature = "alloc-global")]
+    pub(super) fn small_leaves_ptr(&self, base: *mut u8) -> Option<*const ClassLeaves> {
+        let index = SegmentHeader::segment_id_at(base) as usize;
+        if index >= self.cap {
+            return None;
+        }
+        // SAFETY: owner-only read of an initialized live route slot — the
+        // same discipline every other accessor in this impl uses.
+        let route = (unsafe { &*self.slots.add(index) }).as_ref()?;
+        if route.root() != base {
+            return None;
+        }
+        route
+            .small_sidecar()
+            .map(|sidecar| core::ptr::from_ref(sidecar.classes()))
+    }
+
     pub(super) fn remove(&mut self, index: usize) {
         if index >= self.cap {
             fatal(b"route_slots: remove index out of range\n");

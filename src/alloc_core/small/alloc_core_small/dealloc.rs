@@ -119,6 +119,15 @@ impl AllocCore {
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off);
         bm.mark_free(off);
+        // B4 Шаг S-v: the block entered the class bin → FREE. Every flush /
+        // staging path funnels through `dealloc_small`, so this is the single
+        // bin-insertion store for the ordinary free/flush lifecycle.
+        #[cfg(feature = "small-state-byte")]
+        SegmentMeta::new(base).state_byte().write(
+            off,
+            class_idx,
+            crate::alloc_core::state_byte::StateByte::FREE,
+        );
         SegmentMeta::new(base).dec_live();
         // R7-A2: directory bitmap maintenance — the new head is always non-null
         // (we just pushed `off`), so the only transition is empty→non-empty

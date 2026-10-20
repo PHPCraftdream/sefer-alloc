@@ -436,6 +436,11 @@ impl AllocCore {
             base,
             SegLayout::magazine_bitmap_off(),
         ));
+        // B4 Шаг S-v: the state-byte array gets the same miri-only explicit
+        // zero-init as the bitmaps (fresh OS pages are zero = "never issued";
+        // miri's std::alloc fallback is not).
+        #[cfg(all(miri, feature = "small-state-byte"))]
+        crate::alloc_core::state_byte::StateByte::new(base).init_in_place();
         // R7-A1: check whether the segment count has crossed the directory
         // materialisation threshold. If so, materialize the sidecar and do
         // the one-time rebuild. This is a lazy, one-shot operation: once the

@@ -661,6 +661,10 @@ impl AllocCore {
             };
             Node::write_next(block_nn, next_ptr);
             bm.mark_free(off);
+            // B4 Шаг S-v: accepted into the bin → FREE.
+            #[cfg(feature = "small-state-byte")]
+            meta.state_byte()
+                .write(off, class_idx, crate::alloc_core::state_byte::StateByte::FREE);
             prev_off = off;
             last_accepted = Some(off);
             accepted_count += 1;

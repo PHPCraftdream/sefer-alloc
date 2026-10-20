@@ -43,6 +43,14 @@ impl HeapCore {
         SegmentMeta::new(base)
             .magazine_bitmap()
             .clear_magazine(off as u32);
+        // B4 Шаг S-v: MAG → LIVE on issue (the byte is the free-path
+        // authority under `small-state-byte`; the bitmap stays for its other
+        // readers). Class bits preserved via `set_state`.
+        #[cfg(feature = "small-state-byte")]
+        SegmentMeta::new(base).state_byte().set_state(
+            off as u32,
+            crate::alloc_core::state_byte::StateByte::LIVE,
+        );
     }
 
     /// Task #2002: the shared tail of [`refill_magazine_slow`](Self::refill_magazine_slow)
@@ -84,6 +92,16 @@ impl HeapCore {
             SegmentMeta::new(pbase)
                 .magazine_bitmap()
                 .mark_magazine(poff);
+            // B4 Шаг S-v: the block just became MAGAZINE-resident — record
+            // MAG in its state byte (the byte flips back to LIVE on issue,
+            // see `pop_magazine`); the bitmap keeps its other readers (drain
+            // / reclaim / `class_cursor` scans).
+            #[cfg(feature = "small-state-byte")]
+            SegmentMeta::new(pbase).state_byte().write(
+                poff,
+                c,
+                crate::alloc_core::state_byte::StateByte::MAG,
+            );
         }
         self.tcache.classes[c].slots[new_cnt]
     }

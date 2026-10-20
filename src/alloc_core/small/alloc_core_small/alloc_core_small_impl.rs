@@ -454,6 +454,13 @@ impl AllocCore {
         // and is handed to the caller, so a subsequent free must NOT see it as
         // already-free (and the next legitimate free must be able to re-mark it).
         meta.alloc_bitmap().mark_alloc(head_off);
+        // B4 Шаг S-v: the block leaves the bin for the caller → LIVE.
+        #[cfg(feature = "small-state-byte")]
+        meta.state_byte().write(
+            head_off,
+            class_idx,
+            crate::alloc_core::state_byte::StateByte::LIVE,
+        );
         // Phase 35 (M6): a block left the free list and is handed to the caller
         // → one more live block in this segment. Owner-only counter. A popped
         // block always comes from a COMMITTED payload (a decommitted segment was
@@ -621,6 +628,13 @@ impl AllocCore {
                 // Clear this block's bitmap bit — it leaves the free list and is
                 // handed out (per-block, byte-identical to `pop_free`).
                 bm.mark_alloc(head_off);
+                // B4 Шаг S-v: issued to the caller → LIVE.
+                #[cfg(feature = "small-state-byte")]
+                meta.state_byte().write(
+                    head_off,
+                    class_idx,
+                    crate::alloc_core::state_byte::StateByte::LIVE,
+                );
                 run.commit(head_off);
                 out[k] = block_ptr;
                 k += 1;
@@ -778,6 +792,14 @@ impl AllocCore {
         }
         // Update ONLY the bump cursor.
         meta.set_bump(aligned_bump + block_size);
+        // B4 Шаг S-v: carved → LIVE (the caller's block; a refill-path block
+        // is re-marked MAG by the magazine tail / FREE by a bin push).
+        #[cfg(feature = "small-state-byte")]
+        meta.state_byte().write(
+            aligned_bump as u32,
+            class_idx,
+            crate::alloc_core::state_byte::StateByte::LIVE,
+        );
         // Phase 35: this carved block is now live (handed to the caller, or — on
         // the refill path — immediately pushed to the free list, which calls
         // `dealloc_small` → `dec_live`, netting zero for refill blocks; the
@@ -983,6 +1005,13 @@ impl AllocCore {
                 }
             }
             let ptr = Node::deref(segment, off);
+            // B4 Шаг S-v: carved → LIVE (issued to the caller).
+            #[cfg(feature = "small-state-byte")]
+            meta.state_byte().write(
+                off as u32,
+                class_idx,
+                crate::alloc_core::state_byte::StateByte::LIVE,
+            );
             run.commit(off as u32);
             *slot = ptr;
         }

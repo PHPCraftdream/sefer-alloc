@@ -1,0 +1,27 @@
+MARGINAL Ir/op (sefer larson T=1): 650
+--- by source file (Ir/op)
+  650.3	PROGRAM TOTALS
+  423.9	events annotated
+  217.0	lv-u1l/src/registry/segment_route/directory.rs
+   87.0	lv-u1l/crates/malloc-bench-rs/src/lib.rs
+   50.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs
+   47.4	lv-u1l/src/registry/heap_core/free/dealloc_own_base.rs
+   27.4	}
+   25.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/mod.rs
+   24.0	if index >= self.len {
+   21.0	<counts for unidentified lines in lv-u1l/src/registry/segment_route/directory.rs>
+   19.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/list.rs
+   18.4	lv-u1l/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   17.0	lv-u1l/src/alloc_core/alloc_core/mem/mem_impl.rs
+   16.0	let mid = lo + (hi - lo) / 2;
+   16.0	let cnt = self.tcache.classes[c].count as usize;
+   15.9	(bit >> 3 1u8 << (bit & 7))
+   15.7	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   15.5	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+   15.0	lv-u1l/src/alloc_core/platform/size_classes.rs
+   14.0	if index >= self.cap {
+   13.8	lv-u1l/src/registry/heap_core/alloc/hot.rs
+   13.0	lv-u1l/src/registry/segment_route/small_sidecar.rs
+   12.0	while lo < hi {
+   12.0	slots[idx] = Some(unsafe { alloc_block(a &mut rng) });
+   12.0	self.slots[index].load(Ordering

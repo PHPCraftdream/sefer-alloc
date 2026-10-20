@@ -108,6 +108,22 @@ impl AllocCore {
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[allow(unsafe_code)] // R29-8: `unsafe fn` boundary (live_count==0 precondition).
     pub unsafe fn dbg_force_decommit_retain_for(&self, ptr: *mut u8) -> bool {
+        // B4 У1 (`small-class-authority`, ADR §4.2): retain decommit would
+        // drop the payload pages whose `ClassLeaves` start-granule bytes the
+        // free path now treats as AUTHORITATIVE — after a retain + re-commit
+        // the class state is no longer trusted. On a routed core (the only
+        // shape whose segments carry Small sidecars, and the only shape the
+        // free path routes through `small_class_authority`) the hook is
+        // therefore FATAL. Unrouted standalone cores (`AllocCore::new()` —
+        // no route can exist, registration without route is impossible,
+        // `register_payload`) have no class authority and keep the hook: the
+        // existing retain tests drive exactly that shape and must stay green.
+        #[cfg(feature = "small-class-authority")]
+        if self.table.class_authority_routes_attached() {
+            crate::alloc_core::fatal::fatal(
+                b"small-class-authority: retain decommit of a routed segment is forbidden (class-byte authority must not outlive its pages)\n",
+            );
+        }
         let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base_ro(base) {
             return false;
@@ -213,6 +229,13 @@ impl AllocCore {
         for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
             bt.set_head(c, FREE_LIST_NULL);
         }
+        // B4 Шаг S-v: reset the state-byte array to "never issued" (zero),
+        // mirroring the explicit bitmap re-init this reset performs — the
+        // bins are empty, so every granule is un-issued from the allocator's
+        // point of view and only a fresh carve (which writes LIVE) may
+        // re-activate one.
+        #[cfg(feature = "small-state-byte")]
+        meta.state_byte().init_in_place();
         // 2c. Re-mark every payload page `Free` in the page map (metadata pages
         //     keep their `Meta` marking). Payload pages are `[meta_pages,
         //     PAGES_PER_SEGMENT)`.

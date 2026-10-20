@@ -33,7 +33,28 @@ impl Layout {
     }
     /// End of mandatory owner-only small metadata.
     const fn owner_metadata_end() -> usize {
+        Self::magazine_bitmap_off()
+            + crate::alloc_core::magazine_bitmap::MagazineBitmap::FOOTPRINT
+            + Self::state_byte_footprint()
+    }
+    /// B4 Шаг S-v (`small-state-byte`): the per-granule STATE byte array
+    /// (`state_byte.rs`), placed AFTER the two bitmaps — behind every
+    /// published-protocol metadata region — and BEFORE the tight payload
+    /// boundary. Under the feature this shifts `small_meta_end` (and hence
+    /// the payload start and the primordial regions computed from it) up by
+    /// one byte per `MIN_BLOCK` granule; without the feature the footprint
+    /// is ZERO and the layout is byte-identical to the pre-S-v geometry.
+    #[cfg(feature = "small-state-byte")]
+    pub(crate) const fn state_byte_off() -> usize {
         Self::magazine_bitmap_off() + crate::alloc_core::magazine_bitmap::MagazineBitmap::FOOTPRINT
+    }
+    #[cfg(feature = "small-state-byte")]
+    pub(crate) const fn state_byte_footprint() -> usize {
+        crate::alloc_core::state_byte::StateByte::FOOTPRINT
+    }
+    #[cfg(not(feature = "small-state-byte"))]
+    pub(crate) const fn state_byte_footprint() -> usize {
+        0
     }
     /// End of the small-segment metadata (page-aligned past the last metadata
     /// region). Payload carving begins here.

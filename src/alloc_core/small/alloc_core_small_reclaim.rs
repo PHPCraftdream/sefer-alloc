@@ -67,6 +67,13 @@ impl AllocCore {
         Node::write_next(block, next);
         bins.set_head(class_idx, offset);
         bitmap.mark_free(offset);
+        // B4 Шаг S-v: reclaimed into the bin → FREE.
+        #[cfg(feature = "small-state-byte")]
+        meta.state_byte().write(
+            offset,
+            class_idx,
+            crate::alloc_core::state_byte::StateByte::FREE,
+        );
         meta.dec_live();
         true
     }

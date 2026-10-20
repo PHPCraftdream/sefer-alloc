@@ -65,6 +65,10 @@ pub(crate) use segment::remote_bitmap;
 // visibility/cfg/doc-hidden parity) so every one stays reachable at its
 // existing `alloc_core::<name>` module path.
 pub(crate) use segment::bitmap::{alloc_bitmap, magazine_bitmap, segment_bitmap};
+// B4 Шаг S-v (`small-state-byte`): module-path parity with the bitmap
+// siblings above — `crate::alloc_core::state_byte` stays reachable.
+#[cfg(feature = "small-state-byte")]
+pub(crate) use segment::state_byte;
 #[cfg_attr(
     not(any(feature = "alloc-stats", feature = "internals")),
     allow(unused_imports)
@@ -167,6 +171,13 @@ pub use alloc_core::AllocCore;
 // (`fastbin` implies `alloc-global`).
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub(crate) use alloc_core::OwnedBlock;
+// B4 У1 (`small-class-authority`): tri-state free-path class-authority
+// verdict (see `alloc_core::mem::mem_impl`); consumed by the registry's
+// `small_free_guard` callers.
+#[cfg(feature = "small-class-authority")]
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#[cfg_attr(feature = "small-state-byte", allow(unused_imports))]
+pub(crate) use alloc_core::ClassAuthority;
 /// The dropped-free counter, re-exported crate-wide so
 /// `HeapCore::publish_foreign` can bump it (like
 /// [`LARGE_ZERO_PASS_CALLS`]). Not public API; read via
@@ -193,6 +204,20 @@ pub(crate) use alloc_core::LARGE_ZERO_PASS_CALLS;
 /// predicate.
 #[cfg(any(feature = "internals", feature = "bench-internals"))]
 pub(crate) use alloc_core::LOCAL_REJECT_FREES;
+/// B4 У1 (`small-class-authority`): strengthening-reject counter (ADR §4.5
+/// category 3), re-exported crate-wide for the `small_free_guard` consumers —
+/// same discipline as [`LOCAL_REJECT_FREES`] above. Read via
+/// `AllocCore::dbg_local_reject_stronger_frees`.
+#[cfg(all(
+    any(feature = "small-class-authority", feature = "small-state-byte"),
+    any(feature = "internals", feature = "bench-internals")
+))]
+pub(crate) use alloc_core::LOCAL_REJECT_STRONGER_FREES;
+/// B4 У1 activation oracle counters (cfg `small-class-authority-activation`;
+/// NEVER in a measured build): "authority check ran" vs "case (а) legacy
+/// fallback". See `counters.rs` for the numerator definitions.
+#[cfg(feature = "small-class-authority-activation")]
+pub(crate) use alloc_core::{AUTHORITY_CACHED_CHECKS, AUTHORITY_FALLBACK_CHECKS, AUTHORITY_UNROUTED_FREES};
 /// R12-10 (task #261, `virgin-zero-skip`) test seam: the process-wide
 /// Small-path explicit zero-pass counter, re-exported crate-wide so
 /// `HeapCore::alloc_zeroed` (registry) can bump the SAME counter

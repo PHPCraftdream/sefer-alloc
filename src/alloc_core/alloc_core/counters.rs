@@ -537,6 +537,57 @@ pub(crate) static FOREIGN_OR_UNROUTABLE_FREES: core::sync::atomic::AtomicU64 =
 pub(crate) static LOCAL_REJECT_FREES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// B4 У1 (`small-class-authority`, ADR §4.5 category 3): process-wide count
+/// of frees rejected ONLY by the new strengthening — aligned wrong-class,
+/// unaligned (non-`MIN_BLOCK`-multiple) offsets, and interior pointers into a
+/// zero class-byte (never-issued / metadata / live-interior) start granule.
+/// Deliberately SEPARATE from [`LOCAL_REJECT_FREES`]: those counters keep
+/// counting exactly what they counted before (RejectNoOp, H1), and the
+/// legacy-silent production `divides`/SEC-1 rejects stay silent (category 2,
+/// owner decision). Batch rejections of the class byte outside the payload
+/// window are also strengthenings there (batch has no `divides` of its own).
+/// Increments are gated behind `internals`/`bench-internals` (the
+/// `LOCAL_REJECT_FREES` convention). Read via
+/// `AllocCore::dbg_local_reject_stronger_frees`. Relaxed: diagnostic only.
+#[cfg(any(feature = "small-class-authority", feature = "small-state-byte"))]
+#[cfg(feature = "alloc-core")]
+#[cfg_attr(
+    not(any(feature = "internals", feature = "bench-internals")),
+    allow(dead_code)
+)]
+pub(crate) static LOCAL_REJECT_STRONGER_FREES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 У1 activation oracle (ADR §9(д), cfg
+/// `small-class-authority-activation` — NEVER in a measured build): number of
+/// frees where the authority check ran on the CACHED `ClassLeaves` handle
+/// from the own_cache entry (ADR §4.1 variant (в) transport — one hot-line
+/// read, no directory lookup). Pairs with [`AUTHORITY_FALLBACK_CHECKS`] and
+/// [`AUTHORITY_UNROUTED_FREES`]; the three numerators partition every
+/// authority-site free. Relaxed.
+#[cfg(feature = "small-class-authority-activation")]
+pub(crate) static AUTHORITY_CACHED_CHECKS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 У1 activation oracle: number of frees where routes ARE attached but the
+/// authority still went through the authoritative route lookup — ADR §4.2
+/// case (в): missing/invalid cached handle while the route is alive. Both
+/// benign sub-cases land here: a matched own_cache entry whose `leaves` is
+/// null (route without a Small sidecar — Primordial/Large kind) and a key
+/// mismatch (empty slot / direct-mapped conflict). Expected 0 on a routed
+/// own-Small free path; a nonzero value degrades to the pre-У1b cost, never
+/// to weaker checks. Relaxed.
+#[cfg(feature = "small-class-authority-activation")]
+pub(crate) static AUTHORITY_FALLBACK_CHECKS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 У1 activation oracle: number of frees that took the ADR §4.2 case (а)
+/// legacy path (unrouted core / no directory descriptor / no Small sidecar).
+/// Expected ~0 on a routed HeapCore free path. Relaxed.
+#[cfg(feature = "small-class-authority-activation")]
+pub(crate) static AUTHORITY_UNROUTED_FREES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 // TEST/DIAGNOSTIC-ONLY (task D1 → 0.4.x task #133): large-cache HIT
 // counter. Originally a single process-wide `static AtomicU64`, bumped by
 // EVERY heap's `alloc_large` cache-hit path — a contended `lock xadd` on a

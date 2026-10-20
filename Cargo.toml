@@ -688,6 +688,39 @@ alloc-segment-directory = ["alloc-core"]
 # has the magazine free path this guards); enabling it without the magazine is a
 # no-op. See the `hardened` row in the README Features matrix.
 hardened = ["fastbin"]
+# B4 У1 (`adr_v2_r4.md` §4.2): `ClassLeaves` as the free-path authority for the
+# start address AND the class of routed Small/Primordial blocks. Replaces the
+# `payload_start` check and the production `divides` stride check on the
+# magazine free path with
+# `off & (MIN_BLOCK-1) == 0  ∧  encoded(off >> 4) == c + 1`
+# applied as SEQUENTIAL early returns (alignment first, class byte second —
+# §4.5; the checks must NOT be merged: merged-condition builds measured +6 Ir,
+# NO-GO). Unrouted cores / segments without a live Small sidecar keep the
+# ENTIRE legacy path (`payload_start` + `divides` + every hardened check), so
+# this is a pure strengthening: every free the old path rejects the new path
+# rejects too, and additionally rejects aligned wrong-class frees,
+# unaligned (`start+8`) frees, and interior pointers into never-issued (zero
+# class-byte) granules — closing item 247(b) for `batch-api` as well (batch
+# goes through the SAME `small_free_guard`). Additive over `production`
+# builds; no new dependencies, no public API change, no new unsafe.
+small-class-authority = []
+# B4 Шаг S-v (`state_byte_design.md` variant (в)): one owner-private STATE
+# byte per MIN_BLOCK granule in segment metadata
+# (`root + Layout::state_byte_off() + (off >> 4)`), accessed through the
+# existing safe `Node::read_u8`/`write_u8` seam — no new `unsafe`. On the
+# own free path one byte load replaces the magazine + alloc-bitmap oracles
+# AND the class check (strict form: the byte's class field must equal
+# `class_for(Layout) + 1`; mismatch = strengthening reject). Payload and
+# bump checks stay explicit (ADR v2 r4 §4.5 order, sequential early
+# returns). Byte states: LIVE=0 / MAG=1 / FREE=2 (`state_byte.rs`).
+# RSS ≈ +4.7 % net of touched small payload (owner-accepted); independent
+# of `small-class-authority` — if both are on, the byte path SUBSUMES the
+# U1 class check and the U1 handle is not read on the hot path.
+small-state-byte = []
+# B4 У1 activation oracle (ADR §9(д)): counters for "authority check applied on
+# a routed segment" vs "unrouted/legacy fallback". NEVER part of a measured
+# build — measurement tiers enable `small-class-authority` alone.
+small-class-authority-activation = ["small-class-authority", "internals", "bench-internals"]
 # NUMA-aware segment reservation: when a new segment is reserved, pages are
 # steered to the NUMA node of the calling thread
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).

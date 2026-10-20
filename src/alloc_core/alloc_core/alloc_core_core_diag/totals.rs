@@ -87,6 +87,38 @@ impl AllocCore {
         crate::alloc_core::LOCAL_REJECT_FREES.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// B4 У1 (`small-class-authority`): test alias of the strengthening-reject
+    /// counter (ADR §4.5 category 3). See
+    /// `counters::LOCAL_REJECT_STRONGER_FREES`.
+    #[doc(hidden)]
+    #[cfg(all(
+        any(feature = "small-class-authority", feature = "small-state-byte"),
+        any(feature = "internals", feature = "bench-internals")
+    ))]
+    #[must_use]
+    pub fn dbg_local_reject_stronger_frees() -> u64 {
+        crate::alloc_core::LOCAL_REJECT_STRONGER_FREES
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// B4 У1 activation oracle (`small-class-authority-activation`; never in a
+    /// measured build): `(cached-handle checks, case-в fallback checks,
+    /// case-а legacy fallbacks)` — the three numerators partition every
+    /// authority-site free (ADR §4.1 (в) transport).
+    #[doc(hidden)]
+    #[cfg(feature = "small-class-authority-activation")]
+    #[must_use]
+    pub fn dbg_class_authority_activation_counts() -> (u64, u64, u64) {
+        (
+            crate::alloc_core::AUTHORITY_CACHED_CHECKS
+                .load(core::sync::atomic::Ordering::Relaxed),
+            crate::alloc_core::AUTHORITY_FALLBACK_CHECKS
+                .load(core::sync::atomic::Ordering::Relaxed),
+            crate::alloc_core::AUTHORITY_UNROUTED_FREES
+                .load(core::sync::atomic::Ordering::Relaxed),
+        )
+    }
+
     /// Test alias of [`Self::segments_reserved_total`].
     #[doc(hidden)]
     #[must_use]
