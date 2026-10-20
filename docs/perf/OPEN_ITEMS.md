@@ -259,9 +259,9 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 90. **[A] R6-PF-2 — owner-drain skip by a pin-epoch in the high bits of `Entry.refs` (`src/registry/segment_route/directory.rs`).** (Filed 2026-10-15, round-6 src review.)
 
    > **Current state**
-   > - **Status:** OPEN — tracked; queued as round-6 task R6-T02 (docs/agent_reviews_round6/SUMMARY.md).
-   > - **Current number/verdict:** owner skips drain for segments with no new pins, adding no new RMW on the producer side; largest potential win (multiseg/growth: from O(S·W) locked RMW down to O(S), estimated ×10+), high risk (changes the terminal-publication protocol). Estimates only — round-6 reports are static, nothing measured.
-   > - **Next trigger:** owner decision on re-opening item 82 (closed 2026-10-14 NO-GO for the producer-side summaries C′/C''/C‴; this variant is owner-side and does not belong to the rejected family). Needs a loom model on `Entry.refs` plus pre-registration on the R20_PRF01_C3 framework.
+   > - **Status:** DEFERRED (2026-10-20) — до замера-триггера B4-29; решение владельца по консультации rush reviewer + @oxx (оба: отложить).
+   > - **Current number/verdict:** оценка «×10+» (O(S·W) locked RMW → O(S)) устарела: в main уже load-before-swap — пустое pending-слово читается `load(Acquire)`, `swap` только для ненулевого (`src/alloc_core/segment/remote_bitmap/bitmap_scan.rs`), и bin-first discovery с class cursor (`src/alloc_core/small/alloc_core_small/find_segment/scan.rs`); остаток — O(S·W) простых чтений, а не locked RMW. При T ≥ 2 R1-кэш маршрутов (TLS pin cache, hit 0.9992–0.9998 по mt-xp4, `docs/perf/B4_MT_PIN_NOTOWN.md`) держит pin'ы удалённых сегментов, поэтому «нет новых pin'ов» почти не наступает и активация пропуска стремится к нулю. Высокий риск (протокол терминальной публикации) без измеренной выгоды.
+   > - **Next trigger:** любой из: (1) iai Sefer/mimalloc на `mimalloc_growth16_4n` ≥ 3× И ≥ 30 % Ir в скане discovery; (2) MT-счётчики T=2/4: скан ≥ 1 слово/op И ≥ 50 % сегментов с holders == база; (3) discovery ≥ 5 % Ir в mstress/larson или ≥ 10 % в growth/multiseg. Замер — задача B4-29 (iai-рукава `mimalloc_growth16_{n,2n,4n}` + атрибуция `B4_SCAN_WORDS`). При срабатывании — loom-модель на `Entry.refs` и предрегистрация по R20_PRF01_C3.
    > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-2; task R6-T02.
 
 101. **[A] B4 — частота discovery-вызовов на refill-miss НЕ устранена
@@ -286,8 +286,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
    > **Current state**
    > - **Status:** open.
-   > - **Current:** (а) N9 на промахо-тяжёлой нагрузке thrash64 (64 сегмента) дороже базы на +4 Ir/free и +1 Ir/alloc (§9; на локальных нагрузках −7 Ir/free); (б) N7 «refill наполовину» — larson −5…−9 Ir, но пакетный alloc +5…+15 — решение владельца; (в) n4b «бит из указателя» на alloc-hit не измерен (оценка −2…−4 Ir); (г) Win64-часть налога кадра в WSL-callgrind не видна.
-   > - **Next trigger:** (а) политика заполнения memo N9 без записи на каждом выигрыше `hash_find` — следующий раунд микроприёмов; (б) решение владельца; (в) тот же раунд; (г) asm-трипвайр `w_alloc`/`w_free` для `x86_64-pc-windows-msvc` на CI.
+   > - **Current:** (а) N9 на промахо-тяжёлой нагрузке thrash64 (64 сегмента) дороже базы на +4 Ir/free и +1 Ir/alloc (§9; на локальных нагрузках −7 Ir/free); (б) N7/N7b «refill наполовину» — NO-GO в этой форме (решение владельца после консультации rush reviewer + @oxx, 2026-10-20): к фактической базе N4 larson −9.2/−4.8, mstress −14.2/0 (не −87/−72 — те были к main `f93c1b52`), batch alloc +15/+5, batchl alloc +15/+6 — скалярный `GlobalAlloc`-путь, регресс реальный (`B4_FRAME_TAX.md` §4.3); (в) n4b «бит из указателя» на alloc-hit не измерен (оценка −2…−4 Ir); (г) Win64-часть налога кадра в WSL-callgrind не видна.
+   > - **Next trigger:** (а) политика заполнения memo N9 без записи на каждом выигрыше `hash_find` — следующий раунд микроприёмов; (б) адаптивный N7a (refill наполовину только в смешанной фазе класса, гистерезис по overflow-flush) поверх S1/D1′, порог batch/batchl alloc ≤ +1…+2 Ir; (в) тот же раунд; (г) asm-трипвайр `w_alloc`/`w_free` для `x86_64-pc-windows-msvc` на CI.
    > - **Evidence:** `docs/perf/B4_FRAME_TAX.md` §4, §6, §9; `docs/perf/B4_FRAME_TAX_summary.csv`, `docs/perf/B4_FRAME_TAX_thrash64_summary.csv`; сырьё `docs/perf/_raw_b4_frame_*.log`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
