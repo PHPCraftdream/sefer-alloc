@@ -226,7 +226,7 @@ impl HeapCore {
     }
 
     // --- B4-M (P1-2): thin process-wide delegations to the `AllocCore`
-    // --- bench-internals observer counters (S1 / X-null / X-span / N9), so
+    // --- bench-internals observer counters (S1 / X-null / X-span), so
     // --- macro-bench/test workloads driven through `HeapCore` can read them
     // --- (same pattern as `dbg_contains_base_tier1_hits` above).
 
@@ -304,56 +304,6 @@ impl HeapCore {
     #[must_use]
     pub fn dbg_xspan_mask_branch_taken() -> u64 {
         crate::alloc_core::AllocCore::dbg_xspan_mask_branch_taken()
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): see [`AllocCore::dbg_n9_memo_hits`].
-    #[doc(hidden)]
-    #[cfg(all(
-        feature = "alloc-global",
-        feature = "bench-internals",
-        feature = "internals"
-    ))]
-    #[must_use]
-    pub fn dbg_n9_memo_hits() -> u64 {
-        crate::alloc_core::AllocCore::dbg_n9_memo_hits()
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): see [`AllocCore::dbg_n9_owncache_hits`].
-    #[doc(hidden)]
-    #[cfg(all(
-        feature = "alloc-global",
-        feature = "bench-internals",
-        feature = "internals"
-    ))]
-    #[must_use]
-    pub fn dbg_n9_owncache_hits() -> u64 {
-        crate::alloc_core::AllocCore::dbg_n9_owncache_hits()
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): see
-    /// [`AllocCore::dbg_n9_memo_fills_owncache_hit`].
-    #[doc(hidden)]
-    #[cfg(all(
-        feature = "alloc-global",
-        feature = "bench-internals",
-        feature = "internals"
-    ))]
-    #[must_use]
-    pub fn dbg_n9_memo_fills_owncache_hit() -> u64 {
-        crate::alloc_core::AllocCore::dbg_n9_memo_fills_owncache_hit()
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): see
-    /// [`AllocCore::dbg_n9_won_probe_exact`].
-    #[doc(hidden)]
-    #[cfg(all(
-        feature = "alloc-global",
-        feature = "bench-internals",
-        feature = "internals"
-    ))]
-    #[must_use]
-    pub fn dbg_n9_won_probe_exact() -> u64 {
-        crate::alloc_core::AllocCore::dbg_n9_won_probe_exact()
     }
 
     /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to

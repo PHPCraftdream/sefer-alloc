@@ -1,4 +1,4 @@
-# B4-M — пакет микроприёмов: S1 + X-null + X-span + N9 (R3, X-c1 отклонены)
+# B4-M — пакет микроприёмов: S1 + X-null + X-span приняты (perf(runtime)); R3, X-c1, N9 v3 — NO-GO
 
 Ветка `b4-micro`. Хэш финального diff кода правок (включая bench-internals
 счётчики; сами счётчики под `cfg` и на замеряемые production-сборки не
@@ -8,6 +8,16 @@
 документации/скрипта — `8f26c8bf724c1332676a69b0316f870c66b665501386ec2f53d907e271c3cb1c`).
 База пакета A: `bbc3c7b4d376971b9ea7627ad3b4ff43ac39084d`
 (diff от неё пустой).
+
+**Состав PR.** Измеренное дерево целиком закоммичено как коммит-идентичность
+`14ce71eb` (`wip(b4-micro): measured micro-pack tree …`, родитель `bbc3c7b4`;
+закреплён веткой `b4-micro-measured`): `git diff bbc3c7b4 14ce71eb
+--diff-filter=M | sha256sum` воспроизводит `8f26c8bf…` выше. В PR тот же коммит
+перенесён rebase на текущий `main` (новый SHA, содержимое пакета то же). Следующий коммит
+убирает N9 v3 (локальный NO-GO по PREREG, §5): код в `segment_table_impl.rs`,
+счётчики `N9_*`, `dbg_segment_memo_holds` и `tests/b4_micro_n9_memo_fill_policy.rs`;
+сырые логи N9 остаются как доказательство вердикта. В production уходят только
+S1, X-null и X-span; окончательная приёмка — точный iai A/B и mt-bench на CI.
 
 ## 0. Методика
 

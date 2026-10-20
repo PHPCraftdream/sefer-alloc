@@ -434,8 +434,10 @@ function computeStepRows(stepName, aRow, bRow) {
         // отсутствующая альтернатива = не выполнена (и для "and", и для "or").
         if (isTgt) {
           const alt = tgt.alts.find((a2) => a2.judge === judge && a2.key === key);
+          // Известная сторона сохраняется (CSV == отчёт), дельта не определена.
           rows.push({ judge, key, label: col.label, role: "target",
-            a: null, b: null, d: "—", thr: targetLabel(alt), prec: "—",
+            a: ca ? ca.v : null, b: cb ? cb.v : null, d: "—",
+            thr: targetLabel(alt), prec: "—",
             verdict: "нет данных (target)", met: false, fail: null,
             target: true, csvVerdict: "нет данных (target)",
             exactA: true, exactB: true });
@@ -758,9 +760,9 @@ function verifyCsvAgainstRaw() {
     assert(parseCsvNum(varS) === expVar,
       `CSV recheck ${step}/${judge}/${metric}: variant ${varS} != ${expVar}`);
     if (expBase === null || expVar === null) {
-      // отсутствующая целевая ячейка: значения «—», дельта не определена
-      assert(parseCsvNum(baseS) === null && parseCsvNum(varS) === null && deltaS === "—",
-        `CSV recheck ${step}/${judge}/${metric}: отсутствующая ячейка должна быть «—» во всех колонках значений`);
+      // отсутствующая целевая ячейка: известная сторона сверена выше, дельта «—»
+      assert(deltaS === "—",
+        `CSV recheck ${step}/${judge}/${metric}: у отсутствующей ячейки дельта должна быть «—»`);
       checked++;
       (perStepVerdicts[step] ??= []).push(row);
       continue;

@@ -637,38 +637,3 @@ pub(crate) static XSPAN_MASK_BRANCH_CALLS: core::sync::atomic::AtomicU64 =
 #[cfg(feature = "bench-internals")]
 pub(crate) static XSPAN_MASK_BRANCH_TAKEN: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
-
-/// B4-M (P1-2): `SegmentTable::canonical_base_of_mut` lookups served by the
-/// single-entry memo (`last_key` hit) — counted IN ADDITION TO
-/// [`CONTAINS_BASE_TIER1_HITS`] (which groups memo and `own_cache` hits
-/// together as "Tier-1"); N9 splits the two hit kinds. Companion of
-/// [`N9_OWNCACHE_HITS`]. Same gating/ordering convention.
-#[cfg(feature = "bench-internals")]
-pub(crate) static N9_MEMO_HITS: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
-
-/// B4-M (P1-2): `SegmentTable::canonical_base_of_mut` lookups served by the
-/// direct-mapped `own_cache` (Tier-1 hit, memo missed) — see
-/// [`N9_MEMO_HITS`]. Same gating/ordering convention.
-#[cfg(feature = "bench-internals")]
-pub(crate) static N9_OWNCACHE_HITS: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
-
-/// B4-M (P1-2): N9-v3 memo fills performed on the `own_cache`-hit path (the
-/// `cached_root.addr() == key.addr()` exact-base guard passed and
-/// `last_key`/`last_root` were re-armed) — see
-/// `canonical_base_of_mut`'s N9-v3 comment. Same gating/ordering convention.
-#[cfg(feature = "bench-internals")]
-pub(crate) static N9_MEMO_FILLS_OWNCACHE_HIT: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
-
-/// B4-M (P1-2): events where the pre-v3 policy would have memo-filled from a
-/// won exact-base probe — the honest denominator of the N9 fill-share oracle.
-/// Bumped in `canonical_base_of_mut` after a won `hash_find` whose returned
-/// root is the exact base (`root.addr() == key.addr()`); the numerator is
-/// [`N9_MEMO_FILLS_OWNCACHE_HIT`], so `fills / (fills + won_probe_exact)` is
-/// the share of old-policy fill events the new policy still covers. Companion
-/// of [`N9_MEMO_FILLS_OWNCACHE_HIT`]. Same gating/ordering convention.
-#[cfg(feature = "bench-internals")]
-pub(crate) static N9_WON_PROBE_EXACT: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);

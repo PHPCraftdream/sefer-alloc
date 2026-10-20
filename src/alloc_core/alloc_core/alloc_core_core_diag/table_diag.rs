@@ -169,22 +169,6 @@ impl AllocCore {
         self.table.dbg_hash_contains_only(base)
     }
 
-    /// TEST-ONLY (N9-v3): read-only observation of the one-entry
-    /// last-segment memo in `SegmentTable` — does it currently hold
-    /// `ptr`'s segment base? Lets
-    /// `tests/b4_micro_n9_memo_fill_policy.rs` pin WHICH fill site armed
-    /// the memo (an `own_cache` hit under N9-v3, a won `hash_find` probe
-    /// under the pre-v3 policy) without touching the Tier-1 counters.
-    /// Takes any pointer previously returned by `alloc` (the base is
-    /// derived internally, same convention as `dbg_contains_base`).
-    /// Requires `bench-internals`.
-    #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
-    #[must_use]
-    pub fn dbg_segment_memo_holds(&self, ptr: *mut u8) -> bool {
-        self.table.memo_holds(os::segment_base_of_ptr(ptr))
-    }
-
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): process-wide count of
     /// mutable `SegmentTable::canonical_base_of_mut` lookups that HIT the
     /// Tier-1 direct-mapped `own_cache` (including `contains_base`) — see
@@ -230,7 +214,7 @@ impl AllocCore {
     }
 
     // --- B4-M (P1-2) bench-internals observer counters (S1 / X-null /
-    // --- X-span / N9). All process-wide, Relaxed, `bench-internals`-gated
+    // --- X-span). All process-wide, Relaxed, `bench-internals`-gated
     // --- (see each counter's doc in `alloc_core/counters.rs`).
 
     /// MEASUREMENT-ONLY (B4-M P1-2): magazine-refill events — see
@@ -295,50 +279,6 @@ impl AllocCore {
     #[must_use]
     pub fn dbg_xspan_mask_branch_taken() -> u64 {
         crate::alloc_core::alloc_core::counters::XSPAN_MASK_BRANCH_TAKEN
-            .load(core::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): memo (Tier-1a) hits in
-    /// `canonical_base_of_mut` — see `counters::N9_MEMO_HITS`. Reads 0 unless
-    /// `bench-internals` is on.
-    #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
-    #[must_use]
-    pub fn dbg_n9_memo_hits() -> u64 {
-        crate::alloc_core::alloc_core::counters::N9_MEMO_HITS
-            .load(core::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): `own_cache` (Tier-1b) hits in
-    /// `canonical_base_of_mut` — see `counters::N9_OWNCACHE_HITS`. Reads 0
-    /// unless `bench-internals` is on.
-    #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
-    #[must_use]
-    pub fn dbg_n9_owncache_hits() -> u64 {
-        crate::alloc_core::alloc_core::counters::N9_OWNCACHE_HITS
-            .load(core::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): memo fills on the own_cache-hit path —
-    /// see `counters::N9_MEMO_FILLS_OWNCACHE_HIT`. Reads 0 unless
-    /// `bench-internals` is on.
-    #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
-    #[must_use]
-    pub fn dbg_n9_memo_fills_owncache_hit() -> u64 {
-        crate::alloc_core::alloc_core::counters::N9_MEMO_FILLS_OWNCACHE_HIT
-            .load(core::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// MEASUREMENT-ONLY (B4-M P1-2): won exact-base probes (pre-v3-policy
-    /// memo-fill events, the N9 fill-share denominator) — see
-    /// `counters::N9_WON_PROBE_EXACT`. Reads 0 unless `bench-internals` is on.
-    #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
-    #[must_use]
-    pub fn dbg_n9_won_probe_exact() -> u64 {
-        crate::alloc_core::alloc_core::counters::N9_WON_PROBE_EXACT
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 

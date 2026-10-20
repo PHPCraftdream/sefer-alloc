@@ -227,16 +227,15 @@ pub(crate) struct SegmentTable {
     own_cache: [(usize, *mut u8); OWN_CACHE_SIZE],
     /// N9 — a ONE-entry "last resolved segment" memo consulted BEFORE
     /// `own_cache`/hash lookup. Holds `(key.addr(), root)` for the most
-    /// recent exact-base resolution (root.addr() == key.addr() only —
+    /// recent exact-base `hash_find` win (root.addr() == key.addr() only —
     /// biased Large payload keys are NEVER cached here, unlike `own_cache`).
-    /// Hit cost: one address compare; miss cost unchanged. Invalidated in
-    /// `own_cache_clear`, so a stale hit is impossible. EMPTY is
-    /// `last_key == LAST_EMPTY_KEY` (usize::MAX): real bases are
-    /// SEGMENT-aligned and a null key is 0, so EMPTY is never hit — one
-    /// compare, no extra branch.
-    ///
-    /// N9-v3 fill policy: filled ONLY from an exact-base `own_cache` HIT (never
-    /// from a won `hash_find` probe): warm locally, free on thrash64.
+    /// Hit cost is a single address compare; miss cost is unchanged. Filled
+    /// ONLY from a won probe with an exact root match; invalidated in
+    /// `own_cache_clear`, i.e. in lockstep with `own_cache` on every
+    /// `unregister`/`recycle`, so a stale hit is structurally impossible.
+    /// EMPTY is encoded as `last_key == LAST_EMPTY_KEY` (usize::MAX): real
+    /// segment bases are SEGMENT-aligned and a null lookup key is 0, so an
+    /// EMPTY entry can never be hit — with a SINGLE compare, no extra branch.
     last_key: usize,
     last_root: *mut u8,
 
@@ -661,14 +660,14 @@ impl SegmentTable {
     /// The cost is a leak (the OS reservation is never returned), not
     /// UB/a double-free — recorded via
     /// [`SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL`] and flagged via that counter
-    /// only: the free path never panics. (Reachable only via caller corruption
-    /// or a genuine double-recycle bug — never a normal decommit → recycle
-    /// call — so no test in this crate is expected to drive it; a
-    /// corrupted-but-still-registered `segment_id` instead drives the
-    /// linear-scan-found path above, exercised by
+    /// only: the free path never panics. (This branch is reachable only via caller corruption
+    /// or a genuine double-recycle bug — never through a normal
+    /// decommit → recycle call — so no test in this crate is expected to
+    /// drive it; a corrupted-but-still-registered `segment_id` instead
+    /// drives the linear-scan-found path above, which is exercised by
     /// `tests/segment_table_recycle.rs::recycle_defensive_tail_evicts_hash_and_cache`).
-    /// The linear scan only ever runs in this anomalous branch — the common
-    /// `segment_id`-resolves-directly case above stays O(1).
+    /// The linear scan itself only ever runs in this anomalous branch — the
+    /// common `segment_id`-resolves-directly case above stays O(1).
     #[cfg(feature = "alloc-decommit")]
     pub(crate) fn recycle(&mut self, base: *mut u8) {
         // oxx R2-06: membership FIRST, keyed on `base`'s ADDRESS only — no
@@ -798,14 +797,15 @@ impl SegmentTable {
     #[inline(always)]
     pub(crate) fn canonical_base_of_mut(&mut self, key: *mut u8) -> Option<*mut u8> {
         // N9: single-entry memo FIRST — one address compare on the hit path,
-        // nothing new on the miss path. The stored root carries the table's own
-        // provenance; EMPTY matches nothing.
+        // nothing new on the miss path. The stored root carries the table's
+        // own provenance (same guarantee as `own_cache`), never the lookup
+        // key. Eviction is co-located with `own_cache` in `own_cache_clear`.
+        // Single compare: `last_key == LAST_EMPTY_KEY` encodes EMPTY, which
+        // neither a real SEGMENT-aligned base nor a null key can match.
         if self.last_key == key.addr() {
+            // The memo is part of Tier-1: count its hits with the own_cache hits.
             #[cfg(feature = "bench-internals")]
             crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            #[cfg(feature = "bench-internals")]
-            crate::alloc_core::alloc_core::N9_MEMO_HITS
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return Some(self.last_root);
         }
@@ -815,38 +815,21 @@ impl SegmentTable {
             #[cfg(feature = "bench-internals")]
             crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            // N9-v3 (item 102 (а)): fill the memo HERE, on an own_cache hit — never on a won probe.
-            #[cfg(feature = "bench-internals")]
-            crate::alloc_core::alloc_core::N9_OWNCACHE_HITS
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            if cached_root.addr() == key.addr() {
-                self.last_key = key.addr();
-                self.last_root = cached_root;
-                #[cfg(feature = "bench-internals")]
-                crate::alloc_core::alloc_core::N9_MEMO_FILLS_OWNCACHE_HIT
-                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            }
             return Some(cached_root);
         }
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let root = self.hash_find(key)?;
-        // N9 (honest fill-share oracle): a won exact-base probe is a pre-v3-policy memo-fill event.
-        #[cfg(feature = "bench-internals")]
-        if root.addr() == key.addr() {
-            crate::alloc_core::alloc_core::N9_WON_PROBE_EXACT
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        }
         self.own_cache[index] = (key.addr(), root);
+        // N9: memoize ONLY exact-base wins (root.addr() == key.addr());
+        // biased Large payload keys (root != key) are never memoized.
+        if root.addr() == key.addr() {
+            self.last_key = key.addr();
+            self.last_root = root;
+        }
         Some(root)
     }
-    /// TEST-ONLY (N9-v3): does the memo hold this base? (EMPTY can't match.)
-    #[cfg(feature = "bench-internals")]
-    pub(crate) fn memo_holds(&self, key: *mut u8) -> bool {
-        self.last_key == key.addr()
-    }
-
     /// R2-05 (independent src review round 2, task #2007): like
     /// [`contains_base_ro`](Self::contains_base_ro), but returns the STORED,
     /// canonical segment-base pointer — the exact `*mut u8` THIS table
@@ -855,17 +838,21 @@ impl SegmentTable {
     ///
     /// # Why this exists
     ///
-    /// A caller that derives `base` from an arbitrary/caller-supplied pointer
-    /// (e.g. a `dbg_*` diagnostic accessor's `ptr` argument) and then confirms
-    /// `contains_base_ro(base)` has only proven that SOME live segment happens
-    /// to share `base`'s ADDRESS — not that `base` itself has valid provenance
-    /// over that segment's memory. Matching an address does not grant
-    /// provenance: safe code can construct a pointer with the same address as
-    /// a live allocation but zero provenance over it (e.g. via
-    /// `ptr::without_provenance_mut`), and dereferencing such a pointer is
-    /// undefined behavior even though the address is "correct". Reading
-    /// allocator metadata through `base` itself after only an
-    /// address-membership check is exactly that hazard.
+    /// `base` is used only as a lookup KEY here: its ADDRESS is compared
+    /// against every stored entry, never dereferenced by this method itself.
+    /// A caller that derives `base` from an arbitrary/caller-supplied
+    /// pointer (e.g. a `dbg_*` diagnostic accessor's `ptr` argument) and then
+    /// confirms `contains_base_ro(base)` has only proven that SOME live
+    /// segment happens to share `base`'s ADDRESS — not that `base` itself
+    /// has valid provenance over that segment's memory. Under Rust's
+    /// strict-provenance model, matching an address does not grant
+    /// provenance: safe code can construct a pointer with the same address
+    /// as a live allocation but zero provenance over it (e.g. via
+    /// `ptr::without_provenance_mut`, or arithmetic on an unrelated
+    /// allocation that happens to land on the same address), and
+    /// dereferencing such a pointer is undefined behavior even though the
+    /// address is "correct". Reading allocator metadata through `base`
+    /// itself after only an address-membership check is exactly that hazard.
     ///
     /// The fix is to read allocator metadata through the pointer THIS
     /// method returns (the table's own stored entry, which was written by
