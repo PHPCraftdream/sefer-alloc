@@ -3056,7 +3056,7 @@ jobs:
         run: |
           set -o pipefail
           cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
-          grep -F "test narrow_pin_cache_hit_release_and_delivery_miri ... ok" "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
+          grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
         shell: bash
       - name: b4-r1 pin cache narrow provenance under TreeBorrows
         env:
@@ -3064,7 +3064,7 @@ jobs:
         run: |
           set -o pipefail
           cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
-          grep -F "test narrow_pin_cache_hit_release_and_delivery_miri ... ok" "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
+          grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
         shell: bash
       - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - alloc-global - strict Stacked Borrows)
         env:

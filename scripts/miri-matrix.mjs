@@ -48,7 +48,7 @@ export const MIRI_TARGETS = [
   // preemption=0.5 coverage of the start gate schedule is retained.
   ...['sb', 'tb'].map((borrows) => green('miri-core', 'b4_r1_pin_cache_miri', 'alloc-global internals bench-internals', {
     borrows, args: ['--', 'narrow'],
-    marker: 'test narrow_pin_cache_hit_release_and_delivery_miri ... ok',
+    marker: '[b4_r1_pin_cache_miri] COMPLETE narrow',
   })),
   green('miri-plain', 'r6_terminal_owner_drain', 'alloc-global alloc-xthread internals bench-internals', {
     model: 'plain', args: ['--', '--exact', 'requested_sizes_one_through_seven_retire_once_and_reissue'],

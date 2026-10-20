@@ -1036,6 +1036,14 @@ harness = false
 test = false
 required-features = ["alloc-global", "internals", "bench-internals"]
 
+# b4-r1 pin-cache Miri cell: no libtest (its teardown frees a by-value Box on
+# the main thread, which hits the accepted P1-box defect on non-fastbin rows).
+[[test]]
+name = "b4_r1_pin_cache_miri"
+harness = false
+test = false
+required-features = ["alloc-global", "internals", "bench-internals"]
+
 # PG-1 W0: MODEL-LIMIT probe — Box tcache reuse while the freeing by-value
 # frame is still live, vs after return, vs a same-frame control. Selector =
 # first argument, one scenario per process; `test = false` keeps ordinary
