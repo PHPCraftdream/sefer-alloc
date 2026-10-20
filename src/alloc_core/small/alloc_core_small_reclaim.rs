@@ -45,12 +45,15 @@ impl AllocCore {
         {
             fatal(b"alloc_core_small_reclaim: sidecar record offset geometry invalid\n");
         }
-        let mut bitmap = meta.alloc_bitmap();
-        if bitmap.is_free(offset) {
+        // B4 (в): state-byte stale-free and magazine-residency checks (the
+        // former alloc-bitmap + magazine-bitmap oracle pair) — by state only,
+        // class-agnostic like the old bitmap bits.
+        let sb = meta.state_byte().read(offset);
+        if (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
             return false;
         }
         #[cfg(feature = "fastbin")]
-        if meta.magazine_bitmap().is_in_magazine(offset) {
+        if (sb >> 6) == crate::alloc_core::state_byte::StateByte::MAG {
             return false;
         }
         let ptr = Node::deref(base, off);
@@ -66,7 +69,12 @@ impl AllocCore {
         });
         Node::write_next(block, next);
         bins.set_head(class_idx, offset);
-        bitmap.mark_free(offset);
+        // B4 (в): commit LIVE → FREE in the state byte.
+        meta.state_byte().write(
+            offset,
+            class_idx,
+            crate::alloc_core::state_byte::StateByte::FREE,
+        );
         meta.dec_live();
         true
     }

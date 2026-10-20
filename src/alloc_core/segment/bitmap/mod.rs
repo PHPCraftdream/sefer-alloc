@@ -1,19 +1,9 @@
-//! Group module: the per-segment bitmap family — the shared bit-test/set/
-//! clear *mechanism* (`SegmentBitmap`, private to this bitmap family) and the two
-//! orthogonal per-segment bitmaps built on it ([`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap)
-//! free/resident, [`MagazineBitmap`](crate::alloc_core::magazine_bitmap::MagazineBitmap) magazine residency).
+//! Group module: the per-granule STATE BYTE (B4 variant (в)) — the single
+//! authoritative small-segment state record. The former bitmap family
+//! (`SegmentBitmap` mechanism + the `AllocBitmap`/`MagazineBitmap` wrappers)
+//! was removed: no production reader/writer remained after the state-byte
+//! rewrite, and the state byte now occupies their slot in the segment
+//! metadata geometry (`Layout::state_byte_off()`).
 
-pub(crate) mod alloc_bitmap;
-/// RAD-5 (plan Phase 5-E4), verdict GO — the second orthogonal per-segment
-/// bitmap (magazine residency), wired into the production hot path. See the
-/// module doc for the design and `docs/perf/IAI_BASELINE.md` §RAD-5 for the
-/// measurement.
-pub(crate) mod magazine_bitmap;
-/// The shared per-segment bitmap *mechanism* (the bit-test/set/clear
-/// arithmetic + `FOOTPRINT`) common to [`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap) and
-/// [`MagazineBitmap`](crate::alloc_core::magazine_bitmap::MagazineBitmap); task #98 / R4-6 dedup of
-/// `code_quality_review.md` finding #7. `pub(crate)` only because
-/// `alloc_core` itself is `#[doc(hidden)]`; the type is `pub(super)` so neither
-/// wrapper nor any other crate code can confuse the two bitmap KINDS at a call
-/// site. Nothing here is stable public API.
-pub(crate) mod segment_bitmap;
+/// B4 variant (в): the per-granule owner-private STATE BYTE.
+pub(crate) mod state_byte;

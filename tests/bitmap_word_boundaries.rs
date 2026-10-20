@@ -1,26 +1,28 @@
-//! N4 (word-wide bitmap access) proof-of-boundaries tests.
+//! B4 variant (в): STATE-BYTE granule↔byte-index boundary tests.
 //!
-//! The bitmap accessors moved from byte-wide to `u64`-word-wide loads/stores
-//! (`SegmentBitmap::locate` now returns `(word = bit / 64, 1 << bit % 64)`).
-//! The in-memory byte layout is REQUIRED to stay identical to the byte-wide
-//! predecessor: bit `b` = byte `b >> 3`, bit `b & 7` (little-endian word
-//! numbering). These tests read the raw bitmap bytes back through the
-//! test-only dump hook (`dbg_alloc_bitmap_bytes_for`) and compare them to an
-//! independent BYTE-form reference bit-set, so a word-shift bug (wrong 8-byte
-//! group or wrong bit inside the word) fails immediately.
+//! HISTORY: the original N4 tests asserted the `u64`-word boundaries of the
+//! per-segment `AllocBitmap` (bit 7/8 byte crossing, bit 63/64 word
+//! crossing, last word of the footprint). Those assertions went STALE BY
+//! DESIGN when the per-granule STATE BYTE (one byte per `MIN_BLOCK` granule,
+//! `byte = (class+1) | (state << 6)`) became the authoritative small-segment
+//! state record and the bitmaps stopped being maintained — a bitmap-word
+//! shift can no longer change allocation behaviour, so testing it would test
+//! a dead mechanism. This file now asserts the STATE BYTE's own boundaries
+//! through the `dbg_state_bytes_for` dump hook:
 //!
-//! Covered boundaries:
-//! * bit 7/8  — the first byte→byte crossing inside word 0;
-//! * bit 63/64 — the first word→word crossing (the whole point of N4);
-//! * last bits of the LAST `u64` word of the segment footprint
-//!   (262141..262143 = byte 32767 bits 5..7), in-footprint;
-//! * full byte-form equivalence: every freed bit index is compared against a
-//!   reference byte image built independently (byte `b >> 3`, mask
-//!   `1 << (b & 7)`) over the whole touched span, plus explicit
-//!   neighbour-preservation checks.
+//! * first-granule mapping: an issued block's byte lives at byte index
+//!   `off >> 4` (== the granule index) and nowhere else;
+//! * LIVE vs FREE state transitions per granule, with byte-indexed
+//!   neighbour preservation (consecutive granules are consecutive BYTES —
+//!   the byte mapping makes the old bit-packing hazards unreachable);
+//! * the LAST granule of the segment maps to the LAST byte of the region
+//!   (`StateByte::FOOTPRINT == SEGMENT / MIN_BLOCK == 256 KiB`);
+//! * full byte-form equivalence over a swept span (FREE-encoded even
+//!   granules, LIVE odd granules) against an independently built reference
+//!   image.
 //!
-//! Mutant contract: shifting the word index by one bit (e.g. `(bit >> 6) + 1`
-//! or addressing byte `bit >> 3 & !7 + 8`) makes every assertion here fail.
+//! Mutant contract: shifting the byte index by one (e.g. indexing
+//! `(off >> 4) + 1`, or mapping `off >> 3`) makes every assertion here fail.
 
 #![cfg(all(feature = "alloc-core", feature = "internals"))]
 
@@ -31,30 +33,36 @@ use sefer_alloc::alloc_core::AllocCore;
 const BLOCK: usize = 16; // MIN_BLOCK for the default configuration
 const SEGMENT: usize = 4 * 1024 * 1024;
 const BLOCKS_PER_SEG: usize = SEGMENT / BLOCK; // 262_144
-const FOOTPRINT: usize = BLOCKS_PER_SEG / 8; // 32_768 bitmap bytes
+/// State-byte region footprint: ONE BYTE per granule (not per bit).
+const FOOTPRINT: usize = BLOCKS_PER_SEG; // 256 KiB
 
-/// The bitmap bit index of an issued 16-byte block pointer.
-fn bit_of(p: *mut u8) -> usize {
+const STATE_LIVE: u8 = 0;
+const STATE_FREE: u8 = 2;
+
+/// The state-byte (granule) index of an issued 16-byte block pointer.
+fn granule_of(p: *mut u8) -> usize {
     let addr = p as usize;
     let off = addr & (SEGMENT - 1);
     off >> 4 // MIN_BLOCK_SHIFT = 4
 }
 
-/// Independent byte-form reference: bit `b` lives in byte `b >> 3`, bit
-/// `b & 7` (little-endian byte numbering — exactly the pre-N4 layout).
-fn reference_bytes(bits: &[usize], out: &mut [u8]) {
-    for b in out.iter_mut() {
-        *b = 0;
-    }
-    for &bit in bits {
-        out[bit >> 3] |= 1u8 << (bit & 7);
-    }
+fn state(b: u8) -> u8 {
+    b >> 6
+}
+fn class_field(b: u8) -> u8 {
+    b & 0x3F
 }
 
-/// Allocate `n` 16-byte blocks; the issued set covers bitmap bits
-/// `first_bit..first_bit+n` contiguously (the substrate carves contiguous
-/// blocks; issue order is LIFO per refill batch, which does not matter here —
-/// only the ADDRESS set does). Returns the pointers.
+/// Dump the first `len` state bytes of `anchor`'s segment.
+fn dump(ac: &AllocCore, anchor: *mut u8, len: usize) -> Vec<u8> {
+    let mut v = vec![0u8; len];
+    // SAFETY: `anchor` is a live allocation owned by `ac`.
+    unsafe { ac.dbg_state_bytes_for(anchor, &mut v) };
+    v
+}
+
+/// Allocate `n` 16-byte blocks; the issued set covers granules
+/// `first..first+n` contiguously (the substrate carves contiguous blocks).
 fn alloc_blocks(ac: &mut AllocCore, n: usize) -> Vec<*mut u8> {
     let layout = Layout::from_size_align(BLOCK, BLOCK).unwrap();
     let mut v = Vec::with_capacity(n);
@@ -66,143 +74,199 @@ fn alloc_blocks(ac: &mut AllocCore, n: usize) -> Vec<*mut u8> {
     v
 }
 
-/// Free the blocks whose bit indices appear in `set` (they must all be part of
-/// `blocks`), dump the raw AllocBitmap bytes and compare against the byte-form
-/// reference across the span from the lowest to the highest chosen bit plus a
-/// one-byte margin on each side. A free of a 16-byte block `mark_free`s
-/// exactly its own bit; the substrate's own refill-batch frees all sit in the
-/// first-carved prefix which we keep fully allocated, outside that span.
-fn free_and_verify(ac: &mut AllocCore, blocks: &[*mut u8], mut set: Vec<usize>, label: &str) {
-    set.sort_unstable();
+#[test]
+fn state_byte_first_granule_mapping_and_live_state() {
+    let mut ac = AllocCore::new().expect("primordial");
+    let blocks = alloc_blocks(&mut ac, 32);
+    let g0 = granule_of(blocks[0]);
 
-    // Baseline: the substrate's own refill-batch population legitimately
-    // `mark_free`s up to 31 same-class blocks per carve batch at ALLOC time,
-    // so the bitmap is NOT all-zero before our chosen frees. Capture it and
-    // require our frees to only ever ADD their own bits on top of it.
-    let mut before = vec![0u8; FOOTPRINT];
-    // SAFETY: `blocks[0]` is a live allocation owned by `ac`.
-    unsafe { ac.dbg_alloc_bitmap_bytes_for(blocks[0], &mut before) };
-    for &bit in &set {
+    let buf = dump(&ac, blocks[0], FOOTPRINT);
+
+    // Every issued block's byte sits at granule index `granule_of(p)`, is
+    // nonzero (its class field is set), and is in the LIVE state.
+    for &p in &blocks {
+        let g = granule_of(p);
+        let b = buf[g];
+        assert_ne!(b, 0, "issued block's state byte at granule {g} is zero");
         assert_eq!(
-            before[bit >> 3] & (1u8 << (bit & 7)),
-            0,
-            "{label}: bit {bit} already free before the harness free"
+            state(b),
+            STATE_LIVE,
+            "issued block at granule {g} is not LIVE (byte {b:#04x})"
         );
     }
 
+    // Zero-byte invariant (И1): every granule BEFORE the first issued one
+    // was never a block start — its byte must be exactly zero.
+    assert!(
+        buf[..g0].iter().all(|&b| b == 0),
+        "state bytes before the payload's first granule are not zero \
+         (first non-zero at {:?})",
+        buf[..g0].iter().position(|&b| b != 0)
+    );
+
+    // Class-field consistency: all 32 issued blocks share one class, so all
+    // 32 bytes carry the same class field.
+    let cf = class_field(buf[g0]);
+    assert_ne!(cf, 0, "LIVE byte must have a nonzero class field");
+    for &p in &blocks {
+        assert_eq!(class_field(buf[granule_of(p)]), cf);
+    }
+}
+
+#[test]
+fn state_byte_free_transition_and_byte_neighbour_preservation() {
+    let mut ac = AllocCore::new().expect("primordial");
+    let blocks = alloc_blocks(&mut ac, 72);
+    let g0 = granule_of(blocks[0]);
+    let before = dump(&ac, blocks[0], FOOTPRINT);
+    let cf = class_field(before[g0]);
+
+    // Free granules straddling the old bitmap's first byte boundary (7/8) —
+    // for BYTES this just picks neighbouring-but-distinct byte indices.
+    let set = [g0, g0 + 1, g0 + 7, g0 + 8];
     let layout = Layout::from_size_align(BLOCK, BLOCK).unwrap();
-    // bit index -> pointer (issued blocks cover bits contiguously).
-    let by_bit: std::collections::HashMap<usize, *mut u8> =
-        blocks.iter().map(|&p| (bit_of(p), p)).collect();
-    for &bit in &set {
-        let p = by_bit[&bit];
+    let by_g: std::collections::HashMap<usize, *mut u8> =
+        blocks.iter().map(|&p| (granule_of(p), p)).collect();
+    for &g in &set {
         // SAFETY: live allocation owned by `ac`, exact original layout.
-        unsafe { ac.dealloc(p, layout) };
+        unsafe { ac.dealloc(by_g[&g], layout) };
     }
 
-    let mut buf = vec![0u8; FOOTPRINT];
-    // SAFETY: `blocks[0]` is a live allocation owned by `ac`.
-    unsafe { ac.dbg_alloc_bitmap_bytes_for(blocks[0], &mut buf) };
-
-    let mut want = vec![0u8; FOOTPRINT];
-    reference_bytes(&set, &mut want);
-    for i in 0..FOOTPRINT {
-        want[i] |= before[i];
-    }
-
-    let lo = set[0];
-    let hi = *set.last().unwrap();
-    let lo_byte = (lo >> 3).saturating_sub(1);
-    let hi_byte = ((hi >> 3) + 2).min(FOOTPRINT);
-    for (i, (got, exp)) in buf[lo_byte..hi_byte]
-        .iter()
-        .zip(want[lo_byte..hi_byte].iter())
-        .enumerate()
-    {
+    let after = dump(&ac, blocks[0], FOOTPRINT);
+    for &g in &set {
+        let b = after[g];
         assert_eq!(
-            got,
-            exp,
-            "{label}: bitmap byte {} mismatch (bit range {lo}..={hi}); \
-             word-shift or RMW clobber",
-            i + lo_byte
+            state(b),
+            STATE_FREE,
+            "freed granule {g} is not FREE (byte {b:#04x})"
+        );
+        assert_eq!(
+            class_field(b),
+            cf,
+            "freed granule {g} lost its class field (byte {b:#04x})"
         );
     }
-
-    // Neighbour preservation: every bit adjacent to a chosen bit but not
-    // chosen itself must read 0.
-    for &bit in &set {
-        for nb in bit.saturating_sub(1)..=(bit + 1).min(BLOCKS_PER_SEG - 1) {
-            if !set.contains(&nb) && before[nb >> 3] & (1u8 << (nb & 7)) == 0 {
-                let byte = buf[nb >> 3];
+    // Byte neighbour preservation: every granule adjacent to a freed one but
+    // not itself freed must be byte-IDENTICAL to its pre-free value.
+    for &g in &set {
+        for nb in g.saturating_sub(1)..=(g + 1).min(BLOCKS_PER_SEG - 1) {
+            if !set.contains(&nb) {
                 assert_eq!(
-                    byte & (1 << (nb & 7)),
-                    0,
-                    "{label}: neighbour bit {nb} clobbered by set/clear of {bit}"
+                    after[nb], before[nb],
+                    "neighbour granule {nb} clobbered by the free of granule {g}"
                 );
             }
         }
     }
 }
 
-/// The first bitmap bit covered by issued payload blocks (the payload start
-/// depends on the metadata geometry; the tests below anchor to it).
-fn first_bit(blocks: &[*mut u8]) -> usize {
-    blocks.iter().map(|&p| bit_of(p)).min().unwrap()
-}
-
 #[test]
-fn n4_bit_7_8_byte_crossing() {
-    let mut ac = AllocCore::new().expect("primordial");
-    let blocks = alloc_blocks(&mut ac, 32);
-    let b0 = first_bit(&blocks);
-    // Bits b0 and b0+1 (payload block 0 is byte-aligned): they straddle byte
-    // b0>>3 / byte (b0>>3)+1, both inside the same u64 word.
-    // Bits b0+7 and b0+8 additionally straddle the word's FIRST byte
-    // boundary (byte bit-grid positions 7/8).
-    free_and_verify(&mut ac, &blocks, vec![b0, b0 + 1, b0 + 7, b0 + 8], "bit7/8");
-}
-
-#[test]
-fn n4_bit_63_64_word_crossing() {
-    let mut ac = AllocCore::new().expect("primordial");
-    let blocks = alloc_blocks(&mut ac, 72);
-    let b0 = first_bit(&blocks);
-    // The first word->word crossing at or after b0: b1 = start of the next
-    // u64 word; bits b1-1 (last of its word) and b1 (first of the next). A
-    // one-bit word-index shift addresses the wrong word for exactly one.
-    #[allow(clippy::manual_is_multiple_of)] // keep % form compatible with older toolchains
-    let b1 = if b0 % 64 == 0 {
-        b0 + 64
-    } else {
-        b0 + 64 - (b0 % 64)
-    };
-    free_and_verify(&mut ac, &blocks, vec![b1 - 1, b1], "bit63/64-style");
-}
-
-#[test]
-fn n4_last_bits_of_last_word_in_footprint() {
-    let mut ac = AllocCore::new().expect("primordial");
-    let last = BLOCKS_PER_SEG - 1;
-    // The 16-byte class spans the whole segment, so the carved payload covers
-    // every bit of the footprint; the final three bits are the last bits of
-    // the LAST u64 word (byte 32767 bits 5,6,7).
-    let blocks = alloc_blocks(&mut ac, BLOCKS_PER_SEG);
-    free_and_verify(
-        &mut ac,
-        &blocks,
-        vec![last - 2, last - 1, last],
-        "last-word",
-    );
-}
-
-#[test]
-fn n4_full_byte_form_equivalence_first_two_words() {
-    // Every-bit sweep of bits 0..128: free ONLY the even bits, verify the byte
-    // image equals the reference pattern (0x55 repeating). A word-index
-    // off-by-one-bit moves odd bits into even slots and inverts this image.
+fn state_byte_full_byte_form_equivalence_even_sweep() {
+    // Every-granule sweep of 128 granules: free ONLY the even ones, verify
+    // the byte image equals the reference pattern (FREE-encoded even, LIVE
+    // odd). A byte-index off-by-one moves even granules into odd slots and
+    // inverts this image.
     let mut ac = AllocCore::new().expect("primordial");
     let blocks = alloc_blocks(&mut ac, 128);
-    let b0 = first_bit(&blocks);
-    let set: Vec<usize> = (b0..b0 + 128).step_by(2).collect();
-    free_and_verify(&mut ac, &blocks, set, "even-sweep-0..128");
+    let g0 = granule_of(blocks[0]);
+    let layout = Layout::from_size_align(BLOCK, BLOCK).unwrap();
+    let cf = class_field(dump(&ac, blocks[0], FOOTPRINT)[g0]);
+
+    let mut freed = std::collections::HashSet::new();
+    for (i, &p) in blocks.iter().enumerate() {
+        if i % 2 == 0 {
+            // SAFETY: live allocation owned by `ac`, exact original layout.
+            unsafe { ac.dealloc(p, layout) };
+            freed.insert(granule_of(p));
+        }
+    }
+
+    let buf = dump(&ac, blocks[0], FOOTPRINT);
+    for (i, &p) in blocks.iter().enumerate() {
+        let g = granule_of(p);
+        let want = if freed.contains(&g) {
+            cf | (STATE_FREE << 6)
+        } else {
+            cf | (STATE_LIVE << 6)
+        };
+        assert_eq!(
+            buf[g], want,
+            "granule {g} (block {i}) byte mismatch: got {:#04x}, want {want:#04x}",
+            buf[g]
+        );
+    }
+}
+
+#[test]
+fn state_byte_last_granule_maps_to_last_footprint_byte() {
+    let mut ac = AllocCore::new().expect("primordial");
+    // Fill the FIRST segment with the 16 B class until the allocator crosses
+    // into a second segment. (B4 (в): the state-byte region costs 256 KiB of
+    // metadata per segment, so a segment's payload no longer holds all
+    // `BLOCKS_PER_SEG` 16 B blocks and the sweep spills — drive to the spill
+    // point instead and assert on the TOP granules the first segment
+    // actually issued.)
+    let layout = Layout::from_size_align(BLOCK, BLOCK).unwrap();
+    let mut blocks: Vec<*mut u8> = Vec::with_capacity(BLOCKS_PER_SEG);
+    loop {
+        let p = ac.alloc(layout);
+        assert!(!p.is_null(), "alloc failed during fill");
+        let seg = (p as usize) & !(SEGMENT - 1);
+        let is_first = blocks
+            .first()
+            .is_none_or(|&f| (f as usize) & !(SEGMENT - 1) == seg);
+        blocks.push(p);
+        if !is_first {
+            // `blocks.last()` is the FIRST block of segment 2; drop it.
+            blocks.pop();
+            // SAFETY: live allocation owned by `ac`, exact original layout.
+            unsafe { ac.dealloc(p, layout) };
+            break;
+        }
+    }
+    let base1 = (blocks[0] as usize) & !(SEGMENT - 1);
+
+    // The top three ISSUED granules of segment 1.
+    let gmax = blocks
+        .iter()
+        .map(|&p| ((p as usize) - base1) >> 4)
+        .max()
+        .unwrap();
+    assert!(
+        gmax < FOOTPRINT,
+        "granule {gmax} outside the state-byte region"
+    );
+    let mut seg1_blocks: Vec<*mut u8> = blocks
+        .iter()
+        .copied()
+        .filter(|&p| ((p as usize) & !(SEGMENT - 1)) == base1)
+        .collect();
+    seg1_blocks.sort_by_key(|&p| (p as usize) & (SEGMENT - 1));
+    let start = seg1_blocks.len() - 3;
+    let top: Vec<*mut u8> = seg1_blocks[start..].to_vec();
+    for p in &top {
+        // SAFETY: live allocation owned by `ac`, exact original layout.
+        unsafe { ac.dealloc(*p, layout) };
+    }
+
+    let buf = dump(&ac, seg1_blocks[0], FOOTPRINT);
+    assert_eq!(buf.len(), FOOTPRINT, "state-byte footprint is not 256 KiB");
+    for &p in &top {
+        let g = ((p as usize) - base1) >> 4;
+        let b = buf[g];
+        assert_eq!(
+            state(b),
+            STATE_FREE,
+            "top granule {g} is not FREE after free (byte {b:#04x})"
+        );
+        assert_ne!(b, 0, "top granule {g} byte is zero after free");
+    }
+    // Nothing was ever issued past the top granule: the region above it must
+    // read zero for at least the next 64 granules (well past any rounding).
+    let zero_from = gmax + 1;
+    let zero_to = (zero_from + 64).min(FOOTPRINT);
+    assert!(
+        buf[zero_from..zero_to].iter().all(|&b| b == 0),
+        "state bytes above the top issued granule {gmax} are not zero"
+    );
 }

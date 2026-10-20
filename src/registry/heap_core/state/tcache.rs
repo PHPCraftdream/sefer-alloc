@@ -10,11 +10,12 @@
 //! longer skips ALL dependent loads on the hit path. The alloc-hit magazine
 //! pop (`HeapCore::alloc`, `src/registry/heap_core/alloc/hot.rs`'s RAD-5 E4
 //! block) derives `os::segment_base_of_ptr(issued)` from the just-popped
-//! pointer, then does a magazine-residency-bitmap read-modify-write
-//! (`SegmentMeta::new(base).magazine_bitmap().clear_magazine(off)`) at the
-//! derived offset — a load, and a store, dependent on the popped pointer's
+//! pointer, then does a per-granule state-byte read-modify-write
+//! (`SegmentMeta::new(base).state_byte().set_state(off, LIVE)`) at the
+//! derived offset (B4 (в); the former magazine-BITMAP RMW had the same
+//! shape) — a load, and a store, dependent on the popped pointer's
 //! value, on EVERY magazine hit under `production`. That RMW targets the
-//! segment's bitmap metadata, a region the magazine array itself does not
+//! segment's state-byte metadata, a region the magazine array itself does not
 //! cover — it is not a re-read of the popped block's own body. See
 //! `docs/perf/R29_10_ALLOC_HIT_CLEAR_MAGAZINE_ISOLATION_GATE.md` for the
 //! isolated per-pop cost of this RMW.

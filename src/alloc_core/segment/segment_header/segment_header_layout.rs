@@ -17,29 +17,25 @@ impl Layout {
     pub(crate) const fn bin_table_off() -> usize {
         Self::page_map_off() + PageMap::FOOTPRINT
     }
-    /// Offset of the per-segment allocation bitmap after both bin-table
-    /// footprints, preserving room for the two-list layout.
-    pub(crate) const fn alloc_bitmap_off() -> usize {
+    /// B4 (variant в): per-granule STATE BYTE region after both bin-table
+    /// footprints (8-aligned) — the single authoritative small-segment state
+    /// record. This offset is the former `alloc_bitmap_off()`: the two dead
+    /// bitmaps (`AllocBitmap`/`MagazineBitmap`, removed with B4) are gone and
+    /// the state-byte footprint occupies their slot in the geometry.
+    pub(crate) const fn state_byte_off() -> usize {
         align_up_const(Self::bin_table_off() + BinTable::FOOTPRINT * 2, 8)
     }
-    /// Orthogonal magazine-residency bitmap after `AllocBitmap`, aligned to
-    /// eight bytes. Its footprint and position are part of segment metadata
-    /// geometry.
-    pub(crate) const fn magazine_bitmap_off() -> usize {
-        align_up_const(
-            Self::alloc_bitmap_off() + crate::alloc_core::alloc_bitmap::AllocBitmap::FOOTPRINT,
-            8,
-        )
-    }
-    /// End of mandatory owner-only small metadata.
+    /// End of mandatory owner-only small metadata. The per-granule STATE BYTE
+    /// region ends here (B4 variant (в)).
     const fn owner_metadata_end() -> usize {
-        Self::magazine_bitmap_off() + crate::alloc_core::magazine_bitmap::MagazineBitmap::FOOTPRINT
+        Self::state_byte_off()
+            + crate::alloc_core::segment::bitmap::state_byte::StateByte::FOOTPRINT
     }
     /// End of the small-segment metadata (page-aligned past the last metadata
     /// region). Payload carving begins here.
     ///
-    /// Owner metadata contains the header, page map, bins and allocation/
-    /// magazine bitmaps. Remote ingress is an independently allocated sidecar,
+    /// Owner metadata contains the header, page map, bins and the per-granule
+    /// state-byte region. Remote ingress is an independently allocated sidecar,
     /// never in this window.
     ///
     /// R8-6 (task #219): this is the **TIGHT** payload/metadata boundary —

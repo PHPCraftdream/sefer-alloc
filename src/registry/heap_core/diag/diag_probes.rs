@@ -26,7 +26,7 @@ use crate::registry::heap_core::HeapCore;
 // Task #2000: `os` / `SegmentMeta` (the OTHER former consumers of this same
 // gate) were removed — `dbg_clear_magazine_on_hit` now calls the shared
 // `HeapCore::clear_magazine_on_issue` instead of inlining its own
-// `os::segment_base_of_ptr` + `SegmentMeta::new(..).magazine_bitmap()` copy.
+// `os::segment_base_of_ptr` + `SegmentMeta::new(..).state_byte()` copy.
 #[cfg(all(
     feature = "alloc-global",
     feature = "fastbin",
@@ -228,8 +228,8 @@ impl HeapCore {
     /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to
     /// [`dealloc_own_thread_with_base`](crate::registry::heap_core::HeapCore::dealloc_own_thread_with_base),
     /// exposed so `benches/perf_gate_iai.rs` can isolate the free path's
-    /// POST-ROUTING body — the M2 double-free oracle checks (in-magazine
-    /// bitmap probe + flushed/alloc-bitmap probe) and the magazine push
+    /// POST-ROUTING body — the M2 double-free oracle (the state-byte LIVE-exact
+    /// compare, subsuming the former in-magazine and flushed-bitmap probes) and the magazine push
     /// itself — from the ROUTING prefix (`segment_base_of_ptr` +
     /// `contains_base`) that R22-17/R23-1 already isolated. This is the SAME
     /// production own-thread free body `dealloc_routing` calls once ownership
@@ -358,11 +358,12 @@ impl HeapCore {
     }
 
     /// R29-10 (task #441) MEASUREMENT-ONLY: run the EXACT production alloc-hit
-    /// `clear_magazine` block (`src/registry/heap_core/alloc/hot.rs`, the RAD-5 E4
-    /// block that runs on EVERY magazine hit under `production`) standalone on
-    /// `issued`, so `benches/perf_gate_iai.rs` can isolate its combined Ir cost
-    /// (`segment_base_of_ptr(issued)` + `SegmentMeta::new(base).magazine_bitmap
-    /// ().clear_magazine(off)`) — the ALLOC-side sub-mechanism R3's
+    /// issue block (`src/registry/heap_core/alloc/hot.rs` — B4 (в): the
+    /// state-byte MAG → LIVE `set_state` flip that runs on EVERY magazine
+    /// hit under `production`) standalone on `issued`, so
+    /// `benches/perf_gate_iai.rs` can isolate its combined Ir cost
+    /// (`segment_base_of_ptr(issued)` + `SegmentMeta::new(base).state_byte
+    /// ().set_state(off, LIVE)`) — the ALLOC-side sub-mechanism R3's
     /// honest-reject (`docs/perf/IAI_BASELINE.md`) flagged as "never isolated"
     /// (R3 rejected DEFERRING the clear for correctness reasons but admitted "no
     /// iai baseline was taken; there is nothing to measure"). See
@@ -386,21 +387,23 @@ impl HeapCore {
     /// be a live issued allocation or a logically freed block retained in this
     /// heap's magazine; it must not have been recycled, reissued to another
     /// owner, or released. The caller must exclusively control the block and
-    /// prevent conflicting bitmap access for the duration of this call.
-    /// The production magazine-hit step derives the segment base and writes
-    /// the residency bitmap without validating pointer membership. A null,
+    /// prevent conflicting state-byte access for the duration of this call.
+    /// The production magazine-hit step derives the segment base and rewrites
+    /// the block's STATE BYTE (MAG → LIVE) without validating pointer
+    /// membership. A null,
     /// foreign, interior, or released pointer can therefore access unmapped
     /// memory or corrupt unrelated metadata. This measurement hook changes
-    /// only the residency bit: it does not issue ownership or authorize a
+    /// only that one byte: it does not issue ownership or authorize a
     /// second free of a logically freed magazine block.
     /// `issued` must retain allocator-issued provenance and read/write access
-    /// permission for the initialized magazine-bitmap word selected by its
+    /// permission for the initialized STATE-BYTE granule selected by its
     /// offset through the derived segment base, not just the payload bytes.
     /// A payload-only reference/slice or `Box` reborrow tag is insufficient
     /// unless it still authorizes that metadata access. An address/alignment
     /// check does not grant access. The offset must identify a carved small
-    /// block within the bitmap's extent; the reservation must remain owned by
-    /// this heap, with no conflicting bitmap accesses or release for the call.
+    /// block within the state-byte region's extent; the reservation must
+    /// remain owned by this heap, with no conflicting state-byte accesses or
+    /// release for the call.
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-global",

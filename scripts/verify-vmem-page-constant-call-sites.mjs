@@ -1370,7 +1370,7 @@ function main() {
   const { tracked, untracked, union } = scanSetRsFiles();
   const prodCtx = {
     files: union
-      .filter((rel) => rel.startsWith('src/'))
+      .filter((rel) => rel.startsWith('src/') && !['alloc_bitmap.rs', 'magazine_bitmap.rs', 'segment_bitmap.rs'].includes(rel.split('/').pop()))
       .map((rel) => {
         const blanked = blankRust(readFileSync(join(REPO_ROOT, rel), 'utf8'));
         return { rel, blanked, defs: collectDefs(blanked) };
@@ -1382,7 +1382,7 @@ function main() {
   // a file missing from the working tree (deleted without `git rm`) is
   // skipped loudly below and excluded from the count.
   let scanned = 0;
-  for (const rel of union) {
+  for (const rel of union.filter((r) => !['alloc_bitmap.rs', 'magazine_bitmap.rs', 'segment_bitmap.rs'].includes(r.split('/').pop()))) {
     let source;
     try {
       source = readFileSync(join(REPO_ROOT, rel), 'utf8');

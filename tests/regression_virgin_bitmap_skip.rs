@@ -1,15 +1,20 @@
-//! PERF-PASS-2 (G5/C1, task #50) — poison-then-assert counterfactual for the
-//! fresh-segment `AllocBitmap` init-elision.
+//! PERF-PASS-2 (G5/C1, task #50) → B4 (variant в) — poison-then-assert
+//! counterfactual for the fresh-segment STATE-BYTE virgin-init elision.
 //!
-//! `AllocCore::reserve_small_segment` and `bootstrap::primordial` now SKIP the
-//! explicit `AllocBitmap::init_in_place` zero-write under `cfg(not(miri))`
-//! (see the matching comments at both call sites in `alloc_core.rs` /
+//! `AllocCore::reserve_small_segment` and `bootstrap::primordial` SKIP the
+//! explicit `StateByte::init_in_place` zero-write under `cfg(not(miri))`
+//! (see the matching comments at both call sites in `reserve.rs` /
 //! `bootstrap.rs`). The soundness argument is: the memory backing a
 //! freshly-reserved segment is handed back by the OS already zeroed (Windows
-//! `MEM_COMMIT` demand-zero; POSIX anonymous `mmap` zero-fill), and
-//! `AllocBitmap`'s init target state IS all-zeros — so the explicit write was
+//! `MEM_COMMIT` demand-zero; POSIX anonymous `mmap` zero-fill), and the state
+//! byte's "never issued" encoding IS all-zeros — so the explicit write was
 //! always a tautology on this exact code path (never on any other path: the
-//! decommit-reuse full-reset keeps its own unconditional re-init).
+//! decommit-reuse full-reset performs its own SCOPED state-byte zeroing).
+//! The same argument was first documented for the former
+//! `AllocBitmap`/`MagazineBitmap` init elision (this file's original form,
+//! `git show 897463e6:tests/regression_virgin_bitmap_skip.rs`); B4 removed
+//! those dead bitmaps and routed their whole-footprint zero checks onto the
+//! authoritative per-granule STATE-BYTE region.
 //!
 //! This is NOT the rejected P4(b) `alloc_zeroed` virgin-skip: that NO-GO was
 //! about *user-visible payload* virginity, where a RECYCLED (not freshly-
@@ -29,20 +34,18 @@
 //! on ONE LEVEL UP, empirically, on THIS platform, via the crate's own
 //! reserve path:
 //!
-//!   1. **T1 — raw empirical zero-read-back.** Reserve a fresh `AllocCore`
-//!      (which reserves the PRIMORDIAL segment — one of the two call sites
-//!      the skip applies to), alloc ONE block (the minimum needed to obtain a
-//!      pointer into the segment for `dbg_alloc_bitmap_bytes_for`'s (ptr ->
-//!      base) contract), and read back its `AllocBitmap` footprint EXCLUDING
-//!      the narrow span the one alloc's own refill batch legitimately
-//!      populates (`carve_block_with_refill` carves 31 extra same-class
-//!      blocks and correctly frees them back to the BinTable — see the test's
-//!      own doc comment for the exact math). If the OS-zero guarantee did NOT
-//!      hold on this platform (or the skip were wrongly applied to a
-//!      non-virgin path), this read would observe non-zero garbage outside
-//!      that span. It reads all zeros — this IS the empirical proof the
-//!      skip's soundness argument depends on, not a vacuous "does not crash"
-//!      check.
+//!   1. **T1 — raw empirical zero-read-back (primordial).** Reserve a fresh
+//!      `AllocCore` (which reserves the PRIMORDIAL segment — one of the two
+//!      call sites the skip applies to), alloc ONE block (the minimum needed
+//!      to obtain a pointer into the segment for `dbg_state_bytes_for`'s
+//!      (ptr -> base) contract), and read back its STATE-BYTE region
+//!      EXCLUDING the narrow granule span the one alloc's own refill batch
+//!      legitimately populates (`carve_block_with_refill` carves 31 extra
+//!      same-class blocks and correctly frees them back to the BinTable). If
+//!      the OS-zero guarantee did NOT hold on this platform (or the skip were
+//!      wrongly applied to a non-virgin path), this read would observe
+//!      non-zero garbage outside that span. It reads all zeros — this IS the
+//!      empirical proof the skip's soundness argument depends on.
 //!   2. **T2 — same proof for a SECOND fresh segment**, forcing
 //!      `reserve_small_segment` (the non-primordial call site) by exhausting
 //!      the primordial's small-class capacity, stopping at the FIRST pointer
@@ -52,62 +55,27 @@
 //!   3. **T3 — behavioural counterfactual.** With the skip active, drive a
 //!      full M2 double-free-guard exercise (alloc, double-free, re-alloc) on
 //!      blocks carved from the just-reserved segment. If the skip had left
-//!      SOME bits stuck at 1 (garbage "already free") on a virgin block, the
-//!      very first `alloc` from that class would either return null (bitmap
-//!      says allocated when the substrate thinks it's free — a different bug
-//!      class) or a later double-free guard would misfire — this test's
-//!      shape mirrors `tests/double_free_guard.rs` exactly, so a broken skip
-//!      would fail it the same way a broken bitmap init has always failed
-//!      that file's tests (proving THIS test is not vacuous).
+//!      SOME state bytes non-zero (garbage "already free / in-magazine"), the
+//!      very first `alloc` from that class would either return null or a
+//!      later double-free guard would misfire — this test's shape mirrors
+//!      `tests/double_free_guard.rs` exactly, so a broken skip would fail it
+//!      the same way a broken init has always failed that file's tests
+//!      (proving THIS test is not vacuous).
 //!
 //! ## "No third path" audit (documented, not a runtime test)
 //!
-//! `grep -rn "AllocBitmap::init_in_place" src/` (re-run as part of this task)
-//! shows exactly THREE call sites:
-//!   - `bootstrap.rs::primordial` — the primordial virgin-reserve (skipped
-//!     under `cfg(not(miri))`, this task).
-//!   - `alloc_core.rs::reserve_small_segment` — the non-primordial
-//!     virgin-reserve (skipped under `cfg(not(miri))`, this task).
-//!   - `alloc_core_small_pool.rs::decommit_empty_segment_impl` (the
-//!     `release_follows = false` full-reset branch) — untouched by this task.
-//!     Historically this was the "pool retain" path that re-armed a pooled
-//!     segment on admission (B3, R7 Workstream B) and re-initialised the
-//!     bitmap on a non-virgin, about-to-be-reused segment. Task #223 (R8-10)
-//!     removed decommit-on-pool-admission entirely — a pooled segment is no
-//!     longer decommitted/reset at all, it stays exactly as it was when it
-//!     emptied — so this branch's only caller was deleted and it is now
-//!     UNREACHABLE (still present in source, dead in every current
-//!     configuration; a documented, deliberately-deferred cleanup, not a
-//!     correctness bug — see task #223's summary).
-//!
-//! No other call site exists, and none is reachable today: with the
-//! `release_follows = false` branch dead, `AllocBitmap::init_in_place` is
-//! currently invoked ONLY by the two (skipped-under-this-task) virgin-reserve
-//! sites above — i.e. it never actually runs on `cfg(not(miri))` today.
-//! `decommit_empty_segment_for_release` (the `release_follows = true`
-//! variant) does NOT call `init_in_place` at all — the whole reservation is
-//! about to be released to the OS, so a future re-reserve of that address
-//! range goes through one of the two (now-skipped) virgin-reserve sites
-//! again, not through a stale, still-dirty bitmap. Since #223 (R8-10), pool
-//! admission (the former third caller of the `false` branch) performs NO
-//! decommit call at all — a pooled segment is left exactly as it was when it
-//! emptied, so `decommit_empty_segment_for_release` (the `true` variant) is
-//! the ONLY decommit path exercised today, reached solely from the release
-//! (pool-disabled/full, or pool-eviction) branches.
-//!
-//! ## RAD-5 (E4) GO/NO-GO EXPERIMENT extension
-//!
-//! T1/T2 below were extended with an identical unconditional whole-footprint
-//! check for the second (magazine-residency) `MagazineBitmap`, which mirrors
-//! `AllocBitmap`'s exact virgin-skip discipline at the same two call sites
-//! (`bootstrap::primordial`, `AllocCore::reserve_small_segment`) — originally
-//! plus an unconditional re-init on the decommit-reset full-reset path
-//! (`alloc_core_small_pool.rs`'s `decommit_empty_segment_impl`,
-//! `release_follows = false` branch), the same "skip on virgin, always
-//! re-init on reuse" shape as `AllocBitmap`; that third leg is now dead code
-//! per the "No third path" audit above (task #223 / R8-10). See
-//! `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the measured GO/NO-GO
-//! verdict on the bitmap this extension protects.
+//! The state byte's only UNCONDITIONAL reset lives in the decommit-reset
+//! full-reset branch (`decommit_empty_segment_impl`,
+//! `release_follows = false`), which — since task #223 (R8-10) removed
+//! decommit-on-pool-admission — has no production caller today. Historically
+//! that was the "pool retain" path that re-initialised a non-virgin segment
+//! before reuse. `decommit_empty_segment_for_release` (the
+//! `release_follows = true` variant) performs no metadata reset at all — the
+//! whole reservation is about to be released to the OS, so a future re-reserve
+//! of that address range goes through one of the two (skipped-under-`not(miri)`)
+//! virgin-reserve sites again. Since #223, pool admission performs NO decommit
+//! call at all, so the release variant is the ONLY decommit path exercised
+//! today.
 
 #![cfg(all(feature = "alloc-core", feature = "internals"))]
 
@@ -117,97 +85,74 @@ use std::collections::HashSet;
 use sefer_alloc::alloc_core::AllocCore;
 
 /// T1: a freshly-reserved `AllocCore` (primordial segment) reads back
-/// all-zero across its `AllocBitmap` footprint before any alloc/dealloc call
-/// TOUCHES that region. This is the empirical anchor for the elision's
-/// soundness argument.
+/// all-zero across its STATE-BYTE region before any alloc/dealloc call
+/// TOUCHES it (beyond the one alloc's own refill span). This is the empirical
+/// anchor for the elision's soundness argument.
 ///
 /// IMPORTANT: `ac.alloc(layout)` on a class miss does NOT carve just the ONE
 /// requested block — the non-`fastbin` substrate path
 /// (`carve_block_with_refill`) also carves `REFILL_BATCH = 31` EXTRA blocks of
 /// the SAME class and pushes each through `dealloc_small`, which legitimately
 /// `mark_free`s them (a real, correct free-list population — unrelated to
-/// this task). So after one 16 B alloc, up to 32 consecutive 16 B-class bits
-/// starting at the payload's first block legitimately read as FREE (bit=1).
-/// This test therefore checks the bitmap BYTES BEYOND that maximum possible
-/// same-class refill span (32 blocks × 16 B = 512 B window, rounded up to a
-/// whole byte-aligned margin) — the OS-zero assumption is about to be
-/// exercised there just as much as anywhere else in the segment, so this is
-/// still a meaningful, non-vacuous check of the untouched majority of the
-/// bitmap footprint.
+/// this task). So after one 16 B alloc, up to 32 consecutive 16 B-class
+/// granules starting at the payload's first block legitimately read non-zero
+/// (FREE). This test therefore checks the state bytes BEYOND that maximum
+/// same-class refill span (32 blocks × 16 B = 32 granules) — the OS-zero
+/// assumption is about to be exercised there just as much as anywhere else
+/// in the segment, so this is still a meaningful, non-vacuous check of the
+/// untouched majority of the region.
 #[test]
-fn t1_primordial_bitmap_reads_zero_before_any_traffic() {
+fn t1_primordial_state_bytes_read_zero_before_any_traffic() {
     let mut ac = AllocCore::new().expect("primordial");
     let layout = Layout::from_size_align(16, 8).unwrap();
     let p = ac.alloc(layout);
     assert!(!p.is_null());
 
-    const FOOTPRINT: usize = 32 * 1024; // AllocBitmap::FOOTPRINT for the default SEGMENT/MIN_BLOCK pair
-    let mut buf = vec![0u8; FOOTPRINT];
-    // SAFETY: `p` is a live allocation owned by `ac`.
-    unsafe { ac.dbg_alloc_bitmap_bytes_for(p, &mut buf) };
-
-    // RAD-5 (E4) GO/NO-GO EXPERIMENT: the second (magazine-residency)
-    // bitmap's virgin-init is skipped by the SAME `cfg(not(miri))` discipline
-    // (see `bootstrap.rs`/`alloc_core_small.rs`'s matching skip comments for
-    // `MagazineBitmap::init_in_place`). `AllocCore` alone (no `HeapCore`
-    // magazine layer above it) never marks this bitmap, so EVERY byte of its
-    // footprint must read zero on a freshly-reserved primordial segment — a
-    // stronger, unconditional check than T1's `AllocBitmap` assertion (which
-    // has to exclude the legitimately-refilled span). If the virgin-init
-    // skip were unsound for this bitmap's freshly-carved pages, this would
-    // observe non-zero garbage.
-    const MAG_FOOTPRINT: usize = 32 * 1024; // MagazineBitmap::FOOTPRINT, same geometry as AllocBitmap
-    let mut mag_buf = vec![0u8; MAG_FOOTPRINT];
-    // SAFETY: `p` is a live allocation owned by `ac`.
-    unsafe { ac.dbg_magazine_bitmap_bytes_for(p, &mut mag_buf) };
-    assert!(
-        mag_buf.iter().all(|&b| b == 0),
-        "freshly-reserved primordial segment's MagazineBitmap (RAD-5) did \
-         not read back all-zero before any magazine traffic — the OS-zero \
-         assumption the virgin-init skip depends on does not hold on this \
-         platform (or the skip fired on a non-virgin path). First non-zero \
-         byte at index {:?}.",
-        mag_buf.iter().position(|&b| b != 0)
-    );
-
     // The requested block sits at `primordial_meta_end()` (the payload
-    // start); its bit index is `off >> MIN_BLOCK_SHIFT`. The refill batch
+    // start); its granule index is `off >> 4`. The refill batch
     // (`REFILL_BATCH = 31` extra same-class blocks, `carve_block_with_refill`)
     // covers at most the next 31 × `block_size` bytes of payload past that,
-    // i.e. at most 32 total blocks (1 requested + 31 refilled) from the same
-    // starting bit — see T2's identical margin computation (which uses a
-    // LARGER class and so needs a wider margin; this formula is shared so
-    // neither test hardcodes a class-specific magic number).
+    // i.e. at most 32 total blocks (1 requested + 31 refilled).
     let off = (p as usize) - ((p as usize) & !((4 * 1024 * 1024) - 1));
-    let touched_byte = (off >> 4) / 8; // AllocBitmap::locate's byte_idx for `off`
-    const REFILL_BATCH_MARGIN_BLOCKS: usize = 32; // 1 requested + 31 refilled (carve_block_with_refill)
-    let margin_bytes = (REFILL_BATCH_MARGIN_BLOCKS * layout.size()).div_ceil(16 * 8);
-    let skip_to = touched_byte + margin_bytes;
+
+    // B4 (в): STATE-BYTE region check. Everything outside the legitimately-refilled
+    // granule span must read zero ("never issued"); the issued block itself
+    // must read LIVE with a nonzero class field. An `AllocCore` alone never
+    // parks blocks in a magazine, so no MAG state can legitimately appear.
+    const STATE_FOOTPRINT: usize = 256 * 1024; // StateByte::FOOTPRINT = SEGMENT / MIN_BLOCK
+    let mut state_buf = vec![0u8; STATE_FOOTPRINT];
+    // SAFETY: `p` is a live allocation owned by `ac`.
+    unsafe { ac.dbg_state_bytes_for(p, &mut state_buf) };
+    const REFILL_BATCH_MARGIN_GRANULES: usize = 32; // 1 requested + 31 refilled
+    let issued_granule = off >> 4;
+    let state_skip_to = issued_granule + REFILL_BATCH_MARGIN_GRANULES;
+    assert!(state_skip_to <= STATE_FOOTPRINT);
     assert!(
-        buf[skip_to..].iter().all(|&b| b == 0),
-        "freshly-reserved primordial segment's AllocBitmap did not read back \
-         all-zero (past the legitimately-refilled span) BEFORE any free — \
+        state_buf[state_skip_to..].iter().all(|&b| b == 0),
+        "freshly-reserved primordial segment's STATE-BYTE region did not \
+         read back all-zero past the legitimately-refilled granule span — \
          the OS-zero assumption the virgin-init skip depends on does not \
          hold on this platform (or the skip fired on a non-virgin path). \
-         First non-zero byte at index {:?} (touched span was bytes {}..{}).",
-        buf[skip_to..]
+         First non-zero granule at {:?}.",
+        state_buf[state_skip_to..]
             .iter()
             .position(|&b| b != 0)
-            .map(|i| i + skip_to),
-        touched_byte,
-        skip_to
+            .map(|i| i + state_skip_to)
     );
-    // Sanity: bytes BEFORE the touched block's own bit-byte (metadata region
-    // — header/page-map/bin-table/ring/registry/hash/free-list, all of which
-    // the bitmap's flat indexing also numerically "covers" even though no
-    // block ever starts there) must ALSO read zero — the OS-zero guarantee
-    // applies uniformly across the whole fresh page range, not just payload.
     assert!(
-        buf[..touched_byte].iter().all(|&b| b == 0),
-        "freshly-reserved primordial segment's AllocBitmap metadata-region \
-         bytes (before the payload's first block) did not read back \
-         all-zero. First non-zero byte at index {:?}.",
-        buf[..touched_byte].iter().position(|&b| b != 0)
+        state_buf[..issued_granule].iter().all(|&b| b == 0),
+        "STATE-BYTE region granules before the payload's first block did \
+         not read back all-zero. First non-zero granule at {:?}.",
+        state_buf[..issued_granule].iter().position(|&b| b != 0)
+    );
+    assert_ne!(
+        state_buf[issued_granule], 0,
+        "issued block's state byte is zero"
+    );
+    assert_eq!(
+        state_buf[issued_granule] >> 6,
+        0,
+        "issued block's state byte is not LIVE"
     );
 
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
@@ -217,18 +162,19 @@ fn t1_primordial_bitmap_reads_zero_before_any_traffic() {
 /// T2: force a SECOND, non-primordial small-segment reservation
 /// (`reserve_small_segment`) by exhausting the primordial's small-class
 /// capacity with one class, then read back the TAIL of that fresh segment's
-/// bitmap — far past any bit the handful of carve/refill calls that crossed
-/// into it could have touched — isolating "OS handed back zero" from "our
-/// own bookkeeping happens to read zero".
+/// STATE-BYTE region — far past any granule the handful of carve/refill
+/// calls that crossed into it could have touched — isolating "OS handed back
+/// zero" from "our own bookkeeping happens to read zero".
 #[test]
-fn t2_fresh_small_segment_bitmap_reads_zero_for_untouched_classes() {
+fn t2_fresh_small_segment_state_bytes_read_zero_for_untouched_classes() {
     let mut ac = AllocCore::new().expect("primordial");
 
     // Drive 256 B allocations (a different class from T1's 16 B) until a
     // SECOND distinct 4 MiB-aligned region is observed, then STOP
     // immediately (do not keep allocating into the fresh segment) — the
-    // point is to touch as little of the fresh segment's bitmap as possible
-    // before reading it back, so the untouched tail is a meaningful check.
+    // point is to touch as little of the fresh segment's state region as
+    // possible before reading it back, so the untouched tail is a meaningful
+    // check.
     let layout = Layout::from_size_align(256, 8).unwrap();
     let mut ptrs: Vec<*mut u8> = Vec::new();
     let mut segment_bases: HashSet<usize> = HashSet::new();
@@ -257,64 +203,48 @@ fn t2_fresh_small_segment_bitmap_reads_zero_for_untouched_classes() {
         )
     });
 
-    const FOOTPRINT: usize = 32 * 1024;
-    let mut buf = vec![0u8; FOOTPRINT];
+    // B4 (в): the STATE-BYTE region of the SECOND (non-primordial)
+    // virgin-reserve call site. The refill span covers 32 blocks of 256 B =
+    // 512 granules (granule = MIN_BLOCK, independent of class size);
+    // everything past it must read zero ("never issued"), the issued block
+    // itself LIVE with a nonzero class field.
+    const STATE_FOOTPRINT: usize = 256 * 1024; // StateByte::FOOTPRINT
+    let mut state_buf = vec![0u8; STATE_FOOTPRINT];
     // SAFETY: `fresh_ptr` is a live allocation owned by `ac`.
-    unsafe { ac.dbg_alloc_bitmap_bytes_for(fresh_ptr, &mut buf) };
-
-    // RAD-5 (E4) GO/NO-GO EXPERIMENT: same unconditional whole-footprint
-    // check as T1, for the second (non-primordial) virgin-reserve call site
-    // (`AllocCore::reserve_small_segment`'s `MagazineBitmap` skip).
-    const MAG_FOOTPRINT: usize = 32 * 1024;
-    let mut mag_buf = vec![0u8; MAG_FOOTPRINT];
-    // SAFETY: `fresh_ptr` is a live allocation owned by `ac`.
-    unsafe { ac.dbg_magazine_bitmap_bytes_for(fresh_ptr, &mut mag_buf) };
-    assert!(
-        mag_buf.iter().all(|&b| b == 0),
-        "freshly-reserved (non-primordial) small segment's MagazineBitmap \
-         (RAD-5) did not read back all-zero — the OS-zero assumption \
-         failed, or the skip fired on a segment that was not actually \
-         virgin. First non-zero byte at index {:?}.",
-        mag_buf.iter().position(|&b| b != 0)
-    );
-
-    // `fresh_ptr` is the FIRST block carved from the fresh segment; the same
-    // `carve_block_with_refill` batch behaviour as T1 applies: 1 requested +
-    // `REFILL_BATCH = 31` extra SAME-CLASS (256 B) blocks legitimately read
-    // FREE. That is 32 blocks × 256 B = 8192 B of payload = 512 bits = 64
-    // bytes of bitmap (unlike T1's 16 B class, where the same 32-block span
-    // is only 4 bytes of bitmap) — the margin must scale with `block_size`,
-    // not be a fixed constant copied from T1. Skip that span, then require
-    // the remainder of the fresh segment's bitmap — covering every OTHER
-    // size class, none of which has ever allocated from this brand-new
-    // segment — to read all zero.
+    unsafe { ac.dbg_state_bytes_for(fresh_ptr, &mut state_buf) };
     let base = (fresh_ptr as usize) & !((4 * 1024 * 1024) - 1);
     let off = (fresh_ptr as usize) - base;
-    let touched_byte = (off >> 4) / 8;
-    const REFILL_BATCH_MARGIN_BLOCKS: usize = 32; // 1 requested + 31 refilled (carve_block_with_refill)
-    let block_size = layout.size(); // 256, a whole number of MIN_BLOCK (16) units
-    let margin_bytes = (REFILL_BATCH_MARGIN_BLOCKS * block_size).div_ceil(16 * 8);
-    let skip_to = touched_byte + margin_bytes;
+    let issued_granule = off >> 4;
+    // Each 256 B block spans 16 granules; 1 requested + 31 refilled blocks
+    // ⇒ 512 granules.
+    const REFILL_BATCH_MARGIN_BLOCKS: usize = 32;
+    let state_skip_to = issued_granule + REFILL_BATCH_MARGIN_BLOCKS * (layout.size() / 16);
+    assert!(state_skip_to <= STATE_FOOTPRINT);
     assert!(
-        buf[skip_to..].iter().all(|&b| b == 0),
-        "freshly-reserved (non-primordial) small segment's AllocBitmap did \
-         not read back all-zero past the legitimately-refilled span — the \
-         OS-zero assumption failed, or the skip fired on a segment that was \
-         not actually virgin. First non-zero byte at index {:?} (touched \
-         span was bytes {}..{}).",
-        buf[skip_to..]
+        state_buf[state_skip_to..].iter().all(|&b| b == 0),
+        "freshly-reserved (non-primordial) small segment's STATE-BYTE \
+         region did not read back all-zero past the refilled granule span — \
+         the OS-zero assumption failed, or the skip fired on a non-virgin \
+         segment. First non-zero granule at {:?}.",
+        state_buf[state_skip_to..]
             .iter()
             .position(|&b| b != 0)
-            .map(|i| i + skip_to),
-        touched_byte,
-        skip_to
+            .map(|i| i + state_skip_to)
     );
     assert!(
-        buf[..touched_byte].iter().all(|&b| b == 0),
-        "freshly-reserved (non-primordial) small segment's AllocBitmap \
-         metadata-region bytes (before the payload's first block) did not \
-         read back all-zero. First non-zero byte at index {:?}.",
-        buf[..touched_byte].iter().position(|&b| b != 0)
+        state_buf[..issued_granule].iter().all(|&b| b == 0),
+        "STATE-BYTE region granules before the fresh segment's first block \
+         did not read back all-zero. First non-zero granule at {:?}.",
+        state_buf[..issued_granule].iter().position(|&b| b != 0)
+    );
+    assert_ne!(
+        state_buf[issued_granule], 0,
+        "issued block's state byte is zero"
+    );
+    assert_eq!(
+        state_buf[issued_granule] >> 6,
+        0,
+        "issued block's state byte is not LIVE"
     );
     for p in ptrs {
         // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
@@ -325,9 +255,10 @@ fn t2_fresh_small_segment_bitmap_reads_zero_for_untouched_classes() {
 /// T3: behavioural counterfactual — the M2 double-free guard must still work
 /// correctly on blocks carved from a freshly-reserved (skip-elided-init)
 /// segment. Mirrors `tests/double_free_guard.rs`'s shape exactly: if the
-/// elided init left the bitmap in anything other than the correct "all
-/// allocated" starting state, either the first alloc from a virgin block
-/// would misbehave, or a double-free on it would fail to no-op (both
+/// elided init left the state bytes in anything other than the correct
+/// all-zero "never issued" starting state, either the first alloc from a
+/// virgin block would misbehave, or a double-free on it would fail to no-op
+/// (both
 /// failure modes this test would catch, proving it is not vacuous the same
 /// way `double_free_guard.rs` is not vacuous against ITS guard).
 #[test]
@@ -338,18 +269,18 @@ fn t3_double_free_guard_still_correct_on_freshly_reserved_segment() {
     let p = ac.alloc(layout);
     assert!(!p.is_null());
 
-    // A virgin (never-freed) block's bit must read "allocated" (is_free ==
-    // false) — this is the exact state the elided init is supposed to
+    // A virgin (never-freed) block's state byte must read "never issued"
+    // (all-zero) — this is the exact state the elided init is supposed to
     // produce implicitly via the OS's zero pages, matching what the removed
     // explicit zero-write used to produce explicitly.
     assert!(
         !ac.dbg_is_free_for(p),
-        "virgin block's AllocBitmap bit read FREE before any free() call — \
-         the init-elision left the bitmap in the wrong starting state"
+        "virgin block's state byte read FREE before any free() call — \
+         the init-elision left the state region in the wrong starting state"
     );
 
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
-    unsafe { ac.dealloc(p, layout) }; // legitimate free -> bit set
+    unsafe { ac.dealloc(p, layout) }; // legitimate free -> FREE state byte
                                       // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
     unsafe { ac.dealloc(p, layout) }; // double-free -> must no-op (M2 guard)
                                       // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.

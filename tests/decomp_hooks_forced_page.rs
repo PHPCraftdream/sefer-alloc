@@ -8,11 +8,11 @@
 //! `AllocCore::dbg_decomp_recommit_payload`
 //! (`src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`) computed their payload start
 //! from `SegLayout::small_meta_end()` — a `const fn` aligned only to the
-//! compile-time `PAGE` (4 KiB; non-hardened value 73728).
+//! compile-time `PAGE` (4 KiB; measured tight value 270336).
 //! `os::decommit_pages` documents "offsets MUST be page-aligned", and
 //! `aligned_vmem::decommit`'s range-contract `debug_assert!` (restored by
 //! task #1072) checks that against the RUNTIME `page_size()` — so on a
-//! 16/64 KiB-page host the decommit hook panics (73728 % 16384 == 8192) and
+//! 16/64 KiB-page host the decommit hook panics (270336 % 16384 == 8192) and
 //! the recommit twin returns `false`, leaving the example's
 //! write-after-decommit loop writing into uncommitted pages under Windows
 //! `MEM_DECOMMIT` semantics. Two commits of one wave interacted: task #1074
@@ -83,8 +83,12 @@ const SUPPORTED_PAGE_SIZES: [usize; 3] = [4 * 1024, 16 * 1024, 64 * 1024];
 /// hardened), mirrored from `tests/lazy_initial_commit_forced_page.rs` so
 /// the hardened literal stays covered even when the hardened features are
 /// off (and vice versa).
-const PLAIN_SMALL_META_END: usize = 73728;
-const HARDENED_SMALL_META_END: usize = 335872;
+const PLAIN_SMALL_META_END: usize = 270336;
+// B4 (в): the plain and hardened small layouts coincide (the removed dead
+// bitmaps were the only difference) — the hardened literal equals the plain
+// one, but is kept as a separate named row for symmetry with
+// lazy_initial_commit_forced_page.rs.
+const HARDENED_SMALL_META_END: usize = 270336;
 
 /// Pure half (no cfg flag): pins the counterfactual's own premise — the
 /// TIGHT `small_meta_end()` boundary must stay a 4 KiB multiple (which is
@@ -313,7 +317,7 @@ mod forced_page {
             let base = handle.dbg_base();
 
             // THE counterfactual: a hook reverted to `small_meta_end()`
-            // passes 73728 (a 4 KiB-only multiple) to `os::decommit_pages`;
+            // passes 270336 (a 4 KiB-only multiple) to `os::decommit_pages`;
             // `aligned_vmem::decommit`'s range-contract `debug_assert!`
             // (task #1072) panics HERE on any host, debug profile.
             unsafe { AllocCore::dbg_decomp_decommit_payload(base) };

@@ -1,0 +1,16 @@
+script,rc
+scripts\verify-aligned-vmem-bench-internals-exhaustive.mjs,0
+scripts\verify-alloc-core-dbg-internals-exhaustive.mjs,0
+scripts\verify-ci-sentinels.mjs,0
+scripts\verify-commit-prefixes.mjs,0
+scripts\verify-dbg-hook-safety.mjs,0
+scripts\verify-evidence-registry.mjs,1
+scripts\verify-gate-report.mjs,0
+scripts\verify-internals-negative-boundary.mjs,0
+scripts\verify-loom-target-wiring.mjs,0
+scripts\verify-miri-target-wiring.mjs,0
+scripts\verify-no-bare-abort.mjs,0
+scripts\verify-perf-gate-stubs.mjs,0
+scripts\verify-root-package-list.mjs,0
+scripts\verify-structure-limits.mjs,0
+scripts\verify-vmem-page-constant-call-sites.mjs,0
