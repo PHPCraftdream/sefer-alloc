@@ -1,0 +1,91 @@
+# raw log — B4 X-mix probe + bench-internals counters (worktree b4-judges)
+# date: 2026-10-20, base: f93c1b52, agent: b4-judges worker
+# probe: .rush/wsl/j_xmix_probe.rs (exact larson pick_size, 768 live slots,
+#        w_alloc/w_free #[inline(never)], examples/zz_xmix, features production,
+#        CARGO_PROFILE_RELEASE_DEBUG=line-tables-only, WSL callgrind)
+# script: .rush/wsl/prof_j_xmix_win.sh b4-judges <label> <alloc>
+# baseline for comparison: alloc_only probe (16..512 B uniform), sol_ox.md §3.3:
+#        sefer alloc 63 / free 115 Ir/op; mimalloc alloc 51 / free 23 Ir/op.
+
+== run: bash .rush/wsl/prof_j_xmix_win.sh b4-judges j-xmix-sefer sefer
+== j-xmix sefer w_alloc marginal Ir/op: 64
+  15.9	examples/zz_xmix.rs | fn w_alloc wrapper
+  13.0	src/registry/heap_core/alloc/hot.rs (w_alloc inclusive)
+   7.3	src/alloc_core/segment/bitmap/segment_bitmap.rs | (bit >> 3, 1u8 << (bit & 7))
+   6.0	hot.rs | let cnt = self.tcache.classes[c].count as usize;
+   5.0	size_classes.rs (inclusive)
+   3.1	try_drain_freelist_batch (inclusive)
+   3.0	size_classes.rs | Some(SIZE2CLASS[seed_idx] as usize)
+== j-xmix sefer w_alloc cache: D1m/op=0.10 LLm/op=0.08 EstCycles/op=73.3
+== j-xmix sefer w_free marginal Ir/op: 115
+  30.3	dealloc_own_base.rs (w_free inclusive)
+  17.0	zz_xmix.rs w_free frame (inclusive)
+  15.0	zz_xmix.rs | fn w_free wrapper
+  12.0	size_classes.rs (inclusive)
+  10.0	segment_table_impl.rs (inclusive)
+   8.8	segment_bitmap.rs (inclusive)
+   8.5	segment_bitmap.rs | (bit >> 3, 1u8 << (bit & 7))
+   5.0	dealloc_own_base.rs | let cnt = self.tcache.classes[c].count as usize;
+   5.0	dealloc_own_base.rs | if meta.magazine_bitmap().is_in_magazine(off) {
+   4.6	flush_class_internal (inclusive)
+   4.1	segment_table_impl.rs | (base.addr() >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)
+   4.1	core::ptr (inclusive)
+   4.0	segment_table_impl.rs | let (cached_key, cached_root) = self.own_cache[index];
+== j-xmix sefer w_free cache: D1m/op=0.03 LLm/op=0.06 EstCycles/op=121.9
+
+== run: bash .rush/wsl/prof_j_xmix_win.sh b4-judges j-xmix-mi mimalloc
+== j-xmix mimalloc w_alloc marginal Ir/op: 56
+  (dominated by mi_theap_malloc_aligned / _mi_page_malloc_zero, full lines in
+   WSL callgrind outputs pa.j-xmix-mi.mimalloc.*.out under ~/ab)
+== j-xmix mimalloc w_alloc cache: D1m/op=0.67 LLm/op=0.00 EstCycles/op=63.0
+== j-xmix mimalloc w_free marginal Ir/op: 23
+  (mi_free body + page-map lookups)
+== j-xmix mimalloc w_free cache: D1m/op=0.02 LLm/op=0.69 EstCycles/op=92.6
+
+# ── C. counter readout ─────────────────────────────────────────────────────
+# cmd: CARGO_TARGET_DIR=.rush/cargo-target-J cargo run --release --example
+#      zz_xmix_counters --features "production internals bench-internals"
+#      (timeout 600, Windows native, NOT callgrind; 10k warm-up + 100k steps,
+#      XorShift64/pick_size copied bit-for-bit from malloc-bench-rs)
+steps = 100000
+refill_events    le512 =      878 (0.008780/step)   gt512 =        4 (0.000040/step)   total = 0.008820/step
+refill_blocks    le512 =    14048 (0.140480/step)   gt512 =       34 (0.000340/step)   total = 0.140820/step
+overflow_events  le512 =     1756 (0.017560/step)   gt512 =        0 (0.000000/step)   total = 0.017560/step
+flush_blocks     le512 =    14048 (0.140480/step)   gt512 =       34 (0.000340/step)   total = 0.140820/step
+r101_events      le512 =        0 (0.000000/step)   gt512 =       34 (0.000340/step)   total = 0.000340/step
+own_cache_miss   le512 =        0 (0.000000/step)   gt512 =        0 (0.000000/step)   total = 0.000000/step
+# (first build had the R1-01 bump placed before the `cap < TCACHE_CAP` branch;
+#  it double-counted overflow events as R1-01 — fixed, bump moved inside the
+#  R1-01 arm; the numbers above are post-fix.)
+
+# сверка с моделью sol_rush2.md §5.3 (≈0.01 refill/step, ≈0.02 overflow/step):
+#   refill/step  = 0.00882  vs модель 0.01  → совпало (0.88×, −12 %)
+#   overflow/step= 0.01756  vs модель 0.02  → совпало (0.88×, −12 %)
+#   R1-01/step   = 0.00034  (исключительно >512 Б: классы 5–8 КиБ с cap<16,
+#                 как предсказано в sol_ox.md §3.3(a)); в 30× реже overflow.
+#   own_cache_miss/step = 0.000000 (T=1, ~1–2 сегмента — Tier-1 всегда хит).
+
+# ── ВЕРДИКТ по гипотезе (a) sol_ox.md §3.3 ─────────────────────────────────
+# X-mix (larson pick_size) vs alloc-only probe (16..512 uniform):
+#   sefer    alloc: 64 vs 63 Ir/op (+1);  free: 115 vs 115 Ir/op (+0)
+#   mimalloc alloc: 56 vs 51 Ir/op (+5);  free:  23 vs 23 Ir/op (+0)
+#   вклад хвоста 512 Б–8 КиБ в sefer ≈ 1 Ir/op < 5 Ir/op порога §5.5(X-mix)
+#   → ГИПОТЕЗА (а) ОТВЕРГНУТА: 3 % размеров 512 Б–8 КиБ НЕ объясняют
+#   «необъяснённые» 25–40 Ir/step. Остаток — харнесс/раздувание (J(б)) и
+#   реализация free-push (§3.4), не размерная смесь.
+
+# ── D. tests ───────────────────────────────────────────────────────────────
+# cmd: CARGO_TARGET_DIR=<repo>/.rush/cargo-target-J timeout 600 \
+#      cargo test --test b4_judges_xmix_counters \
+#      --features "internals bench-internals alloc-global fastbin alloc-xthread"
+# exit code 0; `test result: ok. 1 passed; 0 failed` (single #[test]: counters
+# are process-global and monotonic, so the refill/hit, overflow/R1-01 and
+# bucket-split phases run sequentially inside one test to avoid parallel-thread
+# interference; fastbin + alloc-xthread added to the task's feature list since
+# the magazine/refill counters and the dealloc_routing own_cache snapshot are
+# compiled only under those features).
+# clippy: `cargo clippy -- -D warnings` (no features) → exit 0, zero warnings;
+#         `cargo clippy --features "production internals bench-internals" -- -D
+#         warnings` → exit 0.
+# verify-structure-limits: OK — 9 directories and 28 files grandfathered, none
+#         new, none grown.

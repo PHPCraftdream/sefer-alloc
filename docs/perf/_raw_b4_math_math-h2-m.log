@@ -1,0 +1,27 @@
+MARGINAL Ir/op (sefer mstress T=1): 498
+--- by source file (Ir/op)
+  498.6	PROGRAM TOTALS
+  328.4	events annotated
+   92.4	math-h2-m/crates/malloc-bench-rs/src/lib.rs
+   59.3	math-h2-m/src/registry/heap_core/free/dealloc_own_base.rs
+   48.1	math-h2-m/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   41.4	(bit >> 3 1u8 << (bit & 7))
+   37.2	math-h2-m/src/alloc_core/small/alloc_core_small_magazine.rs
+   26.5	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   25.2	math-h2-m/src/registry/heap_core/alloc/hot.rs
+   23.7	math-h2-m/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+   21.0	math-h2-m/src/alloc_core/platform/size_classes.rs
+   16.9	math-h2-m/src/alloc_core/segment/segment_table/segment_table_impl.rs
+   13.9	}
+   13.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+   13.8	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+   13.8	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   12.6	unsafe fn alloc_block<A
+   12.3	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs
+   10.1	math-h2-m/src/alloc_core/segment/segment_table/route_slots.rs
+    9.8	let cnt = self.tcache.classes[c & TCACHE_CLASS_IDX_MASK].count as usize;
+    9.5	16 + (r >> 8) as usize % (512 - 16)
+    9.4	let cnt = self.tcache.classes[c & CLASS_IDX_MASK].count as usize;
+    9.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs
+    9.3	if (off as usize) < payload_start {
+    8.8	<counts for unidentified lines in math-h2-m/src/registry/heap_core/free/dealloc_own_base.rs>

@@ -486,23 +486,69 @@ impl HeapCore {
                     // budget (`FREE_PARK_CAP`) is exhausted, but the physical
                     // magazine array is not — do NOT grow past `cap` (that
                     // would re-open the D3 gap: parking more bytes on the
-                    // free side than a refill ever would). Hand the block
-                    // straight to the substrate instead of parking it. The
-                    // M2 oracles (`small_free_guard`) already ran above; the
-                    // block never entered the magazine, so no bitmap/slot
-                    // bookkeeping to undo.
+                    // free side than a refill ever would). O(1) swap-top:
+                    // the magazine evicts its TOP block to the substrate and
+                    // the currently-freed block takes its slot, so the
+                    // budget is preserved (depth stays at exactly `cap`).
+                    //
+                    // The flushed block must NOT be `block` itself: `block`'s
+                    // body still belongs to the live `Box::drop`/dealloc
+                    // frame (P1-box / item 164) — `flush_run` writes `next`
+                    // into the block body (`Node::write_next`), which is the
+                    // R1-01 UB. The evicted block has long been resident in
+                    // the magazine and its frame is complete, so writing its
+                    // body is safe. The M2 oracles (`small_free_guard`)
+                    // already ran above; their order is unchanged.
                     if cap < TCACHE_CAP {
-                        // SAFETY (R6-MS-3): `block` is a valid, currently-live
-                        // small-class-`c` allocation owned by this heap — the
-                        // same guarantee `small_free_guard`'s `Accept` arm
-                        // already established for the ordinary push path
-                        // above; freed exactly once here via a one-element
-                        // batch.
+                        let evicted = self.tcache.classes[c].slots[cnt - 1];
+                        // RAD-5 analogue (cf. overflow path below): the
+                        // evicted block LEAVES the magazine — clear its bit
+                        // BEFORE the flush ("flush = clear_magazine +
+                        // mark_free"; the AllocBitmap side happens inside
+                        // `flush_class`, this bitmap's clear happens here).
+                        let ebase = crate::alloc_core::os::segment_base_of_ptr(evicted);
+                        debug_assert_eq!(
+                            self.core.canonical_root_for(evicted),
+                            Some(ebase),
+                            "evicted magazine block must map to its segment base"
+                        );
+                        let eoff = (evicted.addr() - ebase.addr()) as u32;
+                        SegmentMeta::new(ebase)
+                            .magazine_bitmap()
+                            .clear_magazine(eoff);
+                        // SAFETY (R6-MS-3): `evicted` is a valid,
+                        // currently-live small-class-`c` allocation owned by
+                        // this heap's magazine (parked there by an earlier
+                        // free; its magazine bit cleared just above) — freed
+                        // exactly once here via a one-element batch, same
+                        // guarantee as the overflow path's flush of resident
+                        // slots below.
                         #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
                         unsafe {
                             self.core
-                                .flush_class_internal(c, core::slice::from_ref(&block));
+                                .flush_class_internal(c, core::slice::from_ref(&evicted));
                         }
+                        // The current block takes the evicted slot; `count`
+                        // is unchanged — the magazine still holds exactly
+                        // `cap` blocks (byte budget preserved).
+                        self.tcache.classes[c].slots[cnt - 1] = block;
+                        // RAD-5: the current block ENTERS the magazine —
+                        // mark it (as on the push path above; `meta`/`off`
+                        // were already computed for the M2 bitmap read).
+                        meta.magazine_bitmap().mark_magazine(off);
+                        // R13-3 analogue: like the push path above, both the
+                        // current block (being FREED right now) and the
+                        // evicted block (previously issued from the
+                        // magazine) are NEVER virgin — defensive no-op AND,
+                        // kept explicit so the invariant is visibly
+                        // re-asserted at every mutation site.
+                        #[cfg(feature = "virgin-zero-skip")]
+                        {
+                            self.tcache.classes[c].virgin_mask &= !(1u16 << (cnt - 1));
+                        }
+                        #[cfg(feature = "bench-internals")]
+                        crate::registry::heap_core::diag::R1_01_CAP_ROUTE_FREES
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         return;
                     }
                     // ── Magazine overflow (cnt == TCACHE_CAP) ──────────

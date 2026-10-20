@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+104. **[A] B4 events — refill/flush событие в mstress стоит в 5–6 раз дороже, чем в larson.** (Filed 2026-10-20, `docs/perf/B4_EVENTS_COST.md`.)
+
+   > **Current state**
+   > - **Status:** open (диагностика готова, правки не начаты).
+   > - **Current:** refill 1,535 Ir/событие в larson и 7,444 в mstress (≈100 и ≈483 Ir на блок), вызов `flush_class_internal` 1,828 и 11,066 Ir; на step — refill 14 / 99, flush 7 / 55 Ir. Крупнейшие строки mstress: повторное чтение next для `head_off` в commit-проходе, детекция run во flush, сам `flush_run`.
+   > - **Next trigger:** после байта состояния (`b4-sbyte`) — по одному: слияние probe/commit drain (нужна формальная проверка «validate-всё-до-мутации»), run-детекция во flush по соседству вместо `segment_base_of_ptr`, условный store байта `ClassLeaves` (Loom + MT-замер), вынос сегмента из MAG-маркировки; каждое — callgrind mstress/larson и порог из отчёта.
+   > - **Evidence:** `docs/perf/B4_EVENTS_COST.md`; `docs/perf/B4_EVENTS_COST_summary.csv`; `scripts/b4_events_table.mjs`; сырьё `docs/perf/_raw_b4_events_*.log(.gz)`.
+
 1. **`contains_base`'s share of a real free's `Ir` — region judged likely
    exhausted (current share 8.8%, supersedes the original 18.6%).**
 
@@ -170,6 +178,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Current number/verdict:** bench-table geomean C/B 0.9743 (≤ 1.05), MT geomean Mops C/B 1.1267 (≥ 0.95); две ячейки INCONCLUSIVE по шум-правилу: MT mstress T=8 (Mops C/B 0.6991) и `global_alloc_churn/*/1024B` (C/B 1.2405). Перемер оркестратора на тихой машине (MT 30+30, bench 60+60 чередующихся прогонов): значимых различий нет (p = 0.929 / 0.725), но bootstrap 95% CI для churn/1024B [0.855, 1.269] включает предел 1.10 — wall-clock на этом хосте эффект до +27% не исключает.
    > - **Next trigger:** владелец требует безусловный GO по wall-clock → повтор на нативной Windows или на тихом хосте с судьёй, сравнивающим каждую ячейку со СВОЕЙ полосой/мощностью (не с глобальным max по ячейкам) и 60+ прогонами на ячейку; либо новое подозрение на регрессию churn/1024B/MT T=8 из iai-атрибуции.
    > - **Evidence:** `docs/perf/PH6B_COST_AB.md` §3.2/§3.3/§7/§9; `docs/perf/PH6B_COST_AB_summary.csv`; `scripts/ph6b_cost_ab_table.mjs`, `scripts/ph6b_mt_rerun_table.mjs`, `scripts/ph6b_bt_rerun_table.mjs`; сырьё `docs/perf/_raw_ph6b_*.log`.
+
+103. **[A] B4 judges — разрыв larson T=1 с mimalloc сидит в hit/push, refill — дорогое редкое событие.** (Filed 2026-10-20, `docs/perf/B4_JUDGES_LARSON.md`.)
+
+   > **Current state**
+   > - **Status:** open (диагностика готова, правки не начаты).
+   > - **Current:** с честным полом харнесса собственная часть larson T=1 — sefer 182 против mimalloc 75 Ir/step; баланс объясняет 98.4 %: hit+push 179, refill 0.00882/step × ≈1587 Ir ≈ 14, flush ≈8 Ir/step (стоимость одного вызова flush уточнена в item 104: 456 Ir — это деление на число переполнений, а не вызовов). Гипотеза «хвост размеров 512 Б–8 КиБ» отвергнута (+1 Ir/op). mstress: события — 41 % собственной части (refill 101, flush 60 Ir/step).
+   > - **Next trigger:** правки hit/push (байт состояния (в), микроприёмы X-null/X-span/X-c1) и удешевление события refill (три прохода: probe, commit, MAG-маркировка) — каждая со своим callgrind-замером; цель larson own ≤ 1.0× mimalloc.
+   > - **Evidence:** `docs/perf/B4_JUDGES_LARSON.md`; `docs/perf/B4_JUDGES_LARSON_summary.csv`; `scripts/b4_judges_table.mjs`; сырьё `docs/perf/_raw_b4_judges_{floor,uniconst,xmix,balance}.log`.
 
 **Placement note (2026-10-06, src-review round 14 remediation R14-05):** item 40 below was physically listed inside the `[D]` tier while carrying an `[A]` active label; moved here into the `[A]` tier per its existing label. Status, verdict, and trigger unchanged.
 

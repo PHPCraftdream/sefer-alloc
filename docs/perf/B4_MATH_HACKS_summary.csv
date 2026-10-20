@@ -1,0 +1,8 @@
+step,w_alloc_ir_op,w_free_ir_op,larson_t1_ir_op,mstress_t1_ir_op,verdict
+base,63,115,319,494,base
+h1_branchless_guards,63,121,334,500,NO-GO rolled back
+h4_cap_in_padding,63,115,319,493,NO-GO rolled back
+h5b_residency_witness,63,115,319,494,NO-GO rolled back
+h5a_kind_off_witness,63,120,322,502,NO-GO rolled back
+h2_class_index_mask,63,117,320,498,NO-GO rolled back
+h6a_run_mag_marking,63,115,319,495,NO-GO rolled back
