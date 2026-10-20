@@ -201,6 +201,56 @@ function deltaTable() {
   return lines.join('\n');
 }
 
+// §4.3 (append-only, 2026-10-21): N7/N7b deltas against the base they were
+// actually measured on (N4 final; `_raw_b4_frame_split-n7-base.log` = N4's
+// 55/105), next to the mixed-base figures §4.1/§4 item 6 printed.
+function n7CorrectionTable() {
+  const n4 = merge(...CHAIN[4].files.filter((f) => !f.includes('-th.')));
+  const main = merge(...CHAIN[0].files.filter((f) => !f.includes('-th.')));
+  const n7base = parseLog('_raw_b4_frame_split-n7-base.log');
+  if (n7base.ao_alloc !== n4.ao_alloc || n7base.ao_free !== n4.ao_free) {
+    throw new Error('N7 base log does not match N4 final ao numbers');
+  }
+  const steps = NOGO.filter((c) => c.step.startsWith('N7'));
+  if (steps.length !== 2) throw new Error('expected N7 and N7b rows');
+  const metrics = [
+    ['ao alloc Ir/op', 'ao_alloc'],
+    ['ao free Ir/op', 'ao_free'],
+    ['batch alloc Ir/call', 'batch_alloc'],
+    ['batchl alloc Ir/call', 'batchl_alloc'],
+    ['larson Ir/op', 'larson'],
+    ['mstress Ir/op', 'mstress'],
+  ];
+  const r1 = (x) => Number(x.toFixed(1));
+  const sgn = (x) => (x > 0 ? `+${x}` : `${x}`.replace('-', '−'));
+  const lines = [
+    '### 4.3 Исправление базы N7/N7b (append-only, 2026-10-21; ИЗМЕРЕНО, те же сырые логи)',
+    '',
+    'База N7/N7b — финал N4 (`_raw_b4_frame_split-n7-base.log` = ao 55/105, как `-n4.log`). Δ ниже — к N4; столбец «к main» — к базе `f93c1b52`, от которой были взяты mstress-цифры §4.1/п. 6.',
+    '',
+    '| Шаг | метрика | N4 | шаг | Δ к N4 | Δ к main |',
+    '|---|---|---|---|---|---|',
+  ];
+  for (const c of steps) {
+    const [ao, batch, batchl, cst, , lar, mst] = c.files;
+    const d = merge(ao, batch, cst, lar, mst);
+    d.batchl_alloc = parseLog(batchl)?.batchl_alloc;
+    for (const [label, key] of metrics) {
+      const v = d[key];
+      const b = n4[key];
+      const m = main[key];
+      const dn4 = r1(v - b);
+      const dmain = r1(v - m);
+      if (Math.abs(b + dn4 - v) > 0.05 || Math.abs(m + dmain - v) > 0.05) {
+        throw new Error(`delta arithmetic for ${c.step} ${label}`);
+      }
+      lines.push(`| ${c.step.split(' ')[0]} | ${label} | ${fmt(b)} | ${fmt(v)} | ${sgn(dn4)} | ${sgn(dmain)} |`);
+    }
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
 function appendix() {
   const files = readdirSync(PERF).filter((f) => f.startsWith('_raw_b4_frame_')).sort();
   const logs = files.filter((f) => f.endsWith('.log'));
@@ -217,4 +267,5 @@ console.log();
 console.log(deltaTable());
 console.log(chainTable());
 console.log(nogoTable());
+console.log(n7CorrectionTable());
 console.log(appendix());
