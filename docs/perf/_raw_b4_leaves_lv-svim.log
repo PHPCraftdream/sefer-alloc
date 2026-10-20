@@ -1,0 +1,27 @@
+MARGINAL Ir/op (sefer mstress T=1): 538
+--- by source file (Ir/op)
+  538.7	PROGRAM TOTALS
+  360.8	events annotated
+   93.8	lv-svim/crates/malloc-bench-rs/src/lib.rs
+   88.9	lv-svim/src/registry/heap_core/free/dealloc_own_base.rs
+   51.7	lv-svim/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   37.8	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   36.3	lv-svim/src/alloc_core/small/alloc_core_small_magazine.rs
+   29.3	(bit >> 3 1u8 << (bit & 7))
+   23.3	lv-svim/src/registry/heap_core/alloc/hot.rs
+   22.7	lv-svim/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+   17.8	let cnt = self.tcache.classes[c].count as usize;
+   17.1	let bit = (off >> MIN_BLOCK_SHIFT) as usize;
+   16.0	lv-svim/src/alloc_core/segment/segment_table/segment_table_impl.rs
+   15.7	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   15.5	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+   14.3	}
+   14.0	lv-svim/src/alloc_core/platform/size_classes.rs
+   13.6	let (off meta c) = match small_free_guard(
+   12.8	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+   12.6	unsafe fn alloc_block<A
+   10.7	if (off as usize) < payload_start {
+   10.6	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs
+   10.5	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs
+   10.2	lv-svim/src/alloc_core/segment/segment_table/route_slots.rs
+    9.5	16 + (r >> 8) as usize % (512 - 16)

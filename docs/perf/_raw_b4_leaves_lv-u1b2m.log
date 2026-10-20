@@ -1,0 +1,27 @@
+MARGINAL Ir/op (sefer mstress T=1): 546
+--- by source file (Ir/op)
+  546.8	PROGRAM TOTALS
+  366.2	events annotated
+   92.4	lv-u1b2m/crates/malloc-bench-rs/src/lib.rs
+   66.0	lv-u1b2m/src/registry/heap_core/free/dealloc_own_base.rs
+   46.3	lv-u1b2m/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   39.6	(bit >> 3 1u8 << (bit & 7))
+   37.2	lv-u1b2m/src/alloc_core/small/alloc_core_small_magazine.rs
+   29.2	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   28.5	lv-u1b2m/src/alloc_core/segment/segment_table/segment_table_impl.rs
+   24.8	lv-u1b2m/src/alloc_core/alloc_core/mem/mem_impl.rs
+   23.8	lv-u1b2m/src/registry/heap_core/alloc/hot.rs
+   23.7	lv-u1b2m/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+   21.4	let cnt = self.tcache.classes[c].count as usize;
+   20.0	lv-u1b2m/src/alloc_core/platform/size_classes.rs
+   17.3	lv-u1b2m/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs
+   15.3	}
+   13.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+   13.8	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   13.4	<counts for unidentified lines in lv-u1b2m/src/registry/heap_core/free/dealloc_own_base.rs>
+   12.8	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+   12.6	unsafe fn alloc_block<A
+   12.3	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs
+   10.1	lv-u1b2m/src/alloc_core/segment/segment_table/route_slots.rs
+    9.5	16 + (r >> 8) as usize % (512 - 16)
+    9.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs

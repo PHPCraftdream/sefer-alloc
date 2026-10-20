@@ -1,0 +1,13 @@
+step,label,mode,alloc_ir,free_ir,batch_alloc_ir,batch_free_ir,larson_ir,mstress_ir,verdict
+base,ao-16b,rt,63,115,136,173,319,494,OK (production baseline)
+base,ao-16b,const,26,74,108,140,,,OK (production baseline)
+u1,ao-16b-route-lookup,rt,63,433,136,491,650,953,NO-GO (free +318 rt)
+u1,ao-16b-route-lookup,const,26,393,108,459,,,NO-GO (free +318 rt)
+u1b,ao-16b-cached-handle,rt,63,160,136,218,384,546,NO-GO (free +45 rt / +63 const; batch +45/+64; larson +65; mstress +52)
+u1b,ao-16b-cached-handle,const,26,137,108,204,,,NO-GO (free +45 rt / +63 const; batch +45/+64; larson +65; mstress +52)
+sv,ao-16b-small-state-byte,rt,66,118,144,181,322,507,NO-GO (free +3; batch +8/+7; larson +3; mstress +13; same check strength; byte written alongside both bitmaps)
+sv,ao-16b-small-state-byte,const,28,74,115,147,,,NO-GO (const free +/-0; batch +7)
+svi,ao-16b-interval-free,rt,66,143,144,206,359,538,NO-GO (premisa sol_rush2 1.1 опровергнута; free +25) - OTKATAN
+svi,ao-16b-interval-free,const,28,82,115,155,,,NO-GO (const free +8) - OTKATAN
+svr,ao-16b-refill-one-pass,rt,65,143,139,206,358,,NO-GO / effect ~0 (on top of svi) - OTKATAN
+svr,ao-16b-refill-one-pass,const,,,139,206,,,NO-GO / effect ~0 - OTKATAN
