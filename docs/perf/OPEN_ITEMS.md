@@ -3156,6 +3156,10 @@ is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
 
+- **Item 105 — B4-MT X-notown (256-битный notown-фильтр SegmentTable): NO-GO, closed 2026-10-20** (thrash64 w_free +5 Ir > +2; src откачен). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A105.
+
+- **Item 106 — B4-MT X-pin (heap-route-pin-cache): NO-GO, closed 2026-10-20** (второе ревью запретило lazy Box на пути чужого free; решающий замер mt-xp4 показал потолок выгоды 0.16–0.33% Ir/op ≪ порога +2% и достаточность существующего R1 TLS-кэша). История mt-xp3/mt-xp4 сохранена в `docs/perf/B4_MT_PIN_NOTOWN.md` §11; полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A106.
+
 - **R6-PF-4 / item 92 — Tier-1 `own_cache` parallel key/root arrays.** Closed 2026-10-16, R6-T11: `own_cache` became a (key, root) pair array with a sentinel key (`docs/perf/R6_T11_OWN_CACHE_PAIR_LAYOUT_GATE.md`). Full closure: the `92` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 
 - **R6-PF-5 (+R17-OPT-08) / item 93 — per-record segment invariants in owner-drain.** Closed 2026-10-16, NO-GO (R6-T12): the per-scan context with one `sub_live(k)` and a reciprocal raised `Ir` on every drain cell (`growth16_n` +26608 of 19241175, `r19_prf01_publication` +1425 of 3621539); not merged (`docs/perf/R6_T12_OWNER_DRAIN_CONTEXT_GATE.md`). Full closure: the `93` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.

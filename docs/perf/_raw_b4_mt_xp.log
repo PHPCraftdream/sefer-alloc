@@ -1,0 +1,84 @@
+# b4-mt Phase-3 X-pin raw evidence log (sanitized)
+# Date: 2026-10-20. Paths sanitized: repo = <repo>, home = ~/.
+# Branch b4-mt, base = origin/main @ 2730d02a (base A; X-notown stays reverted).
+# Worktree during measurements: mt-xp-a* = (a) only; mt-xp-ab* / mt-xp2* = (a)+(b).
+# Iteration 1 (mt-xp-a-*/mt-xp-ab-*): mstress +0.96% and thrash64 +3 Ir FAILED
+#   the GO gate (own free bloat: the heap-cache probe arm was inline in
+#   dealloc_routing) -> ONE mt-xp2 iteration moved the whole foreign leg into a
+#   #[cold] publish_foreign_heap.
+# FINAL state (mt-xp2a2-*/mt-xp2b2-*): a-only PRE diff sha256 =
+#   d43222b0a9533184210fab73d0a117b602fb5ecd1571cb8ecc1129c4a8cce778;
+#   ab PRE diff sha256 =
+#   445ade2bf73002f514cb72d0800ab32bc549dad76e20ac457b035783ee3cb5cb.
+# Identity rests on the worktree diff hash (no commits; mt-base/mt-xn logs and
+# labels untouched). Interim (superseded) hashes: ab iter-1 ab-state
+# 4db89f46510da124dfc3f78dcc5deccb97f77f61f413da00ef75463665d8a9ed,
+# a iter-1 f0922a05..., mt-xp2 a (pad Entry variant) c9b42b7f...,
+# mt-xp2 ab (pad Entry variant) 9f561a41....
+# Build: release, CARGO_PROFILE_RELEASE_DEBUG=line-tables-only, WSL callgrind;
+#   foreign/own via .rush/wsl/mt_prof_foreign_free_win.sh (untouched);
+#   larson/mstress via prof_win.sh, thrash64 via prof_thrash64_dir.sh (untouched).
+# Oracle: bench-internals build, counters PIN_CACHE_HITS/MISSES are the shared
+#   subsystem totals across the TLS cache AND the new HeapCore cache.
+
+## FINAL RUN SET (mt-xp2)
+## Run 1: mt-xp2a2-f (foreign locality, (a) only)  -- exit 0
+MARGINAL Ir/free (foreign locality) = 122        # base A 136 -> -14 (-10.3%)
+ORACLE deltas: publish_ok=10000 pin_hits=9999 pin_misses=1 hit_frac=0.9999 -> PASS
+## Run 2: mt-xp2a2-fcap (foreign capacity, (a) only)  -- exit 0
+MARGINAL Ir/free (foreign capacity) = 122        # base A 952 -> -830
+ORACLE deltas: publish_ok=100000 pin_hits=99990 pin_misses=10 hit_frac=0.9999
+-> PASS(capacity: misses expected). HONEST NOTE: with the 16-slot direct-mapped
+   HeapCore cache the capacity trace's frees group by base well enough that the
+   measured hit_frac is 0.9999 (printed verbatim by the untouched oracle); the
+   PASS criterion (all 100000 frees published) holds. Base A was 0.0000.
+## Run 3: mt-xp2a2-own (own free control)  -- exit 0
+MARGINAL Ir/free (own locality) = 167            # base A 166 -> +1 (gate: <= +1)
+ORACLE deltas: publish_ok=0 ... -> PASS(own control: no foreign publishes)
+## Run 4: mt-xp2a2-larson (T=1)  -- exit 0
+MARGINAL Ir/op (sefer larson T=1) = 300          # base A 300 -> +0 (gate <= +0.5%)
+## Run 5: mt-xp2a2-mstress (T=1)  -- exit 0
+MARGINAL Ir/op (sefer mstress T=1) = 415         # base A 415 -> +0 (gate <= +0.5%)
+## Run 6: mt-xp2a2-thrash64  -- exit 0
+== activation: [thrash64] distinct 16B-window segments: 64
+sefer w_alloc marginal Ir/op = 26                # base A 26 -> +0
+sefer w_free marginal Ir/op  = 103               # base A 103 -> +0 (gate <= +2)
+
+## (a)+(b) set (final state, Entry.refs in line 1)
+## Run 7: mt-xp2b2-f  -- exit 0
+MARGINAL Ir/free (foreign locality) = 122        # -14 vs base A
+ORACLE deltas: publish_ok=10000 pin_hits=9999 pin_misses=1 hit_frac=0.9999 -> PASS
+## Run 8: mt-xp2b2-own  -- exit 0
+MARGINAL Ir/free (own locality) = 167            # +1 vs base A
+ORACLE deltas: publish_ok=0 ... -> PASS
+## Run 9: mt-xp2b2-larson  -- exit 0
+MARGINAL Ir/op (sefer larson T=1) = 300          # +0 vs base A
+
+## SUPERSEDED iteration-1 numbers (kept for the record, gates FAILED)
+# mt-xp-a-f=127 fcap=127 hit_frac=0.9999 own=167 larson=299 mstress=419(+0.96% FAIL) thrash64 26/106(+3 FAIL)
+# mt-xp-ab-f=127 own=167 larson=299
+
+## Verification (final state)
+# loom (CARGO_TARGET_DIR=<repo>/.rush/cargo-target-M-loom, RUSTFLAGS="--cfg loom",
+#   --features alloc-core,alloc-xthread,tagged-index-stack/loom, --release):
+#   loom_b4_r1_pin_cache: 4 passed; 0 failed
+#   loom_route_pin_unlink: 2 passed; 0 failed
+# cargo test (release, production,internals,bench-internals):
+#   b4_r1_pin_cache 7 passed; b4_xp_heap_pin_cache (NEW) 3 passed;
+#   dealloc_only_no_bind 2; dealloc_only_no_bind_torn 2; all 0 failed.
+# cargo test (production,internals): r34_18_heap_core_stack_pressure_pin 1 passed
+#   (size_of::<HeapCore>() = 8392 B, budget 10240, headroom 1848 B);
+#   lib entry_layout (NEW, in pin.rs) 1 passed.
+# cargo clippy -D warnings (production and production,internals,bench-internals;
+#   --lib --tests --benches): clean.
+# node scripts/verify-structure-limits.mjs: OK (directory.rs exactly 1000 lines).
+# rustfmt --edition 2021: all changed files.
+# NOT run locally (CI-only, per instructions): Miri cell b4_r1_pin_cache_miri
+#   (tests/b4_r1_pin_cache_miri.rs); also iai/cargo bench/wall-clock suites.
+# Honest notes:
+# - Ir numbers are callgrind T=1 deterministic; no MT coherence measured.
+# - own=167 is exactly at the +1 gate (no headroom).
+# - RSS retention: HeapCore cache enforces MAX_LIVE_PINS=4 live pins
+#   (~4 x 0.29 MiB ~ 1.16 MiB, same envelope as the 4-slot TLS cache); 16 slots
+#   alone would be ~4.6 MiB worst-case, over the +1 MiB budget -> cap + sweep
+#   on cold path + release_all in trim_for_recycle.

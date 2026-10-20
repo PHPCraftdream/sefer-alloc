@@ -1,0 +1,85 @@
+# b4-mt Phase-1 baseline raw evidence log (sanitized)
+# Date: 2026-10-20. All paths sanitized: repo = <repo>, home = ~/.
+# Source identity (before AND after every measurement, byte-identical):
+#   HEAD = 2730d02a5824128804f847d006206bda75a9fc84  branch b4-mt (upstream origin/main)
+#   git diff | sha256sum = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (EMPTY diff)
+#   toolchain: rustc 1.97.0 x86_64-pc-windows-msvc; WSL Linux side builds via existing prof.sh pattern
+#   build: release, CARGO_PROFILE_RELEASE_DEBUG=line-tables-only, CARGO_TARGET_DIR=~/ab/tgt*-<label>
+# No src/ changes were made. Only new files (all outside the repo):
+#   <repo>/.rush/wsl/mt_foreign_free_probe.rs
+#   <repo>/.rush/wsl/mt_prof_foreign_free.sh
+#   <repo>/.rush/wsl/mt_prof_foreign_free_win.sh
+# Binary SHA256s: NOT captured per binary this round (honest limitation);
+# identity rests on the empty worktree diff + fixed snapshot tar per label
+# (~/ab/<label> extraction is reproducible from the same tar).
+
+## Judge scheme (mt_foreign_free_probe)
+# Owner thread allocates N blocks (locality: classes 16/64/256, <=4 segment
+# bases; capacity: 256B class across >4 segment bases, frees interleaved
+# across bases). Worker warms its OWN heap pre-window (own alloc/free x128) so
+# current_for_dealloc = Own and dealloc_routing's owned_block_of/hash_find
+# miss is actually exercised. Measured window: worker ONLY calls
+# #[inline(never)] w_free (GlobalAlloc::dealloc). Owner drains after join
+# (trim_current_thread). Own control mode: worker pre-allocates its OWN blocks
+# pre-window; window frees only those. Oracle (separate bench-internals
+# build): SeferAlloc::dbg_b4_collapse_counters()[3]=B4_FOREIGN_PUBLISH_OK,
+# [4]=B4_DIRECTORY_LOOKUPS; RoutePin::dbg_route_pin_cache_totals() hits/misses.
+
+## Run 1: mt-base-f (foreign locality)  — exit 0
+# cmd: bash -lc 'bash /mnt/d/dev/rust/sefer-alloc/.rush/wsl/mt_prof_foreign_free_win.sh b4-mt mt-base-f foreign locality'
+# (wrapper: git ls-files -co snapshot -> mt-base-f.tar; WSL builds + callgrind
+#  --toggle-collect='*zz_mt_foreign_free::w_free*' at 50k/100k; oracle build
+#  --features production,internals,bench-internals, run at 10k oracle)
+# PRE-MEASURE diff hash: e3b0c442...855 (same as above, run before all runs; no src edits at any point)
+MARGINAL Ir/free (foreign locality) = 136
+ORACLE: PRE all 0; POST publish_ok=10000 dir_lookups=1 pin_hits=9999 pin_misses=1
+ORACLE deltas: publish_ok=10000 pin_hits=9999 pin_misses=1 hit_frac=0.9999 -> PASS
+# (>=95% activation of the real cached foreign path; exactly 1 dir lookup = warmup miss)
+
+## Run 2: mt-base-own (own free control)  — exit 0
+# cmd: ... mt_prof_foreign_free_win.sh b4-mt mt-base-own own locality
+MARGINAL Ir/free (own locality) = 166
+ORACLE: publish_ok delta=0 pin deltas=0 -> PASS (no foreign publishes; own path only)
+# note: own control includes owned_block_of/hash_find (segment_table frames visible in breakdown)
+
+## Run 3: mt-base-fcap (foreign capacity, cache thrash)  — exit 0
+# cmd: ... mt_prof_foreign_free_win.sh b4-mt mt-base-fcap foreign capacity
+MARGINAL Ir/free (foreign capacity) = 952
+ORACLE (at 100k): publish_ok=100000 dir_lookups=100000 pin_hits=0 pin_misses=100000 hit_frac=0.0000
+-> PASS(capacity: misses expected; 100% uncached path, all published)
+
+## Run 4: mt-base-larson (larson T=1, existing prof_win.sh, untouched)  — exit 0
+# cmd: bash -lc 'bash /mnt/d/dev/rust/sefer-alloc/.rush/wsl/prof_win.sh b4-mt mt-base-larson larson sefer'
+MARGINAL Ir/op (sefer larson T=1) = 300
+top files: malloc-bench-rs/lib.rs 78.0; src/registry/heap_core/free/dealloc_own_base.rs 30.5;
+std mpmc 44.0; size_classes 17.0; segment_bitmap 16.1; heap_core/alloc/hot.rs 13.8
+
+## Run 5: mt-base-mstress (mstress T=1, existing prof_win.sh, untouched)  — exit 0
+# cmd: bash -lc 'bash /mnt/d/dev/rust/sefer-alloc/.rush/wsl/prof_win.sh b4-mt mt-base-mstress mstress sefer'
+MARGINAL Ir/op (sefer mstress T=1) = 415
+top files: malloc-bench-rs/lib.rs 49.5; segment_bitmap 41.5; dealloc_own_base 39.6;
+small_magazine 33.5; size_classes 25.0; alloc/hot.rs 23.3
+
+## Run 6: mt-base-thrash64 (existing prof_thrash64_dir.sh, untouched)  — exit 0
+# cmd: bash -lc 'bash /mnt/d/dev/rust/sefer-alloc/.rush/wsl/prof_thrash64_dir.sh /d/dev/rust/sefer-alloc/worktrees/b4-mt mt-base-thrash64 sefer'
+== activation: [thrash64] distinct 16B-window segments: 64
+sefer w_alloc marginal Ir/op = 26 (D1m=0.00 LLm=0.00 EstCycles=26.0)
+sefer w_free marginal Ir/op  = 103 (D1m=0.88 LLm=0.00 EstCycles=112.6)
+w_free top: segment_table_impl 18.9; dealloc_own_base 17.0; hash 15.6; segment_bitmap 9.0; header_views 7.9
+
+## POST-MEASURE identity
+# HEAD = 2730d02a5824128804f847d006206bda75a9fc84; git status clean vs origin/main;
+# git diff | sha256sum = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (unchanged, empty)
+
+## Warnings / honest notes
+# - All Ir numbers are callgrind T=1 deterministic; no multicore coherence measured.
+# - Inclusive frame costs OVERLAP; per-frame numbers were printed separately by the
+#   runner and must NOT be summed (see pmti.* / job logs).
+# - The instrumented (bench-internals) build was used ONLY for oracles; reported Ir
+#   comes from the counter-free production build.
+# - First mt-base-f attempt failed (exit 101, compile error in the oracle build:
+#   dbg_b4_collapse_counters is an associated fn) BEFORE any number was recorded;
+#   probe fixed, then re-run clean. Production Ir of that failed run (136) matched
+#   the clean re-run exactly.
+# - mt-base-own "own control" measured Ir/free=166 includes only frees in the window;
+#   own allocs were pre-window.

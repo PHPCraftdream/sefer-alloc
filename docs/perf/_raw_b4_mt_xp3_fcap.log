@@ -1,0 +1,42 @@
+diff-hash: 751f1ad2d47258ce898790833cc6178ca9195db265e62dbe9d31d866cba6c645  -
+         3 ( 0.00%)  *  mt-xp3-fcap/src/alloc_core/segment/segment_table/hash.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        .                           // `publish_small_borrowed` (and via the cached fast path
+        .                           // into `publish_cached`) for terminal publication — a bare
+        .                           let published = unsafe { pin.publish_small_borrowed(offset) };
+        .                           published
+        .                           unsafe { pin.publish_large() }
+        .                       // The shared tail in `publish_foreign` counts this miss exactly
+        .                       // once via `published == false`.
+        .                       Self::publish_count_tail(published);
+        .                       unsafe { Self::publish_foreign(ptr layout) };
+        .                   // `#[cold]` call so the inlined own-thread body of `dealloc_routing`
+        .                   // forwarded verbatim to `publish_cached`.
+        .                   // free (the `dealloc_routing` contract); the unique ownership is
+        .                   // ref drop after the lock; Release `linked = false` publishes the unlink.
+        .                   Self::publish_count_tail(published);
+        .                   if let CachedPublication::Published(published) =
+        .                   if published {
+        .               // Cold relative to the own-thread free in `dealloc_routing`: keeps the
+        .               /// static `publish_foreign` (same rationale — keep it out of the inlined
+        .               fn publish_count_tail(published: bool) {
+        .               pub(crate) unsafe fn publish_foreign(ptr: *mut u8 layout: Layout) {
+        .           /// X-pin (а): where `publish_foreign_uncached` stores a freshly looked-up
+        .           /// mapped cache (the `&mut HeapCore` is already held by `dealloc_routing`);
+        1 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        1 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        1 ( 0.00%)  *  mt-xp3-fcap/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        10 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        10 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        2 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/boxed.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        2 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        20 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/bool.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        20 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        28 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        29 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        3 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/boxed.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+ORACLE_PRE publish_ok=0 dir_lookups=0 pin_hits=0 pin_misses=0
+ORACLE_POST publish_ok=100000 dir_lookups=52976 pin_hits=47024 pin_misses=52976
+ORACLE deltas: publish_ok=100000 pin_hits=47024 pin_misses=52976 hit_frac=0.4702
+ORACLE VERDICT: PASS(capacity: misses expected)
+DONE mt_prof_foreign_free b4-mt mt-xp3-fcap foreign capacity
+MARGINAL Ir/free (foreign capacity): 883 # recomputed from pmt callgrind outs (same formula as mt_prof_foreign_free.sh)

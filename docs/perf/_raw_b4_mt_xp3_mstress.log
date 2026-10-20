@@ -1,0 +1,28 @@
+diff-hash: 751f1ad2d47258ce898790833cc6178ca9195db265e62dbe9d31d866cba6c645  -
+MARGINAL Ir/op (sefer mstress T=1): 415
+--- by source file (Ir/op)
+  415.9	PROGRAM TOTALS
+  246.1	events annotated
+   49.5	mt-xp3-f/crates/malloc-bench-rs/src/lib.rs
+   41.5	mt-xp3-f/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   39.7	mt-xp3-f/src/registry/heap_core/free/dealloc_own_base.rs
+   33.5	mt-xp3-f/src/alloc_core/small/alloc_core_small_magazine.rs
+   26.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   25.0	mt-xp3-f/src/alloc_core/platform/size_classes.rs
+   23.3	mt-xp3-f/src/registry/heap_core/alloc/hot.rs
+   22.6	mt-xp3-f/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+   18.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   15.4	let cnt = self.tcache.classes[c].count as usize;
+   15.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+   13.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+   13.5	let bit = (off >> MIN_BLOCK_SHIFT) as usize;
+   13.4	Node
+   10.8	16 + (r >> 8) as usize % (512 - 16)
+   10.1	mt-xp3-f/src/alloc_core/segment/segment_table/route_slots.rs
+    9.8	<counts for unidentified lines in mt-xp3-f/src/alloc_core/small/alloc_core_small_magazine.rs>
+    8.6	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs
+    8.4	Some(SIZE2CLASS[seed_idx] as usize)
+    8.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs
+    8.1	head_off = if next.is_null() {
+    8.0	let w = Self
+    8.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs
