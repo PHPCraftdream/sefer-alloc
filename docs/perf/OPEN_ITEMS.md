@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+104. **[A] B4 events — refill/flush событие в mstress стоит в 5–6 раз дороже, чем в larson.** (Filed 2026-10-20, `docs/perf/B4_EVENTS_COST.md`.)
+
+   > **Current state**
+   > - **Status:** open (диагностика готова, правки не начаты).
+   > - **Current:** refill 1,535 Ir/событие в larson и 7,444 в mstress (≈100 и ≈483 Ir на блок), вызов `flush_class_internal` 1,828 и 11,066 Ir; на step — refill 14 / 99, flush 7 / 55 Ir. Крупнейшие строки mstress: повторное чтение next для `head_off` в commit-проходе, детекция run во flush, сам `flush_run`.
+   > - **Next trigger:** после байта состояния (`b4-sbyte`) — по одному: слияние probe/commit drain (нужна формальная проверка «validate-всё-до-мутации»), run-детекция во flush по соседству вместо `segment_base_of_ptr`, условный store байта `ClassLeaves` (Loom + MT-замер), вынос сегмента из MAG-маркировки; каждое — callgrind mstress/larson и порог из отчёта.
+   > - **Evidence:** `docs/perf/B4_EVENTS_COST.md`; `docs/perf/B4_EVENTS_COST_summary.csv`; `scripts/b4_events_table.mjs`; сырьё `docs/perf/_raw_b4_events_*.log(.gz)`.
+
 1. **`contains_base`'s share of a real free's `Ir` — region judged likely
    exhausted (current share 8.8%, supersedes the original 18.6%).**
 

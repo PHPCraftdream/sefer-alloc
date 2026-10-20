@@ -1,0 +1,41 @@
+# ev-1 mstress T=1 (ev-m1) — toggles/calls/full/cache
+TOGGLE mstress refill_magazine_slow marginal Ir/op: 99
+TOGGLE mstress flush_class_internal marginal Ir/op: 55
+TOGGLE mstress try_drain_freelist_batch marginal Ir/op: 77
+TOGGLE mstress find_segment_with_free marginal Ir/op: 0
+TOGGLE mstress carve_batch marginal Ir/op: 0
+TOGGLE mstress refill_magazine_slow_virgin / finish_magazine_refill / flush_run / batch_drain_from_class_cursor / reserve_small_segment: NOMATCH (inlined or not called)
+FULL mstress marginal Ir/op: 422  (50k=43297503? 100k totals below)
+CALLS mstress (100k trace): refill_magazine_slow=1330 flush_class_internal=497 try_drain_freelist_batch=530 try_carve_batch=864 find_segment_with_free_impl=93
+CACHE mstress 100k totals: Ir=43,298,241 Dr=7,121,385 Dw=4,007,222 ILmr=3,018 D1mr=132,930 D1mw=215,906
+
+== line annotation mstress (key fns) ==
+  6,419                      self.small_cur,
+    656              let n = match self.try_carve_batch(class_idx, block_size, &mut out[filled..]) {
+293,564      pub(crate) unsafe fn flush_class_internal(&mut self, class_idx: usize, blocks: &[*mut u8]) {
+102,120          while i < blocks.len() {
+ 12,765              let ptr = blocks[i];
+358,080              while run_end < blocks.len() {
+ 89,575                  let q = blocks[run_end];
+127,681          let mut prev_ptr: *mut u8 = if old_head == FREE_LIST_NULL {
+102,340              let off = (ptr as usize - base as usize) as u32;
+    467                  self.publish_nonempty(base, class_idx, slot_idx);
+ 2          let key = base.addr() >> segment_table::SEGMENT_SHIFT;
+ 6          let start_idx = (key ^ (key >> 13) ^ (key >> 26)) & (segment_table::HASH_CAPACITY - 1);
+19      pub(crate) fn claim_lease_with_config(
+ 2              let candidate = match failed_chunk {
+ 2              let generation = slot.generation.fetch_add(1, Ordering::Release) + 1;
+ 51,352      pub(in crate::alloc_core) fn try_drain_freelist_batch(
+207,477              while probed < out.len() && probe != FREE_LIST_NULL {
+202,448                      probe = if next.is_null() {
+392,285              while k < out.len() && head_off != FREE_LIST_NULL {
+101,224                  let block_ptr = Node::deref(segment, head_off as usize);
+101,224                  out[k] = block_ptr;
+809,792                  head_off = if next.is_null() {
+    574      pub(in crate::alloc_core) fn try_carve_batch(
+    656          let room = (SEGMENT - aligned_start) / block_size;
+  3,348              let off = aligned_start + i * block_size;
+    164              let batch_end = aligned_start + n * block_size;
+  4,464              let off = aligned_start + i * block_size;
+ 4                  let root = if id == 0 { entry } else { self.base_at(id - 1) };
+374    while (current < x && !mi_atomic_cas_weak_release((_Atomic(int64_t)*)p, &current, x)) { /* nothing */ };
