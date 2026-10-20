@@ -1,1 +1,1 @@
-{"runner":"scripts/r20_r6_ab_iai_run.mjs","stages":"prepare,build,oracle,measure","outDir":"target/r20r6ab-b4frame","benchTarget":"perf_gate_iai","features":"production bench-internals internals","note":"B4 frame tax: N1-alloc + N8 + N9 + N4; main vs branch"}
+{"runner":"scripts/r20_evidence_reverify_run.mjs","stages":"prepare,build,oracle","outDir":"target/r20-evidence-reverify"}
