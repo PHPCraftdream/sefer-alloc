@@ -15,6 +15,14 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 248 — CLOSED (2026-10-20)
+
+248. **[T] B4-MT heap-route-pin-cache (`src/registry/heap_core_xthread/heap_route_pin_cache.rs`) has NO loom model: the X-pin GO rests its model coverage on the TLS pin-cache path only.** (Filed 2026-10-20, B4-MT final phase, `docs/perf/B4_MT_PIN_NOTOWN.md` §5/§8.)
+
+    > **Current state**
+    > - **Status:** CLOSED (2026-10-20, mt-xp4 NO-GO) — the gap's subject was removed: the heap-route pin cache (`heap_route_pin_cache.rs`, `tests/b4_xp_heap_pin_cache.rs`) was DELETED with the X-pin rollback to `2730d02a` (second review forbade the lazy-Box storage; the decisive mt-xp4 measurement showed the existing R1 TLS cache suffices: hit_frac 0.9992–0.9998 at T=2/4, miss losses max 0.0104% Ir/op — ОЦЕНКА from the measured miss frequency × the measured 830 Ir miss price). The remaining TLS pin-cache path keeps its loom model (`tests/loom_b4_r1_pin_cache.rs`). The worktree tree contains no `heap_route_pin_cache.rs` / `tests/b4_xp_heap_pin_cache.rs` (any git-index residue of the deleted stubs disappears with the orchestrator's commit). Narrative note: the closed mt-xp4 measurement's hit-rate (0.9992–0.9998) is an argument that MISS LOSSES of the existing TLS cache are negligible, not that "a cache is unneeded" — the X-pin NO-GO's primary ground is the benefit ceiling (foreign-free share per step × 14–16 Ir = 0.16–0.33% Ir/op, ОЦЕНКА ≪ the mt-bench +2% adoption threshold; see `docs/perf/B4_MT_PIN_NOTOWN.md` §11).
+    > - **Evidence:** `docs/perf/B4_MT_PIN_NOTOWN.md` §11; `docs/perf/_raw_b4_mt_xp4_tls.log`.
+
 ### 233 — CLOSED (2026-10-16)
 
 233. **[T] Stale `hardened` doc comment in `Cargo.toml`: nonexistent `reclaim_offset`, nonexistent README section, `RemoteFreeRing`.** (Filed 2026-10-15, round-6 src review; being fixed this round.)

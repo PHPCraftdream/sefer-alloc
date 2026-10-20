@@ -1,5 +1,5 @@
 //! Layout pin (R34-18/task #537, release-stabilization finding F-6 [low]):
-//! `size_of::<HeapCore>()` must stay within a 10 KiB stack-pressure budget,
+//! `size_of::<HeapCore>()` must stay within a 9 KiB stack-pressure budget,
 //! unconditionally across every feature composition.
 //!
 //! ## The risk this guards
@@ -19,9 +19,9 @@
 //!
 //! ## The two-layer guard
 //!
-//! 1. A **compile-time** `const _: () = assert!(size_of::<HeapCore>() <= 10240)`
+//! 1. A **compile-time** `const _: () = assert!(size_of::<HeapCore>() <= 9216)`
 //!    in `src/registry/heap_core/core.rs` (right after the struct definition) — a
-//!    future field addition that grows `HeapCore` past 10 KiB fails the BUILD,
+//!    future field addition that grows `HeapCore` past 9 KiB fails the BUILD,
 //!    not a downstream deployment. This mirrors the established
 //!    `SegmentHeader` pin pattern (`src/alloc_core/segment/segment_header/layout_asserts.rs).
 //! 2. This **runtime** `#[test]` — reads `size_of::<HeapCore>()` for the
@@ -30,7 +30,7 @@
 //!    suspicious shrink that would silently weaken the magazine/cache) is
 //!    caught here too, and it prints the measured size for the record.
 //!
-//! ## Measured sizes (as of this correction) and why the budget is 10240
+//! ## Measured sizes (as of this correction) and why the budget is 9216
 //!
 //! **Correction (task #572/H2's own follow-up wave — an independent readonly
 //! review, `docs/reviews/2026-08-05-wave3-h1h8-remediation-readonly-review.md`
@@ -53,7 +53,7 @@
 //! every composition tried: plain `production` = 7576 B, `production
 //! medium-classes` = 8408 B, `production medium-classes numa-aware` =
 //! 8416 B, `production medium-classes-wide numa-aware` = 8832 B,
-//! `--all-features` = 8840 B (the confirmed maximum). Budget 10240 leaves
+//! `--all-features` = 8840 B (the confirmed maximum). Budget 9216 leaves
 //! 376 B (~4%) headroom above that maximum.
 //!
 //! R34-24/fix #571: This test requires `internals` to reach `HeapCore`,
@@ -65,8 +65,8 @@ use core::mem::size_of;
 
 use sefer_alloc::registry::HeapCore;
 
-/// `HeapCore` must fit within the 10 KiB stack-pressure budget. This mirrors
-/// the compile-time `const _: () = assert!(size_of::<HeapCore>() <= 10240)`
+/// `HeapCore` must fit within the 9 KiB stack-pressure budget. This mirrors
+/// the compile-time `const _: () = assert!(size_of::<HeapCore>() <= 9216)`
 /// pin in `src/registry/heap_core/core.rs` at runtime, for the feature set
 /// actually under test — both are unconditional across every composition.
 /// Non-vacuous: the measured size is positive and meaningfully close to the
@@ -78,11 +78,11 @@ fn heap_core_size_within_stack_pressure_budget() {
     // Upper bound — the stack-pressure budget. Unconditional: covers every
     // feature composition, including `--all-features` (the confirmed global
     // maximum, 8840 B). A HeapCore temporary is constructed by-value on a
-    // thread's first-allocation frame; 10 KiB is still just over half of a
+    // thread's first-allocation frame; 9 KiB is still just over half of a
     // 16 KiB embedded stack — the risk this pin guards.
     assert!(
-        size <= 10240,
-        "HeapCore grew to {size} bytes — exceeds the 10 KiB (10240) stack-pressure \
+        size <= 9216,
+        "HeapCore grew to {size} bytes — exceeds the 9 KiB (9216) stack-pressure \
          budget (R34-18/F-6, corrected by the F1 fix in the wave-3 follow-up \
          review). A multi-KiB-by-value construction on a small-stack thread's \
          first-allocation frame is the stack-overflow risk this pin guards; \
@@ -105,7 +105,7 @@ fn heap_core_size_within_stack_pressure_budget() {
 
     // Record the measured size for the feature set under test.
     eprintln!(
-        "size_of::<HeapCore>() = {size} bytes (budget 10240, headroom {} B)",
-        10240_i64 - size as i64
+        "size_of::<HeapCore>() = {size} bytes (budget 9216, headroom {} B)",
+        9216_i64 - size as i64
     );
 }

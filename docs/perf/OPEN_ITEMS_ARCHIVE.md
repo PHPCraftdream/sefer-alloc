@@ -720,6 +720,40 @@ don't rewrite" convention.
 
 ---
 
+### A105
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (one-line pointer;
+item 105 removed from the `[A]` Active tier). Full closure narrative,
+byte-preserved from the former inline card.*
+
+**105 — B4-MT X-notown — 256-битный notown-фильтр SegmentTable: NO-GO (thrash64 w_free +5 Ir > +2), src откачен.** (Filed 2026-10-20, `docs/perf/B4_MT_PIN_NOTOWN.md` §4.)
+
+   > **Current state**
+   > - **Status:** closed — NO-GO (история: итерация mt-xn → mt-xn2, обе мимо thrash64-гейта; `src/`-правки полностью откачены, остался только сырой лог и этот отчёт).
+   > - **Current:** foreign free −7 Ir (136→129, −5.1% ИЗМЕРЕНО) и notown-оракул 100000/100000 = 1.0 (≥95% PASS) — механизм работает; единственный драйвер NO-GO — thrash64 w_free 108 против 103 (+5 ИЗМЕРЕНО > +2 допуска), чисто инструкционная цена гейта на OWN Tier-1-промахе (D1m без изменений); mt-xn2 (независимые битовые диапазоны) не изменил число.
+   > - **Next trigger (дизайн-триггер):** редизайн «гейтить только не-владельца региона адресного пространства» (per-heap foreign-bias flag), убирающий per-miss работу гейта с OWN-пути — вне одной итерации; переоткрывать только с новым замером полного судейского набора.
+   > - **Evidence:** `docs/perf/B4_MT_PIN_NOTOWN.md` §3/§4; `docs/perf/B4_MT_PIN_NOTOWN_summary.csv`; `scripts/b4_mt_pin_notown_table.mjs`; сырьё `docs/perf/_raw_b4_mt_xn.log` (diff-хэши `43c72c4f…`, mt-xn2 `003391ac…`).
+
+---
+
+### A106
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (one-line pointer;
+item 106 removed from the `[A]` Active tier). Full closure narrative,
+byte-preserved from the former inline card with the review-fix corrections
+(mt-xp4v3 log, ОЦЕНКА labeling, §11 references).*
+
+**106 — B4-MT X-pin — heap-route-pin-cache: NO-GO (отозван после второго ревью: Box запрещён + mt-xp4 показал достаточность R1 TLS-кэша).** (Filed 2026-10-20, `docs/perf/B4_MT_PIN_NOTOWN.md` §5/§11.)
+
+   > **Current state**
+   > - **Status:** closed — NO-GO (2026-10-20; GO §5 ОТМЕНЁН вторым ревью и решающим замером mt-xp4; `src/` = base A `2730d02a`, все X-pin правки откачены, файлы `heap_route_pin_cache.rs`/`tests/b4_xp_heap_pin_cache.rs` удалены из дерева).
+   > - **Current:** итог NO-GO. Главное основание — ПОТОЛОК ВЫГОДЫ (ОЦЕНКА по измеренным частотам и измеренной цене попадания): доля чужих free на step при T≥2 = (hits+misses)/(steps·T) = 0.0488–0.0625 (ИЗМЕРЕНО счётчиками, mt-xp4v3) × измеренная экономия на чужой free 14 Ir (mt-xp2) / 16 Ir (mt-xp3) = 0.68–1.00 Ir/step = 0.16–0.33% Ir/op — на порядок ниже порога принятия mt-bench (+2%); оценка выгоды по измеренным частотам и измеренной цене попадания — доли процента Ir/step; это оценка, а не доказанный предел. Затем безопасность (Box на пути чужого free запрещён: реентрантность + fallback-детлок; TLS-вариант дешевле по выгоде; HeapSlot требует кодовых доказательств) и бюджет 9216 (headroom 8 Б под --all-features). hit-rate R1 ≥ 0.999 — довод о пренебрежимости ПОТЕРЬ НА ПРОМАХАХ (макс. 0.0104% Ir/op, ОЦЕНКА), а НЕ «кэш не нужен»: X-pin экономил цену ПОПАДАНИЯ, не промаха. larson/mstress T=1 flat ничего не доказывают — при T=1 чужих free в трассе нет. Полный разбор — `docs/perf/B4_MT_PIN_NOTOWN.md` §11.
+   > - **Review-fix update (2026-10-20, mt-xp4 NO-GO, `docs/perf/B4_MT_PIN_NOTOWN.md` §11):** второй ревью (СТОП-находка) запретило lazy Box навсегда (реентрантная аллокация внутри free + детлок fallback-LockGuard, `realloc.rs:512` → `fallback.rs:539`). Решающий замер mt-xp4 (R30-8): hit-rate СУЩЕСТВУЮЩЕГО R1 TLS-кэша на реальных larson/mstress T=2/T=4 = 0.9992–0.9998 (≥0.95), потери на промахах — максимум 0.0104% Ir/op (ОЦЕНКА по измеренной частоте промахов и измеренной цене 830 Ir) — потери на промахах существующего R1-кэша пренебрежимы (довод о потерях, НЕ «кэш не нужен»: X-pin экономил цену ПОПАДАНИЯ — главное основание NO-GO теперь потолок выгоды, см. Status/Current выше). **Вердикт изменён на NO-GO**: все X-pin src-правки откачены к `2730d02a` побайтово (`git diff 2730d02a -- src tests` пуст, diff-хэш `61bc39ed…`); `heap_route_pin_cache.rs`/`tests/b4_xp_heap_pin_cache.rs` удалены; r34_18: 7872/9208 Б ≤ 9216; Loom 4+2 зелёные; clippy PER_PR_ROWS зелёные; verify-*.mjs зелёные (кроме evidence-registry). Честный механизм evidence-registry RED: верификатор сравнивает src-scope строк с committed HEAD = `f0c0c623`, который ещё СОДЕРЖИТ X-pin src (M/D относительно `2730d02a` — это расхождение HEAD↔рабочей копии, а не «тот же RED на 2730d02a»); поэтому 9 evidence-src-stale RED-строк (R4a-01/02/05, R4c-02/03/05/06/07/09) объясняются содержимым HEAD, а проверка «совпадает ли с базой» будет валидной только ПОСЛЕ коммита оркестратором. Бюджет 9216 на месте, подъём не потребовался.
+   > - **Next trigger:** переоткрыть можно только с НОВЫМ замером (новый сырой лог с идентичностью источника) и решением владельца о budget/безопасности (например, легального HeapSlot-доказательства); см. §11 `docs/perf/B4_MT_PIN_NOTOWN.md`.
+   > - **Evidence:** `docs/perf/_raw_b4_mt_xp4_tls.log` (mt-xp4v3: `set -euo pipefail`, tee внутри WSL, конфигурационные строки `steps=… workload=… T=…` и identity-строки вычислены скриптом — sha256 tar-файла и файла пробы); `docs/perf/b4_mt_probes/` (исходники проб и обёрток + README с полной воспроизводимостью); `docs/perf/B4_MT_PIN_NOTOWN.md` §11; `scripts/b4_mt_pin_notown_table.mjs` (таблица mt-xp4: hit/miss ИЗМЕРЕНО, потолок выгоды и цена промахов ОЦЕНКА); `docs/perf/B4_MT_PIN_NOTOWN_summary.csv` (строки `xp4_*`, `verdict_x_pin=NO-GO`).
+
+---
+
 ## [D] Deferred designs
 
 ### D2

@@ -42,11 +42,15 @@ const approx = (a, b, tol) => Math.abs(a - b) <= tol;
 function parseMarginal(lines) {
   const out = {};
   for (const l of lines) {
-    let m = l.match(/^MARGINAL Ir\/free \(([^)]+)\) = (\d+)/);
+    // mt-xp3 logs use ": N"; the base/xn/xp logs use "= N" — both accepted.
+    let m = l.match(/^MARGINAL Ir\/free \(([^)]+)\)\s*[:=]\s*(\d+)/);
     if (m) out[`free:${m[1]}`] = Number(m[2]);
-    m = l.match(/^MARGINAL Ir\/op \(sefer (\w+) T=1\) = (\d+)/);
+    m = l.match(/^MARGINAL Ir\/op \(sefer (\w+) T=1\)\s*[:=]\s*(\d+)/);
     if (m) out[`op:${m[1]}`] = Number(m[2]);
     m = l.match(/^sefer w_(alloc|free) marginal Ir\/op\s+= (\d+)/);
+    if (m) out[`thrash64:${m[1]}`] = Number(m[2]);
+    // thrash64 wrapper prints "== sefer w_free marginal Ir/op: 103"
+    m = l.match(/^== sefer w_(alloc|free) marginal Ir\/op: (\d+)/);
     if (m) out[`thrash64:${m[1]}`] = Number(m[2]);
   }
   return out;
@@ -61,9 +65,49 @@ function parseOracleHitFrac(lines) {
   return null;
 }
 
+const xp3f = read("_raw_b4_mt_xp3_f.log");
+const xp3fcap = read("_raw_b4_mt_xp3_fcap.log");
+const xp3own = read("_raw_b4_mt_xp3_own.log");
+const xp3larson = read("_raw_b4_mt_xp3_larson.log");
+const xp3mstress = read("_raw_b4_mt_xp3_mstress.log");
+const xp3thrash = read("_raw_b4_mt_xp3_thrash64.log");
+const xp3rss = read("_raw_b4_mt_xp3_rss.log");
+
 const base = read("_raw_b4_mt_base.log");
 const xn = read("_raw_b4_mt_xn.log");
 const xp = read("_raw_b4_mt_xp.log");
+
+const XP3 = {
+  ...parseMarginal(xp3f),
+  ...parseMarginal(xp3fcap),
+  ...parseMarginal(xp3own),
+  ...parseMarginal(xp3larson),
+  ...parseMarginal(xp3mstress),
+  ...parseMarginal(xp3thrash),
+};
+
+// RSS probe (blocker 2): DELTA_RSS_KIB <n> (...) : PASS|FAIL
+let rss = null;
+for (const l of xp3rss) {
+  const m = l.match(/^DELTA_RSS_KIB (-?\d+) \((-?[\d.]+) MiB\)\s+threshold <= \+1024 KiB : (PASS|FAIL)/);
+  if (m) rss = { kib: Number(m[1]), mib: Number(m[2]), verdict: m[3] };
+}
+// per-arm RSS
+let rssA = null, rssB = null;
+for (const l of xp3rss) {
+  const m = l.match(/^RSS_KIB (\d+)$/);
+  if (m && rssA === null) rssA = Number(m[1]);
+  else if (m) rssB = Number(m[1]);
+}
+// xp3 diff hash (each xp3 log starts with "diff-hash: <64hex>")
+const xp3Hashes = new Set();
+for (const lines of [xp3f, xp3fcap, xp3own, xp3larson, xp3mstress, xp3thrash]) {
+  for (const l of lines) {
+    const m = l.match(/^diff-hash: ([0-9a-f]{64})/);
+    if (m) xp3Hashes.add(m[1]);
+  }
+}
+const rssHash = (xp3rss.find((l) => /^diff-hash: ([0-9a-f]{64})/.test(l)) ?? "").match(/^diff-hash: ([0-9a-f]{64})/);
 
 const B = parseMarginal(base);
 const XN = parseMarginal(xn);
@@ -165,6 +209,93 @@ if (iter1) {
 // identity asserts
 check(hashes.head === "2730d02a5824128804f847d006206bda75a9fc84", "HEAD is base A identity");
 check(hashes.baseDiff === EMPTY_DIFF, "base diff hash is the empty-diff sha256");
+// mt-xp3 identity: every judge log must carry the SAME final diff hash.
+check(xp3Hashes.size === 1, `mt-xp3 judges must share one diff hash, got ${[...xp3Hashes].join(",")}`);
+check(XP3["free:foreign locality"] !== undefined, "xp3 foreign parsed");
+check(XP3["free:foreign capacity"] !== undefined, "xp3 fcap parsed");
+check(XP3["free:own locality"] !== undefined, "xp3 own parsed");
+check(XP3["op:larson"] !== undefined, "xp3 larson parsed");
+check(XP3["op:mstress"] !== undefined, "xp3 mstress parsed");
+check(XP3["thrash64:free"] !== undefined && XP3["thrash64:alloc"] !== undefined, "xp3 thrash64 parsed");
+check(rss !== null && rss.verdict === "PASS", "xp3 RSS probe verdict PASS");
+// ── xp4 (R30-8 decisive measurement): TLS pin hit/miss on REAL traces ────────
+// Log lines:
+//   "# snapshot commit: ..." + two sha256sum lines (tar, probe) — identity,
+//   "== base A <wl> T=<t> ==" markers,
+//   "sefer <N> T=<t> PINS hits=<h> misses=<m> ... TLS_HIT_FRAC <f>".
+// Probe arguments: <steps> and <T> are parsed FROM THE LOG (the wrapper prints
+// a `steps=<N> workload=<w> T=<t>` configuration line before each run; no
+// hardcoded step count anywhere in this script).
+const xp4 = read("_raw_b4_mt_xp4_tls.log");
+const xp4Cfg = [];
+for (const l of xp4) {
+  const m = l.match(/^steps=(\d+) workload=(\w+) T=(\d+)/);
+  if (m) xp4Cfg.push({ steps: Number(m[1]), wl: m[2], t: Number(m[3]) });
+}
+check(xp4Cfg.length === 4, `xp4 log must carry 4 "steps=… workload=… T=…" config lines, got ${xp4Cfg.length}`);
+check(new Set(xp4Cfg.map((c) => c.steps)).size === 1, "xp4 config: steps must be identical in every config line");
+const XP4_STEPS = xp4Cfg.length > 0 ? xp4Cfg[0].steps : 0;
+check(XP4_STEPS > 0, "xp4 steps parsed from the log must be > 0");
+const xp4TarSha = (xp4.find((l) => /mt-xp3-rss-a\.tar/.test(l) && /^[0-9a-f]{64}\s/.test(l)) ?? "").match(/^([0-9a-f]{64})/)?.[1] ?? null;
+const xp4ProbeSha = (xp4.find((l) => /mt_xp4_tls_probe\.rs/.test(l) && /^[0-9a-f]{64}\s/.test(l)) ?? "").match(/^([0-9a-f]{64})/)?.[1] ?? null;
+const xp4SnapshotCommit = (xp4.find((l) => l.includes("# snapshot commit:")) ?? "").match(/([0-9a-f]{40})/)?.[1] ?? null;
+const xp4Points = [];
+{
+  let wl = null, t = null;
+  for (const l of xp4) {
+    const m0 = l.match(/^== base A (\w+) T=(\d+) ==$/);
+    if (m0) { wl = m0[1]; t = Number(m0[2]); continue; }
+    const m = l.match(/^sefer \d+ T=(\d+) PINS hits=(\d+) misses=(\d+) .*TLS_HIT_FRAC ([\d.]+)/);
+    if (m) xp4Points.push({ wl, t: Number(m[1]), hits: Number(m[2]), misses: Number(m[3]), frac: Number(m[4]) });
+  }
+}
+// Measured components re-derived FROM THE LOGS (no hardcoded 14/16/830):
+const SAVE_XP2 = B["free:foreign locality"] - XP["free:foreign locality"]; // 136-122
+const SAVE_XP3 = B["free:foreign locality"] - XP3["free:foreign locality"]; // 136-120
+const MISS_PRICE = B["free:foreign capacity"] - XP["free:foreign capacity"]; // 952-122
+check(xp4TarSha !== null && /^[0-9a-f]{64}$/.test(xp4TarSha), "xp4 log carries tar sha256 identity line");
+check(xp4ProbeSha !== null && /^[0-9a-f]{64}$/.test(xp4ProbeSha), "xp4 log carries probe sha256 identity line");
+check(xp4SnapshotCommit === "2730d02a5824128804f847d006206bda75a9fc84", "xp4 snapshot commit is base A 2730d02a");
+check(xp4Points.length === 4, `xp4 must have 4 points, got ${xp4Points.length}`);
+check(
+  JSON.stringify(xp4Points.map((p) => `${p.wl}|${p.t}`).sort()) ===
+    JSON.stringify(["larson|2", "larson|4", "mstress|2", "mstress|4"]),
+  "xp4 point set must be EXACTLY {(larson,2),(larson,4),(mstress,2),(mstress,4)} without duplicates",
+);
+check(SAVE_XP2 === 14, `xp2 foreign saving must be 14 (136-122), got ${SAVE_XP2}`);
+check(SAVE_XP3 === 16, `xp3 foreign saving must be 16 (136-120), got ${SAVE_XP3}`);
+check(MISS_PRICE === 830, `miss price must be 830 (952-122), got ${MISS_PRICE}`);
+for (const p of xp4Points) {
+  check(p.wl === "larson" || p.wl === "mstress", `xp4 workload label ${p.wl}`);
+  check(p.t === 2 || p.t === 4, `xp4 T=${p.t}`);
+  const total = p.hits + p.misses;
+  check(total > 0 && total <= XP4_STEPS * p.t, `xp4 hits+misses ${total} in (0, steps*T=${XP4_STEPS * p.t}]`);
+  // printed TLS_HIT_FRAC must equal hits/(hits+misses)
+  check(approx(p.frac, p.hits / total, 0.0001), `xp4 ${p.wl} T=${p.t} hit_frac printed ${p.frac} vs hits/(hits+misses)`);
+}
+// per-point derived quantities (labels carry numerator/denominator):
+const xp4Derived = xp4Points.map((p) => {
+  const foreignFreePerStep = (p.hits + p.misses) / (XP4_STEPS * p.t); // чужих free на step
+  const baseIr = p.wl === "larson" ? B["op:larson"] : B["op:mstress"];
+  return {
+    ...p,
+    foreignFreePerStep,
+    ceilXp2Ir: foreignFreePerStep * SAVE_XP2, // (hits+misses)/(steps*T) * 14
+    ceilXp3Ir: foreignFreePerStep * SAVE_XP3, // (hits+misses)/(steps*T) * 16
+    ceilXp2Pct: (foreignFreePerStep * SAVE_XP2 / baseIr) * 100,
+    ceilXp3Pct: (foreignFreePerStep * SAVE_XP3 / baseIr) * 100,
+    missIr: (p.misses * MISS_PRICE) / (XP4_STEPS * p.t), // misses*830/(steps*T)
+    missPct: ((p.misses * MISS_PRICE) / (XP4_STEPS * p.t) / baseIr) * 100,
+    baseIr,
+  };
+});
+// identity re-checks of every derived number (assert-арифметика)
+for (const q of xp4Derived) {
+  check(approx(q.ceilXp2Ir, (q.hits + q.misses) * SAVE_XP2 / (XP4_STEPS * q.t), 1e-12), `ceiling xp2 identity ${q.wl} T=${q.t}`);
+  check(approx(q.missIr, q.misses * MISS_PRICE / (XP4_STEPS * q.t), 1e-12), `miss-loss identity ${q.wl} T=${q.t}`);
+  check(q.ceilXp2Pct < 2, `ceiling xp2 ${q.wl} T=${q.t} below mt-bench +2% threshold (NO-GO ground)`);
+}
+
 if (failures > 0) process.exit(1);
 
 // ── verdicts (computed from gates, not hardcoded) ────────────────────────────
@@ -277,6 +408,55 @@ R("mt-xp2 (a)+(b), PRE", hashes.xpAbDiff);
 R("HEAD (base A)", hashes.head);
 out.push("");
 
+// ═══ Table 6: review fixes (mt-xp3) ══════════════════════════════════════════
+out.push("### Исправления по ревью (mt-xp3, финальное состояние) vs base A и xp2", "");
+H("судья", "base A", "xp2 (f0c0c623)", "mt-xp3", "Δ (к base A)", "порог", "вердикт");
+const xp3Rows = [
+  ["foreign free (locality), Ir/free", "free:foreign locality", null],
+  ["foreign capacity, Ir/free", "free:foreign capacity", null],
+  ["own free (контроль), Ir/free", "free:own locality", GATES.own],
+  ["larson T=1, Ir/op", "op:larson", GATES.larson],
+  ["mstress T=1, Ir/op", "op:mstress", GATES.mstress],
+  ["thrash64 w_alloc, Ir/op", "thrash64:alloc", GATES["thrash64:alloc"]],
+  ["thrash64 w_free, Ir/op", "thrash64:free", GATES["thrash64:free"]],
+];
+for (const [label, key, gate] of xp3Rows) {
+  const v = verdictRow(B[key], XP3[key], gate);
+  R(label, fmt(B[key]), fmt(XP[key]), fmt(XP3[key]), v.deltaTxt, v.gateTxt, v.ok);
+}
+R("RSS-проба (блокер 2), Δ idle RSS", "—", "—", `${rss.kib} KiB (${rss.mib} MiB)`, `A=${rssA} KiB / B=${rssB} KiB`, "≤ +1024 KiB", rss.verdict);
+const xp3HitF = Math.max(
+  ...(xp3f.map((l) => l.match(/hit_frac=([\d.]+)/)).filter(Boolean).map((m) => Number(m[1]))),
+);
+R("foreign locality pin hit_frac", fmt(parseOracleHitFrac(base)), "—", xp3HitF.toFixed(4), "—", "≥ 0.95", xp3HitF >= 0.95 ? "PASS" : "FAIL");
+out.push("");
+
+// ═══ Table 7: mt-xp4 TLS pin hit/miss + X-pin benefit ceiling + miss cost ════
+out.push("### mt-xp4 (base A snapshot, production∧internals∧bench-internals): TLS route-pin-cache hits/misses, потолок выгоды X-pin и цена промахов", "");
+out.push(`Идентичность источника (ИЗМЕРЕНО скриптом из первой строки лога): snapshot commit ${xp4SnapshotCommit}; tar sha256 ${xp4TarSha}; probe sha256 ${xp4ProbeSha}.`);
+out.push(`steps=${XP4_STEPS}/поток и T — ИЗ ЛОГА (конфигурационная строка обёртки «steps=… workload=… T=…»; проба захардкоживает working_set 768 / mstress_blocks 512 — записаны в той же строке как конфигурация запуска); экономия на чужой free — ИЗМЕРЕНО из судейских логов: ${SAVE_XP2} Ir (136−122, mt-xp2) и ${SAVE_XP3} Ir (136−120, mt-xp3); цена промаха ${MISS_PRICE} Ir — ИЗМЕРЕНО (952−122, capacity, base/xp2-логи).`);
+out.push(" larson/mstress T=1 «flat» ничего не доказывают — при T=1 чужих free в трассе нет; все строки ниже — T≥2.");
+out.push("");
+H("трасса", "T", "hits", "misses", "hit_frac", "чужие free/step = (hits+misses)/(steps·T)", "потолок выгоды [ОЦЕНКА], Ir/step = foreign/step·14 (xp2)", "% от Ir/op (база)", "потолок [ОЦЕНКА], Ir/step = foreign/step·16 (xp3)", "% от Ir/op (база)", "потери на промахах [ОЦЕНКА], Ir/step = misses·830/(steps·T)", "% от Ir/op (база)");
+for (const q of xp4Derived) {
+  const pctLbl = (v) => `${v.toFixed(4)}% от ${q.baseIr}`;
+  R(
+    q.wl, q.t, q.hits, q.misses, q.frac.toFixed(4),
+    `${q.foreignFreePerStep.toFixed(5)} = (${q.hits}+${q.misses})/(${XP4_STEPS}·${q.t})`,
+    `${q.ceilXp2Ir.toFixed(4)} = ${q.foreignFreePerStep.toFixed(5)}·${SAVE_XP2} — ОЦЕНКА`,
+    pctLbl(q.ceilXp2Pct),
+    `${q.ceilXp3Ir.toFixed(4)} = ${q.foreignFreePerStep.toFixed(5)}·${SAVE_XP3} — ОЦЕНКА`,
+    pctLbl(q.ceilXp3Pct),
+    `${q.missIr.toFixed(5)} = ${q.misses}·${MISS_PRICE}/(${XP4_STEPS}·${q.t}) — ОЦЕНКА`,
+    pctLbl(q.missPct),
+  );
+}
+const worstCeil = Math.max(...xp4Derived.map((q) => q.ceilXp3Pct));
+const worstMiss = Math.max(...xp4Derived.map((q) => q.missPct));
+out.push("");
+out.push(`Вердикт: ОЦЕНКА выгоды X-pin по измеренным частотам чужих free и измеренной цене попадания — доли процента Ir/step (максимум ${worstCeil.toFixed(4)}% Ir/op, все точки ≪ порога принятия mt-bench +2%); потери на промахах — максимум ${worstMiss.toFixed(5)}% Ir/op (ОЦЕНКА). callgrind не отражает когерентность кэшей и wall-clock. **X-pin NO-GO** против порога +2% (см. §11 отчёта).`);
+out.push("");
+
 console.log(out.join("\n"));
 
 // ── CSV export (R14-10: generated by the script, not transcribed) ───────────
@@ -312,7 +492,34 @@ deltaRow("xp2_delta_own_free_Ir", XP["free:own locality"] - B["free:own locality
 deltaRow("xp2_delta_thrash64_w_free_Ir", XP["thrash64:free"] - B["thrash64:free"], "вычислено");
 deltaRow("xn_delta_thrash64_w_free_Ir", XN["thrash64:free"] - B["thrash64:free"], "вычислено");
 csv.push(`verdict_x_notown,NO-GO,ИЗМЕРЕНО (вычислено),thrash64 w_free ${XN["thrash64:free"] - B["thrash64:free"]} Ir > +2`);
-csv.push(`verdict_x_pin,GO,ИЗМЕРЕНО (вычислено),все гейты пройдены`);
+// финальный вердикт X-pin (NO-GO) добавляется в блоке mt-xp4 ниже
+// mt-xp3 (review fixes) — колонка/строки mt-xp3, источник — логи _raw_b4_mt_xp3*
+const xp3row = (metric, key, log) => csv.push(`${metric},${XP3[key]},ИЗМЕРЕНО,${log}`);
+xp3row("xp3_foreign_free_Ir", "free:foreign locality", "_raw_b4_mt_xp3_f.log");
+xp3row("xp3_foreign_capacity_Ir", "free:foreign capacity", "_raw_b4_mt_xp3_fcap.log");
+xp3row("xp3_own_free_Ir", "free:own locality", "_raw_b4_mt_xp3_own.log");
+xp3row("xp3_larson_T1_Ir_per_op", "op:larson", "_raw_b4_mt_xp3_larson.log");
+xp3row("xp3_mstress_T1_Ir_per_op", "op:mstress", "_raw_b4_mt_xp3_mstress.log");
+xp3row("xp3_thrash64_w_alloc_Ir_per_op", "thrash64:alloc", "_raw_b4_mt_xp3_thrash64.log");
+xp3row("xp3_thrash64_w_free_Ir_per_op", "thrash64:free", "_raw_b4_mt_xp3_thrash64.log");
+csv.push(`xp3_delta_rss_kib,${rss.kib},ИЗМЕРЕНО,_raw_b4_mt_xp3_rss.log`);
+csv.push(`xp3_verdict_rss,${rss.verdict},ИЗМЕРЕНО (порог ≤ +1024 KiB),_raw_b4_mt_xp3_rss.log`);
+csv.push(`xp3_diff_sha256,${[...xp3Hashes][0]},ИЗМЕРЕНО,все mt-xp3 логи`);
+
+// mt-xp4 (R30-8): TLS pin hit/miss, потолок выгоды, цена промахов — источник _raw_b4_mt_xp4_tls.log
+for (const q of xp4Derived) {
+  csv.push(`xp4_${q.wl}_T${q.t}_hits,${q.hits},ИЗМЕРЕНО,_raw_b4_mt_xp4_tls.log`);
+  csv.push(`xp4_${q.wl}_T${q.t}_misses,${q.misses},ИЗМЕРЕНО,_raw_b4_mt_xp4_tls.log`);
+  csv.push(`xp4_${q.wl}_T${q.t}_hit_frac,${q.frac.toFixed(4)},ИЗМЕРЕНО,_raw_b4_mt_xp4_tls.log`);
+  csv.push(`xp4_${q.wl}_T${q.t}_foreign_free_per_step,${q.foreignFreePerStep.toFixed(6)},ОЦЕНКА (вычислено: (hits+misses)/(steps·T)),_raw_b4_mt_xp4_tls.log`);
+  csv.push(`xp4_${q.wl}_T${q.t}_ceiling_ir_per_step_save${SAVE_XP2},${q.ceilXp2Ir.toFixed(5)},ОЦЕНКА (вычислено),foreign/step·${SAVE_XP2}`);
+  csv.push(`xp4_${q.wl}_T${q.t}_ceiling_ir_per_step_save${SAVE_XP3},${q.ceilXp3Ir.toFixed(5)},ОЦЕНКА (вычислено),foreign/step·${SAVE_XP3}`);
+  csv.push(`xp4_${q.wl}_T${q.t}_ceiling_pct_of_base,${q.ceilXp3Pct.toFixed(5)},ОЦЕНКА (вычислено),потолок/${q.baseIr} Ir/op`);
+  csv.push(`xp4_${q.wl}_T${q.t}_miss_loss_ir_per_step,${q.missIr.toFixed(6)},ОЦЕНКА (вычислено: misses·830/(steps·T)),_raw_b4_mt_xp4_tls.log`);
+}
+csv.push(`xp4_tar_sha256,${xp4TarSha},ИЗМЕРЕНО,_raw_b4_mt_xp4_tls.log`);
+csv.push(`xp4_probe_sha256,${xp4ProbeSha},ИЗМЕРЕНО,_raw_b4_mt_xp4_tls.log`);
+csv.push(`verdict_x_pin,NO-GO,ОЦЕНКА (вычислено),оценка выгоды по измеренным частотам чужих free и измеренной цене попадания — доли процента Ir/step (макс. ${worstCeil.toFixed(4)}%); callgrind не отражает когерентность/wall-clock; NO-GO против порога mt-bench +2%; бюджет 9216 — см. §11 отчёта`);
 
 if (process.argv.includes("--csv")) {
   const csvPath = join(logDir, "B4_MT_PIN_NOTOWN_summary.csv");

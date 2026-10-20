@@ -24,15 +24,6 @@ impl HeapCore {
     /// Each sub-operation carries its own feature gate; in a build without
     /// the relevant feature the corresponding step compiles to nothing.
     pub(crate) fn trim_for_recycle(&mut self) {
-        // X-pin (а): release THIS heap's route pins FIRST — before the
-        // sidecar drain and before the caller's `LIVE → FREE` CAS — so a
-        // recycled slot never hands its successor stale refcounts (same
-        // order as the TLS cache: pins released during trim, before the
-        // lease release, cf. `tls_heap.rs` `LeaseReleaseGuard::drop`).
-        // Owner-thread only (single-writer); releases go through the
-        // existing `EntryHandle` protocol.
-        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-        self.route_pins.release_all();
         // Terminal sidecars require a full, bounded sweep independent of dirty
         // hints. Retire detached records before flushing magazines or releasing
         // reservations; a pre-publication producer keeps its outstanding credit.

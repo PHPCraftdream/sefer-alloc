@@ -353,8 +353,6 @@ const _: fn(&HeapCore) = |hc| {
             tcache: _,
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         tcache_hits,
-        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-        route_pins,
     } = hc;
     assert_send(id);
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
@@ -367,14 +365,6 @@ const _: fn(&HeapCore) = |hc| {
     assert_send(large_hot_cursor);
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     assert_send(tcache_hits);
-    // X-pin (а): `HeapRoutePinCache` holds counted `RoutePin`s (an
-    // `AtomicPtr<Entry>` handle each — no thread-affine resource: no `Rc`,
-    // no TLS, no thread handles; the refcounts are plain atomics, movable
-    // like `Arc`). The cache is owner-private and never crosses threads
-    // inside the slot, but the audit's premise is `HeapCore: Send`, so the
-    // field is asserted like every other non-excluded field.
-    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-    assert_send(route_pins);
 };
 unsafe impl Sync for HeapSlot {}
 

@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an `unsafe` seam or algorithmic invariant has (or lacks) interpreter/model-checker PROOF coverage (miri, loom, kani) -- distinct from ordinary CI gate wiring (a test that exists but does not run under some job) and from platform empirical verification (real hardware, not a formal tool).
 
-**Card count:** 12 numbered records (9 open; 3 retained closed/resolved); item 188 is CLOSED and not a current record here (`RESOLVED.md`).
+**Card count:** 11 numbered records (8 open; 3 retained closed/resolved); item 188 is CLOSED and not a current record here (`RESOLVED.md`).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -295,11 +295,3 @@ Item 188 is CLOSED (2026-10-13); it is not a current record here — its closure
     > - **Current:** `tests/regression_r6_t22_foreign_window_key_miri.rs` exists and is selected by `scripts/miri-matrix.mjs` (`exact-span-large`, internals); no green miri-alloc-core CI receipt was inspected in this audit.
     > - **Next trigger:** confirm a green miri-alloc-core CI run executing this case under the specified features; only then close this proof-only item.
     > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-1 (Miri aspect); task R6-T22.
-
-248. **[T] B4-MT heap-route-pin-cache (`src/registry/heap_core_xthread/heap_route_pin_cache.rs`) has NO loom model: the X-pin GO rests its model coverage on the TLS pin-cache path only.** (Filed 2026-10-20, B4-MT final phase, `docs/perf/B4_MT_PIN_NOTOWN.md` §5/§8.)
-
-    > **Current state**
-    > - **Status:** OPEN — static coverage gap, not a demonstrated race.
-    > - **Current:** `tests/loom_b4_r1_pin_cache.rs` (4 passed) models the TLS route-pin cache; the new HeapCore-level heap-route pin cache (16 direct-mapped slots, `MAX_LIVE_PINS = 4`, cold-path sweep + round-robin live eviction, `release_all` in `trim_for_recycle`) is covered ONLY by unit tests `tests/b4_xp_heap_pin_cache.rs` (3 passed) and the `entry_layout` layout pin. No loom model exercises the heap-cache insert/evict/sweep schedules or their interleaving with foreign `w_free` and owner drain.
-    > - **Next trigger:** a loom model of the heap-cache arm (insert vs concurrent foreign free vs `MAX_LIVE_PINS` sweep/eviction vs `trim_for_recycle` release), with positive + negative (mutant) controls per the item 186/R6-T53 pattern; block only on a route-lifetime or eviction-policy change, or before promoting the heap cache beyond its current retention envelope.
-    > - **Evidence:** `docs/perf/B4_MT_PIN_NOTOWN.md` §5/§8 (honest note "loom-модели heap-ветки нет"); `docs/perf/_raw_b4_mt_xp.log` (verification section); `src/registry/heap_core_xthread/heap_route_pin_cache.rs` (:66/:70/:194–205); `tests/b4_xp_heap_pin_cache.rs`; `tests/loom_b4_r1_pin_cache.rs` (TLS-path model only).
