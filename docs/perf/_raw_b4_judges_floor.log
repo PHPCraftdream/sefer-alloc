@@ -1,0 +1,25 @@
+# raw log: b4-judges floor probe (step 1)
+base: main f93c1b52, worktree b4-judges
+Tue Oct 20 01:03:12 CEST 2026
+$ timeout 1800 bash .rush/wsl/prof_j_floor_win.sh b4-judges j-floor1
+exit=127
+
+# retry with absolute path
+$ timeout 1800 bash <repo>/.rush/wsl/prof_j_floor_win.sh b4-judges j-floor1
+FLOOR pass=1 larson sefer marginal Ir/step: 319
+FLOOR pass=1 larson mimalloc marginal Ir/step: 212
+FLOOR pass=1 larson bumpa marginal Ir/step: 137
+FLOOR pass=1 larson bumpn marginal Ir/step: 144
+FLOOR pass=1 mstress sefer marginal Ir/step: 494
+FLOOR pass=1 mstress mimalloc marginal Ir/step: 208
+FLOOR pass=1 mstress bumpa marginal Ir/step: 107
+FLOOR pass=1 mstress bumpn marginal Ir/step: 123
+FLOOR pass=2 larson sefer marginal Ir/step: 319
+FLOOR pass=2 larson mimalloc marginal Ir/step: 212
+FLOOR pass=2 larson bumpa marginal Ir/step: 136
+FLOOR pass=2 larson bumpn marginal Ir/step: 144
+FLOOR pass=2 mstress sefer marginal Ir/step: 494
+FLOOR pass=2 mstress mimalloc marginal Ir/step: 208
+FLOOR pass=2 mstress bumpa marginal Ir/step: 107
+FLOOR pass=2 mstress bumpn marginal Ir/step: 123
+exit=0

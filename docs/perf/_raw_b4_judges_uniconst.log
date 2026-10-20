@@ -1,0 +1,67 @@
+# raw log: b4-judges unified runtime/const probe (step 2), clean rerun
+# fix vs first attempt: rt wrappers renamed w_alloc_rt/w_free_rt so --toggle-collect glob *w_alloc* no longer matches w_alloc16/w_alloc64 (first run inflated rt numbers: 110/263)
+base: main f93c1b52, worktree b4-judges
+Tue Oct 20 01:08:41 CEST 2026
+$ timeout 1800 bash <repo>/.rush/wsl/prof_j_uniconst_win.sh b4-judges j-uniconst-sefer2 sefer
+UNICONST pass=1 sefer w_alloc_rt marginal Ir/op: 60
+UNICONST pass=1 sefer w_free_rt marginal Ir/op: 115
+UNICONST pass=1 sefer w_alloc16 marginal Ir/op: 25
+UNICONST pass=1 sefer w_free16 marginal Ir/op: 74
+UNICONST pass=1 sefer w_alloc64 marginal Ir/op: 25
+UNICONST pass=1 sefer w_free64 marginal Ir/op: 74
+UNICONST pass=2 sefer w_alloc_rt marginal Ir/op: 60
+UNICONST pass=2 sefer w_free_rt marginal Ir/op: 115
+UNICONST pass=2 sefer w_alloc16 marginal Ir/op: 25
+UNICONST pass=2 sefer w_free16 marginal Ir/op: 74
+UNICONST pass=2 sefer w_alloc64 marginal Ir/op: 25
+UNICONST pass=2 sefer w_free64 marginal Ir/op: 74
+exit=0
+
+## mimalloc
+$ timeout 1800 bash <repo>/.rush/wsl/prof_j_uniconst_win.sh b4-judges j-uniconst-mi2 mimalloc
+UNICONST pass=1 mimalloc w_alloc_rt marginal Ir/op: 53
+<repo>/.rush/wsl/prof_j_uniconst.sh: line 23: .PROGRAMTOTALS: syntax error: operand expected (error token is ".PROGRAMTOTALS")
+exit=1
+
+## mimalloc (rerun after parser hardening; first mi attempt aborted on flaky TOTALS parse)
+$ timeout 1800 bash <repo>/.rush/wsl/prof_j_uniconst_win.sh b4-judges j-uniconst-mi3 mimalloc
+UNICONST pass=1 mimalloc w_alloc_rt marginal Ir/op: 53
+exit=1
+
+## mimalloc (attempt 3)
+$ timeout 1800 bash <repo>/.rush/wsl/prof_j_uniconst_win.sh b4-judges j-uniconst-mi4 mimalloc
+UNICONST pass=1 mimalloc w_alloc_rt marginal Ir/op: 53
+exit=1
+
+## FINAL rerun (free wrappers now use the layout; prevents LLVM ICF folding of mimalloc free bodies)
+Tue Oct 20 01:14:38 CEST 2026
+$ timeout 1800 bash <repo>/.rush/wsl/prof_j_uniconst_win.sh b4-judges j-uniconst-sefer3 sefer
+UNICONST pass=1 sefer w_alloc_rt marginal Ir/op: 60
+UNICONST pass=1 sefer w_free_rt marginal Ir/op: 116
+UNICONST pass=1 sefer w_alloc16 marginal Ir/op: 25
+UNICONST pass=1 sefer w_free16 marginal Ir/op: 78
+UNICONST pass=1 sefer w_alloc64 marginal Ir/op: 25
+UNICONST pass=1 sefer w_free64 marginal Ir/op: 78
+UNICONST pass=2 sefer w_alloc_rt marginal Ir/op: 60
+UNICONST pass=2 sefer w_free_rt marginal Ir/op: 116
+UNICONST pass=2 sefer w_alloc16 marginal Ir/op: 25
+UNICONST pass=2 sefer w_free16 marginal Ir/op: 78
+UNICONST pass=2 sefer w_alloc64 marginal Ir/op: 25
+UNICONST pass=2 sefer w_free64 marginal Ir/op: 78
+exit=0
+
+## mimalloc final
+$ timeout 1800 bash <repo>/.rush/wsl/prof_j_uniconst_win.sh b4-judges j-uniconst-mi5 mimalloc
+UNICONST pass=1 mimalloc w_alloc_rt marginal Ir/op: 53
+UNICONST pass=1 mimalloc w_free_rt marginal Ir/op: 31
+UNICONST pass=1 mimalloc w_alloc16 marginal Ir/op: 45
+UNICONST pass=1 mimalloc w_free16 marginal Ir/op: 28
+UNICONST pass=1 mimalloc w_alloc64 marginal Ir/op: 48
+UNICONST pass=1 mimalloc w_free64 marginal Ir/op: 28
+UNICONST pass=2 mimalloc w_alloc_rt marginal Ir/op: 53
+UNICONST pass=2 mimalloc w_free_rt marginal Ir/op: 31
+UNICONST pass=2 mimalloc w_alloc16 marginal Ir/op: 45
+UNICONST pass=2 mimalloc w_free16 marginal Ir/op: 28
+UNICONST pass=2 mimalloc w_alloc64 marginal Ir/op: 48
+UNICONST pass=2 mimalloc w_free64 marginal Ir/op: 28
+exit=0
