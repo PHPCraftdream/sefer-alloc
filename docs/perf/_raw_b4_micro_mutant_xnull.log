@@ -1,0 +1,27 @@
+CARGO_TARGET_DIR=$REPO/.rush/cargo-target-C timeout 600 cargo test --locked --features "production batch-api internals bench-internals" --test b4_micro_xnull_null_free_noop   # cwd: worktrees/b4-micro (mutant: null-guard body removed in src/registry/heap_core_xthread/routing.rs publish_foreign; RC=101 RED)
+   Compiling sefer-alloc v0.3.0 ($REPO\worktrees\b4-micro)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.52s
+     Running tests\b4_micro_xnull_null_free_noop.rs (<repo>/.rush/cargo-target-C\debug\deps\b4_micro_xnull_null_free_noop-1a339c0de7ccb88c.exe)
+
+running 2 tests
+test xnull_null_dealloc_is_a_noop ... ok
+test xnull_null_free_counters_untouched ... FAILED
+
+failures:
+
+---- xnull_null_free_counters_untouched stdout ----
+
+thread 'xnull_null_free_counters_untouched' (59476) panicked at tests\b4_micro_xnull_null_free_noop.rs:95:5:
+assertion `left == right` failed: null free must not bump FOREIGN_OR_UNROUTABLE_FREES
+  left: 22
+ right: 6
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    xnull_null_free_counters_untouched
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test b4_micro_xnull_null_free_noop`
+RC=101

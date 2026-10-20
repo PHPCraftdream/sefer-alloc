@@ -76,7 +76,12 @@ pub(crate) struct StateByte {
 impl StateByte {
     /// Granule is at the user (or in a batch's in-flight output).
     pub(crate) const LIVE: u8 = 0;
-    /// Granule is resident in a tcache magazine.
+    /// Granule is resident in a tcache magazine. Only the magazine
+    /// (`alloc-global` + `fastbin`) writes or tests it.
+    #[cfg_attr(
+        not(all(feature = "alloc-global", feature = "fastbin")),
+        allow(dead_code)
+    )]
     pub(crate) const MAG: u8 = 1;
     /// Granule is on a bin free list.
     pub(crate) const FREE: u8 = 2;
