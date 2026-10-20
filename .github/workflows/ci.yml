@@ -3045,6 +3045,31 @@ jobs:
           cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-tree.log"
           grep -F "[miri_global_box_acceptance] COMPLETE narrow_two_rounds" "$RUNNER_TEMP/miri-installed-box-tree.log"
         shell: bash
+      - name: installed Box R1-01 cap-frame flush witness (SB)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+        run: |
+          # R1-01 witness on the `cnt == cap < TCACHE_CAP` dealloc branch (magazine path,
+          # dealloc_own_base.rs): the freelist-next write into the CURRENT block's body
+          # inside the live Box::drop frame was closed by swap-top (magazine evicts the
+          # top slot to the substrate, the current block takes the slot; count unchanged,
+          # byte budget preserved). `fastbin` is REQUIRED — without it the R1-01 branch
+          # does not compile and the witness goes red on a pre-existing
+          # dealloc_small/P1-box path instead.
+          set -o pipefail
+          cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_r1_01_cap_frame 2>&1 | tee "$RUNNER_TEMP/miri-r101-cap-frame.log"
+          grep -F "[miri_r1_01_cap_frame] COMPLETE r1_01_cap_frame" "$RUNNER_TEMP/miri-r101-cap-frame.log"
+        shell: bash
+      - name: installed Box R1-01 cap-frame flush witness under TreeBorrows
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+        run: |
+          # R1-01 witness under TreeBorrows; see the SB step above for the swap-top
+          # closure note and why `fastbin` is required.
+          set -o pipefail
+          cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_r1_01_cap_frame 2>&1 | tee "$RUNNER_TEMP/miri-r101-cap-frame-tree.log"
+          grep -F "[miri_r1_01_cap_frame] COMPLETE r1_01_cap_frame" "$RUNNER_TEMP/miri-r101-cap-frame-tree.log"
+        shell: bash
       - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - alloc-global - strict Stacked Borrows)
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
