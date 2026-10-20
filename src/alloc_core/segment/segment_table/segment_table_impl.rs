@@ -813,6 +813,10 @@ impl SegmentTable {
         // Single compare: `last_key == LAST_EMPTY_KEY` encodes EMPTY, which
         // neither a real SEGMENT-aligned base nor a null key can match.
         if self.last_key == key.addr() {
+            // The memo is part of Tier-1: count its hits with the own_cache hits.
+            #[cfg(feature = "bench-internals")]
+            crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return Some(self.last_root);
         }
         let index = Self::cache_index(key);

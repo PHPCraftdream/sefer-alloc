@@ -173,7 +173,7 @@ flush-событие 509.1→421.0 Ir (−88; значения из записи
 
 - `src/global/sefer_alloc/global_alloc.rs:35-54,104` — N1: fallback-рукав
   вынесен в `#[inline(never)] alloc_via_fallback`; exit-escape внутри хвоста.
-- `src/global/tls_heap.rs:418,489,496` — N1: `bind_slow_tagged_with_config(&LargeCacheConfig)`.
+- ~~`src/global/tls_heap.rs:418,489,496` — N1: `bind_slow_tagged_with_config(&LargeCacheConfig)`.~~ Снято при ревью (см. §9): замер без этой правки даёт те же 55/105 Ir и 62.0/110.2 EstCycles, а файл входит в область десяти строк реестра доказательств.
 - `src/registry/heap_core/alloc/hot.rs:186-199,364-381` — N1: drain слит в
   `alloc_large_without_magazine`, Large-рукава терминальны.
 - `src/alloc_core/small/alloc_core_small_magazine.rs:616-669` — N8: hoisted
@@ -475,3 +475,18 @@ fn main() {
 после N9 вырос до 1046 строк (лимит 1000); free-list-хелперы перенесены без
 изменений в `src/alloc_core/segment/segment_table/hash.rs` (видимость полей
 `free_list`/`free_top` и трёх функций — `pub(super)`), каталог не растёт.
+
+Ещё две правки оркестратора после первого CI PR #82:
+
+- `src/global/tls_heap.rs` возвращён к базе (передача `LargeCacheConfig` по
+  ссылке в холодный `bind_slow_tagged_with_config`). Замер без неё
+  (`docs/perf/_raw_b4_frame_split-tlsrev.log`, `prof_ao`, production):
+  w_alloc 55, w_free 105, EstCycles 62.0 / 110.2 — ровно как у финала §3, то
+  есть правка ничего не давала, а её файл входит в исходную область десяти
+  строк реестра доказательств (R4b-03…R4c-04), которые иначе пришлось бы
+  перепроверять.
+- Попадание в memo N9 теперь считается `CONTAINS_BASE_TIER1_HITS`
+  (`bench-internals`) — memo является частью Tier-1. Без этого
+  `tests/segment_table_contains_base_tier1_counters.rs` падал: освобождения в одном
+  сегменте проходили через memo и не попадали ни в hits, ни в misses.
+  Production-сборка не меняется (счётчик под `bench-internals`).
