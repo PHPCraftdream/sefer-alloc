@@ -59,7 +59,7 @@ v1 — пад `size_of::<HeapCore>()` в `GlobalAlloc::alloc` (оболочка 
 ## Identity измерения
 
 - База измерения (пин, генератор НЕ читает HEAD): `4a2071eda743c63557f9dc065f34fff8e1fabf5e`
-- Логика измерения: `tests/b4_30_first_alloc_min_stack.rs`, sha256 файла с ЗАМАСКИРОВАННЫМИ значениями `const BUDGET_*` = `7b76596b0094181357498db5fa8ea8d37d259d76fa87896fdb073f76cb3a4070` — этот пин assert'ится генератором и продюсером evidence против ЖИВОГО файла: менять константы бюджетов можно без перемера, менять логику измерения — нельзя (требуется перемер и новый пин). Текущий sha файла целиком: `d1a32987aa924c846099e4cf150cefc5153045c88a180544f5daecd30b608f49`.
+- Логика измерения: `tests/b4_30_first_alloc_min_stack.rs`, sha256 файла с ЗАМАСКИРОВАННЫМИ значениями `const BUDGET_*` = `eec4ab36653e46c00752603373793347127923fddd2a9b26b533d7360251da43` — этот пин assert'ится генератором и продюсером evidence против ЖИВОГО файла: менять константы бюджетов можно без перемера, менять логику измерения — нельзя (требуется перемер и новый пин). Текущий sha файла целиком: `ea81ac86bd7d199fadaccbf2545343e5ae7f22f95c9688a3a2416083087f2e74`.
 - Evidence: `docs/perf/b4_30_probes/b4_30_fix7_budget_evidence.csv` (sha256 `5b520d0a85c7b4e6c09d118517593ee0994feecf26dd766c8e36645cf80cd8f7`), выведена продюсером `scripts/b4_30_fix7_evidence.mjs` из закоммиченных сырых логов `docs/perf/_raw_b4_30_fix7_*.log` (≥2 полных независимых прогона на ячейку, worst = max need); манифест среды прогонов — `docs/perf/b4_30_probes/b4_30_fix7_run_manifest.csv`. 8 ячеек (windows/linux × debug/release × production internals / --all-features) × 3 сценария, need в дифференциальной метрике на 2 МиБ worker-потоке.
 - rustc: rustc 1.98.1; rustc 1.97.0
 

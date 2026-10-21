@@ -1,6 +1,6 @@
 # identity: generator=scripts/b4_30_stack_table.mjs sha256=989f1a66331d36eb4ba2d72c55607bfab3a6383fa2042c3154600247114cf686
 # measured_base=4a2071eda743c63557f9dc065f34fff8e1fabf5e (worktree base commit of the measurement; the generator does NOT read HEAD — outputs stay reproducible after the commit)
-# measured test logic sha256 (BUDGET_* values masked)=62baadba40db989ccd87200bda6eb34db86df6566ddd991adc78238f9eeeee92; live masked=7b76596b0094181357498db5fa8ea8d37d259d76fa87896fdb073f76cb3a4070; current test file sha256=d1a32987aa924c846099e4cf150cefc5153045c88a180544f5daecd30b608f49
+# measured test logic sha256 (BUDGET_* values masked)=62baadba40db989ccd87200bda6eb34db86df6566ddd991adc78238f9eeeee92; live masked=eec4ab36653e46c00752603373793347127923fddd2a9b26b533d7360251da43; current test file sha256=ea81ac86bd7d199fadaccbf2545343e5ae7f22f95c9688a3a2416083087f2e74
 # evidence=docs/perf/b4_30_probes/b4_30_fix7_budget_evidence.csv sha256=5b520d0a85c7b4e6c09d118517593ee0994feecf26dd766c8e36645cf80cd8f7 (producer: scripts/b4_30_fix7_evidence.mjs; raw logs: docs/perf/_raw_b4_30_fix7_*.log)
 # budget rule: budget = ceil_1024(worst_differential) + max(4096, ceil_1024(0.25 * worst_differential)), asserted equal to the test's BUDGET_* constants
 os,profile,features,scenario,need,fs,fc,stride,boundary,control,rustc,test_sha,budget,budget_base,worst_os_profile,margin,cpu,os_build,runs

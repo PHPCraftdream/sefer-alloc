@@ -10,7 +10,9 @@
 // logic. This script closes that gate: it recomputes the NORMALIZED+MASKED
 // sha of the LIVE test file and requires it to be accepted by the pin
 // registry in scripts/b4_30_fix7_evidence.mjs (the measured pin, or one of
-// its explicitly listed format-only successors).
+// its explicitly listed logicEquivalents successors — revisions proven
+// EQUIVALENT FOR NEED, e.g. formatting-only or, since fix9, the
+// confirmation-probe slack change that does not participate in need).
 //
 // Normalization + masking + the comment-dropping safety argument are
 // IMPORTED from scripts/b4_30_fix7_evidence.mjs (normalizedMaskedTestSha /
@@ -47,7 +49,7 @@ if (!MASKED_TEST_SHA_PINS.accepts(masked)) {
   console.error(
     `verify-b4-30-pin: normalized masked sha of ${TEST} = ${masked} is NOT accepted\n` +
       `  pinned (measured at 5940f78f): ${MASKED_TEST_SHA_PINS.pin}\n` +
-      `  format-only successors: ${JSON.stringify(MASKED_TEST_SHA_PINS.formatOnly)}\n` +
+      `  logic-equivalent successors: ${JSON.stringify(MASKED_TEST_SHA_PINS.logicEquivalents)}\n` +
       `  The measurement logic changed — re-measure all 8 cells, refresh the raw logs and evidence, then update the pin.`,
   );
   process.exit(1);
@@ -55,5 +57,5 @@ if (!MASKED_TEST_SHA_PINS.accepts(masked)) {
 const via =
   masked === MASKED_TEST_SHA_PINS.pin
     ? "measured pin"
-    : `format-only successor (${MASKED_TEST_SHA_PINS.formatOnly[masked]})`;
+    : `logic-equivalent successor (${MASKED_TEST_SHA_PINS.logicEquivalents[masked]})`;
 console.log(`verify-b4-30-pin: OK — ${TEST} matches the ${via} (${masked})`);

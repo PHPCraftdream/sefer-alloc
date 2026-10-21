@@ -130,6 +130,25 @@ const BUDGET_WIN_DEBUG: usize = 87040;
 const BUDGET_WIN_RELEASE: usize = 19456;
 const BUDGET_LINUX_DEBUG: usize = 86016;
 const BUDGET_LINUX_RELEASE: usize = 17408;
+/// Confirmation-probe slack ABOVE the measured boundary `fs` (fix9). The
+/// runtime confirmation probe runs in a FRESH child process, and on Windows
+/// the frame placement of the eater differs between processes: the fix7 raw
+/// logs show fs/fc spreads across independent runs of the same cell up to
+/// 224 B (win-debug-production fs 89639..89863, stride 224 => boundary moves
+/// in whole strides), and the contract records cross-run frame jitter up to
+/// ~448 B (mutant v4 win-debug notes). A probe at exactly `fs` can therefore
+/// land below the child process's own minimal passing boundary and overflow
+/// spuriously (CI flake: job `test windows (production)`, rustc 1.99.1,
+/// commit 153112ae, `confirmation probe at measured boundary 34959
+/// overflowed`). The probe target is raised by a platform slack constant:
+/// windows = 1024 B (>= 1 KiB, ~2.3x the worst observed 448 B jitter);
+/// linux = 256 B (0 jitter observed in all 12 wsl raw logs — fs identical
+/// across every run of every cell — but kept NONZERO as protection against
+/// future nondeterminism). The slack does NOT enter `need` or the budget:
+/// the boundary bisect and `need = fs - fc + stride` are untouched, and the
+/// probe target stays far inside the budget reserve (>= 4 KiB).
+const CONF_SLACK_WINDOWS: usize = 1024;
+const CONF_SLACK_LINUX: usize = 256;
 /// Fully independent bracket+bisect searches per boundary; the worst (max
 /// free at the passing boundary) is taken.
 const REPEATS: usize = 3;
@@ -637,7 +656,9 @@ fn skip_if_unmeasurable() -> bool {
 /// searches (worst free), the differential `need = fs - fc + stride` over
 /// the control (or the absolute upper estimate when the control floored),
 /// the budget assert (only under SEFER_B4_30_ENFORCE=1), a runtime
-/// confirmation probe at the measured boundary, then the markers.
+/// confirmation probe at the measured boundary plus the platform
+/// cross-process slack (fix9; the probe does not participate in `need`),
+/// then the markers.
 fn measure(s: &str) {
     let (stride, fc, free0, control_floor) = control();
     let mut fs = 0;
@@ -681,16 +702,39 @@ fn measure(s: &str) {
             _ => println!("[b4-30] enforced scenario=foreign-free"),
         }
     }
-    // Runtime confirmation: the scenario must pass AT its measured boundary
-    // target, stopping inside the dynamic-stride window [fs, fs + stride).
-    let cfree = match step(s, 0, Some(fs)) {
-        Step::Pass(p) => p.free,
-        Step::Overflow => panic!("confirmation probe at measured boundary {fs} overflowed"),
+    // Runtime confirmation (fix9): the scenario must still pass in a fresh
+    // child process at a target NOT BELOW the measured boundary. The target
+    // is `fs + CONF_SLACK_*` (see the constants): the confirming child's
+    // frame placement jitters against the measuring process (Windows up to
+    // ~448 B observed), so probing at exactly `fs` flakes with a spurious
+    // overflow (CI: job `test windows (production)`, rustc 1.99.1, commit
+    // 153112ae). Hardness is kept: the probe MUST pass, and because the
+    // child stops in `[t, t + stride)` of its own free coordinate, a pass at
+    // `t = fs + slack` proves the scenario executed at free >=
+    // `t - stride >= fs` (slack >= stride holds for both platforms:
+    // 1024 >= 224, 256 >= 192) — i.e. the upper bound on the requirement
+    // is still demonstrated by execution, not weakened into a no-op.
+    let slack = if cfg!(windows) {
+        CONF_SLACK_WINDOWS
+    } else {
+        CONF_SLACK_LINUX
     };
+    let target = fs + slack;
+    let cfree = match step(s, 0, Some(target)) {
+        Step::Pass(p) => p.free,
+        Step::Overflow => {
+            panic!("confirmation probe at measured boundary {fs} + slack {slack} overflowed")
+        }
+    };
+    // FAIL both ways: below `target - stride` would mean the measured
+    // boundary is overstated (the scenario needs MORE than `fs` in this
+    // child); at/above `target + stride` cannot result from a passing stop
+    // window but is asserted anyway so the window stays explicit.
     assert!(
-        cfree >= fs && cfree < fs + stride,
-        "confirmation free {cfree} outside the dynamic-stride window [{fs}, {})",
-        fs + stride
+        cfree + stride >= target && cfree < target + stride,
+        "confirmation free {cfree} outside the window [{}, {}) at target {target} (boundary {fs} + slack {slack})",
+        target.saturating_sub(stride),
+        target + stride
     );
     // Static-literal scenario markers (CI greps the verbatim prefix; kept as
     // bare println!("<literal>") so scripts/verify-ci-sentinels.mjs resolves
