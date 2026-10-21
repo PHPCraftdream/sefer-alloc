@@ -1,0 +1,37 @@
+== MUTATION TEST: B4_U31_SCAN_NO_PENDING always-increment mutant ==
+date: 2026-10-21T00:05:37Z
+mutation: src/alloc_core/alloc_core/sidecar_drain.rs U31NoPendingObserver::finish: 'if self.nonempty_words == 0' -> 'if true' (always fire NO_PENDING)
+command: CARGO_TARGET_DIR=<repo>/.rush/cargo-target-U cargo test --test b4_u31_trigger_growth16_oracle --features production,bench-internals,internals -- --nocapture --test-threads=1
+expected: u31_no_pending_counts_empty_scans_but_not_published_pending_scans goes red on the 'published' leg (nopending == 0 assertion)
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc\worktrees\b4-u31trig)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.16s
+     Running tests\b4_u31_trigger_growth16_oracle.rs (<repo>/.rush/cargo-target-U\debug\deps\b4_u31_trigger_growth16_oracle-bb7be79d00db888c.exe)
+
+running 2 tests
+test growth16_discovery_counters_positive ... {"growth16_n":32768,"find_segment_calls":2048,"scan_calls":2048,"scan_words":524800,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":32768,"u31_scan_segments":2048,"u31_holders_base":2048,"u31_scan_no_pending":2048}
+{"growth16_n":65536,"find_segment_calls":2048,"scan_calls":2048,"scan_words":1573376,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":65536,"u31_scan_segments":2048,"u31_holders_base":2048,"u31_scan_no_pending":2048}
+{"growth16_n":131072,"find_segment_calls":4096,"scan_calls":4096,"scan_words":6292480,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":131072,"u31_scan_segments":4096,"u31_holders_base":4096,"u31_scan_no_pending":4096}
+ok
+test u31_no_pending_counts_empty_scans_but_not_published_pending_scans ... {"leg":"empty","class":1,"found":false,"u31_scan_segments":1,"u31_scan_no_pending":1}
+{"leg":"published","found":true,"u31_scan_segments":1,"u31_scan_no_pending":1}
+
+thread 'u31_no_pending_counts_empty_scans_but_not_published_pending_scans' (20252) panicked at tests\b4_u31_trigger_growth16_oracle.rs:197:5:
+assertion `left == right` failed: leg published: the scan found a nonzero pending word — NO_PENDING must NOT fire (mutant "always no-pending" goes red here)
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    u31_no_pending_counts_empty_scans_but_not_published_pending_scans
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+
+error: test failed, to rerun pass `--test b4_u31_trigger_growth16_oracle`
+exit=101
+== REVERTED; mutant gone: 0 ==

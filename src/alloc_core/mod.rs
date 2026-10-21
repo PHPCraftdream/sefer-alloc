@@ -220,6 +220,7 @@ pub(crate) use alloc_core::XNULL_NULL_TAIL_GUARD;
 pub(crate) use alloc_core::{
     B4_CURSOR_HITS, B4_CURSOR_MISSES, B4_DIRECTORY_LOOKUPS, B4_FIND_SEGMENT_CALLS,
     B4_FOREIGN_PUBLISH_OK, B4_SCAN_CALLS, B4_SCAN_WORDS, B4_SHARD_LOCK_SPINS, B4_SHARD_LOCK_YIELDS,
+    B4_U31_DISCOVERY_SCANS, B4_U31_SCAN_HOLDERS_BASE, B4_U31_SCAN_NO_PENDING, B4_U31_SCAN_SEGMENTS,
 };
 medium_promotion_reachable! {
     /// R29-5 (task #436) re-export seam: the medium→Large promotion-frequency /

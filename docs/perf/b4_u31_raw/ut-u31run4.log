@@ -1,0 +1,26 @@
+git_diff_sha256 512508e8a7ba2b91682ec33ed905f899e4c50e4095db881746ea1799d2a82ec7
+bin ~/ab/tgt-ut-u31run4/release/examples/ut_u31_probe
+IR_TOTAL sefer 32768 12499110
+SELF_IR scan.rs=155647 bitmap_scan.rs=3154947 sum=3310594 total=12499110
+ATTR_TOTALS RESIDUAL annotated=7833390 program=12499110 uncovered=4665720
+IR_TOTAL sefer 65536 33895720
+SELF_IR scan.rs=311295 bitmap_scan.rs=12601347 sum=12912642 total=33895720
+ATTR_TOTALS RESIDUAL annotated=21816750 program=33895720 uncovered=12078970
+IR_TOTAL sefer 131072 105000655
+SELF_IR scan.rs=622591 bitmap_scan.rs=50368515 sum=50991106 total=105000655
+ATTR_TOTALS RESIDUAL annotated=68657838 program=105000655 uncovered=36342817
+IR_TOTAL mimalloc 32768 3430226
+SELF_IR scan.rs=0 bitmap_scan.rs=0 sum=0 total=3430226
+ATTR_TOTALS RESIDUAL annotated=2715717 program=3430226 uncovered=714509
+IR_TOTAL mimalloc 65536 6358244
+SELF_IR scan.rs=0 bitmap_scan.rs=0 sum=0 total=6358244
+ATTR_TOTALS RESIDUAL annotated=5282373 program=6358244 uncovered=1075871
+IR_TOTAL mimalloc 131072 12214979
+SELF_IR scan.rs=0 bitmap_scan.rs=0 sum=0 total=12214979
+ATTR_TOTALS RESIDUAL annotated=10416337 program=12214979 uncovered=1798642
+COUNTERS {"mode":"sefer","growth16_n":32768,"find_segment_calls":2048,"scan_calls":2048,"scan_words":524800,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":32768,"u31_scan_segments":2048,"u31_holders_base":2048,"u31_scan_no_pending":2048}
+COUNTERS {"mode":"sefer","growth16_n":65536,"find_segment_calls":4096,"scan_calls":4096,"scan_words":2098176,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":65536,"u31_scan_segments":4096,"u31_holders_base":4096,"u31_scan_no_pending":4096}
+COUNTERS {"mode":"sefer","growth16_n":131072,"find_segment_calls":8192,"scan_calls":8192,"scan_words":8390656,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":131072,"u31_scan_segments":8192,"u31_holders_base":8192,"u31_scan_no_pending":8192}

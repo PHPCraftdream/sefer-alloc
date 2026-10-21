@@ -32,6 +32,52 @@ pub(crate) static B4_SCAN_WORDS: core::sync::atomic::AtomicU64 =
 pub(crate) static B4_FOREIGN_PUBLISH_OK: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// B4 U31 trigger observer (owner-drain skip, OPEN_ITEMS item 90): routed
+/// Small sidecar scans that reached a live route slot (`scan_small_from`
+/// past base/sidecar validation). Denominator of the "holders == base"
+/// fraction.
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_U31_SCAN_SEGMENTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 U31 trigger observer: SECONDARY slice of [`B4_U31_SCAN_SEGMENTS`] —
+/// scans whose route `Entry.refs` equaled the base value 1 (owner reference
+/// only) at the moment of the scan. This is a snapshot of CURRENT holders
+/// (base), NOT evidence that no pins were published since the previous
+/// scan: `RoutePin::publish_small` publishes and immediately releases its
+/// pin, so `refs` returns to base even with nonempty pending bits. For the
+/// U31 upper bound of skippable scans see
+/// [`B4_U31_SCAN_NO_PENDING`] / [`B4_U31_DISCOVERY_SCANS`].
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_U31_SCAN_HOLDERS_BASE: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 U31 trigger observer: of [`B4_U31_SCAN_SEGMENTS`], discovery scans
+/// (`drain_segment_sidecar`) whose ENTIRE routed segment scan found no
+/// nonzero pending word (every visited bitmap word was zero; a zero-word
+/// scan range counts vacuously). Upper bound of the U31 skip benefit: such
+/// a scan could not have reclaimed anything even without the scan. Fired
+/// from `U31NoPendingObserver`, NOT from the `changed_classes == 0`
+/// branch: a nonzero word whose records are all already FREE/MAG in the
+/// state byte yields zero changed classes while pending bits existed
+/// (`alloc_core_small_reclaim.rs:52-58`).
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_U31_SCAN_NO_PENDING: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 U31 trigger observer: discovery scans (`drain_segment_sidecar`), the
+/// exact same set of scans over which [`B4_U31_SCAN_NO_PENDING`] is
+/// counted — denominator of the U31 upper bound
+/// `B4_U31_SCAN_NO_PENDING / B4_U31_DISCOVERY_SCANS` ("how many of the
+/// discovery scans were empty"). Segments scanned by NON-discovery paths
+/// (strict trim, bounded step — they have their own observers) are NOT in
+/// this set: that is the DEFINITION of this limit. The broader all-sites
+/// denominator ([`B4_U31_SCAN_SEGMENTS`], with the `holders == base`
+/// numerator [`B4_U31_SCAN_HOLDERS_BASE`]) is a different measurement.
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_U31_DISCOVERY_SCANS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): route-directory
 /// lookups (`RouteDirectory::lookup`).
 #[cfg(feature = "bench-internals")]

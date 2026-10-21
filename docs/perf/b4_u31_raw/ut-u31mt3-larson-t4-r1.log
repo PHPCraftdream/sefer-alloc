@@ -1,0 +1,5 @@
+git_diff_sha256 bcaba550066895a065d416952059b30fe4c1baf146cad295838dcaf088d92a3d
+workload larson threads 4 steps 100000
+sefer ops_actual=425000
+{"workload":"larson","threads":4,"steps":100000,"find_segment_calls":995,"scan_calls":995,"scan_words":933425,"foreign_publish_ok":25000,"directory_lookups":15,"shard_lock_spins":0,"shard_lock_yields":0}
+{"workload":"larson","threads":4,"steps":100000,"ops_actual":425000,"scan_words":933425,"scan_words_per_op_scaled_1e3":2196,"u31_scan_segments":999,"u31_holders_base":274,"u31_scan_no_pending":429,"u31_discovery_scans":995,"holders_base_num":274,"holders_base_den":999}
