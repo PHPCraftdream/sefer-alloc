@@ -592,6 +592,91 @@ counter-правок (счётчики под cfg) — `daf97989…` (см. §7)
 - iai A/B судей: mstress, larson, ao, batch, thrash64 (все шаги пакета).
 - Miri-клетки зоны: `state_byte_*` miri-клетки, `b4_r1_pin_cache_miri`.
 
+## 13. CI-квитанции (iai A/B и mt-bench) — измерение, без изменения runtime
+
+Вывод `node scripts/b4_micro_ci_table.mjs` (сырьё: `_raw_b4_micro_iai_ab.csv`,
+`_raw_b4_micro_iai_ab_verdict.log` — r20 gate-run 39517950738 на `e26321de`;
+`_raw_b4_micro_iai_ab_v1.csv` — r20 39511431025 на `bed33681` (ещё с
+горячими счётчиками-наблюдателями); `_raw_b4_micro_mt_v1a.log`/`_v1b.log`/`_v2.log` —
+mt-bench 39511430913 / 39511430538 / 39517950754, усечены до таблиц; сводка —
+`B4_MICRO_PACK_ci_summary.csv`):
+
+```text
+iai A/B (r20 gate-run, A = `4a2071ed`, B = `e26321de`, features `production bench-internals internals`):
+- cells with A > 100 Ir: 77; better 62, worse 8, equal 7; largest regression 0.44 %
+- mimalloc control cells: 13, all Δ = 0: yes
+
+| cell (largest gains) | A Ir | B Ir | Δ | Δ % |
+|---|---:|---:|---:|---:|
+| `oscillating_live_set_16b` | 68386 | 67068 | -1318 | -1.93 % |
+| `recycle_alloc_free_256x16b` | 151581 | 148732 | -2849 | -1.88 % |
+| `recycle_alloc_free_256x64b` | 153084 | 150232 | -2852 | -1.86 % |
+| `growth16_n` | 13489142 | 13247350 | -241792 | -1.79 % |
+| `recycle_alloc_only_256x16b` | 124257 | 122284 | -1973 | -1.59 % |
+| `growth16_2n` | 36371064 | 35887480 | -483584 | -1.33 % |
+| `dealloc_free_only_1088_16b_n1024` | 269515 | 266092 | -3423 | -1.27 % |
+| `cold_alloc_free_256x16b_4n` | 271360 | 268026 | -3334 | -1.23 % |
+| `cold_alloc_free_256x16b_2n` | 156484 | 154816 | -1668 | -1.07 % |
+| `dealloc_free_only_1088_16b_n256` | 190411 | 188428 | -1983 | -1.04 % |
+
+| cell (all regressions) | A Ir | B Ir | Δ | Δ % |
+|---|---:|---:|---:|---:|
+| `r19_prf01_publication` | 149610 | 150265 | 655 | 0.44 % |
+| `carve_batch_only_16b` | 3453 | 3462 | 9 | 0.26 % |
+| `seg_cycle_decommit_256k` | 1673547 | 1676348 | 2801 | 0.17 % |
+| `carve_batch_only_16b_2n` | 9610 | 9619 | 9 | 0.09 % |
+| `multiseg_cold_256k` | 1554997 | 1556070 | 1073 | 0.07 % |
+| `large_cache_hit_only_4mib` | 57877 | 57885 | 8 | 0.01 % |
+| `large_cache_free_slot_search_prefill_only` | 61280 | 61287 | 7 | 0.01 % |
+| `large_cache_free_slot_search_cycle_only` | 73433 | 73440 | 7 | 0.01 % |
+
+B side, first head (hot-path observer counters) → final head: 74 cells changed; largest:
+
+| cell | B v1 | B v2 | v1 − v2 |
+|---|---:|---:|---:|
+| `growth16_4n` | 110094863 | 109479439 | 615424 |
+| `growth16_2n` | 36195192 | 35887480 | 307712 |
+| `growth16_n` | 13401206 | 13247350 | 153856 |
+| `r19_prf01_joined_producer_same_word` | 488309 | 480117 | 8192 |
+| `cold_alloc_free_256x16b_4n` | 269762 | 268026 | 1736 |
+| `recycle_alloc_free_256x64b` | 151893 | 150232 | 1661 |
+| `recycle_alloc_free_256x16b` | 150387 | 148732 | 1655 |
+| `dealloc_free_only_1088_16b_n1024` | 267746 | 266092 | 1654 |
+
+mt-bench, production (identical production code in all three PR #89 runs), SeferAlloc / mimalloc ops-per-sec ratio:
+
+| OS | workload | T | PR #87 head (run1 / run2) | PR #89, 6 runs: min … max |
+|---|---|---:|---|---|
+| ubuntu-24.04 | larson | 1 | 0.91 / 0.93 | 0.76 … 0.92 |
+| ubuntu-24.04 | larson | 2 | 1.30 / 1.02 | 0.64 … 1.25 |
+| ubuntu-24.04 | larson | 4 | 1.27 / 1.26 | 1.12 … 1.52 |
+| ubuntu-24.04 | mstress | 1 | 0.77 / 0.76 | 0.62 … 0.78 |
+| ubuntu-24.04 | mstress | 2 | 0.75 / 0.75 | 0.62 … 1.13 |
+| ubuntu-24.04 | mstress | 4 | 0.69 / 0.74 | 0.62 … 0.75 |
+| windows-2022 | larson | 1 | 0.75 / 0.72 | 0.70 … 0.72 |
+| windows-2022 | larson | 2 | 0.95 / 0.73 | 0.74 … 0.95 |
+| windows-2022 | larson | 4 | 0.83 / 0.65 | 0.82 … 0.96 |
+| windows-2022 | mstress | 1 | 0.54 / 0.54 | 0.41 … 0.55 |
+| windows-2022 | mstress | 2 | 0.73 / 0.55 | 0.41 … 0.68 |
+| windows-2022 | mstress | 4 | 0.66 / 0.56 | 0.59 … 0.63 |
+```
+
+**Итог iai (детерминированный судья).** Второй прогон v1 (r20 39511430638)
+дал побитово те же Ir во всех ячейках, что и 39511431025. Регрессии финальной
+головы — ≤ 0.44 % (8 ячеек из 77): `r19_prf01_publication` (+655 Ir) и
+carve-ячейки (`carve_batch_only_16b` +9 Ir, `seg_cycle_decommit_256k` +0.17 %,
+`multiseg_cold_256k` +0.07 %) — путь S1 (`issue_state`-параметр carve/drain и
+`bench-internals`-счётчики S1 на refill); ни одна не входит в предрегистрированные
+судьи §0.1, которые все прошли. Разница v1 → v2 на стороне B (`growth16_4n`
+−615 424 Ir, producer −8 192 Ir) — это ровно удалённые горячие наблюдатели
+(см. «Наблюдатели после замера»): в production-сборке их не было никогда.
+
+**mt-bench — справочно, не судья.** Шесть прогонов PR #89 — один и тот же
+production-код (наблюдатели только под `bench-internals`), а разброс отношения
+к mimalloc внутри них доходит до 0.64 … 1.25 (ubuntu larson T=2); значения
+головы PR #87 лежат внутри или на границе этого разброса во всех 12 ячейках.
+Межпрогонное сравнение на общих VM не различает эффекты такого размера.
+
 ## Приложение А. Сверка с сырыми логами
 
 Вывод `node scripts/b4_micro_pack_table.mjs` (парсит

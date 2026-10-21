@@ -1,0 +1,117 @@
+r6 A/B iai verdict
+
+cell                                                   A_Ir           B_Ir        delta  delta_pct  verdict
+aligned_churn_640b_a128                               51149          50932         -217     -0.42%  info
+alloc_clear_magazine_only_16b                         46969          46914          -55     -0.12%  info
+alloc_clear_magazine_only_16b_prefix                  46838          46783          -55     -0.12%  info
+alloc_magazine_hit_only_16b                           50262          49987         -275     -0.55%  info
+alloc_magazine_prefill_only_16b                       49984          49709         -275     -0.55%  info
+alloc_zeroed_calloc_recycled_64k                          3              3            0      0.00%  info
+alloc_zeroed_calloc_recycled_64k_prefix                   3              3            0      0.00%  info
+alloc_zeroed_calloc_virgin_64k                            3              3            0      0.00%  info
+alloc_zeroed_calloc_virgin_64k_prefix                     3              3            0      0.00%  info
+alloc_zeroed_magazine_hit_only_16b                    50295          50020         -275     -0.55%  info
+alloc_zeroed_magazine_prefill_only_16b                49984          49709         -275     -0.55%  info
+carve_batch_only_16b                                   3453           3462            9      0.26%  info
+carve_batch_only_16b_2n                                9610           9619            9      0.09%  info
+churn_256b                                            50619          50404         -215     -0.42%  info
+churn_write_256b                                      50747          50532         -215     -0.42%  info
+cold_alloc_free_256x16b                               97978          97143         -835     -0.85%  info
+cold_alloc_free_256x16b_2n                           156484         154816        -1668     -1.07%  info
+cold_alloc_free_256x16b_4n                           271360         268026        -3334     -1.23%  info
+cold_alloc_free_256x64b                               99481          98643         -838     -0.84%  info
+cold_alloc_only_256x16b                               71526          71173         -353     -0.49%  info
+cold_alloc_only_256x16b_2n                           102704         101998         -706     -0.69%  info
+cold_alloc_only_256x16b_4n                           162924         161512        -1412     -0.87%  info
+dealloc_batch_fresh_0_16b                                 3              3            0      0.00%  info
+dealloc_batch_fresh_1024_16b                              3              3            0      0.00%  info
+dealloc_batch_fresh_128_16b                               3              3            0      0.00%  info
+dealloc_batch_fresh_16_16b                                3              3            0      0.00%  info
+dealloc_batch_fresh_17_16b                                3              3            0      0.00%  info
+dealloc_batch_fresh_1_16b                                 3              3            0      0.00%  info
+dealloc_batch_fresh_200_16b                               3              3            0      0.00%  info
+dealloc_batch_fresh_512_16b                               3              3            0      0.00%  info
+dealloc_batch_fresh_64_16b                                3              3            0      0.00%  info
+dealloc_batch_fresh_80_16b                                3              3            0      0.00%  info
+dealloc_batch_fresh_81_16b                                3              3            0      0.00%  info
+dealloc_batch_fresh_8_16b                                 3              3            0      0.00%  info
+dealloc_contains_base_probe_only_16b                  51603          51514          -89     -0.17%  info
+dealloc_flush_all_tcache_16b                          47953          47867          -86     -0.18%  info
+dealloc_flush_all_tcache_16b_prefix                   46848          46761          -87     -0.19%  info
+dealloc_flush_class_only_16b                          46881          46826          -55     -0.12%  info
+dealloc_flush_class_only_16b_prefix                   46427          46372          -55     -0.12%  info
+dealloc_free_only_1088_16b_n1024                     269515         266092        -3423     -1.27%  info
+dealloc_free_only_1088_16b_n17                       166200         164666        -1534     -0.92%  info
+dealloc_free_only_1088_16b_n256                      190411         188428        -1983     -1.04%  info
+dealloc_free_only_1088_16b_n32                       167339         165776        -1563     -0.93%  info
+dealloc_free_only_1088_16b_n64                       170635         169012        -1623     -0.95%  info
+dealloc_free_only_16b                                 56502          56289         -213     -0.38%  info
+dealloc_free_only_16b_n1                              50875          50783          -92     -0.18%  info
+dealloc_free_only_16b_n16                             51555          51434         -121     -0.23%  info
+dealloc_free_only_16b_n17                             52065          51943         -122     -0.23%  info
+dealloc_free_only_16b_n32                             53204          53053         -151     -0.28%  info
+dealloc_free_only_16b_n8                              51195          51090         -105     -0.21%  info
+dealloc_free_only_16b_n9                              51240          51133         -107     -0.21%  info
+dealloc_hash_contains_only_probe_16b                  53157          53068          -89     -0.17%  info
+dealloc_own_thread_body_only_16b                      56897          56411         -486     -0.85%  info
+dealloc_prealloc_only_1088_16b                       164922         163421        -1501     -0.91%  info
+dealloc_prealloc_only_16b                             50787          50698          -89     -0.18%  info
+dealloc_realloc_burst_1088_16b_n17                   168241         166668        -1573     -0.93%  info
+dealloc_segment_base_of_ptr_probe_only_16b            51358          51269          -89     -0.17%  info
+decomp_full_cycle_8x                                 608846         608846            0      0.00%  info
+decomp_os_roundtrip_8x                                  861            861            0      0.00%  info
+growth16_2n                                        36371064       35887480      -483584     -1.33%  info
+growth16_4n                                       110446607      109479439      -967168     -0.88%  info
+growth16_n                                         13489142       13247350      -241792     -1.79%  info
+large_alloc_free_cycle                                46960          46960            0      0.00%  info
+large_cache_eviction_hit_only_41x4mib                234661         234497         -164     -0.07%  info
+large_cache_eviction_prefill_only_41x4mib            156430         156348          -82     -0.05%  info
+large_cache_free_slot_search_cycle_only               73433          73440            7      0.01%  info
+large_cache_free_slot_search_prefill_only             61280          61287            7      0.01%  info
+large_cache_hit_only_4mib                             57877          57885            8      0.01%  info
+large_cache_payload_hit_only_4mib                     45711          45711            0      0.00%  info
+large_cache_payload_prefill_only_4mib                 44285          44285            0      0.00%  info
+large_cache_prefill_only_4mib                         56453          56453            0      0.00%  info
+medium_class_dealloc_churn_16b                        50619          50404         -215     -0.42%  info
+mimalloc_bootstrap_proxy                              13050          13050            0      0.00%  info
+mimalloc_churn_256b                                   16130          16130            0      0.00%  info
+mimalloc_cold_alloc_free_256x16b                      32325          32325            0      0.00%  info
+mimalloc_cold_alloc_free_256x16b_2n                   58389          58389            0      0.00%  info
+mimalloc_cold_alloc_free_256x16b_4n                  106653         106653            0      0.00%  info
+mimalloc_cold_alloc_free_256x64b                      33329          33329            0      0.00%  info
+mimalloc_cold_alloc_only_256x16b                      24584          24584            0      0.00%  info
+mimalloc_cold_alloc_only_256x16b_2n                   42968          42968            0      0.00%  info
+mimalloc_cold_alloc_only_256x16b_4n                   75872          75872            0      0.00%  info
+mimalloc_recycle_alloc_free_256x16b                   53027          53027            0      0.00%  info
+mimalloc_recycle_alloc_free_256x64b                   54031          54031            0      0.00%  info
+mimalloc_small_churn_16b                              16629          16629            0      0.00%  info
+mimalloc_small_churn_16b_2n                           21557          21557            0      0.00%  info
+multiseg_cold_256k                                  1554997        1556070         1073      0.07%  info
+oscillating_live_set_16b                              68386          67068        -1318     -1.93%  info
+r19_prf01_joined_producer_same_word                  480117         480117            0      0.00%  info
+r19_prf01_publication                                149610         150265          655      0.44%  info
+realloc_grow                                         568394         568241         -153     -0.03%  info
+realloc_large_equal_8mib                           16823948       16823938          -10     -0.00%  info
+realloc_large_equal_8mib_prefix                     8435112        8435106           -6     -0.00%  info
+realloc_large_grow_6_to_8mib                       15421267       15421258           -9     -0.00%  info
+realloc_large_grow_6_to_8mib_prefix                 6337960        6337954           -6     -0.00%  info
+realloc_large_shrink_8_to_3mib                     11929546       11929537           -9     -0.00%  info
+realloc_large_shrink_8_to_3mib_prefix               8435112        8435106           -6     -0.00%  info
+realloc_large_shrink_8_to_4p5mib                   13675402       13675393           -9     -0.00%  info
+realloc_large_shrink_8_to_4p5mib_prefix             8435112        8435106           -6     -0.00%  info
+realloc_large_shrink_8_to_6mib                     15421258       15421249           -9     -0.00%  info
+realloc_large_shrink_8_to_6mib_prefix               8435112        8435106           -6     -0.00%  info
+recycle_alloc_free_256x16b                           151581         148732        -2849     -1.88%  info
+recycle_alloc_free_256x64b                           153084         150232        -2852     -1.86%  info
+recycle_alloc_only_256x16b                           124257         122284        -1973     -1.59%  info
+seg_cycle_decommit_256k                             1673547        1676348         2801      0.17%  info
+small_churn_16b                                       50619          50404         -215     -0.42%  info
+small_churn_16b_2n                                    54907          54500         -407     -0.74%  info
+
+no thresholds in config: informational only, no pass/fail
+
+A=4a2071eda743c63557f9dc065f34fff8e1fabf5e
+B=e26321de5930f38fa063abb025f2f1b064de3086
+features: production bench-internals internals
+rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+os: Linux 7.0.0-1017-azure
