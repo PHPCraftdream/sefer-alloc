@@ -1,0 +1,1 @@
+{"runner":"scripts/r20_r6_ab_iai_run.mjs","stages":"prepare,build,oracle,measure","outDir":"target/r20r6ab-d1p","benchTarget":"perf_gate_iai","features":"production bench-internals internals","note":"B4-23 D1′ one-class map: main vs branch"}
