@@ -1,4 +1,5 @@
-//! Single-bank pending bits and owner-issued classes, outside the reservation.
+//! Single-bank pending bits and the owner's "start was issued" map, outside
+//! the reservation.
 //!
 //! The future directory supplies stable, disjoint atomic backing for the
 //! entire reservation lifetime. It prepares that backing on an allocation
@@ -7,20 +8,12 @@
 //! or dereferences one. The directory must pin the backing through all
 //! unpublished producers, published bits, and detached cuts.
 
-use super::{AtomicPtr, AtomicU64, AtomicU8, BitmapScan, Ordering};
+use super::{AtomicU64, BitmapScan, Ordering};
 
-#[path = "sidecar_bitmap/leaf_classes.rs"]
-#[cfg_attr(test, allow(dead_code))]
-mod leaf_classes;
-pub(crate) use leaf_classes::ClassLeaves;
-// Batch-issue seam re-export (B4-R3); consumed by route_slots, so it is
-// unused in source-include test units that compile this file alone.
-#[allow(unused_imports)]
-pub(crate) use leaf_classes::LeafCursor;
-
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::os::SEGMENT;
 use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
-use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
+use crate::alloc_core::size_classes::MIN_BLOCK;
 
 const GRANULES: usize = SEGMENT / MIN_BLOCK;
 const WORDS: usize = GRANULES / 64;
@@ -29,26 +22,16 @@ const WORDS: usize = GRANULES / 64;
 /// it does not allocate, initialize, or bind a reservation pointer.
 pub(crate) struct SidecarBitmap<'a> {
     pub(super) pending: &'a [AtomicU64],
-    pub(super) classes: ClassMap<'a>,
-}
-
-#[derive(Clone, Copy)]
-#[cfg_attr(test, allow(dead_code))]
-pub(super) enum ClassMap<'a> {
-    // R6-T16: constructed only by `from_initialized`, whose consumers are
-    // source-include harnesses (`--cfg loom` / `cfg(test)`), never the lib.
-    #[cfg_attr(not(test), allow(dead_code))]
-    Dense(&'a [AtomicU8]),
-    Leaves(&'a ClassLeaves),
-}
-
-impl ClassMap<'_> {
-    pub(super) fn encoded(self, granule: usize) -> u8 {
-        match self {
-            Self::Dense(classes) => classes[granule].load(Ordering::Acquire),
-            Self::Leaves(leaves) => leaves.encoded(granule),
-        }
-    }
+    /// D1′ phase-1a: the dense "start was issued" map, one bit per 16 B
+    /// granule (32 KiB, `[AtomicU64; WORDS]`), written ONLY by the owner
+    /// (single-writer `load(Acquire)` → `store(old | mask, Release)`) at
+    /// exactly the leaf-issue points (`SmallSidecar::issue` and
+    /// `RoutedIssueRun::commit`), cleared by retain-reset together with
+    /// `pending`. Producers read it (Acquire) as the publication gate below;
+    /// the class leaves still carry the written class code but are no longer
+    /// read by `publish` (phase-1a: leaves are written, never read by the
+    /// producer/owner decision points).
+    pub(super) starts: &'a [AtomicU64],
 }
 
 impl<'a> SidecarBitmap<'a> {
@@ -60,66 +43,66 @@ impl<'a> SidecarBitmap<'a> {
     // R6-T16: loom-shim / source-include constructor (`--cfg loom`, `cfg(test)`);
     // production bitmaps start zeroed via the primordial path.
     #[cfg_attr(not(loom), allow(dead_code))]
-    pub(crate) fn from_initialized(
-        pending: &'a [AtomicU64],
-        classes: &'a [AtomicU8],
-    ) -> Option<Self> {
-        (pending.len() == WORDS && classes.len() == GRANULES).then_some(Self {
-            pending,
-            classes: ClassMap::Dense(classes),
-        })
+    pub(crate) fn from_pending(pending: &'a [AtomicU64], starts: &'a [AtomicU64]) -> Option<Self> {
+        (pending.len() == WORDS && starts.len() == WORDS).then_some(Self { pending, starts })
     }
 
-    #[cfg_attr(test, allow(dead_code))]
-    pub(crate) fn from_leaves(pending: &'a [AtomicU64], classes: &'a ClassLeaves) -> Option<Self> {
-        (pending.len() == WORDS).then_some(Self {
-            pending,
-            classes: ClassMap::Leaves(classes),
-        })
-    }
-
-    /// Owner-only issue, before handing the allocation to another thread.
+    /// Owner-only issue: set the "start was issued" bit for `offset`'s
+    /// granule. The record's class lives ONLY in the owner-private state
+    /// byte; nothing else is stored here.
+    ///
     /// The previous incarnation's bit must already be cut and reclaimed.
     /// A separate allocation handoff must carry this Release store to a
     /// producer; the bitmap does not itself establish that handoff.
-    pub(crate) fn issue(&self, offset: u32, class: u8) -> bool {
+    ///
+    /// D1′ phase-1b: infallible. The class-leaf spill OOM is gone with the
+    /// leaves; the only owner-side error an issue could report (bad class
+    /// code) no longer exists. An out-of-segment or misaligned offset on
+    /// this owner-only path is metadata corruption and aborts.
+    pub(crate) fn issue(&self, offset: u32) {
         let Some(granule) = Self::granule(offset) else {
-            return false;
+            fatal(b"sidecar_bitmap: issue offset out of segment or misaligned\n");
         };
-        if usize::from(class) >= SMALL_CLASS_COUNT {
-            return false;
-        }
-        match self.classes {
-            ClassMap::Dense(classes) => {
-                classes[granule].store(class + 1, Ordering::Release);
-                true
-            }
-            ClassMap::Leaves(leaves) => leaves.issue(granule, class),
-        }
+        // Single-writer load -> or -> Release store (the owner is the only
+        // `starts` writer; producers only read). Monotone: a reissue from
+        // the free list stores the already-set bit back.
+        let mask = 1u64 << (granule % 64);
+        let old = self.starts[granule / 64].load(Ordering::Acquire);
+        self.starts[granule / 64].store(old | mask, Ordering::Release);
     }
 
-    /// Producer terminal AcqRel RMW. No header or reservation access; the
-    /// class map is read (Acquire) once BEFORE the RMW, only to drop a granule
-    /// that was never issued (segment metadata, uncarved tail) instead of
-    /// publishing a record the owner's `BitmapCut::pop` would abort on. The
-    /// leaf class map carries a class code only in an issued block's start
-    /// granule, so this check also drops 16-aligned interior pointers into
-    /// larger issued blocks; a re-registered route gets a freshly zeroed
-    /// sidecar, so no stale class code survives a segment reset. This pending
-    /// RMW is the linearization point and
-    /// last producer access to the reclaimable reservation and ledger. Afterwards
-    /// only a discovery-summary bit in the SAME sidecar may be set, using an
-    /// address obtained before this RMW while RoutePin is held, then the pin
-    /// released. Strict trim and periodic maintenance ignore summary; this
-    /// permission does not imply a runtime summary implementation.
-    /// Exactly one producer publishes each valid allocation instance. An
-    /// unpublished producer retains its segment credit; a published one
-    /// retains it until reclaim.
-    pub(crate) fn publish(&self, offset: u32) -> bool {
+    /// Producer terminal AcqRel RMW. No header or reservation access. The
+    /// D1′ phase-1a producer filter replaces the former leaf-class read:
+    /// (1) payload filter by route kind — a granule below the route's
+    /// metadata end (`payload_start`, in bytes, supplied by the pin from the
+    /// route descriptor) is rejected before any sidecar access; (2) alignment 16 (via [`Self::granule`]); (3) an
+    /// Acquire load of the owner-written "start was issued" bit — a granule
+    /// that was never issued (uncarved tail, 16-aligned interior pointer,
+    /// gap) reads 0 and is dropped WITHOUT any RMW. Only then the same
+    /// terminal `fetch_or(AcqRel)` runs — still exactly one anchor R5b-13
+    /// per publication. The owner sets start bits no earlier than the
+    /// former leaf-issue points (never before the block's own commit) and
+    /// clears them only on retain-reset, so a re-registered route's freshly
+    /// zeroed sidecar rejects every stale publication exactly as before.
+    /// This pending RMW is the linearization point and
+    /// last producer access to the reclaimable reservation and ledger.
+    /// Afterwards only a discovery-summary bit in the SAME sidecar may be
+    /// set, using an address obtained before this RMW while RoutePin is
+    /// held, then the pin released. Strict trim and periodic maintenance
+    /// ignore summary; this permission does not imply a runtime summary
+    /// implementation. Exactly one producer publishes each valid allocation
+    /// instance. An unpublished producer retains its segment credit; a
+    /// published one retains it until reclaim. The public
+    /// `foreign_or_unroutable_frees` semantics are unchanged: a `false`
+    /// return counts one rejected publication.
+    pub(crate) fn publish(&self, offset: u32, payload_start: usize) -> bool {
         let Some(granule) = Self::granule(offset) else {
             return false;
         };
-        if self.classes.encoded(granule) == 0 {
+        if granule < payload_start / MIN_BLOCK {
+            return false;
+        }
+        if self.starts[granule / 64].load(Ordering::Acquire) & (1u64 << (granule % 64)) == 0 {
             return false;
         }
         self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);
@@ -153,7 +136,6 @@ impl<'a> SidecarBitmap<'a> {
         }
         Some(BitmapScan {
             pending: self.pending.get(start_word..)?.iter(),
-            classes: self.classes,
             next_word: start_word,
             end_word,
         })

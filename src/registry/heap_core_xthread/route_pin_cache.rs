@@ -79,9 +79,10 @@ macro_rules! count {
 impl PinCache {
     /// Drop every cached pin whose route has been unlinked (`linked ==
     /// false`). This is the memory-reclamation sweep: an idle thread can
-    /// otherwise hold up to `PIN_CACHE_SLOTS` × (Entry + sidecar + up to
-    /// 1024 class-leaves of 256 `AtomicU8`) ≈ 1.16 MiB of dead descriptors
-    /// alive until eviction or thread exit. Only called on cold paths (see
+    /// otherwise hold up to `PIN_CACHE_SLOTS` × (Entry + the 65 536 B
+    /// SmallSidecar backing: 32 KiB pending + 32 KiB starts) ≈ 4 × 64 KiB of
+    /// dead descriptors alive until eviction or thread exit (D1′ phase-1b:
+    /// the class leaves — and their promotion allocations — are gone). Only called on cold paths (see
     /// the call sites): `linked()` is an Acquire load that can touch a
     /// foreign cache line, so a hit-path sweep would cost the very lookup
     /// this cache exists to avoid — a miss/insert is by definition already
@@ -210,8 +211,8 @@ pub(crate) unsafe fn publish_cached(ptr: *mut u8) -> CachedPublication {
                 .find(|slot| slot.pin.is_some() && slot.base == base)
             else {
                 // Cold path: no slot for this base. Sweep dead (unlinked)
-                // pins so a long-lived idle thread does not retain ~1.16 MiB
-                // of stale descriptors; see `sweep_dead_slots`.
+                // pins so a long-lived idle thread does not retain
+                // ≤ 4 × 64 KiB of stale descriptors; see `sweep_dead_slots`.
                 cache.sweep_dead_slots();
                 count!(PIN_CACHE_MISSES);
                 return CachedPublication::Miss;

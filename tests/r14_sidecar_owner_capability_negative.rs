@@ -774,7 +774,12 @@ fn shared_sidecar_prepare_is_not_callable_from_outside_the_crate() {
     if variants.is_empty() {
         return;
     }
-    assert_fixture_fails(&fixture, &variants, "E0624", ["prepare", "private"]);
+    assert_fixture_fails(
+        &fixture,
+        &variants,
+        "E0624",
+        ["clear_pending_start_bit", "private"],
+    );
 }
 
 /// Fixture B: `SmallSidecar::issue` is independently sealed — unsealing ONLY

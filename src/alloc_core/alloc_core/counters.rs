@@ -537,6 +537,108 @@ pub(crate) static FOREIGN_OR_UNROUTABLE_FREES: core::sync::atomic::AtomicU64 =
 pub(crate) static LOCAL_REJECT_FREES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// D1' phase-1a owner-side counters: OBSERVED rejected pending
+/// records/bits, NOT a count of misuse calls (a `fetch_or` collapses
+/// duplicate publications of one address into one bit; carve-clear drops
+/// bits without a reclaim; a stale pin's bit can land in a detached
+/// sidecar and never be observed). Relaxed `fetch_add` on the failure
+/// path only; gated `internals ∨ bench-internals` (the
+/// `LOCAL_REJECT_FREES` convention — a plain `production` build pays
+/// nothing).
+///
+/// - `REMOTE_REJECT_UNISSUED`: a published record whose state byte reads 0
+///   (never issued). Counted immediately before the owner `fatal` (the
+///   fatal itself stays in ALL builds — no weakening).
+/// - `REMOTE_REJECT_FREE` / `REMOTE_REJECT_MAG`: a published record whose
+///   state byte is FREE / MAG — quiet no-op reclaims.
+#[cfg(feature = "alloc-core")]
+#[cfg_attr(
+    not(all(
+        feature = "alloc-global",
+        any(feature = "internals", feature = "bench-internals")
+    )),
+    allow(dead_code)
+)]
+pub(crate) static REMOTE_REJECT_UNISSUED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+#[cfg(feature = "alloc-core")]
+#[cfg_attr(
+    not(all(
+        feature = "alloc-global",
+        any(feature = "internals", feature = "bench-internals")
+    )),
+    allow(dead_code)
+)]
+pub(crate) static REMOTE_REJECT_FREE: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+#[cfg(feature = "alloc-core")]
+#[cfg_attr(
+    not(all(
+        feature = "alloc-global",
+        any(feature = "internals", feature = "bench-internals")
+    )),
+    allow(dead_code)
+)]
+pub(crate) static REMOTE_REJECT_MAG: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// D1' phase-1a carve-clear oracle: pending bits actually cleared by the
+/// owner's carve-clear (top), and word loads it performed (bottom — an
+/// activation/proportion oracle). Relaxed, `internals ∨ bench-internals`.
+#[cfg(feature = "alloc-core")]
+#[cfg_attr(
+    not(all(
+        feature = "alloc-global",
+        any(feature = "internals", feature = "bench-internals")
+    )),
+    allow(dead_code)
+)]
+pub(crate) static CARVE_CLEAR_BITS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+#[cfg(feature = "alloc-core")]
+#[cfg_attr(
+    not(all(
+        feature = "alloc-global",
+        any(feature = "internals", feature = "bench-internals")
+    )),
+    allow(dead_code)
+)]
+pub(crate) static CARVE_CLEAR_WORD_LOADS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// D1′ M-h oracle seam (test-only): `try_carve_batch` stores the number of
+/// blocks it is about to carve here right AFTER the batch-wide bump advance
+/// and its `add_live`, and BEFORE the first per-block
+/// `clear_pending_start_bit` → `issue` (start bit) → LIVE sequence; it
+/// stores 0 again after the loop. A concurrent producer observing a
+/// non-zero stage is inside the early-publication defect window
+/// `[set_bump, first per-block issue]` — exactly where an early mass
+/// publication of the batch's start bits would be visible. The window is
+/// observable only when the test also arms [`CARVE_BATCH_PAUSE`]; the
+/// production fast path pays one store plus one load.
+#[cfg(feature = "alloc-core")]
+#[cfg(any(feature = "internals", feature = "bench-internals"))]
+pub(crate) static CARVE_BATCH_STAGE: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
+/// D1′ M-h oracle seam (test-only): the pause arm. Default `false` — the
+/// owner never waits. When a test arms it, `try_carve_batch` parks INSIDE
+/// the defect window (after the stage store) until the test sets
+/// [`CARVE_BATCH_RESUME`], giving the test a deterministic, scheduler-free
+/// view of the sidecar start-bit bank at the exact production commit point.
+#[cfg(feature = "alloc-core")]
+#[cfg(any(feature = "internals", feature = "bench-internals"))]
+pub(crate) static CARVE_BATCH_PAUSE: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// D1′ M-h oracle seam (test-only): the resume latch the paused owner spins
+/// on (one `swap(false)` — the test re-arms for a later run by storing
+/// `true` again).
+#[cfg(feature = "alloc-core")]
+#[cfg(any(feature = "internals", feature = "bench-internals"))]
+pub(crate) static CARVE_BATCH_RESUME: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
 // TEST/DIAGNOSTIC-ONLY (task D1 → 0.4.x task #133): large-cache HIT
 // counter. Originally a single process-wide `static AtomicU64`, bumped by
 // EVERY heap's `alloc_large` cache-hit path — a contended `lock xadd` on a

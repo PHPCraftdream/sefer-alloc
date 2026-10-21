@@ -27,11 +27,16 @@ fn small_sidecar_uses_unzeroed_system_storage_then_initializes_all_state() {
     );
     assert_eq!(after.3 - before.3, 1);
 
+    // D1' phase-1b: no class leaves and no fallible prepare exist — the
+    // sidecar is exactly the two 32 KiB banks, and the owner issue is an
+    // infallible start-bit set (observable only through the publication
+    // gate: offset 0 is metadata, so the publish must still be rejected by
+    // the payload filter regardless of the start bit).
+    assert_eq!(size, 65_536);
     let sidecar = route.small_sidecar().unwrap();
-    assert_eq!(sidecar.class_at_for_test(0), None);
-    assert_eq!(sidecar.mixed_leaves_for_test(), 0);
-    assert!(route.prepare_small(0, 0));
-    assert_eq!(sidecar.class_at_for_test(0), None);
-    assert!(route.issue_small(0, 0));
-    assert_eq!(sidecar.class_at_for_test(0), Some(0));
+    sidecar.issue_for_test(0);
+    let pin = directory.lookup(root).unwrap();
+    // SAFETY: the test issued this standalone granule; offset 0 is below the
+    // route's payload start, so the payload filter rejects the publication.
+    assert!(!unsafe { pin.publish_small(0) });
 }

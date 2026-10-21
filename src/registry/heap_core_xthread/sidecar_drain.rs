@@ -101,6 +101,14 @@ impl HeapCore {
                 fatal(b"sidecar_drain: segment base not found for sidecar record\n")
             });
         let offset = (address - base.addr()) as u32;
-        crate::alloc_core::AllocCore::reclaim_sidecar_record(base, offset, class)
+        // D1' phase-1a: the class comes from the owner state byte; `class`
+        // is now the EXPECTED class - a reclaimed block of a different class
+        // is a probe mismatch (false), not a silent acceptance.
+        crate::alloc_core::AllocCore::reclaim_sidecar_record(
+            self.core.sidecar_table(),
+            base,
+            offset,
+        )
+        .is_some_and(|got| got == class)
     }
 }

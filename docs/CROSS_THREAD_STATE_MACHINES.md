@@ -416,6 +416,15 @@ sidecar ("touches only the independently allocated descriptor/sidecar",
 `pin.rs:37-38`). That metadata-only `Drop` is not a reservation touch or
 another terminal-state access.
 Small/Primordial use the sidecar bitmap `fetch_or` terminal publication.
+D1′ phase-1b: the producer is a payload/alignment filter plus an Acquire
+load of the owner-written "start was issued" bit, then the same terminal
+`fetch_or(AcqRel)`; the sidecar carries NO class state — the owner decides
+the record's class from its private state byte at reclaim. The owner sets
+the start bit only at the issue points (infallible `issue`, the former
+leaf-issue points) and clears the fresh block's pending start bit at carve
+(RMW `fetch_and`, never load+store); the former issue transaction
+(`IssueTransaction`/`prepare_*`) is removed — issue paths are infallible,
+and the only OOM left is an honest OS commit/reserve refusal.
 The terminal `pending[w].fetch_or(AcqRel)` is the linearization point and
 last producer access to the reclaimable reservation and ledger. Afterwards
 only (1) setting a discovery-summary bit in the SAME sidecar, using an
@@ -539,8 +548,10 @@ bit.
   (`src/registry/segment_route/directory.rs`).
 - **I5. Summary words are never read as pending bits.** Owner metadata is
   ≥ 64 KiB (two 32 KiB per-granule bitmaps), so
-  `payload_start_word ≥ SUMMARY_WORDS = 64`; metadata granules encode
-  class 0 and are rejected by the producer's class gate; every scanner
+  `payload_start_word ≥ SUMMARY_WORDS = 64`; metadata offsets are rejected
+  by the producer's payload filter (below the route's `payload_start`)
+  BEFORE any sidecar access (D1′ phase-1b: there is no class gate and no
+  class carrier — the former `leaf_classes.rs` is removed); every scanner
   starts at or after the payload start (prerequisite Patch S: strict trim
   starts at the payload start; Gate S). Enforcement (future work per design
   §4.2, NOT yet in the tree): a `const` assert in

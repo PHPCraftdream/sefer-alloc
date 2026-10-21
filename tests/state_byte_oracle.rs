@@ -2,11 +2,14 @@
 //! live-accounting effects. Periodic duplicate frees test guard rejection while
 //! the block is actually MAG (after the first free), not while user-live.
 
+// `HeapCore::dbg_live_count_for` is `alloc-decommit`-gated (registry diag
+// queries).
 #![cfg(all(
     feature = "alloc-global",
     feature = "fastbin",
     feature = "internals",
-    feature = "bench-internals"
+    feature = "bench-internals",
+    feature = "alloc-decommit"
 ))]
 
 use core::alloc::Layout;

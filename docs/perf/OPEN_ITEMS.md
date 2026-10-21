@@ -290,6 +290,31 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** (а) политика заполнения memo N9 без записи на каждом выигрыше `hash_find` — следующий раунд микроприёмов; (б) решение владельца; (в) тот же раунд; (г) asm-трипвайр `w_alloc`/`w_free` для `x86_64-pc-windows-msvc` на CI.
    > - **Evidence:** `docs/perf/B4_FRAME_TAX.md` §4, §6, §9; `docs/perf/B4_FRAME_TAX_summary.csv`, `docs/perf/B4_FRAME_TAX_thrash64_summary.csv`; сырьё `docs/perf/_raw_b4_frame_*.log`.
 
+105. **[A] B4 D1′ thrash64 free +3 Ir/op (+3.5 % EstCycles) — NO-GO J1, причина не локализована.** (Filed 2026-10-20, `docs/perf/B4_ONECLASS.md` §1/§8.1.)
+
+   > **Current state**
+   > - **Status:** OPEN — NO-GO строки подтверждён дважды (oc3 и oc7-раунды); точечное устранение доступными production-нейтральными атрибутами — НЕТ (4 попытки с замерами ниже); причина локализована построчно (oc7).
+   > - **Current number/verdict:** thrash64 free 91→94 Ir/op, EstCycles 100.2→103.7; независимое воспроизведение oc7 (A = чистый `git archive bbc3c7b4`: ровно 22/91 Ir, 22.0/100.2 cyc; B = финальное дерево: ровно 94/103.7 — `_raw_b4_oneclass_oc7-thrash64-{a,b}-attr.log`) подтверждает стабильность. Построчная атрибуция Δ+3.0 Ir/op: `dealloc_own_base` Δ=0.0 (16.0 в обоих плечах), `segment_header_views` Δ=0.0; весь прирост — в НЕизменённых (diff vs bbc3c7b4 пуст) инlined-функциях окна: `hash.rs` 15.3→17.5 (Δ+2.2: hash-выражение +1.0, probe-строки `hash_find` по +0.4), `segment_table_impl.rs` 18.8→19.7 (Δ+0.9: `i>=count` +0.3, `own_cache[index]=…` +0.2, `root==key` +0.2), `core::ptr` +0.2. «Сдвиг инлайнинга/раскладки» — ГИПОТЕЗА (теперь с числами); добавленной инструкции на own-free пути нет.
+   > - **Attempts (все — layout-only атрибуты, логика/проверки не тронуты, каждая с полным замером B thrash64):** (1) `hash_slot_write` `#[inline]`→`#[inline(always)]` — 94/103.7, без эффекта; (2) `own_cache_clear` `#[inline]`→`#[inline(always)]` — 94/103.7, без эффекта; (3) `canonical_block_of` `#[inline]`→`#[inline(always)]` — 94/103.7, без эффекта; (4) `canonical_base_of{,_mut}` `#[inline(always)]`→`#[inline]` — 94/103.7, без эффекта. Логи `_raw_b4_oneclass_oc7-attempt-{1..4}.log`; все правки откачены (tree-diff дерева = pre-attempt `7659fcf3…`).
+   > - **Next trigger:** решение владельца: принять как стоимость D1′ (mstress −33, batch alloc −18 перекрывают +3), либо отдельный раунд с иными приёмами (реорганизация инlined-кластера `canonical_base_of`→`hash_find`, `#[cold]` на холодных ветках) — атрибутами `#[inline]`/`#[cold]` на соседних функциях эффект в oc7 не достигнут.
+   > - **Evidence:** `docs/perf/B4_ONECLASS.md` §1, §8.1; `docs/perf/B4_ONECLASS_summary.csv`; сырьё `docs/perf/_raw_b4_oneclass_{base,b2,b3}-thrash64.log`, `docs/perf/_raw_b4_oneclass_oc7-thrash64-{a,b}-attr.log`, `docs/perf/_raw_b4_oneclass_oc7-attempt-{1..4}.log` (полные построчные логи: `.rush/wsl/oc7-thrash64-{a,b}-attr-full.log`, `oc7-attempt-{1..4}-full.log`).
+
+106. **[A] B4 D1′ foreign free −2 Ir при цели ≤ −4 — порог НЕ достигнут (FAIL-THRESHOLD; ZONE-категория гейта удалена).** (Filed 2026-10-20, обновлён oc3-раундом, `docs/perf/B4_ONECLASS.md` §4/§8.2.)
+
+   > **Current state**
+   > - **Status:** OPEN — решение владельцу.
+   > - **Current number/verdict:** foreign 136→134 Ir/free (−2, −1.5 %) при цели D1′-гейта §8.4c ≤ −4; повторный замер на финальном дереве (b3/oc3, `_raw_b4_oneclass_b3-foreign.log`) — те же 134: producer-путь не менялся фикс-раундом. Построчная атрибуция publish_foreign_uncached (§4.1): доминанта — filter payload/alignment в directory lookup (58.5 % A → 54.5 % B), пин-кэш 13.4→19.1 %, RMW-публикация лишь 5.0→2.3 % — прежняя формулировка «остаток — RMW» снята измерением.
+   > - **Next trigger:** решение владельца: принять −2, либо отдельный раунд снижения цены directory-фильтра без ослабления проверок.
+   > - **Evidence:** `docs/perf/B4_ONECLASS.md` §4, §4.1, §8.2; `docs/perf/B4_ONECLASS_summary.csv`; сырьё `docs/perf/_raw_b4_oneclass_{base,b2,b3}-foreign.log`.
+
+107. **[A] B4 D1′ residuals: ранняя публикация стартов batch (M-h) + bench-счётчик повторных чтений `next` не внедрён.** (Filed 2026-10-20, `docs/perf/B4_ONECLASS.md` §6/§7; correctness-индекс — карточка 251.)
+
+   > **Current state**
+   > - **Status:** OPEN — оба остатка зафиксированы, носитель — correctness-индекс.
+   > - **Current number/verdict:** (1) M-h: ранняя публикация стартов batch (d1p_rev находка 3) закрыта контрактом поблочного set + loom `issue_precedes_handoff`, детерминированного оракула на allocator-path нет; (2) однопроходность drain закреплена кодом + `r6_t06` continuation-тестом, bench-счётчик повторных чтений `next` не внедрён.
+   > - **Next trigger:** test-only хук наблюдения порядка публикации стартов (bench-internals seam) → детерминированный оракул → закрытие карточки 251; bench-счётчик — отдельный micro-приём при следующем touch drain.
+   > - **Evidence:** `docs/correctness-open-items/TRACKED_correctness_residuals.md` item 251; `docs/perf/B4_ONECLASS.md` §6 (оракул 1), §7 (M-h); `.rush/art/b4/d1p_rev_rush.md` находка 3.
+
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**

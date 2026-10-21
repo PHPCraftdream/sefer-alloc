@@ -1,4 +1,3 @@
-use super::issue_transaction::{IssueRun, IssueTransaction};
 #[cfg(feature = "alloc-global")]
 use super::route_slots::RouteSlots;
 use super::*;
@@ -199,7 +198,10 @@ pub(crate) const SEGMENT_SHIFT: usize = 22;
 /// filters them out; [`register`](Self::register) reuses them before appending.
 pub(crate) struct SegmentTable {
     #[cfg(feature = "alloc-global")]
-    routes: Option<RouteSlots>,
+    /// D1' phase-1a: `pub(super)` so the seams moved verbatim into
+    /// `route_slots.rs` (same directory) can reach the route slots without
+    /// growing this 1000-line-capped file.
+    pub(super) routes: Option<RouteSlots>,
     /// Pointer to the first slot of the registry array (lives in the
     /// primordial segment's payload). `MAX_SEGMENTS` entries.
     slots: *mut *mut u8,
@@ -332,68 +334,6 @@ impl SegmentTable {
         if let Some(routes) = &mut self.routes {
             routes.close_all();
         }
-    }
-
-    /// Owner-only class publication. Standalone AllocCore has no route.
-    #[cfg_attr(not(debug_assertions), inline(always))]
-    pub(crate) fn issue_small(&self, base: *mut u8, offset: u32, class_idx: usize) {
-        #[cfg(feature = "alloc-global")]
-        if let Some(routes) = &self.routes {
-            let class = u8::try_from(class_idx)
-                .unwrap_or_else(|_| fatal(b"segment_table: small class index exceeds u8\n"));
-            let index = SegmentHeader::segment_id_at(base) as usize;
-            if self.base_at(index) != base {
-                fatal(b"segment_table: issue base is not the segment base\n");
-            }
-            routes.issue_small(index, base, offset, class);
-        }
-        #[cfg(not(feature = "alloc-global"))]
-        let _ = (base, offset, class_idx);
-    }
-
-    /// Fallible owner-only class spill before any block issue state changes.
-    /// The returned witness is the prepare half of the `prepare -> commit`
-    /// protocol; `None` is the uncommitted spill OOM.
-    #[cfg_attr(not(debug_assertions), inline(always))]
-    pub(crate) fn prepare_small_issue(
-        &self,
-        base: *mut u8,
-        offset: u32,
-        class_idx: usize,
-    ) -> Option<IssueTransaction> {
-        #[cfg(feature = "alloc-global")]
-        if let Some(routes) = &self.routes {
-            let class = u8::try_from(class_idx)
-                .unwrap_or_else(|_| fatal(b"segment_table: small class index exceeds u8\n"));
-            let index = SegmentHeader::segment_id_at(base) as usize;
-            if self.base_at(index) != base {
-                fatal(b"segment_table: prepare base is not the segment base\n");
-            }
-            return routes.prepare_small_issue(index, base, offset, class);
-        }
-        let _ = (base, offset, class_idx);
-        Some(IssueTransaction::unrouted(base, offset))
-    }
-
-    /// Run-level twin of `prepare_small_issue` for whole-batch refills: the
-    /// fatal route guards (live slot, matching root, Small sidecar) run once
-    /// per run. Infallible; per-block OOM moves to `IssueRun::prepare_for`
-    /// (leaf changes).
-    #[cfg_attr(not(debug_assertions), inline(always))]
-    pub(crate) fn prepare_small_issue_run(&self, base: *mut u8, class_idx: usize) -> IssueRun<'_> {
-        #[cfg(feature = "alloc-global")]
-        if let Some(routes) = &self.routes {
-            let class = u8::try_from(class_idx)
-                .unwrap_or_else(|_| fatal(b"segment_table: small class index exceeds u8\n"));
-            let index = SegmentHeader::segment_id_at(base) as usize;
-            if self.base_at(index) != base {
-                fatal(b"segment_table: prepare base is not the segment base\n");
-            }
-            let inner = routes.prepare_small_issue_run(base, class);
-            return IssueRun::routed(index, base, inner);
-        }
-        let _ = (base, class_idx);
-        IssueRun::unrouted(base)
     }
 
     /// R6-T05 (SEC-1): free-side class-identity check against the owner route

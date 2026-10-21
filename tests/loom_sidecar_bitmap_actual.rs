@@ -1,10 +1,11 @@
 //! P1-2 / PRF-01 §4.3.1 actual-source Loom refinement: the REAL
-//! `bitmap_cut.rs`, `bitmap_record.rs`, `bitmap_scan.rs`, and
-//! `sidecar_bitmap.rs` are compiled as top-level modules; the remote_bitmap
-//! shim only reexports them. The class map is dense `AtomicU8` backing via
-//! `from_initialized` AND the production `ClassLeaves` mixed-leaf
-//! map via `from_leaves`: `leaf_classes.rs` takes its atomics from `super`, so the
-//! included source runs on loom atomics too.
+//! `bitmap_cut.rs`, `bitmap_scan.rs`, and `sidecar_bitmap.rs` are compiled as
+//! top-level modules; the remote_bitmap shim only reexports them. D1′
+//! phase-1b: the class-leaves carrier is GONE — the sidecar runs the pending
+//! bank plus the owner's start-issue map via `from_pending`, and the
+//! carve-clear tests below mirror `SmallSidecar::clear_pending_start_bit`'s
+//! RMW (`load(Acquire)` skip + `fetch_and(!mask, AcqRel)`) against a real
+//! publisher on the included pending bank.
 //!
 //! Reduced geometry: 3 pending words (`SEGMENT = 3 * 64 * MIN_BLOCK`). The
 //! protocol is CURRENT production code: producer terminal `fetch_or(AcqRel)`
@@ -43,12 +44,10 @@ mod alloc_core {
 }
 
 // The included production files resolve `super` at this root module.
-pub(crate) use loom::sync::atomic::{AtomicPtr, AtomicU64, AtomicU8, Ordering};
+pub(crate) use loom::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_cut.rs"]
 mod bitmap_cut;
-#[path = "../src/alloc_core/segment/remote_bitmap/bitmap_record.rs"]
-mod bitmap_record;
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_scan.rs"]
 mod bitmap_scan;
 #[path = "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs"]
@@ -56,13 +55,11 @@ mod sidecar_bitmap;
 
 mod remote_bitmap {
     pub(crate) use super::bitmap_cut::BitmapCut;
-    pub(crate) use super::bitmap_record::BitmapRecord;
     pub(crate) use super::bitmap_scan::BitmapScan;
-    pub(crate) use super::sidecar_bitmap::ClassLeaves;
     pub(crate) use super::sidecar_bitmap::SidecarBitmap;
 }
 
-use remote_bitmap::{BitmapCut, BitmapRecord, BitmapScan, ClassLeaves, SidecarBitmap};
+use remote_bitmap::{BitmapCut, BitmapScan, SidecarBitmap};
 
 use loom::sync::Arc;
 use loom::thread;
@@ -72,7 +69,7 @@ const TRIM_HIGH_WATER: usize = 1040; // strict trim includes offset 1024 at MIN_
 
 struct Backing {
     words: Vec<AtomicU64>,
-    classes: Vec<AtomicU8>,
+    starts: Vec<AtomicU64>,
 }
 
 impl Backing {
@@ -81,65 +78,22 @@ impl Backing {
             words: (0..SidecarBitmap::WORDS)
                 .map(|_| AtomicU64::new(0))
                 .collect(),
-            classes: (0..SidecarBitmap::GRANULES)
-                .map(|_| AtomicU8::new(0))
+            // D1' phase-1a start bank, zero-initialized.
+            starts: (0..SidecarBitmap::WORDS)
+                .map(|_| AtomicU64::new(0))
                 .collect(),
         }
     }
 
     fn bitmap(&self) -> SidecarBitmap<'_> {
-        SidecarBitmap::from_initialized(&self.words, &self.classes).unwrap()
+        SidecarBitmap::from_pending(&self.words, &self.starts).unwrap()
     }
-}
-
-/// ClassLeaves backing for the mixed-leaf tests below: the pending words the
-/// production `from_leaves` geometry requires, plus one System-backed leaf
-/// set initialised exactly like `tests/class_leaves_publication_miri.rs`
-/// does.
-struct LeafBacking {
-    words: Vec<AtomicU64>,
-    leaves: Box<ClassLeaves>,
-}
-
-impl LeafBacking {
-    fn new() -> Self {
-        let words = (0..SidecarBitmap::WORDS)
-            .map(|_| AtomicU64::new(0))
-            .collect();
-        let mut slot = Box::new(core::mem::MaybeUninit::<ClassLeaves>::uninit());
-        // SAFETY: the Box owns a private, aligned, writable ClassLeaves-sized
-        // slot; nothing references it until `initialize_at` returns. Loom
-        // atomics are scheduler handles: byte-zeroing the slot would not
-        // construct valid atomic cells, so `initialize_at` is mandatory here.
-        unsafe { ClassLeaves::initialize_at(slot.as_mut_ptr()) };
-        // SAFETY: every field was initialized above; the Box keeps ownership
-        // of its original allocation and layout.
-        let leaves = unsafe { slot.assume_init() };
-        Self { words, leaves }
-    }
-
-    fn bitmap(&self) -> SidecarBitmap<'_> {
-        SidecarBitmap::from_leaves(&self.words, &self.leaves).unwrap()
-    }
-}
-
-/// Loom runner for the `ClassLeaves` cells: preparing a leaf writes every
-/// granule's class byte, and each of those atomic stores is a loom branch
-/// point, so the default branch limit is too low. The preemption bound keeps
-/// the run small.
-fn leaf_model<F>(f: F)
-where
-    F: Fn() + Sync + Send + 'static,
-{
-    let mut builder = loom::model::Builder::new();
-    builder.max_branches = 100_000;
-    builder.preemption_bound = Some(2);
-    builder.check(f);
 }
 
 /// Owner discovery: every word's cut through the real `BitmapScan::next_cut`
 /// (plain `swap(0, AcqRel)`), records tagged with the cut's word index.
-fn drain(map: &SidecarBitmap<'_>, high_water: usize, records: &mut Vec<(usize, BitmapRecord)>) {
+// D1' phase-1a: cuts yield the OFFSET only.
+fn drain(map: &SidecarBitmap<'_>, high_water: usize, records: &mut Vec<(usize, u32)>) {
     let mut scan = map.scan(high_water).expect("in-bounds high water");
     let mut word = 0;
     while let Some(mut cut) = scan.next_cut() {
@@ -154,14 +108,14 @@ fn drain(map: &SidecarBitmap<'_>, high_water: usize, records: &mut Vec<(usize, B
     }
 }
 
-fn assert_union(records: &[(usize, BitmapRecord)], expected: &[(usize, u64, u8)]) {
+fn assert_union(records: &[(usize, u32)], expected: &[(usize, u64)]) {
     let mut seen = records.to_vec();
-    seen.sort_by_key(|(word, record)| (*word, record.offset));
+    seen.sort_by_key(|(word, record)| (*word, *record));
     let mut expected = expected.to_vec();
     expected.sort();
-    let actual: Vec<(usize, u64, u8)> = seen
+    let actual: Vec<(usize, u64)> = seen
         .iter()
-        .map(|(word, r)| (*word, u64::from(r.offset), r.class))
+        .map(|(word, r)| (*word, u64::from(*r)))
         .collect();
     assert_eq!(
         actual, expected,
@@ -175,21 +129,21 @@ fn loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup() {
         let backing = Arc::new(Backing::new());
         let map = backing.bitmap();
         assert_eq!(SidecarBitmap::WORDS, 3);
-        assert!(map.issue(0, 3));
-        assert!(map.issue(16, 4));
-        assert!(!map.publish(32), "never-issued granule must not publish");
+        map.issue(0);
+        map.issue(16);
+        assert!(!map.publish(32, 0), "never-issued granule must not publish");
         let p1 = {
             let backing = Arc::clone(&backing);
             thread::spawn(move || {
                 thread::yield_now();
-                assert!(backing.bitmap().publish(0));
+                assert!(backing.bitmap().publish(0, 0));
             })
         };
         let p2 = {
             let backing = Arc::clone(&backing);
             thread::spawn(move || {
                 thread::yield_now();
-                assert!(backing.bitmap().publish(16));
+                assert!(backing.bitmap().publish(16, 0));
             })
         };
         let mut records = Vec::new();
@@ -197,7 +151,7 @@ fn loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup() {
         p1.join().unwrap();
         p2.join().unwrap();
         drain(&map, HIGH_WATER, &mut records);
-        assert_union(&records, &[(0, 0, 3), (0, 16, 4)]);
+        assert_union(&records, &[(0, 0), (0, 16)]);
         let mut drained = Vec::new();
         drain(&map, HIGH_WATER, &mut drained);
         assert!(drained.is_empty(), "third discovery finds nothing");
@@ -209,20 +163,20 @@ fn loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup() {
     loom::model(move || {
         let backing = Arc::new(Backing::new());
         let map = backing.bitmap();
-        assert!(map.issue(0, 3));
-        assert!(map.issue(64 * 16, 5));
+        map.issue(0);
+        map.issue(64 * 16);
         let p1 = {
             let backing = Arc::clone(&backing);
             thread::spawn(move || {
                 thread::yield_now();
-                assert!(backing.bitmap().publish(0));
+                assert!(backing.bitmap().publish(0, 0));
             })
         };
         let p2 = {
             let backing = Arc::clone(&backing);
             thread::spawn(move || {
                 thread::yield_now();
-                assert!(backing.bitmap().publish(64 * 16));
+                assert!(backing.bitmap().publish(64 * 16, 0));
             })
         };
         let mut records = Vec::new();
@@ -230,7 +184,7 @@ fn loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup() {
         p1.join().unwrap();
         p2.join().unwrap();
         drain(&map, HIGH_WATER, &mut records);
-        assert_union(&records, &[(0, 0, 3), (1, 64 * 16, 5)]);
+        assert_union(&records, &[(0, 0), (1, 64 * 16)]);
         let mut drained = Vec::new();
         drain(&map, HIGH_WATER, &mut drained);
         assert!(drained.is_empty(), "third discovery finds nothing");
@@ -242,20 +196,20 @@ fn loom_actual_publish_racing_strict_trim_union_is_complete() {
     loom::model(move || {
         let backing = Arc::new(Backing::new());
         let map = backing.bitmap();
-        assert!(map.issue(0, 3));
-        assert!(map.issue(1024, 6));
+        map.issue(0);
+        map.issue(1024);
         let p0 = {
             let backing = Arc::clone(&backing);
             thread::spawn(move || {
                 thread::yield_now();
-                assert!(backing.bitmap().publish(0));
+                assert!(backing.bitmap().publish(0, 0));
             })
         };
         let p1 = {
             let backing = Arc::clone(&backing);
             thread::spawn(move || {
                 thread::yield_now();
-                assert!(backing.bitmap().publish(1024));
+                assert!(backing.bitmap().publish(1024, 0));
             })
         };
         // Strict scan's 1040-byte bound covers both word 0 and offset 1024.
@@ -265,7 +219,7 @@ fn loom_actual_publish_racing_strict_trim_union_is_complete() {
         p1.join().unwrap();
         // The union of the racing strict scan and later discovery must be exact.
         drain(&map, HIGH_WATER, &mut records);
-        assert_union(&records, &[(0, 0, 3), (1, 1024, 6)]);
+        assert_union(&records, &[(0, 0), (1, 1024)]);
         let mut drained = Vec::new();
         drain(&map, HIGH_WATER, &mut drained);
         assert!(drained.is_empty(), "discovery after recovery finds nothing");
@@ -274,20 +228,144 @@ fn loom_actual_publish_racing_strict_trim_union_is_complete() {
     loom::model(move || {
         let backing = Arc::new(Backing::new());
         let map = backing.bitmap();
-        assert!(map.issue(1024, 6));
+        map.issue(1024);
         let producer = {
             let backing = Arc::clone(&backing);
-            thread::spawn(move || assert!(backing.bitmap().publish(1024)))
+            thread::spawn(move || assert!(backing.bitmap().publish(1024, 0)))
         };
         producer.join().unwrap();
 
         let mut records = Vec::new();
         drain(&map, TRIM_HIGH_WATER, &mut records);
-        assert_union(&records, &[(1, 1024, 6)]);
+        assert_union(&records, &[(1, 1024)]);
         let mut drained = Vec::new();
         drain(&map, TRIM_HIGH_WATER, &mut drained);
         assert!(drained.is_empty(), "strict scan itself found offset 1024");
     });
+}
+
+// ---------------------------------------------------------------------------
+// D1' phase-1b carve-clear (design §2.4) against a real publisher, on the
+// SAME included pending bank. The owner clear mirrors
+// `SmallSidecar::clear_pending_start_bit` verbatim: load(Acquire) to skip
+// clean words, then fetch_and(!mask, AcqRel) — never a plain load+store.
+// ---------------------------------------------------------------------------
+
+/// One-bit owner clear of `offset`'s granule (mask form of
+/// `clear_pending_start_bit`).
+fn clear_pending_bit(map_words: &[AtomicU64], offset: usize) {
+    let granule = offset / 16;
+    let mask = 1u64 << (granule % 64);
+    if map_words[granule / 64].load(Ordering::Acquire) & mask != 0 {
+        map_words[granule / 64].fetch_and(!mask, Ordering::AcqRel);
+    }
+}
+
+/// A legitimate pending bit of a NEIGHBOURING granule in the same word must
+/// survive the owner's masked carve-clear in every interleaving, and the
+/// cleared granule must stop publishing (its stale bit is gone).
+#[test]
+fn loom_actual_carve_clear_keeps_neighbour_bit_and_drops_cleared_one() {
+    loom::model(move || {
+        let backing = Arc::new(Backing::new());
+        let map = backing.bitmap();
+        map.issue(0);
+        map.issue(16);
+        // Plant the stale pending bit on granule 0 (the garbage-free record
+        // the carve-clear must drop) BEFORE the spawn, so the owner's
+        // clear_pending_bit actually takes its RMW branch.
+        assert!(map.publish(0, 0));
+        // One legitimate publication on granule 1, racing the owner's carve-clear
+        // of granule 0.
+        let p = {
+            let backing = Arc::clone(&backing);
+            thread::spawn(move || {
+                thread::yield_now();
+                backing.bitmap().publish(16, 0)
+            })
+        };
+        let o = {
+            let backing = Arc::clone(&backing);
+            thread::spawn(move || {
+                thread::yield_now();
+                clear_pending_bit(&backing.words, 0);
+            })
+        };
+        o.join().unwrap();
+        let neighbour_published = p.join().unwrap();
+        // Word state: bit 0 cleared-or-never-set (the stale bit cannot come
+        // back), bit 1 set iff the publish RMW won the race.
+        let word = backing.words[0].load(Ordering::Acquire);
+        assert_eq!(
+            word & 1,
+            0,
+            "carve-clear must drop the cleared granule's bit in every interleaving"
+        );
+        assert_eq!(
+            (word >> 1) & 1,
+            u64::from(neighbour_published),
+            "the neighbour's legitimate bit survives exactly when its publish won the race"
+        );
+        if neighbour_published {
+            let mut records = Vec::new();
+            drain(&map, HIGH_WATER, &mut records);
+            assert_union(&records, &[(0, 16)]);
+        }
+    });
+}
+
+/// NEGATIVE control: a plain load+store clear (FORBIDDEN form) loses a
+/// concurrently published neighbouring bit in the same word. Legality
+/// preconditions: granule 0's pending bit was legitimately published
+/// BEFORE the spawn (a stale record the owner's carve-clear of the
+/// recarved offset must drop), granule 1's start bit is pre-issued, and
+/// the concurrent producer publishes granule 1 while the owner runs the
+/// forbidden load+store form. The RMW positive model
+/// (`clear_pending_bit` +
+/// `loom_actual_carve_clear_keeps_neighbour_bit_and_drops_cleared_one`)
+/// keeps the neighbour's bit in every interleaving; this mutant form
+/// loses it whenever the producer RMW lands between the load and the
+/// store.
+#[test]
+#[should_panic(expected = "load+store carve-clear lost the concurrent bit")]
+fn loom_actual_negative_carve_clear_via_load_store_loses_concurrent_bit() {
+    loom::model(move || {
+        let backing = Arc::new(Backing::new());
+        map_issue(backing.as_ref(), 0);
+        map_issue(backing.as_ref(), 16);
+        // Stale pending bit on granule 0, planted BEFORE the spawn.
+        assert!(backing.bitmap().publish(0, 0));
+        let p = {
+            let backing = Arc::clone(&backing);
+            thread::spawn(move || {
+                thread::yield_now();
+                backing.bitmap().publish(16, 0)
+            })
+        };
+        let o = {
+            let backing = Arc::clone(&backing);
+            thread::spawn(move || {
+                thread::yield_now();
+                // FORBIDDEN form: plain load + masked store (the yield
+                // between them opens the producer's loss window).
+                let w = backing.words[0].load(Ordering::Acquire);
+                thread::yield_now();
+                backing.words[0].store(w & !1, Ordering::Release);
+            })
+        };
+        o.join().unwrap();
+        let neighbour_published = p.join().unwrap();
+        let word = backing.words[0].load(Ordering::Acquire);
+        assert_eq!(
+            (word >> 1) & 1,
+            u64::from(neighbour_published),
+            "load+store carve-clear lost the concurrent bit"
+        );
+    });
+}
+
+fn map_issue(backing: &Backing, offset: u32) {
+    backing.bitmap().issue(offset);
 }
 
 /// Shadow of one pending word for the negative cut mechanisms.
@@ -360,86 +438,5 @@ fn loom_actual_negative_masked_cut_drops_pending_bits() {
         pb.join().unwrap();
         seen |= word.bits.swap(0, Ordering::AcqRel);
         assert_eq!(seen, 3, "masked cut dropped pending bits");
-    });
-}
-
-/// Actual-source `ClassLeaves` publication: the owner's `prepare` (System leaf
-/// allocation, Release pointer publication) and `issue` race a producer's
-/// `publish` through `ClassMap::Leaves`. Whatever the interleaving, the
-/// producer either sees no leaf yet or the fully initialized one, a completed
-/// issue is never lost for a later discovery, and a never-issued granule in a
-/// prepared leaf never publishes.
-#[test]
-fn loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable() {
-    leaf_model(move || {
-        let backing = Arc::new(LeafBacking::new());
-        let owner = {
-            let backing = Arc::clone(&backing);
-            thread::spawn(move || {
-                assert!(backing.leaves.prepare(0, 3));
-                assert!(backing.bitmap().issue(0, 3));
-            })
-        };
-        let producer = {
-            let backing = Arc::clone(&backing);
-            thread::spawn(move || {
-                thread::yield_now();
-                backing.bitmap().publish(0)
-            })
-        };
-        owner.join().unwrap();
-        let _published_early = producer.join().unwrap();
-        let map = backing.bitmap();
-        assert!(!map.publish(16), "never-issued granule must not publish");
-        assert!(map.publish(0), "completed issue must remain discoverable");
-        let mut records = Vec::new();
-        drain(&map, HIGH_WATER, &mut records);
-        assert_union(&records, &[(0, 0, 3)]);
-        let mut drained = Vec::new();
-        drain(&map, HIGH_WATER, &mut drained);
-        assert!(drained.is_empty(), "second discovery finds nothing");
-    });
-}
-
-/// Two producers publishing distinct granules of the SAME mixed leaf. The
-/// owner's `prepare` (System leaf allocation, Release pointer publication)
-/// and both `issue` stores complete before the producers spawn, so each
-/// publish observes the issued classes; the racing part is the two producers
-/// against each other and the owner's cut. Every schedule keeps the cut
-/// union exact: no loss, no duplicates, and unissued granules never publish.
-/// (The prepare-vs-producer race is covered by
-/// `loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable`,
-/// whose final re-publish keeps it schedule-uniform.)
-#[test]
-fn loom_actual_leaves_two_producers_same_leaf_no_loss_no_dup() {
-    leaf_model(move || {
-        let backing = Arc::new(LeafBacking::new());
-        assert!(backing.leaves.prepare(0, 3));
-        assert!(backing.bitmap().issue(0, 3));
-        assert!(backing.bitmap().issue(16, 4));
-        let p1 = {
-            let backing = Arc::clone(&backing);
-            thread::spawn(move || {
-                thread::yield_now();
-                assert!(backing.bitmap().publish(0));
-            })
-        };
-        let p2 = {
-            let backing = Arc::clone(&backing);
-            thread::spawn(move || {
-                thread::yield_now();
-                assert!(backing.bitmap().publish(16));
-            })
-        };
-        p1.join().unwrap();
-        p2.join().unwrap();
-        let map = backing.bitmap();
-        assert!(!map.publish(32), "never-issued granule must not publish");
-        let mut records = Vec::new();
-        drain(&map, HIGH_WATER, &mut records);
-        assert_union(&records, &[(0, 0, 3), (0, 16, 4)]);
-        let mut drained = Vec::new();
-        drain(&map, HIGH_WATER, &mut drained);
-        assert!(drained.is_empty(), "third discovery finds nothing");
     });
 }

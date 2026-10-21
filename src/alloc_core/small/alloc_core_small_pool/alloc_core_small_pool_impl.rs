@@ -554,6 +554,25 @@ impl AllocCore {
         self.pool_cap as usize
     }
 
+    /// MEASUREMENT-ONLY (B4 mem4 memory judge): the RESOLVED operative pool
+    /// byte bound = `pool_cap × SEGMENT`. HONESTY NOTE: the configured byte
+    /// ceiling itself (`pool_byte_cap`'s byte VALUE with its default
+    /// fallback) is NOT retained at runtime anywhere — resolution
+    /// (`AllocCore::new_with_config`) folds it into `pool_cap` =
+    /// `min(pool_segments, pool_byte_cap / SEGMENT)` and keeps only the
+    /// segment count, so no accessor can return the original byte figure.
+    /// What the runtime genuinely enforces is this folded byte bound, and
+    /// that is what this hook returns: a RESOLVED value derived from stored
+    /// runtime state (`pool_cap`), never the requested number. Read-only
+    /// widening cast + multiply; no mutation, no pointer.
+    /// `bench-internals`-gated (no production caller → R25-10 sub-rule 2).
+    #[doc(hidden)]
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_pool_byte_cap_effective(&self) -> usize {
+        self.dbg_pool_cap() * crate::alloc_core::os::SEGMENT
+    }
+
     /// TEST-ONLY (Mechanism 2, task #51): forcibly DRAIN the hysteresis pool —
     /// release every pooled segment to the OS (reset + `table.recycle`) exactly
     /// as the pool-full eviction path does. Returns the number of segments

@@ -22,7 +22,6 @@ mod alloc_core {
     }
     pub mod size_classes {
         pub const MIN_BLOCK: usize = sefer_alloc::SegmentLayout::MIN_BLOCK;
-        pub const SMALL_CLASS_COUNT: usize = sefer_alloc::SegmentLayout::SIZE_CLASS_TABLE.len();
     }
     pub mod segment_layout {
         pub const SIDECAR_WORD_BYTES: usize =
@@ -35,7 +34,7 @@ mod alloc_core {
 mod remote_bitmap;
 
 mod tests {
-    use super::remote_bitmap::{BitmapRecord, BitmapScan, SidecarBitmap};
+    use super::remote_bitmap::{BitmapScan, SidecarBitmap};
 
     /// High-water covering the whole pending bank.
     const FULL_WINDOW: usize =
@@ -49,10 +48,11 @@ mod tests {
         let words: Vec<std::sync::atomic::AtomicU64> = (0..SidecarBitmap::WORDS)
             .map(|_| std::sync::atomic::AtomicU64::new(0))
             .collect();
-        let classes: Vec<std::sync::atomic::AtomicU8> = (0..SidecarBitmap::GRANULES)
-            .map(|_| std::sync::atomic::AtomicU8::new(0))
+        let starts: Vec<std::sync::atomic::AtomicU64> = (0..SidecarBitmap::WORDS)
+            .map(|_| std::sync::atomic::AtomicU64::new(0))
             .collect();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        // payload_start 0: the whole segment is payload in this harness.
+        let map = SidecarBitmap::from_pending(&words, &starts).unwrap();
 
         BitmapScan::measure_rmw_swaps(true);
 
@@ -80,15 +80,16 @@ mod tests {
         let words: Vec<std::sync::atomic::AtomicU64> = (0..SidecarBitmap::WORDS)
             .map(|_| std::sync::atomic::AtomicU64::new(0))
             .collect();
-        let classes: Vec<std::sync::atomic::AtomicU8> = (0..SidecarBitmap::GRANULES)
-            .map(|_| std::sync::atomic::AtomicU8::new(0))
+        let starts: Vec<std::sync::atomic::AtomicU64> = (0..SidecarBitmap::WORDS)
+            .map(|_| std::sync::atomic::AtomicU64::new(0))
             .collect();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        // payload_start 0: the whole segment is payload in this harness.
+        let map = SidecarBitmap::from_pending(&words, &starts).unwrap();
 
         // Offset 1024 lives in pending word 1 (1024 bytes per bit at
         // MIN_BLOCK=16 × 64 bits/word), class 7 is an arbitrary payload.
-        assert!(map.issue(1024, 7));
-        assert!(map.publish(1024));
+        map.issue(1024);
+        assert!(map.publish(1024, 0));
 
         BitmapScan::measure_rmw_swaps(true);
 
@@ -102,11 +103,8 @@ mod tests {
         }
         assert_eq!(
             record,
-            Some(BitmapRecord {
-                offset: 1024,
-                class: 7
-            }),
-            "the published word-1 record must survive the guard"
+            Some(1024),
+            "the published word-1 record offset must survive the guard"
         );
 
         let rmw = BitmapScan::measure_rmw_swaps(false);

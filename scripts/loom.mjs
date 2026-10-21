@@ -56,7 +56,11 @@ const FEATURES = {
   loom_r20_heap_reuse_spill: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_ph4a_heap_lease: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_ph4b_publish_recycle_drain: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
-  loom_r11_small_sidecar: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
+  // D1′ phase-1b replacements: the shadow class map and the r11 mixed-leaf
+  // pin model are gone; both new models gate on `#![cfg(loom)]` only, so
+  // they carry just the mandatory `tagged-index-stack/loom` forward.
+  loom_oneclass_small_sidecar_actual: 'tagged-index-stack/loom',
+  loom_oneclass_start_bit: 'tagged-index-stack/loom',
   loom_sharded: 'experimental,tagged-index-stack/loom',
   loom_epoch: 'experimental,tagged-index-stack/loom',
   loom_r11_epoch_false_full: 'experimental,tagged-index-stack/loom',

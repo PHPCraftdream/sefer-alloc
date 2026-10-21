@@ -1,4 +1,4 @@
-use super::{sidecar_bitmap::ClassMap, AtomicU64, BitmapCut, Ordering};
+use super::{AtomicU64, BitmapCut, Ordering};
 use crate::alloc_core::fatal::fatal;
 
 /// Positions of the [`SCAN_COUNTS`] benchmark array (`measure_scans`'s
@@ -36,7 +36,6 @@ std::thread_local! {
 #[must_use = "finish the fixed scan or persist the remaining cursor"]
 pub(crate) struct BitmapScan<'a> {
     pub(super) pending: core::slice::Iter<'a, AtomicU64>,
-    pub(super) classes: ClassMap<'a>,
     pub(super) next_word: usize,
     pub(super) end_word: usize,
 }
@@ -124,7 +123,7 @@ impl<'a> BitmapScan<'a> {
             }
         });
         Some(BitmapCut {
-            classes: self.classes,
+            _marker: core::marker::PhantomData,
             word,
             bits,
         })

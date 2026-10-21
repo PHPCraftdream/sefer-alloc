@@ -58,8 +58,6 @@ pub(crate) use loom::sync::atomic::{AtomicPtr, AtomicU64, AtomicU8, Ordering};
 
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_cut.rs"]
 mod bitmap_cut;
-#[path = "../src/alloc_core/segment/remote_bitmap/bitmap_record.rs"]
-mod bitmap_record;
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_scan.rs"]
 mod bitmap_scan;
 #[path = "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs"]
@@ -67,7 +65,6 @@ mod sidecar_bitmap;
 
 mod remote_bitmap {
     pub(crate) use super::bitmap_cut::BitmapCut;
-    pub(crate) use super::bitmap_record::BitmapRecord;
     pub(crate) use super::bitmap_scan::BitmapScan;
     pub(crate) use super::sidecar_bitmap::SidecarBitmap;
 }
@@ -75,7 +72,7 @@ mod remote_bitmap {
 // Root bindings for the names the included production files resolve via
 // `super::` (same mechanism as `tests/loom_sidecar_bitmap_actual.rs`);
 // `BitmapCut`/`BitmapScan` are referenced by the included sources themselves.
-use remote_bitmap::{BitmapCut, BitmapRecord, BitmapScan, SidecarBitmap};
+use remote_bitmap::{BitmapCut, BitmapScan, SidecarBitmap};
 
 use loom::sync::Arc;
 use loom::thread;
@@ -88,7 +85,7 @@ const HIGH_WATER: usize = 2 * 64 * 16; // covers both words
 
 struct Backing {
     words: Vec<AtomicU64>,
-    classes: Vec<AtomicU8>,
+    starts: Vec<AtomicU64>,
 }
 
 impl Backing {
@@ -97,14 +94,16 @@ impl Backing {
             words: (0..SidecarBitmap::WORDS)
                 .map(|_| AtomicU64::new(0))
                 .collect(),
-            classes: (0..SidecarBitmap::GRANULES)
-                .map(|_| AtomicU8::new(0))
+            // D1' phase-1a start bank, zero-initialized.
+            starts: (0..SidecarBitmap::WORDS)
+                .map(|_| AtomicU64::new(0))
                 .collect(),
         }
     }
 
     fn bitmap(&self) -> SidecarBitmap<'_> {
-        SidecarBitmap::from_initialized(&self.words, &self.classes).unwrap()
+        // payload_start 0: the whole (reduced) segment is payload here.
+        SidecarBitmap::from_pending(&self.words, &self.starts).unwrap()
     }
 }
 
@@ -114,7 +113,7 @@ fn loom_b4_publish_racing_zero_word_skip_found_by_later_scan() {
         assert_eq!(SidecarBitmap::WORDS, 2);
         let backing = Arc::new(Backing::new());
         let map = backing.bitmap();
-        assert!(map.issue(OFFSET, CLASS), "granule 1024 must issue");
+        map.issue(OFFSET);
 
         // Scanner: word 0 (zero → skip), then word 1 (may or may not find the
         // concurrently published bit, depending on the interleaving).
@@ -135,7 +134,7 @@ fn loom_b4_publish_racing_zero_word_skip_found_by_later_scan() {
         // Publisher: publishes the (already issued) word-1 granule.
         let publisher = {
             let backing = Arc::clone(&backing);
-            thread::spawn(move || assert!(backing.bitmap().publish(OFFSET)))
+            thread::spawn(move || assert!(backing.bitmap().publish(OFFSET, 0)))
         };
 
         let first_word1 = scanner.join().unwrap();
@@ -157,14 +156,9 @@ fn loom_b4_publish_racing_zero_word_skip_found_by_later_scan() {
         // Exactly-once: the published record is found by exactly one of the
         // two word-1 scans — never duplicated, never lost.
         match (first_word1, second_word1) {
-            (Some(found), None) | (None, Some(found)) => assert_eq!(
-                found,
-                BitmapRecord {
-                    offset: OFFSET,
-                    class: CLASS
-                },
-                "the record carries the issued offset and class"
-            ),
+            (Some(found), None) | (None, Some(found)) => {
+                assert_eq!(found, OFFSET, "the record carries the issued offset")
+            }
             (None, None) => panic!("published bit lost by the zero-word skip"),
             (Some(_), Some(_)) => panic!("record duplicated across the two scans"),
         }

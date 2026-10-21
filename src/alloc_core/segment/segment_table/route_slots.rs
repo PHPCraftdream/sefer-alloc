@@ -12,15 +12,10 @@ use std::alloc::{GlobalAlloc, Layout, System};
 static SYSTEM_TOTALS: [AtomicUsize; 4] = [const { AtomicUsize::new(0) }; 4];
 
 use crate::alloc_core::fatal::fatal;
-use crate::alloc_core::os::SEGMENT;
-use crate::alloc_core::remote_bitmap::{ClassLeaves, LeafCursor};
-use crate::alloc_core::segment_header::SegmentHeader;
 use crate::alloc_core::segment_header::SegmentKind;
-use crate::alloc_core::size_classes::MIN_BLOCK;
 use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
 
-use super::issue_transaction::IssueTransaction;
-use super::MAX_SEGMENTS;
+use super::{SmallIssueRun, MAX_SEGMENTS};
 
 pub(super) struct RouteSlots {
     slots: *mut Option<RouteRegistration<'static>>,
@@ -139,73 +134,74 @@ impl RouteSlots {
         *slot = Some(route);
     }
 
-    pub(super) fn issue_small(&self, index: usize, base: *mut u8, offset: u32, class: u8) {
-        if index >= self.cap {
-            fatal(b"route_slots: issue_small index out of range\n");
-        }
-        // SAFETY: owner-only access to an initialized slot in the live array.
-        let route = unsafe { &*self.slots.add(index) }
-            .as_ref()
-            .unwrap_or_else(|| fatal(b"route_slots: issue_small on empty route slot\n"));
-        // Commit cannot allocate: the owner completed every fallible prepare.
-        if route.root() != base
-            || !route
-                .small_sidecar()
-                .is_some_and(|sidecar| sidecar.prepared(offset, class))
-            || !route.issue_small(offset, class)
-        {
-            fatal(b"route_slots: small issue commit rejected\n");
-        }
+    /// D1′ staged issue (phase-2 OPT): the fatal slot guards run ONCE per
+    /// run — this constructor — and the returned handle does only the cheap
+    /// per-block sidecar operations (`issue` / `clear_pending_start_bit`).
+    /// Same fatal guards as the former per-block `issue_small`:
+    /// index < cap, occupied slot, root == base, Small sidecar present.
+    pub(super) fn small_issue_run(&self, index: usize, base: *mut u8) -> SmallIssueRun<'_> {
+        SmallIssueRun::routed(self.small_sidecar_or_fatal(index, base))
     }
 
-    #[cfg_attr(not(debug_assertions), inline(always))]
-    pub(super) fn prepare_small_issue(
+    /// D1′ phase-1a: owner-only guard helper resolving the live Small
+    /// sidecar for `base`'s slot (same fatal guards as `issue_small` /
+    /// `scan_small_from`).
+    fn small_sidecar_or_fatal(
         &self,
         index: usize,
         base: *mut u8,
-        offset: u32,
-        class: u8,
-    ) -> Option<IssueTransaction> {
+    ) -> &crate::registry::segment_route::SmallSidecar {
         if index >= self.cap {
-            fatal(b"route_slots: prepare index out of range\n");
+            fatal(b"route_slots: small sidecar index out of range\n");
         }
         // SAFETY: owner-only access to an initialized live route slot.
         let route = unsafe { &*self.slots.add(index) }
             .as_ref()
-            .unwrap_or_else(|| fatal(b"route_slots: prepare on empty route slot\n"));
+            .unwrap_or_else(|| fatal(b"route_slots: small sidecar on empty route slot\n"));
         if route.root() != base {
-            fatal(b"route_slots: prepare base does not match route root\n");
+            fatal(b"route_slots: small sidecar base does not match route root\n");
         }
-        let prepared = route.prepare_small(offset, class);
-        if !prepared && route.small_sidecar().is_none() {
-            fatal(b"route_slots: prepare_small failed without sidecar\n");
-        }
-        prepared.then_some(IssueTransaction::prepared(index, base, offset, class))
+        route
+            .small_sidecar()
+            .unwrap_or_else(|| fatal(b"route_slots: small sidecar on non-Small route\n"))
     }
 
-    /// Run-level twin of [`Self::prepare_small_issue`]: the fatal guards (live
-    /// slot, matching root, Small sidecar) run ONCE per refill batch; the
-    /// per-block OOM moves to `RoutedIssueRun::prepare_for` (leaf changes).
-    pub(super) fn prepare_small_issue_run(&self, base: *mut u8, class: u8) -> RoutedIssueRun<'_> {
-        let index = SegmentHeader::segment_id_at(base) as usize;
-        if index >= self.cap {
-            fatal(b"route_slots: issue run index out of range\n");
-        }
-        // SAFETY: owner-only access to an initialized live route slot.
-        let route = unsafe { &*self.slots.add(index) }
-            .as_ref()
-            .unwrap_or_else(|| fatal(b"route_slots: issue run on empty route slot\n"));
-        if route.root() != base {
-            fatal(b"route_slots: issue run base does not match route root\n");
-        }
-        let sidecar = route
-            .small_sidecar()
-            .unwrap_or_else(|| fatal(b"route_slots: issue run on non-Small route\n"));
-        RoutedIssueRun {
-            classes: sidecar.classes(),
-            class,
-            cursor: None,
-        }
+    /// Reclaim's start-bit check: the published record's start granule MUST
+    /// carry its start bit (a published pending bit with start bit 0 is
+    /// corruption; the caller fatals on `false`).
+    pub(super) fn reclaim_start_bit(&self, index: usize, base: *mut u8, offset: u32) -> bool {
+        self.small_sidecar_or_fatal(index, base).start_bit(offset)
+    }
+
+    /// Reclaim's production overlap check: any start bit set in the OPEN
+    /// interval `[start, end)` (start EXCLUDES the record's own granule,
+    /// end EXCLUDES the block end) means the claimed block spans an issued
+    /// neighbour — corruption; the caller fatals on `true`.
+    pub(super) fn reclaim_start_overlap(
+        &self,
+        index: usize,
+        base: *mut u8,
+        start: u32,
+        end: u32,
+    ) -> bool {
+        self.small_sidecar_or_fatal(index, base)
+            .start_bits_between(start, end)
+    }
+
+    /// Retain-reset: atomically clear pending AND start bits over the
+    /// granule range `[start_off, end_off)` (the state-byte reset range).
+    // Only the retain-reset hook (bench-internals + internals +
+    // alloc-decommit) reaches this seam; allow the production-only build.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    pub(super) fn clear_remote_bits(
+        &self,
+        index: usize,
+        base: *mut u8,
+        start_off: u32,
+        end_off: u32,
+    ) {
+        self.small_sidecar_or_fatal(index, base)
+            .clear_remote_bits_range(start_off, end_off);
     }
 
     pub(super) fn scan_small_from(
@@ -259,74 +255,6 @@ impl RouteSlots {
             let slot = unsafe { &mut *self.slots.add(i) };
             let _ = slot.take();
         }
-    }
-}
-
-/// Whole-batch issue run over one route's class leaves: the fatal route
-/// guards run once in [`RouteSlots::prepare_small_issue_run`], leaf backing
-/// is resolved once per 256-granule leaf CHANGE, and each block costs one
-/// Release store ([`Self::commit`]).
-pub(super) struct RoutedIssueRun<'a> {
-    classes: &'a ClassLeaves,
-    class: u8,
-    cursor: Option<LeafCursor>,
-}
-
-impl RoutedIssueRun<'_> {
-    /// Fallible per-block half: promote the block's leaf if the run has not
-    /// seen it yet (OOM-shaped `false`, same as the per-block prepare).
-    pub(super) fn prepare_for(&mut self, offset: u32) -> bool {
-        let off = offset as usize;
-        let granule = off / MIN_BLOCK;
-        if off >= SEGMENT || !off.is_multiple_of(MIN_BLOCK) {
-            return false;
-        }
-        // The hoist: same-leaf blocks cost two shifts + compare, zero atomics.
-        if self
-            .cursor
-            .as_ref()
-            .is_some_and(|c| c.leaf_idx() == LeafCursor::leaf_index(granule))
-        {
-            #[cfg(all(feature = "internals", feature = "bench-internals"))]
-            if ClassLeaves::fail_prepare_injected() {
-                return false;
-            }
-            return true;
-        }
-        match self.classes.prepare_leaf(granule, self.class) {
-            Some(cursor) => {
-                self.cursor = Some(cursor);
-                true
-            }
-            None => false,
-        }
-    }
-
-    /// Infallible per-block half: one Release class store. On a leaf CHANGE
-    /// (non-monotonic freelist offsets, or a skipped prepare) the leaf is
-    /// re-resolved first, and a never-promoted leaf fatals — a skipped
-    /// prepare cannot silently store.
-    pub(super) fn commit(&mut self, offset: u32) {
-        let off = offset as usize;
-        debug_assert!(off < SEGMENT, "batch issue commit offset out of segment");
-        debug_assert!(
-            off.is_multiple_of(MIN_BLOCK),
-            "batch issue commit offset not block aligned"
-        );
-        let granule = off / MIN_BLOCK;
-        let same_leaf = self
-            .cursor
-            .as_ref()
-            .is_some_and(|c| c.leaf_idx() == LeafCursor::leaf_index(granule));
-        if !same_leaf {
-            let cursor = self
-                .classes
-                .resolve_leaf(granule)
-                .unwrap_or_else(|| fatal(b"route_slots: batch issue commit on unprepared leaf\n"));
-            self.cursor = Some(cursor);
-        }
-        self.classes
-            .issue_in(self.cursor.as_ref().unwrap(), granule, self.class);
     }
 }
 

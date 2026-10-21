@@ -719,22 +719,20 @@ hard compile error in every configuration:
 | [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync` impl on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off. `HeapSlot` is deliberately not `Send`. | `alloc-global` |
 | [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | file owns the lease-claim path: slot picking + the `FREE → LIVE` CAS (`claim_lease` / `claim_lease_with_config`), OOM push-back, the config-conflict rollback guard, and `HeapLease` (its `Drop` performs the `LIVE → FREE` Release CAS) — the pointer handoff `*mut HeapCore` out of a slot's `UnsafeCell`. The legacy raw-pointer surface (`claim` / `claim_with_config` / `unsafe fn recycle` / `HeapLease::into_raw`) was removed (task #2119) | `alloc-global` |
 | [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries and sidecars; shard-lock pin acquisition prevents load/increment UAF. Numeric foreign-free lookup uses this directory. | `alloc-global` |
-| [`src/registry/segment_route/small_sidecar.rs`](src/registry/segment_route/small_sidecar.rs) | In-place construction of the pending words and adaptive class map before publication. | `alloc-global` |
-| [`src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`](src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs) | Genuine System-backed mixed-leaf pointers, owner-only presence bits, and exact layout deallocation after unlink and the last pin. | `alloc-core`; used by `alloc-global` |
+| [`src/registry/segment_route/small_sidecar.rs`](src/registry/segment_route/small_sidecar.rs) | In-place construction of the sidecar's pending words and start-issue map before publication (D1′ phase-1b: no class leaves; the class lives only in the owner state byte). | `alloc-global` |
 | [`src/alloc_core/segment/segment_table/route_slots.rs`](src/alloc_core/segment/segment_table/route_slots.rs) | System-backed owner-only registration handles; unlink before segment OS release without GlobalAlloc recursion. | `alloc-global` |
 | [`src/registry/segment_route/shard_lock.rs`](src/registry/segment_route/shard_lock.rs) | Non-allocating spin lock guarding route-directory shards; std `Mutex` boxes a pthread mutex on first lock on macOS, which would re-enter the installed global allocator during heap construction. | `alloc-global` |
 | [`src/concurrent/epoch/hand.rs`](src/concurrent/epoch/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
-+ primordial-lazy-commit`) the active internal tier-1 seams are **fifteen**:
++ primordial-lazy-commit`) the active internal tier-1 seams are **fourteen**:
 `alloc_core::platform::{os, node, sidecar}` and
 `alloc_core::segment::segment_table::route_slots`;
 `global::{sefer_alloc::global_alloc, fallback, process_exit}`;
 `registry::bootstrap::{registry, ensure}`, `registry::heap_slot`,
 `registry::heap_registry::claim`, and
-`registry::segment_route::{directory, shard_lock, small_sidecar}` and
-`alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes`.
+`registry::segment_route::{directory, shard_lock, small_sidecar}` (the D1′ phase-1b removal of `sidecar_bitmap::leaf_classes` dropped its tier-1 seam).
 R6-T37 demoted `global::tls_heap` to a tier-2 item-scoped site (its sole `bench-internals`-gated `dbg_restore_local_for_test` hook); the module itself is safe.
 `registry::heap_registry::maintenance` is safe composition; its lease's
 confined unsafe handoff lives in `claim`, not in a separate tier-1 seam.
@@ -797,8 +795,8 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **27** tier-1 module-level seams (21 in
-`src/`, 6 in `crates/`) plus **101** tier-2 item-scoped allows across **32**
+That's the full list (both tiers): **26** tier-1 module-level seams (20 in
+`src/`, 6 in `crates/`) plus **104** tier-2 item-scoped allows across **32**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1419,9 +1417,9 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **445 integration test files**,
-**97 example binaries**, **33 benches**, and **21 root Loom models**
-in `tests/`, plus two member-crate
+needs its acceptance run. The present tree contains **441 integration test files**,
+**97 example binaries**, **33 benches**, and **22 root Loom models**
+in `tests/` (`tests/*.rs` (441 files)), plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
 Counts cover root `*.rs` targets in each folder, excluding nested fixtures
@@ -1429,11 +1427,11 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (445 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (438 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (97 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (33 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (21 files):** `tests/loom_active_kind_index.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
+| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (22 files):** `tests/loom_active_kind_index.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_oneclass_small_sidecar_actual.rs`, `tests/loom_oneclass_start_bit.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri-matrix.mjs` is the single manifest of Miri targets (GREEN, EXPECTED-RED with its card, WAIVED); `scripts/miri.mjs` runs it and `scripts/verify-miri-target-wiring.mjs` checks that every Miri test file is classified and wired in CI; it includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
 | ThreadSanitizer | Real cross-thread races in selected binaries | `scripts/tsan.mjs` / CI; old ring-era results are not cutover acceptance |
@@ -1870,7 +1868,7 @@ cross-thread; `// SAFETY:` for any new `unsafe`).
 
 The codebase conventions are documented in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and `CLAUDE.md` (one
-export per file; `mod.rs` only re-exports; tests live in `tests/` not
+export per file; `mod.rs` only re-exports; tests live in `tests/` (`tests/*.rs` (441 files)) not
 inline; `unsafe` only in named seams). The compiler enforces the unsafe
 discipline; the rest is convention.
 
