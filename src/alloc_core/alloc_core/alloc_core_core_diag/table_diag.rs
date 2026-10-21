@@ -169,6 +169,17 @@ impl AllocCore {
         self.table.dbg_hash_contains_only(base)
     }
 
+    /// TEST-ONLY (N9-v3): read-only — does the one-entry last-segment memo
+    /// in `SegmentTable` currently hold `ptr`'s segment base? Address
+    /// compare only, nothing is dereferenced. Pins WHICH site arms the memo
+    /// (`tests/b4_micro_n9_memo_fill_policy.rs`). Requires `bench-internals`.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_segment_memo_holds(&self, ptr: *mut u8) -> bool {
+        self.table.memo_holds(os::segment_base_of_ptr(ptr))
+    }
+
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): process-wide count of
     /// mutable `SegmentTable::canonical_base_of_mut` lookups that HIT the
     /// Tier-1 direct-mapped `own_cache` (including `contains_base`) — see
