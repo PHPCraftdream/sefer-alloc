@@ -1,1 +1,0 @@
-{"runner":"scripts/r20_r6_ab_iai_run.mjs","stages":"prepare,build,oracle,measure","outDir":"target/r20r6ab-n9","benchTarget":"perf_gate_iai","features":"production bench-internals internals","note":"B4-31 N9 v3 memo fill policy: main vs branch"}
