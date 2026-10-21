@@ -88,7 +88,7 @@
 - Entry points: `GlobalAlloc::{alloc, alloc_zeroed, realloc, dealloc}` через установленный `#[global_allocator]` (Box, Vec, String; narrow-reborrow 1..7; align выше 16 и Large/high-align); `trim_current_thread`; `start_maintenance`/`maintenance_running`; fallback при teardown TLS и насыщении registry.
 - OOM: ошибка подготовки ресурса даёт null или частичный batch, никогда abort или panic в `GlobalAlloc`; старый объект при OOM в `realloc` остаётся живым; `dealloc` не аллоцирует.
 - Совместимость: стабильная поверхность (`SeferAlloc`, `AllocStats`, `MaintenanceStartError`, `Profile` и `*Config`, публичные `AllocCore`/`SegmentLayout` под `alloc-core`) не ломается; поверхность за `#[doc(hidden)]` и `internals` менять можно; любой слом стабильного API — отдельное решение и отдельная просьба о версии.
-- Не становятся `pub unsafe` (только `pub(crate)`; тестам — безопасные числовые наблюдатели под `bench-internals`): `IssueTransaction`/`IssueTicket`; tickets терминальной публикации, retire и pending-claim; domain/heap lease и maintenance claim; descriptor caps (`AtomicPtr`), токены release ОС; `BitmapCut`/`RouteCut`, handles внетельной free-структуры, seam `Node`.
+- Не становятся `pub unsafe` (только `pub(crate)`; тестам — безопасные числовые наблюдатели под `bench-internals`): `IssueTransaction`/`IssueTicket` (УДАЛЕНЫ в D1′ phase-1b 2026-10-20: issue-транзакция упразднена, пути issue инфаллибельны); tickets терминальной публикации, retire и pending-claim; domain/heap lease и maintenance claim; descriptor caps (`AtomicPtr`), токены release ОС; `BitmapCut`/`RouteCut`, handles внетельной free-структуры, seam `Node`.
 
 ## Стоп-линии
 

@@ -29,7 +29,7 @@ mod alloc_core {
 mod remote_bitmap;
 
 use core::sync::atomic::{AtomicU64, Ordering};
-use remote_bitmap::{BitmapRecord, ClassLeaves, SidecarBitmap};
+use remote_bitmap::SidecarBitmap;
 
 #[test]
 fn sidecar_granule_index_exhaustive() {
@@ -42,23 +42,11 @@ fn sidecar_granule_index_exhaustive() {
     assert_eq!(SidecarBitmap::GRANULES, granules);
     assert_eq!(SidecarBitmap::WORDS, words);
     assert!(classes >= 2);
+    // D1' phase-1b: pending + start banks only — the class carrier is gone.
     let pending: Vec<_> = (0..words).map(|_| AtomicU64::new(0)).collect();
-    let mut storage = Box::<ClassLeaves>::new_uninit();
-    // SAFETY: Box provides one private, aligned, writable ClassLeaves slot.
-    // No ClassLeaves reference or Drop exists before initialize_at returns;
-    // it initializes every uniform atomic, mixed pointer and presence word
-    // in place.
-    unsafe { ClassLeaves::initialize_at(storage.as_mut_ptr()) };
-    // SAFETY: initialize_at completed initialization of every value-bearing
-    // field. This Box owns the slot and outlives the bitmap and every cut.
-    let leaves = unsafe { storage.assume_init() };
-    let map = SidecarBitmap::from_leaves(&pending, &leaves).unwrap();
-
-    // Oracle: 4 KiB class leaves; bit position comes from the byte position
-    // within a u64-sized pending word, independently of SidecarBitmap::granule.
-    let uniform_class = |offset: usize| u8::try_from((offset / 4096) % classes).unwrap();
-    let mixed_class =
-        |offset: usize| u8::try_from(((offset / 4096) + (offset / stride) % 2) % classes).unwrap();
+    let starts: Vec<_> = (0..words).map(|_| AtomicU64::new(0)).collect();
+    // payload_start 0: the whole segment is payload in this harness.
+    let map = SidecarBitmap::from_pending(&pending, &starts).unwrap();
     let mut issued = [0usize; 2];
     let mut published = [0usize; 2];
     let mut decoded = [0usize; 2];
@@ -69,31 +57,28 @@ fn sidecar_granule_index_exhaustive() {
             u32::try_from(segment).unwrap(),
             u32::MAX,
         ] {
-            assert!(!map.issue(invalid, 0), "invalid offset {invalid}");
-            assert!(!map.publish(invalid), "invalid offset {invalid}");
+            // D1' phase-1b: the infallible issue no longer validates (an
+            // out-of-segment owner offset is a fatal); the PUBLICATION gate
+            // still rejects every invalid offset without an RMW.
+            assert!(!map.publish(invalid, 0), "invalid offset {invalid}");
         }
         assert!(pending.iter().all(|word| word.load(Ordering::Relaxed) == 0));
         let mut expected = vec![0u64; words];
         for offset in (0..segment).step_by(stride) {
-            let granule = offset / stride;
             let word = offset / (stride * u64::BITS as usize);
             let bit = (offset % (stride * u64::BITS as usize)) / stride;
-            let class = if pass == 0 {
-                uniform_class(offset)
-            } else {
-                mixed_class(offset)
-            };
-            assert!(leaves.prepare(granule, class), "prepare {offset}");
-            assert!(
-                map.issue(u32::try_from(offset).unwrap(), class),
-                "issue {offset}"
-            );
+            map.issue(u32::try_from(offset).unwrap());
             issued[pass] += 1;
-            // encoded has no validation: only use the bounded oracle granule
-            // after issue accepted this aligned in-segment offset.
-            assert_eq!(leaves.encoded(granule), class + 1, "encoded {offset}");
+            // Oracle: the start bit's position comes from the byte position
+            // within a u64-sized bank word, independently of
+            // SidecarBitmap::granule.
+            assert_eq!(
+                starts[word].load(Ordering::Relaxed) >> bit & 1,
+                1,
+                "start word {word}, offset {offset}"
+            );
             assert!(
-                map.publish(u32::try_from(offset).unwrap()),
+                map.publish(u32::try_from(offset).unwrap(), 0),
                 "publish {offset}"
             );
             published[pass] += 1;
@@ -119,17 +104,9 @@ fn sidecar_granule_index_exhaustive() {
             );
             for bit in 0..u64::BITS as usize {
                 let offset = word * (stride * u64::BITS as usize) + bit * stride;
-                let class = if pass == 0 {
-                    uniform_class(offset)
-                } else {
-                    mixed_class(offset)
-                };
                 assert_eq!(
                     cut.pop(),
-                    Some(BitmapRecord {
-                        offset: u32::try_from(offset).unwrap(),
-                        class
-                    }),
+                    Some(u32::try_from(offset).unwrap()),
                     "inverse word {word}, bit {bit}"
                 );
                 decoded[pass] += 1;
@@ -144,5 +121,11 @@ fn sidecar_granule_index_exhaustive() {
     assert_eq!(published, [granules; 2]);
     assert_eq!(decoded, [granules; 2]);
     assert_eq!(cut_counts, [words; 2]);
-    println!("granules={granules} uniform_records={} mixed_records={} total_records={} cuts={} boundary_rejections=12", decoded[0], decoded[1], decoded.iter().sum::<usize>(), cut_counts.iter().sum::<usize>());
+    println!(
+        "granules={granules} uniform_records={} mixed_records={} total_records={} cuts={} boundary_rejections=12",
+        decoded[0],
+        decoded[1],
+        decoded.iter().sum::<usize>(),
+        cut_counts.iter().sum::<usize>()
+    );
 }

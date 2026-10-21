@@ -2,35 +2,35 @@
 
 > **ВНИМАНИЕ:** этот файл сгенерирован скриптом `scripts/generate-evidence-registry-md.mjs` из `docs/evidence/registry.csv` — НЕ править руками; правки только в `registry.csv`.
 
-Источник: sha256 registry.csv = 069b4e76
+Источник: sha256 registry.csv = 644f3b7c
 
 ## Сводка по статусам
 
 | Статус | Строк |
 |---|---:|
-| PASS | 128 |
+| PASS | 126 |
 | FAIL | 3 |
 | KNOWN-DEFECT | 6 |
 | KNOWN-RED | 3 |
 | MODEL-LIMIT | 4 |
-| NOT_RUN | 15 |
+| NOT_RUN | 16 |
 | CFG_EXCLUDED | 1 |
 | BUILD_ONLY | 0 |
 | INCONCLUSIVE | 8 |
-| CI_PENDING | 3 |
-| CONDITIONAL | 9 |
-| TOTAL | 180 |
+| CI_PENDING | 4 |
+| CONDITIONAL | 8 |
+| TOTAL | 179 |
 
 ## Сводка по owner_phase
 
 | Фаза | Всего | PASS | NOT_RUN | Прочие |
 |---|---:|---:|---:|---:|
+| B4 | 1 | 0 | 0 | 1 |
 | PG-1 | 5 | 1 | 0 | 4 |
 | PG-2 | 2 | 0 | 0 | 2 |
 | PG-3 | 1 | 0 | 0 | 1 |
-| Ph0 | 28 | 19 | 5 | 4 |
+| Ph0 | 28 | 18 | 6 | 4 |
 | Ph1b | 3 | 0 | 0 | 3 |
-| Ph3a | 2 | 1 | 0 | 1 |
 | Ph3b | 1 | 1 | 0 | 0 |
 | Ph4a | 10 | 10 | 0 | 0 |
 | Ph4b | 15 | 12 | 0 | 3 |
@@ -45,7 +45,7 @@
 | Scope | Строк |
 |---|---:|
 | bench-only | 11 |
-| crate-internal | 77 |
+| crate-internal | 76 |
 | isolated-witness | 12 |
 | low-level-api | 13 |
 | shadow-model | 15 |
@@ -56,6 +56,7 @@
 
 | cell_id | gate | class | expects | Статус в реестре | note |
 |---|---|---|---|---|---|
+| R-D1P-01 | C1 | protocol | CI_PENDING\|PASS | CI_PENDING | новая строка D1′ one-class (замена R-Ph3a-native/-iai); вердикт по landing SHA после merge-коммита |
 | R-PG1-b-sb | C1 | p1-box | KNOWN-DEFECT | KNOWN-DEFECT | набор B KNOWN-DEFECT (класс P1-box, node.rs:90) |
 | R-PG1-b-tb | C1 | p1-box | KNOWN-DEFECT | KNOWN-DEFECT | набор B KNOWN-DEFECT (класс P1-box, node.rs:90) |
 | R-PG1-native | C4 | evidence-infra | PASS | PASS | W-0 positive-свидетель на наборе A (native) |
@@ -67,8 +68,6 @@
 | R-Ph1b-native | C1 | prototype | CONDITIONAL | CONDITIONAL | прототип exact-object; не влит (ветка proto/exact-object-ph1b) |
 | R-Ph1b-sb | C1 | prototype | CONDITIONAL | CONDITIONAL | прототип exact-object; не влит (ветка proto/exact-object-ph1b) |
 | R-Ph1b-tb | C1 | prototype | CONDITIONAL | CONDITIONAL | прототип exact-object; не влит (ветка proto/exact-object-ph1b) |
-| R-Ph3a-iai | C1 | protocol | CONDITIONAL | CONDITIONAL | waiver: iai-замер не перепроверен (перезапуск iai запрещён рамками Ph7b), строка честно CONDITIONAL |
-| R-Ph3a-native | C1 | protocol | PASS | PASS | waiver: нативная часть покрыта тремя мутант-циклами Ph7b; iai выделен в отдельную строку |
 | R-Ph3b | C2 | reverify | PASS\|CONDITIONAL | PASS | перепроверка на HEAD после изменения теста; тест переписан после замера |
 | R0-01 | C1 | p1-box | FAIL | FAIL | исторический Ph0-witness P1-box |
 | R0-02 | C1 | p1-box | FAIL | FAIL | исторический Ph0-witness P1-box |
@@ -85,7 +84,7 @@
 | R0-19 | C2 | reverify | PASS\|CONDITIONAL | PASS | перепроверка на HEAD после изменения теста; тест переписан после замера |
 | R0-20 | C2 | reverify | PASS\|CONDITIONAL | PASS | перепроверка на HEAD после изменения теста; тест переписан после замера |
 | R0-21 | C1 | protocol | PASS | PASS | shadow-модель; мутанты sidecar/terminal отвергнуты |
-| R0-22 | C1 | protocol | PASS | PASS | shadow-модель; мутанты pointer-publication/early-leaf отвергнуты |
+| R0-22 | C1 | protocol | NOT_RUN\|PASS | NOT_RUN | waiver: свидетель loom_r11_small_sidecar удалён; полной замены pin-retention/early-leaf пока нет |
 | R0-23 | C5 | protocol | NOT_RUN\|PASS | NOT_RUN | waiver: ownerless progress; не проверялся в Фазе 0 |
 | R0-24 | C1 | protocol | NOT_RUN\|PASS | NOT_RUN | waiver: W+3; witness не выбран (шаг 1a) |
 | R0-25 | COST | cost | NOT_RUN\|PASS\|CONDITIONAL | CONDITIONAL | агрегат стоимости; закрывается строками R6b-01..07 |
@@ -210,7 +209,7 @@
 
 | Gate | Клетки | Статусы |
 |---|---|---|
-| C1 | 24 | R-PG1-b-sb=KNOWN-DEFECT, R-PG1-b-tb=KNOWN-DEFECT, R-Ph1b-native=CONDITIONAL, R-Ph1b-sb=CONDITIONAL, R-Ph1b-tb=CONDITIONAL, R-Ph3a-iai=CONDITIONAL, R-Ph3a-native=PASS, R0-01=FAIL, R0-02=FAIL, R0-11=CFG_EXCLUDED, R0-12=PASS, R0-13=PASS, R0-14=PASS, R0-15=PASS, R0-21=PASS, R0-22=PASS, R0-24=NOT_RUN, R5c-09=NOT_RUN, R5c-10=NOT_RUN, R6a-C2=KNOWN-DEFECT, R6a-C3=KNOWN-DEFECT, R6a-C4=KNOWN-DEFECT, R6a-C5=KNOWN-DEFECT, R6a-C5b=NOT_RUN |
+| C1 | 23 | R-D1P-01=CI_PENDING, R-PG1-b-sb=KNOWN-DEFECT, R-PG1-b-tb=KNOWN-DEFECT, R-Ph1b-native=CONDITIONAL, R-Ph1b-sb=CONDITIONAL, R-Ph1b-tb=CONDITIONAL, R0-01=FAIL, R0-02=FAIL, R0-11=CFG_EXCLUDED, R0-12=PASS, R0-13=PASS, R0-14=PASS, R0-15=PASS, R0-21=PASS, R0-22=NOT_RUN, R0-24=NOT_RUN, R5c-09=NOT_RUN, R5c-10=NOT_RUN, R6a-C2=KNOWN-DEFECT, R6a-C3=KNOWN-DEFECT, R6a-C4=KNOWN-DEFECT, R6a-C5=KNOWN-DEFECT, R6a-C5b=NOT_RUN |
 | C2 | 20 | R-Ph3b=PASS, R0-06=PASS, R0-16=PASS, R0-17=PASS, R0-19=PASS, R0-20=PASS, R5b-01=PASS, R5b-03=PASS, R5b-04=INCONCLUSIVE, R5c-01=PASS, R5c-02=PASS, R5c-11=PASS, R5c-12=PASS, R6a-C1=PASS, R6a-C6a=PASS, R6a-C6b=PASS, R6a-M2=PASS, R6a-M4=PASS, R6a-M5=PASS, R6a-M7=PASS |
 | C3 | 5 | R5b-08=PASS, R5c-03=PASS, R5c-06=PASS, R5c-14=PASS, R5c-16=INCONCLUSIVE |
 | C4 | 11 | R-PG1-native=PASS, R-PG1-sb=MODEL-LIMIT, R-PG1-tb=MODEL-LIMIT, R-PG2-sb=CONDITIONAL, R-PG2-tb=CONDITIONAL, R4b-07=PASS, R4c-05=KNOWN-RED, R4c-06=KNOWN-RED, R5b-09-sb=MODEL-LIMIT, R5b-09-tb=MODEL-LIMIT, R6a-M8=PASS |
@@ -249,6 +248,7 @@ Raw logs переносите в `docs/evidence` по трем CLAUDE.md tiers: 
 
 | id | status | owner_phase | entry | features | os | profile | activation | positive_marker | mutant | receipt | scope | mutant_rejected | source_sha | status_reason |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| R-D1P-01 | CI_PENDING | B4 | tests/oneclass_carve_batch_early_publication.rs, tests/oneclass_mutant_battery.rs, tests/r11_ph3a… | production internals bench-internals alloc-xthread alloc-decommit fastbin lazy-commit-fault-injec… | Windows 10 x86_64 MSVC (host) | debug | cargo test --features production internals bench-internals alloc-xthread alloc-decommit fastbin l… | oc_port_t01: oneclass_carve_batch_early_publication 1 passed; oc_port_t02: oneclass_mutant_batter… | oneclass_mutant_battery: 9 RED-мутантов D1′ (M-a, M-c′, M-d, M-e, M-f, M-l) убиты на чистом дерев… | docs/design/2026-10-20-adr-oneclass-starts-map.md | crate-internal | false |  | локальные прогоны PASS и мутант RED 3/3 получены до merge-коммита (git-sha замера недоступен); вердикт по landing SHA после merge — EV-1 reverify по <scratch>/oc_ev1_rows.json |
 | R-PG1-b-sb | KNOWN-DEFECT | PG-1 | installed SeferAlloc; tests/r11_w0_box_reuse.rs (набор B: alloc-global) | alloc-global internals bench-internals | Windows x86_64 (host-Miri) | Miri SB (strict-provenance) | cargo +nightly miri test --features "alloc-global internals bench-internals" -j 1 --test r11_w0_b… | w0-after красный: UB not granting access … в src/alloc_core/platform/node.rs:90 (sb_B_w0-after.lo… | отдельный факт о наборе B; не гипотеза | docs/reviews/2026-10-01-adr-pg1-w0-receipt.md | shipping-installed | false | 4382e23b8782a0fafa92a233e5389869e5dd97a3 | KNOWN-DEFECT (класс P1-box): src/alloc_core/platform/node.rs:90 Node::write_next ← dealloc_small (src/alloc_core/small/alloc_core_small/dealloc.rs:118) ← dealloc_at_base — интрузивная freelist-запись немедленно в dealloc, внутри кадра Box::drop; отдельный факт о наборе B, не гипотеза; см. R6a-C2..C5; сплит строки R-PG1 |
 | R-PG1-b-tb | KNOWN-DEFECT | PG-1 | installed SeferAlloc; tests/r11_w0_box_reuse.rs (набор B: alloc-global) | alloc-global internals bench-internals | Windows x86_64 (host-Miri) | Miri TB (tree-borrows) | cargo +nightly miri test --features "alloc-global internals bench-internals" -j 1 -Zmiri-tree-bor… | write access through <1414> (root of the allocation) … forbidden | отдельный факт о наборе B; не гипотеза | docs/reviews/2026-10-01-adr-pg1-w0-receipt.md | shipping-installed | false | 4382e23b8782a0fafa92a233e5389869e5dd97a3 | KNOWN-DEFECT (класс P1-box): src/alloc_core/platform/node.rs:90 Node::write_next ← dealloc_small (src/alloc_core/small/alloc_core_small/dealloc.rs:118) ← dealloc_at_base — интрузивная freelist-запись немедленно в dealloc, внутри кадра Box::drop; отдельный факт о наборе B, не гипотеза; см. R6a-C2..C5; сплит строки R-PG1 |
 | R-PG1-native | PASS | PG-1 | installed #[global_allocator] SeferAlloc; tests/r11_w0_box_reuse.rs -- w0/w0-after/w0-same-frame … | alloc-global internals bench-internals | Windows x86_64 (host-Miri) | native debug | cargo test --features "alloc-global internals bench-internals" --test r11_w0_box_reuse -- <w0\|w0-… | native: exit 0, COMPLETE, reuse-счётчик 40/40 на наборе A (все три сценария) | positive + контрфактуал контроли w0-after/w0-same-frame | docs/reviews/2026-10-01-adr-pg1-w0-receipt.md | shipping-installed | false | 4382e23b8782a0fafa92a233e5389869e5dd97a3 | positive-свидетель гипотезы (набор A): без живого protector'а тот же reuse легален; сплит строки … |
@@ -260,8 +260,6 @@ Raw logs переносите в `docs/evidence` по трем CLAUDE.md tiers: 
 | R-Ph1b-native | CONDITIONAL | Ph1b | installed #[global_allocator] SeferAlloc (exact-object-proto); paused-Box witness (native) | exact-object-proto internals bench-internals | Windows x86_64 (host-Miri) | native debug | прогон paused-Box witness нативно + мутант-прогоны (ветка proto/exact-object-ph1b, cabc785b) | paused-Box witness COMPLETE (native); мутанты красные по нужным причинам; baseline (feature off) … | мутанты красные; baseline без feature красный | docs/reviews/2026-10-01-refactor-ph1b-exact-object-proto-receipt.md | shipping-installed | false | cabc785b2b18adbc1bb7278b95da5f4fca412b51 | CONDITIONAL(proto): код не влит (ветка proto/exact-object-ph1b, cabc785b); P1 ≥17 байт не закрыт; шаг 2 не сделан; перепроверка на HEAD оркестратором; сплит строки R-Ph1b; spike-not-merged:cabc785b (коммит только в локальной ветке спайка, не в main и не в CI-клоне) |
 | R-Ph1b-sb | CONDITIONAL | Ph1b | installed SeferAlloc (exact-object-proto); paused-Box witness (SB) | exact-object-proto internals bench-internals | Windows x86_64 (host-Miri) | Miri SB (strict-provenance) | cargo +nightly miri test (MIRIFLAGS -Zmiri-strict-provenance) paused-Box witness; ветка proto/exa… | paused-Box witness COMPLETE (SB); мутанты красные по нужным причинам; baseline (feature off) крас… | мутанты красные; baseline без feature красный | docs/reviews/2026-10-01-refactor-ph1b-exact-object-proto-receipt.md | shipping-installed | false | cabc785b2b18adbc1bb7278b95da5f4fca412b51 | CONDITIONAL(proto): код не влит (ветка proto/exact-object-ph1b, cabc785b); P1 ≥17 байт не закрыт; шаг 2 не сделан; перепроверка на HEAD оркестратором; сплит строки R-Ph1b; spike-not-merged:cabc785b (коммит только в локальной ветке спайка, не в main и не в CI-клоне) |
 | R-Ph1b-tb | CONDITIONAL | Ph1b | installed SeferAlloc (exact-object-proto); paused-Box witness (TB) | exact-object-proto internals bench-internals | Windows x86_64 (host-Miri) | Miri TB (tree-borrows) | cargo +nightly miri test (MIRIFLAGS -Zmiri-tree-borrows) paused-Box witness; ветка proto/exact-ob… | paused-Box witness COMPLETE (TB); мутанты красные по нужным причинам; baseline (feature off) крас… | мутанты красные; baseline без feature красный | docs/reviews/2026-10-01-refactor-ph1b-exact-object-proto-receipt.md | shipping-installed | false | cabc785b2b18adbc1bb7278b95da5f4fca412b51 | CONDITIONAL(proto): код не влит (ветка proto/exact-object-ph1b, cabc785b); P1 ≥17 байт не закрыт; шаг 2 не сделан; перепроверка на HEAD оркестратором; сплит строки R-Ph1b; spike-not-merged:cabc785b (коммит только в локальной ветке спайка, не в main и не в CI-клоне) |
-| R-Ph3a-iai | CONDITIONAL | Ph3a | tests/r11_ph3a_issue_transaction_scalar.rs, tests/r11_ph3a_issue_transaction_batch.rs, tests/r11_… | production internals bench-internals + alloc-core | Windows x86_64 | native debug; iai (WSL+callgrind) | прогон новых tests/r11_ph3a_*.rs + мутант-прогоны + iai | 4 новых теста зелёные; iai hot −0.354% Ir (refill до −2.670% EstCycles) | мутанты (a)/(b)/(c) красные | docs/reviews/2026-10-02-ph3a-issue-transaction-receipt.md | crate-internal | false | faf253e9f18895c1044a20923f0f8df36b6d092a | iai-замер не перепроверен: перезапуск iai запрещён рамками Ph7b |
-| R-Ph3a-native | PASS | Ph3a | tests/r11_ph3a_issue_transaction_scalar.rs, tests/r11_ph3a_issue_transaction_batch.rs, tests/r11_… | production internals bench-internals + alloc-core | linux x64 | debug | tests/r11_ph3a_issue_transaction_scalar.rs; tests/r11_ph3a_issue_transaction_batch.rs; r11_ph3a_r… | r11_ph3a_scalar/batch/reserve/magazine: 4x test result: ok. 1 passed | 3 Ph7b mutants: (a) set_head<prepare — FAILED scalar_issue_transactions_roll_back_before_commit_a… | docs/evidence/_raw_reverify_R-Ph3a-native.log | crate-internal | true | 5225d7f1d5d76c2714880714b8b8ad870907f567 | E0 verified; preserve PASS |
 | R-Ph3b | PASS | Ph3b | installed SeferAlloc | production internals bench-internals (ключевой тест под medium-classes) | linux x64 | debug | прогон tests/r11_ph3b_kind_aware_entries.rs + мутант-прогоны + iai | r11_ph3b_kind_aware_entries: 5 passed (observed; old receipt said 7) | мутант (a) красный (tests/r11_ph3b_kind_aware_entries.rs:1052); (b)/(c) нативно зелёные (исход ид… | docs/evidence/_raw_reverify_R-Ph3b.log | crate-internal | true | 55ee50639226d4c3d8f169dd280d5fa40eb12bc4 | E0 verified; preserve PASS |
 | R0-01 | FAIL | Ph0 | installed #[global_allocator] SeferAlloc; miri_global_box_acceptance -- paused | alloc-global internals bench-internals | Windows 10 x86_64 MSVC (host-Miri) | Miri SB (strict-provenance) MIRIFLAGS S dev | прогон miri_global_box_acceptance -- paused в модели SB | лог v3-sb-sefer-paused.log: UB not granting access to tag <1479> ... weakly protected at node.rs:… | мутант-контроль W−1 уровня System (R0-12..R0-15) | docs/design/2026-10-01-proof-obligation-registry-draft.md | shipping-installed | false | ceffecb5c07d45e9d715670dfcaec3de69b2f9d2 | KNOWN-DEFECT P1-box: UB в src/alloc_core/platform/node.rs:90 Node::write_next при паузе внутри Box::drop (цепочка write_next ← reclaim_sidecar_record ← drain_sidecar_ingress ← trim_for_recycle); на момент Ph0 фиксировался как FAIL |
 | R0-02 | FAIL | Ph0 | installed #[global_allocator] SeferAlloc; miri_global_box_acceptance -- paused | alloc-global internals bench-internals | Windows 10 x86_64 MSVC (host-Miri) | Miri TB (tree-borrows) MIRIFLAGS T dev | прогон miri_global_box_acceptance -- paused в модели TB | лог v3-tb-sefer-paused.log: write access through <1414> (root of the allocation) ... forbidden; R… | мутант-контроль W−1 уровня System | docs/design/2026-10-01-proof-obligation-registry-draft.md | shipping-installed | false | ceffecb5c07d45e9d715670dfcaec3de69b2f9d2 | KNOWN-DEFECT P1-box: UB в src/alloc_core/platform/node.rs:90 Node::write_next при паузе внутри Box::drop (Reserved→Disabled; цепочка write_next ← reclaim_sidecar_record); на момент Ph0 фиксировался как FAIL |
@@ -285,8 +283,8 @@ Raw logs переносите в `docs/evidence` по трем CLAUDE.md tiers: 
 | R0-18 | NOT_RUN | Ph0 | CI job global-regressions (ci.yml:2029-2038) | production batch-api internals bench-internals | ubuntu-latest | native | CI grep-строки результата | нет результата CI | — | docs/design/2026-10-01-proof-obligation-registry-draft.md | low-level-api | false | ceffecb5c07d45e9d715670dfcaec3de69b2f9d2 | нет результата CI |
 | R0-19 | PASS | Ph0 | r6_terminal_owner_drain::requested_sizes_one_through_seven_retire_once_and_reissue | alloc-global alloc-xthread internals bench-internals | Windows 10 x86_64 (host-Miri) | Miri SB (MIRIFLAGS P; без strict-provenance) | прогон теста под Miri (MIRIFLAGS P) | r6_terminal_owner_drain::requested_sizes_one_through_seven_retire_once_and_reissue: 1 passed, 5 f… | положительный свидетель | docs/reviews/2026-10-06-ph7-reverification-at-head.md | low-level-api | false | 876429d2a63ce73dd248bbacc4c6d6c528692cbb | Ph7b: Miri permissive-provenance прогон подтверждён |
 | R0-20 | PASS | Ph0 | r6_terminal_owner_drain::requested_sizes_one_through_seven_retire_once_and_reissue | alloc-global alloc-xthread internals bench-internals | Windows 10 x86_64 (host-Miri) | Miri TB (MIRIFLAGS PT) | прогон теста под Miri (MIRIFLAGS PT) | r6_terminal_owner_drain::requested_sizes_one_through_seven_retire_once_and_reissue: 1 passed, 5 f… | положительный свидетель | docs/reviews/2026-10-06-ph7-reverification-at-head.md | low-level-api | false | 876429d2a63ce73dd248bbacc4c6d6c528692cbb | Ph7b: Miri permissive-provenance/tree-borrows прогон подтверждён |
-| R0-21 | PASS | Ph0 | loom_sidecar_bitmap (3) + loom_terminal_large (2) + loom_terminal_owner_drain (2) | alloc-core alloc-xthread | linux x64 | Loom (--cfg loom --release) | node scripts/loom.mjs loom_sidecar_bitmap loom_terminal_large loom_terminal_owner_drain | 7/7: loom_sidecar_bitmap 3 passed; loom_terminal_large 2 passed; loom_terminal_owner_drain 2 pass… | мутанты: loom_sidecar_negative_class_after_terminal_bit и negative_producer_retirement_allows_pre… | docs/evidence/_raw_reverify_R0-21.log | shadow-model | true | 00d309f9ed462f2e2922a3a720f6bd17e5c3eedc | E0 verified; preserve PASS |
-| R0-22 | PASS | Ph0 | loom_r11_small_sidecar (3) | alloc-core alloc-xthread | Windows 10 x86_64 | Loom (--cfg loom --release) | прогон loom_r11_small_sidecar | лог loom-r11-small-sidecar.log: 3 из 3 ok | мутанты negative_relaxed_pointer_publication и negative_early_leaf_release отвергнуты | docs/design/2026-10-01-proof-obligation-registry-draft.md | shadow-model | true | ceffecb5c07d45e9d715670dfcaec3de69b2f9d2 | shadow-модель |
+| R0-21 | PASS | Ph0 | loom_sidecar_bitmap (3) + loom_terminal_large (2) + loom_terminal_owner_drain (2) | alloc-core alloc-xthread | linux x64 | Loom (--cfg loom --release) | node scripts/loom.mjs loom_sidecar_bitmap loom_terminal_large loom_terminal_owner_drain | 7/7: loom_sidecar_bitmap 3 passed; loom_terminal_large 2 passed; loom_terminal_owner_drain 2 pass… | мутанты: loom_sidecar_negative_ungated_publication_detected_by_start_check и negative_producer_re… | docs/evidence/_raw_reverify_R0-21.log | shadow-model | true | 00d309f9ed462f2e2922a3a720f6bd17e5c3eedc | E0 verified; preserve PASS |
+| R0-22 | NOT_RUN | Ph0 | loom_route_pin_unlink + loom_b4_r1_pin_cache (pin-retention/publication) | alloc-core alloc-xthread | Windows 10 x86_64 | Loom (--cfg loom --release) | не запускалось — заменённых свидетелей нет на HEAD в дереве замера | — | мутант не определён для замены | docs/design/2026-10-01-proof-obligation-registry-draft.md | shadow-model | false | ceffecb5c07d45e9d715670dfcaec3de69b2f9d2 | NOT_RUN: свидетель loom_r11_small_sidecar (leaf-часть) удалён PR-ом; pin-retention покрывается loom_route_pin_unlink/loom_b4_r1_pin_cache, но полной замены (pointer publication + early leaf release) без новой приёмки нет |
 | R0-23 | NOT_RUN | Ph0 | installed SeferAlloc + start_maintenance() | production | любая | native + Miri | активации нет — в Фазе 0 не проверялся | — | мутант не определён | docs/design/2026-10-01-proof-obligation-registry-draft.md | shipping-installed | false |  | в Фазе 0 не проверялся (ACTIVE.md:165) |
 | R0-24 | NOT_RUN | Ph0 | isolated/Sefer — witness не выбран | — | — | Miri SB / TB | запуск не производился (шаг 1a) | — | — | docs/design/2026-10-01-proof-obligation-registry-draft.md | isolated-witness | false |  | шаг 1a плана; witness не определён |
 | R0-25 | CONDITIONAL | Ph0 | installed SeferAlloc; A/B | production internals bench-internals | Linux x86_64 (WSL2) | release; measurement; A/B B0 7d80d7e1 vs C fd954856 (src/ == main HEAD) | частично: см. R6b-01..R6b-07 | — | — | docs/perf/PH6B_COST_AB.md | bench-only | false | fd954856acab9aa3015b30d49c87c58d2436d796 | агрегат: iai и RSS PASS (R6b-05, R6b-03), wall-clock INCONCLUSIVE/CONDITIONAL (R6b-01, R6b-07), p99/System-вызовы/page faults NOT_RUN (R6b-02/04/06); условный GO — docs/perf/PH6B_COST_AB.md §7 |
@@ -414,7 +412,7 @@ Raw logs переносите в `docs/evidence` по трем CLAUDE.md tiers: 
 | R6a-F | PASS | Ph6a | node scripts/tsan.mjs | alloc-global alloc-xthread alloc-decommit internals bench-internals | Linux x86_64 (WSL) | TSan | node scripts/tsan.mjs | лог f_tsan.log: test teardown_ordering_stress_no_crash ... ok; [tsan:production internals bench-i… | TSan PASS без гонок | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | false | fd954856acab9aa3015b30d49c87c58d2436d796 | TSan EXIT=0 |
 | R6a-G | CI_PENDING | Ph6a | cargo test (macOS arm64) | все ключевые feature-строки | macOS arm64 | CI | локального тулчейна нет; вердикт по landing SHA | вердикт по landing SHA | — | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | tool-only | false |  | локального macOS-тулчейна нет; вердикт по landing SHA |
 | R6a-G2 | CI_PENDING | Ph6a | cargo test (Linux aarch64 native) | все ключевые feature-строки | Linux aarch64 | CI | локального тулчейна нет; вердикт по landing SHA | вердикт по landing SHA | — | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | tool-only | false |  | локального aarch64-тулчейна нет; вердикт по landing SHA |
-| R6a-M1 | PASS | Ph6a | tests::free_list_reuses_freed_blocks (alloc_core_invariants.rs) | alloc-core internals | Windows x86_64 | native debug | мутант применён; прогон ловца; откат (sha256 совпал); повторный прогон зелёный | лог mut_M1b.log: test free_list_reuses_freed_blocks ... FAILED; откат: test result: ok. 1 passed | мутант M1 пойман; первая попытка с ловцом freelist_reuse NOT_CAUGHT (mut_M1.log; инертный slotmap… | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | true | fd954856acab9aa3015b30d49c87c58d2436d796 | мутант CAUGHT ловцом free_list_reuses_freed_blocks |
+| R6a-M1 | PASS | Ph6a | tests::alloc_core_invariants (free_list_reuses_freed_blocks) | alloc-core internals | Windows x86_64 | native debug | мутант применён; прогон ловца; откат (sha256 совпал); повторный прогон зелёный | лог mut_M1b.log: test free_list_reuses_freed_blocks ... FAILED; откат: test result: ok. 1 passed | мутант M1 пойман; первая попытка с ловцом freelist_reuse NOT_CAUGHT (mut_M1.log; инертный slotmap… | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | true | fd954856acab9aa3015b30d49c87c58d2436d796 | мутант CAUGHT ловцом free_list_reuses_freed_blocks |
 | R6a-M2 | PASS | Ph6a | tests::r14_4_promotion_free_correctness | production medium-classes internals bench-internals | Windows x86_64 | native debug | мутант применён; прогон ловца; откат | лог mut_M2.log: test canary_survives_promotion_and_free_leaves_no_leak_per_base ... FAILED; откат… | мутант M2 пойман | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | true | fd954856acab9aa3015b30d49c87c58d2436d796 | мутант CAUGHT |
 | R6a-M3 | PASS | Ph6a | tests::regression_r5_01_alloc_global_cross_thread | production internals | Windows x86_64 | native debug | мутант применён; прогон ловца; откат | лог mut_M3.log: test cross_thread_small_free_does_not_hit_foreign_or_unroutable_frees ... FAILED;… | мутант M3 пойман | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | true | fd954856acab9aa3015b30d49c87c58d2436d796 | мутант CAUGHT |
 | R6a-M4 | PASS | Ph6a | tests::r11_ph5c_registry_saturation_fallback | production internals | Windows x86_64 | native debug | мутант применён; прогон ловца; откат | лог mut_M4.log: thread caused non-unwinding panic. aborting. + error: test failed (null deref abo… | мутант M4 пойман | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | true | fd954856acab9aa3015b30d49c87c58d2436d796 | мутант CAUGHT (non-unwinding abort) |

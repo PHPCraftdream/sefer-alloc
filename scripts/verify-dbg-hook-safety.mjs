@@ -58,7 +58,13 @@ const PURE_OBSERVERS = [
   // Read-only Relaxed load of the cold-path giveup counter.
   "src/global/fallback.rs::dbg_exit_lock_giveups",
   // Read-only Relaxed descriptor count; the borrowed RoutePin retains its lifetime.
-  "src/registry/segment_route/directory.rs::dbg_route_pin_refs",
+  "src/registry/segment_route/registration.rs::dbg_route_pin_refs",
+  // B4 mem4: read-only Relaxed load of the monotonic successful-registration
+  // counter; no pointer, no allocation, no allocator-state mutation.
+  "src/registry/segment_route/registration.rs::dbg_registrations_total",
+  // B4 mem4: read-only resolved pool byte bound (pool_cap x SEGMENT); stored
+  // state only, no pointer, no mutation. HeapCore level.
+  "src/registry/heap_core/diag/queries.rs::dbg_pool_byte_cap_effective",
   // Read-only Relaxed load of Entry.refs through the owner-held RouteRegistration's own EntryHandle; no address-keyed lookup, no pointer dereference beyond the already-owned entry.
   "src/registry/segment_route/registration.rs::dbg_entry_refs_relaxed",
   "crates/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
@@ -147,6 +153,9 @@ const PURE_OBSERVERS = [
   "src/alloc_core/small/alloc_core_small_diag.rs::dbg_live_count_for",
   "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pooled_count",
   "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pool_cap",
+  // B4 mem4: read-only resolved pool byte bound (pool_cap x SEGMENT);
+  // widening cast + multiply of stored state; no pointer, no mutation.
+  "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pool_byte_cap_effective",
   "src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_is_decommitted_for",
   "src/global/fallback.rs::dbg_fallback_lock_acquisitions",
   // Pure production-helper transition on a by-value u32; no shared state,
@@ -176,16 +185,44 @@ const PURE_OBSERVERS = [
   // Non-panicking SegmentTable membership probe (canonical_root_for); read-only.
   "src/registry/heap_core/diag/queries.rs::dbg_segment_registered_for",
   "src/registry/heap_core/diag/queries.rs::dbg_table_count",
+  // D1-prime fix round 2: read-only frontier observer and the P2-C vacuum
+  // guard witness — a read-only Relaxed load of the injector's cumulative
+  // fired counter (the injector itself is the reviewed
+  // lazy-commit-fault-injection fixture); no pointer retained, no allocation.
+  "src/registry/heap_core/diag/queries.rs::dbg_committed_payload_end_for",
+  // P2-C vacuum guard: read-only Relaxed load of the injector's cumulative
+  // fired-failure counter; lets a test prove a refusal was actually consumed.
+  "src/registry/heap_core/diag/queries.rs::dbg_commit_fail_count",
+  // AllocCore-level forwarder of the same read-only fired-failure counter.
+  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_commit_fail_count",
+  // D1-prime M-h oracle: read-only stage flag of the test-only carve-batch
+  // window; numeric load, no pointer, no allocator state.
+  "src/alloc_core/small/alloc_core_small_reclaim.rs::dbg_carve_batch_stage",
   "src/registry/bootstrap/ensure.rs::dbg_slot_or_none"
 ];
 
 // Safe mutators: each retained reviewed invariant justification is authoritative.
 const SAFE_MUTATORS = [
+  // P3-10: NOT a pure observer — this is a forwarder to the real-path
+  // commit-failure injector (aligned_vmem::fault_injection::arm_fail_next,
+  // the reviewed TEST-ONLY lazy-commit-fault-injection fixture, R2-19):
+  // arming it mutates the fixture's process-wide FAULT_STATE so that the
+  // next real commit_pages calls are refused. It changes no allocator
+  // state, retains no pointer and performs no allocation, but it is a
+  // deliberate state mutator of the lazy-commit fixture and belongs here.
+  [
+    "src/registry/heap_core/diag/queries.rs::dbg_arm_commit_fail",
+    "forwarder to the real-path commit-failure injector " +
+      "(aligned_vmem::fault_injection::arm_fail_next, the reviewed TEST-ONLY " +
+      "lazy-commit-fault-injection fixture, R2-19): mutates the fixture's " +
+      "process-wide fault state so the next real commit_pages calls are " +
+      "refused; no allocator state, no pointer retained, no allocation"
+  ],
   [
     "src/global/sefer_alloc/diag.rs::dbg_background_maintenance_current_thread",
     "delegates only to the production bounded background_maintenance_step for current_for_trim's current-thread exclusive live HeapCore; no FREE-slot lease or lifecycle mutation; bench-internals + internals gated"
   ],  [
-    "src/registry/segment_route/directory.rs::dbg_with_shard_of_locked_for_test",
+    "src/registry/segment_route/registration.rs::dbg_with_shard_of_locked_for_test",
     "bench-internals-only ordinary shard guard; pointer address is only a shard key, never dereferenced; callback receives no protected data; reentry or a stranded holder risks liveness, not memory safety; unwind releases the guard"
   ],
   ["src/registry/bootstrap/registry.rs::dbg_slot_state", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic state, without borrowing the core"],
@@ -283,6 +320,14 @@ const SAFE_MUTATORS = [
   [
     "src/alloc_core/small/alloc_core_small_diag.rs::dbg_arm_commit_fail_at",
     "arms the Nth-call fault injector; same justification as dbg_arm_commit_fail"
+  ],
+  [
+    "src/alloc_core/small/alloc_core_small_reclaim.rs::dbg_carve_batch_pause",
+    "arms/disarms the test-only try_carve_batch pause inside the d1p_rev M-h early-publication window; a plain bool flag store, default false, the owner never waits unless a test armed it and resumes it; internals + bench-internals gated"
+  ],
+  [
+    "src/alloc_core/small/alloc_core_small_reclaim.rs::dbg_carve_batch_resume",
+    "releases the owner parked by dbg_carve_batch_pause; a plain bool flag store, no pointer or allocator state; a stranded arm risks the arming test's liveness only; internals + bench-internals gated"
   ],
   [
     "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_drain_small_pool",
@@ -387,6 +432,7 @@ const UNSAFE_HOOKS = [
   "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_release",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_win_commit_only",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_win_release_only",
+  "src/registry/heap_core/diag/queries.rs::dbg_force_decommit_retain_for",
   "src/alloc_core/alloc_core/sidecar_test_hooks.rs::dbg_publish_small_sidecar_free",
   "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_publish_small_sidecar_free",
   "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_reclaim_sidecar_record_for_test",
@@ -415,36 +461,42 @@ export const REVIEWED_SURFACE = [
     ['src/registry/heap_core/diag/diag_probes.rs', ['dbg_promotion_compiled', 'dbg_promotion_macro_gate'], 'observer', 'compile-time predicate'],
     ['src/global/maintenance_service.rs', ['passes_for_test', 'fallback_visits_for_test'], 'observer', 'atomic diagnostic counters'],
     ['src/global/maintenance_service.rs', ['wait_after_for_test'], 'mutator', 'locks/waits on production completion condition'],
-    ['src/registry/segment_route/directory.rs', ['fail_next_registration_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
+    ['src/registry/segment_route/registration.rs', ['fail_next_registration_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
     ['src/registry/segment_route/directory.rs', ['with_initial_incarnation_for_test'], 'mutator', 'constructs isolated directory with chosen initial incarnation'],
-    ['src/registry/segment_route/directory.rs', ['retained_pointer_capacity_for_test', 'moved_pointer_cells_for_test', 'shard_index_for_test', 'live_route_census_for_test'], 'observer', 'directory capacity/census under its locks'],
-    ['src/registry/segment_route/small_sidecar.rs', ['class_at_for_test', 'mixed_leaves_for_test', 'system_totals_for_test'], 'observer', 'sidecar class/counter observations'],
-    ['src/registry/segment_route/registration.rs', ['class_at_global_address_for_test'], 'observer', 'lookup pins independent sidecar before class read'],
+    ['src/registry/segment_route/registration.rs', ['retained_pointer_capacity_for_test', 'moved_pointer_cells_for_test', 'shard_index_for_test', 'live_route_census_for_test'], 'observer', 'directory capacity/census under its locks'],
+    ['src/registry/segment_route/small_sidecar.rs', ['system_totals_for_test'], 'observer', 'sidecar System totals (one SmallSidecar alloc/free per route; D1 phase-1b removed the class leaves)'],
+    ['src/registry/segment_route/registration.rs', ['start_state_at_global_address_for_test'], 'observer', 'lookup pins the descriptor and reads ONLY the pinned sidecar start/pending atomic banks; no segment memory or state-byte access (the pin never owns the reservation)'],
     ['src/registry/segment_route/large_state.rs', ['word_for_test'], 'observer', 'atomic terminal state snapshot'],
     ['src/registry/segment_route/pin.rs', ['pending_for_test'], 'observer', 'pinned sidecar pending state'],
     ['src/alloc_core/platform/numa.rs', ['biased_root_offset_for_test'], 'observer', 'pure checked geometry'],
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['large_geometry_for_test'], 'observer', 'validated owned header geometry'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['internals'] }))),
+  // `internals-or-loom` (see expressionRequires): loom model tests build with
+  // the canonical loom feature set (no `internals`), so the hook is also
+  // `cfg(loom)`-gated.
+  ...[
+    ['src/registry/segment_route/small_sidecar.rs', ['issue_for_test'], 'mutator', 'owner start-bit set at the production issue point; no allocation, no class carrier (D1 phase-1b)'],
+  ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['internals-or-loom'] }))),
   ...[
     ['src/alloc_core/segment/segment_table/harness.rs', ['attach_routes_for_test', 'register_route_for_test'], 'mutator', 'exclusive owned fixture delegates to real attachment/registration; synthetic address keys never dereferenced and descriptors unlinked on drop'],
     ['src/global/maintenance_service.rs', ['try_fallback_step_for_test', 'fail_next_start_for_test', 'pause_start_for_test', 'wait_start_paused_for_test', 'fail_worker_for_test'], 'mutator', 'bounded maintenance step or explicit startup/worker fault injection; synchronization retained'],
-    ['src/registry/segment_route/directory.rs', ['fail_next_registrations_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
-    ['src/registry/segment_route/small_sidecar.rs', ['fail_spill_after_for_test', 'fail_next_spills_for_test', 'fail_prepare_after_for_test'], 'mutator', 'atomic fallible preparation/spill fault injection'],
-    ['src/registry/segment_route/small_sidecar.rs', ['spill_failures_remaining_for_test'], 'observer', 'atomic injection countdown'],
+    ['src/registry/segment_route/registration.rs', ['fail_next_registrations_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
     ['src/registry/segment_route/small_sidecar.rs', ['owner_state_for_test'], 'unsafe', 'caller owns mapped reservation; raw metadata snapshot'],
     ['src/alloc_core/large/alloc_core_large_cache_eviction.rs', ['terminal_cached_large_state_for_test'], 'observer', 'owner cache terminal snapshot'],
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['terminal_header_layout_for_test', 'terminal_header_snapshot_for_test', 'terminal_primordial_snapshot_for_test', 'terminal_next_generation_for_test'], 'observer', 'checked header layout/state and generation geometry'],
     ['src/concurrent/sharded/sharded_region.rs', ['_set_remote_free_hint_for_tests'], 'mutator', 'advisory hint only; real queue remains authoritative'],
+    ['src/registry/segment_route/pin.rs', ['dbg_small_sidecar_for_test'], 'mutator', 'test-only forwarder to the pinned route sidecar. The &SmallSidecar it hands out exposes MORE than the reviewed issue_for_test hook: dbg_unset_start_bit_for_test (single-writer unset that arms the reclaim start-bit-0 fatal lane), issue_for_test itself — a SECOND writer of the owner start bit whose load→or→store is not a single RMW, so a non-owner issue racing the owner can lose the owner\'s start-bit set, after which reclaim goes fatal on the published record (a liveness/abort hazard, NOT UB; the unsafe owner_state_for_test boundary stays pub(crate)) — and pub fn scan(), which on a dropped sidecar loses free of any start bits cut by a racing unset. Every reachable hazard is therefore liveness or abort, not memory unsafety: the pinned borrow is live only while the caller holds it, no pointer escapes, and no allocation occurs; the consuming publish_small path stays the only producer entry'],
     ['src/registry/segment_route/pin.rs', ['dbg_publish_cached_for_test'], 'unsafe', 'entry into the production cached fast path; the address must be the caller’s CURRENT issued Small/Primordial allocation — publication consumes ownership once, and a bare address never establishes it (publishing a foreign live address forces the owner to reclaim a live instance: UAF by construction)'],
     ['src/registry/segment_route/pin.rs', ['dbg_cache_insert_for_test'], 'mutator', 'inserts caller-looked-up pin; no publish/reclaim obligation'],
     ['src/registry/segment_route/pin.rs', ['dbg_route_pin_cache_totals'], 'observer', 'pure Relaxed counter snapshot'],
+    ['src/registry/segment_route/small_sidecar.rs', ['dbg_unset_start_bit_for_test'], 'mutator', 'test-only single-word start-bit unset that arms the reclaim start-bit-0 fatal lane; no allocation, no class carrier (D1\u2032)'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['internals', 'bench-internals'] }))),
   ...[
     ['src/concurrent/lock_free/lock_free_region.rs', ['_forge_handle_for_tests', '_page_arc_clones_for_tests', '_checked_total_slots_for_tests'], 'observer', 'by-value handle/geometry or TLS counter; ordinary operations still validate handles'],
     ['src/concurrent/lock_free/lock_free_region.rs', ['_reset_page_arc_clones_for_tests'], 'mutator', 'TLS diagnostic counter only'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['bench-internals'] }))),
   { id: 'src/alloc_core/segment/segment_table/harness.rs::hide_root_for_test', kind: 'mutator', reason: 'isolated numeric harness; no dereference; external alloc_core module path requires internals, not a compilation gate', gates: [] },
-  { id: 'src/registry/segment_route/directory.rs::register', kind: 'mutator', reason: 'internals-only public form of the crate-only register_route; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
+  { id: 'src/registry/segment_route/registration.rs::register', kind: 'mutator', reason: 'internals-only public form of the crate-only register_route; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
   { id: 'src/registry/segment_route/directory.rs::lookup', kind: 'observer', reason: 'the real production lookup path; the pointer is only a numeric shard key, never dereferenced', gates: [] },
   { id: 'src/registry/segment_route/pin.rs::contains_payload', kind: 'observer', reason: 'pure span-geometry comparison of the caller pointer against the pinned entry bounds; no dereference', gates: [] },
   { id: 'src/registry/heap_core/alloc/batch.rs::alloc_batch', kind: 'mutator', reason: 'production batch allocation path; writes issued block pointers into the caller-owned out slice', gates: [] },
@@ -534,6 +586,7 @@ function featureImplies(from, required, seen = new Set()) {
 }
 function expressionRequires(expr, feature) {
   if (feature === 'loom' || feature === 'r18_sidecar_scan_bench') return !!expr && ((expr.name === feature && !expr.children) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
+  if (feature === 'internals-or-loom') return !!expr && expr.name === 'any' && expr.children.some(child => expressionRequires(child, 'internals')) && expr.children.some(child => child.name === 'loom' && !child.children);
   if (feature === 'test-model') return !!expr && ((['loom', 'tagged_index_stack_test'].includes(expr.name) && !expr.children) || (expr.name === 'any' && expr.children.length > 0 && expr.children.every(child => expressionRequires(child, feature))) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
   return !!expr && ((expr.name === 'feature' && featureImplies(expr.value, feature)) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
 }
@@ -828,7 +881,7 @@ function selfCheck() {
     const skeleton = gates => `${gates}\nimpl ${owner} {\n${declaration}\n}`;
     // r18_sidecar_scan_bench is a bare cfg (see Cargo.toml check-cfg), like loom —
     // never a cargo feature, so the synthesized attribute must not use feature =.
-    const attrs = row.gates.map(gate => gate === 'test-model' ? '#[cfg(any(tagged_index_stack_test, loom))]' : gate === 'loom' || gate === 'r18_sidecar_scan_bench' ? `#[cfg(${gate})]` : `#[cfg(feature = "${gate}")]`);
+    const attrs = row.gates.map(gate => gate === 'test-model' ? '#[cfg(any(tagged_index_stack_test, loom))]' : gate === 'internals-or-loom' ? '#[cfg(any(feature = "internals", loom))]' : gate === 'loom' || gate === 'r18_sidecar_scan_bench' ? `#[cfg(${gate})]` : `#[cfg(feature = "${gate}")]`);
     const policy = { safe: row.kind === 'unsafe' ? [] : [row.id], unsafe: row.kind === 'unsafe' ? [row.id] : [], surface: [row] };
     // Free functions in the model crate must not accidentally acquire an owner.
     const source = gates => qualified && owner === 'Core' ? `${gates}\n${declaration}` : skeleton(gates);

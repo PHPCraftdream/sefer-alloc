@@ -107,6 +107,17 @@ impl AllocCore {
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[allow(unsafe_code)] // R29-8: `unsafe fn` boundary (live_count==0 precondition).
+    ///
+    /// D1′ phase-1a quiescence hook: this retain-reset branch requires
+    /// EXCLUSIVE access — no pending publications, no concurrent producer or
+    /// owner activity on the segment (`# Safety` above). Under that
+    /// exclusion the owner atomically clears BOTH remote sidecar banks
+    /// (pending and the start map) over exactly the state-byte reset range
+    /// `[payload_start, old_bump)` immediately after the shared
+    /// `decommit_empty_segment_impl` body — so no stale pending or start bit
+    /// survives into the next incarnation of the retained route (design
+    /// §2.6; a CONCURRENT retain would need a separate
+    /// incarnation/exclusion protocol and is out of scope for phase 1a).
     pub unsafe fn dbg_force_decommit_retain_for(&self, ptr: *mut u8) -> bool {
         let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base_ro(base) {
@@ -116,7 +127,15 @@ impl AllocCore {
             return false;
         }
         let mut meta = SegmentMeta::new(base);
+        // F7 twin: the pre-reset bump bounds the granule range that can
+        // carry stale remote bits, exactly as it bounds the state bytes.
+        let bump_before_reset = meta.bump_of();
         Self::decommit_empty_segment_impl(&mut meta, base, false);
+        let payload_start = SegLayout::small_meta_end() as u32;
+        #[allow(clippy::useless_conversion)]
+        let bump_before_reset = bump_before_reset as u32;
+        self.table
+            .clear_remote_bits(base, payload_start, bump_before_reset);
         true
     }
 

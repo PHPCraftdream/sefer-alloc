@@ -9,7 +9,7 @@ use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, SmallSidec
 const SEGMENT: usize = 4 * 1024 * 1024;
 
 #[test]
-fn small_sidecar_uses_unzeroed_system_storage_then_initializes_all_state() {
+fn small_sidecar_backing_arrives_zeroed_then_initializes_all_state() {
     let before = SmallSidecar::system_totals_for_test();
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
@@ -20,18 +20,31 @@ fn small_sidecar_uses_unzeroed_system_storage_then_initializes_all_state() {
     let after = SmallSidecar::system_totals_for_test();
     let size = core::mem::size_of::<SmallSidecar>();
     assert_eq!(after.0 - before.0, size);
-    assert_eq!(
-        after.1 - before.1,
-        0,
-        "sidecar System bytes must not be zeroed"
-    );
+    // fix8: native targets back the sidecar with a FRESH anonymous OS
+    // mapping whose demand-zero pages already read as zero, so the backing
+    // is recorded as zeroed and `initialize_at` never memsets the banks;
+    // miri/loom still pay the explicit zeroing (recorded unzeroed).
+    if cfg!(miri) {
+        assert_eq!(after.1 - before.1, 0, "miri backing is explicitly zeroed");
+    } else {
+        assert_eq!(
+            after.1 - before.1,
+            size,
+            "native backing must arrive zeroed from the OS mapping"
+        );
+    }
     assert_eq!(after.3 - before.3, 1);
 
+    // D1' phase-1b: no class leaves and no fallible prepare exist — the
+    // sidecar is exactly the two 32 KiB banks, and the owner issue is an
+    // infallible start-bit set (observable only through the publication
+    // gate: offset 0 is metadata, so the publish must still be rejected by
+    // the payload filter regardless of the start bit).
+    assert_eq!(size, 65_536);
     let sidecar = route.small_sidecar().unwrap();
-    assert_eq!(sidecar.class_at_for_test(0), None);
-    assert_eq!(sidecar.mixed_leaves_for_test(), 0);
-    assert!(route.prepare_small(0, 0));
-    assert_eq!(sidecar.class_at_for_test(0), None);
-    assert!(route.issue_small(0, 0));
-    assert_eq!(sidecar.class_at_for_test(0), Some(0));
+    sidecar.issue_for_test(0);
+    let pin = directory.lookup(root).unwrap();
+    // SAFETY: the test issued this standalone granule; offset 0 is below the
+    // route's payload start, so the payload filter rejects the publication.
+    assert!(!unsafe { pin.publish_small(0) });
 }

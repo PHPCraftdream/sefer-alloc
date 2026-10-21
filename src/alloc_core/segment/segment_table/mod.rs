@@ -61,8 +61,6 @@ mod harness;
 
 mod hash;
 
-mod issue_transaction;
-
 #[cfg(feature = "alloc-global")]
 mod route_slots;
 
@@ -72,3 +70,6 @@ mod route_slots_observers;
 mod segment_table_impl;
 #[cfg_attr(not(feature = "internals"), allow(unused_imports))] // pub items are internals-only
 pub use segment_table_impl::*;
+
+mod small_issue_run;
+pub(crate) use small_issue_run::SmallIssueRun;

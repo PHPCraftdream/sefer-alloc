@@ -4,18 +4,32 @@ use std::sync::mpsc;
 use std::thread;
 
 use sefer_alloc::registry::segment_route::{
-    RouteDirectory, RouteError, RouteKind, RouteRecord, RouteRegistration,
+    RouteDirectory, RouteError, RouteKind, RouteRegistration,
 };
 
 const SEGMENT: usize = 4 * 1024 * 1024;
+// D1' phase-1a: published offsets must sit above the route kind's metadata
+// end (the producer payload filter); base every issued/published offset here.
+const OFF: u32 = 384 * 1024;
 
-fn cut_one(route: &RouteRegistration<'_>) -> RouteRecord {
-    let mut scan = route.small_sidecar().unwrap().scan(16).unwrap();
-    let mut cut = scan.next_cut().unwrap();
-    let record = cut.pop().unwrap();
-    assert!(cut.pop().is_none());
-    assert!(scan.next_cut().is_none());
-    record
+// D1' phase-1a: the cut yields the OFFSET only; the class comes from the
+// owner state byte at reclaim.
+fn cut_one(route: &RouteRegistration<'_>) -> u32 {
+    let mut scan = route
+        .small_sidecar()
+        .unwrap()
+        // Word-granular window: OFF lives in word OFF/1024, so the bound
+        // must cover that whole word.
+        .scan((OFF as usize).next_multiple_of(1024) + 1024)
+        .unwrap();
+    let mut records = Vec::new();
+    while let Some(mut cut) = scan.next_cut() {
+        while let Some(offset) = cut.pop() {
+            records.push(offset);
+        }
+    }
+    assert_eq!(records, vec![OFF], "exactly one detached record at OFF");
+    OFF
 }
 
 #[test]
@@ -62,8 +76,10 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
     let route = directory
         .register(root, SEGMENT, root, 1, RouteKind::Primordial)
         .unwrap();
-    assert!(route.issue_small(0, 0));
-    let old_pin = directory.lookup(root).unwrap();
+    route.small_sidecar().unwrap().issue_for_test(OFF);
+    let old_pin = directory
+        .lookup(root.with_addr(root.addr() + OFF as usize))
+        .unwrap();
     let old_sidecar_addr = core::ptr::from_ref(route.small_sidecar().unwrap()).addr();
     let old_incarnation = route.incarnation();
     let (published_tx, published_rx) = mpsc::channel();
@@ -73,21 +89,15 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
         let directory_ref = &directory;
         scope.spawn(move || {
             let pin = directory_ref
-                .lookup(core::ptr::without_provenance_mut(addr))
+                .lookup(core::ptr::without_provenance_mut(addr + OFF as usize))
                 .unwrap();
-            // SAFETY: the model issued offset zero once and transfers it here.
-            assert!(unsafe { pin.publish_small(0) });
+            // SAFETY: the model issued OFF once and transfers it here.
+            assert!(unsafe { pin.publish_small(OFF) });
             published_tx.send(()).unwrap();
             resume_rx.recv().unwrap();
         });
         published_rx.recv().unwrap();
-        assert_eq!(
-            cut_one(&route),
-            RouteRecord {
-                offset: 0,
-                class: 0
-            }
-        );
+        assert_eq!(cut_one(&route), OFF);
         drop(route);
         let replacement = directory
             .register(root, SEGMENT, root, 2, RouteKind::Primordial)
@@ -113,17 +123,13 @@ fn published_pin_cleanup_survives_reservation_unmap() {
     let route = directory
         .register(root, SEGMENT, root, 2, RouteKind::Small)
         .unwrap();
-    assert!(route.issue_small(0, 0));
-    let pin = directory.lookup(root).unwrap();
-    // SAFETY: the owned model block at offset zero is issued and transferred once.
-    assert!(unsafe { pin.publish_small(0) });
-    assert_eq!(
-        cut_one(&route),
-        RouteRecord {
-            offset: 0,
-            class: 0
-        }
-    );
+    route.small_sidecar().unwrap().issue_for_test(OFF);
+    let pin = directory
+        .lookup(root.with_addr(root.addr() + OFF as usize))
+        .unwrap();
+    // SAFETY: the owned model block at OFF is issued and transferred once.
+    assert!(unsafe { pin.publish_small(OFF) });
+    assert_eq!(cut_one(&route), OFF);
     drop(route);
     drop(reservation);
     // Consuming publication already released the producer pin.

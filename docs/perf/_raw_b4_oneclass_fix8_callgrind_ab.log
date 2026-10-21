@@ -1,0 +1,53 @@
+## OC fix8 A/B callgrind totals (A = 8da6402d scratch, B = fix8 scratch)
+total_ir a small 368353
+total_ir a large 364401
+total_ir a dealloc256 505599
+total_ir a multiseg 466295
+total_ir b small 326688
+total_ir b large 323195
+total_ir b dealloc256 447990
+total_ir b multiseg 424936
+
+## per-run valgrind summaries
+--- run_a_small
+==319432== Collected : 368353
+==319432== I   refs:      368,353
+--- run_a_large
+==319433== Collected : 364401
+==319433== I   refs:      364,401
+--- run_a_dealloc256
+==319434== Collected : 505599
+==319434== I   refs:      505,599
+--- run_a_multiseg
+==319435== Collected : 466295
+==319435== I   refs:      466,295
+--- run_b_small
+==319436== Collected : 326688
+==319436== I   refs:      326,688
+--- run_b_large
+==319437== Collected : 323195
+==319437== I   refs:      323,195
+--- run_b_dealloc256
+==319438== Collected : 447990
+==319438== I   refs:      447,990
+--- run_b_multiseg
+==319441== Collected : 424936
+==319441== I   refs:      424,936
+
+## sidecar-relevant memset annotations (callgrind_annotate, top memset rows)
+--- cg_a_small
+41,321 (11.22%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+--- cg_b_small
+   208 ( 0.06%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+--- cg_a_large
+41,371 (11.35%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+--- cg_b_large
+   258 ( 0.08%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+--- cg_a_dealloc256
+50,042 ( 9.90%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+--- cg_b_dealloc256
+ 8,929 ( 1.99%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+--- cg_a_multiseg
+42,914 ( 9.20%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+--- cg_b_multiseg
+ 1,801 ( 0.42%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]

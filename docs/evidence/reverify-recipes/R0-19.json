@@ -1,0 +1,32 @@
+{
+  "id": "R0-19",
+  "registryActivationHash": "1e19258533eabaa05088be30a1c0faf22f5f0a73004c4c95f157003d412c15b9",
+  "steps": [
+    {
+      "name": "retire once + reissue sizes 1..7 under Miri SB (permissive)",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-permissive-provenance -Zmiri-disable-isolation"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread internals bench-internals",
+        "--test",
+        "r6_terminal_owner_drain",
+        "requested_sizes_one_through_seven_retire_once_and_reissue"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test requested_sizes_one_through_seven_retire_once_and_reissue \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

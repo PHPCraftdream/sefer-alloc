@@ -9,13 +9,22 @@ use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, SmallSidec
 use std::sync::Mutex;
 
 const SEGMENT: usize = 4 * 1024 * 1024;
-#[cfg(not(miri))]
-const LEAVES: usize = 1024;
-const LEAF: usize = 4096;
+// D1' phase-1a: the producer payload filter rejects offsets below the
+// route kind's metadata end, so every PUBLISHED offset in these tests is
+// based at OFF_BASE (above both `small_meta_end` and `primordial_meta_end`).
+const OFF_BASE: u32 = 384 * 1024;
+// D1' phase-1b: the sidecar carries pending (32 KiB) + starts (32 KiB) and
+// NOTHING else — its total System footprint is exactly 65 536 B.
+const SIDECAR_BYTES: usize = 65_536;
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
-fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
+fn sidecar_is_exactly_two_32kib_banks() {
+    assert_eq!(size_of::<SmallSidecar>(), SIDECAR_BYTES);
+}
+
+#[test]
+fn actual_system_requests_single_sidecar_and_last_pin_release() {
     let _guard = TEST_LOCK.lock().unwrap();
     let before = SmallSidecar::system_totals_for_test();
     let directory = RouteDirectory::new();
@@ -28,76 +37,62 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
     let sidecar = route.small_sidecar().unwrap();
     assert_eq!(directory.live_route_census_for_test(), (1, 0, 0));
     let base = SmallSidecar::system_totals_for_test();
-    // SmallSidecar size: pending (4096 × 8 B) + ClassLeaves mixed pointers
-    // (1024 × 8 B) + presence bitmap (16 × 8 B).
+    // SmallSidecar size: pending (4096 × 8 B) + starts (4096 × 8 B) — one
+    // System allocation, no promoted leaves (D1' phase-1b).
+    assert_eq!(size_of::<SmallSidecar>(), SIDECAR_BYTES);
     assert_eq!(base.0 - before.0, size_of::<SmallSidecar>());
     assert_eq!(base.1 - before.1, 0); // R6-T40 OPT-04: unzeroed System storage.
     assert_eq!(base.3 - before.3, 1);
-    assert_eq!(sidecar.mixed_leaves_for_test(), 0);
 
-    for (offset, class) in [(0, 0), (16, 0), (LEAF as u32, 0)] {
-        assert!(route.prepare_small(offset, class));
-        assert!(route.issue_small(offset, class));
+    // Owner start-bit issue (D1' phase-1b: infallible, no spill, no class
+    // carrier — the record's class lives only in the owner state byte).
+    for offset in [OFF_BASE, OFF_BASE + 16, OFF_BASE + 4096] {
+        sidecar.issue_for_test(offset);
     }
-    assert_eq!(sidecar.mixed_leaves_for_test(), 2);
-    assert!(route.prepare_small(32, 1));
-    assert!(route.issue_small(32, 1));
-    assert_eq!(sidecar.class_at_for_test(0), Some(0));
-    assert_eq!(sidecar.class_at_for_test(32), Some(1));
-    assert_eq!(sidecar.mixed_leaves_for_test(), 2);
-
-    SmallSidecar::fail_spill_after_for_test(1);
-    assert!(!route.prepare_small(2 * LEAF as u32 + 16, 1));
-    assert_eq!(sidecar.mixed_leaves_for_test(), 2);
-    assert_eq!(sidecar.class_at_for_test(2 * LEAF as u32), None);
-    assert!(route.prepare_small(2 * LEAF as u32 + 16, 1));
-    assert!(route.issue_small(2 * LEAF as u32 + 16, 1));
-    assert_eq!(sidecar.mixed_leaves_for_test(), 3);
 
     let pinned_after_terminal = directory.lookup(root).unwrap();
-    for offset in [0, 16, 32, LEAF as u32, 2 * LEAF as u32 + 16] {
+    for offset in [OFF_BASE, OFF_BASE + 16, OFF_BASE + 32, OFF_BASE + 4096] {
         let pin = directory
             .lookup(root.with_addr(root.addr() + offset as usize))
             .unwrap();
-        // SAFETY: each offset was issued once above and is transferred once.
-        assert!(unsafe { pin.publish_small(offset) });
+        // SAFETY: the offset's start bit was set once above and the transfer
+        // happens once here. (OFF_BASE + 32 was never issued: the publication
+        // must be rejected by the start-bit gate.)
+        assert_eq!(
+            unsafe { pin.publish_small(offset) },
+            offset != OFF_BASE + 32
+        );
     }
-    let mut scan = sidecar.scan(2 * LEAF + 32).unwrap();
+    let mut scan = sidecar.scan((OFF_BASE as usize) + 4096 + 16).unwrap();
     let mut records = Vec::new();
     while let Some(mut cut) = scan.next_cut() {
-        while let Some(record) = cut.pop() {
-            records.push((record.offset, record.class));
+        while let Some(offset) = cut.pop() {
+            records.push(offset);
         }
     }
-    assert_eq!(
-        records,
-        [
-            (0, 0),
-            (16, 0),
-            (32, 1),
-            (LEAF as u32, 0),
-            (2 * LEAF as u32 + 16, 1)
-        ]
-    );
+    // D1' phase-1a: cuts carry the offset only.
+    assert_eq!(records, [OFF_BASE, OFF_BASE + 16, OFF_BASE + 4096]);
     drop(scan);
     drop(route);
     assert!(directory.lookup(root).is_none());
     assert_eq!(directory.live_route_census_for_test(), (0, 0, 0));
     let held = SmallSidecar::system_totals_for_test();
-    assert_eq!(held.0 - before.0, size_of::<SmallSidecar>() + 3 * 256);
+    // D1' phase-1b: no promoted-leaf allocations — the held bytes are still
+    // exactly one sidecar.
+    assert_eq!(held.0 - before.0, size_of::<SmallSidecar>());
     assert_eq!(held.2 - before.2, 0);
     let replacement = directory
         .register(root, SEGMENT, root, 11, RouteKind::Small)
         .unwrap();
     assert!(replacement.incarnation() > old_incarnation);
-    assert_eq!(
-        replacement.small_sidecar().unwrap().mixed_leaves_for_test(),
-        0
-    );
-    assert_eq!(
-        replacement.small_sidecar().unwrap().class_at_for_test(0),
-        None
-    );
+    // A fresh incarnation's sidecar is fully zeroed: nothing publishes
+    // before a fresh owner issue.
+    // SAFETY: a stale publication of the OLD incarnation's granule; the new
+    // sidecar's zeroed start bank must reject it without mutations.
+    let pin = directory
+        .lookup(root.with_addr(root.addr() + OFF_BASE as usize))
+        .unwrap();
+    assert!(!unsafe { pin.publish_small(OFF_BASE) });
     assert_eq!(directory.live_route_census_for_test(), (1, 0, 0));
     drop(replacement);
     drop(reservation);
@@ -109,7 +104,7 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
 
 #[cfg(not(miri))]
 #[test]
-fn adversarial_all_mixed_real_route_has_no_universal_small_budget() {
+fn adversarial_dense_issue_publish_drain_has_fixed_one_sidecar_cost() {
     let _guard = TEST_LOCK.lock().unwrap();
     let before = SmallSidecar::system_totals_for_test();
     let directory = RouteDirectory::new();
@@ -120,12 +115,13 @@ fn adversarial_all_mixed_real_route_has_no_universal_small_budget() {
         .unwrap();
     let sidecar = route.small_sidecar().unwrap();
     assert_eq!(directory.live_route_census_for_test(), (0, 1, 0));
-    for leaf in 0..LEAVES {
-        let offset = (leaf * LEAF) as u32;
-        assert!(route.prepare_small(offset, 0));
-        assert!(route.issue_small(offset, 0));
-        assert!(route.prepare_small(offset + 16, 1));
-        assert!(route.issue_small(offset + 16, 1));
+    // Dense issue across many distinct 4 KiB spans (the former leaf-domain
+    // sweep): each span's start granule is issued and published.
+    const SPANS: usize = 896;
+    for span in 0..SPANS {
+        let offset = OFF_BASE + (span * 4096) as u32;
+        sidecar.issue_for_test(offset);
+        sidecar.issue_for_test(offset + 16);
         for published in [offset, offset + 16] {
             let ptr = root.with_addr(root.addr() + published as usize);
             let pin = directory.lookup(ptr).unwrap();
@@ -134,19 +130,22 @@ fn adversarial_all_mixed_real_route_has_no_universal_small_budget() {
         }
     }
     let mut scan = sidecar.scan(SEGMENT).unwrap();
-    let mut counts = [0usize; 2];
+    // D1' phase-1a: the cut no longer carries a class, so the drained
+    // per-class split is asserted as one total (2 records per span).
+    let mut drained = 0usize;
     while let Some(mut cut) = scan.next_cut() {
-        while let Some(record) = cut.pop() {
-            counts[record.class as usize] += 1;
+        while let Some(_offset) = cut.pop() {
+            drained += 1;
         }
     }
-    assert_eq!(counts, [LEAVES, LEAVES]);
+    assert_eq!(drained, 2 * SPANS);
     drop(scan);
-    assert_eq!(sidecar.mixed_leaves_for_test(), LEAVES);
     let live = SmallSidecar::system_totals_for_test();
-    assert_eq!(live.0 - before.0, size_of::<SmallSidecar>() + LEAVES * 256);
+    // D1' phase-1b: the dense sweep costs exactly ONE fixed sidecar — no
+    // per-leaf promotions, no per-issue System requests.
+    assert_eq!(live.0 - before.0, size_of::<SmallSidecar>());
     assert_eq!(live.1 - before.1, 0);
-    assert_eq!(live.3 - before.3, 1 + LEAVES);
+    assert_eq!(live.3 - before.3, 1);
     drop(route);
     assert_eq!(directory.live_route_census_for_test(), (0, 0, 0));
     drop(reservation);

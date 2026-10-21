@@ -485,11 +485,8 @@ function testsFrom(...fields) {
   for (const f of fields) {
     if (!f) continue;
     for (const m of f.matchAll(TESTS_RE)) out.add(m[1]);
-    // `tests::<x>` may name a test function, not a file: count it only when
-    // tests/<x>.rs exists.
-    for (const m of f.matchAll(/tests::([A-Za-z0-9_]+)/g)) {
-      if (stems.has(m[1])) out.add(`tests/${m[1]}.rs`);
-    }
+    // `tests::<x>` / `--test <x>` are EXPLICIT citations: a deleted target is flagged by evidence-test-missing, not skipped.
+    for (const m of f.matchAll(/tests::([A-Za-z0-9_]+)/g)) out.add(`tests/${m[1]}.rs`);
     for (const m of f.matchAll(/--test\s+([A-Za-z0-9_]+)/g)) out.add(`tests/${m[1]}.rs`);
     for (const m of f.matchAll(/[A-Za-z0-9_]{8,}/g)) {
       if (m[0].includes('_') && stems.has(m[0])) out.add(`tests/${m[0]}.rs`);
@@ -904,10 +901,13 @@ for (const row of rows) {
         }
       }
     } else if (isStrong && idn.ancestor === true) {
-      // (и) staleness: the pinned commit must still contain the very test
-      // files the entry cites, byte-identical to HEAD.
+      // (и) staleness: pinned commit must still contain the cited test files, byte-identical to HEAD.
       for (const rel of rowTests(row)) {
-        if (!existsSync(join(repoRoot, rel))) continue; // gone from HEAD: skip
+        if (!existsSync(join(repoRoot, rel))) {
+          violation('evidence-test-missing', id,
+            `${rel} cited by a ${row.status} row does not exist at HEAD (identity staleness loop)`);
+          continue;
+        }
         const old = blobAt(idn.resolved, rel.replace(/\\/g, '/'));
         if (old === null) {
           violation('evidence-identity-base', id,

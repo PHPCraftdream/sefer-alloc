@@ -17,13 +17,10 @@
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "8 passed; 0 failed",
-          "test mixed_leaf_published_after_its_initialization \\.\\.\\. ok",
-          "test owner_cut_is_acqrel_swap \\.\\.\\. ok",
-          "test class_leaves_ordering_inventory_is_exact \\.\\.\\. ok",
-          "test owner_issue_class_store_is_release \\.\\.\\. ok",
+          "3 passed; 0 failed",
           "test producer_publish_is_acqrel_fetch_or \\.\\.\\. ok",
-          "test production_small_sidecar_uses_class_leaves \\.\\.\\. ok"
+          "test owner_issue_start_store_is_release \\.\\.\\. ok",
+          "test owner_cut_is_acqrel_swap \\.\\.\\. ok"
         ]
       }
     }

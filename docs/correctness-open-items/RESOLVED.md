@@ -15,6 +15,56 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 252 — CLOSED (2026-10-21)
+
+252. **[T] Flaky `tests/oneclass_starts_map.rs` T1: 0xC0000409/abort при unwind (1 из 4 в port-раунде, затем воспроизведён — 2 падения из 805 прогонов (5+200+200+100+300).** (Filed 2026-10-20 port-раунд; воспроизведён и закрыт 2026-10-21 fix-раундом.)
+
+    > **Current state**
+    > - **Status:** CLOSED (2026-10-21) — детерминированный сегментный delta-оракул.
+    > - **Mechanism:** T1 использовал неверную модель `live_count` в `tests/oneclass_starts_map.rs`: сравнение абсолютного значения вместо сегментной дельты делало оракул чувствительным к тому, из какого сегмента были обслужены 64 аллокации. На рассинхроне тест паниковал; `HeapLease::drop` при unwind попадал в fatal-путь → `abort()` (0xC0000409) — abort вторичен, первичен неверный оракул.
+    > - **Fix:** сегментный delta-оракул: `Δ live_count сегмента p = −(1 + блоки из 64, обслуженные из сегмента p)`; `pre`-снимок поглощает MAG-резидентов и остатки прошлых тестов, равенство точное и детерминированное. Alloc-side accounting за 64 аллокации T1 больше не проверяется T1 — это покрыто `r11_ph3a_magazine_refill_partial`.
+    > - **Verification:** после фикса 200 повторов Windows + 200 WSL — 0 сбоев; мутант-контроль RED 3/3.
+    > - **Evidence:** `<scratch>/oc_flake_*` (воспроизведение и фикс-раунды); `tests/oneclass_starts_map.rs`.
+
+### 251 — CLOSED (moved 2026-10-21 per R34-24)
+
+251. **[T, filed 2026-10-20, D1′ fix-round — residual] Early publication of batch starts (`d1p_rev` finding 3) is pinned by a deterministic test oracle on the allocator path. The M-h defect is closed by `oneclass_carve_batch_early_publication`; this card keeps the historical finding and closure evidence.** (Filed 2026-10-20; moved here from `TRACKED_correctness_residuals.md` 2026-10-21.)
+
+    > **Current state**
+    > - **Status:** CLOSED — production-path deterministic M-h oracle passes; mutant battery demonstrates counterfactual RED. T4 same-route reset fixture separately repaired and repeat-verified. Flaky T4/T1 repeat harness issue separately closed as item 252 (2026-10-21): segment-delta oracle, 200 Windows + 200 WSL, 0 failures, mutant RED 3/3.
+    > - **Current-number-or-verdict:** `oneclass_carve_batch_early_publication`: 1 passed, RC=0 (`<scratch>/oc_final_finish_mh_test.log`); mutant battery: 9 passed, RC=0. T4 whole `oneclass_starts_map`: 30 reported repeats plus final targeted pass, same-root/different-class/cleared bits/no stale reclaim/control reclaim-once retained; after the item-252 oracle fix, 200 + 200 repeats with 0 failures.
+    > - **Next trigger:** reopen only upon a failing deterministic production-path oracle or changed early-publication ordering.
+    > - **Evidence:** `<scratch>/art/b4/d1p_rev_rush.md` finding 3; deterministic production-path test `tests/oneclass_carve_batch_early_publication.rs` (1 passed, RC=0); counterfactual battery `tests/oneclass_mutant_battery.rs` (9 passed, RC=0); T4 bounded same-route fixture `tests/oneclass_starts_map.rs` (30 repeats plus final pass; post-fix 200 + 200). `docs/design/2026-10-20-adr-oneclass-starts-map.md` §3/§7 and `docs/perf/B4_ONECLASS.md` §7.
+
+### 166 — CLOSED (moved 2026-10-21 per R34-24)
+
+166. **[T → CLOSED 2026-10-20, D1′ phase-1b] R12-01 остаток — внешнее освобождение внутреннего указателя в ВЫДАННЫЙ блок больше не доводит владельца до `abort()`.** (Filed 2026-10-06, fxx round 12, R12-01; частичный фикс `0228d150`; CLOSED D1′ phase-1b; moved here from `TRACKED_correctness_residuals.md` 2026-10-21.)
+
+    > **Current state**
+    > - **Status:** CLOSED (D1′ phase-1b) — the closure property the card's
+    >   trigger (2) named is proven: the interior record (`live + 32`) is
+    >   rejected WITHOUT owner mutations and without `abort()`.
+    > - **Mechanism:** with the class leaves removed, the producer's gate is
+    >   the owner-written "start was issued" bit (`SidecarBitmap::publish`):
+    >   an interior granule of a live block was never issued as a block
+    >   START, so its start bit is 0 and the publication is dropped BEFORE
+    >   any sidecar RMW (and counted in `foreign_or_unroutable_frees`). The
+    >   former `fatal` on a zero leaf class in `BitmapCut::pop` is deleted
+    >   with the leaves — a garbage record can no longer abort the owner
+    >   (that fatal was itself the DoS this card's mechanism leaned on).
+    > - **Counterfactual test:** `tests/r12_01_foreign_free_of_unissued_granule.rs`
+    >   case 2 (`live + 32`, sub-process): the owner's drain finds nothing,
+    >   the live block stays live (clean re-dealloc), and the rejection is
+    >   counted. Red without the start-bit gate (the stale pending bit would
+    >   survive into the owner's drain).
+    > - **Scope note:** this closes the abort-on-interior residual only. The
+    >   general stale/double-free-after-reissue indistinguishability remains
+    >   OPEN as item 246.
+    > - **Evidence:** D1′ design (`<scratch>/art/b4/oneclass_design.md` §2, §8.2);
+    >   commits/D1′ phase-1b working tree; the card's original evidence
+    >   (`docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md` R12-01,
+    >   commits `0228d150`, `7d3b3e84`).
+
 ### 249 — CLOSED (2026-10-20)
 
 249. **[T] B4-MT heap-route-pin-cache (`src/registry/heap_core_xthread/heap_route_pin_cache.rs`) has NO loom model: the X-pin GO rests its model coverage on the TLS pin-cache path only.** (Filed 2026-10-20, B4-MT final phase, `docs/perf/B4_MT_PIN_NOTOWN.md` §5/§8.)
@@ -439,7 +489,7 @@ same-day item-number-range split. The split reversed item 86's
       §6.8 и полный actual-source witness в приложении B.
 
 
-- **fxx round 12 (2026-10-06) — correctness findings fixed in-round, not previously indexed.** R12-01 (P2, foreign free of a never-issued granule aborted the owner): fixed for metadata/uncarved-tail granules, `0228d150` — the interior-pointer residual is open as item 166; R12-04 (fallback-init losers spun without `yield_now`): `c4725071`; R12-06/07/08 (empty unsafe seam, contradictory seam comments, dead `tagged-index-stack` dependency): `ea47a10c` — the loom/kani model coverage residual is open as item 167; R12-09/R12-10 (stale slot/bootstrap docs, inline `#[cfg(test)]` modules, stale `allow(dead_code)`): `3cf802e6`, `516358fa`. Report: `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md`.
+- **fxx round 12 (2026-10-06) — correctness findings fixed in-round, not previously indexed.** R12-01 (P2, foreign free of a never-issued granule aborted the owner): fixed for metadata/uncarved-tail granules, `0228d150` — the interior-pointer residual was filed as item 166 (CLOSED 2026-10-20, D1′ phase-1b — §166 above); R12-04 (fallback-init losers spun without `yield_now`): `c4725071`; R12-06/07/08 (empty unsafe seam, contradictory seam comments, dead `tagged-index-stack` dependency): `ea47a10c` — the loom/kani model coverage residual is open as item 167; R12-09/R12-10 (stale slot/bootstrap docs, inline `#[cfg(test)]` modules, stale `allow(dead_code)`): `3cf802e6`, `516358fa`. Report: `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md`.
 
 - **CI defect (macOS): `std::sync::Mutex` в `RouteDirectory` аллоцирует `Box` при первом `lock` → рекурсия в глобальный аллокатор → переполнение стека.** CLOSED 2026-10-02, commit `b50f04f4` (`fix(perf)`): шарды RouteDirectory переведены на неаллоцирующий spin-lock (`ShardLock`); rustfmt-своп `14807327`; гейт дифференциальной диагностики на доступность segment_bases — `041cfd9e`. Не номерной пункт (не был в индексе до фикса) — заведён задним числом как closure trail.
 

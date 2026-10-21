@@ -278,6 +278,54 @@ impl HeapCore {
         self.core.dbg_layout_class_for(layout)
     }
 
+    /// TEST-ONLY (D1′ fix round 2, `r11_ph3a_magazine_refill_partial`): the
+    /// `committed_payload_end` frontier of `ptr`'s segment — thin delegation
+    /// to [`AllocCore::dbg_committed_payload_end_for`]. Exposed at the
+    /// `HeapCore` level because `core` is `pub(crate)` and external
+    /// integration tests only see `HeapCore`/`HeapRegistry`. Read-only
+    /// numeric observer; no pointer leaves the test.
+    #[doc(hidden)]
+    #[must_use]
+    // D1′ fix round (measurement round): the delegation target lives in the
+    // `internals`-gated `impl AllocCore` (alloc_core_small_diag.rs), so this
+    // wrapper must be gated the same way or non-internals production builds
+    // fail to resolve the method. Same gating pattern as `dbg_class_for`.
+    #[cfg(all(
+        any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        ),
+        feature = "internals"
+    ))]
+    pub fn dbg_committed_payload_end_for(&self, ptr: *mut u8) -> Option<usize> {
+        self.core.dbg_committed_payload_end_for(ptr)
+    }
+
+    /// TEST-ONLY (D1′ fix round 2, `r11_ph3a_magazine_refill_partial`): arm
+    /// the real-path commit-failure fault injector — thin delegation to
+    /// [`AllocCore::dbg_arm_commit_fail`]. Exposed at the `HeapCore` level
+    /// for the same reason as [`Self::dbg_class_for`]; the injector itself is
+    /// the reviewed TEST-ONLY `lazy-commit-fault-injection` fixture (R2-19).
+    #[doc(hidden)]
+    #[cfg(feature = "lazy-commit-fault-injection")]
+    pub fn dbg_arm_commit_fail(&self, n: u32) {
+        self.core.dbg_arm_commit_fail(n);
+    }
+
+    /// TEST-ONLY (P2-C vacuum guard, `r11_ph3a_magazine_refill_partial`):
+    /// cumulative count of real commit calls the armed injector actually
+    /// forced to fail since process start — thin delegation to
+    /// `AllocCore::dbg_commit_fail_count`. Read-only `Relaxed` counter
+    /// load; exposed at the `HeapCore` level for the same reason as
+    /// `dbg_arm_commit_fail`. Same `lazy-commit-fault-injection` gating
+    /// as `dbg_arm_commit_fail`.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "lazy-commit-fault-injection")]
+    pub fn dbg_commit_fail_count(&self) -> u64 {
+        self.core.dbg_commit_fail_count()
+    }
+
     /// TEST-ONLY (task D3): the per-class refill amount `alloc`'s
     /// magazine-miss path actually uses for class `c` — i.e.
     /// `crate::registry::heap_core::state::tcache::refill_n_for_class(SizeClasses::block_size(c))`, the
@@ -403,6 +451,27 @@ impl HeapCore {
     #[must_use]
     pub fn dbg_pool_cap(&self) -> usize {
         self.core.dbg_pool_cap()
+    }
+
+    /// B4 mem4 memory judge: thin delegation to
+    /// [`AllocCore::dbg_pool_byte_cap_effective`] — the RESOLVED operative
+    /// pool byte bound (`pool_cap × SEGMENT`) for this heap, exposed at the
+    /// `HeapCore` level (same delegation pattern as `dbg_pool_cap`
+    /// immediately above). NOTE: the configured byte-ceiling VALUE is not
+    /// retained at runtime (resolution folds it into `pool_cap`); this hook
+    /// returns the resolved folded bound, never the requested figure.
+    /// Read-only `&self`; does NOT mutate allocator state.
+    /// `bench-internals`-gated (no production caller → R25-10 sub-rule 2),
+    /// same gating as `dbg_pool_cap`.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_pool_byte_cap_effective(&self) -> usize {
+        self.core.dbg_pool_byte_cap_effective()
     }
 
     /// R29-4 (task #435) MEASUREMENT-ONLY: thin delegation to
@@ -684,6 +753,31 @@ impl HeapCore {
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// [`AllocCore::dbg_force_decay_tick`] moved behind `internals`
     /// (`alloc_core_large_cache.rs`'s module doc).
+    /// D1′ phase-1a: forwarder to
+    /// [`AllocCore::dbg_force_decommit_retain_for`](crate::alloc_core::AllocCore::dbg_force_decommit_retain_for)
+    /// so registry-level retain-reset probes (e.g.
+    /// `tests/oneclass_starts_map.rs` T4) can drive the quiescent retain leg
+    /// through a claimed heap lease.
+    ///
+    /// # Safety
+    /// Forwarded verbatim: the caller must guarantee the segment at `ptr`'s
+    /// base has `live_count == 0`-equivalent quiescence (see the callee's
+    /// `# Safety`); the probe may deliberately waive the live-count check
+    /// ONLY while every outstanding block's ownership was already
+    /// transferred (published) and no reservation byte is touched again.
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "internals",
+        feature = "bench-internals"
+    ))]
+    #[doc(hidden)]
+    #[allow(unsafe_code)]
+    pub unsafe fn dbg_force_decommit_retain_for(&self, ptr: *mut u8) -> bool {
+        // SAFETY: forwarded verbatim; the caller upholds the callee's
+        // contract.
+        unsafe { self.core.dbg_force_decommit_retain_for(ptr) }
+    }
+
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-decommit",

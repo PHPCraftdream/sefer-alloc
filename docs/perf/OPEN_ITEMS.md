@@ -300,6 +300,31 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    >   - **X-c1 (таблица `SIZE2C1`, c+1) — ОТКЛОНЁН (NO-GO).** Сумма ao alloc+free не изменилась (136 при пороге ≤135) — LLVM и так сворачивал `+1` в encode; mstress +1. Итерация b не помогла. Полностью откачен; пункт сохранён с пометкой, чтобы гипотеза не переоткрывалась без новых данных.
    >   - Evidence: `docs/perf/B4_MICRO_PACK.md`; `docs/perf/B4_MICRO_PACK_summary.csv`; `scripts/b4_micro_pack_table.mjs`; сырьё `docs/perf/_raw_b4_micro_*.log(.gz)`.
 
+109. **[A] B4 D1′ thrash64 free +3 Ir/op, +3.1 % EstCycles (PORT2) — компромисс принят, причина локализована построчно.** (Filed 2026-10-20, `docs/perf/B4_ONECLASS.md` §1/§8.1.)
+
+   > **Current state**
+   > - **Status:** ACCEPTED — компромисс ПРИНЯТ владельцем после PORT2-перезамера (2026-10-21); NO-GO строки подтверждён трижды (oc3, oc7 и PORT2-раунды); точечное устранение доступными production-нейтральными атрибутами — НЕТ (4 попытки с замерами ниже); причина локализована построчно (oc7).
+   > - **Current number/verdict:** thrash64 free PORT2: 81→84 Ir/op (+3), EstCycles +3.1 % (порт-база 90.3 → port2 93.1; ранние oc3/oc7-числа 91→94 / 100.2→103.7 сняты на старой базе `bbc3c7b4`, port-раунд == port2 по числам; оставлены как история); независимое воспроизведение oc7 (A = чистый `git archive bbc3c7b4`: ровно 22/91 Ir, 22.0/100.2 cyc; B = финальное дерево: ровно 94/103.7 — `_raw_b4_oneclass_oc7-thrash64-{a,b}-attr.log`) подтверждает стабильность. Построчная атрибуция Δ+3.0 Ir/op: `dealloc_own_base` Δ=0.0 (16.0 в обоих плечах), `segment_header_views` Δ=0.0; весь прирост — в НЕизменённых (diff vs bbc3c7b4 пуст) инlined-функциях окна: `hash.rs` 15.3→17.5 (Δ+2.2: hash-выражение +1.0, probe-строки `hash_find` по +0.4), `segment_table_impl.rs` 18.8→19.7 (Δ+0.9: `i>=count` +0.3, `own_cache[index]=…` +0.2, `root==key` +0.2), `core::ptr` +0.2. «Сдвиг инлайнинга/раскладки» — ГИПОТЕЗА (теперь с числами); добавленной инструкции на own-free пути нет.
+   > - **Attempts (все — layout-only атрибуты, логика/проверки не тронуты, каждая с полным замером B thrash64):** (1) `hash_slot_write` `#[inline]`→`#[inline(always)]` — 94/103.7, без эффекта; (2) `own_cache_clear` `#[inline]`→`#[inline(always)]` — 94/103.7, без эффекта; (3) `canonical_block_of` `#[inline]`→`#[inline(always)]` — 94/103.7, без эффекта; (4) `canonical_base_of{,_mut}` `#[inline(always)]`→`#[inline]` — 94/103.7, без эффекта. Логи `_raw_b4_oneclass_oc7-attempt-{1..4}.log`; все правки откачены (tree-diff дерева = pre-attempt `7659fcf3…`).
+   > - **Next trigger:** владелец принял +3 Ir/op как стоимость D1′ (mstress −33, batch alloc −18 перекрывают +3); переоткрывать только при новой гипотезе с иными приёмами — атрибутами `#[inline]`/`#[cold]` на соседних функциях в oc7 эффект не достигнут. PORT2 также зафиксировал принятую цену deadpins-регресса: +24 448 Б на освобождённый dead pin (+59 %; sidecar +48 896 Б). Исторический текст триггера: отдельный раунд с иными приёмами (реорганизация инlined-кластера `canonical_base_of`→`hash_find`, `#[cold]` на холодных ветках) — атрибутами `#[inline]`/`#[cold]` на соседних функциях эффект в oc7 не достигнут.
+   > - **Evidence:** `docs/perf/B4_ONECLASS.md` §1, §8.1; `docs/perf/B4_ONECLASS_summary.csv`; сырьё `docs/perf/_raw_b4_oneclass_{base,b2,b3}-thrash64.log`, `docs/perf/_raw_b4_oneclass_oc7-thrash64-{a,b}-attr.log`, `docs/perf/_raw_b4_oneclass_oc7-attempt-{1..4}.log` (PORT2-сырьё `docs/perf/_raw_b4_oneclass_port2-thrash64-{base,b}.log`; полные построчные логи oc7-раунда: `<scratch>/oc7-thrash64-{a,b}-attr-full.log`, `<scratch>/oc7-attempt-{1..4}-full.log`).
+
+110. **[A] B4 D1′ foreign free −2 Ir при цели ≤ −4 — порог НЕ достигнут (FAIL-THRESHOLD; ZONE-категория гейта удалена).** (Filed 2026-10-20, обновлён oc3-раундом, `docs/perf/B4_ONECLASS.md` §4/§8.2.)
+
+   > **Current state**
+   > - **Status:** ACCEPTED — компромисс ПРИНЯТ владельцем после PORT2-перезамера (2026-10-21): −2 Ir при цели ≤ −4 зафиксирован как принятый остаток.
+   > - **Current number/verdict:** foreign PORT2: 136→134 Ir/free (−2 при цели D1′-гейта §8.4c ≤ −4); PORT2-перезамер подтвердил те же 134 (ранний b3/oc3: `_raw_b4_oneclass_b3-foreign.log`): producer-путь не менялся фикс-раундом. Построчная атрибуция publish_foreign_uncached (§4.1): доминанта — filter payload/alignment в directory lookup (58.5 % A → 54.5 % B), пин-кэш 13.4→19.1 %, RMW-публикация лишь 5.0→2.3 % — прежняя формулировка «остаток — RMW» снята измерением.
+   > - **Next trigger:** остаток −2 принят (см. ACCEPTED-статус выше); переоткрывать только при новой гипотезе снижения цены directory-фильтра без ослабления проверок.
+   > - **Evidence:** `docs/perf/B4_ONECLASS.md` §4, §4.1, §8.2 и PORT2-раздел; `docs/perf/B4_ONECLASS_PORT2_summary.csv`; сырьё `docs/perf/_raw_b4_oneclass_port2-foreign-{base,b}.log`, историческое `docs/perf/_raw_b4_oneclass_{base,b2,b3}-foreign.log`.
+
+111. **[A] B4 D1′ residuals: M-h закрыт оракулом + battery; остаток — bench-счётчик повторных чтений `next` не внедрён.** (Filed 2026-10-20, `docs/perf/B4_ONECLASS.md` §6/§7; correctness-индекс — карточка 251.)
+
+   > **Current state**
+   > - **Status:** PARTIAL — M-h-часть ЗАКРЫТА (2026-10-21): детерминированный оракул на allocator-path ЕСТЬ — `oneclass_carve_batch_early_publication` (1 passed) + мутант-battery RED; correctness-носитель — RESOLVED §251/§252. Остаток карточки — только bench-счётчик повторных чтений `next`.
+   > - **Current number/verdict:** (1) M-h: ранняя публикация стартов batch закрыта детерминированным production-path оракулом `tests/oneclass_carve_batch_early_publication.rs` (1 passed, RC=0) и мутант-battery `tests/oneclass_mutant_battery.rs` (9 RED, RC=0); (2) однопроходность drain закреплена кодом + `r6_t06` continuation-тестом, bench-счётчик повторных чтений `next` не внедрён.
+   > - **Next trigger:** bench-счётчик повторных чтений `next` — отдельный micro-приём при следующем touch drain (M-h-часть закрыта, переоткрывать не требуется).
+   > - **Evidence:** `docs/correctness-open-items/RESOLVED.md` §251/§252; `docs/perf/B4_ONECLASS.md` §6 (оракул 1), §7 (M-h); `<scratch>/art/b4/d1p_rev_rush.md` находка 3.
+
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**

@@ -10,8 +10,9 @@
 
 /// One byte of state per `MIN_BLOCK` granule of a small or primordial
 /// segment. Owner-private: only the segment owner thread reads/writes it;
-/// producers and other threads NEVER touch it (unlike the remote sidecar /
-/// `ClassLeaves`, whose protocol is untouched here).
+/// producers and other threads NEVER touch it. D1′ phase-1b: this byte is
+/// the ONLY carrier of a record's class — the remote sidecar carries no
+/// class state (the former `ClassLeaves` protocol is removed).
 ///
 /// ## Encoding
 ///
@@ -26,9 +27,9 @@
 ///   remote-pending), [`StateByte::MAG`] = 1 (resident in a tcache
 ///   magazine), [`StateByte::FREE`] = 2 (on a bin / free list). `state == 3`
 ///   is never produced.
-/// - Bit 7 remains available to the remote `ClassLeaves` protocol. The separate
-///   owner state array consumes its own bit 7 for `FREE`; leaf entries remain
-///   encoded as `class + 1` and do not consume that bit.
+/// - Bit 7: the former remote `ClassLeaves` carrier (leaf bit 7) is removed
+///   (D1′ phase-1b); the owner state array consumes bit 7 for `FREE` and no
+///   other protocol uses it.
 ///
 /// ## Formal invariants
 ///
@@ -76,8 +77,10 @@ pub(crate) struct StateByte {
 impl StateByte {
     /// Granule is at the user (or in a batch's in-flight output).
     pub(crate) const LIVE: u8 = 0;
-    /// Granule is resident in a tcache magazine. Only the magazine
-    /// (`alloc-global` + `fastbin`) writes or tests it.
+    /// Granule is resident in a tcache magazine. Written only by the magazine
+    /// writer/refill pair (magazine + refill, `alloc-global` + `fastbin`);
+    /// reclaim additionally TESTS it on every xthread build
+    /// (`alloc-global` + `alloc-xthread`).
     #[cfg_attr(
         not(all(feature = "alloc-global", feature = "fastbin")),
         allow(dead_code)

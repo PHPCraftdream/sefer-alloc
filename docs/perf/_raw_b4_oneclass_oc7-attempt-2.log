@@ -1,0 +1,6 @@
+tree-diff-sha256 7659fcf3231b342b4065f950d242bb262adf613e968cdbc2b0a84c2f42e8eead + attempt2: own_cache_clear #[inline] -> #[inline(always)] (src/alloc_core/segment/segment_table/segment_table_impl.rs:844; layout-only)
+== activation: [thrash64] distinct 16B-window segments: 64
+== sefer w_alloc marginal Ir/op: 22
+== sefer w_alloc cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=22.0
+== sefer w_free marginal Ir/op: 94
+== sefer w_free cache: D1m/op=0.89 LLm/op=0.00 EstCycles/op=103.7

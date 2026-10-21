@@ -23,7 +23,6 @@ mod alloc_core {
     }
     pub mod size_classes {
         pub const MIN_BLOCK: usize = sefer_alloc::SegmentLayout::MIN_BLOCK;
-        pub const SMALL_CLASS_COUNT: usize = sefer_alloc::SegmentLayout::SIZE_CLASS_TABLE.len();
     }
     pub mod segment_layout {
         pub const SIDECAR_WORD_BYTES: usize =
@@ -38,7 +37,7 @@ mod alloc_core {
 mod remote_bitmap;
 
 mod tests {
-    use super::remote_bitmap::{BitmapRecord, SidecarBitmap};
+    use super::remote_bitmap::SidecarBitmap;
 
     /// Word 0 of the pending bank is zero; word 1 carries bits. One scan from
     /// word 0 must: return an empty cut for word 0 (the B4 skip path), return
@@ -49,15 +48,16 @@ mod tests {
         let words: Vec<std::sync::atomic::AtomicU64> = (0..SidecarBitmap::WORDS)
             .map(|_| std::sync::atomic::AtomicU64::new(0))
             .collect();
-        let classes: Vec<std::sync::atomic::AtomicU8> = (0..SidecarBitmap::GRANULES)
-            .map(|_| std::sync::atomic::AtomicU8::new(0))
+        let starts: Vec<std::sync::atomic::AtomicU64> = (0..SidecarBitmap::WORDS)
+            .map(|_| std::sync::atomic::AtomicU64::new(0))
             .collect();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        // payload_start 0: the whole segment is payload in this harness.
+        let map = SidecarBitmap::from_pending(&words, &starts).unwrap();
 
         // Offset 1024 lives in pending word 1 (1024 bytes per bit at
         // MIN_BLOCK=16 × 64 bits/word), class 7 is an arbitrary payload.
-        assert!(map.issue(1024, 7));
-        assert!(map.publish(1024));
+        map.issue(1024);
+        assert!(map.publish(1024, 0));
 
         let mut scan = map.scan_from(2048, 0).unwrap();
 
@@ -71,11 +71,8 @@ mod tests {
         assert!(!cut1.is_empty(), "nonzero word must not be over-skipped");
         assert_eq!(
             cut1.pop(),
-            Some(BitmapRecord {
-                offset: 1024,
-                class: 7
-            }),
-            "word-1 cut must yield the published record"
+            Some(1024),
+            "word-1 cut must yield the record offset"
         );
         assert!(cut1.pop().is_none(), "record must not be duplicated");
 

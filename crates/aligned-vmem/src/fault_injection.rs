@@ -71,7 +71,7 @@
 //! `#[cfg(feature = "fault-injection")]`-gated, so the production path is
 //! byte-identical with the feature disabled.
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 /// Fault state protected by a mutex to serialize arm/fire operations and
@@ -91,6 +91,25 @@ static FAULT_STATE: Mutex<FaultState> = Mutex::new(FaultState {
 /// When `> 0`, the next real commit call fails without touching the OS and
 /// decrements this counter. `0` disarms. See [`arm_fail_next`].
 static FAIL_NEXT: AtomicU32 = AtomicU32::new(0);
+
+/// Cumulative count of commit calls this module forced to fail (both tiers,
+/// `arm_fail_next` and `arm_fail_at`, since process start). Test-only
+/// witness: lets a consumer prove an armed refusal was actually consumed —
+/// the guard against a vacuously green fault-injection test where the armed
+/// commit is never reached. Monotonic, never reset; read via
+/// [`commit_failure_count`]. `Relaxed`: a diagnostic total, no payload.
+static COMMIT_FAILURES: AtomicU64 = AtomicU64::new(0);
+
+/// Cumulative number of real commit calls this module forced to fail since
+/// process start (both hooks; monotonic, never reset). Test-only witness:
+/// a fault-injection test can assert this count grew across the decisive
+/// call, proving the armed injector actually fired instead of the test
+/// passing vacuously because the armed commit was never reached.
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
+#[must_use]
+pub fn commit_failure_count() -> u64 {
+    COMMIT_FAILURES.load(Ordering::Relaxed)
+}
 
 /// Arm the "fail the next N real commits" hook. The next `n` calls to the
 /// real commit path ([`crate::try_commit_range`] / [`crate::commit_range`])
@@ -163,6 +182,7 @@ pub(crate) fn should_fail_commit() -> bool {
         })
         .is_ok();
     if fired {
+        COMMIT_FAILURES.fetch_add(1, Ordering::Relaxed);
         return true;
     }
 
@@ -180,6 +200,7 @@ pub(crate) fn should_fail_commit() -> bool {
             // mutex, so no concurrent arm can interleave and be lost.
             state.target = 0;
             state.counter = 0;
+            COMMIT_FAILURES.fetch_add(1, Ordering::Relaxed);
             return true;
         }
     }

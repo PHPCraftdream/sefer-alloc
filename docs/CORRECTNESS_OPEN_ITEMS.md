@@ -530,7 +530,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 161 | `TRACKED_misc.md` |
 | 164 | `TRACKED_correctness_residuals.md` |
 | 165 | `TRACKED_correctness_residuals.md` |
-| 166 | `TRACKED_correctness_residuals.md` |
+| 166 | `RESOLVED.md` |
 | 167 | `TRACKED_verification_coverage.md` |
 | 168 | `RESOLVED.md` |
 | 169 | `RESOLVED.md` |
@@ -614,6 +614,9 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 247 | `TRACKED_correctness_residuals.md` |
 | 248 | `TRACKED_correctness_residuals.md` |
 | 249 | `RESOLVED.md` |
+| 250 | `TRACKED_correctness_residuals.md` |
+| 251 | `RESOLVED.md` |
+| 252 | `RESOLVED.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains

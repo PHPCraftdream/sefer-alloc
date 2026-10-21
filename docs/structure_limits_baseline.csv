@@ -33,6 +33,6 @@ folder,crates/globalalloc-model/src,9,grandfathered when the structure limits la
 folder,src/alloc_core/alloc_core,10,grandfathered when the structure limits landed (2026-10-12)
 folder,src/alloc_core/platform,8,grandfathered when the structure limits landed (2026-10-12)
 folder,src/alloc_core/segment/segment_header,9,grandfathered when the structure limits landed (2026-10-12)
-folder,src/alloc_core/segment/segment_table,9,grandfathered when the structure limits landed (2026-10-12)
+folder,src/alloc_core/segment/segment_table,9,D1' phase-1b: issue_transaction.rs removed, then small_issue_run.rs added (2026-10-20)
 folder,src/global,9,grandfathered when the structure limits landed (2026-10-12)
-folder,src/registry/segment_route,13,grandfathered when the structure limits landed (2026-10-12)
+folder,src/registry/segment_route,12,D1' phase-1b: route_record.rs removed (2026-10-20)

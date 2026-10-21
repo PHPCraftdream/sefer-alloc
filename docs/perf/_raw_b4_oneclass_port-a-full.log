@@ -1,0 +1,15 @@
+identity: shoulder=a base=8da6402d oc_mem_hooks_a2.patch(sha256=5e01b6c82272a0e43720b186c358d3a65486cea011b870479999fb7d965db586) write-tree=40fd66d75637e8ac163d8f33384b3e719bad2299 source-manifest-sha256=c93793c7259682e248bbab98c134311a14c86713a608c2d2cdc189ff9ef6f936 probe-sha256=9daf6992a996c74635d11c85ac68c52bc71ff4c57a2a11426a6d5244cd8b4e3a mode=full
+build-cmd: cargo build --release --example zz_oc_mem_probe --features production,internals,bench-internals (CARGO_TARGET_DIR isolated)
+warning: unused variable: `base`
+   --> examples/zz_oc_mem_probe.rs:325:35
+    |
+325 | fn mode_cold(heap: &mut HeapCore, base: (usize, usize, usize, usize, usize)) {
+    |                                   ^^^^ help: if this is intentional, prefix it with an underscore: `_base`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+BUILD_RC=0
+full: live 16-B blocks = 1048576
+MEM committed_bytes=20971520 system_sidecar_bytes=1254016 retained_pins=0 descriptor_entries=0 rss_kib=4516 config_conflicts_total=0 requested_pool=segments=8,byte_cap=33554432 resolved_pool=segments=8 resolved_pool_byte_cap=33554432(hook=dbg_pool_byte_cap_effective)
+RUN_RC=0
+RC=0

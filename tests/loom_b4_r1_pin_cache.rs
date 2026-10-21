@@ -20,15 +20,15 @@
 //!   Release-clear under the shard lock), `Entry`/`EntryHandle` (counted
 //!   refs; final drop frees the sidecar; NO drain on owner-ref drop).
 //! - `src/registry/segment_route/registration.rs` — `RouteRegistration`
-//!   (`issue_small`, drop = production remove then owner-ref drop).
+//!   (drop = production remove then owner-ref drop).
 //! - `src/registry/segment_route/small_sidecar.rs` — production
 //!   `SmallSidecar::publish` → `SidecarBitmap::publish` (the real
 //!   `fetch_or`), `initialize_at`.
 //! - `src/alloc_core/segment/remote_bitmap/{sidecar_bitmap,bitmap_scan,
-//!   bitmap_cut,bitmap_record}.rs` (+ their `leaf_classes.rs` child) — the
+//!   bitmap_cut}.rs` — the
 //!   real scan/drain primitive (`BitmapScan::next_cut` = per-word
 //!   `swap(0, AcqRel)`), same include shape as the sidecar-bitmap model.
-//! - `src/registry/segment_route/{error,kind,route_record,route_scan,
+//! - `src/registry/segment_route/{error,kind,route_scan,
 //!   route_cut,large_state}.rs` and
 //!   `src/alloc_core/large/reservation_state.rs` — the compile cascade of
 //!   the files above. `large_state.rs`/`reservation_state.rs` stay fully on
@@ -92,7 +92,7 @@
 //! and 16, word 0); cache of
 //! `PIN_CACHE_SLOTS = 4` (production constant, 1 slot used).
 //! - OWNER: `RouteDirectory::new` → `register` (production) →
-//!   `issue_small(0,0)` (granule LIVE) → own `lookup` pin (drain handle) →
+//!   owner start-bit issue (`issue_for_test`) → own `lookup` pin (drain handle) →
 //!   signal producer → wait producer-ack (insert done) → `RouteRegistration::
 //!   drop` (production `remove`: unlink + `linked=false` Release under the
 //!   lock, then owner-ref drop — no drain on that drop, matching
@@ -178,6 +178,23 @@ pub(crate) use loom::sync::atomic::{
 };
 
 mod alloc_core {
+    // D1' phase-1b shims for the doc-hidden test observers compiled into the
+    // included `registration.rs` / `small_sidecar.rs`: never executed in any
+    // schedule of this model (only publication/drain paths run), compile-only.
+    pub(crate) mod state_byte {
+        pub(crate) struct StateByte;
+        impl StateByte {
+            pub(crate) const LIVE: u8 = 0;
+            pub(crate) fn read(&self, _off: u32) -> u8 {
+                0
+            }
+        }
+    }
+    // Carve-clear diagnostic counters (real crate: alloc_core root statics).
+    pub(crate) static CARVE_CLEAR_WORD_LOADS: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(0);
+    pub(crate) static CARVE_CLEAR_BITS: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(0);
     // Mirrors `alloc_core::fatal` for the source-included primitives.
     pub(crate) mod fatal {
         pub fn fatal(msg: &'static [u8]) -> ! {
@@ -209,12 +226,60 @@ mod alloc_core {
     pub(crate) mod remote_bitmap {
         pub(crate) use crate::bitmap_cut::BitmapCut;
         pub(crate) use crate::bitmap_scan::BitmapScan;
-        pub(crate) use crate::sidecar_bitmap::{ClassLeaves, SidecarBitmap};
+        pub(crate) use crate::sidecar_bitmap::SidecarBitmap;
     }
     // COMPILE-ONLY shim of the Large phase-word codec
     // (`segment_header/terminal_words.rs`); never executed in this model —
     // only Small routes are registered (see the header).
     pub(crate) mod segment_header {
+        // Compile-only stubs for the state-byte class observer in the
+        // included `registration.rs` (never called in this model).
+        pub(crate) struct SegmentHeader;
+        impl SegmentHeader {
+            pub(crate) fn kind_at(_base: *mut u8) -> SegmentKind {
+                SegmentKind::Small
+            }
+        }
+        pub(crate) enum SegmentKind {
+            Small,
+            Primordial,
+            Large,
+            Unknown,
+        }
+        pub(crate) struct SegmentMeta;
+        impl SegmentMeta {
+            pub(crate) fn new(_base: *mut u8) -> SegmentMeta {
+                SegmentMeta
+            }
+            pub(crate) fn state_byte(&self) -> crate::alloc_core::state_byte::StateByte {
+                crate::alloc_core::state_byte::StateByte
+            }
+        }
+        // D1' phase-1a: the payload-filter boundary lives behind the real
+        // `Layout` associated fns; shim them the same way.
+        pub(crate) struct Layout;
+        impl Layout {
+            pub(crate) const fn small_meta_end() -> usize {
+                0
+            }
+            pub(crate) const fn primordial_meta_end() -> usize {
+                0
+            }
+        }
+        // D1' phase-1a: the payload-filter boundary. In THIS model the shim
+        // value is 0 so the modeled publications of offsets 0 and 16 (word 0,
+        // the whole modeled protocol region) still pass the producer's
+        // payload filter — shrinking the model's word count matters more
+        // than the metadata boundary here, and the payload filter itself is
+        // covered by its own tests (tests/oneclass_starts_map.rs). The
+        // honest production values are page-aligned metadata ends well above
+        // any of the offsets this model publishes.
+        pub(crate) const fn small_meta_end() -> usize {
+            0
+        }
+        pub(crate) const fn primordial_meta_end() -> usize {
+            0
+        }
         pub(crate) const MAX_LARGE_GENERATION: u64 = u64::MAX >> 3;
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         #[repr(u8)]
@@ -389,9 +454,6 @@ mod shard_lock {
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_cut.rs"]
 mod bitmap_cut;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/remote_bitmap/bitmap_record.rs"]
-mod bitmap_record;
-#[allow(dead_code)]
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_scan.rs"]
 mod bitmap_scan;
 #[allow(dead_code)]
@@ -426,9 +488,6 @@ mod route_kind;
 #[path = "../src/registry/heap_core_xthread/route_pin_cache.rs"]
 mod route_pin_cache;
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/route_record.rs"]
-mod route_record;
-#[allow(dead_code)]
 #[path = "../src/registry/segment_route/route_scan.rs"]
 mod route_scan;
 #[allow(dead_code)]
@@ -439,7 +498,6 @@ mod small_sidecar;
 // `segment_route` in production), so the root re-exports the surface those
 // `use super::{...}` lines name.
 use bitmap_cut::BitmapCut;
-use bitmap_record::BitmapRecord;
 use bitmap_scan::BitmapScan;
 use large_state::LargeState;
 use pin::RoutePin;
@@ -447,7 +505,6 @@ use registration::RouteRegistration;
 use route_cut::RouteCut;
 use route_error::RouteError;
 use route_kind::RouteKind;
-use route_record::RouteRecord;
 use route_scan::RouteScan;
 use small_sidecar::SmallSidecar;
 
@@ -456,6 +513,7 @@ use small_sidecar::SmallSidecar;
 mod registry {
     pub(crate) mod segment_route {
         pub(crate) use crate::pin::RoutePin;
+        pub(crate) use crate::route_kind::RouteKind;
     }
 }
 
@@ -512,10 +570,9 @@ fn pin_refs(pin: &RoutePin) -> usize {
 /// changing its code path.
 const SCAN_BYTES: usize = 64;
 
-/// Owner-side drain through the PRODUCTION scan primitive: every word's
-/// cut via `BitmapScan::next_cut` (`swap(0, AcqRel)`), records detached as
-/// `(offset, class)`.
-fn drain(pin: &RoutePin) -> Vec<(u32, u8)> {
+// D1' phase-1a: cuts yield the OFFSET only (the class is decided from the
+// owner state byte at reclaim, outside this primitive model).
+fn drain(pin: &RoutePin) -> Vec<u32> {
     let sidecar: &SmallSidecar = pin
         .entry
         .small_sidecar()
@@ -523,9 +580,8 @@ fn drain(pin: &RoutePin) -> Vec<(u32, u8)> {
     let mut out = Vec::new();
     let mut scan = sidecar.scan(SCAN_BYTES).expect("in-bounds high water");
     while let Some(mut cut) = scan.next_cut() {
-        while let Some(record) = cut.pop() {
-            let RouteRecord { offset, class } = record;
-            out.push((offset, class));
+        while let Some(offset) = cut.pop() {
+            out.push(offset);
         }
     }
     out
@@ -541,14 +597,20 @@ fn bounded_model() {
         let ptr = span.ptr();
         let base = ptr.addr();
 
-        // OWNER setup: production registration + issue; the granule goes
-        // LIVE with class 0 (encode 1), so `SmallSidecar::publish` accepts
-        // offset 0.
+        // OWNER setup: production registration + start-bit issue (D1′
+        // phase-1b: the class lives only in the state byte; publication is
+        // gated by the start bit alone).
         let registration = dir
             .register_route(ptr, SEGMENT, ptr, 1, RouteKind::Small)
             .expect("registration succeeds");
-        assert!(registration.issue_small(0, 0), "issue at offset 0");
-        assert!(registration.issue_small(16, 0), "issue at offset 16");
+        registration
+            .small_sidecar()
+            .expect("small sidecar")
+            .issue_for_test(0);
+        registration
+            .small_sidecar()
+            .expect("small sidecar")
+            .issue_for_test(16);
 
         // Owner's own pin: the drain handle that keeps the sidecar alive
         // across the whole unlink-to-drain window (O4's lower bound).
@@ -648,18 +710,18 @@ fn bounded_model() {
             published_true.load(Ordering::Relaxed),
             "O1: published bits must all be delivered to the owner's drains"
         );
-        for (offset, class) in drained_1.iter().chain(drained_2.iter()) {
+        // D1' phase-1a: the cut carries the offset only.
+        for offset in drained_1.iter().chain(drained_2.iter()) {
             assert!(
                 [0, 16].contains(offset),
                 "only issued offsets are delivered"
             );
-            assert_eq!(*class, 0, "published class");
         }
         let delivered_mask =
             drained_1
                 .iter()
                 .chain(drained_2.iter())
-                .fold(0usize, |mask, (offset, _)| {
+                .fold(0usize, |mask, offset| {
                     let bit = match *offset {
                         0 => 0,
                         16 => 1,
@@ -682,10 +744,10 @@ fn bounded_model() {
         let exit_registration = dir
             .register_route(ptr, SEGMENT, ptr, 1, RouteKind::Small)
             .expect("exit registration succeeds");
-        assert!(
-            exit_registration.issue_small(0, 0),
-            "exit issue at offset 0"
-        );
+        exit_registration
+            .small_sidecar()
+            .expect("exit small sidecar")
+            .issue_for_test(0);
         let exit_owner_pin = dir.lookup(ptr).expect("exit owner lookup");
         let exit_producer = {
             let dir = Arc::clone(&dir);
@@ -719,7 +781,7 @@ fn bounded_model() {
         );
         assert_eq!(
             drain(&exit_owner_pin),
-            vec![(0, 0)],
+            vec![0],
             "exit publication delivered once"
         );
 

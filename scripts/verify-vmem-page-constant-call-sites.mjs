@@ -1322,21 +1322,19 @@ function scanSetRsFiles() {
   // DEDUPE WITHIN each list before anything else (task #1108). `git ls-files
   // --cached` emits a conflicted path ONCE PER MERGE STAGE, so during an
   // unresolved merge a single file appears two or three times: the printed
-  // count gains phantom files, the file is scanned (and any finding in it
-  // reported) once per stage, and "the count is a property of the commit" —
-  // the whole reason task #1088/L7 moved the scan set into git — stops
-  // holding. Reproduced during the OH3 review: a real conflict on
-  // `crates/aligned-vmem/src/page.rs` made this script print
+  // count gains phantom files and the file is scanned (and any finding in it
+  // reported) once per stage — "the count is a property of the commit"
+  // (task #1088/L7) stops holding. Reproduced during the OH3 review: a real
+  // conflict on `crates/aligned-vmem/src/page.rs` made this script print
   // `scanned 560 file(s) (560 tracked + 0 untracked)` and ALL GREEN, with two
   // phantom entries and the conflicted file examined three times.
   const tracked = [...new Set(run(['ls-files', '--cached', '--', '*.rs']))];
   const untracked = [...new Set(run(['ls-files', '--others', '--exclude-standard', '--', '*.rs']))];
   // --cached and --others are disjoint by git's semantics ("others" = NOT in
   // the index); assert it so the printed tracked/untracked split can never
-  // double-count a file ACROSS the two lists. Note what this assert does and
-  // does not buy: cross-list duplication is what it catches; WITHIN-list
-  // duplication (the merge-stage case above) it never could, which is why the
-  // dedupe is done at the source rather than left to this check.
+  // double-count a file ACROSS the two lists. This catches cross-list
+  // duplication only; WITHIN-list duplication (the merge-stage case above)
+  // it never could, which is why the dedupe is done at the source.
   const seen = new Set(tracked);
   const dup = untracked.filter((f) => seen.has(f));
   if (dup.length > 0) {
@@ -1348,6 +1346,15 @@ function scanSetRsFiles() {
 }
 
 function main() {
+  // Read a scan-set file; a tracked file deleted without `git rm` is skipped loudly.
+  const readRust = (rel) => {
+    try {
+      return readFileSync(join(REPO_ROOT, rel), 'utf8');
+    } catch {
+      console.log(`[${SCRIPT}] WARNING: tracked file missing on disk, skipped: ${rel}`);
+      return null;
+    }
+  };
   console.log(`[${SCRIPT}] repo: ${REPO_ROOT}`);
   console.log(`[${SCRIPT}] phase 1/2: fixture self-test (a guard that never fired is unproven)\n`);
   const bad = runSelfTest();
@@ -1363,33 +1370,26 @@ function main() {
   };
   const findings = [];
   const prodFindings = [];
-  // Cross-file index for the production provenance rule (task #1080), built
-  // ONCE from the root crate's production tree — the SAME scan set (tracked ∪
-  // untracked-not-ignored, OH3/I3) as the main scan below, filtered to src/,
-  // so the two can never disagree about what the production tree is.
+  // Cross-file index for the production provenance rule (task #1080), built ONCE
+  // from the root crate's production tree — the SAME scan set (tracked ∪
+  // untracked-not-ignored, OH3/I3) as the main scan, filtered to src/.
   const { tracked, untracked, union } = scanSetRsFiles();
   const prodCtx = {
     files: union
       .filter((rel) => rel.startsWith('src/') && !['alloc_bitmap.rs', 'magazine_bitmap.rs', 'segment_bitmap.rs'].includes(rel.split('/').pop()))
-      .map((rel) => {
-        const blanked = blankRust(readFileSync(join(REPO_ROOT, rel), 'utf8'));
-        return { rel, blanked, defs: collectDefs(blanked) };
+      .flatMap((rel) => {
+        const source = readRust(rel);
+        if (source === null) return [];
+        const blanked = blankRust(source);
+        return [{ rel, blanked, defs: collectDefs(blanked) }];
       }),
   };
-  // Count of files actually read+scanned. In a clean tree this equals
-  // tracked.length + untracked.length (on a clean CHECKOUT the untracked
-  // query returns nothing, so it equals `git ls-files -- '*.rs' | wc -l`);
-  // a file missing from the working tree (deleted without `git rm`) is
-  // skipped loudly below and excluded from the count.
+  // Count of files actually read+scanned; in a clean tree this equals
+  // tracked.length + untracked.length (missing-on-disk files excluded above).
   let scanned = 0;
   for (const rel of union.filter((r) => !['alloc_bitmap.rs', 'magazine_bitmap.rs', 'segment_bitmap.rs'].includes(r.split('/').pop()))) {
-    let source;
-    try {
-      source = readFileSync(join(REPO_ROOT, rel), 'utf8');
-    } catch {
-      console.log(`[${SCRIPT}] WARNING: tracked file missing on disk, skipped: ${rel}`);
-      continue;
-    }
+    const source = readRust(rel);
+    if (source === null) continue;
     scanned++;
     const r = scanSource(rel, source, rel.startsWith('src/') ? prodCtx : undefined);
     findings.push(...r.findings);

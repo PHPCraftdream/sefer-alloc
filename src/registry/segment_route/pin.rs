@@ -1,4 +1,5 @@
 use super::directory::EntryHandle;
+use super::small_sidecar::SmallSidecar;
 use super::RouteKind;
 
 /// Counted descriptor and sidecar capability, not a reservation credit.
@@ -60,6 +61,16 @@ impl RoutePin {
                 .is_some_and(|sidecar| sidecar.pending_for_test(offset))
         }
     }
+    /// Doc-hidden test-only forwarder to the pinned route's `SmallSidecar`
+    /// (D1′ phase-1b), whose own test surface is exclusively doc-hidden
+    /// (`issue_for_test`). Grants no capability beyond those reviewed hooks:
+    /// the consuming `publish_small` path stays the only producer entry, and
+    /// the owner-only `issue` remains `pub(crate)`.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_small_sidecar_for_test(&self) -> Option<&SmallSidecar> {
+        self.entry.small_sidecar()
+    }
     /// Terminal publication consumes the producer capability. Drop then
     /// touches only the independently allocated descriptor/sidecar.
     ///
@@ -92,9 +103,29 @@ impl RoutePin {
     /// per-thread pin cache relies on).
     #[allow(unsafe_code)]
     pub unsafe fn publish_small_borrowed(&self, offset: u32) -> bool {
-        self.entry
-            .small_sidecar()
-            .is_some_and(|sidecar| sidecar.publish(offset))
+        // OPT: read the immutable descriptor ONCE — the payload-filter bound
+        // (the route kind's metadata end) and the sidecar pointer both come
+        // from the same Entry. Metadata offsets are rejected before any
+        // sidecar access (D1′ phase-1b semantics unchanged).
+        let entry = self.entry.entry();
+        let payload_start = match entry.kind {
+            super::RouteKind::Primordial => {
+                crate::alloc_core::segment_header::Layout::primordial_meta_end()
+            }
+            _ => crate::alloc_core::segment_header::Layout::small_meta_end(),
+        };
+        if matches!(entry.kind, super::RouteKind::Large) {
+            return false;
+        }
+        // SAFETY: this counted handle retains the System allocation; only
+        // atomic fields are accessed through the shared reference.
+        let sidecar = unsafe {
+            &*entry
+                .sidecar
+                .load(super::Ordering::Relaxed)
+                .cast::<SmallSidecar>()
+        };
+        sidecar.publish(offset, payload_start)
     }
     /// Terminal LIVE(g) -> PENDING(g) CAS, consuming this pin.
     ///
@@ -129,7 +160,8 @@ impl RoutePin {
     }
     /// Test-only entry into the production cached fast path. The input is
     /// address-only (no provenance); unlike the read-only
-    /// `RouteRegistration::class_at_global_address_for_test` class probe, this
+    /// `RouteRegistration::start_state_at_global_address_for_test`
+    /// sidecar-banks probe, this
     /// publication CREATES a reclaim obligation — hence `pub unsafe fn` (see
     /// `# Safety`). The sidecar RMW never dereferences the pointer.
     ///

@@ -131,9 +131,9 @@ impl AllocCore {
 
     /// Patch S: first pending-bitmap word that can carry payload bits. Payload
     /// begins at the page-aligned metadata end, an exact multiple of one word
-    /// (64 × MIN_BLOCK). Words below it can only read zero: only an issued
-    /// block is published, and issue/reclaim reject any offset below
-    /// `payload_start`.
+    /// (64 × MIN_BLOCK). Words below it can only read zero: the producer's
+    /// payload filter (the route's `payload_start`) rejects every metadata
+    /// offset BEFORE any sidecar access, so only an issued block is published.
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     pub(crate) fn sidecar_payload_start_word(base: *mut u8) -> usize {
         let payload_start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
@@ -183,7 +183,7 @@ impl AllocCore {
             crate::alloc_core::remote_bitmap::BitmapScan::count_routed_scan();
             #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
             crate::alloc_core::remote_bitmap::Prf01SidecarOracle::constructed();
-            Self::consume_small_cuts(base, scan, U31NoPendingObserver::default())
+            Self::consume_small_cuts(&self.table, base, scan, U31NoPendingObserver::default())
         };
         // NO_PENDING is NOT keyed off `changed_classes == 0`: a nonzero word
         // whose records are all already FREE/MAG in the state byte yields

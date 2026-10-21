@@ -1,0 +1,48 @@
+tree-diff-sha256 c1c1ca8ed7bcd9688916f301cf090f916ff5eefa172944170d6a5c30360a4caa
+MARGINAL Ir/free (foreign locality): 134
+--- inclusive frames (each separately; DO NOT sum)
+         1 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+         1 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+         3 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+         3 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+         3 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/eager.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+         6 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+         9 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        1 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        1 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        12 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/bool.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        12 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        12 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        15 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        18 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        18 ( 0.00%)  *  oc-b2-foreign/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        2 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        2 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        2 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/eager.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        21 ( 0.00%)  *  oc-b2-foreign/src/registry/segment_route/pin.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        36 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        4 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        6 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        72 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        8 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/bool.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        8 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+        8 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+       10 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+       12 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+       12 ( 0.00%)  *  oc-b2-foreign/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+       128 ( 0.00%)  *  oc-b2-foreign/src/alloc_core/segment/bitmap/state_byte.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+       14 ( 0.00%)  *  oc-b2-foreign/src/registry/segment_route/pin.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+       150 ( 0.00%)  *  oc-b2-foreign/src/registry/heap_core_xthread/route_pin_cache.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+       256 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+       256 ( 0.00%)  *  oc-b2-foreign/src/alloc_core/alloc_core/mem/mem_impl.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+       36 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+       384 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+       384 ( 0.00%)  *  oc-b2-foreign/src/alloc_core/segment/segment_header/segment_header_views.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+       48 ( 0.00%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+       702 ( 0.01%)  *  oc-b2-foreign/src/registry/segment_route/directory.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+       96 ( 0.00%)  *  oc-b2-foreign/src/registry/heap_core_xthread/route_pin_cache.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached
+ORACLE_PRE publish_ok=0 dir_lookups=0 pin_hits=0 pin_misses=0
+ORACLE_POST publish_ok=10000 dir_lookups=1 pin_hits=9999 pin_misses=1
+ORACLE deltas: publish_ok=10000 pin_hits=9999 pin_misses=1 hit_frac=0.9999
+ORACLE VERDICT: PASS
+DONE mt_prof_foreign_free b4-oneclass oc-b2-foreign foreign locality

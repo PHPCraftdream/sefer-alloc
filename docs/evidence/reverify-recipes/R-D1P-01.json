@@ -1,0 +1,67 @@
+{
+  "id": "R-D1P-01",
+  "registryActivationHash": "9a1b3d4b81266e20b23887c2a6f4469614c57f6ab875cf07d1aa702788399cb4",
+  "steps": [
+    {
+      "name": "D1′ one-class refill witnesses — three native targets",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals bench-internals alloc-xthread alloc-decommit fastbin lazy-commit-fault-injection",
+        "--test",
+        "oneclass_carve_batch_early_publication",
+        "--test",
+        "oneclass_mutant_battery",
+        "--test",
+        "r11_ph3a_magazine_refill_partial"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test no_block_of_an_in_flight_carve_batch_is_publicable \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed",
+          "test result: ok\\. 9 passed; 0 failed",
+          "test magazine_refill_commit_refusal_commits_only_the_drained_blocks \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs",
+    "find": "        // slot guards run here, not per block (design §2.2).\n        let issue_run = self.table.small_issue_run(segment);",
+    "replace": "        // slot guards run here, not per block (design §2.2).\n        let issue_run = self.table.small_issue_run(segment);\n        for mass in 0..n {\n            issue_run.issue((aligned_start + mass * block_size) as u32);\n        }",
+    "steps": [
+      {
+        "name": "M-h mass early publication mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals bench-internals alloc-xthread alloc-decommit fastbin lazy-commit-fault-injection",
+          "--test",
+          "oneclass_carve_batch_early_publication"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "test no_block_of_an_in_flight_carve_batch_is_publicable \\.\\.\\. FAILED",
+            "test result: FAILED\\. 0 passed; 1 failed"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "test no_block_of_an_in_flight_carve_batch_is_publicable \\.\\.\\. FAILED",
+        "test result: FAILED\\. 0 passed; 1 failed"
+      ]
+    }
+  }
+}

@@ -5,21 +5,20 @@
 //! for the granule and `abort()`s the owner.
 //!
 //! `abort()` cannot be caught, so every case runs in a child process (this very
-//! test binary, selected by `CHILD`). Two malformed addresses are covered:
-//! (0) a 16-aligned address in the segment metadata, (1) a 16-aligned address in
-//! the not-yet-carved tail.
+//! test binary, selected by `CHILD`). Three malformed addresses are covered:
+//! (0) a 16-aligned address in the segment metadata (rejected by the payload
+//! filter), (1) a 16-aligned address in the not-yet-carved tail (rejected by
+//! the zero start bit), and — D1' phase-1b, closing CORRECTNESS item 166 —
+//! (2) `live + 32`: a 16-aligned INTERIOR pointer into a LIVE issued 64-byte
+//! block. Its granule was never issued as a block START, so the start-bit
+//! gate rejects the publication BEFORE any sidecar mutation (no RMW), the
+//! rejection is counted in `foreign_or_unroutable_frees`, and the owner's
+//! drain finds nothing: the live block is untouched and never aborts.
 //!
-//! Residual (not covered, by design of the producer protocol): an interior
-//! pointer into an issued block whose class leaf is uniform still reads a
-//! non-zero class for every granule of the leaf, and the producer may not read
-//! block geometry from the segment header (the segment of a malformed free may
-//! be released concurrently). Such a record is rejected by the owner-side
-//! geometry check, which aborts; see `docs/CORRECTNESS_OPEN_ITEMS.md`.
-//!
-//! Non-vacuous: without the `encoded(granule) == 0` check in
-//! `SidecarBitmap::publish` the owner's drain aborts and the child exits with a
-//! failure status; the counter assertion also pins the "dropped, not
-//! published" outcome.
+//! Non-vacuous: without the start-bit gate in `SidecarBitmap::publish` (the
+//! former leaf-class gate was its 1a predecessor) the stale pending bit would
+//! survive into the owner's drain and the child exits with a failure status;
+//! the counter assertion also pins the "rejected, not published" outcome.
 
 #![cfg(all(
     feature = "alloc-global",
@@ -47,15 +46,29 @@ fn run_child(case: usize) {
         let live = unsafe { allocator.alloc(layout) };
         assert!(!live.is_null());
         let base = live.addr() & !(SegmentLayout::SEGMENT - 1);
-        ptr_tx.send(base).expect("send");
+        ptr_tx.send((base, live.addr())).expect("send");
         drain_rx.recv().expect("drain signal");
-        // Owner-side drain of the cross-thread ingress: reaches `BitmapCut::pop`.
+        // Owner-side drain of the cross-thread ingress: reaches
+        // `BitmapScan::next_cut`/`BitmapCut::pop`. For the interior case the
+        // publication was rejected BEFORE any RMW, so the drain must find
+        // NOTHING: the live block stays live (proved by the clean re-dealloc
+        // below — a wrongly reclaimed block would corrupt the owner's state).
         allocator.trim_current_thread();
         // SAFETY: the only valid allocation of this thread.
         unsafe { allocator.dealloc(live, layout) };
     });
-    let base = ptr_rx.recv().expect("owner allocation");
-    let address = [base + 16, base + SegmentLayout::SEGMENT - 16][case];
+    let (base, live_addr) = ptr_rx.recv().expect("owner allocation");
+    let address = [
+        base + 16,
+        base + SegmentLayout::SEGMENT - 16,
+        // Case 2 (item 166): interior of the LIVE 64-byte block allocated in
+        // the owner thread — `live` itself is `base + off` for some
+        // payload-start-aligned offset; `live + 32` is a 16-aligned interior
+        // granule of that live block. The owner sends the segment base only,
+        // so probe live's own granule + 2 granules: still inside the live
+        // block (64 bytes), never issued as a start.
+        live_addr + 32,
+    ][case];
     let before = SeferAlloc::new().stats().foreign_or_unroutable_frees;
     // This thread never allocated, so `dealloc` resolves ForeignNoBind and goes
     // through GlobalAlloc -> publish_foreign -> route pin -> sidecar publish.
@@ -81,7 +94,7 @@ fn foreign_free_of_unissued_granules_is_dropped_without_abort() {
         run_child(case.to_str().expect("utf8").parse().expect("case index"));
         return;
     }
-    for case in 0..2 {
+    for case in 0..3 {
         let output = std::process::Command::new(std::env::current_exe().expect("exe"))
             .arg(TEST)
             .arg("--exact")

@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it documents a known, honestly-recorded gap in a panic-safety or unwind-safety guarantee of shipping (non-hook, non-platform-specific) code -- a residual the code's own doc comments already name, not yet a proven live bug.
 
-**Card count:** 7 numbered records in this file (re-counted 2026-10-08, src-review round 16). Composition: 4 open [T] cards (items 23, 155, 164, 166) + 3 closed/resolved records retained for lookup (items 16, 66, and 165); closure evidence is routed through `RESOLVED.md`/`ARCHIVE.md`, with item 165's dated history retained below. Item 22 (the retired `RemoteFreeRing::DrainHeadPublish` residual) was CLOSED/SUPERSEDED in R16 and moved to `RESOLVED.md`.
+**Card count:** 12 numbered records in this file (re-counted 2026-10-21, D1′ PORT2 round). Composition: 4 open [T] cards (items 23, 155, 164, 250) + items 201/202/246/247/248 retained [T] records + closed records retained for lookup (items 16, 66, 165) + one-line pointers for items 166 and 251, whose full cards moved to `RESOLVED.md` on 2026-10-21 per R34-24 (closure evidence routed through `RESOLVED.md`; 251's flaky-T1 follow-up is §252 there). Item 22 (the retired `RemoteFreeRing::DrainHeadPublish` residual) was CLOSED/SUPERSEDED in R16 and moved to `RESOLVED.md`. Item 249 was renumbered to 250 in the D1′ fix-round (numbering collision with PR #88; no content change).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -134,14 +134,7 @@ split the same day.)
     - **EXECUTED by task #2119 (2026-10-05):** остаточный долг выше закрыт — legacy-поверхность удалена целиком (`HeapRegistry::claim`, `claim_with_config`, `unsafe fn recycle`, `HeapLease::into_raw`, `lease_into_raw`, inline `mod legacy_semantics`); `unsafe fn` в `src/registry/heap_registry` больше нет. Внешних вызовов не было (grep-подтверждение); unit-тесты legacy-семантики (null/double `recycle` = no-op) удалены вместе с семантикой: `HeapLease` освобождает слот ровно один раз (Drop по значению), null/двойной recycle невыразимы. README «Where unsafe lives» (строка `claim.rs`) обновлён соответственно.
     - **Evidence:** `docs/reviews/2026-10-05-ph4c-narrow-legacy-registry-receipt.md` (Ph4c receipt), task #2107; README «Where unsafe lives (the complete list)», строка `src/registry/heap_registry/claim.rs`.
 
-166. **[T] R12-01 остаток — внешнее освобождение внутреннего указателя в ВЫДАННЫЙ блок однородного листа классов всё ещё доводит владельца до `abort()`.** (Filed 2026-10-06, fxx round 12, R12-01; частичный фикс `0228d150`.)
-
-    - **Status:** OPEN — известный остаток hardening-класса, не маскируется. Входной указатель нарушает контракт `GlobalAlloc::dealloc` (не получен от `alloc`), поэтому это не дефект корректности для валидного использования; цена — `abort()` владельца вместо отброшенного освобождения.
-    - **Current-number-or-verdict:** `SidecarBitmap::publish` (`src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`) теперь отбрасывает гранулу, чей класс в листе нулевой (метаданные сегмента, некарвленный хвост) ДО RMW; `tests/r12_01_foreign_free_of_unissued_granule.rs` (подпроцессный, 2 случая) красный без этой проверки. Но лист «uniform» возвращает ненулевой класс для КАЖДОЙ гранулы листа, поэтому внутренний указатель `live + 32` внутри выданного блока публикуется и отвергается только владельцем (геометрическая проверка в `BitmapCut::pop`/reclaim) через `abort()`. Предложенное ревью «закрывает всё» исправление неполно — это найдено контрфактуальным тестом.
-    - **Next trigger:** (1) производитель получает способ проверить начало блока БЕЗ чтения заголовка сегмента (сегмент малформной записи может быть освобождён параллельно — читать геометрию из заголовка производителю нельзя); или (2) решение владельца заменить `abort()` владельца на счёт+отбрасывание для записей, отвергнутых геометрией (потеряем сигнал порчи). Тогда добавить третий случай `live + 32` в подпроцессный тест.
-    - **Evidence:** `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md` R12-01; модуль-doc `tests/r12_01_foreign_free_of_unissued_granule.rs` («Residual»); doc `SidecarBitmap::publish`; commits `0228d150`, `7d3b3e84`.
-
-    - **Round 6 (2026-10-15):** R6-CR-2/R6-SEC-2 refine the mechanism: the spill copies `old` into all 256 granules of a leaf; a uniform leaf stamps the whole leaf with the first block's class; the class map is never reset on segment reset; and a cross-thread free of an interior pointer passes all owner checks and silently corrupts the free list (`write_next` into a live block, `dec_live` undercount). Under `hardened` the own-thread interior case is rejected but the cross-thread one is not. Tracked as task R6-T28; Evidence: `docs/agent_reviews_round6/correctness_review.md` R6-CR-2, `docs/agent_reviews_round6/api_security_review.md` R6-SEC-2.
+166. **[T → CLOSED 2026-10-20, D1′ phase-1b] R12-01 остаток (interior-pointer free больше не abort'ит владельца).** — **CLOSED**, moved verbatim to "Recently resolved" §166 in RESOLVED.md (2026-10-21 per R34-24).
 
 201. **[T] Production does not validate Small free-list links (`next`); only `hardened` does.**
 
@@ -173,6 +166,11 @@ split the same day.)
     > - **Clarification (2026-10-19, independent read-only review):** duplicate/reissue до reclaim уже явно оговорён (`src/registry/heap_core/free/dealloc_own_base.rs:180–186`); уточнение последствия — при free→own-free→переиздании→reclaim блок линкуется в бин и снимается credit, так что следующая выдача может ПЕРЕСЕЧЬСЯ с живым экземпляром: живая память возвращается в бин. Классификация не меняется: Invalid-use (двойной free), не дефект валидной программы.
     > - **Round 6 decision (2026-10-16, r6-u28):** NOT implemented this round; recorded as a design residual. Design sketch — a per-issued-block issue-generation tag the producer copies before publication and the owner re-checks at consumption. Small candidates: (a) steal the free high bit of each `ClassLeaves` class byte (`SMALL_CLASS_COUNT < 128`, so bit 7 is unused) — zero layout growth but a 1-bit epoch detects only ONE reissue (ABA on the second); (b) a dedicated per-granule generation byte/word — ~256 KiB per routed Small segment of extra System sidecar memory (~8× today's 32 KiB pending bitmap), or a per-sidecar 64-bit epoch counter whose per-block copy needs a carrier (the header `owner_state` generation sub-field is hardcoded 0; using it adds an alloc-hot-path header write — the write class R6-T01 just removed as dead). Large: `LargeState` already carries a generation word, but `publish_pending()` publishes for the CURRENT generation — the fix needs the issue-time generation carried to the producer's pin, the same carry problem. Cost: a sidecar format change shared by EVERY `alloc-global` build (a hardened-only tag means a cfg'd format split or the cost everywhere), new producer/consumer protocol states plus a loom model for the epoch compare, and hot-path writes the perf rounds just removed. Kept as caller-contract UB residual (documented in `mem_impl.rs`'s `# Safety` and `alloc_core_small_pool_impl.rs`).
     > - **Next trigger:** owner decision — schedule a hardened-format design round (candidate (a) 1-bit epoch is the cheapest start; its one-reissue ABA window must be documented explicitly) or close as accepted caller-contract UB residual.
+    > - **D1′ phase-1b (2026-10-20):** the one candidate CARRIER of a published
+    >   epoch — the `ClassLeaves` leaf bit 7 — is REMOVED together with the
+    >   leaves themselves (the sidecar now carries pending bits + start bits
+    >   only). No epoch carrier exists in the sidecar; 246 remains OPEN as
+    >   caller-contract UB.
     > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-4 (and the U-R5-5 row in its R5 closure table); task R6-T51.
 
 247. **[T, filed 2026-10-16, R6-T06/R6-T05 round 6
@@ -222,8 +220,23 @@ split the same day.)
       magazine even without hardened, while scalar would reject it by the
       class map. Card item 247(b) explicitly fixes SEC-1; the missing batch
       `divides` is recorded here.
-    - **Next trigger:** an owner decision to spend the iai budget on (a); a
-      batch-api promotion round for (b).
+    - **Next trigger:** see the partial-closure note below; (a) and the batch `divides` gap remain the triggers.
+    - **D1′ phase-1b partial closure of (b) (2026-10-20):** the sub-items whose
+      proof existed in the byte-state model are CLOSED; the rest of the card
+      stays OPEN. CLOSED: (i) batch/non-fastbin class coverage — with the
+      class leaves gone, the class comes ONLY from the state byte and the
+      owner reclaim accepts exactly `encode(c, LIVE)` in ALL builds
+      (`small_free_guard` with the exact encoding gates scalar, batch
+      (`dealloc_batch` goes through it) and non-fastbin frees; the former
+      leaf-map free check, whose coverage (b) questioned, no longer exists);
+      (ii) stale class bytes after an in-route segment reset — there are no
+      class bytes left to go stale: the state byte is reset by the existing
+      F7 reset, and the sidecar's start bank is cleared by the
+      retain-reset hook (`SmallSidecar::clear_remote_bits_range`,
+      exercised by the decommit retain tests; quiescence documented). STILL
+      OPEN: sub-item (a) safe-linking, the production `divides`-check gap in
+      batch-api, and the general "geometrically plausible class substitution
+      is undetectable" residual — filed as item 250.
     - **Evidence:** fix tests `tests/r6_t06_freelist_continuation_bounds.rs`
       and `tests/r6_t33_t05_own_free_kind_and_class.rs` (landed with the
       R6-T05/T06/T33 fixes).
@@ -252,3 +265,26 @@ split the same day.)
       issue guarantee is inferred beyond these checks.
     - **Evidence:** branch `b4-sbyte`, tests above; mutant runs recorded in
       the b4-sbyte chunk-3 report.
+
+250. **[T, filed 2026-10-20, D1′ phase-1b — ACCEPTED residual] The state byte is
+    the SINGLE carrier of a record's class; a geometrically plausible class
+    substitution (rewriting a live block's state byte to another valid
+    `encode(c', LIVE)`) is not detectable by any independent copy.**
+
+    - **Status:** OPEN, accepted by the owner (D1′ decision §8: "явное принятие
+      потери независимого класса") — recorded so the accepted weakening stays
+      visible.
+    - **Current-number-or-verdict:** after the `ClassLeaves` removal the
+      sidecar (pending + start bits) carries no class state; reclaim reads
+      the class from the owner-private state byte only. Any single-byte
+      corruption of a LIVE byte to another valid class code routes the block
+      to the wrong bin; hardened's geometry checks and the start-bit
+      overlap check do not cover class identity. The former independent
+      leaf-class copy would have caught some of these; it is gone.
+    - **Next trigger:** an owner request to reintroduce an independent class
+      witness (e.g. a per-block class copy in a separate sidecar bank), with
+      an iai A/B gate per the standing rules.
+    - **Evidence:** D1′ design §8.4 (owner decision (4)), `oneclass_rev_rush.md`
+      §(3); the removal diff (phase-1b).
+
+251. **[T, filed 2026-10-20, D1′ fix-round — residual] Early publication of batch starts (M-h) — deterministic allocator-path oracle.** — **CLOSED**, moved verbatim to "Recently resolved" §251 in RESOLVED.md (2026-10-21 per R34-24); flaky T1 repeat harness fix recorded as §252 there.
