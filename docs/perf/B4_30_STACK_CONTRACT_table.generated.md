@@ -39,15 +39,15 @@
 
 ## Мутанты fix7 (таблица выведена генератором из закоммиченных логов docs/perf/b4_30_probes/b4_30_fix7_mut_v*.log)
 
-v1 — пад `size_of::<HeapCore>()` в `GlobalAlloc::alloc` (оболочка inline(always)-цепочки; патч `b4_30_fix7_mut_v1.patch`); v4 — лишняя копия `HeapCore` ПО ЗНАЧЕНИЮ в `HeapRegistry::claim_impl` перед `heap_ptr.write(hc)` (реальный сайт by-value конструирования, путь `bind_slow_tagged`; патч `b4_30_fix7_mut_v4.patch`). Каждый мутант: временная правка `src/`, побайтный откат (sha `src/` до=после), полный прогон ячейки при `SEFER_B4_30_ENFORCE=1`. Δneed = (need мутанта − need evidence) по ХУДШЕМУ ИЗМЕРЕННОМУ сценарию; в RED-ячейках упавшие сценарии остановились на assert бюджета и need не печатают (для них RED означает need > budget), поэтому их Δ взята из прошедших сценариев.
+v1 — пад `size_of::<HeapCore>()` в `GlobalAlloc::alloc` (оболочка inline(always)-цепочки; патч `b4_30_fix7_mut_v1.patch`); v4 — лишняя копия `HeapCore` ПО ЗНАЧЕНИЮ в `HeapRegistry::claim_impl` перед `heap_ptr.write(hc)` (реальный сайт by-value конструирования, путь `bind_slow_tagged_with_config` → `claim_impl`, общий для всех ячеек; патч `b4_30_fix7_mut_v4.patch`). Каждый мутант: временная правка `src/`, побайтный откат (sha `src/` до=после), полный прогон ячейки при `SEFER_B4_30_ENFORCE=1`. Итог ячейки выводится генератором из лога: RED — ТОЛЬКО срабатывание assert'а бюджета (парсится его паника `need … B exceeds the declared budget … B (… scenario=<s>)`); каждый напечатанный в логе `budget=` сверяется с ЗАКОММИЧЕННОЙ константой `BUDGET_*` этой ячейки, вердикт пересчитывается против закоммиченного бюджета (need > budget). Δneed в RED-ячейках — из УПАВШЕГО сценария (need паники − need evidence, худший из small/large); в не-RED — худший из small/large по details (foreign-free не используется). ЧЕСТНАЯ ПОМЕТКА: 8 WSL-логов сняты при старом `BUDGET_LINUX_DEBUG = 84992` (до перебазирования на 86016); для linux/debug это допущено явно, вердикт пересчитан против 86016 (упавшие need ≥ 86208 — итоги не меняются).
 
 | Ячейка | v1 Δneed Б | v1 итог | v4 Δneed Б | v4 итог |
 |---|---:|---|---:|---|
 | windows debug production internals | 7760 | не RED | 15808 | не RED |
-| windows release production internals | 64 | RED | -32 | RED |
-| windows debug --all-features | 9200 | не RED | -288 | RED |
-| windows release --all-features | -144 | RED | -160 | RED |
+| windows release production internals | 7888 | RED | 7920 | RED |
+| windows debug --all-features | 9200 | не RED | 18288 | RED |
+| windows release --all-features | 9232 | RED | 9200 | RED |
 | linux debug production internals | 7872 | не RED | 15936 | не RED |
-| linux release production internals | 0 | RED | 0 | RED |
-| linux debug --all-features | 9216 | не RED | 0 | RED |
-| linux release --all-features | 0 | RED | 0 | RED |
+| linux release production internals | 7872 | RED | 7872 | RED |
+| linux debug --all-features | 9216 | не RED | 18432 | RED |
+| linux release --all-features | 9264 | RED | 9264 | RED |

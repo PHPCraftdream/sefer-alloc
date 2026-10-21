@@ -105,6 +105,12 @@ jobs:
       - run: node scripts/verify-miri-target-wiring.mjs
       - run: node scripts/verify-root-package-list.mjs
       - run: node scripts/verify-no-bare-abort.mjs
+      # B4-30 fix8 (P2-4): cargo-free gate for the measurement-logic pin of
+      # tests/b4_30_first_alloc_min_stack.rs. RC=1 on any change to the
+      # measurement logic (REPEATS, stride window, anchors, budget mapping)
+      # that is not reflected in the pinned sha in
+      # scripts/b4_30_fix7_evidence.mjs (constants-only rebases stay valid).
+      - run: node scripts/verify-b4-30-pin.mjs
       - run: node scripts/ci-plan.mjs --check-doc
       - run: node scripts/r20-gate-config.mjs --selftest
       - run: node scripts/r20_r6_ab_iai_run.mjs --selftest

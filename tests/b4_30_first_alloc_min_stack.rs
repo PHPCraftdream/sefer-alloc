@@ -1,4 +1,4 @@
-//! B4-30 first-allocation stack budget test (fix6: differential self-measurement).
+//! B4-30 first-allocation stack budget test (fix8: differential self-measurement).
 //!
 //! The contract is a FIXED per-(OS, profile) byte budget declared in the
 //! constants below. Every run of this test MEASURES on the CURRENT toolchain
@@ -27,19 +27,24 @@
 //!
 //! Degenerate boundaries: if a SCENARIO bracket reaches the bottom of the
 //! free coordinate (the scenario completes even on the deepest reachable
-//! frame — observed for foreign-free on linux release), the boundary is a
-//! valid `boundary=floor` result and `need` is the resulting upper
-//! estimate. If the CONTROL bracket floors, the control requirement is
-//! indistinguishable from zero in this coordinate, so the differential is
-//! replaced by the sound absolute upper estimate `need = fs + stride`
-//! (marker `control=floor`); this keeps the gate conservative instead of
-//! asserting a differential the measurement cannot support.
+//! frame), the boundary is a valid `boundary=floor` result and `need` is the
+//! resulting upper estimate. If the CONTROL bracket floors, the control
+//! requirement is indistinguishable from zero in this coordinate, so the
+//! differential is replaced by the sound absolute upper estimate
+//! `need = fs + stride` (marker `control=floor`); this keeps the gate
+//! conservative instead of asserting a differential the measurement cannot
+//! support. NOTE (fix8 honesty): NEITHER floor branch was ever OBSERVED in
+//! the fix7 evidence — all 24 rows are `boundary=bisect` and
+//! `control=bisect` (linux release fc = 63 B, fs = 159 B); both branches are
+//! model-argued, not demonstrated.
 //!
 //! Measured platforms: windows/linux. On any other target the file compiles
 //! to nothing; on windows/linux with a non-x86_64 arch the tests print
-//! `[b4-30] SKIP <reason>` and pass — a SKIP is a MARKED green produced
-//! without measurement, not an unmarked vacuous one. A dedicated marker
-//! test (`tests/b4_30_skip_marker.rs`) prints `[b4-30] SKIP macos` on macOS.
+//! `[b4-30] SKIP <reason>` and pass — a deliberate, marked skip rather than
+//! an unmarked vacuous pass, though libtest CAPTURES the printed marker
+//! (it is visible only with `--nocapture` or in failure output dumps, so the
+//! passing CI log shows a plain `test ... ok`). A dedicated marker test
+//! (`tests/b4_30_skip_marker.rs`) prints `[b4-30] SKIP macos` on macOS.
 #![cfg(all(
     feature = "alloc-global",
     feature = "internals",
@@ -193,8 +198,10 @@ fn eat(d: usize, target: Option<(usize, usize)>, body: &mut dyn FnMut()) {
 /// One ISOLATED frame per scenario (fix7): the allocator's
 /// `#[inline(always)]` entry chain may inline only into the `sc_*` frame of
 /// the allocating scenario, never into the control's frame. `scenario` below
-/// is a pure dispatcher; `sc_eat_only` gives the control the same
-/// body-call frame shape as the scenarios.
+/// is a pure dispatcher; `sc_eat_only` is empty and in RELEASE LLVM removes
+/// the call entirely (no symbol in the asm), so the control's deepest frame
+/// is the dispatcher closure (~48 B): need is understated by a CONSTANT
+/// <= 48 B, which does not affect the gate or the mutants.
 #[inline(never)]
 fn sc_eat_only() {}
 #[inline(never)]
@@ -512,7 +519,7 @@ fn step(s: &str, depth: usize, t: Option<usize>) -> Step {
 /// Two-point eater calibration (depths 8 and 9, depth mode): slope of
 /// consumed = entry - deep is the per-frame stride. Fails loudly if the
 /// frame exceeds 512 B (the stop window and budget reserve assume the
-/// measured range 160..=224 B).
+/// fix7-observed strides 48/80/192/224 B).
 fn calibrate() -> usize {
     let a = match step("eat-only", 8, None) {
         Step::Pass(p) => p,

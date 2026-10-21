@@ -21,4 +21,3 @@ test b4_30_large_first_alloc_stack_budget ... ok
 test b4_30_small_first_alloc_stack_budget ... ok
 
 test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.82s
-

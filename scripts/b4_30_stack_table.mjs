@@ -19,9 +19,16 @@
 // validation failure throws => exit code 1.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { MASKED_TEST_SHA_PINS } from "./b4_30_fix7_evidence.mjs";
+import {
+  EVIDENCE_PATH,
+  MASKED_TEST_SHA_PINS,
+} from "./b4_30_fix7_evidence.mjs";
 
-const EVIDENCE = process.env.B4_30_EVIDENCE || "docs/perf/b4_30_probes/b4_30_fix7_budget_evidence.csv";
+// The evidence path is the producer's own constant: importing the producer
+// ALWAYS regenerates the default-path CSV, so a `B4_30_EVIDENCE` override
+// could only point the generator at a file the just-ran producer did not
+// write (the old override was dead/misleading and is gone).
+const EVIDENCE = EVIDENCE_PATH;
 const TEST = "tests/b4_30_first_alloc_min_stack.rs";
 const SUMMARY = process.env.B4_30_SUMMARY_OUT || "docs/perf/B4_30_STACK_CONTRACT_summary.csv";
 const TABLE = process.env.B4_30_TABLE_OUT || "docs/perf/B4_30_STACK_CONTRACT_table.generated.md";
@@ -115,38 +122,106 @@ for (const [key, worst] of Object.entries(worstByOsProfile)) {
 
 // ---- mutant logs (v1 envelope pad, v4 claim_impl by-value copy) -----------
 // Each log docs/perf/b4_30_probes/b4_30_fix7_mut_v{1,4}_<celltag>.log is one
-// full ENFORCE=1 run of the test on ONE cell against ONE mutant; RED = any
-// scenario test FAILED / "test result: FAILED".
+// full ENFORCE=1 run of the test on ONE cell against ONE mutant. P2-1 (fix8):
+// RED means the BUDGET ASSERT fired — parsed from the assert's own panic
+// message `need <N> B exceeds the declared budget <B> B (os=… profile=…
+// scenario=<s>)` — not "any test result: FAILED". Every logged budget value
+// is asserted against the COMMITTED `BUDGET_*` constant for the cell, with
+// one honest exception: the 8 WSL mutant logs were captured before the
+// linux/debug budget was rebased 84992 -> 86016, so 84992 is accepted there
+// (and the verdict is RECOMPUTED against the committed 86016 — see
+// `legacyBudgetBudget` and the table note). Δneed for a RED cell comes from
+// the PANICKING scenario's need (mutant need − evidence need, worst of
+// small/large), NOT from a passing foreign-free scenario; for non-RED cells
+// it is the worst Δ over small/large details lines (foreign-free excluded).
+const DELTA_SCENARIOS = ["small", "large"];
+// Captured before the linux/debug rebase; verdicts recomputed vs 86016.
+const LEGACY_BUDGETS = { "linux/debug": [84992] };
 function parseMutant(cell, version) {
   const p = `${PROBES}/b4_30_fix7_mut_v${version}_${cell.tag}.log`;
   check(existsSync(p), `mutant log missing: ${p}`);
   const text = readFileSync(p, "utf8");
-  const red = text.includes("test result: FAILED");
+  const key = `${cell.os}/${cell.profile}`;
+  const panics = [
+    ...text.matchAll(
+      /B4-30 first-alloc differential stack need (\d+) B exceeds the declared budget (\d+) B \(os=(\S+) profile=(\S+) scenario=(\S+)\)/g,
+    ),
+  ].map((m) => ({
+    need: Number(m[1]),
+    loggedBudget: Number(m[2]),
+    os: m[3],
+    profile: m[4],
+    scenario: m[5],
+  }));
+  const failedLines = [
+    ...text.matchAll(/test result: FAILED\. \d+ passed; (\d+) failed;/g),
+  ].map((m) => Number(m[1]));
+  const failedTotal = failedLines.reduce((a, b) => a + b, 0);
+  check(
+    failedTotal === panics.length && failedTotal <= 3,
+    `${p}: ${failedTotal} failed tests but ${panics.length} budget-assert panics parsed`,
+  );
+  const red = panics.length > 0;
   const enforced = [];
   for (const m of text.matchAll(/\[b4-30\] enforced scenario=(small|large|foreign-free)/g)) enforced.push(m[1]);
   if (red) {
     // libtest keeps running the remaining scenarios after a budget-assert
     // failure, so a RED run still prints enforced markers for the scenarios
-    // that passed: require at least one FAILED scenario and at most 3 markers.
-    check(text.includes("0 failed;") === false || red, `${p}: inconsistent test result line`);
+    // that passed: require at most 3 markers.
     check(enforced.length <= 3, `${p}: more enforced markers than scenarios`);
   } else {
+    check(failedTotal === 0, `${p}: FAILED result line without a budget-assert panic`);
     check(enforced.length === 3, `${p}: expected 3 enforced markers, got ${enforced.length}`);
   }
+  // Every budget value printed anywhere in the log (details lines and
+  // assert panics) must equal the committed constant for this cell.
+  const loggedBudgets = new Set();
+  for (const m of text.matchAll(/budget=(\d+)/g)) loggedBudgets.add(Number(m[1]));
+  let legacyBudget = false;
+  for (const b of loggedBudgets) {
+    if (b === budgetsDeclared[key]) continue;
+    check(
+      (LEGACY_BUDGETS[key] ?? []).includes(b),
+      `${p}: logged budget ${b} != committed ${budgetsDeclared[key]} for ${key}`,
+    );
+    legacyBudget = true;
+  }
+  for (const pc of panics) {
+    check(pc.os === cell.os && pc.profile === cell.profile,
+      `${p}: budget assert for ${pc.os}/${pc.profile} in a ${key} log`);
+  }
+  // Verdict recomputed against the COMMITTED budget: a failed scenario is
+  // RED only if its measured need exceeds the committed constant (for the
+  // legacy 84992 WSL logs this is the honest 86016-based recompute).
+  const redScenarios = panics
+    .filter((pc) => pc.need > budgetsDeclared[key])
+    .map((pc) => pc.scenario);
+  check(redScenarios.length === 0 || red, `${p}: recomputed RED without assert panics`);
   const det = {};
   for (const m of text.matchAll(/\[b4-30\] scenario=(\S+) details need=(\d+) budget=\d+ margin=(-?\d+) fs=(\d+) fc=(\d+) stride=(\d+).*enforce=1/g)) {
     check(!det[m[1]], `${p}: duplicate details for ${m[1]}`);
     det[m[1]] = { need: Number(m[2]), margin: Number(m[3]), fs: Number(m[4]), fc: Number(m[5]) };
   }
   if (!red) check(Object.keys(det).length === 3, `${p}: expected 3 details lines`);
-  // worst delta over measured scenarios vs the evidence need
-  let worstDelta = null, worstScenario = null;
-  for (const s of Object.keys(det)) {
-    const base = findRow(cell, s).need;
-    const d = det[s].need - base;
-    if (worstDelta === null || d > worstDelta) { worstDelta = d; worstScenario = s; }
+  // Δ: RED cells — worst over the PANICKING scenarios' need vs evidence;
+  // non-RED cells — worst over small/large details (not foreign-free).
+  let worstDelta = null, worstScenario = null, worstSource = null;
+  if (red) {
+    for (const pc of panics) {
+      if (pc.need <= budgetsDeclared[key]) continue; // legacy-budget non-RED
+      const d = pc.need - findRow(cell, pc.scenario).need;
+      if (worstDelta === null || d > worstDelta) {
+        worstDelta = d; worstScenario = pc.scenario; worstSource = "budget-assert panic";
+      }
+    }
+  } else {
+    for (const s of DELTA_SCENARIOS) {
+      const base = findRow(cell, s).need;
+      const d = det[s].need - base;
+      if (worstDelta === null || d > worstDelta) { worstDelta = d; worstScenario = s; worstSource = "details (small/large worst)"; }
+    }
   }
-  return { path: p, red, det, worstDelta, worstScenario, enforced };
+  return { path: p, red, det, worstDelta, worstScenario, worstSource, enforced, legacyBudget };
 }
 const mutants = { v1: {}, v4: {} };
 for (const cell of CELLS) {
@@ -158,7 +233,7 @@ for (const v of ["v1", "v4"])
 
 // ---- summary CSV ----------------------------------------------------------
 const GEN_SHA = sha("scripts/b4_30_stack_table.mjs");
-const summaryHeader = "os,profile,features,scenario,need,fs,fc,stride,boundary,control,rustc,test_sha,budget,budget_base,worst_os_profile,margin,cpu,os_build,repeats";
+const summaryHeader = "os,profile,features,scenario,need,fs,fc,stride,boundary,control,rustc,test_sha,budget,budget_base,worst_os_profile,margin,cpu,os_build,runs";
 const summaryLines = [
   `# identity: generator=scripts/b4_30_stack_table.mjs sha256=${GEN_SHA}`,
   `# measured_base=${MEASURED_BASE} (worktree base commit of the measurement; the generator does NOT read HEAD — outputs stay reproducible after the commit)`,
@@ -203,7 +278,7 @@ for (const [key, b] of Object.entries(budgets)) {
 }
 // Mutant table: DERIVED from the committed logs (P2-3).
 table.push("", "## Мутанты fix7 (таблица выведена генератором из закоммиченных логов docs/perf/b4_30_probes/b4_30_fix7_mut_v*.log)", "",
-  "v1 — пад `size_of::<HeapCore>()` в `GlobalAlloc::alloc` (оболочка inline(always)-цепочки; патч `b4_30_fix7_mut_v1.patch`); v4 — лишняя копия `HeapCore` ПО ЗНАЧЕНИЮ в `HeapRegistry::claim_impl` перед `heap_ptr.write(hc)` (реальный сайт by-value конструирования, путь `bind_slow_tagged`; патч `b4_30_fix7_mut_v4.patch`). Каждый мутант: временная правка `src/`, побайтный откат (sha `src/` до=после), полный прогон ячейки при `SEFER_B4_30_ENFORCE=1`. Δneed = (need мутанта − need evidence) по ХУДШЕМУ ИЗМЕРЕННОМУ сценарию; в RED-ячейках упавшие сценарии остановились на assert бюджета и need не печатают (для них RED означает need > budget), поэтому их Δ взята из прошедших сценариев.",
+  "v1 — пад `size_of::<HeapCore>()` в `GlobalAlloc::alloc` (оболочка inline(always)-цепочки; патч `b4_30_fix7_mut_v1.patch`); v4 — лишняя копия `HeapCore` ПО ЗНАЧЕНИЮ в `HeapRegistry::claim_impl` перед `heap_ptr.write(hc)` (реальный сайт by-value конструирования, путь `bind_slow_tagged_with_config` → `claim_impl`, общий для всех ячеек; патч `b4_30_fix7_mut_v4.patch`). Каждый мутант: временная правка `src/`, побайтный откат (sha `src/` до=после), полный прогон ячейки при `SEFER_B4_30_ENFORCE=1`. Итог ячейки выводится генератором из лога: RED — ТОЛЬКО срабатывание assert'а бюджета (парсится его паника `need … B exceeds the declared budget … B (… scenario=<s>)`); каждый напечатанный в логе `budget=` сверяется с ЗАКОММИЧЕННОЙ константой `BUDGET_*` этой ячейки, вердикт пересчитывается против закоммиченного бюджета (need > budget). Δneed в RED-ячейках — из УПАВШЕГО сценария (need паники − need evidence, худший из small/large); в не-RED — худший из small/large по details (foreign-free не используется). ЧЕСТНАЯ ПОМЕТКА: 8 WSL-логов сняты при старом `BUDGET_LINUX_DEBUG = 84992` (до перебазирования на 86016); для linux/debug это допущено явно, вердикт пересчитан против 86016 (упавшие need ≥ 86208 — итоги не меняются).",
   "",
   "| Ячейка | v1 Δneed Б | v1 итог | v4 Δneed Б | v4 итог |",
   "|---|---:|---|---:|---|");
@@ -215,7 +290,11 @@ writeFileSync(TABLE, table.join("\n") + "\n");
 
 // ---- report ---------------------------------------------------------------
 // Documented prologue frame sizes from the saved ASM excerpt (prose context).
+// P3 (fix8): the rev2 excerpt is OPTIONAL input — if the file is absent, the
+// prose degrades to a placeholder instead of throwing (the excerpt is a
+// rev2-era artifact, not part of the fix7 evidence chain).
 const asmSizes = (() => {
+  if (!existsSync(ASM)) return null;
   const text = readFileSync(ASM, "utf8");
   const sizes = [...text.matchAll(/\.seh_stackalloc\s+(\d+)/g)].map(m => Number(m[1]));
   check(sizes.length >= 2, "ASM excerpt: expected >=2 .seh_stackalloc entries");
@@ -242,11 +321,11 @@ const report = [
   "",
   "Каждый прогон теста `tests/b4_30_first_alloc_min_stack.rs` САМ измеряет потребность на текущем тулчейне: свежие дочерние процессы, едок-рекурсия с живым маркером кадров, физическая глубина по адресам, динамический stride_actual в ребёнке, bracket+bisect по целевому свободному остатку (SEFER_B4_30_FREE) в координатах free = deep − stack_low, классификация переполнения по сигнатуре (Windows 0xC00000FD, Linux SIGABRT + \"has overflowed its stack\").",
   "",
-  "Метрика — ДИФФЕРЕНЦИАЛЬНАЯ: `need = fs − fc + stride`, где fs — худшая (max за 3 ПОЛНЫЕ независимые bracket+bisect поиска) граница сценария, fc — граница контроля eat-only (те же 3 независимых поиска), на том же worker-потоке той же сборки. Собственные кадры контроля в need НЕ входят.",
+  "Метрика — ДИФФЕРЕНЦИАЛЬНАЯ: `need = fs − fc + stride`, где fs — худшая (max за 3 ПОЛНЫЕ независимые bracket+bisect поиска) граница сценария, fc — граница контроля eat-only (те же 3 независимых поиска), на том же worker-потоке той же сборки. Собственные кадры контроля в need НЕ входят. Оценка `fs/fc = max` по `REPEATS = 3` независимым поискам занижает need на разброс fc между поисками (на Windows до 272 Б, на Linux 0 — детерминирован); эта погрешность поглощается гранулярностью `ceil_1024` базы бюджета.",
   "",
-  "Изоляция кадров (fix7, починка дефекта стенда fix6): каждый сценарий исполняется в СВОЁМ `#[inline(never)]`-кадре (`sc_small` / `sc_large` / `sc_foreign_free`), контроль — в отдельном пустом кадре; тело сценария передаётся в едока через `black_box(&mut body)`, что запрещает его девиртуализацию/инлайнинг в `eat`. Проверено по ассемблеру (`docs/perf/b4_30_probes/b4_30_fix7_inline_check.s`, сводка в отчёте раунда): тело аллокатора (`#[inline(always)]`-цепочка `GlobalAlloc::alloc`/`dealloc` → `current_heap` → `HeapCore::alloc`) встраивается ТОЛЬКО в кадры `sc_*`; кадр `eat` содержит только рекурсию и виртуальный вызов тела, контроль не содержит кода аллокатора. Поэтому стековая проба пролога сценарного кадра больше не списывается на контроль — дефект fix6 (0/8 мутантов из-за общего кадра) устранён.",
+  "Изоляция кадров (fix7, починка дефекта стенда fix6): каждый сценарий исполняется в СВОЁМ `#[inline(never)]`-кадре (`sc_small` / `sc_large` / `sc_foreign_free`), контроль — в отдельном пустом кадре; тело сценария передаётся в едока через `black_box(&mut body)`, что запрещает его девиртуализацию/инлайнинг в `eat`. Проверено по ассемблеру (`docs/perf/b4_30_probes/b4_30_fix7_inline_check.s` — УСЕЧЁННЫЙ дамп ОДНОЙ ячейки win release production internals; полная сборка воспроизводима: `RUSTFLAGS='--emit asm' cargo test --release --test b4_30_first_alloc_min_stack --features 'production internals' --no-run`, windows x86_64, rustc 1.97.0; 4 вывода проверки, перенесённые из лога раунда: (1) `eat` содержит только саморекурсию и один косвенный вызов black_box-нутого тела; (2) цепочка входа аллокатора встраивается только в кадры `sc_*` (`alloc_via_fallback`, `bind_slow_tagged_with_config`, `refill_magazine_slow`, `exit_escape_alloc`); (3) `sc_eat_only` пуст и LLVM удалил его целиком — контроль не содержит кода аллокатора; (4) `scenario` — диспетчер с хвостовыми переходами в `sc_*`): тело аллокатора (`#[inline(always)]`-цепочка `GlobalAlloc::alloc`/`dealloc` → `current_heap` → `HeapCore::alloc`) встраивается ТОЛЬКО в кадры `sc_*`; кадр `eat` содержит только рекурсию и виртуальный вызов тела, контроль не содержит кода аллокатора. Поэтому стековая проба пролога сценарного кадра больше не списывается на контроль — дефект fix6 (0/8 мутантов из-за общего кадра) устранён. ОГОВОРКИ: asm покрывает одну ячейку (win release production internals) — для остальных изоляция держится структурно, на атрибутах `noinline`/`black_box`; в release `sc_eat_only` удалён LLVM и сценарии входят в `sc_*` хвостовым вызовом, поэтому самый глубокий кадр контроля — замыкание-диспетчер (~48 Б), и need занижен на ≤ 48 Б — постоянная, на гейт и мутанты не влияет.",
   "",
-  "Вырожденные границы: если bracket СЦЕНАРИЯ дошёл до дна free-координаты (сценарий завершается даже на самом глубоком достижимом кадре — наблюдается для foreign-free на linux release), это валидный результат `boundary=floor`: need = верхняя оценка (free на дне + stride), тест проходит, если она ≤ бюджета. Если дно достигает КОНТРОЛЬ (наблюдается на linux release: eat-only проходит почти на любом кадре — fc = 15–63 Б, потому что на Linux НЕТ std-гарантии минимального стека spawned-потока и едок доходит почти до guard-страницы), дифференциал неизмеряем (требование контроля ~0), и тест консервативно подставляет АБСОЛЮТНУЮ верхнюю оценку `need = fs + stride` (маркер `control=floor`). На Windows fc ≈ 29 КиБ — там контроль останавливается на std-гарантии; на Linux-ячейках `control=floor` абсолютная оценка близка к дифференциалу (расхождение ≤ fc ≤ 63 Б). Негативные пробы (настоящий overflow при STACK=64 КиБ → FAIL; заниженная константа бюджета → RED при ENFORCE=1 и GREEN без него) подтверждают, что гейт срабатывает по назначению — см. отчёт раунда с RC.",
+  "Вырожденные границы (ветки `floor`): если bracket СЦЕНАРИЯ дошёл до дна free-координаты, это валидный результат `boundary=floor` (need = верхняя оценка fs + stride); если дно достигает КОНТРОЛЬ, дифференциал неизмеряем и тест консервативно подставляет абсолютную верхнюю оценку `need = fs + stride` (маркер `control=floor`). ФАКТ fix7: во ВСЕХ 24 строках evidence (и во всех известных прогонах) `boundary=bisect` и `control=bisect`; linux release fc = 63 Б, fs = 159 Б — ни сценарий, ни контроль дна не достигали. Обе floor-ветки непокрыты живым прогоном: их консервативность аргументирована модельно, но НЕ продемонстрирована (см. «Что НЕ доказано»). На Windows fc ≈ 29 КиБ — контроль останавливается на std-гарантии; на Linux fc мал (std-гарантии минимального стека spawned-потока нет). Негативные пробы (логи раунда, в репозиторий не закоммичены): бюджетная проба — RED при ENFORCE=1 (assert бюджета на `tests/…:654`), GREEN без ENFORCE (margin −4640); проба STACK=16 КиБ упала НЕ на overflow/якоре, а на оракуле геометрии `tests/b4_30_first_alloc_min_stack.rs:486` (`worker stack size != 2 MiB`: left 65536, right 16384 — Windows округляет резерв потока до 64 КиБ) — громкий отказ оракула, а не доказательство срабатывания overflow-ветки; STACK=64 КиБ — GREEN. Путь `Step::Overflow` при штатном STACK=2 МиБ исполняется в каждом прогоне (каждый bracket кончается overflow-ребёнком), но отдельная негативная проба «настоящий overflow → FAIL» на 64 КиБ НЕ воспроизведена.",
   "",
   "## Бюджет",
   "",
@@ -254,9 +333,9 @@ const report = [
   "",
   "Процедура перебазирования при дрейфе stable-тулчейна (в репозитории, выполняется одним PR): (1) перемерить все 8 ячеек текущей ревизией логики теста без `SEFER_B4_30_ENFORCE`, ≥2 полных прогона на ячейку, сырые логи — `docs/perf/_raw_b4_30_fix7_<cell>.run<k>.log` + строка в `b4_30_fix7_run_manifest.csv`; (2) `node scripts/b4_30_fix7_evidence.mjs` — пересобрать evidence CSV; (3) обновить константы `BUDGET_*` в тесте по выводу `node scripts/b4_30_stack_table.mjs` (пин замаскированного sha НЕ меняется — менялись только значения); (4) прогон всех ячеек с `SEFER_B4_30_ENFORCE=1` (GREEN) и регенерация производных файлов тем же PR.",
   "",
-  "Предыдущие метрики — superseded: fix4-raw (абсолютная метрика required_free_from_low, водители `scripts/b4_30_stack_pilot.mjs` / `b4_30_stack_pilot_linux.py`) и fix6-raw удалены из дерева в fix7 как не потребляемые генераторами и не воспроизводимые (probe-тест fix4 не был закоммичен); бюджеты fix7 выводятся ТОЛЬКО из fix7-логов. Сохранённый ASM excerpt Windows release-production показывает прологи " + asmSizes.join(" и ") + " Б через __chkstk и вызов конструктора AllocCore (sret) — контекст, не вход расчёта.",
+  "Предыдущие метрики — superseded: fix4-raw (абсолютная метрика required_free_from_low, водители `scripts/b4_30_stack_pilot.mjs` / `b4_30_stack_pilot_linux.py`) и fix6-raw удалены из дерева в fix7 как не потребляемые генераторами и не воспроизводимые (probe-тест fix4 не был закоммичен); бюджеты fix7 выводятся ТОЛЬКО из fix7-логов. " + (asmSizes ? `Сохранённый ASM excerpt Windows release-production показывает прологи ${asmSizes.join(" и ")} Б через __chkstk и вызов конструктора AllocCore (sret) — контекст, не вход расчёта.` : "(asm excerpt not present)"),
   "",
-  "Точка входа измеренного пути: `#[global_allocator] SeferAlloc` через `GlobalAlloc::alloc` (`src/global/sefer_alloc/global_alloc.rs:96–119`); сайт by-value конструирования `HeapCore` — `HeapRegistry::claim_impl` (`src/registry/heap_registry/claim.rs:285`, запись `:410`), путь первого bind `bind_slow_tagged` (`src/global/tls_heap.rs:471`). Linux-среда измерений — WSL2.",
+  "Точка входа измеренного пути: `#[global_allocator] SeferAlloc` через `GlobalAlloc::alloc` (`src/global/sefer_alloc/global_alloc.rs:96–119`); сайт by-value конструирования `HeapCore` — `HeapRegistry::claim_impl` (`src/registry/heap_registry/claim.rs:285`, запись `:410`), путь первого bind `bind_slow_tagged_with_config` (`src/global/tls_heap.rs:489`, при alloc-decommit; виден в asm; `claim_impl` общий для всех конфигураций, поэтому вывод v4 от выбора ветки bind не зависит). Linux-среда измерений — WSL2.",
   "",
   "## Что НЕ доказано",
   "",
@@ -269,11 +348,12 @@ function notProven() {
     m1.push(`${cell.os}/${cell.profile}/${cell.features}: ${mutants.v1[cell.tag].red ? "RED" : "не RED"} (Δneed ${mutants.v1[cell.tag].worstDelta ?? "n/a"})`);
     m4.push(`${cell.os}/${cell.profile}/${cell.features}: ${mutants.v4[cell.tag].red ? "RED" : "не RED"} (Δneed ${mutants.v4[cell.tag].worstDelta ?? "n/a"})`);
   }
-  out.push(`- **Мутант v1 (пад \`size_of::<HeapCore>()\` в \`GlobalAlloc::alloc\`, оболочка inline(always)-цепочки): RED на ${v1Reds} из 8 ячеек.** ${m1.join("; ")}. Числа выведены генератором из закоммиченных логов (таблица выше); интерпретация не-RED ячеек (главным образом debug, где margin ≫ размера копии) — ожидаемая недостаточность резерва правила, а не дефект стенда.`);
-  out.push(`- **Мутант v4 (лишняя копия HeapCore по значению в \`claim_impl\` перед \`write\`): RED на ${v4Reds} из 8 ячеек.** ${m4.join("; ")}. Это САМ сайт by-value конструирования (предмет карточки 108); там, где копия НЕ даёт RED (margin больше размера копии), гейт не ловит рост — ловит прокси \`size_of::<HeapCore>() <= 9216\` размер, но не ЧИСЛО by-value копий; несколько копий в одном кадре этим классом не покрыты.`);
+  out.push(`- **Мутант v1 (пад \`size_of::<HeapCore>()\` в \`GlobalAlloc::alloc\`, оболочка inline(always)-цепочки): RED на ${v1Reds} из 8 ячеек.** ${m1.join("; ")}. Числа выведены генератором из закоммиченных логов (таблица выше); все 4 не-RED ячейки v1 — debug (margin там ≫ размера пада): ожидаемая недостаточность резерва правила, а не дефект стенда. Вывод вердикта: RED = именно assert бюджета (генератор парсит его панику), каждый \`budget=\` лога сверен с закоммиченной константой \`BUDGET_*\`, Δ RED-ячеек взята из УПАВШЕГО сценария.`);
+  out.push(`- **Мутант v4 (лишняя копия HeapCore по значению в \`claim_impl\` перед \`write\`): RED на ${v4Reds} из 8 ячеек.** ${m4.join("; ")}. Это САМ сайт by-value конструирования (предмет карточки 108); там, где копия НЕ даёт RED (margin больше размера копии), гейт не ловит рост — ловит прокси \`size_of::<HeapCore>() <= 9216\` размер, но не ЧИСЛО by-value копий; несколько копий в одном кадре этим классом не покрыты. Два debug-RED v4 ПОГРАНИЧНЫ: win debug all-features +256/+272 Б при разбросе debug на Windows до 448 Б — не гарантированно воспроизводимы; linux debug all-features +192 Б против закоммиченных 86016 — детерминирован. ЧЕСТНАЯ ПОМЕТКА: WSL-мутантные логи (8 шт.) сняты при старом \`BUDGET_LINUX_DEBUG = 84992\` (до перебазирования); вердикты пересчитаны генератором против закоммиченных 86016.`);
+  out.push("- **ASM-проверка изоляции кадров покрывает ОДНУ ячейку** (win release production internals, `docs/perf/b4_30_probes/b4_30_fix7_inline_check.s`, усечён до цитируемых функций `eat`, диспетчера, `sc_*`); в release `sc_eat_only` удалён LLVM — самый глубокий кадр контроля, замыкание-диспетчер, занижает need на ≤ 48 Б (постоянная, гейт и мутанты не затрагивает); для остальных 7 ячеек изоляция держится структурно, на `#[inline(never)]`/`black_box`.");
   out.push("- **Удвоение кадра первого alloc мутантом не проверялось** (только v1-пад и v4-копия); statement «удвоение ловится, где margin < worst» — модельное, мутантом не подтверждено.");
-  out.push("- **CI-разрывы покрытия:** Windows-ячейки исполняются только в nightly/full-ci (per-PR Windows отсутствует для этого теста, `--all-features` на Windows нет нигде); прогон на CI-stable (1.99) не выполнялся; ~20 whole-suite строк CI компилируют тест в режиме измерения-без-assert (без `SEFER_B4_30_ENFORCE=1`). Разрывы заведены в индекс: `docs/CORRECTNESS_OPEN_ITEMS.md` → `docs/correctness-open-items/TRACKED_ci_gate_coverage.md` (карточка 253).");
-  out.push("- **Контроль=floor на linux release подставляет абсолютную оценку `fs + stride`.** На Linux fc = 15–63 Б (std-гарантии минимального стека spawned-потока НЕТ, едок доходит почти до дна), поэтому абсолютная оценка расходится с истинным дифференциалом не более чем на fc ≤ 63 Б; «включение ОС-базовой линии» относится только к Windows-ячейкам (fc ≈ 29 КиБ, там контроль останавливается на std-гарантии). Сдвиг std-гарантии виден в need только на Windows; на Linux гейт защищён дифференциалом напрямую.");
+  out.push("- **CI-разрывы покрытия:** Windows-ячейки исполняются только в nightly/full-ci (per-PR Windows отсутствует для этого теста, `--all-features` на Windows нет нигде); прогон на CI-stable (1.99) не выполнялся; ~20 whole-suite строк CI компилируют тест в режиме измерения-без-assert (без `SEFER_B4_30_ENFORCE=1`). Разрывы заведены в индекс: `docs/CORRECTNESS_OPEN_ITEMS.md` → `docs/correctness-open-items/TRACKED_ci_gate_coverage.md` (карточка 253). До fix8 masked-пин логики измерения не принуждался ни одним CI-гейтом; с fix8 его проверяет cargo-free `scripts/verify-b4-30-pin.mjs` (шаг в job `docs-consistency`).");
+  out.push("- **Обе ветки floor (сценарий и контроль) в fix7 НЕ наблюдались:** во всех 24 строках evidence `boundary=bisect` и `control=bisect` (linux release fc = 63 Б, fs = 159 Б). Их консервативность — модельная аргументация, не продемонстрированная живым прогоном; прежняя формулировка «control=floor наблюдается на linux release» (закрытый P3 fix6) была ЛОЖНОЙ для fix7 — переоткрыта по факту и закрыта этой правкой. На Linux fc мал (std-гарантии минимального стека spawned-потока нет), на Windows fc ≈ 29 КиБ — контроль останавливается на std-гарантии; сдвиг std-гарантии виден в need только на Windows, на Linux гейт защищён дифференциалом напрямую.");
   out.push("- **Бюджеты действуют на x86_64 windows/linux** (см. маркеры SKIP на прочих целях) и выведены из ≥2 полных прогонов на ячейку (worst по прогонам; внутри прогона — worst из 3 независимых bracket+bisect поисков на сценарий и контроль). Межсерийный дрейф между ДНЯМИ/тулчейнами ограничен только резервом правила (≥4 КиБ) — статистики многих серий нет; при дрейфе действует процедура перебазирования выше.");
   out.push("- **Время/стоимость CI:** измерение ~2–4 с на ячейку (8 прогонов по ~2 с локально, до ~5 с на WSL). Чистая release-сборка теста (граф dev-deps, lto=thin, codegen-units=1, пустой target-dir, эта машина) — ~53 с; на CI-раннере закладывать сопоставимо или хуже, ×3 job'а с прогонами (fast ×2 + windows), кэша cargo в шагах нет.");
   return out;
@@ -286,18 +366,17 @@ function buildCard() {
   const key = os => p => budgets[`${os}/${p}`].budget;
   const bytes = n => `${n} bytes`;
   return [
-    ">   **Current state**",
-    ">   - **Status:** OPEN `[L]` — fix7: the contract is a fixed per-(OS, profile) DIFFERENTIAL budget (`need = fs − fc + stride`, control = eat-only boundary in its own allocator-free frame, floor-tolerant), self-measured by every run on the current toolchain; enforcement gated by `SEFER_B4_30_ENFORCE=1` and observable via the enforce-only markers `[b4-30] enforced scenario=<s>`. Phase 2 trigger remains open.",
-    ">   - **Current verdict:** Budgets (rule: `ceil_1024(worst differential) + max(4096, ceil1024(0.25 × worst))`, asserted by the generator against the test's `BUDGET_*` constants):",
-    `>     - windows debug = ${bytes(key("windows")("debug"))}, windows release = ${bytes(key("windows")("release"))}, linux debug = ${bytes(key("linux")("debug"))}, linux release = ${bytes(key("linux")("release"))}.`,
-    `>   - Evidence: fix7 differential measurement — ${rows.length} rows (8 cells × 3 scenarios, ≥2 full runs per cell, worst kept) in \`docs/perf/b4_30_probes/b4_30_fix7_budget_evidence.csv\`, derived by \`scripts/b4_30_fix7_evidence.mjs\` from the committed raw logs \`docs/perf/_raw_b4_30_fix7_*.log\`; measurement-logic pin = sha256 of the test with \`BUDGET_*\` values masked (\`${maskedSha}\`), asserted against the live file. Generated summary/table/report: \`docs/perf/B4_30_STACK_CONTRACT*.md/_summary.csv/_table.generated.md\`.`,
-    `>   - Mutants (table DERIVED from the committed logs \`docs/perf/b4_30_probes/b4_30_fix7_mut_v*.log\`, patches \`b4_30_fix7_mut_v1.patch\`/\`v4.patch\`, byte-exact src rollback per run): v1 — pad \`size_of::<HeapCore>()\` in \`GlobalAlloc::alloc\` (inline(always) envelope): RED on ${v1Reds} of 8 cells; v4 — an extra by-value \`HeapCore\` copy in \`claim_impl\` before the slot write (the real construction site): RED on ${v4Reds} of 8 cells. Cells without RED have margin = budget − need larger than the copy size — the gate does not claim detection there; the compile-time proxy pins SIZE only, not the NUMBER of by-value copies.`,
-    ">   - **Rebase procedure on stable-toolchain drift (one PR, in-repo):** (1) re-measure all 8 cells with ENFORCE unset, ≥2 full runs per cell, raw logs committed; (2) rebuild the evidence CSV with `scripts/b4_30_fix7_evidence.mjs`; (3) update the `BUDGET_*` constants per the generator output (the masked-logic pin is unchanged by value-only edits); (4) run all cells with `SEFER_B4_30_ENFORCE=1` green and regenerate the derived files.",
-    ">   - **Next trigger:** a target platform with a small guaranteed stack, or any change to the HeapCore construction path.",
-    ">   - **Evidence:** docs/perf/B4_30_STACK_CONTRACT.md, B4_30_STACK_CONTRACT_summary.csv, B4_30_STACK_CONTRACT_table.generated.md; docs/perf/b4_30_probes/b4_30_fix7_budget_evidence.csv, b4_30_fix7_run_manifest.csv, b4_30_fix7_mut_v*.log/.patch, b4_30_fix7_inline_check.s; docs/perf/_raw_b4_30_fix7_*.log; tests/b4_30_first_alloc_min_stack.rs; CI-gap card: docs/correctness-open-items/TRACKED_ci_gate_coverage.md (253).",
-    ">   <!-- B4-30-CARD-NUMBERS-START -->",
-    `>   - Headline: budgets win-debug=${bytes(key("windows")("debug"))}, win-release=${bytes(key("windows")("release"))}, linux-debug=${bytes(key("linux")("debug"))}, linux-release=${bytes(key("linux")("release"))}; worst differentials ${Object.entries(budgets).map(([k, b]) => `${k}=${b.worst}`).join(", ")} bytes.`,
-    ">   <!-- B4-30-CARD-NUMBERS-END -->",
+    "   > **Current state**",
+    "   > - **Status:** OPEN `[L]` — fix7: the contract is a fixed per-(OS, profile) DIFFERENTIAL budget (`need = fs − fc + stride`, control = eat-only boundary in its own allocator-free frame, floor-tolerant), self-measured by every run on the current toolchain; enforcement gated by `SEFER_B4_30_ENFORCE=1` and observable via the enforce-only markers `[b4-30] enforced scenario=<s>`. Phase 2 trigger remains open.",
+    "   > - **Current verdict:** Budgets (rule: `ceil_1024(worst differential) + max(4096, ceil1024(0.25 × worst))`, asserted by the generator against the test's `BUDGET_*` constants):",
+    `   >   - windows debug = ${bytes(key("windows")("debug"))}, windows release = ${bytes(key("windows")("release"))}, linux debug = ${bytes(key("linux")("debug"))}, linux release = ${bytes(key("linux")("release"))}.`,
+    `   > - Mutants (table DERIVED from the committed logs \`docs/perf/b4_30_probes/b4_30_fix7_mut_v*.log\`, patches \`b4_30_fix7_mut_v1.patch\`/\`v4.patch\`, byte-exact src rollback per run): v1 — pad \`size_of::<HeapCore>()\` in \`GlobalAlloc::alloc\` (inline(always) envelope): RED on ${v1Reds} of 8 cells; v4 — an extra by-value \`HeapCore\` copy in \`claim_impl\` before the slot write (the real construction site): RED on ${v4Reds} of 8 cells. Cells without RED have margin = budget − need larger than the copy size — the gate does not claim detection there; the compile-time proxy pins SIZE only, not the NUMBER of by-value copies (proxy margin is 8 bytes: HeapCore 9208 vs threshold 9216 — any growth >= 16 bytes reds the r34_18 doc check in someone else's PR; until fix8 the measurement-logic pin was enforced by no CI gate, now by scripts/verify-b4-30-pin.mjs in docs-consistency).`,
+    "   > - **Rebase procedure on stable-toolchain drift (one PR, in-repo):** (1) re-measure all 8 cells with ENFORCE unset, ≥2 full runs per cell, raw logs committed; (2) rebuild the evidence CSV with `scripts/b4_30_fix7_evidence.mjs`; (3) update the `BUDGET_*` constants per the generator output (the masked-logic pin is unchanged by value-only edits); (4) run all cells with `SEFER_B4_30_ENFORCE=1` green and regenerate the derived files.",
+    "   > - **Next trigger:** a target platform with a small guaranteed stack, or any change to the HeapCore construction path.",
+    "   > - **Evidence:** docs/perf/B4_30_STACK_CONTRACT.md, B4_30_STACK_CONTRACT_summary.csv, B4_30_STACK_CONTRACT_table.generated.md; docs/perf/b4_30_probes/b4_30_fix7_budget_evidence.csv, b4_30_fix7_run_manifest.csv, b4_30_fix7_mut_v*.log/.patch, b4_30_fix7_inline_check.s; docs/perf/_raw_b4_30_fix7_*.log; tests/b4_30_first_alloc_min_stack.rs; CI-gap card: docs/correctness-open-items/TRACKED_ci_gate_coverage.md (253).",
+    "   > <!-- B4-30-CARD-NUMBERS-START -->",
+    `   > - Headline: budgets win-debug=${bytes(key("windows")("debug"))}, win-release=${bytes(key("windows")("release"))}, linux-debug=${bytes(key("linux")("debug"))}, linux-release=${bytes(key("linux")("release"))}; worst differentials ${Object.entries(budgets).map(([k, b]) => `${k}=${b.worst}`).join(", ")} bytes.`,
+    "   > <!-- B4-30-CARD-NUMBERS-END -->",
   ];
 }
 const card = readFileSync(CARD, "utf8");

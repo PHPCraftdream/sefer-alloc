@@ -8,39 +8,77 @@
 // runs per cell. The budget generator (scripts/b4_30_stack_table.mjs)
 // consumes that CSV; this script is its only producer.
 //
-// Identity: the `test_sha` column is the sha256 of the test file with the
-// `const BUDGET_*: usize = <N>;` VALUES masked, so a constant-only rebase
+// Identity: the `test_sha` column is the sha256 of the test file after the
+// P2-4 NORMALIZATION + masking below, so a constant-only rebase
 // (new budgets, same measurement logic) keeps old evidence valid while any
-// logic change invalidates it. The producer ASSERTS the live masked sha
-// equals the pinned MASKED_TEST_SHA below.
+// logic change invalidates it. The producer ASSERTS the live normalized
+// masked sha is accepted by MASKED_TEST_SHA_PINS (pin or a formatOnly
+// successor). The verify gate `scripts/verify-b4-30-pin.mjs` re-checks the
+// same pin cargo-free in CI (docs-consistency).
+//
+// NORMALIZATION (P2-4, fix8) — applied BEFORE masking and hashing:
+//   1. CRLF -> LF (the pin must not depend on checkout eol; `.gitattributes`
+//      sets no `eol` for this path);
+//   2. WHOLE-LINE comments and blank lines are dropped: a line is kept iff
+//      its trim() is non-empty and does not start with `//`.
+// Why dropping comment lines cannot smuggle a logic change:
+//   - Only WHOLE-line comments are dropped. A trailing `// ...` after code
+//     stays, and the CODE part of the line is still hashed, so hiding a
+//     logic change behind a trailing comment is impossible.
+//   - Everything that is executable or declarative in Rust survives: every
+//     line of real code, including `#[...]` attributes (`#[inline(never)]`
+//     starts with `#`, not `//`), string literals, and multi-line
+//     expressions. A logic change MUST occupy at least one non-comment,
+//     non-blank line, and every such line is hashed — so any logic change
+//     changes the hash.
+//   - `///` / `//!` doc comments are real comments (rustdoc prose); this
+//     file is an integration-test target, so doc comments never generate
+//     doctests or code. Dropping them only allows comment-only edits to
+//     pass — exactly the intended property (P3-1 comment fixes need no new
+//     pin); they cannot carry logic.
+//   - The masking regex still anchors `^const (BUDGET_\w+): usize = \d+;$`
+//     on the normalized text, so budget-value rebases stay pin-neutral.
 import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 const DIR = "docs/perf";
-const EVIDENCE = `${DIR}/b4_30_probes/b4_30_fix7_budget_evidence.csv`;
+export const EVIDENCE_PATH = `${DIR}/b4_30_probes/b4_30_fix7_budget_evidence.csv`;
+const EVIDENCE = EVIDENCE_PATH;
 const MANIFEST = `${DIR}/b4_30_probes/b4_30_fix7_run_manifest.csv`;
-const TEST = "tests/b4_30_first_alloc_min_stack.rs";
-// sha256 of tests/b4_30_first_alloc_min_stack.rs with every
-// `const BUDGET_*: usize = <number>;` line replaced by
-// `const <NAME>: usize = <BUDGET>;` — the revision of the MEASUREMENT
-// LOGIC that produced every raw fix7 log (constants masked so rebasing
-// budgets alone does not require a re-measure).
+export const TEST = "tests/b4_30_first_alloc_min_stack.rs";
+export function normalizedMaskedTestSha(source) {
+  const norm = source
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((l) => {
+      const t = l.trim();
+      return t && !t.startsWith("//");
+    })
+    .join("\n");
+  return createHash("sha256")
+    .update(
+      norm.replace(
+        /^const (BUDGET_\w+): usize = \d+;$/gm,
+        "const $1: usize = <BUDGET>;",
+      ),
+    )
+    .digest("hex");
+}
 export const MASKED_TEST_SHA_PINS = {
-  maskedTestSha: (source) =>
-    createHash("sha256")
-      .update(
-        source.replace(
-          /^const (BUDGET_\w+): usize = \d+;$/gm,
-          "const $1: usize = <BUDGET>;",
-        ),
-      )
-      .digest("hex"),
-  pin: "9f3fd8848335e176aaa17962645c5d8304b143b9ea7983386f147efc33bbdf33",
-  // Masked shas of later revisions whose diff against the pinned one is
-  // formatting only (no measurement-logic change), each with its diff.
+  maskedTestSha: normalizedMaskedTestSha,
+  // Normalized+masked sha of the MEASURED revision (git show
+  // 5940f78f:tests/b4_30_first_alloc_min_stack.rs) — the exact logic that
+  // produced every raw fix7 log.
+  pin: "62baadba40db989ccd87200bda6eb34db86df6566ddd991adc78238f9eeeee92",
+  // Normalized+masked shas of later revisions whose diff against the pinned
+  // one is formatting only (no measurement-logic change), each with its
+  // justification.
   formatOnly: {
-    // rustfmt --edition 2021 import order: `atomic::{..}` before `Mutex, OnceLock`.
-    "704c9a44377acffa2a5bec95a2b3ba3d956e046c9b3f74da3e611d70a31cc400": "rustfmt import order",
+    // rustfmt --edition 2021 reordered the `use` items (e.g.
+    // `atomic::{..}` before `Mutex, OnceLock`); the SET of normalized
+    // non-comment lines is byte-identical, only their order differs.
+    "7b76596b0094181357498db5fa8ea8d37d259d76fa87896fdb073f76cb3a4070":
+      "rustfmt import order (formatting only)",
   },
   accepts(masked) {
     return masked === this.pin || Object.hasOwn(this.formatOnly, masked);
@@ -92,8 +130,8 @@ const parseDetails = (text) => {
       enforce: Number(m[10]),
     };
   }
-  const tool = text.match(/\[b4-30\] toolchain=(\S+ \S+)?/);
-  return { scenarios: out, rustc: text.match(/toolchain=(rustc [^ ]+)/)?.[1] };
+  const rustc = text.match(/toolchain=(rustc [^ ]+)/)?.[1];
+  return { scenarios: out, rustc };
 };
 
 const byCell = {}; // key os/profile/features -> {scenario: [{need,...,cpu,os_build}]}
