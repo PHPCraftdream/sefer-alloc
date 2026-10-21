@@ -578,3 +578,36 @@ pub(crate) static LOCAL_REJECT_FREES: core::sync::atomic::AtomicU64 =
 // oxx R2-07), planted when the active lease binds. See `HeapSlot::large_cache_hits`.
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) type LargeCacheHitCounter = core::sync::atomic::AtomicU64;
+
+/// B4-M (P1-2): magazine-refill event counter — bumped once per
+/// `AllocCore::refill_class_bump_impl` call whose `issue_state` is
+/// [`StateByte::MAG`](crate::alloc_core::state_byte::StateByte::MAG)
+/// (i.e. only magazine refills; batch-API refills commit LIVE and are not
+/// counted). Companion of [`S1_MAG_BYTE_WRITES`]. Read via
+/// `AllocCore::dbg_s1_refill_events`. `bench-internals`-gated (the
+/// `CONTAINS_BASE_TIER1_HITS` convention): never reachable in a plain
+/// production build. Relaxed: diagnostic only.
+#[cfg(feature = "bench-internals")]
+pub(crate) static S1_REFILL_EVENTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): count of MAG state-byte writes performed by the substrate
+/// refill itself — `try_drain_freelist_batch` and `try_carve_batch` add their
+/// committed block count once per call when `issue_state == MAG` (equal to
+/// one per `meta.state_byte().write(.., MAG)`). Under S1 the retained
+/// magazine blocks' MAG bytes are written HERE; the full-revert mutant (drain
+/// LIVE + the old `finish_magazine_refill` MAG loop) drives this to 0 for the
+/// same end-state bytes, which is what
+/// `tests/b4_micro_s1_refill_mag_bytes.rs` pins. Companion of
+/// [`S1_REFILL_EVENTS`]. Same gating/ordering convention.
+#[cfg(feature = "bench-internals")]
+pub(crate) static S1_MAG_BYTE_WRITES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): null frees that reached `HeapCore::publish_foreign`'s null
+/// tail guard (`if ptr.is_null() { return; }`) — the X-null no-op oracle.
+/// Counted inside the null branch only, so non-null frees pay nothing even
+/// under `bench-internals`. Relaxed: diagnostic only.
+#[cfg(feature = "bench-internals")]
+pub(crate) static XNULL_NULL_TAIL_GUARD: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);

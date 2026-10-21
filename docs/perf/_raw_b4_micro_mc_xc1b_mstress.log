@@ -1,0 +1,29 @@
+HASH f7dc1d8d4dde427e01e00cf513599e662e2c8df989402f2ee845d45057246e4c  -
+MARGINAL Ir/op (sefer mstress T=1): 369
+--- by source file (Ir/op)
+  369.7	PROGRAM TOTALS
+  214.7	events annotated
+   49.9	mc-xc1b-mstress/crates/malloc-bench-rs/src/lib.rs
+   42.9	mc-xc1b-mstress/src/registry/heap_core/free/dealloc_own_base.rs
+   36.9	mc-xc1b-mstress/src/alloc_core/small/alloc_core_small_magazine.rs
+   22.5	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   22.4	mc-xc1b-mstress/src/alloc_core/platform/size_classes.rs
+   22.3	mc-xc1b-mstress/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+   21.7	mc-xc1b-mstress/src/registry/heap_core/alloc/hot.rs
+   17.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   13.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+   11.1	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+   10.8	16 + (r >> 8) as usize % (512 - 16)
+    9.8	let seed_idx = if size == 0 {
+    9.8	let cnt = self.tcache.classes[c1 - 1].count as usize;
+    9.7	mc-xc1b-mstress/src/alloc_core/segment/bitmap/state_byte.rs
+    9.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs
+    9.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs
+    9.2	mc-xc1b-mstress/src/alloc_core/segment/segment_table/route_slots.rs
+    8.8	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs
+    8.4	let cnt = self.tcache.classes[c].count as usize;
+    8.1	if sb & 0x3F != class_idx as u8 + 1
+    8.1	head_off = if next.is_null() {
+    7.0	<counts for unidentified lines in mc-xc1b-mstress/src/registry/heap_core/free/dealloc_own_base.rs>
+    6.9	<counts for unidentified lines in mc-xc1b-mstress/src/alloc_core/small/alloc_core_small_magazine.rs>
+mstress RC=0

@@ -208,6 +208,11 @@ pub(crate) use alloc_core::LOCAL_REJECT_FREES;
 /// static itself stays always-compiled.
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
 pub(crate) use alloc_core::SMALL_ZERO_PASS_CALLS;
+/// B4-M (P1-2): X-null tail-guard counter, re-exported crate-wide for its
+/// increment site in `registry` (the S1 counters stay internal to
+/// `alloc_core`, reached via `alloc_core::alloc_core::`).
+#[cfg(feature = "bench-internals")]
+pub(crate) use alloc_core::XNULL_NULL_TAIL_GUARD;
 /// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): slow-path observer
 /// counters, re-exported crate-wide for their increment sites and
 /// `SeferAlloc::dbg_b4_collapse_counters`.

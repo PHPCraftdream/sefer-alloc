@@ -55,6 +55,10 @@ pub(in crate::alloc_core) use counters::{LargeCacheHitCounter, DECOMMIT_CALLS};
 pub(in crate::alloc_core) use counters::{CONTAINS_BASE_TIER1_HITS, CONTAINS_BASE_TIER1_MISSES};
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 pub(in crate::alloc_core) use counters::{FORCE_DECAY_CLOCK_READ, MAYBE_DECAY_GUARD_PASSED};
+// B4-M (P1-2): bench-internals observer counters, re-exported crate-wide
+// (their increment sites span `alloc_core` and `registry`).
+#[cfg(feature = "bench-internals")]
+pub(crate) use counters::{S1_MAG_BYTE_WRITES, S1_REFILL_EVENTS, XNULL_NULL_TAIL_GUARD};
 pub(in crate::alloc_core) use lifecycle::base_add;
 
 // ---------------------------------------------------------------------------

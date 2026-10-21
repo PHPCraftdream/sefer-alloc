@@ -164,6 +164,7 @@ impl AllocCore {
         &mut self,
         class_idx: usize,
         out: &mut [*mut u8],
+        issue_state: u8,
     ) -> Result<usize, ()> {
         // Fast path: no cursor recorded — no call into the probe.
         if self.small_class_cursor[class_idx] == CLASS_CURSOR_NONE {
@@ -172,7 +173,7 @@ impl AllocCore {
         let Some(base) = self.cursor_probe_base(class_idx) else {
             return Ok(0);
         };
-        match self.try_drain_freelist_batch(base, class_idx, out) {
+        match self.try_drain_freelist_batch(base, class_idx, out, issue_state) {
             Ok(n) => {
                 #[cfg(feature = "bench-internals")]
                 if n != 0 {

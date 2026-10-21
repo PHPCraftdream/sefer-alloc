@@ -27,6 +27,18 @@ impl HeapCore {
     // cache lookup out of that inlined body (iai: ~+1 Ir per own free without).
     #[cold]
     pub(crate) unsafe fn publish_foreign(ptr: *mut u8, layout: Layout) {
+        // X-null: the single null guard for the whole free path. Null's
+        // memo/own_cache key is 0 and never matches a stored segment base
+        // (or `LAST_EMPTY_KEY`), so null always lands here; returning here
+        // preserves the no-op and leaves `FOREIGN_OR_UNROUTABLE_FREES` /
+        // `LOCAL_REJECT_FREES` untouched.
+        if ptr.is_null() {
+            // B4-M (P1-2): X-null tail-side null-free count.
+            #[cfg(feature = "bench-internals")]
+            crate::alloc_core::XNULL_NULL_TAIL_GUARD
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return;
+        }
         // SAFETY: this function's `# Safety` contract is the unique transfer
         // of the current issued allocation instance; that unique ownership
         // is forwarded verbatim to `publish_cached`, which hands it to

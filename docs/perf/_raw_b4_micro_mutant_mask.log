@@ -1,0 +1,30 @@
+CARGO_TARGET_DIR=$REPO/.rush/cargo-target-C timeout 600 cargo test --locked --features "production batch-api internals bench-internals" --test b4_micro_xspan_small_primordial_mask
+EXPECTED: RED — xspan_small_and_primordial_deeps_free_exactly FAILED (block at off 0x3ff000 must read FREE after dealloc: 0 vs 2).
+---
+   Compiling sefer-alloc v0.3.0 ($REPO\worktrees\b4-micro)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.48s
+     Running tests\b4_micro_xspan_small_primordial_mask.rs ($REPO/.rush/cargo-target-C\debug\deps\b4_micro_xspan_small_primordial_mask-c5e8d526515c9331.exe)
+
+running 2 tests
+test xspan_large_span_bound_untouched ... ok
+test xspan_small_and_primordial_deeps_free_exactly ... FAILED
+
+failures:
+
+---- xspan_small_and_primordial_deeps_free_exactly stdout ----
+
+thread 'xspan_small_and_primordial_deeps_free_exactly' (54572) panicked at tests\b4_micro_xspan_small_primordial_mask.rs:112:9:
+assertion `left == right` failed: block at off 0x3ff000 of segment 0x2989b000000 must read FREE after dealloc
+  left: 0
+ right: 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    xspan_small_and_primordial_deeps_free_exactly
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--test b4_micro_xspan_small_primordial_mask`
+---
+CARGO_EXIT_CODE=101
