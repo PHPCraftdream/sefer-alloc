@@ -1,6 +1,6 @@
 # ADR: карта стартов «старт выдавался» (D1′) — удаление ClassLeaves и issue-транзакции (one-class)
 
-Дата 2026-10-20. Статус: **ПРЕДЛОЖЕН (ожидает принятия владельцем)**; бывший остаток M-h ЗАКРЫТ детерминированным оракулом (§7). Ветка `b4-oneclass`
+Дата 2026-10-20. Статус: **ПРИНЯТ (реализация влита в main, PR #94; вердикты производительности — см. PORT2 / `docs/perf/OPEN_ITEMS.md` 109–111)**; бывший остаток M-h ЗАКРЫТ детерминированным оракулом (§7). Ветка `b4-oneclass`
 (фазы 1a + 1b + OPT). Образец: `docs/design/2026-10-19-adr-small-path-v2.md`.
 Дизайн-ревью-первоисточник: `<scratch>/art/b4/oneclass_design.md` (§2 эквивалентность,
 §6 план замеров, §7 GO-условия, §8.4 D1′); ревью D1′: `<scratch>/art/b4/d1p_rev_rush.md`,
@@ -175,18 +175,18 @@ layout-only атрибутов — без эффекта; см. B4_ONECLASS.md �
 - Мутант-таблица — `docs/perf/B4_ONECLASS.md` §7: M-k RED
   (`mutk_reclaim_live_record_start_bit_0_is_fatal`); порядок reclaim: старт-бит-0
   fatal ДО тихих FREE/MAG-return; M-b оракулы переписаны (соседний бит);
-  M-h — зафиксированный остаток (§7); T4 — реально другой класс; T6 — все
+  M-h закрыт детерминированным оракулом + mutant battery (§7); T4 — реально другой класс; T6 — все
   small-классы (`SIZE_CLASS_TABLE.len()`); MAG no-op — во всех сборках;
   safe-observer `class_at_global_address_for_test` заменён на
   `start_state_at_global_address_for_test` (только атомарные банки sidecar).
 
-## 7. OWNER-ACCEPTED RESIDUAL (ADR proposed; design choice accepted by owner)
+## 7. OWNER-ACCEPTED RESIDUAL (ADR ADOPTED; design choice accepted by owner)
 
-The owner explicitly accepts **state byte as the sole class source** for D1′. D1′ has no independent class copy after leaf removal. A geometrically compatible wrong-class LIVE-byte mutation (`bs(d)` divides `off`, `off+bs(d) ≤ bump`) is not detected by geometry/overlap alone; smaller or co-sized substitutions may leak the block tail instead of overlapping a neighbor. The design decision is owner-accepted; reintroducing an independent witness is deferred unless the owner requests it. The ADR itself remains proposed pending owner adoption; that does not make the accepted design decision unaccepted.
+The owner explicitly accepts **state byte as the sole class source** for D1′. D1′ has no independent class copy after leaf removal. A geometrically compatible wrong-class LIVE-byte mutation (`bs(d)` divides `off`, `off+bs(d) ≤ bump`) is not detected by geometry/overlap alone; smaller or co-sized substitutions may leak the block tail instead of overlapping a neighbor. The design decision is owner-accepted; reintroducing an independent witness is deferred unless the owner requests it. The ADR itself is adopted (implementation merged to main, PR #94); that does not change the accepted design decision.
 
-M-h's separate deterministic production-path early-publication defect is closed by the test in `tests/oneclass_carve_batch_early_publication.rs`; T4's same-route reset fixture is separately repaired and repeat-verified. The flaky T1 repeat-harness defect (wrong absolute `live_count` model; 2 failures in ~738 runs) was fixed by a deterministic segment-delta oracle — 200 Windows + 200 WSL repeats, 0 failures, mutant RED 3/3 — recorded as correctness `RESOLVED.md` §252 (evidence `<scratch>/oc_flake_*`).
+M-h's separate deterministic production-path early-publication defect is closed by the test in `tests/oneclass_carve_batch_early_publication.rs`; T4's same-route reset fixture is separately repaired and repeat-verified. The flaky T1 repeat-harness defect (wrong absolute `live_count` model; 2 failures in 805 runs = 5+200+200+100+300) was fixed by a deterministic segment-delta oracle — 200 Windows + 200 WSL repeats, 0 failures, mutant RED 3/3 — recorded as correctness `RESOLVED.md` §252 (evidence `<scratch>/oc_flake_*`).
 
-Перенос на main: D1′ переносится merge-коммитом `294ff32a` × `8da6402d` (незавершённый merge в ветке `b4-oneclass`). После ревью порта (P2-1/P2-2: measurement-счётчики RouteDirectory гейтированы `all(internals, bench-internals)`) выполнен PORT2-перезамер всех 26 ячеек: числа совпали с port-раундом в пределах порога (кроме A aoc c16/c64 alloc 21→22); NO-GO thrash64 (free +3 Ir/op, EstCycles +3.1 %) и foreign (−2 при цели ≤ −4) — без изменений; канонические RSS-числа — PORT2-генератор (full −1052, sparse −1500, cold −1968, deadpins +200 КиБ; sidecar +48 896 Б). Отчёт: `docs/perf/B4_ONECLASS.md` PORT2-раздел; evidence-реестр: R-Ph3a-native/-iai → superseded, новая строка `R-D1P-01`.
+Перенос на main: D1′ перенесён merge-коммитом `294ff32a` × `8da6402d`; merge `d48534ea` закоммичен в ветке `b4-oneclass` (PR #94, реализация влита в main). После ревью порта (P2-1/P2-2: measurement-счётчики RouteDirectory гейтированы `all(internals, bench-internals)`) выполнен PORT2-перезамер всех 26 ячеек: числа совпали с port-раундом в пределах порога (кроме A aoc c16/c64 alloc 21→22); NO-GO thrash64 (free +3 Ir/op, EstCycles +3.1 %) и foreign (−2 при цели ≤ −4) — без изменений; канонические RSS-числа — PORT2-генератор (full −1052, sparse −1500, cold −1968, deadpins +200 КиБ; sidecar +48 896 Б). Отчёт: `docs/perf/B4_ONECLASS.md` PORT2-раздел; evidence-реестр: R-Ph3a-native/-iai → superseded, новая строка `R-D1P-01`.
 
 ## 8. Отклонённые варианты
 

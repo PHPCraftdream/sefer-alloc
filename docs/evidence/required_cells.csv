@@ -20,7 +20,7 @@ R0-14,protocol,C1,PASS,true,мутант W−1 отвергнут UB в моде
 R0-15,protocol,C1,PASS,true,мутант W−1 отвергнут UB в модели TB
 R0-18,evidence-infra,C7,NOT_RUN,false,CI job global-regressions; результата нет
 R0-21,protocol,C1,PASS,true,shadow-модель; мутанты sidecar/terminal отвергнуты
-R0-22,protocol,C1,PASS,true,shadow-модель; мутанты pointer-publication/early-leaf отвергнуты
+R0-22,protocol,C1,NOT_RUN|PASS,false,waiver: свидетель loom_r11_small_sidecar удалён; полной замены pin-retention/early-leaf пока нет
 R0-23,protocol,C5,NOT_RUN|PASS,false,waiver: ownerless progress; не проверялся в Фазе 0
 R0-24,protocol,C1,NOT_RUN|PASS,false,waiver: W+3; witness не выбран (шаг 1a)
 R0-25,cost,COST,NOT_RUN|PASS|CONDITIONAL,false,агрегат стоимости; закрывается строками R6b-01..07
@@ -146,5 +146,4 @@ R0-17,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD по
 R0-19,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
 R0-20,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
 R-Ph3b,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
-
 R-D1P-01,protocol,C1,CI_PENDING|PASS,true,новая строка D1′ one-class (замена R-Ph3a-native/-iai); вердикт по landing SHA после merge-коммита

@@ -99,6 +99,18 @@ fn fill_to_commit_frontier(
         // A carve of one CLASS_SIZE block from `bump` needs a commit iff
         // `bump + CLASS_SIZE > frontier`.
         if bump + CLASS_SIZE > frontier {
+            // P2-C vacuum guard: if the platform's lazy-commit policy
+            // committed the whole segment up front (frontier == SEGMENT,
+            // e.g. `numa-aware` or the Linux frontier choice), the armed
+            // refusal can never land on a real `commit_pages` call and the
+            // test would pass vacuously. Fail loudly instead.
+            assert!(
+                frontier < SegmentLayout::SEGMENT,
+                "commit frontier reached the whole segment (frontier = \
+                 {frontier} == SEGMENT): the lazy-commit refusal witness is \
+                 vacuous on this platform/feature set — no commit can be \
+                 refused",
+            );
             return;
         }
         let ptr = heap.alloc(layout());
@@ -218,6 +230,7 @@ fn magazine_refill_commit_refusal_commits_only_the_drained_blocks() {
     let (bump_before, live_before, _) = owner_state(anchor, c);
     let frontier_before = heap.dbg_committed_payload_end_for(anchor);
     heap.dbg_arm_commit_fail(8);
+    let fails_before = heap.dbg_commit_fail_count();
     let issued = heap.alloc(layout());
     assert!(
         !issued.is_null(),
@@ -272,6 +285,15 @@ fn magazine_refill_commit_refusal_commits_only_the_drained_blocks() {
         live_after as usize,
         held.len() + (k - 1),
         "anchor live == caller-held + its magazine residents",
+    );
+
+    // P2-C witness: the injector must have ACTUALLY refused at least one
+    // real commit; otherwise the rollback oracle above was asserted against
+    // a call that never touched the commit path (vacuous green).
+    assert!(
+        heap.dbg_commit_fail_count() > fails_before,
+        "the armed commit-failure injector never fired: the rollback oracle \
+         above was vacuous",
     );
 
     // Disarm: drain the partial refill's leftovers, then a fresh magazine
@@ -373,6 +395,7 @@ fn magazine_refill_commit_refusal_is_a_scalar_oom_with_a_full_rollback() {
     // Arm enough refusals for the decisive carve_block's grow commit and any
     // subsequent commit on the anchor segment.
     heap.dbg_arm_commit_fail(8);
+    let fails_before = heap.dbg_commit_fail_count();
     let served = heap.alloc(layout());
     assert!(
         !served.is_null(),
@@ -419,6 +442,15 @@ fn magazine_refill_commit_refusal_is_a_scalar_oom_with_a_full_rollback() {
             "rescue segment live == its caller-held stock",
         );
     }
+
+    // P2-C witness: the injector must have ACTUALLY refused at least one
+    // real commit; otherwise the rollback oracle above was asserted against
+    // a call that never touched the commit path (vacuous green).
+    assert!(
+        heap.dbg_commit_fail_count() > fails_before,
+        "the armed commit-failure injector never fired: the rollback oracle \
+         above was vacuous",
+    );
 
     // Disarm: the next alloc carves for real (from the fallback segment the
     // rescue published as the cursor).

@@ -20,8 +20,9 @@
         "exit": 0,
         "stdoutRegex": [
           "3 passed; 0 failed",
-          "test loom_sidecar_class_publication_and_two_producers \\.\\.\\. ok",
-          "test loom_sidecar_negative_class_after_terminal_bit - should panic \\.\\.\\. ok"
+          "test loom_sidecar_publication_and_two_producers \\.\\.\\. ok",
+          "test loom_sidecar_paused_producer_and_reused_bit \\.\\.\\. ok",
+          "test loom_sidecar_negative_ungated_publication_detected_by_start_check - should panic \\.\\.\\. ok"
         ]
       }
     },
@@ -43,7 +44,8 @@
         "exit": 0,
         "stdoutRegex": [
           "2 passed; 0 failed",
-          "test producer_owner_cut_and_duplicate_admission \\.\\.\\. ok"
+          "test producer_owner_cut_and_duplicate_admission \\.\\.\\. ok",
+          "test owner_cache_or_release_is_exclusive \\.\\.\\. ok"
         ]
       }
     },

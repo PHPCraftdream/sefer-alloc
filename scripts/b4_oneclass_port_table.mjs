@@ -50,6 +50,19 @@ function firstMatch(text, re) {
   return m ? Number(m[1]) : undefined;
 }
 
+// Feature set каждого raw-лога: строка «features:» в шапке.
+function featuresOf(text) {
+  const m = text.match(/^features:[ \t]*(.*)$/m);
+  return m ? m[1].trim() : '';
+}
+function configIdentityOf(rawA, rawB, label) {
+  const fa = featuresOf(rawA);
+  const fb = featuresOf(rawB);
+  if (!fa && !fb) return 'unknown (no features: line in own raw log)';
+  if (fa && fb && fa !== fb) fail(`${label}: features mismatch A/B: ${JSON.stringify([fa, fb])}`);
+  return `features=${fa || fb}`;
+}
+
 // ---------- парсеры ----------
 
 // Каждый лог содержит только свою секцию — нужны только «свои» ключи.
@@ -166,6 +179,7 @@ const CELLS = ['mstress', 'larson', 'ao', 'aoc', 'batch', 'batchc', 'batchl', 'f
 const M = {}; // M[A|Bp|B][cell] = parsed
 // Identity (R29-6/R14-10): each row carries its own raw log's tree diff.
 const TT = {};
+const RAW = {}; // raw text of each cell log (для строк «features:» в шапке)
 const patchIdentity = (text) => text.match(/patch(?: identity)?(?: sha256)?[=: ]+([0-9a-f]{64})/i)?.[1] ?? text.match(/oc_mem_hooks_a[0-9]+\.patch\(sha256=([0-9a-f]{64})\)/)?.[1] ?? 'UNKNOWN';
 function treeOf(text, label) {
   const m = text.match(/^tree-diff-sha256 ([0-9a-f]{64})/m);
@@ -178,6 +192,7 @@ function treeOf(text, label) {
 for (const [key, sh] of Object.entries(SHOULDER)) {
   M[key] = {};
   TT[key] = {};
+  RAW[key] = {};
   for (const cell of CELLS) {
     const KEYS = {
       ao: ['ao_alloc', 'ao_free', 'ao_alloc_cycles', 'ao_free_cycles'],
@@ -189,6 +204,7 @@ for (const [key, sh] of Object.entries(SHOULDER)) {
     const t = readLog(`${sh.prefix}${cell}.log`);
     if (!t) continue;
     TT[key][cell] = treeOf(t, `${sh.prefix}${cell}.log`);
+    RAW[key][cell] = t;
     if (KEYS[cell]) {
       M[key][cell] = parseSuiteLog(t, `${sh.prefix}${cell}.log`, KEYS[cell]);
     } else {
@@ -206,6 +222,7 @@ for (const [key, sh] of Object.entries(SHOULDER)) {
   const t = readLog(`${sh.prefix}thrash64.log`);
   if (t) {
     TT[key].thrash64 = treeOf(t, `${sh.prefix}thrash64.log`);
+    RAW[key].thrash64 = t;
     M[key].thrash64 = parseThrashLog(t, `${sh.prefix}thrash64.log`);
   }
 }
@@ -458,17 +475,22 @@ for (const r of rows) {
   const aIdentity = TT.A[cell] ?? 'MISSING';
   const bpIdentity = '';
   const bIdentity = TT.B[cell] ?? 'MISSING';
+  const completeness = 'full write-tree/manifest identity recorded; tree objects not reachable until commit (pin refs at merge)';
   const sourceNotes = [`A base 8da6402d + oc_mem_hooks_a3.patch (a3 patch sha256=${SNAPSHOT_PATCH_SHA256}); write-tree=02db40ed426458ebdb351babdcf6e263c9b3cd36; source-manifest-sha256=086180efab1faf2bfa9889f4194355bb83cda9a69dbec83a5e2b9e9f992c89b3`, `B′ отсутствует в port2-раунде`, `B объединённое дерево; write-tree=19aa0fcf11fa955a7a245f0d338141891ac38d92; source-manifest-sha256=58f83d6b71a7e8a16341cae2f1f9c6ccb65af351508659e7cfc85af9bf1e5fc0`];
-  csvRecord([r.cell,r.metric,r.A,r.B,r.Bp,r.delta,r.pct,r.threshold,r.verdict,aIdentity,bpIdentity,bIdentity,'tree-diff-sha256','full write-tree/manifest identity recorded; tree objects not reachable until commit (pin refs at merge)','unknown (no perf config in own raw log)',...sourceNotes,'',`a3 patch sha256=${SNAPSHOT_PATCH_SHA256}`]);
+  csvRecord([r.cell,r.metric,r.A,r.B,r.Bp,r.delta,r.pct,r.threshold,r.verdict,aIdentity,bpIdentity,bIdentity,'source-manifest-sha256',completeness,configIdentityOf(RAW.A[cell] ?? '', RAW.B[cell] ?? '', `perf ${r.cell}/${r.metric}`),...sourceNotes,'',`a3 patch sha256=${SNAPSHOT_PATCH_SHA256}`]);
 }
 for (const r of memRows) {
   const a=MEM[`a-${r.mode}`], b=MEM[`b-${r.mode}`];
-  const rawA=MEM_RAW[`a-${r.mode}`];
+  const rawA=MEM_RAW[`a-${r.mode}`] ?? '';
+  const rawB=MEM_RAW[`b-${r.mode}`] ?? '';
   const aid=patchIdentity(rawA);
+  // A_tree_diff_sha256: A's own source-manifest hash from the raw header
+  // (the a3 patch sha stays in shoulder_a/manifest_digest notes).
+  const aManifest=rawA.match(/source-manifest-sha256=([0-9a-f]{64})/)?.[1] ?? 'UNKNOWN';
   const aKind=`instrumentation-patch:${aid}`;
   const bKind=b.identity_type;
   const completeness='full write-tree/manifest identity recorded; tree objects not reachable until commit (pin refs at merge)';
-  csvRecord([`port2/${r.mode}`,r.metric,r.A,r.B,'',r.delta,r.pct,'MEASURED','MEASURED',aid,b.tree_diff_sha256,`${aKind} / ${bKind}`,'source-manifest-sha256',completeness,`${b.requested_pool}; ${b.resolved_pool}; cap=${b.resolved_pool_byte_cap}`,`A own raw patch identity=${aid} (a3 patch sha256=${SNAPSHOT_PATCH_SHA256}); A write-tree=02db40ed426458ebdb351babdcf6e263c9b3cd36; A source-manifest-sha256=086180efab1faf2bfa9889f4194355bb83cda9a69dbec83a5e2b9e9f992c89b3`,`B kind=${bKind}; B write-tree=19aa0fcf11fa955a7a245f0d338141891ac38d92; B source-manifest-sha256=58f83d6b71a7e8a16341cae2f1f9c6ccb65af351508659e7cfc85af9bf1e5fc0`,'Diff/manifest hashes identify measured trees; full write-tree/manifest identity recorded; tree objects not reachable until commit (pin refs at merge)','A/B identity details are distinct per mode',`a3 patch sha256=${SNAPSHOT_PATCH_SHA256}`]);
+  csvRecord([`port2/${r.mode}`,r.metric,r.A,r.B,'',r.delta,r.pct,'MEASURED','MEASURED',aManifest,'',b.tree_diff_sha256,'source-manifest-sha256',completeness,`${b.requested_pool}; ${b.resolved_pool}; cap=${b.resolved_pool_byte_cap}; ${configIdentityOf(rawA, rawB, `port2/${r.mode}`)}`,`A kind=${aKind}; A own raw patch identity=${aid} (a3 patch sha256=${SNAPSHOT_PATCH_SHA256}); A write-tree=02db40ed426458ebdb351babdcf6e263c9b3cd36; A source-manifest-sha256=086180efab1faf2bfa9889f4194355bb83cda9a69dbec83a5e2b9e9f992c89b3`,'B′ отсутствует в port2-раунде',`B kind=${bKind}; B write-tree=19aa0fcf11fa955a7a245f0d338141891ac38d92; B source-manifest-sha256=58f83d6b71a7e8a16341cae2f1f9c6ccb65af351508659e7cfc85af9bf1e5fc0`,'Diff/manifest hashes identify measured trees; A/B identity details are distinct per mode',`a3 patch sha256=${SNAPSHOT_PATCH_SHA256}`]);
 }
 // ---------- итог ----------
 

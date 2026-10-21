@@ -116,7 +116,11 @@ impl EntryHandle {
             // `SmallSidecar::dealloc_sidecar` (this file sits at its
             // 1000-line cap).
             RouteKind::Small | RouteKind::Primordial => {
-                SmallSidecar::dealloc_sidecar(sidecar.cast())
+                // SAFETY: `sidecar` is the fully initialized `SmallSidecar`
+                // this entry allocated from `System` (see # Safety on
+                // `dealloc_sidecar`); this is the last-pin release, so no
+                // reference remains and it is dropped exactly once.
+                unsafe { SmallSidecar::dealloc_sidecar(sidecar.cast()) }
             }
             RouteKind::Large => {
                 // SAFETY: pointer came from System.alloc with this Layout and

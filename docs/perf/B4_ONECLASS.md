@@ -367,6 +367,9 @@ Loom-модель «старт-бит ↔ publish ↔ owner-drain» (включ�
   `cold_alloc_only_256x16b` ≤ −2 %, `growth16_n` ≤ −2 %, `r19_prf01_*`,
   `seg_cycle_decommit_256k`, `multiseg_cold_256k` ≤ 0; нерегресс hot ≤ +0.5 % Ir и
   EstCycles ≤ +1 %; own-free клетки |Δ| ≤ 2 Ir; контроль `mimalloc_*` Δ = 0.
+  Примечание: J2 iai идёт со сборкой `production bench-internals internals`; в этой
+  сборке в плече B компилируется M-h test-seam (2 store + 1 load на batch) — смещение
+  консервативное (против B).
 - **J3 mt-bench** (T=1/2/4, 2 прогона): медиана ≥ −2 %, INFO ≥ +2 % при T=4.
 - **Miri-клетки:** `tests/class_leaves_publication_miri.rs` удалён (шаг CI снят);
   Miri-режимы лиз/битмапов (`segment_directory_a5_miri`, `r11_ph4a/b lease miri`,
@@ -390,9 +393,9 @@ Loom-модель «старт-бит ↔ publish ↔ owner-drain» (включ�
 
 ## Перенос на main 8da6402d (D1′-PORT, перезамер)
 
-Дата 2026-10-21; merge `294ff32a` × `origin/main` (`8da6402d`), содержимое разрешено, индекс оставлен владельцу.
+Дата 2026-10-21; merge `294ff32a` × `origin/main` (`8da6402d`), содержимое разрешено, merge `d48534ea` закоммичен в ветке `b4-oneclass` (PR #94); perf-карточки перенесены/обновлены в `docs/perf/OPEN_ITEMS.md` (109–111) — вручную владельцу ничего не остаётся.
 
-- Плечо A: чистый main `8da6402d` + read-only патч `oc_mem_hooks_a2.patch`
+- Плечо A: чистый main `8da6402d` + read-only патч `oc_mem_hooks_a2.patch` (УСТАРЕЛО: патч a2/a3 добавляет measurement-счётчики, гейтированные `all(internals, bench-internals)` в обоих плечах — см. PORT2)
   (sha256 `5e01b6c82272a0e43720b186c358d3a65486cea011b870479999fb7d965db586`).
   Write-tree `40fd66d75637e8ac163d8f33384b3e719bad2299`;
   source-manifest `c93793c7259682e248bbab98c134311a14c86713a608c2d2cdc189ff9ef6f936`.
@@ -401,7 +404,12 @@ Loom-модель «старт-бит ↔ publish ↔ owner-drain» (включ�
 
 ### Таблица судей (измерено, callgrind T=1, маргинально 50k→100k; перезамер на объединённом дереве)
 
-A = port-base (чистый origin/main 8da6402d + read-only хуки a2), B = port-b (объединённое дерево b4-oneclass × 8da6402d); B′-колонка пуста — интермедиат на PORT-этапе не измерялся. Построчные проверки: 46 арифметик / 46 процентов / 0 mismatches; RC=0.
+> **ИСТОРИЧЕСКОЕ (port-раунд 1):** эта таблица и `docs/perf/B4_ONECLASS_PORT_summary.csv`
+> сгенерированы версией `b4_oneclass_port_table.mjs` из коммита `294ff32a`; скрипт HEAD
+> port-раунд 1 не воспроизводит (сейчас он генерирует только port2-раунд).
+> CSV и таблица ниже оставлены как зафиксированное историческое свидетельство, без изменений.
+
+A = port-base (чистый origin/main 8da6402d + read-only хуки a2 — УСТАРЕЛО: патч a2/a3 добавляет measurement-счётчики, гейтированные `all(internals, bench-internals)` в обоих плечах, см. PORT2), B = port-b (объединённое дерево b4-oneclass × 8da6402d); B′-колонка пуста — интермедиат на PORT-этапе не измерялся. Построчные проверки: 46 арифметик / 46 процентов / 0 mismatches; RC=0.
 
 | Плечо | Метрика | A | B′ | B | Δ=B−A | Δ% | Порог | Вердикт |
 |---|---|---|---|---|---|---|---|---|
@@ -471,7 +479,7 @@ A = port-base (чистый origin/main 8da6402d + read-only хуки a2), B = p
 
 - Адресные тесты D1′: M-h 1, battery 9, starts_map 5, reclaim_mag 1×2, state_byte 1+10, sgie 1, refill 1+1, r6/r12/r14/r11_ph5b — все PASS RC=0; main-сторона: b4_micro_s1 2, xnull 2, xspan 2, n9 1, u31 2 — все PASS RC=0.
 - Мутанты M-h и refill-accounting снова RED и откачены.
-- Loom: 7/7 групп PASS. run-check-matrix: ALL GREEN (один flake-инцидент 0xC0000409 в oneclass_starts_map, 1 из 4, повторно не воспроизвёлся — 10/10 повторов PASS; зафиксирован честно; УСТАРЕЛО: флейк впоследствии воспроизведён — 2 падения из ~738 — и исправлен, см. correctness RESOLVED-карточку 252).
+- Loom: 7/7 групп PASS. run-check-matrix: ALL GREEN (один flake-инцидент 0xC0000409 в oneclass_starts_map, 1 из 4, повторно не воспроизвёлся — 10/10 повторов PASS; зафиксирован честно; УСТАРЕЛО: флейк впоследствии воспроизведён — 2 падения из 805 прогонов (5+200+200+100+300) — и исправлен, см. correctness RESOLVED-карточку 252).
 - clippy 5/5; fmt-check RC=0; verify-*.mjs 13/15 RC=0, verify-structure-limits RC=0 (после переноса carve_batch в diag), verify-evidence-registry RED (УСТАРЕЛО: «stale-строки незакоммиченного merge — ожидаемо, реестр не правился» — неверно: 17 из 23 нарушений были вызваны D1′ и устранены правкой реестра — R-Ph3a-native/-iai superseded → R-D1P-01; остаток RED — только reverify-строки EV-1).
 - A-worktree удалён после замера.
 
@@ -513,6 +521,7 @@ A = port2-base (чистый origin/main 8da6402d + oc_mem_hooks_a3.patch, sha25
 | batchl | free Ir/блок | 140 |  | 140 | 0 | 0 % | free Δ ≤ +1 | GO |
 | thrash64 | alloc Ir/op | 22 |  | 22 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
 | thrash64 | free Ir/op | 81 |  | 84 | +3 | +3.7 % | Δ ≤ +1 Ir/op И EstCycles ≤ +1 % (Δcyc=3.1 %) | NO-GO |
+| thrash64 | free EstCycles | 90.3 |  | 93.1 | +2.8 | +3.1 % | EstCycles ≤ +1 % (точно 3.1 %) | NO-GO |
 
 ### Судья памяти port2 (ИЗМЕРЕНО; дословно вывод генератора)
 

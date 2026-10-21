@@ -6,6 +6,30 @@
 (генераторы: `scripts/b4_oneclass_port_table.mjs`; исторический генератор §1–§8 —
 `scripts/b4_oneclass_table.mjs`).
 
+## Driver-скрипты port2-комплекта (воспроизведение)
+
+Рабочие версии driver-скриптов, снявших port2-логи, — в этом каталоге:
+
+- `oc_mem_hooks_a3.patch` — instrumentation-патч плеча A port2
+  (sha256 `1ff7e14000bb078836d7e455732322b857192bcf69439d2e95cbb03c97c9a1ce`,
+  байт-в-байт оригинал из scratch-комплекта).
+- `oc_rem2_perf.sh` — драйвер callgrind-ячейки судьи hot-путей: пишет шапку
+  raw-лога (`identity:` / `features:` / `cmd:`), снимает маргинальные Ir и
+  дописывает RC в хвост лога.
+- `oc_rem2_memrun.sh` — драйвер memory-судьи (`zz_oc_mem_probe`, режимы
+  full/sparse/cold/deadpins): пишет шапку identity/features/cmd, строку
+  `MEM …` и RC; прокидывает probe-sha256.
+- `oc_rem2_tar.sh` — tar-снимок измеряемого дерева (write-tree/identity
+  свидетельство для плеча запуска).
+- `prof_win.sh` — Windows-обёртка запуска WSL-профилировщика из хост-сессии
+  (проброс `REPO`/`REPO_WSL`/`SCRATCH`).
+
+Примечание о probe-sha256 в mem-raw шапках: `probe-sha256=9daf6992…` в
+`_raw_b4_oneclass_port2-{a,b}-{full,sparse,cold,deadpins}.log` посчитан по
+CRLF-копии пробы на момент замера; LF-блоб `oc_mem_probe.rs` в коммите даёт
+sha256 `493d573e…`. Сами raw-логи не редактируются — оба хэша считаются
+корректным свидетельством одного блоба с разной нормализацией концов строк.
+
 ## Что чем мерить (судьи)
 
 | Ячейка | Скрипт | Probe | Судья |

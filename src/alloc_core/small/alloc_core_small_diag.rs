@@ -86,9 +86,9 @@ impl AllocCore {
     ///     lands on a fresh page, so this degrades to per-block correctly.
     ///
     /// ## D1 / boundary — preserved EXACTLY
-    ///   - Alloc bitmap: carve NEVER touches it (a bump-carved block is
-    ///     allocated by construction, not by a bitmap bit) — identical to
-    ///     `carve_block`.
+    ///   - Start/state byte (`segment::bitmap::state_byte`): carve NEVER
+    ///     touches it (a bump-carved block is allocated by construction, not
+    ///     by a state-byte transition) — identical to `carve_block`.
     ///   - D1: `+n` for the `n` blocks handed out.
     ///   - Boundary: `n = min(out.len(), room)` where
     ///     `room = (SEGMENT - aligned_start) / block_size`, so
@@ -403,6 +403,22 @@ impl AllocCore {
     #[cfg(feature = "lazy-commit-fault-injection")]
     pub fn dbg_arm_commit_fail_at(&self, k: u32) {
         aligned_vmem::fault_injection::arm_fail_at(k);
+    }
+
+    /// TEST-ONLY (P2-C vacuum guard, `r11_ph3a_magazine_refill_partial`):
+    /// cumulative count of real commit calls the armed injector actually
+    /// forced to fail since process start (both `dbg_arm_commit_fail` and
+    /// `dbg_arm_commit_fail_at` tiers; monotonic, never reset). Read-only
+    /// `Relaxed` load of `aligned_vmem::fault_injection`'s counter — lets a
+    /// test prove a refusal was actually consumed instead of passing
+    /// vacuously because the armed commit was never reached. Compiled only
+    /// under the TEST-ONLY `lazy-commit-fault-injection` fixture feature
+    /// (R2-19), same gating as [`Self::dbg_arm_commit_fail`].
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "lazy-commit-fault-injection")]
+    pub fn dbg_commit_fail_count(&self) -> u64 {
+        aligned_vmem::fault_injection::commit_failure_count()
     }
 
     /// TEST-ONLY (B2, R7 Workstream B): the `GROW_CHUNK` constant (bytes).

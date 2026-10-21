@@ -312,6 +312,20 @@ impl HeapCore {
         self.core.dbg_arm_commit_fail(n);
     }
 
+    /// TEST-ONLY (P2-C vacuum guard, `r11_ph3a_magazine_refill_partial`):
+    /// cumulative count of real commit calls the armed injector actually
+    /// forced to fail since process start — thin delegation to
+    /// `AllocCore::dbg_commit_fail_count`. Read-only `Relaxed` counter
+    /// load; exposed at the `HeapCore` level for the same reason as
+    /// `dbg_arm_commit_fail`. Same `lazy-commit-fault-injection` gating
+    /// as `dbg_arm_commit_fail`.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "lazy-commit-fault-injection")]
+    pub fn dbg_commit_fail_count(&self) -> u64 {
+        self.core.dbg_commit_fail_count()
+    }
+
     /// TEST-ONLY (task D3): the per-class refill amount `alloc`'s
     /// magazine-miss path actually uses for class `c` — i.e.
     /// `crate::registry::heap_core::state::tcache::refill_n_for_class(SizeClasses::block_size(c))`, the

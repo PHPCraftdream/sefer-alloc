@@ -1,0 +1,38 @@
+{
+  "id": "R0-17",
+  "registryActivationHash": "fdea229522edc3791e1750169f60c1f32541bbd7cb96e267a059e5ec3e01c535",
+  "steps": [
+    {
+      "name": "foreign terminal free strict trim — non-fastbin feature set",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals",
+        "--test",
+        "r6_terminal_owner_drain",
+        "--test",
+        "r8_owner_sidecar_miss",
+        "--test",
+        "r8_terminal_global"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test requested_sizes_one_through_seven_retire_once_and_reissue \\.\\.\\. ok",
+          "test public_trim_consumes_small_and_large_terminal_publications \\.\\.\\. ok",
+          "test result: ok\\. 7 passed; 0 failed",
+          "test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep \\.\\.\\. ok",
+          "test result: ok\\. 2 passed; 0 failed",
+          "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out",
+          "test fallback_direct_free_before_service_and_busy_terminal_publication \\.\\.\\. ok",
+          "test result: ok\\. 6 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

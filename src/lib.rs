@@ -253,7 +253,7 @@
 //                             the shard lock.
 //                             (under `alloc-global`)
 //      * `registry::segment_route::small_sidecar` — in-place construction of
-//                             pending atomics and the owner class map.
+//                             pending atomics and the start map.
 //                             (under `alloc-global`)
 //      * `alloc_core::segment::segment_table::route_slots` — System-backed,
 //                             owner-only non-Copy registration storage;

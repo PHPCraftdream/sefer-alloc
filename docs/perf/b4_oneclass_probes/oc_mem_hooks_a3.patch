@@ -1,0 +1,127 @@
+diff --git a/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs b/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs
+index 0c0aa125..29d6d2e3 100644
+--- a/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs
++++ b/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs
+@@ -554,6 +554,16 @@ impl AllocCore {
+         self.pool_cap as usize
+     }
+ 
++    /// MEASUREMENT-ONLY (B4 mem4 memory judge): the RESOLVED operative pool
++    /// byte bound = `pool_cap × SEGMENT`. Read-only; `bench-internals`-gated,
++    /// identical to the B shoulder hook.
++    #[doc(hidden)]
++    #[cfg(all(feature = "internals", feature = "bench-internals"))]
++    #[must_use]
++    pub fn dbg_pool_byte_cap_effective(&self) -> usize {
++        self.dbg_pool_cap() * crate::alloc_core::os::SEGMENT
++    }
++
+     /// TEST-ONLY (Mechanism 2, task #51): forcibly DRAIN the hysteresis pool —
+     /// release every pooled segment to the OS (reset + `table.recycle`) exactly
+     /// as the pool-full eviction path does. Returns the number of segments
+diff --git a/src/registry/heap_core/diag/queries.rs b/src/registry/heap_core/diag/queries.rs
+index 0dad3255..defe38e8 100644
+--- a/src/registry/heap_core/diag/queries.rs
++++ b/src/registry/heap_core/diag/queries.rs
+@@ -405,6 +405,22 @@ impl HeapCore {
+         self.core.dbg_pool_cap()
+     }
+ 
++    /// B4 mem4 memory judge: thin delegation to
++    /// [`AllocCore::dbg_pool_byte_cap_effective`] — the RESOLVED operative
++    /// pool byte bound (`pool_cap × SEGMENT`) for this heap, exposed at the
++    /// `HeapCore` level (same delegation pattern as `dbg_pool_cap` above).
++    /// Read-only; `bench-internals`-gated, identical to the B shoulder hook.
++    #[doc(hidden)]
++    #[cfg(all(
++        feature = "alloc-decommit",
++        feature = "bench-internals",
++        feature = "internals"
++    ))]
++    #[must_use]
++    pub fn dbg_pool_byte_cap_effective(&self) -> usize {
++        self.core.dbg_pool_byte_cap_effective()
++    }
++
+     /// R29-4 (task #435) MEASUREMENT-ONLY: thin delegation to
+     /// [`AllocCore::dbg_segment_state_reconciliation`] — exposed at the
+     /// `HeapCore` level (mirroring `dbg_pooled_count`'s / `dbg_pool_cap`'s
+diff --git a/src/registry/segment_route/directory.rs b/src/registry/segment_route/directory.rs
+index a1f4168d..b19c603c 100644
+--- a/src/registry/segment_route/directory.rs
++++ b/src/registry/segment_route/directory.rs
+@@ -727,6 +727,13 @@ impl Drop for Shard {
+ pub struct RouteDirectory {
+     shards: [ShardLock<Shard>; SHARDS],
+     next_incarnation: AtomicU64,
++    // Measurement-only counters: gated `all(internals, bench-internals)` —
++    // identical to the B shoulder (P2-1): plain production pays neither the
++    // fields nor the RMW.
++    #[cfg(all(feature = "internals", feature = "bench-internals"))]
++    registrations_total: AtomicU64,
++    #[cfg(all(feature = "internals", feature = "bench-internals"))]
++    unlinks_total: AtomicU64,
+ }
+ 
+ impl RouteDirectory {
+@@ -734,6 +741,10 @@ impl RouteDirectory {
+         Self {
+             shards: [const { ShardLock::new(Shard::empty()) }; SHARDS],
+             next_incarnation: AtomicU64::new(0),
++            #[cfg(all(feature = "internals", feature = "bench-internals"))]
++            registrations_total: AtomicU64::new(0),
++            #[cfg(all(feature = "internals", feature = "bench-internals"))]
++            unlinks_total: AtomicU64::new(0),
+         }
+     }
+ 
+@@ -881,6 +892,10 @@ impl RouteDirectory {
+                 .ok_or(RouteError::ProcessExiting)?;
+             let (need_block, index_cap) = match guard.insert(key, entry.ptr()) {
+                 Insert::Done => {
++                    // Measurement hook (read-only counter; Relaxed, never
++                    // read by production logic — identical to B shoulder).
++                    #[cfg(all(feature = "internals", feature = "bench-internals"))]
++                    self.registrations_total.fetch_add(1, Ordering::Relaxed);
+                     drop(guard);
+                     return Ok(RouteRegistration {
+                         directory: self,
+@@ -936,6 +951,27 @@ impl RouteDirectory {
+         pin.entry.entry().refs.load(Ordering::Relaxed)
+     }
+ 
++    /// Monotonic successful route registrations since directory construction.
++    /// MEASUREMENT-ONLY (mem4 memory judge): read-only Relaxed counter, never
++    /// read by production logic (identical to B shoulder).
++    #[doc(hidden)]
++    #[cfg(all(feature = "internals", feature = "bench-internals"))]
++    #[must_use]
++    pub fn dbg_registrations_total(&self) -> u64 {
++        self.registrations_total
++            .load(core::sync::atomic::Ordering::Relaxed)
++    }
++
++    /// Monotonic count of successful unlink operations on this directory.
++    /// Diagnostic only; production behavior never reads this counter
++    /// (identical to B shoulder).
++    #[doc(hidden)]
++    #[cfg(all(feature = "internals", feature = "bench-internals"))]
++    #[must_use]
++    pub fn dbg_unlinks_total(&self) -> u64 {
++        self.unlinks_total.load(core::sync::atomic::Ordering::Relaxed)
++    }
++
+     /// Only `ptr.addr()` is used as a key; no reservation byte is read.
+     pub fn lookup(&self, ptr: *mut u8) -> Option<RoutePin> {
+         #[cfg(feature = "bench-internals")]
+@@ -982,6 +1018,10 @@ impl RouteDirectory {
+         // ref drop after the lock; Release `linked = false` publishes the unlink.
+         let _retired = guard.remove(key, entry.ptr());
+         entry.entry().linked.store(false, Ordering::Release);
++        // Measurement hook (read-only counter; Relaxed, never read by
++        // production logic — identical to B shoulder).
++        #[cfg(all(feature = "internals", feature = "bench-internals"))]
++        self.unlinks_total.fetch_add(1, Ordering::Relaxed);
+         drop(guard);
+         true
+     }

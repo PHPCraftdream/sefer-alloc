@@ -17,7 +17,7 @@
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "8 passed; 0 failed",
+          "3 passed; 0 failed",
           "test owner_cut_is_acqrel_swap \\.\\.\\. ok"
         ]
       }
@@ -25,8 +25,8 @@
   ],
   "mutant": {
     "file": "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs",
-    "find": "        let pending = self\n            .pending\n            .next()\n            .unwrap_or_else(|| fatal(b\"bitmap_scan: sidecar scan iterator exhausted early\\n\"));\n        #[cfg(all(feature = \"bench-internals\", r18_sidecar_scan_bench))]\n        let baseline = BASELINE_SCAN.with(core::cell::Cell::get);\n        #[cfg(all(feature = \"bench-internals\", r18_sidecar_scan_bench))]\n        let (bits, empty, exchanged) = if baseline {\n            let bits = pending.swap(0, Ordering::AcqRel);\n            (bits, bits == 0, true)\n        } else if pending.load(Ordering::Acquire) == 0 {\n            (0, true, false)\n        } else {\n            (pending.swap(0, Ordering::AcqRel), false, true)\n        };\n        #[cfg(not(all(feature = \"bench-internals\", r18_sidecar_scan_bench)))]\n        // B4 (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): a zero word can never yield\n        // a record; read it plain and pay the RMW only when bits are present.\n        // The discovery scan is one-pass, so a bit published after this read\n        // was already outside this scan's reach under the unconditional swap —\n        // it stays pending for the next discovery scan or strict trim. Release\n        // is credit-gated (`dec_live_and_maybe_decommit`), so a skipped word is\n        // never lost.\n        let bits = if pending.load(Ordering::Acquire) == 0 {\n            0\n        } else {\n            #[cfg(all(feature = \"bench-internals\", not(r18_sidecar_scan_bench)))]\n            B4_PROD_SCAN_RMW.with(|count| {\n                if let Some(current) = count.get() {\n                    count.set(Some(current + 1));\n                }\n            });\n            pending.swap(0, Ordering::AcqRel)",
-    "replace": "        let pending = self\n            .pending\n            .next()\n            .unwrap_or_else(|| fatal(b\"bitmap_scan: sidecar scan iterator exhausted early\\n\"));\n        #[cfg(all(feature = \"bench-internals\", r18_sidecar_scan_bench))]\n        let baseline = BASELINE_SCAN.with(core::cell::Cell::get);\n        #[cfg(all(feature = \"bench-internals\", r18_sidecar_scan_bench))]\n        let (bits, empty, exchanged) = if baseline {\n            let bits = pending.swap(0, Ordering::Relaxed);\n            (bits, bits == 0, true)\n        } else if pending.load(Ordering::Acquire) == 0 {\n            (0, true, false)\n        } else {\n            (pending.swap(0, Ordering::Relaxed), false, true)\n        };\n        #[cfg(not(all(feature = \"bench-internals\", r18_sidecar_scan_bench)))]\n        // B4 (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): a zero word can never yield\n        // a record; read it plain and pay the RMW only when bits are present.\n        // The discovery scan is one-pass, so a bit published after this read\n        // was already outside this scan's reach under the unconditional swap —\n        // it stays pending for the next discovery scan or strict trim. Release\n        // is credit-gated (`dec_live_and_maybe_decommit`), so a skipped word is\n        // never lost.\n        let bits = if pending.load(Ordering::Acquire) == 0 {\n            0\n        } else {\n            #[cfg(all(feature = \"bench-internals\", not(r18_sidecar_scan_bench)))]\n            B4_PROD_SCAN_RMW.with(|count| {\n                if let Some(current) = count.get() {\n                    count.set(Some(current + 1));\n                }\n            });\n            pending.swap(0, Ordering::Relaxed)",
+    "find": "(pending.swap(0, Ordering::AcqRel), false, true)",
+    "replace": "(pending.swap(0, Ordering::Relaxed), false, true)",
     "steps": [
       {
         "name": "owner cut pin mutant",
@@ -44,7 +44,7 @@
           "exit": 101,
           "stdoutRegex": [
             "test owner_cut_is_acqrel_swap \\.\\.\\. FAILED",
-            "test result: FAILED\\. 7 passed; 1 failed"
+            "test result: FAILED\\. 2 passed; 1 failed"
           ]
         }
       }
@@ -53,7 +53,7 @@
       "exitNonZero": true,
       "stdoutRegex": [
         "test owner_cut_is_acqrel_swap \\.\\.\\. FAILED",
-        "test result: FAILED\\. 7 passed; 1 failed"
+        "test result: FAILED\\. 2 passed; 1 failed"
       ]
     }
   }

@@ -62,9 +62,15 @@ fn owner_issue_start_store_is_release() {
 
 #[test]
 fn owner_cut_is_acqrel_swap() {
-    let text = scan_src();
-    assert!(
-        text.contains(".swap(0, Ordering::AcqRel)"),
-        "the owner's word cut must be an AcqRel swap(0) (pairs with publish)"
+    // D1′ merge: `next_cut` now has THREE cut swap(0) sites (the r18 bench
+    // baseline path, its zero-word fast path and the plain production path).
+    // The pin must hold for EVERY site: weakening any single site to a weaker
+    // ordering is a mutant, not a refactor — a file-wide `contains` probe
+    // would stay green and let the R5b-14 mutant survive.
+    let body = fn_body(&scan_src(), "next_cut");
+    assert_eq!(
+        body.matches(".swap(0, Ordering::AcqRel)").count(),
+        3,
+        "every cut swap(0) in next_cut must stay AcqRel (pairs with publish):\n{body}"
     );
 }

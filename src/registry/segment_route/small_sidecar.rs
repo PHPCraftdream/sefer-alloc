@@ -89,15 +89,27 @@ impl SmallSidecar {
     /// System-side teardown of one fully initialized `SmallSidecar` (moved
     /// verbatim from `directory.rs`'s `free_sidecar` so that file stays at
     /// its 1000-line cap; last-pin release guarantees no reference remains).
-    pub(crate) fn dealloc_sidecar(sidecar: *mut SmallSidecar) {
-        // SAFETY: pointer is a fully initialized SmallSidecar from System;
-        // last-pin release ensures no remaining reference.
+    ///
+    /// # Safety
+    ///
+    /// `sidecar` MUST be a non-null, aligned pointer to a fully initialized
+    /// `SmallSidecar` that was produced by `System.alloc` with
+    /// `Layout::new::<SmallSidecar>()` (as `init_sidecar` does), and this
+    /// MUST be the last release of the sidecar: the last-pin drop of the
+    /// owning route entry must have already guaranteed that no reference
+    /// (pin, descriptor or reader) remains, so dropping in place is safe and
+    /// the deallocation matches the single prior allocation exactly.
+    /// `sidecar` must not be used again after this call.
+    pub(super) unsafe fn dealloc_sidecar(sidecar: *mut SmallSidecar) {
+        // SAFETY: `sidecar` is a fully initialized `SmallSidecar` from
+        // `System.alloc` and the last-pin release guarantees no remaining
+        // reference (see # Safety above).
         unsafe { ptr::drop_in_place(sidecar) };
         #[cfg(feature = "internals")]
         record_system_free(core::mem::size_of::<SmallSidecar>());
-        // SAFETY: pointer came from System.alloc with this exact Layout and
-        // was fully dropped by `drop_in_place` above.
         use std::alloc::{GlobalAlloc, System};
+        // SAFETY: `sidecar` came from `System.alloc` with this exact layout
+        // and was fully dropped by `drop_in_place` above (see # Safety).
         unsafe { System.dealloc(sidecar.cast(), core::alloc::Layout::new::<Self>()) };
     }
     /// Process-wide RouteSlots System totals: (arrays allocated, arrays freed,

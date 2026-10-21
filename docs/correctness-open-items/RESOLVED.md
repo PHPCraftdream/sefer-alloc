@@ -17,7 +17,7 @@ same-day item-number-range split. The split reversed item 86's
 
 ### 252 — CLOSED (2026-10-21)
 
-252. **[T] Flaky `tests/oneclass_starts_map.rs` T1: 0xC0000409/abort при unwind (1 из 4 в port-раунде, затем воспроизведён — 2 падения из ~738).** (Filed 2026-10-20 port-раунд; воспроизведён и закрыт 2026-10-21 fix-раундом.)
+252. **[T] Flaky `tests/oneclass_starts_map.rs` T1: 0xC0000409/abort при unwind (1 из 4 в port-раунде, затем воспроизведён — 2 падения из 805 прогонов (5+200+200+100+300).** (Filed 2026-10-20 port-раунд; воспроизведён и закрыт 2026-10-21 fix-раундом.)
 
     > **Current state**
     > - **Status:** CLOSED (2026-10-21) — детерминированный сегментный delta-оракул.

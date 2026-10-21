@@ -202,7 +202,7 @@ export function docTableMatches(docText, ciText) {
 }
 
 function selftest() {
-  const seam = new Set(['class_leaves_publication_miri']);
+  const seam = new Set(['segment_directory_a5_miri']);
   const P = (files, event = 'pull_request', labels = []) => plan({ files, event, labels, seamTests: seam });
   const on = r => Object.keys(r).filter(k => r[k]).sort().join(',');
   const heavy = ['seam', 'os'];
@@ -217,7 +217,7 @@ function selftest() {
   eq(on(P(['tests/foo_bar.rs'])), 'always,fast', 'ordinary test');
   eq(on(P(['benches/r20_prf01_controls_iai.rs', 'examples/e.rs'])), 'always,fast', 'bench+example');
   // test that appears in the loom/miri manifests or is named loom/miri: seam too.
-  eq(on(P(['tests/class_leaves_publication_miri.rs'])), 'always,fast,seam', 'miri test');
+  eq(on(P(['tests/segment_directory_a5_miri.rs'])), 'always,fast,seam', 'miri test');
   eq(on(P(['tests/loom_r20_prf01_summary_transition.rs'])), 'always,fast,seam', 'loom test');
   eq(on(P(['tests/numa_seam.rs'])), 'always,fast,os', 'numa test');
   // root src: fast + seam; platform dir adds os.

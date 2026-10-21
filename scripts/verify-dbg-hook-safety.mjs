@@ -185,11 +185,16 @@ const PURE_OBSERVERS = [
   // Non-panicking SegmentTable membership probe (canonical_root_for); read-only.
   "src/registry/heap_core/diag/queries.rs::dbg_segment_registered_for",
   "src/registry/heap_core/diag/queries.rs::dbg_table_count",
-  // D1-prime fix round 2: read-only frontier observer and the commit-fault
-  // arming forwarder (the injector itself is the reviewed
+  // D1-prime fix round 2: read-only frontier observer and the P2-C vacuum
+  // guard witness — a read-only Relaxed load of the injector's cumulative
+  // fired counter (the injector itself is the reviewed
   // lazy-commit-fault-injection fixture); no pointer retained, no allocation.
   "src/registry/heap_core/diag/queries.rs::dbg_committed_payload_end_for",
-  "src/registry/heap_core/diag/queries.rs::dbg_arm_commit_fail",
+  // P2-C vacuum guard: read-only Relaxed load of the injector's cumulative
+  // fired-failure counter; lets a test prove a refusal was actually consumed.
+  "src/registry/heap_core/diag/queries.rs::dbg_commit_fail_count",
+  // AllocCore-level forwarder of the same read-only fired-failure counter.
+  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_commit_fail_count",
   // D1-prime M-h oracle: read-only stage flag of the test-only carve-batch
   // window; numeric load, no pointer, no allocator state.
   "src/alloc_core/small/alloc_core_small_reclaim.rs::dbg_carve_batch_stage",
@@ -198,6 +203,21 @@ const PURE_OBSERVERS = [
 
 // Safe mutators: each retained reviewed invariant justification is authoritative.
 const SAFE_MUTATORS = [
+  // P3-10: NOT a pure observer — this is a forwarder to the real-path
+  // commit-failure injector (aligned_vmem::fault_injection::arm_fail_next,
+  // the reviewed TEST-ONLY lazy-commit-fault-injection fixture, R2-19):
+  // arming it mutates the fixture's process-wide FAULT_STATE so that the
+  // next real commit_pages calls are refused. It changes no allocator
+  // state, retains no pointer and performs no allocation, but it is a
+  // deliberate state mutator of the lazy-commit fixture and belongs here.
+  [
+    "src/registry/heap_core/diag/queries.rs::dbg_arm_commit_fail",
+    "forwarder to the real-path commit-failure injector " +
+      "(aligned_vmem::fault_injection::arm_fail_next, the reviewed TEST-ONLY " +
+      "lazy-commit-fault-injection fixture, R2-19): mutates the fixture's " +
+      "process-wide fault state so the next real commit_pages calls are " +
+      "refused; no allocator state, no pointer retained, no allocation"
+  ],
   [
     "src/global/sefer_alloc/diag.rs::dbg_background_maintenance_current_thread",
     "delegates only to the production bounded background_maintenance_step for current_for_trim's current-thread exclusive live HeapCore; no FREE-slot lease or lifecycle mutation; bench-internals + internals gated"
@@ -465,7 +485,7 @@ export const REVIEWED_SURFACE = [
     ['src/alloc_core/large/alloc_core_large_cache_eviction.rs', ['terminal_cached_large_state_for_test'], 'observer', 'owner cache terminal snapshot'],
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['terminal_header_layout_for_test', 'terminal_header_snapshot_for_test', 'terminal_primordial_snapshot_for_test', 'terminal_next_generation_for_test'], 'observer', 'checked header layout/state and generation geometry'],
     ['src/concurrent/sharded/sharded_region.rs', ['_set_remote_free_hint_for_tests'], 'mutator', 'advisory hint only; real queue remains authoritative'],
-    ['src/registry/segment_route/pin.rs', ['dbg_small_sidecar_for_test'], 'mutator', 'test-only forwarder to the pinned route sidecar whose entire test surface is the reviewed doc-hidden issue_for_test hook; the consuming publish_small path stays the only producer entry and the owner-only issue remains pub(crate)'],
+    ['src/registry/segment_route/pin.rs', ['dbg_small_sidecar_for_test'], 'mutator', 'test-only forwarder to the pinned route sidecar. The &SmallSidecar it hands out exposes MORE than the reviewed issue_for_test hook: dbg_unset_start_bit_for_test (single-writer unset that arms the reclaim start-bit-0 fatal lane), issue_for_test itself — a SECOND writer of the owner start bit whose load→or→store is not a single RMW, so a non-owner issue racing the owner can lose the owner\'s start-bit set, after which reclaim goes fatal on the published record (a liveness/abort hazard, NOT UB; the unsafe owner_state_for_test boundary stays pub(crate)) — and pub fn scan(), which on a dropped sidecar loses free of any start bits cut by a racing unset. Every reachable hazard is therefore liveness or abort, not memory unsafety: the pinned borrow is live only while the caller holds it, no pointer escapes, and no allocation occurs; the consuming publish_small path stays the only producer entry'],
     ['src/registry/segment_route/pin.rs', ['dbg_publish_cached_for_test'], 'unsafe', 'entry into the production cached fast path; the address must be the caller’s CURRENT issued Small/Primordial allocation — publication consumes ownership once, and a bare address never establishes it (publishing a foreign live address forces the owner to reclaim a live instance: UAF by construction)'],
     ['src/registry/segment_route/pin.rs', ['dbg_cache_insert_for_test'], 'mutator', 'inserts caller-looked-up pin; no publish/reclaim obligation'],
     ['src/registry/segment_route/pin.rs', ['dbg_route_pin_cache_totals'], 'observer', 'pure Relaxed counter snapshot'],
