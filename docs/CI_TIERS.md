@@ -19,12 +19,20 @@ on a schedule and on demand.
   ARCHITECTURE and `ci.yml`. A documents-only change still cannot publish a stale count.
 - Concurrency: a newer push to the same PR cancels the older run (`cancel-in-progress` only for
   `pull_request`; main, schedule and dispatch runs are never cancelled).
+- `licenses` (license compatibility, plus cargo-deny `bans` and `sources`) is always on, but its check
+  runs only when the dependency set changed since a run that passed. `scripts/license-check-fingerprint.mjs`
+  hashes every input the verdict depends on: `Cargo.lock`, `deny.toml`, the workspace members'
+  name/version/license/license-file/publish, the cargo-deny version, the `licenses` job text and the script
+  itself. A pass stores an Actions-cache marker keyed `license-check-<fingerprint>`; a run that finds the
+  marker skips the check and says so in its step summary. A miss (a new dependency set, or an evicted
+  marker) runs the check. Pull-request caches are visible only to that pull request, so `main` keeps its own
+  markers. Advisories stay in `deny` on every run: the advisory database moves without the graph changing.
 
 ## Groups
 
 | Group | Selected by (changed path) |
 |---|---|
-| `always` | every change: fmt, commit-prefix-lint, evidence-registry, deny, docs-consistency |
+| `always` | every change: fmt, commit-prefix-lint, evidence-registry, deny, licenses, docs-consistency |
 | `fast` | `src/**`, `crates/**`, `tests/**`, `benches/**`, `examples/**`, `fuzz/**`, `Cargo.*`, build scripts (`check-matrix`, `run-check-matrix`, `lib`, `check-all`), and any unrecognised path |
 | `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests |
 | `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**`, tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`) |
@@ -82,10 +90,11 @@ the smoke row covers those scenarios.
 |---|---|---|
 | `changes` | plan (which job groups this change needs) | every change |
 | `commit-prefix-lint` | commit-prefix-lint (R30-12 taxonomy, PR range + pushed range) | every change |
-| `deny` | cargo-deny (advisories + licenses) | every change |
+| `deny` | cargo-deny advisories | every change |
 | `docs-consistency` | docs consistency (always) | every change |
 | `evidence-registry` | evidence-registry | every change |
 | `fmt` | rustfmt | every change |
+| `licenses` | license compatibility (only when dependencies changed) | every change |
 | `check-matrix` | check-matrix (manifest-driven, non-clippy rows) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `clippy` | clippy | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `docs` | rustdoc | `fast`: source, tests, benches, examples, fuzz, build scripts |
