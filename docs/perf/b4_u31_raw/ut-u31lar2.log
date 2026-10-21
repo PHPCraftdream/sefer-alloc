@@ -1,0 +1,10 @@
+git_diff_sha256 512508e8a7ba2b91682ec33ed905f899e4c50e4095db881746ea1799d2a82ec7
+bin ~/ab/tgt-ut-u31lar2/release/examples/ut_larson_probe2
+workload larson threads 1 steps 100000
+IR_TOTAL larson t1 30352132
+SELF_IR scan.rs=8056 bitmap_scan.rs=400692 sum=408748 total=30352132
+ATTR_TOTALS RESIDUAL annotated=17875858 program=30352132 uncovered=12476274
+   613,467 ( 2.02%)  ut-u31lar2/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [~/ab/tgt-ut-u31lar2/release/examples/ut_larson_probe2]
+     1,272 ( 0.00%)  ut-u31lar2/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+     1,166 ( 0.00%)  ut-u31lar2/src/alloc_core/segment/segment_table/active_kind_index.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+COUNTERS {"workload":"larson","steps":100000,"u31_scan_segments":107,"u31_holders_base":107,"u31_scan_no_pending":106}

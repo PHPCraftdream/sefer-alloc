@@ -225,7 +225,21 @@ impl RouteSlots {
         if route.root() != base {
             fatal(b"route_slots: scan base does not match route root\n");
         }
-        route.small_sidecar()?.scan_from(high_water, word)
+
+        let sidecar = route.small_sidecar()?;
+        // B4 U31 trigger observer (OPEN_ITEMS item 90): pure Relaxed
+        // fetch_adds; no RMW on `Entry.refs` and no ordering effect on the
+        // scan path. Base `refs` is 1 (owner reference); == 1 means no pins
+        // (including R1 TLS pin-cache pins) are held anywhere.
+        #[cfg(feature = "bench-internals")]
+        {
+            use core::sync::atomic::Ordering;
+            crate::alloc_core::B4_U31_SCAN_SEGMENTS.fetch_add(1, Ordering::Relaxed);
+            if route.dbg_entry_refs_relaxed() == 1 {
+                crate::alloc_core::B4_U31_SCAN_HOLDERS_BASE.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        sidecar.scan_from(high_water, word)
     }
 
     pub(super) fn claim_large_pending(&self, index: usize, base: *mut u8) -> bool {

@@ -41,7 +41,7 @@ struct DirectoryCandidateContext {
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use super::super::sidecar_drain_outcome::SidecarDrainOutcome;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use crate::alloc_core::alloc_core::{DiscoverySummaryObserver, DrainEnd};
+use crate::alloc_core::alloc_core::{DrainEnd, U31NoPendingObserver};
 
 impl AllocCore {
     /// Carve one fresh block of `class_idx` for the caller, plus a refill
@@ -161,6 +161,11 @@ impl AllocCore {
         #[cfg(feature = "bench-internals")]
         {
             crate::alloc_core::B4_SCAN_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            // Discovery-path scan (drain_segment_sidecar); same set over
+            // which B4_U31_SCAN_NO_PENDING is counted — denominator of the
+            // U31 no-pending upper bound.
+            crate::alloc_core::B4_U31_DISCOVERY_SCANS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             crate::alloc_core::B4_SCAN_WORDS.fetch_add(
                 (end_word - start_word) as u64,
                 core::sync::atomic::Ordering::Relaxed,
@@ -178,8 +183,13 @@ impl AllocCore {
             crate::alloc_core::remote_bitmap::BitmapScan::count_routed_scan();
             #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
             crate::alloc_core::remote_bitmap::Prf01SidecarOracle::constructed();
-            Self::consume_small_cuts(base, scan, DiscoverySummaryObserver::default())
+            Self::consume_small_cuts(base, scan, U31NoPendingObserver::default())
         };
+        // NO_PENDING is NOT keyed off `changed_classes == 0`: a nonzero word
+        // whose records are all already FREE/MAG in the state byte yields
+        // zero changed classes while pending bits existed. The exact
+        // "whole scan saw zero nonzero pending words" condition fires inside
+        // `U31NoPendingObserver::finish` above.
         if changed_classes == 0 {
             return SidecarDrainOutcome::Skipped;
         }

@@ -1,0 +1,10 @@
+git_diff_sha256 512508e8a7ba2b91682ec33ed905f899e4c50e4095db881746ea1799d2a82ec7
+bin ~/ab/tgt-ut-u31ms2/release/examples/ut_larson_probe2
+workload mstress threads 1 steps 100000
+IR_TOTAL mstress t1 40081140
+SELF_IR scan.rs=6232 bitmap_scan.rs=266714 sum=272946 total=40081140
+ATTR_TOTALS RESIDUAL annotated=26288472 program=40081140 uncovered=13792668
+   409,446 ( 1.02%)  ut-u31ms2/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [~/ab/tgt-ut-u31ms2/release/examples/ut_larson_probe2]
+       984 ( 0.00%)  ut-u31ms2/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+       902 ( 0.00%)  ut-u31ms2/src/alloc_core/segment/segment_table/active_kind_index.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+COUNTERS {"workload":"mstress","steps":100000,"u31_scan_segments":83,"u31_holders_base":83,"u31_scan_no_pending":82}

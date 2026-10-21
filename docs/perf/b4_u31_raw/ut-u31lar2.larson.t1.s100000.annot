@@ -1,0 +1,41 @@
+--------------------------------------------------------------------------------
+Profile data file 'ut-u31lar2.larson.t1.s100000.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 5109720
+Trigger: Program termination
+Profiled target:  ~/ab/tgt-ut-u31lar2/release/examples/ut_larson_probe2 sefer larson 100000 (PID 630, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                  
+--------------------------------------------------------------------------------
+30,352,132 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                   file:function
+--------------------------------------------------------------------------------
+29,848,668 (98.34%)  ./nptl/./nptl/pthread_create.c:start_thread [/usr/lib/x86_64-linux-gnu/libc.so.6]
+29,810,897 (98.22%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread/unix.rs:<std::sys::thread::unix::Thread>::new::thread_start [~/ab/tgt-ut-u31lar2/release/examples/ut_larson_probe2]
+29,807,141 (98.20%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/boxed.rs:<std::sys::thread::unix::Thread>::new::thread_start
+29,807,137 (98.20%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:<std::thread::lifecycle::spawn_unchecked<malloc_bench_rs::run_with<sefer_alloc::global::sefer_alloc::core::SeferAlloc, malloc_bench_rs::run<sefer_alloc::global::sefer_alloc::core::SeferAlloc>::{closure#0}>::{closure#0}, (u64, std::sync::mpsc::Receiver<malloc_bench_rs::Block>, std::time::Instant, std::time::Instant)>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} [~/ab/tgt-ut-u31lar2/release/examples/ut_larson_probe2]
+29,807,068 (98.20%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/lifecycle.rs:<std::thread::lifecycle::spawn_unchecked<malloc_bench_rs::run_with<sefer_alloc::global::sefer_alloc::core::SeferAlloc, malloc_bench_rs::run<sefer_alloc::global::sefer_alloc::core::SeferAlloc>::{closure#0}>::{closure#0}, (u64, std::sync::mpsc::Receiver<malloc_bench_rs::Block>, std::time::Instant, std::time::Instant)>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+# TRUNCATED — kept the callgrind_annotate header and every line containing '::find_segment_with_free_impl' (the only lines scripts/b4_u31_trigger_table.mjs reads from this file); full output reproducible via callgrind_annotate --inclusive=yes on the out-file named in the matching .log
+   613,467 ( 2.02%)  ut-u31lar2/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [~/ab/tgt-ut-u31lar2/release/examples/ut_larson_probe2]
+     1,272 ( 0.00%)  ut-u31lar2/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+     1,166 ( 0.00%)  ut-u31lar2/src/alloc_core/segment/segment_table/active_kind_index.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+       318 ( 0.00%)  ut-u31lar2/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+       318 ( 0.00%)  ut-u31lar2/src/alloc_core/segment/segment_table/active_kind_ops.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+       318 ( 0.00%)  ut-u31lar2/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+       212 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+       212 ( 0.00%)  ut-u31lar2/src/alloc_core/segment/segment_layout.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+       106 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+613,467 ( 2.02%)  => ut-u31lar2/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl (106x)

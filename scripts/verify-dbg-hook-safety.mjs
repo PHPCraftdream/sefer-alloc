@@ -59,6 +59,8 @@ const PURE_OBSERVERS = [
   "src/global/fallback.rs::dbg_exit_lock_giveups",
   // Read-only Relaxed descriptor count; the borrowed RoutePin retains its lifetime.
   "src/registry/segment_route/directory.rs::dbg_route_pin_refs",
+  // Read-only Relaxed load of Entry.refs through the owner-held RouteRegistration's own EntryHandle; no address-keyed lookup, no pointer dereference beyond the already-owned entry.
+  "src/registry/segment_route/registration.rs::dbg_entry_refs_relaxed",
   "crates/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
   "crates/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
   "crates/once-ptr-cell/src/imp.rs::dbg_is_ready",

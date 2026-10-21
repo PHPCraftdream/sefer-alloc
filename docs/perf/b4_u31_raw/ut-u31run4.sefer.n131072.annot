@@ -1,0 +1,41 @@
+--------------------------------------------------------------------------------
+Profile data file 'ut-u31run4.sefer.n131072.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 31151766
+Trigger: Program termination
+Profiled target:  ~/ab/tgt-ut-u31run4/release/examples/ut_u31_probe sefer 131072 (PID 463, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                   
+--------------------------------------------------------------------------------
+105,000,655 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                    file:function
+--------------------------------------------------------------------------------
+105,000,655 (100.0%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+104,762,345 (99.77%)  ???:(below main) [~/ab/tgt-ut-u31run4/release/examples/ut_u31_probe]
+104,762,333 (99.77%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+104,625,866 (99.64%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+104,595,544 (99.61%)  ???:main [~/ab/tgt-ut-u31run4/release/examples/ut_u31_probe]
+# TRUNCATED — kept the callgrind_annotate header and every line containing '::find_segment_with_free_impl' (the only lines scripts/b4_u31_trigger_table.mjs reads from this file); full output reproducible via callgrind_annotate --inclusive=yes on the out-file named in the matching .log
+ 77,105,139 (73.43%)  ut-u31run4/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [~/ab/tgt-ut-u31run4/release/examples/ut_u31_probe]
+     98,304 ( 0.09%)  ut-u31run4/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+     90,112 ( 0.09%)  ut-u31run4/src/alloc_core/segment/segment_table/active_kind_index.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+     24,576 ( 0.02%)  ut-u31run4/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+     24,576 ( 0.02%)  ut-u31run4/src/alloc_core/segment/segment_table/active_kind_ops.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+     24,576 ( 0.02%)  ut-u31run4/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+     16,384 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+     16,384 ( 0.02%)  ut-u31run4/src/alloc_core/segment/segment_layout.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+      8,192 ( 0.01%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+77,105,139 (73.43%)  => ut-u31run4/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl (8,192x)

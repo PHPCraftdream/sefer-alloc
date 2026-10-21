@@ -1886,6 +1886,18 @@ name = "r19_prf02_production_iai"
 harness = false
 required-features = ["production", "internals"]
 
+# B4-29 (U31 trigger): the PRF01 growth16 discovery-scale axis
+# (n = 32768/65536/131072 16 B blocks), SeferAlloc vs mimalloc, as its own iai
+# target so `perf_gate_iai` (a frozen baseline file) does not grow. The Sefer
+# arms reuse the shared `benches/support/r19_prf01.rs` workload body; the
+# mimalloc arms mirror it op-for-op through mimalloc's `GlobalAlloc` impl.
+# `bench-internals`/`internals` mirror `perf_gate_iai`: the same B4_* observer
+# counters are read alongside these cells (growth16 discovery oracle).
+[[bench]]
+name = "b4_u31_trigger_iai"
+harness = false
+required-features = ["alloc-global", "bench-internals", "internals"]
+
 # PRF-01 strict trim uses the production routed heap, counter oracle and internals.
 [[test]]
 name = "r20_strict_trim_payload_start"
