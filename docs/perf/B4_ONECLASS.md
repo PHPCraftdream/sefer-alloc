@@ -557,3 +557,107 @@ A = port2-base (чистый origin/main 8da6402d + oc_mem_hooks_a3.patch, sha25
 ### Сравнение port vs port2
 
 Числа port2 практически байт-в-байт совпадают с port. Единственный сдвиг: A aoc c16/c64 alloc 21→22 (в пределах порога Δ ≤ +1, вердикты GO без изменений). Verdict-картина port2 идентична port: mstress/larson/ao/aoc/batch* — GO; thrash64 free Ir/op +3 (+3.7 %) и free EstCycles +3.1 % — NO-GO без изменений; foreign −2 при цели ≤ −4 — FAIL-THRESHOLD без изменений. В memory-судье sidecar +48 896 Б и per-freed-pin +24 448 Б (+59 %) воспроизведены без изменений; RSS deadpins в port2 — +200 КиБ (2440→2640) против +264 КиБ в port-таблице выше (колебание RSS, вывод не меняет).
+
+## fix8 (CI iai A/B PR #94): +24k Ir фиксированной стоимости первой регистрации — устранён (fresh anonymous OS mapping для sidecar backing)
+
+### Контекст
+
+Точный CI iai A/B PR #94 (A = main `8da6402d`, B = `263ffc87`, production
+bench-internals internals): почти каждая ячейка платила фиксированные
+≈ +24 000 Ir, включая чисто Large-пути (`large_alloc_free_cycle` +24 441),
+многосегментные — кратно (`multiseg_cold_256k` +62 796,
+`decomp_full_cycle_8x` +335 735). Файлы: CI iai CSV/verdict артефакты PR #94
+(A/B-таблицы iai-callgrind). Атрибуция (локальный callgrind A/B, метод:
+scratch-копии через `git archive`, probe-пример, `valgrind --tool=callgrind
+--dump-instr=no --collect-atstart=yes`): механизм — новый банк `starts`
+(`[AtomicU64; 4096]`, 32 КиБ) в `SmallSidecar`
+(`src/registry/segment_route/small_sidecar.rs:34-42`), зануляемый вместе с
+`pending` явными циклами в `initialize_at` (там же, `:140-158`), вызываемым из
+`EntryHandle::new` (`src/registry/segment_route/directory.rs:55-70`) на КАЖДУЮ
+регистрацию: A занулял ≈41 КиБ (pending + ленивые ClassLeaves-заголовок),
+B ≈65.5 КиБ → `__memset_avx2_unaligned_erms` +24 448 Ir под
+`register_route` на регистрацию (self, small-ячейка: 41 321 → 65 769).
+
+### Фикс (дифф-описание)
+
+`SmallSidecar` backing больше НЕ heap-чанк `System.alloc` с явным memset:
+- `small_sidecar.rs`: новый `SmallSidecar::alloc_and_init()` — на нативных
+  таргетах backing = СВЕЖЕЕ анонимное ОС-отображение 69 632 Б
+  (`aligned_vmem::reserve_aligned`, align 4 КиБ; 65 536 Б банков + страница
+  подзапаса с `ReservationHeader` — сырой triple `into_parts` для
+  симметричного `aligned_vmem::release` в `dealloc_sidecar`). Zero-гарантия:
+  Linux anonymous `mmap` zero-fill on first touch; Windows
+  `MEM_RESERVE | MEM_COMMIT` demand-zero — тот же аргумент, что F7-аудит
+  `reserve.rs` для свежих сегментов. Ключевое: нулевое состояние — свойство
+  САМОГО отображения, а не истории сегмента, поэтому инвариант «оба банка
+  нулевые на момент публикации регистрации» выполняется на ВСЕХ путях
+  (virgin reserve, decommit-reset reuse, release→re-reserve, повторная
+  регистрация после unlink) БЕЗ ветвления по virgin/reuse. Там, где ОС-нуль
+  недоступен (`miri` — vmem aperture это `System.alloc`; `cfg(loom)` —
+  source-included harness), сохранён прежний путь `System.alloc` +
+  явный `initialize_at` (обнуление обязательно). Явное обнуление сегментных
+  путей не тронуто: `decommit_empty_segment_impl` по-прежнему делает свой
+  scoped reset; пул-reuse не трогает sidecar (запись живёт в route entry).
+  Новых `unsafe`-блоков — четыре (`alloc_and_init` запись хедера,
+  `dealloc_sidecar` чтение хедера + release, приведение `System.alloc.cast`),
+  каждый с `// SAFETY:`-доказательством в коде.
+- `directory.rs` (`EntryHandle::new`): Small/Primordial-плечо сведено к
+  `SmallSidecar::alloc_and_init().cast::<u8>()`; файл стал короче (989 строк,
+  лимит 1000, ratchet-базлайн не поднят — verify-structure-limits RC=0).
+- `tests/r6_t40_sidecar_system_alloc.rs`: контракт обновлён (backing
+  засчитывается как zeroed на нативных таргетах; miri — explicit zeroing).
+  Функциональная часть (issue/publish-фильтр) без изменений.
+- Отвергнутый вариант владельца `System.alloc_zeroed`: НЕ работает на glibc —
+  65 552 Б чанка < mmap-порога 128 КиБ → chunk из main arena → glibc
+  ОБЯЗАН занулять memset'ом (что и видно в атрибуции: 41–65 КиБ memset под
+  calloc-узлом `register_route`).
+
+### Замер A/B (тот же метод, что атрибуция; WSL, callgrind, процесс целиком)
+
+Генератор чисел: scratch-скрипты `runall.sh`/`tot.sh`/`collect_raw.sh`
+(плейсхолдер `${REPO_WSL}`); raw:
+`docs/perf/_raw_b4_oneclass_fix8_callgrind_ab.log`.
+
+| ячейка (probe) | A Ir | B (fix) Ir | Δ | фикс. доплата |
+|---|---|---|---|---|
+| small_churn_16b | 368,353 | 326,688 | **−41,665** | нет (отрицательная) |
+| large_alloc_free_cycle | 364,401 | 323,195 | **−41,206** | нет |
+| dealloc_free_only_1088_n256 | 505,599 | 447,990 | **−57,609** | нет |
+| multiseg_cold_256k (64×256 КиБ, cold) | 466,295 | 424,936 | **−41,359** | нет |
+
+memset-самозатраты sidecar: A 41,321 / B 208 (small), A 41,371 / B 258
+(large), A 50,042 / B 8,929 (dealloc256 — остаток = легитимный scoped
+state-byte zeroing `decommit_empty_segment_impl`, НЕ sidecar), A 42,914 /
+B 1,801 (multiseg). Фиксированная доплата B−A ≤ +500 Ir — ВЫПОЛНЕНА с
+запасом (≈ −41k на ячейку); маржинальные выигрыши D1′ (carve-путь) не
+тронуты — пути `try_carve_batch`/`refill_magazine_slow` не менялись.
+
+### Проверки (Windows, изолированный CARGO_TARGET_DIR; все RC=0)
+
+| команда | features | результат |
+|---|---|---|
+| cargo test --test oneclass_starts_map | production,internals,bench-internals | 5 passed |
+| cargo test --test oneclass_mutant_battery | alloc-global,alloc-xthread,internals,bench-internals,alloc-decommit,fastbin,alloc-stats | 9 passed |
+| cargo test --test oneclass_carve_batch_early_publication | те же | 1 passed |
+| cargo test --test r6_class_issue | alloc-global,internals,alloc-stats | 3 passed |
+| cargo test --test r6_route_directory | alloc-global,internals,alloc-stats | 9 passed |
+| cargo test --test r11_ph5b_c5_sidecar_ordering_pinned | production | 3 passed |
+| cargo test --test r6_t40_sidecar_system_alloc | production,internals,bench-internals | 1 passed (обновлён) |
+| cargo test --test release_graph_no_fault_injection | production,internals,bench-internals | 2 passed |
+| cargo test --test small_segment_pool | +alloc-decommit… | 11 passed |
+| cargo test --test reclaim_mag_quiet_noop | +alloc-decommit… | 1 passed |
+| cargo test --test phase13_drain_reclaim_layout_class | +alloc-decommit… | 0 passed (0 assertions в конфигурации) |
+| cargo test --test no_stale_doc_references | alloc-stats | 32 passed |
+| node scripts/fmt-check.mjs | — | RC=0 |
+| cargo clippy ×5 (all-targets; lib numa-aware internals; production…; hardened…; all-features) | — | RC=0 ×5 |
+| node scripts/verify-structure-limits.mjs / verify-dbg-hook-safety / verify-perf-gate-stubs | — | RC=0 |
+| loom (WSL, RUSTFLAGS=--cfg loom, --release): loom_sidecar_bitmap / loom_sidecar_bitmap_actual / loom_oneclass_small_sidecar_actual / loom_oneclass_start_bit | alloc-core,alloc-xthread,tagged-index-stack/loom | 1+3+3+7 passed, RC=0 |
+
+### Вывод
+
+Цель «фиксированная доплата ≤ +500 Ir на ячейку» достигнута с запасом
+(измерено ≈ −41k Ir на ячейку на тех же ячейках, что атрибуция и CI);
+гарантии не ослаблены: инвариант нулевых банков на публикацию сохранён на
+всех путях регистрации (ОС-нуль свежего отображения / явное зануление под
+miri+loom), негативные мутант-тесты, retain-reset T4, decommit-reset,
+release-граф и loom-батареи зелёные. Готово к CI iai A/B перезапуску владельцем.

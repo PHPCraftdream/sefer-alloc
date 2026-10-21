@@ -54,20 +54,12 @@ impl EntryHandle {
     ) -> Result<Self, RouteError> {
         let sidecar = match kind {
             RouteKind::Small | RouteKind::Primordial => {
-                // SAFETY: System is independent of the installed allocator; the
-                // span stays private until `initialize_at` builds every atomic.
-                let ptr = unsafe { System.alloc(Layout::new::<SmallSidecar>()) };
-                if !ptr.is_null() {
-                    #[cfg(feature = "internals")]
-                    super::small_sidecar::record_system_alloc(
-                        Layout::new::<SmallSidecar>().size(),
-                        false,
-                    );
-                    // SAFETY: fresh private storage has SmallSidecar's exact
-                    // layout; in-place construction initializes every atomic.
-                    unsafe { SmallSidecar::initialize_at(ptr.cast()) };
-                }
-                ptr
+                // fix8: `alloc_and_init` returns fully constructed storage —
+                // native targets: fresh anonymous OS mapping (demand-zero
+                // pages, so both banks are all-zero without any explicit
+                // zeroing, on EVERY registration path); miri/loom: System
+                // alloc + explicit `initialize_at`. Null on OOM.
+                SmallSidecar::alloc_and_init().cast::<u8>()
             }
             RouteKind::Large => {
                 // SAFETY: System returns a properly aligned allocation for
