@@ -11,6 +11,8 @@ function isForbidden(file) {
   return (
     exactForbidden.has(file) ||
     file.startsWith('docs/perf/_raw_tis_p3_ab_') ||
+    file.startsWith('docs/perf/_raw_b4_30_') ||
+    file.startsWith('docs/perf/b4_30_probes/') ||
     /^docs\/perf\/TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_.+\.csv$/.test(file)
   );
 }

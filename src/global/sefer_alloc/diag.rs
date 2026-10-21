@@ -51,6 +51,34 @@ impl SeferAlloc {
         ]
     }
 
+    /// B4 U31 trigger observer (OPEN_ITEMS item 90): [0] = routed Small
+    /// scans past route validation, ALL sites (`B4_U31_SCAN_SEGMENTS`), [1] =
+    /// of those, scans whose `Entry.refs` equaled the base value 1 — a
+    /// SECONDARY slice snapshotting CURRENT holders (base), NOT evidence of
+    /// "no pins published since the previous scan" (`publish_small` returns
+    /// `refs` to base on release) (`B4_U31_SCAN_HOLDERS_BASE`), [2] =
+    /// discovery scans whose ENTIRE routed segment scan found no nonzero
+    /// pending word (fired from `U31NoPendingObserver`, NOT from
+    /// `changed_classes == 0` — see `B4_U31_SCAN_NO_PENDING`), [3] =
+    /// discovery scans (`drain_segment_sidecar`) — the exact same set as
+    /// [2]; upper bound of the U31 skip benefit is [2]/[3]
+    /// (`B4_U31_DISCOVERY_SCANS`). Diagnostic only (Relaxed).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_b4_u31_scan_counters() -> [u64; 4] {
+        use crate::alloc_core::{
+            B4_U31_DISCOVERY_SCANS, B4_U31_SCAN_HOLDERS_BASE, B4_U31_SCAN_NO_PENDING,
+            B4_U31_SCAN_SEGMENTS,
+        };
+        use core::sync::atomic::Ordering;
+        [
+            B4_U31_SCAN_SEGMENTS.load(Ordering::Relaxed),
+            B4_U31_SCAN_HOLDERS_BASE.load(Ordering::Relaxed),
+            B4_U31_SCAN_NO_PENDING.load(Ordering::Relaxed),
+            B4_U31_DISCOVERY_SCANS.load(Ordering::Relaxed),
+        ]
+    }
+
     /// B4 §11 test-only: this thread's current heap's discovery-cursor slot
     /// for `class_idx` (`None` = no heap bound or no cursor recorded).
     #[doc(hidden)]

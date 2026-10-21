@@ -1869,6 +1869,26 @@ jobs:
       - name: test (--features production)
         if: ${{ !cancelled() }}
         run: cargo test --features "production internals" --no-fail-fast # #137: the recommended flagship config (fastbin + decommit)
+      # B4-30 fix7: first-alloc stack budget, differential self-measurement,
+      # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
+      - name: b4-30 first-alloc stack budget (production internals, linux)
+        if: ${{ !cancelled() }}
+        env:
+          SEFER_B4_30_ENFORCE: '1'
+        run: |
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-release.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-prodint-release.log"
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-release.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-prodint-release.log"
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-release.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-prodint-release.log"
+        shell: bash
       # Direct child mode exposes the real ownerless oracle after the final
       # user frees: no alloc, registry claim or artificial worker wakeup.
       # Exact single-test isolation keeps nocapture output sentinel-safe.
@@ -2027,6 +2047,26 @@ jobs:
       - name: test (--all-features)
         if: ${{ !cancelled() }}
         run: cargo test --all-features --no-fail-fast
+      # B4-30 fix7: first-alloc stack budget, differential self-measurement,
+      # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
+      - name: b4-30 first-alloc stack budget (--all-features, linux)
+        if: ${{ !cancelled() }}
+        env:
+          SEFER_B4_30_ENFORCE: '1'
+        run: |
+          cargo test --all-features --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          cargo test --all-features --release --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-release.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-allfeat-release.log"
+          cargo test --all-features --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          cargo test --all-features --release --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-release.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-allfeat-release.log"
+          cargo test --all-features --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          cargo test --all-features --release --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-release.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-allfeat-release.log"
+        shell: bash
       # task #1288: `--all-features` above no longer activates numa-shim's mock
       # backend (the `mock` Cargo feature is gone — replaced by the build-time
       # `--cfg numa_shim_mock`), so the six `numa-aware-mock` mock-gated root
@@ -2250,6 +2290,28 @@ jobs:
           node-version: '22'
       # `internals` added (R34-3/task #522) — whole-suite row.
       - run: cargo test --features "production internals" --no-fail-fast
+      # B4-30 fix7: first-alloc stack budget, differential self-measurement,
+      # enforced (SEFER_B4_30_ENFORCE=1). NIGHTLY/OS GROUP ONLY: test-windows is
+      # gated by changes.outputs.os, so per-PR coverage for this Windows cell
+      # does not exist.
+      - name: b4-30 first-alloc stack budget (production internals, windows)
+        if: ${{ !cancelled() }}
+        env:
+          SEFER_B4_30_ENFORCE: '1'
+        run: |
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-release.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-winprodint-release.log"
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-release.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-winprodint-release.log"
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-release.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-winprodint-release.log"
+        shell: bash
       - name: exact OS release (minimal global and decommit, Windows)
         if: ${{ !cancelled() }}
         run: |
@@ -4400,15 +4462,13 @@ jobs:
           RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps -p sefer-alloc --features "$FEATURES"
 
   deny:
-    # SEC-5 (task #202): machine-check RustSec advisories AND license
-    # compatibility in one job, closing the §1.3 / §1.6 #3 / §2.2 gap from
-    # docs/security/SECURITY_COMPLIANCE_AUDIT_2026-07-06.md. Uses cargo-deny
-    # (not cargo-audit alone) because it covers BOTH concerns in one tool.
-    # `cargo deny check` with no sub-args runs all four check categories
-    # (advisories, licenses, bans, sources) — kept broad so a future bans or
-    # source-policy tightening (currently permissive per the task scope) is
-    # already wired into the job. Config lives at repo-root `deny.toml`.
-    name: cargo-deny (advisories + licenses)
+    # SEC-5 (task #202): machine-check RustSec advisories, closing the §1.3 /
+    # §1.6 #3 gap from docs/security/SECURITY_COMPLIANCE_AUDIT_2026-07-06.md.
+    # Runs on every change and every schedule: the advisory database moves
+    # without this repository's dependency graph changing. The graph-only
+    # categories (licenses, bans, sources) live in the `licenses` job below.
+    # Config lives at repo-root `deny.toml`.
+    name: cargo-deny advisories
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -4416,7 +4476,73 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
-      - run: cargo deny check
+      - run: cargo deny check advisories
+
+  licenses:
+    # License compatibility of the dependency graph with this workspace's
+    # `MIT OR Apache-2.0` (cargo-deny `licenses`: the `deny.toml` allow-list,
+    # copyleft and unlicensed denied), plus the graph-only `bans` and
+    # `sources` checks. Runs only when the dependency set changed since a run
+    # that passed: these checks are a pure function of the inputs that
+    # `scripts/license-check-fingerprint.mjs` hashes (Cargo.lock, deny.toml,
+    # the members' license metadata, the cargo-deny version, this job's text
+    # and the script itself). A pass stores a marker in the Actions cache
+    # under that fingerprint; a later run with the same fingerprint finds it
+    # and skips the check. A miss (a new dependency set, or a marker that was
+    # evicted or never written) runs it. Caches written by a pull request are
+    # visible only to that pull request, so `main` keeps its own markers.
+    name: license compatibility (only when dependencies changed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: Self-test the fingerprint
+        run: node scripts/license-check-fingerprint.mjs --selftest
+      - name: Dependency-set fingerprint
+        id: fp
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --no-deps --format-version 1 > "$RUNNER_TEMP/members.json"
+          node scripts/license-check-fingerprint.mjs --metadata "$RUNNER_TEMP/members.json" --tool "$(cargo deny --version)"
+      - name: Did this dependency set already pass?
+        id: seen
+        uses: actions/cache/restore@v4
+        with:
+          path: .license-check-pass
+          key: license-check-${{ steps.fp.outputs.fingerprint }}
+          lookup-only: true
+      - name: cargo deny check licenses bans sources
+        if: steps.seen.outputs.cache-hit != 'true'
+        run: cargo deny check licenses bans sources
+      - name: Record the passed fingerprint
+        if: steps.seen.outputs.cache-hit != 'true'
+        env:
+          FINGERPRINT: ${{ steps.fp.outputs.fingerprint }}
+        run: |
+          mkdir -p .license-check-pass
+          printf '%s\n' "$FINGERPRINT" > .license-check-pass/fingerprint
+      - if: steps.seen.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .license-check-pass
+          key: license-check-${{ steps.fp.outputs.fingerprint }}
+      - name: Report
+        env:
+          HIT: ${{ steps.seen.outputs.cache-hit }}
+          FINGERPRINT: ${{ steps.fp.outputs.fingerprint }}
+        run: |
+          if [ "$HIT" = "true" ]; then
+            msg="license check skipped: dependency set $FINGERPRINT already passed"
+          else
+            msg="license check ran and passed for dependency set $FINGERPRINT"
+          fi
+          echo "$msg" | tee -a "$GITHUB_STEP_SUMMARY"
 
   feature-powerset:
     # R14-10 (task #295, P2 process): a cargo-hack `--feature-powerset

@@ -1,4 +1,4 @@
-# identity: generator=scripts/b4_30_stack_table.mjs sha256=cc78a662b9fc7e842056a423718192a65c6947fdb5fdd70740821a5050bc7fbe
+# identity: generator=scripts/b4_30_stack_table.mjs sha256=6c1c03fefa080018d32d37222a4ed78af62d1f7ef42bda8158a1b686800cb891
 # measured_base=4a2071eda743c63557f9dc065f34fff8e1fabf5e (worktree base commit of the measurement; the generator does NOT read HEAD — outputs stay reproducible after the commit)
 # measured test logic sha256 (BUDGET_* values masked)=9f3fd8848335e176aaa17962645c5d8304b143b9ea7983386f147efc33bbdf33; current test file sha256=cf34f38265033cbfda84b31887110cc072bbf4b080cc105a96d881098c003339
 # evidence=docs/perf/b4_30_probes/b4_30_fix7_budget_evidence.csv sha256=5d8afd9b06687a14c394aa2ee23c8aab3e8250bb6c18e32226de52a93509d875 (producer: scripts/b4_30_fix7_evidence.mjs; raw logs: docs/perf/_raw_b4_30_fix7_*.log)

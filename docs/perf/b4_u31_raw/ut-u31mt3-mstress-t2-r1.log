@@ -1,0 +1,5 @@
+git_diff_sha256 bcaba550066895a065d416952059b30fe4c1baf146cad295838dcaf088d92a3d
+workload mstress threads 2 steps 100000
+sefer ops_actual=289708
+{"workload":"mstress","threads":2,"steps":100000,"find_segment_calls":382,"scan_calls":382,"scan_words":310350,"foreign_publish_ok":9863,"directory_lookups":3,"shard_lock_spins":0,"shard_lock_yields":0}
+{"workload":"mstress","threads":2,"steps":100000,"ops_actual":289708,"scan_words":310350,"scan_words_per_op_scaled_1e3":1071,"u31_scan_segments":384,"u31_holders_base":104,"u31_scan_no_pending":194,"u31_discovery_scans":382,"holders_base_num":104,"holders_base_den":384}

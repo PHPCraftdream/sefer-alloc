@@ -22,6 +22,25 @@ impl RouteRegistration<'_> {
     pub fn incarnation(&self) -> u64 {
         self.entry.incarnation()
     }
+    /// Bench-internals observer for the U31 owner-drain-skip trigger
+    /// (OPEN_ITEMS item 90): Relaxed read of the route `Entry.refs` refcount.
+    /// Base is 1 (the owner reference created at registration); every held
+    /// pin adds exactly one count. IMPORTANT: this is a SECONDARY slice
+    /// snapshotting the CURRENT holders (base) at the moment of the read —
+    /// `refs == 1` does NOT mean "no pins were published since the previous
+    /// scan": `RoutePin::publish_small` publishes and immediately releases
+    /// its pin, so `refs` returns to base even with nonempty pending bits
+    /// (`pin.rs:63-80`, `directory.rs:218-225`; counterexample
+    /// `tests/r6_route_directory.rs:109-129`). For the U31 upper bound of
+    /// skippable scans use `B4_U31_SCAN_NO_PENDING /
+    /// B4_U31_DISCOVERY_SCANS`. Diagnostic only (Relaxed); no RMW.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_entry_refs_relaxed(&self) -> usize {
+        use core::sync::atomic::Ordering;
+        self.entry.entry().refs.load(Ordering::Relaxed)
+    }
     pub fn small_sidecar(&self) -> Option<&SmallSidecar> {
         self.entry.small_sidecar()
     }

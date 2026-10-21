@@ -62,11 +62,13 @@ pub(crate) use sidecar_drain::{
     BACKGROUND_INGRESS_STEP_CALLS, SIDECAR_INGRESS_DRAIN_CALLS, SIDECAR_INGRESS_RECORDS_CONSUMED,
 };
 
-/// Shared Small-drain finalization result and the discovery drain's bench
-/// observer, re-exported for `alloc_core::small`'s discovery drain (see
-/// `sidecar_drain.rs`).
+/// Shared Small-drain finalization result and the discovery drain's U31
+/// bench observer, re-exported for `alloc_core::small`'s discovery drain
+/// (see `sidecar_drain.rs`; `DiscoverySummaryObserver` stays private to
+/// `sidecar_drain` — its only external consumer, the discovery scan, now
+/// uses the wrapping `U31NoPendingObserver`).
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-pub(crate) use sidecar_drain::{DiscoverySummaryObserver, DrainEnd};
+pub(crate) use sidecar_drain::{DrainEnd, U31NoPendingObserver};
 
 /// Group module: object lifecycle — construction config resolution, bootstrap
 /// invocation, and teardown.

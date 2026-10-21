@@ -4,7 +4,7 @@
 // line per group (to $GITHUB_OUTPUT when set) plus a human summary on stdout.
 //
 // Groups (see docs/CI_TIERS.md):
-//   always  fmt, commit-prefix-lint, evidence-registry, deny, docs-consistency
+//   always  fmt, commit-prefix-lint, evidence-registry, deny, licenses, docs-consistency
 //   fast    clippy, check-matrix, test-*, no_std, docs, fuzz-build
 //   seam    unsafe-seam proofs: miri-*, loom-*, kani, tsan, asan
 //   os      cross-OS / cross-arch / MSRV

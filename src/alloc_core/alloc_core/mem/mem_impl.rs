@@ -40,24 +40,39 @@ impl AllocCore {
     /// by the allocation/layout contract; membership alone is not enough.
     #[inline]
     pub(crate) fn canonical_block_of(&mut self, ptr: *mut u8) -> Option<(*mut u8, *mut u8)> {
-        if ptr.is_null() {
-            return None;
-        }
+        // X-null: no hot null check. Null's key is 0; the memo stores only
+        // real bases or `LAST_EMPTY_KEY` and the table only segment bases
+        // (never 0), so null always misses -> `None`, and every miss tail
+        // (e.g. `publish_foreign`) null-checks before any action.
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of_mut(candidate)?;
-        // R6-MS-1 (T22): bound the caller-derived offset BEFORE `Node::deref`'s
-        // `add` — a foreign address sharing the 4 MiB key window (exact-span-
-        // large / biased Large) must reject without forming an out-of-bounds
-        // witness pointer.
-        let off = ptr.addr().wrapping_sub(base.addr());
-        let span = if SegmentHeader::kind_at(base) == SegmentKind::Large {
-            SegmentHeader::span_usable_at(base)
+        // X-span (T22): for non-Large segments the offset is just the low
+        // SEGMENT bits of the address. Non-Large roots are registered under
+        // their own SEGMENT-aligned base as the key (`reserve_small_segment`
+        // and the primordial bootstrap reserve SEGMENT-aligned), so
+        // `root == candidate` and `ptr - root == ptr & (SEGMENT - 1)`.
+        // That equality is what makes the mask exact (debug-asserted below);
+        // `off < SEGMENT` keeps `block` inside `root`'s reservation.
+        let off = if SegmentHeader::kind_at(base) == SegmentKind::Large {
+            // R6-MS-1 (T22): bound the caller-derived offset BEFORE
+            // `Node::deref`'s `add` — a foreign address sharing the 4 MiB key
+            // window must reject without forming an out-of-bounds witness.
+            let off = ptr.addr().wrapping_sub(base.addr());
+            if off >= SegmentHeader::span_usable_at(base) {
+                return None;
+            }
+            off
         } else {
-            os::SEGMENT
+            debug_assert_eq!(
+                base.addr(),
+                candidate.addr(),
+                "X-span: non-Large root must equal its SEGMENT-aligned key"
+            );
+            ptr.addr() & (os::SEGMENT - 1)
         };
-        if off >= span {
-            return None;
-        }
+        // NOTE: the root == key assert is non-Large only — a Large root need
+        // NOT equal the raw key-window base (biased payload keys); there the
+        // `off >= span` guard and the byte/bitmap checks keep this safe.
         let block = Node::deref(base, off);
         Some((base, block))
     }

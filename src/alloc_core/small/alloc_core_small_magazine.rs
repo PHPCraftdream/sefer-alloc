@@ -13,6 +13,7 @@ use crate::alloc_core::segment_header::{
     Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
 };
 use crate::alloc_core::size_classes::SizeClasses;
+use crate::alloc_core::state_byte::StateByte;
 
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(all(
@@ -131,11 +132,30 @@ impl AllocCore {
         class_idx: usize,
         out: &mut [*mut u8],
     ) -> usize {
+        // Batch-API callers hand blocks straight to the user → LIVE bytes.
+        self.refill_class_bump_state_internal(class_idx, out, StateByte::LIVE)
+    }
+
+    /// S1 (B4-M): magazine-refill entry — every block this refill hands out
+    /// is committed MAG (parked in the caller's tcache magazine) instead of
+    /// LIVE; `HeapCore::finish_magazine_refill` then flips only the ONE issued
+    /// block back to LIVE. Same number of state-byte writes, but the tail's
+    /// per-block `segment_base_of_ptr` scan disappears. Batch-API callers
+    /// (`refill_class_bump_internal`) keep LIVE bytes unchanged.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    #[inline]
+    pub(crate) fn refill_class_bump_state_internal(
+        &mut self,
+        class_idx: usize,
+        out: &mut [*mut u8],
+        issue_state: u8,
+    ) -> usize {
         self.refill_class_bump_impl(
             class_idx,
             out,
             #[cfg(feature = "virgin-zero-skip")]
             None,
+            issue_state,
         )
     }
 
@@ -173,6 +193,25 @@ impl AllocCore {
         out: &mut [*mut u8],
         virgin_out: &mut u16,
     ) -> usize {
+        // Batch-API caller → LIVE bytes (see `refill_class_bump_internal`).
+        self.refill_class_bump_virgin_state_internal(class_idx, out, virgin_out, StateByte::LIVE)
+    }
+
+    /// S1 (B4-M): magazine-refill sibling of `refill_class_bump_virgin_internal`
+    /// — commits MAG per handed-out block (see `refill_class_bump_state_internal`).
+    #[cfg(all(
+        feature = "alloc-xthread",
+        feature = "fastbin",
+        feature = "virgin-zero-skip"
+    ))]
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    pub(crate) fn refill_class_bump_virgin_state_internal(
+        &mut self,
+        class_idx: usize,
+        out: &mut [*mut u8],
+        virgin_out: &mut u16,
+        issue_state: u8,
+    ) -> usize {
         const VIRGIN_MASK_BITS: usize = u16::BITS as usize;
         if out.len() > VIRGIN_MASK_BITS {
             fatal(
@@ -181,7 +220,7 @@ impl AllocCore {
         }
         // Clear reused output bits before any partial or early return.
         *virgin_out = 0;
-        self.refill_class_bump_impl(class_idx, out, Some(virgin_out))
+        self.refill_class_bump_impl(class_idx, out, Some(virgin_out), issue_state)
     }
 
     // R6-T16: call sites compile only under feature-gated arms; internals
@@ -202,7 +241,17 @@ impl AllocCore {
         // compiled out entirely when `virgin-zero-skip` is off (the parameter
         // does not exist in that build — see the two thin wrappers above).
         #[cfg(feature = "virgin-zero-skip")] mut virgin_out: Option<&mut u16>,
+        // S1 (B4-M): state byte committed per handed-out block (see
+        // `refill_class_bump_state_internal`).
+        issue_state: u8,
     ) -> usize {
+        // B4-M (P1-2): count only magazine refills (batch-API callers pass
+        // LIVE and are not counted).
+        #[cfg(feature = "bench-internals")]
+        if issue_state == StateByte::MAG {
+            crate::alloc_core::alloc_core::S1_REFILL_EVENTS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
         let want = out.len();
@@ -241,6 +290,7 @@ impl AllocCore {
                     self.small_cur,
                     class_idx,
                     &mut out[filled..],
+                    issue_state,
                 ) {
                     Ok(n) => n,
                     Err(()) => return filled,
@@ -253,7 +303,11 @@ impl AllocCore {
                 // — batch-drain the remembered segment's bin. A miss (stale or
                 // empty bin) is never a trusted negative: discovery still runs
                 // below (starting after the cursor's slot).
-                let n = match self.batch_drain_from_class_cursor(class_idx, &mut out[filled..]) {
+                let n = match self.batch_drain_from_class_cursor(
+                    class_idx,
+                    &mut out[filled..],
+                    issue_state,
+                ) {
                     Ok(n) => n,
                     Err(()) => return filled,
                 };
@@ -268,8 +322,12 @@ impl AllocCore {
                 // free/magazine guards; no caller closure or output scan is needed.
                 let found_seg = self.find_segment_with_free(class_idx);
                 if let Some(seg) = found_seg {
-                    let n = match self.try_drain_freelist_batch(seg, class_idx, &mut out[filled..])
-                    {
+                    let n = match self.try_drain_freelist_batch(
+                        seg,
+                        class_idx,
+                        &mut out[filled..],
+                        issue_state,
+                    ) {
                         Ok(n) => n,
                         Err(()) => return filled,
                     };
@@ -302,7 +360,12 @@ impl AllocCore {
             let cur_virgin = virgin_out
                 .is_some()
                 .then(|| SegmentMeta::new(self.small_cur).payload_virgin_of());
-            let n = match self.try_carve_batch(class_idx, block_size, &mut out[filled..]) {
+            let n = match self.try_carve_batch(
+                class_idx,
+                block_size,
+                &mut out[filled..],
+                issue_state,
+            ) {
                 Ok(n) => n,
                 Err(()) => return filled,
             };
@@ -325,7 +388,12 @@ impl AllocCore {
                     let fresh_virgin = virgin_out
                         .is_some()
                         .then(|| SegmentMeta::new(self.small_cur).payload_virgin_of());
-                    let n = match self.try_carve_batch(class_idx, block_size, &mut out[filled..]) {
+                    let n = match self.try_carve_batch(
+                        class_idx,
+                        block_size,
+                        &mut out[filled..],
+                        issue_state,
+                    ) {
                         Ok(n) => n,
                         Err(()) => return filled,
                     };
@@ -365,6 +433,7 @@ impl AllocCore {
                                 seg,
                                 class_idx,
                                 &mut out[filled..],
+                                issue_state,
                             ) {
                                 Ok(n) => n,
                                 Err(()) => return filled,

@@ -1,0 +1,81 @@
+=== ubuntu-24.04 production malloc_macro_run1.log
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           32.55 M           40.65 M           27.33 M
+  2           34.23 M           27.48 M           15.03 M
+  4           55.81 M           49.43 M           26.66 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           39.09 M           63.01 M           19.23 M
+  2           63.43 M           79.00 M           16.79 M
+  4           79.07 M          117.25 M           28.68 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+=== ubuntu-24.04 production malloc_macro_run2.log
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           32.52 M           39.31 M           19.49 M
+  2           33.50 M           52.48 M           15.24 M
+  4           53.34 M           44.29 M           26.56 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           37.59 M           57.64 M           18.81 M
+  2           59.33 M           52.65 M           16.90 M
+  4           51.33 M           82.87 M           27.82 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+=== windows-2022 production malloc_macro_run1.log
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           32.53 M           46.08 M           12.32 M
+  2           46.20 M           48.99 M           15.34 M
+  4           64.01 M           74.34 M           24.81 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           31.37 M           56.90 M           10.70 M
+  2           55.21 M           95.72 M           14.41 M
+  4           75.67 M          124.62 M           22.07 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+=== windows-2022 production malloc_macro_run2.log
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           33.34 M           47.48 M           12.85 M
+  2           46.02 M           49.49 M           14.19 M
+  4           63.10 M           77.04 M           23.67 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           23.93 M           57.97 M           10.43 M
+  2           39.30 M           95.13 M           17.26 M
+  4           74.90 M          125.43 M           19.19 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+# TRUNCATED — cargo build output before the '== sefer-alloc MT macro-benchmark ==' banner cut; production rows only; full logs: GitHub Actions artifacts of mt-bench run 39511430913
