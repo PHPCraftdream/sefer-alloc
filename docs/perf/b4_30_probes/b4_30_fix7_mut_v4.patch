@@ -1,0 +1,19 @@
+diff --git a/src/registry/heap_registry/claim.rs b/src/registry/heap_registry/claim.rs
+index 5e7c1f7a..f79d4b05 100644
+--- a/src/registry/heap_registry/claim.rs
++++ b/src/registry/heap_registry/claim.rs
+@@ -407,7 +407,13 @@ impl HeapRegistry {
+                 let made = materialise(idx as u32);
+                 match made {
+                     // SAFETY: sole writer, uninitialised slot, first claim.
+-                    Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
++                    Some(hc) => unsafe {
++                        // B4-30 fix7 MUTANT v4 (temporary): an extra by-value
++                        // HeapCore copy before the slot write — the real
++                        // by-value-construction risk of card 108.
++                        let hc_extra: HeapCore = core::hint::black_box(hc);
++                        heap_ptr.cast::<HeapCore>().write(hc_extra)
++                    },
+                     None => {
+                         // R6-T03: construction OOM releases the slot to FREE
+                         // (M-5, same shape as `recycle`) WITHOUT taking the

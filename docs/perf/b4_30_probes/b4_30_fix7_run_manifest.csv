@@ -1,0 +1,27 @@
+# B4-30 fix7 run manifest: machine identity per raw run log (paths relative to docs/perf/)
+# windows: Windows 10 Pro build 19045; wsl: WSL2 (Ubuntu) kernel 6.18.33.2-microsoft-standard-WSL2
+log,os,profile,features,cpu,os_build
+_raw_b4_30_fix7_win-debug-production.run1.log,windows,debug,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-debug-production.run2.log,windows,debug,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-debug-production.run3.log,windows,debug,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-release-production.run1.log,windows,release,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-release-production.run2.log,windows,release,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-release-production.run3.log,windows,release,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-debug-allfeatures.run1.log,windows,debug,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-debug-allfeatures.run2.log,windows,debug,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-debug-allfeatures.run3.log,windows,debug,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-release-allfeatures.run1.log,windows,release,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-release-allfeatures.run2.log,windows,release,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_win-release-allfeatures.run3.log,windows,release,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,Windows 10 Pro build 19045
+_raw_b4_30_fix7_wsl-debug-production.run1.log,linux,debug,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-debug-production.run2.log,linux,debug,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-debug-production.run3.log,linux,debug,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-release-production.run1.log,linux,release,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-release-production.run2.log,linux,release,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-release-production.run3.log,linux,release,production+internals,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-debug-all-features.run1.log,linux,debug,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-debug-all-features.run2.log,linux,debug,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-debug-all-features.run3.log,linux,debug,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-release-all-features.run1.log,linux,release,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-release-all-features.run2.log,linux,release,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2
+_raw_b4_30_fix7_wsl-release-all-features.run3.log,linux,release,all-features,Intel Core i7-11800H @ 2.30GHz x86_64,WSL2 Linux 6.18.33.2-microsoft-standard-WSL2

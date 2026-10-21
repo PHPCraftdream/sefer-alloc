@@ -1,0 +1,15 @@
+diff --git a/src/global/sefer_alloc/global_alloc.rs b/src/global/sefer_alloc/global_alloc.rs
+index 24feefc3..7ef1f8c4 100644
+--- a/src/global/sefer_alloc/global_alloc.rs
++++ b/src/global/sefer_alloc/global_alloc.rs
+@@ -96,6 +96,10 @@ fn exit_escape_realloc(ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mu
+ unsafe impl GlobalAlloc for SeferAlloc {
+     #[inline(always)]
+     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
++        // B4-30 fix7 MUTANT v1 (temporary): pad of size_of::<HeapCore>() in the
++        // inline(always) envelope — simulates envelope growth of the first-alloc path.
++        let pad = [0u8; core::mem::size_of::<crate::registry::HeapCore>()];
++        core::hint::black_box(&pad);
+         #[cfg(feature = "exact-object-proto")]
+         if ExactNarrow::is_narrow(layout) {
+             return ExactNarrow::alloc(layout, false);

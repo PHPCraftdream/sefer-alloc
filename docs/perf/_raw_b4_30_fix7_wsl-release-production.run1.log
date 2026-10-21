@@ -1,0 +1,118 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.46
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling zmij v1.0.21
+   Compiling serde_core v1.0.228
+   Compiling zerocopy v0.8.52
+   Compiling serde v1.0.228
+   Compiling getrandom v0.3.4
+   Compiling serde_json v1.0.150
+   Compiling autocfg v1.5.1
+   Compiling libm v0.2.16
+   Compiling crossbeam-utils v0.8.21
+   Compiling getrandom v0.4.3
+   Compiling crossbeam-epoch v0.9.20
+   Compiling rustix v1.1.4
+   Compiling num-traits v0.2.19
+   Compiling once_cell v1.21.4
+   Compiling shlex v2.0.1
+   Compiling bitflags v2.13.0
+   Compiling version_check v0.9.5
+   Compiling find-msvc-tools v0.1.9
+   Compiling linux-raw-sys v0.12.1
+   Compiling regex-syntax v0.8.11
+   Compiling fastrand v2.4.1
+   Compiling cc v1.2.65
+   Compiling either v1.16.0
+   Compiling rayon-core v1.13.0
+   Compiling slotmap v1.1.1
+   Compiling anstyle v1.0.14
+   Compiling memchr v2.8.2
+   Compiling itoa v1.0.18
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling plotters-backend v0.3.7
+   Compiling quick-error v1.2.3
+   Compiling clap_lex v1.1.0
+   Compiling syn v2.0.118
+   Compiling crossbeam-deque v0.8.6
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling fnv v1.0.7
+   Compiling bit-vec v0.8.0
+   Compiling ciborium-io v0.2.2
+   Compiling plotters-svg v0.3.7
+   Compiling clap_builder v4.6.0
+   Compiling itertools v0.10.5
+   Compiling bit-set v0.8.0
+   Compiling wait-timeout v0.2.1
+   Compiling rand_core v0.9.5
+   Compiling iai-callgrind v0.14.2
+   Compiling unarray v0.1.4
+   Compiling cast v0.3.0
+   Compiling same-file v1.0.6
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.4
+   Compiling walkdir v2.5.0
+   Compiling rayon v1.12.0
+   Compiling sefer-region v0.2.0 (<worktree>/crates/sefer-region)
+   Compiling libmimalloc-sys v0.1.49
+   Compiling is-terminal v0.4.17
+   Compiling aligned-vmem v0.2.0 (<worktree>/crates/aligned-vmem)
+   Compiling proc-memstat v0.1.0 (<worktree>/crates/proc-memstat)
+   Compiling size-classes v0.1.0 (<worktree>/crates/size-classes)
+   Compiling pin-project-lite v0.2.17
+   Compiling plotters v0.3.7
+   Compiling oorandom v11.1.5
+   Compiling anes v0.1.6
+   Compiling once-ptr-cell v0.1.0 (<worktree>/crates/once-ptr-cell)
+   Compiling proc-probe v0.1.0 (<worktree>/crates/proc-probe)
+   Compiling sefer-alloc v0.3.0 (<worktree>)
+   Compiling malloc-bench-rs v0.1.0 (<worktree>/crates/malloc-bench-rs)
+   Compiling regex-automata v0.4.14
+   Compiling tempfile v3.27.0
+   Compiling criterion-plot v0.5.0
+   Compiling rusty-fork v0.3.1
+   Compiling clap v4.6.1
+   Compiling proc-macro-error2 v2.0.1
+   Compiling regex v1.12.4
+   Compiling serde_derive v1.0.228
+   Compiling zerocopy-derive v0.8.52
+   Compiling derive_more-impl v2.1.1
+   Compiling tokio-macros v2.7.0
+   Compiling tokio v1.52.3
+   Compiling derive_more v2.1.1
+   Compiling mimalloc v0.1.52
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling tinytemplate v1.2.1
+   Compiling bincode v1.3.3
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+   Compiling globalalloc-model v0.1.0 (<worktree>/crates/globalalloc-model)
+    Finished `release` profile [optimized] target(s) in 25.08s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/b4_30_first_alloc_min_stack.rs (<target-dir>/release/deps/b4_30_first_alloc_min_stack-4fc3a723e8af9b0f)
+
+running 4 tests
+test b4_30_probe_child ... ignored, measurement child only
+[b4-30] scenario=large need=
+[b4-30] scenario=large details need=11136 budget=17408 margin=6272 fs=11151 fc=63 stride=48 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.98.1 (48a229cea 2026-09-01) os=linux profile=release
+test b4_30_large_first_alloc_stack_budget ... ok
+[b4-30] scenario=foreign-free need=
+[b4-30] scenario=foreign-free details need=144 budget=17408 margin=17264 fs=159 fc=63 stride=48 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.98.1 (48a229cea 2026-09-01) os=linux profile=release
+test b4_30_foreign_free_first_alloc_stack_budget ... ok
+[b4-30] scenario=small need=
+[b4-30] scenario=small details need=11136 budget=17408 margin=6272 fs=11151 fc=63 stride=48 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.98.1 (48a229cea 2026-09-01) os=linux profile=release
+test b4_30_small_first_alloc_stack_budget ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.18s
+

@@ -3159,6 +3159,22 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** a fallback-profile RSS report, or a change to the fallback idle policy (`FALLBACK_IDLE_VISITS` in `src/global/maintenance_service.rs`).
    > - **Evidence:** `tests/r6_t27_fallback_worker_ingress_only.rs`; task R6-T27.
 
+108. **[L] B4-30 phase 2 — in-place `HeapCore` construction (remove the by-value copy from the first-allocation stack frame).** (Filed 2026-10-21, B4-30 phase 1 rev2, chunk D. Number chosen ≥108 due to possible conflicts with parallel branches.)
+
+<!-- B4-30-CARD-START -->
+   > **Current state**
+   > - **Status:** OPEN `[L]` — fix7: the contract is a fixed per-(OS, profile) DIFFERENTIAL budget (`need = fs − fc + stride`, control = eat-only boundary in its own allocator-free frame, floor-tolerant), self-measured by every run on the current toolchain; enforcement gated by `SEFER_B4_30_ENFORCE=1` and observable via the enforce-only markers `[b4-30] enforced scenario=<s>`. Phase 2 trigger remains open.
+   > - **Current verdict:** Budgets (rule: `ceil_1024(worst differential) + max(4096, ceil1024(0.25 × worst))`, asserted by the generator against the test's `BUDGET_*` constants):
+   >   - windows debug = 87040 bytes, windows release = 19456 bytes, linux debug = 86016 bytes, linux release = 17408 bytes.
+   > - Mutants (table DERIVED from the committed logs `docs/perf/b4_30_probes/b4_30_fix7_mut_v*.log`, patches `b4_30_fix7_mut_v1.patch`/`v4.patch`, byte-exact src rollback per run): v1 — pad `size_of::<HeapCore>()` in `GlobalAlloc::alloc` (inline(always) envelope): RED on 4 of 8 cells; v4 — an extra by-value `HeapCore` copy in `claim_impl` before the slot write (the real construction site): RED on 6 of 8 cells. Cells without RED have margin = budget − need larger than the copy size — the gate does not claim detection there; the compile-time proxy pins SIZE only, not the NUMBER of by-value copies (proxy margin is 8 bytes: HeapCore 9208 vs threshold 9216 — any growth >= 16 bytes reds the r34_18 doc check in someone else's PR; until fix8 the measurement-logic pin was enforced by no CI gate, now by scripts/verify-b4-30-pin.mjs in docs-consistency).
+   > - **Rebase procedure on stable-toolchain drift (one PR, in-repo):** (1) re-measure all 8 cells with ENFORCE unset, ≥2 full runs per cell, raw logs committed; (2) rebuild the evidence CSV with `scripts/b4_30_fix7_evidence.mjs`; (3) update the `BUDGET_*` constants per the generator output (the masked-logic pin is unchanged by value-only edits); (4) run all cells with `SEFER_B4_30_ENFORCE=1` green and regenerate the derived files.
+   > - **Next trigger:** a target platform with a small guaranteed stack, or any change to the HeapCore construction path.
+   > - **Evidence:** docs/perf/B4_30_STACK_CONTRACT.md, B4_30_STACK_CONTRACT_summary.csv, B4_30_STACK_CONTRACT_table.generated.md; docs/perf/b4_30_probes/b4_30_fix7_budget_evidence.csv, b4_30_fix7_run_manifest.csv, b4_30_fix7_mut_v*.log/.patch, b4_30_fix7_inline_check.s; docs/perf/_raw_b4_30_fix7_*.log; tests/b4_30_first_alloc_min_stack.rs; CI-gap card: docs/correctness-open-items/TRACKED_ci_gate_coverage.md (253).
+   > <!-- B4-30-CARD-NUMBERS-START -->
+   > - Headline: budgets win-debug=87040 bytes, win-release=19456 bytes, linux-debug=86016 bytes, linux-release=17408 bytes; worst differentials windows/debug=69040, windows/release=14448, linux/debug=67776, linux/release=12576 bytes.
+   > <!-- B4-30-CARD-NUMBERS-END -->
+<!-- B4-30-CARD-END -->
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

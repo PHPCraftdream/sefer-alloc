@@ -1,0 +1,21 @@
+   Compiling sefer-alloc v0.3.0 (<worktree>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.88s
+     Running tests\b4_30_first_alloc_min_stack.rs (<target-dir>\debug\deps\b4_30_first_alloc_min_stack-6475e37bbf7d8be2.exe)
+
+running 4 tests
+test b4_30_probe_child ... ignored, measurement child only
+[b4-30] scenario=foreign-free need=
+[b4-30] scenario=foreign-free details need=6864 budget=86016 margin=79152 fs=35863 fc=29223 stride=224 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.97.0 (2d8144b78 2026-07-07) os=windows profile=debug
+test b4_30_foreign_free_first_alloc_stack_budget ... ok
+[b4-30] scenario=large need=
+[b4-30] scenario=large details need=68912 budget=86016 margin=17104 fs=97911 fc=29223 stride=224 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.97.0 (2d8144b78 2026-07-07) os=windows profile=debug
+test b4_30_large_first_alloc_stack_budget ... ok
+[b4-30] scenario=small need=
+[b4-30] scenario=small details need=68976 budget=86016 margin=17040 fs=97975 fc=29223 stride=224 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.97.0 (2d8144b78 2026-07-07) os=windows profile=debug
+test b4_30_small_first_alloc_stack_budget ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.88s
+

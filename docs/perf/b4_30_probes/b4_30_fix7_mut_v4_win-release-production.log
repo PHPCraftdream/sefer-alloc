@@ -1,0 +1,30 @@
+   Compiling sefer-alloc v0.3.0 (<worktree>)
+    Finished `release` profile [optimized] target(s) in 10.12s
+     Running tests\b4_30_first_alloc_min_stack.rs (<target-dir>\release\deps\b4_30_first_alloc_min_stack-b0a2e01621c504ff.exe)
+
+running 4 tests
+test b4_30_probe_child ... ignored, measurement child only
+[b4-30] enforced scenario=foreign-free
+[b4-30] scenario=foreign-free need=
+[b4-30] scenario=foreign-free details need=80 budget=19456 margin=19376 fs=28799 fc=28815 stride=80 boundary=bisect control=bisect enforce=1
+[b4-30] toolchain=rustc 1.97.0 (2d8144b78 2026-07-07) os=windows profile=release
+test b4_30_foreign_free_first_alloc_stack_budget ... ok
+
+thread 'b4_30_large_first_alloc_stack_budget' (40924) panicked at tests\b4_30_first_alloc_min_stack.rs:654:9:
+B4-30 first-alloc differential stack need 20752 B exceeds the declared budget 19456 B (os=windows profile=release scenario=large): the first-alloc path grew past the evidenced worst differential + its reserve
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test b4_30_large_first_alloc_stack_budget ... FAILED
+
+thread 'b4_30_small_first_alloc_stack_budget' (53220) panicked at tests\b4_30_first_alloc_min_stack.rs:654:9:
+B4-30 first-alloc differential stack need 20656 B exceeds the declared budget 19456 B (os=windows profile=release scenario=small): the first-alloc path grew past the evidenced worst differential + its reserve
+test b4_30_small_first_alloc_stack_budget ... FAILED
+
+failures:
+
+failures:
+    b4_30_large_first_alloc_stack_budget
+    b4_30_small_first_alloc_stack_budget
+
+test result: FAILED. 1 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.88s
+
+error: test failed, to rerun pass `--test b4_30_first_alloc_min_stack`

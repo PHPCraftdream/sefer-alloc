@@ -25,6 +25,8 @@ exclude = [
     "tests/tagged_index_stack_ab_runner_scratch_guard.rs",
     "tests/support/tagged_index_stack_compile_fail.rs",
     "docs/perf/_raw_tis_p3_ab_*",
+    "docs/perf/_raw_b4_30_*",
+    "docs/perf/b4_30_probes/",
     "docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_*.csv",
 ]
 

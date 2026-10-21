@@ -105,6 +105,12 @@ jobs:
       - run: node scripts/verify-miri-target-wiring.mjs
       - run: node scripts/verify-root-package-list.mjs
       - run: node scripts/verify-no-bare-abort.mjs
+      # B4-30 fix8 (P2-4): cargo-free gate for the measurement-logic pin of
+      # tests/b4_30_first_alloc_min_stack.rs. RC=1 on any change to the
+      # measurement logic (REPEATS, stride window, anchors, budget mapping)
+      # that is not reflected in the pinned sha in
+      # scripts/b4_30_fix7_evidence.mjs (constants-only rebases stay valid).
+      - run: node scripts/verify-b4-30-pin.mjs
       - run: node scripts/ci-plan.mjs --check-doc
       - run: node scripts/r20-gate-config.mjs --selftest
       - run: node scripts/r20_r6_ab_iai_run.mjs --selftest
@@ -1869,6 +1875,26 @@ jobs:
       - name: test (--features production)
         if: ${{ !cancelled() }}
         run: cargo test --features "production internals" --no-fail-fast # #137: the recommended flagship config (fastbin + decommit)
+      # B4-30 fix7: first-alloc stack budget, differential self-measurement,
+      # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
+      - name: b4-30 first-alloc stack budget (production internals, linux)
+        if: ${{ !cancelled() }}
+        env:
+          SEFER_B4_30_ENFORCE: '1'
+        run: |
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-release.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-prodint-release.log"
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-release.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-prodint-release.log"
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-prodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-release.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-prodint-release.log"
+        shell: bash
       # Direct child mode exposes the real ownerless oracle after the final
       # user frees: no alloc, registry claim or artificial worker wakeup.
       # Exact single-test isolation keeps nocapture output sentinel-safe.
@@ -2027,6 +2053,26 @@ jobs:
       - name: test (--all-features)
         if: ${{ !cancelled() }}
         run: cargo test --all-features --no-fail-fast
+      # B4-30 fix7: first-alloc stack budget, differential self-measurement,
+      # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
+      - name: b4-30 first-alloc stack budget (--all-features, linux)
+        if: ${{ !cancelled() }}
+        env:
+          SEFER_B4_30_ENFORCE: '1'
+        run: |
+          cargo test --all-features --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          cargo test --all-features --release --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-release.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-allfeat-release.log"
+          cargo test --all-features --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          cargo test --all-features --release --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-release.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-allfeat-release.log"
+          cargo test --all-features --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+          cargo test --all-features --release --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-release.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-allfeat-release.log"
+        shell: bash
       # task #1288: `--all-features` above no longer activates numa-shim's mock
       # backend (the `mock` Cargo feature is gone — replaced by the build-time
       # `--cfg numa_shim_mock`), so the six `numa-aware-mock` mock-gated root
@@ -2250,6 +2296,28 @@ jobs:
           node-version: '22'
       # `internals` added (R34-3/task #522) — whole-suite row.
       - run: cargo test --features "production internals" --no-fail-fast
+      # B4-30 fix7: first-alloc stack budget, differential self-measurement,
+      # enforced (SEFER_B4_30_ENFORCE=1). NIGHTLY/OS GROUP ONLY: test-windows is
+      # gated by changes.outputs.os, so per-PR coverage for this Windows cell
+      # does not exist.
+      - name: b4-30 first-alloc stack budget (production internals, windows)
+        if: ${{ !cancelled() }}
+        env:
+          SEFER_B4_30_ENFORCE: '1'
+        run: |
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-release.log"
+          grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-winprodint-release.log"
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-release.log"
+          grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-winprodint-release.log"
+          cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+          cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-release.log"
+          grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-winprodint-release.log"
+        shell: bash
       - name: exact OS release (minimal global and decommit, Windows)
         if: ${{ !cancelled() }}
         run: |
