@@ -1,0 +1,3 @@
+identity: raw overlap-isolation probe oc6_overlap_iso, arm=c8k, tree=b4-oneclass worktree (base bbc3c7b4 + uncommitted D1-prime), src+crates diff sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 at capture; wrapper-hook AllocCore::overlap_check_probe_call (bench-internals, doc-hidden) + callgrind --toggle-collect='*overlap_check_probe_call*'; owner volume 32 MiB per arm; probe scripts in .rush/wsl (not in repo)
+OVERLAP_ISO_RESULT mode=c8k class=8192B records=4096 segments=9 overlap_ir_total=610304(100.0%)PROGRAMTOTALS overlap_ir_per_record=149.00
+OVERLAP_ISO mode=c8k class=8192B records=4096 owner_total_bytes=33554432 segments_reserved_at_alloc_end=9

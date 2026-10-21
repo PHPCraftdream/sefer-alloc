@@ -25,12 +25,11 @@ pub(crate) struct SidecarBitmap<'a> {
     /// D1′ phase-1a: the dense "start was issued" map, one bit per 16 B
     /// granule (32 KiB, `[AtomicU64; WORDS]`), written ONLY by the owner
     /// (single-writer `load(Acquire)` → `store(old | mask, Release)`) at
-    /// exactly the leaf-issue points (`SmallSidecar::issue` and
-    /// `RoutedIssueRun::commit`), cleared by retain-reset together with
+    /// exactly the per-block issue points (`SmallSidecar::issue`, reached
+    /// from both the drain and the carve-batch paths through
+    /// `SmallIssueRun::issue`), cleared by retain-reset together with
     /// `pending`. Producers read it (Acquire) as the publication gate below;
-    /// the class leaves still carry the written class code but are no longer
-    /// read by `publish` (phase-1a: leaves are written, never read by the
-    /// producer/owner decision points).
+    /// the record's class lives only in the owner-private state byte.
     pub(super) starts: &'a [AtomicU64],
 }
 

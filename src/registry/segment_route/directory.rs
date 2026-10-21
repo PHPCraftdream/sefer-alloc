@@ -228,14 +228,14 @@ impl Drop for EntryHandle {
 }
 
 /// Block capacity: the most pointer cells one insert/remove shifts.
-pub(super) const BLOCK_CAP: usize = 64;
+const BLOCK_CAP: usize = 64;
 /// Split point, and merge ceiling for two adjacent blocks.
 const BLOCK_HALF: usize = BLOCK_CAP / 2;
 const INITIAL_INDEX_CAP: usize = 8;
 
 /// Fixed-capacity sorted run of non-owning entry pointers; a linked block is never empty.
-pub(super) struct Block {
-    pub(super) len: usize,
+struct Block {
+    len: usize,
     slots: [AtomicPtr<Entry>; BLOCK_CAP],
 }
 
@@ -265,7 +265,7 @@ impl Block {
         unsafe { System.dealloc(ptr.cast(), Layout::new::<Block>()) };
     }
 
-    pub(super) fn get(&self, index: usize) -> *mut Entry {
+    fn get(&self, index: usize) -> *mut Entry {
         if index >= self.len {
             fatal(b"directory: block get index out of range\n");
         }
@@ -354,10 +354,10 @@ impl Block {
 }
 
 /// Sorted index of owned `Block`s by first key; capacity is retained after removals.
-pub(super) struct BlockIndex {
+struct BlockIndex {
     ptr: AtomicPtr<AtomicPtr<Block>>,
-    pub(super) len: usize,
-    pub(super) cap: usize,
+    len: usize,
+    cap: usize,
 }
 
 impl BlockIndex {
@@ -401,7 +401,7 @@ impl BlockIndex {
         unsafe { &*self.ptr.load(Ordering::Relaxed).add(index) }
     }
 
-    pub(super) fn get(&self, index: usize) -> *mut Block {
+    fn get(&self, index: usize) -> *mut Block {
         if index >= self.len {
             fatal(b"directory: index get out of range\n");
         }
@@ -520,12 +520,12 @@ impl Retired {
 
 /// Two-level sorted shard: an index of blocks, each at most `BLOCK_CAP` pointers. Updates
 /// shift within one block (plus the short block index on split/merge), all under the shard lock.
-pub(super) struct Shard {
-    pub(super) index: BlockIndex,
+struct Shard {
+    index: BlockIndex,
     /// One retained empty block, so splits after removals never allocate.
-    pub(super) spare: AtomicPtr<Block>,
+    spare: AtomicPtr<Block>,
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
-    pub(super) moved: u64,
+    moved: u64,
 }
 
 impl Shard {
@@ -547,7 +547,7 @@ impl Shard {
         let _ = cells;
     }
 
-    pub(super) fn block(&self, index: usize) -> &Block {
+    fn block(&self, index: usize) -> &Block {
         // SAFETY: linked blocks are live System allocations owned by this
         // shard; the shard lock excludes concurrent mutation.
         unsafe { &*self.index.get(index) }
@@ -720,11 +720,16 @@ impl Drop for Shard {
 /// Process-stable directory; route count limited by System memory, O(log n) lookup
 /// under one shard mutex.
 pub struct RouteDirectory {
-    pub(super) shards: [ShardLock<Shard>; SHARDS],
-    pub(super) next_incarnation: AtomicU64,
-    pub(super) registrations_total: AtomicU64,
+    shards: [ShardLock<Shard>; SHARDS],
+    next_incarnation: AtomicU64,
+    // Measurement-only counters (P2-1): gated like the `dbg_*` getters in
+    // `registration.rs` and `B4_DIRECTORY_LOOKUPS`; plain production pays
+    // neither the fields nor the RMW.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    registrations_total: AtomicU64,
     /// Successful unlink count for measurement-only cold release oracle.
-    pub(super) unlinks_total: AtomicU64,
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    unlinks_total: AtomicU64,
 }
 
 impl RouteDirectory {
@@ -732,7 +737,9 @@ impl RouteDirectory {
         Self {
             shards: [const { ShardLock::new(Shard::empty()) }; SHARDS],
             next_incarnation: AtomicU64::new(0),
+            #[cfg(all(feature = "internals", feature = "bench-internals"))]
             registrations_total: AtomicU64::new(0),
+            #[cfg(all(feature = "internals", feature = "bench-internals"))]
             unlinks_total: AtomicU64::new(0),
         }
     }
@@ -740,6 +747,18 @@ impl RouteDirectory {
     pub fn global() -> &'static Self {
         static ROUTES: RouteDirectory = RouteDirectory::new();
         &ROUTES
+    }
+
+    /// Test-only directory starting `next_incarnation` at `value`
+    /// (incarnation-wrap oracles).
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn with_initial_incarnation_for_test(value: u64) -> Self {
+        let directory = Self::new();
+        directory
+            .next_incarnation
+            .store(value, core::sync::atomic::Ordering::Relaxed);
+        directory
     }
 
     /// Registration and all System allocations precede user-visible issue.
@@ -801,6 +820,7 @@ impl RouteDirectory {
                     // Count the successful registration (Relaxed: diagnostic
                     // counter, no ordering required; never read by
                     // production logic).
+                    #[cfg(all(feature = "internals", feature = "bench-internals"))]
                     self.registrations_total.fetch_add(1, Ordering::Relaxed);
                     drop(guard);
                     return Ok(RouteRegistration {
@@ -884,6 +904,7 @@ impl RouteDirectory {
         // ref drop after the lock; Release `linked = false` publishes the unlink.
         let _retired = guard.remove(key, entry.ptr());
         entry.entry().linked.store(false, Ordering::Release);
+        #[cfg(all(feature = "internals", feature = "bench-internals"))]
         self.unlinks_total.fetch_add(1, Ordering::Relaxed);
         drop(guard);
         true
@@ -892,6 +913,76 @@ impl RouteDirectory {
     pub(super) const fn shard_index(key: usize) -> usize {
         let value = key / SEGMENT;
         (value ^ (value >> 13) ^ (value >> 26)) % SHARDS
+    }
+
+    // P2-2: read-only observers replacing the former `pub(super)` field
+    // access from `registration.rs`. The hooks only read; every shard
+    // invariant (`BlockIndex::len/cap`, `Block::len`, `Block::get`) stays
+    // writeable from `directory.rs` alone.
+
+    /// Monotonic successful route registrations since directory construction.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(super) fn registrations_total(&self) -> u64 {
+        self.registrations_total
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Monotonic count of successful unlink operations on this directory.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(super) fn unlinks_total(&self) -> u64 {
+        self.unlinks_total
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Pointer cells retained: block indexes plus whole blocks (spares too).
+    #[cfg(feature = "internals")]
+    pub(super) fn retained_pointer_capacity(&self) -> usize {
+        self.shards
+            .iter()
+            .map(|shard| {
+                let shard = shard.lock();
+                let spare = usize::from(!shard.spare.load(Ordering::Relaxed).is_null());
+                shard.index.cap + (shard.index.len + spare) * BLOCK_CAP
+            })
+            .sum()
+    }
+
+    /// Live routes by kind: `(small, primordial, large)`.
+    #[cfg(feature = "internals")]
+    pub(super) fn live_route_census(&self) -> (usize, usize, usize) {
+        let mut counts = (0, 0, 0);
+        for shard in &self.shards {
+            let shard = shard.lock();
+            for b in 0..shard.index.len {
+                let block = shard.block(b);
+                for index in 0..block.len {
+                    // SAFETY: the shard lock retains the linked owner reference.
+                    match unsafe { &*block.get(index) }.kind {
+                        RouteKind::Small => counts.0 += 1,
+                        RouteKind::Primordial => counts.1 += 1,
+                        RouteKind::Large => counts.2 += 1,
+                    }
+                }
+            }
+        }
+        counts
+    }
+
+    /// Pointer cells moved by updates (shifts, splits, merges, index growth
+    /// copies) since construction.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(super) fn moved_pointer_cells(&self) -> u64 {
+        self.shards.iter().map(|shard| shard.lock().moved).sum()
+    }
+
+    /// Runs `f` while holding the shard selected by the numeric segment key.
+    /// Reentering this shard from `f` can deadlock (see the test hook doc in
+    /// `registration.rs`).
+    #[cfg(feature = "bench-internals")]
+    pub(super) fn with_shard_of_key_locked(&self, key: usize, f: impl FnOnce()) {
+        let guard = self.shards[Self::shard_index(key)].lock();
+        f();
+        drop(guard);
     }
 }
 

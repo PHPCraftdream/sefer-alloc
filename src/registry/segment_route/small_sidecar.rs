@@ -96,7 +96,7 @@ impl SmallSidecar {
         #[cfg(feature = "internals")]
         record_system_free(core::mem::size_of::<SmallSidecar>());
         // SAFETY: pointer came from System.alloc with this exact Layout and
-        // its mixed leaves were released by Drop above.
+        // was fully dropped by `drop_in_place` above.
         use std::alloc::{GlobalAlloc, System};
         unsafe { System.dealloc(sidecar.cast(), core::alloc::Layout::new::<Self>()) };
     }
@@ -146,12 +146,8 @@ impl SmallSidecar {
     }
 
     fn bitmap(&self) -> SidecarBitmap<'_> {
-        SidecarBitmap::from_pending(&self.pending, &self.starts).unwrap_or_else(|| {
-            fatal(
-                b"small_sidecar: sidecar bitmap layout mismatch
-",
-            )
-        })
+        SidecarBitmap::from_pending(&self.pending, &self.starts)
+            .unwrap_or_else(|| fatal(b"small_sidecar: sidecar bitmap layout mismatch\n"))
     }
 
     /// Doc-hidden test-only forwarder (CLAUDE.md "test-only export pattern"):

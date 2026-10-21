@@ -1,0 +1,32 @@
+tree-diff-sha256 58f83d6b71a7e8a16341cae2f1f9c6ccb65af351508659e7cfc85af9bf1e5fc0
+identity: shoulder=b base=8da6402d (origin/main) merged with 294ff32a (b4-oneclass D1-prime, mid-merge resolved) write-tree=19aa0fcf11fa955a7a245f0d338141891ac38d92 source-manifest-sha256=58f83d6b71a7e8a16341cae2f1f9c6ccb65af351508659e7cfc85af9bf1e5fc0 tree-diff-sha256(src+crates)=58f83d6b71a7e8a16341cae2f1f9c6ccb65af351508659e7cfc85af9bf1e5fc0
+features: production
+cmd: bash ${REPO_WSL}/.rush/wsl/prof_f.sh ocport2 ocport2-b-mstress mstress sefer (via ${REPO_WSL}/.rush/wsl tar snapshot ocport2-b-mstress.tar)
+MARGINAL Ir/op (sefer mstress T=1): 336
+--- by source file (Ir/op)
+  336.5	PROGRAM TOTALS
+  197.7	events annotated
+   49.9	ocport2-b-mstress/crates/malloc-bench-rs/src/lib.rs
+   41.6	ocport2-b-mstress/src/registry/heap_core/free/dealloc_own_base.rs
+   36.7	ocport2-b-mstress/src/alloc_core/small/alloc_core_small_magazine.rs
+   21.7	ocport2-b-mstress/src/registry/heap_core/alloc/hot.rs
+   19.6	ocport2-b-mstress/src/alloc_core/platform/size_classes.rs
+   19.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   17.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   15.4	let cnt = self.tcache.classes[c].count as usize;
+   12.4	ocport2-b-mstress/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+   11.1	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+   10.8	16 + (r >> 8) as usize % (512 - 16)
+    9.7	ocport2-b-mstress/src/alloc_core/segment/bitmap/state_byte.rs
+    9.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs
+    9.1	ocport2-b-mstress/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs
+    9.1	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs
+    8.4	Some(SIZE2CLASS[seed_idx] as usize)
+    8.4	<counts for unidentified lines in ocport2-b-mstress/src/registry/heap_core/free/dealloc_own_base.rs>
+    8.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs
+    8.1	if sb & 0x3F != class_idx as u8 + 1
+    6.8	<counts for unidentified lines in ocport2-b-mstress/src/alloc_core/small/alloc_core_small_magazine.rs>
+    5.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs
+    5.7	x ^= x >> 27;
+    5.7	x ^= x >> 12;
+RC=0

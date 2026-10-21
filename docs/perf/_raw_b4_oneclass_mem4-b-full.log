@@ -1,0 +1,6 @@
+identity: shoulder=b base=bbc3c7b4 tree-diff-sha256(src+crates)=7659fcf3231b342b4065f950d242bb262adf613e968cdbc2b0a84c2f42e8eead mode=full (includes uncommitted D1-prime + mem4 hooks); full snapshot identity to be added by owner as a separate step
+build-cmd: cargo build --release --example zz_oc_mem_probe --features production,internals,bench-internals (CARGO_TARGET_DIR isolated)
+BUILD_RC=0
+full: live 16-B blocks = 1048576
+MEM committed_bytes=20971520 system_sidecar_bytes=327680 retained_pins=0 descriptor_entries=0 rss_kib=3492 config_conflicts_total=0 requested_pool=segments=8,byte_cap=33554432 resolved_pool=segments=8 resolved_pool_byte_cap=33554432(hook=dbg_pool_byte_cap_effective)
+RUN_RC=0

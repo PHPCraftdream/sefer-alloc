@@ -1,0 +1,15 @@
+Checking patch src/registry/segment_route/directory.rs...
+Checking patch src/registry/heap_core/diag/queries.rs...
+Checking patch src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs...
+Applied patch src/registry/segment_route/directory.rs cleanly.
+Applied patch src/registry/heap_core/diag/queries.rs cleanly.
+Applied patch src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs cleanly.
+APPLY_RC=0
+identity: shoulder=a base=bbc3c7b4 probe-sha256=b2e6ffb4479e279f1f5fb28de28b147b67978607a774860e7a05ecb881e162b0 mode=sparse; A hooks patch sha256=ba337e7eee92a795e9de7d1f597c21059cb2424b6dc809db47811c7a7876b508
+build-cmd: cargo build --release --example zz_oc_mem_probe --features production,internals,bench-internals (CARGO_TARGET_DIR isolated)
+BUILD_RC=0
+sparse: allocated 6144 4-KiB blocks (plan 6144; exceeds the primordial payload — fresh small routes forced)
+sparse: oracle registrations_delta=6 (mid) / 6 (post-free) >= 4 required (plan 4 routes); kept live blocks=8 (sparse semantics); census after free: small=6 primordial=1 (pool retains freed routes)
+MEM committed_bytes=29360128 system_sidecar_bytes=1860480 retained_pins=0 descriptor_entries=0 rss_kib=30148 config_conflicts_total=0 requested_pool=segments=8,byte_cap=33554432 resolved_pool=segments=8 resolved_pool_byte_cap=33554432(hook=dbg_pool_byte_cap_effective)
+RUN_RC=0
+RC=0

@@ -120,9 +120,10 @@ unsafe impl GlobalAlloc for SeferAlloc {
 
     #[inline(always)]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if ptr.is_null() {
-            return;
-        }
+        // X-null: no hot null check. Null's memo/own_cache key is 0 and never
+        // matches a stored segment base or `LAST_EMPTY_KEY`, so null always
+        // misses into `publish_foreign`, whose first line null-checks before
+        // any counter or action (same observable no-op).
         // Prototype: every pointer is looked up by exact address first.
         // SAFETY: `ptr`/`layout` are this method's own contract pair.
         #[cfg(feature = "exact-object-proto")]

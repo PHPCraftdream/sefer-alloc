@@ -65,6 +65,8 @@ const PURE_OBSERVERS = [
   // B4 mem4: read-only resolved pool byte bound (pool_cap x SEGMENT); stored
   // state only, no pointer, no mutation. HeapCore level.
   "src/registry/heap_core/diag/queries.rs::dbg_pool_byte_cap_effective",
+  // Read-only Relaxed load of Entry.refs through the owner-held RouteRegistration's own EntryHandle; no address-keyed lookup, no pointer dereference beyond the already-owned entry.
+  "src/registry/segment_route/registration.rs::dbg_entry_refs_relaxed",
   "crates/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
   "crates/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
   "crates/once-ptr-cell/src/imp.rs::dbg_is_ready",
@@ -440,7 +442,7 @@ export const REVIEWED_SURFACE = [
     ['src/global/maintenance_service.rs', ['passes_for_test', 'fallback_visits_for_test'], 'observer', 'atomic diagnostic counters'],
     ['src/global/maintenance_service.rs', ['wait_after_for_test'], 'mutator', 'locks/waits on production completion condition'],
     ['src/registry/segment_route/registration.rs', ['fail_next_registration_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
-    ['src/registry/segment_route/registration.rs', ['with_initial_incarnation_for_test'], 'mutator', 'constructs isolated directory with chosen initial incarnation'],
+    ['src/registry/segment_route/directory.rs', ['with_initial_incarnation_for_test'], 'mutator', 'constructs isolated directory with chosen initial incarnation'],
     ['src/registry/segment_route/registration.rs', ['retained_pointer_capacity_for_test', 'moved_pointer_cells_for_test', 'shard_index_for_test', 'live_route_census_for_test'], 'observer', 'directory capacity/census under its locks'],
     ['src/registry/segment_route/small_sidecar.rs', ['system_totals_for_test'], 'observer', 'sidecar System totals (one SmallSidecar alloc/free per route; D1 phase-1b removed the class leaves)'],
     ['src/registry/segment_route/registration.rs', ['start_state_at_global_address_for_test'], 'observer', 'lookup pins the descriptor and reads ONLY the pinned sidecar start/pending atomic banks; no segment memory or state-byte access (the pin never owns the reservation)'],

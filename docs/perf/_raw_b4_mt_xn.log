@@ -1,0 +1,106 @@
+# b4-mt Phase-2 X-notown raw evidence log (sanitized)
+# Date: 2026-10-20. All paths sanitized: repo = <repo>, home = ~/.
+# Design: sol_ox.md §7 (X-notown), 256-bit filter in SegmentTable.
+# Mechanism implemented: `notown_filter: [u64; 4]` field, bit = (base >> 22) & 255;
+#   set at `hash_insert_identity` (the only key-insertion chokepoint), rebuilt at
+#   `hash_remove` (the only removal chokepoint; full recompute, not bit-clear),
+#   built from slots in `from_primordial`; gate in `canonical_base_of_mut`'s
+#   Tier-1 miss tail BEFORE `hash_find`. Own path unchanged (filter ⊇ table).
+# Counter: NOTOWN_FILTER_REJECTS (Relaxed, gated internals ∧ bench-internals),
+#   read via doc-hidden AllocCore::dbg_notown_filter_rejects.
+# VERDICT: NO-GO (thrash64 w_free +5 Ir > +2 Ir allowance; unchanged after the
+#   mt-xn2 iteration). src/ edits REVERTED at the end (see POST-MEASURE identity).
+
+## Identity (before AND after every measurement, byte-identical diff hash)
+# HEAD = 2730d02a5824128804f847d006206bda75a9fc84  branch b4-mt
+# git diff | sha256sum (mt-xn implementation, pre-mutant, all runs below):
+#   43c72c4f1b80db6a9770e8e5f177697c4d385f03acbe839686769f215b44aa22
+# mt-xn2 implementation (gate micro-opt: word/bit from independent bit ranges):
+#   003391ac5f4edbad2c2821a5a004e5072648a65e4203ac5f4cb4a0e65ee28c13
+# toolchain: rustc 1.97.0 x86_64-pc-windows-msvc; WSL Linux side callgrind
+# build: release, CARGO_PROFILE_RELEASE_DEBUG=line-tables-only, CARGO_TARGET_DIR=~/ab/tgt*-
+
+## Tests / static control (Windows, worktree)
+# cargo check --features production                     -> exit 0
+# cargo check (no features)                             -> exit 0
+# cargo clippy --features production -- -D warnings     -> exit 0
+# cargo clippy --features "alloc-global,internals,bench-internals" --tests -- -D warnings -> exit 0
+#   (note: `cargo clippy --features production --all-targets` fails on the
+#    PRE-EXISTING example sol_f1_dbg_carve_batch_negative_probe.rs [E0599,
+#    dbg_carve_batch needs internals]; unrelated to this change)
+# node scripts/verify-structure-limits.mjs              -> OK (exit 0)
+# rustfmt --edition 2021 on all touched files           -> done
+# CARGO_TARGET_DIR=<repo>/.rush/cargo-target-M timeout 600 \
+#   cargo test --test b4_mt_xn_notown_filter \
+#   --features "alloc-global,internals,bench-internals" -> CLEAN_EXIT=0
+#   test own_free_never_hits_notown_filter_reject ... ok (1 passed)
+
+## Mutant (test must go red): gate inverted in hash.rs `notown_filter_gate`
+# CARGO_TARGET_DIR=<repo>/.rush/cargo-target-M timeout 600 cargo test \
+#   --test b4_mt_xn_notown_filter --features "alloc-global,internals,bench-internals"
+#   -> MUTANT_EXIT=101, "test result: FAILED. 0 passed; 1 failed"
+# Reverted; git diff | sha256sum returned to
+#   43c72c4f1b80db6a9770e8e5f177697c4d385f03acbe839686769f215b44aa22 (verified).
+
+## Judge runs (each PRE-MEASURE: git diff | sha256sum = 43c72c4f...4aa22)
+
+## Run 1: mt-xn-f (foreign locality, judge mt_prof_foreign_free.sh) — exit 0
+# cmd: bash <repo>/.rush/wsl/mt_prof_foreign_free_win.sh b4-mt mt-xn-f foreign locality
+# totals 50k/100k: 6119662 / 12579945
+MARGINAL Ir/free (foreign locality) = 129        # base mt-base-f = 136  -> -7 Ir (-5.1%)
+ORACLE: PRE all 0; POST publish_ok=10000 dir_lookups=1 pin_hits=9999 pin_misses=1
+ORACLE deltas: publish_ok=10000 pin_hits=9999 pin_misses=1 hit_frac=0.9999 -> PASS
+
+## Run 2: mt-xn-own (own control) — exit 0
+# cmd: bash <repo>/.rush/wsl/mt_prof_foreign_free_win.sh b4-mt mt-xn-own own locality
+MARGINAL Ir/free (own locality) = 166            # base mt-base-own = 166 -> +/-0
+ORACLE: publish_ok delta=0 -> PASS (no foreign publishes; own path only)
+
+## Run 3: mt-xn-larson (larson T=1, prof_win.sh) — exit 0
+# cmd: bash <repo>/.rush/wsl/prof_win.sh b4-mt mt-xn-larson larson sefer
+# totals 50k/100k: 16442221 / 31466638
+MARGINAL Ir/op (sefer larson T=1) = 300          # base mt-base-larson = 300 -> +/-0 (0.0%)
+
+## Run 4: mt-xn-mstress (mstress T=1, prof_win.sh) — exit 0
+# cmd: bash <repo>/.rush/wsl/prof_win.sh b4-mt mt-xn-mstress mstress sefer
+MARGINAL Ir/op (sefer mstress T=1) = 415         # base mt-base-mstress = 415 -> +/-0
+
+## Run 5: mt-xn-thrash64 (prof_thrash64_dir.sh) — exit 0
+# cmd: bash <repo>/.rush/wsl/prof_thrash64_dir.sh /d/dev/rust/sefer-alloc/worktrees/b4-mt mt-xn-thrash64 sefer
+== activation: [thrash64] distinct 16B-window segments: 64
+sefer w_alloc marginal Ir/op = 26                # base = 26 -> +/-0
+sefer w_free marginal Ir/op  = 108               # base = 103 -> +5 Ir  ** OVER the +2 Ir allowance **
+w_free cache: D1m/op=0.88 (same as base; cost is pure instruction overhead in the gate)
+gate line in profile: hash.rs `if self.notown_filter[word] & bit != 0` = 4.7 (top own-free line)
+
+## Iteration mt-xn2 (one meaningful iteration to rescue the thrash64 criterion)
+# change: gate word/bit extracted from INDEPENDENT bit ranges of the address
+# ((a >> 28) & 3 / 1 << ((a >> SEGMENT_SHIFT) & 63)) — no shift chain.
+# git diff | sha256sum = 003391ac5f4edbad2c2821a5a004e5072648a65e4203ac5f4cb4a0e65ee28c13
+# cmd: bash <repo>/.rush/wsl/prof_thrash64_dir.sh /d/dev/rust/sefer-alloc/worktrees/b4-mt mt-xn2-thrash64 sefer — exit 0
+sefer w_alloc marginal Ir/op = 26
+sefer w_free marginal Ir/op  = 108               # unchanged: +5 Ir, still OVER +2 -> NO-GO stands
+
+## Oracle (separate bench-internals build; capacity trace, k=100000)
+# probe: zz_mt_xn_notown (new example, built inside the ~/ab/mt-xn-f snapshot):
+# owner allocates 100k x 256B (>6 segment bases), worker warms own heap (128
+# alloc/free) then frees ONLY the owner's blocks; NOTOWN_FILTER_REJECTS delta.
+NOTOWN_ORACLE frees=100000 rejects=100000 frac=1.0000 -> >=95% PASS (ORACLE_EXIT=0)
+# foreign locality judge oracle (Run 1) also PASS (publish_ok=10000, pin hit 0.9999).
+
+## POST-MEASURE identity (NO-GO revert)
+# HEAD unchanged; git diff (tracked) EMPTY: all src/ + tests/ edits for X-notown
+# reverted (`git checkout -- .`, tests/b4_mt_xn_notown_filter.rs removed).
+# This log file is the only artifact left (untracked).
+
+## Warnings / honest notes
+# - All Ir numbers are callgrind T=1 deterministic; no wall-clock, no iai.
+# - foreign locality win (-7 Ir) met its criterion and the own/larson/mstress
+#   criteria were exactly flat; the single NO-GO driver is thrash64 w_free
+#   +5 Ir (gate arithmetic on the own Tier-1 miss tail, 64-hot-segment trace,
+#   own_cache hit rate ~25%). A redesign that avoids per-miss gate work on the
+#   OWN path (e.g. a per-heap foreign-bias flag, or gating only threads that
+#   are not the owner of the address space region) would be the next attempt;
+#   that is a design change beyond one iteration, so honest NO-GO.
+# - Binary SHA256s not captured per binary (same honest limitation as base);
+#   identity rests on fixed diff hashes above + fixed snapshot tars per label.

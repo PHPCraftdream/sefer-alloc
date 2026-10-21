@@ -1,0 +1,55 @@
+diff-hash: 751f1ad2d47258ce898790833cc6178ca9195db265e62dbe9d31d866cba6c645  -
+warning: unused import: `Barrier`
+  --> examples/zz_mt_rss_pin.rs:20:22
+   |
+20 | use std::sync::{Arc, Barrier, Mutex};
+   |                      ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `h_owner`
+  --> examples/zz_mt_rss_pin.rs:92:9
+   |
+92 |     let h_owner = handoff.clone();
+   |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_h_owner`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `worker`
+   --> examples/zz_mt_rss_pin.rs:101:9
+    |
+101 |     let worker = thread::spawn(move || {
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_worker`
+
+warning: unused import: `Barrier`
+  --> examples/zz_mt_rss_pin.rs:20:22
+   |
+20 | use std::sync::{Arc, Barrier, Mutex};
+   |                      ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `h_owner`
+  --> examples/zz_mt_rss_pin.rs:92:9
+   |
+92 |     let h_owner = handoff.clone();
+   |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_h_owner`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `worker`
+   --> examples/zz_mt_rss_pin.rs:101:9
+    |
+101 |     let worker = thread::spawn(move || {
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_worker`
+
+===== arm A (base 2730d02a) =====
+PINS hits=0 misses=262144 inserts=262144 evictions=262140 unlink_fb=0 thread_releases=0 sweeps=0
+RSS_KIB 14424
+SYS_REQUESTED_BYTES 4935936 (alloc+zeroed-free, requested not RSS)
+===== arm B (current tree) =====
+PINS hits=0 misses=262144 inserts=262144 evictions=257821 unlink_fb=0 thread_releases=0 sweeps=0
+RSS_KIB 14404
+SYS_REQUESTED_BYTES 4935936 (alloc+zeroed-free, requested not RSS)
+DELTA_RSS_KIB -20 (-0.02 MiB)  threshold <= +1024 KiB : PASS
+DONE mt_rss_pin mt-xp3-rss

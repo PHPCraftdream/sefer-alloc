@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it documents a known, honestly-recorded gap in a panic-safety or unwind-safety guarantee of shipping (non-hook, non-platform-specific) code -- a residual the code's own doc comments already name, not yet a proven live bug.
 
-**Card count:** 10 numbered records in this file (re-counted 2026-10-20, D1′ fix-round). Composition: 5 open [T] cards (items 23, 155, 164, 250, 251) + item 201/202/246/247/248 retained [T] records + closed/resolved records retained for lookup (items 16, 66, 165, and 166 closed 2026-10-20 by D1′ fix-round); closure evidence is routed through `RESOLVED.md`/`ARCHIVE.md`. Item 22 (the retired `RemoteFreeRing::DrainHeadPublish` residual) was CLOSED/SUPERSEDED in R16 and moved to `RESOLVED.md`. Item 249 was renumbered to 250 in the D1′ fix-round (numbering collision with PR #88; no content change).
+**Card count:** 12 numbered records in this file (re-counted 2026-10-21, D1′ PORT2 round). Composition: 4 open [T] cards (items 23, 155, 164, 250) + items 201/202/246/247/248 retained [T] records + closed records retained for lookup (items 16, 66, 165) + one-line pointers for items 166 and 251, whose full cards moved to `RESOLVED.md` on 2026-10-21 per R34-24 (closure evidence routed through `RESOLVED.md`; 251's flaky-T1 follow-up is §252 there). Item 22 (the retired `RemoteFreeRing::DrainHeadPublish` residual) was CLOSED/SUPERSEDED in R16 and moved to `RESOLVED.md`. Item 249 was renumbered to 250 in the D1′ fix-round (numbering collision with PR #88; no content change).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -134,32 +134,7 @@ split the same day.)
     - **EXECUTED by task #2119 (2026-10-05):** остаточный долг выше закрыт — legacy-поверхность удалена целиком (`HeapRegistry::claim`, `claim_with_config`, `unsafe fn recycle`, `HeapLease::into_raw`, `lease_into_raw`, inline `mod legacy_semantics`); `unsafe fn` в `src/registry/heap_registry` больше нет. Внешних вызовов не было (grep-подтверждение); unit-тесты legacy-семантики (null/double `recycle` = no-op) удалены вместе с семантикой: `HeapLease` освобождает слот ровно один раз (Drop по значению), null/двойной recycle невыразимы. README «Where unsafe lives» (строка `claim.rs`) обновлён соответственно.
     - **Evidence:** `docs/reviews/2026-10-05-ph4c-narrow-legacy-registry-receipt.md` (Ph4c receipt), task #2107; README «Where unsafe lives (the complete list)», строка `src/registry/heap_registry/claim.rs`.
 
-166. **[T → CLOSED 2026-10-20, D1′ phase-1b] R12-01 остаток — внешнее освобождение внутреннего указателя в ВЫДАННЫЙ блок больше не доводит владельца до `abort()`.** (Filed 2026-10-06, fxx round 12, R12-01; частичный фикс `0228d150`; CLOSED D1′ phase-1b.)
-
-    > **Current state**
-    > - **Status:** CLOSED (D1′ phase-1b) — the closure property the card's
-    >   trigger (2) named is proven: the interior record (`live + 32`) is
-    >   rejected WITHOUT owner mutations and without `abort()`.
-    > - **Mechanism:** with the class leaves removed, the producer's gate is
-    >   the owner-written "start was issued" bit (`SidecarBitmap::publish`):
-    >   an interior granule of a live block was never issued as a block
-    >   START, so its start bit is 0 and the publication is dropped BEFORE
-    >   any sidecar RMW (and counted in `foreign_or_unroutable_frees`). The
-    >   former `fatal` on a zero leaf class in `BitmapCut::pop` is deleted
-    >   with the leaves — a garbage record can no longer abort the owner
-    >   (that fatal was itself the DoS this card's mechanism leaned on).
-    > - **Counterfactual test:** `tests/r12_01_foreign_free_of_unissued_granule.rs`
-    >   case 2 (`live + 32`, sub-process): the owner's drain finds nothing,
-    >   the live block stays live (clean re-dealloc), and the rejection is
-    >   counted. Red without the start-bit gate (the stale pending bit would
-    >   survive into the owner's drain).
-    > - **Scope note:** this closes the abort-on-interior residual only. The
-    >   general stale/double-free-after-reissue indistinguishability remains
-    >   OPEN as item 246.
-    > - **Evidence:** D1′ design (`.rush/art/b4/oneclass_design.md` §2, §8.2);
-    >   commits/D1′ phase-1b working tree; the card's original evidence
-    >   (`docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md` R12-01,
-    >   commits `0228d150`, `7d3b3e84`).
+166. **[T → CLOSED 2026-10-20, D1′ phase-1b] R12-01 остаток (interior-pointer free больше не abort'ит владельца).** — **CLOSED**, moved verbatim to "Recently resolved" §166 in RESOLVED.md (2026-10-21 per R34-24).
 
 201. **[T] Production does not validate Small free-list links (`next`); only `hardened` does.**
 
@@ -312,10 +287,4 @@ split the same day.)
     - **Evidence:** D1′ design §8.4 (owner decision (4)), `oneclass_rev_rush.md`
       §(3); the removal diff (phase-1b).
 
-251. **[T, filed 2026-10-20, D1′ fix-round — residual] Early publication of batch
-    starts (`d1p_rev` finding 3) is pinned by a deterministic test oracle on the allocator path. The M-h defect is closed by `oneclass_carve_batch_early_publication`; this card keeps the historical finding and closure evidence.
-
-    - **Status:** CLOSED — production-path deterministic M-h oracle passes; mutant battery demonstrates counterfactual RED. T4 same-route reset fixture separately repaired and repeat-verified.
-    - **Current-number-or-verdict:** `oneclass_carve_batch_early_publication`: 1 passed, RC=0 (`oc_final_finish_mh_test.log`); mutant battery: 9 passed, RC=0. T4 whole `oneclass_starts_map`: 30 reported repeats plus final targeted pass, same-root/different-class/cleared bits/no stale reclaim/control reclaim-once retained.
-    - **Next trigger:** reopen only upon a failing deterministic production-path oracle or changed early-publication ordering.
-    - **Evidence:** `.rush/art/b4/d1p_rev_rush.md` finding 3; deterministic production-path test `tests/oneclass_carve_batch_early_publication.rs` (1 passed, RC=0); counterfactual battery `tests/oneclass_mutant_battery.rs` (9 passed, RC=0); T4 bounded same-route fixture `tests/oneclass_starts_map.rs` (30 repeats plus final pass). `docs/design/2026-10-20-adr-oneclass-starts-map.md` §3/§7 and `docs/perf/B4_ONECLASS.md` §7.
+251. **[T, filed 2026-10-20, D1′ fix-round — residual] Early publication of batch starts (M-h) — deterministic allocator-path oracle.** — **CLOSED**, moved verbatim to "Recently resolved" §251 in RESOLVED.md (2026-10-21 per R34-24); flaky T1 repeat harness fix recorded as §252 there.

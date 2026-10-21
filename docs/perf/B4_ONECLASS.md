@@ -139,9 +139,9 @@ uncached — `pin_hits=26 176 / pin_misses=53 824` (miss_frac 0,673: 8
   «54,5 % filter / 2,3 % RMW» (суммы inclusive-кадров, raw помечен
   «DO NOT sum») отозваны.
 - Логи: `docs/perf/_raw_b4_oneclass_oc6-foreign-{cached,uncached}-b.log`
-  (проба `.rush/wsl/oc6_foreign2.rs`, драйвер `oc6_foreign.sh` /
+  (проба `<scratch>/oc6_foreign2.rs`, драйвер `oc6_foreign.sh` /
   `oc6_run_foreign_win.sh`; identity-строка в шапке), построчная аннотация —
-  `.rush/wsl/oc6-foreign-sidecar-lines.log`.
+  `<scratch>/oc6-foreign-sidecar-lines.log`.
 
 ## 5. Судья памяти (полная таблица, ИЗМЕРЕНО; mem4-раунд)
 
@@ -156,7 +156,7 @@ uncached — `pin_hits=26 176 / pin_misses=53 824` (miss_frac 0,673: 8
 MEM-снимок снимался ПОСЛЕ drop fixtures; (6) resolved byte-cap заменялся
 requested-only. Старые числа не приводятся и ни в какие таблицы не включаются.
 
-Исправленный судья (mem4, `oc_mem_probe.rs` @ `.rush/wsl`):
+Исправленный судья (mem4, `oc_mem_probe.rs` @ `<scratch>/`):
 - baseline System-sidecar/pin-счётчиков ДО bootstrap/claim (симметрично);
 - `cold` гоняет churn ЧЕРЕЗ тот же RAW lease-heap, с которого снимается
   reconciliation (один heap на workload и измерение); пул сегментов для cold
@@ -250,7 +250,7 @@ worker'а блоками 256 КиБ; owner-объём идентичен). Чи�
   выход первого слова» снят (его нет в `bank_bits_between`); атрибуция
   5,3/98,9 (bitmap_scan.rs, pending-банк) отозвана — это не overlap-путь.
 - Логи: `docs/perf/_raw_b4_oneclass_oc6-overlap-{c256,c8k,med}.log`
-  (проба `.rush/wsl/oc6_overlap_iso.{rs,sh}`, драйвер `oc6_run_overlap_win.sh`;
+  (проба `<scratch>/oc6_overlap_iso.{rs,sh}`, драйвер `oc6_run_overlap_win.sh`;
   identity-строка в шапке лога — дерево b4-oneclass + обёртка-хук).
 
 ## 6. Оракулы активации (§6.2; все проверены)
@@ -284,7 +284,7 @@ worker'а блоками 256 КиБ; owner-объём идентичен). Чи�
 ## 7. Мутанты (статусы по факту фикс-раунда; RED — где указано)
 
 Батарея: `tests/oneclass_mutant_battery.rs` (child-abort-схема `ocmut_child`) +
-`tests/oneclass_starts_map.rs`; прогоны `.rush/wsl/oc-mut2-*.log` (локальные, не в
+`tests/oneclass_starts_map.rs`; прогоны `<scratch>/oc-mut2-*.log` (локальные, не в
 репо). ИЗМЕРЕНО = `test result: FAILED` в логе.
 
 | Мутант | Что ломается | Краснеет тестом | Лог |
@@ -304,7 +304,7 @@ M-h is **CLOSED by the deterministic production-path test** (`oneclass_carve_bat
 
 Loom-модель «старт-бит ↔ publish ↔ owner-drain» (включая паузу producer'а перед RMW
 и мусорный free никогда не выданной гранулы): `tests/loom_oneclass_start_bit.rs`,
-`tests/loom_oneclass_small_sidecar_actual.rs` — зелёные (`.rush/wsl/oc-1a-loom*.log`).
+`tests/loom_oneclass_small_sidecar_actual.rs` — зелёные (`<scratch>/oc-1a-loom*.log`).
 Обоснованно-эквивалентные (не мутанты, а эквивалентные проверки):
 `t1_garbage_tail_free_is_rejected_and_never_reclaimed`,
 `t2_interior_free_of_live_block_is_rejected_payload_intact`,
@@ -384,6 +384,167 @@ Loom-модель «старт-бит ↔ publish ↔ owner-drain» (включ�
   (SELF-Ir пофункционно + построчно, §4.1),
   `_raw_b4_oneclass_mem4-{a,b}-sparse.log` (симметричный rerun: оба плеча выделили 6144×4 КиБ и получили 6 регистраций при плане 4; прежний вакуумный A-сценарий не используется).
 - CSV: `docs/perf/B4_ONECLASS_summary.csv`.
-- Дизайн-ревью: `.rush/art/b4/oneclass_design.md` (§6.1 пороги, §6.2 оракулы, §8.4
-  D1′); ревью D1′: `.rush/art/b4/d1p_rev_rush.md`, `.rush/art/b4/oneclass_rev_rush.md`.
+- Дизайн-ревью: `<scratch>/art/b4/oneclass_design.md` (§6.1 пороги, §6.2 оракулы, §8.4
+  D1′); ревью D1′: `<scratch>/art/b4/d1p_rev_rush.md`, `<scratch>/art/b4/oneclass_rev_rush.md`.
 - ADR: `docs/design/2026-10-20-adr-oneclass-starts-map.md`.
+
+## Перенос на main 8da6402d (D1′-PORT, перезамер)
+
+Дата 2026-10-21; merge `294ff32a` × `origin/main` (`8da6402d`), содержимое разрешено, индекс оставлен владельцу.
+
+- Плечо A: чистый main `8da6402d` + read-only патч `oc_mem_hooks_a2.patch`
+  (sha256 `5e01b6c82272a0e43720b186c358d3a65486cea011b870479999fb7d965db586`).
+  Write-tree `40fd66d75637e8ac163d8f33384b3e719bad2299`;
+  source-manifest `c93793c7259682e248bbab98c134311a14c86713a608c2d2cdc189ff9ef6f936`.
+- Плечо B: объединённое дерево. Write-tree `5a73e3377ee37c8ca11fbbc57f28821ca37be1c0`;
+  source-manifest `d0baf7dd2d7c2d25e341a008fca2a02d41a18af5d4febe06e199777979ebe776`.
+
+### Таблица судей (измерено, callgrind T=1, маргинально 50k→100k; перезамер на объединённом дереве)
+
+A = port-base (чистый origin/main 8da6402d + read-only хуки a2), B = port-b (объединённое дерево b4-oneclass × 8da6402d); B′-колонка пуста — интермедиат на PORT-этапе не измерялся. Построчные проверки: 46 арифметик / 46 процентов / 0 mismatches; RC=0.
+
+| Плечо | Метрика | A | B′ | B | Δ=B−A | Δ% | Порог | Вердикт |
+|---|---|---|---|---|---|---|---|---|
+| mstress | Ir/step | 368 |  | 336 | -32 | -8.7 % | GO ≤ −15; ZONE −15<Δ≤−5 | GO |
+| larson | Ir/step | 279 |  | 275 | -4 | -1.4 % | GO ≤ −1.5; NO-GO ≥ 0 | GO |
+| foreign | Ir/free | 136 |  | 134 | -2 | -1.5 % | цель ≤ −4 (D1′-гейт §8.4c) | FAIL-THRESHOLD |
+| ao | ao alloc Ir/op | 49 |  | 45 | -4 | -8.2 % | Δ ≤ +1 Ir/op | GO |
+| ao | ao alloc EstCycles | 60.4 |  | 49.8 | -10.6 | -17.5 % | информативно | MEASURED |
+| ao | ao free Ir/op | 87 |  | 87 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| ao | ao free EstCycles | 94.4 |  | 94.1 | -0.3 | -0.3 % | информативно | MEASURED |
+| aoc/rt | alloc Ir/op | 49 |  | 45 | -4 | -8.2 % | Δ ≤ +1 Ir/op | GO |
+| aoc/rt | free Ir/op | 87 |  | 87 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| aoc/c16 | alloc Ir/op | 21 |  | 22 | +1 | +4.8 % | Δ ≤ +1 Ir/op | GO |
+| aoc/c16 | free Ir/op | 49 |  | 49 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| aoc/c64 | alloc Ir/op | 21 |  | 22 | +1 | +4.8 % | Δ ≤ +1 Ir/op | GO |
+| aoc/c64 | free Ir/op | 49 |  | 49 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| batch | alloc Ir/блок | 108 |  | 89 | -19 | -17.6 % | alloc GO ≤ −5; NO-GO > +1 | GO |
+| batch | free Ir/блок | 135 |  | 135 | 0 | 0 % | free Δ ≤ +1 | GO |
+| batchc | alloc Ir/блок | 88 |  | 69 | -19 | -21.6 % | alloc GO ≤ −5; NO-GO > +1 | GO |
+| batchc | free Ir/блок | 105 |  | 105 | 0 | 0 % | free Δ ≤ +1 | GO |
+| batchl | alloc Ir/блок | 114 |  | 95 | -19 | -16.7 % | alloc GO ≤ −5; NO-GO > +1 | GO |
+| batchl | free Ir/блок | 140 |  | 140 | 0 | 0 % | free Δ ≤ +1 | GO |
+| thrash64 | alloc Ir/op | 22 |  | 22 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| thrash64 | free Ir/op | 81 |  | 84 | +3 | +3.7 % | Δ ≤ +1 Ir/op И EstCycles ≤ +1 % (Δcyc=3.1 %) | NO-GO |
+| thrash64 | free EstCycles | 90.3 |  | 93.1 | +2.8 | +3.1 % | EstCycles ≤ +1 % (точно 3.1 %) | NO-GO |
+
+### Вердикт по предрегистрации
+
+- Регресс deadpins: +24 448 Б на освобождённый dead pin (+59 %: 41 088→65 536), sidecar +48 896 Б, RSS +264 КиБ — принятая владельцем цена вместе с NO-GO thrash64/foreign.
+
+- mstress — GO; larson — GO; ao/aoc — GO; batch/batchc/batchl — GO.
+- NO-GO строки, принятые владельцем как компромисс ради mstress/batch/памяти:
+  1. thrash64 free Ir/op 81→84, Δ=+3 (+3.7 %), порог ≤ +1 — NO-GO;
+  2. thrash64 free EstCycles 90.3→93.1, +3.1 % — NO-GO;
+  3. foreign 136→134, Δ=−2 при цели ≤ −4 — FAIL-THRESHOLD.
+- NO-GO строки: причина — те же строки/функции, что в fix2-раунде (hash_slot_write/own_cache_clear/canonical_base_of кластер, атрибутные попытки без эффекта); на PORT-этапе новые попытки устранения не предпринимались; владелец принял компромисс.
+
+### Судья памяти (измерено, port raw-логи)
+
+| Режим | Метрика | A | B | Δ |
+|---|---|---|---|---|
+| full | committed | 20971520 | 20971520 | 0 |
+| full | sidecar | 1254016 | 327680 | -926336 |
+| full | rss_kib | 4516 | 3552 | -964 |
+| sparse | committed | 29360128 | 29360128 | 0 |
+| sparse | sidecar | 1860480 | 458752 | -1401728 |
+| sparse | rss_kib | 30184 | 28728 | -1456 |
+| cold | committed | 8388608 | 8388608 | 0 |
+| cold | sidecar | 462592 | 131072 | -331520 |
+| cold | rss_kib | 11036 | 9052 | -1984 |
+| deadpins | committed | 4194304 | 4194304 | 0 |
+| deadpins | sidecar | 82176 | 131072 | +48896 |
+| deadpins | rss_kib | 2396 | 2660 | +264 |
+
+- committed Δ=0 во всех четырёх режимах.
+- Cold-оракул (оба плеча): registrations=449, unlink_routes=448, census_removed=448 → 448/449 = 99.78 %; census_removed=448=unlink.
+- Sparse-оракул: registrations_delta=6 (mid) / 6 (post-free) ≥ план 4, оба плеча (A и B идентичны).
+- Deadpins: registrations 7=7; sweep_freed 4=4; dead_route_bytes 164352→262144; per-freed-pin 41088→65536.
+- Config: full/sparse/deadpins requested segments=8,byte_cap=33554432 → resolved segments=8,byte_cap=33554432; cold resolved segments=0,byte_cap=0 (ожидаемо); `config_conflicts_total=0` во всех 8 mem-логах.
+
+### Сырые логи и RC
+
+- Raw `-port` файлы (26 шт.): 9 × `_raw_b4_oneclass_port-base-{ao,aoc,batch,batchc,batchl,foreign,larson,mstress,thrash64}.log`, 9 × `_raw_b4_oneclass_port-b-{ao,aoc,batch,batchc,batchl,foreign,larson,mstress,thrash64}.log`, 8 × `_raw_b4_oneclass_port-{a,b}-{full,sparse,cold,deadpins}.log`.
+- Логи RC: `<scratch>/oc_remeas_table.log` (RC=0), `<scratch>/oc_remeas_identity.log`.
+
+### Этап проверки (замечание)
+
+- Адресные тесты D1′: M-h 1, battery 9, starts_map 5, reclaim_mag 1×2, state_byte 1+10, sgie 1, refill 1+1, r6/r12/r14/r11_ph5b — все PASS RC=0; main-сторона: b4_micro_s1 2, xnull 2, xspan 2, n9 1, u31 2 — все PASS RC=0.
+- Мутанты M-h и refill-accounting снова RED и откачены.
+- Loom: 7/7 групп PASS. run-check-matrix: ALL GREEN (один flake-инцидент 0xC0000409 в oneclass_starts_map, 1 из 4, повторно не воспроизвёлся — 10/10 повторов PASS; зафиксирован честно; УСТАРЕЛО: флейк впоследствии воспроизведён — 2 падения из ~738 — и исправлен, см. correctness RESOLVED-карточку 252).
+- clippy 5/5; fmt-check RC=0; verify-*.mjs 13/15 RC=0, verify-structure-limits RC=0 (после переноса carve_batch в diag), verify-evidence-registry RED (УСТАРЕЛО: «stale-строки незакоммиченного merge — ожидаемо, реестр не правился» — неверно: 17 из 23 нарушений были вызваны D1′ и устранены правкой реестра — R-Ph3a-native/-iai superseded → R-D1P-01; остаток RED — только reverify-строки EV-1).
+- A-worktree удалён после замера.
+
+## PORT2 (гейтирование measurement-счётчиков): перезамер после P2-1/P2-2
+
+Причина перезамера: в port-раунде оба плеча содержали негейтированные measurement-счётчики RouteDirectory (P2-1), достигнутые через расширение приватности `directory.rs` (P2-2). После гейтирования счётчиков (`all(internals, bench-internals)`) и в плече A, и в плече B выполнен повторный прогон всех 26 ячеек: 26 новых raw-логов `docs/perf/_raw_b4_oneclass_port2-*.log` (identity и feature set — в шапке каждого лога, RC — в хвосте).
+
+### Identity плеч port2
+
+- A = port2-base: origin/main `8da6402d` + `oc_mem_hooks_a3.patch` (sha256 `1ff7e14000bb078836d7e455732322b857192bcf69439d2e95cbb03c97c9a1ce`); write-tree `02db40ed426458ebdb351babdcf6e263c9b3cd36`; source-manifest-sha256 `086180efab1faf2bfa9889f4194355bb83cda9a69dbec83a5e2b9e9f992c89b3`. Шапка raw: `identity: shoulder=a base=8da6402d patch=oc_mem_hooks_a3.patch(sha256=1ff7e140…) write-tree=02db40ed… source-manifest-sha256=086180ef…`.
+- B = port2-b: объединённое дерево b4-oneclass × 8da6402d; write-tree `19aa0fcf11fa955a7a245f0d338141891ac38d92`; source-manifest-sha256 `58f83d6b71a7e8a16341cae2f1f9c6ccb65af351508659e7cfc85af9bf1e5fc0`. Шапка raw: `identity: shoulder=b base=8da6402d (origin/main) merged with 294ff32a (b4-oneclass D1-prime, mid-merge resolved) write-tree=19aa0fcf… source-manifest-sha256=58f83d6b… tree-diff-sha256(src+crates)=58f83d6b…`.
+- Полнота идентичности: full write-tree/manifest identity recorded; tree objects not reachable until commit (pin refs at merge).
+
+### Таблица судей port2 (ИЗМЕРЕНО; дословно вывод `scripts/b4_oneclass_port_table.mjs`; CSV `docs/perf/B4_ONECLASS_PORT2_summary.csv`)
+
+B4 ONE-CLASS PORT2 — таблица судей (ИЗМЕРЕНО, callgrind T=1, маргинально 50k→100k; перезамер после гейтирования measurement-счётчиков в обоих плечах)
+A = port2-base (чистый origin/main 8da6402d + oc_mem_hooks_a3.patch, sha256=1ff7e140…), B = port2-b (объединённое дерево b4-oneclass × 8da6402d); B′ в port2-раунде отсутствует; feature set в шапках raw-логов («features:»)
+
+| Плечо | Метрика | A | B′ | B | Δ=B−A | Δ% | Порог | Вердикт |
+|---|---|---|---|---|---|---|---|---|
+| mstress | Ir/step | 368 |  | 336 | -32 | -8.7 % | GO ≤ −15; ZONE −15<Δ≤−5 | GO |
+| larson | Ir/step | 279 |  | 275 | -4 | -1.4 % | GO ≤ −1.5; NO-GO ≥ 0 | GO |
+| foreign | Ir/free | 136 |  | 134 | -2 | -1.5 % | цель ≤ −4 (D1′-гейт §8.4c) | FAIL-THRESHOLD |
+| ao | ao alloc Ir/op | 49 |  | 45 | -4 | -8.2 % | Δ ≤ +1 Ir/op | GO |
+| ao | ao alloc EstCycles | 60.4 |  | 49.8 | -10.6 | -17.5 % | информативно | MEASURED |
+| ao | ao free Ir/op | 87 |  | 87 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| ao | ao free EstCycles | 94.4 |  | 94.1 | -0.3 | -0.3 % | информативно | MEASURED |
+| aoc/rt | alloc Ir/op | 49 |  | 45 | -4 | -8.2 % | Δ ≤ +1 Ir/op | GO |
+| aoc/rt | free Ir/op | 87 |  | 87 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| aoc/c16 | alloc Ir/op | 22 |  | 22 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| aoc/c16 | free Ir/op | 49 |  | 49 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| aoc/c64 | alloc Ir/op | 22 |  | 22 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| aoc/c64 | free Ir/op | 49 |  | 49 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| batch | alloc Ir/блок | 108 |  | 89 | -19 | -17.6 % | alloc GO ≤ −5; NO-GO > +1 | GO |
+| batch | free Ir/блок | 135 |  | 135 | 0 | 0 % | free Δ ≤ +1 | GO |
+| batchc | alloc Ir/блок | 88 |  | 69 | -19 | -21.6 % | alloc GO ≤ −5; NO-GO > +1 | GO |
+| batchc | free Ir/блок | 105 |  | 105 | 0 | 0 % | free Δ ≤ +1 | GO |
+| batchl | alloc Ir/блок | 114 |  | 95 | -19 | -16.7 % | alloc GO ≤ −5; NO-GO > +1 | GO |
+| batchl | free Ir/блок | 140 |  | 140 | 0 | 0 % | free Δ ≤ +1 | GO |
+| thrash64 | alloc Ir/op | 22 |  | 22 | 0 | 0 % | Δ ≤ +1 Ir/op | GO |
+| thrash64 | free Ir/op | 81 |  | 84 | +3 | +3.7 % | Δ ≤ +1 Ir/op И EstCycles ≤ +1 % (Δcyc=3.1 %) | NO-GO |
+
+### Судья памяти port2 (ИЗМЕРЕНО; дословно вывод генератора)
+
+Судья памяти port2 (ИЗМЕРЕНО, port2 raw-логи; расходы памяти A/B из этих логов)
+| Режим | Метрика | A | B | Δ |
+|---|---|---|---|---|
+| full | committed | 20971520 | 20971520 | 0 |
+| full | sidecar | 1254016 | 327680 | -926336 |
+| full | pins | 0 | 0 | 0 |
+| full | descriptor_entries | 0 | 0 | 0 |
+| full | rss_kib | 4524 | 3472 | -1052 |
+| sparse | committed | 29360128 | 29360128 | 0 |
+| sparse | sidecar | 1860480 | 458752 | -1401728 |
+| sparse | pins | 0 | 0 | 0 |
+| sparse | descriptor_entries | 0 | 0 | 0 |
+| sparse | rss_kib | 30172 | 28672 | -1500 |
+| cold | committed | 8388608 | 8388608 | 0 |
+| cold | sidecar | 462592 | 131072 | -331520 |
+| cold | pins | 0 | 0 | 0 |
+| cold | descriptor_entries | 0 | 0 | 0 |
+| cold | rss_kib | 11060 | 9092 | -1968 |
+| deadpins | committed | 4194304 | 4194304 | 0 |
+| deadpins | sidecar | 82176 | 131072 | 48896 |
+| deadpins | pins | 1 | 1 | 0 |
+| deadpins | descriptor_entries | 1 | 1 | 0 |
+| deadpins | rss_kib | 2440 | 2640 | 200 |
+| deadpins | route_registrations | 7 | 7 | 0 |
+| deadpins | dead_route_bytes | 164352 | 262144 | 97792 |
+| deadpins | dead_route_bytes_per_freed_pin | 41088 | 65536 | 24448 |
+| deadpins | retained_pins_after_sweep | 1 | 1 | 0 |
+
+
+### Сравнение port vs port2
+
+Числа port2 практически байт-в-байт совпадают с port. Единственный сдвиг: A aoc c16/c64 alloc 21→22 (в пределах порога Δ ≤ +1, вердикты GO без изменений). Verdict-картина port2 идентична port: mstress/larson/ao/aoc/batch* — GO; thrash64 free Ir/op +3 (+3.7 %) и free EstCycles +3.1 % — NO-GO без изменений; foreign −2 при цели ≤ −4 — FAIL-THRESHOLD без изменений. В memory-судье sidecar +48 896 Б и per-freed-pin +24 448 Б (+59 %) воспроизведены без изменений; RSS deadpins в port2 — +200 КиБ (2440→2640) против +264 КиБ в port-таблице выше (колебание RSS, вывод не меняет).

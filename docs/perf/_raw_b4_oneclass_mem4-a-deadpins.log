@@ -1,0 +1,17 @@
+Checking patch src/registry/segment_route/directory.rs...
+Checking patch src/registry/heap_core/diag/queries.rs...
+Checking patch src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs...
+Applied patch src/registry/segment_route/directory.rs cleanly.
+Applied patch src/registry/heap_core/diag/queries.rs cleanly.
+Applied patch src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs cleanly.
+APPLY_RC=0
+identity: shoulder=a base=bbc3c7b4 + oc_mem_hooks_a.patch(sha256=ba337e7eee92a795e9de7d1f597c21059cb2424b6dc809db47811c7a7876b508, read-only measurement hooks, identical to B) mode=deadpins; full snapshot identity to be added by owner as a separate step
+build-cmd: cargo build --release --example zz_oc_mem_probe --features production,internals,bench-internals (CARGO_TARGET_DIR isolated)
+BUILD_RC=0
+deadpins: checkpoint phase-1 6 fixture routes registered (probe register() calls so far=6), 4 pins inserted via production insert path
+deadpins: checkpoint phase-3 (pre-sweep) retained=4 sidecar_bytes=287616 LIVE-CENSUS small=2 primordial=0 large=0 (census is NOT route_registrations)
+deadpins: checkpoint phase-4 (post-sweep) retained=1 sweep_freed_pins(counter PIN_CACHE_SWEEPS delta)=4 sidecar_bytes_mid(before sweep insert)=328704
+deadpins: checkpoint phase-4 sidecar mid=328704 after=164352 dead_route_bytes=164352 dead_route_bytes_per_freed_pin=41088
+deadpins: checkpoint final fixtures kept ALIVE to the MEM snapshot; route_registrations=7 (probe register() call count, not a census)
+MEM committed_bytes=4194304 system_sidecar_bytes=82176 retained_pins=1 descriptor_entries=1 rss_kib=2424 config_conflicts_total=0 requested_pool=segments=8,byte_cap=33554432 resolved_pool=segments=8 resolved_pool_byte_cap=33554432(hook=dbg_pool_byte_cap_effective) route_registrations=7(probe register() calls: 6 fixtures + 1 sweep) retained_pins_after_sweep=1 sweep_freed_pins=4 dead_route_bytes=164352 dead_route_bytes_per_freed_pin=41088
+RUN_RC=0

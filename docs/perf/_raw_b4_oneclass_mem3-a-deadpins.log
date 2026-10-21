@@ -1,0 +1,17 @@
+tree-diff-sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (плечо A: библиотека = git archive bbc3c7b4, пустой diff; проба oc_mem_probe — внешний файл .rush/wsl)
+warning: field `registration` is never read
+   --> examples/zz_oc_mem_probe.rs:255:5
+    |
+253 | struct FxFixture {
+    |        --------- field in this struct
+254 |     _reservation: aligned_vmem::Reservation,
+255 |     registration: sefer_alloc::registry::segment_route::RouteRegistration<'static>,
+    |     ^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+deadpins: 6 fixture routes registered, 4 pins inserted via production insert path
+deadpins: retained=4 live census small=2 primordial=0 large=0
+deadpins: after sweep-insert retained=1 (sweeps delta=4)
+deadpins: sidecar bytes with dead routes retained=287616, after sweep=164352, dead_route_bytes=123264
+MEM committed_bytes=4194304 system_sidecar_bytes=82176 retained_pins=1 descriptor_entries=1 rss_kib=2436 config_conflicts_total=0 requested_pool=segments=8,byte_cap=33554432(requested-only,no-resolved-hook) resolved_pool=segments=8 route_registrations=2 retained_pins_after_sweep=1 dead_route_bytes=123264

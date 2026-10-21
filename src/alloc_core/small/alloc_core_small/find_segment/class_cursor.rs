@@ -156,12 +156,14 @@ impl AllocCore {
 
     /// B4 §11: batch-drain this class's cursor segment's bin into `out`.
     /// Same semantics as [`pop_from_class_cursor`](Self::pop_from_class_cursor).
-    /// D1′ phase-1b: infallible — the class-spill OOM is gone.
+    /// D1′ phase-1b: infallible — the class-spill OOM is gone, so the drain
+    /// degraded to a plain `usize` (0 = nothing drained).
     #[inline]
     pub(in crate::alloc_core) fn batch_drain_from_class_cursor(
         &mut self,
         class_idx: usize,
         out: &mut [*mut u8],
+        issue_state: u8,
     ) -> usize {
         // Fast path: no cursor recorded — no call into the probe.
         if self.small_class_cursor[class_idx] == CLASS_CURSOR_NONE {
@@ -170,7 +172,7 @@ impl AllocCore {
         let Some(base) = self.cursor_probe_base(class_idx) else {
             return 0;
         };
-        let n = self.try_drain_freelist_batch(base, class_idx, out);
+        let n = self.try_drain_freelist_batch(base, class_idx, out, issue_state);
         #[cfg(feature = "bench-internals")]
         if n != 0 {
             self.cursor_hit();

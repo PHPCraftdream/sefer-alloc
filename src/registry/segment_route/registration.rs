@@ -34,6 +34,25 @@ impl RouteRegistration<'_> {
     pub fn incarnation(&self) -> u64 {
         self.entry.incarnation()
     }
+    /// Bench-internals observer for the U31 owner-drain-skip trigger
+    /// (OPEN_ITEMS item 90): Relaxed read of the route `Entry.refs` refcount.
+    /// Base is 1 (the owner reference created at registration); every held
+    /// pin adds exactly one count. IMPORTANT: this is a SECONDARY slice
+    /// snapshotting the CURRENT holders (base) at the moment of the read —
+    /// `refs == 1` does NOT mean "no pins were published since the previous
+    /// scan": `RoutePin::publish_small` publishes and immediately releases
+    /// its pin, so `refs` returns to base even with nonempty pending bits
+    /// (`pin.rs:63-80`, `directory.rs:218-225`; counterexample
+    /// `tests/r6_route_directory.rs:109-129`). For the U31 upper bound of
+    /// skippable scans use `B4_U31_SCAN_NO_PENDING /
+    /// B4_U31_DISCOVERY_SCANS`. Diagnostic only (Relaxed); no RMW.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_entry_refs_relaxed(&self) -> usize {
+        use core::sync::atomic::Ordering;
+        self.entry.entry().refs.load(Ordering::Relaxed)
+    }
     pub fn small_sidecar(&self) -> Option<&SmallSidecar> {
         self.entry.small_sidecar()
     }
@@ -121,9 +140,8 @@ impl Drop for RouteRegistration<'_> {
 // move, D1′ round-2 structural fix: `directory.rs` was over the 1000-line
 // file limit; this directory already sits at its entry-count ratchet, so the
 // split reuses the existing `registration.rs` file instead of a new one).
-// Inherent impls may live in any module of the defining crate; the touched
-// private items (`shards`, `next_incarnation`, `registrations_total`,
-// `shard_index`) were widened to `pub(super)` — no behavior change.
+// All touched directory internals are private again (P2-2): the hooks read
+// through the `pub(super)` read-only observers defined in `directory.rs`.
 impl RouteDirectory {
     #[cfg(feature = "internals")]
     #[doc(hidden)]
@@ -135,16 +153,6 @@ impl RouteDirectory {
     #[doc(hidden)]
     pub fn fail_next_registrations_for_test(count: usize) {
         let _ = FAIL_NEXT_REGISTRATION.try_with(|left| left.set(count));
-    }
-
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn with_initial_incarnation_for_test(value: u64) -> Self {
-        let directory = Self::new();
-        directory
-            .next_incarnation
-            .store(value, core::sync::atomic::Ordering::Relaxed);
-        directory
     }
 
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
@@ -176,9 +184,7 @@ impl RouteDirectory {
     #[doc(hidden)]
     pub fn dbg_with_shard_of_locked_for_test(&self, ptr: *mut u8, f: impl FnOnce()) {
         let key = ptr.addr() & !(crate::alloc_core::os::SEGMENT - 1);
-        let guard = self.shards[Self::shard_index(key)].lock();
-        f();
-        drop(guard);
+        self.with_shard_of_key_locked(key, f);
     }
 
     #[cfg(feature = "bench-internals")]
@@ -195,8 +201,7 @@ impl RouteDirectory {
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[must_use]
     pub fn dbg_registrations_total(&self) -> u64 {
-        self.registrations_total
-            .load(core::sync::atomic::Ordering::Relaxed)
+        self.registrations_total()
     }
 
     /// Monotonic count of successful unlink operations on this directory.
@@ -205,31 +210,15 @@ impl RouteDirectory {
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[must_use]
     pub fn dbg_unlinks_total(&self) -> u64 {
-        self.unlinks_total
-            .load(core::sync::atomic::Ordering::Relaxed)
+        self.unlinks_total()
     }
 
-    // The live census SAFETY comment is inherited verbatim from the move
-    // source (`directory.rs`, which carries the crate-file
-    // `#![allow(unsafe_code)]` this module does not).
     /// Pointer cells retained: block indexes plus whole blocks (spares too).
     #[cfg(feature = "internals")]
     #[doc(hidden)]
-    #[allow(unsafe_code)]
+    #[must_use]
     pub fn retained_pointer_capacity_for_test(&self) -> usize {
-        self.shards
-            .iter()
-            .map(|shard| {
-                let guard = shard.lock();
-                let spare = usize::from(
-                    !guard
-                        .spare
-                        .load(core::sync::atomic::Ordering::Relaxed)
-                        .is_null(),
-                );
-                guard.index.cap + (guard.index.len + spare) * super::directory::BLOCK_CAP
-            })
-            .sum()
+        self.retained_pointer_capacity()
     }
 
     /// Pointer cells moved by updates (shifts, splits, merges, index growth
@@ -237,28 +226,14 @@ impl RouteDirectory {
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[doc(hidden)]
     pub fn moved_pointer_cells_for_test(&self) -> u64 {
-        self.shards.iter().map(|shard| shard.lock().moved).sum()
+        self.moved_pointer_cells()
     }
 
+    /// Live routes by kind: `(small, primordial, large)`.
     #[cfg(feature = "internals")]
     #[doc(hidden)]
-    #[allow(unsafe_code)]
+    #[must_use]
     pub fn live_route_census_for_test(&self) -> (usize, usize, usize) {
-        let mut counts = (0, 0, 0);
-        for shard in &self.shards {
-            let guard = shard.lock();
-            for b in 0..guard.index.len {
-                let block = guard.block(b);
-                for index in 0..block.len {
-                    // SAFETY: the shard lock retains the linked owner reference.
-                    match unsafe { &*block.get(index) }.kind {
-                        RouteKind::Small => counts.0 += 1,
-                        RouteKind::Primordial => counts.1 += 1,
-                        RouteKind::Large => counts.2 += 1,
-                    }
-                }
-            }
-        }
-        counts
+        self.live_route_census()
     }
 }

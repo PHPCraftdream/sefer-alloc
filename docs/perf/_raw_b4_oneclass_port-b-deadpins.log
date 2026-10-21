@@ -1,0 +1,19 @@
+identity: shoulder=b base=8da6402d+294ff32a (b4-oneclass mid-merge resolved) write-tree=5a73e3377ee37c8ca11fbbc57f28821ca37be1c0 source-manifest-sha256=d0baf7dd2d7c2d25e341a008fca2a02d41a18af5d4febe06e199777979ebe776 tree-diff-sha256(src+crates)=d0baf7dd2d7c2d25e341a008fca2a02d41a18af5d4febe06e199777979ebe776 probe-sha256=9daf6992a996c74635d11c85ac68c52bc71ff4c57a2a11426a6d5244cd8b4e3a mode=deadpins
+build-cmd: cargo build --release --example zz_oc_mem_probe --features production,internals,bench-internals (CARGO_TARGET_DIR isolated)
+warning: unused variable: `base`
+   --> examples/zz_oc_mem_probe.rs:325:35
+    |
+325 | fn mode_cold(heap: &mut HeapCore, base: (usize, usize, usize, usize, usize)) {
+    |                                   ^^^^ help: if this is intentional, prefix it with an underscore: `_base`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+BUILD_RC=0
+deadpins: checkpoint phase-1 6 fixture routes registered (probe register() calls so far=6), 4 pins inserted via production insert path
+deadpins: checkpoint phase-3 (pre-sweep) retained=4 sidecar_bytes=458752 LIVE-CENSUS small=2 primordial=0 large=0 (census is NOT route_registrations)
+deadpins: checkpoint phase-4 (post-sweep) retained=1 sweep_freed_pins(counter PIN_CACHE_SWEEPS delta)=4 sidecar_bytes_mid(before sweep insert)=524288
+deadpins: checkpoint phase-4 sidecar mid=524288 after=262144 dead_route_bytes=262144 dead_route_bytes_per_freed_pin=65536
+deadpins: checkpoint final fixtures kept ALIVE to the MEM snapshot; route_registrations=7 (probe register() call count, not a census)
+MEM committed_bytes=4194304 system_sidecar_bytes=131072 retained_pins=1 descriptor_entries=1 rss_kib=2660 config_conflicts_total=0 requested_pool=segments=8,byte_cap=33554432 resolved_pool=segments=8 resolved_pool_byte_cap=33554432(hook=dbg_pool_byte_cap_effective) route_registrations=7(probe register() calls: 6 fixtures + 1 sweep) retained_pins_after_sweep=1 sweep_freed_pins=4 dead_route_bytes=262144 dead_route_bytes_per_freed_pin=65536
+RUN_RC=0
+RC=0

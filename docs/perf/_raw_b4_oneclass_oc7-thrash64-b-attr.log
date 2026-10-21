@@ -1,0 +1,9 @@
+tree-diff-sha256 7659fcf3231b342b4065f950d242bb262adf613e968cdbc2b0a84c2f42e8eead (src+crates diff vs bbc3c7b4, oc7 round)
+untracked-src-sha256 3d4f0a14ea2ddb16a0c1bf742c68dcf05be04ef991f2cd8106601f587e90544a src/alloc_core/segment/segment_table/small_issue_run.rs (untracked, в tar и сборке B-плеча)
+== identity: worktree b4-oneclass (D1-prime uncommitted), tar oc7-b, CARGO_TARGET_DIR tgt64-oc7-b (WSL), callgrind --toggle-collect zz_thrash64::w_{alloc,free}, 50000/100000 marginal
+== activation: [thrash64] distinct 16B-window segments: 64
+== sefer w_alloc marginal Ir/op: 22
+== sefer w_alloc cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=22.0
+== sefer w_free marginal Ir/op: 94
+== sefer w_free cache: D1m/op=0.89 LLm/op=0.00 EstCycles/op=103.7
+(полная построчная атрибуция w_free: внешний журнал атрибуции oc7-thrash64-b-attr-full.log)

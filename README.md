@@ -781,7 +781,7 @@ item-scoped regions.
 | [`src/alloc_core/segment/segment_directory/segment_directory_impl.rs`](src/alloc_core/segment/segment_directory/segment_directory_impl.rs) | 2 | `init_node_ids_raw` variants — raw fixup of not-yet-valid sidecar storage. |
 | [`src/registry/heap_core/free/dealloc_batch.rs`](src/registry/heap_core/free/dealloc_batch.rs) | 8 | Batch free caller-pointer boundaries and internal scalar/flush calls. |
 | [`src/registry/heap_core/diag/diag_probes.rs`](src/registry/heap_core/diag/diag_probes.rs) | 8 | `dbg_dealloc_own_thread_with_base` (R23-3, task #372, gated `bench-internals`) / `dbg_flush_class_only` (R28-1, task #430, gated `bench-internals`) / `dbg_clear_magazine_on_hit` (R29-10, task #441, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract) — plus the R29-3 `dbg_decomp_decommit_payload`/`dbg_decomp_recommit_payload` (R31-6, task #469) delegations (gated `bench-internals`); see the R24-6/R25-1 note below the table. (`dbg_decomp_release`'s delegation is `unsafe fn` again as of R31-15/task #486 — forwards the identical `# Safety` contract; see the `alloc_core_small_pool/decomp_hooks.rs` row above for why.) Plus two task #504 (F11 step 2) delegations, `dbg_decomp_win_commit_only`/`dbg_decomp_win_release_only` (gated `bench-internals`), forwarding their identical `# Safety` contracts from the `alloc_core_small_pool/decomp_hooks.rs` originals. |
-| [`src/registry/heap_core/diag/queries.rs`](src/registry/heap_core/diag/queries.rs) | 1 | `dbg_stamp_kind_byte` (R6-T33, gated `alloc-global` + `internals`) — `unsafe fn` delegation to `AllocCore::dbg_stamp_kind_byte` (raw segment-header write), forwarding its `# Safety` contract; used by the corrupted-kind regression test. |
+| [`src/registry/heap_core/diag/queries.rs`](src/registry/heap_core/diag/queries.rs) | 2 | `dbg_stamp_kind_byte` (R6-T33, gated `alloc-global` + `internals`) — `unsafe fn` delegation to `AllocCore::dbg_stamp_kind_byte` (raw segment-header write), forwarding its `# Safety` contract; used by the corrupted-kind regression test — plus `dbg_force_decommit_retain_for` (B4 D1′ PORT, gated `bench-internals`) — second `unsafe fn` delegation, forwarding the `AllocCore::dbg_force_decommit_retain_for` `# Safety` contract (decommit of a caller-pointer segment payload). |
 | [`src/registry/heap_core/free/dealloc.rs`](src/registry/heap_core/free/dealloc.rs) | 2 | `dealloc` — `unsafe fn` boundary (caller-pointer contract) + internal call-site block into `AllocCore::dealloc` |
 | [`src/registry/heap_core/free/dealloc_own_base.rs`](src/registry/heap_core/free/dealloc_own_base.rs) | 4 | `dealloc_own_thread[_with_base]` — internal call-site blocks into `AllocCore::flush_class` / `AllocCore::dealloc` + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` (R32-3/task #494: `realloc`'s move leg and `try_promote_to_large` now call the safe `dealloc_own_thread[_with_base]` bodies directly with their already-proven `base` instead of routing back through `HeapCore::dealloc` — this file hosts that routing block today) + R1-01's free-side byte-budget-cap call into `AllocCore::flush_class` (a single-block batch, once a class's magazine reaches its D3 refill-byte-budget cap) |
 | [`src/registry/heap_core/free/realloc.rs`](src/registry/heap_core/free/realloc.rs) | 1 | `realloc` — `unsafe fn` boundary (caller-pointer contract); its move leg was never separately counted here: it was an inner `unsafe {}` block already covered by `realloc`'s own `unsafe fn` boundary |
@@ -796,7 +796,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **26** tier-1 module-level seams (20 in
-`src/`, 6 in `crates/`) plus **104** tier-2 item-scoped allows across **32**
+`src/`, 6 in `crates/`) plus **102** tier-2 item-scoped allows across **32**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1417,9 +1417,9 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **441 integration test files**,
-**97 example binaries**, **33 benches**, and **22 root Loom models**
-in `tests/` (`tests/*.rs` (441 files)), plus two member-crate
+needs its acceptance run. The present tree contains **447 integration test files**,
+**97 example binaries**, **34 benches**, and **22 root Loom models**
+in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
 Counts cover root `*.rs` targets in each folder, excluding nested fixtures
@@ -1427,9 +1427,9 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (438 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (447 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (97 files) |
-| Benches | Reproducible performance and gate harnesses | `benches/*.rs` (33 files) |
+| Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (22 files):** `tests/loom_active_kind_index.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_oneclass_small_sidecar_actual.rs`, `tests/loom_oneclass_start_bit.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri-matrix.mjs` is the single manifest of Miri targets (GREEN, EXPECTED-RED with its card, WAIVED); `scripts/miri.mjs` runs it and `scripts/verify-miri-target-wiring.mjs` checks that every Miri test file is classified and wired in CI; it includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |
@@ -1868,8 +1868,7 @@ cross-thread; `// SAFETY:` for any new `unsafe`).
 
 The codebase conventions are documented in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and `CLAUDE.md` (one
-export per file; `mod.rs` only re-exports; tests live in `tests/` (`tests/*.rs` (441 files)) not
-inline; `unsafe` only in named seams). The compiler enforces the unsafe
+export per file; `mod.rs` only re-exports; tests live in `tests/` not inline; `unsafe` only in named seams). The compiler enforces the unsafe
 discipline; the rest is convention.
 
 ---

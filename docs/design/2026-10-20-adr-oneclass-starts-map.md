@@ -1,10 +1,10 @@
 # ADR: карта стартов «старт выдавался» (D1′) — удаление ClassLeaves и issue-транзакции (one-class)
 
-Дата 2026-10-20. Статус: **ПРЕДЛОЖЕН (ожидает принятия владельцем)**; остаток M-h описан в §7. Ветка `b4-oneclass`
+Дата 2026-10-20. Статус: **ПРЕДЛОЖЕН (ожидает принятия владельцем)**; бывший остаток M-h ЗАКРЫТ детерминированным оракулом (§7). Ветка `b4-oneclass`
 (фазы 1a + 1b + OPT). Образец: `docs/design/2026-10-19-adr-small-path-v2.md`.
-Дизайн-ревью-первоисточник: `.rush/art/b4/oneclass_design.md` (§2 эквивалентность,
-§6 план замеров, §7 GO-условия, §8.4 D1′); ревью D1′: `.rush/art/b4/d1p_rev_rush.md`,
-`.rush/art/b4/oneclass_rev_rush.md`.
+Дизайн-ревью-первоисточник: `<scratch>/art/b4/oneclass_design.md` (§2 эквивалентность,
+§6 план замеров, §7 GO-условия, §8.4 D1′); ревью D1′: `<scratch>/art/b4/d1p_rev_rush.md`,
+`<scratch>/art/b4/oneclass_rev_rush.md` (артефакты вне репозитория).
 
 Метки: **ИЗМЕРЕНО** — число из сырого лога `docs/perf/_raw_b4_oneclass_*.log`;
 **ВЫВОД ИЗ КОДА** — следует из исходника по `file:line`; **ОЦЕНКА** — вывод с
@@ -23,7 +23,7 @@ foreign free 136 Ir/free; цена sidecar из первоначального �
 см. mem4-замер в `docs/perf/B4_ONECLASS.md` §5; из оценки @ox —
 −25…−40 Ir/step на mstress при удалении.
 
-Находка rush №1 (`.rush/art/b4/oneclass_rev_rush.md`): наивный D1 (удалить листья,
+Находка rush №1 (`<scratch>/art/b4/oneclass_rev_rush.md`): наивный D1 (удалить листья,
 решение в producer-RMW `fetch_or`) **расширяет окно misuse**: исполнение «фильтр
 пройден до carve, producer заснул, RMW после гашения» освобождает живой блок.
 D1 в чистом виде — NO-GO.
@@ -167,7 +167,7 @@ layout-only атрибутов — без эффекта; см. B4_ONECLASS.md �
   пауза producer'а перед RMW, мусорный free никогда не выданной гранулы),
   `tests/loom_oneclass_small_sidecar_actual.rs`; обновлены
   `loom_sidecar_bitmap*.rs`, `loom_b4_scan_skip_empty_publish.rs`,
-  `loom_b4_r1_pin_cache.rs` (`.rush/wsl/oc-1a-loom*.log` — зелёные).
+  `loom_b4_r1_pin_cache.rs` (`<scratch>/oc-1a-loom*.log` — зелёные).
 - Native: `tests/oneclass_starts_map.rs` (t1/t2/t4/t5/t6),
   `tests/oneclass_mutant_battery.rs`, переписанные `r12_01`, `r6_u21`,
   `r6_terminal_owner_drain{,_model}`, `state_byte_heap_magazine`,
@@ -184,7 +184,9 @@ layout-only атрибутов — без эффекта; см. B4_ONECLASS.md �
 
 The owner explicitly accepts **state byte as the sole class source** for D1′. D1′ has no independent class copy after leaf removal. A geometrically compatible wrong-class LIVE-byte mutation (`bs(d)` divides `off`, `off+bs(d) ≤ bump`) is not detected by geometry/overlap alone; smaller or co-sized substitutions may leak the block tail instead of overlapping a neighbor. The design decision is owner-accepted; reintroducing an independent witness is deferred unless the owner requests it. The ADR itself remains proposed pending owner adoption; that does not make the accepted design decision unaccepted.
 
-M-h's separate deterministic production-path early-publication defect is closed by the test in `tests/oneclass_carve_batch_early_publication.rs`; T4's same-route reset fixture is separately repaired and repeat-verified.
+M-h's separate deterministic production-path early-publication defect is closed by the test in `tests/oneclass_carve_batch_early_publication.rs`; T4's same-route reset fixture is separately repaired and repeat-verified. The flaky T1 repeat-harness defect (wrong absolute `live_count` model; 2 failures in ~738 runs) was fixed by a deterministic segment-delta oracle — 200 Windows + 200 WSL repeats, 0 failures, mutant RED 3/3 — recorded as correctness `RESOLVED.md` §252 (evidence `<scratch>/oc_flake_*`).
+
+Перенос на main: D1′ переносится merge-коммитом `294ff32a` × `8da6402d` (незавершённый merge в ветке `b4-oneclass`). После ревью порта (P2-1/P2-2: measurement-счётчики RouteDirectory гейтированы `all(internals, bench-internals)`) выполнен PORT2-перезамер всех 26 ячеек: числа совпали с port-раундом в пределах порога (кроме A aoc c16/c64 alloc 21→22); NO-GO thrash64 (free +3 Ir/op, EstCycles +3.1 %) и foreign (−2 при цели ≤ −4) — без изменений; канонические RSS-числа — PORT2-генератор (full −1052, sparse −1500, cold −1968, deadpins +200 КиБ; sidecar +48 896 Б). Отчёт: `docs/perf/B4_ONECLASS.md` PORT2-раздел; evidence-реестр: R-Ph3a-native/-iai → superseded, новая строка `R-D1P-01`.
 
 ## 8. Отклонённые варианты
 

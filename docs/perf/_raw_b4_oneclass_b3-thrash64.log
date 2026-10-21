@@ -1,0 +1,13 @@
+tree-diff-sha256 22398b8df1acd95aa1cc2c7bed7d0fe95e8185420b9332c9676db6c42dd72b89 (src+crates diff vs bbc3c7b4, oc3 round)
+== activation: [thrash64] distinct 16B-window segments: 64
+== sefer w_alloc marginal Ir/op: 22
+== sefer w_alloc cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=22.0
+== sefer w_free marginal Ir/op: 94
+  19.7	 | src/alloc_core/segment/segment_table/segment_table_impl.rs:zz_thrash64::w_free
+  17.5	 | src/alloc_core/segment/segment_table/hash.rs:zz_thrash64::w_free
+  16.0	 | src/registry/heap_core/free/dealloc_own_base.rs:zz_thrash64::w_free
+   7.9	src/alloc_core/segment/segment_table/hash.rs | (key ^ (key >> 13) ^ (key >> 26)) & (HASH_CAPACITY - 1)
+   7.9	 | src/alloc_core/segment/segment_header/segment_header_views.rs:zz_thrash64::w_free
+   6.9	src/alloc_core/segment/segment_header/segment_header_views.rs | match b {
+== sefer w_free cache: D1m/op=0.89 LLm/op=0.00 EstCycles/op=103.7
+(oc3-thrash64 fresh run on final tree; full annotate output in .rush/wsl run log — transcription of judge lines)

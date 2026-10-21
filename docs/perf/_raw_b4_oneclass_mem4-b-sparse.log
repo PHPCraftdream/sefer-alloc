@@ -1,0 +1,9 @@
+RC=0
+identity: shoulder=b base=bbc3c7b4 tree-diff-sha256(src+crates)=7659fcf3231b342b4065f950d242bb262adf613e968cdbc2b0a84c2f42e8eead source-manifest-sha256=746be19fa4eca828463d4c4fc680b208b0f049bba3517a8b4d60baa359473cca mode=sparse
+build-cmd: cargo build --release --example zz_oc_mem_probe --features production,internals,bench-internals (CARGO_TARGET_DIR isolated)
+BUILD_RC=0
+sparse: allocated 6144 4-KiB blocks (plan 6144; exceeds the primordial payload — fresh small routes forced)
+sparse: oracle registrations_delta=6 (mid) / 6 (post-free) >= 4 required (plan 4 routes); kept live blocks=8 (sparse semantics); census after free: small=6 primordial=1 (pool retains freed routes)
+MEM committed_bytes=29360128 system_sidecar_bytes=458752 retained_pins=0 descriptor_entries=0 rss_kib=28752 config_conflicts_total=0 requested_pool=segments=8,byte_cap=33554432 resolved_pool=segments=8 resolved_pool_byte_cap=33554432(hook=dbg_pool_byte_cap_effective)
+RUN_RC=0
+RC=0

@@ -82,10 +82,7 @@ impl super::segment_table_impl::SegmentTable {
             let index =
                 crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) as usize;
             if self.base_at(index) != base {
-                fatal(
-                    b"segment_table: issue base is not the segment base
-",
-                );
+                fatal(b"segment_table: issue base is not the segment base\n");
             }
             return routes.small_issue_run(index, base);
         }
@@ -103,10 +100,7 @@ impl super::segment_table_impl::SegmentTable {
             let index =
                 crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) as usize;
             if self.base_at(index) != base {
-                fatal(
-                    b"segment_table: reclaim base is not the segment base
-",
-                );
+                fatal(b"segment_table: reclaim base is not the segment base\n");
             }
             return routes.reclaim_start_bit(index, base, offset);
         }
@@ -122,10 +116,7 @@ impl super::segment_table_impl::SegmentTable {
             let index =
                 crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) as usize;
             if self.base_at(index) != base {
-                fatal(
-                    b"segment_table: overlap base is not the segment base
-",
-                );
+                fatal(b"segment_table: overlap base is not the segment base\n");
             }
             return routes.reclaim_start_overlap(index, base, start, end);
         }
@@ -147,10 +138,7 @@ impl super::segment_table_impl::SegmentTable {
             let index =
                 crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) as usize;
             if self.base_at(index) != base {
-                fatal(
-                    b"segment_table: reset base is not the segment base
-",
-                );
+                fatal(b"segment_table: reset base is not the segment base\n");
             }
             routes.clear_remote_bits(index, base, start_off, end_off);
         }

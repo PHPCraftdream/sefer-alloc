@@ -1,0 +1,83 @@
+identity: raw foreign self-Ir probe oc6_foreign2, arm=cached, tree=b4-oneclass worktree (base bbc3c7b4 + uncommitted D1-prime), src+crates diff sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 at capture; callgrind toggle '*zz_oc6_foreign2::w_free*', 80000 frees; probe scripts in .rush/wsl (not in repo)
+FOREIGN_SELF arm=cached frees=80000 window_ir_total=10520019(100.0%)PROGRAMTOTALS window_ir_per_free=131.50
+--- per-function SELF Ir (arm=cached; each line separate; DO NOT sum)
+1557283 (14.80%)  oc6-foreign/src/registry/heap_core_xthread/route_pin_cache.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+1280018 (12.17%)  oc6-foreign/src/registry/heap_core_xthread/routing.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+1039922 ( 9.89%)  oc6-foreign/src/registry/segment_route/pin.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  799940 ( 7.60%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  479964 ( 4.56%)  oc6-foreign/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  320000 ( 3.04%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  319976 ( 3.04%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/bool.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  160001 ( 1.52%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  160000 ( 1.52%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+   80012 ( 0.76%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/eager.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+   80000 ( 0.76%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+     .           pub(crate) fn current_for_dealloc() -> CurrentHeapForDealloc {
+-- Auto-annotated source: oc6-foreign/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs
+      .               pub(crate) fn canonical_base_of_mut(&mut self key: *mut u8) -> Option<*mut u8> {
+      .                   self.hash_find(base)
+      .               unsafe { a.dealloc(p l) }
+      .               pub(super) fn hash_find(&self base: *mut u8) -> Option<*mut u8> {
+-- Auto-annotated source: oc6-foreign/src/registry/heap_core_xthread/route_pin_cache.rs
+      .               /// a directory-lookup-price path where one extra Acquire-load per slot
+    146 ( 0.00%)  => oc6-foreign/src/registry/heap_core_xthread/route_pin_cache.rs:<sefer_alloc::registry::heap_core_xthread::route_pin_cache::PinCache>::sweep_dead_slots (6x)
+      .                           // once — identical to `publish_foreign`'s contract; address
+      .                   // Cold path (the caller just ran a full directory lookup): sweep
+    146 ( 0.00%)  => oc6-foreign/src/registry/heap_core_xthread/route_pin_cache.rs:<sefer_alloc::registry::heap_core_xthread::route_pin_cache::PinCache>::sweep_dead_slots (6x)
+374079 ( 3.56%)  <counts for unidentified lines in oc6-foreign/src/registry/heap_core_xthread/route_pin_cache.rs>
+      .               // Cold relative to the own-thread free in `dealloc_routing`: keeps the
+--- line-level self Ir in sidecar_bitmap.rs (arm=cached)
+--------------------------------------------------------------------------------
+Profile data file 'cg6.oc6-foreign.cached.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 157555941
+Trigger: Program termination
+Profiled target:  zz_oc6_foreign2(release-bin) cached 80000 (PID 476, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   oc6-foreign/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs
+Auto-annotation:  off
+
+--------------------------------------------------------------------------------
+Ir                  
+--------------------------------------------------------------------------------
+10,520,019 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                  file:function
+--------------------------------------------------------------------------------
+1,557,283 (14.80%)  oc6-foreign/src/registry/heap_core_xthread/route_pin_cache.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+1,280,018 (12.17%)  oc6-foreign/src/registry/heap_core_xthread/routing.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+1,120,000 (10.65%)  oc6-foreign/src/global/sefer_alloc/global_alloc.rs:zz_oc6_foreign2::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+1,039,922 ( 9.89%)  oc6-foreign/src/registry/segment_route/pin.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  960,000 ( 9.13%)  oc6-foreign/src/alloc_core/segment/segment_table/hash.rs:zz_oc6_foreign2::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  880,000 ( 8.37%)  oc6-foreign/src/alloc_core/segment/segment_table/segment_table_impl.rs:zz_oc6_foreign2::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  799,940 ( 7.60%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  560,000 ( 5.32%)  oc6-foreign/examples/zz_oc6_foreign2.rs:zz_oc6_foreign2::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  479,964 ( 4.56%)  oc6-foreign/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  320,000 ( 3.04%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  319,976 ( 3.04%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/bool.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  240,000 ( 2.28%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:zz_oc6_foreign2::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  160,001 ( 1.52%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  160,000 ( 1.52%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:zz_oc6_foreign2::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  160,000 ( 1.52%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+   80,012 ( 0.76%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/eager.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+   80,000 ( 0.76%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:zz_oc6_foreign2::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   80,000 ( 0.76%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+   80,000 ( 0.76%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:zz_oc6_foreign2::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   80,000 ( 0.76%)  oc6-foreign/src/global/tls_heap.rs:zz_oc6_foreign2::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+
+--------------------------------------------------------------------------------
+-- User-annotated source: oc6-foreign/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs
+--------------------------------------------------------------------------------
+  No information has been collected for oc6-foreign/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs
+
+--- oracle (bench-internals build, NO callgrind), arm=cached
+ORACLE arm=cached publish_ok=80000 pin_hits=79994 pin_misses=6 (deltas +80000/79994/6)
+DONE oc6_foreign oc6-foreign cached

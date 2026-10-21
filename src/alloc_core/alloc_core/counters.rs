@@ -32,6 +32,52 @@ pub(crate) static B4_SCAN_WORDS: core::sync::atomic::AtomicU64 =
 pub(crate) static B4_FOREIGN_PUBLISH_OK: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// B4 U31 trigger observer (owner-drain skip, OPEN_ITEMS item 90): routed
+/// Small sidecar scans that reached a live route slot (`scan_small_from`
+/// past base/sidecar validation). Denominator of the "holders == base"
+/// fraction.
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_U31_SCAN_SEGMENTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 U31 trigger observer: SECONDARY slice of [`B4_U31_SCAN_SEGMENTS`] —
+/// scans whose route `Entry.refs` equaled the base value 1 (owner reference
+/// only) at the moment of the scan. This is a snapshot of CURRENT holders
+/// (base), NOT evidence that no pins were published since the previous
+/// scan: `RoutePin::publish_small` publishes and immediately releases its
+/// pin, so `refs` returns to base even with nonempty pending bits. For the
+/// U31 upper bound of skippable scans see
+/// [`B4_U31_SCAN_NO_PENDING`] / [`B4_U31_DISCOVERY_SCANS`].
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_U31_SCAN_HOLDERS_BASE: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 U31 trigger observer: of [`B4_U31_SCAN_SEGMENTS`], discovery scans
+/// (`drain_segment_sidecar`) whose ENTIRE routed segment scan found no
+/// nonzero pending word (every visited bitmap word was zero; a zero-word
+/// scan range counts vacuously). Upper bound of the U31 skip benefit: such
+/// a scan could not have reclaimed anything even without the scan. Fired
+/// from `U31NoPendingObserver`, NOT from the `changed_classes == 0`
+/// branch: a nonzero word whose records are all already FREE/MAG in the
+/// state byte yields zero changed classes while pending bits existed
+/// (`alloc_core_small_reclaim.rs:52-58`).
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_U31_SCAN_NO_PENDING: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 U31 trigger observer: discovery scans (`drain_segment_sidecar`), the
+/// exact same set of scans over which [`B4_U31_SCAN_NO_PENDING`] is
+/// counted — denominator of the U31 upper bound
+/// `B4_U31_SCAN_NO_PENDING / B4_U31_DISCOVERY_SCANS` ("how many of the
+/// discovery scans were empty"). Segments scanned by NON-discovery paths
+/// (strict trim, bounded step — they have their own observers) are NOT in
+/// this set: that is the DEFINITION of this limit. The broader all-sites
+/// denominator ([`B4_U31_SCAN_SEGMENTS`], with the `holders == base`
+/// numerator [`B4_U31_SCAN_HOLDERS_BASE`]) is a different measurement.
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_U31_DISCOVERY_SCANS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): route-directory
 /// lookups (`RouteDirectory::lookup`).
 #[cfg(feature = "bench-internals")]
@@ -680,3 +726,36 @@ pub(crate) static CARVE_BATCH_RESUME: core::sync::atomic::AtomicBool =
 // oxx R2-07), planted when the active lease binds. See `HeapSlot::large_cache_hits`.
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) type LargeCacheHitCounter = core::sync::atomic::AtomicU64;
+
+/// B4-M (P1-2): magazine-refill event counter — bumped once per
+/// `AllocCore::refill_class_bump_impl` call whose `issue_state` is
+/// [`StateByte::MAG`](crate::alloc_core::state_byte::StateByte::MAG)
+/// (i.e. only magazine refills; batch-API refills commit LIVE and are not
+/// counted). Companion of [`S1_MAG_BYTE_WRITES`]. Read via
+/// `AllocCore::dbg_s1_refill_events`. `bench-internals`-gated (the
+/// `CONTAINS_BASE_TIER1_HITS` convention): never reachable in a plain
+/// production build. Relaxed: diagnostic only.
+#[cfg(feature = "bench-internals")]
+pub(crate) static S1_REFILL_EVENTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): count of MAG state-byte writes performed by the substrate
+/// refill itself — `try_drain_freelist_batch` and `try_carve_batch` add their
+/// committed block count once per call when `issue_state == MAG` (equal to
+/// one per `meta.state_byte().write(.., MAG)`). Under S1 the retained
+/// magazine blocks' MAG bytes are written HERE; the full-revert mutant (drain
+/// LIVE + the old `finish_magazine_refill` MAG loop) drives this to 0 for the
+/// same end-state bytes, which is what
+/// `tests/b4_micro_s1_refill_mag_bytes.rs` pins. Companion of
+/// [`S1_REFILL_EVENTS`]. Same gating/ordering convention.
+#[cfg(feature = "bench-internals")]
+pub(crate) static S1_MAG_BYTE_WRITES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4-M (P1-2): null frees that reached `HeapCore::publish_foreign`'s null
+/// tail guard (`if ptr.is_null() { return; }`) — the X-null no-op oracle.
+/// Counted inside the null branch only, so non-null frees pay nothing even
+/// under `bench-internals`. Relaxed: diagnostic only.
+#[cfg(feature = "bench-internals")]
+pub(crate) static XNULL_NULL_TAIL_GUARD: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);

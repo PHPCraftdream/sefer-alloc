@@ -1,0 +1,16 @@
+identity: shoulder=b base=8da6402d+294ff32a (b4-oneclass mid-merge resolved) write-tree=5a73e3377ee37c8ca11fbbc57f28821ca37be1c0 source-manifest-sha256=d0baf7dd2d7c2d25e341a008fca2a02d41a18af5d4febe06e199777979ebe776 tree-diff-sha256(src+crates)=d0baf7dd2d7c2d25e341a008fca2a02d41a18af5d4febe06e199777979ebe776 probe-sha256=9daf6992a996c74635d11c85ac68c52bc71ff4c57a2a11426a6d5244cd8b4e3a mode=sparse
+build-cmd: cargo build --release --example zz_oc_mem_probe --features production,internals,bench-internals (CARGO_TARGET_DIR isolated)
+warning: unused variable: `base`
+   --> examples/zz_oc_mem_probe.rs:325:35
+    |
+325 | fn mode_cold(heap: &mut HeapCore, base: (usize, usize, usize, usize, usize)) {
+    |                                   ^^^^ help: if this is intentional, prefix it with an underscore: `_base`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+BUILD_RC=0
+sparse: allocated 6144 4-KiB blocks (plan 6144; exceeds the primordial payload — fresh small routes forced)
+sparse: oracle registrations_delta=6 (mid) / 6 (post-free) >= 4 required (plan 4 routes); kept live blocks=8 (sparse semantics); census after free: small=6 primordial=1 (pool retains freed routes)
+MEM committed_bytes=29360128 system_sidecar_bytes=458752 retained_pins=0 descriptor_entries=0 rss_kib=28728 config_conflicts_total=0 requested_pool=segments=8,byte_cap=33554432 resolved_pool=segments=8 resolved_pool_byte_cap=33554432(hook=dbg_pool_byte_cap_effective)
+RUN_RC=0
+RC=0

@@ -1,0 +1,8 @@
+tree-diff-sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (плечо A: чистый git archive bbc3c7b4, пустой src+crates diff)
+== identity: git archive bbc3c7b4, tar oc7-a, CARGO_TARGET_DIR tgt64-oc7-a (WSL), callgrind --toggle-collect zz_thrash64::w_{alloc,free}, 50000/100000 marginal
+== activation: [thrash64] distinct 16B-window segments: 64
+== sefer w_alloc marginal Ir/op: 22
+== sefer w_alloc cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=22.0
+== sefer w_free marginal Ir/op: 91
+== sefer w_free cache: D1m/op=0.89 LLm/op=0.00 EstCycles/op=100.2
+(полная построчная атрибуция w_free: внешний журнал атрибуции oc7-thrash64-a-attr-full.log)

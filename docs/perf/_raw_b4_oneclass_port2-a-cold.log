@@ -1,0 +1,84 @@
+identity: shoulder=a base=8da6402d oc_mem_hooks_a3.patch(sha256=1ff7e14000bb078836d7e455732322b857192bcf69439d2e95cbb03c97c9a1ce) write-tree=02db40ed426458ebdb351babdcf6e263c9b3cd36 source-manifest-sha256=086180efab1faf2bfa9889f4194355bb83cda9a69dbec83a5e2b9e9f992c89b3 probe-sha256=9daf6992a996c74635d11c85ac68c52bc71ff4c57a2a11426a6d5244cd8b4e3a mode=cold
+features: production,internals,bench-internals
+build-cmd: cargo build --release --example zz_oc_mem_probe --features production,internals,bench-internals (CARGO_TARGET_DIR isolated)
+warning: unused variable: `base`
+   --> examples/zz_oc_mem_probe.rs:325:35
+    |
+325 | fn mode_cold(heap: &mut HeapCore, base: (usize, usize, usize, usize, usize)) {
+    |                                   ^^^^ help: if this is intentional, prefix it with an underscore: `_base`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+BUILD_RC=0
+cold: checkpoint pre-loop registrations_before=1 census small=0 primordial=1 large=0
+cold: iteration 0 live 4-KiB blocks = 8192 (NULL-terminated)
+cold: cycle 0 registrations=8 census 0->8->1 unlink_delta=7
+cold: cycle 1 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 2 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 3 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 4 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 5 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 6 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 7 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 8 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 9 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 10 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 11 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 12 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 13 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 14 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 15 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 16 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 17 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 18 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 19 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 20 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 21 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 22 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 23 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 24 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 25 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 26 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 27 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 28 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 29 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 30 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 31 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 32 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 33 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 34 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 35 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 36 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 37 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 38 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 39 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 40 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 41 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 42 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 43 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 44 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 45 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 46 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 47 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 48 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 49 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 50 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 51 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 52 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 53 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 54 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 55 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 56 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 57 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 58 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 59 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 60 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 61 registrations=7 census 1->8->1 unlink_delta=7
+cold: cycle 62 registrations=7 census 1->8->1 unlink_delta=7
+cold: iteration 63 live 4-KiB blocks = 8192 (NULL-terminated)
+cold: cycle 63 registrations=7 census 1->8->1 unlink_delta=7
+cold: checkpoint post-loop registrations_after=450 registrations_delta=449 (claimed cycles=64, required >=61)
+cold: release facts census small=1 primordial=1 large=0 (pre-loop small=0); registrations=449, unlink_routes=448, census_removed=448 over 64 cycles
+MEM committed_bytes=8388608 system_sidecar_bytes=462592 retained_pins=0 descriptor_entries=0 rss_kib=11060 config_conflicts_total=0 requested_pool=segments=8,byte_cap=33554432 resolved_pool=segments=0 resolved_pool_byte_cap=0(hook=dbg_pool_byte_cap_effective)
+RUN_RC=0
+RC=0

@@ -438,17 +438,14 @@ catcher-теста): cross-heap free magazine-резидентного блок�
 - **Тест:** `tests/dealloc_substrate_exact_guard.rs` (3 теста).
 - **Мутанты:** RED 101; откат → 0.
 
-## Evidence registry blocker (current worktree)
+## Evidence registry (resolved)
 
-`scripts/verify-evidence-registry.mjs` currently exits 1: 15 existing strong
-evidence rows are source-scope stale (R-Ph3a-native, R-Ph3b, R4b-03/04/05/09/11/12/15,
-R4c-02/04/05/06/07/08). The script identifies concrete source paths changed
-since each row’s pinned source commit; these are not fresh verified pins. Their
-statuses, source SHAs, and required-cell expectations were not changed. Rows
-remain honest historical evidence pending source identity reconciliation and
-required source/CI verification; no nonexistent receipt or CI result was
-invented. Five other warnings remain identity/unpublished-commit warnings,
-separate from the 15 blocking stale-scope violations.
+The source-scope-stale rows were reverified through the EV-1 runner on CI
+(gate-run, run 39420852160, E0 PASS, head `801d84bc`): R-Ph3a-native, R-Ph3b,
+R4c-05, R4c-06 (preserve KNOWN-RED), R4c-07, R4c-08 (new recipe
+`docs/evidence/reverify-recipes/R4c-08.json`). The R4b-*/R4c-02/R4c-04 rows
+dropped out of the stale set after the rebase onto `main` `2730d02a` (the
+`tls_heap.rs` change they tracked is not part of this branch).
 
 ---
 
@@ -513,3 +510,81 @@ production-equivalent зелёная строка — `production,internals`;
 расхождений, rc 0. Значения G-suite идентичны колонке B (ao 50/93, cycles
 61.4/100.4; rt 50/93, c16 22/54, c64 22/54; batch 114/141; batchc 94/110;
 larson 283; mstress 384; thrash64 22/91, cycles 22.0/100.2).
+
+## 12. CI-квитанции (iai A/B и mt-bench)
+
+Таблицы ниже выведены `node scripts/b4_state_byte_ci_table.mjs` из
+закоммиченных сырых файлов: `docs/perf/_raw_b4_state_byte_iai_ab.csv` и
+`_raw_b4_state_byte_iai_ab_verdict.log` (r20 gate-run 39422462237,
+`scripts/r20_r6_ab_iai_run.mjs`), `docs/perf/_raw_b4_state_byte_mt_base.log`
+(mt-bench 39403460449 на `2730d02a`) и `_raw_b4_state_byte_mt_pr87.log`
+(mt-bench 39422510174 на `30e57b62`, логи усечены до таблиц, маркер в файле).
+ИЗМЕРЕНО (CI).
+
+iai A/B (r20 gate-run, A = `2730d02a`, B = `30e57b62`, features `production bench-internals internals`):
+- cells with A > 100 Ir: 77; better 50, worse 16, equal 11
+- mimalloc control cells: 13, all Δ = 0: yes
+
+| cell (largest gains) | A Ir | B Ir | Δ | Δ % |
+|---|---:|---:|---:|---:|
+| `recycle_alloc_free_256x16b` | 163720 | 151581 | -12139 | -7.41 % |
+| `recycle_alloc_free_256x64b` | 165223 | 153084 | -12139 | -7.35 % |
+| `dealloc_free_only_1088_16b_n1024` | 289268 | 269515 | -19753 | -6.83 % |
+| `cold_alloc_free_256x16b_4n` | 290972 | 271360 | -19612 | -6.74 % |
+| `recycle_alloc_only_256x16b` | 132314 | 124257 | -8057 | -6.09 % |
+| `cold_alloc_free_256x16b_2n` | 166208 | 156484 | -9724 | -5.85 % |
+| `growth16_n` | 14269275 | 13489142 | -780133 | -5.47 % |
+| `cold_alloc_free_256x16b` | 102758 | 97978 | -4780 | -4.65 % |
+
+| cell (all regressions) | A Ir | B Ir | Δ | Δ % |
+|---|---:|---:|---:|---:|
+| `carve_batch_only_16b` | 2752 | 3453 | 701 | 25.47 % |
+| `carve_batch_only_16b_2n` | 8205 | 9610 | 1405 | 17.12 % |
+| `r19_prf01_publication` | 144790 | 149610 | 4820 | 3.33 % |
+| `seg_cycle_decommit_256k` | 1632161 | 1673547 | 41386 | 2.54 % |
+| `multiseg_cold_256k` | 1519611 | 1554997 | 35386 | 2.33 % |
+| `r19_prf01_joined_producer_same_word` | 476020 | 480117 | 4097 | 0.86 % |
+| `realloc_large_grow_6_to_8mib_prefix` | 6337958 | 6337960 | 2 | 0.00 % |
+| `realloc_large_shrink_8_to_6mib_prefix` | 8435110 | 8435112 | 2 | 0.00 % |
+| `realloc_large_shrink_8_to_4p5mib_prefix` | 8435110 | 8435112 | 2 | 0.00 % |
+| `realloc_large_shrink_8_to_3mib_prefix` | 8435110 | 8435112 | 2 | 0.00 % |
+| `realloc_large_equal_8mib_prefix` | 8435110 | 8435112 | 2 | 0.00 % |
+| `realloc_large_shrink_8_to_3mib` | 11929544 | 11929546 | 2 | 0.00 % |
+| `realloc_large_shrink_8_to_4p5mib` | 13675400 | 13675402 | 2 | 0.00 % |
+| `realloc_large_shrink_8_to_6mib` | 15421256 | 15421258 | 2 | 0.00 % |
+| `realloc_large_grow_6_to_8mib` | 15421265 | 15421267 | 2 | 0.00 % |
+| `realloc_large_equal_8mib` | 16823946 | 16823948 | 2 | 0.00 % |
+
+mt-bench, production, SeferAlloc / mimalloc ops-per-sec ratio (run1 / run2, same job):
+
+| OS | workload | T | base `2730d02a` | PR #87 |
+|---|---|---:|---|---|
+| ubuntu-24.04 | larson | 1 | 0.83 / 0.77 | 0.91 / 0.93 |
+| ubuntu-24.04 | larson | 2 | 1.01 / 0.82 | 1.30 / 1.02 |
+| ubuntu-24.04 | larson | 4 | 1.12 / 1.09 | 1.27 / 1.26 |
+| ubuntu-24.04 | mstress | 1 | 0.60 / 0.60 | 0.77 / 0.76 |
+| ubuntu-24.04 | mstress | 2 | 0.66 / 0.67 | 0.75 / 0.75 |
+| ubuntu-24.04 | mstress | 4 | 0.55 / 0.59 | 0.69 / 0.74 |
+| windows-2022 | larson | 1 | 0.70 / 0.71 | 0.75 / 0.72 |
+| windows-2022 | larson | 2 | 0.89 / 0.76 | 0.95 / 0.73 |
+| windows-2022 | larson | 4 | 0.84 / 0.82 | 0.83 / 0.65 |
+| windows-2022 | mstress | 1 | 0.52 / 0.52 | 0.54 / 0.54 |
+| windows-2022 | mstress | 2 | 0.76 / 0.55 | 0.73 / 0.55 |
+| windows-2022 | mstress | 4 | 0.57 / 0.55 | 0.66 / 0.56 |
+
+Регрессии iai — механизм, не шум (контрольные ячейки mimalloc Δ = 0):
+`carve_batch_only_16b` (+701 Ir), `multiseg_cold_256k` и
+`seg_cycle_decommit_256k` (+2.3…+2.5 %) — свежий carve теперь пишет байт
+состояния каждому блоку (в базе нулевой alloc-битмап уже означал
+«выделен», carve его не трогал); `r19_prf01_publication` и
+`r19_prf01_joined_producer_same_word` (+0.9…+3.3 %) — owner-сторона
+reclaim читает и пишет байт; путь producer'а не менялся. Эти ячейки не
+входили в предрегистрированные гейты (судьи §§ выше), сквозные ячейки
+улучшились на 1…7 %. Сокращение стоимости carve — задачи B4-24 (S1:
+финальное состояние сразу) и B4-23 (D1′: без per-issue записи листа).
+
+mt-bench: на Linux отношение к mimalloc выросло во всех ячейках (mstress T=1
+0.60 → 0.77). На Windows ячейки в пределах разброса двух прогонов, кроме
+larson T=4 run2 (0.82 → 0.65 при run1 0.84 → 0.83) — одиночный выброс VM,
+повтор не делался.
+

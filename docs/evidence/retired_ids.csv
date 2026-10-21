@@ -1,2 +1,4 @@
 id,reason
 R-Ph3a,"id расщеплён в R-Ph3a-native (PASS, Ph7b) и R-Ph3a-iai (CONDITIONAL); старый id выведен из обращения при Ph7b"
+R-Ph3a-native,SUPERSEDED by R-D1P-01: механизм IssueTransaction (prepare->commit) удалён в D1′ one-class; см. docs/design/2026-10-20-adr-oneclass-starts-map.md. Нативная часть (refill commit-refusal accounting, mutant battery, M-h оракул) переоформлена строкой R-D1P-01
+R-Ph3a-iai,SUPERSEDED by R-D1P-01: механизм IssueTransaction удалён в D1′ one-class; см. docs/design/2026-10-20-adr-oneclass-starts-map.md. iai-замер транзакций неприменим к новой архитектуре; D1′-перезамер — docs/perf/B4_ONECLASS.md (PORT2)

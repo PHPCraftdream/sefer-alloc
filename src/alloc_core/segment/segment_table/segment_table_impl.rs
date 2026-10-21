@@ -229,10 +229,12 @@ pub(crate) struct SegmentTable {
     own_cache: [(usize, *mut u8); OWN_CACHE_SIZE],
     /// N9 — a ONE-entry "last resolved segment" memo consulted BEFORE
     /// `own_cache`/hash lookup. Holds `(key.addr(), root)` for the most
-    /// recent exact-base `hash_find` win (root.addr() == key.addr() only —
+    /// recent exact-base resolution (root.addr() == key.addr() only —
     /// biased Large payload keys are NEVER cached here, unlike `own_cache`).
-    /// Hit cost is a single address compare; miss cost is unchanged. Filled
-    /// ONLY from a won probe with an exact root match; invalidated in
+    /// Hit cost is a single address compare; miss cost is unchanged. N9-v3:
+    /// filled ONLY from an exact-base `own_cache` HIT, never from a won
+    /// `hash_find` probe (on miss-heavy work the memo would not hit between
+    /// misses, so the probe-side fill was dead stores); invalidated in
     /// `own_cache_clear`, i.e. in lockstep with `own_cache` on every
     /// `unregister`/`recycle`, so a stale hit is structurally impossible.
     /// EMPTY is encoded as `last_key == LAST_EMPTY_KEY` (usize::MAX): real
@@ -755,20 +757,26 @@ impl SegmentTable {
             #[cfg(feature = "bench-internals")]
             crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            // N9-v3: arm the memo on an exact-base own_cache hit only.
+            if cached_root.addr() == key.addr() {
+                self.last_key = key.addr();
+                self.last_root = cached_root;
+            }
             return Some(cached_root);
         }
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let root = self.hash_find(key)?;
+        // N9-v3: a won probe fills `own_cache` only; the memo is armed by the
+        // next exact-base own_cache hit.
         self.own_cache[index] = (key.addr(), root);
-        // N9: memoize ONLY exact-base wins (root.addr() == key.addr());
-        // biased Large payload keys (root != key) are never memoized.
-        if root.addr() == key.addr() {
-            self.last_key = key.addr();
-            self.last_root = root;
-        }
         Some(root)
+    }
+    /// TEST-ONLY (N9-v3): does the memo hold this base? (EMPTY can't match.)
+    #[cfg(feature = "bench-internals")]
+    pub(crate) fn memo_holds(&self, key: *mut u8) -> bool {
+        self.last_key == key.addr()
     }
     /// R2-05 (independent src review round 2, task #2007): like
     /// [`contains_base_ro`](Self::contains_base_ro), but returns the STORED,

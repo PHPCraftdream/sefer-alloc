@@ -7,6 +7,7 @@
 #![cfg(all(
     feature = "alloc-global",
     feature = "fastbin",
+    feature = "alloc-decommit",
     feature = "internals",
     feature = "bench-internals",
     feature = "alloc-decommit"

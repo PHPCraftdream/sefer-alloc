@@ -1,0 +1,32 @@
+1ca86c821646e59d087a7dcb5634fe8bc26c9f62cc0d903b75e9e270da48d851  -
+diff-hash: 9cdad2a7235c5e43092ebd09cc2d2d7df4f41700f2e03287f18a92cfd5b36d95  -
+      9 ( 0.00%)                  self.publish_nonempty(base class_idx slot_idx);
+     12 ( 0.00%)                  self.publish_nonempty(base class_idx slot_idx);
+    25020 ( 0.15%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+    37530 ( 0.23%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   100128 ( 0.60%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   100128 ( 0.60%)  *  mt-xp3-b1/src/global/tls_heap.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   12516 ( 0.15%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   18774 ( 0.23%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   200256 ( 1.21%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   200256 ( 1.21%)  *  mt-xp3-b1/src/alloc_core/alloc_core/mem/mem_impl.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   300384 ( 1.81%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   300384 ( 1.81%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   300384 ( 1.81%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   301122 ( 1.81%)  *  mt-xp3-b1/src/alloc_core/segment/segment_table/segment_table_impl.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   500544 ( 3.01%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   500640 ( 3.02%)  *  mt-xp3-b1/src/global/sefer_alloc/global_alloc.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   50128 ( 0.61%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   50128 ( 0.61%)  *  mt-xp3-b1/src/global/tls_heap.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   613236 ( 3.69%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   621649 ( 3.74%)  *  mt-xp3-b1/src/alloc_core/segment/segment_header/segment_header_views.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  100256 ( 1.22%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  100256 ( 1.22%)  *  mt-xp3-b1/src/alloc_core/alloc_core/mem/mem_impl.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  150384 ( 1.83%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  150384 ( 1.83%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  150384 ( 1.83%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:zz_mt_foreign_free::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ORACLE_PRE publish_ok=0 dir_lookups=0 pin_hits=0 pin_misses=0
+ORACLE_POST publish_ok=0 dir_lookups=0 pin_hits=0 pin_misses=0
+ORACLE deltas: publish_ok=0 pin_hits=0 pin_misses=0 hit_frac=1.0000
+ORACLE VERDICT: PASS(own control: no foreign publishes)
+DONE mt_prof_foreign_free b4-mt mt-xp3-b1 own locality

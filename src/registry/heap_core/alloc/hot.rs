@@ -71,27 +71,29 @@ impl HeapCore {
             "finish_magazine_refill requires n >= 1 (OOM is the caller's job)"
         );
         // Pop the top, leave n-1 in the magazine. (Task #2002: the refill
-        // tail is mark_magazine / count bookkeeping only — no stamp pass.)
+        // tail is state-byte / count bookkeeping only — no stamp pass.)
         let new_cnt = n - 1;
         self.tcache.classes[c].count = new_cnt as u8;
-        // B4 (в): mark the n-1 blocks REMAINING in the magazine as MAG in
-        // the state byte. The block at `new_cnt` is popped to the caller
-        // below and must NOT be marked (it is being issued, not retained);
-        // the drain/pop already committed its LIVE byte (FREE → LIVE in
-        // `pop_free`, or fresh-carve LIVE in `carve_block`), so the refill
-        // itself performs NO state-byte write on the issued block — a later
-        // MAG→LIVE `clear_magazine_on_issue` flip applies only to magazine
-        // HIT issues of previously-parked blocks, never to this one.
-        for &p in &self.tcache.classes[c].slots[0..new_cnt] {
-            let pbase = os::segment_base_of_ptr(p);
-            let poff = (p as usize - pbase as usize) as u32;
-            SegmentMeta::new(pbase).state_byte().write(
-                poff,
-                c,
-                crate::alloc_core::state_byte::StateByte::MAG,
-            );
-        }
-        self.tcache.classes[c].slots[new_cnt]
+        // S1 (B4-M): the n-1 blocks REMAINING in the magazine were committed
+        // MAG directly by the substrate refill (`refill_class_bump_state_internal`
+        // → drain/carve `issue_state`), so this tail no longer scans
+        // `segment_base_of_ptr` per retained block. Only the ONE block popped
+        // to the caller needs a write here: flip its MAG → LIVE (single
+        // `set_state`, class bits already correct per И1). Reclaim rejects MAG
+        // blocks (same deferred-clear discipline as `alloc_batch`), so the
+        // parked blocks are safe in flight between drain and park.
+        let issued = self.tcache.classes[c].slots[new_cnt];
+        let base = os::segment_base_of_ptr(issued);
+        let off = (issued as usize - base as usize) as u32;
+        debug_assert_eq!(
+            SegmentMeta::new(base).state_byte().read(off) >> 6,
+            crate::alloc_core::state_byte::StateByte::MAG,
+            "refill-issued block must arrive MAG from the parameterized drain/carve"
+        );
+        SegmentMeta::new(base)
+            .state_byte()
+            .set_state(off, crate::alloc_core::state_byte::StateByte::LIVE);
+        issued
     }
 
     /// Allocate `layout.size()` bytes satisfying `layout.align()`. Returns a
@@ -506,10 +508,11 @@ impl HeapCore {
         let mut virgin_mask: u16 = 0;
         let n = self.refill_with_large_rescue(|heap| {
             let cur = &mut heap.tcache.classes[c];
-            heap.core.refill_class_bump_virgin_internal(
+            heap.core.refill_class_bump_virgin_state_internal(
                 c,
                 &mut cur.slots[0..want],
                 &mut virgin_mask,
+                crate::alloc_core::state_byte::StateByte::MAG,
             )
         });
         if n == 0 {
@@ -680,8 +683,11 @@ impl HeapCore {
         // belong to the owner retirement primitive, not a caller closure.
         let n = self.refill_with_large_rescue(|heap| {
             let cur = &mut heap.tcache.classes[c];
-            heap.core
-                .refill_class_bump_internal(c, &mut cur.slots[0..want])
+            heap.core.refill_class_bump_state_internal(
+                c,
+                &mut cur.slots[0..want],
+                crate::alloc_core::state_byte::StateByte::MAG,
+            )
         });
         if n == 0 {
             return ::core::ptr::null_mut();

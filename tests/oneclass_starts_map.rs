@@ -17,9 +17,11 @@
 //!     (REMOTE_REJECT_FREE).
 //!
 //! Mutant contracts (counterfactuals):
-//! - remove the start-bit set at the leaf-issue points (`SidecarBitmap::issue`
-//!   / `RoutedIssueRun::commit`) → T6 goes RED (legitimate publications are
-//!   dropped by the zero start bit, the drain reclaims nothing);
+//! - remove the start-bit set at the owner per-block issue points
+//!   (`SidecarBitmap::issue`, reached from both the drain and the
+//!   carve-batch paths through `SmallIssueRun::issue`) → T6 goes RED
+//!   (legitimate publications are dropped by the zero start bit, the drain
+//!   reclaims nothing);
 //! - remove the Acquire start-bit check in `SidecarBitmap::publish` (or move
 //!   the RMW before it) → T1/T2/T5 go RED (garbage/interior/misaligned frees
 //!   publish and the owner aborts or reclaims foreign blocks);
@@ -132,16 +134,34 @@ fn t1_garbage_tail_free_is_rejected_and_never_reclaimed() {
     }
     // SAFETY: p is live and transferred exactly once here.
     assert!(unsafe { try_publish(p) });
+    // Deterministic live-count oracle: snapshot AFTER all 64 allocations and
+    // every `try_publish` (publication never touches `live_count`, so the
+    // snapshot is unaffected by them) but BEFORE the drain, so the baseline
+    // absorbs the magazine-resident blocks and any residue from earlier tests
+    // in this process, independent of which segments served the 64 blocks.
+    let pre = heap.dbg_live_count_for(p).unwrap();
     let reclaimed = heap.dbg_drain_sidecar_ingress();
     assert_eq!(reclaimed, blocks.len() + 1);
-    // live0 already counted p; after publishing and reclaiming p plus the 64
-    // fresh blocks the segment is one block lighter.
+    // The drain reclaimed exactly the published set (asserted above). Of
+    // that set only p and the fresh blocks the magazine served from p's
+    // segment's OWN free lists (reuse of blocks freed by earlier tests in
+    // this process) belong to p's segment; blocks carved into other segments
+    // stay there. The segment's live count must drop by exactly that many —
+    // one per reclaimed block of the segment, never more, never less.
+    let same_segment = blocks
+        .iter()
+        .filter(|q| q.addr() & !(SEGMENT - 1) == base)
+        .count() as u32
+        + 1; // p itself
     assert_eq!(
         heap.dbg_live_count_for(p).unwrap(),
-        live0 - 1,
+        pre - same_segment,
         "live_count must be exact"
     );
     assert_eq!(heap.dbg_drain_sidecar_ingress(), 0);
+    // Note: alloc-side accounting for the 64 T1 allocations themselves (the
+    // refill counter model) is NOT re-checked here; that oracle lives in
+    // `tests/r11_ph3a_magazine_refill_partial.rs`.
     // SAFETY: all issued allocations were retired by the owner-side drain.
     drop(lease);
 }

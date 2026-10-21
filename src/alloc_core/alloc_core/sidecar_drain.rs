@@ -148,6 +148,53 @@ impl SmallCutObserver for DiscoverySummaryObserver {
     }
 }
 
+/// B4 U31 trigger observer (OPEN_ITEMS item 90): wraps the discovery drain's
+/// [`DiscoverySummaryObserver`] (preserving the R19 summary oracle) and fires
+/// `B4_U31_SCAN_NO_PENDING` (Relaxed fetch_add, `bench-internals` only) when
+/// the whole routed segment scan found no nonzero pending word — i.e. every
+/// visited bitmap word read zero (a zero-word scan range counts vacuously).
+/// This is the EXACT "nothing pending to reclaim" predicate; the caller's
+/// `changed_classes == 0` branch is NOT: a nonzero word whose records are all
+/// already FREE/MAG in the state byte (`alloc_core_small_reclaim.rs:52-58`)
+/// yields zero changed classes while pending bits existed. The upper bound
+/// of the U31 owner-drain-skip benefit counts this exact condition.
+#[derive(Default)]
+pub(crate) struct U31NoPendingObserver {
+    /// R19 discovery summary oracle, forwarded verbatim.
+    inner: DiscoverySummaryObserver,
+    /// Words whose cut carried at least one pending bit
+    /// (`bench-internals` only; zero under every other feature set).
+    #[cfg(feature = "bench-internals")]
+    nonempty_words: u64,
+}
+
+impl SmallCutObserver for U31NoPendingObserver {
+    fn cut_visited(&mut self, nonempty: bool) {
+        #[cfg(feature = "bench-internals")]
+        {
+            self.nonempty_words += u64::from(nonempty);
+        }
+        #[cfg(not(feature = "bench-internals"))]
+        {
+            let _ = nonempty;
+        }
+        self.inner.cut_visited(nonempty);
+    }
+
+    fn record_reclaimed(&mut self) {
+        self.inner.record_reclaimed();
+    }
+
+    fn finish(&mut self) {
+        self.inner.finish();
+        #[cfg(feature = "bench-internals")]
+        if self.nonempty_words == 0 {
+            use core::sync::atomic::Ordering;
+            crate::alloc_core::B4_U31_SCAN_NO_PENDING.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 /// Strict-trim ([`AllocCore::drain_sidecar_ingress`]) observer: per-pass
 /// cut/record totals feed `Prf01SidecarOracle::strict_visited`, and every
 /// reclaimed record also bumps `SIDECAR_INGRESS_RECORDS_CONSUMED` (the M-C

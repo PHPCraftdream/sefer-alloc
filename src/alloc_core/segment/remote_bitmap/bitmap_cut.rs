@@ -13,13 +13,13 @@ impl BitmapCut<'_> {
         self.bits == 0
     }
 
-    /// D1′ phase-1a: the owner no longer reads the class from the leaf map —
-    /// `pop` returns ONLY the record offset, and the class is decided from the
-    /// owner-private state byte in `AllocCore::reclaim_sidecar_record` (only
+    /// D1′ phase-1b: the leaf-class map is gone entirely — `pop` returns ONLY
+    /// the record offset, and the class is decided from the owner-private
+    /// state byte in `AllocCore::reclaim_sidecar_record` (only
     /// `encode(c, LIVE)` is accepted). The former `fatal` on a zero leaf
     /// encoding is gone with it: a never-issued granule's pending bit can no
-    /// longer abort the owner, and the leaf structures themselves stay in
-    /// place until phase 1b removes them.
+    /// longer abort the owner, and the sidecar carries only the pending and
+    /// start banks.
     pub(crate) fn pop(&mut self) -> Option<u32> {
         if self.bits == 0 {
             return None;

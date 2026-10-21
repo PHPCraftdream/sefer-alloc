@@ -13,10 +13,18 @@
 //! `alloc-core`), so gating the `alloc_core` MODULE PATH behind `internals`
 //! (R34-3/task #522) does NOT hide these inherent methods — they stay
 //! reachable as `sefer_alloc::AllocCore::dbg_*` regardless. The whole `impl`
-//! block is gated `#[cfg(feature = "internals")]` directly; see
+//! block is gated `#[cfg(feature = "internals")]` directly; it also hosts
+//! the internals-gated `carve_batch` wrapper (moved here from
+//! `alloc_core_small_impl.rs` as pure code movement to keep that file under
+//! the 1000-line structure limit); see
 //! `alloc_core_core_diag.rs`'s module doc for the fuller rationale (that
 //! sibling file needed a split because three of its methods DO have a
 //! stable-API caller — none of this file's methods do).
+//!
+//! Wrapper asymmetry note: the batch drain wrapper (`drain_freelist_batch`)
+//! lives next to `try_drain_freelist_batch` in `alloc_core_small_impl.rs`,
+//! while the batch carve wrapper (`carve_batch`) lives here — both are pure
+//! code movement under the 1000-line structure limit.
 
 #[cfg(feature = "hardened")]
 use core::ptr::NonNull;
@@ -35,9 +43,71 @@ use crate::alloc_core::size_classes::{SizeClasses, SMALL_CLASS_COUNT};
 
 #[cfg(feature = "internals")]
 use crate::alloc_core::alloc_core::AllocCore;
+#[cfg(feature = "internals")]
+use crate::alloc_core::state_byte::StateByte;
 
 #[cfg(feature = "internals")]
 impl AllocCore {
+    /// E1 (task W4) — **batched bump-carve**. Carve a RUN of up to `out.len()`
+    /// `block_size`-strided blocks from the current small segment's bump cursor
+    /// in ONE shot, writing them into `out[..n]` and returning `n` (0 if the
+    /// segment cannot fit even one block — the caller reserves a fresh segment,
+    /// exactly as it does on `carve_block` → `None`).
+    ///
+    /// ## Byte-identical to `n` sequential `carve_block`s — what is HOISTED
+    ///
+    /// A run of `carve_block(class_idx, block_size)` calls, after the FIRST,
+    /// always finds `bump` already `block_size`-aligned (the previous carve left
+    /// `bump = aligned_prev + block_size`, and every class `block_size` is a
+    /// multiple of `MIN_BLOCK`), so `align_up(bump, block_size)` is a TAUTOLOGY
+    /// from the second block on. We therefore align ONCE (`aligned_start`), then
+    /// stride by `block_size`. The following are hoisted across the run because
+    /// none of them can change mid-run (a carve run touches only owner-only
+    /// bump/live/page-map state, and no free/decommit runs between carves):
+    ///   - `SegmentMeta::new` + `bump_of()` LOAD — once (bump only advances by
+    ///     our own writes; we track it locally).
+    ///   - `align_up` div — once (tautological after block 0).
+    ///   - `set_bump` STORE — once, to `aligned_start + n*block_size` (identical
+    ///     to the last sequential carve's final bump).
+    ///   - `live += n` — one batched saturating add (D1: exactly `n` handed out,
+    ///     byte-identical to `n` `inc_live`s; owner-only counter, intermediate
+    ///     states unobservable — same argument as `drain_freelist_batch`).
+    ///   - `is_decommitted()` check + recommit — once at run start (the flag is
+    ///     set only in the decommit path, which cannot run mid-carve).
+    ///
+    /// ## What STAYS per-block (NOT tautologies)
+    ///   - The page-map `class_of`/`set_class` "first class wins" marking is
+    ///     applied per DISTINCT payload page: we compute the page of each block
+    ///     and call `set_class` only when the page index CHANGES from the prior
+    ///     block (byte-identical to `carve_block`'s per-block "mark only if
+    ///     `class_of(page).is_none()`", since within a run the first block to
+    ///     enter a page is the one that dedicates it, and later same-page blocks
+    ///     find it already `Some` → no-op). For `block_size > PAGE` every block
+    ///     lands on a fresh page, so this degrades to per-block correctly.
+    ///
+    /// ## D1 / boundary — preserved EXACTLY
+    ///   - Alloc bitmap: carve NEVER touches it (a bump-carved block is
+    ///     allocated by construction, not by a bitmap bit) — identical to
+    ///     `carve_block`.
+    ///   - D1: `+n` for the `n` blocks handed out.
+    ///   - Boundary: `n = min(out.len(), room)` where
+    ///     `room = (SEGMENT - aligned_start) / block_size`, so
+    ///     `aligned_start + n*block_size <= SEGMENT` — the same
+    ///     `aligned + block_size > SEGMENT` per-block check, batched.
+    // R12-11 (task #262): `class_idx` is used ONLY for the diagnostic-only
+    // page-map marking below (see `PageMap`'s struct doc) — it is genuinely
+    // unused without `page-map-diag`.
+    #[cfg_attr(not(feature = "page-map-diag"), allow(unused_variables))]
+    #[cfg(feature = "internals")]
+    pub(in crate::alloc_core) fn carve_batch(
+        &mut self,
+        class_idx: usize,
+        block_size: usize,
+        out: &mut [*mut u8],
+    ) -> usize {
+        self.try_carve_batch(class_idx, block_size, out, StateByte::LIVE)
+    }
+
     /// Owner-only outstanding Small/Primordial credits, independent of decommit.
     /// `ptr` supplies only an address key; metadata reads use the stored root.
     #[doc(hidden)]
@@ -417,130 +487,5 @@ impl AllocCore {
         let off = (ptr as usize - base as usize) as u32;
         let byte = SegmentMeta::new(base).state_byte().read(off);
         Some(byte >> 6)
-    }
-}
-
-// --- D1' phase-1a pure code movement: the two `#[cfg(feature = "internals")]`
-// thin batch wrappers (`drain_freelist_batch`, `carve_batch`) moved VERBATIM
-// from `alloc_core_small_impl.rs` so the carve-clear insertions there keep the
-// file at its exact 1000-line cap. Pure move, no behavior change.
-#[cfg(feature = "internals")]
-impl AllocCore {
-    /// Э7 (task #161) — **batch freelist drain**. Pop up to `out.len()` free
-    /// blocks of class `class_idx` from `segment`'s `BinTable[class_idx]` in ONE
-    /// walk, writing them into `out[..k]` and returning `k` (the number popped,
-    /// `0` if the free list was empty). Byte-identical end-state to calling
-    /// [`pop_free`](Self::pop_free) `k` times, but with the per-block round-trip HOISTED:
-    ///
-    ///   - `head` is read ONCE (not re-read from the `BinTable` per block).
-    ///   - `set_head` is written ONCE at the end, to the first UN-popped node
-    ///     (or `FREE_LIST_NULL` if the chain was exhausted before `out` filled).
-    ///   - `inc_live` is applied ONCE by `k` (under `alloc-decommit`), exactly
-    ///     equalling `k` individual `inc_live`s.
-    ///
-    /// The two per-block costs that MUST stay per-block are kept per-block:
-    ///
-    ///   - `read_next(block)` — the dependent load that walks the intrusive
-    ///     chain. mimalloc pays this too; there is no way to hoist it (each
-    ///     `next` lives in the previous block's body). We never WRITE the block
-    ///     body on this path (pop doesn't), so reading `next` before advancing
-    ///     is hazard-free: nothing overwrites a block between our read of its
-    ///     `next` and our recording it.
-    ///   - `mark_alloc(off)` — cleared per-block. **Decision: per-block, NOT
-    ///     merged.** A freelist is a LIFO push chain, so consecutive popped
-    ///     offsets are in general SCATTERED across the bitmap (they do not share
-    ///     a byte the way a flush batch of consecutive carves would). Merging
-    ///     the RMWs across blocks would only be byte-identical for offsets that
-    ///     share a bitmap byte, which is not guaranteed here — so we keep the
-    ///     per-block `mark_alloc`, which is trivially identical to `pop_free`'s.
-    ///     The batch win is the hoisted `set_head` / `head`-read / `inc_live`,
-    ///     NOT the bitmap RMW (which was never the expensive part).
-    ///
-    /// ## D1 / M2 / set_head correctness
-    ///
-    ///   - **D1:** exactly `k` blocks leave the free list and are handed out, so
-    ///     `inc_live` by `k` == `k` per-block `inc_live`s. No double, no
-    ///     under-count.
-    ///   - **M2:** every recorded block ends bitmap-ALLOCATED (bit cleared) via
-    ///     its own `mark_alloc`, exactly as `pop_free` leaves it. A later
-    ///     double-free still hits `is_free` correctly.
-    ///   - **set_head:** after the walk, `head` holds either the offset of the
-    ///     first un-popped node (chain longer than `out`) or `FREE_LIST_NULL`
-    ///     (chain exhausted). We `set_head` to that once. A subsequent
-    ///     `pop_free`/drain therefore yields exactly the remaining blocks in the
-    ///     same order.
-    ///
-    /// R7-A2: `&mut self` (upgraded from `&self`) so the directory bitmap can
-    /// be maintained at the single choke point. Touches only `segment` metadata
-    /// via `SegmentMeta` for the freelist walk, then calls `publish_empty` on
-    /// the directory sidecar (if materialised) when the drain empties the list.
-    #[inline]
-    #[cfg(feature = "internals")]
-    pub(in crate::alloc_core) fn drain_freelist_batch(
-        &mut self,
-        segment: *mut u8,
-        class_idx: usize,
-        out: &mut [*mut u8],
-    ) -> usize {
-        self.try_drain_freelist_batch(segment, class_idx, out)
-    }
-
-    /// E1 (task W4) — **batched bump-carve**. Carve a RUN of up to `out.len()`
-    /// `block_size`-strided blocks from the current small segment's bump cursor
-    /// in ONE shot, writing them into `out[..n]` and returning `n` (0 if the
-    /// segment cannot fit even one block — the caller reserves a fresh segment,
-    /// exactly as it does on `carve_block` → `None`).
-    ///
-    /// ## Byte-identical to `n` sequential `carve_block`s — what is HOISTED
-    ///
-    /// A run of `carve_block(class_idx, block_size)` calls, after the FIRST,
-    /// always finds `bump` already `block_size`-aligned (the previous carve left
-    /// `bump = aligned_prev + block_size`, and every class `block_size` is a
-    /// multiple of `MIN_BLOCK`), so `align_up(bump, block_size)` is a TAUTOLOGY
-    /// from the second block on. We therefore align ONCE (`aligned_start`), then
-    /// stride by `block_size`. The following are hoisted across the run because
-    /// none of them can change mid-run (a carve run touches only owner-only
-    /// bump/live/page-map state, and no free/decommit runs between carves):
-    ///   - `SegmentMeta::new` + `bump_of()` LOAD — once (bump only advances by
-    ///     our own writes; we track it locally).
-    ///   - `align_up` div — once (tautological after block 0).
-    ///   - `set_bump` STORE — once, to `aligned_start + n*block_size` (identical
-    ///     to the last sequential carve's final bump).
-    ///   - `live += n` — one batched saturating add (D1: exactly `n` handed out,
-    ///     byte-identical to `n` `inc_live`s; owner-only counter, intermediate
-    ///     states unobservable — same argument as `drain_freelist_batch`).
-    ///   - `is_decommitted()` check + recommit — once at run start (the flag is
-    ///     set only in the decommit path, which cannot run mid-carve).
-    ///
-    /// ## What STAYS per-block (NOT tautologies)
-    ///   - The page-map `class_of`/`set_class` "first class wins" marking is
-    ///     applied per DISTINCT payload page: we compute the page of each block
-    ///     and call `set_class` only when the page index CHANGES from the prior
-    ///     block (byte-identical to `carve_block`'s per-block "mark only if
-    ///     `class_of(page).is_none()`", since within a run the first block to
-    ///     enter a page is the one that dedicates it, and later same-page blocks
-    ///     find it already `Some` → no-op). For `block_size > PAGE` every block
-    ///     lands on a fresh page, so this degrades to per-block correctly.
-    ///
-    /// ## M2 / D1 / boundary — preserved EXACTLY
-    ///   - M2: carve NEVER touches the alloc bitmap (a bump-carved block is
-    ///     already bit0=allocated, the M2 convention) — identical to `carve_block`.
-    ///   - D1: `+n` for the `n` blocks handed out.
-    ///   - Boundary: `n = min(out.len(), room)` where
-    ///     `room = (SEGMENT - aligned_start) / block_size`, so
-    ///     `aligned_start + n*block_size <= SEGMENT` — the same
-    ///     `aligned + block_size > SEGMENT` per-block check, batched.
-    // R12-11 (task #262): `class_idx` is used ONLY for the diagnostic-only
-    // page-map marking below (see `PageMap`'s struct doc) — it is genuinely
-    // unused without `page-map-diag`.
-    #[cfg_attr(not(feature = "page-map-diag"), allow(unused_variables))]
-    #[cfg(feature = "internals")]
-    pub(in crate::alloc_core) fn carve_batch(
-        &mut self,
-        class_idx: usize,
-        block_size: usize,
-        out: &mut [*mut u8],
-    ) -> usize {
-        self.try_carve_batch(class_idx, block_size, out)
     }
 }

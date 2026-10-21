@@ -169,6 +169,17 @@ impl AllocCore {
         self.table.dbg_hash_contains_only(base)
     }
 
+    /// TEST-ONLY (N9-v3): read-only — does the one-entry last-segment memo
+    /// in `SegmentTable` currently hold `ptr`'s segment base? Address
+    /// compare only, nothing is dereferenced. Pins WHICH site arms the memo
+    /// (`tests/b4_micro_n9_memo_fill_policy.rs`). Requires `bench-internals`.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_segment_memo_holds(&self, ptr: *mut u8) -> bool {
+        self.table.memo_holds(os::segment_base_of_ptr(ptr))
+    }
+
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): process-wide count of
     /// mutable `SegmentTable::canonical_base_of_mut` lookups that HIT the
     /// Tier-1 direct-mapped `own_cache` (including `contains_base`) — see
@@ -211,6 +222,42 @@ impl AllocCore {
             .store(0, core::sync::atomic::Ordering::Relaxed);
         crate::alloc_core::alloc_core::counters::CONTAINS_BASE_TIER1_MISSES
             .store(0, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    // --- B4-M (P1-2) bench-internals observer counters (S1 / X-null).
+    // --- All process-wide, Relaxed, `bench-internals`-gated
+    // --- (see each counter's doc in `alloc_core/counters.rs`).
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): magazine-refill events — see
+    /// `counters::S1_REFILL_EVENTS`. Reads 0 unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_s1_refill_events() -> u64 {
+        crate::alloc_core::alloc_core::counters::S1_REFILL_EVENTS
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): MAG state-byte writes by the substrate
+    /// refill — see `counters::S1_MAG_BYTE_WRITES`. Reads 0 unless
+    /// `bench-internals` is on.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_s1_mag_byte_writes() -> u64 {
+        crate::alloc_core::alloc_core::counters::S1_MAG_BYTE_WRITES
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// MEASUREMENT-ONLY (B4-M P1-2): null frees stopped at
+    /// `publish_foreign`'s tail guard — see `counters::XNULL_NULL_TAIL_GUARD`.
+    /// Reads 0 unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_xnull_null_tail_guard() -> u64 {
+        crate::alloc_core::alloc_core::counters::XNULL_NULL_TAIL_GUARD
+            .load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// TEST-ONLY (task #135): read the stamped `segment_id` field of `ptr`'s
