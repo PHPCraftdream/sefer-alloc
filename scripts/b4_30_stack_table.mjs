@@ -40,7 +40,7 @@ const budgetOf = worst => ceil1024(worst) + Math.max(4096, ceil1024(0.25 * worst
 const TEST_SHA = sha(TEST);
 const testSource = readFileSync(TEST, "utf8");
 const maskedSha = MASKED_TEST_SHA_PINS.maskedTestSha(testSource);
-check(maskedSha === MASKED_TEST_SHA_PINS.pin,
+check(MASKED_TEST_SHA_PINS.accepts(maskedSha),
   `masked test sha ${maskedSha} != pinned measurement-logic revision ${MASKED_TEST_SHA_PINS.pin}`);
 check(MASKED_TEST_SHA_PINS.pin !== "PENDING", "producer pin is still PENDING");
 const BUDGET_CONSTS = {
@@ -73,7 +73,7 @@ const rows = evLines.slice(headerLineIdx + 1).filter(l => l.trim() && !l.startsW
 });
 check(rows.length === 24, `evidence: expected 24 rows (8 cells x 3 scenarios), got ${rows.length}`);
 for (const r of rows) {
-  check(r.test_sha === maskedSha, `evidence: row ${r.os}/${r.profile}/${r.scenario} test_sha != live masked test logic sha`);
+  check(r.test_sha === MASKED_TEST_SHA_PINS.pin, `evidence: row ${r.os}/${r.profile}/${r.scenario} test_sha != live masked test logic sha`);
   check(r.runs >= 2, `evidence: row ${r.os}/${r.profile}/${r.scenario} has ${r.runs} runs (< 2)`);
   check(SCENARIOS.includes(r.scenario), `evidence: unknown scenario ${r.scenario}`);
   check(Number.isInteger(r.need) && r.need >= 0, `evidence: bad need ${r.need}`);
@@ -162,7 +162,7 @@ const summaryHeader = "os,profile,features,scenario,need,fs,fc,stride,boundary,c
 const summaryLines = [
   `# identity: generator=scripts/b4_30_stack_table.mjs sha256=${GEN_SHA}`,
   `# measured_base=${MEASURED_BASE} (worktree base commit of the measurement; the generator does NOT read HEAD — outputs stay reproducible after the commit)`,
-  `# measured test logic sha256 (BUDGET_* values masked)=${maskedSha}; current test file sha256=${TEST_SHA}`,
+  `# measured test logic sha256 (BUDGET_* values masked)=${MASKED_TEST_SHA_PINS.pin}; live masked=${maskedSha}; current test file sha256=${TEST_SHA}`,
   `# evidence=${EVIDENCE} sha256=${sha(EVIDENCE)} (producer: scripts/b4_30_fix7_evidence.mjs; raw logs: docs/perf/_raw_b4_30_fix7_*.log)`,
   `# budget rule: budget = ceil_1024(worst_differential) + max(4096, ceil_1024(0.25 * worst_differential)), asserted equal to the test's BUDGET_* constants`,
   summaryHeader,

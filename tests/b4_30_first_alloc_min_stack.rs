@@ -53,8 +53,8 @@ use std::{
     alloc::{GlobalAlloc, Layout},
     hint::black_box,
     sync::{
-        Mutex, OnceLock,
         atomic::{AtomicUsize, Ordering},
+        Mutex, OnceLock,
     },
 };
 #[global_allocator]
