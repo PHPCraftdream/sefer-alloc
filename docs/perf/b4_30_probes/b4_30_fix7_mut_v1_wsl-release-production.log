@@ -1,0 +1,32 @@
+   Compiling sefer-alloc v0.3.0 (<worktree>)
+    Finished `release` profile [optimized] target(s) in 5.79s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/b4_30_first_alloc_min_stack.rs (<target-dir>/release/deps/b4_30_first_alloc_min_stack-4fc3a723e8af9b0f)
+
+running 4 tests
+test b4_30_probe_child ... ignored, measurement child only
+[b4-30] enforced scenario=foreign-free
+[b4-30] scenario=foreign-free need=
+[b4-30] scenario=foreign-free details need=144 budget=17408 margin=17264 fs=159 fc=63 stride=48 boundary=bisect control=bisect enforce=1
+[b4-30] toolchain=rustc 1.98.1 (48a229cea 2026-09-01) os=linux profile=release
+test b4_30_foreign_free_first_alloc_stack_budget ... ok
+
+thread 'b4_30_large_first_alloc_stack_budget' (295075) panicked at tests/b4_30_first_alloc_min_stack.rs:654:9:
+B4-30 first-alloc differential stack need 19008 B exceeds the declared budget 17408 B (os=linux profile=release scenario=large): the first-alloc path grew past the evidenced worst differential + its reserve
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test b4_30_large_first_alloc_stack_budget ... FAILED
+
+thread 'b4_30_small_first_alloc_stack_budget' (295076) panicked at tests/b4_30_first_alloc_min_stack.rs:654:9:
+B4-30 first-alloc differential stack need 19008 B exceeds the declared budget 17408 B (os=linux profile=release scenario=small): the first-alloc path grew past the evidenced worst differential + its reserve
+test b4_30_small_first_alloc_stack_budget ... FAILED
+
+failures:
+
+failures:
+    b4_30_large_first_alloc_stack_budget
+    b4_30_small_first_alloc_stack_budget
+
+test result: FAILED. 1 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.24s
+
+error: test failed, to rerun pass `--test b4_30_first_alloc_min_stack`

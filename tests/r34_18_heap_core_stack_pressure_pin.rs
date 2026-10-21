@@ -50,11 +50,15 @@
 //! headroom, and made both the compile-time assert AND this runtime test's
 //! upper-bound assertion unconditional — no future feature, shipping or
 //! experimental, can silently evade either one again. Measured sizes across
-//! every composition tried: plain `production` = 7576 B, `production
-//! medium-classes` = 8408 B, `production medium-classes numa-aware` =
-//! 8416 B, `production medium-classes-wide numa-aware` = 8832 B,
-//! `--all-features` = 8840 B (the confirmed maximum). Budget 9216 leaves
-//! 376 B (~4%) headroom above that maximum.
+//! every composition tried at the correction: plain `production` = 7576 B,
+//! `production medium-classes` = 8408 B, `production medium-classes
+//! numa-aware` = 8416 B, `production medium-classes-wide numa-aware` = 8832 B,
+//! `--all-features` = 8840 B then — but the confirmed maximum has since GROWN:
+//! re-measured 2026-10-21 (B4-30 fix7 round, this tree) `--all-features` =
+//! 9208 B, leaving only 8 B of headroom under the 9216 budget. The budget is
+//! unchanged (bumping it is a stack-pressure decision, not a mechanical
+//! drift fix); the doc figures above are historical, the 9208 B figure is
+//! current.
 //!
 //! R34-24/fix #571: This test requires `internals` to reach `HeapCore`,
 //! which was gated behind that feature in R34-3/Sol-F1.
@@ -77,9 +81,11 @@ fn heap_core_size_within_stack_pressure_budget() {
 
     // Upper bound — the stack-pressure budget. Unconditional: covers every
     // feature composition, including `--all-features` (the confirmed global
-    // maximum, 8840 B). A HeapCore temporary is constructed by-value on a
-    // thread's first-allocation frame; 9 KiB is still just over half of a
-    // 16 KiB embedded stack — the risk this pin guards.
+    // maximum; re-measured 2026-10-21 at 9208 B — only 8 B of headroom). A
+    // HeapCore temporary is constructed by-value on a thread's
+    // first-allocation frame; 9 KiB is over half of a 16 KiB embedded stack
+    // — the risk this pin guards (B4-30 card 108 tracks removing the
+    // by-value copy itself).
     assert!(
         size <= 9216,
         "HeapCore grew to {size} bytes — exceeds the 9 KiB (9216) stack-pressure \

@@ -1,0 +1,26 @@
+   Compiling sefer-alloc v0.3.0 (<worktree>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.74s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/b4_30_first_alloc_min_stack.rs (<target-dir>/debug/deps/b4_30_first_alloc_min_stack-c7990c13b2d6709f)
+
+running 4 tests
+test b4_30_probe_child ... ignored, measurement child only
+[b4-30] enforced scenario=foreign-free
+[b4-30] scenario=foreign-free need=
+[b4-30] scenario=foreign-free details need=6336 budget=84992 margin=78656 fs=6527 fc=383 stride=192 boundary=bisect control=bisect enforce=1
+[b4-30] toolchain=rustc 1.98.1 (48a229cea 2026-09-01) os=linux profile=debug
+test b4_30_foreign_free_first_alloc_stack_budget ... ok
+[b4-30] enforced scenario=large
+[b4-30] scenario=large need=
+[b4-30] scenario=large details need=67776 budget=84992 margin=17216 fs=67967 fc=383 stride=192 boundary=bisect control=bisect enforce=1
+[b4-30] toolchain=rustc 1.98.1 (48a229cea 2026-09-01) os=linux profile=debug
+test b4_30_large_first_alloc_stack_budget ... ok
+[b4-30] enforced scenario=small
+[b4-30] scenario=small need=
+[b4-30] scenario=small details need=67776 budget=84992 margin=17216 fs=67967 fc=383 stride=192 boundary=bisect control=bisect enforce=1
+[b4-30] toolchain=rustc 1.98.1 (48a229cea 2026-09-01) os=linux profile=debug
+test b4_30_small_first_alloc_stack_budget ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.41s
+

@@ -1,0 +1,20 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running tests\b4_30_first_alloc_min_stack.rs (<target-dir>\debug\deps\b4_30_first_alloc_min_stack-3bec2775bb993722.exe)
+
+running 4 tests
+test b4_30_probe_child ... ignored, measurement child only
+[b4-30] scenario=foreign-free need=
+[b4-30] scenario=foreign-free details need=6592 budget=86016 margin=79424 fs=35767 fc=29399 stride=224 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.97.0 (2d8144b78 2026-07-07) os=windows profile=debug
+test b4_30_foreign_free_first_alloc_stack_budget ... ok
+[b4-30] scenario=large need=
+[b4-30] scenario=large details need=60480 budget=86016 margin=25536 fs=89655 fc=29399 stride=224 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.97.0 (2d8144b78 2026-07-07) os=windows profile=debug
+test b4_30_large_first_alloc_stack_budget ... ok
+[b4-30] scenario=small need=
+[b4-30] scenario=small details need=60464 budget=86016 margin=25552 fs=89639 fc=29399 stride=224 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.97.0 (2d8144b78 2026-07-07) os=windows profile=debug
+test b4_30_small_first_alloc_stack_budget ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.96s
+

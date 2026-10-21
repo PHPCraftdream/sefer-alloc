@@ -1,0 +1,22 @@
+    Finished `release` profile [optimized] target(s) in 0.06s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/b4_30_first_alloc_min_stack.rs (<target-dir>/release/deps/b4_30_first_alloc_min_stack-4fc3a723e8af9b0f)
+
+running 4 tests
+test b4_30_probe_child ... ignored, measurement child only
+[b4-30] scenario=large need=
+[b4-30] scenario=large details need=11136 budget=17408 margin=6272 fs=11151 fc=63 stride=48 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.98.1 (48a229cea 2026-09-01) os=linux profile=release
+test b4_30_large_first_alloc_stack_budget ... ok
+[b4-30] scenario=small need=
+[b4-30] scenario=small details need=11136 budget=17408 margin=6272 fs=11151 fc=63 stride=48 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.98.1 (48a229cea 2026-09-01) os=linux profile=release
+test b4_30_small_first_alloc_stack_budget ... ok
+[b4-30] scenario=foreign-free need=
+[b4-30] scenario=foreign-free details need=144 budget=17408 margin=17264 fs=159 fc=63 stride=48 boundary=bisect control=bisect enforce=0
+[b4-30] toolchain=rustc 1.98.1 (48a229cea 2026-09-01) os=linux profile=release
+test b4_30_foreign_free_first_alloc_stack_budget ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.27s
+

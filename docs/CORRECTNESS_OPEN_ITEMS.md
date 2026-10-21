@@ -271,7 +271,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   are single confirmed platform-divergence bugs (Windows decommit crash;
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
-- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (28
+- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (29
   cards; items 175 and 107 are retained CLOSED pointers in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
@@ -614,6 +614,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 247 | `TRACKED_correctness_residuals.md` |
 | 248 | `TRACKED_correctness_residuals.md` |
 | 249 | `RESOLVED.md` |
+| 250 | `TRACKED_ci_gate_coverage.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
