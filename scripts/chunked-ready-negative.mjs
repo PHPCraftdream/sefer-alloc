@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'negative control исполняется только GitHub CI');
 const root = fileURLToPath(new URL('../', import.meta.url));
-const source = new URL('../src/alloc_core/segment/remote_bitmap/chunked_bank.rs', import.meta.url);
+const source = new URL('../src/alloc_core/segment/remote_bitmap/sidecar_bitmap/chunked_bank.rs', import.meta.url);
 const original = readFileSync(source, 'utf8');
 const needle = 'self.ready[chunk / 64].load(Ordering::Acquire)';
 assert.equal(original.split(needle).length, 2, 'ровно одна load-gate точка мутации');

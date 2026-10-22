@@ -46,7 +46,7 @@ Loom source-includes тот же storage, заменяя атомики и `Unsa
 
 Проверены все строки `PER_PR_ROWS` из `scripts/check-matrix.mjs` с `kind` равным `clippy` или `check`, с их собственными target/features/env и `-D warnings` у Clippy. Тестовые строки намеренно не запускались. Проверены workspace rustfmt, source-included Loom typecheck, Miri/Loom wiring, hook safety, структура, sentinels и синтаксис YAML. Типизация Loom проходит с предупреждениями; это не strict Clippy и не исполнение моделей.
 
-При проверке исправлены два cfg-дефекта: тестовый owner-helper в plain production и лишний BitmapScan re-export в standalone NUMA. В новой actual-source oneclass Loom fixture устранена унаследованная утечка backing на каждой итерации: Box уничтожается после join всех readers. Это не receipt выполнения Drop моделью.
+При проверке исправлены два cfg-дефекта: тестовый owner-helper в plain production и лишний BitmapScan re-export в standalone NUMA. CI run 39859543504 также выявил несовпадение physical path unsafe seam и `src/lib.rs` inventory; `chunked_bank.rs`/Kani proof теперь расположены в `remote_bitmap/sidecar_bitmap/`, совпадая с модульной записью и source-file inventory. В новой actual-source oneclass Loom fixture устранена унаследованная утечка backing на каждой итерации: Box уничтожается после join всех readers. Это не receipt выполнения Drop моделью.
 
 Лично проверены новый storage/owner/scanner, порядок issue/clear/state, reclaim guards, lifecycle/wiring и перенос native/model tests. Review выявил и исправил перечисленные ниже дефекты oracle и подключения. Контрфактуальное исполнение replacement tests и runtime-приёмка требуют CI; статус остаётся NOT ACCEPTED.
 

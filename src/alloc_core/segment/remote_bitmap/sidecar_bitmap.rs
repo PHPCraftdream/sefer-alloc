@@ -13,7 +13,7 @@ use super::{AtomicU64, BitmapScan, Ordering};
 #[cfg(not(any(test, loom)))]
 use super::{AtomicU64, Ordering};
 
-#[path = "chunked_bank.rs"]
+#[path = "sidecar_bitmap/chunked_bank.rs"]
 mod chunked_bank;
 pub(crate) use chunked_bank::ChunkedBank;
 

@@ -11,7 +11,7 @@ fn src(text: &str) -> String {
 
 fn bank_src() -> String {
     src(include_str!(
-        "../src/alloc_core/segment/remote_bitmap/chunked_bank.rs"
+        "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap/chunked_bank.rs"
     ))
 }
 

@@ -20,7 +20,7 @@ mod alloc_core {
     }
 }
 
-#[path = "../src/alloc_core/segment/remote_bitmap/chunked_bank.rs"]
+#[path = "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap/chunked_bank.rs"]
 mod chunked_bank;
 use chunked_bank::ChunkedBank;
 
