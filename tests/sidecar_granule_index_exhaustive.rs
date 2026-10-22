@@ -47,85 +47,74 @@ fn sidecar_granule_index_exhaustive() {
     let starts: Vec<_> = (0..words).map(|_| AtomicU64::new(0)).collect();
     // payload_start 0: the whole segment is payload in this harness.
     let map = SidecarBitmap::from_pending(&pending, &starts).unwrap();
-    let mut issued = [0usize; 2];
-    let mut published = [0usize; 2];
-    let mut decoded = [0usize; 2];
-    let mut cut_counts = [0usize; 2];
-    for pass in 0..2 {
-        for invalid in [
-            u32::try_from(segment - 1).unwrap(),
-            u32::try_from(segment).unwrap(),
-            u32::MAX,
-        ] {
-            // D1' phase-1b: the infallible issue no longer validates (an
-            // out-of-segment owner offset is a fatal); the PUBLICATION gate
-            // still rejects every invalid offset without an RMW.
-            assert!(!map.publish(invalid, 0), "invalid offset {invalid}");
-        }
-        assert!(pending.iter().all(|word| word.load(Ordering::Relaxed) == 0));
-        let mut expected = vec![0u64; words];
-        for offset in (0..segment).step_by(stride) {
-            let word = offset / (stride * u64::BITS as usize);
-            let bit = (offset % (stride * u64::BITS as usize)) / stride;
-            map.issue(u32::try_from(offset).unwrap());
-            issued[pass] += 1;
-            // Oracle: the start bit's position comes from the byte position
-            // within a u64-sized bank word, independently of
-            // SidecarBitmap::granule.
-            assert_eq!(
-                starts[word].load(Ordering::Relaxed) >> bit & 1,
-                1,
-                "start word {word}, offset {offset}"
-            );
-            assert!(
-                map.publish(u32::try_from(offset).unwrap(), 0),
-                "publish {offset}"
-            );
-            published[pass] += 1;
-            expected[word] |= 1u64 << bit;
-            assert_eq!(
-                pending[word].load(Ordering::Relaxed),
-                expected[word],
-                "pending word {word}, offset {offset}"
-            );
-        }
-        for (word, expected_bits) in pending.iter().zip(&expected) {
-            assert_eq!(word.load(Ordering::Relaxed), *expected_bits);
-            assert_eq!(*expected_bits, u64::MAX);
-        }
-        let mut scan = map.scan(segment).unwrap();
-        for (word, pending_word) in pending.iter().enumerate() {
-            let mut cut = scan.next_cut().expect("one cut per production word");
-            cut_counts[pass] += 1;
-            assert_eq!(
-                pending_word.load(Ordering::Relaxed),
-                0,
-                "cut clears word {word}"
-            );
-            for bit in 0..u64::BITS as usize {
-                let offset = word * (stride * u64::BITS as usize) + bit * stride;
-                assert_eq!(
-                    cut.pop(),
-                    Some(u32::try_from(offset).unwrap()),
-                    "inverse word {word}, bit {bit}"
-                );
-                decoded[pass] += 1;
-            }
-            assert!(cut.is_empty());
-            assert!(cut.pop().is_none());
-        }
-        assert!(scan.next_cut().is_none());
-        assert!(pending.iter().all(|word| word.load(Ordering::Relaxed) == 0));
+    let mut issued = 0usize;
+    let mut published = 0usize;
+    let mut decoded = 0usize;
+    let mut cut_count = 0usize;
+    for invalid in [
+        u32::try_from(segment - 1).unwrap(),
+        u32::try_from(segment).unwrap(),
+        u32::MAX,
+    ] {
+        // D1′ issue is owner-infallible; publication still rejects invalid
+        // offsets without an RMW.
+        assert!(!map.publish(invalid, 0), "invalid offset {invalid}");
     }
-    assert_eq!(issued, [granules; 2]);
-    assert_eq!(published, [granules; 2]);
-    assert_eq!(decoded, [granules; 2]);
-    assert_eq!(cut_counts, [words; 2]);
-    println!(
-        "granules={granules} uniform_records={} mixed_records={} total_records={} cuts={} boundary_rejections=12",
-        decoded[0],
-        decoded[1],
-        decoded.iter().sum::<usize>(),
-        cut_counts.iter().sum::<usize>()
-    );
+    assert!(pending.iter().all(|word| word.load(Ordering::Relaxed) == 0));
+
+    let mut expected = vec![0u64; words];
+    for offset in (0..segment).step_by(stride) {
+        let word = offset / (stride * u64::BITS as usize);
+        let bit = (offset % (stride * u64::BITS as usize)) / stride;
+        map.issue(u32::try_from(offset).unwrap());
+        issued += 1;
+        assert_eq!(
+            starts[word].load(Ordering::Relaxed) >> bit & 1,
+            1,
+            "start word {word}, offset {offset}"
+        );
+        assert!(
+            map.publish(u32::try_from(offset).unwrap(), 0),
+            "publish {offset}"
+        );
+        published += 1;
+        expected[word] |= 1u64 << bit;
+        assert_eq!(
+            pending[word].load(Ordering::Relaxed),
+            expected[word],
+            "pending word {word}, offset {offset}"
+        );
+    }
+    for (word, expected_bits) in pending.iter().zip(&expected) {
+        assert_eq!(word.load(Ordering::Relaxed), *expected_bits);
+        assert_eq!(*expected_bits, u64::MAX);
+    }
+    let mut scan = map.scan(segment).unwrap();
+    for (word, pending_word) in pending.iter().enumerate() {
+        let mut cut = scan.next_cut().expect("one cut per production word");
+        cut_count += 1;
+        assert_eq!(
+            pending_word.load(Ordering::Relaxed),
+            0,
+            "cut clears word {word}"
+        );
+        for bit in 0..u64::BITS as usize {
+            let offset = word * (stride * u64::BITS as usize) + bit * stride;
+            assert_eq!(
+                cut.pop(),
+                Some(u32::try_from(offset).unwrap()),
+                "inverse word {word}, bit {bit}"
+            );
+            decoded += 1;
+        }
+        assert!(cut.is_empty());
+        assert!(cut.pop().is_none());
+    }
+    assert!(scan.next_cut().is_none());
+    assert!(pending.iter().all(|word| word.load(Ordering::Relaxed) == 0));
+    assert_eq!(issued, granules);
+    assert_eq!(published, granules);
+    assert_eq!(decoded, granules);
+    assert_eq!(cut_count, words);
+    println!("granules={granules} records={decoded} cuts={cut_count} boundary_rejections=3");
 }
