@@ -253,13 +253,12 @@
 //                             the shard lock.
 //                             (under `alloc-global`)
 //      * `registry::segment_route::small_sidecar` — in-place construction of
-//                             pending atomics and the owner class map.
+//                             backing и unsafe owner-forwarders.
 //                             (under `alloc-global`)
-//      * `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes` —
-//                             genuine System mixed-leaf pointers, owner-only
-//                             presence bits, and exact deallocation after the
-//                             last route pin.
-//                             (under `alloc-core`; used by `alloc-global`)
+//      * `alloc_core::segment::remote_bitmap::sidecar_bitmap::chunked_bank` —
+//                             owner-only конструкция чанков, ready Acquire/Release,
+//                             ограниченный payload-access и last-pin teardown.
+//                             (under `alloc-core`, used by `alloc-global`)
 //      * `alloc_core::segment::segment_table::route_slots` — System-backed,
 //                             owner-only non-Copy registration storage;
 //                             routes close before reservation release.

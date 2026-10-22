@@ -286,15 +286,12 @@ impl AllocCore {
             //    later drain pass. So re-draining the current segment's
             //    freelist would only ever pop 0 — safe to skip.
             if !free_exhausted {
-                let n = match self.try_drain_freelist_batch(
+                let n = self.try_drain_freelist_batch(
                     self.small_cur,
                     class_idx,
                     &mut out[filled..],
                     issue_state,
-                ) {
-                    Ok(n) => n,
-                    Err(()) => return filled,
-                };
+                );
                 if n != 0 {
                     filled += n;
                     continue;
@@ -303,14 +300,8 @@ impl AllocCore {
                 // — batch-drain the remembered segment's bin. A miss (stale or
                 // empty bin) is never a trusted negative: discovery still runs
                 // below (starting after the cursor's slot).
-                let n = match self.batch_drain_from_class_cursor(
-                    class_idx,
-                    &mut out[filled..],
-                    issue_state,
-                ) {
-                    Ok(n) => n,
-                    Err(()) => return filled,
-                };
+                let n =
+                    self.batch_drain_from_class_cursor(class_idx, &mut out[filled..], issue_state);
                 if n != 0 {
                     filled += n;
                     continue;
@@ -322,15 +313,12 @@ impl AllocCore {
                 // free/magazine guards; no caller closure or output scan is needed.
                 let found_seg = self.find_segment_with_free(class_idx);
                 if let Some(seg) = found_seg {
-                    let n = match self.try_drain_freelist_batch(
+                    let n = self.try_drain_freelist_batch(
                         seg,
                         class_idx,
                         &mut out[filled..],
                         issue_state,
-                    ) {
-                        Ok(n) => n,
-                        Err(()) => return filled,
-                    };
+                    );
                     if n != 0 {
                         filled += n;
                         continue;
@@ -360,15 +348,7 @@ impl AllocCore {
             let cur_virgin = virgin_out
                 .is_some()
                 .then(|| SegmentMeta::new(self.small_cur).payload_virgin_of());
-            let n = match self.try_carve_batch(
-                class_idx,
-                block_size,
-                &mut out[filled..],
-                issue_state,
-            ) {
-                Ok(n) => n,
-                Err(()) => return filled,
-            };
+            let n = self.try_carve_batch(class_idx, block_size, &mut out[filled..], issue_state);
             if n != 0 {
                 #[cfg(feature = "virgin-zero-skip")]
                 if let (Some(mask), Some(true)) = (virgin_out.as_deref_mut(), cur_virgin) {
@@ -388,15 +368,12 @@ impl AllocCore {
                     let fresh_virgin = virgin_out
                         .is_some()
                         .then(|| SegmentMeta::new(self.small_cur).payload_virgin_of());
-                    let n = match self.try_carve_batch(
+                    let n = self.try_carve_batch(
                         class_idx,
                         block_size,
                         &mut out[filled..],
                         issue_state,
-                    ) {
-                        Ok(n) => n,
-                        Err(()) => return filled,
-                    };
+                    );
                     if n != 0 {
                         #[cfg(feature = "virgin-zero-skip")]
                         if let (Some(mask), Some(true)) = (virgin_out.as_deref_mut(), fresh_virgin)
@@ -429,15 +406,12 @@ impl AllocCore {
                             #[cfg(feature = "alloc-stats")]
                             crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
                                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                            let n = match self.try_drain_freelist_batch(
+                            let n = self.try_drain_freelist_batch(
                                 seg,
                                 class_idx,
                                 &mut out[filled..],
                                 issue_state,
-                            ) {
-                                Ok(n) => n,
-                                Err(()) => return filled,
-                            };
+                            );
                             if n != 0 {
                                 filled += n;
                                 continue;

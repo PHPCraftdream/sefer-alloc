@@ -1,4 +1,5 @@
-use super::{sidecar_bitmap::ClassMap, AtomicU64, BitmapCut, Ordering};
+use super::sidecar_bitmap::ChunkedBank;
+use super::{AtomicU64, BitmapCut, Ordering};
 use crate::alloc_core::fatal::fatal;
 
 /// Positions of the [`SCAN_COUNTS`] benchmark array (`measure_scans`'s
@@ -36,12 +37,26 @@ std::thread_local! {
 #[must_use = "finish the fixed scan or persist the remaining cursor"]
 pub(crate) struct BitmapScan<'a> {
     pub(super) pending: core::slice::Iter<'a, AtomicU64>,
-    pub(super) classes: ClassMap<'a>,
+    pub(super) chunked: Option<&'a ChunkedBank>,
     pub(super) next_word: usize,
     pub(super) end_word: usize,
 }
 
 impl<'a> BitmapScan<'a> {
+    pub(crate) fn from_chunked(
+        bank: &'a ChunkedBank,
+        high_water: usize,
+        word: usize,
+    ) -> Option<Self> {
+        let end_word = ChunkedBank::window_end(high_water, word)?;
+        Some(Self {
+            pending: [].iter(),
+            chunked: Some(bank),
+            next_word: word,
+            end_word,
+        })
+    }
+
     #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
     pub(crate) fn measure_scans(enable: bool, baseline: bool) -> [u64; 5] {
         BASELINE_SCAN.with(|mode| mode.set(baseline));
@@ -79,20 +94,32 @@ impl<'a> BitmapScan<'a> {
         }
         let word = self.next_word;
         self.next_word += 1;
-        let pending = self
-            .pending
-            .next()
-            .unwrap_or_else(|| fatal(b"bitmap_scan: sidecar scan iterator exhausted early\n"));
+        let pending =
+            if self.chunked.is_none() {
+                Some(self.pending.next().unwrap_or_else(|| {
+                    fatal(b"bitmap_scan: sidecar scan iterator exhausted early\n")
+                }))
+            } else {
+                None
+            };
+        let load = || match self.chunked {
+            Some(bank) => bank.pending_load(word),
+            None => pending.unwrap().load(Ordering::Acquire),
+        };
+        let swap = || match self.chunked {
+            Some(bank) => bank.pending_swap(word),
+            None => pending.unwrap().swap(0, Ordering::AcqRel),
+        };
         #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
         let baseline = BASELINE_SCAN.with(core::cell::Cell::get);
         #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
         let (bits, empty, exchanged) = if baseline {
-            let bits = pending.swap(0, Ordering::AcqRel);
+            let bits = swap();
             (bits, bits == 0, true)
-        } else if pending.load(Ordering::Acquire) == 0 {
+        } else if load() == 0 {
             (0, true, false)
         } else {
-            (pending.swap(0, Ordering::AcqRel), false, true)
+            (swap(), false, true)
         };
         #[cfg(not(all(feature = "bench-internals", r18_sidecar_scan_bench)))]
         // B4 (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): a zero word can never yield
@@ -102,7 +129,7 @@ impl<'a> BitmapScan<'a> {
         // it stays pending for the next discovery scan or strict trim. Release
         // is credit-gated (`dec_live_and_maybe_decommit`), so a skipped word is
         // never lost.
-        let bits = if pending.load(Ordering::Acquire) == 0 {
+        let bits = if load() == 0 {
             0
         } else {
             #[cfg(all(feature = "bench-internals", not(r18_sidecar_scan_bench)))]
@@ -111,7 +138,7 @@ impl<'a> BitmapScan<'a> {
                     count.set(Some(current + 1));
                 }
             });
-            pending.swap(0, Ordering::AcqRel)
+            swap()
         };
         #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
         SCAN_COUNTS.with(|counts| {
@@ -124,7 +151,7 @@ impl<'a> BitmapScan<'a> {
             }
         });
         Some(BitmapCut {
-            classes: self.classes,
+            _marker: core::marker::PhantomData,
             word,
             bits,
         })

@@ -17,7 +17,6 @@ mod alloc_core {
     }
     pub mod size_classes {
         pub const MIN_BLOCK: usize = sefer_alloc::SegmentLayout::MIN_BLOCK;
-        pub const SMALL_CLASS_COUNT: usize = sefer_alloc::SegmentLayout::SIZE_CLASS_TABLE.len();
     }
     pub mod segment_layout {
         pub const SIDECAR_WORD_BYTES: usize =
@@ -33,33 +32,37 @@ mod alloc_core {
 mod remote_bitmap;
 
 mod tests {
-    use super::remote_bitmap::{BitmapRecord, SidecarBitmap};
-    use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+    use super::remote_bitmap::SidecarBitmap;
+    use core::sync::atomic::AtomicU64;
     use std::sync::{Arc, Barrier};
 
-    fn backing() -> (Vec<AtomicU64>, Vec<AtomicU8>) {
+    // D1' phase-1b: pending + start banks only — the class-leaves carrier is
+    // gone and the class lives only in the owner state byte.
+    fn backing() -> (Vec<AtomicU64>, Vec<AtomicU64>) {
         (
             (0..SidecarBitmap::WORDS)
                 .map(|_| AtomicU64::new(0))
                 .collect(),
-            (0..SidecarBitmap::GRANULES)
-                .map(|_| AtomicU8::new(0))
+            // Start bank, zero-initialized (payload_start 0: the whole
+            // segment is payload in this harness).
+            (0..SidecarBitmap::WORDS)
+                .map(|_| AtomicU64::new(0))
                 .collect(),
         )
     }
 
     #[test]
     fn r18_concurrent_publications_survive_empty_cuts_and_resume() {
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
-        assert!(map.issue(1024, 3));
-        assert!(map.issue(1040, 4));
+        let (words, starts) = backing();
+        let map = SidecarBitmap::from_pending(&words, &starts).unwrap();
+        map.issue(1024);
+        map.issue(1040);
         let mut first = map.scan_from(2048, 1).unwrap();
         let mut records = Vec::new();
         std::thread::scope(|scope| {
             let map_ref = &map;
-            let a = scope.spawn(move || assert!(map_ref.publish(1024)));
-            let b = scope.spawn(move || assert!(map_ref.publish(1040)));
+            let a = scope.spawn(move || assert!(map_ref.publish(1024, 0)));
+            let b = scope.spawn(move || assert!(map_ref.publish(1040, 0)));
             let mut cut = first.next_cut().unwrap();
             while let Some(record) = cut.pop() {
                 records.push(record);
@@ -73,19 +76,10 @@ mod tests {
         while let Some(record) = cut.pop() {
             records.push(record);
         }
-        records.sort_by_key(|record| record.offset);
+        records.sort_by_key(|record| *record);
         assert_eq!(
             records,
-            [
-                BitmapRecord {
-                    offset: 1024,
-                    class: 3
-                },
-                BitmapRecord {
-                    offset: 1040,
-                    class: 4
-                },
-            ],
+            [1024, 1040,],
             "publication lost or duplicated across cuts"
         );
         assert!(later.next_cut().is_none());
@@ -95,10 +89,10 @@ mod tests {
             .next_cut()
             .unwrap()
             .is_empty());
-        assert!(map.issue(1024, 5));
-        assert!(map.publish(1024));
+        map.issue(1024);
+        assert!(map.publish(1024, 0));
         let mut valid = map.scan_from(2048, 1).unwrap().next_cut().unwrap();
-        assert_eq!(valid.pop().unwrap().class, 5, "nonempty control must drain");
+        assert_eq!(valid.pop().unwrap(), 1024, "nonempty control must drain");
         assert!(valid.pop().is_none());
     }
 
@@ -107,8 +101,8 @@ mod tests {
     fn r18_candidate_skips_empty_exchange_and_drains_exact_record() {
         use super::remote_bitmap::BitmapScan;
 
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        let (words, starts) = backing();
+        let map = SidecarBitmap::from_pending(&words, &starts).unwrap();
         BitmapScan::measure_scans(true, false);
         let mut empty = map.scan(1024).unwrap();
         assert!(empty.next_cut().unwrap().is_empty());
@@ -116,17 +110,11 @@ mod tests {
         // An unconditional exchange would report [1, 1, 1, 0].
         assert_eq!(&BitmapScan::measure_scans(true, false)[..4], &[1, 1, 0, 0]);
 
-        assert!(map.issue(64, 3));
-        assert!(map.publish(64));
+        map.issue(64);
+        assert!(map.publish(64, 0));
         let mut scan = map.scan(1024).unwrap();
         let mut cut = scan.next_cut().unwrap();
-        assert_eq!(
-            cut.pop(),
-            Some(BitmapRecord {
-                offset: 64,
-                class: 3
-            })
-        );
+        assert_eq!(cut.pop(), Some(64));
         assert!(cut.pop().is_none());
         assert!(scan.next_cut().is_none());
         assert_eq!(&BitmapScan::measure_scans(false, true)[..4], &[1, 0, 1, 1]);
@@ -136,17 +124,15 @@ mod tests {
 
     #[test]
     fn r6_geometry_and_fixed_high_water() {
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        let (words, starts) = backing();
+        let map = SidecarBitmap::from_pending(&words, &starts).unwrap();
         assert_eq!(SidecarBitmap::WORDS, 4096);
         assert_eq!(SidecarBitmap::GRANULES, 262_144);
-        assert!(!map.issue(1, 0));
-        assert!(!map.publish(4 * 1024 * 1024));
-        assert!(!map.issue(16, u8::MAX));
-        assert!(map.issue(1024, 0));
-        assert!(map.issue(4 * 1024 * 1024 - 16, 1));
-        assert!(map.publish(1024));
-        assert!(map.publish(4 * 1024 * 1024 - 16));
+        assert!(!map.publish(4 * 1024 * 1024, 0));
+        map.issue(1024);
+        map.issue(4 * 1024 * 1024 - 16);
+        assert!(map.publish(1024, 0));
+        assert!(map.publish(4 * 1024 * 1024 - 16, 0));
         let mut scan = map.scan(2048).unwrap();
         let mut records = Vec::new();
         let mut cuts = 0;
@@ -157,13 +143,7 @@ mod tests {
             }
         }
         assert_eq!(cuts, 2);
-        assert_eq!(
-            records,
-            [BitmapRecord {
-                offset: 1024,
-                class: 0
-            }]
-        );
+        assert_eq!(records, [1024]);
         let mut full = map.scan(4 * 1024 * 1024).unwrap();
         let mut final_record = None;
         let mut visits = 0;
@@ -174,20 +154,14 @@ mod tests {
             }
         }
         assert_eq!(visits, 4096);
-        assert_eq!(
-            final_record,
-            Some(BitmapRecord {
-                offset: 4 * 1024 * 1024 - 16,
-                class: 1
-            })
-        );
+        assert_eq!(final_record, Some(4 * 1024 * 1024 - 16));
     }
 
     #[test]
     fn r6_paused_before_and_after_terminal_publish() {
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
-        assert!(map.issue(16, 3));
+        let (words, starts) = backing();
+        let map = SidecarBitmap::from_pending(&words, &starts).unwrap();
+        map.issue(16);
         let mut before = map.scan(1024).unwrap();
         assert!(before.next_cut().unwrap().is_empty());
         let entered = Arc::new(Barrier::new(2));
@@ -199,14 +173,14 @@ mod tests {
             scope.spawn(move || {
                 entered_producer.wait();
                 resume_producer.wait();
-                assert!(map_ref.publish(16));
+                assert!(map_ref.publish(16, 0));
             });
             entered.wait();
             let cut = map.scan(1024).unwrap().next_cut().unwrap();
             assert!(cut.is_empty());
             resume.wait();
         });
-        assert!(map.issue(32, 4));
+        map.issue(32);
         let published = Arc::new(Barrier::new(2));
         let return_now = Arc::new(Barrier::new(2));
         std::thread::scope(|scope| {
@@ -214,26 +188,14 @@ mod tests {
             let return_producer = Arc::clone(&return_now);
             let map_ref = &map;
             scope.spawn(move || {
-                assert!(map_ref.publish(32));
+                assert!(map_ref.publish(32, 0));
                 published_producer.wait();
                 return_producer.wait();
             });
             published.wait();
             let mut cut = map.scan(1024).unwrap().next_cut().unwrap();
-            assert_eq!(
-                cut.pop().unwrap(),
-                BitmapRecord {
-                    offset: 16,
-                    class: 3
-                }
-            );
-            assert_eq!(
-                cut.pop().unwrap(),
-                BitmapRecord {
-                    offset: 32,
-                    class: 4
-                }
-            );
+            assert_eq!(cut.pop().unwrap(), 16);
+            assert_eq!(cut.pop().unwrap(), 32);
             assert!(cut.pop().is_none());
             return_now.wait();
         });
@@ -241,63 +203,37 @@ mod tests {
 
     #[test]
     fn r6_reuse_bit_and_republish_class() {
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        let (words, starts) = backing();
+        let map = SidecarBitmap::from_pending(&words, &starts).unwrap();
         let offset = 64;
-        assert!(map.issue(offset, 2));
-        assert!(map.publish(offset));
+        map.issue(offset);
+        assert!(map.publish(offset, 0));
         let mut first = map.scan(1024).unwrap().next_cut().unwrap();
-        assert_eq!(first.pop().unwrap().class, 2);
+        assert_eq!(first.pop().unwrap(), 64);
         assert!(first.pop().is_none());
-        assert!(map.issue(offset, 5));
-        assert!(map.publish(offset));
+        map.issue(offset);
+        assert!(map.publish(offset, 0));
         let mut second = map.scan(1024).unwrap().next_cut().unwrap();
-        assert_eq!(second.pop().unwrap().class, 5);
+        assert_eq!(second.pop().unwrap(), 64);
         assert!(second.pop().is_none());
     }
 
+    // D1' phase-1b REWRITE: there is no class carrier left to corrupt — the
+    // sidecar stores no class state (the former leaf-corruption injection is
+    // meaningless). Publication is gated by the start bit alone; the class is
+    // decided from the owner state byte in `reclaim_sidecar_record`, which
+    // keeps its class >= COUNT fatal.
     #[test]
-    fn r6_invalid_class_aborts_without_unwind() {
-        const CHILD: &str = "SEFER_R6_SIDECAR_INVALID_CLASS_CHILD";
-        if let Some(mode) = std::env::var_os(CHILD) {
-            let mode = mode.to_string_lossy().into_owned();
-            let (words, classes) = backing();
-            let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
-            match mode.as_str() {
-                "pre:255" => classes[1].store(u8::MAX, Ordering::Relaxed),
-                // The class is cleared after a valid publication: the owner's own
-                // check still rejects the record.
-                "post:0" => {
-                    classes[1].store(1, Ordering::Relaxed);
-                    assert!(map.publish(16));
-                    classes[1].store(0, Ordering::Relaxed);
-                }
-                other => panic!("unknown child mode {other}"),
-            }
-            if mode == "pre:255" {
-                assert!(map.publish(16));
-            }
-            let mut cut = map.scan(1024).unwrap().next_cut().unwrap();
-            let _ = cut.pop();
-            return;
-        }
-
-        // A zero class at publication time is dropped by the producer (R12-01):
-        // nothing reaches the owner. In-process: it needs no child.
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
-        classes[1].store(0, Ordering::Relaxed);
-        assert!(!map.publish(16), "zero class must be dropped at publish");
-
-        let executable = std::env::current_exe().unwrap();
-        for mode in ["pre:255", "post:0"] {
-            let status = std::process::Command::new(&executable)
-                .args(["--exact", "tests::r6_invalid_class_aborts_without_unwind"])
-                .env(CHILD, mode)
-                .status()
-                .unwrap();
-            assert!(!status.success(), "invalid class {mode} returned normally");
-            assert_ne!(status.code(), Some(101), "invalid class {mode} unwound");
-        }
+    fn r6_publication_gated_by_start_bit_alone() {
+        let (words, starts) = backing();
+        let map = SidecarBitmap::from_pending(&words, &starts).unwrap();
+        // A never-issued granule: publication is dropped by the start-bit gate.
+        assert!(!map.publish(16, 0), "never-issued granule must not publish");
+        // Issue sets the start bit; the same granule now publishes and drains.
+        map.issue(16);
+        assert!(map.publish(16, 0), "publication consults the start bit");
+        let mut cut = map.scan(1024).unwrap().next_cut().unwrap();
+        assert_eq!(cut.pop(), Some(16));
+        assert!(cut.pop().is_none());
     }
 }

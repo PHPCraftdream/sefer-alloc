@@ -774,7 +774,12 @@ fn shared_sidecar_prepare_is_not_callable_from_outside_the_crate() {
     if variants.is_empty() {
         return;
     }
-    assert_fixture_fails(&fixture, &variants, "E0624", ["prepare", "private"]);
+    assert_fixture_fails(
+        &fixture,
+        &variants,
+        "E0624",
+        ["clear_pending_start_bit", "private"],
+    );
 }
 
 /// Fixture B: `SmallSidecar::issue` is independently sealed — unsealing ONLY
@@ -827,6 +832,25 @@ fn route_registration_shared_reference_must_not_be_sync() {
         return;
     }
     assert_fixture_fails(&fixture, &variants, "E0277", ["RouteRegistration", "Sync"]);
+}
+
+/// Общая safe-ссылка не даёт права конструировать новый чанк через test-hook.
+#[test]
+#[cfg(not(miri))]
+fn chunked_shared_test_issue_requires_unsafe_owner_contract() {
+    let fixture = canonicalize_fixture(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/compile_fail/chunked_shared_test_issue_requires_unsafe/src/main.rs"),
+    );
+    let variants = compatible_variants(
+        "chunked_issue",
+        &probe_fixture(),
+        &candidate_rlibs(&deps_dir(), "chunked_issue"),
+    );
+    if variants.is_empty() {
+        return;
+    }
+    assert_fixture_fails(&fixture, &variants, "E0133", ["issue_for_test", "unsafe"]);
 }
 
 /// Canonicalizes a fixture path so rustc's reported `file_name` matches

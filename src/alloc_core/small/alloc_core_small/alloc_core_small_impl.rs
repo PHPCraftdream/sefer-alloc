@@ -8,10 +8,11 @@ use crate::alloc_core::node::{Node, NODE_SIZE};
 ))]
 use crate::alloc_core::os;
 use crate::alloc_core::os::SEGMENT;
-// R7-A2: `SegmentHeader::segment_id_at` is consulted here by the
-// `alloc-segment-directory`-gated directory-bitmap maintenance arms of
+// R7-A2 + D1′ phase-1b: `SegmentHeader::segment_id_at` is consulted here by
+// the `alloc-segment-directory`-gated directory-bitmap maintenance arms of
 // `pop_free`/`drain_freelist_batch` and by the `hardened` freelist
-// validation, so the import is gated on exactly those features.
+// validation — gate the import on the same pair so builds without either
+// stay warning-clean (D1′ phase-1b removed the other consumers).
 #[cfg(any(feature = "hardened", feature = "alloc-segment-directory"))]
 use crate::alloc_core::segment_header::SegmentHeader;
 use crate::alloc_core::segment_header::{align_up, SegmentMeta, FREE_LIST_NULL};
@@ -167,31 +168,33 @@ impl AllocCore {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
         // 1. Try the free list of the current small segment.
-        match self.pop_free(self.small_cur, class_idx) {
-            Ok(Some(ptr)) => return ptr,
-            Err(()) => return core::ptr::null_mut(),
-            Ok(None) => {}
+        if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
+            return ptr;
         }
         // 2. Current segment's class free list is empty: probe the per-class
         //    discovery cursor, then scan the OTHER owned segments for one
-        //    with a non-empty class free list (B4 §11: scan starts after the
-        //    cursor's slot, wraps; see docs/perf/B4_MT_COLLAPSE_DIAGNOSIS.md
-        //    §11; shared metadata guards — terminal consumption cannot
-        //    double-link a block).
-        match self.alloc_small_via_discovery(class_idx) {
-            Err(()) => return core::ptr::null_mut(),
-            Ok(Some(ptr)) => return ptr,
-            Ok(None) => {}
+        //    with a non-empty class free list (B4 §11: the scan starts after
+        //    the cursor's slot and wraps; see
+        //    docs/perf/B4_MT_COLLAPSE_DIAGNOSIS.md §11). Scalar and refill
+        //    discovery share the same physical metadata guards; terminal
+        //    consumption cannot link a free or magazine-resident block onto
+        //    the substrate a second time. D1′ phase-1b: discovery is
+        //    infallible — the class-leaf spill OOM is gone with the class
+        //    leaves, so no `Err` arm remains (main's OOM probe lived in the
+        //    removed `prepare_for` class-spill path).
+        if let Some(ptr) = self.alloc_small_via_discovery(class_idx) {
+            return ptr;
         }
         // 3. No free block anywhere: carve a FRESH block. On the cold carve
         //    path we also carve a refill batch (Phase 9 amortisation) so the
         //    next allocs pop from the free list instead of carving one-by-one.
         //    Each refilled block is pushed into its OWN segment's BinTable
-        //    (via `segment_base_of(ptr)`), never a captured "current"
-        //    pointer (defect A fix: `small_cur` may shift mid-batch).
-        if !self.prepare_current_carve(class_idx, block_size) {
-            return core::ptr::null_mut();
-        }
+        //    (via `segment_base_of(ptr)`), never a captured "current" pointer
+        //    (defect A fix: `small_cur` may shift mid-batch when a segment fills).
+        //    D1′ phase-1b: no fallible prepare before the carve — issue paths
+        //    are infallible (the only OOM left is an honest OS commit/reserve
+        //    refusal, handled inside the carve itself). Main's
+        //    `prepare_current_carve` probe is removed with the class leaves.
         if let Some(ptr) = self.carve_block_with_refill(class_idx, block_size) {
             return ptr;
         }
@@ -200,10 +203,8 @@ impl AllocCore {
             Some(_) => {
                 // Retry once on the fresh segment. Recurse-free: a single
                 // direct retry (not a loop that could grow unboundedly).
-                match self.pop_free(self.small_cur, class_idx) {
-                    Ok(Some(ptr)) => return ptr,
-                    Err(()) => return core::ptr::null_mut(),
-                    Ok(None) => {}
+                if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
+                    return ptr;
                 }
                 // no-panic: a fresh small segment is guaranteed by construction
                 // to have room for at least one block of every small class
@@ -232,10 +233,8 @@ impl AllocCore {
                         #[cfg(feature = "alloc-stats")]
                         crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        match self.pop_free(seg, class_idx) {
-                            Ok(Some(ptr)) => return ptr,
-                            Err(()) => return core::ptr::null_mut(),
-                            Ok(None) => {}
+                        if let Some(ptr) = self.pop_free(seg, class_idx) {
+                            return ptr;
                         }
                     }
                 }
@@ -271,26 +270,19 @@ impl AllocCore {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
         // 1. Current segment's free list — never virgin (dispatch conjunct).
-        match self.pop_free(self.small_cur, class_idx) {
-            Ok(Some(ptr)) => return (ptr, false),
-            Err(()) => return (core::ptr::null_mut(), false),
-            Ok(None) => {}
+        if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
+            return (ptr, false);
         }
         // 2. Other owned segments' free lists — never virgin (a popped block
         //    was carved and issued earlier). Same cursor-aware discovery step
         //    as `alloc_small` (B4 §11).
-        match self.alloc_small_via_discovery(class_idx) {
-            Err(()) => return (core::ptr::null_mut(), false),
-            Ok(Some(ptr)) => return (ptr, false),
-            Ok(None) => {}
+        if let Some(ptr) = self.alloc_small_via_discovery(class_idx) {
+            return (ptr, false);
         }
         // 3. No free block anywhere: carve a FRESH block from the CURRENT
         //    segment. Read the lifetime-virginity bit before carving — the
         //    carve itself never mutates the bit (see this fn's doc).
         let cur_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
-        if !self.prepare_current_carve(class_idx, block_size) {
-            return (core::ptr::null_mut(), false);
-        }
         if let Some(ptr) = self.carve_block_with_refill(class_idx, block_size) {
             return (ptr, cur_virgin && cfg!(not(miri)));
         }
@@ -302,10 +294,8 @@ impl AllocCore {
                 // to mirror `alloc_small`'s identical retry shape; it never
                 // actually hits in practice, but if it somehow did, a
                 // free-list-served block is never virgin regardless.
-                match self.pop_free(self.small_cur, class_idx) {
-                    Ok(Some(ptr)) => return (ptr, false),
-                    Err(()) => return (core::ptr::null_mut(), false),
-                    Ok(None) => {}
+                if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
+                    return (ptr, false);
                 }
                 let fresh_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
                 match self.carve_block_with_refill(class_idx, block_size) {
@@ -323,26 +313,14 @@ impl AllocCore {
                         #[cfg(feature = "alloc-stats")]
                         crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        match self.pop_free(seg, class_idx) {
-                            Ok(Some(ptr)) => return (ptr, false),
-                            Err(()) => return (core::ptr::null_mut(), false),
-                            Ok(None) => {}
+                        if let Some(ptr) = self.pop_free(seg, class_idx) {
+                            return (ptr, false);
                         }
                     }
                 }
                 (core::ptr::null_mut(), false)
             }
         }
-    }
-
-    fn prepare_current_carve(&self, class_idx: usize, block_size: usize) -> bool {
-        let bump = SegmentMeta::new(self.small_cur).bump_of();
-        let aligned = align_up(bump, block_size);
-        aligned + block_size > SEGMENT
-            || self
-                .table
-                .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
-                .is_some()
     }
 
     #[cfg(feature = "hardened")]
@@ -393,28 +371,28 @@ impl AllocCore {
         next_off
     }
 
-    /// Pop a free block; `Err` is an uncommitted class-spill OOM, leaving
-    /// the class head and bitmap unchanged. Hardened corruption aborts.
+    /// Pop a free block. D1′ phase-1b: infallible — the former transactional
+    /// prepare (and its class-leaf spill OOM) is gone; the only remaining
+    /// owner-side OOM is an honest OS commit/reserve refusal, which this
+    /// path never performs. Hardened corruption aborts.
     #[inline(always)]
     pub(in crate::alloc_core) fn pop_free(
         &mut self,
         segment: *mut u8,
         class_idx: usize,
-    ) -> Result<Option<*mut u8>, ()> {
+    ) -> Option<*mut u8> {
         let mut meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
         let head_off = bt.head(class_idx);
         if head_off == FREE_LIST_NULL {
-            return Ok(None);
+            return None;
         }
         #[cfg(feature = "hardened")]
         if !Self::valid_free_node(segment, head_off, class_idx) {
             Self::free_list_corrupted();
         }
         let block_ptr = Node::deref(segment, head_off as usize);
-        let Some(block_nn) = NonNull::new(block_ptr) else {
-            return Ok(None);
-        };
+        let block_nn = NonNull::new(block_ptr)?;
         let next = Node::read_next(block_nn);
         #[cfg(feature = "hardened")]
         let new_head = Self::free_continuation(segment, head_off, class_idx, next);
@@ -425,9 +403,6 @@ impl AllocCore {
             let bounds =
                 crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
             Node::continuation_offset_or_fatal(segment, next, bounds)
-        };
-        let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
-            return Err(());
         };
         bt.set_head(class_idx, new_head);
         // R7-A2: directory bitmap maintenance — the old head was non-null
@@ -453,21 +428,29 @@ impl AllocCore {
         // segment's free list is empty), so no recommit is needed here — only
         // `carve_block` writes fresh payload and thus recommits.
         meta.inc_live();
-        tx.commit(&self.table);
-        Ok(Some(block_ptr))
+        // D1′ phase-1b: set the record's "start was issued" bit exactly at the
+        // former `tx.commit` point (infallible; the class lives only in the
+        // byte written above). Staged: the slot guards open once here (one
+        // block per `pop_free` call — same guard set, one handle).
+        self.table.small_issue_run(segment).issue(head_off);
+        Some(block_ptr)
     }
 
-    /// Э7 (task #161) — **batch freelist drain**. Pop up to `out.len()` free
-    /// blocks of class `class_idx` from `segment`'s `BinTable[class_idx]` in ONE
-    /// walk, writing them into `out[..k]` and returning `k` (the number popped,
-    /// `0` if the free list was empty). Byte-identical end-state to calling
-    /// [`pop_free`](Self::pop_free) `k` times, but with the per-block round-trip HOISTED:
+    /// Drain up to `out.len()` free blocks of one class into `out`; returns
+    /// the number drained. D1′ phase-1b: the former transactional
+    /// `prepare_for` probe (class-leaf spill OOM) is gone.
     ///
-    ///   - `head` is read ONCE (not re-read from the `BinTable` per block).
-    ///   - `set_head` is written ONCE at the end, to the first UN-popped node
-    ///     (or `FREE_LIST_NULL` if the chain was exhausted before `out` filled).
-    ///   - `inc_live` is applied ONCE by `k` (under `alloc-decommit`), exactly
-    ///     equalling `k` individual `inc_live`s.
+    /// - Production: ONE pass — validate the node, read its continuation,
+    ///   commit the LIVE byte, store into `out[k]`. The continuation checks
+    ///   (`continuation_offset_or_fatal` / hardened `free_continuation`)
+    ///   are MOVED here, not deleted.
+    /// - Hardened: stays two-pass — a Floyd/`valid_free_node` walk validates
+    ///   the whole chain BEFORE any mutation, then the single-pass commit
+    ///   walk runs on the validated chain.
+    ///
+    /// A cheap per-run route-slot integrity check
+    /// (`base_at(segment_id_at(base)) == base`) replaces the former
+    /// per-issue fatal guards.
     ///
     /// The two per-block costs that MUST stay per-block are kept per-block:
     ///
@@ -477,24 +460,22 @@ impl AllocCore {
     ///     body on this path (pop doesn't), so reading `next` before advancing
     ///     is hazard-free: nothing overwrites a block between our read of its
     ///     `next` and our recording it.
-    ///   - `mark_alloc(off)` — cleared per-block. **Decision: per-block, NOT
-    ///     merged.** A freelist is a LIFO push chain, so consecutive popped
-    ///     offsets are in general SCATTERED across the bitmap (they do not share
-    ///     a byte the way a flush batch of consecutive carves would). Merging
-    ///     the RMWs across blocks would only be byte-identical for offsets that
-    ///     share a bitmap byte, which is not guaranteed here — so we keep the
-    ///     per-block `mark_alloc`, which is trivially identical to `pop_free`'s.
-    ///     The batch win is the hoisted `set_head` / `head`-read / `inc_live`,
-    ///     NOT the bitmap RMW (which was never the expensive part).
+    ///   - the start-bit set (`issue(off)`) — cleared/committed per-block.
+    ///     **Decision: per-block, NOT merged.** A freelist is a LIFO push
+    ///     chain, so consecutive popped offsets are in general SCATTERED
+    ///     across the sidecar (they do not share a word the way a flush batch
+    ///     of consecutive carves would). The batch win is the hoisted
+    ///     `set_head` / `head`-read / `add_live`, NOT the per-block sidecar
+    ///     ops (which were never the expensive part).
     ///
     /// ## D1 / M2 / set_head correctness
     ///
     ///   - **D1:** exactly `k` blocks leave the free list and are handed out, so
-    ///     `inc_live` by `k` == `k` per-block `inc_live`s. No double, no
+    ///     `add_live` by `k` == `k` per-block `inc_live`s. No double, no
     ///     under-count.
-    ///   - **M2:** every recorded block ends bitmap-ALLOCATED (bit cleared) via
-    ///     its own `mark_alloc`, exactly as `pop_free` leaves it. A later
-    ///     double-free still hits `is_free` correctly.
+    ///   - **M2:** every recorded block ends with its own state byte
+    ///     (`issue_state`) written, exactly as `pop_free` leaves it. A later
+    ///     double-free still hits the state check correctly.
     ///   - **set_head:** after the walk, `head` holds either the offset of the
     ///     first un-popped node (chain longer than `out`) or `FREE_LIST_NULL`
     ///     (chain exhausted). We `set_head` to that once. A subsequent
@@ -502,9 +483,10 @@ impl AllocCore {
     ///     same order.
     ///
     /// R7-A2: `&mut self` (upgraded from `&self`) so the directory bitmap can
-    /// be maintained at the single choke point. Touches only `segment` metadata
-    /// via `SegmentMeta` for the freelist walk, then calls `publish_empty` on
-    /// the directory sidecar (if materialised) when the drain empties the list.
+    /// be maintained at the single choke point. Touches only `segment`
+    /// metadata via `SegmentMeta` for the freelist walk, then calls
+    /// `publish_empty` on the directory sidecar (if materialised) when the
+    /// drain empties the list.
     #[inline]
     #[cfg(feature = "internals")]
     pub(in crate::alloc_core) fn drain_freelist_batch(
@@ -514,49 +496,51 @@ impl AllocCore {
         out: &mut [*mut u8],
     ) -> usize {
         self.try_drain_freelist_batch(segment, class_idx, out, StateByte::LIVE)
-            .unwrap_or(0)
     }
 
-    /// `Err` is only an uncommitted class-spill OOM; hardened validation
-    /// failures abort rather than being converted to an empty drain.
-    /// S1: `issue_state` = state byte committed per popped block — LIVE for
-    /// batch paths, MAG for the magazine refill (parks n−1 blocks; see
-    /// `finish_magazine_refill`). Same as `alloc_batch`'s deferred-clear.
+    /// `issue_state` = state byte committed per popped block — LIVE for
+    /// batch paths, MAG for the magazine refill (parks n−1 blocks; S1).
+    /// Infallible since D1′ phase-1b: the former fallible `prepare_for`
+    /// class-spill probe is gone with the class leaves, so main's
+    /// `Result<usize, ()>` signature degraded to a plain `usize` (0 =
+    /// nothing drained); hardened validation failures abort rather than
+    /// being converted to an empty drain.
     pub(in crate::alloc_core) fn try_drain_freelist_batch(
         &mut self,
         segment: *mut u8,
         class_idx: usize,
         out: &mut [*mut u8],
         issue_state: u8,
-    ) -> Result<usize, ()> {
+    ) -> usize {
         if out.is_empty() {
-            return Ok(0);
+            return 0;
         }
+        // D1′ staged (OPT): the fatal slot guards (index < cap, occupied
+        // slot, root == base, sidecar present) plus the cheap per-run
+        // integrity check `base_at(segment_id_at(base)) == base` — all
+        // hoisted into ONE `small_issue_run` open per run (design §2.2);
+        // the per-block loop below does only the cheap sidecar operations.
+        let issue_run = self.table.small_issue_run(segment);
         let mut meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
-        // Run-level protocol (B4-R3): fatal route guards run once in
-        // `prepare_small_issue_run`; per-block `prepare_for` promotes only on
-        // a leaf CHANGE, `run.commit` is one Release store (see `IssueRun`);
-        // `issue_small` re-derives the id in all builds.
-
+        // Read the head ONCE.
+        let mut head_off = bt.head(class_idx);
+        if head_off == FREE_LIST_NULL {
+            return 0;
+        }
+        // Run-level protocol (B4-R3), D1′ form: the fatal route guards run
+        // once in `small_issue_run` (opened above); nothing per-block is
+        // fallible any more (main's per-block `prepare_for` leaf-spill probe
+        // is gone with the class leaves).
+        // Hardened pre-pass: validate the chain (Floyd cycle detection +
+        // per-node FREE-byte/geometry checks) BEFORE any mutation. No
+        // `prepare_for` — nothing fallible remains.
+        #[cfg(feature = "hardened")]
         {
-            // Read the head ONCE.
-            let mut head_off = bt.head(class_idx);
-            if head_off == FREE_LIST_NULL {
-                return Ok(0);
-            }
-            let mut run = self.table.prepare_small_issue_run(segment, class_idx);
-            // Prepare every spill on the still-owned chain. On OOM head, bitmap, live count and
-            // output stay unchanged; promoted leaves are valid zero-filled copies for a retry.
-            #[cfg(not(feature = "hardened"))]
-            let bounds =
-                crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
             let mut probe = head_off;
-            #[cfg(feature = "hardened")]
             let mut slow = head_off;
             let mut probed = 0usize;
             while probed < out.len() && probe != FREE_LIST_NULL {
-                #[cfg(feature = "hardened")]
                 if !Self::valid_free_node(segment, probe, class_idx) {
                     Self::free_list_corrupted();
                 }
@@ -564,92 +548,98 @@ impl AllocCore {
                 let Some(nn) = NonNull::new(block) else {
                     break;
                 };
-                if !run.prepare_for(probe) {
-                    return Err(());
-                }
                 let next = Node::read_next(nn);
-                #[cfg(feature = "hardened")]
-                {
-                    let next_off = Self::free_continuation(segment, probe, class_idx, next);
-                    if next_off == bt.head(class_idx) {
-                        Self::free_list_corrupted();
-                    }
-                    probe = next_off;
-                    if probed % 2 == 1 {
-                        let slow_block = NonNull::new(Node::deref(segment, slow as usize))
-                            .unwrap_or_else(|| Self::free_list_corrupted());
-                        slow = Self::free_continuation(
-                            segment,
-                            slow,
-                            class_idx,
-                            Node::read_next(slow_block),
-                        );
-                    }
-                    if probe != FREE_LIST_NULL && probe == slow {
-                        Self::free_list_corrupted();
-                    }
+                let next_off = Self::free_continuation(segment, probe, class_idx, next);
+                if next_off == bt.head(class_idx) {
+                    Self::free_list_corrupted();
                 }
-                #[cfg(not(feature = "hardened"))]
-                {
-                    probe = if next.is_null() {
-                        FREE_LIST_NULL
-                    } else {
-                        Node::continuation_offset_or_fatal(segment, next, bounds)
-                    };
+                probe = next_off;
+                if probed % 2 == 1 {
+                    let slow_block = NonNull::new(Node::deref(segment, slow as usize))
+                        .unwrap_or_else(|| Self::free_list_corrupted());
+                    slow = Self::free_continuation(
+                        segment,
+                        slow,
+                        class_idx,
+                        Node::read_next(slow_block),
+                    );
+                }
+                if probe != FREE_LIST_NULL && probe == slow {
+                    Self::free_list_corrupted();
                 }
                 probed += 1;
             }
-            // B4 (в): the state byte is written per block below.
-            let mut k = 0usize;
-            while k < out.len() && head_off != FREE_LIST_NULL {
-                let block_ptr = Node::deref(segment, head_off as usize);
-                let block_nn = match NonNull::new(block_ptr) {
-                    Some(nn) => nn,
-                    // Corrupt offset only: commit what we have (defence-in-depth);
-                    // `head` stays on this node so nothing is lost.
-                    None => break,
-                };
-                // Dependent load: read `next` BEFORE recording (block body is
-                // never written on the pop path — race-free against ourselves).
-                let next = Node::read_next(block_nn);
-                // B4 (в)/S1: issue = commit `issue_state` (LIVE, or MAG when
-                // the caller parks the batch in a magazine).
-                meta.state_byte().write(head_off, class_idx, issue_state);
-                run.commit(head_off);
-                out[k] = block_ptr;
-                k += 1;
-                // The probe pass above validated this same chain link by link.
-                head_off = if next.is_null() {
-                    FREE_LIST_NULL
-                } else {
-                    next.addr().wrapping_sub(segment.addr()) as u32
-                };
-            }
-            // Write the new head ONCE: the first un-popped node, or NULL.
-            bt.set_head(class_idx, head_off);
-            // B4-M (P1-2): MAG state-byte writes of this drain, one add per batch.
-            #[cfg(feature = "bench-internals")]
-            if issue_state == StateByte::MAG {
-                crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
-                    .fetch_add(k as u64, core::sync::atomic::Ordering::Relaxed);
-            }
-            // R7-A2: directory bitmap maintenance — the old head was non-null
-            // (early return above), so the only transition is non-empty→empty
-            // when the drain exhausted the chain (head_off == FREE_LIST_NULL);
-            // `let _ = run` ends its borrow before the `&mut self` publish.
-            let _ = run;
-            #[cfg(feature = "alloc-segment-directory")]
-            if head_off == FREE_LIST_NULL {
-                let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
-                self.publish_empty(segment, class_idx, slot_idx);
-            }
-            // `inc_live` ONCE by `k` (D1): exactly `k` blocks handed out; a
-            // popped block always comes from a COMMITTED payload (a decommitted
-            // segment's freelist is empty), so no recommit is needed here.
-            // Batch `add_live(k)` ≡ `k` per-block `inc_live`s (D1 note there).
-            meta.add_live(k as u32);
-            Ok(k)
         }
+        #[cfg(not(feature = "hardened"))]
+        let bounds =
+            crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
+        // Single mutation pass: validate → read_next → LIVE byte → out[k].
+        let mut k = 0usize;
+        while k < out.len() && head_off != FREE_LIST_NULL {
+            let block_ptr = Node::deref(segment, head_off as usize);
+            let block_nn = match NonNull::new(block_ptr) {
+                Some(nn) => nn,
+                // Corrupt offset only: commit what we have (defence-in-depth);
+                // `head` stays on this node so nothing is lost.
+                None => break,
+            };
+            // Dependent load: read this block's `next` BEFORE recording it. The
+            // block body is never written on the pop path, so this is race-free
+            // against ourselves.
+            let next = Node::read_next(block_nn);
+            // Continuation check (MOVED from the former probe pass, never
+            // deleted): resolve the next node's offset through the same
+            // guarded path as before mutating this node's state byte.
+            let next_off = if next.is_null() {
+                FREE_LIST_NULL
+            } else {
+                #[cfg(feature = "hardened")]
+                {
+                    let next_off = Self::free_continuation(segment, head_off, class_idx, next);
+                    if next_off == head_off {
+                        Self::free_list_corrupted();
+                    }
+                    next_off
+                }
+                #[cfg(not(feature = "hardened"))]
+                {
+                    Node::continuation_offset_or_fatal(segment, next, bounds)
+                }
+            };
+            // B4 (в)/S1: issue = commit `issue_state` (LIVE for batch paths,
+            // MAG when the caller parks the batch in a magazine).
+            meta.state_byte().write(head_off, class_idx, issue_state);
+            // D1′ phase-1b: set the start bit at the former `run.commit`
+            // point — per block, never merged (d1p_rev finding 3).
+            issue_run.issue(head_off);
+            out[k] = block_ptr;
+            k += 1;
+            head_off = next_off;
+        }
+        // Write the new head ONCE: the first un-popped node, or NULL.
+        bt.set_head(class_idx, head_off);
+        // B4-M (P1-2): MAG state-byte writes of this drain, one add per batch.
+        #[cfg(feature = "bench-internals")]
+        if issue_state == StateByte::MAG {
+            crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
+                .fetch_add(k as u64, core::sync::atomic::Ordering::Relaxed);
+        }
+        // R7-A2: directory bitmap maintenance — the old head was non-null
+        // (early return above), so the only transition is non-empty→empty
+        // when the drain exhausted the chain (head_off == FREE_LIST_NULL).
+        #[cfg(feature = "alloc-segment-directory")]
+        if head_off == FREE_LIST_NULL {
+            let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+            self.publish_empty(segment, class_idx, slot_idx);
+        }
+        // `inc_live` ONCE by `k` (D1): exactly `k` blocks were handed out. A
+        // popped block always comes from a COMMITTED payload (a decommitted
+        // segment was reset to an empty free list, so the drain finds nothing
+        // there), so no recommit is needed on this path. Applied via the
+        // batch `add_live(k)` primitive (byte-identical to `k` per-block
+        // `inc_live`s — see `add_live`'s D1-equivalence note).
+        meta.add_live(k as u32);
+        k
     }
 
     /// Carve a fresh `block_size`-aligned block from the current small
@@ -677,11 +667,9 @@ impl AllocCore {
         if aligned_bump + block_size > SEGMENT {
             return None;
         }
-        // Fallible prepare before any mutation: `?` is the `return None` the
-        // old inline guard performed — "segment full" so the caller reserves.
-        let tx = self
-            .table
-            .prepare_small_issue(segment, aligned_bump as u32, class_idx)?;
+        // D1′ phase-1b: no fallible prepare before the mutation — issue
+        // paths are infallible; the segment-full check above still sends a
+        // full segment to the reserve path.
         // Phase 35 (M6 recommit): if this segment's payload was decommitted (it
         // emptied and we returned its pages to the OS), we are about to write
         // into the payload — recommit and clear the flag BEFORE the bump cursor
@@ -775,6 +763,14 @@ impl AllocCore {
         }
         // Update ONLY the bump cursor.
         meta.set_bump(aligned_bump + block_size);
+        // D1' phase-1a carve-clear (design section 2.4): after ALL fallible
+        // steps and BEFORE the LIVE write, drop the fresh block's start
+        // granule's pending bit (load Acquire -> fetch_and !mask AcqRel, RMW
+        // only) so a garbage pending bit on a never-issued granule cannot
+        // survive into a live block. Counted by CARVE_CLEAR_BITS /
+        // CARVE_CLEAR_WORD_LOADS. Staged: the per-run slot guards open once
+        // here (`small_issue_run`); the clear and the per-block start-bit
+        // set below are the cheap sidecar operations.
         // Phase 35: this carved block is now live (handed to the caller, or — on
         // the refill path — immediately pushed to the free list, which calls
         // `dealloc_small` → `dec_live`, netting zero for refill blocks; the
@@ -794,71 +790,17 @@ impl AllocCore {
             }
         }
         let ptr = Node::deref(segment, aligned_bump);
-        tx.commit(&self.table);
+        // D1′ staged: open the per-run handle once for this single-block
+        // carve (same fatal guards); carve-clear, then the fresh block's
+        // start bit set at exactly the former `tx.commit` point — both
+        // before the LIVE write (infallible).
+        let issue_run = self.table.small_issue_run(segment);
+        issue_run.clear_pending_start_bit(aligned_bump as u32);
+        issue_run.issue(aligned_bump as u32);
         // B4 (в): a freshly carved block is issued LIVE at first touch.
         meta.state_byte()
             .write(aligned_bump as u32, class_idx, StateByte::LIVE);
         Some(ptr)
-    }
-
-    /// E1 (task W4) — **batched bump-carve**. Carve a RUN of up to `out.len()`
-    /// `block_size`-strided blocks from the current small segment's bump cursor
-    /// in ONE shot, writing them into `out[..n]` and returning `n` (0 if the
-    /// segment cannot fit even one block — the caller reserves a fresh segment,
-    /// exactly as it does on `carve_block` → `None`).
-    ///
-    /// ## Byte-identical to `n` sequential `carve_block`s — what is HOISTED
-    ///
-    /// A run of `carve_block(class_idx, block_size)` calls, after the FIRST,
-    /// always finds `bump` already `block_size`-aligned (the previous carve left
-    /// `bump = aligned_prev + block_size`, and every class `block_size` is a
-    /// multiple of `MIN_BLOCK`), so `align_up(bump, block_size)` is a TAUTOLOGY
-    /// from the second block on. We therefore align ONCE (`aligned_start`), then
-    /// stride by `block_size`. The following are hoisted across the run because
-    /// none of them can change mid-run (a carve run touches only owner-only
-    /// bump/live/page-map state, and no free/decommit runs between carves):
-    ///   - `SegmentMeta::new` + `bump_of()` LOAD — once (bump only advances by
-    ///     our own writes; we track it locally).
-    ///   - `align_up` div — once (tautological after block 0).
-    ///   - `set_bump` STORE — once, to `aligned_start + n*block_size` (identical
-    ///     to the last sequential carve's final bump).
-    ///   - `live += n` — one batched saturating add (D1: exactly `n` handed out,
-    ///     byte-identical to `n` `inc_live`s; owner-only counter, intermediate
-    ///     states unobservable — same argument as `drain_freelist_batch`).
-    ///   - `is_decommitted()` check + recommit — once at run start (the flag is
-    ///     set only in the decommit path, which cannot run mid-carve).
-    ///
-    /// ## What STAYS per-block (NOT tautologies)
-    ///   - The page-map `class_of`/`set_class` "first class wins" marking is
-    ///     applied per DISTINCT payload page: we compute the page of each block
-    ///     and call `set_class` only when the page index CHANGES from the prior
-    ///     block (byte-identical to `carve_block`'s per-block "mark only if
-    ///     `class_of(page).is_none()`", since within a run the first block to
-    ///     enter a page is the one that dedicates it, and later same-page blocks
-    ///     find it already `Some` → no-op). For `block_size > PAGE` every block
-    ///     lands on a fresh page, so this degrades to per-block correctly.
-    ///
-    /// ## M2 / D1 / boundary — preserved EXACTLY
-    ///   - M2: carve NEVER touches the alloc bitmap (a bump-carved block is
-    ///     already bit0=allocated, the M2 convention) — identical to `carve_block`.
-    ///   - D1: `+n` for the `n` blocks handed out.
-    ///   - Boundary: `n = min(out.len(), room)` where
-    ///     `room = (SEGMENT - aligned_start) / block_size`, so
-    ///     `aligned_start + n*block_size <= SEGMENT` — the same
-    ///     `aligned + block_size > SEGMENT` per-block check, batched.
-    // R12-11 (task #262): `class_idx` is used ONLY for the diagnostic-only
-    // page-map marking below (see `PageMap`'s struct doc) — it is genuinely
-    // unused without `page-map-diag`.
-    #[cfg_attr(not(feature = "page-map-diag"), allow(unused_variables))]
-    #[cfg(feature = "internals")]
-    pub(in crate::alloc_core) fn carve_batch(
-        &mut self,
-        class_idx: usize,
-        block_size: usize,
-        out: &mut [*mut u8],
-    ) -> usize {
-        self.try_carve_batch(class_idx, block_size, out, StateByte::LIVE)
-            .unwrap_or(0)
     }
 
     /// S1: `issue_state` — LIVE (batch paths) or MAG (magazine refill);
@@ -869,31 +811,23 @@ impl AllocCore {
         block_size: usize,
         out: &mut [*mut u8],
         issue_state: u8,
-    ) -> Result<usize, ()> {
+    ) -> usize {
         if out.is_empty() {
-            return Ok(0);
+            return 0;
         }
         let segment = self.small_cur;
         let mut meta = SegmentMeta::new(segment);
         let bump = meta.bump_of();
         let aligned_start = align_up(bump, block_size);
         if aligned_start + block_size > SEGMENT {
-            return Ok(0); // not room for even one block
+            return 0; // not room for even one block
         }
         let room = (SEGMENT - aligned_start) / block_size;
         let n = out.len().min(room);
-        // Run-level protocol (B4-R3): guards once per run, per-block
-        // `prepare_for` promotes only on a leaf CHANGE, `run.commit` is one
-        // Release store (see `IssueRun`). A successful promotion is retained
-        // even if later OS commit fails; no class code or issue credit
-        // changes until the carve commits.
-        let mut run = self.table.prepare_small_issue_run(segment, class_idx);
-        for i in 0..n {
-            let off = aligned_start + i * block_size;
-            if !run.prepare_for(off as u32) {
-                return Err(());
-            }
-        }
+        // D1′ phase-1b: no per-block fallible prepare (main's per-block
+        // `run.prepare_for` leaf-spill probe is gone with the class leaves) —
+        // the start-bit set happens per block below, at the former
+        // `run.commit` point.
         // Recommit ONCE at run start if the segment's payload was decommitted
         // (identical to `carve_block`'s per-block check — the flag cannot change
         // mid-run, so one check covers the whole run).
@@ -914,7 +848,7 @@ impl AllocCore {
                     // decommitted, do not advance the bump, and carve nothing
                     // so the caller falls back (fresh segment / null) instead
                     // of writing into a still-reserved page.
-                    return Ok(0);
+                    return 0;
                 }
                 meta.set_decommitted(false);
             }
@@ -946,9 +880,10 @@ impl AllocCore {
                 // clamped to SEGMENT (never commit past the segment end).
                 let new_frontier = align_up(batch_end, GROW_CHUNK).min(SEGMENT);
                 if !os::commit_pages(segment, frontier, new_frontier) {
-                    // Commit-charge exhaustion: cannot grow the frontier;
-                    // everything unchanged (bump, live_count, page map).
-                    return Ok(0);
+                    // Commit-charge exhaustion: cannot grow the frontier.
+                    // Everything unchanged: bump not moved, live_count
+                    // unchanged, page map unwritten, no blocks handed out.
+                    return 0;
                 }
                 GROW_COMMIT_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 meta.set_committed_payload_end(new_frontier);
@@ -957,8 +892,32 @@ impl AllocCore {
         // Advance the bump cursor ONCE to just past the last carved block —
         // byte-identical to the final `set_bump` of the n-th sequential carve.
         meta.set_bump(aligned_start + n * block_size);
+        // D1′ staged (OPT): open the per-run issue handle ONCE — the fatal
+        // slot guards run here, not per block (design §2.2).
+        let issue_run = self.table.small_issue_run(segment);
         // Batched live increment (D1): exactly `n` blocks handed out.
         meta.add_live(n as u32);
+        // D1′ M-h oracle seam (test-only, compiled out of every build without
+        // `internals`/`bench-internals`): expose the defect window
+        // `[set_bump + add_live, first per-block issue]`. Production issue
+        // order below is PER BLOCK — `clear_pending_start_bit(off)` →
+        // `issue(off)` (start bit) → LIVE byte — so while this stage value
+        // is `n`, NO block of the batch may yet show a start bit to a
+        // concurrent publisher. An early mass publication of all batch
+        // start bits here (d1p_rev M-h) is visible exactly inside this
+        // window; the test `oneclass_carve_batch_early_publication` parks
+        // the owner here and probes the sidecar start-bit bank.
+        #[cfg(any(feature = "internals", feature = "bench-internals"))]
+        {
+            crate::alloc_core::CARVE_BATCH_STAGE.store(n, core::sync::atomic::Ordering::Release);
+            if crate::alloc_core::CARVE_BATCH_PAUSE.load(core::sync::atomic::Ordering::Acquire) {
+                while !crate::alloc_core::CARVE_BATCH_RESUME
+                    .swap(false, core::sync::atomic::Ordering::AcqRel)
+                {
+                    core::hint::spin_loop();
+                }
+            }
+        }
         // Page-map "first class wins", applied once per DISTINCT page entered by
         // this run. `carve_block` marks a page iff it was not already owned; the
         // first block to land on a page is the one that dedicates it, so calling
@@ -984,17 +943,30 @@ impl AllocCore {
                 }
             }
             let ptr = Node::deref(segment, off);
-            run.commit(off as u32);
-            // B4 (в)/S1: freshly carved blocks commit `issue_state` (see doc).
+            // D1' phase-1a carve-clear: PER BLOCK, at the block's own
+            // per-block commit point (never one merged mask after
+            // `set_bump` - d1p_rev finding 3), before its LIVE write.
+            // D1′ phase-1b: the start bit is set at EXACTLY the former
+            // per-block `run.commit` point — never merged into one store
+            // after `set_bump` (d1p_rev finding 3). Infallible. D1′
+            // equivalent of main's `run.commit(off)`.
+            issue_run.clear_pending_start_bit(off as u32);
+            issue_run.issue(off as u32);
+            // B4 (в)/S1: freshly carved blocks commit `issue_state` (LIVE,
+            // or MAG when the caller parks the batch in a magazine).
             meta.state_byte().write(off as u32, class_idx, issue_state);
             *slot = ptr;
         }
+        // D1′ M-h oracle seam (test-only): the batch is fully issued — the
+        // early-publication window is closed.
+        #[cfg(any(feature = "internals", feature = "bench-internals"))]
+        crate::alloc_core::CARVE_BATCH_STAGE.store(0, core::sync::atomic::Ordering::Release);
         // B4-M (P1-2): MAG state-byte writes of this carve, one add per batch.
         #[cfg(feature = "bench-internals")]
         if issue_state == StateByte::MAG {
             crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
                 .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
         }
-        Ok(n)
+        n
     }
 }

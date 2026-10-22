@@ -148,7 +148,7 @@ small, single-responsibility crates that can be audited in complete isolation.
 **Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):
 
 The current tree has **27** tier-1 `#![allow(unsafe_code)]` files (21 in
-`src/`, 6 in `crates/`) and **92** item-scoped allows across **28** files.
+`src/`, 6 in `crates/`) and **104** item-scoped allows across **33** files.
 The ordinary `production` build activates 15 internal tier-1 seams;
 `--cfg loom` adds its bootstrap shim, while `batch-api`,
 `large-cache-extended` and `experimental` add optional seams. See
@@ -493,10 +493,10 @@ do not certify the terminal-sidecar snapshot.
 
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (452 files) |
+| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (451 files) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
-| miri | Selected provenance/aliasing checks; snapshot execution pending | manifest `scripts/miri-matrix.mjs` (GREEN / EXPECTED-RED / WAIVED) run by `scripts/miri.mjs` and checked against CI by `scripts/verify-miri-target-wiring.mjs`, including `r8_global_box_provenance` and tagged-index-stack `narrow_domain_unchecked_storage`; not a whole-project proof |
-| loom | Bounded interleavings; snapshot execution pending | **Root (21 files):** `tests/loom_active_kind_index.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
+| miri | Selected provenance/aliasing checks; snapshot execution pending | manifest `scripts/miri-matrix.mjs` (GREEN / EXPECTED-RED / WAIVED) run by `scripts/miri.mjs` and checked against CI by `scripts/verify-miri-target-wiring.mjs`, including `miri_global_box_acceptance` (GREEN narrow / EXPECTED-RED paused, item 164) and `chunked_sidecar_storage` (SB/TB; execution pending) and tagged-index-stack `narrow_domain_unchecked_storage`; not a whole-project proof |
+| loom | Bounded interleavings; snapshot execution pending | **Root (23 files):** `tests/loom_active_kind_index.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_oneclass_small_sidecar_actual.rs`, `tests/loom_oneclass_start_bit.rs`, `tests/loom_chunked_sidecar_actual.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | ThreadSanitizer | Real cross-thread data races (not model-checked) | CI job + manual (verified x3: cross-thread path + decommit path) |
 | Valgrind memcheck | UAF, leaks at process level | CI job + manual (verified clean) |
 | aarch64 (qemu-user) | Code-gen correctness + relaxed-memory smoke | CI job + manual (verified 13/13 test suites) |

@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an `unsafe` seam or algorithmic invariant has (or lacks) interpreter/model-checker PROOF coverage (miri, loom, kani) -- distinct from ordinary CI gate wiring (a test that exists but does not run under some job) and from platform empirical verification (real hardware, not a formal tool).
 
-**Card count:** 11 numbered records (8 open; 3 retained closed/resolved); item 188 is CLOSED and not a current record here (`RESOLVED.md`).
+**Card census:** current numbered records are derived with `grep -cE '^[0-9]+[a-z]?\. \*\*' docs/correctness-open-items/TRACKED_verification_coverage.md`; individual Status blocks distinguish open obligations and retained closed records. Item 188 is CLOSED and lives in `RESOLVED.md`.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -49,6 +49,17 @@ git grep -l "docs/CORRECTNESS_OPEN_ITEMS\.md" -- ':!docs/' | wc -l
 split the same day.)
 
 ---
+
+254. **[T] Чанковый D1′: новый unsafe storage и owner-boundary требуют execution receipts.** (Filed 2026-10-22.)
+
+    - **Status:** OPEN / PROTOTYPE — наличие harnesses и успешный typecheck не являются доказательством или разрешением на merge.
+    - **Current-number-or-verdict:** добавлены actual-source storage lifecycle, три Loom-сценария с отслеживаемым UnsafeCell, compile-fail для shared issue-hook и пять Kani arithmetic harnesses. CI wiring выбирает Miri SB/TB, release/debug Loom, настоящий ready-Relaxed мутант с восстановлением и существующие pin-cache/lifetime модели. Новые модели и мутант пока НЕ ИСПОЛНЕНЫ.
+    - **Next trigger:** проверенный CI на фиксированной source identity: отказ мутанта по causality assertion, GREEN восстановленного кода, обе borrowing-модели и все Kani harnesses; затем perf acceptance отдельно. Не считать старые dense-модели или receipts F1/C2 доказательством чанкового payload.
+    - **Rollback wiring review (2026-10-22):** replacement `r11_ph3a_magazine_refill_partial` был недостижим в CI: Windows-only и opt-in fault injection, тогда как all-features включает исключённый NUMA. Добавлены OS-group Windows строки fastbin и scalar с явной small-segment lazy policy и sentinels; scalar witness дополнен frontier assert. Typecheck/Clippy не закрывают обязанность получить runtime receipts обеих строк. Начальный snapshot `31ecb1e7` уже не текущий кандидат.
+    - **Mutant battery review (2026-10-22):** parent теперь требует точную production fatal-строку для каждого abort-case и не принимает panic exit 101; прежние ARMED/nonzero/no-SURVIVED не различали нужную причину и посторонний crash. M-f проверяет pending именно у `meta_lo`, не у offset 0. M-c′ перед reset передаёт все шесть caller-held блоков целевого сегмента, сохраняя quiescence-контракт. Это исправления oracle/fixture; runtime и реальная mutation sensitivity пока не подтверждены.
+    - **Boundary:** единственный конструктор через регистрацию !Sync и non-Send/non-Sync issue-run; общий sidecar test-hook unsafe. Ready только публикует lifetime чанка и не сбрасывается при retain. Kani arithmetic не доказывает memory ordering или reclamation. Items 164/167/186/190/197/205 сохраняют свои отдельные остатки и trigger; остальные карточки остаются без изменения в этом узком эксперименте.
+    - **Evidence:** `docs/design/2026-10-22-adr-chunked-sidecar-prototype.md`, `tests/chunked_sidecar_storage.rs`, `tests/loom_chunked_sidecar_actual.rs`, `scripts/chunked-ready-negative.mjs`, `src/alloc_core/segment/remote_bitmap/chunked_bank_proofs.rs`.
+
 17. **[T, filed 2026-08-04, R34-2/task #521] Five tier-1 `unsafe` seams have
     no miri, no loom, and no kani harness — covered by ordinary integration
     tests only (`docs/reviews/2026-08-04-release-stabilization-audit.md` G3

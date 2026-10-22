@@ -1,5 +1,5 @@
 //! PRF-01 C-prime reduced shadow (Loom 0.7.2): two pending words, one summary.
-//! Not the actual SidecarBitmap/ClassLeaves or a lifetime/provenance proof.
+//! Not the actual SidecarBitmap or a lifetime/provenance proof.
 //! Arc keeps the shadow sidecar alive; production must retain RoutePin and
 //! obtain the summary address before the pending RMW. No reservation is modeled.
 //! Oracles follow owner decision Question 2: discovery must recover without
@@ -14,7 +14,7 @@
 #![cfg(loom)]
 #![forbid(unsafe_code)]
 
-use loom::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use loom::sync::atomic::{AtomicU64, Ordering};
 use loom::sync::{mpsc, Arc};
 use loom::thread;
 
@@ -26,10 +26,11 @@ enum Mode {
     NeverSetCleanSummary,
 }
 
+// D1' phase-1b: the shadow class map is gone — the class lives only in the
+// owner state byte, which the summary protocol never touches.
 struct Sidecar {
     pending: [AtomicU64; 2],
     summary: AtomicU64,
-    classes: [AtomicU8; 2],
 }
 
 impl Sidecar {
@@ -37,7 +38,6 @@ impl Sidecar {
         Self {
             pending: [AtomicU64::new(0), AtomicU64::new(0)],
             summary: AtomicU64::new(0),
-            classes: [AtomicU8::new(0), AtomicU8::new(0)],
         }
     }
 
@@ -51,10 +51,6 @@ impl Sidecar {
     }
 
     fn publish(&self, id: usize, word: usize, mode: Mode) {
-        // Shadow of owner issue + synchronized allocation handoff to producer.
-        // Write inside the producer so the owner's pre-join cut must acquire
-        // publication to see the class; issue on the owner would mask this.
-        self.classes[id].store((id + 3) as u8, Ordering::Release);
         if matches!(mode, Mode::SummaryBeforePending) {
             self.notify(word, mode);
         }
@@ -65,17 +61,7 @@ impl Sidecar {
     }
 
     fn cut_word(&self, word: usize) -> u64 {
-        let bits = self.pending[word].swap(0, Ordering::AcqRel);
-        for id in 0..2 {
-            if bits & (1 << id) != 0 {
-                assert_eq!(
-                    self.classes[id].load(Ordering::Relaxed),
-                    (id + 3) as u8,
-                    "class visibility after pending cut"
-                );
-            }
-        }
-        bits
+        self.pending[word].swap(0, Ordering::AcqRel)
     }
 
     fn discovery(&self, mode: Mode) -> u64 {
@@ -142,7 +128,6 @@ fn paused_pending(strict_uses_summary: bool) {
         let (published_tx, published_rx) = mpsc::channel();
         let (resume_tx, resume_rx) = mpsc::channel();
         let producer = thread::spawn(move || {
-            producer_sidecar.classes[0].store(3, Ordering::Release);
             producer_sidecar.pending[0].fetch_or(1, Ordering::AcqRel);
             published_tx.send(()).unwrap();
             resume_rx.recv().unwrap();
@@ -175,7 +160,6 @@ fn loom_summary_pending_pause_strict_inclusion() {
 fn loom_summary_spurious_bit_benign() {
     loom::model(|| {
         let sidecar = Sidecar::new();
-        sidecar.classes[0].store(3, Ordering::Release);
         sidecar.pending[0].fetch_or(1, Ordering::AcqRel);
         assert_eq!(sidecar.strict(), 1);
         // Late notification after strict consumed the bit is only a false hint.

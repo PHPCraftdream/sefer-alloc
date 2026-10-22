@@ -182,15 +182,24 @@ fn misaligned_interior_free_is_rejected_in_all_configurations() {
     let off = interior.addr() - root.addr();
     assert_ne!(off % 48, 0);
     assert_ne!(off % 64, 0);
+    // D1′ phase-1b: the address observer reads only the pinned sidecar's
+    // atomic banks — the start granule reports the issued start, interior
+    // granules report none (the class carrier is the owner state byte,
+    // exercised by the wrong-class free guard below).
     assert_eq!(
-        RouteRegistration::class_at_global_address_for_test(p.addr()),
-        Some(class_big as u8),
-        "start granule encodes the issuing class"
+        RouteRegistration::start_state_at_global_address_for_test(p.addr()),
+        Some((true, false)),
+        "start granule carries the issued start"
     );
     assert_eq!(
-        RouteRegistration::class_at_global_address_for_test(interior.addr()),
-        None,
-        "interior granule encodes no class"
+        heap.dbg_class_for(big),
+        Some(class_big),
+        "the issuing layout decodes to the asserted class"
+    );
+    assert_eq!(
+        RouteRegistration::start_state_at_global_address_for_test(interior.addr()),
+        Some((false, false)),
+        "interior granule carries no issued start"
     );
     let resident_small = heap.dbg_tcache_count(class_small);
     // SAFETY: deliberate interior-pointer and wrong-layout misuse; the guard
@@ -234,9 +243,14 @@ fn aligned_wrong_class_block_start_is_rejected_by_hardened_identity_check() {
     let off = p.addr() - SegmentLayout::segment_base_of(p.addr());
     assert_eq!(off % 192, 0, "proves divisibility by 64 and 48");
     assert_eq!(
-        RouteRegistration::class_at_global_address_for_test(p.addr()),
-        Some(class_big as u8),
-        "start granule encodes the true class"
+        RouteRegistration::start_state_at_global_address_for_test(p.addr()),
+        Some((true, false)),
+        "start granule carries the issued start"
+    );
+    assert_eq!(
+        heap.dbg_class_for(Layout::from_size_align(64, 16).unwrap()),
+        Some(class_big),
+        "the issuing layout decodes to the asserted class"
     );
     let resident_small = heap.dbg_tcache_count(class_small);
     // SAFETY: deliberate wrong-layout misuse at a true block start; both

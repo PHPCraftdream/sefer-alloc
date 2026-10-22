@@ -35,4 +35,4 @@ folder,src/alloc_core/platform,8,grandfathered when the structure limits landed 
 folder,src/alloc_core/segment/segment_header,9,grandfathered when the structure limits landed (2026-10-12)
 folder,src/alloc_core/segment/segment_table,9,grandfathered when the structure limits landed (2026-10-12)
 folder,src/global,9,grandfathered when the structure limits landed (2026-10-12)
-folder,src/registry/segment_route,13,grandfathered when the structure limits landed (2026-10-12)
+folder,src/registry/segment_route,12,grandfathered when the structure limits landed (2026-10-12)

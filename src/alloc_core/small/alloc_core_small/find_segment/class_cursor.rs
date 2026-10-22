@@ -135,20 +135,18 @@ impl AllocCore {
     }
 
     /// B4 §11: probe this class's discovery-cursor segment for one free
-    /// block. `Ok(None)` = fall through to discovery; `Err(())` is a
-    /// class-spill OOM propagated to the caller (same as discovery's pop).
+    /// block. `None` = fall through to discovery. D1′ phase-1b: infallible —
+    /// the class-spill OOM is gone with the class leaves.
     #[inline]
-    fn pop_from_class_cursor(&mut self, class_idx: usize) -> Result<Option<*mut u8>, ()> {
+    fn pop_from_class_cursor(&mut self, class_idx: usize) -> Option<*mut u8> {
         // Fast path: no cursor recorded — no call into the probe.
         if self.small_class_cursor[class_idx] == CLASS_CURSOR_NONE {
-            return Ok(None);
+            return None;
         }
-        let Some(base) = self.cursor_probe_base(class_idx) else {
-            return Ok(None);
-        };
+        let base = self.cursor_probe_base(class_idx)?;
         let popped = self.pop_free(base, class_idx);
         #[cfg(feature = "bench-internals")]
-        if matches!(popped, Ok(Some(_))) {
+        if popped.is_some() {
             self.cursor_hit();
         } else {
             self.cursor_miss();
@@ -157,57 +155,44 @@ impl AllocCore {
     }
 
     /// B4 §11: batch-drain this class's cursor segment's bin into `out`.
-    /// Same semantics as [`pop_from_class_cursor`](Self::pop_from_class_cursor);
-    /// `Err(())` is a class-spill OOM propagated to the caller.
+    /// Same semantics as [`pop_from_class_cursor`](Self::pop_from_class_cursor).
+    /// D1′ phase-1b: infallible — the class-spill OOM is gone, so the drain
+    /// degraded to a plain `usize` (0 = nothing drained).
     #[inline]
     pub(in crate::alloc_core) fn batch_drain_from_class_cursor(
         &mut self,
         class_idx: usize,
         out: &mut [*mut u8],
         issue_state: u8,
-    ) -> Result<usize, ()> {
+    ) -> usize {
         // Fast path: no cursor recorded — no call into the probe.
         if self.small_class_cursor[class_idx] == CLASS_CURSOR_NONE {
-            return Ok(0);
+            return 0;
         }
         let Some(base) = self.cursor_probe_base(class_idx) else {
-            return Ok(0);
+            return 0;
         };
-        match self.try_drain_freelist_batch(base, class_idx, out, issue_state) {
-            Ok(n) => {
-                #[cfg(feature = "bench-internals")]
-                if n != 0 {
-                    self.cursor_hit();
-                } else {
-                    self.cursor_miss();
-                }
-                Ok(n)
-            }
-            Err(()) => {
-                #[cfg(feature = "bench-internals")]
-                self.cursor_miss();
-                Err(())
-            }
+        let n = self.try_drain_freelist_batch(base, class_idx, out, issue_state);
+        #[cfg(feature = "bench-internals")]
+        if n != 0 {
+            self.cursor_hit();
+        } else {
+            self.cursor_miss();
         }
+        n
     }
 
     /// B4 §11: shared "cursor probe → discovery → pop" step of the small
-    /// scalar path. `Ok(Some(ptr))` = block served; `Ok(None)` = nothing
-    /// found, caller carves; `Err(())` = class-spill OOM, caller returns null.
+    /// scalar path. `Some(ptr)` = block served; `None` = nothing found,
+    /// caller carves. D1′ phase-1b: infallible — the class-spill OOM is gone.
     pub(in crate::alloc_core) fn alloc_small_via_discovery(
         &mut self,
         class_idx: usize,
-    ) -> Result<Option<*mut u8>, ()> {
-        if let Some(ptr) = self.pop_from_class_cursor(class_idx)? {
-            return Ok(Some(ptr));
+    ) -> Option<*mut u8> {
+        if let Some(ptr) = self.pop_from_class_cursor(class_idx) {
+            return Some(ptr);
         }
-        let Some(seg) = self.find_segment_with_free(class_idx) else {
-            return Ok(None);
-        };
-        match self.pop_free(seg, class_idx) {
-            Ok(Some(ptr)) => Ok(Some(ptr)),
-            Ok(None) => Ok(None),
-            Err(()) => Err(()),
-        }
+        let seg = self.find_segment_with_free(class_idx)?;
+        self.pop_free(seg, class_idx)
     }
 }

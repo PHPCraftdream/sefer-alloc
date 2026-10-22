@@ -1,6 +1,6 @@
 //! B4-R6: a freshly registered route's sidecar backing reads as all zero —
-//! the in-place initialize_at construction contract (pending bits, presence
-//! bits, and class codes all start at the zero state).
+//! the in-place initialize_at construction contract (pending bits and start
+//! bits all start at the zero state; D1' phase-1b removed the class codes).
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use core::mem::size_of;
@@ -22,26 +22,38 @@ fn fresh_route_backing_reads_all_zero() {
     // garbage instead of page-luck zeros (counterfactual sensitivity).
     let poison = vec![0xA5_u8; size_of::<SmallSidecar>()];
     drop(poison);
-    let route = directory
+    // The registration must stay alive: its Drop unlinks the route.
+    let _route = directory
         .register(root, SEGMENT, root, 9, RouteKind::Small)
         .unwrap();
-    let sidecar = route.small_sidecar().unwrap();
-    assert_eq!(sidecar.mixed_leaves_for_test(), 0);
+    // Exhaustive: every granule's pending bit is clear AND its publication is
+    // rejected (the zeroed start bank drops it before any RMW — the D1'
+    // phase-1b "never issued ⇒ no publication" zero state). Sampled under
+    // Miri.
     let pin = directory.lookup(root).unwrap();
-    // Exhaustive: every granule's pending bit is clear and its class code is
-    // the "never issued" encoding (None). Sampled under Miri.
     #[cfg(not(miri))]
     for granule in 0..GRANULES {
         let offset = (granule * MIN_BLOCK) as u32;
         let addr = root.with_addr(root.addr() + offset as usize);
         assert!(!pin.pending_for_test(addr), "pending bit {granule}");
-        assert_eq!(sidecar.class_at_for_test(offset), None, "class {granule}");
+        // SAFETY: a never-issued granule of this test's own reservation; the
+        // zeroed start bank rejects the publication without mutations. The
+        // borrowed form keeps the single lookup pin alive across the sweep.
+        assert!(
+            !unsafe { pin.publish_small_borrowed(offset) },
+            "start bit {granule}"
+        );
     }
     #[cfg(miri)]
     for granule in [0usize, 1, 63, 64, GRANULES / 2, GRANULES - 1] {
         let offset = (granule * MIN_BLOCK) as u32;
         let addr = root.with_addr(root.addr() + offset as usize);
         assert!(!pin.pending_for_test(addr), "pending bit {granule}");
-        assert_eq!(sidecar.class_at_for_test(offset), None, "class {granule}");
+        // SAFETY: a never-issued granule of this test's own reservation; the
+        // zeroed start bank rejects the publication without mutations.
+        assert!(
+            !unsafe { pin.publish_small_borrowed(offset) },
+            "start bit {granule}"
+        );
     }
 }

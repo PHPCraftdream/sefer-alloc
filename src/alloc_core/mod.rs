@@ -4,8 +4,9 @@
 //! Re-exports only — no logic lives here (per the one-export-per-file rule).
 //! Tier-1 `#![allow(unsafe_code)]` seams in this tree (oxx R2-07) are
 //! `platform::{os,node,sidecar}`, `large::large_cache_extended`,
-//! `segment::segment_table::route_slots`, and
-//! `segment::remote_bitmap::sidecar_bitmap::leaf_classes`.
+//! `segment::segment_table::route_slots` и
+//! `segment::remote_bitmap::sidecar_bitmap::chunked_bank` (конструкция
+//! MaybeUninit-чанков с ready Release/Acquire вместо прежних class leaves).
 //! Otherwise-safe files carry documented tier-2 `#[allow(unsafe_code)]`
 //! items, including owner-side sidecar dereference. Do not
 //! hand-count these — per `CLAUDE.md`'s "Active rules" unsafe-inventory
@@ -222,6 +223,30 @@ pub(crate) use alloc_core::{
     B4_FOREIGN_PUBLISH_OK, B4_SCAN_CALLS, B4_SCAN_WORDS, B4_SHARD_LOCK_SPINS, B4_SHARD_LOCK_YIELDS,
     B4_U31_DISCOVERY_SCANS, B4_U31_SCAN_HOLDERS_BASE, B4_U31_SCAN_NO_PENDING, B4_U31_SCAN_SEGMENTS,
 };
+/// D1' phase-1a owner-side reject/carve-clear counters, re-exported
+/// crate-wide so the registry-side seam (`SmallSidecar`) and the owner
+/// reclaim path bump the SAME statics (same pattern as
+/// [`LOCAL_REJECT_FREES`] above). Read via the internals/bench-internals
+/// probes only; not public API. The probes live in `alloc-global`-gated
+/// modules (registry sidecar seam, owner reclaim path), so the re-export
+/// carries the full predicate to stay import-clean in narrower configs.
+#[cfg(all(
+    feature = "alloc-global",
+    any(feature = "internals", feature = "bench-internals")
+))]
+pub(crate) use alloc_core::{
+    CARVE_CLEAR_BITS, CARVE_CLEAR_WORD_LOADS, REMOTE_REJECT_FREE, REMOTE_REJECT_MAG,
+    REMOTE_REJECT_UNISSUED,
+};
+
+/// D1′ M-h oracle seam (test-only) re-export, same discipline as the
+/// carve-clear counters above: the owner carve path (`try_carve_batch`) and
+/// the internals test hooks read/write the SAME statics. Not public API.
+#[cfg(all(
+    feature = "alloc-core",
+    any(feature = "internals", feature = "bench-internals")
+))]
+pub(crate) use alloc_core::{CARVE_BATCH_PAUSE, CARVE_BATCH_RESUME, CARVE_BATCH_STAGE};
 medium_promotion_reachable! {
     /// R29-5 (task #436) re-export seam: the medium→Large promotion-frequency /
     /// copied-byte-distribution diagnostic statics, re-exported crate-wide so

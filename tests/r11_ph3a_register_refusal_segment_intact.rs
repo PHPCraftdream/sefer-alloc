@@ -4,23 +4,39 @@
     feature = "bench-internals"
 ))]
 
-//! Ph3a promotion/reserve witnesses. When the current small segment is
-//! exhausted, `alloc_small` reserves a fresh segment BEFORE issuing: the
-//! reservation itself is fallible (`SegmentTable::register` ->
-//! `RouteDirectory::register`), and the post-reserve carve's sidecar prepare
-//! is fallible too. Neither refusal may touch the exhausted segment's state,
-//! and the one-shot disarms make the retry succeed on the fresh segment.
+//! Ported from the removed `tests/r11_ph3a_reserve_promotion_fault.rs`
+//! (294ff32a, IssueTransaction era): the NON-leaf promotion witness. When the
+//! current small segment is exhausted, `alloc_small` reserves a fresh segment
+//! BEFORE issuing; the reservation itself is fallible
+//! (`SegmentTable::register` -> `RouteDirectory::register`). A refused
+//! register must surface as OOM (never a panic) and must leave the EXHAUSTED
+//! segment bit-for-bit intact: bump / live / head (the owner state triple),
+//! its directory bit, and no sidecar / route / table-slot movement.
 //!
-//! Hook inventory (searched as the brief asks): `alloc_core_small_pool` and
-//! `alloc_core_small_diag.rs` expose NO reserve-refusal hook of their own, so
-//! the register refusal is armed through the directory's own test seam
-//! (`RouteDirectory::fail_next_registration_for_test`) — the exact hook the
-//! brief's option (a) names — and the post-reserve carve refusal through
-//! `SmallSidecar::fail_prepare_after_for_test`. Both are covered below.
+//! Mechanism under D1′ (one-class): there is no prepare-transaction any
+//! more — the only publication steps are the reserve's `register_route`
+//! followed by the carve's `set_bump` -> per-block `issue` -> `add_live`. The
+//! refusal is armed through the directory's own test seam
+//! (`RouteDirectory::fail_next_registration_for_test`), which is exactly the
+//! hook the promotion fault always used for the register leg; the commit
+//! leg's refusal (`dbg_arm_commit_fail`) is covered by
+//! `tests/r11_ph3a_magazine_refill_partial.rs`.
+//!
+//! Mutant reasoning (why this must fail under the mutants):
+//! - a mutant that lets the refused register still advance the exhausted
+//!   segment's bump/live (`set_bump`/`add_live` before the register check)
+//!   is caught by the `owner_state_for_test` triple equality;
+//! - a mutant that clears the exhausted segment's directory bit or moves its
+//!   bin head on refusal is caught by the directory-bit observer;
+//! - a mutant that publishes the route (or takes a table slot / allocates
+//!   the sidecar) despite the refusal is caught by the census /
+//!   `dbg_table_count` / `system_totals_for_test` equality assertions;
+//! - a mutant that demotes the refusal to a silent success is caught by the
+//!   null-return assertion (OOM contract).
 
 use core::alloc::Layout;
-use sefer_alloc::registry::segment_route::{RouteDirectory, RouteRegistration, SmallSidecar};
-use sefer_alloc::{AllocCore, SegmentLayout};
+use sefer_alloc::registry::segment_route::{RouteDirectory, SmallSidecar};
+use sefer_alloc::AllocCore;
 
 const CLASS_SIZE: usize = 32;
 
@@ -40,7 +56,10 @@ fn exhaust_current_segment(core: &mut AllocCore) -> *mut u8 {
 }
 
 /// Observer bundle for the EXHAUSTED (old) segment, which `small_cur` stops
-/// naming the moment a reserve succeeds.
+/// naming the moment a reserve succeeds. `owner_state_for_test` reads exactly
+/// the three D1′-relevant fields — bump, live_count, bin head — through the
+/// segment header, so the oracle is the "bump/live/head untouched" property
+/// from the original promotion-fault witness, unchanged.
 struct OldSegment {
     anchor: *mut u8,
     slot: u32,
@@ -80,8 +99,9 @@ fn assert_old_untouched(core: &AllocCore, before: &OldSegment) {
 
 /// The register refusal: `reserve_small_segment` cannot publish the fresh
 /// segment, so the promotion is a full rollback (nothing reserved, nothing
-/// carved) and the retry promotes cleanly.
-fn reserve_register_refusal_rolls_back_and_the_retry_promotes() {
+/// carved) and the retry promotes cleanly on a fresh segment.
+#[test]
+fn refused_register_leaves_the_exhausted_segment_intact_and_retry_promotes() {
     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
     let anchor = exhaust_current_segment(&mut core);
     let before = capture_old(&core, anchor);
@@ -92,11 +112,11 @@ fn reserve_register_refusal_rolls_back_and_the_retry_promotes() {
     );
     assert_old_untouched(&core, &before);
     // The refusal happens before the entry (and therefore the sidecar) is
-    // built, so the counters do not move at all.
+    // built, so the sidecar's System counters do not move at all.
     let after = SmallSidecar::system_totals_for_test();
     assert_eq!(
         after, before.system,
-        "a refused register allocates no sidecar"
+        "a refused register allocates no sidecar",
     );
     assert_eq!(
         RouteDirectory::global().live_route_census_for_test(),
@@ -109,13 +129,10 @@ fn reserve_register_refusal_rolls_back_and_the_retry_promotes() {
         "a refused register takes no table slot",
     );
 
+    // The one-shot seam disarms itself, so the retry promotes: a fresh
+    // segment serves the block, and exactly one segment was reserved.
     let ptr = core.alloc(layout());
     assert!(!ptr.is_null(), "the one-shot disarm lets the retry promote");
-    assert_eq!(
-        RouteRegistration::class_at_global_address_for_test(ptr.addr()),
-        Some(1),
-        "the retry issues a class-1 block from the fresh segment",
-    );
     assert_ne!(
         core.dbg_segment_id_of(ptr),
         before.slot,
@@ -128,57 +145,4 @@ fn reserve_register_refusal_rolls_back_and_the_retry_promotes() {
     );
     // SAFETY: `ptr` came from this core with this exact layout.
     unsafe { core.dealloc(ptr, layout()) };
-}
-
-/// The post-reserve carve refusal: the fresh segment IS reserved (that is the
-/// documented reserve semantics — the reservation happens before the issue
-/// prepare), the carve on it refuses, and the exhausted segment keeps its
-/// state bit-for-bit while the retry carves on the fresh one.
-fn post_reserve_carve_refusal_leaves_the_old_segment_intact() {
-    let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
-    let anchor = exhaust_current_segment(&mut core);
-    let before = capture_old(&core, anchor);
-
-    SmallSidecar::fail_prepare_after_for_test(1);
-    assert!(
-        core.alloc(layout()).is_null(),
-        "a refused post-reserve carve must surface as OOM",
-    );
-    assert_old_untouched(&core, &before);
-    let table_after = core.dbg_table_count();
-    assert!(
-        table_after == before.table || table_after == before.table + 1,
-        "the reserve may or may not have materialised before the refusal \
-         (table delta {})",
-        table_after - before.table,
-    );
-    assert_eq!(
-        RouteDirectory::global().live_route_census_for_test().0 - before.census.0,
-        usize::from(table_after != before.table),
-        "at most the reserved segment's route is new",
-    );
-
-    let ptr = core.alloc(layout());
-    assert!(!ptr.is_null(), "the retry carves on the fresh segment");
-    assert_eq!(
-        RouteRegistration::class_at_global_address_for_test(ptr.addr()),
-        Some(1),
-    );
-    assert_ne!(
-        core.dbg_segment_id_of(ptr),
-        before.slot,
-        "the retry must be served by the newly reserved segment",
-    );
-    assert_eq!(core.dbg_table_count(), before.table + 1);
-    // SAFETY: `ptr` came from this core with this exact layout.
-    unsafe { core.dealloc(ptr, layout()) };
-    let _ = SegmentLayout::SEGMENT;
-}
-
-// One test by design: the sidecar accounting observers are process-wide, so
-// the two promotion scenarios run sequentially inside a single test.
-#[test]
-fn promotion_faults_roll_back_the_exhausted_segment_and_retry_promotes() {
-    reserve_register_refusal_rolls_back_and_the_retry_promotes();
-    post_reserve_carve_refusal_leaves_the_old_segment_intact();
 }

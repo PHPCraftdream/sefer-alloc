@@ -119,6 +119,16 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+112. **[A] D1′ чанковый sidecar — отдельный эксперимент, не принятый F1/C2.**
+
+   > **Current state**
+   > - **Status:** PROTOTYPE / NOT ACCEPTED (2026-10-22, запрос владельца «давай попробуй твой вариант»).
+   > - **Current number/verdict:** производительность НЕ ИЗМЕРЕНА. Одна System-аллокация; lazy starts/pending чанки по 8 слов, монотонная ready-map и owner-only construction. Без U31/refill и Cargo feature-развилки. Прежние результаты F1/C2 не удостоверяют новый storage.
+   > - **Next trigger:** actual-source Loom/Miri SB/TB/Kani и контроли на фиксированном кандидате, затем настоящий iai A/B и wall/RSS с неизменёнными приёмочными ограничениями. По запросу владельца от 2026-10-22 обязательна трёхсторонняя таблица до / после / mimalloc на одном runner и одинаковых workloads: абсолютные значения, after/before и оба SeferAlloc/mimalloc сравнения; wall — через канонический `bench:table`, iai raw/marginal — отдельно. Commit/push/локальные прогоны не подразумеваются разрешением на реализацию.
+   > - **Evidence:** `docs/design/2026-10-22-adr-chunked-sidecar-prototype.md`; correctness item 254.
+
+**Disposition этого эксперимента:** все прочие существующие карточки сохраняют свои status/trigger; чужие отложенные оптимизации не переоткрываются и не закрываются по typecheck. В частности, U31/item 90 остаётся отдельным протоколом, Box-frame residual и старые perf NO-GO не переобъявляются исправленными. Это изолированный storage-кандидат, не завершение общей очереди G1/G2.
+
 104. **[A] B4 events — refill/flush событие в mstress стоит в 5–6 раз дороже, чем в larson.** (Filed 2026-10-20, `docs/perf/B4_EVENTS_COST.md`.)
 
    > **Current state**

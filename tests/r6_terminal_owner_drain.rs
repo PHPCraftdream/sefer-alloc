@@ -8,7 +8,7 @@
 
 use core::alloc::Layout;
 
-use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration};
+use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind};
 use sefer_alloc::registry::HeapRegistry;
 use sefer_alloc::SegmentLayout;
 
@@ -224,7 +224,9 @@ fn duplicate_detached_record_does_not_retire_another_credit() {
     let heap = lease.core();
     let ptr = heap.alloc(Layout::from_size_align(16, 16).unwrap());
     assert!(!ptr.is_null());
-    let class = RouteRegistration::class_at_global_address_for_test(ptr.addr()).unwrap();
+    // D1′ phase-1b: the class comes from the issued layout (the address
+    // observer no longer reads the owner state byte).
+    let class = SegmentLayout::class_for(16, 16).unwrap() as u8;
     #[cfg(feature = "alloc-decommit")]
     let before = heap.dbg_live_count_for(ptr).unwrap();
     // SAFETY: the synthetic record transfers this one live allocation. This
@@ -249,7 +251,8 @@ fn detached_magazine_record_preserves_the_canonical_copy() {
     let layout = Layout::from_size_align(16, 16).unwrap();
     let ptr = heap.alloc(layout);
     assert!(!ptr.is_null());
-    let class = RouteRegistration::class_at_global_address_for_test(ptr.addr()).unwrap();
+    // D1′ phase-1b: the class comes from the issued layout.
+    let class = SegmentLayout::class_for(16, 16).unwrap() as u8;
     // SAFETY: the sole live allocation is returned once through the local path.
     unsafe { heap.dealloc(ptr, layout) };
     assert!(

@@ -24,6 +24,7 @@ const r101 = (borrows) => green('miri-core', 'miri_r1_01_cap_frame', 'alloc-glob
 const plainFeatures = 'alloc-global alloc-xthread alloc-decommit internals bench-internals';
 export const MIRI_TARGETS = [
   green('miri-core', 'region_invariants'),
+  ...['sb', 'tb'].map((borrows) => green('miri-core', 'chunked_sidecar_storage', 'alloc-core internals', { borrows })),
   narrow('sb'),
   narrow('tb'),
   r101('sb'),
@@ -63,7 +64,6 @@ export const MIRI_TARGETS = [
   green('miri-core', 'r11_ph4b_lease_miri', 'alloc-global alloc-xthread internals'),
   green('miri-core', 'regression_r2_05_diag_provenance_miri', 'alloc-core internals'),
   green('miri-core', 'regression_w3_stats_aliasing_miri', 'std'),
-  green('miri-core', 'class_leaves_publication_miri', 'alloc-core'),
   green('miri-plain', 'regression_r2_06_header_race_miri', plainFeatures, { model: 'plain' }),
   green('local-only', 'regression_realloc_oob_old_layout', 'alloc-core', {
     expect: 'WAIVED', card: 190,
