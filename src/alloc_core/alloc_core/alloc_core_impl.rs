@@ -25,6 +25,24 @@ pub(crate) use counters::FOREIGN_OR_UNROUTABLE_FREES;
 // the crate-root re-export in `alloc_core/mod.rs` carries the same predicate.
 #[cfg(any(feature = "internals", feature = "bench-internals"))]
 pub(crate) use counters::LOCAL_REJECT_FREES;
+// D1' phase-1a owner-side reject/carve-clear counters: same path-parity
+// shape as `LOCAL_REJECT_FREES` (increment sites are `internals` ∨
+// `bench-internals`-gated) — with the full predicate: the sites live in
+// `alloc-global`-gated modules, so the narrower configs must not import.
+#[cfg(all(
+    feature = "alloc-global",
+    any(feature = "internals", feature = "bench-internals")
+))]
+pub(crate) use counters::{
+    CARVE_CLEAR_BITS, CARVE_CLEAR_WORD_LOADS, REMOTE_REJECT_FREE, REMOTE_REJECT_MAG,
+    REMOTE_REJECT_UNISSUED,
+};
+// D1′ M-h oracle seam (test-only): same path-parity shape — the owner carve
+// path (`try_carve_batch`) and the `AllocCore::dbg_carve_batch_*` test
+// hooks share these statics; the sites exist only in
+// `internals`/`bench-internals` builds.
+#[cfg(any(feature = "internals", feature = "bench-internals"))]
+pub(crate) use counters::{CARVE_BATCH_PAUSE, CARVE_BATCH_RESUME, CARVE_BATCH_STAGE};
 // B4 state-byte activation oracle: same path-parity shape — the increment
 // sites (small_free_guard, clear_magazine_on_issue) and the `dbg_` accessor
 // are all `bench-internals`-gated.

@@ -91,6 +91,15 @@ static FAULT_STATE: Mutex<FaultState> = Mutex::new(FaultState {
 /// When `> 0`, the next real commit call fails without touching the OS and
 /// decrements this counter. `0` disarms. See [`arm_fail_next`].
 static FAIL_NEXT: AtomicU32 = AtomicU32::new(0);
+static COMMIT_FAILURES: AtomicU32 = AtomicU32::new(0);
+
+/// Число принудительно отказанных commit-вызовов обоих hooks с начала процесса.
+/// Диагностический wrapping u32, расширенный до u64; не счётчик отказов ОС.
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
+#[must_use]
+pub fn commit_failure_count() -> u64 {
+    u64::from(COMMIT_FAILURES.load(Ordering::Relaxed))
+}
 
 /// Arm the "fail the next N real commits" hook. The next `n` calls to the
 /// real commit path ([`crate::try_commit_range`] / [`crate::commit_range`])
@@ -163,6 +172,7 @@ pub(crate) fn should_fail_commit() -> bool {
         })
         .is_ok();
     if fired {
+        COMMIT_FAILURES.fetch_add(1, Ordering::Relaxed);
         return true;
     }
 
@@ -180,6 +190,7 @@ pub(crate) fn should_fail_commit() -> bool {
             // mutex, so no concurrent arm can interleave and be lost.
             state.target = 0;
             state.counter = 0;
+            COMMIT_FAILURES.fetch_add(1, Ordering::Relaxed);
             return true;
         }
     }

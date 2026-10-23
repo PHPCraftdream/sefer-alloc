@@ -17,7 +17,7 @@
 // their atomics through `super` instead of `core::sync::atomic`, so a
 // harness re-exporting these names from its root module runs the REAL
 // production code on loom atomics.
-pub(crate) use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+pub(crate) use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 mod directory;
 mod error;
@@ -26,7 +26,6 @@ mod large_state;
 mod pin;
 mod registration;
 mod route_cut;
-mod route_record;
 mod route_scan;
 mod shard_lock;
 mod small_sidecar;
@@ -40,7 +39,6 @@ pub use large_state::LargeState;
 pub use pin::RoutePin;
 pub use registration::RouteRegistration;
 pub use route_cut::RouteCut;
-pub use route_record::RouteRecord;
 pub use route_scan::RouteScan;
 pub use small_sidecar::SmallSidecar;
 #[cfg(all(miri, feature = "internals", feature = "bench-internals"))]

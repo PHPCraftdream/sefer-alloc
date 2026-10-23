@@ -1,0 +1,30 @@
+{
+  "measurement_source_snapshot": {
+    "baseline_commit": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+    "baseline_base_tree": "b5d22c5a770e503750bb549152245325d915f350",
+    "baseline_measurement_tree": "988f78d97035d2870a71561c34cc9f21b8b21b76",
+    "candidate_commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+    "candidate_base_tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496",
+    "candidate_measurement_tree": "c3a52a9ce02f6ff47602b3c6a7d0ca19939b439f",
+    "tree_method": "temporary GIT_INDEX_FILE; read-tree HEAD; git add -A; git write-tree",
+    "mt_harness_patch_sha256": "743fef67ba3f7fb50e39710197d9d66ef5a7b8322d4542a3cb5c069b896b87f1",
+    "registration_harness_sha256": "b12cd36f2b28d72914f93708967016cfc213b2462719e7f05b1ad3a63a02963c"
+  },
+  "host": {
+    "os": "Windows 10 x86_64, Windows MSVC target",
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+    "logical_processors": 16,
+    "rustc": "1.97.0 (2d8144b78 2026-07-07), LLVM 22.1.6",
+    "cargo": "1.97.0 (c980f4866 2026-06-30)"
+  },
+  "timing_features": "production",
+  "oracle_features_baseline": "production internals",
+  "oracle_features_candidate": "production internals bench-internals",
+  "entrypoint": "SeferAlloc::GlobalAlloc::alloc/dealloc direct calls on owner threads; trim_current_thread plus thread-exit recycle; no installed process global allocator in this component probe",
+  "process_boundary": "fresh process per sample; fresh worker thread per registration cycle; timing A/B/B/A subprocess blocks",
+  "oracle_build": "separate from timing; baseline uses route-census snapshots, candidate also reads registration/unlink counters and constructed chunk counts",
+  "nonclaims": [
+    "Diagnostic-oracle build timings are discarded.",
+    "Installed-#[global_allocator] wall comparison is measured separately by paired-installed-ab."
+  ]
+}

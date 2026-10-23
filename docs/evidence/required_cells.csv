@@ -10,8 +10,8 @@ R-PG3,cost,COST,FAIL,false,iai-плечо спайка; resolved-by-decision (AD
 R-Ph1b-native,prototype,C1,CONDITIONAL,false,прототип exact-object; не влит (ветка proto/exact-object-ph1b)
 R-Ph1b-sb,prototype,C1,CONDITIONAL,false,прототип exact-object; не влит (ветка proto/exact-object-ph1b)
 R-Ph1b-tb,prototype,C1,CONDITIONAL,false,прототип exact-object; не влит (ветка proto/exact-object-ph1b)
-R-Ph3a-native,protocol,C1,PASS,false,waiver: нативная часть покрыта тремя мутант-циклами Ph7b; iai выделен в отдельную строку
-R-Ph3a-iai,protocol,C1,CONDITIONAL,false,"waiver: iai-замер не перепроверен (перезапуск iai запрещён рамками Ph7b), строка честно CONDITIONAL"
+R-Ph3a-native,protocol,C1,PASS|CI_PENDING,false,waiver: current D1′ registration/commit-refusal rollback witnesses await CI receipts
+R-Ph3a-iai,protocol,C1,CONDITIONAL|NOT_RUN,false,waiver: old IssueTransaction iai does not measure D1′; candidate measurement awaits safety acceptance
 R0-01,p1-box,C1,FAIL,false,исторический Ph0-witness P1-box
 R0-02,p1-box,C1,FAIL,false,исторический Ph0-witness P1-box
 R0-03,evidence-infra,C7,NOT_RUN,false,CI job miri-core; результата нет
@@ -21,7 +21,7 @@ R0-13,protocol,C1,PASS,true,мутант W−1 отвергнут UB на r11_bo
 R0-14,protocol,C1,PASS,true,мутант W−1 отвергнут UB в модели TB
 R0-15,protocol,C1,PASS,true,мутант W−1 отвергнут UB в модели TB
 R0-18,evidence-infra,C7,NOT_RUN,false,CI job global-regressions; результата нет
-R0-21,protocol,C1,PASS,true,shadow-модель; мутанты sidecar/terminal отвергнуты
+R0-21,protocol,C1,PASS|CI_PENDING,true,current ChunkedBank proof receipt pending; historical implementation receipt is not current evidence
 R0-22,protocol,C1,PASS,true,shadow-модель; мутанты pointer-publication/early-leaf отвергнуты
 R0-23,protocol,C5,NOT_RUN|PASS,false,waiver: ownerless progress; не проверялся в Фазе 0
 R0-24,protocol,C1,NOT_RUN|PASS,false,waiver: W+3; witness не выбран (шаг 1a)
@@ -46,8 +46,8 @@ R4b-14,ordering,C5,INCONCLUSIVE,false,waiver: аналогично L1; част�
 R4b-15,ordering,C5,PASS,true,L3: CAS-loser не drain'ит (loom красный)
 R4c-01,protocol,C5,PASS|CONDITIONAL,true,оракул trim при re-claim consume ровно один раз
 R4c-04,protocol,C5,PASS,false,waiver: Miri-свидетель lease teardown (Ph4b); собственного мутанта нет — протокол закрыт loom/source-pin строками R4a-05/R4a-10/R4b-11; описание исправлено: это НЕ ingress-оракул
-R4c-05,model-limit,C4,KNOWN-RED,false,известная краснота Miri-скабболда (int->ptr); в PLAIN PASS
-R4c-06,model-limit,C4,KNOWN-RED,false,известная краснота Miri-скабболда (int->ptr); в PLAIN PASS
+R4c-05,model-limit,C4,KNOWN-RED|CI_PENDING,false,historical scaffold verdict; re-evaluate after D1′ source changes before restoring status
+R4c-06,model-limit,C4,KNOWN-RED|CI_PENDING,false,historical scaffold verdict; re-evaluate after D1′ source changes before restoring status
 R4c-09,ordering,C5,PASS,true,мутант №1 пойман loom-моделью
 R4c-10,free,C5,PASS,true,мутант №2 пойман
 R4c-11,protocol,C5,PASS,true,мутант №3 пойман
@@ -69,9 +69,9 @@ R5b-08,free,C3,PASS,true,C3 bypass-free-list-pop KILLED
 R5b-09-sb,model-limit,C4,MODEL-LIMIT,false,C4-гейт: клетки в спайке PG-2
 R5b-09-tb,model-limit,C4,MODEL-LIMIT,false,C4-гейт: клетки в спайке PG-2
 R5b-11,protocol,C5,PASS,true,C5 lost-publication нативный оракул
-R5b-12,ordering,C5,PASS,false,"waiver: source-pin трёх атомарных рёбер; позитив-клетка, мутант закрыт парной строкой реестра"
-R5b-13,ordering,C5,PASS,true,publish fetch_or AcqRel->Relaxed красный
-R5b-14,ordering,C5,PASS,true,bitmap_scan cut swap AcqRel->Relaxed красный
+R5b-12,ordering,C5,PASS|CI_PENDING,false,waiver: current ChunkedBank positive source-pin receipt awaits its paired current mutant runs
+R5b-13,ordering,C5,PASS|CI_PENDING,true,current ChunkedBank proof receipt pending; historical implementation receipt is not current evidence
+R5b-14,ordering,C5,PASS|CI_PENDING,true,current ChunkedBank proof receipt pending; historical implementation receipt is not current evidence
 R5b-15,ordering,C5,CONDITIONAL|PASS,false,waiver: reportedly KILLED в prior evidence без сырого лога; не независимое подтверждение
 R5b-16,oom,C6,PASS,false,"waiver: realloc OOM old-alive; позитив-клетка, мутант закрыт парной строкой реестра"
 R5b-17,oom,C6,PASS,true,realloc-мутант KILLED (crash-shaped)
@@ -143,8 +143,10 @@ R6b-05,cost,COST,PASS,false,iai CPU/op детерминированно
 R6b-06,cost,COST,NOT_RUN|PASS,false,page faults не измерялись
 R6b-07,cost,COST,INCONCLUSIVE|PASS,false,MT wall-clock; perf item 81
 R0-06,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
-R0-16,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
-R0-17,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
-R0-19,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
-R0-20,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
+R0-16,reverify,C2,PASS|CONDITIONAL|CI_PENDING,false,"historical Ph7b run; D1′ changed cited test bytes, current CI verification pending"
+R0-17,reverify,C2,PASS|CONDITIONAL|CI_PENDING,false,"historical Ph7b run; D1′ changed cited test bytes, current CI verification pending"
+R0-19,reverify,C2,PASS|CONDITIONAL|CI_PENDING,false,"historical Ph7b run; D1′ changed cited test bytes, current CI verification pending"
+R0-20,reverify,C2,PASS|CONDITIONAL|CI_PENDING,false,"historical Ph7b run; D1′ changed cited test bytes, current CI verification pending"
 R-Ph3b,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
+R4c-07,model-limit,C4,PASS|CI_PENDING,false,Miri plain witness predates D1′ source changes; current verification is pending
+R4c-08,model-limit,C4,PASS|CI_PENDING,false,Miri decommit witness predates D1′ source changes; current verification is pending

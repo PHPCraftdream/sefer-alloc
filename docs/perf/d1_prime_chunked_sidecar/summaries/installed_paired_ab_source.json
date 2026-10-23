@@ -1,0 +1,1023 @@
+{
+  "features": "production internals",
+  "raw_files": [
+    "samples.ndjson",
+    "after-before.json",
+    "before-mimalloc.json",
+    "after-mimalloc.json",
+    "before-aa-control.json",
+    "after-aa-control.json"
+  ],
+  "summary": [
+    {
+      "comparison": "after-before",
+      "a": {
+        "id": "after",
+        "commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+        "tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496"
+      },
+      "b": {
+        "id": "before",
+        "commit": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+        "tree": "b5d22c5a770e503750bb549152245325d915f350"
+      },
+      "order": "A/B/B/A",
+      "pairs": 20,
+      "internal_elapsed_ns": {
+        "a_mean": 631107.5,
+        "b_mean": 656437.5,
+        "a_over_b": {
+          "numerator": 631107.5,
+          "denominator": 656437.5,
+          "ratio": 0.9614129296391507
+        },
+        "paired_t": {
+          "n": 20,
+          "mean_delta_ns": -25330,
+          "sd_delta_ns": 130825.53609573645,
+          "se_delta_ns": 29253.479190291913,
+          "critical_t_005_approx": 2.093,
+          "ci95_low_ns": -86557.53194528096,
+          "ci95_high_ns": 35897.53194528097,
+          "t": -0.8658799124449456,
+          "significant_p_lt_005_approx": false
+        }
+      },
+      "full_process_wall_ns": {
+        "a_mean": 7438430,
+        "b_mean": 6931940,
+        "a_over_b": {
+          "numerator": 7438430,
+          "denominator": 6931940,
+          "ratio": 1.0730661257887402
+        },
+        "paired_t": {
+          "n": 20,
+          "mean_delta_ns": 506490,
+          "sd_delta_ns": 1777475.824737517,
+          "se_delta_ns": 397455.677247559,
+          "critical_t_005_approx": 2.093,
+          "ci95_low_ns": -325384.732479141,
+          "ci95_high_ns": 1338364.732479141,
+          "t": 1.2743307719429755,
+          "significant_p_lt_005_approx": false
+        }
+      },
+      "paired_rows": [
+        {
+          "block": 0,
+          "a_internal_ns": 703050,
+          "b_internal_ns": 839550,
+          "delta_internal_ns": -136500,
+          "a_process_ns": 11778900,
+          "b_process_ns": 10704450,
+          "delta_process_ns": 1074450
+        },
+        {
+          "block": 1,
+          "a_internal_ns": 578350,
+          "b_internal_ns": 615800,
+          "delta_internal_ns": -37450,
+          "a_process_ns": 7066850,
+          "b_process_ns": 6829950,
+          "delta_process_ns": 236900
+        },
+        {
+          "block": 2,
+          "a_internal_ns": 528550,
+          "b_internal_ns": 553050,
+          "delta_internal_ns": -24500,
+          "a_process_ns": 6658000,
+          "b_process_ns": 5783550,
+          "delta_process_ns": 874450
+        },
+        {
+          "block": 3,
+          "a_internal_ns": 515150,
+          "b_internal_ns": 640600,
+          "delta_internal_ns": -125450,
+          "a_process_ns": 6001500,
+          "b_process_ns": 5755450,
+          "delta_process_ns": 246050
+        },
+        {
+          "block": 4,
+          "a_internal_ns": 546400,
+          "b_internal_ns": 496300,
+          "delta_internal_ns": 50100,
+          "a_process_ns": 5442900,
+          "b_process_ns": 5605750,
+          "delta_process_ns": -162850
+        },
+        {
+          "block": 5,
+          "a_internal_ns": 568300,
+          "b_internal_ns": 645550,
+          "delta_internal_ns": -77250,
+          "a_process_ns": 5851450,
+          "b_process_ns": 6123450,
+          "delta_process_ns": -272000
+        },
+        {
+          "block": 6,
+          "a_internal_ns": 534800,
+          "b_internal_ns": 707100,
+          "delta_internal_ns": -172300,
+          "a_process_ns": 5582000,
+          "b_process_ns": 6320900,
+          "delta_process_ns": -738900
+        },
+        {
+          "block": 7,
+          "a_internal_ns": 490050,
+          "b_internal_ns": 502400,
+          "delta_internal_ns": -12350,
+          "a_process_ns": 5751650,
+          "b_process_ns": 5566850,
+          "delta_process_ns": 184800
+        },
+        {
+          "block": 8,
+          "a_internal_ns": 644050,
+          "b_internal_ns": 733450,
+          "delta_internal_ns": -89400,
+          "a_process_ns": 6070450,
+          "b_process_ns": 6287250,
+          "delta_process_ns": -216800
+        },
+        {
+          "block": 9,
+          "a_internal_ns": 740200,
+          "b_internal_ns": 630950,
+          "delta_internal_ns": 109250,
+          "a_process_ns": 6788850,
+          "b_process_ns": 6220800,
+          "delta_process_ns": 568050
+        },
+        {
+          "block": 10,
+          "a_internal_ns": 920650,
+          "b_internal_ns": 686050,
+          "delta_internal_ns": 234600,
+          "a_process_ns": 7325850,
+          "b_process_ns": 7249450,
+          "delta_process_ns": 76400
+        },
+        {
+          "block": 11,
+          "a_internal_ns": 508400,
+          "b_internal_ns": 527850,
+          "delta_internal_ns": -19450,
+          "a_process_ns": 5451300,
+          "b_process_ns": 5584550,
+          "delta_process_ns": -133250
+        },
+        {
+          "block": 12,
+          "a_internal_ns": 543650,
+          "b_internal_ns": 519500,
+          "delta_internal_ns": 24150,
+          "a_process_ns": 5452600,
+          "b_process_ns": 4938550,
+          "delta_process_ns": 514050
+        },
+        {
+          "block": 13,
+          "a_internal_ns": 722700,
+          "b_internal_ns": 1073750,
+          "delta_internal_ns": -351050,
+          "a_process_ns": 14137750,
+          "b_process_ns": 15603450,
+          "delta_process_ns": -1465700
+        },
+        {
+          "block": 14,
+          "a_internal_ns": 704950,
+          "b_internal_ns": 808950,
+          "delta_internal_ns": -104000,
+          "a_process_ns": 16227450,
+          "b_process_ns": 8573850,
+          "delta_process_ns": 7653600
+        },
+        {
+          "block": 15,
+          "a_internal_ns": 764400,
+          "b_internal_ns": 838650,
+          "delta_internal_ns": -74250,
+          "a_process_ns": 7690550,
+          "b_process_ns": 7670100,
+          "delta_process_ns": 20450
+        },
+        {
+          "block": 16,
+          "a_internal_ns": 568550,
+          "b_internal_ns": 527850,
+          "delta_internal_ns": 40700,
+          "a_process_ns": 6303500,
+          "b_process_ns": 5569200,
+          "delta_process_ns": 734300
+        },
+        {
+          "block": 17,
+          "a_internal_ns": 549850,
+          "b_internal_ns": 519550,
+          "delta_internal_ns": 30300,
+          "a_process_ns": 6132800,
+          "b_process_ns": 5448400,
+          "delta_process_ns": 684400
+        },
+        {
+          "block": 18,
+          "a_internal_ns": 907700,
+          "b_internal_ns": 695550,
+          "delta_internal_ns": 212150,
+          "a_process_ns": 6976650,
+          "b_process_ns": 6951500,
+          "delta_process_ns": 25150
+        },
+        {
+          "block": 19,
+          "a_internal_ns": 582400,
+          "b_internal_ns": 566300,
+          "delta_internal_ns": 16100,
+          "a_process_ns": 6077600,
+          "b_process_ns": 5851350,
+          "delta_process_ns": 226250
+        }
+      ],
+      "sample_count": 80
+    },
+    {
+      "comparison": "before-mimalloc",
+      "a": {
+        "id": "before",
+        "commit": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+        "tree": "b5d22c5a770e503750bb549152245325d915f350"
+      },
+      "b": {
+        "id": "mimalloc",
+        "commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+        "tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496"
+      },
+      "order": "A/B/B/A",
+      "pairs": 20,
+      "internal_elapsed_ns": {
+        "a_mean": 575162.5,
+        "b_mean": 1322487.5,
+        "a_over_b": {
+          "numerator": 575162.5,
+          "denominator": 1322487.5,
+          "ratio": 0.4349095927182677
+        },
+        "paired_t": {
+          "n": 20,
+          "mean_delta_ns": -747325,
+          "sd_delta_ns": 207143.6772540156,
+          "se_delta_ns": 46318.734344925586,
+          "critical_t_005_approx": 2.093,
+          "ci95_low_ns": -844270.1109839292,
+          "ci95_high_ns": -650379.8890160708,
+          "t": -16.13440027170934,
+          "significant_p_lt_005_approx": true
+        }
+      },
+      "full_process_wall_ns": {
+        "a_mean": 6311205,
+        "b_mean": 8257150,
+        "a_over_b": {
+          "numerator": 6311205,
+          "denominator": 8257150,
+          "ratio": 0.7643321242801693
+        },
+        "paired_t": {
+          "n": 20,
+          "mean_delta_ns": -1945945,
+          "sd_delta_ns": 1310752.3800534522,
+          "se_delta_ns": 293093.14234691585,
+          "critical_t_005_approx": 2.093,
+          "ci95_low_ns": -2559388.946932095,
+          "ci95_high_ns": -1332501.0530679051,
+          "t": -6.639339919105674,
+          "significant_p_lt_005_approx": true
+        }
+      },
+      "paired_rows": [
+        {
+          "block": 0,
+          "a_internal_ns": 569100,
+          "b_internal_ns": 1497500,
+          "delta_internal_ns": -928400,
+          "a_process_ns": 5984750,
+          "b_process_ns": 11022900,
+          "delta_process_ns": -5038150
+        },
+        {
+          "block": 1,
+          "a_internal_ns": 539900,
+          "b_internal_ns": 1255700,
+          "delta_internal_ns": -715800,
+          "a_process_ns": 5832050,
+          "b_process_ns": 8283300,
+          "delta_process_ns": -2451250
+        },
+        {
+          "block": 2,
+          "a_internal_ns": 518300,
+          "b_internal_ns": 1750900,
+          "delta_internal_ns": -1232600,
+          "a_process_ns": 5871150,
+          "b_process_ns": 9441050,
+          "delta_process_ns": -3569900
+        },
+        {
+          "block": 3,
+          "a_internal_ns": 691400,
+          "b_internal_ns": 1175800,
+          "delta_internal_ns": -484400,
+          "a_process_ns": 5393400,
+          "b_process_ns": 7020550,
+          "delta_process_ns": -1627150
+        },
+        {
+          "block": 4,
+          "a_internal_ns": 531700,
+          "b_internal_ns": 1402350,
+          "delta_internal_ns": -870650,
+          "a_process_ns": 5826650,
+          "b_process_ns": 8012650,
+          "delta_process_ns": -2186000
+        },
+        {
+          "block": 5,
+          "a_internal_ns": 546950,
+          "b_internal_ns": 1155100,
+          "delta_internal_ns": -608150,
+          "a_process_ns": 5748250,
+          "b_process_ns": 7579050,
+          "delta_process_ns": -1830800
+        },
+        {
+          "block": 6,
+          "a_internal_ns": 520500,
+          "b_internal_ns": 1689850,
+          "delta_internal_ns": -1169350,
+          "a_process_ns": 5500350,
+          "b_process_ns": 7698050,
+          "delta_process_ns": -2197700
+        },
+        {
+          "block": 7,
+          "a_internal_ns": 603000,
+          "b_internal_ns": 1189900,
+          "delta_internal_ns": -586900,
+          "a_process_ns": 5907750,
+          "b_process_ns": 7299000,
+          "delta_process_ns": -1391250
+        },
+        {
+          "block": 8,
+          "a_internal_ns": 535950,
+          "b_internal_ns": 1200250,
+          "delta_internal_ns": -664300,
+          "a_process_ns": 5867350,
+          "b_process_ns": 7657550,
+          "delta_process_ns": -1790200
+        },
+        {
+          "block": 9,
+          "a_internal_ns": 526950,
+          "b_internal_ns": 1185400,
+          "delta_internal_ns": -658450,
+          "a_process_ns": 5658750,
+          "b_process_ns": 7080400,
+          "delta_process_ns": -1421650
+        },
+        {
+          "block": 10,
+          "a_internal_ns": 521000,
+          "b_internal_ns": 1173200,
+          "delta_internal_ns": -652200,
+          "a_process_ns": 5455900,
+          "b_process_ns": 7148550,
+          "delta_process_ns": -1692650
+        },
+        {
+          "block": 11,
+          "a_internal_ns": 523800,
+          "b_internal_ns": 1166000,
+          "delta_internal_ns": -642200,
+          "a_process_ns": 5237350,
+          "b_process_ns": 7168750,
+          "delta_process_ns": -1931400
+        },
+        {
+          "block": 12,
+          "a_internal_ns": 571400,
+          "b_internal_ns": 1341750,
+          "delta_internal_ns": -770350,
+          "a_process_ns": 7621050,
+          "b_process_ns": 7316600,
+          "delta_process_ns": 304450
+        },
+        {
+          "block": 13,
+          "a_internal_ns": 889450,
+          "b_internal_ns": 1940500,
+          "delta_internal_ns": -1051050,
+          "a_process_ns": 12711050,
+          "b_process_ns": 17153300,
+          "delta_process_ns": -4442250
+        },
+        {
+          "block": 14,
+          "a_internal_ns": 799450,
+          "b_internal_ns": 1263850,
+          "delta_internal_ns": -464400,
+          "a_process_ns": 9100450,
+          "b_process_ns": 8464550,
+          "delta_process_ns": 635900
+        },
+        {
+          "block": 15,
+          "a_internal_ns": 549950,
+          "b_internal_ns": 1188800,
+          "delta_internal_ns": -638850,
+          "a_process_ns": 6444250,
+          "b_process_ns": 7574550,
+          "delta_process_ns": -1130300
+        },
+        {
+          "block": 16,
+          "a_internal_ns": 536650,
+          "b_internal_ns": 1235600,
+          "delta_internal_ns": -698950,
+          "a_process_ns": 5462650,
+          "b_process_ns": 7487150,
+          "delta_process_ns": -2024500
+        },
+        {
+          "block": 17,
+          "a_internal_ns": 516950,
+          "b_internal_ns": 1254750,
+          "delta_internal_ns": -737800,
+          "a_process_ns": 5522350,
+          "b_process_ns": 6724350,
+          "delta_process_ns": -1202000
+        },
+        {
+          "block": 18,
+          "a_internal_ns": 508650,
+          "b_internal_ns": 1127550,
+          "delta_internal_ns": -618900,
+          "a_process_ns": 5788500,
+          "b_process_ns": 7537150,
+          "delta_process_ns": -1748650
+        },
+        {
+          "block": 19,
+          "a_internal_ns": 502200,
+          "b_internal_ns": 1255000,
+          "delta_internal_ns": -752800,
+          "a_process_ns": 5290100,
+          "b_process_ns": 7473550,
+          "delta_process_ns": -2183450
+        }
+      ],
+      "sample_count": 80
+    },
+    {
+      "comparison": "after-mimalloc",
+      "a": {
+        "id": "after",
+        "commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+        "tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496"
+      },
+      "b": {
+        "id": "mimalloc",
+        "commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+        "tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496"
+      },
+      "order": "A/B/B/A",
+      "pairs": 20,
+      "internal_elapsed_ns": {
+        "a_mean": 605502.5,
+        "b_mean": 1287410,
+        "a_over_b": {
+          "numerator": 605502.5,
+          "denominator": 1287410,
+          "ratio": 0.4703260810464421
+        },
+        "paired_t": {
+          "n": 20,
+          "mean_delta_ns": -681907.5,
+          "sd_delta_ns": 169842.4628225568,
+          "se_delta_ns": 37977.92923372178,
+          "critical_t_005_approx": 2.093,
+          "ci95_low_ns": -761395.3058861797,
+          "ci95_high_ns": -602419.6941138203,
+          "t": -17.9553628583444,
+          "significant_p_lt_005_approx": true
+        }
+      },
+      "full_process_wall_ns": {
+        "a_mean": 6092685,
+        "b_mean": 8051705,
+        "a_over_b": {
+          "numerator": 6092685,
+          "denominator": 8051705,
+          "ratio": 0.7566950105598752
+        },
+        "paired_t": {
+          "n": 20,
+          "mean_delta_ns": -1959020,
+          "sd_delta_ns": 580843.0208258556,
+          "se_delta_ns": 129880.4478822939,
+          "critical_t_005_approx": 2.093,
+          "ci95_low_ns": -2230859.777417641,
+          "ci95_high_ns": -1687180.2225823589,
+          "t": -15.083255655042022,
+          "significant_p_lt_005_approx": true
+        }
+      },
+      "paired_rows": [
+        {
+          "block": 0,
+          "a_internal_ns": 821300,
+          "b_internal_ns": 1145600,
+          "delta_internal_ns": -324300,
+          "a_process_ns": 6509900,
+          "b_process_ns": 7367750,
+          "delta_process_ns": -857850
+        },
+        {
+          "block": 1,
+          "a_internal_ns": 591900,
+          "b_internal_ns": 1254100,
+          "delta_internal_ns": -662200,
+          "a_process_ns": 5438150,
+          "b_process_ns": 7362300,
+          "delta_process_ns": -1924150
+        },
+        {
+          "block": 2,
+          "a_internal_ns": 620250,
+          "b_internal_ns": 1139450,
+          "delta_internal_ns": -519200,
+          "a_process_ns": 5654250,
+          "b_process_ns": 7386300,
+          "delta_process_ns": -1732050
+        },
+        {
+          "block": 3,
+          "a_internal_ns": 702250,
+          "b_internal_ns": 1439500,
+          "delta_internal_ns": -737250,
+          "a_process_ns": 6679700,
+          "b_process_ns": 9478200,
+          "delta_process_ns": -2798500
+        },
+        {
+          "block": 4,
+          "a_internal_ns": 528100,
+          "b_internal_ns": 1199350,
+          "delta_internal_ns": -671250,
+          "a_process_ns": 5364700,
+          "b_process_ns": 7062500,
+          "delta_process_ns": -1697800
+        },
+        {
+          "block": 5,
+          "a_internal_ns": 494650,
+          "b_internal_ns": 1149500,
+          "delta_internal_ns": -654850,
+          "a_process_ns": 5413350,
+          "b_process_ns": 7381550,
+          "delta_process_ns": -1968200
+        },
+        {
+          "block": 6,
+          "a_internal_ns": 585600,
+          "b_internal_ns": 1120000,
+          "delta_internal_ns": -534400,
+          "a_process_ns": 5668150,
+          "b_process_ns": 7416300,
+          "delta_process_ns": -1748150
+        },
+        {
+          "block": 7,
+          "a_internal_ns": 641700,
+          "b_internal_ns": 1236900,
+          "delta_internal_ns": -595200,
+          "a_process_ns": 5739600,
+          "b_process_ns": 7501750,
+          "delta_process_ns": -1762150
+        },
+        {
+          "block": 8,
+          "a_internal_ns": 519200,
+          "b_internal_ns": 1176050,
+          "delta_internal_ns": -656850,
+          "a_process_ns": 5469700,
+          "b_process_ns": 7224600,
+          "delta_process_ns": -1754900
+        },
+        {
+          "block": 9,
+          "a_internal_ns": 591300,
+          "b_internal_ns": 1171500,
+          "delta_internal_ns": -580200,
+          "a_process_ns": 5870300,
+          "b_process_ns": 7375000,
+          "delta_process_ns": -1504700
+        },
+        {
+          "block": 10,
+          "a_internal_ns": 502350,
+          "b_internal_ns": 1188150,
+          "delta_internal_ns": -685800,
+          "a_process_ns": 5407300,
+          "b_process_ns": 6917250,
+          "delta_process_ns": -1509950
+        },
+        {
+          "block": 11,
+          "a_internal_ns": 510300,
+          "b_internal_ns": 1163250,
+          "delta_internal_ns": -652950,
+          "a_process_ns": 5418700,
+          "b_process_ns": 7121950,
+          "delta_process_ns": -1703250
+        },
+        {
+          "block": 12,
+          "a_internal_ns": 511700,
+          "b_internal_ns": 1182900,
+          "delta_internal_ns": -671200,
+          "a_process_ns": 5353400,
+          "b_process_ns": 7388050,
+          "delta_process_ns": -2034650
+        },
+        {
+          "block": 13,
+          "a_internal_ns": 673250,
+          "b_internal_ns": 1584550,
+          "delta_internal_ns": -911300,
+          "a_process_ns": 6977000,
+          "b_process_ns": 10140950,
+          "delta_process_ns": -3163950
+        },
+        {
+          "block": 14,
+          "a_internal_ns": 963900,
+          "b_internal_ns": 2107500,
+          "delta_internal_ns": -1143600,
+          "a_process_ns": 10739400,
+          "b_process_ns": 13512450,
+          "delta_process_ns": -2773050
+        },
+        {
+          "block": 15,
+          "a_internal_ns": 729950,
+          "b_internal_ns": 1652200,
+          "delta_internal_ns": -922250,
+          "a_process_ns": 8168250,
+          "b_process_ns": 11137000,
+          "delta_process_ns": -2968750
+        },
+        {
+          "block": 16,
+          "a_internal_ns": 498400,
+          "b_internal_ns": 1311900,
+          "delta_internal_ns": -813500,
+          "a_process_ns": 5709750,
+          "b_process_ns": 8076750,
+          "delta_process_ns": -2367000
+        },
+        {
+          "block": 17,
+          "a_internal_ns": 541200,
+          "b_internal_ns": 1189050,
+          "delta_internal_ns": -647850,
+          "a_process_ns": 5492150,
+          "b_process_ns": 7320850,
+          "delta_process_ns": -1828700
+        },
+        {
+          "block": 18,
+          "a_internal_ns": 547800,
+          "b_internal_ns": 1165850,
+          "delta_internal_ns": -618050,
+          "a_process_ns": 5598550,
+          "b_process_ns": 6914800,
+          "delta_process_ns": -1316250
+        },
+        {
+          "block": 19,
+          "a_internal_ns": 534950,
+          "b_internal_ns": 1170900,
+          "delta_internal_ns": -635950,
+          "a_process_ns": 5181400,
+          "b_process_ns": 6947800,
+          "delta_process_ns": -1766400
+        }
+      ],
+      "sample_count": 80
+    },
+    {
+      "comparison": "before-aa-control",
+      "a": {
+        "id": "before",
+        "commit": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+        "tree": "b5d22c5a770e503750bb549152245325d915f350"
+      },
+      "b": {
+        "id": "before",
+        "commit": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+        "tree": "b5d22c5a770e503750bb549152245325d915f350"
+      },
+      "order": "A/B/B/A",
+      "pairs": 10,
+      "internal_elapsed_ns": {
+        "a_mean": 538930,
+        "b_mean": 565585,
+        "a_over_b": {
+          "numerator": 538930,
+          "denominator": 565585,
+          "ratio": 0.9528718052989382
+        },
+        "paired_t": {
+          "n": 10,
+          "mean_delta_ns": -26655,
+          "sd_delta_ns": 44134.135503787395,
+          "se_delta_ns": 13956.439075447099,
+          "critical_t_005_approx": 2.262,
+          "ci95_low_ns": -58224.46518866134,
+          "ci95_high_ns": 4914.465188661339,
+          "t": -1.9098711251420053,
+          "significant_p_lt_005_approx": false
+        }
+      },
+      "full_process_wall_ns": {
+        "a_mean": 5460255,
+        "b_mean": 5599645,
+        "a_over_b": {
+          "numerator": 5460255,
+          "denominator": 5599645,
+          "ratio": 0.9751073505552584
+        },
+        "paired_t": {
+          "n": 10,
+          "mean_delta_ns": -139390,
+          "sd_delta_ns": 322829.3931957112,
+          "se_delta_ns": 102087.61781485112,
+          "critical_t_005_approx": 2.262,
+          "ci95_low_ns": -370312.19149719324,
+          "ci95_high_ns": 91532.19149719324,
+          "t": -1.3653957549759022,
+          "significant_p_lt_005_approx": false
+        }
+      },
+      "paired_rows": [
+        {
+          "block": 0,
+          "a_internal_ns": 512700,
+          "b_internal_ns": 528550,
+          "delta_internal_ns": -15850,
+          "a_process_ns": 4966800,
+          "b_process_ns": 5304300,
+          "delta_process_ns": -337500
+        },
+        {
+          "block": 1,
+          "a_internal_ns": 523250,
+          "b_internal_ns": 549450,
+          "delta_internal_ns": -26200,
+          "a_process_ns": 4882350,
+          "b_process_ns": 5082550,
+          "delta_process_ns": -200200
+        },
+        {
+          "block": 2,
+          "a_internal_ns": 654700,
+          "b_internal_ns": 721500,
+          "delta_internal_ns": -66800,
+          "a_process_ns": 6028000,
+          "b_process_ns": 6045450,
+          "delta_process_ns": -17450
+        },
+        {
+          "block": 3,
+          "a_internal_ns": 519300,
+          "b_internal_ns": 625700,
+          "delta_internal_ns": -106400,
+          "a_process_ns": 5758300,
+          "b_process_ns": 6078750,
+          "delta_process_ns": -320450
+        },
+        {
+          "block": 4,
+          "a_internal_ns": 527150,
+          "b_internal_ns": 502600,
+          "delta_internal_ns": 24550,
+          "a_process_ns": 5637900,
+          "b_process_ns": 5438650,
+          "delta_process_ns": 199250
+        },
+        {
+          "block": 5,
+          "a_internal_ns": 520300,
+          "b_internal_ns": 515100,
+          "delta_internal_ns": 5200,
+          "a_process_ns": 5045300,
+          "b_process_ns": 5219300,
+          "delta_process_ns": -174000
+        },
+        {
+          "block": 6,
+          "a_internal_ns": 526000,
+          "b_internal_ns": 522200,
+          "delta_internal_ns": 3800,
+          "a_process_ns": 5515050,
+          "b_process_ns": 5410600,
+          "delta_process_ns": 104450
+        },
+        {
+          "block": 7,
+          "a_internal_ns": 538250,
+          "b_internal_ns": 608900,
+          "delta_internal_ns": -70650,
+          "a_process_ns": 6031000,
+          "b_process_ns": 6791650,
+          "delta_process_ns": -760650
+        },
+        {
+          "block": 8,
+          "a_internal_ns": 524300,
+          "b_internal_ns": 564400,
+          "delta_internal_ns": -40100,
+          "a_process_ns": 5571750,
+          "b_process_ns": 5191800,
+          "delta_process_ns": 379950
+        },
+        {
+          "block": 9,
+          "a_internal_ns": 543350,
+          "b_internal_ns": 517450,
+          "delta_internal_ns": 25900,
+          "a_process_ns": 5166100,
+          "b_process_ns": 5433400,
+          "delta_process_ns": -267300
+        }
+      ],
+      "sample_count": 40
+    },
+    {
+      "comparison": "after-aa-control",
+      "a": {
+        "id": "after",
+        "commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+        "tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496"
+      },
+      "b": {
+        "id": "after",
+        "commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+        "tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496"
+      },
+      "order": "A/B/B/A",
+      "pairs": 10,
+      "internal_elapsed_ns": {
+        "a_mean": 630225,
+        "b_mean": 616000,
+        "a_over_b": {
+          "numerator": 630225,
+          "denominator": 616000,
+          "ratio": 1.0230925324675324
+        },
+        "paired_t": {
+          "n": 10,
+          "mean_delta_ns": 14225,
+          "sd_delta_ns": 86920.40500110175,
+          "se_delta_ns": 27486.645494777193,
+          "critical_t_005_approx": 2.262,
+          "ci95_low_ns": -47949.79210918601,
+          "ci95_high_ns": 76399.792109186,
+          "t": 0.5175240464575035,
+          "significant_p_lt_005_approx": false
+        }
+      },
+      "full_process_wall_ns": {
+        "a_mean": 6617405,
+        "b_mean": 6427020,
+        "a_over_b": {
+          "numerator": 6617405,
+          "denominator": 6427020,
+          "ratio": 1.029622593363643
+        },
+        "paired_t": {
+          "n": 10,
+          "mean_delta_ns": 190385,
+          "sd_delta_ns": 625623.9765448394,
+          "se_delta_ns": 197839.67246934518,
+          "critical_t_005_approx": 2.262,
+          "ci95_low_ns": -257128.3391256588,
+          "ci95_high_ns": 637898.3391256589,
+          "t": 0.9623196279275065,
+          "significant_p_lt_005_approx": false
+        }
+      },
+      "paired_rows": [
+        {
+          "block": 0,
+          "a_internal_ns": 522700,
+          "b_internal_ns": 498350,
+          "delta_internal_ns": 24350,
+          "a_process_ns": 5085200,
+          "b_process_ns": 4818900,
+          "delta_process_ns": 266300
+        },
+        {
+          "block": 1,
+          "a_internal_ns": 495350,
+          "b_internal_ns": 511100,
+          "delta_internal_ns": -15750,
+          "a_process_ns": 5168700,
+          "b_process_ns": 5052750,
+          "delta_process_ns": 115950
+        },
+        {
+          "block": 2,
+          "a_internal_ns": 517350,
+          "b_internal_ns": 496250,
+          "delta_internal_ns": 21100,
+          "a_process_ns": 5075850,
+          "b_process_ns": 5543100,
+          "delta_process_ns": -467250
+        },
+        {
+          "block": 3,
+          "a_internal_ns": 557050,
+          "b_internal_ns": 558700,
+          "delta_internal_ns": -1650,
+          "a_process_ns": 6029100,
+          "b_process_ns": 5929850,
+          "delta_process_ns": 99250
+        },
+        {
+          "block": 4,
+          "a_internal_ns": 550800,
+          "b_internal_ns": 648150,
+          "delta_internal_ns": -97350,
+          "a_process_ns": 5763750,
+          "b_process_ns": 5631750,
+          "delta_process_ns": 132000
+        },
+        {
+          "block": 5,
+          "a_internal_ns": 533000,
+          "b_internal_ns": 526050,
+          "delta_internal_ns": 6950,
+          "a_process_ns": 5016500,
+          "b_process_ns": 4922850,
+          "delta_process_ns": 93650
+        },
+        {
+          "block": 6,
+          "a_internal_ns": 656100,
+          "b_internal_ns": 619900,
+          "delta_internal_ns": 36200,
+          "a_process_ns": 6593550,
+          "b_process_ns": 5734650,
+          "delta_process_ns": 858900
+        },
+        {
+          "block": 7,
+          "a_internal_ns": 780600,
+          "b_internal_ns": 744100,
+          "delta_internal_ns": 36500,
+          "a_process_ns": 9472850,
+          "b_process_ns": 8517700,
+          "delta_process_ns": 955150
+        },
+        {
+          "block": 8,
+          "a_internal_ns": 951950,
+          "b_internal_ns": 731300,
+          "delta_internal_ns": 220650,
+          "a_process_ns": 9372350,
+          "b_process_ns": 8476550,
+          "delta_process_ns": 895800
+        },
+        {
+          "block": 9,
+          "a_internal_ns": 737350,
+          "b_internal_ns": 826100,
+          "delta_internal_ns": -88750,
+          "a_process_ns": 8596200,
+          "b_process_ns": 9642100,
+          "delta_process_ns": -1045900
+        }
+      ],
+      "sample_count": 40
+    }
+  ]
+}

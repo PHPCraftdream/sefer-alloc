@@ -1,0 +1,971 @@
+{
+  "count": 193,
+  "total_bytes": 1250818,
+  "entries": [
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc/mimalloc_16b/new/benchmark.json",
+      "bytes": 210,
+      "sha256": "dc6953cbaaaa64d062826b6cd91de529e8836406074f29a3db9fded7effdf25f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc/mimalloc_16b/new/estimates.json",
+      "bytes": 974,
+      "sha256": "bd7308a4f808519334aea6cfb95d37d2cce8beae45cd3e0b98e88953acccc51f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc/mimalloc_16b/new/sample.json",
+      "bytes": 228,
+      "sha256": "2c7f4fabea8d4e37ce68ca4b04fd7350049c537139f0c25be44624958628a5ad"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc/seferalloc_16b/new/benchmark.json",
+      "bytes": 218,
+      "sha256": "857ba8a93e86351b3d3370501029731c657e77079902463234c0c8914ae5ebf8"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc/seferalloc_16b/new/estimates.json",
+      "bytes": 976,
+      "sha256": "f43ffba863ddb79bed7aebf79b7dfc8c912195da9f235dcbbd5918b30861d46a"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc/seferalloc_16b/new/sample.json",
+      "bytes": 225,
+      "sha256": "0e8cce0b189b2712c9960f82832a4603d405bcd37aa989881aaf48ed08351a86"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc/system_16b/new/benchmark.json",
+      "bytes": 202,
+      "sha256": "39f154687f968bc1499d7d23ff1206e5917868e564fd59ba7a3150bac4bbedf1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc/system_16b/new/estimates.json",
+      "bytes": 976,
+      "sha256": "755f1e80b8fb8891a1a643d397190546af9e0b00ff8cd2697532ccd181fc252c"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc/system_16b/new/sample.json",
+      "bytes": 220,
+      "sha256": "0675f32e8f7894b568767828e1a07506bde60ee71ea51ebbddc71a62c8093fbe"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn/mimalloc_16b/new/benchmark.json",
+      "bytes": 234,
+      "sha256": "d2299b11af325dfb281fca86c41c258f685bfcc237446d0671f5b7163e71fa65"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn/mimalloc_16b/new/estimates.json",
+      "bytes": 981,
+      "sha256": "6ad35fd90c6be7c95f53d1523a63af4e9464deff8c00a23b52a7950b54b758be"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn/mimalloc_16b/new/sample.json",
+      "bytes": 224,
+      "sha256": "dba0940272cf83f84022b70da1f136b50e58796a7762c83d5c24bab7ef53b9e2"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn/seferalloc_16b/new/benchmark.json",
+      "bytes": 242,
+      "sha256": "bcf6d4c04e7cba247174812603f556c9c9a5a7996f1496f06804fa82851720b6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn/seferalloc_16b/new/estimates.json",
+      "bytes": 981,
+      "sha256": "fe922b93daa3a11a71c6170d9bc82fe90bd5436f5803e03862eb047a79ab711f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn/seferalloc_16b/new/sample.json",
+      "bytes": 221,
+      "sha256": "b982ade6db9eda8eb27f062231875ad9855e1f4380a40ac01446761363cf8149"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn/system_16b/new/benchmark.json",
+      "bytes": 226,
+      "sha256": "d27b2c32e52e5bd913f236b71cff760580050920d470bf7a486c79c76550b1a6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn/system_16b/new/estimates.json",
+      "bytes": 964,
+      "sha256": "288ef63feeaa918e291d50dbc0a41ee12f6c5b742eea61bcf94add7aef5a2dcd"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn/system_16b/new/sample.json",
+      "bytes": 219,
+      "sha256": "95fe656f9558614c2c0801b7c206d9e3ab12f6cfe514ec06d18cefda1e37026d"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_with_teardown/mimalloc_64b/new/benchmark.json",
+      "bytes": 290,
+      "sha256": "d4ab2b46b0b43654f4bc6859c6b9b5ad2e0ddfcd6559b4bf0e0c8e99e28fab8d"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_with_teardown/mimalloc_64b/new/estimates.json",
+      "bytes": 982,
+      "sha256": "4b4ef133363277cd87c8e6a8ec61ac9430630e5c86b2cf6f328546886f80add6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_with_teardown/mimalloc_64b/new/sample.json",
+      "bytes": 225,
+      "sha256": "913374e526bc10fe02431c8b92315f688dba5ed2982d57756f4b68940b73dbd3"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_with_teardown/seferalloc_64b/new/benchmark.json",
+      "bytes": 298,
+      "sha256": "6ac33a0293018e196a7c91e4a44af8180c097b2d57b466cb605bc30bdf00f068"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_with_teardown/seferalloc_64b/new/estimates.json",
+      "bytes": 982,
+      "sha256": "6b4569ab7af902a362f825cd07a2d941936964b67cfbc4fb967dca8be2da1222"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_with_teardown/seferalloc_64b/new/sample.json",
+      "bytes": 221,
+      "sha256": "150f82e614e7a82b56814d30cafcc15b0b0038a084ba83b49bdf47a51970fbc0"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_with_teardown/system_64b/new/benchmark.json",
+      "bytes": 282,
+      "sha256": "70ce426c9cbd50a00ae37780fc70cad4e96181355a6df30618bd528c8295d662"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_with_teardown/system_64b/new/estimates.json",
+      "bytes": 978,
+      "sha256": "aaf16a62ec36efe31bc5a7557812540fb3e522f7727fdbd9fe493fc3f0741caa"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_with_teardown/system_64b/new/sample.json",
+      "bytes": 218,
+      "sha256": "34bdc60075f2a7b3472190dbd4d1bfa792df67f31f40a8c79dab686c7aca3972"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_write/mimalloc_16b/new/benchmark.json",
+      "bytes": 258,
+      "sha256": "d26a52c471efc1cb940003f84b9ee6d2606dc679011ed5bd6276c8a39c839819"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_write/mimalloc_16b/new/estimates.json",
+      "bytes": 974,
+      "sha256": "13a0c0f2df66174c290f1c155a5c0c6396abee3da4cad74c1fc9bb3b1c1e8cc1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_write/mimalloc_16b/new/sample.json",
+      "bytes": 225,
+      "sha256": "bdf0744f301a23ef29d1047978eb3a2197647ca8a3296c698b4d4c4a905beaef"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_write/seferalloc_16b/new/benchmark.json",
+      "bytes": 266,
+      "sha256": "cdd3e1b6b77bbb8e9788ff79bda3ba7822cba728f701f4d9c2a06fe48924a4e9"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_write/seferalloc_16b/new/estimates.json",
+      "bytes": 982,
+      "sha256": "543ceaf4c33ac23994e144e35dbd33b8d31bb40ce976f93e223965dfe633cf1f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_write/seferalloc_16b/new/sample.json",
+      "bytes": 223,
+      "sha256": "977006900aad0776a8ca4302c708e52158f53a0f02e26adefba55b56641811c2"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_write/system_16b/new/benchmark.json",
+      "bytes": 250,
+      "sha256": "58548b70db3a7d51b4925cad7adc447ca6b2c1b1f2138abe2e532f689cddb041"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_write/system_16b/new/estimates.json",
+      "bytes": 981,
+      "sha256": "9ad968ce8e216daa73e547dcf3cc040436240c96fe0dc6f57b1e917b9dd67817"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/global_alloc_churn_write/system_16b/new/sample.json",
+      "bytes": 219,
+      "sha256": "ba02110e025ef216339f278e0d1e09fe9ebf49dbc3d554f18302805084fcddbc"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/segment_decommit_cycle/mimalloc_253kib/new/benchmark.json",
+      "bytes": 262,
+      "sha256": "3969224adf20b368435704188da5111ecc62554a25425431dac5143510b10c1b"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/segment_decommit_cycle/mimalloc_253kib/new/estimates.json",
+      "bytes": 983,
+      "sha256": "f217d169ddf36fa8d15adafa159980244f740493ad6900a500690da4a0c672f8"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/segment_decommit_cycle/mimalloc_253kib/new/sample.json",
+      "bytes": 233,
+      "sha256": "8b658e6fcac7cc60f17beac655b368fc04d7279cbddd7f2aaf4a9232648da5dd"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/segment_decommit_cycle/seferalloc_253kib/new/benchmark.json",
+      "bytes": 270,
+      "sha256": "3974e639c065fd4af6202b84d817fb81b36d47bbe26677ce23a03f51f85ffeb1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/segment_decommit_cycle/seferalloc_253kib/new/estimates.json",
+      "bytes": 981,
+      "sha256": "8123e8f958e27bedff072c47b7b7899d79c45b050555739a222af68fc0b30cf4"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/segment_decommit_cycle/seferalloc_253kib/new/sample.json",
+      "bytes": 224,
+      "sha256": "05b0cad45f86ec7d228ffdb32e801277605a37ebbb031ff5c229b1001f658f89"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/segment_decommit_cycle/system_253kib/new/benchmark.json",
+      "bytes": 254,
+      "sha256": "9a44474a933aa58c74d177ce0e028d92fc0a054ca7ef5c99d0c27d7bfbd1297f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/segment_decommit_cycle/system_253kib/new/estimates.json",
+      "bytes": 978,
+      "sha256": "8e404f1e5a2ab4c3e43cb80b31ec4f882c12d41202b17ac4508b34912c475250"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-1/segment_decommit_cycle/system_253kib/new/sample.json",
+      "bytes": 227,
+      "sha256": "777bf1bff07e27a5ebd4fccfa7075abd320d33deb8d0058c4bc04888bfad9189"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc/mimalloc_16b/new/benchmark.json",
+      "bytes": 210,
+      "sha256": "dc6953cbaaaa64d062826b6cd91de529e8836406074f29a3db9fded7effdf25f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc/mimalloc_16b/new/estimates.json",
+      "bytes": 975,
+      "sha256": "df6d5dd5023ae0cb6408092aec2575066f8d6c69a6ee74e6b7fb615fd6c01861"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc/mimalloc_16b/new/sample.json",
+      "bytes": 228,
+      "sha256": "93e38f866db589676cf08f0029c39572a8a933594538f059f2ffb4e4a3762347"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc/seferalloc_16b/new/benchmark.json",
+      "bytes": 218,
+      "sha256": "857ba8a93e86351b3d3370501029731c657e77079902463234c0c8914ae5ebf8"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc/seferalloc_16b/new/estimates.json",
+      "bytes": 987,
+      "sha256": "19471a47100bd2a68e97790fb15fdb20f950594fd179e9edaa9642b995ada83b"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc/seferalloc_16b/new/sample.json",
+      "bytes": 226,
+      "sha256": "56883ec1c9d1689951b29134e4333ac6d01fe72b94f83d32eb97906883f68ee6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc/system_16b/new/benchmark.json",
+      "bytes": 202,
+      "sha256": "39f154687f968bc1499d7d23ff1206e5917868e564fd59ba7a3150bac4bbedf1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc/system_16b/new/estimates.json",
+      "bytes": 976,
+      "sha256": "23505fe111a8a98ff8c2523f0c26312c93b54df09308fca3a19dced843a779df"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc/system_16b/new/sample.json",
+      "bytes": 219,
+      "sha256": "bc2cf816d6c7b6fa0faa748b421f31133c3e14a65cbc4f7df0df28ec744d8f83"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn/mimalloc_16b/new/benchmark.json",
+      "bytes": 234,
+      "sha256": "d2299b11af325dfb281fca86c41c258f685bfcc237446d0671f5b7163e71fa65"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn/mimalloc_16b/new/estimates.json",
+      "bytes": 975,
+      "sha256": "bd9365e7286d57ac7f9ef9a37f1298ce8a76bd8fdff03828167cd26215f379cc"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn/mimalloc_16b/new/sample.json",
+      "bytes": 225,
+      "sha256": "73a59fd7a391def193d35107ca1fdb34e4b3653e0ef2a51f39a23867063009b5"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn/seferalloc_16b/new/benchmark.json",
+      "bytes": 242,
+      "sha256": "bcf6d4c04e7cba247174812603f556c9c9a5a7996f1496f06804fa82851720b6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn/seferalloc_16b/new/estimates.json",
+      "bytes": 988,
+      "sha256": "818f241f051b34d036a464b8f5ce26744197a9596ae6ce36438b98085440261f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn/seferalloc_16b/new/sample.json",
+      "bytes": 224,
+      "sha256": "191ed53e72066a40ad014dcf2e6cbf79ff6f2ff36af25cf26457d709732dcf43"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn/system_16b/new/benchmark.json",
+      "bytes": 226,
+      "sha256": "d27b2c32e52e5bd913f236b71cff760580050920d470bf7a486c79c76550b1a6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn/system_16b/new/estimates.json",
+      "bytes": 979,
+      "sha256": "37a5a16f29d069d98f112b8536b81f63d6446e99ee85588173dc5c953a190dbb"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn/system_16b/new/sample.json",
+      "bytes": 218,
+      "sha256": "a469c4ed322606e89561bfbca533565a82b2d98f49414ea48bbe73fd73e63864"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_with_teardown/mimalloc_64b/new/benchmark.json",
+      "bytes": 290,
+      "sha256": "d4ab2b46b0b43654f4bc6859c6b9b5ad2e0ddfcd6559b4bf0e0c8e99e28fab8d"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_with_teardown/mimalloc_64b/new/estimates.json",
+      "bytes": 981,
+      "sha256": "e49ca50d14bfbec7b5fd65a6dc28de22adb74bb8ca679e75c5570504d41f6dec"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_with_teardown/mimalloc_64b/new/sample.json",
+      "bytes": 225,
+      "sha256": "32ee7c21b189369022e9cc741f839d8996efa59880f7a4259ac2c15198e92b94"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_with_teardown/seferalloc_64b/new/benchmark.json",
+      "bytes": 298,
+      "sha256": "6ac33a0293018e196a7c91e4a44af8180c097b2d57b466cb605bc30bdf00f068"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_with_teardown/seferalloc_64b/new/estimates.json",
+      "bytes": 977,
+      "sha256": "ec047f72e87dc7f376a43debd00e2703928522dc55a44fb191502fb2bd24a781"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_with_teardown/seferalloc_64b/new/sample.json",
+      "bytes": 221,
+      "sha256": "b32fab61ad8d74ae8cd63b90efafb8ee9d3813f350451babef2cbffba01e935f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_with_teardown/system_64b/new/benchmark.json",
+      "bytes": 282,
+      "sha256": "70ce426c9cbd50a00ae37780fc70cad4e96181355a6df30618bd528c8295d662"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_with_teardown/system_64b/new/estimates.json",
+      "bytes": 974,
+      "sha256": "a7b997df3534ddef6183978f2e966b81085320b0295c94d04430e4f1c7103177"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_with_teardown/system_64b/new/sample.json",
+      "bytes": 218,
+      "sha256": "7decb9b1b68a83a373e5dedb2e213407e50ab4557c90b8b6ee957c935a044915"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_write/mimalloc_16b/new/benchmark.json",
+      "bytes": 258,
+      "sha256": "d26a52c471efc1cb940003f84b9ee6d2606dc679011ed5bd6276c8a39c839819"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_write/mimalloc_16b/new/estimates.json",
+      "bytes": 978,
+      "sha256": "3f5a601bd3db37dd4ce6d66ed858d89330e6918ca116e4a0a0b6102550c8faeb"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_write/mimalloc_16b/new/sample.json",
+      "bytes": 225,
+      "sha256": "24da90c370cf124dd3bfaf7732e4f9e3dc0cb6366addd21434446d620808d0d1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_write/seferalloc_16b/new/benchmark.json",
+      "bytes": 266,
+      "sha256": "cdd3e1b6b77bbb8e9788ff79bda3ba7822cba728f701f4d9c2a06fe48924a4e9"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_write/seferalloc_16b/new/estimates.json",
+      "bytes": 981,
+      "sha256": "01c2d256376b7d9ba3c4ed0bcc4a23bf59cf96392fa1a4ba6636fd766f5f7e5c"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_write/seferalloc_16b/new/sample.json",
+      "bytes": 223,
+      "sha256": "6c5005976607adedaab91b45657b961c50a6060a3b42fd3d01baf2a1313f0511"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_write/system_16b/new/benchmark.json",
+      "bytes": 250,
+      "sha256": "58548b70db3a7d51b4925cad7adc447ca6b2c1b1f2138abe2e532f689cddb041"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_write/system_16b/new/estimates.json",
+      "bytes": 975,
+      "sha256": "078ccb93d8fa59bfe85004376a6e92b281e86e40532935e72e76047f2b71536f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/global_alloc_churn_write/system_16b/new/sample.json",
+      "bytes": 218,
+      "sha256": "d6d92a4213c7cf1b677252c10c4c870020981ae635a20f003fce8deeee62e7ad"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/segment_decommit_cycle/mimalloc_253kib/new/benchmark.json",
+      "bytes": 262,
+      "sha256": "3969224adf20b368435704188da5111ecc62554a25425431dac5143510b10c1b"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/segment_decommit_cycle/mimalloc_253kib/new/estimates.json",
+      "bytes": 983,
+      "sha256": "a582f1566b02256763627a765ff23431f187c4f6c8dde9124305f369039b6a17"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/segment_decommit_cycle/mimalloc_253kib/new/sample.json",
+      "bytes": 233,
+      "sha256": "aaafb872f38ea101ed02e84f799703a458aa67fb5205e010f2e010f0566d5640"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/segment_decommit_cycle/seferalloc_253kib/new/benchmark.json",
+      "bytes": 270,
+      "sha256": "3974e639c065fd4af6202b84d817fb81b36d47bbe26677ce23a03f51f85ffeb1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/segment_decommit_cycle/seferalloc_253kib/new/estimates.json",
+      "bytes": 981,
+      "sha256": "f59383888724367068c50d407c04b5313c455132daf05a8dba35459abd62d974"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/segment_decommit_cycle/seferalloc_253kib/new/sample.json",
+      "bytes": 226,
+      "sha256": "a55828e5aea36fff20d9ff52526d3d735bb56a14daf363496898ee1ab164a064"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/segment_decommit_cycle/system_253kib/new/benchmark.json",
+      "bytes": 254,
+      "sha256": "9a44474a933aa58c74d177ce0e028d92fc0a054ca7ef5c99d0c27d7bfbd1297f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/segment_decommit_cycle/system_253kib/new/estimates.json",
+      "bytes": 978,
+      "sha256": "504a5088c65d63af280c53e2ddb498f4c89297d23c664dfff5e772c6694a0f03"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/after-clean-2/segment_decommit_cycle/system_253kib/new/sample.json",
+      "bytes": 222,
+      "sha256": "b591285fd0a0bd900881ba95fc0a6a7e540c7babc9adca4ea5db6a3257799e38"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc/mimalloc_16b/new/benchmark.json",
+      "bytes": 210,
+      "sha256": "dc6953cbaaaa64d062826b6cd91de529e8836406074f29a3db9fded7effdf25f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc/mimalloc_16b/new/estimates.json",
+      "bytes": 971,
+      "sha256": "978b064853cc48c8bef92bf4f815ff865bd979547de19a16c2cb4705445e457c"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc/mimalloc_16b/new/sample.json",
+      "bytes": 231,
+      "sha256": "fc4572bcea807f2f6f8c6d794c2cee01972f4462655677a708c98df106c0ab9f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc/seferalloc_16b/new/benchmark.json",
+      "bytes": 218,
+      "sha256": "857ba8a93e86351b3d3370501029731c657e77079902463234c0c8914ae5ebf8"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc/seferalloc_16b/new/estimates.json",
+      "bytes": 983,
+      "sha256": "61ff9a1e73b81586d0c9aa301e67b925d518e835f0c7713ee088bec51914b89b"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc/seferalloc_16b/new/sample.json",
+      "bytes": 224,
+      "sha256": "8287ab45beaaf93d420746d83f28d6685a53700d0b647c45e76dcb603e02ae24"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc/system_16b/new/benchmark.json",
+      "bytes": 202,
+      "sha256": "39f154687f968bc1499d7d23ff1206e5917868e564fd59ba7a3150bac4bbedf1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc/system_16b/new/estimates.json",
+      "bytes": 974,
+      "sha256": "fa1736123ab7641fa313712be8c8c461d1f8870868816e9d1ff96ceb41ddc5cf"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc/system_16b/new/sample.json",
+      "bytes": 222,
+      "sha256": "987a73017db643c7cc28198f0ca34a72935adcf9abe3797f69a17af110b3e5dc"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn/mimalloc_16b/new/benchmark.json",
+      "bytes": 234,
+      "sha256": "d2299b11af325dfb281fca86c41c258f685bfcc237446d0671f5b7163e71fa65"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn/mimalloc_16b/new/estimates.json",
+      "bytes": 975,
+      "sha256": "f7afd047922a8bba819e3b329a79b028c10e27ce17c05109fd7f6a4260c67296"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn/mimalloc_16b/new/sample.json",
+      "bytes": 224,
+      "sha256": "5ff7b90abb5292dbb81036bc827337ae168a143a6bfc15b30f6e30b4f95193a2"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn/seferalloc_16b/new/benchmark.json",
+      "bytes": 242,
+      "sha256": "bcf6d4c04e7cba247174812603f556c9c9a5a7996f1496f06804fa82851720b6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn/seferalloc_16b/new/estimates.json",
+      "bytes": 975,
+      "sha256": "648cdaccecce4a4fc1b5dd01abf4bbd6f10b4709af7e42ea558a75f4ab0e02e3"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn/seferalloc_16b/new/sample.json",
+      "bytes": 223,
+      "sha256": "9b927a59ad84a7c105427704876a52af2bdb77b77aff7c73c76bc3a05859e131"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn/system_16b/new/benchmark.json",
+      "bytes": 226,
+      "sha256": "d27b2c32e52e5bd913f236b71cff760580050920d470bf7a486c79c76550b1a6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn/system_16b/new/estimates.json",
+      "bytes": 971,
+      "sha256": "93c8a12712d39f9d3b44e2a78d5aac897c4094ab5df2f3781d52ff66973c0c8e"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn/system_16b/new/sample.json",
+      "bytes": 219,
+      "sha256": "de6ea24bcfc9ae5182cbc7d65d55ef872d6fd59fcbeea97c25909a6960c6c062"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_with_teardown/mimalloc_64b/new/benchmark.json",
+      "bytes": 290,
+      "sha256": "d4ab2b46b0b43654f4bc6859c6b9b5ad2e0ddfcd6559b4bf0e0c8e99e28fab8d"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_with_teardown/mimalloc_64b/new/estimates.json",
+      "bytes": 969,
+      "sha256": "a8ca6219991372d10d626fd64f2516b9cff99ae705a172fab1e735e01c92a560"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_with_teardown/mimalloc_64b/new/sample.json",
+      "bytes": 226,
+      "sha256": "aa249cab3452ef6ff0a6b0863995a452c662d285d7cabcc88776170e0c358e34"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_with_teardown/seferalloc_64b/new/benchmark.json",
+      "bytes": 298,
+      "sha256": "6ac33a0293018e196a7c91e4a44af8180c097b2d57b466cb605bc30bdf00f068"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_with_teardown/seferalloc_64b/new/estimates.json",
+      "bytes": 982,
+      "sha256": "50d53e7f76e1321faacfe536bf3acfbcc2051fca9a9681c3a58d559456a1d1ac"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_with_teardown/seferalloc_64b/new/sample.json",
+      "bytes": 223,
+      "sha256": "a9b48a293ec3e8f28b481613b4ab6ead3dbe1dd3c8a1967d0be0f021548c41f6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_with_teardown/system_64b/new/benchmark.json",
+      "bytes": 282,
+      "sha256": "70ce426c9cbd50a00ae37780fc70cad4e96181355a6df30618bd528c8295d662"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_with_teardown/system_64b/new/estimates.json",
+      "bytes": 974,
+      "sha256": "29a0deafd3bc15375deb5d5f90feb6017703e37d1da2d16b457533ba8410086c"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_with_teardown/system_64b/new/sample.json",
+      "bytes": 218,
+      "sha256": "89c0683b754f6a9ddba48437847fd006560e98dd5fc6d70dfd8ed0f575866654"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_write/mimalloc_16b/new/benchmark.json",
+      "bytes": 258,
+      "sha256": "d26a52c471efc1cb940003f84b9ee6d2606dc679011ed5bd6276c8a39c839819"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_write/mimalloc_16b/new/estimates.json",
+      "bytes": 974,
+      "sha256": "f10898cd219980787021dac14b76d16a7adc1d46ca8175eb8caac72dfcf089e2"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_write/mimalloc_16b/new/sample.json",
+      "bytes": 227,
+      "sha256": "560dd76e44d01294d3e53720b7a5f988606c773a77fec30452782b6fc807a042"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_write/seferalloc_16b/new/benchmark.json",
+      "bytes": 266,
+      "sha256": "cdd3e1b6b77bbb8e9788ff79bda3ba7822cba728f701f4d9c2a06fe48924a4e9"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_write/seferalloc_16b/new/estimates.json",
+      "bytes": 984,
+      "sha256": "5fd7aab755f456a4cf1fe59975168e889ca8a83af3d441fe1350be301d83deee"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_write/seferalloc_16b/new/sample.json",
+      "bytes": 224,
+      "sha256": "5219ee73fbceb04a3f24ea568d461099d4749551ff3702a62250691968ab6ac8"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_write/system_16b/new/benchmark.json",
+      "bytes": 250,
+      "sha256": "58548b70db3a7d51b4925cad7adc447ca6b2c1b1f2138abe2e532f689cddb041"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_write/system_16b/new/estimates.json",
+      "bytes": 980,
+      "sha256": "86ef53d8374ffa158690c13454f621ae1dd3dd7074b4aaa61dfe910075871d6e"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/global_alloc_churn_write/system_16b/new/sample.json",
+      "bytes": 217,
+      "sha256": "50f1501a92e2a1a98795be53e0d6dabe2e0f75539afba35b4c392367d55d7150"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/segment_decommit_cycle/mimalloc_253kib/new/benchmark.json",
+      "bytes": 262,
+      "sha256": "3969224adf20b368435704188da5111ecc62554a25425431dac5143510b10c1b"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/segment_decommit_cycle/mimalloc_253kib/new/estimates.json",
+      "bytes": 984,
+      "sha256": "23697b57c240c0407b5ab5b5646ce7afb5618a8541a2a24626e31c2f7e805136"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/segment_decommit_cycle/mimalloc_253kib/new/sample.json",
+      "bytes": 231,
+      "sha256": "0d9a8afa10428fdc2f747a88cb74740f08c1d2582114d3d730e9e23a6d6bb3b4"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/segment_decommit_cycle/seferalloc_253kib/new/benchmark.json",
+      "bytes": 270,
+      "sha256": "3974e639c065fd4af6202b84d817fb81b36d47bbe26677ce23a03f51f85ffeb1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/segment_decommit_cycle/seferalloc_253kib/new/estimates.json",
+      "bytes": 980,
+      "sha256": "9322cf6d71e61da894926d068c071e95b77e4babfd7166f968bff86baf3d5d29"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/segment_decommit_cycle/seferalloc_253kib/new/sample.json",
+      "bytes": 235,
+      "sha256": "e979c3b0181fe51dd8f2106a2f95ed9787370c62fbe3faaa5a8a7cf7f3bbb017"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/segment_decommit_cycle/system_253kib/new/benchmark.json",
+      "bytes": 254,
+      "sha256": "9a44474a933aa58c74d177ce0e028d92fc0a054ca7ef5c99d0c27d7bfbd1297f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/segment_decommit_cycle/system_253kib/new/estimates.json",
+      "bytes": 962,
+      "sha256": "9b056bf404229956672e20cb5cd2592644f77a31ea05715b9ccd7896f1c9a043"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-1/segment_decommit_cycle/system_253kib/new/sample.json",
+      "bytes": 226,
+      "sha256": "84d3cebb067502304b1d68d93b3a10ccf4c2dab469961694727f2e3a97170db4"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc/mimalloc_16b/new/benchmark.json",
+      "bytes": 210,
+      "sha256": "dc6953cbaaaa64d062826b6cd91de529e8836406074f29a3db9fded7effdf25f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc/mimalloc_16b/new/estimates.json",
+      "bytes": 976,
+      "sha256": "d12318f7ef99fedc41b2b79bbea79090c279752aa80a608b3c1c37bb3147582a"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc/mimalloc_16b/new/sample.json",
+      "bytes": 230,
+      "sha256": "2a206dd9f9df515939c90414030ff24ee95205bbfa55884887e18cd4c3b91a7a"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc/seferalloc_16b/new/benchmark.json",
+      "bytes": 218,
+      "sha256": "857ba8a93e86351b3d3370501029731c657e77079902463234c0c8914ae5ebf8"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc/seferalloc_16b/new/estimates.json",
+      "bytes": 985,
+      "sha256": "4b21e55dec1d75e729c5e2f753be3152af58d21cb7edb71d9f4c801d0cf3afc4"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc/seferalloc_16b/new/sample.json",
+      "bytes": 224,
+      "sha256": "e5da656b2b129edd8dab2e4250c2e08417b34e2d26ea58e41bd7131ac32b0674"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc/system_16b/new/benchmark.json",
+      "bytes": 202,
+      "sha256": "39f154687f968bc1499d7d23ff1206e5917868e564fd59ba7a3150bac4bbedf1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc/system_16b/new/estimates.json",
+      "bytes": 979,
+      "sha256": "7f0ce2bb32c7bf806a0325b7698cc484772594a637ee85d609c2061832ae4227"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc/system_16b/new/sample.json",
+      "bytes": 219,
+      "sha256": "b98a13468eef1e99ea806abd0709923aaed602c89dbf040e4ed5cb8c77301966"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn/mimalloc_16b/new/benchmark.json",
+      "bytes": 234,
+      "sha256": "d2299b11af325dfb281fca86c41c258f685bfcc237446d0671f5b7163e71fa65"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn/mimalloc_16b/new/estimates.json",
+      "bytes": 974,
+      "sha256": "745c2f15e806bf0cc69771742e04a9f8320d4809d39092d44528bed3da503e55"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn/mimalloc_16b/new/sample.json",
+      "bytes": 224,
+      "sha256": "4c32150ae368864548ce19593092b4cf1ca5fb8dfea2c3d65306f8e6c2eaae17"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn/seferalloc_16b/new/benchmark.json",
+      "bytes": 242,
+      "sha256": "bcf6d4c04e7cba247174812603f556c9c9a5a7996f1496f06804fa82851720b6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn/seferalloc_16b/new/estimates.json",
+      "bytes": 977,
+      "sha256": "b47bf70370c38bac60bd29223a626b6dac1a80b5de5c329bd4b680527a2697fd"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn/seferalloc_16b/new/sample.json",
+      "bytes": 224,
+      "sha256": "d3801be111ff15d808415c6938e57aeb147da93deb848725ff6040ec8cec5c0d"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn/system_16b/new/benchmark.json",
+      "bytes": 226,
+      "sha256": "d27b2c32e52e5bd913f236b71cff760580050920d470bf7a486c79c76550b1a6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn/system_16b/new/estimates.json",
+      "bytes": 979,
+      "sha256": "381e3a5925a00750f651ccc4a460060bfd700024c661b0bab3cf59ac7fc4b0a8"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn/system_16b/new/sample.json",
+      "bytes": 220,
+      "sha256": "e2db64316e8a4b76f6795451091d01af33759437379b868f57937c0cb0ccfc1c"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_with_teardown/mimalloc_64b/new/benchmark.json",
+      "bytes": 290,
+      "sha256": "d4ab2b46b0b43654f4bc6859c6b9b5ad2e0ddfcd6559b4bf0e0c8e99e28fab8d"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_with_teardown/mimalloc_64b/new/estimates.json",
+      "bytes": 977,
+      "sha256": "ab52257a11bbae956fad3ba8b07ba2d229ebf013d3dadfe24668a4464904438f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_with_teardown/mimalloc_64b/new/sample.json",
+      "bytes": 224,
+      "sha256": "1da9c2da99c9aab935c0997eae4e9327183d1b29f2dad940238cbf26f8337769"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_with_teardown/seferalloc_64b/new/benchmark.json",
+      "bytes": 298,
+      "sha256": "6ac33a0293018e196a7c91e4a44af8180c097b2d57b466cb605bc30bdf00f068"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_with_teardown/seferalloc_64b/new/estimates.json",
+      "bytes": 979,
+      "sha256": "532cb0778e9e1fb883ae2f8f0f061ced23f1d78cc25ca18b4afadc82af49061b"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_with_teardown/seferalloc_64b/new/sample.json",
+      "bytes": 224,
+      "sha256": "aebed126492d4070915f3ab02579bf1255e3ae1e3cc0876ff04ba99a91ab14e3"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_with_teardown/system_64b/new/benchmark.json",
+      "bytes": 282,
+      "sha256": "70ce426c9cbd50a00ae37780fc70cad4e96181355a6df30618bd528c8295d662"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_with_teardown/system_64b/new/estimates.json",
+      "bytes": 982,
+      "sha256": "5e85d98771c31c5eef53197e274a5a551c9565494de652a425395bf6ae5f5a99"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_with_teardown/system_64b/new/sample.json",
+      "bytes": 220,
+      "sha256": "961da2a65aec7ee0f88856669532faac692ea45a36ec967be8155fb6901b2cc3"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_write/mimalloc_16b/new/benchmark.json",
+      "bytes": 258,
+      "sha256": "d26a52c471efc1cb940003f84b9ee6d2606dc679011ed5bd6276c8a39c839819"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_write/mimalloc_16b/new/estimates.json",
+      "bytes": 975,
+      "sha256": "f0febadcdaee7fb66aede68bfdea9e555cfa2963ca448fe5cc87513f770f403f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_write/mimalloc_16b/new/sample.json",
+      "bytes": 224,
+      "sha256": "83418050719e9e308f1add005337b3d075bd002f05e98b7d1c8f503dd9458ae8"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_write/seferalloc_16b/new/benchmark.json",
+      "bytes": 266,
+      "sha256": "cdd3e1b6b77bbb8e9788ff79bda3ba7822cba728f701f4d9c2a06fe48924a4e9"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_write/seferalloc_16b/new/estimates.json",
+      "bytes": 981,
+      "sha256": "9b70fc95874d870e4dfe292777bff35b56655e63b1db719f1c891102955f9ab3"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_write/seferalloc_16b/new/sample.json",
+      "bytes": 224,
+      "sha256": "b41337a26cf43492ba5e78906c486022a07220712d20bbe260f6525a2d1d8ce5"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_write/system_16b/new/benchmark.json",
+      "bytes": 250,
+      "sha256": "58548b70db3a7d51b4925cad7adc447ca6b2c1b1f2138abe2e532f689cddb041"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_write/system_16b/new/estimates.json",
+      "bytes": 980,
+      "sha256": "dfbee9e3b3086e1e3590e601afd1b32b815e44f16c096d0396efb654cd49df67"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/global_alloc_churn_write/system_16b/new/sample.json",
+      "bytes": 219,
+      "sha256": "d83ec8316ed7c77f217a7e83369fbbf977579ea19e20c29ef53d0a82ebc9d2b3"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/segment_decommit_cycle/mimalloc_253kib/new/benchmark.json",
+      "bytes": 262,
+      "sha256": "3969224adf20b368435704188da5111ecc62554a25425431dac5143510b10c1b"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/segment_decommit_cycle/mimalloc_253kib/new/estimates.json",
+      "bytes": 977,
+      "sha256": "92fb7134ebc9d167fcbb178819169323f950d5204f0f4a9bb23f7a96d2058c13"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/segment_decommit_cycle/mimalloc_253kib/new/sample.json",
+      "bytes": 236,
+      "sha256": "9cf626debca15f554eaaed6ec4b548e221d201453f7e0e23665768417633ab96"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/segment_decommit_cycle/seferalloc_253kib/new/benchmark.json",
+      "bytes": 270,
+      "sha256": "3974e639c065fd4af6202b84d817fb81b36d47bbe26677ce23a03f51f85ffeb1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/segment_decommit_cycle/seferalloc_253kib/new/estimates.json",
+      "bytes": 975,
+      "sha256": "bedbba9579ed7b6409efd21f9e3176916b2bf84c0fdacefcbc1e61d1e3300a83"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/segment_decommit_cycle/seferalloc_253kib/new/sample.json",
+      "bytes": 234,
+      "sha256": "08d43c16a8f6334eceee0dfe2728f3d2d7ed6adecf51c9b6793a2b2b7d3d6c21"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/segment_decommit_cycle/system_253kib/new/benchmark.json",
+      "bytes": 254,
+      "sha256": "9a44474a933aa58c74d177ce0e028d92fc0a054ca7ef5c99d0c27d7bfbd1297f"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/segment_decommit_cycle/system_253kib/new/estimates.json",
+      "bytes": 983,
+      "sha256": "bd737f0ac8c2a0aa959d7fec58c999f662f9c074e54f7fd4f5ad8e7566aa0a61"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/criterion/before-clean-2/segment_decommit_cycle/system_253kib/new/sample.json",
+      "bytes": 223,
+      "sha256": "be39db6413f22da48bcc3d3da12c2e4ec041e8eae0e70986542bcbf3ca2f993b"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_bench_after_clean1.log",
+      "bytes": 102090,
+      "sha256": "ab9fd9c3f56ba60c79792c855a6e89772d523995504b12b05c80e380208860f5"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_bench_after_clean2.log",
+      "bytes": 101769,
+      "sha256": "4522dfd13998a7b652efff9b5cf394601ea7290157dc230e7dfa7d895fac2d15"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_bench_before_clean1.log",
+      "bytes": 101366,
+      "sha256": "087740734190944f8016a49eed089d4e12b534505abca7a4cb90a928f604d316"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_bench_before_clean2.log",
+      "bytes": 102357,
+      "sha256": "aac60fe1f7e4acf68cb7f1f282c39968e11e2aab5a46b18411181dc260548153"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_foreign_free_ab.ndjson.gz",
+      "bytes": 9845,
+      "sha256": "db8e3b4bd0cbdc2f9e908f0132d3f2c5d975a8dbf5e5a0cc649106bc164d01c7"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_iai_after.log",
+      "bytes": 77729,
+      "sha256": "c9612aa072c893c83c1712b8a97ee9e7b949fee3fa817cb8ead72e8918ebb921"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_iai_before.log",
+      "bytes": 75805,
+      "sha256": "a1fb41139a52d0e1c5e6d6798235e66eccdcb01bfe582607c28de876d4a95bb9"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_installed_paired_ab.ndjson",
+      "bytes": 151116,
+      "sha256": "1c18e71f97526d02e4f5ab6bc40dc10c00918b66ac03a379ef5b69c2f5698607"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_mt_larson_run2.ndjson.gz",
+      "bytes": 8755,
+      "sha256": "2885cf1174fedc59f4b000a166254d23fa3fff37b99c4e3e4d03acf7d9e860cd"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_registration_oracle_run5.ndjson.gz",
+      "bytes": 27442,
+      "sha256": "c6c47a4d516081a56f6e00da8cc1ac1d9c6c4d8d134ba989def3a3d393ad7af6"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_registration_timing_run5.ndjson.gz",
+      "bytes": 87446,
+      "sha256": "9464e77996608a616115f00dc318cfcb2bdce0e90201ef59f440b1a55d24655b"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_retained_pin_windows_run6.ndjson",
+      "bytes": 133762,
+      "sha256": "e6e06cde0a477344db7beac2895f3684cd60cb6e171dc95fbdbef7286fef84d1"
+    },
+    {
+      "file": "docs/perf/d1_prime_chunked_sidecar/raw/_raw_d1_prime_retained_pin_wsl_linux_run7.ndjson",
+      "bytes": 184168,
+      "sha256": "cab8eface54541045d564af8b798af3b7c4febff01d4b84c9ade0f023aba96d7"
+    }
+  ]
+}

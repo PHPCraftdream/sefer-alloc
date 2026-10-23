@@ -1,0 +1,32 @@
+{
+  "measurement_source_snapshot": {
+    "baseline_commit": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+    "baseline_base_tree": "b5d22c5a770e503750bb549152245325d915f350",
+    "baseline_measurement_tree": "60fcd80364ced3bef26587e405ff32b17b132690",
+    "candidate_commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+    "candidate_base_tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496",
+    "candidate_measurement_tree": "8e7952f37a99a05e46db33075318d46e06a87aaa",
+    "tree_method": "temporary GIT_INDEX_FILE; read-tree HEAD; git add -A; git write-tree",
+    "mt_harness_patch_sha256": "743fef67ba3f7fb50e39710197d9d66ef5a7b8322d4542a3cb5c069b896b87f1",
+    "registration_harness_sha256": "b12cd36f2b28d72914f93708967016cfc213b2462719e7f05b1ad3a63a02963c",
+    "retained_pin_harness_sha256": "ba8ffbc2a68a5ac4161d5b0de7d9149548a45509201c4446858f556149edeb81",
+    "retained_pin_contract_test_sha256": "00af6c662bf48a9b34b79853153ca9f441a7d4f97340cd508db6fba0a4492d9c"
+  },
+  "host": {
+    "os": "Windows 10 x86_64, Windows MSVC target",
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+    "logical_processors": 16,
+    "rustc": "1.97.0 (2d8144b78 2026-07-07), LLVM 22.1.6",
+    "cargo": "1.97.0 (c980f4866 2026-06-30)"
+  },
+  "features": {
+    "baseline_oracle": "production internals",
+    "candidate_oracle": "production internals bench-internals"
+  },
+  "entrypoint": "RouteDirectory::register/RoutePin owner-unlink/final-release; component lifetime and Windows memory oracle, not allocator throughput benchmark",
+  "process_boundary": "fresh process per sample; A/B/B/A pairwise baseline/candidate sequence",
+  "nonclaims": [
+    "System allocation counters prove lifecycle ordering; process RSS/commit deltas are OS observations and include the 4 MiB numeric route-root allocation.",
+    "No direct mimalloc analogue exists for route-registration/pin lifetime."
+  ]
+}

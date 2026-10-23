@@ -368,18 +368,15 @@ fn unlinked_cached_pin_never_publishes_and_releases() {
     let registration = directory
         .register(root, SEGMENT, root, 17, RouteKind::Small)
         .unwrap();
-    // Make the granule at offset 0 LIVE before unlinking: the
-    // `dbg_publish_cached_for_test` hook's `# Safety` contract requires the
-    // CURRENT issued Small instance at the address, so the fixture must issue
-    // one (same pattern as `re_registered_route_is_served_after_cache_fallback`).
-    // With the class issued, the linked gate is the ONLY reason publication
-    // can fail, which sharpens the oracle below.
-    assert!(registration.issue_small(0, 0));
+    // Payload-offset исключает независимый отказ metadata-фильтра.
+    let offset = sefer_alloc::SegmentLayout::SMALL_META_END;
+    let address = root.with_addr(root.addr() + offset);
+    registration.issue_small_for_test(u32::try_from(offset).unwrap());
 
     // SAFETY: `lookup` reads only the address.
-    let pin_probe = directory.lookup(root).unwrap();
+    let pin_probe = directory.lookup(address).unwrap();
     // SAFETY: address-only, as above.
-    let cached = directory.lookup(root).unwrap();
+    let cached = directory.lookup(address).unwrap();
     cached.dbg_cache_insert_for_test();
 
     // Production unlink: `RouteDirectory::remove` clears `linked` under the
@@ -389,7 +386,7 @@ fn unlinked_cached_pin_never_publishes_and_releases() {
 
     let hits_before = totals().0;
     // SAFETY: the fixture owns the whole reservation; the only issued instance
-    // is the fixture's own `issue_small` granule above (fixture-owned
+    // is the fixture's own issued start-bit granule above (fixture-owned
     // reservation bytes, no live owner can be affected). Publication returns
     // `false` from the LINKED GATE, not from a class gate: the class was made
     // issued on purpose so that the gate mutant is observable.
@@ -397,7 +394,7 @@ fn unlinked_cached_pin_never_publishes_and_releases() {
     // gain the bit and publication would return `true`.
     // MUTANT publish-on-false / no-gate: same as above.
     assert!(
-        !(unsafe { RoutePin::dbg_publish_cached_for_test(root.addr()) }),
+        !(unsafe { RoutePin::dbg_publish_cached_for_test(address.addr()) }),
         "unlinked cached pin must fall back, never publish"
     );
     let after = totals();
@@ -414,7 +411,7 @@ fn unlinked_cached_pin_never_publishes_and_releases() {
         "cached dead pin was released immediately; only the probe remains"
     );
     assert!(
-        !pin_probe.pending_for_test(root),
+        !pin_probe.pending_for_test(address),
         "zombie pending bits must be zero: nothing may be published into the unlinked route"
     );
     drop(pin_probe);
@@ -425,6 +422,10 @@ fn unlinked_cached_pin_never_publishes_and_releases() {
 // ---------------------------------------------------------------------------
 #[test]
 fn re_registered_route_is_served_after_cache_fallback() {
+    // D1' phase-1a: published offsets must sit above the Small metadata end
+    // (the producer payload filter), so this fixture issues and publishes at
+    // OFF instead of offset 0.
+    const OFF: u32 = 384 * 1024;
     let _guard = SerialGuard::acquire();
     let before = totals();
     let directory = RouteDirectory::new();
@@ -435,20 +436,22 @@ fn re_registered_route_is_served_after_cache_fallback() {
         .unwrap();
     let first_incarnation = first.incarnation();
     // The cached-publication hook requires a currently issued instance.
-    assert!(first.issue_small(0, 0));
+    first.issue_small_for_test(OFF);
 
     // SAFETY: `lookup` reads only the address.
     let pin_probe = directory.lookup(root).unwrap();
     // SAFETY: address-only, as above.
-    let cached = directory.lookup(root).unwrap();
+    let cached = directory
+        .lookup(root.with_addr(root.addr() + OFF as usize))
+        .unwrap();
     cached.dbg_cache_insert_for_test();
     drop(first);
 
     // SAFETY: fixture-owned reservation; the only issued instance is the
-    // fixture's own `issue_small` granule on the OLD route; it was not consumed
+    // fixture's own issued start-bit granule on the OLD route; it was not consumed
     // before unlink. The fallback empties the dead slot and looks up anew.
     assert!(
-        !unsafe { RoutePin::dbg_publish_cached_for_test(root.addr()) },
+        !unsafe { RoutePin::dbg_publish_cached_for_test(root.addr() + OFF as usize) },
         "zombie pin must not publish"
     );
 
@@ -459,33 +462,37 @@ fn re_registered_route_is_served_after_cache_fallback() {
     assert!(second.incarnation() > first_incarnation);
     // Make the granule at offset 0 LIVE on the new route so the sidecar
     // accepts the cached publication.
-    assert!(second.issue_small(0, 0));
+    second.issue_small_for_test(OFF);
 
     // Production fallback's insert step: the dead slot was already emptied,
     // so no eviction is charged for replacing it.
     // SAFETY: `lookup` reads only the address.
-    let fresh = directory.lookup(root).unwrap();
+    let fresh = directory
+        .lookup(root.with_addr(root.addr() + OFF as usize))
+        .unwrap();
     fresh.dbg_cache_insert_for_test();
     assert!(totals().2 - before.2 >= 2, "two seam inserts");
 
     // SAFETY: fixture-owned reservation; the only issued instance is the
-    // fixture's own `issue_small` granule on the NEW route, which this
+    // fixture's own issued start-bit granule on the NEW route, which this
     // publication consumes.
     // MUTANT skip-linked-check / publish-on-false: the zombie slot (or the
     // new slot pointing at the old sidecar) would serve this and the old
     // probe would observe the pending bit.
     assert!(
-        unsafe { RoutePin::dbg_publish_cached_for_test(root.addr()) },
+        unsafe { RoutePin::dbg_publish_cached_for_test(root.addr() + OFF as usize) },
         "new route's cached pin must publish"
     );
     assert!(
-        !pin_probe.pending_for_test(root),
+        !pin_probe.pending_for_test(root.with_addr(root.addr() + OFF as usize)),
         "publication went to the NEW sidecar, not the zombie"
     );
     // SAFETY: address-only lookup on the re-registered route.
-    let check = directory.lookup(root).unwrap();
+    let check = directory
+        .lookup(root.with_addr(root.addr() + OFF as usize))
+        .unwrap();
     assert!(
-        check.pending_for_test(root),
+        check.pending_for_test(root.with_addr(root.addr() + OFF as usize)),
         "publication landed in the new route's sidecar"
     );
     drop(check);
@@ -825,7 +832,7 @@ fn sweep_reclaims_unlinked_cached_pin_after_next_miss() {
     // Make the hook's contract hold: the CURRENT issued Small instance at the
     // address. Publication misses (no cached slot for B's base), so ownership
     // is NOT consumed; the granule stays fixture-owned, like the zombie tests.
-    assert!(registration_b.issue_small(0, 0));
+    registration_b.issue_small_for_test(0);
 
     use std::sync::mpsc;
     let (tx_pre, rx_pre) = mpsc::channel::<usize>();
@@ -863,7 +870,7 @@ fn sweep_reclaims_unlinked_cached_pin_after_next_miss() {
         // its cached pin is dead and must be reclaimed HERE, on the same
         // thread, before any thread exit.
         // SAFETY: the current issued instance at this address is the
-        // fixture's own `issue_small` granule on route B; the publication
+        // fixture's own issued start-bit granule on route B; the publication
         // misses (B's base was never cached), so ownership is retained.
         assert!(
             !unsafe { RoutePin::dbg_publish_cached_for_test(root_b_addr) },

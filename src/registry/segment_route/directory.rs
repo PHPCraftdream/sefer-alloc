@@ -17,10 +17,11 @@ use super::{LargeState, RouteError, RouteKind, RoutePin, RouteRegistration, Smal
 
 const SHARDS: usize = 64;
 
+// Moved (pure move, D1′ round-2 structural fix) to `registration.rs` next to
+// the registration test surface that uses it; both files resolve it through
+// the shared `super` module (including the Loom source-including harness).
 #[cfg(feature = "internals")]
-std::thread_local! {
-    static FAIL_NEXT_REGISTRATION: Cell<usize> = const { Cell::new(0) };
-}
+use super::registration::FAIL_NEXT_REGISTRATION;
 
 pub(super) struct Entry {
     pub(super) key: usize,
@@ -58,7 +59,7 @@ impl EntryHandle {
                 let ptr = unsafe { System.alloc(Layout::new::<SmallSidecar>()) };
                 if !ptr.is_null() {
                     #[cfg(feature = "internals")]
-                    crate::alloc_core::remote_bitmap::ClassLeaves::record_alloc(
+                    super::small_sidecar::record_system_alloc(
                         Layout::new::<SmallSidecar>().size(),
                         false,
                     );
@@ -111,17 +112,15 @@ impl EntryHandle {
 
     fn free_sidecar(kind: RouteKind, sidecar: *mut u8) {
         match kind {
+            // D1' phase-1a: the Small/Primordial arm moved verbatim into
+            // `SmallSidecar::dealloc_sidecar` (this file sits at its
+            // 1000-line cap).
             RouteKind::Small | RouteKind::Primordial => {
-                // SAFETY: pointer is a fully initialized SmallSidecar from
-                // System; last-pin release ensures no remaining reference.
-                unsafe { ptr::drop_in_place(sidecar.cast::<SmallSidecar>()) };
-                #[cfg(feature = "internals")]
-                crate::alloc_core::remote_bitmap::ClassLeaves::record_free(
-                    Layout::new::<SmallSidecar>().size(),
-                );
-                // SAFETY: pointer came from System.alloc with this Layout
-                // and its mixed leaves were released by Drop above.
-                unsafe { System.dealloc(sidecar, Layout::new::<SmallSidecar>()) };
+                // SAFETY: `sidecar` is the fully initialized `SmallSidecar`
+                // this entry allocated from `System` (see # Safety on
+                // `dealloc_sidecar`); this is the last-pin release, so no
+                // reference remains and it is dropped exactly once.
+                unsafe { SmallSidecar::dealloc_sidecar(sidecar.cast()) }
             }
             RouteKind::Large => {
                 // SAFETY: pointer came from System.alloc with this Layout and
@@ -727,6 +726,14 @@ impl Drop for Shard {
 pub struct RouteDirectory {
     shards: [ShardLock<Shard>; SHARDS],
     next_incarnation: AtomicU64,
+    // Measurement-only counters (P2-1): gated like the `dbg_*` getters in
+    // `registration.rs` and `B4_DIRECTORY_LOOKUPS`; plain production pays
+    // neither the fields nor the RMW.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    registrations_total: AtomicU64,
+    /// Successful unlink count for measurement-only cold release oracle.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    unlinks_total: AtomicU64,
 }
 
 impl RouteDirectory {
@@ -734,6 +741,10 @@ impl RouteDirectory {
         Self {
             shards: [const { ShardLock::new(Shard::empty()) }; SHARDS],
             next_incarnation: AtomicU64::new(0),
+            #[cfg(all(feature = "internals", feature = "bench-internals"))]
+            registrations_total: AtomicU64::new(0),
+            #[cfg(all(feature = "internals", feature = "bench-internals"))]
+            unlinks_total: AtomicU64::new(0),
         }
     }
 
@@ -742,87 +753,16 @@ impl RouteDirectory {
         &ROUTES
     }
 
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn fail_next_registration_for_test() {
-        let _ = FAIL_NEXT_REGISTRATION.try_with(|left| left.set(1));
-    }
-
-    #[cfg(all(feature = "internals", feature = "bench-internals"))]
-    #[doc(hidden)]
-    pub fn fail_next_registrations_for_test(count: usize) {
-        let _ = FAIL_NEXT_REGISTRATION.try_with(|left| left.set(count));
-    }
-
+    /// Test-only directory starting `next_incarnation` at `value`
+    /// (incarnation-wrap oracles).
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn with_initial_incarnation_for_test(value: u64) -> Self {
         let directory = Self::new();
-        directory.next_incarnation.store(value, Ordering::Relaxed);
         directory
-    }
-
-    /// Pointer cells retained: block indexes plus whole blocks (spares too).
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn retained_pointer_capacity_for_test(&self) -> usize {
-        self.shards
-            .iter()
-            .map(|shard| {
-                let guard = shard.lock();
-                let spare = usize::from(!guard.spare.load(Ordering::Relaxed).is_null());
-                guard.index.cap + (guard.index.len + spare) * BLOCK_CAP
-            })
-            .sum()
-    }
-
-    /// Pointer cells moved by updates (shifts, splits, merges, index growth
-    /// copies) since construction.
-    #[cfg(all(feature = "internals", feature = "bench-internals"))]
-    #[doc(hidden)]
-    pub fn moved_pointer_cells_for_test(&self) -> u64 {
-        self.shards.iter().map(|shard| shard.lock().moved).sum()
-    }
-
-    #[cfg(all(feature = "internals", feature = "bench-internals"))]
-    #[doc(hidden)]
-    pub fn shard_index_for_test(key: usize) -> usize {
-        Self::shard_index(key)
-    }
-
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn live_route_census_for_test(&self) -> (usize, usize, usize) {
-        let mut counts = (0, 0, 0);
-        for shard in &self.shards {
-            let guard = shard.lock();
-            for b in 0..guard.index.len {
-                let block = guard.block(b);
-                for index in 0..block.len {
-                    // SAFETY: the shard lock retains the linked owner reference.
-                    match unsafe { &*block.get(index) }.kind {
-                        RouteKind::Small => counts.0 += 1,
-                        RouteKind::Primordial => counts.1 += 1,
-                        RouteKind::Large => counts.2 += 1,
-                    }
-                }
-            }
-        }
-        counts
-    }
-
-    /// Test surface of [`Self::register_route`] (R6-T38), `internals` only.
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn register(
-        &self,
-        root: *mut u8,
-        len: usize,
-        route_ptr: *mut u8,
-        owner: usize,
-        kind: RouteKind,
-    ) -> Result<RouteRegistration<'_>, RouteError> {
-        self.register_route(root, len, route_ptr, owner, kind)
+            .next_incarnation
+            .store(value, core::sync::atomic::Ordering::Relaxed);
+        directory
     }
 
     /// Registration and all System allocations precede user-visible issue.
@@ -881,6 +821,11 @@ impl RouteDirectory {
                 .ok_or(RouteError::ProcessExiting)?;
             let (need_block, index_cap) = match guard.insert(key, entry.ptr()) {
                 Insert::Done => {
+                    // Count the successful registration (Relaxed: diagnostic
+                    // counter, no ordering required; never read by
+                    // production logic).
+                    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+                    self.registrations_total.fetch_add(1, Ordering::Relaxed);
                     drop(guard);
                     return Ok(RouteRegistration {
                         directory: self,
@@ -915,25 +860,6 @@ impl RouteDirectory {
             drop(guard);
             drop(surplus);
         }
-    }
-
-    /// Runs a test closure while holding the shard selected by the address.
-    /// The pointer is only a numeric shard key and is never dereferenced.
-    /// Reentering this shard from `f` can deadlock: a liveness risk, not a
-    /// memory-safety precondition. Unwinding releases the ordinary guard.
-    #[cfg(feature = "bench-internals")]
-    #[doc(hidden)]
-    pub fn dbg_with_shard_of_locked_for_test(&self, ptr: *mut u8, f: impl FnOnce()) {
-        let key = ptr.addr() & !(SEGMENT - 1);
-        let guard = self.shards[Self::shard_index(key)].lock();
-        f();
-        drop(guard);
-    }
-
-    #[cfg(feature = "bench-internals")]
-    #[doc(hidden)]
-    pub fn dbg_route_pin_refs(pin: &RoutePin) -> usize {
-        pin.entry.entry().refs.load(Ordering::Relaxed)
     }
 
     /// Only `ptr.addr()` is used as a key; no reservation byte is read.
@@ -982,13 +908,85 @@ impl RouteDirectory {
         // ref drop after the lock; Release `linked = false` publishes the unlink.
         let _retired = guard.remove(key, entry.ptr());
         entry.entry().linked.store(false, Ordering::Release);
+        #[cfg(all(feature = "internals", feature = "bench-internals"))]
+        self.unlinks_total.fetch_add(1, Ordering::Relaxed);
         drop(guard);
         true
     }
 
-    const fn shard_index(key: usize) -> usize {
+    pub(super) const fn shard_index(key: usize) -> usize {
         let value = key / SEGMENT;
         (value ^ (value >> 13) ^ (value >> 26)) % SHARDS
+    }
+
+    // P2-2: read-only observers replacing the former `pub(super)` field
+    // access from `registration.rs`. The hooks only read; every shard
+    // invariant (`BlockIndex::len/cap`, `Block::len`, `Block::get`) stays
+    // writeable from `directory.rs` alone.
+
+    /// Monotonic successful route registrations since directory construction.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(super) fn registrations_total(&self) -> u64 {
+        self.registrations_total
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Monotonic count of successful unlink operations on this directory.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(super) fn unlinks_total(&self) -> u64 {
+        self.unlinks_total
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Pointer cells retained: block indexes plus whole blocks (spares too).
+    #[cfg(feature = "internals")]
+    pub(super) fn retained_pointer_capacity(&self) -> usize {
+        self.shards
+            .iter()
+            .map(|shard| {
+                let shard = shard.lock();
+                let spare = usize::from(!shard.spare.load(Ordering::Relaxed).is_null());
+                shard.index.cap + (shard.index.len + spare) * BLOCK_CAP
+            })
+            .sum()
+    }
+
+    /// Live routes by kind: `(small, primordial, large)`.
+    #[cfg(feature = "internals")]
+    pub(super) fn live_route_census(&self) -> (usize, usize, usize) {
+        let mut counts = (0, 0, 0);
+        for shard in &self.shards {
+            let shard = shard.lock();
+            for b in 0..shard.index.len {
+                let block = shard.block(b);
+                for index in 0..block.len {
+                    // SAFETY: the shard lock retains the linked owner reference.
+                    match unsafe { &*block.get(index) }.kind {
+                        RouteKind::Small => counts.0 += 1,
+                        RouteKind::Primordial => counts.1 += 1,
+                        RouteKind::Large => counts.2 += 1,
+                    }
+                }
+            }
+        }
+        counts
+    }
+
+    /// Pointer cells moved by updates (shifts, splits, merges, index growth
+    /// copies) since construction.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(super) fn moved_pointer_cells(&self) -> u64 {
+        self.shards.iter().map(|shard| shard.lock().moved).sum()
+    }
+
+    /// Runs `f` while holding the shard selected by the numeric segment key.
+    /// Reentering this shard from `f` can deadlock (see the test hook doc in
+    /// `registration.rs`).
+    #[cfg(feature = "bench-internals")]
+    pub(super) fn with_shard_of_key_locked(&self, key: usize, f: impl FnOnce()) {
+        let guard = self.shards[Self::shard_index(key)].lock();
+        f();
+        drop(guard);
     }
 }
 

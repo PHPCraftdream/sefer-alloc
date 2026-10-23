@@ -13,10 +13,18 @@
 //! `alloc-core`), so gating the `alloc_core` MODULE PATH behind `internals`
 //! (R34-3/task #522) does NOT hide these inherent methods — they stay
 //! reachable as `sefer_alloc::AllocCore::dbg_*` regardless. The whole `impl`
-//! block is gated `#[cfg(feature = "internals")]` directly; see
+//! block is gated `#[cfg(feature = "internals")]` directly; it also hosts
+//! the internals-gated `carve_batch` wrapper (moved here from
+//! `alloc_core_small_impl.rs` as pure code movement to keep that file under
+//! the 1000-line structure limit); see
 //! `alloc_core_core_diag.rs`'s module doc for the fuller rationale (that
 //! sibling file needed a split because three of its methods DO have a
 //! stable-API caller — none of this file's methods do).
+//!
+//! Wrapper asymmetry note: the batch drain wrapper (`drain_freelist_batch`)
+//! lives next to `try_drain_freelist_batch` in `alloc_core_small_impl.rs`,
+//! while the batch carve wrapper (`carve_batch`) lives here — both are pure
+//! code movement under the 1000-line structure limit.
 
 #[cfg(feature = "hardened")]
 use core::ptr::NonNull;
@@ -35,9 +43,71 @@ use crate::alloc_core::size_classes::{SizeClasses, SMALL_CLASS_COUNT};
 
 #[cfg(feature = "internals")]
 use crate::alloc_core::alloc_core::AllocCore;
+#[cfg(feature = "internals")]
+use crate::alloc_core::state_byte::StateByte;
 
 #[cfg(feature = "internals")]
 impl AllocCore {
+    /// E1 (task W4) — **batched bump-carve**. Carve a RUN of up to `out.len()`
+    /// `block_size`-strided blocks from the current small segment's bump cursor
+    /// in ONE shot, writing them into `out[..n]` and returning `n` (0 if the
+    /// segment cannot fit even one block — the caller reserves a fresh segment,
+    /// exactly as it does on `carve_block` → `None`).
+    ///
+    /// ## Byte-identical to `n` sequential `carve_block`s — what is HOISTED
+    ///
+    /// A run of `carve_block(class_idx, block_size)` calls, after the FIRST,
+    /// always finds `bump` already `block_size`-aligned (the previous carve left
+    /// `bump = aligned_prev + block_size`, and every class `block_size` is a
+    /// multiple of `MIN_BLOCK`), so `align_up(bump, block_size)` is a TAUTOLOGY
+    /// from the second block on. We therefore align ONCE (`aligned_start`), then
+    /// stride by `block_size`. The following are hoisted across the run because
+    /// none of them can change mid-run (a carve run touches only owner-only
+    /// bump/live/page-map state, and no free/decommit runs between carves):
+    ///   - `SegmentMeta::new` + `bump_of()` LOAD — once (bump only advances by
+    ///     our own writes; we track it locally).
+    ///   - `align_up` div — once (tautological after block 0).
+    ///   - `set_bump` STORE — once, to `aligned_start + n*block_size` (identical
+    ///     to the last sequential carve's final bump).
+    ///   - `live += n` — one batched saturating add (D1: exactly `n` handed out,
+    ///     byte-identical to `n` `inc_live`s; owner-only counter, intermediate
+    ///     states unobservable — same argument as `drain_freelist_batch`).
+    ///   - `is_decommitted()` check + recommit — once at run start (the flag is
+    ///     set only in the decommit path, which cannot run mid-carve).
+    ///
+    /// ## What STAYS per-block (NOT tautologies)
+    ///   - The page-map `class_of`/`set_class` "first class wins" marking is
+    ///     applied per DISTINCT payload page: we compute the page of each block
+    ///     and call `set_class` only when the page index CHANGES from the prior
+    ///     block (byte-identical to `carve_block`'s per-block "mark only if
+    ///     `class_of(page).is_none()`", since within a run the first block to
+    ///     enter a page is the one that dedicates it, and later same-page blocks
+    ///     find it already `Some` → no-op). For `block_size > PAGE` every block
+    ///     lands on a fresh page, so this degrades to per-block correctly.
+    ///
+    /// ## D1 / boundary — preserved EXACTLY
+    ///   - Start/state byte (`segment::bitmap::state_byte`): carve NEVER
+    ///     touches it (a bump-carved block is allocated by construction, not
+    ///     by a state-byte transition) — identical to `carve_block`.
+    ///   - D1: `+n` for the `n` blocks handed out.
+    ///   - Boundary: `n = min(out.len(), room)` where
+    ///     `room = (SEGMENT - aligned_start) / block_size`, so
+    ///     `aligned_start + n*block_size <= SEGMENT` — the same
+    ///     `aligned + block_size > SEGMENT` per-block check, batched.
+    // R12-11 (task #262): `class_idx` is used ONLY for the diagnostic-only
+    // page-map marking below (see `PageMap`'s struct doc) — it is genuinely
+    // unused without `page-map-diag`.
+    #[cfg_attr(not(feature = "page-map-diag"), allow(unused_variables))]
+    #[cfg(feature = "internals")]
+    pub(in crate::alloc_core) fn carve_batch(
+        &mut self,
+        class_idx: usize,
+        block_size: usize,
+        out: &mut [*mut u8],
+    ) -> usize {
+        self.try_carve_batch(class_idx, block_size, out, StateByte::LIVE)
+    }
+
     /// Owner-only outstanding Small/Primordial credits, independent of decommit.
     /// `ptr` supplies only an address key; metadata reads use the stored root.
     #[doc(hidden)]
@@ -333,6 +403,22 @@ impl AllocCore {
     #[cfg(feature = "lazy-commit-fault-injection")]
     pub fn dbg_arm_commit_fail_at(&self, k: u32) {
         aligned_vmem::fault_injection::arm_fail_at(k);
+    }
+
+    /// TEST-ONLY (P2-C vacuum guard, `r11_ph3a_magazine_refill_partial`):
+    /// cumulative count of real commit calls the armed injector actually
+    /// forced to fail since process start (both `dbg_arm_commit_fail` and
+    /// `dbg_arm_commit_fail_at` tiers; monotonic, never reset). Read-only
+    /// `Relaxed` load of `aligned_vmem::fault_injection`'s counter — lets a
+    /// test prove a refusal was actually consumed instead of passing
+    /// vacuously because the armed commit was never reached. Compiled only
+    /// under the TEST-ONLY `lazy-commit-fault-injection` fixture feature
+    /// (R2-19), same gating as [`Self::dbg_arm_commit_fail`].
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "lazy-commit-fault-injection")]
+    pub fn dbg_commit_fail_count(&self) -> u64 {
+        aligned_vmem::fault_injection::commit_failure_count()
     }
 
     /// TEST-ONLY (B2, R7 Workstream B): the `GROW_CHUNK` constant (bytes).

@@ -1,0 +1,7 @@
+workload,before_Sefer_marginal_Ir_op,before_mimalloc_marginal_Ir_op,before_ratio_Sefer_over_mimalloc,after_Sefer_marginal_Ir_op,after_mimalloc_marginal_Ir_op,after_ratio_Sefer_over_mimalloc
+small_churn_16b,52.3,55.9,0.936,53.7,55.9,0.961
+churn_256b,52.3,48.1,1.087,53.7,48.1,1.116
+cold_alloc_free_256x16b,190.9,75.3,2.535,216.2,75.3,2.871
+cold_alloc_free_256x64b,196.8,79.2,2.485,231.9,79.2,2.928
+recycle_alloc_free_256x16b,198,78.1,2.535,204.2,78.1,2.615
+recycle_alloc_free_256x64b,200.9,80,2.511,212,80,2.65

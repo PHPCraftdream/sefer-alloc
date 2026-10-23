@@ -3182,6 +3182,8 @@ is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
 
+- **Item 112 — D1′ chunked sidecar: NO-GO / NOT ACCEPTED, closed 2026-10-23.** Current candidate has significant MT Larson T=4/T=8, dense16, and registration-churn regressions; favorable memory observations do not offset them. Full closure, source identities and caveats: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A112; gate: `docs/perf/D1_PRIME_CHUNKED_SIDECAR_GATE.md`.
+
 - **Item 105 — B4-MT X-notown (256-битный notown-фильтр SegmentTable): NO-GO, closed 2026-10-20** (thrash64 w_free +5 Ir > +2; src откачен). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A105.
 
 - **Item 106 — B4-MT X-pin (heap-route-pin-cache): NO-GO, closed 2026-10-20** (второе ревью запретило lazy Box на пути чужого free; решающий замер mt-xp4 показал потолок выгоды 0.16–0.33% Ir/op ≪ порога +2% и достаточность существующего R1 TLS-кэша). История mt-xp3/mt-xp4 сохранена в `docs/perf/B4_MT_PIN_NOTOWN.md` §11; полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A106.

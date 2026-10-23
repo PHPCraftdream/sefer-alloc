@@ -1,9 +1,6 @@
-//! Source pins for pending-bit publication/cuts, the Dense test backing's
-//! class store, and production ClassLeaves atomic operations and construction.
-//! The reduced Loom shadow is not sensitive to production ordering changes;
-//! class_leaves_publication_miri exercises the real mixed-leaf publication edge.
+//! Source pins действующего ChunkedBank; не замена actual-source Loom/Miri.
 
-/// Source text with CRLF normalised and `//` comment lines dropped.
+/// Удаляет CRLF и отдельные строки комментариев.
 fn src(text: &str) -> String {
     text.replace("\r\n", "\n")
         .lines()
@@ -12,9 +9,9 @@ fn src(text: &str) -> String {
         .join("\n")
 }
 
-fn bitmap_src() -> String {
+fn bank_src() -> String {
     src(include_str!(
-        "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs"
+        "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap/chunked_bank.rs"
     ))
 }
 
@@ -24,7 +21,7 @@ fn scan_src() -> String {
     ))
 }
 
-/// Body of `fn <name>(` up to the end of its 4-space-indented block.
+/// Тело метода до закрывающей скобки с четырьмя пробелами отступа.
 fn fn_body(text: &str, name: &str) -> String {
     let start = text
         .find(&format!("fn {name}("))
@@ -36,195 +33,56 @@ fn fn_body(text: &str, name: &str) -> String {
     rest[..end].to_string()
 }
 
-fn leaves_src() -> String {
-    src(include_str!(
-        "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs"
-    ))
-}
-
-fn atomic_inventory(body: &str) -> Vec<(&str, Vec<&str>)> {
-    let mut inventory = Vec::new();
-    for (dot, _) in body.match_indices('.') {
-        let rest = &body[dot + 1..];
-        let name_end = rest
-            .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-            .unwrap_or(rest.len());
-        let op = &rest[..name_end];
-        let args = rest[name_end..].trim_start();
-        if !args.starts_with('(') {
-            continue;
-        }
-        let mut depth = 0;
-        let end = args
-            .char_indices()
-            .find_map(|(i, c)| {
-                match c {
-                    '(' => depth += 1,
-                    ')' => depth -= 1,
-                    _ => {}
-                }
-                (depth == 0).then_some(i)
-            })
-            .expect("balanced method arguments");
-        let orderings: Vec<_> = args[..end]
-            .match_indices("Ordering::")
-            .map(|(i, _)| {
-                let ordering = &args[i + "Ordering::".len()..end];
-                let len = ordering
-                    .find(|c: char| !c.is_ascii_alphabetic())
-                    .unwrap_or(ordering.len());
-                &ordering[..len]
-            })
-            .collect();
-        if !orderings.is_empty() {
-            inventory.push((op, orderings));
-        }
-    }
-    inventory
-}
-
-#[test]
-fn class_leaves_ordering_inventory_is_exact() {
-    let text = leaves_src();
-    for (name, expected) in [
-        ("prepared", vec![("load", vec!["Acquire"])]),
-        ("prepare", vec![]),
-        (
-            "promote",
-            vec![("store", vec!["Release"]), ("fetch_or", vec!["Release"])],
-        ),
-        (
-            "issue",
-            vec![("load", vec!["Acquire"]), ("store", vec!["Release"])],
-        ),
-        (
-            "encoded",
-            vec![("load", vec!["Acquire"]), ("load", vec!["Acquire"])],
-        ),
-    ] {
-        let body = fn_body(&text, name);
-        assert_eq!(
-            atomic_inventory(&body),
-            expected,
-            "ClassLeaves::{name}:\n{body}"
-        );
-    }
-}
-
-#[test]
-fn mixed_leaf_published_after_its_initialization() {
-    let body = fn_body(&leaves_src(), "promote");
-    let initialization = "core::ptr::write_bytes(fresh, 0, LEAF_GRANULES)";
-    let publication = "self.mixed[leaf].store(fresh, Ordering::Release)";
-    assert_eq!(
-        body.matches(initialization).count(),
-        1,
-        "initialize every fresh slot:\n{body}"
-    );
-    assert_eq!(
-        body.matches(publication).count(),
-        1,
-        "publish once:\n{body}"
-    );
-    assert!(
-        body.find(initialization).unwrap() + initialization.len() < body.find(publication).unwrap(),
-        "initialize the entire leaf before mixed publication:\n{body}"
-    );
-}
-
-#[test]
-fn promotion_sets_presence_bit_after_leaf_publication() {
-    let body = fn_body(&leaves_src(), "promote");
-    let publication = "self.mixed[leaf].store(fresh, Ordering::Release)";
-    let presence = "self.present[leaf / 64].fetch_or(1u64 << (leaf % 64), Ordering::Release)";
-    assert_eq!(
-        body.matches(publication).count(),
-        1,
-        "publish the leaf pointer once:\n{body}"
-    );
-    assert_eq!(
-        body.matches(presence).count(),
-        1,
-        "set the presence bit exactly once:\n{body}"
-    );
-    assert!(
-        body.find(publication).unwrap() < body.find(presence).unwrap(),
-        "presence bit only after the leaf pointer's Release publication:\n{body}"
-    );
-}
-
-#[test]
-fn drop_walks_presence_bits_not_the_full_slot_array() {
-    let text = leaves_src();
-    let body = fn_body(&text, "drop");
-    assert!(
-        body.contains("self.present.iter().enumerate()"),
-        "Drop must iterate the presence bitmap:\n{body}"
-    );
-    assert!(
-        !body.contains("for slot in &self.mixed"),
-        "Drop must not linearly scan all leaf slots:\n{body}"
-    );
-}
-
-#[test]
-fn production_small_sidecar_uses_class_leaves() {
-    let text = src(include_str!(
-        "../src/registry/segment_route/small_sidecar.rs"
-    ));
-    let body = fn_body(&text, "bitmap");
-    assert_eq!(
-        body.matches("SidecarBitmap::from_leaves(&self.pending, &self.classes)")
-            .count(),
-        1,
-        "production bitmap must borrow ClassLeaves:\n{body}"
-    );
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut dirs = vec![root];
-    while let Some(dir) = dirs.pop() {
-        for entry in std::fs::read_dir(dir).expect("read production source directory") {
-            let entry = entry.expect("production source entry");
-            let kind = entry.file_type().expect("source entry type");
-            let path = entry.path();
-            if kind.is_dir() {
-                dirs.push(path);
-            } else if kind.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
-                let text = src(&std::fs::read_to_string(&path).expect("read Rust source"));
-                for (i, _) in text.match_indices("from_initialized(") {
-                    assert!(
-                        text[..i].ends_with("fn "),
-                        "no Dense constructor calls in production: {}",
-                        path.display()
-                    );
-                }
-            }
-        }
-    }
-}
-
 #[test]
 fn producer_publish_is_acqrel_fetch_or() {
-    let body = fn_body(&bitmap_src(), "publish");
-    assert!(
-        body.contains(".fetch_or(1 << (granule % 64), Ordering::AcqRel)"),
-        "producer publication must be an AcqRel fetch_or on the pending word:\n{body}"
+    let body = fn_body(&bank_src(), "publish");
+    assert_eq!(
+        body.matches(".fetch_or(mask, Ordering::AcqRel)").count(),
+        1,
+        "terminal publication выполняет один AcqRel fetch_or:\n{body}"
     );
 }
 
 #[test]
-fn owner_issue_class_store_is_release() {
-    let body = fn_body(&bitmap_src(), "issue");
-    assert!(
-        body.contains(".store(class + 1, Ordering::Release)"),
-        "issue must Release-store the class before any handoff:\n{body}"
-    );
+fn owner_issue_start_store_is_release() {
+    let body = fn_body(&bank_src(), "issue");
+    assert!(body.contains(".store(old | mask, Ordering::Release)"));
+    assert!(body.contains(".load(Ordering::Acquire)"));
 }
 
 #[test]
 fn owner_cut_is_acqrel_swap() {
-    let text = scan_src();
+    let bank = fn_body(&bank_src(), "pending_swap");
+    assert_eq!(bank.matches(".swap(0, Ordering::AcqRel)").count(), 1);
+    let scan = fn_body(&scan_src(), "next_cut");
     assert!(
-        text.contains(".swap(0, Ordering::AcqRel)"),
-        "the owner's word cut must be an AcqRel swap(0) (pairs with publish)"
+        scan.contains("Some(bank) => bank.pending_swap(word)"),
+        "production scanner должен вызывать проверенный chunked cut:\n{scan}"
     );
+    // Плотный test-oracle тоже сохраняет тот же ordering.
+    assert_eq!(scan.matches(".swap(0, Ordering::AcqRel)").count(), 1);
+}
+
+#[test]
+fn chunk_construction_is_release_published_and_acquire_observed() {
+    let bank = bank_src();
+    let construction = fn_body(&bank, "ensure_chunk");
+    assert_eq!(
+        construction
+            .matches("ready.store(old | mask, Ordering::Release)")
+            .count(),
+        1
+    );
+    let pending = construction
+        .find("pending.add(i).write(AtomicU64::new(0))")
+        .unwrap();
+    let starts = construction
+        .find("starts.add(i).write(AtomicU64::new(0))")
+        .unwrap();
+    let publish = construction
+        .find("ready.store(old | mask, Ordering::Release)")
+        .unwrap();
+    assert!(pending < publish && starts < publish);
+    let observer = fn_body(&bank, "is_ready");
+    assert_eq!(observer.matches(".load(Ordering::Acquire)").count(), 1);
 }

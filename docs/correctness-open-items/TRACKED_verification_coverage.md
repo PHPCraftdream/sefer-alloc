@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an `unsafe` seam or algorithmic invariant has (or lacks) interpreter/model-checker PROOF coverage (miri, loom, kani) -- distinct from ordinary CI gate wiring (a test that exists but does not run under some job) and from platform empirical verification (real hardware, not a formal tool).
 
-**Card count:** 11 numbered records (8 open; 3 retained closed/resolved); item 188 is CLOSED and not a current record here (`RESOLVED.md`).
+**Card census:** current numbered records are derived with `grep -cE '^[0-9]+[a-z]?\. \*\*' docs/correctness-open-items/TRACKED_verification_coverage.md`; individual Status blocks distinguish open obligations and retained closed records. Item 188 is CLOSED and lives in `RESOLVED.md`.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -49,6 +49,7 @@ git grep -l "docs/CORRECTNESS_OPEN_ITEMS\.md" -- ':!docs/' | wc -l
 split the same day.)
 
 ---
+
 17. **[T, filed 2026-08-04, R34-2/task #521] Five tier-1 `unsafe` seams have
     no miri, no loom, and no kani harness — covered by ordinary integration
     tests only (`docs/reviews/2026-08-04-release-stabilization-audit.md` G3

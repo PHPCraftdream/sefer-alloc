@@ -18,7 +18,11 @@
     not(aligned_vmem_mock)
 ))]
 
-use aligned_vmem::fault_injection::{arm_fail_at, arm_fail_next};
+use aligned_vmem::fault_injection::{arm_fail_at, arm_fail_next, commit_failure_count};
+
+fn forced_count() -> u32 {
+    u32::try_from(commit_failure_count()).expect("счётчик расширяет wrapping u32")
+}
 use aligned_vmem::{commit_range, page_size, reserve_aligned_lazy, PAGE};
 use std::sync::Mutex;
 
@@ -46,17 +50,24 @@ fn fail_next_forces_exactly_one_real_commit_failure() {
     let r = reserve_aligned_lazy(span, span, chunk).expect("real lazy reserve");
     let base = r.as_ptr();
 
+    let before = forced_count();
     arm_fail_next(1);
 
     // SAFETY: base is a live reservation; [chunk, 2*chunk) is within span.
     let first = unsafe { commit_range(base, chunk, 2 * chunk) };
     assert!(!first, "armed fault must force the real commit to fail");
+    assert_eq!(forced_count().wrapping_sub(before), 1);
 
     // SAFETY: same range; the fault was one-shot (consumed above).
     let second = unsafe { commit_range(base, chunk, 2 * chunk) };
     assert!(
         second,
         "the following commit must hit the real backend and succeed"
+    );
+    assert_eq!(
+        forced_count().wrapping_sub(before),
+        1,
+        "успех не увеличивает forced total"
     );
 
     // Prove the range is genuinely committed now (real write, not a mock).
@@ -81,6 +92,7 @@ fn fail_at_fails_exactly_the_kth_real_commit() {
     let base = r.as_ptr();
 
     // Fail the 2nd commit from now.
+    let before = forced_count();
     arm_fail_at(2);
 
     // SAFETY: [chunk, 2*chunk) is within span.
@@ -90,6 +102,11 @@ fn fail_at_fails_exactly_the_kth_real_commit() {
     // SAFETY: [2*chunk, 3*chunk) is within span.
     let c2 = unsafe { commit_range(base, 2 * chunk, 3 * chunk) };
     assert!(!c2, "2nd commit (k=2) must be the forced failure");
+    assert_eq!(
+        forced_count().wrapping_sub(before),
+        1,
+        "fail-at учитывается тем же счётчиком"
+    );
 
     // One-shot: the hook disarmed itself, so the 3rd commit succeeds.
     // SAFETY: same range as the failed c2 — retrying is a valid real commit.

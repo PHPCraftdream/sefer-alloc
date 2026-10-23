@@ -31,8 +31,8 @@
 //! not proven linked into the current test build.
 
 fn positive(route: &sefer_alloc::registry::segment_route::RouteRegistration<'_>) {
-    route.prepare_small(0, 0);
-    route.issue_small(0, 0);
+    // D1' phase-1b: the owner-side fallible prepare/issue API is gone; the
+    // public observer surface is the sidecar borrow itself.
     let _ = route.small_sidecar().unwrap().scan(0);
 }
 

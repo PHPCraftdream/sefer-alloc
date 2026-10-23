@@ -1970,9 +1970,6 @@ jobs:
       - name: test (--features "production hardened")
         if: ${{ !cancelled() }}
         run: cargo test --features "production hardened internals" --no-fail-fast
-      - name: test (Small sidecar preflight, production hardened)
-        if: ${{ !cancelled() }}
-        run: cargo test --locked --test r11_p3_small_sidecar_preflight --features "production hardened internals bench-internals"
       # R14 hotfix (task #299): `tests/r11_4_dealloc_batch_hardened_guards.rs`
       # exercises `HeapCore::dealloc_batch`'s hardened guards (F7/H1), which
       # requires `batch-api` directly -- `hardened` alone does not pull it in
@@ -2296,6 +2293,18 @@ jobs:
           node-version: '22'
       # `internals` added (R34-3/task #522) — whole-suite row.
       - run: cargo test --features "production internals" --no-fail-fast
+      - name: chunked D1 refill rollback (fastbin, Windows)
+        if: ${{ !cancelled() }}
+        run: |
+          cargo test --locked --features "production internals bench-internals small-segment-lazy-commit lazy-commit-fault-injection" --test r11_ph3a_magazine_refill_partial -- --exact magazine_refill_commit_refusal_commits_only_the_drained_blocks --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chunked-refill-rollback.log"
+          grep -F "test magazine_refill_commit_refusal_commits_only_the_drained_blocks ... ok" "$RUNNER_TEMP/chunked-refill-rollback.log"
+        shell: bash
+      - name: chunked D1 scalar rollback (without fastbin, Windows)
+        if: ${{ !cancelled() }}
+        run: |
+          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit internals bench-internals small-segment-lazy-commit lazy-commit-fault-injection" --test r11_ph3a_magazine_refill_partial -- --exact magazine_refill_commit_refusal_is_a_scalar_oom_with_a_full_rollback --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chunked-scalar-rollback.log"
+          grep -F "test magazine_refill_commit_refusal_is_a_scalar_oom_with_a_full_rollback ... ok" "$RUNNER_TEMP/chunked-scalar-rollback.log"
+        shell: bash
       # B4-30 fix7: first-alloc stack budget, differential self-measurement,
       # enforced (SEFER_B4_30_ENFORCE=1). NIGHTLY/OS GROUP ONLY: test-windows is
       # gated by changes.outputs.os, so per-PR coverage for this Windows cell
@@ -3306,8 +3315,22 @@ jobs:
         run: cargo miri test --locked --features "alloc-core internals" --test regression_r2_05_diag_provenance_miri
       - name: regression_w3_stats_aliasing_miri
         run: cargo miri test --locked --features "std" --test regression_w3_stats_aliasing_miri
-      - name: class_leaves_publication_miri
-        run: cargo miri test --locked --features "alloc-core" --test class_leaves_publication_miri
+      - name: chunked sidecar storage (SB)
+        run: |
+          cargo miri test --locked --features "alloc-core internals" --test chunked_sidecar_storage 2>&1 | tee "$RUNNER_TEMP/chunked-sb.log"
+          grep -F "test unready_dirty_storage_is_never_read_or_materialized_by_readers ... ok" "$RUNNER_TEMP/chunked-sb.log"
+          grep -F "test distant_issue_constructs_only_two_chunks_and_never_reconstructs_old_pending ... ok" "$RUNNER_TEMP/chunked-sb.log"
+          grep -F "test retain_clear_keeps_constructed_lifetimes_and_reissue_works ... ok" "$RUNNER_TEMP/chunked-sb.log"
+        shell: bash
+      - name: chunked sidecar storage (TB)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows"
+        run: |
+          cargo miri test --locked --features "alloc-core internals" --test chunked_sidecar_storage 2>&1 | tee "$RUNNER_TEMP/chunked-tb.log"
+          grep -F "test unready_dirty_storage_is_never_read_or_materialized_by_readers ... ok" "$RUNNER_TEMP/chunked-tb.log"
+          grep -F "test distant_issue_constructs_only_two_chunks_and_never_reconstructs_old_pending ... ok" "$RUNNER_TEMP/chunked-tb.log"
+          grep -F "test retain_clear_keeps_constructed_lifetimes_and_reissue_works ... ok" "$RUNNER_TEMP/chunked-tb.log"
+        shell: bash
 
   miri-alloc-core:
     needs: changes
@@ -3503,13 +3526,20 @@ jobs:
             --test loom_b4_r1_pin_cache \
             --test loom_terminal_owner_drain \
             --test loom_terminal_large \
-            --test loom_b4_scan_skip_empty_publish 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test loom_sidecar_class_publication_and_two_producers ... ok" "$RUNNER_TEMP/loom-xthread.log"
+            --test loom_b4_scan_skip_empty_publish \
+            --test loom_oneclass_small_sidecar_actual \
+            --test loom_oneclass_start_bit \
+            --test loom_chunked_sidecar_actual 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test new_chunk_handoff_and_two_cuts_preserve_exact_publication ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test ready_acquire_protects_observer_without_allocation_handoff ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test two_producers_and_masked_clear_keep_neighbour_publication ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_oneclass_small_sidecar_actual_battery ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_oneclass_garbage_never_issued_granule_never_publishes ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_publish_racing_strict_trim_union_is_complete ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test loom_actual_leaves_two_producers_same_leaf_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_carve_clear_keeps_neighbour_bit_and_drops_cleared_one ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_negative_carve_clear_via_load_store_loses_concurrent_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test route_pin_under_lock_never_resurrects_unlinked_route ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test negative_pin_without_lock_resurrects_freed_route - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           # loom_b4_r1_pin_cache is the ACTUAL-SOURCE model of the b4-r1
@@ -3525,7 +3555,7 @@ jobs:
           grep -F "test loom_shadow_acquire_gate_false_read_sees_index_unlink ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_negative_cut_via_load_store_loses_concurrent_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_negative_masked_cut_drops_pending_bits - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test loom_sidecar_negative_class_after_terminal_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_sidecar_negative_ungated_publication_detected_by_start_check - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_summary_conditional_two_words_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_summary_conditional_same_word_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_summary_pending_pause_strict_inclusion ... ok" "$RUNNER_TEMP/loom-xthread.log"
@@ -3538,6 +3568,15 @@ jobs:
           grep -F "test negative_producer_retirement_allows_premature_release - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test producer_owner_cut_and_duplicate_admission ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_b4_publish_racing_zero_word_skip_found_by_later_scan ... ok" "$RUNNER_TEMP/loom-xthread.log"
+        shell: bash
+
+      - name: chunked ready counterfactual and restored debug model
+        run: |
+          node scripts/chunked-ready-negative.mjs
+          cargo test --locked --features "alloc-core alloc-xthread tagged-index-stack/loom" --test loom_chunked_sidecar_actual 2>&1 | tee "$RUNNER_TEMP/chunked-restored.log"
+          grep -F "test new_chunk_handoff_and_two_cuts_preserve_exact_publication ... ok" "$RUNNER_TEMP/chunked-restored.log"
+          grep -F "test ready_acquire_protects_observer_without_allocation_handoff ... ok" "$RUNNER_TEMP/chunked-restored.log"
+          grep -F "test two_producers_and_masked_clear_keep_neighbour_publication ... ok" "$RUNNER_TEMP/chunked-restored.log"
         shell: bash
 
   loom-experimental:
@@ -3594,8 +3633,7 @@ jobs:
             --test loom_r19_registry_free_set \
             --test loom_r20_heap_reuse_spill \
             --test loom_r11_ph4a_heap_lease \
-            --test loom_r11_ph4b_publish_recycle_drain \
-            --test loom_r11_small_sidecar 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
+            --test loom_r11_ph4b_publish_recycle_drain 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
           grep -F "test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test lease_drop_release_pairs_with_claim_and_maintenance_acquires ... ok" "$RUNNER_TEMP/loom-registry.log"
@@ -3614,9 +3652,6 @@ jobs:
           grep -F "test three_slot_two_release_claim_maintenance_preserve_availability_and_unique_ownership ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test quiet_summary_uses_bounded_state_scan ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test summary_clear_recheck_preserves_concurrent_bit_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
-          grep -F "test pointer_publication_and_last_pin_retention ... ok" "$RUNNER_TEMP/loom-registry.log"
-          grep -F "test negative_relaxed_pointer_publication - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
-          grep -F "test negative_early_leaf_release - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test selector_bump_before_scan_never_certifies_a_claimable_slot ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test stale_hint_at_or_above_count_is_never_a_heap ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test negative_hint_without_count_guard_hands_out_an_unminted_slot - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"

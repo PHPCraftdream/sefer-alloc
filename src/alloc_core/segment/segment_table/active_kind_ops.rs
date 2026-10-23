@@ -62,3 +62,87 @@ impl SegmentTable {
         )
     }
 }
+
+// --- D1' phase-1a: the SegmentTable-side start-bit-map seams, moved VERBATIM
+// from `segment_table_impl.rs` (which sits at its exact 1000-line cap). Pure
+// move; an inherent `impl` may live in any module of the same crate, and the
+// `routes` field is `pub(super)` exactly so this sibling file can reach it.
+impl super::segment_table_impl::SegmentTable {
+    // --- D1′ staged issue (phase-2 OPT) ----------------------------------
+    // Open a per-run issue handle: the fatal slot guards (index < cap,
+    // occupied slot, root == base, Small sidecar present) plus the cheap
+    // `base_at(segment_id_at(base)) == base` integrity check run ONCE here;
+    // per-block `SmallIssueRun::issue` / `clear_pending_start_bit` perform
+    // only the cheap sidecar operations. Unrouted (standalone) tables get a
+    // no-op run, exactly like the former per-issue no-op.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(crate) fn small_issue_run(&self, base: *mut u8) -> super::SmallIssueRun<'_> {
+        #[cfg(feature = "alloc-global")]
+        if let Some(routes) = &self.routes {
+            let index =
+                crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) as usize;
+            if self.base_at(index) != base {
+                fatal(b"segment_table: issue base is not the segment base\n");
+            }
+            return routes.small_issue_run(index, base);
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        let _ = base;
+        super::SmallIssueRun::unrouted()
+    }
+
+    /// Reclaim's start-bit check on the published record's start granule.
+    /// Unrouted tables make no objection (`true`), matching the SEC-1
+    /// convention of `scan_small_route_from`.
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn reclaim_start_bit(&self, base: *mut u8, offset: u32) -> bool {
+        if let Some(routes) = &self.routes {
+            let index =
+                crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) as usize;
+            if self.base_at(index) != base {
+                fatal(b"segment_table: reclaim base is not the segment base\n");
+            }
+            return routes.reclaim_start_bit(index, base, offset);
+        }
+        true
+    }
+
+    /// Reclaim's production overlap check over the OPEN interval
+    /// `[start, end)`; `true` = a foreign start bit inside the claimed
+    /// block (corruption). Unrouted tables make no objection (`false`).
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn reclaim_start_overlap(&self, base: *mut u8, start: u32, end: u32) -> bool {
+        if let Some(routes) = &self.routes {
+            let index =
+                crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) as usize;
+            if self.base_at(index) != base {
+                fatal(b"segment_table: overlap base is not the segment base\n");
+            }
+            return routes.reclaim_start_overlap(index, base, start, end);
+        }
+        false
+    }
+
+    /// Retain-reset: atomically clear pending AND start bits over the
+    /// granule range `[start_off, end_off)`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    // Only the retain-reset hook (bench-internals + internals +
+    // alloc-decommit) reaches this seam; allow the production-only build.
+    #[cfg_attr(
+        not(all(feature = "alloc-decommit", feature = "bench-internals")),
+        allow(dead_code)
+    )]
+    pub(crate) fn clear_remote_bits(&self, base: *mut u8, start_off: u32, end_off: u32) {
+        #[cfg(feature = "alloc-global")]
+        if let Some(routes) = &self.routes {
+            let index =
+                crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) as usize;
+            if self.base_at(index) != base {
+                fatal(b"segment_table: reset base is not the segment base\n");
+            }
+            routes.clear_remote_bits(index, base, start_off, end_off);
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        let _ = (base, start_off, end_off);
+    }
+}

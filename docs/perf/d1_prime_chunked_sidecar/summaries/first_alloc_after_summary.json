@@ -1,0 +1,51 @@
+{
+  "run": "after",
+  "commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+  "tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496",
+  "features": "production internals",
+  "sample_count": 30,
+  "summary": {
+    "first_alloc_latency_ns": {
+      "n": 30,
+      "min": 39000,
+      "median": 44400,
+      "max": 74400
+    },
+    "rss_delta_1_heap_kib": {
+      "n": 30,
+      "min": 128,
+      "median": 132,
+      "max": 132
+    },
+    "rss_delta_8_heaps_kib": {
+      "n": 30,
+      "min": 780,
+      "median": 834,
+      "max": 852
+    },
+    "rss_delta_64_heaps_kib": {
+      "n": 30,
+      "min": 4960,
+      "median": 5020,
+      "max": 5064
+    },
+    "commit_delta_1_heap_kib": {
+      "n": 30,
+      "min": 1212,
+      "median": 1212,
+      "max": 1216
+    },
+    "commit_delta_8_heaps_kib": {
+      "n": 30,
+      "min": 7312,
+      "median": 7340,
+      "max": 7360
+    },
+    "commit_delta_64_heaps_kib": {
+      "n": 30,
+      "min": 50412,
+      "median": 50456,
+      "max": 50524
+    }
+  }
+}

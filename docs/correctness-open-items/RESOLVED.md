@@ -15,6 +15,16 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 254 — CLOSED (2026-10-23, PR #96)
+
+254. **[T] D1′ chunked sidecar: new unsafe storage and owner boundary require actual-source execution receipts.** Filed 2026-10-22 after the owner requested the separately researched chunked candidate.
+
+    - **Status:** CLOSED for safety-proof execution on candidate `d031f03cdc14efdcc501840868491de7d8a9891e`, tree `5f89eee0eca1dad02ab7879360a97b1188559648`; performance acceptance remains separately open as perf item 112.
+    - **Candidate boundary:** one System backing with lazy owner construction of starts/pending chunks and a monotonic ready bitmap. Ready Release/Acquire publishes chunk lifetime only; individual start gating, terminal pending RMW, state-byte class source, reclaim geometry/start/overlap checks, and counted route lifetime remain. No U31, refill-policy, batch-free, feature-composition, or version changes.
+    - **Receipts:** PR #96 CI run `39869595774` concluded GREEN on the exact candidate SHA. The receipt at `docs/evidence/R96_D1_CHUNKED_SAFETY_CI_RECEIPT.md` records: actual-source storage under Miri SB/TB (3/3 each); actual-source Loom handoff/cuts/producer models; the production ready Acquire→Relaxed counterfactual's required Loom causality failure, source restoration, and restored debug pass; all five ChunkedBank Kani harnesses among the 21 successful harnesses; fastbin and scalar Windows commit-refusal rollback sentinels; owner compile-fail and full required test matrices. Kani arithmetic proofs do not establish memory ordering or reclamation; those are covered by the actual-source Loom/Miri rows. The full CI run, not a local typecheck, supplies the receipt.
+    - **Review corrections before acceptance:** migrated ordering source pins to ChunkedBank; moved the source/proof files under `remote_bitmap/sidecar_bitmap/` to match the enforced seam inventory; corrected test size to 65,600 B including ready-map; prevented metadata-filter false positives in pin-cache fixtures; made abort oracles require exact production fatal diagnostics; corrected M-f/M-c′ test preconditions; wired both Windows rollback configurations and frontier oracle. CI for the pre-fix head failed on a seam-inventory mismatch and stale evidence rows; the corrected candidate run above passed.
+    - **Residual boundaries:** pre-existing Box-frame defect item 164 and other indexed items remain unchanged. This closure accepts only the scoped safety-proof execution; it does not accept the prototype for performance, does not claim speedup/non-regression, does not promote a feature/default, and does not authorize merge.
+
 ### 249 — CLOSED (2026-10-20)
 
 249. **[T] B4-MT heap-route-pin-cache (`src/registry/heap_core_xthread/heap_route_pin_cache.rs`) has NO loom model: the X-pin GO rests its model coverage on the TLS pin-cache path only.** (Filed 2026-10-20, B4-MT final phase, `docs/perf/B4_MT_PIN_NOTOWN.md` §5/§8.)

@@ -1,0 +1,38 @@
+{
+  "measurement_source_snapshot": {
+    "baseline_commit": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+    "baseline_base_tree": "b5d22c5a770e503750bb549152245325d915f350",
+    "baseline_measurement_tree": "346a155750dc1fda2d5eb1be0edc3b3e6f1bcfa3",
+    "candidate_commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+    "candidate_base_tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496",
+    "candidate_measurement_tree": "001e6ad026a2e1a960ccc580d79a7ff9cf10f781",
+    "tree_method": "temporary GIT_INDEX_FILE; read-tree HEAD; git add -A; git write-tree",
+    "registration_harness_sha256": "b12cd36f2b28d72914f93708967016cfc213b2462719e7f05b1ad3a63a02963c",
+    "retained_pin_harness_sha256": "ba8ffbc2a68a5ac4161d5b0de7d9149548a45509201c4446858f556149edeb81",
+    "retained_pin_linux_oracle_sha256": "227a7c26b1e5419319c7fe79764bdfe9cfb56cb25d395d59afb24c2340c07ddc",
+    "retained_pin_contract_test_sha256": "00af6c662bf48a9b34b79853153ca9f441a7d4f97340cd508db6fba0a4492d9c"
+  },
+  "host": {
+    "host_os": "Windows 10 Pro x86_64",
+    "kernel_measurement": "WSL2 Ubuntu 24.04 userland; memory telemetry via /proc/self/smaps_rollup",
+    "linux_kernel": "Linux PC 6.18.33.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026 x86_64",
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+    "logical_processors": 16,
+    "rustc_windows": "1.97.0 (2d8144b78 2026-07-07), LLVM 22.1.6",
+    "cargo_windows": "1.97.0 (c980f4866 2026-06-30)",
+    "rustc_linux_wsl": "1.98.1 (48a229cea 2026-09-01)",
+    "cargo_linux_wsl": "1.98.1 (797e8a9bc 2026-08-05)"
+  },
+  "features": {
+    "baseline_oracle": "production internals",
+    "candidate_oracle": "production internals bench-internals"
+  },
+  "entrypoint": "RouteDirectory::register/RoutePin owner-unlink/final-release; component lifetime and Linux process-memory oracle, not allocator throughput benchmark",
+  "process_boundary": "fresh WSL process per sample; pair order after/before/before/after",
+  "nonclaims": [
+    "WSL memory measurements are not native Linux performance results.",
+    "RSS/PSS/private-dirty and VmSize describe the WSL process; they do not substitute for native Linux results.",
+    "System allocation counters prove sidecar free ordering; process RSS/PSS/private-dirty are OS observations and include the 4 MiB numeric route-root allocation.",
+    "No direct mimalloc analogue exists for route-registration/pin lifetime."
+  ]
+}

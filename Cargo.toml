@@ -1653,6 +1653,22 @@ required-features = ["alloc-global", "alloc-xthread"]
 name = "ph6b_mt_ab"
 required-features = ["alloc-global", "internals"]
 
+# D1′ registration/chunk activation probe; timing excludes oracle-only hooks.
+[[example]]
+name = "d1_sidecar_registration_gate"
+required-features = ["production"]
+test = false
+
+[[example]]
+name = "d1_retained_pin_memory_oracle"
+required-features = ["production", "internals"]
+test = false
+
+[[example]]
+name = "d1_retained_pin_linux_oracle"
+required-features = ["production", "internals"]
+test = false
+
 # Soak harness: high-load multi-thread stability test (32/64/128 threads, hours).
 # NOT a throughput benchmark — a correctness + stability harness that detects
 # panics, deadlocks, and accounting mismatches at scale.

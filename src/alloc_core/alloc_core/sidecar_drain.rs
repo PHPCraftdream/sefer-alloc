@@ -332,11 +332,12 @@ impl AllocCore {
     /// bench counters only — the body itself touches none.
     #[inline]
     pub(crate) fn consume_small_cuts<O: SmallCutObserver>(
+        table: &crate::alloc_core::segment_table::SegmentTable,
         base: *mut u8,
         scan: crate::registry::segment_route::RouteScan<'_>,
         observer: O,
     ) -> (u64, usize) {
-        Self::consume_small_cuts_impl(base, scan, observer, false)
+        Self::consume_small_cuts_impl(table, base, scan, observer, false)
     }
 
     /// Exactly-one-cut variant for the bounded maintenance step: the word
@@ -344,14 +345,16 @@ impl AllocCore {
     /// the scan's first cut — and aborts when the routed scan yields none.
     #[inline]
     pub(crate) fn consume_one_small_cut<O: SmallCutObserver>(
+        table: &crate::alloc_core::segment_table::SegmentTable,
         base: *mut u8,
         scan: crate::registry::segment_route::RouteScan<'_>,
         observer: O,
     ) -> (u64, usize) {
-        Self::consume_small_cuts_impl(base, scan, observer, true)
+        Self::consume_small_cuts_impl(table, base, scan, observer, true)
     }
 
     fn consume_small_cuts_impl<O: SmallCutObserver>(
+        table: &crate::alloc_core::segment_table::SegmentTable,
         base: *mut u8,
         mut scan: crate::registry::segment_route::RouteScan<'_>,
         mut observer: O,
@@ -359,26 +362,64 @@ impl AllocCore {
     ) -> (u64, usize) {
         let mut changed_classes = 0u64;
         let mut reclaimed = 0usize;
+        // F1 (B4/C): the per-word loop keeps ALL loop state (scan cursor,
+        // end_word, base, counters) out of call-clobber pressure. The only
+        // remaining call inside the loop is the `#[inline(never)]`
+        // [`Self::consume_nonzero_cut`] helper below, invoked ONLY on a
+        // nonzero pending word; the hot zero-word path is call-free, so the
+        // scan cursor and counters stay in callee-saved registers instead of
+        // spilling around a `reclaim_sidecar_record` call every iteration.
+        // Semantics are unchanged: same Acquire word loads, same RMW gate,
+        // same per-bit reclaim order, same fatal lanes.
         loop {
-            let Some(mut cut) = scan.next_cut() else {
+            let Some(cut) = scan.next_cut() else {
                 if exactly_one_cut {
                     fatal(b"sidecar_drain: sidecar scan cut unavailable\n");
                 }
                 break;
             };
-            observer.cut_visited(!cut.is_empty());
-            while let Some(record) = cut.pop() {
-                if Self::reclaim_sidecar_record(base, record.offset, record.class) {
-                    changed_classes |= 1u64 << record.class;
-                    reclaimed += 1;
-                    observer.record_reclaimed();
-                }
+            // D1' phase-1a: `pop` yields the OFFSET only; the class is
+            // decided from the owner state byte inside reclaim (only
+            // `encode(c, LIVE)` is accepted).
+            let nonempty = !cut.is_empty();
+            observer.cut_visited(nonempty);
+            if nonempty {
+                let (cut_changed, cut_reclaimed) =
+                    Self::consume_nonzero_cut(table, base, cut, &mut observer);
+                changed_classes |= cut_changed;
+                reclaimed += cut_reclaimed;
             }
             if exactly_one_cut {
                 break;
             }
         }
         observer.finish();
+        (changed_classes, reclaimed)
+    }
+
+    /// F1 (B4/C) hot-loop offload: consume ONE nonzero pending word.
+    /// `#[inline(never)]` keeps the `reclaim_sidecar_record` call (and its
+    /// caller-saved register spills) out of the per-word discovery loop:
+    /// this helper runs only when the word carried at least one pending bit.
+    /// Takes no pointer to the scan state, so the caller's loop cursor stays
+    /// register-allocated. Bit-consumption order and all fatal lanes are
+    /// identical to the former inline loop.
+    #[inline(never)]
+    fn consume_nonzero_cut<O: SmallCutObserver>(
+        table: &crate::alloc_core::segment_table::SegmentTable,
+        base: *mut u8,
+        mut cut: crate::registry::segment_route::RouteCut<'_>,
+        observer: &mut O,
+    ) -> (u64, usize) {
+        let mut changed_classes = 0u64;
+        let mut reclaimed = 0usize;
+        while let Some(offset) = cut.pop() {
+            if let Some(class) = Self::reclaim_sidecar_record(table, base, offset) {
+                changed_classes |= 1u64 << class;
+                reclaimed += 1;
+                observer.record_reclaimed();
+            }
+        }
         (changed_classes, reclaimed)
     }
 
@@ -430,7 +471,7 @@ impl AllocCore {
                             cursor.1,
                             b"sidecar_drain: routed scan unavailable\n",
                         );
-                        Self::consume_one_small_cut(base, scan, NoSmallCutObserver)
+                        Self::consume_one_small_cut(&self.table, base, scan, NoSmallCutObserver)
                     };
                     reclaimed += cut_reclaimed;
                     units += 1;
@@ -468,8 +509,9 @@ impl AllocCore {
     }
 
     /// Fixes the table high-water at entry and visits each live slot once.
-    /// Strict trim cuts payload words only: producer rejects class-0 metadata
-    /// (`sidecar_bitmap.rs:116-121`); metadata is >=64KiB/page-aligned
+    /// Strict trim cuts payload words only: the producer's payload filter
+    /// rejects every metadata offset (below the route's `payload_start`)
+    /// before any sidecar access; metadata is >=64KiB/page-aligned
     /// (`segment_header_layout.rs:44-72,126-127`).
     /// The owner lease excludes issue/reuse throughout this pass. Each Small
     /// word is visited exactly once; post-cut publishers wait for a later
@@ -495,7 +537,7 @@ impl AllocCore {
             match SegmentHeader::kind_at(base) {
                 SegmentKind::Small | SegmentKind::Primordial => {
                     let high_water = SegmentMeta::new(base).bump_of();
-                    // Producer rejects class-0 metadata (sidecar_bitmap.rs:116-121); metadata is >=64 KiB, page aligned (segment_header_layout.rs:44-72, 126-127).
+                    // The producer's payload filter rejects metadata offsets (below the route's payload_start) before any sidecar access; metadata is >=64 KiB, page aligned (segment_header_layout.rs:44-72, 126-127).
                     let end_word = high_water.div_ceil(SIDECAR_WORD_BYTES);
                     let start = Self::sidecar_payload_start_word(base).min(end_word);
                     let (changed_classes, drained_records) = {
@@ -506,7 +548,12 @@ impl AllocCore {
                             start,
                             b"sidecar_drain: routed scan unavailable\n",
                         );
-                        Self::consume_small_cuts(base, scan, StrictTrimObserver::default())
+                        Self::consume_small_cuts(
+                            &self.table,
+                            base,
+                            scan,
+                            StrictTrimObserver::default(),
+                        )
                     };
                     reclaimed += drained_records;
                     // Every cut and the route borrow are gone before table
