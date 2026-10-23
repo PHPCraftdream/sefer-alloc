@@ -1,15 +1,16 @@
 # D1′ / PR96 — manifest эксперимента
 
-Это отдельный эксперимент, не новый общий раунд проекта. Срез commit history до delivery commit; сам delivery commit и последующие CI receipts не входят в этот верхний endpoint.
+Это отдельный эксперимент, не новый общий раунд проекта. Срез commit history включает delivery commit. Последующая синхронизация этого manifest и CI receipts исключены из фиксированного верхнего endpoint; это документационные дополнения, не новые measurements.
 
-Команда: git log --reverse --format="%H|%s" f80c681b799ef4ef7fa08d79c06896fdf1104fe9..734395b7bb12bdd21f605c07de5426b2e4e717ef
+Команда: git log --reverse --format="%H|%s" f80c681b799ef4ef7fa08d79c06896fdf1104fe9..c52b6dc6b1a6b7c3ba8820e852216787c60f2b65
 
 | Commit | Категория | Subject |
 | --- | --- | --- |
-| 6358cad7d6cae03e11a688813607417feef4fd09 | feat | feat(sidecar): prototype owner-initialized chunked ingress |
-| 76bbf7e874b0cb96f8577a33f1fdceba8298ed10 | test | test(sidecar): remove obsolete class-pass duplication |
-| d031f03cdc14efdcc501840868491de7d8a9891e | test | test(sidecar): align chunked seam inventory and evidence |
+| 6358cad7d6cae03e11a688813607417feef4fd09 | feat(sidecar) | feat(sidecar): prototype owner-initialized chunked ingress |
+| 76bbf7e874b0cb96f8577a33f1fdceba8298ed10 | test(sidecar) | test(sidecar): remove obsolete class-pass duplication |
+| d031f03cdc14efdcc501840868491de7d8a9891e | test(sidecar) | test(sidecar): align chunked seam inventory and evidence |
 | 734395b7bb12bdd21f605c07de5426b2e4e717ef | docs(evidence) | docs(evidence): record chunked safety receipts |
+| c52b6dc6b1a6b7c3ba8820e852216787c60f2b65 | bench(sidecar) | bench(sidecar): record D1-prime comparative NO-GO evidence |
 
 ## Изменения и verdict
 
