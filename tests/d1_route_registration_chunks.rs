@@ -1,4 +1,4 @@
-#![cfg(feature = "internals")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use core::alloc::Layout;
 use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, SmallSidecar};
