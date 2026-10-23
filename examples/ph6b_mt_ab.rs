@@ -34,11 +34,12 @@
 //! deterministic: fixed xorshift seeds per thread index, no time-based
 //! decisions. At T = 1 the ring degenerates and all frees are local.
 //!
-//! Threads synchronize on a `Barrier` BEFORE the measured phase; timing is
-//! taken around the whole work phase (after the barrier), one cell per
-//! (workload × T), no averaging. The cell's wall time is the maximum of the
-//! per-thread windows (the critical path — all threads start inside the same
-//! barrier-release window).
+//! Threads synchronize on a `Barrier` BEFORE the measured phase and on a
+//! completion barrier before the final remote-free drain. Keeping receivers
+//! alive until all producers finish prevents late cross-thread frees from being
+//! dropped. Timing covers the work, completion rendezvous, and final drain; the
+//! cell's wall time is the maximum per-thread window. Exact operation totals
+//! are asserted against each workload's configured count.
 //!
 //! Output protocol: only `RESULT key=value` lines
 //! (`RESULT mt_ns workload=<w> T=<t> ns=<u64>`,
@@ -233,11 +234,12 @@ fn run_mstress(w: &mut Worker, me: usize) {
     w.drain_remote();
 }
 
-/// One (workload × T) cell: spawn T workers, barrier, then time the whole
-/// work phase; the cell result is max(per-thread ns) × sum(per-thread ops).
+/// One (workload × T) cell: rendezvous at start and completion; include the
+/// final remote-free drain in the critical-path window and operation count.
 fn measure(workload: &str, threads: usize) -> (u64, u64) {
     let workload = workload.to_string();
-    let barrier = Arc::new(Barrier::new(threads));
+    let start = Arc::new(Barrier::new(threads));
+    let finish = Arc::new(Barrier::new(threads));
     let mut senders: Vec<mpsc::Sender<RemoteBlk>> = Vec::with_capacity(threads);
     let mut rxs: Vec<mpsc::Receiver<RemoteBlk>> = Vec::with_capacity(threads);
     for _ in 0..threads {
@@ -247,7 +249,8 @@ fn measure(workload: &str, threads: usize) -> (u64, u64) {
     }
     let mut handles = Vec::with_capacity(threads);
     for (me, rx) in rxs.into_iter().enumerate() {
-        let barrier = Arc::clone(&barrier);
+        let start = Arc::clone(&start);
+        let finish = Arc::clone(&finish);
         let senders = senders.clone();
         let workload = workload.clone();
         handles.push(std::thread::spawn(move || {
@@ -258,15 +261,22 @@ fn measure(workload: &str, threads: usize) -> (u64, u64) {
                 rx,
                 senders,
             };
-            barrier.wait();
+            start.wait();
             let t0 = std::time::Instant::now();
-            if workload == "larson" {
-                run_larson(&mut w, me);
-            } else {
-                run_mstress(&mut w, me);
-            }
-            let ns = t0.elapsed().as_nanos() as u64;
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if workload == "larson" {
+                    run_larson(&mut w, me);
+                } else {
+                    run_mstress(&mut w, me);
+                }
+            }));
+            // Keep every receiver alive until all producers have stopped.
+            finish.wait();
             w.drain_remote();
+            let ns = t0.elapsed().as_nanos() as u64;
+            if let Err(payload) = outcome {
+                std::panic::resume_unwind(payload);
+            }
             (ns, w.ops)
         }));
     }
@@ -287,6 +297,16 @@ fn main() {
     for &t in THREAD_SWEEP {
         for workload in ["larson", "mstress"] {
             let (ns, ops) = measure(workload, t);
+            let expected_per_thread = match workload {
+                "larson" => 801_536,
+                "mstress" => 399_360,
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                ops,
+                expected_per_thread * t as u64,
+                "{workload}/T={t}: lost or duplicated operations"
+            );
             println!("RESULT mt_ns workload={workload} T={t} ns={ns}");
             println!("RESULT mt_ops workload={workload} T={t} ops={ops}");
         }

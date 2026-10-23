@@ -1,0 +1,318 @@
+{
+  "source_identity": {
+    "baseline_commit": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+    "baseline_base_tree": "b5d22c5a770e503750bb549152245325d915f350",
+    "baseline_measurement_tree": "60fcd80364ced3bef26587e405ff32b17b132690",
+    "candidate_commit": "734395b7bb12bdd21f605c07de5426b2e4e717ef",
+    "candidate_base_tree": "89bfd1c99ff3f528b1d9d1e93c468029c3e82496",
+    "candidate_measurement_tree": "8e7952f37a99a05e46db33075318d46e06a87aaa",
+    "tree_method": "temporary GIT_INDEX_FILE; read-tree HEAD; git add -A; git write-tree",
+    "mt_harness_patch_sha256": "743fef67ba3f7fb50e39710197d9d66ef5a7b8322d4542a3cb5c069b896b87f1",
+    "registration_harness_sha256": "b12cd36f2b28d72914f93708967016cfc213b2462719e7f05b1ad3a63a02963c",
+    "retained_pin_harness_sha256": "ba8ffbc2a68a5ac4161d5b0de7d9149548a45509201c4446858f556149edeb81",
+    "retained_pin_contract_test_sha256": "00af6c662bf48a9b34b79853153ca9f441a7d4f97340cd508db6fba0a4492d9c"
+  },
+  "pairs": 20,
+  "order": "after/before/before/after",
+  "builds": [
+    "before-retained-pin-build.log",
+    "after-retained-pin-build.log"
+  ],
+  "oracle_contract": "owner unlink removes lookup visibility; retained pin keeps sidecar system allocation alive; last-pin drop frees exact sidecar allocation",
+  "comparison": [
+    {
+      "key": "rss_before_kib",
+      "before_median": 2952,
+      "after_median": 2948,
+      "after_over_before_median": {
+        "numerator": 2948,
+        "denominator": 2952,
+        "ratio": 0.9986449864498645
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": -4.5,
+        "sd_delta": 3.605551275463989,
+        "se_delta": 0.8062257748298549,
+        "ci95_low": -6.187430546718886,
+        "ci95_high": -2.812569453281114,
+        "t": -5.581563056514381,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": true
+      }
+    },
+    {
+      "key": "rss_after_root_kib",
+      "before_median": 2964,
+      "after_median": 2956,
+      "after_over_before_median": {
+        "numerator": 2956,
+        "denominator": 2964,
+        "ratio": 0.9973009446693657
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": -8.6,
+        "sd_delta": 3.7332080179469185,
+        "se_delta": 0.8347706902276564,
+        "ci95_low": -10.347175054646485,
+        "ci95_high": -6.852824945353515,
+        "t": -10.302230421691771,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": true
+      }
+    },
+    {
+      "key": "rss_after_registration_kib",
+      "before_median": 3020,
+      "after_median": 2976,
+      "after_over_before_median": {
+        "numerator": 2976,
+        "denominator": 3020,
+        "ratio": 0.9854304635761589
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": -45.6,
+        "sd_delta": 4.083342284272324,
+        "se_delta": 0.9130630923032186,
+        "ci95_low": -47.511041052190635,
+        "ci95_high": -43.68895894780937,
+        "t": -49.94178429113059,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": true
+      }
+    },
+    {
+      "key": "rss_after_owner_unlink_pin_held_kib",
+      "before_median": 3020,
+      "after_median": 2976,
+      "after_over_before_median": {
+        "numerator": 2976,
+        "denominator": 3020,
+        "ratio": 0.9854304635761589
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": -45.6,
+        "sd_delta": 4.083342284272324,
+        "se_delta": 0.9130630923032186,
+        "ci95_low": -47.511041052190635,
+        "ci95_high": -43.68895894780937,
+        "t": -49.94178429113059,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": true
+      }
+    },
+    {
+      "key": "rss_after_last_pin_drop_kib",
+      "before_median": 3020,
+      "after_median": 2980,
+      "after_over_before_median": {
+        "numerator": 2980,
+        "denominator": 3020,
+        "ratio": 0.9867549668874173
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": -41.6,
+        "sd_delta": 4.083342284272324,
+        "se_delta": 0.9130630923032186,
+        "ci95_low": -43.511041052190635,
+        "ci95_high": -39.68895894780937,
+        "t": -45.56092601997879,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": true
+      }
+    },
+    {
+      "key": "rss_after_root_free_kib",
+      "before_median": 3012,
+      "after_median": 2972,
+      "after_over_before_median": {
+        "numerator": 2972,
+        "denominator": 3012,
+        "ratio": 0.9867197875166003
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": -41.5,
+        "sd_delta": 3.993415633396132,
+        "se_delta": 0.892954881868413,
+        "ci95_low": -43.36895456775059,
+        "ci95_high": -39.63104543224941,
+        "t": -46.474912498563945,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": true
+      }
+    },
+    {
+      "key": "commit_before_kib",
+      "before_median": 624,
+      "after_median": 624,
+      "after_over_before_median": {
+        "numerator": 624,
+        "denominator": 624,
+        "ratio": 1
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": -2.1,
+        "sd_delta": 5.36950453462593,
+        "se_delta": 1.2006577144916952,
+        "ci95_low": -4.612976596431118,
+        "ci95_high": 0.41297659643111784,
+        "t": -1.7490413584599722,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": false
+      }
+    },
+    {
+      "key": "commit_after_root_kib",
+      "before_median": 8838,
+      "after_median": 8836,
+      "after_over_before_median": {
+        "numerator": 8836,
+        "denominator": 8838,
+        "ratio": 0.9997737044580222
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": -1.4,
+        "sd_delta": 6.394076205857715,
+        "se_delta": 1.429758904961179,
+        "ci95_low": -4.392485388083747,
+        "ci95_high": 1.5924853880837477,
+        "t": -0.97918606776435,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": false
+      }
+    },
+    {
+      "key": "commit_after_registration_kib",
+      "before_median": 8882,
+      "after_median": 8904,
+      "after_over_before_median": {
+        "numerator": 8904,
+        "denominator": 8882,
+        "ratio": 1.0024769196127
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": 22.6,
+        "sd_delta": 6.394076205857715,
+        "se_delta": 1.429758904961179,
+        "ci95_low": 19.607514611916255,
+        "ci95_high": 25.592485388083748,
+        "t": 15.806860808195939,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": true
+      }
+    },
+    {
+      "key": "commit_after_owner_unlink_pin_held_kib",
+      "before_median": 8882,
+      "after_median": 8904,
+      "after_over_before_median": {
+        "numerator": 8904,
+        "denominator": 8882,
+        "ratio": 1.0024769196127
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": 22.6,
+        "sd_delta": 6.394076205857715,
+        "se_delta": 1.429758904961179,
+        "ci95_low": 19.607514611916255,
+        "ci95_high": 25.592485388083748,
+        "t": 15.806860808195939,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": true
+      }
+    },
+    {
+      "key": "commit_after_last_pin_drop_kib",
+      "before_median": 8882,
+      "after_median": 8904,
+      "after_over_before_median": {
+        "numerator": 8904,
+        "denominator": 8882,
+        "ratio": 1.0024769196127
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": 22.6,
+        "sd_delta": 6.394076205857715,
+        "se_delta": 1.429758904961179,
+        "ci95_low": 19.607514611916255,
+        "ci95_high": 25.592485388083748,
+        "t": 15.806860808195939,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": true
+      }
+    },
+    {
+      "key": "commit_after_root_free_kib",
+      "before_median": 668,
+      "after_median": 692,
+      "after_over_before_median": {
+        "numerator": 692,
+        "denominator": 668,
+        "ratio": 1.035928143712575
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": 21.9,
+        "sd_delta": 5.36950453462593,
+        "se_delta": 1.2006577144916952,
+        "ci95_low": 19.387023403568882,
+        "ci95_high": 24.412976596431115,
+        "t": 18.24000273822542,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": true
+      }
+    },
+    {
+      "key": "sidecar_size_bytes",
+      "before_median": 41088,
+      "after_median": 65600,
+      "after_over_before_median": {
+        "numerator": 65600,
+        "denominator": 41088,
+        "ratio": 1.5965732087227413
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": 24512,
+        "sd_delta": 0,
+        "se_delta": 0,
+        "ci95_low": 24512,
+        "ci95_high": 24512,
+        "t": 0,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": false
+      }
+    },
+    {
+      "key": "sidecar_alloc_bytes",
+      "before_median": 41088,
+      "after_median": 65600,
+      "after_over_before_median": {
+        "numerator": 65600,
+        "denominator": 41088,
+        "ratio": 1.5965732087227413
+      },
+      "paired_delta_after_minus_before": {
+        "n": 20,
+        "mean_delta": 24512,
+        "sd_delta": 0,
+        "se_delta": 0,
+        "ci95_low": 24512,
+        "ci95_high": 24512,
+        "t": 0,
+        "critical_t_005": 2.093,
+        "significant_p_lt_005_approx": false
+      }
+    }
+  ]
+}

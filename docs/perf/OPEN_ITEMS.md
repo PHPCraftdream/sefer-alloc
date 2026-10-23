@@ -119,16 +119,6 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
-112. **[A] D1′ чанковый sidecar — отдельный эксперимент, не принятый F1/C2.**
-
-   > **Current state**
-   > - **Status:** PROTOTYPE / NOT ACCEPTED (2026-10-22, запрос владельца «давай попробуй твой вариант»).
-   > - **Current number/verdict:** safety CI GREEN на PR #96, head `d031f03cdc14efdcc501840868491de7d8a9891e` (run `39869595774`); actual-source Miri SB/TB, Loom + ready-Relaxed counterfactual/restoration, Kani и оба Windows rollback witnesses прошли. Производительность НЕ ИЗМЕРЕНА; прототип не принят и не слит.
-   > - **Next trigger:** обязательная трёхсторонняя таблица baseline ДО / D1′ ПОСЛЕ / mimalloc на одинаковых workloads, runner, CPU/toolchain и сопоставимых features: абсолютные значения, after/before, before/mimalloc, after/mimalloc. Wall — канонический `bench:table`; iai raw totals и штатные marginal — отдельно, плюс MT/first-alloc/foreign/dense/sparse/churn/registration/RSS и activation oracles. Владелец явно разрешил выполнять сравнительные бенчмарки локально после safety; commit/push отдельной ветки/PR также разрешены, merge — нет.
-   > - **Evidence:** `docs/design/2026-10-22-adr-chunked-sidecar-prototype.md`; correctness item 254.
-
-**Disposition этого эксперимента:** все прочие существующие карточки сохраняют свои status/trigger; чужие отложенные оптимизации не переоткрываются и не закрываются по typecheck. В частности, U31/item 90 остаётся отдельным протоколом, Box-frame residual и старые perf NO-GO не переобъявляются исправленными. Это изолированный storage-кандидат, не завершение общей очереди G1/G2.
-
 104. **[A] B4 events — refill/flush событие в mstress стоит в 5–6 раз дороже, чем в larson.** (Filed 2026-10-20, `docs/perf/B4_EVENTS_COST.md`.)
 
    > **Current state**
@@ -3191,6 +3181,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
+
+- **Item 112 — D1′ chunked sidecar: NO-GO / NOT ACCEPTED, closed 2026-10-23.** Current candidate has significant MT Larson T=4/T=8, dense16, and registration-churn regressions; favorable memory observations do not offset them. Full closure, source identities and caveats: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A112; gate: `docs/perf/D1_PRIME_CHUNKED_SIDECAR_GATE.md`.
 
 - **Item 105 — B4-MT X-notown (256-битный notown-фильтр SegmentTable): NO-GO, closed 2026-10-20** (thrash64 w_free +5 Ir > +2; src откачен). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A105.
 

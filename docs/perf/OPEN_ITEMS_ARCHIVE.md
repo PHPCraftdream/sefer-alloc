@@ -36,6 +36,7 @@ don't rewrite" convention.
 
 - [[A] Active / high-value — item 1: `contains_base`'s share of a real free's `Ir` — measured MATERIAL](#a1)
 - [[A] Active / high-value — item 13: R24-11 — `bench_global_alloc_churn_with_teardown`@1024B residual](#a13)
+- [Recently resolved — item 112: D1′ chunked sidecar NO-GO](#a112)
 - [[D] Deferred designs — item 2: R17-10 — batched deferred reclaim (sub-design A + B).](#d2)
 - [[D] Deferred designs — item 3: R11-7 page-run layer (R12-13 deferred).](#d3)
 - [[D] Deferred designs — item 4: R14-7 expandable / chained `SegmentTable`.](#d4)
@@ -2267,3 +2268,12 @@ The review estimated ~10–20 Ir per reclaimed record from hoisting `kind_at`, p
 - **Current number/verdict:** `find_segment_with_free_impl` attempts directory materialization before fallback scanning, rebuilding lazily after cold trim. Combined T31/T32 iai gate PASSed its pre-set thresholds; informational/hot Small cells showed small costs.
 - **Next trigger:** None for lazy directory rebuilding. T31's pool decay only runs on allocator activity; the gate does not measure RSS and a completely inactive thread retains up to its configured pool cap.
 - **Evidence:** `tests/r6_t32_directory_rebuild_after_trim.rs`; `docs/perf/R6_T31_T32_POOL_DECAY_DIRECTORY_REBUILD_GATE.md`; `5fffd5a5` gate record. Test not run in this audit.
+
+## A112 — D1′ chunked sidecar (2026-10-23)
+
+- **Status:** CLOSED — performance NO-GO / NOT ACCEPTED; candidate remains unmerged.
+- **Current number/verdict:** corrected installed-global Larson T=4/T=8 latency ratios candidate/baseline are 1.281 and 1.191, with paired difference confidence intervals excluding zero. Dense16 component mean timing is 54,095,745 / 21,817,490 = 2.479 candidate/baseline; registration churn also regresses. Canonical wall-clock is noisy and the installed-global shared-workload comparison is inconclusive, not a non-regression PASS. IAI raw totals improve while marginal costs increase; these axes must not be conflated.
+- **Memory:** retained-pin lifetime assertions passed in 80 Windows and 80 WSL Linux processes. Backing grows from 41,088 to 65,600 bytes; lower observed resident/PSS/private-dirty memory does not prove lower commit. WSL results are not native Linux results.
+- **Evidence:** `docs/perf/D1_PRIME_CHUNKED_SIDECAR_GATE.md`, companion summary CSV, and `docs/perf/d1_prime_chunked_sidecar/`. Safety receipt remains scoped to `d031f03cdc14efdcc501840868491de7d8a9891e`, run `39869595774`; it does not accept performance.
+- **Next trigger:** a materially different owner-approved candidate with fresh acceptance evidence. No merge permission is implied. U31, the Box-frame residual, F1/C2 and other existing items retain their independent dispositions.
+- **Delivery boundary:** report and benchmark-harness CI must still be verified before the session delivery task is complete; the NO-GO decision itself does not assert that new CI has passed.

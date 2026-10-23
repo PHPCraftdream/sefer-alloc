@@ -1,0 +1,19 @@
+baseline_commit=f80c681b799ef4ef7fa08d79c06896fdf1104fe9
+baseline_tree=b5d22c5a770e503750bb549152245325d915f350
+candidate_commit=734395b7bb12bdd21f605c07de5426b2e4e717ef
+candidate_tree=89bfd1c99ff3f528b1d9d1e93c468029c3e82496
+features=production internals bench-internals
+bench=global_alloc (npm run bench:table)
+run_order=before-1,after-1,after-2,before-2
+rustc 1.97.0 (2d8144b78 2026-07-07)
+binary: rustc
+commit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3
+commit-date: 2026-07-07
+host: x86_64-pc-windows-msvc
+release: 1.97.0
+LLVM version: 22.1.6
+cargo 1.97.0 (c980f4866 2026-06-30)
+MINGW64_NT-10.0-19045 PC 3.6.6-1cdd4371.x86_64 2026-01-15 22:20 UTC x86_64 Msys
+CPU model:
+logical_processors=16
+cpu_model=11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz

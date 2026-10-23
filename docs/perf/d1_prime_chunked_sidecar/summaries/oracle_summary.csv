@@ -1,0 +1,11 @@
+arm,commit,measurement_tree,features,scenario,cycles,blocks_per_cycle,block_size,activation_method,actual_registrations,actual_unlinks,registrations_per_cycle,unlinks_per_cycle,active_routes_observed_sum,constructed_chunks_sum,logical_initialized_payload_bytes_sum,sidecar_backing_bytes_sum,path_activation_pass
+before,f80c681b799ef4ef7fa08d79c06896fdf1104fe9,988f78d97035d2870a71561c34cc9f21b8b21b76,production internals,registration,30,24,258752,live-route census deltas,31,30,1.0333333333333334,1,0,,,,true
+before,f80c681b799ef4ef7fa08d79c06896fdf1104fe9,988f78d97035d2870a71561c34cc9f21b8b21b76,production internals,registration,60,24,258752,live-route census deltas,61,60,1.0166666666666666,1,0,,,,true
+before,f80c681b799ef4ef7fa08d79c06896fdf1104fe9,988f78d97035d2870a71561c34cc9f21b8b21b76,production internals,registration,120,24,258752,live-route census deltas,121,120,1.0083333333333333,1,0,,,,true
+before,f80c681b799ef4ef7fa08d79c06896fdf1104fe9,988f78d97035d2870a71561c34cc9f21b8b21b76,production internals,dense16,1,262144,16,live-route census deltas,2,1,2,1,0,,,,true
+before,f80c681b799ef4ef7fa08d79c06896fdf1104fe9,988f78d97035d2870a71561c34cc9f21b8b21b76,production internals,sparse_max_small,1,8,258752,live-route census deltas,1,0,1,0,0,,,,true
+after,734395b7bb12bdd21f605c07de5426b2e4e717ef,c3a52a9ce02f6ff47602b3c6a7d0ca19939b439f,production internals bench-internals,registration,30,24,258752,bench-internals counters,31,30,1.0333333333333334,1,60,720,92160,3936000,true
+after,734395b7bb12bdd21f605c07de5426b2e4e717ef,c3a52a9ce02f6ff47602b3c6a7d0ca19939b439f,production internals bench-internals,registration,60,24,258752,bench-internals counters,61,60,1.0166666666666666,1,120,1440,184320,7872000,true
+after,734395b7bb12bdd21f605c07de5426b2e4e717ef,c3a52a9ce02f6ff47602b3c6a7d0ca19939b439f,production internals bench-internals,registration,120,24,258752,bench-internals counters,121,120,1.0083333333333333,1,240,2880,368640,15744000,true
+after,734395b7bb12bdd21f605c07de5426b2e4e717ef,c3a52a9ce02f6ff47602b3c6a7d0ca19939b439f,production internals bench-internals,dense16,1,262144,16,bench-internals counters,2,1,2,1,2,513,65664,131200,true
+after,734395b7bb12bdd21f605c07de5426b2e4e717ef,c3a52a9ce02f6ff47602b3c6a7d0ca19939b439f,production internals bench-internals,sparse_max_small,1,8,258752,bench-internals counters,1,0,1,0,1,8,1024,65600,true
