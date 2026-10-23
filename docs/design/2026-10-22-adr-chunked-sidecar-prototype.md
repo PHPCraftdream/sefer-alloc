@@ -32,29 +32,32 @@
 
 Loom source-includes тот же storage, заменяя атомики и `UnsafeCell` на отслеживаемые типы. Instrumented cell включается лишь под `all(loom, test)`; Loom остаётся dev-dependency, новые library dependencies не добавляются. Это инструментирование доступа, не альтернативный протокол.
 
-## Покрытие — пока не execution receipts
+## Safety receipts — CI GREEN; performance приёмка отдельно
 
-- `tests/chunked_sidecar_storage.rs`: actual-source dirty/unready backing, далёкая выдача без промежуточной материализации, reissue без затирания pending, индивидуальный start gate, masked clear, quiescent reset, Drop. Предназначен также для Miri SB/TB.
-- `tests/loom_chunked_sidecar_actual.rs`: новый чанк с valid handoff и точным union двух cuts; safe observer нового чанка без allocation handoff; соседний бит при двух producer и masked clear.
-- `scripts/chunked-ready-negative.mjs`: CI-only мутация настоящего ready Acquire в Relaxed; ожидается именно causality failure целевого Loom-теста, затем побайтное восстановление и положительный повтор. Compile error/crash не засчитываются.
-- Пять Kani harnesses рядом с ChunkedBank: offset gate, word/backing/ready bounds, общая issue/publish bit-location, исходные scan bounds/empty window, точное membership range mask. Они не доказывают concurrency, владение и reclamation.
-- Существующий actual-source pin-cache/unlink Loom target переносится вместе с протоколом, но его прежний receipt не является receipt нового storage.
+CI run [`39869595774`](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/39869595774), head `d031f03cdc14efdcc501840868491de7d8a9891e`, завершился `success`. Сводный receipt и job links: `docs/evidence/R96_D1_CHUNKED_SAFETY_CI_RECEIPT.md`.
 
-Для принятия нужны реальные CI receipts всех слоёв, включая отрицательные контроли и существующие D1′/allocator tests. Новые файлы и успешный cargo check не являются этими receipts. Accepted Box-frame defect item 164 остаётся отдельным известным дефектом; новый storage не получает разрешения на новое UB.
+- `tests/chunked_sidecar_storage.rs`: actual-source dirty/unready backing, далёкая выдача без промежуточной материализации, reissue без затирания pending, индивидуальный start gate, masked clear, quiescent reset, Drop — 3/3 под Miri SB и 3/3 под Miri TB.
+- `tests/loom_chunked_sidecar_actual.rs`: новый чанк с valid handoff и точным union двух cuts; safe observer нового чанка без allocation handoff; соседний бит при двух producer и masked clear — 3/3 release и 3/3 restored debug.
+- `scripts/chunked-ready-negative.mjs`: CI изменил production ready Acquire на Relaxed; Loom поймал требуемое causality violation; restoration проверена byte-for-byte, после чего positive debug model прошёл.
+- Пять Kani harnesses рядом с ChunkedBank: offset gate, word/backing/ready bounds, общая issue/publish bit-location, scan bounds/empty window, exact range-mask membership. Полный Kani CI отчёт: 21 harnesses, 0 failures, 1 unreachable; Kani не доказывает concurrency или reclamation.
+- Windows fastbin и scalar commit-refusal rollback witnesses прошли с точными sentinels; owner compile-fail, native matrix, Loom, Miri, Kani и все required CI jobs завершились зелёными.
+- Historical proof-registry rows, чьи source/test bytes изменены, оставлены `CI_PENDING`/`NOT_RUN`, а не переписаны задним числом как PASS; см. registry и correctness item 254.
+
+Это закрывает execution-gate для D1′ safety harnesses на указанном SHA, но **не принимает performance-кандидат**. Accepted Box-frame defect item 164 остаётся отдельным известным дефектом.
 
 ## Локальная проверка прототипа
 
 Проверены все строки `PER_PR_ROWS` из `scripts/check-matrix.mjs` с `kind` равным `clippy` или `check`, с их собственными target/features/env и `-D warnings` у Clippy. Тестовые строки намеренно не запускались. Проверены workspace rustfmt, source-included Loom typecheck, Miri/Loom wiring, hook safety, структура, sentinels и синтаксис YAML. Типизация Loom проходит с предупреждениями; это не strict Clippy и не исполнение моделей.
 
-При проверке исправлены два cfg-дефекта: тестовый owner-helper в plain production и лишний BitmapScan re-export в standalone NUMA. CI run 39859543504 также выявил несовпадение physical path unsafe seam и `src/lib.rs` inventory; `chunked_bank.rs`/Kani proof теперь расположены в `remote_bitmap/sidecar_bitmap/`, совпадая с модульной записью и source-file inventory. В новой actual-source oneclass Loom fixture устранена унаследованная утечка backing на каждой итерации: Box уничтожается после join всех readers. Это не receipt выполнения Drop моделью.
+При проверке исправлены два cfg-дефекта: тестовый owner-helper в plain production и лишний BitmapScan re-export в standalone NUMA. CI run 39859543504 выявил несовпадение physical path unsafe seam и `src/lib.rs` inventory; `chunked_bank.rs`/Kani proof перемещены в `remote_bitmap/sidecar_bitmap/`, выровняв source-file inventory. В actual-source oneclass Loom fixture убрана унаследованная утечка backing: Box уничтожается после join readers. Этот локальный typecheck сам по себе не был receipt; Drop/lifetime paths прошли в run `39869595774`.
 
-Лично проверены новый storage/owner/scanner, порядок issue/clear/state, reclaim guards, lifecycle/wiring и перенос native/model tests. Review выявил и исправил перечисленные ниже дефекты oracle и подключения. Контрфактуальное исполнение replacement tests и runtime-приёмка требуют CI; статус остаётся NOT ACCEPTED.
+Лично проверены новый storage/owner/scanner, порядок issue/clear/state, reclaim guards, lifecycle/wiring и перенос native/model tests. Review исправил дефекты oracle и подключения. Run `39869595774` на SHA `d031f03cdc14efdcc501840868491de7d8a9891e` завершился GREEN по требуемым матрицам; receipts перечислены выше. Safety execution gate закрыт на этом коде. Статус кандидата всё ещё NOT ACCEPTED до сравнительной performance-приёмки.
 
 Дополнительно исправлены: ordering source-pins теперь читают действующий ChunkedBank, включая ready и оба cut-пути; unlink pin-cache fixture использует payload-offset, чтобы metadata-фильтр не скрывал дефект linked gate; точный size-test учитывает ready-map (65 600 B); ранний batch-handshake замечает завершившийся owner, а scoped thread и ResumeOnDrop исключают detached worker при провале assertion. Inventory документов пересчитан: 451 root test file, 23 root Loom targets, 16 nested Rust fixtures.
 
-Продолжение review выявило пробел replacement rollback witness: его Windows/feature-gated тело не выбиралось ни одной CI-строкой, хотя комментарий утверждал обратное. Добавлены отдельные Windows строки fastbin и scalar с `small-segment-lazy-commit`, fault injection и точными sentinels; это OS-group coverage, не безусловный per-PR gate. Сам тест теперь явно требует small-segment policy, а scalar-ветка дополнительно сверяет неизменность commit frontier. Типизация обеих комбинаций проверяется отдельно; runtime receipts всё ещё требуются. Первоначальный snapshot tree `31ecb1e75db26972b39826fd3db1fc0051f433cc` предшествует этим исправлениям и последующему запросу сравнения с mimalloc; перед измерением нужна новая source identity.
+Продолжение review выявило недостижимый replacement rollback witness: его Windows/feature-gated тело не выбиралось CI. Добавлены отдельные Windows строки fastbin и scalar с `small-segment-lazy-commit`, fault injection и точными sentinels; scalar дополнен frontier oracle. Обе строки прошли в run `39869595774`. Первоначальный snapshot tree `31ecb1e75db26972b39826fd3db1fc0051f433cc` исторический; для benchmark будет использован новый committed candidate identity.
 
-Дальнейший review mutant battery усилил oracle: abort-cases требуют своей точной fatal-строки и отвергают panic exit 101; M-f читает pending отвергнутого metadata-offset, а не offset 0; M-c′ перед retain-reset передаёт все шесть caller-held блоков целевого сегмента. Строгий Clippy этого target и структурный guard проходят. Это не исполнение тестов и не подтверждение mutation sensitivity.
+Review mutant battery усилил oracle: abort-cases требуют точную production fatal-строку и отвергают panic exit 101; M-f читает pending отвергнутого metadata-offset, а не offset 0; M-c′ перед retain-reset передаёт все шесть caller-held блоков целевого сегмента. Строгий Clippy и structural guard прошли; native positive abort-oracle tests прошли в CI (контрфактуальные mutations этих отдельных oracle не запускались). Отдельно experimental ready-Relaxed mutant реального `ChunkedBank` был запущен и отвергнут ожидаемым Loom causality violation.
 
 ## Измерительная приёмка
 
