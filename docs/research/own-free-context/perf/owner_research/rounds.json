@@ -1,0 +1,212 @@
+[
+  {
+    "round": "scalar",
+    "axis": "free",
+    "arm": "sefer",
+    "mode": "rt",
+    "Ir": 86.72552
+  },
+  {
+    "round": "scalar",
+    "axis": "free",
+    "arm": "sefer",
+    "mode": "16",
+    "Ir": 52
+  },
+  {
+    "round": "scalar",
+    "axis": "free",
+    "arm": "sefer",
+    "mode": "64",
+    "Ir": 52
+  },
+  {
+    "round": "scalar",
+    "axis": "free",
+    "arm": "mimalloc",
+    "mode": "rt",
+    "Ir": 31.00214
+  },
+  {
+    "round": "scalar",
+    "axis": "free",
+    "arm": "mimalloc",
+    "mode": "16",
+    "Ir": 28
+  },
+  {
+    "round": "scalar",
+    "axis": "free",
+    "arm": "mimalloc",
+    "mode": "64",
+    "Ir": 28
+  },
+  {
+    "round": "scalar",
+    "axis": "control",
+    "arm": "sefer",
+    "mode": "bulk64",
+    "Ir": 121.34375
+  },
+  {
+    "round": "scalar",
+    "axis": "control",
+    "arm": "sefer",
+    "mode": "bulk16k",
+    "Ir": 188.71875
+  },
+  {
+    "round": "scalar",
+    "axis": "control",
+    "arm": "mimalloc",
+    "mode": "bulk64",
+    "Ir": 31.890625
+  },
+  {
+    "round": "scalar",
+    "axis": "control",
+    "arm": "mimalloc",
+    "mode": "bulk16k",
+    "Ir": 73.1875
+  },
+  {
+    "round": "context",
+    "axis": "free",
+    "arm": "sefer",
+    "mode": "rt",
+    "Ir": 80.03368
+  },
+  {
+    "round": "context",
+    "axis": "free",
+    "arm": "sefer",
+    "mode": "16",
+    "Ir": 43
+  },
+  {
+    "round": "context",
+    "axis": "free",
+    "arm": "sefer",
+    "mode": "64",
+    "Ir": 43
+  },
+  {
+    "round": "context",
+    "axis": "free",
+    "arm": "mimalloc",
+    "mode": "rt",
+    "Ir": 31.00214
+  },
+  {
+    "round": "context",
+    "axis": "free",
+    "arm": "mimalloc",
+    "mode": "16",
+    "Ir": 28
+  },
+  {
+    "round": "context",
+    "axis": "free",
+    "arm": "mimalloc",
+    "mode": "64",
+    "Ir": 28
+  },
+  {
+    "round": "context",
+    "axis": "control",
+    "arm": "sefer",
+    "mode": "bulk64",
+    "Ir": 116.03125
+  },
+  {
+    "round": "context",
+    "axis": "control",
+    "arm": "sefer",
+    "mode": "bulk16k",
+    "Ir": 194.875
+  },
+  {
+    "round": "context",
+    "axis": "control",
+    "arm": "mimalloc",
+    "mode": "bulk64",
+    "Ir": 31.890625
+  },
+  {
+    "round": "context",
+    "axis": "control",
+    "arm": "mimalloc",
+    "mode": "bulk16k",
+    "Ir": 73.1875
+  },
+  {
+    "round": "mir",
+    "axis": "free",
+    "arm": "sefer",
+    "mode": "rt",
+    "Ir": 80.08504
+  },
+  {
+    "round": "mir",
+    "axis": "free",
+    "arm": "sefer",
+    "mode": "16",
+    "Ir": 43
+  },
+  {
+    "round": "mir",
+    "axis": "free",
+    "arm": "sefer",
+    "mode": "64",
+    "Ir": 43
+  },
+  {
+    "round": "mir",
+    "axis": "free",
+    "arm": "mimalloc",
+    "mode": "rt",
+    "Ir": 31.00214
+  },
+  {
+    "round": "mir",
+    "axis": "free",
+    "arm": "mimalloc",
+    "mode": "16",
+    "Ir": 28
+  },
+  {
+    "round": "mir",
+    "axis": "free",
+    "arm": "mimalloc",
+    "mode": "64",
+    "Ir": 28
+  },
+  {
+    "round": "mir",
+    "axis": "control",
+    "arm": "sefer",
+    "mode": "bulk64",
+    "Ir": 116.3125
+  },
+  {
+    "round": "mir",
+    "axis": "control",
+    "arm": "sefer",
+    "mode": "bulk16k",
+    "Ir": 191.125
+  },
+  {
+    "round": "mir",
+    "axis": "control",
+    "arm": "mimalloc",
+    "mode": "bulk64",
+    "Ir": 31.890625
+  },
+  {
+    "round": "mir",
+    "axis": "control",
+    "arm": "mimalloc",
+    "mode": "bulk16k",
+    "Ir": 73.1875
+  }
+]

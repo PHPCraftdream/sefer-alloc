@@ -1,0 +1,1102 @@
+{
+  "rows": [
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 4094727,
+      "ir2": 8096411,
+      "marginal_ir_per_free": 80.03368
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 2150734,
+      "ir2": 4300734,
+      "marginal_ir_per_free": 43
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 2150734,
+      "ir2": 4300734,
+      "marginal_ir_per_free": 43
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 1575869,
+      "ir2": 3125976,
+      "marginal_ir_per_free": 31.00214
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "16",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 1400507,
+      "ir2": 2800507,
+      "marginal_ir_per_free": 28
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "64",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 1400507,
+      "ir2": 2800507,
+      "marginal_ir_per_free": 28
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 4094727,
+      "ir2": 8096411,
+      "marginal_ir_per_free": 80.03368
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 2150734,
+      "ir2": 4300734,
+      "marginal_ir_per_free": 43
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 2150734,
+      "ir2": 4300734,
+      "marginal_ir_per_free": 43
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 1575869,
+      "ir2": 3125976,
+      "marginal_ir_per_free": 31.00214
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "16",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 1400507,
+      "ir2": 2800507,
+      "marginal_ir_per_free": 28
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "64",
+      "n1": 50000,
+      "n2": 100000,
+      "ir1": 1400507,
+      "ir2": 2800507,
+      "marginal_ir_per_free": 28
+    }
+  ],
+  "attribution": [
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/registry/heap_core/free/dealloc_own_base.rs",
+      "delta_ir": 1433384,
+      "marginal_ir_per_free": 28.66768
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 450000,
+      "marginal_ir_per_free": 9
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/platform/size_classes.rs",
+      "delta_ir": 450000,
+      "marginal_ir_per_free": 9
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/segment/segment_header/segment_header_views.rs",
+      "delta_ir": 204280,
+      "marginal_ir_per_free": 4.0856
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/segment/segment_table/segment_table_impl.rs",
+      "delta_ir": 154280,
+      "marginal_ir_per_free": 3.0856
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs",
+      "delta_ir": 170544,
+      "marginal_ir_per_free": 3.41088
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs",
+      "delta_ir": 174824,
+      "marginal_ir_per_free": 3.49648
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/small/alloc_core_small_magazine.rs",
+      "delta_ir": 230374,
+      "marginal_ir_per_free": 4.60748
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/alloc_core/mem/mem_impl.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/global/tls_heap.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/segment/bitmap/state_byte.rs",
+      "delta_ir": 63696,
+      "marginal_ir_per_free": 1.27392
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs",
+      "delta_ir": 29104,
+      "marginal_ir_per_free": 0.58208
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs",
+      "delta_ir": 24824,
+      "marginal_ir_per_free": 0.49648
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs",
+      "delta_ir": 11984,
+      "marginal_ir_per_free": 0.23968
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs",
+      "delta_ir": 3424,
+      "marginal_ir_per_free": 0.06848
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/lib.rs",
+      "delta_ir": 856,
+      "marginal_ir_per_free": 0.01712
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/small/alloc_core_small/directory.rs",
+      "delta_ir": 110,
+      "marginal_ir_per_free": 0.0022
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "src/registry/heap_core/free/dealloc_own_base.rs",
+      "delta_ir": 1050000,
+      "marginal_ir_per_free": 21
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "src/alloc_core/segment/segment_header/segment_header_views.rs",
+      "delta_ir": 200000,
+      "marginal_ir_per_free": 4
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "src/alloc_core/segment/segment_table/segment_table_impl.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "src/global/tls_heap.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "src/registry/heap_core/free/dealloc_own_base.rs",
+      "delta_ir": 1050000,
+      "marginal_ir_per_free": 21
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "src/alloc_core/segment/segment_header/segment_header_views.rs",
+      "delta_ir": 200000,
+      "marginal_ir_per_free": 4
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "src/alloc_core/segment/segment_table/segment_table_impl.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "src/global/tls_heap.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h",
+      "delta_ir": 550009,
+      "marginal_ir_per_free": 11.00018
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c",
+      "delta_ir": 500052,
+      "marginal_ir_per_free": 10.00104
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 300000,
+      "marginal_ir_per_free": 6
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c",
+      "delta_ir": 28,
+      "marginal_ir_per_free": 0.00056
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c",
+      "delta_ir": 18,
+      "marginal_ir_per_free": 0.00036
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h",
+      "delta_ir": 550000,
+      "marginal_ir_per_free": 11
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c",
+      "delta_ir": 500000,
+      "marginal_ir_per_free": 10
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h",
+      "delta_ir": 550000,
+      "marginal_ir_per_free": 11
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c",
+      "delta_ir": 500000,
+      "marginal_ir_per_free": 10
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 1,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/registry/heap_core/free/dealloc_own_base.rs",
+      "delta_ir": 1433384,
+      "marginal_ir_per_free": 28.66768
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 450000,
+      "marginal_ir_per_free": 9
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/platform/size_classes.rs",
+      "delta_ir": 450000,
+      "marginal_ir_per_free": 9
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/segment/segment_header/segment_header_views.rs",
+      "delta_ir": 204280,
+      "marginal_ir_per_free": 4.0856
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/segment/segment_table/segment_table_impl.rs",
+      "delta_ir": 154280,
+      "marginal_ir_per_free": 3.0856
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs",
+      "delta_ir": 170544,
+      "marginal_ir_per_free": 3.41088
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs",
+      "delta_ir": 174824,
+      "marginal_ir_per_free": 3.49648
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/small/alloc_core_small_magazine.rs",
+      "delta_ir": 230374,
+      "marginal_ir_per_free": 4.60748
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/alloc_core/mem/mem_impl.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/global/tls_heap.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/segment/bitmap/state_byte.rs",
+      "delta_ir": 63696,
+      "marginal_ir_per_free": 1.27392
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs",
+      "delta_ir": 29104,
+      "marginal_ir_per_free": 0.58208
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs",
+      "delta_ir": 24824,
+      "marginal_ir_per_free": 0.49648
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs",
+      "delta_ir": 11984,
+      "marginal_ir_per_free": 0.23968
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs",
+      "delta_ir": 3424,
+      "marginal_ir_per_free": 0.06848
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/lib.rs",
+      "delta_ir": 856,
+      "marginal_ir_per_free": 0.01712
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "rt",
+      "file": "src/alloc_core/small/alloc_core_small/directory.rs",
+      "delta_ir": 110,
+      "marginal_ir_per_free": 0.0022
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "src/registry/heap_core/free/dealloc_own_base.rs",
+      "delta_ir": 1050000,
+      "marginal_ir_per_free": 21
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "src/alloc_core/segment/segment_header/segment_header_views.rs",
+      "delta_ir": 200000,
+      "marginal_ir_per_free": 4
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "src/alloc_core/segment/segment_table/segment_table_impl.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "16",
+      "file": "src/global/tls_heap.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "src/registry/heap_core/free/dealloc_own_base.rs",
+      "delta_ir": 1050000,
+      "marginal_ir_per_free": 21
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "src/alloc_core/segment/segment_header/segment_header_views.rs",
+      "delta_ir": 200000,
+      "marginal_ir_per_free": 4
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "src/alloc_core/segment/segment_table/segment_table_impl.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "sefer",
+      "mode": "64",
+      "file": "src/global/tls_heap.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h",
+      "delta_ir": 550009,
+      "marginal_ir_per_free": 11.00018
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c",
+      "delta_ir": 500052,
+      "marginal_ir_per_free": 10.00104
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 300000,
+      "marginal_ir_per_free": 6
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c",
+      "delta_ir": 28,
+      "marginal_ir_per_free": 0.00056
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "rt",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c",
+      "delta_ir": 18,
+      "marginal_ir_per_free": 0.00036
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h",
+      "delta_ir": 550000,
+      "marginal_ir_per_free": 11
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c",
+      "delta_ir": 500000,
+      "marginal_ir_per_free": 10
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "16",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h",
+      "delta_ir": 550000,
+      "marginal_ir_per_free": 11
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c",
+      "delta_ir": 500000,
+      "marginal_ir_per_free": 10
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "examples/own_free_profile.rs",
+      "delta_ir": 150000,
+      "marginal_ir_per_free": 3
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs",
+      "delta_ir": 100000,
+      "marginal_ir_per_free": 2
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    },
+    {
+      "pass": 2,
+      "arm": "mimalloc",
+      "mode": "64",
+      "file": "<home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs",
+      "delta_ir": 50000,
+      "marginal_ir_per_free": 1
+    }
+  ]
+}

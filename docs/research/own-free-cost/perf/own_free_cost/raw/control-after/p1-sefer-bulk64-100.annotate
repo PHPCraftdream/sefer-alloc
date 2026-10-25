@@ -1,0 +1,887 @@
+--------------------------------------------------------------------------------
+Profile data file '<workspace>/.rush/own-free/control-after/p1-sefer-bulk64-100.callgrind' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 429394
+Trigger: Program termination
+Profiled target:  <workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall sefer bulk64 100 (PID 584492, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir               
+--------------------------------------------------------------------------------
+755,847 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                file:function
+--------------------------------------------------------------------------------
+179,200 (23.71%)  src/registry/heap_core/free/dealloc_own_base.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+162,200 (21.46%)  src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall]
+ 57,600 ( 7.62%)  examples/own_free_wall.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> [<workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall]
+ 57,600 ( 7.62%)  src/alloc_core/platform/size_classes.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 27,000 ( 3.57%)  src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::dealloc_magazine_overflow [<workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall]
+ 25,598 ( 3.39%)  src/alloc_core/segment/segment_header/segment_header_views.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 25,200 ( 3.33%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 19,225 ( 2.54%)  src/alloc_core/segment/segment_table/segment_table_impl.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 19,200 ( 2.54%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 19,200 ( 2.54%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 19,200 ( 2.54%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 18,602 ( 2.46%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 16,800 ( 2.22%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 16,200 ( 2.14%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 14,400 ( 1.91%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 12,800 ( 1.69%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 12,800 ( 1.69%)  src/alloc_core/alloc_core/mem/mem_impl.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 12,000 ( 1.59%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  9,600 ( 1.27%)  src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  6,400 ( 0.85%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  6,400 ( 0.85%)  src/global/tls_heap.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  5,800 ( 0.77%)  src/alloc_core/segment/bitmap/state_byte.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  3,600 ( 0.48%)  src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  3,000 ( 0.40%)  src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  1,800 ( 0.24%)  src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::dealloc_magazine_overflow
+  1,800 ( 0.24%)  src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  1,200 ( 0.16%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    600 ( 0.08%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::dealloc_magazine_overflow
+    600 ( 0.08%)  src/lib.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    200 ( 0.03%)  src/alloc_core/small/alloc_core_small/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+     20 ( 0.00%)  src/alloc_core/segment/segment_table/hash.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+      .           ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+      .           ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [<workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [<workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [<workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall]
+      .           ???:(below main) [<workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall]
+      .           ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+      .           ???:main [<workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall]
+      .           examples/own_free_wall.rs:own_free_wall::main [<workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall]
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/global/tls_heap.rs
+--------------------------------------------------------------------------------
+Ir             
+
+-- line 371 ----------------------------------------
+    .           ///
+    .           /// - real pointer (own heap bound) → [`CurrentHeapForDealloc::Own`] —
+    .           ///   identical fast path to [`current_for_alloc`]'s `Own` arm, unchanged.
+    .           /// - `null` / `TORN` / `Err` → [`CurrentHeapForDealloc::ForeignNoBind`]; the
+    .           ///   stale pointer is never dereferenced.
+    .           #[cfg(feature = "alloc-xthread")]
+    .           #[inline(always)]
+    .           pub(crate) fn current_for_dealloc() -> CurrentHeapForDealloc {
+6,400 ( 0.85%)      match LOCAL.try_with(|c| c.get()) {
+    .                   // Same Э2 (task #145) one-branch collapse as `current_for_alloc`:
+    .                   // real p → `< MAX-1` → Own (fast); null (0) and TORN (MAX) both fall
+    .                   // to the cold arm below, where THIS resolver (unlike
+    .                   // `current_for_alloc`) maps BOTH to `ForeignNoBind` — neither binds
+    .                   // a slot nor resolves the fallback pointer.
+    .                   Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeapForDealloc::Own(p),
+    .                   // null (first call ever, on this thread) OR TORN (slot already
+    .                   // recycled): both are "no live heap of our own to consult" — route
+-- line 387 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/registry/heap_core/free/dealloc_own_base.rs
+--------------------------------------------------------------------------------
+Ir              
+
+-- line 312 ----------------------------------------
+     .               // flushed-bitmap).
+     .               let off = (ptr as usize - base as usize) as u32;
+     .               let meta = SegmentMeta::new(base);
+     .               let payload_start = if matches!(&kind, BlockKind::Primordial) {
+     .                   SegmentLayout::primordial_meta_end()
+     .               } else {
+     .                   SegmentLayout::small_meta_end()
+     .               };
+19,200 ( 2.54%)      if (off as usize) < payload_start {
+     .                   return SmallFreeGuard::RejectNoOp;
+     .               }
+     .               // B4 variant (в): the M2 double-free oracles collapse into ONE check on
+     .               // the authoritative STATE BYTE. The alignment check above (H1, hardened)
+     .               // plus the byte's class field (encoded at every issue site) subsume the
+     .               // former `divides`/`small_class_matches` class-identity precursor; the
+     .               // single reject below covers both the in-magazine and the stale-free
+     .               // double-free cases (state MAG or FREE ⇒ not the caller's LIVE block).
+-- line 328 ----------------------------------------
+-- line 345 ----------------------------------------
+     .               // byte whose state is LIVE but whose CLASS field differs — the base's
+     .               // wrong-class Accept-branch reject. Both surface as
+     .               // `RejectNoOpSilent` (callers treat it identically minus the counter).
+     .               let byte = meta.state_byte().read(off);
+     .               let expected = crate::alloc_core::state_byte::StateByte::encode(
+     .                   c,
+     .                   crate::alloc_core::state_byte::StateByte::LIVE,
+     .               );
+25,600 ( 3.39%)      if (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) != 0 {
+     .                   return SmallFreeGuard::RejectNoOpSilent;
+     .               }
+     .               if byte != expected {
+     .                   if byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::LIVE {
+     .                       return SmallFreeGuard::RejectNoOpSilent;
+     .                   }
+     .                   if byte == 0 {
+     .                       if (off as usize) < meta.bump_of() {
+     .                           return SmallFreeGuard::RejectNoOpSilent;
+     .                       }
+     .                       return SmallFreeGuard::RejectNoOp;
+     .                   }
+     .                   return SmallFreeGuard::RejectNoOp;
+     .               }
+12,800 ( 1.69%)      if (off as usize) >= meta.bump_of() {
+     .                   return SmallFreeGuard::RejectNoOp;
+     .               }
+     .           
+     .               SmallFreeGuard::Accept { off }
+     .           }
+     .           
+     .           // `HARDENED_LARGE_NOOP_COUNT` stayed in the sibling `dealloc` module with
+     .           // the rest of the former file head (R6-T20: the `medium_promotion_reachable!`
+-- line 376 ----------------------------------------
+-- line 439 ----------------------------------------
+     .                       // sound for any align it accepted, not just align<=16).
+     .                       //
+     .                       // Ph3b: the class is computed first because the magazine push
+     .                       // below needs it, but it NO LONGER decides Small-vs-Large —
+     .                       // `small_free_guard` does, from the segment header's `kind` byte
+     .                       // via `BlockKind` (see its F7 branch and the pre-route above it).
+     .                       {
+     .                           if let Some(c) = SizeClasses::class_for(size, align) {
+32,000 ( 4.23%)                      let cnt = self.tcache.classes[c].count as usize;
+     .           
+     .                               // Task #2002: F7 (task #25; R17-4/task #321; R18-3/task
+     .                               // #330) Large-kind routing, H1 (task #167) interior-pointer
+     .                               // guard, and the M2 (Э6, P6.1) double-free oracle pair —
+     .                               // now the shared `small_free_guard` this file defines
+     .                               // above, called identically from `dealloc_batch_small`
+     .                               // (`free/dealloc_batch.rs`). See that function's doc
+     .                               // comment for the full guard-by-guard rationale (case
+-- line 455 ----------------------------------------
+-- line 487 ----------------------------------------
+     .                                       return;
+     .                                   }
+     .                               };
+     .           
+     .                               // R1-01: free-side byte budget. `cap` is `TCACHE_CAP` for
+     .                               // small classes (unchanged behaviour) and smaller for
+     .                               // large small-classes, mirroring D3's refill-side budget
+     .                               // — see `FREE_PARK_CAP`'s doc comment.
+ 6,400 ( 0.85%)                      let cap = FREE_PARK_CAP[c] as usize;
+12,800 ( 1.69%)                      if cnt < cap {
+     .                                   // Legit free → push. NO key stamp, NO block-body write.
+     .                                   //
+     .                                   // B4 variant (в): mark this block MAG in the state
+     .                                   // byte (was RAD-5's magazine-bitmap set).
+     .                                   meta.state_byte().write(
+     .                                       off,
+     .                                       c,
+     .                                       crate::alloc_core::state_byte::StateByte::MAG,
+     .                                   );
+     .                                   // R6-T13: identity mask (`cnt < cap <= TCACHE_CAP`); skips bounds check.
+17,400 ( 2.30%)                          self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block;
+11,600 ( 1.53%)                          self.tcache.classes[c].count = (cnt + 1) as u8;
+     .                                   // R13-3 (task #273): a pushed-back block was
+     .                                   // previously issued (it is being FREED right now) —
+     .                                   // by the dispatch conjunct (§2 of both virgin-skip
+     .                                   // design docs) it is NEVER virgin, regardless of the
+     .                                   // bit any earlier occupant of physical slot `cnt`
+     .                                   // left behind. `PerClass::virgin_mask`'s own
+     .                                   // invariant ("bits >= count are 0") already
+     .                                   // guarantees bit `cnt` reads 0 here (it was `>=
+-- line 516 ----------------------------------------
+-- line 520 ----------------------------------------
+     .                                   // is visibly re-asserted at every mutation site
+     .                                   // rather than relying on readers to re-derive it.
+     .                                   #[cfg(feature = "virgin-zero-skip")]
+     .                                   {
+     .                                       self.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
+     .                                   }
+     .                                   return;
+     .                               }
+ 3,000 ( 0.40%)                      self.dealloc_magazine_overflow(owned, c);
+296,200 (39.19%)  => src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::dealloc_magazine_overflow (600x)
+     .                               return;
+     .                           }
+     .                       }
+     .                   }
+     .                   // Large / non-small / non-fastbin: free directly at the witness root.
+     .                   // PF-10: `root` is the table-derived canonical root from the
+     .                   // `OwnedBlock` witness; do not re-resolve it in the substrate.
+     .                   // SAFETY: dealloc/realloc callers keep the witnessed allocation live
+-- line 536 ----------------------------------------
+-- line 542 ----------------------------------------
+     .                   unsafe {
+     .                       self.core.dealloc_at_base(block, layout, root)
+     .                   };
+     .               }
+     .           
+     .               /// После успешного small_free_guard и достижения cap; policy не меняется.
+     .               #[cold]
+     .               #[inline(never)]
+ 4,800 ( 0.64%)      fn dealloc_magazine_overflow(&mut self, owned: OwnedBlock, c: usize) {
+     .                   use crate::registry::heap_core::state::tcache::{FLUSH_N, FREE_PARK_CAP, TCACHE_CAP};
+     .                   let (root, block) = (owned.root(), owned.block());
+     .                   let off = (block.addr() - root.addr()) as u32;
+     .                   let meta = SegmentMeta::new(root);
+ 4,200 ( 0.56%)          let cnt = self.tcache.classes[c].count as usize;
+     .                   let cap = FREE_PARK_CAP[c] as usize;
+     .                   // ── R1-01: free-side byte-budget cap reached ───────
+     .                   // `cnt == cap < TCACHE_CAP`: this class's per-refill byte
+     .                   // budget (`FREE_PARK_CAP`) is exhausted, but the physical
+     .                   // magazine array is not — do NOT grow past `cap` (that
+     .                   // would re-open the D3 gap: parking more bytes on the
+     .                   // free side than a refill ever would). O(1) swap-top:
+     .                   // the magazine evicts its TOP block to the substrate and
+-- line 563 ----------------------------------------
+-- line 567 ----------------------------------------
+     .                   // The flushed block must NOT be `block` itself: `block`'s
+     .                   // body still belongs to the live `Box::drop`/dealloc
+     .                   // frame (P1-box / item 164) — `flush_run` writes `next`
+     .                   // into the block body (`Node::write_next`), which is the
+     .                   // R1-01 UB. The evicted block has long been resident in
+     .                   // the magazine and its frame is complete, so writing its
+     .                   // body is safe. The M2 oracles (`small_free_guard`)
+     .                   // already ran above; their order is unchanged.
+ 1,200 ( 0.16%)          if cap < TCACHE_CAP {
+     .                       let evicted = self.tcache.classes[c].slots[cnt - 1];
+     .                       // B4 (в): the evicted block LEAVES the magazine; its
+     .                       // MAG → FREE state-byte transition is committed by
+     .                       // `flush_run` inside the flush below (as on the
+     .                       // overflow path), so no separate clear happens here.
+     .                       debug_assert_eq!(
+     .                           self.core.canonical_root_for(evicted),
+     .                           Some(crate::alloc_core::os::segment_base_of_ptr(evicted)),
+-- line 583 ----------------------------------------
+-- line 635 ----------------------------------------
+     .                   // Normal overflow: half-flush, then push.
+     .                   // SAFETY (R6-MS-3): every slot in `slots[0..FLUSH_N]` is a
+     .                   // valid live small-class-`c` allocation owned by this core's
+     .                   // magazine (just freed into it under the alloc-xthread/fastbin
+     .                   // path); each is returned to the substrate exactly once here.
+     .                   #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+     .                   unsafe {
+     .                       self.core
+ 3,000 ( 0.40%)                  .flush_class_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
+266,800 (35.30%)  => <workspace>/worktrees/own-free-cost/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal (600x)
+     .                   };
+     .                   // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
+     .                   let remaining = TCACHE_CAP - FLUSH_N;
+     .                   for i in 0..remaining {
+ 4,800 ( 0.64%)              self.tcache.classes[c].slots[i] = self.tcache.classes[c].slots[i + FLUSH_N];
+     .                   }
+     .                   // R13-3 (task #273): the virgin mask must undergo the
+     .                   // IDENTICAL shift as `slots` — bit `i` of the compacted
+     .                   // mask is bit `i + FLUSH_N` of the pre-compaction mask
+     .                   // (byte-identical to the `slots[i] = slots[i + FLUSH_N]`
+     .                   // loop just above, just on the bitmask instead of the
+     .                   // pointer array). The flushed low half (`slots[0..FLUSH_N]`,
+     .                   // now returned to the substrate via `flush_class`) is
+-- line 656 ----------------------------------------
+-- line 661 ----------------------------------------
+     .                   }
+     .                   // Push (Э6: NO key stamp, NO block-body write). The oracles
+     .                   // above already ran before this overflow branch, so a
+     .                   // double-free is caught even when the magazine is full.
+     .                   // RAD-5: mark the newly-pushed block magazine-resident.
+     .                   // B4 (в): MAG in the state byte.
+     .                   meta.state_byte()
+     .                       .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
+   600 ( 0.08%)          self.tcache.classes[c].slots[remaining] = block;
+   600 ( 0.08%)          self.tcache.classes[c].count = (remaining + 1) as u8;
+     .                   // R13-3: the newly-pushed block is a freed (previously
+     .                   // issued) block — never virgin (dispatch conjunct), same
+     .                   // reasoning as the non-overflow push arm above. Clear bit
+     .                   // `remaining` explicitly: after the `>>= FLUSH_N` shift
+     .                   // above, that bit holds whatever was at pre-shift index
+     .                   // `remaining + FLUSH_N` (`== TCACHE_CAP`, i.e. always 0 by
+     .                   // the mask invariant since no valid slot index reaches
+     .                   // `TCACHE_CAP`) — so this is defensive, not load-bearing,
+     .                   // matching the non-overflow arm's identical comment.
+     .                   #[cfg(feature = "virgin-zero-skip")]
+     .                   {
+     .                       self.tcache.classes[c].virgin_mask &= !(1u16 << remaining);
+     .                   }
+ 4,800 ( 0.64%)      }
+     .           }
+
+41,400 ( 5.48%)  <counts for unidentified lines in src/registry/heap_core/free/dealloc_own_base.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/alloc_core/small/alloc_core_small/directory.rs
+--------------------------------------------------------------------------------
+Ir           
+
+-- line 146 ----------------------------------------
+  .                                     // fully initialised), `AllocCore`'s owner-only discipline
+  .                                     // (neither `Send` nor `Sync`) rules out a concurrent
+  .                                     // reader/writer, and no other reference to the sidecar is
+  .                                     // live across this call.
+  .                                     // R2-12: the returned reference is OWNER-TIED (`&'a` from `self`), not `'static` — the sidecar's VM span is released when this core drops its `directory_sidecar_vm` token.
+  .               pub(in crate::alloc_core) fn directory_mut(
+  .                   &mut self,
+  .               ) -> Option<&mut crate::alloc_core::segment_directory::SegmentDirectory> {
+200 ( 0.03%)          if self.directory_sidecar.is_null() {
+  .                       None
+  .                   } else {
+  .                       // SAFETY: see the `#[allow(unsafe_code)]` justification above.
+  .                       Some(unsafe { crate::alloc_core::sidecar::deref_mut(self.directory_sidecar, &*self) })
+  .                   }
+  .               }
+  .           
+  .               // ── R7-A2: centralized empty↔non-empty transition helpers ──────────────
+-- line 162 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/alloc_core/segment/segment_header/segment_header_views.rs
+--------------------------------------------------------------------------------
+Ir              
+
+-- line 30 ----------------------------------------
+     .                   // membership, but nothing
+     .                   // to validate the `kind` BYTE of a base that IS ours but has been
+     .                   // corrupted in place — so this decode must reject on its own.
+     .                   // Unexpected kind bytes become `Unknown`; callers must interpret that
+     .                   // sentinel according to their own contract: some reject/abort when an
+     .                   // active slot violates its invariant, while fallback candidate checks
+     .                   // may treat it as stale and return `None`. Unknown is not universally
+     .                   // a no-op.
+27,398 ( 3.62%)          match b {
+     .                       0 => SegmentKind::Primordial,
+     .                       1 => SegmentKind::Small,
+     .                       2 => SegmentKind::Large,
+     .                       _ => SegmentKind::Unknown,
+     .                   }
+     .               }
+     .           
+     .               medium_promotion_reachable! {
+-- line 46 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/alloc_core/alloc_core/mem/mem_impl.rs
+--------------------------------------------------------------------------------
+Ir              
+
+
+12,800 ( 1.69%)  <counts for unidentified lines in src/alloc_core/alloc_core/mem/mem_impl.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/alloc_core/platform/size_classes.rs
+--------------------------------------------------------------------------------
+Ir              
+
+-- line 349 ----------------------------------------
+     .               /// forwards `size` unclamped -- clamping there is its OWN caller's
+     .               /// documented contract, not this function's.
+     .               #[must_use]
+     .               pub(crate) const fn class_for(size: usize, align: usize) -> Option<usize> {
+     .                   debug_assert!(
+     .                       align.is_power_of_two(),
+     .                       "class_for: align must be a power of two (the Layout contract)"
+     .                   );
+12,800 ( 1.69%)          if align <= MIN_BLOCK {
+     .                       Self::class_for_small_align(size)
+     .                   } else {
+     .                       SC.class_for(size, align)
+     .                   }
+     .               }
+     .           
+     .               /// Constant-folded fast path of [`class_for`](Self::class_for) for
+     .               /// `align <= MIN_BLOCK` (wave B4: the generic crate path loaded
+-- line 365 ----------------------------------------
+-- line 389 ----------------------------------------
+     .               ///   is a multiple of `MIN_BLOCK >= align`, so with
+     .               ///   `align <= (1 << MIN_BLOCK_SHIFT)` the original always returned
+     .               ///   `Some(seed)` immediately.
+     .               #[must_use]
+     .               #[inline(always)]
+     .               pub(crate) const fn class_for_small_align(size: usize) -> Option<usize> {
+     .                   // `const fn`-safe `max(size, 1)` (`Ord::max` is not const-stable):
+     .                   // `0usize.wrapping_sub(1) >> MIN_BLOCK_SHIFT` would be huge.
+12,800 ( 1.69%)          let seed_idx = if size == 0 {
+     .                       0
+     .                   } else {
+     .                       (size - 1) >> MIN_BLOCK_SHIFT
+     .                   };
+12,800 ( 1.69%)          if seed_idx >= S2C_LEN - 1 {
+     .                       return None;
+     .                   }
+19,200 ( 2.54%)          Some(SIZE2CLASS[seed_idx] as usize)
+     .               }
+     .           
+     .               /// The checked twin of [`class_for`](Self::class_for): rejects a
+     .               /// non-power-of-two `align` (including `0`) with `Err(InvalidAlign)`
+     .               /// instead of trusting it. No in-tree allocator call site needs this --
+     .               /// every internal caller's alignment already comes from a `Layout` -- it
+     .               /// exists solely so [`SegmentLayout::try_class_for`](crate::alloc_core::SegmentLayout::try_class_for),
+     .               /// a genuinely public API, has a checked forwarder to expose (size-classes
+-- line 413 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/lib.rs
+--------------------------------------------------------------------------------
+Ir           
+
+
+600 ( 0.08%)  <counts for unidentified lines in src/lib.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: examples/own_free_wall.rs
+--------------------------------------------------------------------------------
+Ir              
+
+-- line 5 ----------------------------------------
+     .           
+     .           #[inline(never)]
+     .           fn w_alloc_rt<A: GlobalAlloc>(a: &A, layout: Layout) -> *mut u8 {
+     .               // SAFETY: ненулевой корректный layout; результат проверяется до использования.
+     .               unsafe { a.alloc(layout) }
+     .           }
+     .           
+     .           #[inline(never)]
+25,600 ( 3.39%)  fn w_free_rt<A: GlobalAlloc>(a: &A, ptr: *mut u8, layout: Layout) {
+     .               // SAFETY: run_rt передаёт свой уникальный живой блок с исходным layout.
+     .               unsafe { a.dealloc(ptr, layout) };
+     .               black_box(layout.size());
+32,000 ( 4.23%)  }
+     .           
+     .           #[inline(never)]
+     .           fn w_alloc16<A: GlobalAlloc>(a: &A) -> *mut u8 {
+     .               // SAFETY: корректный layout; результат проверяется до использования.
+     .               unsafe { a.alloc(Layout::from_size_align(16, 8).unwrap()) }
+     .           }
+     .           
+     .           #[inline(never)]
+-- line 25 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/alloc_core/small/alloc_core_small_magazine.rs
+--------------------------------------------------------------------------------
+Ir              
+
+-- line 557 ----------------------------------------
+     .               /// Every non-null entry must be a live, mapped allocation start owned by
+     .               /// this core, of valid `class_idx`, and freed at most once. Interior,
+     .               /// foreign, stale, or duplicate pointers are forbidden; nulls are skipped.
+     .               // R6-T16: call sites compile only under feature-gated arms; internals
+     .               // probes reach these directly.
+     .               #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+     .               #[inline]
+     .               #[allow(unsafe_code)] // Caller-pointer contract, unchanged production body.
+15,600 ( 2.06%)      pub(crate) unsafe fn flush_class_internal(&mut self, class_idx: usize, blocks: &[*mut u8]) {
+     .                   // L-4 (UBFIX-11): a per-CALL record of segment bases already recycled
+     .                   // (decommitted-and-released OR pooled) by an EARLIER run within this
+     .                   // same `flush_class` invocation. `flush_class` groups `blocks` into
+     .                   // same-segment runs (Э8); the grouping assumes each segment appears
+     .                   // in AT MOST ONE run, which holds for a legitimate magazine batch
+     .                   // (the magazine never holds two live copies of the same block, and
+     .                   // distinct blocks of one segment naturally form one contiguous
+     .                   // same-base run once produced by the allocator). But an UPSTREAM
+-- line 573 ----------------------------------------
+-- line 599 ----------------------------------------
+     .                   // bases once the array is full (`recycled_n == CAP`) — the excess
+     .                   // just loses the double-free containment for anything beyond the
+     .                   // 16th distinct recycled base, it does not corrupt anything.
+     .                   const RECYCLED_CAP: usize = 16;
+     .                   let mut recycled_bases: [*mut u8; RECYCLED_CAP] = [core::ptr::null_mut(); RECYCLED_CAP];
+     .                   let mut recycled_n: usize = 0;
+     .           
+     .                   let mut i = 0;
+ 4,800 ( 0.64%)          while i < blocks.len() {
+   600 ( 0.08%)              let ptr = blocks[i];
+ 1,200 ( 0.16%)              if ptr.is_null() {
+     .                           i += 1;
+     .                           continue; // defensive: skip nulls (matches per-block path)
+     .                       }
+     .                       let candidate = os::segment_base_of_ptr(ptr);
+     .                       // Detect the run of consecutive same-segment blocks starting at `i`.
+     .                       // Nulls terminate a run (they are handled by the outer loop as
+     .                       // no-ops, exactly as the per-block path skips them).
+     .                       let mut run_end = i + 1;
+12,000 ( 1.59%)              while run_end < blocks.len() {
+ 4,200 ( 0.56%)                  let q = blocks[run_end];
+16,800 ( 2.22%)                  if q.is_null() || os::segment_base_of_ptr(q) != candidate {
+     .                               break;
+     .                           }
+     .                           run_end += 1;
+     .                       }
+     .                       // L-4: if an EARLIER run in this call already recycled `base`,
+     .                       // skip this run entirely — `base`'s metadata may be unmapped
+     .                       // (released leg) or in a state a blind re-run must not assume
+     .                       // (pooled leg). This is the exact defensive-skip the per-block
+-- line 628 ----------------------------------------
+-- line 638 ----------------------------------------
+     .                               if recycled_now && recycled_n < RECYCLED_CAP {
+     .                                   recycled_bases[recycled_n] = candidate;
+     .                                   recycled_n += 1;
+     .                               }
+     .                           }
+     .                       }
+     .                       i = run_end;
+     .                   }
+ 4,800 ( 0.64%)      }
+     .           
+     .               /// Flush ONE run of blocks that all share segment `base` (Э8). See
+     .               /// `flush_class` for splice and batched-credit policy reasoning. Every
+     .               /// block in `run` is non-null and has `segment_base_of_ptr(block) == base`.
+     .               ///
+     .               /// L-4 (UBFIX-11): returns `true` iff this run's flush triggered
+     .               /// `release_or_pool_empty_segment(base)` (i.e. the segment reached
+     .               /// `live_count == 0` and was pooled or released). `flush_class`
+-- line 654 ----------------------------------------
+-- line 695 ----------------------------------------
+     .                   let old_head = bt.head(class_idx);
+     .                   let mut last_accepted: Option<u32> = None;
+     .                   // N3-b (split-n8b): thread the PREVIOUS block's pointer through the
+     .                   // pass instead of re-deriving it per block from `prev_off`. The
+     .                   // linked value and provenance are byte-identical: the hoisted
+     .                   // `Node::deref(base, old_head)` and `block_nn.as_ptr()` of the prior
+     .                   // iteration are exactly the `Node::deref(base, prev_off)` the old
+     .                   // per-block branch computed (both derive from `base`, same address).
+ 6,000 ( 0.79%)          let mut prev_ptr: *mut u8 = if old_head == FREE_LIST_NULL {
+     .                       core::ptr::null_mut()
+     .                   } else {
+     .                       Node::deref(base, old_head as usize)
+     .                   };
+     .                   // Count accepted blocks for one owner-side credit retirement after `set_head`.
+     .                   let mut accepted_count: usize = 0;
+     .                   let span: usize = bump.saturating_sub(payload_start);
+     .           
+ 4,800 ( 0.64%)          for &ptr in run {
+ 4,800 ( 0.64%)              let off = (ptr as usize - base as usize) as u32;
+     .                       // Guards 0+1 (per-block, split-n8c): the hoisted span check.
+     .                       // `off < payload_start` wraps to a huge value ≥ span; `off >= bump`
+     .                       // yields ≥ span. With a corrupted `bump < payload_start`, span is
+     .                       // 0 and every offset is rejected — same strength as the old pair.
+14,400 ( 1.91%)              if (off as usize).wrapping_sub(payload_start) >= span {
+     .                           continue;
+     .                       }
+     .                       // Guard 2 (per-block): accept only a currently-issued block of
+     .                       // this class — its byte must carry this class's class field and
+     .                       // a LIVE or MAG state (B4 (в); the zero/unissued byte, a foreign
+     .                       // class, and an already-FREE block are all rejected/skipped).
+     .                       let sb = meta.state_byte().read(off);
+38,400 ( 5.08%)              if sb & 0x3F != class_idx as u8 + 1
+     .                           || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE
+     .                       {
+     .                           continue;
+     .                       }
+     .                       // `ptr` identifies the offset only. Link through the stored
+     .                       // reservation root, which covers the entire free-list word.
+     .                       let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
+     .                           Some(nn) => nn,
+-- line 734 ----------------------------------------
+-- line 742 ----------------------------------------
+     .                       // B4 (в): commit the accepted block (LIVE or MAG) to FREE.
+     .                       meta.state_byte().write(
+     .                           off,
+     .                           class_idx,
+     .                           crate::alloc_core::state_byte::StateByte::FREE,
+     .                       );
+     .                       prev_ptr = block_nn.as_ptr();
+     .                       last_accepted = Some(off);
+ 4,800 ( 0.64%)              accepted_count += 1;
+     .                   }
+     .           
+     .                   // Write the new head ONCE (only if ≥1 block was accepted). Mirrors the
+     .                   // final `set_head` of the last sequential `dealloc_small` in the run.
+     .                   if let Some(off) = last_accepted {
+     .                       bt.set_head(class_idx, off);
+     .                       // R7-A2: directory bitmap maintenance — the new head is always
+     .                       // non-null (`off`), so the only transition is empty→non-empty
+     .                       // when old_head was FREE_LIST_NULL.
+     .                       #[cfg(feature = "alloc-segment-directory")]
+     .                       if old_head == FREE_LIST_NULL {
+     .                           let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+   100 ( 0.01%)                  self.publish_nonempty(base, class_idx, slot_idx);
+     .                       }
+     .                   }
+     .           
+     .                   // E3 (task W4): retire accepted credits once, after `set_head`.
+     .                   // The following eligibility check only selects pool/release policy.
+     .                   SegmentMeta::new(base).sub_live(accepted_count as u32);
+     .                   #[cfg(feature = "alloc-decommit")]
+     .                   {
+-- line 771 ----------------------------------------
+
+28,900 ( 3.82%)  <counts for unidentified lines in src/alloc_core/small/alloc_core_small_magazine.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs
+--------------------------------------------------------------------------------
+Ir             
+
+-- line 100 ----------------------------------------
+    .                   allow(dead_code)
+    .               )]
+    .               #[inline(always)]
+    .               pub(in crate::alloc_core) fn dec_live_batch_and_maybe_decommit(
+    .                   base: *mut u8,
+    .                   k: u32,
+    .                   small_cur: *mut u8,
+    .               ) -> bool {
+1,200 ( 0.16%)          if k == 0 {
+    .                       return false;
+    .                   }
+    .                   let meta = SegmentMeta::new(base);
+    .                   let live = meta.live_count_of();
+1,800 ( 0.24%)          if live != 0 || base == small_cur || meta.is_decommitted() {
+    .                       return false;
+    .                   }
+    .                   // Same PRIMORDIAL exclusion as `dec_live_and_maybe_decommit`: only a
+    .                   // `Small` segment's payload genuinely starts at `small_meta_end()`.
+    .                   if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+    .                       return false;
+    .                   }
+    .                   // Mechanism 2 (task #51): as in `dec_live_and_maybe_decommit`, the reset
+-- line 121 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/alloc_core/segment/segment_table/hash.rs
+--------------------------------------------------------------------------------
+Ir         
+
+-- line 22 ----------------------------------------
+.               ///
+.               /// `base` is SEGMENT-aligned, so its low `SEGMENT_SHIFT` bits are zero.
+.               /// Right-shifting by `SEGMENT_SHIFT` gives a dense integer key (one key
+.               /// per segment in the virtual address space). We mask to `HASH_CAPACITY - 1`
+.               /// for a fast modulo (power-of-two capacity).
+.               #[inline(always)]
+.               fn hash_index(base: *mut u8) -> usize {
+.                   let key = base.addr() >> SEGMENT_SHIFT;
+9 ( 0.00%)          (key ^ (key >> 13) ^ (key >> 26)) & (HASH_CAPACITY - 1)
+.               }
+.           
+.               /// Address of hash slot `i`. Pure pointer arithmetic through the `node` seam.
+.               #[inline(always)]
+.               fn hash_slot_ptr(&self, i: usize) -> *mut *mut u8 {
+.                   crate::alloc_core::node::Node::offset(
+.                       self.hash_slots as *mut u8,
+.                       i * core::mem::size_of::<*mut u8>(),
+-- line 38 ----------------------------------------
+-- line 247 ----------------------------------------
+.               /// Resolve a numeric payload key through its owner slot. The returned
+.               /// canonical pointer comes only from allocator-owned slot storage.
+.               #[inline(always)]
+.               pub(super) fn hash_find(&self, base: *mut u8) -> Option<*mut u8> {
+.                   let start = Self::hash_index(base);
+.                   let mut i = start;
+.                   loop {
+.                       let entry = self.hash_slot_read(i);
+2 ( 0.00%)              if entry.is_null() {
+.                           // Empty slot: the probe chain ends here; base is not present.
+.                           return None;
+.                       }
+4 ( 0.00%)              if entry.addr() & !((1 << SEGMENT_SHIFT) - 1) == base.addr() {
+.                           let id = entry.addr() & ((1 << SEGMENT_SHIFT) - 1);
+4 ( 0.00%)                  let root = if id == 0 { entry } else { self.base_at(id - 1) };
+.                           // A stale identity with an empty slot is not live membership.
+.                           return (!root.is_null()).then_some(root);
+.                       }
+.                       // A different live entry: skip and continue.
+.                       i = (i + 1) & (HASH_CAPACITY - 1);
+.                       if i == start {
+.                           // Wrapped all the way around without finding base or an empty
+.                           // slot. This can only happen if the table is completely full of
+-- line 269 ----------------------------------------
+
+1 ( 0.00%)  <counts for unidentified lines in src/alloc_core/segment/segment_table/hash.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/alloc_core/segment/segment_table/segment_table_impl.rs
+--------------------------------------------------------------------------------
+Ir              
+
+-- line 799 ----------------------------------------
+     .               #[inline(always)]
+     .               pub(crate) fn canonical_base_of_mut(&mut self, key: *mut u8) -> Option<*mut u8> {
+     .                   // N9: single-entry memo FIRST — one address compare on the hit path,
+     .                   // nothing new on the miss path. The stored root carries the table's
+     .                   // own provenance (same guarantee as `own_cache`), never the lookup
+     .                   // key. Eviction is co-located with `own_cache` in `own_cache_clear`.
+     .                   // Single compare: `last_key == LAST_EMPTY_KEY` encodes EMPTY, which
+     .                   // neither a real SEGMENT-aligned base nor a null key can match.
+12,800 ( 1.69%)          if self.last_key == key.addr() {
+     .                       // The memo is part of Tier-1: count its hits with the own_cache hits.
+     .                       #[cfg(feature = "bench-internals")]
+     .                       crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
+     .                           .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+ 6,398 ( 0.85%)              return Some(self.last_root);
+     .                   }
+     .                   let index = Self::cache_index(key);
+     2 ( 0.00%)          let (cached_key, cached_root) = self.own_cache[index];
+     4 ( 0.00%)          if cached_key == key.addr() {
+     .                       #[cfg(feature = "bench-internals")]
+     .                       crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
+     .                           .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+     .                       // N9-v3: arm the memo on an exact-base own_cache hit only.
+     2 ( 0.00%)              if cached_root.addr() == key.addr() {
+     1 ( 0.00%)                  self.last_key = key.addr();
+     1 ( 0.00%)                  self.last_root = cached_root;
+     .                       }
+     .                       return Some(cached_root);
+     .                   }
+     .                   #[cfg(feature = "bench-internals")]
+     .                   crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
+     .                       .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+     .                   let root = self.hash_find(key)?;
+     .                   // N9-v3: a won probe fills `own_cache` only; the memo is armed by the
+     .                   // next exact-base own_cache hit.
+     2 ( 0.00%)          self.own_cache[index] = (key.addr(), root);
+     .                   Some(root)
+     .               }
+     .               /// TEST-ONLY (N9-v3): does the memo hold this base? (EMPTY can't match.)
+     .               #[cfg(feature = "bench-internals")]
+     .               pub(crate) fn memo_holds(&self, key: *mut u8) -> bool {
+     .                   self.last_key == key.addr()
+     .               }
+     .               /// R2-05 (independent src review round 2, task #2007): like
+-- line 841 ----------------------------------------
+-- line 870 ----------------------------------------
+     .               /// lookup key. `own_cache` carries the same guarantee: its only fill
+     .               /// stores the pointer returned by `hash_find`, not the lookup key.
+     .               /// This remains true after a caller-derived fill, hit, or collision.
+     .               #[inline(always)]
+     .               pub(crate) fn canonical_base_of(&self, base: *mut u8) -> Option<*mut u8> {
+     .                   // N9: same read-only memo check as `canonical_base_of_mut` (no fill
+     .                   // possible under `&self`; the miss path is unchanged).
+     .                   // Single compare: EMPTY encoding can never match (see mut variant).
+ 1,800 ( 0.24%)          if self.last_key == base.addr() {
+   600 ( 0.08%)              return Some(self.last_root);
+     .                   }
+     .                   let idx = Self::cache_index(base);
+     .                   let (cached_key, cached_root) = self.own_cache[idx];
+     .                   if cached_key == base.addr() {
+     .                       return Some(cached_root);
+     .                   }
+     .                   self.hash_find(base)
+     .               }
+     .           
+     .               /// PERF-P2 (Э3): direct-mapped cache index for `base`. Segments are
+     .               /// SEGMENT-aligned so the low `SEGMENT_SHIFT` bits are zero; shift them out
+     .               /// first to get a dense per-segment key, then mask to `OWN_CACHE_SIZE`.
+     .               #[inline(always)]
+     .               fn cache_index(base: *mut u8) -> usize {
+     8 ( 0.00%)          (base.addr() >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)
+     .               }
+     .           
+     .               /// Evict every cache entry holding this canonical root. A biased payload
+     .               /// key may map to a different index than its root, so eviction compares
+     .               /// stored roots, not the numeric lookup keys. Called from
+     .               /// `unregister`/`recycle` in lockstep with `hash_remove`.
+     .               ///
+     .               /// ## Register-reuse reasoning (why `register` does NOT touch the cache)
+-- line 902 ----------------------------------------
+-- line 968 ----------------------------------------
+     .               /// call regardless.) `base_at` sidesteps needing `bases()` here at all:
+     .               /// each call is a self-contained pointer read with no returned borrow,
+     .               /// so the caller can freely interleave `base_at(i)` reads with
+     .               /// `recycle(...)` calls in the same index-driven loop — no pre-collect
+     .               /// buffer needed, and no bound on how many segments can be recycled in
+     .               /// one scan.
+     .               #[inline(always)]
+     .               pub(crate) fn base_at(&self, i: usize) -> *mut u8 {
+     3 ( 0.00%)          if i >= self.count as usize {
+     .                       return core::ptr::null_mut();
+     .                   }
+     1 ( 0.00%)          let slot = Self::slot_ptr(self.slots, i) as *const *mut u8;
+     .                   crate::alloc_core::node::Node::read_struct::<*mut u8>(slot)
+     .               }
+     .           
+     .               // -----------------------------------------------------------------------
+     .               // Private helpers
+     .               // -----------------------------------------------------------------------
+     .           
+     .               /// Address of slot `i` within the registry array. Pure pointer arithmetic
+-- line 987 ----------------------------------------
+
+ 1,203 ( 0.16%)  <counts for unidentified lines in src/alloc_core/segment/segment_table/segment_table_impl.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/alloc_core/segment/bitmap/state_byte.rs
+--------------------------------------------------------------------------------
+Ir             
+
+-- line 88 ----------------------------------------
+    .           
+    .               /// Byte footprint: one byte per `MIN_BLOCK` granule (256 KiB for the
+    .               /// default 4 MiB segment).
+    .               pub(crate) const FOOTPRINT: usize = SEGMENT / MIN_BLOCK;
+    .           
+    .               /// Encode a full state byte for `class_idx` in `state`.
+    .               #[inline(always)]
+    .               pub(crate) const fn encode(class_idx: usize, state: u8) -> u8 {
+6,400 ( 0.85%)          (class_idx as u8 + 1) | (state << 6)
+    .               }
+    .           
+    .               /// View over the state bytes of the segment whose base is `base`.
+    .               #[inline(always)]
+    .               pub(crate) fn new(base: *mut u8) -> Self {
+    .                   Self {
+    .                       bytes: Node::offset(base, Layout::state_byte_off()),
+    .                   }
+    .               }
+    .           
+    .               /// Read the state byte of the granule at payload offset `off`. A
+    .               /// misaligned `off` maps to its START granule's byte — callers reject
+    .               /// misalignment separately.
+    .               #[inline(always)]
+    .               pub(crate) fn read(&self, off: u32) -> u8 {
+9,600 ( 1.27%)          Node::read_u8(Node::offset(self.bytes, (off >> GRANULE_SHIFT) as usize))
+    .               }
+    .           
+    .               /// Write the state byte of the granule at payload offset `off`.
+    .               #[inline(always)]
+    .               pub(crate) fn write(&self, off: u32, class_idx: usize, state: u8) {
+    .                   Node::write_u8(
+  600 ( 0.08%)              Node::offset(self.bytes, (off >> GRANULE_SHIFT) as usize),
+    .                       Self::encode(class_idx, state),
+    .                   );
+    .               }
+    .           
+    .               /// Rewrite ONLY the state bits of the granule's byte, preserving the
+    .               /// class field. Used where the caller has no class index in hand
+    .               /// (alloc-issue: the block was stored under its own class, and a
+    .               /// LIVE/MAG byte is never zero — invariant И1 — so the class bits are
+-- line 127 ----------------------------------------
+
+  600 ( 0.08%)  <counts for unidentified lines in src/alloc_core/segment/bitmap/state_byte.rs>
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./csu/../csu/libc-start.c
+  ./csu/../sysdeps/nptl/libc_start_call_main.h
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs
+
+--------------------------------------------------------------------------------
+Ir               
+--------------------------------------------------------------------------------
+488,539 (64.63%)  events annotated
+

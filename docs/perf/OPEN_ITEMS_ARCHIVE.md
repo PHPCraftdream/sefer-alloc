@@ -32,6 +32,38 @@ don't rewrite" convention.
 
 ---
 
+### L119 — Native mixed calibration, attribution и CPU diagnostic (2026-10-25)
+
+- **Status:** CLOSED — bounded measurement rounds завершены; product-кандидат не открыт.
+- **Current verdict:** JUDGE FAIL / ATTRIBUTION COMPLETE / DO NOT CLAIM NATIVE SPEEDUP. Прежние B и leaf verdicts не пересматриваются.
+- **Next trigger:** независимо проверенный чувствительный native judge/контролируемый host либо новый representative profiling trace с доказанным активным критическим переходом. Не увеличение repeats до PASS и не смена метрики ради выигрыша.
+- **Evidence:** `docs/research/native-mixed-judge/perf/NATIVE_MIXED_CALIBRATION.md`, `NATIVE_MIXED_ATTRIBUTION.md`, `NATIVE_CPU_DIAGNOSTIC.md` в том же каталоге; raw/source identities/generators — `native_mixed/` рядом. Backlink: `docs/perf/OPEN_ITEMS.md`, Recently resolved119.
+
+Pinned f80, изолированный benchmark-only tree, product source/composition не менялись. Два installed allocator arms включают общий старый churn+Vec workload и общий repeated-round driver; benchmark-only nonnull assertions запрещают молча сократить работу при allocation failure. Production timing без alloc-stats/bench-internals; installed Sefer подтверждён segments_reserved_total, refill/flush — отдельным callgraph.
+
+Один pilot и frozen241repeats, A/A10×4: workload paired95 halfwidth/baseline0.054171094861112 при пределе0.025; inner−outer CI −49261.30864205127…−2226.9071255835734ns/full round. Calibration FAIL, причина наблюдаемого position effect неизвестна. Ретюнинг и product native A/B не выполнялись.
+
+Четыре WSL production-only Callgrind profiles Sefer/mimalloc×120/241repeats: полный marginal Ir Sefer ниже mimalloc именно в этом installed workload; это не native latency claim и не исправление прежних direct-facade выводов. Self-cost partition каждого profile точно равен PROGRAM TOTALS. Refill/flush не стали единственным доминирующим источником; крупнейшие self-контейнеры — dealloc и run_workload, где последний смешивает инлайненный allocator с harness. Discovery72calls в обоих N — bootstrap, не marginal U31 victim. Старые S1/R3 решения не переоткрываются. Optimized mi_bin exactELF прочитан; generic/aligned mimalloc calls требуют layer/regime осторожности, не недоказанного объявления C -O0.
+
+Новая отдельная diagnostic hypothesis проверена без candidate A/B и rebuild: шесть одинаковых Windows Sefer processes exact frozen PE, GetProcessTimes и QueryProcessCycleTime через existing Python ctypes. Менялись и elapsed, и raw cycles; CPU accounting квантуется и может превышать process lifetime, поэтому residual не является точным scheduler trace. Причина нестабильности и пригодный native judge этой пробой не установлены. Cpu1 failed до child launch из-за чтения UTF-8 script как cp1252; изолированное воспроизведение и явный UTF-8 исправили механизм, cpu1receipt сохранён. Cpu2 шесть samples успешны; первый failed launch не учитывается как measurement.
+
+Все raw/CSV/Markdown получены проверяемыми generators; archived generators --check PASS. Source identities до build/measure, binary guards без drift, path hygiene и diff-check PASS. Большой derived function-profile JSON сжат по size policy; оригинал сохранён scratch. Local tests/Miri/Loom/doc, candidate native A/B, broad IAI/canonical/MT не запускались. Новых shipping changes/commits/push/merge нет. Остатки correctness и старые scalar acceptance не закрыты benchmark результатами.
+
+### L118 — Native alloc leaf entry (2026-10-25)
+
+- **Status:** CLOSED — исследовательская форма завершена, не принята в production.
+- **Current verdict:** INCONCLUSIVE / DO NOT PROMOTE. Codegen и instruction gain не установили native benefit.
+- **Next trigger:** новое причинное evidence или новый независимо пререгистрированный representative judge; не attribute-перебор и не повтор до удобного результата. Tests/CI/shipping acceptance отсутствует.
+- **Evidence:** `docs/research/native-alloc-leaf/perf/NATIVE_ALLOC_LEAF_CODEGEN.md`, `NATIVE_ALLOC_LEAF_IR.md`, `NATIVE_ALLOC_LEAF_NATIVE.md` в том же каталоге; immutable patch/identity и raw/CSV/generators — `native_alloc_leaf/` рядом. Backlink: `docs/perf/OPEN_ITEMS.md`, Recently resolved item 118.
+
+Независимый prototype от pinned f80, без непринятого B: законченный bound magazine hit отделён от call-bearing Small/Large/unbound/null continuations. Const16/64 действительно leaf, без push/sub-rsp/call; runtime entry без pushes, sub rsp,0x28 вместо прежних pushes3/sub rsp,0x30. Полные asm и ссылки из main проверены; первая диагностическая попытка неверно выводила границы косвенно вызываемых wrappers из ближайшего direct-call target, исправлена и не использована как gate evidence.
+
+120 WSL production-only Callgrind profiles: alloc и full-workload marginal Ir ниже во всех пяти режимах, free marginal точно равен baseline. Callgraph подтверждает фактические alloc counts и одинаковую refill activation; новый bound-miss continuation активен там, где нужен. Raw excerpts сохраняют original totals и call edges; hashes полных scratch profiles, reproduction scripts и checked generators сохранены. Windows timing не выводится из WSL Ir.
+
+840 native fresh-process samples, 20 balanced blocks на режим и 10 A/A blocks: все пять workload и process paired95 CI пересекают ноль. Средние разнонаправлены; win mimalloc/Sefer до/после рассчитан генератором, включая неблагоприятный const64. A/A uncertainty также велика. Нельзя утверждать ни совокупный speedup, ни доказанную нерегрессию, ни объяснение старых canonical ухудшений B.
+
+По пререгистрации native benefit gate не пройден: broad IAI, canonical churn16, installed/global и MT не запускались. Canonical control не заменён micro-result; его необходимость для будущего promotion сохраняется. Два отдельных semantic regression test написаны и compile-checked, но не исполнялись; это не correctness acceptance. Новых measurement hooks нет. Кандидат и старые snapshots оставлены в исследовательских trees для воспроизводимости; в shipping tree не переносились. Product commit/push/merge отсутствуют. Следующей новой доказательной гипотезы на момент закрытия нет.
+
 ## Table of contents
 
 - [[A] Active / high-value — item 1: `contains_base`'s share of a real free's `Ir` — measured MATERIAL](#a1)

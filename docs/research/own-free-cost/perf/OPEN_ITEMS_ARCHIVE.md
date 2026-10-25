@@ -1,0 +1,2278 @@
+# Open items — archived closure narratives
+
+## L114 — own-free overflow outlining (2026-10-24, задачи #15–#17)
+
+> **Status:** CLOSED / NO-GO для этого кандидата; в main не принят.
+> **Current verdict:** целевой normal-free instruction gate пройден, но обязательный bulk16k control регрессирует и по marginal Ir/free, и по nominal paired native workload CI. Улучшение normal/const free не компенсирует проигрыш другого режима.
+> **Next trigger:** переоткрывать только отдельным заранее заданным экспериментом, который устраняет измеренную цену частого cap-eviction, а не ослабляет control budget. Повтор того же широкого outlining не является новым механизмом.
+> **Evidence:** `docs/perf/OWN_FREE_OVERFLOW_OUTLINE_GATE.md`, companion CSV, raw/identities/patches/activation в `docs/perf/own_free_cost/`, prereg `docs/design/2026-10-24-own-free-frame-candidate.md`.
+
+Атрибуция выполнена на принятом f80c681b, без D1′/scalar issue. На ordinary free найден реальный frame tax; вынос только filled-magazine ветви сокращает исполненные инструкции. Однако actual callgraph подтвердил, что на bulk16k cap-eviction — частая, а не холодная ветвь. Native before/after/mimalloc сравнение сохранено полностью, включая проигрыш; широкая promotion-матрица после NO-GO не запускалась. Прототип остаётся только в экспериментальном дереве с точными measurement patches, не в main. Test execution/Miri/Loom/CI не получены и не заявляются; проектные/dependency версии не менялись, commit/push/merge не выполнялись. Прочие perf/correctness карточки сохраняют прежние статусы.
+
+**Purpose.** This file holds the full dated historical narrative bodies for
+every item tracked in `docs/perf/OPEN_ITEMS.md` — the round-by-round
+"here's what happened, here's the correction" prose that used to sit
+inline under each item's current-state card. It was split out by R29-6
+(task #437) because `OPEN_ITEMS.md` had grown past 1,000 lines and CLAUDE.md
+mandates reading it end-to-end at the start of every round — the interleaved
+narrative made that read progressively more expensive without adding any
+CURRENT-STATE information (the current-state card already carries the latest
+correct headline). **No text was deleted or reworded in this split** — every
+paragraph below is byte-identical to what previously lived inline in
+`OPEN_ITEMS.md`, only relocated. Item numbers and tier letters are unchanged
+in the source file; this archive organizes by the same `<tier-letter><item-
+number>` pairing so a reader can jump straight from an `OPEN_ITEMS.md` item
+to its full history here.
+
+**How to use this file.** Each `OPEN_ITEMS.md` item's current-state card ends
+with a line `Full history: OPEN_ITEMS_ARCHIVE.md § <anchor>` pointing at the
+matching `###` heading below. Going the other direction, every section here
+opens with a back-link to its item in `OPEN_ITEMS.md`.
+
+**Convention.** This file is purely an archival extension of
+`docs/perf/OPEN_ITEMS.md` — it does NOT have its own independent "round
+start" reading requirement (CLAUDE.md's "Phased delivery" mandates reading
+`OPEN_ITEMS.md` end-to-end; this file is consulted on demand, when a
+specific item's full history is needed). When `OPEN_ITEMS.md` gains a new
+dated update paragraph for an existing item, append it to that item's
+section here (not inline in `OPEN_ITEMS.md`) and leave only the current-state
+card's headline updated in the main file, per that file's own "append-only,
+don't rewrite" convention.
+
+---
+
+## Table of contents
+
+- [[A] Active / high-value — item 1: `contains_base`'s share of a real free's `Ir` — measured MATERIAL](#a1)
+- [[A] Active / high-value — item 13: R24-11 — `bench_global_alloc_churn_with_teardown`@1024B residual](#a13)
+- [[D] Deferred designs — item 2: R17-10 — batched deferred reclaim (sub-design A + B).](#d2)
+- [[D] Deferred designs — item 3: R11-7 page-run layer (R12-13 deferred).](#d3)
+- [[D] Deferred designs — item 4: R14-7 expandable / chained `SegmentTable`.](#d4)
+- [[D] Deferred designs — item 5: R10-4 run-origin oracle (class-align carve).](#d5)
+- [[D] Deferred designs — item 6: R22-16 — remap-instead-of-copy for the medium→Large promotion memcpy](#d6)
+- [[D] Deferred designs — item 14: R25-8 — run-encoded free batch (arithmetic free list).](#d14)
+- [[D] Deferred designs — item 15: ~~R27-11 — reservation-only overflow tier for the small-segment pool](#d15)
+- [[D] Deferred designs — item 25: R9-5 / R11-8 / R13-3 — `virgin-zero-skip` promotion decision is](#d25)
+- [[D] Deferred designs — item 26: R12-9 — `small-segment-lazy-commit` (and the `alloc-lazy-commit` alias)](#d26)
+- [[L] Low-priority — honest reject — item 7: R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a](#l7)
+- [[L] Low-priority — honest reject — item 8: R14-6 §1.1 — compounding reserved-capacity growth factor (beyond 4×).](#l8)
+- [[L] Low-priority — honest reject — item 9: R15-1 §7 — nonempty-summary-word optimisation for `drain_dirty_segments`.](#l9)
+- [[L] Low-priority — honest reject — item 10: ~~R9-9 — warm-batch-on-`SeferAlloc`-heap arm.~~ DONE (task R10-7,](#l10)
+- [[L] Low-priority — honest reject — item 11: R11-3 — joint threshold×pad-target sweep.](#l11)
+- [[L] Low-priority — honest reject — item 12: R22-6 — sub-16 KiB geometric-ladder OPT-H probe (optional, ~1 hour).](#l12)
+- [[L] Low-priority — honest reject — item 44: R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.](#l44)
+- [[L] Low-priority — honest reject — item 16: R27-11 — reservation-only overflow tier (MOVED here from `[D]` item 15;](#l16)
+- [[L] Low-priority — honest reject — item 17: R29-10 — alloc-hit `clear_magazine` block's per-pop cost (R3's](#l17)
+- [[L] Low-priority — honest reject — item 18: X4 (2026-07-05) — two recycle experiments (`TCACHE_CAP` 16→32 and a 64-bit](#l18)
+- [[L] Low-priority — honest reject — item 19: X6 (2026-07-05) — clz `class_for` vs the 16 KiB `SIZE2CLASS` LUT.](#l19)
+- [[L] Low-priority — honest reject — item 20: X5 (2026-07-05) — per-class segment-queue bitmap (cheapest variant).](#l20)
+- [[L] Low-priority — honest reject — item 21: G1 (2026-07-10) — magazine double-free oracle fold into `AllocBitmap`.](#l21)
+- [[L] Low-priority — honest reject — item 22: T10 (2026-07-12) — per-class "last found segment" hint for `find_segment_with_free` (NO-GO](#l22)
+- [[L] Low-priority — honest reject — item 23: R1 (2026-07-13) — per-segment availability hint for `find_segment_with_free` (NO-GO, clean](#l23)
+- [[L] Low-priority — honest reject — item 24: R5-R2b (2026-07-14) — the wall-clock churn regression signal is NOT an algorithmic/Ir regr](#l24)
+- [[L] Low-priority — honest reject — item 27: R29-13 — large-cache `headroom_bytes` (default 256 MiB/heap) idle-RSS floor measured for](#l27)
+- [[L] Low-priority — item 82: fxx R12-03(b) / O-4 — доверие отрицательному ответу директории при маршрутизированной таблице.](#l82)
+
+---
+
+## [A] Active / high-value
+
+### A1
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 1 (`[A] Active / high-value` tier) — "**`contains_base`'s share of a real free's `Ir` — measured MATERIAL"*
+
+
+   R22-17 (task #368), 2026-07-26: `HeapCore::dealloc_routing`'s
+   own-thread ownership probe (`SegmentTable::contains_base`, a two-tier
+   4-entry-cache-then-hash-probe check) accounts for 18.6% of a real free's
+   instruction count on a single-hot-segment churn workload (Tier-1 cache-hit
+   case — a conservative/lower-bound estimate; a workload spanning more than
+   `OWN_CACHE_SIZE` (4) concurrently-hot segments would show a LARGER share).
+   Clears the "double-digit percentage" bar for a future design task. A
+   header-first alternative (mirroring mimalloc's pointer-mask + one
+   header-field read) is sketched but explicitly NOT implemented: it inverts
+   `contains_base`'s current liveness-before-dereference ordering guarantee,
+   and no way was found in this task's scope to make a bare header read safe
+   against a foreign/use-after-decommit pointer without some other
+   liveness proof that itself costs something — an open question for
+   whoever designs this next, not an assumed-solved prerequisite. Evidence:
+   `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` (full report, §4 for the
+   design sketch + the soundness caveat).
+   **2026-07-27 update (superseded by the 2026-07-27 DONE update directly
+   below — kept for the historical trail, not the current number):** an
+   independent read-only review
+   (`docs/reviews/2026-07-26-r22-readonly-review.md` P1) found the "18.6%"
+   figure is NOT an isolated `contains_base` measurement — the probe arm
+   (`benches/perf_gate_iai.rs:232-239`) calls `dbg_segment_base_of_ptr` +
+   `dbg_contains_base` as two separate non-inlined function calls plus
+   `black_box`, so the reported share is really
+   `(segment_base_of_ptr + contains_base + call-boundary overhead)`, an
+   upper envelope, not a precise isolated cost; the "conservative lower
+   bound" framing above is unproven either direction. Queued for
+   correction: task #370 (R23-1) will add a `segment_base_of_ptr`-only
+   arm to isolate the true `contains_base`-only share before this item's
+   number is cited further.
+   **2026-07-27 update — DONE (task #370, R23-1):** added
+   `dealloc_segment_base_of_ptr_probe_only_16b`, an isolated arm calling ONLY
+   `dbg_segment_base_of_ptr` (never `dbg_contains_base`), following the same
+   shared-prefix-subtraction pattern as the existing three arms. Measured
+   `npm run iai` (two independent runs, byte-identical Ir): raw Ir 7,581 →
+   loop-only 578 (7,581 − 7,003 prefix) → 9.03 Ir/call. Decomposition:
+   `contains_base_only_ir = composite_probe_loop_ir (1,101) −
+   base_only_loop_ir (578) = 523`, i.e. **`contains_base`'s isolated share of
+   a real free's `Ir` is 523 / 5,920 = 8.8%** (not 18.6% — the original
+   figure was the sum of this 8.8% plus `segment_base_of_ptr`'s own 9.8%
+   (578/5,920) plus zero separately-isolable residual, since 578 + 523 =
+   1,101 exactly). **Cite 8.8% going forward, not 18.6%.** 8.8% still clears
+   a MATERIAL (non-negligible) bar, so §4's header-first design-sketch
+   discussion in the report remains valid — it was never contingent on the
+   exact percentage. The "conservative lower bound" claim from the original
+   report is retracted as unproven in either direction (per the review);
+   whether Tier-2-hash-probe-heavy workloads would show MORE than 8.8% is an
+   open question, not a proven floor. Full arithmetic, raw logs, and updated
+   summary CSV: `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` §7 (the
+   correction section) + `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE_summary.csv`
+   (R23-1 rows) + `docs/perf/_raw_r23_1_contains_base_isolation_full.log` /
+   `_raw_r23_1_contains_base_isolation_rerun1.log`. Original 18.6% figure and
+   its history preserved verbatim in the report per this file's own
+   "do not delete, only correct the interpretation" convention.
+   **2026-07-27 update — DONE (task #372, R23-3):** the read-only review's
+   own P0 recommendation (`docs/reviews/2026-07-26-r22-readonly-review.md`
+   §4.1/§6, "R23-3: split hot alloc / hot free / cold alloc / cold free")
+   is executed: a fuller orthogonal decomposition of the WHOLE hot alloc/free
+   path, not just the routing prefix this item's history covers.
+   **Headline finding: the routing prefix (`contains_base` 8.8% +
+   `segment_base_of_ptr` 9.8% = 18.6% combined) is NOT the dominant free-path
+   cost.** The own-thread free BODY that runs once ownership is confirmed
+   (the M2 double-free oracle checks fused with the magazine push,
+   `dealloc_own_thread_with_base`) is **80.8% of a real free's `Ir`** — more
+   than 4x the routing prefix's combined share, and previously un-isolated.
+   Investigated whether Tier-1 vs Tier-2 `contains_base` can be split by
+   workload shape (touching >`OWN_CACHE_SIZE`=4 segments): found this is NOT
+   portably forceable (`cache_index` depends on OS-assigned segment
+   addresses, not anything this allocator or a benchmark controls), and
+   built a direct-call hook (`dbg_hash_contains_only`) instead — Tier-2's
+   own cost, IF it fired, is 13.0% of this workload's total (vs Tier-1's
+   8.8%), but this gate's own single-hot-segment workload never actually
+   exercises Tier-2 in the real routing path. On the alloc side, the
+   magazine-hit pop is 22.4 Ir/op (32.4% of `small_churn_16b`'s combined
+   alloc+free marginal cost). On the cold path: pure bump-carving
+   (standalone, no magazine/refill/BinTable-push) is 23.05 Ir/op; the
+   freelist-pop round of `recycle_alloc_free_256x16b` (isolated via
+   shared-prefix subtraction against the existing `cold_alloc_free_256x16b`
+   row — no new bench arm needed) is 188.2 Ir/op, comparable to (slightly
+   below) virgin-carve's own 203.86 Ir/op full-path marginal (R23-2) — i.e.
+   recycle is NOT the costlier-than-carving mechanism a purely
+   mechanism-level read would suggest once matched to the same full-path
+   denominator. **Two self-caught methodology bugs disclosed in the report,
+   not silently fixed:** a missing `#[inline(always)]` on a new hook
+   initially inflated the own-thread-body measurement past the total free
+   loop's own cost (impossible for a sub-component); and two N/2N bench
+   pairs (magazine-hit, recycle-pop) were invalid because doubling the loop
+   count doubled a whole setup+signal cycle, not the isolated signal alone
+   — both replaced with shared-prefix subtraction (one new pair of arms;
+   the other needed no new arm since an existing bench row already served
+   as the shared prefix). **Recommendation for the next remediation task:
+   the own-thread free body (M2 oracles + magazine push), 80.8% of the free
+   path, not cold-carve/recycle** (which, per this task's finding, is
+   roughly on par with virgin-carve once matched apples-to-apples) — this
+   revises R22-15/R23-2's "cold-carve/recycle is the main remaining
+   candidate" framing. Measurement only, no remediation attempted. Full
+   decomposition, honest "not cleanly isolable" notes, and the ranked
+   table: `R23_3_HOT_PATH_ATTRIBUTION_GATE.md` (full report) +
+   `R23_3_HOT_PATH_ATTRIBUTION_GATE_summary.csv` +
+   `docs/perf/_raw_r23_3_hot_path_attribution_run1.log` /
+   `_raw_r23_3_hot_path_attribution_run2.log`.
+   **2026-07-27 update — CORRECTED (task #379, R24-1):** the R23-3 DONE note
+   directly above (and R23-3's own report §0) name the measured 74.70 Ir/free
+   (80.8%) as "the own-thread free body: M2 oracles + magazine push (fused)"
+   and frame it as the dominant cost of an ordinary hot free. That framing is
+   wrong: the bench arms free 64 DISTINCT pointers in one sequential pass,
+   which hits the magazine overflow arm (`cnt == TCACHE_CAP = 16`) six times
+   — so 74.70 Ir/free is an average over 58 non-overflow pushes AND 6
+   overflow events (bitmap-clear pass + `flush_class` on 8 blocks each +
+   8-pointer compaction), i.e. a 64-block batch-free-with-overflow workload,
+   NOT an isolated "M2 oracles + magazine push" cost and NOT representative
+   of the interleaved `small_churn_16b` hot pair. Cross-check: 22.38 (alloc
+   hit) + 92.50 (this free) = 114.88 > the entire 69.0 Ir hot pair —
+   impossible if 92.50 were the free half of that pair; the workloads measure
+   different magazine states. **Corrected characterization:** the free path's
+   real dominant cost is NOT isolated by R23-3; whether the cheap non-overflow
+   push or the overflow event dominates ordinary hot free is unmeasured. The
+   actual next step is the follow-up measurement split **R24-2 (task #380)**,
+   NOT immediate remediation of a still-incorrectly-named mechanism. Full
+   arithmetic and the falsified "consistent with the free-path table"
+   sentence: `R23_3_HOT_PATH_ATTRIBUTION_GATE.md` §9 (the correction section;
+   original §0–§8 preserved verbatim).
+   **2026-07-27 update — DONE (task #380, R24-2):** the magazine-state split
+   R24-1 queued is executed. The free path's two magazine states are now
+   cleanly isolated. **Headline finding: overflow is a BATCH phenomenon;
+   ordinary interleaved hot free has NO overflow at all.** Cheap non-overflow
+   push ≈ 43–44 Ir/full-free (one via dedicated n8→n9 pair, confirmed by
+   16-push amortization); as R23-3's "cheap arm" scope (oracle+push, routing
+   subtracted) ≈ 26 Ir. One overflow event = 571 Ir = **12.9× a cheap push**
+   (the 17th free alone, via n16→n17 pair). The overflow's ONE cleanly-isolable
+   sub-cost — the 8-block bitmap-clear pass (`heap_core_free.rs:762-768`,
+   R24-3's exact target) — is **84 Ir** via a new hook
+   (`dbg_overflow_bitmap_clear_pass`; re-gated `bench-internals` and made
+   `unsafe fn` by R25-1/task #395 after a soundness review — see
+   `src/registry/heap_core_diag.rs`'s doc comment on that function; the
+   measured Ir figure itself is unaffected, only the hook's type/gate
+   changed); the remaining ~470 Ir (flush_class + 8-
+   pointer compaction + final push) is fused in one straight-line block with no
+   workload-level separation point, reported as a single non-isolable remainder
+   per the "measured, not spun" convention (a flush_class-standalone hook would
+   run a mechanism production never runs outside the overflow arm — Heisenberg
+   risk). **Reconciliation:** R23-3's 74.70 Ir/free decomposes as
+   (58×25.8 + 6×553.8)/64 = 75.30 (0.8% reconstruction) — i.e. **~69% overflow
+   + ~31% cheap push** within the own-thread body, NOT the "fused oracle+push"
+   the original §0 named. N-sweep (N=1/8/16/17/32/64): per-free cost is FLAT at
+   ~44 Ir for N≤16 (zero overflow), steps to 75 at N=17 (first overflow),
+   climbs to 93 at N=64; overflow is **57.9% of the N=64 batch** (6 events =
+   9.4% of the frees). **Interleaved comparison:** ordinary interleaved hot
+   free (`small_churn_16b` shape) ≈ 46.6 Ir/free (69.0 pair − 22.38 alloc-hit),
+   matching the isolated cheap push within refill amortization — the 92.50
+   Ir/free batch figure is NOT ordinary hot free. **Prioritization implication
+   for R24-3 (flush_magazine_class bitmap-clear merge): saves 8.5% of
+   batch-free cost (6×84/5920), 0% of ordinary interleaved hot free (overflow
+   never fires there).** One new safe `#[doc(hidden)]` hook added (for R24-6
+   tracking: lives in the production unsafe-audit surface, gate
+   `alloc-global + fastbin`); 7 new bench arms. Measurement only, no production
+   behavior changed. Full decomposition, honest "not cleanly isolable" notes,
+   the N-sweep table, and the 74.70 reconciliation:
+   `R24_2_FREE_BY_MAGAZINE_STATE_GATE.md` (full report) +
+   `R24_2_FREE_BY_MAGAZINE_STATE_GATE_summary.csv` +
+   `docs/perf/_raw_r24_2_run1.log` / `_raw_r24_2_run2.log`.
+   **2026-07-27 update — NO-GO (task #381, R24-3):** the `flush_magazine_class`
+   merge was implemented (shape (a): unconditional clear loop inside `flush_run`,
+   opt-in via a new `flush_magazine_class` wrapper; `dealloc_batch` unchanged via
+   `flush_class` → `flush_class_inner(..., false)`), correctness-verified (full
+   test suite green; 3 new counterfactual tests including the M2-hazard mutation
+   passed), but the Ir gate measured a **+37 Ir/overflow-event REGRESSION**
+   (expected: -84 Ir improvement). Root cause: the pre-pass was a fixed-length
+   loop (`FLUSH_N` = 8, `const`) that the compiler fully unrolls and CSE's with
+   `flush_class`'s run-grouping (which calls `segment_base_of_ptr` on the same 8
+   pointers); the merged clear loop inside `flush_run` is dynamic-length
+   (`run: &[*mut u8]`) and cannot be unrolled, adding loop overhead that exceeds
+   the saved CSE'd cost. **The standalone-measured 84 Ir (R24-2) overstated the
+   real in-context cost** — the exact Heisenberg risk R24-2 §5.1 warned about.
+   All production code reverted; tree clean at HEAD (`3bc9c91`). **R24-4 (task
+   #382, bulk-mask primitives) remains BLOCKED** — the 84 Ir is not actionable as
+   a savings target. Full evidence and root cause:
+   `R24_3_FLUSH_MAGAZINE_CLASS_GATE.md` +
+   `R24_3_FLUSH_MAGAZINE_CLASS_GATE_summary.csv` +
+   `docs/perf/_raw_r24_3_merged_run1.log`.
+   **2026-07-27 update — NO-GO (task #382, R24-4):** the bulk-mask primitive
+   (`SegmentBitmap::clear_many`/`set_many` accumulator + domain wrappers) was
+   implemented, fully correctness-verified (unit test 10/10 + mutation-nonvacuous;
+   single- AND multi-segment `alloc_batch` integration tests + mutation-nonvacuous;
+   clippy clean on `""`/`production`/`--all-features`), and applied at site #1
+   (`heap_core_alloc.rs`'s `alloc_batch` deferred-clear — the loop whose own
+   comment named the primitive as "the natural follow-up"). The in-context Ir
+   gate — the SAME `alloc_batch_drain*` arm measured BEFORE (old per-block loop)
+   vs AFTER (bulk clear), NOT a standalone hook, under `production batch-api`
+   (`alloc_batch` is `fastbin + batch-api`, NOT in `production`; no in-tree
+   production caller per R23-7) — measured a **+14 Ir/block REGRESSION**
+   (`alloc_batch_drain15_16b` 3,685→3,894 = +209 Ir; `alloc_batch_drain8_16b`
+   3,640→3,752 = +112 Ir), scaling linearly with drain count. All reference arms
+   byte-identical (same toolchain). **Root cause:** the bulk primitive's
+   per-offset bookkeeping (a stack-array store + the accumulator's
+   compare/branch/accumulate) costs more in-context than the HOT-CACHE-LINE RMWs
+   it coalesces (each ~3–4 Ir; the "8 consecutive 16 B blocks = 1 byte" ceiling
+   treated an RMW as a costly unit, but here it is cheap). This is the SAME
+   Heisenberg CLASS as R24-3 (operation-count ceiling ≠ in-context instruction
+   cost) via a DIFFERENT mechanism — site #1's loop IS dynamic-length (R24-3's
+   constant-unroll trap does not apply), yet a different risk materialized: the
+   bulk replacement's own per-offset overhead. **"Dynamic-length loop" was
+   necessary but NOT sufficient** to avoid the class. Site #2
+   (`flush_all_tcache` teardown) was NOT attempted (per the "STOP at first-site
+   regression" gate; it uses the same hot bitmap and would likely reproduce).
+   All `src/`/`tests/`/`benches/`/`ARCHITECTURE.md` changes reverted; tree
+   byte-identical to HEAD (`e530a9f`). **Two bitmap-clear NO-GOs in a row
+   (R24-3, R24-4) indicate per-segment bitmap-clear loops are already efficiently
+   compiled and NOT a fruitful target for RMW-coalescing primitives; the
+   arithmetic ceiling should not be cited as a savings target for these sites
+   without a fresh in-context measurement.** Full evidence and root cause:
+   `R24_4_BULK_MASK_PRIMITIVES_GATE.md` +
+   `R24_4_BULK_MASK_PRIMITIVES_GATE_summary.csv` +
+   `docs/perf/_raw_r24_4_baseline.log` / `_raw_r24_4_after.log`.
+   **2026-07-27 update — DONE (task #383, R24-5):** `cold_alloc_free_256x16b`'s
+   ~2× cold-gap headline (R23-2: SeferAlloc 203.86 vs mimalloc 101.81 Ir/op) is
+   now split into its alloc-only and free-only halves, localizing where the gap
+   actually lives. **Outcome (a) confirmed: the gap is OVERWHELMINGLY in the
+   FREE half.** Per-half ratios (mimalloc's own split built alongside via three
+   new `mimalloc_cold_alloc_only` arms so the comparison is alloc-vs-alloc /
+   free-vs-free, not full-round-only): alloc-only Sefer 91.05 vs mi 71.81 =
+   **1.27×**; free-only Sefer 108.77 vs mi 30.24 = **3.60×**. The full-round
+   2.0× is a BLEND masking how lop-sided the gap is (R23-2's "2.002×" is the
+   average of a 1.27× alloc gap and a 3.60× free gap — NOT a uniform gap).
+   **R24-2 reconciliation HOLDS within 2.6%:** the free half at N=256 is
+   exactly the overflow mechanic R24-2 isolated at N≤64 — `floor((256-17)/8)+1
+   = 30` overflows (period 8, `FLUSH_N=8`) × 571 Ir + 226 cheap × 44.25 =
+   27,130.5 predicted vs 27,846 measured; **overflow is 61.5% of the free-half
+   cost** (vs 57.9% at N=64 — the share grows as overflows accumulate). The
+   task brief's own "~15 overflows at N=256" estimate was an under-count (R24-2's
+   confirmed period-8 pattern implies 30; the "~15" model would miss by 31%).
+   The two refill numbers: virgin ≈ 1099 Ir/event, recycled ≈ 961 Ir/event
+   (both DERIVED via `c_pop=22.38` from R23-3, NOT directly isolated — fused
+   with the pop, no standalone-refill hook added to avoid the R24-2 §5.1
+   Heisenberg risk); recycled is 12.5% CHEAPER than virgin (freelist-drain
+   skips the commit-frontier-grow), and round-2 alloc+free sums to 188.20
+   Ir/op — matching R23-3's independently-published round-2 total EXACTLY.
+   `carve_batch_only_16b` (23.05 Ir/block, reproduced R23-3) is the pure-carve
+   primitive FLOOR, NOT a refill (the real `refill_magazine_slow` is ~3× it —
+   carve + magazine-load + P4 stamp-dedupe + 15 `mark_magazine` RMWs + 2
+   drains). **Caveat the task's own framing was prescient about: the root cause
+   (free-side overflow) is now understood, but the two approaches already tried
+   — R24-3 (flush_magazine_class bitmap-clear merge) and R24-4 (bulk-mask
+   primitive), both targeting the overflow's 84-Ir bitmap-clear sub-cost —
+   measured NO-GO regressions. The overflow's larger UNTRIED lever is
+   `flush_class` itself (~487 Ir/event, the non-isolable remainder R24-2 §5.1
+   flagged), NOT further bitmap-clear work; a flush_class isolation measurement
+   would be the next measurement task.** Measurement only, zero `src/` changes,
+   **zero new hooks** (pure shared-prefix subtraction + N/2N; nothing for R24-6
+   to track); 7 new bench arms (50 total). Full decomposition, the three-outcome
+   verdict table, and the 30-overflow reconciliation arithmetic:
+   `R24_5_COLD_ALLOC_FREE_SPLIT_GATE.md` (full report) +
+   `R24_5_COLD_ALLOC_FREE_SPLIT_GATE_summary.csv` +
+   `docs/perf/_raw_r24_5_run1.log` / `_raw_r24_5_run2.log` (byte-identical `Ir`
+   across both runs; 12 reference arms reproduced R23-2/R24-2/R23-3 exactly).
+   **2026-07-28 update — DONE (task #384, R24-6), CLOSES the "for R24-6
+   tracking" note above (R24-2's `dbg_dealloc_own_thread_with_base` entry)
+   and the R23-3-era review flag that motivated this task:** re-scoped
+   narrowly after a first attempt (via a different tool) tried to gate
+   essentially every `dbg_*` hook in the crate, exploded into a 130+-file
+   diff, and was reverted (nothing committed). The actual short list of
+   `unsafe fn dbg_*` hooks BOTH marked `unsafe fn` (tier-2 `#[allow(unsafe_code)]`)
+   AND reachable from plain `--features production` alone (their own `#[cfg]`
+   gate is a subset of `production`'s feature list) is **4 items**, all in
+   `src/registry/heap_core_diag.rs` / `src/alloc_core/alloc_core_small_reclaim.rs`:
+   `HeapCore::dbg_dealloc_own_thread_with_base` (R23-3, task #372 — NEW, the
+   direct motivator), `HeapCore::dbg_push_coarse_only_entry` (R13-1, task
+   #271 — pre-existing), and `HeapCore::dbg_push_to_ring` /
+   `AllocCore::dbg_push_to_ring` (R6-MS-4 — pre-existing, the oldest tier-2
+   entries in the file). **Split decision, not uniform:** the first two each
+   have exactly ONE call site (`benches/perf_gate_iai.rs` and
+   `tests/class_aware_dirty_oom_latch.rs`) and are now gated behind a new
+   `bench-internals` Cargo feature (Option A) — `production` alone no longer
+   compiles them in. `dbg_push_to_ring` (both variants) was LEFT AS-IS
+   (Option B, doc-only): it has ~20 existing callers across the whole
+   `alloc-xthread` test suite (pre-existing R6-MS-4 debt, not the new
+   regression), so re-gating it would reproduce the same disproportionate
+   diff explosion the reverted first attempt hit, for a documentation-
+   precision concern rather than a real production-surface change. Doc notes
+   added at both `dbg_push_to_ring` definitions plus a new "R24-6 note"
+   paragraph in README.md's "Where unsafe lives" section explaining the
+   split. **Verification:** the tier-2 unsafe-audit grep
+   (`grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`) count is
+   UNCHANGED (still counts the `#[allow(unsafe_code)]` line regardless of
+   what `#[cfg]` surrounds it — textual, feature-gate-blind by construction,
+   confirmed correct before this task started rather than assumed), so
+   README's **61** tier-2 figure needed no update and
+   `tests/no_stale_doc_references.rs`'s
+   `readme_unsafe_inventory_counts_match_reality` tripwire passes untouched.
+   Files touched: `Cargo.toml` (new `bench-internals` feature +
+   `perf_gate_iai`'s `required-features`), `src/registry/heap_core_diag.rs`
+   (2 `#[cfg]` gates widened + 2 doc notes), `src/alloc_core/alloc_core_small_reclaim.rs`
+   (1 doc note), `benches/perf_gate_iai.rs` (1 arm's `#[cfg]` widened),
+   `tests/class_aware_dirty_oom_latch.rs` (file-level `#![cfg]` widened),
+   `.github/workflows/perf-gate.yml` + `.github/workflows/ci.yml` +
+   `scripts/check-all.mjs` (feature strings updated so the two re-gated hooks
+   keep running under CI/`npm run check`), `README.md` (feature table row +
+   "Where unsafe lives" note). No `Cargo.toml`/crate version bump.
+   **2026-07-28 update — DONE (task #386, R24-8):** two independent
+   investigations into `dealloc_batch` internals. **Inv 1 (ownership cache):
+   NO-GO** — a `last_base`/`last_is_owned` cache to skip redundant
+   `contains_base` probes measured +3/−44 Ir (inconsistent sign — codegen noise,
+   not a real win); the Tier-1 `own_cache` hit is already a single compare, so
+   the cache trades one compare for another plus register pressure. Same
+   Heisenberg class as R24-3/R24-4. **Inv 2 (STAGE_CAP reduction): GO** —
+   LLVM-IR proof confirmed the 4096-byte staging-array zero-init is NOT elided
+   (array address escapes into `flush_class`, blocking DSE); reducing STAGE_CAP
+   512→64 saves a constant **−4,065 Ir/call** (−47.7% of a 16-block batch-free).
+   Implemented with correctness test (`r24_8_dealloc_batch_multi_flush.rs`,
+   mutation-confirmed) + 2 new iai arms. Full evidence:
+   `R24_8_DEALLOC_BATCH_INTERNALS_GATE.md` +
+   `R24_8_DEALLOC_BATCH_INTERNALS_GATE_summary.csv` +
+   `docs/perf/_raw_r24_8_baseline.log` / `_raw_r24_8_inv1_after.log` /
+   `_raw_r24_8_inv2_stage64.log`.
+   **2026-07-28 update — DONE (task #401, R25-7):** the N>64 evidence gap the
+   R24 readonly review's P4 flagged (R24-8 measured only N≤64, both of which
+   fit in a single flush at either STAGE_CAP — the multi-flush path R24-8
+   *introduced* was never measured for Ir) is closed by a real A/B sweep at
+   N = 80/81/128/200/512/1024 (six new iai arms) under both STAGE_CAP=64
+   (current) and STAGE_CAP=512 (the value R24-8 changed from). **Verdict:
+   CONFIRMED CLEAN — STAGE_CAP=64 beats STAGE_CAP=512 at EVERY measured N on
+   both Ir (+2,539 to +4,065) and Estimated Cycles (+6,076 to +8,168).** No
+   crossover in range. The ΔIr shrinks linearly as N grows (STAGE_CAP=64 does
+   more intermediate flush_class calls), at exactly **+109 Ir per extra
+   intermediate flush** (linear fit verified to the unit at all 5 multi-flush
+   data points: 4065−ΔIr = 109×extra_flushes). Crossover projects at
+   **N≈2,700** — far beyond the "tens to low hundreds" R23-7 frames as this
+   project's realistic batch size. `git diff HEAD -- src/` is empty (STAGE_CAP
+   kept at 64); only 6 new bench arms added (reusable regression infra, same
+   precedent as R24-2/R24-8/R25-3). Full evidence:
+   `R25_7_STAGE_CAP_BOUNDARY_GATE.md` +
+   `R25_7_STAGE_CAP_BOUNDARY_GATE_summary.csv` +
+   `docs/perf/_raw_r25_7_stage64.log` / `_raw_r25_7_stage512.log`.
+   **2026-07-28 update — NO-GO (task #416, R26-7):** the R25 readonly review's
+   suggested prototype — replace `dealloc_batch_small`'s eager
+   `[*mut u8; STAGE_CAP]` (512 B zero-init on EVERY call) with a lazily-
+   materialized `Option<[*mut u8; STAGE_CAP]>` (materialized only on the first
+   overflow block) — was built as a `bench-internals`-gated A/B sibling
+   (byte-for-byte copy of `dealloc_batch`/`dealloc_batch_small`, ONLY the `stage`
+   representation changed) and measured at N=0/1/8/16/17/64/81/200/1024 via a
+   single-binary iai A/B (eager and lazy arms in ONE callgrind pass — cleaner
+   than R25-7's two-run protocol since both are functions in the same binary).
+   **Verdict: NO-GO — crossover at N=17 (the first overflow block).** The
+   hypothesis was DIRECTIONALLY correct (lazy IS cheaper when never materialized:
+   ~53 Ir / ~1–2% win, constant across N=0/1/8/16) but the win is tiny AND is
+   immediately dominated by per-overflow-block `Option`-discriminant-check
+   overhead the moment the magazine overflows: lazy is +55 Ir at N=17, growing
+   linearly at ~3 Ir/overflow-block to +3,076 Ir (+1.67%) at N=1024. Realistic
+   batch sizes (tens–low hundreds per R23-7) are ALL in the loss regime. **Key
+   calibration finding:** the direct A/B isolates the 64-entry (512 B) stack
+   zero-init at **~54 Ir (N=0)** — NOT the ~581 Ir a linear extrapolation from
+   R24-8/R25-7's 4,065 (the 512-vs-64 array-SIZE delta) would predict; that 4,065
+   measured two different array sizes in a shared codegen, not the isolated
+   64-entry init (the ~10× Heisenberg gap the direct A/B surfaces — same lesson
+   as R24-2 §5.1 / R24-3 / R24-4). **This is the 4th consecutive NO-GO in this
+   exact region (R24-3/R24-4/R25-3/R26-7)**, all the "added per-block bookkeeping
+   costs more than the one-time savings" class — R26-7 entered it through a
+   different door (a FIXED per-call cost, not per-block work), confirming the
+   class now spans both cost axes. `dealloc_batch_small` is byte-identical to
+   HEAD; the lazy variant stays as `bench-internals`-gated experimental bench
+   infra (same retained-arm precedent as R25-7). Full evidence:
+   `R26_7_LAZY_STAGE_ARRAY_GATE.md` +
+   `R26_7_LAZY_STAGE_ARRAY_GATE_summary.csv` +
+   `docs/perf/_raw_r26_7_lazy_stage.log`.
+   **2026-07-29 correction (R27-6, task #424):** the retained lazy
+   implementation (`dbg_dealloc_batch_lazy` / `dealloc_batch_small_lazy`) and
+   its 9 iai bench arms were REMOVED from the tree — retaining a full duplicate
+   copy of correctness-sensitive unsafe shipping code as a bench-only duplicate
+   creates logic-drift risk with no compensating benefit (the arms measured the
+   COPY, not the shipping code). The 4 eager baseline arms
+   (`dealloc_batch_fresh_{0,1,8,17}_16b`) measuring the SHIPPING
+   `dealloc_batch` were retained (genuine N-grid gap fill below N=16). The
+   measurement remains valid; the code is recoverable at commit `8679105`.
+   **2026-07-29 update — DONE (task #428, R27-10):** the bitmap-clear
+   isolation hook `HeapCore::dbg_overflow_bitmap_clear_pass`
+   (`src/registry/heap_core_diag.rs`, R24-2/task #380; re-gated + made
+   `unsafe fn` by R25-1/task #395) and its single iai bench arm
+   (`dealloc_overflow_bitmap_clear_only_16b`, the 84-Ir/7,451 isolation in
+   `R24_2_FREE_BY_MAGAZINE_STATE_GATE.md` §3/§4) were REMOVED. The four
+   consecutive NO-GOs above (R24-3/R24-4/R25-3/R26-7) made the hook dead
+   measurement infrastructure, and its only caller left a temporary
+   magazine-state invariant broken on return (R26 readonly review P2) —
+   deleted rather than keep an `unsafe fn` with an implicit process-isolation
+   precondition. The measurements stay valid historical evidence at their
+   commits; the hook/arm are recoverable in git history. This is a code
+   cleanup, NOT a new verdict on the region (still open — next lever is
+   `flush_class` isolation per the card above).
+   **2026-07-29 update — DONE, MEASUREMENT-ONLY (task #430, R28-1):**
+   `flush_class`'s own standalone Ir cost — the ~487 Ir "non-isolable
+   remainder" R24-2 §5.1 flagged (`flush_class` + the 8-pointer compaction
+   shift + the final magazine push, fused with no workload-level separation
+   point at the time) — is finally isolated. A new `bench-internals`-gated
+   `pub unsafe fn` hook (`HeapCore::dbg_flush_class_only`,
+   `src/registry/heap_core_diag.rs`, gated `bench-internals` **from
+   creation**, per CLAUDE.md's benchmark-hook rule — the positive
+   `dbg_dealloc_own_thread_with_base` pattern, not the R24-2-era
+   safe-`pub-fn`-then-retrofit mistake R25-1 had to fix) calls the real
+   `AllocCore::flush_class` standalone on 8 live blocks. Two new bench arms
+   (`dealloc_flush_class_only_16b_prefix` / `dealloc_flush_class_only_16b`),
+   shared-prefix subtraction, two independent `npm run iai` runs
+   (byte-identical Ir): **`flush_class(8 blocks)` = 449 Ir (56.1 Ir/block)**.
+   Reconciliation: one overflow event re-measured today at 581 Ir (vs R24-2's
+   571 — ~10 Ir/1.8% cross-round drift, unrelated code churn over 5 rounds);
+   subtracting the historical 84 Ir bitmap-clear figure (mechanism unchanged
+   post-R27-10, just no longer behind a standalone hook) gives a 497 Ir
+   remainder, reconciling with R24-2's 487 Ir estimate to within 2.1%.
+   `flush_class` alone is 90.3% of that remainder (449/497); compaction +
+   final push is a small derived residual (~48 Ir, 9.7%). **Verdict: the
+   region is judged likely exhausted for further per-block-cost
+   micro-optimization at this scope** — `flush_run`'s per-block work (2
+   cheap guards, 1 M2 correctness guard, 1 freelist write, 1 bitmap write,
+   with metadata already hoisted once per same-segment run) has no
+   un-hoisted cost left to cut without weakening the M2 double-free guard or
+   the Э8 run-batching invariant, and the compaction+push residual is now
+   confirmed small rather than a hidden larger target. No 5th optimization
+   attempt was opened — this measurement's value is closing out the "Next
+   trigger" question, joining the 4 prior NO-GOs in this region
+   (R24-3/R24-4/R25-3/R26-7) as a 5th data point that the immediate overflow
+   arm is tightly compiled. If a future round revisits magazine-overflow
+   cost, the more promising angle is reducing how often overflow fires or a
+   structural redesign of the fixed bitmap-clear+flush+compact+push
+   sequence, not further per-block `flush_class` tuning. No production
+   change (`AllocCore::flush_class`/`flush_run` byte-identical; the new hook
+   calls the existing function verbatim). Evidence:
+   `R28_1_FLUSH_CLASS_ISOLATION_GATE.md` +
+   `R28_1_FLUSH_CLASS_ISOLATION_GATE_summary.csv` +
+   `docs/perf/_raw_r28_1_run1.log` / `_raw_r28_1_run2.log`.
+
+
+---
+
+### A13
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 13 (`[A] Active / high-value` tier) — "**R24-11 — `bench_global_alloc_churn_with_teardown`@1024B residual"*
+
+   > - **2026-07-28 (R26-3, task #412) — latency axis CONFIRMED through the REAL `#[global_allocator]`:** R25-5/R26-1 measured the latency/decommit axis via an `AllocCore::new_with_config` bypass; R26-3 re-confirms it through the *un-bypassed* production entry point with an A/B/B/A alternating-process paired judge (20 pairs, `scripts/paired-ab-runner.mjs`): cap8 is statistically-significantly faster than cap4 (paired t=12.212 ≫ crit 2.101, sign test 20/20 favoring cap8; mean Δ=23.667 ms ≈ 16% faster at cap8), and the decommit cliff reproduces *deterministically* at the process level (cap4 `decommit_calls_total=9` in all 40 launches; cap8=0 in all 40). A same-vs-same control (cap4 vs cap4) shows t=−0.282 (well under crit), 8/12 sign split — harness honest. The per-run decommit count (9) is lower than R25-5's bypass (~20); the direction and the 4→8 cliff reproduce exactly (see `R26_3_PRODUCTION_TEARDOWN_AB_GATE.md` §2 for the hypothesis). **No production change** (`DEFAULT_POOL_SEGMENTS` stays 4); the promote-4→8 decision remains pending. Evidence: `R26_3_PRODUCTION_TEARDOWN_AB_GATE.md` + `R26_3_PRODUCTION_TEARDOWN_AB_GATE_summary.csv` + `docs/perf/_raw_r26_3_production_teardown_ab.log` + `docs/perf/paired_ab_runs/2026-07-28T16-25-31-476Z.json`.
+   > - **2026-07-28 (R26-9, task #418) — CLOSED without a design attempt.** R26-9's own explicitly-recorded conditional gate: "design (not implement) an adaptive/process-wide pool budget, ONLY if R26-1's corrected RSS gate exposes a real cap-8 memory penalty." R26-1's corrected data does NOT expose a cap-8 penalty — it is RSS-NEUTRAL (identical to cap=4 at every thread count measured, §0/§3 of `R26_1_POOL_CAP_RSS_SUBPROCESS_GATE.md`). There is no cap-specific RSS cost for an adaptive/process-wide budget to manage relative to the current fixed cap=4 default; the case for such a design would have to rest on the linear-in-thread-count multi-thread scaling ALONE, but that scaling is present IDENTICALLY at every cap including the current default (R25-5's original finding, reconfirmed unchanged by R26-1) — it is not something raising `pool_segments` introduces or worsens, so it is not a NEW finding this task's gate was scoped to react to. Dispatching a design task against a gate its own trigger condition explicitly does not meet would be speculative work, the same reasoning R25-6's original closure (and R25-9's) already established this project's practice for. If the multi-thread linear-scaling concern itself (independent of any cap-8-specific penalty) is judged worth a design in a future round, that would be a new task with its own trigger, not a reinterpretation of this one's.
+
+   R24-10 (task #388) established the *mechanism* behind the 1024B teardown
+   residual (the segment decommit/release/re-reserve lifecycle Mechanism-2's
+   pool was built to absorb) but did not re-measure this specific bench's 1024B
+   number against mimalloc *after* Mechanism-2 landed, nor decide which of three
+   candidates (i cap-exceeded / ii decay / iii batch-flush) dominates the
+   *current* residual. R24-11 found that **neither this perf index nor the
+   correctness sibling had tracked "was Mechanism-2's effectiveness against
+   this bench's 1024B number ever re-measured after it landed"** — exactly the
+   silently-dropped-follow-up class the CLAUDE.md "Phased delivery" convention
+   (R18-8 / R22-3 lessons) exists to prevent; this entry closes that gap.
+   Measured verdict: **(i)** — the 4-segment / 16 MiB per-thread pool cap
+   (`small_segment_pool_config.rs`, default `pool_segments=4`,
+   `pool_byte_cap=16 MiB`) is exceeded by this bench's full-teardown-every-
+   iteration shape at 1024B (248 decommit/release events), where smaller sizes
+   fit in one segment and never trip the cap (0 events, parity with mimalloc).
+   The pool cap exists to bound retained RSS, so raising it is an RSS-vs-
+   throughput trade requiring an RSS gate — **flagged as the next step, NOT
+   attempted in R24-11** (no default changed, no production file touched). The
+   bench's doc comment was simultaneously rewritten from its stale "until
+   task #51 lands Mechanism-2" framing to its current **regression-canary**
+   role (it is the only churn bench that times teardown inline; both siblings
+   use `ChurnTeardownGuard`). Full evidence, the cross-size teardown-cost
+   decomposition, and the per-event-cost caveat:
+   `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md`.
+
+   **R25-5 (task #399) — the sweep itself.** Ran `pool_segments` = 4/8/16/32
+   with a generous 256 MiB `pool_byte_cap` against the exact
+   `bench_global_alloc_churn_with_teardown`@1024B shape, per the two-axis
+   ("do not promote from the single-thread latency result alone")
+   constraint the R24 readonly review's P2 section and this item's own
+   "Next trigger" both required. A new standalone probe
+   (`examples/r25_5_pool_cap_sweep_probe.rs`) was needed rather than
+   extending the criterion bench directly (only Sefer has a `pool_segments`
+   knob, not mimalloc/System) — it copies `bench_global_alloc_churn_with_teardown`'s
+   `churn_prefill`/`churn_step`/`churn_teardown` primitives byte-for-byte and
+   measures the latency/decommit axis via `AllocCore::new_with_config`
+   directly (mirroring `pool_cap_sweep_spread_and_drain`'s own established
+   pattern) and the RSS axis via `SeferAlloc::with_config` on N concurrent
+   OS threads (mirroring `first_alloc_process.rs`'s N-concurrent-heap RSS
+   pattern), reading peak RSS/commit through `proc_probe::snapshot()`
+   (this project's established same-instant memory probe). **A real
+   methodology pitfall was caught and fixed mid-task**: a naive sequential
+   prefill→churn→teardown loop measured ZERO decommits at every swept
+   value including the cap=4 baseline — directly contradicting R24-11's own
+   248-decommit finding — because criterion's actual
+   `iter_batched(.., BatchSize::SmallInput)` semantics batch MANY `setup`
+   calls concurrently-live before timing `routine` (`criterion-0.5.1/src/bencher.rs:236`),
+   a fundamentally different memory-pressure shape than one cycle at a
+   time; the probe was fixed to reproduce that exact batched-setup shape,
+   after which the decommit signal reproduced correctly (verified via
+   `AllocCore::dbg_pool_cap()`/`dbg_pooled_count()` self-checks — closing
+   R24-11 §1's own documented `SeferAlloc`-reachability gap for this
+   counter). **Result:** cap=4→8 eliminates the entire decommit residual
+   (20→0 in R25-5's own harness units) at LOWER RSS/commit cost (cap=4's
+   residual decommit-then-reserve churn itself costs real RSS/commit that
+   steady-state cap≥8 avoids); cap=16/32 add nothing further at either axis
+   (this workload's demand tops out at 6-7 concurrently-touched segments,
+   confirmed via the self-verifying diagnostic). The multi-thread (8T/32T)
+   axis confirms the review's warned-about linear-in-thread-count RSS
+   multiplication IS present (~8× at 8 threads, ~32× at 32 threads,
+   relative to the 1-thread delta) but that multiplication is present
+   IDENTICALLY at every swept cap including the current default — cap=8
+   does not make it worse, and in fact its per-thread footprint is smaller
+   than cap=4's. **Verdict: GO-CANDIDATE for `pool_segments=8`**, flagged
+   for a future default-raise decision (task brief's explicit constraint:
+   measure and report, do not change the default in this task). Full
+   evidence, the batching-pitfall counterfactual, and the RSS-cost
+   mechanism explanation: `R25_5_POOL_CAP_SWEEP_GATE.md`.
+
+   **2026-07-28 (R26-2, task #411) — CORRECTION.** The R25-5 paragraph above
+   claims cap 4→8 wins on BOTH the latency/decommit axis AND the RSS/commit axis
+   simultaneously with no tradeoff. That claim is NOT proven: only the
+   latency/decommit axis is confirmed. The RSS axis is invalidated (not merely
+   uncertain) by a methodological bug — `examples/r25_5_pool_cap_sweep_probe.rs`'s
+   `measure_rss_axis` ran the cap 4/8/16/32 arms and 1/8/32 thread counts
+   sequentially in ONE `--release` process, but the registry's slot lifecycle
+   (`src/registry/heap_registry.rs`) means an already-materialised slot keeps its
+   first-claim config: `claim_with_config` (~:209, first materialisation
+   ~:226-246; re-claim ~:247-300 "silently wins"), `recycle` (~:342) returns
+   slots to `free_slots` on thread exit, `pick_slot` (~:316-322) pops them first,
+   and the only always-compiled mismatch signal is the `CONFIG_CONFLICTS` counter
+   (~:263) — the `debug_assert!` (~:285) is compiled out of `--release`. So rows
+   labelled cap=8/16/32 may have executed under cap=4. The latency/decommit axis
+   is unaffected: it uses `AllocCore::new_with_config` directly (no registry) and
+   self-verifies via `assert_eq!(resolved_cap, pool_segments)`. Full detail, the
+   list of now-unreliable vs still-reliable report sections, and the re-stated
+   (latency-axis-only) GO-CANDIDATE: `docs/perf/R25_5_POOL_CAP_SWEEP_GATE.md` §8.
+   Remeasurement is tracked as task #410 (R26-1, subprocess-per-arm isolation);
+   R25-6's closure (which rested entirely on the "wins on both axes, no tradeoff"
+   claim) is reopened and tracked as task #418 (R26-9), conditional on #410.
+
+   **2026-07-28 (R26-1, task #410) — RSS AXIS REMEASURED (subprocess-per-arm).**
+   The remeasurement the R26-2 correction pointed to is now complete. A new
+   probe (`examples/r26_1_pool_cap_rss_subprocess_probe.rs`) runs each
+   `(pool_segments, thread_count, repetition)` tuple in its OWN freshly-spawned
+   OS process, eliminating the registry-slot-reuse bug by construction. Each
+   child claims heaps via `HeapRegistry::claim_with_config` (not `SeferAlloc`,
+   sidestepping its private TLS), then hard-`assert!`s BOTH (i) every claimed
+   heap's `HeapCore::dbg_pool_cap()` (new thin delegation added to
+   `src/registry/heap_core_diag.rs` this task) equals the requested
+   `pool_segments`, AND (ii) `config_conflicts_total()` delta is exactly 0 —
+   per the review's "Required correction" recipe. All 36 child runs (4 caps ×
+   3 thread-counts × 3 reps) passed both self-checks. **Result: the R25-5
+   "cap 4→8 wins on RSS too (lower RSS)" claim does NOT reproduce.** Under
+   isolation, all four caps produce statistically identical RSS at every thread
+   count (cap=4 1T=13,368 KiB vs cap=8 1T=13,372 — 0.03% diff; cap=4 32T=
+   423,448 vs cap=8 32T=423,444 — identical). The inter-cap difference at every
+   cell is smaller than the intra-cap spread across 3 reps. R25-5's dramatic
+   "cap=8 is 34% cheaper on RSS at 8T" was an artifact of cap=8's threads
+   silently reusing cap=4's already-committed segments (measuring incremental-
+   over-warm, not fresh footprint). **Re-stated verdict:** the GO-CANDIDATE
+   for `pool_segments=8` survives on the latency/decommit axis ALONE
+   (eliminates 20 decommits/run at RSS-NEUTRAL cost — no RSS benefit, but also
+   no RSS penalty). The "wins on BOTH axes simultaneously, no tradeoff"
+   framing is refuted for the RSS axis. The DEFAULT-CHANGE decision remains
+   pending — the corrected case is positive but weaker than R25-5's
+   invalidated "faster AND cheaper." Full evidence:
+   `R26_1_POOL_CAP_RSS_SUBPROCESS_GATE.md` +
+   `R26_1_POOL_CAP_RSS_SUBPROCESS_GATE_summary.csv` +
+   `docs/perf/_raw_r26_1_pool_cap_rss_subprocess_probe.log`.
+
+   **2026-07-28 (R27-1, task #419) — CORRECTION: the pending DEFAULT-CHANGE decision was phrased as a one-knob no-op.** Every prior paragraph in this entry phrased the pending decision as "promote `DEFAULT_POOL_SEGMENTS` 4→8". That phrasing is a literal NO-OP: `AllocCore::new_with_config` resolves the effective pool cap as `min(pool_segments, pool_byte_cap / SEGMENT)` (`src/alloc_core/alloc_core.rs:837-839`), and the current `DEFAULT_POOL_BYTE_CAP = 16 MiB` (`src/alloc_core/small_segment_pool_config.rs:117`, with `SEGMENT = 4 MiB`) already resolves to `16 MiB / 4 MiB = 4`, so `min(8, 4) = 4` — editing ONLY `DEFAULT_POOL_SEGMENTS` from 4 to 8 leaves the allocator's behaviour byte-identical. To obtain an effective default cap of 8 the decision must change BOTH knobs: `(pool_segments, pool_byte_cap) = (4, 16 MiB) → (8, 32 MiB)`, which doubles the documented maximum retained committed pool memory per materialised heap (16 MiB → 32 MiB; at 32 concurrent heaps, up to 1 GiB) — an RSS-vs-throughput trade, not the cost-free change the one-knob phrasing implied. None of the R25/R26 A/B arms (R25-5, R26-1, R26-3 — all run at a generous 256 MiB `pool_byte_cap` precisely so the byte ceiling would never bind) ever measured the one-constant default edit the docs proposed; they measured the EFFECTIVE cap (an explicit config with both knobs raised together), so their latency/decommit GO-CANDIDATE survives, but the *default-promotion* task was never actually measured as written. This is purely a task-framing correction — no `src/` default is changed in R27-1. Note also that `SmallSegmentPoolConfig` is builder-only today (`SmallSegmentPoolConfig::new().pool_segments(n).pool_byte_cap(bytes)`); there is NO named preset constant, so any future "throughput recipe" (8/32, 16/64) is documentation guidance, not a shippable constant, unless a later task adds one. Verified by a new test (`tests/small_segment_pool.rs::paired_knob_promotion_is_not_a_noop`) asserting `(pool_segments=8, pool_byte_cap=32 MiB)` resolves to 8 while the malformed `(pool_segments=8, pool_byte_cap=16 MiB)` resolves to 4.
+
+   **2026-07-28 (R27-2, task #420) — CORRECTION: R26-1's "RSS-NEUTRAL" verdict and R26-9's closure rest on an incomplete premise; both are REOPENED.** The Status/Current-number/Next-trigger headline bullets above were updated this round (they are this entry's designed-mutable summary; the historical narrative below is preserved unchanged per the append-don't-rewrite convention) to stop carrying the "RSS-neutral, no cap-specific RSS cost" framing, because two independent reasons show that framing is false:
+
+   **(a) R26-1's RSS probe never proved victim activation.** `examples/r26_1_pool_cap_rss_subprocess_probe.rs:124` sets `RSS_BATCH_SIZE = 50`, i.e. `50 × 256 × 1024 bytes ≈ 12.5 MiB` logical prefill — this fits inside the current 4-segment/16 MiB retention region. The probe records `verified_cap` and `config_conflicts_delta` (proving it RAN cap 8, not that it USED slots 5–8) but records NO `dbg_pooled_count` / pool-occupancy high-water mark and NO decommit counters, and asserts nothing about whether cap 4 was ever saturated or whether cap 8 ever retained a 5th segment. Its "demand tops out at 6 segments" framing was measured on the SEPARATE `LATENCY_BATCH_SIZE=120` axis (the R25-5/R26-3 latency probe), not this RSS axis's batch-50 workload — the demand proof does not transfer across different batch sizes. So identical peak-live-set RSS across caps 4/8/16/32 in R26-1's table is EXPECTED regardless of whether a real retention cost exists, because the extra capacity was never proven to be exercised.
+
+   **(b) R26-3's own committed raw log directly contradicts "no cost."** `grep 'rss_after_kib=' docs/perf/_raw_r26_3_production_teardown_ab.log` shows cap8 arms reporting `rss_after_kib=34576` (~33 occurrences) and cap4 arms reporting `rss_after_kib=30476` (~32 occurrences), a deterministic, repeatable **+4,100 KiB ≈ exactly one 4 MiB segment** retained after teardown, at the pressure-producing batch-120 workload (the SAME workload R26-3 uses for its latency claim, and the one whose "demand tops out at 6 segments" finding actually holds). This is a real, measured retention cost sitting in this project's own committed evidence, and it directly contradicts the "no cap-specific RSS cost" framing task #418 used to close the adaptive-design task.
+
+   **Peak-live-set RSS is also the wrong sole metric for a retention policy** — the pool's actual trade-off appears AFTER teardown (does the cache stay warm/committed while the live working set is gone), which is exactly the axis R26-1's probe never measured (it took only one peak-during-load snapshot) and R26-3 happens to expose as a side effect of its own instrumentation. Per the review's project-improvement #6 (`docs/reviews/2026-07-28-r26-readonly-review.md`), this is fixed by correcting the mutable current-state HEADLINE bullets (done above) rather than leaving the misleading "RSS-neutral, no adaptive trade-off" headline active with only a caveat appended below. The R25-5/R26-2/R26-1/R27-1 narrative paragraphs and the R26-3/R26-9 card bullets are all preserved unchanged (append-only); this R27-2 paragraph is the correction. **Accordingly: the R26-9 closure bullet above ("2026-07-28 (R26-9, task #418) — CLOSED without a design attempt", in the current-state card) is now known to rest on an incomplete premise — its "there is no cap-specific RSS cost" justification is contradicted by R26-3's own committed raw log — and is REOPENED, tracked as task #423 (R27-5), which redoes the adaptive-design evaluation once task #421 (R27-3)'s proper retention gate lands.** Docs-only; no `src/`/`examples/`/`benches/` file touched; no re-measurement attempted (that is task #421 / R27-3, not this task).
+
+   **2026-07-29 (R27-3, task #421) — DONE: the proper RETENTION gate has landed; the cap-specific RSS cost is now QUANTIFIED and victim-activation-PROVEN.** This closes the measurement debt R27-2 flagged. A new probe (`examples/r27_3_pool_retention_gate.rs`) runs each `(pool_segments, pool_byte_cap, thread_count, repetition)` = `(4,16MiB)/(8,32MiB)` × `1/8/32` × 3 reps (18 child processes, subprocess-per-arm isolation) at the **pressure-producing batch 120** (NOT R26-1's batch 50), recording peak-live AND post-teardown AND post-idle (100ms/1s/2s) RSS/commit, final AND high-water `dbg_pooled_count` per heap, decommit/release/reserve counters, and an explicit `dbg_drain_small_pool` reclaimability demonstration. Every arm hard-asserted the R26-4 config-identity contract (`verified_cap == pool_segments`, `config_conflicts_delta == 0`, `process_identity = subprocess`); all 18 passed. **Victim activation PROVEN for both arms** (the counterfactual R26-1's batch-50 RSS axis lacked): cap-4 arms asserted `decommit_delta > 0` (measured 274/1226/1446 at 1/8/32T — the 6-segment demand provably overflows the 4-segment pool); cap-8 arms asserted `pooled_hw_max > 4` (measured 6, retention beyond cap-4's bound) AND `decommit_delta == 0` (cap 8 absorbs the demand). **Result: cap 8 DOES retain more than cap 4 — REAL and PROVEN, not RSS-neutral.** Post-teardown RSS Δ (cap8−cap4, median): 1T=+8,096 KiB; 8T=+65,560 KiB; 32T=+261,424 KiB — **~+8 MiB/heap (~2 segments), scaling linearly** (8,096 / 8,195 / 8,170 per heap). It decomposes into ~+4 MiB/heap pooled (5 vs 4 segments, drainable via `dbg_drain_small_pool`, proven by the post-drain RSS drop) + ~+4 MiB/heap committed-non-pooled (residual after drain). **Decay (§3): the small-pool decay shares the large-cache 1000ms interval but is EVENT-DRIVEN (fires only on `reserve_small_segment`, no background thread) — pure idle does NOT reclaim it; RSS and `dbg_pooled_count` are flat across the 2s idle window (empirically confirmed, `pooled_predrain == pooled_final`); the retention persists until explicit drain / thread-exit.** This is materially larger than R26-3's +4,100 KiB side-channel observation (a lower bound from a non-controlled measurement; cap8's absolute ~34.7 MiB matches R26-3's 34.6 MiB closely, but this gate's cleaner subprocess-isolated cap4 measures 26.7 MiB vs R26-3's 30.5 MiB). **Implications:** the paired default-change (R27-4/#422) is now a quantified trade (eliminate 20 decommits/run at ~+8 MiB/heap, ~+255 MiB at 32 heaps); R26-9's closure condition ("ONLY if R26-1 exposes a real cap-8 penalty") is now MET, so R27-5/#423 (adaptive/process-wide budget re-evaluation) proceeds — and the idle-no-decay finding means an adaptive design wanting idle reclamation cannot rely on the existing decay interval (needs an active drain/scavenge). **No production change** (`DEFAULT_POOL_SEGMENTS`/`DEFAULT_POOL_BYTE_CAP` remain `4`/`16 MiB`; no `src/` file touched at all). Evidence: `R27_3_POOL_RETENTION_GATE.md` + `R27_3_POOL_RETENTION_GATE_summary.csv` + `docs/perf/_raw_r27_3_pool_retention_gate.log`.
+
+   **2026-07-29 (R27-4, task #422) — DONE: the LATENCY half of the paired-default decision is measured at the REAL byte cap through the REAL `#[global_allocator]`; the latency win SURVIVES.** This is the missing measurement R27-1 flagged: every prior A/B (R25-5, R26-1, R26-3) measured `pool_segments=4` vs `8` at a generous 256 MiB `pool_byte_cap` ceiling nobody would ship; the REAL default change is the PAIRED `(pool_segments, pool_byte_cap) = (4,16 MiB) → (8,32 MiB)` (task #419), and nothing had measured THAT exact pair through the real un-bypassed entry point. Two new example binaries (`examples/r27_4_real_default_ab_cap4.rs` / `_cap8.rs`) install a REAL `#[global_allocator]` `SeferAlloc` via the const-fn `with_config` path with the actual byte caps (16/32 MiB) and run the exact churn-with-teardown@1024B shape, judged by the runner's documented real-claim default of 20 A/B/B/A pairs (80 process launches). The byte cap resolves to the SAME effective cap as R26-3's 256 MiB arms (`min(4,4)=4`, `min(8,8)=8` — `pool_byte_cap` is consumed ONLY by that `min()`, `src/alloc_core/alloc_core.rs:839`), so the win was expected to reproduce; it does, which closes the "never measured at the actual shipping config" gap. **Verdict: cap8 is statistically-significantly faster than cap4 at the REAL paired default** (paired t=8.114 ≫ crit 2.101, sign test 19/20 favoring cap8, zero ties; mean Δ=21.404 ms, cap4 mean 96.71 ms vs cap8 mean 75.31 ms ≈ **22% faster** at cap8), and the decommit cliff reproduces deterministically (cap4 `decommit_calls_total=9` in all 40 launches; cap8=0 in all 40). A same-vs-same control (cap4 vs cap4) shows t=−0.434 (well under crit), 11/9 sign split — harness honest. **Methodological note: these binaries fix R26-3's warm-up-placement timing bug from the start** — the warm-up batch runs BEFORE `t0` so `elapsed_ns` covers exactly 8 timed batches × 120 cycles = 960 cycles (NOT R26-3's 9/1080, where `t0` preceded the warm-up and timed all 9); this is why R27-4's absolute ms are NOT directly comparable to R26-3's raw ms, though the per-batch delta is constant (R26-3: 2.63 ms/batch; R27-4: 2.68 ms/batch — within noise). **Combined latency+retention picture for the pending default decision:** the trade is now fully quantified on BOTH axes at the REAL config — cap8 trades ~+8 MiB/heap post-teardown retention (R27-3, cited directly: ~+4 MiB pooled/drainable, ~+4 MiB committed-non-pooled, linearly scaling to ~+255 MiB at 32 heaps, does not decay during idle) for ~22% lower latency and a fully-eliminated decommit churn, both measured at the REAL config through the real entry point. Whether that trade is net-positive is the deployment-context judgment a SEPARATE decision task makes — this task is measurement-only (no `src/` default changed; `DEFAULT_POOL_SEGMENTS`/`DEFAULT_POOL_BYTE_CAP` remain `4`/`16 MiB`). Evidence: `R27_4_REAL_DEFAULT_AB_GATE.md` + `R27_4_REAL_DEFAULT_AB_GATE_summary.csv` + `docs/perf/_raw_r27_4_real_default_ab.log` + `docs/perf/paired_ab_runs/2026-07-28T23-55-35-517Z.json` (main) + `docs/perf/paired_ab_runs/2026-07-28T23-56-02-705Z.json` (control).
+
+   **2026-07-29 (R27-5, task #423) — DONE (DESIGN-ONLY): the adaptive/process-wide pool-budget design is written; recommendation is Option 1 (keep the paired 4/16 MiB default, document an 8/32 MiB throughput recipe), NOT the adaptive design.** R26-9's closure condition ("ONLY if a corrected RSS gate exposes a real cap-8 memory penalty") was met by R27-3 (task #421): cap 8 retains ~+8 MiB/heap post-teardown, scaling linearly to ~+255 MiB at 32 heaps, victim-activation-proven, and does not decay during idle. The design (`docs/perf/R27_5_ADAPTIVE_POOL_BUDGET_DESIGN.md`) develops the review's adaptive-growth sketch in full (per-heap `effective_pool_cap` grown on the cold `reserve_small_segment`/`release_or_pool_empty_segment` path after a calibrated cap-full-event threshold derived from R27-3's 274/1226/1446 decommit counts; a process-wide `GROWTH_TOKENS_REMAINING` atomic touched ONLY on that cold path + trim, satisfying the no-hot-path-atomic hard constraint; decline-on-budget-exhaustion; reset-on-recycle in `trim_for_recycle`), then critiques it honestly against R27-3/R27-4's data: (1) the latency win is BINARY (cap ≥ demand ⇒ 0 decommits, else N), so a global budget that grows only SOME heaps yields a bimodal fleet worse-aggregate than cap-8-for-all; (2) under the uniform-pressure workloads this project has measured (every heap saturates cap 4), the budget is either never binding (= cap-8-for-all = Option 2 with extra steps) or splits the win — the budget only helps under UNEVEN pressure, and no committed workload exhibits that shape; (3) the idle-shrink-back sub-problem is UNSOLVED within this project's documented no-background-thread anti-precedent (R27-3 proved idle does not decay the pool), so a once-grown heap stays grown until thread-exit — for long-lived thread pools this converges to cap-8-for-all's retention footprint anyway. Verdict: CONDITIONAL-GO-on-paper / RECOMMEND-OPTION-1 — the design is deferred (matching R17-10/R25-8's convention) until a measured uneven-pressure victim + a stage-1 counter calibration justifies the heuristic, and Option 1 (document the recipe) is the recommendation for THIS round because it is near-zero complexity, preserves the safety-first default for memory-constrained/high-thread-count deployments, and makes the 22% latency win discoverable via a one-line builder opt-in with fully-measured numbers. Option 2 (promote 8/32) is held as a credible alternative if future deployment evidence shows throughput dominates the general-purpose case. **No `src/` file touched (design-only); no default changed** (`DEFAULT_POOL_SEGMENTS` / `DEFAULT_POOL_BYTE_CAP` remain `4` / `16 MiB`); no commit made (tree left unstaged for review). Evidence: `docs/perf/R27_5_ADAPTIVE_POOL_BUDGET_DESIGN.md` (synthesizes R27-3's retention data + R27-4's latency data; no re-measurement).
+
+   **2026-07-29 (R27-11, task #429) — EVALUATED, NOT OPENED: the reservation-only
+   overflow tier conditional (`docs/reviews/2026-07-28-r26-readonly-review.md`'s
+   "conditional alternative") was checked against its own two required triggers.**
+   Trigger 1 (committed retention cost unacceptable for a default) **fires** —
+   already established by R27-3/R27-4 above, and independently corroborated by
+   R27-5's unrelated design route reaching the same "keep the conservative
+   default" conclusion. Trigger 2 (an isolated cost breakdown showing OS-reserve +
+   segment-table-setup + metadata-reinit is a MATERIAL fraction of the segment
+   lifecycle cost, AFTER the unavoidable recommit/page-fault cost is accounted
+   for) is **unmeasured** — no report in this project's history decomposes the
+   decommit→reserve churn cost into those two shares; R27-4 measured only the
+   aggregate win from eliminating the churn entirely. Per the task's own explicit
+   rule ("do NOT start unless BOTH triggers fire" / "if trigger 2 fails, this
+   design must not be opened"), an unmeasured trigger cannot be treated as fired,
+   so **no design document was written and no `src/` file was touched.** Filed as
+   item 15 in the `[D]` "Deferred designs" tier below (was previously an unfiled
+   review idea) with the exact Stage-1 cost-breakdown measurement a future round
+   would need to run to actually resolve trigger 2, so this does not become a
+   silently-dropped follow-up. Evidence: item 15 in `[D]` below.
+
+   **2026-07-29 (R29-3, task #434) — DONE: trigger 2 MEASURED and DOES NOT FIRE;
+   item 15 moved from `[D]` to `[L]` (honest reject with evidence).** This is the
+   measurement R27-11 deferred. A new probe (`examples/r29_3_decomposition_gate.rs`)
+   decomposes one decommit→reserve segment-lifecycle cycle into its component costs
+   using wall-clock `std::time::Instant` around the existing production code paths
+   (`os::Segment::reserve`, `os::release_segment`, `os::decommit_pages`,
+   `SegmentTable::register`/`recycle`, `SegmentMeta`/`SegmentHeader` init) — NOT iai,
+   because callgrind is structurally blind to the kernel-time-dominated costs (OS
+   syscalls + page faults) this split hinges on (the existing `large_alloc_free_cycle`
+   iai arm reports only 3,308 Ir for a 4 MiB round-trip costing ~50-200 µs real; the
+   supplementary `decomp_*_8x` arms added in this task show the same undercounting).
+   **Result: (1+2+3) avoidable = ~24K ns = 1.0-1.3% of the cycle (across 2 saved
+   runs); (4+5) irreducible (page faults) = ~2,102-2,154K ns = 98.7-99.0%.**
+   Page-fault cost dominates by two orders of magnitude. Additionally, the decommit
+   syscall itself (`MADV_DONTNEED` page-table walk for 1,006 pages) costs
+   ~196-217K ns — an order of magnitude MORE than the entire avoidable overhead,
+   meaning the reservation-only design would be a NET LOSS on Linux. Per the task's
+   own explicit verdict rule (avoidable > 20% → trigger 2 fires), trigger 2 does NOT
+   fire. Item 15 moved from `[D]` to `[L]` with the measured 1.0-1.3% avoidable
+   share as the documented reason. Evidence:
+   `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`.
+
+   **2026-07-29 (R29-4, task #435) — DONE: the R27-3 "committed-non-pooled"
+   residual IS reconciled — to the `small_active` state.** The R28 readonly
+   review (`docs/reviews/2026-07-29-r28-readonly-review.md` lines 183–213)
+   flagged that ~+4 MiB/heap of the post-drain retention delta was real but
+   not accounted to a mechanism (inferred by RSS subtraction, never reconciled
+   to a tracked counter). This task built a per-segment-state reconciliation
+   hook (`AllocCore::dbg_segment_state_reconciliation`, `bench-internals`-gated
+   safe `pub fn`) that classifies every registered segment into exactly one of
+   seven mutually-exclusive states and totals committed/reserved bytes per
+   state. Re-running R27-3's retention shape with it active: **the residual
+   IS fully reconciled.** Post-teardown Δ = +2 segments (+8,192 KiB):
+   +1 `small_pooled` (+4,096 KiB, the pooled tier — drainable) + +1
+   `small_active` (+4,096 KiB, the residual — NOT drainable). Post-drain Δ =
+   +1 segment (+4,096 KiB) = entirely `small_active`. The mechanism: the extra
+   `small_active` segment retains `live_count > 0` because magazine-resident
+   (tcache) blocks keep its live count nonzero (freed-to-magazine blocks don't
+   decrement `live_count`, so the segment was never pool/release-eligible —
+   exactly why drain doesn't reclaim it). The "registered-empty-but-not-pooled"
+   state the review hypothesised has count = 0 at every measurement point
+   (structurally empty: `release_or_pool_empty_segment` either pools or
+   releases, never leaves a segment registered-but-empty). The reconciliation
+   identity `sum(per-state count) == table count()` holds exactly at all four
+   measurement points (hard-asserted). Evidence:
+   `docs/perf/R29_4_SEGMENT_STATE_RECONCILIATION_GATE.md` +
+   `R29_4_SEGMENT_STATE_RECONCILIATION_GATE_summary.csv` +
+   `docs/perf/_raw_r29_4_reconciliation_run1.log` / `_run2.log`.
+
+
+---
+
+### A105
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (one-line pointer;
+item 105 removed from the `[A]` Active tier). Full closure narrative,
+byte-preserved from the former inline card.*
+
+**105 — B4-MT X-notown — 256-битный notown-фильтр SegmentTable: NO-GO (thrash64 w_free +5 Ir > +2), src откачен.** (Filed 2026-10-20, `docs/perf/B4_MT_PIN_NOTOWN.md` §4.)
+
+   > **Current state**
+   > - **Status:** closed — NO-GO (история: итерация mt-xn → mt-xn2, обе мимо thrash64-гейта; `src/`-правки полностью откачены, остался только сырой лог и этот отчёт).
+   > - **Current:** foreign free −7 Ir (136→129, −5.1% ИЗМЕРЕНО) и notown-оракул 100000/100000 = 1.0 (≥95% PASS) — механизм работает; единственный драйвер NO-GO — thrash64 w_free 108 против 103 (+5 ИЗМЕРЕНО > +2 допуска), чисто инструкционная цена гейта на OWN Tier-1-промахе (D1m без изменений); mt-xn2 (независимые битовые диапазоны) не изменил число.
+   > - **Next trigger (дизайн-триггер):** редизайн «гейтить только не-владельца региона адресного пространства» (per-heap foreign-bias flag), убирающий per-miss работу гейта с OWN-пути — вне одной итерации; переоткрывать только с новым замером полного судейского набора.
+   > - **Evidence:** `docs/perf/B4_MT_PIN_NOTOWN.md` §3/§4; `docs/perf/B4_MT_PIN_NOTOWN_summary.csv`; `scripts/b4_mt_pin_notown_table.mjs`; сырьё `docs/perf/_raw_b4_mt_xn.log` (diff-хэши `43c72c4f…`, mt-xn2 `003391ac…`).
+
+---
+
+### A106
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (one-line pointer;
+item 106 removed from the `[A]` Active tier). Full closure narrative,
+byte-preserved from the former inline card with the review-fix corrections
+(mt-xp4v3 log, ОЦЕНКА labeling, §11 references).*
+
+**106 — B4-MT X-pin — heap-route-pin-cache: NO-GO (отозван после второго ревью: Box запрещён + mt-xp4 показал достаточность R1 TLS-кэша).** (Filed 2026-10-20, `docs/perf/B4_MT_PIN_NOTOWN.md` §5/§11.)
+
+   > **Current state**
+   > - **Status:** closed — NO-GO (2026-10-20; GO §5 ОТМЕНЁН вторым ревью и решающим замером mt-xp4; `src/` = base A `2730d02a`, все X-pin правки откачены, файлы `heap_route_pin_cache.rs`/`tests/b4_xp_heap_pin_cache.rs` удалены из дерева).
+   > - **Current:** итог NO-GO. Главное основание — ПОТОЛОК ВЫГОДЫ (ОЦЕНКА по измеренным частотам и измеренной цене попадания): доля чужих free на step при T≥2 = (hits+misses)/(steps·T) = 0.0488–0.0625 (ИЗМЕРЕНО счётчиками, mt-xp4v3) × измеренная экономия на чужой free 14 Ir (mt-xp2) / 16 Ir (mt-xp3) = 0.68–1.00 Ir/step = 0.16–0.33% Ir/op — на порядок ниже порога принятия mt-bench (+2%); оценка выгоды по измеренным частотам и измеренной цене попадания — доли процента Ir/step; это оценка, а не доказанный предел. Затем безопасность (Box на пути чужого free запрещён: реентрантность + fallback-детлок; TLS-вариант дешевле по выгоде; HeapSlot требует кодовых доказательств) и бюджет 9216 (headroom 8 Б под --all-features). hit-rate R1 ≥ 0.999 — довод о пренебрежимости ПОТЕРЬ НА ПРОМАХАХ (макс. 0.0104% Ir/op, ОЦЕНКА), а НЕ «кэш не нужен»: X-pin экономил цену ПОПАДАНИЯ, не промаха. larson/mstress T=1 flat ничего не доказывают — при T=1 чужих free в трассе нет. Полный разбор — `docs/perf/B4_MT_PIN_NOTOWN.md` §11.
+   > - **Review-fix update (2026-10-20, mt-xp4 NO-GO, `docs/perf/B4_MT_PIN_NOTOWN.md` §11):** второй ревью (СТОП-находка) запретило lazy Box навсегда (реентрантная аллокация внутри free + детлок fallback-LockGuard, `realloc.rs:512` → `fallback.rs:539`). Решающий замер mt-xp4 (R30-8): hit-rate СУЩЕСТВУЮЩЕГО R1 TLS-кэша на реальных larson/mstress T=2/T=4 = 0.9992–0.9998 (≥0.95), потери на промахах — максимум 0.0104% Ir/op (ОЦЕНКА по измеренной частоте промахов и измеренной цене 830 Ir) — потери на промахах существующего R1-кэша пренебрежимы (довод о потерях, НЕ «кэш не нужен»: X-pin экономил цену ПОПАДАНИЯ — главное основание NO-GO теперь потолок выгоды, см. Status/Current выше). **Вердикт изменён на NO-GO**: все X-pin src-правки откачены к `2730d02a` побайтово (`git diff 2730d02a -- src tests` пуст, diff-хэш `61bc39ed…`); `heap_route_pin_cache.rs`/`tests/b4_xp_heap_pin_cache.rs` удалены; r34_18: 7872/9208 Б ≤ 9216; Loom 4+2 зелёные; clippy PER_PR_ROWS зелёные; verify-*.mjs зелёные (кроме evidence-registry). Честный механизм evidence-registry RED: верификатор сравнивает src-scope строк с committed HEAD = `f0c0c623`, который ещё СОДЕРЖИТ X-pin src (M/D относительно `2730d02a` — это расхождение HEAD↔рабочей копии, а не «тот же RED на 2730d02a»); поэтому 9 evidence-src-stale RED-строк (R4a-01/02/05, R4c-02/03/05/06/07/09) объясняются содержимым HEAD, а проверка «совпадает ли с базой» будет валидной только ПОСЛЕ коммита оркестратором. Бюджет 9216 на месте, подъём не потребовался.
+   > - **Next trigger:** переоткрыть можно только с НОВЫМ замером (новый сырой лог с идентичностью источника) и решением владельца о budget/безопасности (например, легального HeapSlot-доказательства); см. §11 `docs/perf/B4_MT_PIN_NOTOWN.md`.
+   > - **Evidence:** `docs/perf/_raw_b4_mt_xp4_tls.log` (mt-xp4v3: `set -euo pipefail`, tee внутри WSL, конфигурационные строки `steps=… workload=… T=…` и identity-строки вычислены скриптом — sha256 tar-файла и файла пробы); `docs/perf/b4_mt_probes/` (исходники проб и обёрток + README с полной воспроизводимостью); `docs/perf/B4_MT_PIN_NOTOWN.md` §11; `scripts/b4_mt_pin_notown_table.mjs` (таблица mt-xp4: hit/miss ИЗМЕРЕНО, потолок выгоды и цена промахов ОЦЕНКА); `docs/perf/B4_MT_PIN_NOTOWN_summary.csv` (строки `xp4_*`, `verdict_x_pin=NO-GO`).
+
+---
+
+## [D] Deferred designs
+
+### D2
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 2 (`[D] Deferred designs` tier) — "**R17-10 — batched deferred reclaim (sub-design A + B).**"*
+
+
+   Design-only; proposes a future-round implementation + dual-axis wall-clock
+   gate. Sub-design
+   A (batch the per-block decommit check) is independent and small; sub-design B
+   (deferred cross-segment finalization within one `drain_dirty_segments` sweep)
+   is CONDITIONAL on a §5.1 stage-1 finding that a non-negligible fraction of
+   sweeps empty >1 segment — check BEFORE writing B's code. Evidence:
+   `R17_10_BATCHED_DEFERRED_RECLAIM_DESIGN.md` §6 + §7 (lines 555–668).
+
+
+---
+
+### D3
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 3 (`[D] Deferred designs` tier) — "**R11-7 page-run layer (R12-13 deferred).**"*
+
+
+   NO-GO now; the complete design remains a reusable CONDITIONAL-GO starting
+   point IF a real workload
+   materializes that allocates thousands of simultaneously-live 1.25–2.0 MiB (or
+   larger uniform-size) objects and is measured `MAX_SEGMENTS`-bound or
+   OS-reservation-syscall-bound (not RSS-bound — that is solved wherever
+   `exact-span-large` is enabled). No demonstrated victim exists today.
+   Evidence: `R12_13_PAGE_RUN_LAYER_DEFERRED.md` §4 (lines 188–237).
+
+
+---
+
+### D4
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 4 (`[D] Deferred designs` tier) — "**R14-7 expandable / chained `SegmentTable`.**"*
+
+
+   Design-only; implement ONLY when (1) a real workload
+   needs >`MAX_SEGMENTS`−1 (4095) simultaneously-live
+   Large objects, OR (2) a future `MAX_SEGMENTS` raise stops being "cheap" by
+   §1's criteria, OR (3) page-run is pursued (then re-evaluate this doc's
+   tagged-`SegmentId` widening alongside it — both touch the same header field).
+   Evidence: `R14_7_EXPANDABLE_SEGMENT_TABLE_DESIGN.md` §5 (lines 374–391).
+
+
+---
+
+### D5
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 5 (`[D] Deferred designs` tier) — "**R10-4 run-origin oracle (class-align carve).**"*
+
+
+   DESIGN-ONLY, CONDITIONAL GO. Sound and real density gain (wide classes
+   2/1/1 → 3/2/2), but only worth it
+   if `medium-classes-wide` is pursued — which is itself NO-GO'd for
+   `production` (large realloc regression). Re-evaluate only if wide classes are
+   re-opened. Evidence: `R10_4_RUN_ORIGIN_ORACLE_DESIGN.md` §0/§7/§8.
+
+
+---
+
+### D6
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 6 (`[D] Deferred designs` tier) — "**R22-16 — remap-instead-of-copy for the medium→Large promotion memcpy"*
+
+
+   DESIGN-ONLY. **Status pending correction (task
+   #373/R23-4):** the design doc as committed verdicts NO-GO for
+   remap-in-place under the current shared-segment model, reasoning that a
+   promotion-time "is anyone else sharing my pages" check is unsolved — an
+   independent review (`docs/reviews/2026-07-26-r22-readonly-review.md` P1)
+   found, and I personally re-verified against `carve_block`'s bump-
+   monotonicity (`src/alloc_core/alloc_core_small.rs`) and the empty-segment-
+   only reset (`decommit_empty_segment_impl`,
+   `src/alloc_core/alloc_core_small_pool.rs`), that this specific blocker is
+   based on a flawed premise: a live carved block's byte range is provably
+   exclusive for its entire live lifetime, so no promotion-time check is
+   actually needed for LINUX sub-region remap specifically. The
+   base-address-stability blocker for WHOLE-segment remap is real and
+   unaffected. Task #373 will correct the document's verdict (expected:
+   NO-GO for whole-segment remap stands; Linux sub-region remap becomes
+   CONDITIONAL-GO pending a correctness prototype) — do not cite this
+   item's current NO-GO framing until that correction lands. Separately, the
+   MediumExtent one-object-per-segment redesign (a different, larger-scope
+   mechanism reusing the `SegmentKind::Large` pattern) remains its own
+   CONDITIONAL-GO, gated on a still-unrun Stage-1 workload-shape measurement
+   (what fraction of medium allocations actually cross the promotion
+   threshold). Evidence: `R22_16_PROMOTION_REMAP_DESIGN.md` (full report,
+   §4/§6 for the two candidate directions and verdict, pending correction).
+   **2026-07-27 update — DONE (task #373, R23-4):** the correction landed.
+   Independently re-verified §2.4's blocker against the CURRENT source (not
+   just re-trusting the flagged premise): `carve_block`
+   (`alloc_core_small.rs:1429-1557`) and `carve_batch` (`:1608-1721`) are
+   both monotonically forward-only bump advances, and a full `grep -rn
+   "set_bump" src/` found the ONLY backward reset
+   (`decommit_empty_segment_impl`, `alloc_core_small_pool.rs:751,812`) is
+   reachable, on every production path, only after
+   `dec_live_and_maybe_decommit` has confirmed the WHOLE segment's
+   `live_count == 0` — so a live medium block's byte range is provably
+   exclusive for its entire lifetime, exactly as this update's prior
+   paragraph expected. §2.4's neighbor-liveness blocker is retracted;
+   §3.1-3.3's base-address-stability blocker for whole-segment remap is
+   confirmed independent and unaffected. **New finding beyond what was
+   expected going in:** traced `try_promote_to_large`
+   (`src/registry/heap_core_free.rs:1276-1343`) and found today's
+   memcpy-based promotion frees the source block through the perfectly
+   ordinary `dealloc` → `BinTable` free-list path (medium classes share the
+   same `BinTable`/`SMALL_CLASS_COUNT` indexing as small classes,
+   `size_classes.rs:138,165,95-111`) — so the "permanent hole" bookkeeping
+   concern §3.3 originally flagged is **only partially solved by
+   monotonicity**: bump will never re-carve a vacated span (solved), but
+   nothing stops that span's offset from being pushed onto `BinTable` and
+   reissued via ordinary free-list reuse (NOT solved — this is a new design
+   discipline a remap implementation must observe, not a currently-existing
+   blocker). Also disclosed, not silently fixed: a `#[doc(hidden)]`
+   test-only hook (`dbg_force_decommit_retain_for`,
+   `alloc_core_small_pool.rs:694-707`) resets bump without itself checking
+   `live_count` (trusting its one test caller to have emptied the segment
+   first) — unreachable from any production alloc/dealloc/realloc path, so
+   it does not weaken the production-path argument, but is exactly the kind
+   of edge case this task was told to look for and report honestly rather
+   than paper over. **Revised verdict:** NO-GO for whole-segment remap
+   (base-address stability, unaffected) and NO-GO for Windows specifically
+   (a third, separate blocker — placeholder-VA/`MEM_REPLACE_PLACEHOLDER`
+   only moves section-object-backed mappings, and `crates/aligned-vmem` uses plain
+   anonymous `VirtualAlloc` with no section handle, §1.2 — untouched by
+   this correction); **CONDITIONAL-GO for LINUX SUB-REGION remap
+   specifically**, pending a correctness prototype that adds the `mremap`
+   FFI surface AND builds the still-missing "never free-list-push a
+   remap-vacated offset" discipline §10.3 identifies as the one remaining
+   unbuilt piece. A DESIGN-ONLY (not implemented) sketch of that prototype's
+   minimal scope (Linux-only, page-aligned medium block only, exact-span
+   remap, new Large/extent registration, vacated-range exclusion from
+   `BinTable`, mandatory memcpy fallback on any remap error) is recorded.
+   Full derivation: `R22_16_PROMOTION_REMAP_DESIGN.md` §10 (the correction
+   section) — original §0-§9 content preserved verbatim per this project's
+   "append, don't rewrite" convention.
+   **2026-07-29 update — MediumExtent's Stage-1 trigger MEASURED, NO VICTIM
+   (task #436, R29-5):** ran the §5.1 workload-shape measurement this design
+   doc specified but never itself executed. New `bench-internals`-gated
+   diagnostic counters (`PROMOTION_COUNT`/`PROMOTION_BYTES_SUM`/
+   `PROMOTION_BYTES_MIN`/`PROMOTION_BYTES_MAX`/`PROMOTION_BYTES_HIST`,
+   `src/alloc_core/alloc_core.rs`, read via `AllocCore::dbg_promotion_*`)
+   record every `try_promote_to_large` event's copied-byte count. A new
+   example (`examples/r29_5_promotion_frequency_gate.rs`) drives a realistic
+   `Vec::push`-shaped doubling-growth workload — 4,000 small-population
+   objects (ceiling uniform in `[64B, 64KiB)`, never crossing the 256 KiB
+   threshold by construction), 40 large-population objects (ceiling uniform
+   in `[64B, 2MiB)`, a conservative 100:1 small:large ratio), plus 20,000
+   background never-grown allocations so the denominator reflects realistic
+   allocator traffic, not just the two growth populations in isolation.
+   **Result:** promotions fire on 0.054% of total allocation activity
+   (33/60,722) and 0.82% of growth objects (33/4,040) ever promote even
+   once; RARE by every denominator tried. The AGGREGATE bytes moved by all
+   33 promotion events combined is only ~4.1 MiB — small, because promotion
+   fires at most once per growth trajectory (subsequent grows ride the
+   Large-path in-place OPT-G fast path for free) and few objects ever reach
+   it. Every single promotion event copied exactly 131,072 B (128 KiB) — a
+   structural consequence of pure-doubling growth always visiting exactly
+   that value as the last medium-size step before crossing the 256 KiB
+   threshold, not measurement noise (confirmed reproducible: two independent
+   runs with the same seed produced byte-identical results). Applying the
+   design doc's own "No victim, no implementation" rule: **NO VICTIM** under
+   this realistic workload shape. MediumExtent (4a) stays deferred — this
+   task does not open a follow-up design/prototype task per its own brief,
+   even though the verdict is a clean reject-on-frequency-grounds; a
+   sufficiently different, more promotion-heavy workload shape COULD in
+   principle move this finding, but that is not asserted here, only left as
+   a theoretical door R29-5 did not need to close. Full derivation, raw
+   logs, and the summary CSV: `R29_5_PROMOTION_FREQUENCY_GATE.md` +
+   `R29_5_PROMOTION_FREQUENCY_GATE_summary.csv` +
+   `_raw_r29_5_run1.log`/`_raw_r29_5_run2.log`. The 4b (Linux sub-region
+   remap) CONDITIONAL-GO is UNCHANGED by this update — its own trigger (a
+   correctness prototype) is an orthogonal question this task did not touch.
+
+
+---
+
+### D14
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 14 (`[D] Deferred designs` tier) — "**R25-8 — run-encoded free batch (arithmetic free list).**"*
+
+
+    Design-only; triggered by R25-3's NO-GO (the third consecutive NO-GO in
+    the magazine-overflow free-path region, after R24-3's `flush_magazine_class`
+    merge and R24-4's bulk-mask primitives). Explores a run-descriptor
+    alternative to the intrusive per-block free list: record
+    `(segment, first_offset, count, stride)` for a homogeneous contiguous
+    batch, allocate FROM it arithmetically (no free-list walk while the run is
+    intact), materialize ordinary free-list nodes only on split/escape.
+    CONDITIONAL-GO: the design is sound, but the magazine-overflow free path
+    (the region that motivated the study) fails the run-descriptor's own
+    contiguity precondition (the magazine is LIFO in FREE-order, not
+    offset-order), and the M2 double-free guard forces `mark_free` to stay
+    per-block — so the free-side win collapses to a single hot store R24-4
+    already proved net-negative to coalesce. The one new lever is the alloc
+    side (`read_next` chain elimination), reachable only via a contiguous-batch
+    consumer that does not exist today (R23-7's `dealloc_batch`, P2).
+    Implement ONLY if BOTH triggers fire: (a) a real contiguous-batch consumer
+    emerges, AND (b) a Stage-1 Ir measurement on it confirms the `read_next`
+    chain is the dominant remaining cost. No `src/` change; design doc only.
+
+
+---
+
+### D15
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 15 (`[D] Deferred designs` tier) — "~~**R27-11 — reservation-only overflow tier for the small-segment pool"*
+
+    >   (the decomposition gate); see item 16 in `[L]` for the full honest-reject
+    >   entry.
+
+    The idea: a SECOND tier beyond the four committed hot segments — decommit
+    the payload pages but retain the VA reservation and segment-table
+    identity for a short window, recommit on reuse, release on decay or
+    budget pressure. This is explicitly NOT a replacement for the hot
+    committed pool (that shape was already correctly rejected elsewhere in
+    this project); it would only be worth building if avoiding the
+    reserve/release + metadata-reinit cost (as opposed to the unavoidable
+    recommit/page-fault cost) is itself a material win. **Evaluated this
+    round and NOT opened**: trigger 1 (retention cost too high for a default)
+    fires — R27-3/R27-4 measured it directly, and R27-5's independent design
+    task reached the same "keep the conservative default" conclusion by a
+    different route. Trigger 2 (the reserve/setup/metadata-reinit cost is a
+    material fraction of the segment-lifecycle cost, isolated from
+    recommit/page-fault) has never been measured by any report in this
+    project's history — R27-4 measured the AGGREGATE win from eliminating
+    decommit→reserve churn, not its internal cost breakdown. Since both
+    triggers are required and one is unmeasured (not "failed," genuinely
+    unknown), opening the design now would violate the task's own explicit
+    conditional-entry rule. No design doc written; no `src/` change. The next
+    trigger is a bounded, cheap Stage-1 measurement, not a full design.
+
+
+---
+
+### D25
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 25 (`[D] Deferred designs` tier) — "**R9-5 / R11-8 / R13-3 — `virgin-zero-skip` promotion decision is"*
+
+   >   563–568) + §8 (analytical win ceiling);
+   >   `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8 (independent re-verification,
+   >   same CONDITIONAL-GO); `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md` (the
+   >   only post-design measurement, explicitly NOT a promotion verdict);
+   >   `Cargo.toml:737–744` (feature def + the dangling "see this task's own
+   >   report for the GO/CONDITIONAL-GO/NO-GO recommendation" pointer, which
+   >   points at a recommendation that does not exist).
+
+   Surfaced by the R28 independent review §3.2
+   (`docs/reviews/2026-07-29-oh-acceleration-code-project-review.md`): a
+   pending shipping decision was living ONLY inside a `Cargo.toml` comment —
+   exactly the failure mode `docs/CORRECTNESS_OPEN_ITEMS.md`'s own stated
+   purpose (lines 46–50) says its sibling indexes exist to prevent. The full
+   non-production-feature survey this item was extracted from lives in
+   `docs/FEATURE_PROMOTION_STATUS.md`. This task (R29-12, #443) is
+   docs/indexing only — it does NOT run the missing measurement and does NOT
+   change `production`'s composition.
+
+   **2026-07-29 update (R29-16, task #447):** the missing Stage-0/Stage-3
+   measurement this item named as its "Next trigger" was run. New arms
+   `benches/perf_gate_iai.rs::alloc_zeroed_calloc_{virgin,recycled}_64k[_prefix]`
+   (iai, paired-prefix subtraction, `alloc-core + alloc-decommit +
+   virgin-zero-skip + bench-internals`, Linux/WSL only) isolate ONE
+   `alloc_zeroed(64 KiB)` call's own Ir cost on a genuinely virgin
+   bump-carved block vs. a genuinely recycled/dirty free-list-popped block.
+   Result (2 byte-identical runs): virgin = 3,067 Ir, recycled = 65,624 Ir
+   (~21.4× ratio) — a real, large, deterministic confirmation that the
+   feature skips a substantial memset exactly as designed. New wall-clock
+   bench `benches/r29_16_virgin_zero_skip_calloc_wallclock.rs` (mirrors
+   R13-3's own was/now structure) at the SAME 64 KiB size found NO clean
+   ON/OFF separation across repeated reps, with a specific, source-verified
+   explanation: `production`'s default composition commits ordinary
+   Small-segment pages eagerly (`primordial-lazy-commit` on,
+   `small-segment-lazy-commit` off), so a fresh 64 KiB span's OS first-touch
+   page-fault cost is paid either way, masking the software-level saving at
+   the wall-clock level even though Ir proves it is real. No new
+   `bench-internals` hook was needed — both scenarios were built entirely
+   from already-shipped, already-safe `AllocCore::alloc`/`alloc_zeroed`/
+   `dealloc` plus pre-existing `#[doc(hidden)]` read-only diagnostics
+   (`dbg_layout_class_for`/`dbg_block_size`). No production default was
+   changed. Full report: `docs/perf/R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` +
+   `_summary.csv` + six `_raw_r29_16_*.log` files (see that report's §7 for
+   exact reproduction commands). `docs/perf/R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md`
+   received a dated append-only addendum recording the same result in place
+   (its original "no significant difference" finding was NOT rewritten).
+
+   **2026-07-29 correction (same day, independent readonly review,
+   `docs/reviews/2026-07-29-r29-readonly-review.md` finding P1-4):** the
+   wall-clock "eager page-commit" explanation above is UNCONFIRMED. The
+   "virgin" scenario's own `criterion` closure frees its whole batch at the
+   end of each `b.iter()` call; every iteration after the first therefore
+   pops a RECYCLED block off the free list (`alloc_small_with_virgin` checks
+   the free list BEFORE the bump-carve path where the skip fires,
+   `src/alloc_core/alloc_core_small.rs:274-297`) — the scenario never
+   repeatedly exercises the virgin path it claims to measure, which is a
+   simpler and more direct explanation for the observed lack of ON/OFF
+   separation than eager page-commit. The Stage 1 Ir isolation (21.4×) is
+   UNAFFECTED (single-shot Callgrind arms, not a reused closure). See
+   `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §8 for the full correction and
+   `docs/perf/OPEN_ITEMS.md` item 25's current-state card for the updated
+   next-trigger (fix the bench, then re-run, before any promotion decision).
+
+   **2026-07-30 resolution (R30-3, task #452):** the wall-clock bench was
+   rebuilt from scratch, not patched — `benches/r30_3_virgin_zero_skip_native_gate.rs`,
+   a custom `Instant`-timing-loop harness (Criterion has no first-class
+   channel to report custom per-cell oracle data alongside timing, so this
+   follows the project's existing `heap_fanin_persistent.rs`/
+   `directory_threshold_probe.rs` precedent instead) carrying a
+   PATH-ACTIVATION ORACLE built from the pre-existing
+   `AllocCore::dbg_small_zero_pass_count()` counter — no new hook needed.
+   The oracle caught a real design bug during THIS task's own development
+   (a first attempt at a 16-block virgin batch measured only 6.25%
+   virgin-path activation and was rejected by the gate before any number
+   could ship): `carve_block_with_refill`'s unconditional 31-block refill
+   (Phase 9 amortisation, `src/alloc_core/alloc_core_small.rs:346-376`)
+   means any same-class multi-block burst pops recycled blocks off the
+   free list for all but the first call, capping virgin activation at
+   ~1-in-32 regardless of batch size. Fixed to a single-call-per-fresh-heap
+   shape (`VIRGIN_BATCH = 1`, `VIRGIN_REPS = 50`); the corrected judge
+   passes its own oracle at 100.00% minimum activation on all 48 ON-binary
+   cells (both eager and lazy small-segment commit). Native wall-clock
+   result: virgin-scenario OFF-vs-ON deltas are sign-inconsistent and not
+   distinguishable from this host's own same-binary run-to-run noise;
+   recycled-scenario deltas show a small but direction-consistent
+   regression (ON slower on 48/48 cells) attributed to the feature's own
+   extra dispatch bookkeeping on its non-virgin path. **Verdict: NO-GO for
+   `production` promotion** — no calloc-heavy workload demonstrates a
+   material, noise-distinguishable wall-clock win at this sample size/host,
+   and the structural ~1-in-32 refill-batch dilution independently narrows
+   the feature's realistic victim profile. Recommendation: keep
+   `virgin-zero-skip` opt-in, documented as a narrow-profile feature (only
+   useful for one-call-per-class-per-heap or cross-class calloc patterns,
+   not same-class calloc bursts). Full report:
+   `docs/perf/R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md` + `_summary.csv` + six
+   `_raw_r30_3_*.log` files (see that report's §1 for exact reproduction
+   commands). This closes item 25's outstanding next-trigger; no further
+   action is pending unless a future round wants to pursue the higher-
+   sample-count / different-workload-shape follow-ups named in that
+   report's §6.
+
+
+---
+
+### D26
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 26 (`[D] Deferred designs` tier) — "**R12-9 — `small-segment-lazy-commit` (and the `alloc-lazy-commit` alias)"*
+
+   >   explicit "not part of this recommendation" scope-out);
+   >   `Cargo.toml:685–704` (the `small-segment-lazy-commit` feature def with
+   >   the same reasoning); `Cargo.toml:635–656` (`alloc-lazy-commit` = pure
+   >   `["primordial-lazy-commit", "small-segment-lazy-commit"]` alias, so its
+   >   promotion status reduces entirely to `small-segment-lazy-commit`'s —
+   >   `primordial-lazy-commit` is already in `production`).
+
+   `alloc-lazy-commit` is a pure combinator alias (no `#[cfg]` in `src/`
+   tests its own name; it just turns on both sub-features), so it has no
+   independent promotion decision — its status IS `small-segment-lazy-commit`'s
+   status. Surfaced by the R28 independent review §3.2; full survey in
+   `docs/FEATURE_PROMOTION_STATUS.md`. Docs/indexing only (R29-12, #443): no
+   `src/`/`Cargo.toml` feature change, no `production` re-composition.
+
+
+---
+
+## [L] Low-priority — honest reject
+
+### L7
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 7 (`[L] Low-priority — honest reject` tier) — "**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a"*
+
+
+   Deferred "if a future review wants a
+   number attached to the 'cheap' claim" specifically for N=1/2/4 (R13-8 already
+   measured the 24-distinct-size turnover shape). Evidence:
+   `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` (lines 240–248).
+
+
+---
+
+### L8
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 8 (`[L] Low-priority — honest reject` tier) — "**R14-6 §1.1 — compounding reserved-capacity growth factor (beyond 4×).**"*
+
+
+    Deferred "if 4×'s real numbers ever stop being enough"; would need new
+    per-segment chain-identity state or a threaded hint through the shared
+    `alloc_large_slow` path. Evidence:
+    `R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` (lines 89–95).
+
+
+---
+
+### L9
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 9 (`[L] Low-priority — honest reject` tier) — "**R15-1 §7 — nonempty-summary-word optimisation for `drain_dirty_segments`.**"*
+
+
+    Explicitly NOT recommended now (ceiling below this task's own noise floor).
+    Revisit ONLY if `MAX_SEGMENTS` is raised again by a large factor (toward the
+    R14-7 expandable table) OR a much-higher producer-class fan-in than N=8
+    becomes a real target. Evidence: `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7
+    (lines 519–555).
+
+
+---
+
+### L10
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 10 (`[L] Low-priority — honest reject` tier) — "~~**R9-9 — warm-batch-on-`SeferAlloc`-heap arm.**~~ **DONE (task R10-7,"*
+
+
+    Moved to "Recently resolved" below —
+    left here struck through rather than deleted so the original ask stays
+    visible next to its closure. R10-7 built exactly the fourth arm this
+    item asked for (`batch_core_warm`/`scalar_core_warm`, Part 1) plus the
+    realistic tcache-aware design (`batch_tcache`, Part 2) and measured both
+    against the real warm `SeferAlloc` scalar path. Evidence:
+    `R9_9_BATCH_BENCH_FOLLOWUP.md` (lines 334–343, the original ask);
+    `R10_7_BATCH_WARM_ARM.md` (the closure). **Caught late** (2026-07-27,
+    task #376/R23-7) — this item sat marked "open" in this index for two
+    full rounds (R11 through R23) after R10-7 had already resolved it in
+    the very next round after R9-9, because R10-7's own commit did not
+    touch `OPEN_ITEMS.md` — the same "report lands, index not updated in
+    the same commit" failure mode this file's own convention (§ "When you
+    close an item") exists to prevent.
+
+
+---
+
+### L11
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 11 (`[L] Low-priority — honest reject` tier) — "**R11-3 — joint threshold×pad-target sweep.**"*
+
+
+   The R11-3 probe fixed the
+    pad-target at 2 MiB; "a joint threshold×pad-target sweep is future work."
+    Only relevant if `medium-classes-wide` promotion is re-opened. Evidence:
+    `R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md` (lines 483–485).
+
+
+---
+
+### L12
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 12 (`[L] Low-priority — honest reject` tier) — "**R22-6 — sub-16 KiB geometric-ladder OPT-H probe (optional, ~1 hour).**"*
+
+
+    Not a variant of the now-closed medium-ladder item (see "Recently resolved"
+    below) — a DIFFERENT ladder with much friendlier LCM ratios. The
+    geometric run below the medium classes steps by ~1.25× per class (e.g.
+    16 KiB → 32 KiB doubles, giving `lcm(16 KiB, 32 KiB)/32 KiB` = ratio 2, i.e.
+    roughly 50% of tail-adjacent carve positions clear OPT-H's alignment
+    precondition, vs. the medium ladder's 1-in-3-to-1-in-30 ratios). A
+    Vec-push-shaped 16 B→16 KiB hot-buffer harness would plausibly show a
+    20–50% Stage-1 hit rate — a real, currently-unmeasured data point. BUT:
+    this is also the size range where the move-leg OPT-H would avoid is
+    already cheapest — `realloc_grow_geometric` (64 B→4 MiB) is already
+    reported as **~40× faster than `mimalloc`** (9.7 µs vs 383 µs;
+    `README.md:244-245`/`:639`) via the existing OPT-G in-place Large-grow
+    mechanism — so the marginal payoff of also fast-pathing the sub-16 KiB
+    tail is small even at a favorable hit rate. Recorded as optional,
+    low-priority, roughly-one-hour-if-ever-revisited — explicitly NOT the
+    "one remaining unexplored variant of an active high-value lever" (that
+    framing is retired along with item 1's closure below; this is a
+    low-value, low-cost curiosity probe, not a next step a round should plan
+    around). Evidence: this file's own item-1 closure entry below (the LCM
+    argument that motivates distinguishing the two ladders) +
+    `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5.3 (the single-hot-buffer
+    victim pattern, which applies equally to the geometric ladder).
+
+    **⚠ CORRECTION (2026-08-05, R34-23 gate; filed as task #558, finding G4
+    of `docs/reviews/2026-08-05-r34-review-remediation-readonly-review.md`)
+    — the "~40× faster than `mimalloc`" figure above is wrong, not merely
+    superseded, and the two README line-number pointers are dead.**
+    `docs/perf/R34_23_REALLOC_AND_VEC_GATE.md` found the 9.7 µs/~40× figure
+    physically impossible — the 64 B→4 MiB ×2 chain's final grow step (2
+    MiB→4 MiB) exceeds the Large segment's committed `span_usable` and forces
+    a real 2 MiB copy, which alone costs tens of µs at modern memory
+    bandwidth. A path-activation-oracle re-verification found the real ratio
+    is **~1.8× faster than `mimalloc`** (criterion: ~238 µs vs ~431 µs) to
+    **~2.1× faster** (R34-23 direct gate: ~210 µs vs ~444 µs) — see
+    `docs/perf/R34_23_REALLOC_AND_VEC_GATE.md` §0 and §5. Separately, the two
+    README pointers this entry cited (`README.md:244-245`/`:639`) no longer
+    point at related content as of this same session's edits: `:244-245` is
+    now small-pool-latency prose and `:639` is a row of the `unsafe`-seam
+    inventory table, neither about realloc. The corrected, live
+    `realloc_grow_geometric` figures are at `README.md:918`, `:921-930`
+    (the re-measurement note), and `:1203-1207`. This item's decision (low
+    marginal payoff of a sub-16 KiB OPT-H fast path) is UNCHANGED by this
+    correction — the corrected ~1.8–2.1× ratio is still the cheapest
+    move-leg cost in this size range, so the "small marginal payoff even at
+    a favorable hit rate" conclusion still holds; only the cited magnitude
+    and the README pointers were wrong. Per this project's
+    append-only-correction convention, the original text above is NOT
+    rewritten — this note stands beside it as the current-truth pointer,
+    matching the precedent set by `docs/ALLOC_BENCH.md`'s dated correction
+    block for the same underlying figure (task #552, commit `d46c349` —
+    reworded by the later G1/task #555 rebase to `a7d7395`; cited here by
+    its original SHA since this note describes the state at time of
+    writing, before that rebase ran). The live current-state card at
+    `docs/perf/OPEN_ITEMS.md` item 12 (fixed by task #548, commit `73817ee`
+    — likewise reworded by G1/task #555 to `5e75032`) already cites the
+    corrected ratio; this note brings the archived history this file's own
+    back-link points readers to into agreement with it.
+
+
+---
+
+### L44
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 44 (`[L] Low-priority — honest reject` tier) — "**R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.**"*
+
+
+    Task #397, 2026-07-28. Swept the magazine-overflow half-flush constant
+    `FLUSH_N` across `{4, 8 (baseline), 12, 16}` with `TCACHE_CAP` held fixed,
+    gated on all 5 of: in-context Ir bulk-free sweep (N=17/32/64/256/1024),
+    free-then-immediate-realloc burst Ir, oscillating live-set (8..24)
+    boundary-stress Ir, ordinary interleaved-churn regression check, and a
+    non-Ir refill-count/tcache-hit-rate cross-check (a new example,
+    `examples/r25_3_flush_n_oscillating_probe.rs`, reusing the existing
+    `alloc-stats` `tcache_hits` counter). The oscillating gate's refill-thrash
+    finding at `FLUSH_N=16` (every overflow event during a shrink phase
+    empties the magazine completely, so the immediately-following growth
+    phase's first alloc is GUARANTEED to miss and pay the cold
+    `refill_magazine_slow` path) is the third NO-GO in this exact free-path
+    magazine-overflow code region this round cluster, after R24-3
+    (`flush_magazine_class` bitmap-clear merge) and R24-4 (bulk-mask
+    `clear_many`/`set_many` primitives) — all three confirm this region
+    resists optimization by the mechanisms tried so far. `git diff HEAD --
+    src/` is empty; the new bench arms (`benches/perf_gate_iai.rs`) and probe
+    example are kept as reusable measurement infrastructure (R24-2
+    precedent), since they measure whatever `FLUSH_N` the tree is currently
+    built with rather than hardcoding a value.
+
+
+---
+
+### L16
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 16 (`[L] Low-priority — honest reject` tier) — "**R27-11 — reservation-only overflow tier (MOVED here from `[D]` item 15;"*
+
+    >   decomposition gate); `R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE_summary.csv`;
+    >   `R27_3_POOL_RETENTION_GATE.md` + `R27_4_REAL_DEFAULT_AB_GATE.md` (trigger 1
+    >   evidence — still fires); `R27_5_ADAPTIVE_POOL_BUDGET_DESIGN.md` §4.2.
+
+    Moved from `[D]` item 15 (R29-3, task #434): the reservation-only overflow
+    tier was a conditional design gated on BOTH triggers firing. Trigger 1
+    (retention cost unacceptable for a default) fires (R27-3/R27-4). Trigger 2
+    (avoidable overhead is a material fraction of the cycle) was unmeasured
+    until R29-3. R29-3's wall-clock decomposition measured (1+2+3) avoidable at
+    **1.0-1.3%** of the cycle — two orders of magnitude below the 20% materiality
+    threshold. Page-fault cost (98.7-99.0%) dominates overwhelmingly. The design
+    must NOT be opened; item moved here as an honest reject with the measured
+    numbers as the documented reason.
+
+
+---
+
+### L17
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 17 (`[L] Low-priority — honest reject` tier) — "**R29-10 — alloc-hit `clear_magazine` block's per-pop cost (R3's"*
+
+
+    This is the ALLOC-side sibling of item 1's free-side magazine-overflow
+    decomposition cluster (R24-2 → R28-1): five rounds isolated free-path
+    magazine sub-costs (`flush_class` 449 Ir, overflow 571 Ir, bitmap-clear 84 Ir,
+    etc.), but ZERO measurement existed for this alloc-side sub-mechanism until
+    R29-10, despite alloc and free executing equally often. The isolated 12.19
+    Ir/hit is small in absolute terms (vs 449/571/4,065 Ir material costs),
+    correctness-required (R3 NO-GO), and dominated by `segment_base_of_ptr`
+    (already R22-17's open item) — so this item enters OPEN_ITEMS as a measured
+    honest-reject, closed with the number attached (strictly more than R3
+    achieved). R3's own text in `IAI_BASELINE.md` is preserved verbatim with a
+    dated append-note pointing here.
+
+
+---
+
+### L18
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 18 (`[L] Low-priority — honest reject` tier) — "**X4 (2026-07-05) — two recycle experiments (`TCACHE_CAP` 16→32 and a 64-bit"*
+
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442) — migration of a long-unindexed `honest-reject` (see the named-source note in this file's Scope). Verdict and revisit trigger copied verbatim/close-paraphrased from the source section; no re-measurement performed.
+
+
+---
+
+### L19
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 19 (`[L] Low-priority — honest reject` tier) — "**X6 (2026-07-05) — clz `class_for` vs the 16 KiB `SIZE2CLASS` LUT.**"*
+
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442).
+
+
+---
+
+### L20
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 20 (`[L] Low-priority — honest reject` tier) — "**X5 (2026-07-05) — per-class segment-queue bitmap (cheapest variant).**"*
+
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442). NOTE: this is the first of THREE independent attempts at the same `find_segment_with_free` scan barrier (X5 → T10 → R1, items 20/22/23 below); all three record the SAME structural barrier (every current bench models ≤3 live segments) — see R1's "confirmed a fourth time" note.
+
+
+---
+
+### L21
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 21 (`[L] Low-priority — honest reject` tier) — "**G1 (2026-07-10) — magazine double-free oracle fold into `AllocBitmap`.**"*
+
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442).
+
+
+---
+
+### L22
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 22 (`[L] Low-priority — honest reject` tier) — "**T10 (2026-07-12) — per-class "last found segment" hint for `find_segment_with_free` (NO-GO, reverted).**"*
+
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442). Second of three attempts at the scan barrier (after X5, before R1).
+
+
+---
+
+### L23
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 23 (`[L] Low-priority — honest reject` tier) — "**R1 (2026-07-13) — per-segment availability hint for `find_segment_with_free` (NO-GO, clean revert).**"*
+
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442). Third and final of the three attempts at the scan barrier; together with X5 (item 20) and T10 (item 22) these share ONE next trigger (a genuine ≥64-segment bench).
+
+
+---
+
+### L24
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 24 (`[L] Low-priority — honest reject` tier) — "**R5-R2b (2026-07-14) — the wall-clock churn regression signal is NOT an algorithmic/Ir regression (honest rej"*
+
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442). R5-R2's wall-clock signal itself remains a methodologically sound result — R5-R2b only establishes the difference is not an Ir/algorithmic regression (plausible-but-UNVERIFIED Windows-native cause noted above).
+
+---
+
+### L27
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 27 (`[L] Low-priority — honest
+reject` tier) — "**R29-13 — large-cache `headroom_bytes` (default 256
+MiB/heap) idle-RSS floor measured for the first time; confirmed-by-design, no
+action taken.**"*
+
+**2026-07-29 (R29-13, task #444).** Sourced from
+`docs/reviews/2026-07-29-oh-acceleration-code-project-review.md` §1.2: Rounds
+25–27 spent four tasks and three gate reports quantifying the small-segment
+pool's `~+8 MiB/heap` post-teardown retention floor
+(`R27_3_POOL_RETENTION_GATE.md` et al.), while the large-cache's default
+headroom — 256 MiB/heap, 32x the small pool's 16 MiB byte cap — had never
+been measured at all. This task built `examples/r29_13_large_cache_retention_gate.rs`,
+mirroring R27-3's subprocess-per-arm-isolation + config-self-verification
+methodology exactly, adapted to a LARGE-object workload (8 distinct 34 MiB
+objects per thread, one per base large-cache slot, 272 MiB designed /
+288 MiB measured fill per heap — chosen to exceed every headroom arm in the
+sweep) and to long-lived, non-exiting threads (holding each heap alive
+through post-teardown, post-idle, and post-drain measurement points, since
+the whole point is measuring the floor BEFORE `HeapCore::trim_for_recycle`
+would unconditionally reclaim everything at thread exit).
+
+Swept `headroom_bytes` ∈ {0, 16 MiB, 64 MiB, 256 MiB} at thread counts
+{1, 8, 32}, 3 repetitions each (36 child processes total, each in its own
+freshly-spawned OS process). Every arm self-verified its resolved headroom
+via a NEW thin `HeapCore::dbg_decay_config()` delegation (exposing the
+pre-existing `AllocCore::dbg_decay_config`, which already returned
+`(decay_rate_bp, decay_interval_ms, headroom_bytes)` but was not previously
+reachable from `HeapCore`/`registry`) — read back from the allocator's own
+diagnostic surface, not assumed, per CLAUDE.md's R26-4 config-sweep evidence
+rule. `config_conflicts_total()` delta was 0 in every arm (fresh-process
+isolation proven). Every arm hard-asserted admission
+(`used_post_teardown_max > 0`) and, for non-zero-headroom arms, that the
+post-teardown large-cache byte count never fell below the configured
+headroom (trivially satisfied here since no decay tick ever fires during
+the tight fill/teardown loop — see below).
+
+**Headline result:** every one of the 36 arms showed **identical**
+post-teardown `used_post_teardown_max = 301,989,888` bytes (288 MiB, the
+page-rounded physical span size of 8 × 34 MiB requests) regardless of
+`headroom_bytes` — because `maybe_decay_large_cache`'s first-call
+timer-priming rule (`src/alloc_core/alloc_core_large_cache.rs:320-356`) means
+the very first dealloc in a fresh heap only primes the 1000 ms decay-interval
+timer without decaying, and every subsequent dealloc in the SAME tight
+teardown loop (microseconds apart) also finds `elapsed < decay_interval` and
+skips decay too — so headroom has NO visible effect on the immediate
+post-teardown number; it only matters once decay actually gets a chance to
+run. Across a full 2-second idle window (100 ms/1 s/2 s samples, zero
+allocation activity), the idle delta was **exactly 0 KiB in all 36 arms** —
+direct empirical proof that pure idle reclaims nothing at ANY headroom
+setting (not merely at the 256 MiB default), because idle means
+`maybe_decay_large_cache` is never even called, so the wall clock is never
+sampled.
+
+The headroom policy's actual effect was observed only via an EXPLICIT forced
+decay-to-fixed-point (`dbg_force_decay_tick` — a new thin `HeapCore`
+delegation exposing the pre-existing `AllocCore::dbg_force_decay_tick` —
+looped until `dbg_large_cache_used()` (also newly exposed at the `HeapCore`
+level via `dbg_large_cache_used`/`dbg_large_cache_slot_sizes`, both
+pre-existing `AllocCore` accessors) stopped changing between iterations).
+Converged floors: headroom 0/16 MiB → ~0.2–3.2 MiB/heap residual
+(98.8–99.9% reclaimed — the whole-segment (~36 MiB) eviction granularity
+overshoots a 16 MiB target to near-zero); headroom 64 MiB → ~34.2–37.2
+MiB/heap (86.5–87.4% reclaimed — converges to roughly one retained segment);
+**headroom 256 MiB (the shipped default) → ~238.2–241.3 MiB/heap, only
+12.4–12.5% reclaimed** — roughly six retained ~36 MiB segments, by far the
+largest absolute and proportional floor in the sweep, exactly matching the
+doc's own claim (`large_cache_config.rs:46-48`, "the cache does not decay
+below this level") once forced convergence is used to actually observe it.
+
+**Verdict:** confirmed-by-design, NOT a bug. No default was changed
+(`DEFAULT_HEADROOM_BYTES` remains 256 MiB) — the task was measurement-only.
+Two small `src/` additions were both diagnostic-only, `bench-internals`-gated,
+no production caller, no new `unsafe`, no raw-pointer parameter: four thin
+`HeapCore` delegation wrappers in `src/registry/heap_core_diag.rs`
+(`dbg_large_cache_used`, `dbg_large_cache_slot_sizes`, `dbg_decay_config`,
+`dbg_force_decay_tick`) exposing four PRE-EXISTING `AllocCore` accessors,
+following the exact established pattern already used by
+`dbg_pooled_count`/`dbg_pool_cap`/`dbg_segment_state_reconciliation` in that
+same file. This closes the measurement-asymmetry gap the source review
+identified: the small pool and large cache retention floors are now BOTH
+quantified with the same rigor (subprocess isolation, self-verified config,
+admission proof, idle-vs-forced-drain distinction). What remains explicitly
+NOT measured (a follow-on, not opened by this task): whether a smaller
+headroom would cost anything on large-object churn throughput/hit-rate
+through the real `#[global_allocator]` — the large-cache analogue of R27-4's
+real-default A/B for the small pool. Full report:
+`docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` +
+`R29_13_LARGE_CACHE_RETENTION_GATE_summary.csv` +
+`docs/perf/_raw_r29_13_large_cache_retention_gate.log`.
+
+---
+
+### L82
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 82 (`[L]` tier) — "fxx R12-03(b) / O-4 — доверие отрицательному ответу директории при маршрутизированной таблице"*
+
+*Note: the 2026-10-13/14 owner decision (C‴ redesign, recorded in the current card in `docs/perf/OPEN_ITEMS.md`) superseded the "owner decision pending" and "HUMAN question (redesign vs new owner budgets)" states below — those are RESOLVED; the narrative is retained verbatim as the pre-P1-1 historical record.*
+
+**Pre-P1-1 historical card (the following four bullets are exact copies of the former inline item 82 card from HEAD; the preceding note clarifies that pending states are historical).**
+
+    - **Status:** OPEN — R19 gated the summary-word candidate C′ (PRF-01, arm B `6a8c9d97` over `main` `0fffe021`): **rejected, not merged** — NO-GO by the frozen Ir criteria (hot controls +569 Ir each against T = 10; producer +36992/4096 = +9.03125 Ir per remote free against ≤ +6), although the benefit cells passed with large margin (multiseg B/A 454636/4026117 = 0.113, seg_cycle B/A 1118770/12368927 = 0.090, growth16 slope 2.144 ≤ 2.5); the frozen judge's own machine verdict is INCOMPLETE (native `p50Ns == 0` in 13 of 108 rows), kept as such. Report `docs/perf/R19_PRF01_C_PRIME_GATE_RUN01.md`; HUMAN question there (redesign vs new owner budgets). **R20 update (2026-10-13):** candidate C'' (`edf90675`) ran under the v2 protocol on CI (run 38431619600): NO-GO — benefit cells pass (multiseg B/A 382 467/4 022 898 = 0.095, seg_cycle 895 801/12 364 116 = 0.072, growth16 slope 2.105), producer price +53 376/4096 = +13.03 Ir per free against <= +6 and construction cell +641 Ir against 0 + T_s 10 both fail; native axis deferred. Report `docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01_REPORT.md`, data `docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01/`; owner decision pending (redesign / budgets / close). Earlier status: R18 measured the routed discovery scan but did not promote a production change. The prefilter branch requires both `bench-internals` and the dedicated `r18_sidecar_scan_bench` cfg; production and ordinary IAI without that cfg retain the original unconditional `AcqRel` swap with no R18 TLS read. No numeric GO threshold was registered.
+    - **Current-number-or-verdict:** R19 run01 (arm B `6a8c9d97` over A `0fffe021`, `SeferAlloc` as `GlobalAlloc` -> routed `HeapCore`, deterministic Ir): benefit cells met (multiseg_cold_256k B/A 0.113, seg_cycle_decommit_256k B/A 0.090, growth16 slope 2.144; limits 0.25, 0.25, 2.5); the four hot controls each move +569 Ir against T = 10 and the producer pays +9.03125 Ir per remote free against <= +6, both failed; machine verdict INCOMPLETE. The +569 is identical across four different workloads, i.e. a fixed per-instance cost (+512 memset of the extra sidecar bytes, +32 `RouteScan::next_cut`, +25 `drain_segment_sidecar`), not a per-operation tax; the per-operation neutrality (the `small_churn_16b_2n` slope) was never in the PRF-01 inventory. Earlier measurement (R18/R35): direct `SeferAlloc` `GlobalAlloc::alloc/dealloc -> HeapCore`, one binary/two runtime modes, features `production bench-internals internals`, cfg/RUSTFLAGS `r18_sidecar_scan_bench`, and explicit empty `RUSTC_WORKSPACE_WRAPPER`; exact identities and three-scenario tables are in the R35 report. Every arm activated routed scanning (Growth/Cycles/Publication: 99/275/92 scans). Candidate mode skipped empty-word exchanges but retired 32 more Ir per scenario; lower estimated cycles are Callgrind's model, not native latency. Directory authority remains false: remote pending bits, paused publishers and per-instance routing still prevent trusting a directory miss.
+    - **Next trigger:** keep candidate measurement-only until (1) the load/skip race has an actual-type or reviewed refinement proof for eventual publication consumption, and (2) a matched production-layer workload measures native owner/producer latency and contention/coherence in the same regime. Then make an explicit promotion decision; do not infer it from Callgrind cycles or old logs. Two reviews on 2026-10-12 (`docs/reviews/2026-10-12-prf-open-questions-reviewer-answers.md` §1 and §4): a reviewer proposed protocol v2 with a 3 % relative budget; the arbiter @ox rejected that budget as a post-hoc fit (it admits the already seen +569 Ir and +9.03 Ir/free) and recommends instead: fix the control geometry prospectively (per-operation neutrality by the N/2N slope, construction and first scan in a separate one-sided cell), keep the +6 Ir/free budget, consider a redesign C-double-prime (set the summary bit only when the pending word goes from zero to non-zero) and removing the redundant zeroing, or an explicit owner override with the price recorded; the owner pre-recorded consequence of failure (revert to A+B behind a native gate) stands unless the owner decides otherwise. Owner decision pending. The run01 retained evidence directory (raw profiles) was archived outside the repository and its worktrees removed on 2026-10-12; the hashes in `docs/perf/R19_PRF01_C_PRIME_RUN01/MANIFEST.txt` still verify any copy.
+    - **Evidence:** `docs/perf/R19_PRF01_C_PRIME_GATE_RUN01.md` (+ `docs/perf/R19_PRF01_C_PRIME_RUN01/`), `docs/perf/R19_PRF01_PRODUCER_PREFLIGHT_B03.md`, `docs/perf/R19_PRF01_SIDECAR_SUMMARY_PREREG.md` (Amendments A, B); `docs/perf/R35_SIDE_CAR_SCAN_PREFILTER_GATE.md`, `R35_SIDE_CAR_SCAN_PREFILTER_GATE_summary.csv`, `docs/perf/r35_sidecar_scan_evidence_test_oracle_final/` and the cited root raw logs; `docs/reviews/2026-10-08-src-review-xxs-round-17-P2.md`, R18 execution follow-up; current cfg/bench-internals guards in `src/alloc_core/segment/remote_bitmap/bitmap_scan.rs`. Perf 70's producer-contention axis remains separate and OPEN.
+
+**Supplemental R19 report §4 detail:** native `p50Ns == 0` occurred in 13 of 108 rows (arm A 4, AA 7, B 2, all at n = 1); the WSL2 clocksource quantization mechanism is inferred, not proved.
+
+---
+
+## Recently resolved — full closure trail
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (short summaries
+only remain there; this is the full text, byte-identical to what previously
+lived inline).*
+
+
+- **R17-CQ-01 / R17-CON-02 / R17-SEC-04 — Hardened generation table. CLOSED 2026-10-09 (R18-3).** The write-only hardened metadata table was removed after source review found no runtime reader.
+  - **Status:** The 256 KiB derived footprint, layout reservation, byte accessors, initialization/bump writers, module/export wiring, and table-only tests are gone. `docs/DURABILITY.md` no longer presents the X7 `u8` wrap as a live accepted runtime residual; historical X7 plans/reports remain historical.
+  - **Evidence:** hardened freelist regressions passed 6/6 in debug and release; hardened batch-drain tests passed 3/3, production batch-drain tests 4/4, and `no_stale_doc_references` passed 31/31. Production-internals Clippy/check, hardened-test Clippy, Rustfmt (edition 2021), and the hook-safety scanner passed.
+  - **Scope limit:** 256 KiB is closed-form `SEGMENT / MIN_BLOCK` geometry, not measured RSS. No Ir, RSS, or production-default improvement is claimed; `production` composition did not change.
+  - **Next trigger:** none; any future generation consumer needs a separate design and evidence before adding metadata back.
+
+- **oxx R16 H2 (item 84) — magazine overflow-flush and `flush_all_tcache` resolved each slot's root through the segment table instead of the segment-base mask.** **CLOSED 2026-10-08, GO, commit `b707d196`** (`perf(runtime)`); harness, activation receipt and report in `87f486a2` (`bench`).
+  - **Status:** CLOSED — shipped. Production `perf(runtime)` change: `dealloc_own_thread_with_base`'s overflow branch and `flush_all_tcache` take `os::segment_base_of_ptr` with a `debug_assert!` that the segment table agrees (the R12-02 issue-side pattern), which also removed the two release `.expect`s tracked as correctness item 174.
+  - **Current-number-or-verdict:** deterministic callgrind Ir on `HeapCore` (`production bench-internals internals`), frozen snapshots with A = C0 identity: `dealloc_free_only_16b_n17` 65270/65416 (-146 Ir, one overflow event), `_n32` 66913/67205 (-292 Ir, two events; dose-response exact, residual 0 of 292), `dealloc_flush_all_tcache_16b` 53949/54209 (-260 Ir, paired saving required > 24), `_n16` control (no overflow) 0; every other control within T = max(10, 12) = 12 Ir. Path activation: n16 = 0, n17 = 1, n32 = 2 overflow events, flush-all separate. Counterfactual mutants (flush-mask, flush-noop, overflow) red. The integrator re-measured independently (forced rebuild) and reproduced -146 / -292 / -260 Ir. Not measured: wall-clock, RSS.
+  - **Next trigger:** none.
+  - **Evidence:** `docs/perf/R16_PERF84_FLUSH_ROOT_MASK_GATE.md` (+ `_summary.csv`, `_identity.json`, `docs/perf/_raw_r16_perf84_{A1,A2,B1,B2,C0}.log` and three mutant logs); `scripts/r16_perf84_iai.mjs`, `scripts/r16_perf84_gate_table.mjs`; `tests/r16_perf84_activation.rs`; `benches/perf_gate_iai.rs` (`dealloc_flush_all_tcache_16b_prefix` / `dealloc_flush_all_tcache_16b`).
+
+- **xs R11 P4-3 — `ShardedRegion` shard binding keyed by thread, not region instance (ex-item 77).** **CLOSED 2026-10-01, commit `0ce2ecd1`** (`perf(opt-in)`): per-region binding table, `tests/r11_p4_3_sharded_per_region_binding.rs` (claimed shard and removal path; red on the old code).
+  - **Status:** OPEN — confirmed architecture/locality limitation (contention and a skipped remote-removal path), not a memory-safety defect (the mutex/CAS protocol keeps it correct); `experimental`; fix task in progress, nothing landed.
+  - **Current-number-or-verdict:** one `MY_SHARD` TLS cell serves all `ShardedRegion<T>` values (`src/concurrent/sharded/sharded_region.rs:173`); `:310-320` trusts an in-range cached shard id without checking the region, and `:475-480` uses it to pick the owner-removal path. With two two-shard regions, thread A inserting into B reuses id 0 though B's shard 1 is free (two writers share B/0's mutex), and A's removal of a B/0 handle takes the owner path although B/0's token belongs to thread B. The module header's one-region-per-thread-pool assumption documents this but does not enforce it.
+  - **Next trigger:** the fix task: region-keyed TLS binding with bounded per-thread storage, or an explicit binding token / method-level documentation if the single-region topology is kept. Gate: instrument path selection (A claims B's free shard 1; A's removal of a B/0 handle goes remote), not wall-clock; `get`/`remove` correctness alone stays green in both versions.
+  - **Evidence:** `docs/reviews/2026-09-30-232702-src-review-xs-sol-round-11.md` P4-3.
+
+- **xs R11 P4-2 — `LockFreeRegion` RCU writes clone the whole page table (ex-item 76).** **CLOSED 2026-10-01, commit `1230ee86`** (`perf(opt-in)`): persistent 16-ary page table, `tests/r11_p4_2_lock_free_write_clone_count.rs` (page-`Arc` clones per write <=16; red on the old code); read-path cost not measured.
+  - **Status:** OPEN — confirmed asymptotic cost, not a measured regression; type is `experimental`, legacy/read-mostly, outside the `production` allocator path; fix task in progress, nothing landed.
+  - **Current-number-or-verdict:** `src/concurrent/lock_free/lock_free_region.rs:107-113` clones `pages: Vec<Arc<Vec<Slot<T>>>>`; successful insert (`:362-366`) and remove (`:408-440`) both clone it under the writer mutex, so each write is Theta(P+64) even when one page is touched (`PAGE`=64, `:37-41`). M writes cost Theta(M*P); growth from empty to N slots costs Theta(N^2/64) table-pointer clones. Same family as item 73 (a)/(f), now with a concrete asymptotic witness.
+  - **Next trigger:** the fix task. Gate: count page-`Arc` clones for one successful insert and remove at P=16 vs P=256 (must become sublinear) with stale-handle and drop-once tests green; do not trade away the lock-free read path without a workload-specific A/B. Alternative: document write-heavy steering and keep the contract.
+  - **Evidence:** `docs/reviews/2026-09-30-232702-src-review-xs-sol-round-11.md` P4-2; item 73.
+
+- **xs R11 P4-1 — sorted route arrays make a one-shard wave quadratic (ex-item 75).** **CLOSED 2026-10-01, commit `17ba38ae`** (`perf(runtime)`): chunked sorted blocks (64 cells) under a block index in `src/registry/segment_route/directory.rs`; witness `tests/r11_p4_1_route_shard_moves.rs` (moved cells, not time; red on the old code), model test vs `BTreeMap`, Miri on the model/witness/route tests; lookup A/B directional only.
+  - **Status:** OPEN — confirmed asymptotic cost (source-level), not a measured regression; fix task in progress, nothing landed.
+  - **Current-number-or-verdict:** `src/registry/segment_route/directory.rs:298-316` shifts every later pointer on insert/remove; registration (`:427-457`) and removal (`:496-506`) run under one shard mutex. With n Large routes hashed to one shard and keys registered in descending order (or removed in ascending order) the wave moves n*(n-1)/2 pointer cells under the lock, delaying unrelated foreign frees on that shard. Lookup stays O(log n) (`:266-285`). Worst-case arrangement; the real address distribution is OS-chosen and unmeasured. Scope: `alloc-global` / `internals` route API.
+  - **Next trigger:** the fix task. Gate: count moved pointer cells (not elapsed time) on reverse-key registration of real page-aligned Large roots sharing a shard — must become subquadratic — plus the existing lookup / duplicate-registration / pin-after-unlink / final-free contract cases. A tree/hash/chunked-block index must be A/B'd against the sorted array on a lookup-heavy workload in the same regime before replacing it.
+  - **Evidence:** `docs/reviews/2026-09-30-232702-src-review-xs-sol-round-11.md` P4-1.
+
+- **R9-9 §5 — warm-batch-on-`SeferAlloc`-heap arm (this index's own item 10,
+  above).** **DONE (task R10-7, 2026-07-21, commit `9611a56`).** R10-7 built
+  the fourth arm R9-9 flagged as missing (`batch_core_warm`/
+  `scalar_core_warm`) AND the realistic tcache-aware design (`batch_tcache`,
+  draining the warm magazine + batch-refilling the remainder — the design a
+  real `SeferAlloc`-based public API would actually ship) and measured both
+  against the real warm `SeferAlloc` scalar path. Result: R9-9's
+  "no-daylight-even-warmed" inference (§3.2 of that report) is **empirically
+  refuted** — warm-batch beats warm-scalar by 1.3×-3.3× (the `AllocCore`
+  ceiling arm) and the realistic `batch_tcache` design beats it by
+  1.1×-1.6× at every measured (size, N) including N=8. Evidence:
+  `R10_7_BATCH_WARM_ARM.md` (full report, §1-§3). **Caught late**
+  (2026-07-27, task #376/R23-7): this closure sat unrecorded in this index
+  for 12 rounds because R10-7's own commit did not update `OPEN_ITEMS.md`.
+
+- **R22-readonly-review §4.6 — batch API: is there a real downstream
+  consumer, and does the measured win translate to a real workload?**
+  **DONE — decision recorded, not measured further (task #376/R23-7,
+  2026-07-27).** Investigated whether a cheaper/more-realistic benchmark
+  than what already exists (R8-7/R9-9/R10-7's batch-size sweep + real
+  `SeferAlloc`-scalar comparison arms) could be built; concluded no —
+  R10-7's `batch_tcache` arm already IS the realistic-consumer-shaped
+  measurement the review asked for (goes through the warm magazine,
+  compared against the real scalar entry point, swept across realistic
+  batch sizes). Confirmed by grep: `alloc_batch`/`dealloc_batch`
+  (`src/global/sefer_alloc.rs`) have exactly one call chain in `src/`
+  (`SeferAlloc` → `HeapCore`, both under the `batch-api` feature, which is
+  `["experimental", "alloc-core"]` and NOT part of `production`) — no
+  in-tree production caller exists, confirming the review's premise
+  exactly. Wrote a decision record (not a new benchmark) with an explicit
+  falsifiability clause (three concrete triggers: a real internal consumer
+  emerges; a downstream project adopts/requests batch-shaped allocation;
+  `dealloc_batch` gets batch-optimized closing the R10-7 §2.4 gap). Evidence:
+  `docs/perf/R23_7_BATCH_API_CONSUMER_STATUS.md` (full report).
+
+- **R18-7 §3b — add a `mimalloc` comparison arm to `perf-gate.yml` /
+  `perf_gate_iai.rs`.** Implemented by **R22-15 (task #366)**, 2026-07-26
+  (commit `ff48029`): 7 new mimalloc `#[library_benchmark]` fns added to
+  `benches/perf_gate_iai.rs`, each mirroring an existing SeferAlloc bench
+  byte-for-byte; `scripts/iai.mjs` taught an arm-aware bootstrap constant so
+  the two allocators' different one-time init costs are never conflated.
+  Measured, deterministic result (byte-identical `Ir` across 3 independent
+  runs): SeferAlloc retires **1.3x-2.4x more instructions per op than
+  mimalloc** on every matched workload (1.326x on hot churn, up to 2.430x on
+  cold-carve/recycle) — a real, honestly-reported, unfavorable gap, settling
+  the 10-round wall-clock argument this item names. (This entry itself was
+  left un-closed when R22-15 landed — its own commit did not touch
+  `OPEN_ITEMS.md` — and was only moved here by R22-17/task #368 while adding
+  a sibling item; a stale-open item sitting one round past its actual
+  resolution, caught in passing rather than by a dedicated check.) Evidence:
+  `R22_15_MIMALLOC_IR_ARM_GATE.md` (full report).
+  **2026-07-27 update:** an independent read-only review
+  (`docs/reviews/2026-07-26-r22-readonly-review.md` P1) found this ratio's
+  bootstrap-subtraction is asymmetric across the two allocators
+  (`large_alloc_free_cycle` = 3308 Ir is ~41% of Sefer's raw churn Ir;
+  `mimalloc_bootstrap_proxy` = 13050 Ir is ~78% of mimalloc's raw churn
+  Ir), making the 1.326x-2.430x figures two small remainders after two
+  differently-sized subtractions — a real statistical fragility
+  `scripts/iai.mjs`'s own comment already flags as an approximation
+  designed for within-allocator regression tracking, not cross-allocator
+  ratios. The DIRECTION of the gap (SeferAlloc costs more `Ir` than
+  mimalloc) is not in doubt, but the exact multiplier is provisional.
+  Queued for correction: task #371 (R23-2) will add a warm `N`-vs-`2N`
+  matched-workload gate that cancels the bootstrap constant
+  algebraically instead of subtracting an external proxy, and publish
+  both figures side by side.
+  **2026-07-27 update — DONE (task #371, R23-2):** added six `_2n`/`_4n`
+  sibling bench arms (`small_churn_16b_2n`, `mimalloc_small_churn_16b_2n`,
+  `cold_alloc_free_256x16b_2n`/`_4n`, and their mimalloc mirrors) and
+  computed `c = (Ir(2N) - Ir(N)) / N` for both allocators, cancelling the
+  bootstrap constant algebraically with no proxy bench needed. Measured
+  `npm run iai` (5 independent runs across two build stages,
+  byte-identical `Ir` throughout). **Correcting the "direction is not in
+  doubt" claim directly above: it WAS in doubt, and on the hot-churn
+  workload the direction flips.** Hot-churn ratio: 1.326 -> **0.896**
+  (SeferAlloc's genuine marginal cost, 69.0 Ir/op, is LOWER than
+  mimalloc's, 77.0 Ir/op — SeferAlloc is marginally CHEAPER on this
+  workload once the asymmetric proxy is removed, not 1.3x costlier).
+  Cold-carve ratio: 2.430 -> **~2.0-2.08** (a 3-point N/2N/4N linearity
+  check found both allocators' marginal cost drifts down slightly,
+  3.7%-7.4%, as batch size grows — not the segment-crossing failure mode
+  the correctness caveat worried about, but a genuine small non-linearity
+  reported honestly; the ratio stays near 2.0 regardless of which adjacent
+  point-pair is used — direction unchanged here, magnitude reduced ~18%
+  from 2.430). Isolation-mechanism investigation confirmed each
+  `#[library_benchmark]` fn runs in its own fresh process under Callgrind
+  (already documented three times in `benches/perf_gate_iai.rs`'s own
+  comments), so no separate "warm-up" pre-loop was needed — the existing
+  single-timed-loop pattern already bakes in the full bootstrap cost per
+  bench by construction. The four remaining R22-15 pairs (`churn_256b`,
+  both `recycle_alloc_free_256x*b` pairs) were NOT re-measured with N/2N
+  arms in this task (scoped to the two required pairs plus a linearity
+  extension) and remain unverified under this corrected method. Evidence:
+  `R23_2_WARM_N_2N_MIMALLOC_GATE.md` (full report) +
+  `R23_2_WARM_N_2N_MIMALLOC_GATE_summary.csv` +
+  `docs/perf/_raw_r23_2_warm_n_2n_gate.log` /
+  `_raw_r23_2_warm_n_2n_gate_rerun1.log`. Original 1.326x-2.430x figures and
+  their history preserved verbatim in `R22_15_MIMALLOC_IR_ARM_GATE.md` per
+  this file's own "do not delete, only correct the interpretation"
+  convention (see that report's §9).
+- **Product fate of `medium-classes` — should it ship, in any form?**
+  Resolved by **R22-18 (task #369)**, 2026-07-26: **decision recorded, not
+  merely deferred again.** After 4 independent NULL/NO-GO attempts across 3
+  rounds to clear the realloc axis (R18-2's ~1,180×/~380× re-run, R20-2's
+  NULL on reserved-capacity headroom, R21-2's 0%/0% OPT-H hit rate, R22-6's
+  closed-form LCM proof that the medium ladder cannot support OPT-H
+  structurally, and R22-16's design-level NO-GO on OS-level remap), this
+  record recommends **(b) — a named opt-in workload profile**, not (a) ship
+  in `production` (rejected — the realloc regression is real, large, and
+  unanimous across every measurement) and not (c) reject-and-remove
+  (rejected — the alloc/free win, ~31×/~211×, is real, thrice-reproduced,
+  and never contradicted; removal would delete a genuine win to solve a
+  problem a documentation commitment solves just as durably). Full evidence
+  re-verification, the three-option tradeoff analysis, a stub for the
+  workload-profile doc, and an explicit "what would count as new evidence to
+  reopen this" falsifiability clause are in
+  `docs/perf/R22_18_MEDIUM_CLASSES_FATE_DECISION.md`. This closes the
+  recurring re-measurement cost the R22 plan synthesis
+  (`docs/reviews/2026-07-26-r22-plan.md` §2.3 item 4) flagged — a future
+  round should cite this record rather than re-measuring, absent one of the
+  three narrowly-defined reopen triggers §5 of that document names.
+- **R10-2 §5 #1 — in-place medium-class grow within a segment (OPT-H).**
+  Closed by **R22-6 (task #357)**, 2026-07-26, with a closed-form arithmetic
+  proof, not a further measurement. R21-2 (task #351) had already found a 0%
+  Stage-1 hit rate on both available harnesses and left the entry open with
+  the framing that "a genuinely un-promoted, walks-the-Small-ladder harness
+  is the one remaining unexplored variant" — that framing is retracted here:
+  OPT-H's own two preconditions make even a friendlier, purpose-built harness
+  structurally incapable of a useful hit rate on the medium ladder, so no
+  third harness would change the conclusion.
+
+  **The arithmetic.** OPT-H's preconditions
+  (`docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §2.1) require, for a grow
+  from `old_class` to `new_class` at offset `off`: precondition 3
+  (tail-adjacency — `off` is a carve position, hence a multiple of
+  `block_size(old_class)`) AND precondition 4 (new-class alignment — `off`
+  must ALSO be a multiple of `block_size(new_class)`). Together these force
+  `off` to be a multiple of `lcm(block_size(old_class), block_size(new_class))`.
+  The six medium classes are 256 / 320 / 384 / 512 / 768 / 1024 KiB
+  (`src/alloc_core/size_classes.rs:106-111`, the `EXTRAS` array under
+  `medium-classes`). Working in units of 64 KiB (256K=4u, 320K=5u, 384K=6u,
+  512K=8u, 768K=12u, 1024K=16u; segment = 4 MiB = 64u) so all ratios stay
+  integers, the per-transition `lcm` and the count of legal carve offsets
+  within one 4 MiB segment satisfying precondition 5
+  (`off + block_size(new_class) <= SEGMENT`) are:
+
+  | transition | lcm (64 KiB units → MiB) | legal offsets in one 4 MiB segment |
+  |---|---|---|
+  | 256K→320K | lcm(4,5)=20u = 1.25 MiB | 2 (at 1.25, 2.5 MiB) |
+  | 320K→384K | lcm(5,6)=30u = 1.875 MiB | 1 (at 1.875 MiB) |
+  | 384K→512K | lcm(6,8)=24u = 1.5 MiB | 2 (at 1.5, 3.0 MiB) |
+  | 512K→768K | lcm(8,12)=24u = 1.5 MiB | 2 (at 1.5, 3.0 MiB) |
+  | 768K→1M | lcm(12,16)=48u = 3.0 MiB | 1 (at 3.0 MiB) |
+
+  (`off = 0` is excluded from every row: that offset lies inside the
+  segment's own metadata region — header/page map/bin table — never a legal
+  carve position for a payload block, so it is not a candidate tail-adjacent
+  offset regardless of the lcm arithmetic; the 4 MiB upper bound in
+  precondition 5 is exact, but the lower bound of "legal offsets" starts at
+  one `lcm` step in, not at the segment's raw start.)
+
+  i.e. only a small, fixed handful of carve-order positions per segment ever
+  clear precondition 4 for a single hop, no matter how the harness is built —
+  this bounds the BEST CASE (a single hot buffer, tail-adjacent on every
+  grow, per §5.3 of the design doc), not just the adversarial N=16 case R21-2
+  measured. Chaining is worse: `lcm` across all six classes =
+  `lcm(4,5,6,8,12,16)` = 240 units = 15 MiB, far exceeding the 4 MiB segment,
+  so no offset supports a full six-stage walk. Even three consecutive stages
+  (256→320→384) fail: `lcm(4,5,6)` = 60 units = 3.75 MiB is the only
+  candidate offset within a 4 MiB segment, but the resulting 384 KiB grow
+  then needs `off + 384 KiB = 3.75 MiB + 0.375 MiB = 4.125 MiB > SEGMENT
+  (4 MiB)` — precondition 5 fails for that chained case. **The medium ladder
+  allows at most one cross-class hop per segment lifetime under OPT-H's real
+  preconditions, and only from a small fixed set of carve positions** — this
+  is what the size-class table's own factorization mathematically predicts,
+  independent of which harness is used to observe it. R21-2's 0% measurement
+  is consistent with (not merely "not yet contradicted by") this bound.
+
+  This closes item 1 as NO-GO on geometric grounds for the medium ladder
+  specifically. It does NOT foreclose OPT-H as a mechanism (§2's soundness
+  argument is untouched) nor the sub-16 KiB geometric ladder, which has much
+  friendlier ratios — see the new [L]-tier item 12 above for that narrower,
+  optional, low-priority probe. Evidence: `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md`
+  §2.1 (preconditions); `src/alloc_core/size_classes.rs:106-111` (`EXTRAS`);
+  the LCM table above (re-derived independently for this closure, not copied
+  from R20-3, which only worked one transition as an example); R21-2's
+  `R21_2_OPT_H_STAGE1_HIT_RATE.md` (the empirical 0% that this arithmetic now
+  explains rather than merely reports).
+- **R18-9 §9 — execute the §3 coordinated Large-policy matrix, cell C4.**
+  Resolved by **R20-2 (task #347)**, 2026-07-26: **NULL verdict.** Measured
+  `production,medium-classes,exact-span-large,large-reserved-capacity` (C4)
+  against the R10-2 realloc-heavy harness (W1), plus a direct, load-matched
+  paired A/B/B/A comparison against C1 (`production,medium-classes` alone) —
+  the decisive test showed no statistically resolvable difference
+  (t=1.209 ≪ crit 2.101, sign test dead-even 10/20). Reserved-capacity
+  headroom does NOT reduce the structural medium→Large promotion `memcpy`
+  cost; this confirms R18-2 §10.7's mechanism-level prediction (the copy
+  happens at promotion time, before the fresh Large segment's
+  `reserved_capacity` is established, so headroom can only help a later grow,
+  never the copy that created the promotion). A genuine but orthogonal
+  finding: `exact-span-large` still roughly halves resident commit for this
+  workload (~50.5 MiB → ~23.9 MiB) with an identical cache-hit-rate proxy —
+  a memory win, not a realloc-speed win, and it does not move R10-2's kill
+  gate. (Resolved: this entry originally said "the one remaining lever for
+  R10-2's gate is unchanged: item 1 above (in-place medium-class grow), still
+  not designed" — stale on two counts by the time R22-6 touched this file:
+  (a) content-stale, since R20-3 designed that lever as OPT-H two commits
+  after this entry was written, and R21-2 subsequently measured it; (b)
+  reference-stale, since R22-6's own renumbering of the `[A]` tier (task
+  #357, 2026-07-26) shifted what "item 1" refers to, so leaving the original
+  wording untouched would have made it silently point at the WRONG item
+  (the mimalloc arm) instead of OPT-H. Fixed in place — per this project's
+  established convention of appending a resolution note to historical
+  point-in-time prose rather than rewriting it, R20-1/task #346's precedent
+  — rather than left for a separate pass. See the "R10-2 §5 #1" closure
+  entry earlier in this same "Recently resolved" trail for OPT-H's own
+  closure detail.) Recorded in
+  `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md` (full report) + companion
+  `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE_summary.csv`.
+- **R18-7 §6 (docs fix) — correct the stale "pending the Linux Ir gate"
+  wording.** Resolved by **R20-1 (task #346)**, 2026-07-26: added a short
+  "(Resolved: ...)" note right after each stale "pending"-framed sentence in
+  `CHANGELOG.md:4457`/`:4476` and `docs/ALLOC_BENCH.md:625`/`:688` (the header
+  at `:688` covers the two bullet mentions at `:704`/`:708` in the same
+  section) — original prose kept intact as the honest point-in-time record,
+  per both files' historical/point-in-time nature. This entry's original
+  citation (`CHANGELOG.md:4311`) was itself stale/wrong (that line is an
+  unrelated M2-guard sentence); the line numbers above are re-verified against
+  the file as it stands after this same fix.
+- **R14-4 §6 item 2 — "re-run `scripts/r10_2_medium_gate.mjs` once R14-5 lands."**
+  Resolved by **R18-2 (task #331)**, 2026-07-26: re-ran on `main` @ `912740f` for
+  three feature compositions; `large-cache-extended` helps the realloc phase
+  (~3.5×) but does NOT clear the 20% kill-gate (still ~380× slower). Root cause
+  confirmed as structural promotion-copy cost, not the leak R17-4 fixed. Recorded
+  in `R14_4_MEDIUM_REALLOC_PROMOTION_GATE.md` §6 item 2 + §7.1 + §10; companion
+  summary `R18_2_MEDIUM_REALLOC_GATE_RERUN_summary.csv`.
+- **R14-4 §6 item 1 — pad-target probe commit-cost discrepancy.** Resolved by
+  **R17-4 (task #321, commit `1b761f4`)**: a fastbin magazine dealloc-dispatch
+  bug keyed on `class_for(layout.size())` instead of segment `kind`; fixed in
+  `src/registry/heap_core_free.rs`, pinned by
+  `tests/r17_4_inplace_grown_large_dealloc_routes_by_kind.rs`.
+- **PERF_PLAN_beat_mimalloc_small_medium — "can we beat mimalloc at cold 16 B?"**
+  Resolved by **R18-7 (task #335)**: the plan's named eurekas are exhausted
+  (every tautology already removed); the residual 16 B gap is either honest
+  per-block page-map/fault work or unverifiable without the cross-allocator `Ir`
+  number (→ open item #2 above). Recorded in
+  `R18_7_MIMALLOC_GAP_STATUS.md` §1/§5.
+- **R10-6 — NUMA node-aware bit selection for the segment directory.**
+  Resolved by **R11-6 (task #234)**: added the node-indexed
+  `class_nonempty_by_node` bitmap and wired the per-bucket scan so the
+  directory-driven lookup is active under `numa-aware` too (local-first, then
+  shared unknown bucket, then foreign real-node buckets ascending) — not
+  "disabled, linear scan only" as R10-6 originally found. See
+  `src/alloc_core/alloc_core_small.rs:554-571`'s own "R11-6 UPDATE" comment.
+  **2026-07-28 note (R25-9, task #403):** the R24 readonly review
+  (`docs/reviews/2026-07-28-r24-readonly-review.md`, "Conditional — NUMA
+  directory") independently recommended "a node-indexed directory" as a
+  still-open ~140× high-segment-count `numa-aware` cliff, citing R10-6's
+  own pre-fix measurement. Re-verified against current source before acting
+  on it: this is **already resolved by R11-6** (14 rounds earlier) — the
+  cliff the review describes (O(S) linear scan under `numa-aware`) is
+  exactly what `class_nonempty_by_node`'s node-indexed bitmap replaced. No
+  work item opened; the review's recommendation was based on the
+  pre-R11-6 report without checking whether it had since landed. Task
+  #403 closed with this note as its resolution — no design work needed,
+  no new trigger to track.
+- **R29 post-round readonly review — perf-report methodology findings
+  (`docs/perf/OPEN_ITEMS.md`'s former item 28).** Resolved by **R30-4 (task
+  #453)**, 2026-07-30: all 8 sub-findings (a)-(h) independently re-verified
+  against cited raw logs/source. Source reviews:
+  `docs/reviews/2026-07-29-r29-readonly-review.md` and
+  `docs/reviews/2026-07-30-r29-followup-readonly-review.md` §2.2-§2.6 (the
+  followup review independently corroborated several of the same findings).
+  5 of 8 CONFIRMED (dated correction sections appended to the affected
+  reports, append-only, originals preserved), 2 of 8 PARTIAL (corrections
+  appended with a narrower/corrected framing than either the original
+  report or the review's paraphrase), 1 of 8 REFUTED (recorded here, not
+  corrected in the report it concerns — the original report's number
+  stands as originally published).
+  **(a) REFUTED** — R29-16's "21.4× Ir" (3,067 vs 65,624 Ir) is NOT a
+  "Valgrind artifact." `Node::zero` (`src/alloc_core/node.rs:135-144`) is a
+  plain `write_bytes` memset; Callgrind's VEX-IR translation unrolls
+  REP-prefixed string instructions and charges `Ir` once per loop
+  iteration, so ~1 Ir/byte on a 64 KiB memset is EXPECTED Callgrind
+  behavior, corroborated by R29-16's own L1/L2/RAM cache-line-touching
+  signature (recycled arm: 1,157 L2 hits / 2,135 RAM hits vs. virgin arm's
+  111/1,097). No correction needed to the 21.4× figure; a methodological
+  Ir-vs-wall-clock caveat was appended to
+  `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §9 regardless.
+  **(b) CONFIRMED (narrower framing)** — R29-3 §5's "net loss" headline
+  overstates against the report's OWN A′−B numbers: both saved runs show a
+  same-direction positive saving (5.1%, 1.7%), dismissed as "noise" without
+  any stated variance/stddev in the document. Corrected framing:
+  workload-sensitive / not currently a priority (not "mathematically
+  negative for all shapes," and not "a clear win" either) — a
+  touch-density sweep is the precondition for reopening.
+  **(c) CONFIRMED** — `examples/r29_3_decomposition_gate.rs` computes
+  `total.elapsed() / N` (arithmetic mean) at lines 100/113/150-151/179 and
+  the report/example both label it "median of 200." Pure relabeling fix;
+  underlying numbers unchanged; example source NOT touched.
+  **(d) CONFIRMED** — Measurement B/A′ (`examples/r29_3_decomposition_gate.rs`
+  lines 126-127/135-136/145-146/166-167/174-175) touch ALL ~1,006 payload
+  pages every cycle — full touch density. §6's unconditional "(4+5)
+  dominates" verdict is now scoped explicitly to full-touch density; at
+  sparse touch density the fixed `MADV_DONTNEED` cost could dominate
+  differently and reverse the ordering — unmeasured, named as the
+  reopening precondition.
+  **(e) CONFIRMED** — R29-13's cited sha256
+  (`d40e8280b433892e17605b9b96c28baaebf852a8f3d70057ba64cd47ac0ec98`) is 63
+  characters, not the required 64 (verified by direct count). A
+  reconstruction attempt from the report's own base SHA (`34f3702`) forward
+  to the landing commit (`894e9e3`) produced a DIFFERENT hash
+  (`1c4ea5e1...`), confirming the original was computed over an
+  uncommitted working-tree state that is not reconstructable from git
+  history. Filed as an honest, permanent irreproducibility gap — NOT fixed
+  with a fabricated replacement hash. First real-world application of the
+  R29-6 immutable-provenance rule; exposed that the rule's
+  weakest-justified option (ad-hoc patch+file concatenation) was used for
+  a tree state that was never preserved as a resolvable git object,
+  independent of the transcription error.
+  **(f) CONFIRMED** — R29-16 cites no base SHA / immutable source identity
+  anywhere (grep for `Base revision|sha256|Measured on|commit SHA|main @`
+  returns zero matches in the file). Per CLAUDE.md's explicit
+  non-retroactive carve-out, NOT retroactively reconstructed — noted as a
+  known, permanent provenance gap in that historical report; the operative
+  successor (`R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md`, task #452) already
+  carries proper provenance and supersedes R29-16 for the promotion
+  decision regardless.
+  **(g) PARTIAL** — two distinct issues in R29-13: (1) line 8's "32x the
+  small pool's 16 MiB byte cap" is a plain arithmetic error (256/16 = 16,
+  not 32) — corrected to 16×/8× (cap=4/cap=8 byte caps), exact. (2) line
+  344's "30x the small pool's proven ~8 MiB/heap retention" compares an
+  ABSOLUTE quantity (238 MiB) to R27-3's cap8-minus-cap4 DELTA (~8 MiB),
+  not an absolute retention floor — confirmed apples-to-oranges. No single
+  unambiguous corrected ratio exists (R27-3 and R29-13 measure retention at
+  different lifecycle points and against different baselines); two
+  like-for-like absolute comparisons computed directly from each report's
+  own §0 tables give ~7.6× (vs. small-pool cap=8 absolute, 31.23 MiB) and
+  ~10.3× (vs. cap=4 absolute, 23.23 MiB) — both well below the retracted
+  30× but not offered as *the* replacement headline. The review's own
+  candidate "~12×" was NOT independently reproducible from either report's
+  cited numbers under any reading tried.
+  **(h) PARTIAL** — both cited ratios in R29-5 are arithmetically exact
+  (33/60,722 = 0.054%; 33/40 = 82.5%, confirmed by direct computation). Not
+  an arithmetic error — a framing gap: R29-5's own §1 already discloses the
+  40-object population and that 33/40 promoted, but §0's headline table
+  never computes or states 82.5%, and the "RARE" framing doesn't caveat
+  that a promotion-heavy consumer workload could see a very different
+  rate. Corrected framing added to R29-5 §9: promotion is a small fraction
+  of THIS MIXED workload overall, but common (82.5%) among objects
+  deliberately grown into the promotable region — this does NOT support
+  rejecting Linux `mremap` for a promotion-heavy consumer workload. Item
+  6's "stays deferred" disposition is unchanged.
+  Evidence: dated correction sections appended (append-only) to
+  `R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md` §9,
+  `R29_13_LARGE_CACHE_RETENTION_GATE.md` §9,
+  `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §9,
+  `R29_5_PROMOTION_FREQUENCY_GATE.md` §9.
+
+- **R-V20-849 — Unix exact-reserve hit rate (aligned-vmem, WSL2 only) — `docs/perf/OPEN_ITEMS.md`'s own former item 46.** Resolved by `aligned-vmem` round 2 task #944 (finding P-1), 2026-08-14.
+
+  > **Current state**
+  > - **Status:** re-evaluation required (finding V-1 invalidated prior cost model).
+  > - **Current number/verdict:** 30-run aggregate on WSL2 (Hyper-V-backed kernel) found 4 MiB alignment hit rate = 272/480 = **56.6667%**, not the ~0.1% the review predicted. Other regimes: 4 KiB = 480/480 (100%), 64 KiB = 165/480 (34.375%), 1 MiB = 224/480 (46.6667%). **However**, the prior conclusion that "the exact-mmap fast path is very likely still a net win" is based on an invalidated cost model: it assumed the fast path breaks even at a 50% hit rate (from `SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11), but task #842 removed the two munmap trim calls from the over-reserve path. With the trims gone, the fast path costs 1 syscall on a hit vs 3 on a miss (expected cost `3 - 2p` vs a flat 1 without the fast path), which exceeds 1 for EVERY hit rate p < 1 — the break-even is 100%, not 50%. At real hit rates (34.4%-56.7%), the fast path incurs 87%-131% MORE syscall traffic than not having it at all. What the fast path still buys is address-space economy on 32-bit targets (exact-size mapping instead of `size + align`), not syscall savings.
+  > - **Next trigger:** re-evaluate whether the fast path should be kept, disabled, or gated on a 32-bit target check. The pre-release review (task #920, finding V-1) flags this as requiring a fresh decision based on the corrected arithmetic; the old "very likely still a net win" conclusion no longer holds.
+  > - **Evidence:** `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE.md` (full report), `docs/perf/_raw_r_v20_849_unix_exact_reserve_hit_rate.log` (30-run raw output), `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE_summary.csv`, `crates/aligned-vmem/src/lib.rs`:176-194 (updated fast-path rationale comment with corrected syscall-cost arithmetic).
+  > - **Cross-reference (origin):** task #849 (commit `35d51e6`), `docs/reviews/2026-08-12-aligned-vmem-post-campaign-closing-review.md` finding W15, task #920 (this update, finding V-1).
+  >
+  > **Mechanism to include in a future remeasurement (round 6/task #883, review finding S12 — unmeasured, not a recommendation to implement, recorded so a future bare-metal remeasurement includes this mechanism):**
+  > `docs/perf/ALIGNED_VMEM_VIRTUALALLOC2_VA_OPTIMIZATION_OPPORTUNITY.md` covers
+  > Windows `VirtualAlloc2` and BSD `MAP_ALIGNED(n)` as fast-path mechanisms, but
+  > neither covers Linux or macOS — the two platforms this item's own WSL2 numbers
+  > above actually measure, where the 43-66% miss rate outside the page-size regime
+  > (64 KiB = 34.375%, 1 MiB = 46.6667%, 4 MiB = 56.6667% hit) still costs 3 syscalls
+  > (`mmap(size)` → `munmap` → `mmap(size + align)`) plus a permanent `align` bytes of
+  > VA held for the reservation's lifetime on every miss. One mechanism not
+  > considered anywhere in the existing design note: on a miss, before falling back
+  > to over-reserve, retry `mmap(align_up(p, align), size, …)` with a
+  > non-`MAP_FIXED` hint address. Both Linux and Darwin honour a hint address when
+  > the range is free and silently ignore it otherwise, so the retry is sound by
+  > construction (the existing alignment check already validates the result); cost
+  > on a retry-hit is still 3 syscalls but the mapping is exact-size (no permanent
+  > `align`-byte VA overhead), and cost on a retry-miss is one extra `mmap`/`munmap`
+  > pair before the existing fallback. `UNIX_EXACT_RESERVE_ATTEMPTS`/
+  > `UNIX_EXACT_RESERVE_HITS` and `examples/v20_849_unix_exact_reserve_hit_rate.rs`
+  > already run the 30-independent-process methodology this item used; a third
+  > counter for "hint retry hit" would produce a real number from the same harness.
+  > **Plumbing gap (round 7/task #894, review finding T10 — not implemented,
+  > recorded so a future implementer does not re-derive it on contact):** the
+  > hint address `p` this mechanism wants to retry from is currently discarded
+  > before the caller can see it — `try_reserve_aligned_exact`
+  > (`crates/aligned-vmem/src/lib.rs`), on an alignment miss, munmaps the region and
+  > returns `Err(VmemError::invalid_argument())` with no address, so its
+  > caller `unix_reserve` has nothing to hint from; implementing S12 first
+  > requires widening `try_reserve_aligned_exact`'s error channel (or return
+  > type) to carry the missed address. The current munmap-before-return
+  > ordering is fine/intentional (any future hint would necessarily target an
+  > already-freed range) — worth stating explicitly so a future implementer
+  > does not instead try to read the address before the munmap.
+  > Full history: task #857 (this entry); S12 mechanism added task #883; T10
+  > plumbing note added task #894.
+
+  **Closed (`aligned-vmem` round 2, task #944/P-1, 2026-08-14):** the item's own "next trigger" above — kept, disabled, or gated on a 32-bit target check — is exactly what shipped. `try_reserve_aligned_exact` is now `#[cfg(target_pointer_width = "32")]`-only; `unix_reserve` always over-reserves on 64-bit. Justified by the same deterministic syscall-counting math this item's own "Current number/verdict" already established (expected cost `3 - 2p` exceeds the flat 1-syscall over-reserve cost for every hit rate `p < 1`), not a fresh empirical measurement — removing an always-pessimizing path cannot make things worse on 64-bit; the fast path is kept on 32-bit, where VA economy (this item's own stated remaining benefit) still matters. The S12 hint-retry mechanism directly above remains OPEN and UNIMPLEMENTED — it targets the miss cost of a fast path that still exists on 32-bit and would still apply there; on 64-bit the fast path this mechanism would improve no longer exists at all. Independently re-flagged (without knowledge of this item, per that review's isolation rules) as finding P-2 in `docs/reviews/2026-08-14-aligned-vmem-pre-release-review-round2.md` — see `CHANGELOG.md`'s round-2 entry for P-2's current disposition (still deferred, needs its own fresh measurement). See `CHANGELOG.md`'s `aligned-vmem` round 2 entry for the full task #944 verification.
+
+- **Task #1088/L11 precedent — inverted R30-12 prefixes on `a828ebc` (bare `fix:`) vs `b98edb0` (`fix(perf)`) — `docs/perf/OPEN_ITEMS.md`'s own former item 57.** Recorded 2026-08-18 by task #1088 (finding L11); closed the same day by the OH3 wave's readonly review (finding L5) under CLAUDE.md's R34-24 current-state rule — see the closure note at the end of this entry.
+
+    - **Status:** CLOSED (record-only remediation — no code change possible or needed; the recorded precedent below IS the remediation). History is explicitly non-retroactive (CLAUDE.md R30-12: "no historical commit message is retagged... it governs new commits going forward only"); neither commit is amended.
+    - **Current number-or-verdict:** `a828ebc` ("fix: task #1077 — OPT-G reserved-capacity grow rounded to compile-time PAGE") changed OPT-IN SHIPPING code — `try_grow_large_reserved_capacity`, `#[cfg(feature = "large-reserved-capacity")]` in `src/alloc_core/alloc_core.rs`, a feature NOT in `production`'s composition — with an OBSERVABLE behaviour change on 16/64 KiB-page hosts (the in-place grow was a permanent silent no-op there before; it works after). Under R30-12 that is `perf(opt-in)` (opt-in code, observable change), or at minimum `fix(perf)` (opt-in code, invariant restore). It carries a bare `fix:`. Meanwhile `b98edb0` ("fix(perf): task #1081 — decomp hooks route through the runtime-page-safe boundary") — whose only change outside `bench-internals`-gated hooks is a single `debug_assert!` — carries the STRONGER `fix(perf)` prefix. The prefix ordering is inverted relative to the strength of the claims.
+    - **Next trigger:** none mechanical — this is a judgement precedent, not a lint gap. Before writing any perf-family commit subject, check the diff's cfg context against the R30-12 table: which feature gate encloses the changed lines, is that feature in `production`, and is the change observable (→ `perf(opt-in)`) or invariant-restoring with no observable change (→ `fix(perf)`).
+    - **Evidence:** `git show a828ebc` / `git show b98edb0` (subjects + diffs as described above); `scripts/verify-commit-prefixes.mjs` passes BOTH by design — `fix:` classifies as `'other'` (out of the lint's scope entirely) and `fix(perf):` passes direction-1 because the diff touches `src/`.
+
+    **Why the lint cannot catch this class (considered and rejected, not omitted):** flagging `a828ebc`'s mislabel mechanically would require (1) cfg-context analysis of each `src/` hunk — which `#[cfg(feature = ...)]` block encloses the change, not derivable from the `git show --name-only` output the lint parses; (2) a Cargo.toml feature-graph lookup at that revision, to learn `large-reserved-capacity` is not in `production`; and (3) the human judgement call between `perf(opt-in)` (observable change) and `fix(perf)` (invariant restore, no observable change) — the exact distinction R30-12 leaves to judgement. The cheap heuristic ("bare `fix:`/`feat:` on any commit touching `src/` → WARN") fires on every ordinary memory-safety/correctness fix in `src/`, which the taxonomy legitimately allows as plain `fix` — a wall of false positives that would train readers to ignore the lint. This card is the instrument instead: the round-start read of this index surfaces the precedent exactly when a future round writes its next perf-family subject line.
+
+    **Closure note (OH3 wave, finding L5, 2026-08-18):** the entry above was filed as item 57 in the `[L]` tier with `Status: RECORDED` and `Next trigger: none mechanical` — i.e. closed in substance from the moment it was filed, since by its own text nothing further would ever happen to it. That is the exact structural defect CLAUDE.md's R34-24 rule names: a card that reads as active while being closed, re-presented as an open `[L]` item at every future round-start read. Remediation is the R34-24 move itself: Status updated to CLOSED, the full narrative relocated here, and the main index keeping only the one-line pointer in its "Recently resolved" section. The instrument sentence above still holds in its new home — the round-start read is end-to-end (this index's own header rule 1), so the pointer line still surfaces the precedent when a future round writes its next perf-family subject; the full reasoning is one hop away, here.
+
+- **Item 56 — an unexplained ~10-13% Ir regression, unattributed and unmonitored (nightly gate red 13 nights, then switched off) — `docs/perf/OPEN_ITEMS.md`'s own former item 56.** Filed 2026-08-18 (task #1090); resolved 2026-09-01 by task #1091 — attributed by dual bisect + counterfactual + 2N decomposition against committed raw logs. Verdict: outcome (b) accepted-cost for the bulk + (c) measurement-artifact for the per-op residual; NO production regression to fix. Full report: `docs/perf/R56_ITEM56_IR_REGRESSION_ATTRIBUTION.md`; asserted summary CSV `R56_ITEM56_IR_REGRESSION_ATTRIBUTION_summary.csv` via `scripts/item56_report_summary.mjs`.
+
+  **Original card (2026-08-18, task #1090) — archived verbatim:**
+
+    - **Status:** OPEN. The gate's automatic triggers were commented out in
+      `.github/workflows/perf-gate.yml` by owner decision — no automatic perf
+      runs on GitHub. `workflow_dispatch` remains the only trigger (a human
+      must press "Run workflow"); it is kept because Actions rejects an `on:`
+      block with no trigger at all. **The regression itself was NOT
+      investigated and is NOT fixed** — only the alarm was silenced.
+    - **Current-number-or-verdict:** run `32098094538` (2026-08-18) reported
+      21 of 85 benches over the `Ir=10` limit, worst `large_alloc_free_cycle`
+      +29.00%, with most churn arms clustered at +10…+13.8%. **Read these as
+      a 13-day CUMULATIVE delta against a stale baseline, not a per-night
+      regression** — see the self-lock below. Corroborating the frozen-base
+      model: the count sat at exactly "60 without regressions; 25 regressed"
+      on 08-08, 08-14, 08-16 and 08-17, moving only on 08-18.
+    - **The self-lock (why it could never recover):** `IAI_CALLGRIND_REGRESSION`
+      is set at workflow `env:` level, so it applies to the nightly
+      `--save-baseline=main` run too — contradicting that step's own comment
+      ("A main-branch / scheduled / dispatched run instead (re)RECORDS the
+      baseline"). When the bench step exits non-zero, the next step
+      `Save the main iai baseline` is SKIPPED (it has no `if: always()`;
+      verified in run `32098094538`'s step list, where the sibling
+      `Upload Callgrind artifacts` — which does have it — succeeded). So a
+      failing run never records a new baseline, and the baseline is frozen at
+      `42d8d223` (last green: run `30980354559`, 2026-08-05).
+    - **Retracted hypothesis (do not re-derive):** an rustc bump was proposed
+      as the cause, on the observation that mimalloc's C-compiled rows held or
+      improved (`mimalloc_bootstrap_proxy` −3.55% `Ir`) while every Rust row
+      rose. **Falsified by direct check** — `rustc 1.97.1 (8bab26f4f
+      2026-07-14)` in BOTH the last green (`30980354559`) and the red
+      (`32098094538`). The toolchain never moved; the regression is code, and
+      the mimalloc observation now reads the opposite way (our code changed,
+      the build environment did not).
+    - **Local gate cannot substitute:** `npm run check`'s iai step asserts
+      only that Ir was produced (`[iai] PASS — 85 bench(es) produced Ir`); the
+      `Ir=10` threshold lives solely in the workflow `env:`. A 29% regression
+      passes the local gate green. With the workflow off, **nothing anywhere
+      now enforces an instruction-count threshold.**
+    - **Next trigger:** any decision to attribute or fix the regression (task
+      #1091 owns this); any move to re-enable a trigger (which must fix the
+      self-lock first, or it reproduces the same red streak). Note the trap:
+      fixing the self-lock by adding `if: always()` OVERWRITES the frozen
+      baseline and destroys the only remaining reference point.
+    - **CORRECTION — this is NOT GitHub-dependent and NOT deadline-bound.**
+      An earlier draft of this card (and task #1090's notes) claimed
+      attribution needs either the 30-day Callgrind artifacts or "a bisect on
+      Linux+Valgrind, and this host is Windows". **That is false.**
+      `scripts/iai.mjs` — the `npm run iai` judge already wired into
+      `npm run check` — drives the whole `perf_gate_iai` bench through **WSL +
+      Valgrind/Callgrind**, with its own Linux target dir (`/tmp/sefer-iai`)
+      and the runner version pinned to `Cargo.toml`'s `^0.14`. Verified on
+      this host: `valgrind-3.22.0`, cargo present in WSL, 16 cores. So both
+      endpoints AND every bisect midpoint are measurable locally, offline,
+      deterministically (Callgrind `Ir` is contention-independent), with no
+      GitHub involvement at all — which also matches the owner's directive to
+      stop loading GitHub with perf runs. The archived artifacts
+      (`perf-gate-callgrind-30980354559`, expiring ~2026-09-04) are now only a
+      convenience shortcut, not the critical path.
+    - **Suspect range:** `42d8d223..42d42061`, 153 commits (the R34
+      release-readiness remediation waves, which landed densely). Unread
+      first-glance candidate by subject only, NOT a code-level conclusion:
+      `3d57a26 fix(perf): close F1 — HeapCore stack-pressure budget didn't
+      cover production medium-classes` — a stack-pressure budget sits on every
+      alloc/dealloc path, which fits the near-uniform spread across churn arms.
+    - **Evidence:** `.github/workflows/perf-gate.yml`'s own DISABLED header
+      block; GitHub runs `30980354559` (green), `32098094538` (red);
+      13 consecutive scheduled failures 2026-08-06 … 2026-08-18.
+
+  **Closure findings (task #1091, 2026-09-01) — see the report for full detail; every number below is script-asserted against the committed raw logs:**
+
+  - **Endpoints (WSL callgrind, `scripts/iai.mjs`, local rustc
+    1.98.0-nightly bd08c9e71 2026-06-25; CI's rustc 1.97.1 codegen denominator
+    explains CI's slightly larger headline pcts, +29.00%/+13.8% vs local
+    +24.91%/+12.22% on the same arms):** `large_alloc_free_cycle` 3,308 →
+    4,132 (+824/3,308 = +24.91%); `small_churn_16b` 8,051 → 9,035
+    (+984/8,051 = +12.22%); 25 of 79 compared arms > +10%; every `mimalloc_*`
+    arm exactly 0.00% (the control); 6 red-only arms (`large_cache_*`/
+    `alloc_zeroed_magazine_*`, added in-range). The green endpoint is
+    byte-identical to the recorded R22-15 baseline section of
+    `IAI_BASELINE.md` (16,629 / 13,050 / 3,308 / 74.1 Ir-op / 1.326).
+  - **Bisect 1** (predicate: BAD iff either probe ≥ green+5%): first bad
+    commit **`5df56d3`** ("fix(perf): PerClass gains #[repr(C)]", R32-5,
+    task #496) — trace 8,055/3,312 (GOOD at `62e217f`) → 8,810/4,080 (BAD at
+    `03a6c55`/`5df56d3`).
+  - **Bisect 2** (residual, threshold band GOOD ≤ 8,900 / BAD ≥ 8,980): first
+    bad commit **`5289c66`** ("perf(runtime): OWN_CACHE_SIZE 4->16 + Tier-1
+    hit/miss counter", R32-10, task #501) — 8,810 (GOOD at `ce3f44d`) → 9,037
+    (BAD at `c9a3570`/`a3e3e18`/`5289c66`).
+  - **Decomposition.** At `5df56d3`: churn +759 fixed per process (13,226 −
+    8,810 = 4,416 = green's 12,467 − 8,051 2n-delta → zero per-op cost);
+    759/49 = 15.49 Ir/PerClass; large +772. At `5289c66`: 2n-delta 4,608 =
+    +192 over 64 extra pairs = +3.0 Ir/pair; fixed part +35..47
+    (`own_cache [*mut u8; 16]` vs `[*mut u8; 4]` zero-init);
+    `dealloc_contains_base_probe_only_16b` +239 vs
+    `dealloc_hash_contains_only_probe_16b` (Tier-2 called DIRECTLY, bypassing
+    `contains_base`) +47 fixed-only → the per-call cost sits INSIDE
+    `contains_base` and is `5289c66`'s `#[cfg(feature = "bench-internals")]`
+    `CONTAINS_BASE_TIER1_HITS`/`_MISSES` `AtomicU64::fetch_add` — and
+    `scripts/iai.mjs` builds WITH `bench-internals`, so the gate's own
+    instrument was compiled into the measured binary. Red endpoint ≡
+    `5289c66` on all four regression-signal arms within ±11 Ir (2/11/2/8);
+    honest scoping: green-present full-arm max dev +79 (`decomp_full_cycle_8x`,
+    ~0.8%, jitter class, NOT fully attributed), red-only `large_cache_hit_`
+    /`_prefill_only_4mib` +262/+232 attributed to the post-`5289c66`
+    large-cache commits `eb2463a`/`e88390b` reshaping those paths.
+  - **Counterfactuals.** A (tcache.rs reverted at `5df56d3`): 8,055 / 3,312 /
+    4,343 — every arm within +4..5 Ir of green, 0 arms > +10%. A' (the four
+    `5289c66` src files reverted): every arm byte-identical to the `5df56d3`
+    level (max dev 1 Ir; `contains_base` probe 9,491 → 9,492).
+  - **Mechanisms.** repr(C): standalone probe (`/tmp/probe_reprc/`) shows the
+    `[PerClass;49]` array construction is memcpy-lowered differently under the
+    two layouts (415,075 vs 560,560 Ir; delta in `__memcpy_avx_unaligned_erms`)
+    — mechanism CLASS only (probe amplifies to ~2,969 Ir/element vs the real
+    ~15.5 because its `black_box` forces a full copy per construction).
+    Own-cache: asm A/B probe shows `OWN_CACHE_SIZE` 4 vs 16 emits an IDENTICAL
+    7-instruction hit path (only `and $0x3` vs `and $0xf` differs) — the
+    +3/call is purely the bench-internals counters (gate-only artifact).
+    `5df56d3`'s own message SAW the +755 and attributed it to the
+    `HeapCore::new()` init shift while quoting "0 Ir delta" from isolation
+    arms; `5289c66` explicitly skipped the standing ±10 raw-Ir gate ("argued,
+    not measured").
+  - **Decision + follow-ups.** Accept the +759 (option for a future
+    owner-approved micro-fix, NOT landed, untested: const-fold
+    `[PerClass::new(); SMALL_CLASS_COUNT]` into a `const` item); owner decision
+    on excluding `bench-internals` from the judge's feature set or gating the
+    counters differently (report recommendation ii, tied to the separate
+    threshold-restore/self-lock decision); process lessons recorded in report
+    §9-iii. The nightly-trigger re-enable decision remains gated on fixing the
+    workflow self-lock documented in the archived card above.
+
+- **Item 63 — `tagged-index-stack` `pop_index` CAS-success ordering (`Acquire` → `Relaxed`) — `docs/perf/OPEN_ITEMS.md`'s former item 63.** Resolved 2026-09-06 by current run-25 source HEAD `5549e8db57b5ab6a8ba276c58dbfa6e23529413d`, tree `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d`, digest `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`, and artifact commit `1fff43a`; `c00087f`, `393f81e`, `b01580f`, and `133d842` are the ODB/implementation/intermediate trail.
+
+  - **Status:** CLOSED — static codegen NULL; no production change.
+  - **Current number-or-verdict:** the authoritative `pop_success_relaxed`
+    variant is byte-identical to `base` for `load_next`, `store_next`,
+    `push_index_impl`, and `pop_index_impl` on x86 and on AArch64 with both
+    default and `+lse` features. The exact matrix is 20 x86 rows and 40
+    AArch64 rows, using source HEAD
+    `5549e8db57b5ab6a8ba276c58dbfa6e23529413d`, tree
+    `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d`, and source-input digest
+    `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`.
+  - **Closure rationale:** the candidate is a genuine static NULL, not a
+    timing result. The failure ordering remains `Acquire` and is load-bearing:
+    a failed pop CAS observes a newer head before the retry reads that head's
+    link. The memory-model proof is independent of whether the candidate and
+    production lowerings coincide. Production retains success `Acquire` for
+    proof clarity and no current codegen cost; the runner reopens the candidate
+    if a future lowering diverges.
+  - **Scope boundary:** this closure does not close item 62's link-ordering
+    question or create a wall-clock verdict. Native ARM timing remains OPEN
+    for `base`, `links_relaxed`, and the separate `store_elided` candidate.
+  - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`, the
+    authoritative codegen CSVs/raw logs/assembly bundles, current source-input
+    identity `5549e8db57b5ab6a8ba276c58dbfa6e23529413d` / tree
+    `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d` / digest
+    `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`, and
+    artifact commit `1fff43a`; the earlier ODB/implementation
+    commits remain in the historical trail above.
+
+## 79 — PG-2/PG-3 off-body учёт свободных блоков (closure narrative, 2026-10-05)
+
+79. **PG-2/PG-3 — off-body NextTable spike (Ph2 ADR): paused-witness зелёный, но iai вне пределов ADR — выбор геометрии off-body для Ph3c.**
+
+   > **Current state**
+   > - **Status:** OPEN — spike корректностно успешен, производительно забракован PG-3; наивная геометрия (1 МиБ NextTable на 4 МиБ сегмент) для Ph3c пересматривается. Спайк «not for merge», живёт в ветке `ph2-pg2` (коммит `8a028616`).
+   > - **Current number/verdict:** paused-witness `miri_global_box_acceptance -- paused` зелёный на production/alloc-global в Miri SB+TB (4/4 клеток, COMPLETE); мутант (временный `Node::write_next` в `reclaim_sidecar_record`) красный ровно в `src/alloc_core/platform/node.rs:94`. MODEL-LIMIT (`tests/r11_pg2_model_limit.rs`): клетки (ii) reissue и (iii) Large красные в обеих моделях, как предсказал ADR; клетка (i) seg-release зелёная — ОТКЛОНЕНИЕ от пред-регистрации ADR, открыто (не подтверждает, что сценарий реально освобождает сегмент). PG-3 iai (85 бенчей, `production bench-internals`, callgrind): hot `small_churn_16b` ΔEstCycles +9.732% при пороге ADR ≤ +2%; refill `cold_alloc_free_256x16b_4n` +92.162% при пороге ≤ +5%; 31 из 85 бенчей ≥ +25% ΔEstCycles (пересчитано из `docs/perf/PG3_OFFBODY_SPIKE_IAI_summary.csv`); ~100% прироста локализован в `AllocCore::drain_segment_sidecar` (разброс записей по 1 МиБ таблицы вместо одной горячей строки). Hardened-тесты `regression_freelist_next_validation` (2 теста) красные на спайке и требуют переработки под off-body модель.
+   > - **Next trigger:** выбор геометрии off-body для Ph3c (ADR предполагает однородные per-class leaves вместо наивной таблицы-слота на MIN_BLOCK); RSS-плечо ADR ≤ 1.05 (в спайке NOT_RUN); закрыть (i)-отклонение (доказать, что seg-release реально освобождает сегмент) и переписать hardened-тесты. Параллельно открытый P1 (установленный `Box` paused-witness красный на shipping `production`) — см. `docs/correctness-open-items/ACTIVE.md` item 162.
+   > - **Evidence:** `docs/reviews/2026-10-01-adr-pg2-offbody-spike-receipt.md` (§4 клетки, §5 hardened, §10 отклонения); `docs/perf/PG3_OFFBODY_SPIKE_IAI.md` + `docs/perf/PG3_OFFBODY_SPIKE_IAI_summary.csv` (коммит `7d80d7e1`). Дизайн геометрии: `docs/design/2026-10-02-ph3c-offbody-geometry-design.md` (рекомендован кандидат B, проверка — микро-прототип `PH3C_LEAF_PROTO_IAI`).
+
+   > - **Update 2026-10-02:** B и B2 (микро-прототип, `docs/perf/PH3C_LEAF_PROTO_IAI.md`, `cda836f2`) и B3 (`docs/perf/PH3C_B3_PROTO_IAI.md`, `cbceb311`) провалили пред-регистрированные фильтры — битовое семейство закрыто. Регрессия PG-3 при этом оказалась артефактом скана pending-bitmap (+1024 слова из-за 1 MiB таблицы перед payload), а не ценой off-body учёта. План (решение владельца): шаг 0 PG-3r (патч S, перемер PG-3 на обеих сторонах) → шаг 1 интегрированный спайк B3 с ценой корректности refill/flush (EstCycles ≤1.10 И Ir ≤1.20, hot ≤1.02) → конечная точка (б) (интрузивный slab + принятый известный дефект P1-box). Правила и пределы — `docs/design/2026-10-02-adr-addendum-ph3c-escalation.md`.
+
+**Closure.** 2026-10-05: PG-3r (патч S) показал, что регрессия PG-3 — скан pending-bitmap, а не off-body учёт; B/B2 (микро-прототип, `cda836f2`), B3 (фильтр, `cbceb311`) и интегрированный B3 (шаг 0/1/1′: `c584a3ae`, `49057e12`) — NO-GO по пределам ADR/эскалации. Исполнен путь (б): `docs/design/2026-10-05-adr-addendum-ph3c-path-b.md`.
+
+## 80 — скан pending-bitmap с первого слова payload (closure narrative, 2026-10-05)
+
+80. **Скан pending-bitmap на refill-промахе без пропуска пустых слов (perf(runtime) кандидат, выявлен PG-3 атрибуцией).**
+
+   > **Current state (на момент закрытия)**
+   > - **Status:** OPEN — подтверждено измерением PG-3r (патч S: hot ΔIr −0.003…+0.017%, cold/recycle −0.46…−1.23%, A/A 0.000%); осталось внести как отдельный `perf(runtime)` коммит в `main` (патч — `docs/perf/PG3R_SCAN_PATCH_S.patch`).
+   > - **Current number/verdict:** `drain_segment_sidecar` (`src/alloc_core/small/alloc_core_small/find_segment.rs`) и курсор `sidecar_drain.rs` проходили pending-bitmap от слова 0 до `high_water` по одному `swap(0, AcqRel)` на слово (1 слово = 1 KiB payload), включая пустые и слова метаданных: до 4096 атомарных swap (≈49k Ir) на полностью нарезанном сегменте.
+   > - **Next trigger:** результат PG-3r (патч S: начинать скан с первого слова payload). Если ΔIr hot ≤ +0.5% и refill в пределах ADR — оформить как отдельный `perf(runtime)` с iai-гейтом; с Ph3c не смешивать.
+   > - **Evidence:** `docs/design/2026-10-02-adr-addendum-ph3c-escalation.md` §1.1, §3, §6; `docs/perf/PG3_OFFBODY_SPIKE_IAI_summary.csv`.
+
+**Closure.** 2026-10-05: триггер выполнен — PG-3r (`docs/perf/PG3R_SCAN_PATCH_IAI.md`) уложился в пределы (hot ΔIr ≤ +0.017%, refill/flush −0.46…−1.23%, A/A 0.000%), патч S влит отдельным `perf(runtime)` коммитом `18d76472` (скан и курсор ingress стартуют со слова `payload_start / (MIN_BLOCK * 64)`; слова ниже — нули по построению, т.к. выдача и reclaim отвергают смещения ниже `payload_start`); гейт импортов для наборов без `alloc-global`/`alloc-xthread` — `ccb668d4`. Мутант (+1 слово) краснит `r8_owner_sidecar_miss`; `tests/r9_bounded_background_maintenance.rs` ожидает позиции от START. Остаток исходной формулировки — пропуск ПУСТЫХ payload-слов (иерархический summary-bitmap) — не реализован и не открыт: в PG-3r-атрибуции он не выделялся как цена refill; новая карточка — только по такому измерению.
+
+## 85 — own-thread free resolved the segment root twice (closure narrative, 2026-10-11)
+
+85. **[L] oxx R17 PRF-02 — own-thread free resolves the segment root twice.** (Filed 2026-10-11, src review round 17; solution researched 2026-10-11.)
+
+    - **Status:** OPEN — decision recorded, implementation scheduled (round 19, witness type `OwnedBlock`); not measured. No `perf(runtime)` claim until the gate below passes.
+    - **Current-number-or-verdict:** `src/registry/heap_core_xthread/routing.rs` resolves `(base, block)` through `canonical_block_of`, then `dealloc_own_thread_with_base` resolves the same key again; the second lookup is a provable no-op on the three production callers (static analysis, not a run). Historical own-free cost, paired `dealloc_free_only_16b_n9 − n8`: 45 → 65 → 70 → 70 Ir across the committed logs; static estimate of the removable share is -11…-15 Ir per own free and of commit `36ba3758`'s new lower-bound check +4…6 Ir (both ESTIMATES, no committed iai log after `265a571a`). The old "free ≤ 50 Ir" target is not reachable without dropping mandatory guards (Ph3b, R1-01, SEC-01).
+    - **Next trigger:** preregistered A/B iai gate on `HeapCore::dealloc` with three arms (before `36ba3758`, HEAD, HEAD + `OwnedBlock`), mimalloc control ΔIr = 0 and a path-activation oracle (Tier-1 lookup count = 1 per free); sketch in the research report §5.
+    - **Evidence:** `docs/reviews/2026-10-11-solution-research-free-path-prf02.md`; `docs/reviews/2026-10-08-src-review-oxx-round-17-performance.md` R17-PRF-02; raw logs `docs/perf/_raw_task1999_alloc_zeroed_stub_gap_after_1982.log`, `_raw_ph6b_iai_base_run1.log`, `_raw_ph6b_iai_cand_run1.log`, `_raw_r16_perf84_A1.log`.
+
+**Closure.** 2026-10-11 (R19): the witness type `OwnedBlock` {root, block} replaces the second mutable canonical lookup inside `dealloc_own_thread_with_base`; `dealloc_routing` and `realloc` resolve once and the body consumes the witness (realloc keeps it across the move and promotion tails). Magazine/bitmap guards, hardened Large handling and the Large substrate fall-through are unchanged; only `alloc-global` + `fastbin` builds lose the lookup.
+
+Gate history. First gate (`docs/perf/R19_PRF02_OWN_FREE_SINGLE_RESOLVE_GATE.md`): B met the benefit thresholds but the preregistered symmetric Large control band (+-10) was exceeded in the favourable direction (-18/-21 Ir), so the gate returned NO-GO; C (Unknown rejection with a split boundary) measured +8 Ir/push, NO-GO. R19-PRF02-R (`docs/perf/R19_PRF02R_PREREGISTRATION.md`, preregistered before any new measurement, source identity pinned first) kept the benefit thresholds, added code-derived predictions for root resolutions (Large own free -1, realloc move tail -1, promotion tail -1, all other paths 0) and replaced the Large band by a one-sided one marked as rewritten after observation and not evidence. Result (`docs/perf/R19_PRF02R_REGATE.md`): GO.
+
+Numbers (deterministic iai, first Instructions column, base `042e88fb`, two identical repeats per arm). Production axis: push 69 -> 52 Ir (-17 of 69, -24.6 %), churn 84 -> 70 Ir per pair (-896 of 64 pairs = -14, -16.7 % of 84). Instrumented axis: push 74 -> 53 (-21), churn 99 -> 80 per pair (-19). Large cycle -18/-21 Ir (control, favourable). mimalloc control 0/0. Root resolutions: Large own free 3 -> 2, realloc move tail 1 -> 0, promotion tail 1 -> 0, 16 small frees 32 -> 16, in-place realloc unchanged. Not measured: wall-clock, cross-thread and non-fastbin frees (unchanged by construction).
+
+C-prime (B + Unknown-only rejection, the one attempt granted by the arbiter): push +11 Ir on both axes and raw churn +704..+1410, outside the preregistered [-3,+1] / +10 gates, NO-GO (`docs/perf/R19_PRF02C_RESULT.md`); candidate and hooks removed. The Unknown-kind rejection invariant stays open as a separate owner decision. Tests: `tests/heapcore_own_free_single_canonical_lookup.rs`, `tests/r19_prf02r_realloc_tail.rs` (both fail when the second lookup returns).
+
+## 86 — PRF-03 retained Large route (closure narrative, 2026-10-12)
+
+86. **[L] oxx R17 PRF-03 — the Large cache drops and re-registers the directory route on every deposit/hit cycle.** (Filed 2026-10-11, src review round 17; solution researched 2026-10-11.)
+
+    - **Status:** NO-GO under the frozen criteria for both gated candidates (run 01 candidate B `217c5339`, run 02 candidate B2 `82992739`; judge verdicts INCONCLUSIVE because of native A/A noise, with the iai axis failed independently). Neither is merged (branches `r19-prf03-impl`, `r19-prf03-b2`). Reopen only through an owner-approved NEW preregistered protocol version for R3 and the controls — never a retroactive threshold fit (reviewer decision `docs/reviews/2026-10-12-prf03-run01-decision-reviewer.md`).
+    - **Current-number-or-verdict:** one hit + return cycle costs, on the route side: 2 System allocations, 2 System frees, 2 shard-lock acquisitions, one global CAS on `next_incarnation` and one `refs.fetch_sub` (no foreign pin in the single-threaded bench, so both physical frees run inside the cycle). Hit minus prefill: 378 Ir (`_raw_task1999_...:678–679`, predates `RouteDirectory`) → 1 340 (`_raw_ph3a_iai_before.log:664–665`) → 1 303 (`_raw_r16_perf83_A1.log:125–126`); the route share is an ESTIMATE of 300–700 Ir and the growth must not be attributed to routes wholesale (no bisect). Correctness conditions for B: lookup answers "no route" for CACHED/INITIALIZING/RELEASED phases; reuse only when the payload address matches (it depends on `align`); route removed before `os::release_segment` on all five release paths; own free accepts LIVE and PENDING.
+    - **Run 01 numbers (A `6904dced` vs B `217c5339`, deterministic Ir):** R1 hit-minus-prefill 1259 -> 824 (-435, threshold -200: met); R2 -564 of 109619; R3 (changed payload) +151 against T = 12: FAILED; 7 small-class controls +55..+113 against T = 10 (libc memcpy +48 / memset +7 attributed by function-level diff) and 2 mimalloc cells +7 against exact 0 (the same +7 memset, i.e. worktree-path/alignment noise, not B code): FAILED; 10 of 27 iai cells fail. Native (real `#[global_allocator]`): B faster on all six axes (ns/op -18.8/-26.2/-18.5 %, p99 -33.2/-57.1/-72.7 % at n = 1/4/8) but 3 of 6 axes have A/A noise above the frozen 5 % on a loaded host → INCONCLUSIVE, no speedup claimed.
+    - **Run 02 numbers (A `7e7da281` vs B2 `82992739`, equal-length arm paths per amendment A3):** R1 1253 -> 760 Ir (-493: met); R2 -1181 of 109373; R3 +119 against T = 10: FAILED; 7 small-class controls are CHEAPER by 107..114 Ir (libc memcpy -101 and `new_with_config_and_owner` -13, a one-time construction saving) which still fails the two-sided |delta| <= T rule; all 13 mimalloc cells exactly 0 (the run-01 +7 was a path-shape confounder, now removed); 8 of 27 iai cells fail. Native: B2 faster on all six axes (ns/op -2.0/-33.9/-43.4 %, p99 0.0/-60.0/-85.7 % at n = 1/4/8) but 4 of 6 axes have A/A noise above 5 % on a loaded host → INCONCLUSIVE, no speedup claimed. Report: `docs/perf/R19_PRF03_B2_VS_A_GATE.md`.
+    - **Next trigger:** none scheduled. HUMAN question: the retained route removes ~35-39 % of the instructions of a Large cache hit and is natively faster at N >= 4, but the frozen R3 rule (changed payload, B - A <= max(10, |C0 - A1|)) cannot hold for a design that must discard and re-create a parked route (+119..+151 Ir per nine cycles), and the two-sided control rule fails on unrelated one-time savings; an owner who wants the optimisation must approve a new protocol version with re-scoped R3/control bounds (with an independent justification) before a fresh gate. Correction (2026-10-12 review, `docs/reviews/2026-10-12-prf-open-questions-reviewer-answers.md` §2, checked against `benches/perf_gate_iai.rs` and `scripts/r19_prf03_large_route_retain_gate.mjs`): R3 is the cost of ONE changed-payload hit round (hit body = eight prefill rounds plus one round, minus the prefill body), so +119..+151 Ir is per round, not 'per nine cycles', and that 'cannot hold' is not proven for a design that keeps the reservation descriptor and replaces only the issue snapshot. The reviewer recommends such a redesign with R1/R3/control criteria unchanged. The arbiter @ox (same review §4) accepts it with changes: no rekey (the route key is invariant on the cache path), controls judged by the N/2N slope plus a separate one-sided construction cell, Loom/Miri on the actual types, a cheap Large-hit activation count before any work, and last priority; closing (c) is the fallback if hits are rare. Owner decision pending.
+    - **Evidence:** `docs/perf/R19_PRF03_B2_VS_A_GATE.md` (+ `docs/perf/R19_PRF03_B2_run02/`), `docs/perf/R19_PRF03_B_VS_A_GATE.md` (+ `docs/perf/R19_PRF03_B_run01/`), `docs/perf/R19_PRF03_LARGE_ROUTE_RETAIN_PREREG.md` (A1, A2), `docs/reviews/2026-10-11-prf03-runner-decisions-ox.md`; `docs/reviews/2026-10-11-solution-research-large-route-prf03.md`; `docs/reviews/2026-10-08-src-review-oxx-round-17-performance.md` R17-PRF-03 / R17-OPT-06.
+
+**Closure.** 2026-10-12, variant (c) of the arbiter fallback ("redesign only if frequent Large cache hits are shown, otherwise close with an archive reference and a hook re-evaluation"; owner decision: do as the arbiter recommended). Basis: `docs/perf/R20_PRF03_LARGE_HIT_ACTIVATION.md` (+ `_summary.csv`, `docs/perf/_raw_r20_prf03_large_hit_activation.log`, `scripts/r20_prf03_large_hit_activation_table.mjs`): the repository benches issue 0 Large requests; on four synthetic Large shapes changed-payload hits are 0 of 360, 600, 400 and 800 requests; the only nonzero count is the adversarial alternating-alignment shape (79 of 120), 80 of 2282 overall. The orchestrator re-ran the example and reproduced every number. The payload offset changes only when the requested alignment class crosses the page size, so the zeros are a mechanism confirmed by measurement, not evidence about real applications.
+
+Reading and limits. R3 of the NO-GO verdicts is the cost of one changed-payload round (hit body = eight prefill rounds plus one round, minus the prefill body), so the earlier "per nine cycles" wording was a denominator error, and "R3 cannot hold" was never proved for a design that keeps the reservation descriptor. The closure does not claim the retained route is worthless: its R1 benefit (-435 / -493 Ir per hit) is small next to touching a buffer of at least 253 KiB and its multi-thread value was only directional on a noisy host. No real application traces were run.
+
+Hooks. Main carries no PRF-03 source hook: candidates B and B2 live on `r19-prf03-impl` / `r19-prf03-b2`, the activation probe on `r20-prf03-activation` (`a5508d8b`); the R19 harness (`benches/support/r19_prf03.rs`, `large_cache_payload_*` iai cells, `scripts/r19_prf03_*`) stays as archived benchmark code.
+
+Reopen trigger. Real application traces with frequent Large cache hits on a quiet multi-thread host; a new preregistered protocol must weight R3 by the measured changed-payload frequency and take its budgets from principle, never from the R19 numbers.
+
+## 82 — PRF-01 discovery summary / trust in a negative directory answer (closure narrative, 2026-10-14)
+
+82. **[L] fxx R12-03(b) / O-4 — доверие отрицательному ответу директории при маршрутизированной таблице: НЕ СЕЙЧАС.** (Filed 2026-10-06, round 12.)
+
+    - **Status:** CLOSED 2026-10-14 — NO-GO (C‴ default-path gate, run 38607822194); owner rejected C‴ and the flag fallback. Pre-closure status: C'' NO-GO (R20 CI run 38431619600, recorded below); owner 2026-10-13/14 chose the C‴ redesign per the ox design, target = default-path behaviour WITHOUT a user flag if the cost gate passes; the `RemoteFreeDiscovery` flag (default `FullScan`) is only the fallback if the producer price fails; P1-1 contract/StateMachine docs (2026-10-14) record the proposal as gated (`docs/REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md` §13, `docs/CROSS_THREAD_STATE_MACHINES.md` §10).
+    - **Current-number-or-verdict:** R20 v2 candidate C'' (`edf90675`, CI run 38431619600) NO-GO — benefit cells pass (multiseg B/A 382467/4022898 = 0.095, seg_cycle 895801/12364116 = 0.072, growth16 slope 2.105) but producer +53376/4096 = +13.03 Ir/free (budget ≤ +6) and construction +641 Ir (budget 0 + T_s 10) fail; native axis deferred; report `docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01_REPORT.md`, data `docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01/`. R19 C′ run01 NO-GO (arm B `6a8c9d97` over A `0fffe021`, `SeferAlloc` as `GlobalAlloc` -> routed `HeapCore`, deterministic Ir): benefit B/A 0.113 / 0.090 / slope 2.144 (limits 0.25 / 0.25 / 2.5), four hot controls +569 Ir each (T = 10) and producer +9.03125 Ir/free (budget ≤ +6) failed; machine verdict INCOMPLETE (native `p50Ns == 0` in 13 of 108 rows); the +569 is a fixed per-instance cost (+512 memset of the extra sidecar bytes, +32 `RouteScan::next_cut`, +25 `drain_segment_sidecar`), not a per-operation tax; the per-operation neutrality (the `small_churn_16b_2n` slope) was never in the PRF-01 inventory. R18 measured the routed discovery scan (Growth/Cycles/Publication: 99/275/92 scans; candidate mode retired 32 more Ir per scenario; lower estimated cycles are Callgrind's model, not native latency), no production promotion, no numeric GO threshold registered. Directory authority remains false: remote pending bits, paused publishers and per-instance routing still prevent trusting a directory miss. Design reference: `docs/reviews/2026-10-13-r20-prf01-remote-free-discovery-flag-design.md` — C‴ moves the summary into the dead prefix `pending[0..64)` of the same sidecar, keeps `lock or` as the linearization point (result unused), expected about +5 Ir/free, about 0 construction, +0 sidecar bytes.
+    - **Next trigger:** tasks P1-2..P1-6 in order: (P1-2) actual-source Loom on real sources (`sidecar_bitmap.rs`, `bitmap_scan.rs`) incl. the current fixed protocol; (P1-3) strict trim from payload start + Gate S (`perf(runtime)`); (P1-4) preregistration of C‴ (freeze hashes before any candidate build); (P1-5) C‴ candidate; (P1-6) the DECIDING gate for the default no-flag path: benefit + price (the design's Gate P budgets, A = main): multiseg_cold_256k B/A ≤ 0.25; seg_cycle_decommit_256k B/A ≤ 0.25; growth16 slope ≤ 2.5; r19_prf01_publication net B ≤ A; producer same-word ≤ +6 Ir/free; producer distinct-words ≤ +10 Ir/free; construction 0 + T_s; hot families slope-neutral; sizeof Δ 0; merge of the default-path change only on GO. Gate Z (zero tax: off = main, all budgets 0, summary counters 0) belongs ONLY to the fallback RemoteFreeDiscovery flag path (task P1-7, outside this card's trigger chain). Gate S (strict trim from payload start) stays with P1-3. Standing 2026-10-12 review constraints: frozen control geometry; the +6 Ir/free budget stands; no post-hoc budget (the arbiter rejected the proposed 3 % relative budget as a post-hoc fit admitting the seen +569 Ir and +9.03 Ir/free). Run01 raw profiles were archived outside the repo (worktrees removed 2026-10-12); the hashes in `docs/perf/R19_PRF01_C_PRIME_RUN01/MANIFEST.txt` still verify any copy.
+    - **Evidence:** `docs/perf/R19_PRF01_C_PRIME_GATE_RUN01.md` (+ `docs/perf/R19_PRF01_C_PRIME_RUN01/`), `docs/perf/R19_PRF01_PRODUCER_PREFLIGHT_B03.md`, `docs/perf/R19_PRF01_SIDECAR_SUMMARY_PREREG.md` (Amendments A, B); `docs/perf/R35_SIDE_CAR_SCAN_PREFILTER_GATE.md`, `R35_SIDE_CAR_SCAN_PREFILTER_GATE_summary.csv`, `docs/perf/r35_sidecar_scan_evidence_test_oracle_final/` and the cited root raw logs; `docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01_REPORT.md` (+ `docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01/`); `docs/reviews/2026-10-08-src-review-xxs-round-17-P2.md`, R18 execution follow-up; `docs/reviews/2026-10-12-prf-open-questions-reviewer-answers.md` (§1, §4); `docs/reviews/2026-10-13-r20-prf01-remote-free-discovery-flag-design.md`; current cfg/bench-internals guards in `src/alloc_core/segment/remote_bitmap/bitmap_scan.rs`. Perf 70's producer-contention axis remains separate and OPEN.
+
+
+**Closure.** 2026-10-14, NO-GO. The P1-6 default-path gate for C‴ (summary in the dead prefix `pending[0..64)` of the same sidecar) ran as a PR check on draft PR #29 (run 38607822194; B = `157d6c668c4c01f07c61efc5a68563d5f131cc0d`, A = `02806ba73e0716d0989844c41ea7a3300c51570d`; acceptance verifier PASS, 234 anchored files). Benefit cells passed: multiseg 316378/4023043 = 0.079, seg_cycle 692476/12364261 = 0.056, growth16 slope 33016978/15943242 = 2.071, and publication net −4130792 Ir. The price failed: same-word producer +33280/4096 = +8.125 Ir per free (budget +6), distinct-word +65536/4096 = +16 (budget +10), strict trim and bounded maintenance +99 each (abs(Δ) ≤ T_s), construction +42 (0 + T_s 10). `mimalloc_bootstrap_proxy` B2 +480 on the same binary is a harness nondeterminism, filed as item 89. Owner decision the same day: "удаляем и флаг и функционал" — PR #29 closed unmerged, P1-7 (`RemoteFreeDiscovery` flag) dropped. Report: `docs/perf/R20_PRF01_C3_RUN01_REPORT.md` (+ `docs/perf/R20_PRF01_C3_RUN01/`).
+
+Reading and limits. Three producer-marked summaries were gated: C′ +9.03, C'' +13.03, and C‴ +8.125 / +16 Ir per remote free. Each puts a summary-word access on every remote free, so the hot producer path pays for faster owner discovery. Native latency and contention were never measured (deferred). Directory authority stays false: remote pending bits, paused publishers and per-instance routing still prevent trusting a directory miss.
+
+Hooks. Main carries no C‴ source hook: the candidate's `dbg_prf01_c3_*` oracle hooks and the paused-publish test hooks live only on `p1-5-c3-candidate` (`refs/pull/29/head` = `38193d47`). The C3 harness (prereg, judge, runner, verifier, cells, `examples/r20_prf01_c3_oracle.rs`) stays as archived benchmark code. P1-2 (actual-source Loom model) and P1-3 (strict trim from payload start) concern the shipped protocol and stay. The C‴ protocol text (`docs/REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md` §13, `docs/CROSS_THREAD_STATE_MACHINES.md` §10) is marked REJECTED.
+
+Reopen trigger. Either a design that removes summary work from the producer path, for example the owner-side OPT-01 load-before-swap in item 88, or a measured application workload whose owner discovery cost justifies a principled new producer budget. Either way it needs a new preregistered gate; the frozen budgets are never refitted to these numbers.
+
+## 87 — PRF-04 registry claim reuse (closure narrative, 2026-10-15)
+
+87. **[L] oxx R17 PRF-04 — fresh-first registry claim materialises extra heaps under barrier-wave thread churn.** (Filed 2026-10-11, src review round 17; solution researched 2026-10-11.)
+
+    - **Status:** CLOSED 2026-10-15 — GO (deterministic; native deferred), shipped via PR #28 (ReuseFirst, PRF-04 v2 gate run 38682260617). Pre-closure status: 2026-10-12 — candidate V4′ (`6951a9d0`, branch `r20-prf04-v4prime`, not merged) PASSES the deterministic claim-path Ir gate (frozen judge **GO**, `docs/perf/R20_PRF04_CLAIM_PATH_GATE.md`): +8 Ir at the start cell (budget 10), +8 Ir per cold claim (+0.02 %), +15 Ir per recycled claim+release pair (+0.46 %, budget +5 %), and in the wave state B takes N−1 claims from its free-slot set with zero new heaps while main bumps N−1 heaps (−34463 Ir, −91.40 % per claim); native axes (R-live, wave p99, idle commit) still unevaluated, need a quiet bare-metal host. Earlier verdict: NO-GO by the frozen rules for candidate V4 (run 02, quiet-ish host, `docs/perf/R19_PRF04_B_VS_A_GATE_RUN02.md`): BENEFIT met again (-99.2 %), KILL-2/KILL-3 not fired, KILL-1 (R-live first-call p50) FIRED on the median ratio (+19.08 %, 1429800 / 7494400 ns; A/A band 4.33 % <= 5 %). The same data show the R-live estimator cannot resolve 5 % at 40 processes per arm (paired t p = 0.969, 95 % bootstrap interval of the median difference [-402700, 3213150] ns contains 0). V4 NOT merged (branch `r19-prf04-v4`, `9ad4ccf6`).
+    - **Current-number-or-verdict:** barrier waves K=32, W=128: arm A holds 3970 heaps and an idle commit-charge median of 5420187648 B; arm B (V4, commit `9ad4ccf6`) holds 45465600 B, a 99.2 % (5374722048 / 5420187648) reduction; first-allocating-call p99 -82.7 % (-3389200 / 4097600 ns), R-churn wall -1.6 % (-53711500 / 3278041500 ns) within its 4.6 % bound, R-live p50 -12.9 % (-1127750 / 8735600 ns) but its A/A band is 13.8 % against the 5 % limit, so the axis is INCONCLUSIVE and GO is not issued (owner decision, question 3). Derived by one script from 492 validated slots; raw samples not committed (tier 3).
+    - **Next trigger:** OWNER decision on merging V4′ as a `perf(runtime)` change (gate report §6; native R-live +19.08 % of run02 stays a standing caveat for a quiet host). Earlier trigger text follows. HUMAN / arbiter decision, not a rerun: either accept NO-GO, or approve a NEW preregistered KILL-1 estimator (for example a confidence-interval or rank test with a preregistered process count, decided before new data; never a re-reading of run 01 / run 02) and rerun the unchanged schedule on a quiet host. The run-01 and run-02 verdicts are not replaced. Two reviews on 2026-10-12 (`docs/reviews/2026-10-12-prf-open-questions-reviewer-answers.md` §3 and §4): a reviewer proposed a NEW preregistered KILL-1 estimator (one-sided non-inferiority on the log ratio of per-process p50, 320 ABBA blocks per mode, cold / recycled / wave); the arbiter @ox accepts the direction (V4 stays unmerged) but rejects that estimator: on the committed run02 data the block SD is 0.97-1.33 against the required 0.20, so its power at 320 blocks is about 2-3.5 % (about 6300-11900 blocks per mode would be needed). Recommended instead: deterministic Ir of the claim path (first allocating call in a new thread through the real `GlobalAlloc`, cold and recycled, the owner 5 % as relative Ir fixed before the build) as the primary KILL-1, thread CPU time with K not above the hardware threads as the native check, wall-clock K64 only descriptive; separate `free_set` onto its own cache line and register `dbg_forget_free_slot_hint` in the dbg-hook tables before a new V4-prime gate. First priority of the three. Owner decision pending.
+    - **Evidence:** `docs/perf/R19_PRF04_B_VS_A_GATE_RUN02.md` + `docs/perf/R19_PRF04_B_run02/` (+ `scripts/r19_prf04_live_dispersion.mjs`), `docs/perf/R19_PRF04_B_VS_A_GATE.md` + `docs/perf/R19_PRF04_B_run01/`; preregistration `docs/perf/R19_PRF04_GATE2B_PREREG.md`; phase 1 `docs/perf/R19_PRF04_THREAD_WAVE_GATE.md`; claim-path Ir gate `docs/perf/R20_PRF04_CLAIM_PATH_GATE.md` + `docs/perf/R20_PRF04_CLAIM_PATH_RUN01/` (preregistration `docs/perf/R20_PRF04_CLAIM_PATH_PREREG.md`); `docs/reviews/2026-10-11-solution-research-registry-claim-prf04.md`; `docs/reviews/2026-10-11-owner-questions-decisions-ox.md` question 3.
+
+**Closure.** 2026-10-15. Candidate V4′ was not merged. Its successor ReuseFirst (hint spill into a FREE-slot bitmap; P4-2, PR #28) passed the official PRF-04 heap-reuse gate under protocol v2 (`docs/perf/R20_PRF04_HEAP_REUSE_PREREG.md` §7): GO (deterministic; native deferred), run 38682260617, B `50c902217d551f0c8df6e3cb1390756f37cdebdd` over A `3cc870a9b09353a96cf8c5250d9f479936f5e954`. Benefit: waves at 12962/558283 (L1) and 82133/740979 (L2) of A. Price at the shipping layer (L2): +7 Ir per cold claim, +7 per recycled pair and +12 per release, each under 1% of its A window. The added cost is exactly linear (delta deviation 0). Run01 (38652419070, B `942360b9`) stands as INVALID under v1: absolute-arm linearity failed identically in every arm (allocator state plus a harness front-drain), and the L1 per-work allowances sat below the shipping layer. v2 was written after run01 and discloses that. Report: `docs/perf/R20_PRF04_HEAP_REUSE_RUN02_REPORT.md` (+ `docs/perf/R20_PRF04_HEAP_REUSE_RUN02/`, `docs/perf/R20_PRF04_HEAP_REUSE_RUN01/`).
+
+Hooks. The candidate adds the bench-internals observers `dbg_forget_free_slot_hint`, `dbg_free_slot_hint_popcount` and `dbg_registry_free_set_claims`, used by the shipped gate harness and tests. They stay, inventoried by `scripts/verify-dbg-hook-safety.mjs`.
+
+Reopen trigger. A native A/B on a quiet bare-metal host (R-live, wave p99, idle commit) that contradicts the deterministic result.
+
+## 72 — `finish_magazine_refill` double walk / owner-stamp removal (closure narrative, 2026-10-15)
+
+72. **[D] fxx R2 §4.1 — `finish_magazine_refill` walked the refilled blocks twice.** (Filed 2026-09-28, fxx round-2 src review; closed 2026-10-15 as R6-T01, round 6.)
+
+    - **Status:** CLOSED — code removed (R6-T01, round 6 2026-10-15); the stamp-dedupe pass and the owner stamp are gone, leaving a single `mark_magazine` pass; the iai A/B gate PASSed on the PR (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`).
+    - **Current-number-or-verdict:** as filed, `src/registry/heap_core/alloc/hot.rs` `finish_magazine_refill` computed `segment_base_of_ptr(p)` in one loop (the stamp-dedupe check feeding `stamp_segment_owner`) and again in a second loop for `mark_magazine`; merging the passes saves `n - 1` mask operations plus loop overhead per refill (`n <= 16`), on the miss path only. The review expected a sub-percent effect.
+    - **Evidence:** `docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` §4.1; `docs/agent_reviews_round6/performance_review.md` R6-PF-1.
+
+**Why the double walk existed.** The first pass existed only to service the stamp dedupe (the OPT-C pattern): `stamp_segment_owner` skipped its conditional `owner_state` write when `segment_base_of_ptr(p)` matched the `last_stamped_segment` cache, so the refill pre-computed each block's segment base to feed that check before `mark_magazine` ran in a second pass over the same `n <= 16` blocks.
+
+**Why the stamp had no production reader.** R6-PF-1 (`docs/agent_reviews_round6/performance_review.md`) could not find a production consumer of the `owner_state` owner id anywhere in `src/`: foreign frees resolve the owning heap through terminal descriptors and the route directory (`Entry.owner`, `canonical_root_for` — `src/registry/heap_core_xthread/routing.rs`), never by unpacking the header stamp. The only reader of the stamped value was the test-only diagnostic `dbg_owner_id_for` (`src/registry/heap_core/diag/queries.rs`). A value written on every refill miss but read by no production path is dead work; its maintenance cost (the extra `segment_base_of_ptr` pass) was the item's subject.
+
+**What was removed (R6-T01).** `stamp_segment_owner` itself, the `last_stamped_segment` field backing the OPT-C dedupe, and the Large cache-hit `owner_state` reset (`src/alloc_core/large/alloc_core_large.rs`). The stamp-dedupe pass in `finish_magazine_refill` disappeared with them, leaving a single `mark_magazine` pass. The `owner_state` header word itself is kept INERT — initialized once by the header constructors, then never updated or read by any production path — to preserve the pinned 144-byte `SegmentHeader` layout; foreign-free routing is unaffected (route directory `Entry.owner` / `canonical_root_for`). The stamp-observer tests (`tests/heap_core_tcache_stamp.rs`, `tests/stamp_cache.rs`) were deleted in the same change; ownership assertions move to a non-panicking canonical-table membership probe (a `dbg_segment_registered_for`-style observer), not to a raw-root readback.
+
+**Gate status.** The iai `HeapCore`/`SeferAlloc` A/B gate PASSed on the R6-T01 PR (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`): `cold_alloc_only_256x16b` −3652 of 113034 Ir, `recycle_alloc_only_256x16b` −7012 of 210316 Ir, `large_cache_hit_only_4mib` −298 of 57904 Ir; no cell of 106 regressed. Wall-clock is not claimed either way.
+
+91. **R6-PF-3 — full Large-sweep on every Large alloc.** (Filed 2026-10-15, round-6 src review; closed 2026-10-16 as R6-T10.)
+
+Every Large alloc swept all live Large sidecar slots and re-read each segment header for an abort check. R6-T10(a) turned the header re-read into a `debug_assert!` (`ActiveKindIndex` plus `claim_large_route`'s root check carry the invariant). R6-T10(b) made `HeapCore`'s Large alloc probe at most 4 slots through the persistent `large_hot_cursor`, the R12-05 shape `alloc_batch` already used; the rotating probe retires remote Large publications over successive allocs, and the full sweep stays on the refill rescue and trim paths. A first version that also swept fully on every Large cache miss broke the R12-05 bounded-probe tests and was removed. Gate: `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md` — `large_cache_eviction_hit_only_41x4mib` −70333 of 298163 Ir; with 16 live Large objects a cache hit costs 1588 Ir instead of 2223 Ir. Test: `tests/r6_t10_large_sweep_invariant.rs`.
+
+95. **R6-PF-7 — runtime `div` on every refill miss.** (Filed 2026-10-15; closed 2026-10-16 as R6-T39 PF-7.)
+
+`refill_n_for_class(block_size(c))` was replaced by `FREE_PARK_CAP[c]`, which holds the same values. `tests/r6_t39_free_park_cap_equals_refill.rs` pins table values for representative classes. Gate: `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`.
+
+98. **R6-PF-10 — Large own-free re-resolved its root.** (Filed 2026-10-15; closed 2026-10-16 as R6-T39 PF-10.)
+
+Both own-thread Large free sites in `dealloc_own_base.rs` pass the `OwnedBlock` root to `AllocCore::dealloc_at_base` instead of re-resolving it. `tests/r6_t39_large_own_free_single_lookup.rs` pins one canonical lookup per free. Gate: `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`.
+
+93. **R6-PF-5 (+R17-OPT-08) — per-record recomputation of segment invariants in owner-drain.** (Filed 2026-10-15, round-6 src review; closed 2026-10-16 as R6-T12, NO-GO.)
+
+The review estimated ~10–20 Ir per reclaimed record from hoisting `kind_at`, payload start, `bump_of` and the metadata views to one computation per scan, batching `dec_live` into one `sub_live(k)`, and replacing `off % block_size` with a compile-time reciprocal. PR #58 built that candidate (`SidecarReclaim`, B `e88c3bce`) and the iai A/B gate measured it against `main` `d3941723`: no cell over threshold, but every drain cell went up — `r19_prf01_publication` +1425 of 3621539, `seg_cycle_decommit_256k` +3559 of 10359137, `multiseg_cold_256k` +1271 of 3389835, and `growth16_n` / `_2n` / `_4n` +26608 / +53232 / +106480, scaling with the work. The code was reverted in the same PR. Gate: `docs/perf/R6_T12_OWNER_DRAIN_CONTEXT_GATE.md`. Next trigger: none; the R6-T06 reciprocal divisibility helper (PR #57) is available if a cheaper shape is proposed.
+
+92. **R6-PF-4 — Tier-1 `own_cache` keys and roots in two parallel arrays plus a `!is_null` check on every free/lookup.** (Filed 2026-10-15, round-6 src review; closed 2026-10-16 as R6-T11.)
+
+- **Status:** CLOSED — R6-T11, PR #43, commit `26c1ae16`.
+- **Current number/verdict:** `own_cache` became a (key, root) pair array with a sentinel key. A/B gate: Tier-1 probe −155 Ir; free/churn cells flat; cold/recycle carves +0.1–0.16%.
+- **Next trigger:** None.
+- **Evidence:** `docs/perf/R6_T11_OWN_CACHE_PAIR_LAYOUT_GATE.md`; `tests/segment_table_own_cache_pair_layout.rs`; PR #43. Test not run in this audit.
+
+99. **R6-CR-6 (perf aspect) — every cold trim resets the segment directory.** (Filed 2026-10-15, round-6 src review; closed 2026-10-16 as R6-T32.)
+
+- **Status:** CLOSED — R6-T32, PR #48, implementation `d69266b7`; task merge `2ffaa7ba`.
+- **Current number/verdict:** `find_segment_with_free_impl` attempts directory materialization before fallback scanning, rebuilding lazily after cold trim. Combined T31/T32 iai gate PASSed its pre-set thresholds; informational/hot Small cells showed small costs.
+- **Next trigger:** None for lazy directory rebuilding. T31's pool decay only runs on allocator activity; the gate does not measure RSS and a completely inactive thread retains up to its configured pool cap.
+- **Evidence:** `tests/r6_t32_directory_rebuild_after_trim.rs`; `docs/perf/R6_T31_T32_POOL_DECAY_DIRECTORY_REBUILD_GATE.md`; `5fffd5a5` gate record. Test not run in this audit.

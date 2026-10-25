@@ -1,0 +1,29 @@
+{
+  "delivery": "owner-path research documentation archive 2026-10-25",
+  "parent_before_documentation_commit": "9f4a4fe41016e465700dc42a0d049d865731f8b0",
+  "commit_range_command": "git log --format='%H %s' 9f4a4fe41016e465700dc42a0d049d865731f8b0..HEAD -- docs",
+  "expected_taxonomy": "bench(docs)",
+  "production_default_features": "unchanged",
+  "shipping_source_changes": 0,
+  "new_features": [],
+  "runtime_performance_commits": 0,
+  "archive_payload_files": 6505,
+  "archive_payload_stored_bytes": 30023403,
+  "archive_payload_uncompressed_bytes": 32624474,
+  "raw_log_selection": "suffix .log[.gz], .ndjson, .callgrind[.log][.gz], .annotate",
+  "raw_log_files": 1039,
+  "raw_log_stored_bytes": 22982464,
+  "raw_log_uncompressed_bytes": 22982464,
+  "normalized_files": 424,
+  "verdicts": {
+    "scalar_issue": "INCONCLUSIVE / DO NOT PROMOTE",
+    "overflow_outline": "NO-GO",
+    "half_flush_split": "NO-GO",
+    "single_flush": "instruction gain; no shipping acceptance",
+    "validated_context_B": "NO-GO FOR PROMOTION",
+    "MIR_C": "not selected",
+    "native_leaf": "INCONCLUSIVE / DO NOT PROMOTE",
+    "native_mixed": "JUDGE FAIL / PRODUCT CANDIDATE NOT OPENED"
+  },
+  "verification": "archive hashes/JSON/size/path checks and seven report-generator --check passes; no build/test/benchmark/doc execution"
+}

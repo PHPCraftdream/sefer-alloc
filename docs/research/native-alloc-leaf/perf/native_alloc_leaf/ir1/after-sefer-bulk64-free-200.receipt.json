@@ -1,0 +1,10 @@
+{
+  "phase": "after",
+  "arm": "sefer",
+  "mode": "bulk64",
+  "axis": "free",
+  "n": 200,
+  "total_ir": 1597650,
+  "callgrind_sha256": "f92629b38defa4c3bcc7ccb5abd6aced095dede94a3761a9e756db3d3bb201ea",
+  "stderr": "==620699== Callgrind, a call-graph generating cache profiler\n==620699== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.\n==620699== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info\n==620699== Command: <workspace>/.rush/native-owner/ir-after/target/release/examples/own_free_wall sefer bulk64 200\n==620699== \n==620699== For interactive control, run 'callgrind_control -h'.\n==620699== \n==620699== Events    : Ir\n==620699== Collected : 1597650\n==620699== \n==620699== I   refs:      1,597,650\n"
+}

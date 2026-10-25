@@ -1,0 +1,10 @@
+{
+  "phase": "after",
+  "arm": "mimalloc",
+  "mode": "64",
+  "axis": "free",
+  "n": 100000,
+  "total_ir": 2800507,
+  "callgrind_sha256": "d5c81aade21d3151774b3afd3532cba51047104f8364190fcd929c121141e303",
+  "stderr": "==620771== Callgrind, a call-graph generating cache profiler\n==620771== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.\n==620771== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info\n==620771== Command: <workspace>/.rush/native-owner/ir-after/target/release/examples/own_free_profile mimalloc 64 100000\n==620771== \n==620771== For interactive control, run 'callgrind_control -h'.\n==620771== \n==620771== Events    : Ir\n==620771== Collected : 2800507\n==620771== \n==620771== I   refs:      2,800,507\n"
+}

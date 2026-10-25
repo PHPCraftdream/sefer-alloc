@@ -1,0 +1,81 @@
+{
+  "scope": "Owner-path research documents only; no runtime promotion",
+  "trees": [
+    {
+      "slug": "native-alloc-leaf",
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "files": 420,
+      "stored_bytes": 2565533,
+      "uncompressed_bytes": 2565533,
+      "normalized_files": 0,
+      "manifest": "manifest.json.gz"
+    },
+    {
+      "slug": "native-mixed-judge",
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "files": 55,
+      "stored_bytes": 776979,
+      "uncompressed_bytes": 1029556,
+      "normalized_files": 0,
+      "manifest": "manifest.json"
+    },
+    {
+      "slug": "own-free-context",
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "files": 2995,
+      "stored_bytes": 6116850,
+      "uncompressed_bytes": 6188752,
+      "normalized_files": 168,
+      "manifest": "manifest.json.gz"
+    },
+    {
+      "slug": "own-free-cost",
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "files": 355,
+      "stored_bytes": 5952845,
+      "uncompressed_bytes": 5982146,
+      "normalized_files": 82,
+      "manifest": "manifest.json.gz"
+    },
+    {
+      "slug": "own-free-inline",
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "files": 18,
+      "stored_bytes": 124885,
+      "uncompressed_bytes": 125207,
+      "normalized_files": 2,
+      "manifest": "manifest.json"
+    },
+    {
+      "slug": "own-free-single",
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "files": 351,
+      "stored_bytes": 5256918,
+      "uncompressed_bytes": 5260824,
+      "normalized_files": 82,
+      "manifest": "manifest.json.gz"
+    },
+    {
+      "slug": "own-free-split",
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "files": 383,
+      "stored_bytes": 7299060,
+      "uncompressed_bytes": 9215248,
+      "normalized_files": 90,
+      "manifest": "manifest.json.gz"
+    },
+    {
+      "slug": "scalar-issue-prepared",
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "files": 1928,
+      "stored_bytes": 1930333,
+      "uncompressed_bytes": 2257208,
+      "normalized_files": 0,
+      "manifest": "manifest.json.gz"
+    }
+  ],
+  "total_files": 6505,
+  "total_stored_bytes": 30023403,
+  "total_uncompressed_bytes": 32624474,
+  "normalized_files": 424
+}

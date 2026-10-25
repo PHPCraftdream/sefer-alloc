@@ -1,0 +1,36 @@
+{
+  "captured_before_build": "2026-10-24T23:58:37.621Z",
+  "features": "production internals bench-internals",
+  "sequence": [
+    "before",
+    "after",
+    "after",
+    "before"
+  ],
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+  "os": "10.0.19045",
+  "arch": "x64",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+  "arms": {
+    "before": {
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "patch_sha256": "e1eff49a619518de1de6f79142a5233548aa20df3cf6a79f929b445d067bf09b",
+      "inputs": {
+        "benches/global_alloc.rs": "cdc3d754ba5505ce38ed3a94dd0544079b54796d200b53f4b2168125bfa9219e",
+        "scripts/bench-table.mjs": "4cb9982fc0553aaa2881e6b702a235cb56be6dd3c3833f97015bcdd78b751ae2",
+        "scripts/lib.mjs": "cdfd3ae5235607dd5177c873b7cba4ed681090abae6e92793f47e2dbc044e898",
+        "Cargo.lock": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179"
+      }
+    },
+    "after": {
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "patch_sha256": "09f7b1a14032ed8faecbefa39a92c254656b2368b07d94cb7ad1acd086ab1ce4",
+      "inputs": {
+        "benches/global_alloc.rs": "cdc3d754ba5505ce38ed3a94dd0544079b54796d200b53f4b2168125bfa9219e",
+        "scripts/bench-table.mjs": "4cb9982fc0553aaa2881e6b702a235cb56be6dd3c3833f97015bcdd78b751ae2",
+        "scripts/lib.mjs": "cdfd3ae5235607dd5177c873b7cba4ed681090abae6e92793f47e2dbc044e898",
+        "Cargo.lock": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179"
+      }
+    }
+  }
+}

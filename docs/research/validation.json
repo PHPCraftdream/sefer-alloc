@@ -1,0 +1,33 @@
+{
+  "kind": "cargo-free archive/report checks; no new measurements",
+  "generator_checks": [
+    {
+      "script": "worktrees/scalar-issue-prepared/scripts/scalar_issue_report.mjs",
+      "status": 0
+    },
+    {
+      "script": "worktrees/own-free-context/docs/perf/owner_research/generate.mjs",
+      "status": 0
+    },
+    {
+      "script": "worktrees/native-alloc-leaf/docs/perf/native_alloc_leaf/ir1/generate.mjs",
+      "status": 0
+    },
+    {
+      "script": "worktrees/native-alloc-leaf/docs/perf/native_alloc_leaf/native1/generate.mjs",
+      "status": 0
+    },
+    {
+      "script": "worktrees/native-mixed-judge/docs/perf/native_mixed/calibration1/calibrate.mjs",
+      "status": 0
+    },
+    {
+      "script": "worktrees/native-mixed-judge/docs/perf/native_mixed/attribution1/generate.mjs",
+      "status": 0
+    },
+    {
+      "script": "worktrees/native-mixed-judge/docs/perf/native_mixed/cpu2/generate.mjs",
+      "status": 0
+    }
+  ]
+}

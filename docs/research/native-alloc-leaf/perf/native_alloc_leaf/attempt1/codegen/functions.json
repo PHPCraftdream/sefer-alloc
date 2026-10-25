@@ -1,0 +1,194 @@
+{
+  "sha256": "7aca1221a1a29df885a5f3529841774bf52561a1daeda4cbba692e62e184501d",
+  "boundary": "int3-delimited functions; full body and main address references require manual review",
+  "functions": [
+    {
+      "start": 25408,
+      "end": 25764,
+      "file": ".rush/native-owner/leaf-exact-6340.asm",
+      "bytes": 356,
+      "prologue": [
+        "sub    $0x28,%rsp",
+        "mov    %rcx,%rax",
+        "mov    0x61883(%rip),%ecx        # 0x140067bd0",
+        "mov    %gs:0x58,%r9",
+        "",
+        "mov    (%r9,%rcx,8),%rcx",
+        "mov    0x38(%rcx),%rcx",
+        "lea    -0x1(%rcx),%r9",
+        "cmp    $0xfffffffffffffffd,%r9",
+        "ja     0x140006482"
+      ],
+      "calls": [
+        "call   0x140039cd3"
+      ],
+      "stack": [
+        "sub    $0x28,%rsp",
+        "add    $0x28,%rsp",
+        "add    $0x28,%rsp",
+        "add    $0x28,%rsp",
+        "add    $0x28,%rsp"
+      ]
+    },
+    {
+      "start": 25808,
+      "end": 26498,
+      "file": ".rush/native-owner/leaf-exact-64d0.asm",
+      "bytes": 690,
+      "prologue": [
+        "push   %r14",
+        "push   %rsi",
+        "push   %rdi",
+        "push   %rbx",
+        "sub    $0x38,%rsp",
+        "mov    %rdx,%rcx",
+        "mov    0x616ee(%rip),%eax        # 0x140067bd0",
+        "mov    %gs:0x58,%rdx",
+        "",
+        "mov    (%rdx,%rax,8),%rax"
+      ],
+      "calls": [
+        "call   0x14003cda0",
+        "call   0x14003a490",
+        "call   0x1400094e0"
+      ],
+      "stack": [
+        "push   %r14",
+        "push   %rsi",
+        "push   %rdi",
+        "push   %rbx",
+        "sub    $0x38,%rsp",
+        "add    $0x38,%rsp",
+        "pop    %rbx",
+        "pop    %rdi",
+        "pop    %rsi",
+        "pop    %r14"
+      ]
+    },
+    {
+      "start": 26544,
+      "end": 27237,
+      "file": ".rush/native-owner/leaf-exact-67b0.asm",
+      "bytes": 693,
+      "prologue": [
+        "push   %r14",
+        "push   %rsi",
+        "push   %rdi",
+        "push   %rbx",
+        "sub    $0x38,%rsp",
+        "mov    %rdx,%rcx",
+        "mov    0x6140e(%rip),%eax        # 0x140067bd0",
+        "mov    %gs:0x58,%rdx",
+        "",
+        "mov    (%rdx,%rax,8),%rax"
+      ],
+      "calls": [
+        "call   0x14003cda0",
+        "call   0x14003a490",
+        "call   0x1400094e0"
+      ],
+      "stack": [
+        "push   %r14",
+        "push   %rsi",
+        "push   %rdi",
+        "push   %rbx",
+        "sub    $0x38,%rsp",
+        "add    $0x38,%rsp",
+        "pop    %rbx",
+        "pop    %rdi",
+        "pop    %rsi",
+        "pop    %r14"
+      ]
+    },
+    {
+      "start": 28160,
+      "end": 28299,
+      "file": ".rush/native-owner/leaf-exact-6e00.asm",
+      "bytes": 139,
+      "prologue": [
+        "mov    %rcx,%rax",
+        "mov    0x60dc7(%rip),%ecx        # 0x140067bd0",
+        "mov    %gs:0x58,%rdx",
+        "",
+        "mov    (%rdx,%rcx,8),%rcx",
+        "mov    0x38(%rcx),%rcx",
+        "lea    -0x1(%rcx),%rdx",
+        "cmp    $0xfffffffffffffffe,%rdx",
+        "jae    0x140006e78",
+        "movzbl 0x4a8(%rcx),%eax"
+      ],
+      "calls": [],
+      "stack": []
+    },
+    {
+      "start": 28320,
+      "end": 28462,
+      "file": ".rush/native-owner/leaf-exact-6ea0.asm",
+      "bytes": 142,
+      "prologue": [
+        "mov    %rcx,%rax",
+        "mov    0x60d27(%rip),%ecx        # 0x140067bd0",
+        "mov    %gs:0x58,%rdx",
+        "",
+        "mov    (%rdx,%rcx,8),%rcx",
+        "mov    0x38(%rcx),%rcx",
+        "lea    -0x1(%rcx),%rdx",
+        "cmp    $0xfffffffffffffffe,%rdx",
+        "jae    0x140006f1b",
+        "movzbl 0x640(%rcx),%eax"
+      ],
+      "calls": [],
+      "stack": []
+    },
+    {
+      "start": 28496,
+      "end": 30228,
+      "file": ".rush/native-owner/leaf-exact-6f50.asm",
+      "bytes": 1732,
+      "prologue": [
+        "push   %r15",
+        "push   %r14",
+        "push   %r13",
+        "push   %r12",
+        "push   %rsi",
+        "push   %rdi",
+        "push   %rbp",
+        "push   %rbx",
+        "sub    $0x38,%rsp",
+        "mov    0x60c6a(%rip),%eax        # 0x140067bd0"
+      ],
+      "calls": [
+        "call   0x14003b4c0",
+        "call   0x14003a490",
+        "call   0x14003cda0",
+        "call   0x1400094e0",
+        "call   0x1400094e0",
+        "call   0x140009980",
+        "call   0x1400099f0",
+        "call   0x14003c9b0",
+        "call   0x140039cd3",
+        "call   0x140039cd3"
+      ],
+      "stack": [
+        "push   %r15",
+        "push   %r14",
+        "push   %r13",
+        "push   %r12",
+        "push   %rsi",
+        "push   %rdi",
+        "push   %rbp",
+        "push   %rbx",
+        "sub    $0x38,%rsp",
+        "add    $0x38,%rsp",
+        "pop    %rbx",
+        "pop    %rbp",
+        "pop    %rdi",
+        "pop    %rsi",
+        "pop    %r12",
+        "pop    %r13",
+        "pop    %r14",
+        "pop    %r15"
+      ]
+    }
+  ]
+}

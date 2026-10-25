@@ -1,0 +1,8 @@
+{
+  "status": "FAILED_BEFORE_CHILD_LAUNCH",
+  "samples": 0,
+  "mechanism": "Path(__file__).read_text() used Windows default cp1252 for the UTF-8 diagnostic script; this source-copy operation precedes the subprocess loop.",
+  "reproduced_without_benchmark_execution": true,
+  "error": "UnicodeDecodeError: 'charmap' codec can't decode byte 0x9d in position 328: character maps to <undefined>",
+  "fix": "read_text(encoding='utf-8'); separate cpu2 attempt, cpu1 receipt preserved"
+}

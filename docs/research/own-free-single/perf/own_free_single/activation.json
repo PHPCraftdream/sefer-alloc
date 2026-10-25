@@ -1,0 +1,226 @@
+[
+  {
+    "phase": "control-before",
+    "file": "p1-sefer-bulk16k-100.callgrind",
+    "event": "flush_class_internal",
+    "expected": 6000,
+    "actual": 6000
+  },
+  {
+    "phase": "control-before",
+    "file": "p1-sefer-bulk16k-100.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-before",
+    "file": "p1-sefer-bulk16k-200.callgrind",
+    "event": "flush_class_internal",
+    "expected": 12000,
+    "actual": 12000
+  },
+  {
+    "phase": "control-before",
+    "file": "p1-sefer-bulk16k-200.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-before",
+    "file": "p1-sefer-bulk64-100.callgrind",
+    "event": "flush_class_internal",
+    "expected": 600,
+    "actual": 600
+  },
+  {
+    "phase": "control-before",
+    "file": "p1-sefer-bulk64-100.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-before",
+    "file": "p1-sefer-bulk64-200.callgrind",
+    "event": "flush_class_internal",
+    "expected": 1200,
+    "actual": 1200
+  },
+  {
+    "phase": "control-before",
+    "file": "p1-sefer-bulk64-200.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-before",
+    "file": "p2-sefer-bulk16k-100.callgrind",
+    "event": "flush_class_internal",
+    "expected": 6000,
+    "actual": 6000
+  },
+  {
+    "phase": "control-before",
+    "file": "p2-sefer-bulk16k-100.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-before",
+    "file": "p2-sefer-bulk16k-200.callgrind",
+    "event": "flush_class_internal",
+    "expected": 12000,
+    "actual": 12000
+  },
+  {
+    "phase": "control-before",
+    "file": "p2-sefer-bulk16k-200.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-before",
+    "file": "p2-sefer-bulk64-100.callgrind",
+    "event": "flush_class_internal",
+    "expected": 600,
+    "actual": 600
+  },
+  {
+    "phase": "control-before",
+    "file": "p2-sefer-bulk64-100.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-before",
+    "file": "p2-sefer-bulk64-200.callgrind",
+    "event": "flush_class_internal",
+    "expected": 1200,
+    "actual": 1200
+  },
+  {
+    "phase": "control-before",
+    "file": "p2-sefer-bulk64-200.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-after",
+    "file": "p1-sefer-bulk16k-100.callgrind",
+    "event": "flush_class_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-after",
+    "file": "p1-sefer-bulk16k-100.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 6000,
+    "actual": 6000
+  },
+  {
+    "phase": "control-after",
+    "file": "p1-sefer-bulk16k-200.callgrind",
+    "event": "flush_class_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-after",
+    "file": "p1-sefer-bulk16k-200.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 12000,
+    "actual": 12000
+  },
+  {
+    "phase": "control-after",
+    "file": "p1-sefer-bulk64-100.callgrind",
+    "event": "flush_class_internal",
+    "expected": 600,
+    "actual": 600
+  },
+  {
+    "phase": "control-after",
+    "file": "p1-sefer-bulk64-100.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-after",
+    "file": "p1-sefer-bulk64-200.callgrind",
+    "event": "flush_class_internal",
+    "expected": 1200,
+    "actual": 1200
+  },
+  {
+    "phase": "control-after",
+    "file": "p1-sefer-bulk64-200.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-after",
+    "file": "p2-sefer-bulk16k-100.callgrind",
+    "event": "flush_class_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-after",
+    "file": "p2-sefer-bulk16k-100.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 6000,
+    "actual": 6000
+  },
+  {
+    "phase": "control-after",
+    "file": "p2-sefer-bulk16k-200.callgrind",
+    "event": "flush_class_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-after",
+    "file": "p2-sefer-bulk16k-200.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 12000,
+    "actual": 12000
+  },
+  {
+    "phase": "control-after",
+    "file": "p2-sefer-bulk64-100.callgrind",
+    "event": "flush_class_internal",
+    "expected": 600,
+    "actual": 600
+  },
+  {
+    "phase": "control-after",
+    "file": "p2-sefer-bulk64-100.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  },
+  {
+    "phase": "control-after",
+    "file": "p2-sefer-bulk64-200.callgrind",
+    "event": "flush_class_internal",
+    "expected": 1200,
+    "actual": 1200
+  },
+  {
+    "phase": "control-after",
+    "file": "p2-sefer-bulk64-200.callgrind",
+    "event": "flush_one_magazine_internal",
+    "expected": 0,
+    "actual": 0
+  }
+]

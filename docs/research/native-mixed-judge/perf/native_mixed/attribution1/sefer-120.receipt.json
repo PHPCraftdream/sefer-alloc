@@ -1,0 +1,15 @@
+{
+  "arm": "sefer",
+  "repeats": 120,
+  "total_ir": 794345187,
+  "raw_sha256": "ce1423e540b21659eb736fe3d08e2e1651bddd3af9b4e000bae0207f6592fbc4",
+  "raw_bytes": 146956,
+  "warmup_rounds": 1,
+  "workload_ns": 2571805503,
+  "segments_reserved_total": 1,
+  "rss_kib": 29892,
+  "commit_kib": 71768,
+  "completed": true,
+  "archived_normalized_sha256": "389d364de578c0fe70fbc979fd9140e9589c79ada5dbc29ae43d11a756d4f0a1",
+  "source_path_normalization": "workspace and Cargo registry prefixes only; numeric records unchanged"
+}

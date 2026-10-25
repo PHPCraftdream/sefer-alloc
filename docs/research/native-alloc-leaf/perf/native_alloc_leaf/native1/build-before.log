@@ -1,0 +1,90 @@
+
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.46
+   Compiling cfg-if v1.0.4
+   Compiling windows-link v0.2.1
+   Compiling zerocopy v0.8.52
+   Compiling getrandom v0.3.4
+   Compiling autocfg v1.5.1
+   Compiling serde_core v1.0.228
+   Compiling crossbeam-utils v0.8.21
+   Compiling libm v0.2.16
+   Compiling getrandom v0.4.3
+   Compiling crossbeam-epoch v0.9.20
+   Compiling version_check v0.9.5
+   Compiling once_cell v1.21.4
+   Compiling find-msvc-tools v0.1.9
+   Compiling serde v1.0.228
+   Compiling shlex v2.0.1
+   Compiling zmij v1.0.21
+   Compiling regex-syntax v0.8.11
+   Compiling windows-sys v0.61.2
+   Compiling rayon-core v1.13.0
+   Compiling either v1.16.0
+   Compiling serde_json v1.0.150
+   Compiling fastrand v2.4.1
+   Compiling ciborium-io v0.2.2
+   Compiling fnv v1.0.7
+   Compiling num-traits v0.2.19
+   Compiling slotmap v1.1.1
+   Compiling rand_core v0.9.5
+   Compiling bit-vec v0.8.0
+   Compiling itoa v1.0.18
+   Compiling wait-timeout v0.2.1
+   Compiling clap_lex v1.1.0
+   Compiling quick-error v1.2.3
+   Compiling plotters-backend v0.3.7
+   Compiling memchr v2.8.2
+   Compiling cc v1.2.65
+   Compiling anstyle v1.0.14
+   Compiling itertools v0.10.5
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling bit-set v0.8.0
+   Compiling cast v0.3.0
+   Compiling clap_builder v4.6.0
+   Compiling plotters-svg v0.3.7
+   Compiling bitflags v2.13.0
+   Compiling unarray v0.1.4
+   Compiling once-ptr-cell v0.1.0 (<workspace>\worktrees\own-free-before\crates\once-ptr-cell)
+   Compiling crossbeam-deque v0.8.6
+   Compiling proc-memstat v0.1.0 (<workspace>\worktrees\own-free-before\crates\proc-memstat)
+   Compiling oorandom v11.1.5
+   Compiling sefer-region v0.2.0 (<workspace>\worktrees\own-free-before\crates\sefer-region)
+   Compiling size-classes v0.1.0 (<workspace>\worktrees\own-free-before\crates\size-classes)
+   Compiling tempfile v3.27.0
+   Compiling winapi-util v0.1.11
+   Compiling is-terminal v0.4.17
+   Compiling pin-project-lite v0.2.17
+   Compiling aligned-vmem v0.2.0 (<workspace>\worktrees\own-free-before\crates\aligned-vmem)
+   Compiling syn v2.0.118
+   Compiling anes v0.1.6
+   Compiling proc-probe v0.1.0 (<workspace>\worktrees\own-free-before\crates\proc-probe)
+   Compiling libmimalloc-sys v0.1.49
+   Compiling malloc-bench-rs v0.1.0 (<workspace>\worktrees\own-free-before\crates\malloc-bench-rs)
+   Compiling same-file v1.0.6
+   Compiling sefer-alloc v0.3.0 (<workspace>\worktrees\own-free-before)
+   Compiling mimalloc v0.1.52
+   Compiling walkdir v2.5.0
+   Compiling criterion-plot v0.5.0
+   Compiling rusty-fork v0.3.1
+   Compiling rayon v1.12.0
+   Compiling plotters v0.3.7
+   Compiling zerocopy-derive v0.8.52
+   Compiling serde_derive v1.0.228
+   Compiling tokio-macros v2.7.0
+   Compiling tokio v1.52.3
+   Compiling regex-automata v0.4.14
+   Compiling tinytemplate v1.2.1
+   Compiling clap v4.6.1
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling regex v1.12.4
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+   Compiling globalalloc-model v0.1.0 (<workspace>\worktrees\own-free-before\crates\globalalloc-model)
+    Finished `release` profile [optimized] target(s) in 2m 35s

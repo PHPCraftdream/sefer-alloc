@@ -1,0 +1,195 @@
+{
+  "alloc": [
+    {
+      "mode": "rt",
+      "before": {
+        "totals": [
+          3056628,
+          5832332
+        ],
+        "marginal_ir_per_alloc": 55.51408
+      },
+      "after": {
+        "totals": [
+          3056628,
+          5832332
+        ],
+        "marginal_ir_per_alloc": 55.51408
+      }
+    },
+    {
+      "mode": "16",
+      "before": {
+        "totals": [
+          1148611,
+          2248611
+        ],
+        "marginal_ir_per_alloc": 22
+      },
+      "after": {
+        "totals": [
+          1148611,
+          2248611
+        ],
+        "marginal_ir_per_alloc": 22
+      }
+    },
+    {
+      "mode": "64",
+      "before": {
+        "totals": [
+          1148611,
+          2248611
+        ],
+        "marginal_ir_per_alloc": 22
+      },
+      "after": {
+        "totals": [
+          1148611,
+          2248611
+        ],
+        "marginal_ir_per_alloc": 22
+      }
+    }
+  ],
+  "clear": {
+    "same_normalized_instruction_sequence": true,
+    "non_null_clear_instructions": 128,
+    "shared_black_box_address_instruction": 1,
+    "paired_before": 107,
+    "paired_after": 155,
+    "paired_delta": 48,
+    "verdict": "Парное вычитание не изолирует clear: 16 clear-блоков одинаковы; разница находится вне них. Это не доказательство полной нерегрессии всех alloc workloads."
+  },
+  "normalized_clear_sequence": [
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "lea    STACK(%rsp),%rdx",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)",
+    "mov    STACK(%rsp),%rax",
+    "test   %rax,%rax",
+    "je NEXT",
+    "mov    %rax,%rcx",
+    "and    $0xffffffffffc00000,%rcx",
+    "shr    $0x4,%eax",
+    "and    $0x3ffff,%eax",
+    "andb   $0x3f,0x1588(%rcx,%rax,1)"
+  ]
+}

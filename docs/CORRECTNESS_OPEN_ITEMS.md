@@ -143,6 +143,10 @@ job). Lookup rows updated; card counts in the tier files re-typed.
 
 ---
 
+**Native owner-path round (2026-10-25, task #29).** Все ACTIVE/thematic tier files прочитаны; per-record disposition и snapshot hashes: `docs/design/2026-10-25-native-owner-round-start.md`, `docs/perf/native_owner_codegen/round_start.json`. Все прежние correctness/CI statuses и triggers сохранены: native disassembly не закрывает test/model/platform acceptance. Для нового alloc-entry особо сохраняются item 164 (Box residual), 185 (process-exit semantics), 196 (TLS portability hypothesis), 226 (instrumented/production distinction). Локальные tests/Miri/Loom/doc и публикация этим раундом не разрешаются.
+
+**Native mixed round (2026-10-25, task #32).** Все ACTIVE/thematic файлы byte-identical прежнему полностью прочитанному snapshot; top-index отличается только прочитанной round-note. Hash/disposition receipt: `docs/design/2026-10-25-native-mixed-round-start.md`, `docs/perf/native_mixed_round_start.json`. Сохраняются все correctness/CI status/trigger, особенно Box164, exit185, TLS196, production/instrumented226; benchmark calibration не закрывает эти обязательства.
+
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
 [T] tier RE-split by THEME, not item-number range, task #1222, same day)
 

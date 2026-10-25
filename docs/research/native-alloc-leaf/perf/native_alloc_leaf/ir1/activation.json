@@ -1,0 +1,194 @@
+[
+  {
+    "phase": "before",
+    "mode": "rt",
+    "n": 100000,
+    "expected_allocs": 100768,
+    "observed_allocs": 100768,
+    "magazine_hits": 99858,
+    "refills": 910,
+    "callgraph": [
+      {
+        "name": "<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow",
+        "calls": 910
+      }
+    ],
+    "raw_callgrind_sha256": "bb9f69d1b6cb152d5e74f303e5092ab872f76dfa4eb331ac4431d210ce8cfb4d"
+  },
+  {
+    "phase": "before",
+    "mode": "16",
+    "n": 100000,
+    "expected_allocs": 100016,
+    "observed_allocs": 100016,
+    "magazine_hits": 100015,
+    "refills": 1,
+    "callgraph": [
+      {
+        "name": "<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow",
+        "calls": 1
+      }
+    ],
+    "raw_callgrind_sha256": "42643a7861945370178454bc0f3165f4a20b499b28d20707daacfc6f8f28cd9e"
+  },
+  {
+    "phase": "before",
+    "mode": "64",
+    "n": 100000,
+    "expected_allocs": 100016,
+    "observed_allocs": 100016,
+    "magazine_hits": 100015,
+    "refills": 1,
+    "callgraph": [
+      {
+        "name": "<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow",
+        "calls": 1
+      }
+    ],
+    "raw_callgrind_sha256": "d993c082d59f33392819ffd848a50581c277ff12cfac3acd3c8d9b3b5bd91e21"
+  },
+  {
+    "phase": "before",
+    "mode": "bulk64",
+    "n": 200,
+    "expected_allocs": 12800,
+    "observed_allocs": 12800,
+    "magazine_hits": 12199,
+    "refills": 601,
+    "callgraph": [
+      {
+        "name": "<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow",
+        "calls": 601
+      }
+    ],
+    "raw_callgrind_sha256": "16a148d7d439a78d439a881182fb6bd391bbed9b34bdcac0e4346a33375c9aec"
+  },
+  {
+    "phase": "before",
+    "mode": "bulk16k",
+    "n": 200,
+    "expected_allocs": 12800,
+    "observed_allocs": 12800,
+    "magazine_hits": 9799,
+    "refills": 3001,
+    "callgraph": [
+      {
+        "name": "<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow",
+        "calls": 3001
+      }
+    ],
+    "raw_callgrind_sha256": "f1559dfc67cf93e8c0d9d99a7705858162d5af9765c728f002a8543cce5d55c4"
+  },
+  {
+    "phase": "after",
+    "mode": "rt",
+    "n": 100000,
+    "expected_allocs": 100768,
+    "observed_allocs": 100768,
+    "magazine_hits": 99858,
+    "refills": 910,
+    "callgraph": [
+      {
+        "name": "sefer_alloc::global::sefer_alloc::global_alloc::alloc_bound_small_slow",
+        "calls": 909
+      },
+      {
+        "name": "sefer_alloc::global::sefer_alloc::global_alloc::alloc_unbound_slow",
+        "calls": 1
+      },
+      {
+        "name": "<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow",
+        "calls": 910
+      }
+    ],
+    "raw_callgrind_sha256": "d14a6afee27e4af965e29a095e450764ddcc3fadd8b0d02ae1270057f149d534"
+  },
+  {
+    "phase": "after",
+    "mode": "16",
+    "n": 100000,
+    "expected_allocs": 100016,
+    "observed_allocs": 100016,
+    "magazine_hits": 100015,
+    "refills": 1,
+    "callgraph": [
+      {
+        "name": "sefer_alloc::global::sefer_alloc::global_alloc::alloc_unbound_slow",
+        "calls": 1
+      },
+      {
+        "name": "<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow",
+        "calls": 1
+      }
+    ],
+    "raw_callgrind_sha256": "18771412ffc9aefc7b47dfb359317ebe648182ee907e1624f63e0c2bcf438bad"
+  },
+  {
+    "phase": "after",
+    "mode": "64",
+    "n": 100000,
+    "expected_allocs": 100016,
+    "observed_allocs": 100016,
+    "magazine_hits": 100015,
+    "refills": 1,
+    "callgraph": [
+      {
+        "name": "<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow",
+        "calls": 1
+      },
+      {
+        "name": "sefer_alloc::global::sefer_alloc::global_alloc::alloc_unbound_slow",
+        "calls": 1
+      }
+    ],
+    "raw_callgrind_sha256": "e5a1a9353d1e8eddf1d82f6369d657f0e148194f01189d9123d3bf2aad16f9e5"
+  },
+  {
+    "phase": "after",
+    "mode": "bulk64",
+    "n": 200,
+    "expected_allocs": 12800,
+    "observed_allocs": 12800,
+    "magazine_hits": 12199,
+    "refills": 601,
+    "callgraph": [
+      {
+        "name": "sefer_alloc::global::sefer_alloc::global_alloc::alloc_bound_small_slow",
+        "calls": 600
+      },
+      {
+        "name": "sefer_alloc::global::sefer_alloc::global_alloc::alloc_unbound_slow",
+        "calls": 1
+      },
+      {
+        "name": "<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow",
+        "calls": 601
+      }
+    ],
+    "raw_callgrind_sha256": "05193d9c891932a3795c863d383f8c75f3eddd2715d0021da9e47ad6d5f824dd"
+  },
+  {
+    "phase": "after",
+    "mode": "bulk16k",
+    "n": 200,
+    "expected_allocs": 12800,
+    "observed_allocs": 12800,
+    "magazine_hits": 9799,
+    "refills": 3001,
+    "callgraph": [
+      {
+        "name": "<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow",
+        "calls": 3001
+      },
+      {
+        "name": "sefer_alloc::global::sefer_alloc::global_alloc::alloc_bound_small_slow",
+        "calls": 3000
+      },
+      {
+        "name": "sefer_alloc::global::sefer_alloc::global_alloc::alloc_unbound_slow",
+        "calls": 1
+      }
+    ],
+    "raw_callgrind_sha256": "b62b9c32873d727dadf5436a95beb3abc90e64bfb2d072229c7289773e11211e"
+  }
+]

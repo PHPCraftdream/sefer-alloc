@@ -1,0 +1,299 @@
+
+<workspace>/.rush/own-free-split/control-before/target/release/examples/own_free_wall:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+00000000000338f0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal>:
+   338f0:	push   %rbp
+   338f1:	push   %r15
+   338f3:	push   %r14
+   338f5:	push   %r13
+   338f7:	push   %r12
+   338f9:	push   %rbx
+   338fa:	sub    $0xd8,%rsp
+   33901:	xorps  %xmm0,%xmm0
+   33904:	movaps %xmm0,0xc0(%rsp)
+   3390c:	movaps %xmm0,0xb0(%rsp)
+   33914:	movaps %xmm0,0xa0(%rsp)
+   3391c:	movaps %xmm0,0x90(%rsp)
+   33924:	movaps %xmm0,0x80(%rsp)
+   3392c:	movaps %xmm0,0x70(%rsp)
+   33931:	movaps %xmm0,0x60(%rsp)
+   33936:	movaps %xmm0,0x50(%rsp)
+   3393b:	mov    %rdi,0x10(%rsp)
+   33940:	lea    0x30(%rdi),%r13
+   33944:	lea    0x1(%rsi),%eax
+   33947:	mov    %eax,0x34(%rsp)
+   3394b:	mov    %rsi,0x20(%rsp)
+   33950:	lea    -0x7f(%rsi),%eax
+   33953:	mov    %eax,0x30(%rsp)
+   33957:	xor    %ebx,%ebx
+   33959:	mov    $0x5f000,%edi
+   3395e:	xor    %r15d,%r15d
+   33961:	lea    0x0(,%r15,8),%r10
+   33969:	neg    %r10
+   3396c:	mov    %r15,%r11
+   3396f:	neg    %r11
+   33972:	mov    %r15,%r8
+   33975:	data16 cs nopw 0x0(%rax,%rax,1)
+   33980:	mov    (%rdx,%r8,8),%r12
+   33984:	test   %r12,%r12
+   33987:	jne    339a0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0xb0>
+   33989:	inc    %r8
+   3398c:	add    $0xfffffffffffffff8,%r10
+   33990:	dec    %r11
+   33993:	cmp    %rcx,%r8
+   33996:	jb     33980 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x90>
+   33998:	jmp    33d3c <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x44c>
+   3399d:	nopl   (%rax)
+   339a0:	mov    %rdx,%r9
+   339a3:	sub    %r10,%r9
+   339a6:	and    $0xffffffffffc00000,%r12
+   339ad:	lea    0x1(%r8),%rax
+   339b1:	cmp    %rax,%rcx
+   339b4:	cmova  %rcx,%rax
+   339b8:	mov    %r8,%r15
+   339bb:	nopl   0x0(%rax,%rax,1)
+   339c0:	mov    %r15,%r14
+   339c3:	inc    %r15
+   339c6:	cmp    %rcx,%r15
+   339c9:	jae    339e3 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0xf3>
+   339cb:	mov    0x8(%rdx,%r14,8),%rsi
+   339d0:	test   %rsi,%rsi
+   339d3:	je     339e6 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0xf6>
+   339d5:	and    $0xffffffffffc00000,%rsi
+   339dc:	cmp    %r12,%rsi
+   339df:	je     339c0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0xd0>
+   339e1:	jmp    339e6 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0xf6>
+   339e3:	mov    %rax,%r15
+   339e6:	cmp    $0x11,%rbx
+   339ea:	jae    33d4e <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x45e>
+   339f0:	lea    0x0(,%rbx,8),%rax
+   339f8:	xor    %esi,%esi
+   339fa:	nopw   0x0(%rax,%rax,1)
+   33a00:	cmp    %rsi,%rax
+   33a03:	je     33a20 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x130>
+   33a05:	cmp    %r12,0x50(%rsp,%rsi,1)
+   33a0a:	lea    0x8(%rsi),%rsi
+   33a0e:	jne    33a00 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x110>
+   33a10:	mov    %rbx,%rax
+   33a13:	jmp    33d30 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x440>
+   33a18:	nopl   0x0(%rax,%rax,1)
+   33a20:	mov    0x10(%rsp),%rax
+   33a25:	cmp    %r12,0x130(%rax)
+   33a2c:	mov    %r13,0x8(%rsp)
+   33a31:	jne    33a41 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x151>
+   33a33:	mov    0x10(%rsp),%rax
+   33a38:	mov    0x138(%rax),%rbp
+   33a3f:	jmp    33a67 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x177>
+   33a41:	mov    %r12,%rdi
+   33a44:	shr    $0x16,%rdi
+   33a48:	mov    %edi,%eax
+   33a4a:	and    $0xf,%eax
+   33a4d:	shl    $0x4,%eax
+   33a50:	cmp    %r12,0x0(%r13,%rax,1)
+   33a55:	jne    33c80 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x390>
+   33a5b:	add    %r13,%rax
+   33a5e:	mov    0x8(%rax),%rbp
+   33a62:	mov    $0x5f000,%edi
+   33a67:	cmp    %rcx,%r14
+   33a6a:	jae    33d65 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x475>
+   33a70:	cmp    %r8,%r15
+   33a73:	jb     33d65 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x475>
+   33a79:	mov    0x0(%rbp),%rax
+   33a7d:	cmpb   $0x0,0x1c(%rbp)
+   33a81:	mov    $0x42000,%r14d
+   33a87:	cmove  %rdi,%r14
+   33a8b:	sub    %r14,%rax
+   33a8e:	mov    $0x0,%r13d
+   33a94:	cmovae %rax,%r13
+   33a98:	cmp    %r8,%r15
+   33a9b:	jne    33aaa <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x1ba>
+   33a9d:	mov    %rbx,%rax
+   33aa0:	mov    0x8(%rsp),%r13
+   33aa5:	jmp    33d30 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x440>
+   33aaa:	mov    0x20(%rsp),%rsi
+   33aaf:	mov    0x1400(%rbp,%rsi,4),%edi
+   33ab6:	add    %r15,%r11
+   33ab9:	lea    (%rdx,%r11,8),%r11
+   33abd:	sub    %r10,%r11
+   33ac0:	lea    (%rdi,%rbp,1),%rax
+   33ac4:	movq   $0x0,0x38(%rsp)
+   33acd:	mov    $0xffffffff,%esi
+   33ad2:	mov    %rdi,0x40(%rsp)
+   33ad7:	cmp    %rsi,%rdi
+   33ada:	mov    $0x0,%edi
+   33adf:	cmovne %rax,%rdi
+   33ae3:	xor    %r10d,%r10d
+   33ae6:	mov    %rdi,0x48(%rsp)
+   33aeb:	mov    %r10d,0x1c(%rsp)
+   33af0:	jmp    33b09 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x219>
+   33af2:	data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+   33b00:	add    $0x8,%r9
+   33b04:	cmp    %r11,%r9
+   33b07:	je     33b85 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x295>
+   33b09:	mov    (%r9),%rsi
+   33b0c:	sub    %rbp,%rsi
+   33b0f:	mov    %esi,%r10d
+   33b12:	mov    %r10,%rax
+   33b15:	sub    %r14,%rax
+   33b18:	cmp    %r13,%rax
+   33b1b:	jae    33b00 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x210>
+   33b1d:	mov    %esi,%edi
+   33b1f:	shr    $0x4,%edi
+   33b22:	movzbl 0x1588(%rbp,%rdi,1),%r8d
+   33b2b:	mov    %r8d,%eax
+   33b2e:	and    $0x3f,%al
+   33b30:	cmp    0x34(%rsp),%al
+   33b34:	setne  %al
+   33b37:	cmp    $0xc0,%r8b
+   33b3b:	setl   %r8b
+   33b3f:	or     %al,%r8b
+   33b42:	jne    33b00 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x210>
+   33b44:	mov    0x48(%rsp),%rax
+   33b49:	mov    %rax,0x0(%rbp,%r10,1)
+   33b4e:	lea    (%r10,%rbp,1),%rax
+   33b52:	mov    0x30(%rsp),%r8d
+   33b57:	mov    %r8b,0x1588(%rbp,%rdi,1)
+   33b5f:	mov    0x1c(%rsp),%r10d
+   33b64:	inc    %r10d
+   33b67:	add    $0x8,%r9
+   33b6b:	mov    $0x1,%dil
+   33b6e:	mov    %rdi,0x38(%rsp)
+   33b73:	mov    %esi,0x2c(%rsp)
+   33b77:	mov    %rax,%rdi
+   33b7a:	cmp    %r11,%r9
+   33b7d:	jne    33ae6 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x1f6>
+   33b83:	jmp    33b97 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x2a7>
+   33b85:	mov    0x2c(%rsp),%eax
+   33b89:	mov    %eax,%esi
+   33b8b:	testb  $0x1,0x38(%rsp)
+   33b90:	mov    0x1c(%rsp),%r10d
+   33b95:	je     33bf0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x300>
+   33b97:	mov    0x20(%rsp),%rdi
+   33b9c:	mov    %esi,0x1400(%rbp,%rdi,4)
+   33ba3:	cmpl   $0xffffffff,0x40(%rsp)
+   33ba8:	jne    33bf0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x300>
+   33baa:	mov    0x10(%rsp),%rsi
+   33baf:	mov    0x3e8(%rsi),%rdi
+   33bb6:	test   %rdi,%rdi
+   33bb9:	je     33bf0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x300>
+   33bbb:	mov    %rcx,%r9
+   33bbe:	mov    0x70(%rbp),%ecx
+   33bc1:	mov    %ecx,%r8d
+   33bc4:	shr    $0x6,%r8d
+   33bc8:	cmp    $0xfff,%rcx
+   33bcf:	ja     33d90 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x4a0>
+   33bd5:	mov    $0x1,%eax
+   33bda:	shl    %cl,%rax
+   33bdd:	mov    0x20(%rsp),%rcx
+   33be2:	shl    $0x9,%rcx
+   33be6:	add    %rcx,%rdi
+   33be9:	or     %rax,(%rdi,%r8,8)
+   33bed:	mov    %r9,%rcx
+   33bf0:	mov    0x14(%rbp),%esi
+   33bf3:	mov    %esi,%edi
+   33bf5:	sub    %r10d,%edi
+   33bf8:	jb     33d7e <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x48e>
+   33bfe:	mov    %edi,0x14(%rbp)
+   33c01:	test   %r10d,%r10d
+   33c04:	je     33d22 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x432>
+   33c0a:	cmp    %r10d,%esi
+   33c0d:	mov    $0x5f000,%edi
+   33c12:	jne    33a9d <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x1ad>
+   33c18:	mov    0x10(%rsp),%rsi
+   33c1d:	cmp    0x3a8(%rsi),%rbp
+   33c24:	je     33a9d <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x1ad>
+   33c2a:	cmpl   $0x0,0x18(%rbp)
+   33c2e:	jne    33a9d <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x1ad>
+   33c34:	cmpb   $0x1,0x1c(%rbp)
+   33c38:	jne    33a9d <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x1ad>
+   33c3e:	mov    0x10(%rsp),%rdi
+   33c43:	mov    %rbp,%rsi
+   33c46:	mov    %rcx,%r14
+   33c49:	mov    %rdx,%r13
+   33c4c:	call   33e10 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::release_or_pool_empty_segment>
+   33c51:	mov    $0x5f000,%edi
+   33c56:	mov    %r13,%rdx
+   33c59:	mov    %r14,%rcx
+   33c5c:	mov    $0x10,%eax
+   33c61:	cmp    $0x10,%rbx
+   33c65:	mov    0x8(%rsp),%r13
+   33c6a:	je     33d30 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x440>
+   33c70:	mov    %r12,0x50(%rsp,%rbx,8)
+   33c75:	inc    %rbx
+   33c78:	mov    %rbx,%rax
+   33c7b:	jmp    33d30 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x440>
+   33c80:	mov    %r12,%rax
+   33c83:	shr    $0x23,%rax
+   33c87:	mov    %r12,%rsi
+   33c8a:	shr    $0x30,%rsi
+   33c8e:	xor    %esi,%eax
+   33c90:	xor    %eax,%edi
+   33c92:	and    $0x1fff,%edi
+   33c98:	mov    0x10(%rsp),%rax
+   33c9d:	mov    0x140(%rax),%rsi
+   33ca4:	mov    %rdi,%r13
+   33ca7:	nopw   0x0(%rax,%rax,1)
+   33cb0:	mov    (%rsi,%r13,8),%rbp
+   33cb4:	test   %rbp,%rbp
+   33cb7:	je     33d22 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x432>
+   33cb9:	mov    %rbp,%rax
+   33cbc:	and    $0xffffffffffc00000,%rax
+   33cc2:	cmp    %r12,%rax
+   33cc5:	je     33cd8 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x3e8>
+   33cc7:	inc    %r13d
+   33cca:	and    $0x1fff,%r13d
+   33cd1:	cmp    %rdi,%r13
+   33cd4:	jne    33cb0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x3c0>
+   33cd6:	jmp    33d22 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x432>
+   33cd8:	mov    %rbp,%rsi
+   33cdb:	and    $0x3fffff,%rsi
+   33ce2:	mov    $0x5f000,%edi
+   33ce7:	je     33a67 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x177>
+   33ced:	lea    -0x1(%rsi),%rdi
+   33cf1:	mov    0x10(%rsp),%rax
+   33cf6:	mov    0x158(%rax),%eax
+   33cfc:	cmp    %rax,%rdi
+   33cff:	jae    33d22 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x432>
+   33d01:	mov    0x10(%rsp),%rax
+   33d06:	mov    0x20(%rax),%rax
+   33d0a:	mov    -0x8(%rax,%rsi,8),%rbp
+   33d0f:	test   %rbp,%rbp
+   33d12:	mov    $0x5f000,%edi
+   33d17:	jne    33a67 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x177>
+   33d1d:	jmp    33a9d <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x1ad>
+   33d22:	mov    %rbx,%rax
+   33d25:	mov    0x8(%rsp),%r13
+   33d2a:	mov    $0x5f000,%edi
+   33d2f:	nop
+   33d30:	mov    %rax,%rbx
+   33d33:	cmp    %rcx,%r15
+   33d36:	jb     33961 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal+0x71>
+   33d3c:	add    $0xd8,%rsp
+   33d43:	pop    %rbx
+   33d44:	pop    %r12
+   33d46:	pop    %r13
+   33d48:	pop    %r14
+   33d4a:	pop    %r15
+   33d4c:	pop    %rbp
+   33d4d:	ret
+   33d4e:	lea    0x596cb(%rip),%rcx        # 8d420 <anon.07bf7b68542f29918c2fe01e2698508b.1766.llvm.13623703653819427234+0x518>
+   33d55:	mov    $0x10,%edx
+   33d5a:	xor    %edi,%edi
+   33d5c:	mov    %rbx,%rsi
+   33d5f:	call   *0x5f1c3(%rip)        # 92f28 <_DYNAMIC+0x388>
+   33d65:	lea    0x5969c(%rip),%rax        # 8d408 <anon.07bf7b68542f29918c2fe01e2698508b.1766.llvm.13623703653819427234+0x500>
+   33d6c:	mov    %r8,%rdi
+   33d6f:	mov    %r15,%rsi
+   33d72:	mov    %rcx,%rdx
+   33d75:	mov    %rax,%rcx
+   33d78:	call   *0x5f1aa(%rip)        # 92f28 <_DYNAMIC+0x388>
+   33d7e:	lea    -0x2733a(%rip),%rdi        # ca4b <anon.07bf7b68542f29918c2fe01e2698508b.1589.llvm.13623703653819427234+0x3a6>
+   33d85:	mov    $0x3a,%esi
+   33d8a:	call   *0x5f410(%rip)        # 931a0 <_DYNAMIC+0x600>
+   33d90:	lea    0x596a1(%rip),%rdx        # 8d438 <anon.07bf7b68542f29918c2fe01e2698508b.1766.llvm.13623703653819427234+0x530>
+   33d97:	mov    $0x40,%esi
+   33d9c:	mov    %r8,%rdi
+   33d9f:	call   *0x5f04b(%rip)        # 92df0 <_DYNAMIC+0x250>

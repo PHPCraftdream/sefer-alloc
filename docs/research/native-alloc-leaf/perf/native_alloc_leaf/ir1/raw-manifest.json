@@ -1,0 +1,962 @@
+[
+  {
+    "phase": "before",
+    "file": "before-mimalloc-16-alloc-100000.callgrind.log",
+    "original_sha256": "249ad6dd1d3b7c938ff9b9c1feded9e9a08fb9ee2fc718052b71c0ebca7604fe",
+    "original_bytes": 23404,
+    "excerpt_sha256": "461cebf225eea29a34e53ce3605434e7be0c00177fa1f41774861931907188f1",
+    "excerpt_bytes": 7137
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-16-alloc-50000.callgrind.log",
+    "original_sha256": "e32247ea1336d28aedb5e3272025a0c6994f6dd2d8325bcf20043422156a7ced",
+    "original_bytes": 23374,
+    "excerpt_sha256": "39fd9bc122b67d1417288b4ca4f54da35a8a138f0c5868292857fdf72f7b0dc5",
+    "excerpt_bytes": 7134
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-16-free-100000.callgrind.log",
+    "original_sha256": "7df70747fb9fbd8e6aa5f43de7310643139e27a778e0cadb37cfec82d32064fa",
+    "original_bytes": 3940,
+    "excerpt_sha256": "96387927799e0db20241aecf1e89f8144eb7d7bdb06adaee00e19e839defce72",
+    "excerpt_bytes": 1460
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-16-free-50000.callgrind.log",
+    "original_sha256": "ec0fe8a43aac942c3bd4ac017287f0dff44f7b41c42d6e3d29598197cd039bca",
+    "original_bytes": 3921,
+    "excerpt_sha256": "40d941246f8825cda70e14b0f745d23c8c91907271d8a5c12e72fcc22cb0ef56",
+    "excerpt_bytes": 1458
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-16-pair-100000.callgrind.log",
+    "original_sha256": "76a2c8b14afd86ff7af69d0f1ac25339831180c4831411c1d8184b8bfe2ce4d1",
+    "original_bytes": 146463,
+    "excerpt_sha256": "fb2a087f1afa15e74e6c19dbbd05b3765c8bb8648367e186a5e8244c24708c62",
+    "excerpt_bytes": 36549
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-16-pair-50000.callgrind.log",
+    "original_sha256": "07279ec2e01381a8a45bf8a9574a42f6780b1d61de0f91e6b96d3ba900ff924c",
+    "original_bytes": 146396,
+    "excerpt_sha256": "b1ff6c73b6bc191e62a755e066a1b7b64eaaa222b32dc791bc7984e309045532",
+    "excerpt_bytes": 36544
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-64-alloc-100000.callgrind.log",
+    "original_sha256": "2cec693d095a3fa7cf2fc1e75b353a0301b56ebad51b767d29ba8f1fed539853",
+    "original_bytes": 23799,
+    "excerpt_sha256": "ee5d18f6f4b3b8eb036da429de0601d285a3d2a2bc8128dd73761009819c9185",
+    "excerpt_bytes": 7321
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-64-alloc-50000.callgrind.log",
+    "original_sha256": "ba88d027ad3710d4eadd147f88cb6453bfd78dec552c36898c21add00898b980",
+    "original_bytes": 23766,
+    "excerpt_sha256": "c9604f5a9b52b351c832cec663c988ba406105d1b1d43ddb3c33e1ff637da286",
+    "excerpt_bytes": 7318
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-64-free-100000.callgrind.log",
+    "original_sha256": "746cec2d32618498c53cf0fdd574edc984399540edd56174aaae3a6e6447121c",
+    "original_bytes": 3940,
+    "excerpt_sha256": "9672b7e771f3f94d1c150c5b6b4d6ad646851bf29e731ed57f37b1c2d0c7b6c6",
+    "excerpt_bytes": 1460
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-64-free-50000.callgrind.log",
+    "original_sha256": "d3cca5f315cc01bdb5d6b0a8943cd5252578bce0463861aad6012c0dd5b992a0",
+    "original_bytes": 3921,
+    "excerpt_sha256": "f7e9efe06286ed0e25c33b9c42b9737e1b74c6fb5a4adf7503dc77a278c9fe0f",
+    "excerpt_bytes": 1458
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-64-pair-100000.callgrind.log",
+    "original_sha256": "bc0b4817436d8b95a1f043ed93df5e771711f21154a4cd498c64182f21c66f62",
+    "original_bytes": 146809,
+    "excerpt_sha256": "853c2a5965bbd42b8b4e716072357834113aef223167a902fe9dea45acdbf958",
+    "excerpt_bytes": 36677
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-64-pair-50000.callgrind.log",
+    "original_sha256": "25d5a0ea381ebeb43e5e9699ceda0c243675d4b2211ec2f61dd146b5aeb1aaa9",
+    "original_bytes": 146740,
+    "excerpt_sha256": "2511dcd408b6baab5eb4de3bbe9c93e867c686b451227c4abd695bfe4dcba3ef",
+    "excerpt_bytes": 36672
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk16k-alloc-100.callgrind.log",
+    "original_sha256": "3eccbd66bd314e4f5500392b62ba00b4b9d1a9e4799ad5d34a401199a98b2e36",
+    "original_bytes": 27599,
+    "excerpt_sha256": "a63cf138042f9f65e2dbc7a3b2f44fed7e8e1c4f5bdeb528546e2eebd0bf6742",
+    "excerpt_bytes": 8089
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk16k-alloc-200.callgrind.log",
+    "original_sha256": "5e001edb98382a123c301a6bcd266b17b62f5cd6337db895264cae5238e7f00e",
+    "original_bytes": 30207,
+    "excerpt_sha256": "8eb47c591135e8fa075dd9fd87d7485ef6fa4f070a26687acb822a533f16cea1",
+    "excerpt_bytes": 8423
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk16k-free-100.callgrind.log",
+    "original_sha256": "8b8940b176947c5719da32237f4980f71e660ecb6f1b8c1613712aa7a863424c",
+    "original_bytes": 11585,
+    "excerpt_sha256": "96da7e1dfc424ca689db1e3d3660fecefb14dae00ec5cfe47fd7651c4b226008",
+    "excerpt_bytes": 2985
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk16k-free-200.callgrind.log",
+    "original_sha256": "e9026fb2c92510877a099f37feb592de4c61da0c5f7f04c53444e482f9fc2eaf",
+    "original_bytes": 11719,
+    "excerpt_sha256": "abd450836a4f29bfe8885e588fb5f11012c16c0428e38030b95bc267e97e2d25",
+    "excerpt_bytes": 2991
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk16k-pair-100.callgrind.log",
+    "original_sha256": "d6a78bbd45f80395deb99af2f2e8becbb2806c074ec2de89f57b26d8fbf7db69",
+    "original_bytes": 152538,
+    "excerpt_sha256": "f30ce4cbe41593f6b1b6785dd6e308973c64807af864e7739372bde9b3d90198",
+    "excerpt_bytes": 37530
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk16k-pair-200.callgrind.log",
+    "original_sha256": "8cc2d3447d0859956aa1fe97e7ee02ca900aa5837b1946471dcf396747b39206",
+    "original_bytes": 153069,
+    "excerpt_sha256": "3d96cfcf74548b91b65813496238fa2b823a73e70a11ada48c1c249c6ed9c27f",
+    "excerpt_bytes": 37604
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk64-alloc-100.callgrind.log",
+    "original_sha256": "704934f1b12b00edd6f95dce93d89731af532a95430787c828cae02c7dfaef66",
+    "original_bytes": 22799,
+    "excerpt_sha256": "9ff668a413d75476b2152c1e4cf060f51d524c1cf142091f61d99ee063a8afcc",
+    "excerpt_bytes": 6823
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk64-alloc-200.callgrind.log",
+    "original_sha256": "06dd93f32a974e60f4aedafc91d3ceb8a77b73f5e2e83e93110caa83cb692b8f",
+    "original_bytes": 22833,
+    "excerpt_sha256": "ce64c2c7436b84b46d2d9d4d9f126c861b41f2b3c56fe9c1c0b7b7094b9e042a",
+    "excerpt_bytes": 6828
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk64-free-100.callgrind.log",
+    "original_sha256": "72056899b150a934de02c80e7ceabfcd7cd7e2308917ed348effc2b72b6fa4f3",
+    "original_bytes": 3504,
+    "excerpt_sha256": "c6ff92e4c81eb555ebfb7c184d5caf6925b63679852e6a2a085c1e379e95cee6",
+    "excerpt_bytes": 1110
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk64-free-200.callgrind.log",
+    "original_sha256": "bbe56178a65c65a5a7d4f5a2e4ba3991231e3acd7492f422a929cef9f53a4fc8",
+    "original_bytes": 3525,
+    "excerpt_sha256": "9e0b18492868f2166d68ba8061b3e76bb728b088d9214f7d8835c51237336a25",
+    "excerpt_bytes": 1112
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk64-pair-100.callgrind.log",
+    "original_sha256": "c481b77c92033e27dfeb0eba48e15fbdce72e78d3c3b9fc4c340e84d7ec5407e",
+    "original_bytes": 146545,
+    "excerpt_sha256": "9936ce7120f089ca281f2c57113fdc2a785da28909f59642850c27d6b79d16b9",
+    "excerpt_bytes": 36231
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-bulk64-pair-200.callgrind.log",
+    "original_sha256": "bc65353048c9f3fbbf5516ed69342309cb3cbc60bd092cd08faf8151338dd03d",
+    "original_bytes": 146617,
+    "excerpt_sha256": "14842cd14d04a982e7852881df0ce1cf952a1a5100ef0b57ed466ec54434f91f",
+    "excerpt_bytes": 36238
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-rt-alloc-100000.callgrind.log",
+    "original_sha256": "af24fa7dc17e6540f7bd1e67c6fcdce8a85231eaf90cbb78cf73ca1fd4f93244",
+    "original_bytes": 26137,
+    "excerpt_sha256": "673a73b166f0aba804a99945377fb379313288135e30a7d67b69084762cbad25",
+    "excerpt_bytes": 7572
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-rt-alloc-50000.callgrind.log",
+    "original_sha256": "05da75d2ba64c991a11dc5c7ef8dcf85899998d461ebd2644e59a871a32708cc",
+    "original_bytes": 26093,
+    "excerpt_sha256": "e2574f6970221584255e691ac1564ff1f0ac2cc2de6d6c48953acab1b54564c0",
+    "excerpt_bytes": 7568
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-rt-free-100000.callgrind.log",
+    "original_sha256": "012183b93c4fe8eff3e7fc7709e480bcadffdf8dd73229c4c9ca61395cb977e2",
+    "original_bytes": 8369,
+    "excerpt_sha256": "a76eb625e6e074c7556629a852bba21de962f8d099a0197cbb3b6404bdb1c698",
+    "excerpt_bytes": 2354
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-rt-free-50000.callgrind.log",
+    "original_sha256": "277a8dcc96419158237f6a42ca6df7b02588db95dbd49d6c4795ad256aeace44",
+    "original_bytes": 8350,
+    "excerpt_sha256": "8489f024b04ab0fb321806fe309a4a02cc77509f32782fe380094f5816910059",
+    "excerpt_bytes": 2353
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-rt-pair-100000.callgrind.log",
+    "original_sha256": "62da0aac2dad118e189c1b92bcccf8f0fa1a80776919c093d31a1307c29ad662",
+    "original_bytes": 150101,
+    "excerpt_sha256": "7112dc823592116e3d853e81b50a16f03d84a684975921261acc063cf1d56580",
+    "excerpt_bytes": 36876
+  },
+  {
+    "phase": "before",
+    "file": "before-mimalloc-rt-pair-50000.callgrind.log",
+    "original_sha256": "9d21287a8d6ef236f924dbb12fc98697ac424f5c50cb1340841f1cf694062f83",
+    "original_bytes": 150012,
+    "excerpt_sha256": "347c3172b843c6eae834b605f0aafad9645cca41e8e2b8b274a5b846cb6824e0",
+    "excerpt_bytes": 36869
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-16-alloc-100000.callgrind.log",
+    "original_sha256": "e74b5edcc1caa506461434894f62d4750970cd095fc98faa6679da4871e11a48",
+    "original_bytes": 24235,
+    "excerpt_sha256": "b638a48cf6e337da0fd13a0b84a92a3f3854fc9b2484b655ef6162d8c7670b1c",
+    "excerpt_bytes": 5070
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-16-alloc-50000.callgrind.log",
+    "original_sha256": "582195ccd727865525d81ac400f7b288a021acfbb44570adca81c69d8a0b0d03",
+    "original_bytes": 24225,
+    "excerpt_sha256": "7466b712a3b89508c2a75a538679f4b79720e87666c6e1a5bb6d204d8dbb750d",
+    "excerpt_bytes": 5069
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-16-free-100000.callgrind.log",
+    "original_sha256": "2fb6a689733ab835380c50fb191fc34efec784c126a22a240fb1cb6d7142bb4c",
+    "original_bytes": 4257,
+    "excerpt_sha256": "a69179ef5dd6d60071c29b655de899ccb72fd4c5b05c77ed66a41effd86dd323",
+    "excerpt_bytes": 1354
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-16-free-50000.callgrind.log",
+    "original_sha256": "c8b268ccdc6669467f12f9820344ecef9d65c4ae084cd566d8193b41ce9da8eb",
+    "original_bytes": 4247,
+    "excerpt_sha256": "52e87adac76381a5e19bad1403d0526a5641d7d0fea760f8b8acb2981a8c6654",
+    "excerpt_bytes": 1353
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-16-pair-100000.callgrind.log",
+    "original_sha256": "42643a7861945370178454bc0f3165f4a20b499b28d20707daacfc6f8f28cd9e",
+    "original_bytes": 147127,
+    "excerpt_sha256": "ad030dcb65dc0fe1d461b2de782db7ab59744725998f243a1ead3b1ff8e7d1ee",
+    "excerpt_bytes": 34131
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-16-pair-50000.callgrind.log",
+    "original_sha256": "84ed68cd3e42e2dbc12bf81cf1f9ab0312d1bfd4191b018229e8903e9b30afe2",
+    "original_bytes": 147099,
+    "excerpt_sha256": "e4e3181db6cc7522055163cb663cba458e963b8ef29430bb8e843e8cb1174750",
+    "excerpt_bytes": 34127
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-64-alloc-100000.callgrind.log",
+    "original_sha256": "dacae089bc8dabba92f7f959bc47108ef391432804e460998af42cd63755540f",
+    "original_bytes": 24235,
+    "excerpt_sha256": "c347c7cd03a988b04735705351b2ddbae0fdfd7afdfb6d302b4c1fdd3f9f703d",
+    "excerpt_bytes": 5070
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-64-alloc-50000.callgrind.log",
+    "original_sha256": "33ef0c01e3467b9af8c65d797b57d83a77d8de3c52bcb5d36ede0d505fe746a4",
+    "original_bytes": 24225,
+    "excerpt_sha256": "d870db73872aca38a81744a8991dcf65525f537c44c820feb3f8e802d9c61cc8",
+    "excerpt_bytes": 5069
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-64-free-100000.callgrind.log",
+    "original_sha256": "ba9e51c14e6d71d55890fdbdd632d507ab22c6d246b248075a470305b1cb7dcb",
+    "original_bytes": 4257,
+    "excerpt_sha256": "15effb5e4fceef818e072cb53bd434be4c14abec44288a2626a63b40ed837ac5",
+    "excerpt_bytes": 1354
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-64-free-50000.callgrind.log",
+    "original_sha256": "40ea80328e14fa1591dd823a0003b52c91acd8984a1159a79969da3ccf18a8f2",
+    "original_bytes": 4247,
+    "excerpt_sha256": "8fc8fef43dc9891d0f669c03d567f98e143721a38e3cfe6bd4ba35b2873a1c61",
+    "excerpt_bytes": 1353
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-64-pair-100000.callgrind.log",
+    "original_sha256": "d993c082d59f33392819ffd848a50581c277ff12cfac3acd3c8d9b3b5bd91e21",
+    "original_bytes": 147161,
+    "excerpt_sha256": "19a6a4ffc258c7f5180bf71e1809728337e5c4b995b0a7aa14e4fec6470af106",
+    "excerpt_bytes": 34131
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-64-pair-50000.callgrind.log",
+    "original_sha256": "46786b50b177b51007f6210b8d16f6f73908d658eff98bc1a78bc91f75425093",
+    "original_bytes": 147133,
+    "excerpt_sha256": "72c10dcf923d825f89156dcbf413a868b85220d5dfd88c84ccc8d313bc36d9b3",
+    "excerpt_bytes": 34127
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk16k-alloc-100.callgrind.log",
+    "original_sha256": "283d47142b589ee6efe31eb960cb3c8ec034487f6807513e84d7b3f2b0df3b8b",
+    "original_bytes": 26227,
+    "excerpt_sha256": "7c7ef5a9d88c5d769f25bce7d418b24afbf492e625d1dc208ce1638bf8cd0728",
+    "excerpt_bytes": 4760
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk16k-alloc-200.callgrind.log",
+    "original_sha256": "8da0dc794a7e471e8dc52a9ee3dced7b05cca6d038c24d9d8cfbd0d3f1365581",
+    "original_bytes": 26273,
+    "excerpt_sha256": "6f4c075534584364450e67f6416ca416ec7476f1087b55e40794389ff6963877",
+    "excerpt_bytes": 4762
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk16k-free-100.callgrind.log",
+    "original_sha256": "78efdf2453e4eb0cd84bccd4385e20be649586e8e1b99dfd93528652fe1f8c6c",
+    "original_bytes": 6164,
+    "excerpt_sha256": "d7f91b4ccfe59eab80b1d6c65bef895328972882d69d2bbedf7e8f12571372e5",
+    "excerpt_bytes": 1128
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk16k-free-200.callgrind.log",
+    "original_sha256": "5733e0bf56a5d2c62f6ca1d450fc043f534e1b8da5820c1a2b94dd5de6b93b4c",
+    "original_bytes": 6218,
+    "excerpt_sha256": "bc06d54ce008ed4cc152fc70023178aedae9ae6e33835e522b0eb5b03e1a87d3",
+    "excerpt_bytes": 1130
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk16k-pair-100.callgrind.log",
+    "original_sha256": "d8c08e487bb3d45d03e0e64ac430adb442fcd18b2743912ba36a49a6fb5f9380",
+    "original_bytes": 150719,
+    "excerpt_sha256": "f9e8d396072c4e828fd5166125099bf6765dea62b93571d1c9d33c3c0c7a09f9",
+    "excerpt_bytes": 33813
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk16k-pair-200.callgrind.log",
+    "original_sha256": "f1559dfc67cf93e8c0d9d99a7705858162d5af9765c728f002a8543cce5d55c4",
+    "original_bytes": 150827,
+    "excerpt_sha256": "99bc88373626c15455aec1fb6760217579575a949c9efe8f2464f0df01f8a497",
+    "excerpt_bytes": 33817
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk64-alloc-100.callgrind.log",
+    "original_sha256": "f286274adf1f831b3ebd31204a35cc308bffabfb0d4f280f0554d94fab074702",
+    "original_bytes": 25702,
+    "excerpt_sha256": "dff330d0cc1e9f69530d634b06dce48404ba8522ac3bc4a8caa2e7ac6129c235",
+    "excerpt_bytes": 4747
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk64-alloc-200.callgrind.log",
+    "original_sha256": "7c6bcd33e62886250331f3a5ec44341da2e50d44023d7f87091515de628d5237",
+    "original_bytes": 25785,
+    "excerpt_sha256": "af1ff5bfa02038df10c2ec9f57e18048206f2908637a75e0e31aab6bd4b5eb54",
+    "excerpt_bytes": 4751
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk64-free-100.callgrind.log",
+    "original_sha256": "ea57633491b26c80fc7cd139b06fb9f75cbf0a238f9378498a1be87d5c58465b",
+    "original_bytes": 6287,
+    "excerpt_sha256": "bb7800c61dd3e94e0853164b21adf49f135c80965b42ea274cac1865ce27191c",
+    "excerpt_bytes": 1126
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk64-free-200.callgrind.log",
+    "original_sha256": "945a8d246e87018d7fd3239f9bb40527e84106543e1cfb71112e72f80ec2e33f",
+    "original_bytes": 6349,
+    "excerpt_sha256": "34b67b1ad5b3de81b697037f4b828e3912f477ce3bf6ed8b619f2b46576947bf",
+    "excerpt_bytes": 1130
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk64-pair-100.callgrind.log",
+    "original_sha256": "262759db11aca817b088089cef9ab73ff3996a27a456d339af7e88845539aad6",
+    "original_bytes": 150281,
+    "excerpt_sha256": "3723b7ebf0ef4dd6bb3fe47ca9bd9b65a828d74617fb2e282389dee7e6628054",
+    "excerpt_bytes": 33802
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-bulk64-pair-200.callgrind.log",
+    "original_sha256": "16a148d7d439a78d439a881182fb6bd391bbed9b34bdcac0e4346a33375c9aec",
+    "original_bytes": 150415,
+    "excerpt_sha256": "498d807aa7a98a6d0259d5db5af803e7bbc12f2c851d7c3453d574092e64857a",
+    "excerpt_bytes": 33806
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-rt-alloc-100000.callgrind.log",
+    "original_sha256": "f6b0beefea3b0966cb71f4d65b4f5b01718602cdbe6620c9b3ba3845f615803e",
+    "original_bytes": 26349,
+    "excerpt_sha256": "21f19591572279e207b465d575cdd34ef189dabeeab429a056c0e02f47a1e4d8",
+    "excerpt_bytes": 4743
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-rt-alloc-50000.callgrind.log",
+    "original_sha256": "bfdb3794aa1ed7e202a50ea85b39da6167e8bfccb5a72a7179b0cde041272abb",
+    "original_bytes": 26283,
+    "excerpt_sha256": "02e8e7abb19d8bf5d8bac9967f2afecdd8012292b762be8be720d9d46f42dc51",
+    "excerpt_bytes": 4742
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-rt-free-100000.callgrind.log",
+    "original_sha256": "f0ed402d689a4c7af80d32937aa4816cde922658d08884a1ae5fd67044c3ac81",
+    "original_bytes": 6444,
+    "excerpt_sha256": "000e2f8fb56eaae640a8bd1400344e30a27915a6e59dbe5eb06cd95ae982c167",
+    "excerpt_bytes": 1159
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-rt-free-50000.callgrind.log",
+    "original_sha256": "bb49a6f445827f992325dbd03e258466bded244bcb0c3bc7305801ef3f635023",
+    "original_bytes": 6385,
+    "excerpt_sha256": "9a251d90b56c03b14f727ad09696b570006054d0bb0375b5527909efab9c67f1",
+    "excerpt_bytes": 1158
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-rt-pair-100000.callgrind.log",
+    "original_sha256": "bb9f69d1b6cb152d5e74f303e5092ab872f76dfa4eb331ac4431d210ce8cfb4d",
+    "original_bytes": 150792,
+    "excerpt_sha256": "4c061867a7ec29bd5a2e80111cea89f9bf0ddb1f735a8ea6fefc37cc505386e3",
+    "excerpt_bytes": 33651
+  },
+  {
+    "phase": "before",
+    "file": "before-sefer-rt-pair-50000.callgrind.log",
+    "original_sha256": "683d45dd4e3b24c7c8c87d2c3b1e66a510769d0b118f89f85389ccf57676ee10",
+    "original_bytes": 150652,
+    "excerpt_sha256": "3bf4f688e23a50c62a7d3bb6a27e7fd6c2f1a906d4f80b7ce76ed26a201376bf",
+    "excerpt_bytes": 33649
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-16-alloc-100000.callgrind.log",
+    "original_sha256": "8fbf3ab92c7e137ea6abb71c352b705b8b1a8d26e2b96bf3bad833383e238329",
+    "original_bytes": 23404,
+    "excerpt_sha256": "c22cf600d358b4f62ed19c26ee7f537e8ebb01bff097fa3ecdde1a108f618e71",
+    "excerpt_bytes": 7137
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-16-alloc-50000.callgrind.log",
+    "original_sha256": "4979f8ea46bb296149389dfd273fad778f97782e01d2ede2caed396859dde02d",
+    "original_bytes": 23374,
+    "excerpt_sha256": "ccce390d329f581b0b255a499e07feb70ec14e08f454dbf8c978605ac812738f",
+    "excerpt_bytes": 7134
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-16-free-100000.callgrind.log",
+    "original_sha256": "f78e85ece2f174e7e1352f3038bf6a3d0c23b12d067719a86a65e31ceb04e050",
+    "original_bytes": 3940,
+    "excerpt_sha256": "6f5546bdc5fbc7105736e0c3c3cf6ec3031f83c90c8dd50dc642b359e3cb7bea",
+    "excerpt_bytes": 1460
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-16-free-50000.callgrind.log",
+    "original_sha256": "770bf16ddec74c9d6ebf5f629ed259d4c02c6d4623de22f30e76f44da83d1191",
+    "original_bytes": 3921,
+    "excerpt_sha256": "39f7a14b4a4561deb82241866e67f0043d2d9796c097c11ee0a1c184334a603f",
+    "excerpt_bytes": 1458
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-16-pair-100000.callgrind.log",
+    "original_sha256": "f92b82ce6f9a21334699539ab524f3ca8e68859cab7020410b4b89400e0c11b6",
+    "original_bytes": 146443,
+    "excerpt_sha256": "d0fc7ccca8a4463517e8f44a5b371599938857a89c751d00740fc8ff3bade545",
+    "excerpt_bytes": 36549
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-16-pair-50000.callgrind.log",
+    "original_sha256": "17a277195ef523c095cc19ea37e1351e63386884cbaaad9c5d16617ee9b27db1",
+    "original_bytes": 146386,
+    "excerpt_sha256": "5f304beef65636767cd2ae1cc6877dfa6e0e4404931b00f20a8d50e4e9aa23d2",
+    "excerpt_bytes": 36544
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-64-alloc-100000.callgrind.log",
+    "original_sha256": "96f474f6c358269251caf1e3212239a01eab62b374852ba6384c4a5130f9e2af",
+    "original_bytes": 23799,
+    "excerpt_sha256": "0dedffa9890ad7f5b47478f725793c07f48b9e0f9522375930f5d2c6bbd012bf",
+    "excerpt_bytes": 7321
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-64-alloc-50000.callgrind.log",
+    "original_sha256": "4cd6c0bd529e6f210793fddd8dca5649289bc90af3ec028ee891855d685913ea",
+    "original_bytes": 23766,
+    "excerpt_sha256": "e8ea68e979a17866dd00f9ea886aa699cbd1819c99a198eaf2e2cdfbe921eb4d",
+    "excerpt_bytes": 7318
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-64-free-100000.callgrind.log",
+    "original_sha256": "d5c81aade21d3151774b3afd3532cba51047104f8364190fcd929c121141e303",
+    "original_bytes": 3940,
+    "excerpt_sha256": "999932b80812dd5e303bbbef7c5ca1caae34b960a7112a0ddfc1203ddb96ad7b",
+    "excerpt_bytes": 1460
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-64-free-50000.callgrind.log",
+    "original_sha256": "ff4a4b0c2ba0bc0bdda0d5618beb6f15df082e48eb6f717e9db72bf840159ff1",
+    "original_bytes": 3921,
+    "excerpt_sha256": "7b46de92237cf555bb5a895191f03063c093d9ab1e18f505ff12a741b4af5215",
+    "excerpt_bytes": 1458
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-64-pair-100000.callgrind.log",
+    "original_sha256": "b39324415bacc10f17eda6170fae56d8fe69b49964acc702fd30e3b0b4e161d1",
+    "original_bytes": 146789,
+    "excerpt_sha256": "640780a084c3a25cf0943dfd0dc760bf5d38e452f5d609f83a9340a0262372fb",
+    "excerpt_bytes": 36677
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-64-pair-50000.callgrind.log",
+    "original_sha256": "a3a9afa2bd707efcca90cc49e3dcd3a38fae97fc552fed65041bb5b9e3dda030",
+    "original_bytes": 146730,
+    "excerpt_sha256": "cccbbd04b7bf0f51e5204ca800b26fc35f9aae70b348af084aa23e50090a39a4",
+    "excerpt_bytes": 36672
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk16k-alloc-100.callgrind.log",
+    "original_sha256": "cd48517ab5de63d1dc72e8e1303911031ed7df35c213bfd070444d14ddbe0d64",
+    "original_bytes": 27599,
+    "excerpt_sha256": "a96b0a2ffb0904cf49f45fe09497a4fa9f5ca2c8e21f59f1fc09a368145ecca4",
+    "excerpt_bytes": 8089
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk16k-alloc-200.callgrind.log",
+    "original_sha256": "569b5e6954f792a663e2f85c0acb4788cf542a956de4826e440574a27987d27e",
+    "original_bytes": 30207,
+    "excerpt_sha256": "7fe36958b41a83200738d643779eeb7e194781d0db148728040a9eb462cc85f8",
+    "excerpt_bytes": 8423
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk16k-free-100.callgrind.log",
+    "original_sha256": "5710bd3c09ede83ce4dbfad3696601d3f469f82dd85ba2bf7a3ce83a081579d2",
+    "original_bytes": 11566,
+    "excerpt_sha256": "3d2f27235b2d2c2279f7952a605013b2a6cf4af5899ce2f9f38903523a3831ed",
+    "excerpt_bytes": 2976
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk16k-free-200.callgrind.log",
+    "original_sha256": "3fdd907d504268bfda68ae121260e3023602c4b3a5e8c897625448545895c0e8",
+    "original_bytes": 11700,
+    "excerpt_sha256": "0b911df2fedf224d20f6be9b1b792c23acf439dfc0b1a382268ce1a0e93819f6",
+    "excerpt_bytes": 2982
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk16k-pair-100.callgrind.log",
+    "original_sha256": "3e672ed8cc79aeca49e24e32acc22add365f74dc4dd83cd58dba3b7ddf3c7da9",
+    "original_bytes": 152537,
+    "excerpt_sha256": "1ce8f7adea8942cdd58cfab335d379b9bb92998f9e47c671681af1289187f1a4",
+    "excerpt_bytes": 37530
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk16k-pair-200.callgrind.log",
+    "original_sha256": "bb0c005ece543fcb89155d6165adec61f1695d2207bf4586a414cc932f149f0c",
+    "original_bytes": 153068,
+    "excerpt_sha256": "1feb323e383444e7b433faa4a4ba40a74b52436728257450293afd582a2f6834",
+    "excerpt_bytes": 37604
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk64-alloc-100.callgrind.log",
+    "original_sha256": "cc498f099a59b62e2620744d9a64bcb1d636b6da9ff0fba3e1780fe9403a8044",
+    "original_bytes": 22799,
+    "excerpt_sha256": "e398544e02880fb519de933c17d201ee751aed6b7fb432598621c6429e4d9497",
+    "excerpt_bytes": 6823
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk64-alloc-200.callgrind.log",
+    "original_sha256": "48a9b147e5e610a45cdc7f10c45a77b4b07c31d382e47552d9c622f2b6489bd8",
+    "original_bytes": 22833,
+    "excerpt_sha256": "c10ade3ec4236d504dbad6ae2174d1ea12f008b7bc8c1be174b0d0869e57870d",
+    "excerpt_bytes": 6828
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk64-free-100.callgrind.log",
+    "original_sha256": "ffabf7f69e1952b831b8480167c29c0c92c04ce633b68634e62cb5b06cca44de",
+    "original_bytes": 3504,
+    "excerpt_sha256": "61c681082e61bb13eb46bed98194a4326a9f5067ce2c9de927599661e915d50f",
+    "excerpt_bytes": 1110
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk64-free-200.callgrind.log",
+    "original_sha256": "055249a306070d9c8d05d2ea0aafb8630a9dad2dffcfe25dffd28d561851b51e",
+    "original_bytes": 3525,
+    "excerpt_sha256": "fe14fc876fce9e4f7bda77c2d189d5dddea84e5988358d9880690282fea9ec60",
+    "excerpt_bytes": 1112
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk64-pair-100.callgrind.log",
+    "original_sha256": "cdd6d94b6e2ecc5725387da36f839f294537c3113f3197fd67611e7850146226",
+    "original_bytes": 146534,
+    "excerpt_sha256": "c606d212273d8514b9560044e80f1dba470ff0a47bcff2a75b47098ccf8296e8",
+    "excerpt_bytes": 36231
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-bulk64-pair-200.callgrind.log",
+    "original_sha256": "b1b783c239b9bee7b00191e7a19da05a18651dd45c656ea0bc772d41a5a15160",
+    "original_bytes": 146606,
+    "excerpt_sha256": "5d9a5e92d151b2089fc1dbe80c0a0d51f97f063151a6208ff046080ff0bcc0ac",
+    "excerpt_bytes": 36238
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-rt-alloc-100000.callgrind.log",
+    "original_sha256": "5ba3db4fb3fae7c92fbb91089dd1f8e649db457a74f801ba070582b4f98f9a7e",
+    "original_bytes": 26137,
+    "excerpt_sha256": "9f76500f820f54befd43fcda4cf2a3c052be7285da6e7e7b0e3fc22c04c9d3cc",
+    "excerpt_bytes": 7572
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-rt-alloc-50000.callgrind.log",
+    "original_sha256": "e9b9de47187e09c9c2c6cb6e8178d16f2d6d05369592d1d5c69a61204cbc363c",
+    "original_bytes": 26093,
+    "excerpt_sha256": "6d4a7f63b8499ac1efd2244e2425863943b593594953c83562c8332406b27031",
+    "excerpt_bytes": 7568
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-rt-free-100000.callgrind.log",
+    "original_sha256": "d941cb4c7c88dd0aa833a0e85520041edc2e1dbea893e16da8660c0f43b79eee",
+    "original_bytes": 8369,
+    "excerpt_sha256": "36011030e17881b2fabf3b30721c98bfb2208997e10211f628067cde735f1596",
+    "excerpt_bytes": 2354
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-rt-free-50000.callgrind.log",
+    "original_sha256": "26d71194f55c7084408b41930261c065d5b79b1a2ba68304e3ee80df4673ebe5",
+    "original_bytes": 8350,
+    "excerpt_sha256": "c6a609385569e17b41e5b03662377338081b0c81b7a46a6bffac967d656ed03f",
+    "excerpt_bytes": 2353
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-rt-pair-100000.callgrind.log",
+    "original_sha256": "3f55c36bec470f159a161bb6770f3f4494c6429c5fa311acae91779677deaa25",
+    "original_bytes": 150081,
+    "excerpt_sha256": "7c4ffe195c8aa29c4d91c15caba49bf18341f14b951b0ffcdb45c7aacd23b5e2",
+    "excerpt_bytes": 36876
+  },
+  {
+    "phase": "after",
+    "file": "after-mimalloc-rt-pair-50000.callgrind.log",
+    "original_sha256": "43eff780fa7a357dd9ebc367c8807627475d6f7db67ffde679a490244a15ea58",
+    "original_bytes": 150002,
+    "excerpt_sha256": "4aca059ad69aaf71026d23ded5bb3c082a98757527ff26f4c006ed0b059ddb98",
+    "excerpt_bytes": 36869
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-16-alloc-100000.callgrind.log",
+    "original_sha256": "e58916791dae5fc844c22f5d0a19d87a7d6632fcb070b38c758e8870a2246554",
+    "original_bytes": 24712,
+    "excerpt_sha256": "adc83924f7b643d9606283dc3ff4cc78c13ff1b07c3644fbfbc30c6b390f15c7",
+    "excerpt_bytes": 5171
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-16-alloc-50000.callgrind.log",
+    "original_sha256": "1d688de34dd27f098a9459694148ded995ee42b1def725be4dbbbfd8c0905139",
+    "original_bytes": 24700,
+    "excerpt_sha256": "550cbfe4f940447d7675370caba33e38415a4263c54d29a4a76a6f6789c46b55",
+    "excerpt_bytes": 5170
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-16-free-100000.callgrind.log",
+    "original_sha256": "861a0e205153aa421a37bca9e7eb91ec01df43850e59923df6a2330e48dbc6fb",
+    "original_bytes": 4267,
+    "excerpt_sha256": "254f8b4e004a893adb1a4a0803f4b94f58f9a95030d0bf0ce28370bb98630dd7",
+    "excerpt_bytes": 1354
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-16-free-50000.callgrind.log",
+    "original_sha256": "b3ea892b0e07910958c7c3424daad9be5803bd2957912cb36f62083ef8c2a6f7",
+    "original_bytes": 4257,
+    "excerpt_sha256": "1ca1564e0d5966d05fc2ac9d208366bca5c9429492df419aaf5c82be980dba2d",
+    "excerpt_bytes": 1353
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-16-pair-100000.callgrind.log",
+    "original_sha256": "18771412ffc9aefc7b47dfb359317ebe648182ee907e1624f63e0c2bcf438bad",
+    "original_bytes": 147588,
+    "excerpt_sha256": "5e4949ca45fae2eb6432e86159fe415505d13fe73846d4885672bfde7a1ead93",
+    "excerpt_bytes": 34230
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-16-pair-50000.callgrind.log",
+    "original_sha256": "cc45ca7bb409e30b99f1ca195a076aedcaf7a7a3caa906be52c36909d3a0e03c",
+    "original_bytes": 147570,
+    "excerpt_sha256": "9714cd5f39b1b9cbba52b0eee5399fab58edca1ebb654d52f6428d63d57dd160",
+    "excerpt_bytes": 34228
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-64-alloc-100000.callgrind.log",
+    "original_sha256": "1667a25671604470bca8cc611ab4ef4e1232258f47d50b1fc2c00b9983e8d858",
+    "original_bytes": 24712,
+    "excerpt_sha256": "b882fe24f182db4adb3cab5111c6fdd5fe27ea5ca87e89b8562816dc22dd78bb",
+    "excerpt_bytes": 5171
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-64-alloc-50000.callgrind.log",
+    "original_sha256": "ed5025cea9418b64ee88960392d6b0629c8d1f20a1e343c70dc5bb04e4ce4eb9",
+    "original_bytes": 24700,
+    "excerpt_sha256": "15f4c8d453f5f1e4c3e1adc1f956e45643868a424c12dbd9e084f201de3bcfc0",
+    "excerpt_bytes": 5170
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-64-free-100000.callgrind.log",
+    "original_sha256": "b82cb491333c1a86317e44a4a29ff36c6a0a3b8917c751755429e68627163c1c",
+    "original_bytes": 4267,
+    "excerpt_sha256": "2026e05a2b083077db5f83d3e37980cfba970c68f7c1f09b20a78513527d8b16",
+    "excerpt_bytes": 1354
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-64-free-50000.callgrind.log",
+    "original_sha256": "c955e9e0bdf7ddaa84ed6e005c6c35bf20f541583005d450d5e5a6a9c412a4c1",
+    "original_bytes": 4257,
+    "excerpt_sha256": "c833b4c53991eb52498fd17b3283a3c3c4f0ba82b2a47bfc33c4ed32c1c43a90",
+    "excerpt_bytes": 1353
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-64-pair-100000.callgrind.log",
+    "original_sha256": "e5a1a9353d1e8eddf1d82f6369d657f0e148194f01189d9123d3bf2aad16f9e5",
+    "original_bytes": 147622,
+    "excerpt_sha256": "771576d8cd28ab545aa0728896bae1c4f59cc6b13848682494d9fd863ff592fb",
+    "excerpt_bytes": 34230
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-64-pair-50000.callgrind.log",
+    "original_sha256": "40c4403caf5a8b83d6a2702ceb043956e82888f673ccf05fb898b1b36d99ebb5",
+    "original_bytes": 147604,
+    "excerpt_sha256": "787799747a509f307879fb9ae7d005859f8c485216285fc83701378e5f89cf47",
+    "excerpt_bytes": 34228
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk16k-alloc-100.callgrind.log",
+    "original_sha256": "0ad3ad72578693460d1937aa6d29ebe1d20d1dfb1e3c2b06f7b7cf2144c71f0d",
+    "original_bytes": 26782,
+    "excerpt_sha256": "66ad6cbccaed8736d71820a60882739720aee73e067faf52690dd18ab5ce0dda",
+    "excerpt_bytes": 4993
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk16k-alloc-200.callgrind.log",
+    "original_sha256": "6713ee39e6d014913946a3760bd86303008f5fe0e4811449402c7deba38d6e09",
+    "original_bytes": 26829,
+    "excerpt_sha256": "9401f348758a61f53f42012ed0a8f8d7c951c68c0032c71dc3746e8913e57811",
+    "excerpt_bytes": 4995
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk16k-free-100.callgrind.log",
+    "original_sha256": "9ad26468aaacff5d2b314195e2e5e16ff3cebfecd8a8f33c6567d1072315ac08",
+    "original_bytes": 6186,
+    "excerpt_sha256": "0247e2df7ee73c2f690a508821475fde08d368d3eab50659a8a44d360e5585d3",
+    "excerpt_bytes": 1128
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk16k-free-200.callgrind.log",
+    "original_sha256": "7c70d64ff162c6e25366dd965411f08ca9875daae267eefa3a67bb073fffb033",
+    "original_bytes": 6240,
+    "excerpt_sha256": "a00891940a7d56d13a89441f27664a349348c9cd1f39af3a92883be018722271",
+    "excerpt_bytes": 1130
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk16k-pair-100.callgrind.log",
+    "original_sha256": "c062bff32e9f976c22ae42b7b1a2a0f11b1c758a95dee38e333c7a7764723c50",
+    "original_bytes": 151283,
+    "excerpt_sha256": "8fb3dd4d382e93aa8579f8314a879db78d1b77d62a4c4833fc35bf043cd72353",
+    "excerpt_bytes": 34046
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk16k-pair-200.callgrind.log",
+    "original_sha256": "b62b9c32873d727dadf5436a95beb3abc90e64bfb2d072229c7289773e11211e",
+    "original_bytes": 151392,
+    "excerpt_sha256": "1ad0aa0be28c8a6bdbad4ebc21135c54a94725bc0b54723bfe66ee8aa9557b49",
+    "excerpt_bytes": 34050
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk64-alloc-100.callgrind.log",
+    "original_sha256": "778107407f9239163025208969d62ece71bd7ef957fd864d3ade16740dad41f0",
+    "original_bytes": 26253,
+    "excerpt_sha256": "4bbb5716a390be02d79349c04e8d586f6e77046044d844e6b969eb8955b2d84b",
+    "excerpt_bytes": 4979
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk64-alloc-200.callgrind.log",
+    "original_sha256": "665b1922fdd7adac40e6b5adea0c38a2d4a72b03b5aa5e4da55a6f41d68a8d61",
+    "original_bytes": 26338,
+    "excerpt_sha256": "02a2d306f9c1262e0de99a91715a259bae17145a3afe132d68d78665b50802bc",
+    "excerpt_bytes": 4983
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk64-free-100.callgrind.log",
+    "original_sha256": "58ad56e2020e3e32ce196ed01dc2e4eea0c0f9816cd5f4d25f09e8646018b304",
+    "original_bytes": 6309,
+    "excerpt_sha256": "007549736305f98089e512a3c0e9d034590bb7606f2d7a6403a8022d479eeb01",
+    "excerpt_bytes": 1126
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk64-free-200.callgrind.log",
+    "original_sha256": "f92629b38defa4c3bcc7ccb5abd6aced095dede94a3761a9e756db3d3bb201ea",
+    "original_bytes": 6371,
+    "excerpt_sha256": "406d9248ddc85138f8f1708b880bc5213ede96bca4e8d2a02ebd1b13a240c997",
+    "excerpt_bytes": 1130
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk64-pair-100.callgrind.log",
+    "original_sha256": "d067644f58ce84ca088ec0be6a42a3e5c9dd1ed71b95d6a90c39ce16f4e06287",
+    "original_bytes": 150851,
+    "excerpt_sha256": "c86658d10f36ee6be8ebdba0fa9a66f18d8519860db7564f8f239467ab37200a",
+    "excerpt_bytes": 34034
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-bulk64-pair-200.callgrind.log",
+    "original_sha256": "05193d9c891932a3795c863d383f8c75f3eddd2715d0021da9e47ad6d5f824dd",
+    "original_bytes": 150987,
+    "excerpt_sha256": "0d922877ed2b19139d113e149a8c868b54521690e9e7ecac004df1551b03d59e",
+    "excerpt_bytes": 34038
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-rt-alloc-100000.callgrind.log",
+    "original_sha256": "dec70124dff4b1b469c0d95c611b92be61bdfd88c9c429619c38f06aa8a998ca",
+    "original_bytes": 26903,
+    "excerpt_sha256": "bee1f0570d59e910c032935e7bec15543b80e222cccfff58842c34f597c2611a",
+    "excerpt_bytes": 4975
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-rt-alloc-50000.callgrind.log",
+    "original_sha256": "cd43818163fa70cbdd02b1fc22b4fb16123c897230a0fb8e8a5319a497a2cd02",
+    "original_bytes": 26834,
+    "excerpt_sha256": "2b079d54400afba87b6758b8527fa562bf227d1ed5e8e14fea7bdc991bf6c221",
+    "excerpt_bytes": 4974
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-rt-free-100000.callgrind.log",
+    "original_sha256": "4533b76db62a38309819fdfdaef60eca9420cbe880532e3294170c227921cff5",
+    "original_bytes": 6466,
+    "excerpt_sha256": "583b43ecdce2adcd7290b00542183dd7541397334a2179646c62352ac89ae393",
+    "excerpt_bytes": 1159
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-rt-free-50000.callgrind.log",
+    "original_sha256": "c661a87703b8bace7a932a6aeb3dcc1bba4c692709f67a4eb17b8e3d5f566a2f",
+    "original_bytes": 6407,
+    "excerpt_sha256": "ed68919d72f780bdc8c077d9b62e14840da6c8c09a7d653064d88990f3a7163c",
+    "excerpt_bytes": 1158
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-rt-pair-100000.callgrind.log",
+    "original_sha256": "d14a6afee27e4af965e29a095e450764ddcc3fadd8b0d02ae1270057f149d534",
+    "original_bytes": 151334,
+    "excerpt_sha256": "ff87c619230c9f4731d0c324b46c6eb345ff2d72407f7794e972ece66ec2d52c",
+    "excerpt_bytes": 33883
+  },
+  {
+    "phase": "after",
+    "file": "after-sefer-rt-pair-50000.callgrind.log",
+    "original_sha256": "6fd09ae954945652c4cb5846f9fd189e3f526c342160b738bc8a9e2cd2ff6724",
+    "original_bytes": 151199,
+    "excerpt_sha256": "20dfd9b0b5e9bafd970d484fea08a8d4013622cc0108f94edeae923cc12d51aa",
+    "excerpt_bytes": 33881
+  }
+]

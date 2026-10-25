@@ -1,0 +1,184 @@
+# Source/build paths normalized; numeric data unchanged.
+# callgrind format
+version: 1
+creator: callgrind-3.22.0
+pid: 584507
+cmd:  <workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall mimalloc bulk64 200
+part: 1
+
+
+desc: I1 cache: 
+desc: D1 cache: 
+desc: LL cache: 
+
+desc: Timerange: Basic block 0 - 413717
+desc: Trigger: Program termination
+
+positions: line
+events: Ir
+summary: 408202
+
+
+ob=(1) /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+fl=(1) ???
+fn=(0) 0x000000000001f540
+cob=(6) <workspace>/.rush/own-free/control-after/target/release/examples/own_free_wall
+cfi=(162) ???
+cfn=(534) (below main)
+calls=1 0 
+0 408202
+
+ob=(6)
+fl=(198) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs
+fn=(1006) std::rt::lang_start::<()>::{closure#0}
+cfi=(270) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs
+cfn=(1008) std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+calls=1 162 
+206 408202
+
+fn=(762) std::rt::lang_start_internal
+fi=(337) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs
+cfn=(1006)
+calls=1 206 
+287 408202
+fe=(198)
+
+fl=(271) <workspace>/worktrees/own-free-cost/examples/own_free_wall.rs
+fn=(1246) own_free_wall::w_free_rt::<mimalloc::MiMalloc>
+13 38400
+fi=(338) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs
++48 12800
+cfi=(298) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c
+cfn=(1248) mi_free
+calls=12800 207 
+* 293002
+fi=(287) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs
+491 25600
+fe=(271)
+17 38400
+
+fn=(1010) own_free_wall::main
+cfn=(1246)
+calls=200 13 
+103 6200
+cfn=(1246)
+calls=12600 13 
+103 402002
+
+fl=(270)
+fn=(1008)
+fi=(337)
+cfi=(271)
+cfn=(1010)
+calls=1 119 
+250 408202
+fe=(270)
+
+fl=(182) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h
+fn=(1076) mi_bin
+512 600
+fi=(289) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c
+71 400
++1 1200
+fe=(182)
+
+fl=(298)
+fn=(1248)
+207 12800
+fi=(182)
+648 12800
+-4 12800
+fe=(298)
+207 12800
+fi=(182)
+644 12800
++4 12800
+-6 25600
++1 12800
++11 12800
+fe=(298)
+181 25600
+fi=(185) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h
+301 12800
+fi=(182)
+815 12800
+fe=(298)
+186 25600
+fi=(182)
+1069 25600
+fe=(298)
+43 12800
+-1 12800
++1 12800
+210 12600
+44 400
++1 200
+cfi=(291) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c
+cfn=(1256) _mi_page_retire
+calls=200 432 
+* 11002
+
+fl=(291)
+fn=(1256)
+432 200
++5 400
+-5 600
+fi=(182)
+830 200
++67 200
+-82 200
+-17 200
+fi=(289)
+175 400
+fi=(182)
+797 400
+fi=(289)
+175 400
+cfi=(182)
+cfn=(1076)
+calls=200 512 
+* 2200
+* 600
+49 200
+190 200
+49 200
+fe=(291)
+449 400
++1 1200
++5 1000
++2 600
++2 401
++1 401
++7 400
+
+fl=(162)
+fn=(534)
+cob=(2) /usr/lib/x86_64-linux-gnu/libc.so.6
+cfi=(163) ./csu/../csu/libc-start.c
+cfn=(536) __libc_start_main@@GLIBC_2.34
+calls=1 242 
+0 408202
+
+fn=(760) main
+cfi=(198)
+cfn=(762)
+calls=1 152 
+0 408202
+
+ob=(2)
+fl=(194) ./csu/../sysdeps/nptl/libc_start_call_main.h
+fn=(752) (below main)
+cob=(6)
+cfi=(162)
+cfn=(760)
+calls=1 0 
+58 408202
+
+fl=(163)
+fn=(536)
+cfi=(194)
+cfn=(752)
+calls=1 29 
+360 408202
+
+totals: 408202

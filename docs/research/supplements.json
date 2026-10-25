@@ -1,0 +1,8 @@
+[
+  {
+    "source": "worktrees/scalar-issue-prepared/scripts/scalar_issue_report.mjs",
+    "archive": "scalar-issue-prepared/reproduction/scalar_issue_report.mjs",
+    "restore_to": "scripts/scalar_issue_report.mjs",
+    "sha256": "6e8d08792e83c914b7f53999ede8f77a7b76479f77c4cb4985e980745ebc4872"
+  }
+]

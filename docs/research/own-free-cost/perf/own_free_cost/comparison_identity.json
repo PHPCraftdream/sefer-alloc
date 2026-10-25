@@ -1,0 +1,52 @@
+{
+  "captured_before_build": "2026-10-24T19:52:06.989Z",
+  "identities": {
+    "before": {
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "patch_sha256": "592a1dd7343a856543215f42e3d199c1bb509395af6e22350368ee62e002bff7",
+      "files": {
+        "src/registry/heap_core/free/dealloc_own_base.rs": "950da70583f06c2f20f41232314f360e6bf529b8c1673ba69a6842a2e6a71ef2",
+        "Cargo.toml": "2767876925cac6ed4bdd8d2da0b262c9590a46bdeb398d3b2ca17e86e39ea4b0",
+        "Cargo.lock": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+        "examples/own_free_wall.rs": "320b251f5c0a8e70af02b8fc35f93dfd9f27940f82629d859d01750550ac29dd"
+      }
+    },
+    "after": {
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "patch_sha256": "6a61e27b9601a6e47b013e7dc099883b0180fe0bdd608be44429f03d8efabce6",
+      "files": {
+        "src/registry/heap_core/free/dealloc_own_base.rs": "76ee84acb0eabf7a7311fcac9d26073bbf56afabfd115ae0e606098d851d1012",
+        "Cargo.toml": "24d8e52a93b832d434f27251b9389606772cc6417ae7fe5c7fb0df6a3fa4c533",
+        "Cargo.lock": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+        "examples/own_free_wall.rs": "320b251f5c0a8e70af02b8fc35f93dfd9f27940f82629d859d01750550ac29dd"
+      }
+    }
+  },
+  "features": "production",
+  "native_rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+  "native_cargo": "cargo 1.97.0 (c980f4866 2026-06-30)",
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+  "os": "win32/10.0.19045/x64",
+  "native_plan": {
+    "blocks": 20,
+    "sequence": [
+      "a",
+      "ma",
+      "b",
+      "mb",
+      "mb",
+      "b",
+      "ma",
+      "a"
+    ],
+    "aa_blocks": 10,
+    "modes": {
+      "16": 1000000,
+      "64": 1000000,
+      "rt": 1000000,
+      "bulk64": 256,
+      "bulk16k": 256
+    }
+  },
+  "note": "workload_ns includes setup/churn/teardown inside run; process_ns additionally includes startup/output/exit. Not pure free latency."
+}

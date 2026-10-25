@@ -1,0 +1,48 @@
+# TRUNCATED — Callgrind header, summary/totals and named call edges retained verbatim; source-path and instruction-cost records omitted. Reproduce full file: leaf-ir.sh <pinned-source-tree> <fresh-output-dir>; see identity.json and archived launcher.
+version: 1
+creator: callgrind-3.22.0
+pid: 618714
+part: 1
+positions: line
+events: Ir
+summary: 408202
+fn=(0) 0x000000000001f540
+cfn=(534) (below main)
+calls=1 0 
+fn=(1006) std::rt::lang_start::<()>::{closure#0}
+cfn=(1008) std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+calls=1 162 
+fn=(762) std::rt::lang_start_internal
+cfn=(1006)
+calls=1 206 
+fn=(1246) own_free_wall::w_free_rt::<mimalloc::MiMalloc>
+cfn=(1248) mi_free
+calls=12800 207 
+fn=(1010) own_free_wall::main
+cfn=(1246)
+calls=200 13 
+cfn=(1246)
+calls=12600 13 
+fn=(1008)
+cfn=(1010)
+calls=1 119 
+fn=(1076) mi_bin
+fn=(1248)
+cfn=(1256) _mi_page_retire
+calls=200 432 
+fn=(1256)
+cfn=(1076)
+calls=200 512 
+fn=(534)
+cfn=(536) __libc_start_main@@GLIBC_2.34
+calls=1 242 
+fn=(760) main
+cfn=(762)
+calls=1 152 
+fn=(752) (below main)
+cfn=(760)
+calls=1 0 
+fn=(536)
+cfn=(752)
+calls=1 29 
+totals: 408202

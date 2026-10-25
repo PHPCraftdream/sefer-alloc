@@ -1,0 +1,11 @@
+==598562== Callgrind, a call-graph generating cache profiler
+==598562== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==598562== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==598562== Command: <workspace>/.rush/own-free-single/control-after/target/release/examples/own_free_wall mimalloc bulk16k 200
+==598562== 
+==598562== For interactive control, run 'callgrind_control -h'.
+==598562== 
+==598562== Events    : Ir
+==598562== Collected : 936802
+==598562== 
+==598562== I   refs:      936,802

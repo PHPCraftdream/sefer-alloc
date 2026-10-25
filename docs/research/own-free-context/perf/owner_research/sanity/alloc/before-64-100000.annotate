@@ -1,0 +1,214 @@
+--------------------------------------------------------------------------------
+Profile data file '<workspace>/.rush/own-free-context/alloc-sanity/before-64-100000.callgrind' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 2049692
+Trigger: Program termination
+Profiled target:  <workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile sefer 64 100000 (PID 615447, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                 
+--------------------------------------------------------------------------------
+2,248,611 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                file:function
+--------------------------------------------------------------------------------
+700,111 (31.14%)  worktrees/own-free-before/src/registry/heap_core/alloc/hot.rs:own_free_profile::w_alloc64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+400,062 (17.79%)  worktrees/own-free-before/examples/own_free_profile.rs:own_free_profile::w_alloc64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+300,045 (13.34%)  worktrees/own-free-before/src/alloc_core/segment/bitmap/state_byte.rs:own_free_profile::w_alloc64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+200,036 ( 8.90%)  worktrees/own-free-before/src/global/tls_heap.rs:own_free_profile::w_alloc64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+200,030 ( 8.90%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:own_free_profile::w_alloc64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+100,016 ( 4.45%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:own_free_profile::w_alloc64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+100,016 ( 4.45%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:own_free_profile::w_alloc64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+100,016 ( 4.45%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:own_free_profile::w_alloc64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+100,015 ( 4.45%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:own_free_profile::w_alloc64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+ 41,284 ( 1.84%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  2,712 ( 0.12%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+    948 ( 0.04%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+    407 ( 0.02%)  worktrees/own-free-before/src/registry/heap_core/state/tcache.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+    287 ( 0.01%)  ./malloc/./malloc/malloc.c:calloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+    166 ( 0.01%)  worktrees/own-free-before/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+    152 ( 0.01%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+    136 ( 0.01%)  worktrees/own-free-before/src/registry/segment_route/directory.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+    135 ( 0.01%)  ./malloc/./malloc/malloc.c:malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+    130 ( 0.01%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+    117 ( 0.01%)  worktrees/own-free-before/src/alloc_core/alloc_core/lifecycle.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     83 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+     52 ( 0.00%)  ./misc/../sysdeps/unix/sysv/linux/mmap64.c:mmap [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     49 ( 0.00%)  worktrees/own-free-before/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     48 ( 0.00%)  ./stdlib/./stdlib/cxa_thread_atexit_impl.c:__cxa_thread_atexit_impl [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     46 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+     45 ( 0.00%)  worktrees/own-free-before/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+     44 ( 0.00%)  ./nptl/./nptl/pthread_mutex_lock.c:pthread_mutex_lock@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     40 ( 0.00%)  worktrees/own-free-before/src/registry/heap_registry/claim.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     34 ( 0.00%)  ./nptl/./nptl/pthread_mutex_unlock.c:pthread_mutex_unlock@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     34 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     31 ( 0.00%)  ./elf/./elf/dl-open.c:_dl_find_dso_for_object [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+     31 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+     30 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+     29 ( 0.00%)  worktrees/own-free-before/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     28 ( 0.00%)  ./malloc/./malloc/malloc.c:alloc_perturb [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     28 ( 0.00%)  worktrees/own-free-before/crates/aligned-vmem/src/os/unix.rs:aligned_vmem::os::unix::reserve_aligned_raw [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     26 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+     26 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+     25 ( 0.00%)  ./posix/../sysdeps/unix/sysv/linux/x86/sysconf.c:sysconf [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     25 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+     24 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+     24 ( 0.00%)  worktrees/own-free-before/src/global/tls_heap.rs:sefer_alloc::global::tls_heap::bind_slow_tagged_with_config [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     24 ( 0.00%)  worktrees/own-free-before/src/global/tls_heap.rs:sefer_alloc::global::tls_heap::finish_bind [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     23 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+     22 ( 0.00%)  worktrees/own-free-before/src/alloc_core/alloc_core/sidecar_drain.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+     21 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/destructors/linux_like.rs:std::sys::thread_local::destructors::linux_like::register [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     21 ( 0.00%)  worktrees/own-free-before/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     20 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+     20 ( 0.00%)  worktrees/own-free-before/crates/aligned-vmem/src/api/recommit.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+     20 ( 0.00%)  worktrees/own-free-before/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     20 ( 0.00%)  worktrees/own-free-before/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     19 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+     19 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+     19 ( 0.00%)  worktrees/own-free-before/crates/aligned-vmem/src/page_size.rs:aligned_vmem::page_size::init_page_size_cache [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     19 ( 0.00%)  worktrees/own-free-before/src/alloc_core/config/large_cache_config.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+     19 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/active_kind_index.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+     19 ( 0.00%)  worktrees/own-free-before/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     18 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     18 ( 0.00%)  worktrees/own-free-before/src/alloc_core/small/alloc_core_small/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::maybe_materialize_directory [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     18 ( 0.00%)  worktrees/own-free-before/src/registry/segment_route/directory.rs:<sefer_alloc::registry::segment_route::directory::Shard>::locate [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     17 ( 0.00%)  ./posix/../sysdeps/posix/sysconf.c:sysconf
+     17 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+     17 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote
+     16 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/adapters/enumerate.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+     16 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+     15 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+     15 ( 0.00%)  worktrees/own-free-before/crates/aligned-vmem/src/api/internal.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+     15 ( 0.00%)  worktrees/own-free-before/src/registry/heap_core_xthread/sidecar_drain.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     13 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+     13 ( 0.00%)  worktrees/own-free-before/crates/aligned-vmem/src/os/unix.rs:<once_ptr_cell::imp::OncePtrCell<sefer_alloc::registry::bootstrap::chunk::RegistryChunk>>::init_slow::<sefer_alloc::registry::bootstrap::ensure::ensure_chunk_slow::{closure#0}>
+     13 ( 0.00%)  worktrees/own-free-before/src/registry/heap_registry/stack.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+     12 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:sefer_alloc::global::tls_heap::finish_bind
+     12 ( 0.00%)  worktrees/own-free-before/crates/aligned-vmem/src/page_size.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+     12 ( 0.00%)  worktrees/own-free-before/crates/once-ptr-cell/src/imp.rs:<once_ptr_cell::imp::OncePtrCell<sefer_alloc::registry::bootstrap::chunk::RegistryChunk>>::init_slow::<sefer_alloc::registry::bootstrap::ensure::ensure_chunk_slow::{closure#0}> [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     12 ( 0.00%)  worktrees/own-free-before/src/alloc_core/alloc_core/bootstrap.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+     12 ( 0.00%)  worktrees/own-free-before/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+     11 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+     11 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+     11 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/active_kind_index.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+     11 ( 0.00%)  worktrees/own-free-before/src/registry/segment_route/directory.rs:<sefer_alloc::registry::segment_route::directory::BlockIndex>::insert [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     10 ( 0.00%)  ./posix/../sysdeps/unix/sysv/linux/x86/../sysconf.c:sysconf
+     10 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+      9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:aligned_vmem::os::unix::reserve_aligned_raw
+      9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      8 ( 0.00%)  ./malloc/./malloc/arena.c:calloc
+      8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/alloc/layout.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+      8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+      8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/specialize.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      8 ( 0.00%)  worktrees/own-free-before/crates/once-ptr-cell/src/imp.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      8 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+      7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<once_ptr_cell::imp::OncePtrCell<sefer_alloc::registry::bootstrap::chunk::RegistryChunk>>::init_slow::<sefer_alloc::registry::bootstrap::ensure::ensure_chunk_slow::{closure#0}>
+      7 ( 0.00%)  worktrees/own-free-before/src/alloc_core/config/small_segment_pool_config.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+      6 ( 0.00%)  ./malloc/../string/bits/string_fortified.h:calloc
+      6 ( 0.00%)  ./malloc/./malloc/arena.c:malloc
+      6 ( 0.00%)  ./misc/../sysdeps/unix/sysv/linux/getpagesize.c:getpagesize [/usr/lib/x86_64-linux-gnu/libc.so.6]
+      6 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:aligned_vmem::os::unix::reserve_aligned_raw
+      6 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/eager.rs:sefer_alloc::global::tls_heap::finish_bind
+      6 ( 0.00%)  worktrees/own-free-before/crates/aligned-vmem/src/os/unix.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+      6 ( 0.00%)  worktrees/own-free-before/src/alloc_core/alloc_core/lifecycle.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      6 ( 0.00%)  worktrees/own-free-before/src/registry/heap_core/core.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<once_ptr_cell::imp::OncePtrCell<sefer_alloc::registry::bootstrap::chunk::RegistryChunk>>::init_slow::<sefer_alloc::registry::bootstrap::ensure::ensure_chunk_slow::{closure#0}>
+      5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+      5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+      5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+      5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+      5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+      5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/time.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+      5 ( 0.00%)  worktrees/own-free-before/crates/aligned-vmem/src/page_size.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+      5 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:sefer_alloc::global::tls_heap::bind_slow_tagged_with_config
+      4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:sefer_alloc::global::tls_heap::finish_bind
+      4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+      4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+      4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:aligned_vmem::os::unix::reserve_aligned_raw
+      4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<once_ptr_cell::imp::OncePtrCell<sefer_alloc::registry::bootstrap::chunk::RegistryChunk>>::init_slow::<sefer_alloc::registry::bootstrap::ensure::ensure_chunk_slow::{closure#0}>
+      4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:sefer_alloc::global::tls_heap::finish_bind
+      4 ( 0.00%)  ???:0x000000000489d740 [???]
+      4 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      4 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      4 ( 0.00%)  worktrees/own-free-before/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+      4 ( 0.00%)  worktrees/own-free-before/src/registry/bootstrap/registry.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+      3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+      3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:sefer_alloc::global::tls_heap::bind_slow_tagged_with_config
+      3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:sefer_alloc::global::tls_heap::finish_bind
+      3 ( 0.00%)  worktrees/own-free-before/crates/aligned-vmem/src/os/align_up_addr.rs:aligned_vmem::os::unix::reserve_aligned_raw
+      3 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+      3 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_header/segment_header_meta_fields.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+      3 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+      3 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/active_kind_ops.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+      3 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+      3 ( 0.00%)  worktrees/own-free-before/src/global/sefer_alloc/global_alloc.rs:own_free_profile::w_alloc64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/convert/num.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:sefer_alloc::global::tls_heap::finish_bind
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::segment_route::directory::BlockIndex>::insert
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:aligned_vmem::page_size::init_page_size_cache
+      2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote
+      2 ( 0.00%)  ???:0x000000000489d450 [???]
+      2 ( 0.00%)  ???:0x000000000489d4e0 [???]
+      2 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      2 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_header/descriptors.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+      2 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_layout.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+      2 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_layout.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+      2 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+      2 ( 0.00%)  worktrees/own-free-before/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+      2 ( 0.00%)  worktrees/own-free-before/src/registry/heap_slot.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      2 ( 0.00%)  worktrees/own-free-before/src/registry/segment_route/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      2 ( 0.00%)  worktrees/own-free-before/src/registry/segment_route/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::registry::segment_route::directory::BlockIndex>::insert
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:<sefer_alloc::registry::segment_route::directory::BlockIndex>::insert
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:sefer_alloc::global::tls_heap::bind_slow_tagged_with_config
+      1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:sefer_alloc::global::tls_heap::bind_slow_tagged_with_config
+      1 ( 0.00%)  worktrees/own-free-before/src/alloc_core/large/alloc_core_large_cache_eviction.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      1 ( 0.00%)  worktrees/own-free-before/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+      1 ( 0.00%)  worktrees/own-free-before/src/registry/bootstrap/free_slot_hint.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      1 ( 0.00%)  worktrees/own-free-before/src/registry/heap_core/state/tcache_flush.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+      1 ( 0.00%)  worktrees/own-free-before/src/registry/segment_route/small_sidecar.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+      .           ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+      .           ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      .           ???:(below main) [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      .           ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+      .           ???:main [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      .           worktrees/own-free-before/examples/own_free_profile.rs:own_free_profile::main [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+
+--------------------------------------------------------------------------------
+# TRUNCATED — source listings omitted; full output: rebuild with reproduction/profile.sh then callgrind_annotate --auto=yes --threshold=100 <profile>.callgrind

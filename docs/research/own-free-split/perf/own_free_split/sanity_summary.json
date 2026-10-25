@@ -1,0 +1,17 @@
+{
+  "method": "full-program callgrind without toggle; same control binaries",
+  "phases": {
+    "before": {
+      "ir100": 3332566,
+      "ir200": 6028766,
+      "marginal_ir_per_pair": 421.28125,
+      "binary_sha256": "b6b302dae6f41ea88cd032c8a4479c097a095b2a3046b84fac6eb5e1bcbf7db8"
+    },
+    "after": {
+      "ir100": 2733098,
+      "ir200": 4829998,
+      "marginal_ir_per_pair": 327.640625,
+      "binary_sha256": "e3355ce0c8b999f4ce8e5cd2c15019e77723c52e34f3be9c587623509340e385"
+    }
+  }
+}

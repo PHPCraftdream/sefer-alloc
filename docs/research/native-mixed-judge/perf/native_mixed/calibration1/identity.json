@@ -1,0 +1,22 @@
+{
+  "captured_before_build": "2026-10-25T10:17:41.052Z",
+  "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+  "patch_sha256": "41a9b269d1af6d174722fd68736e3a070ade88e40e3915e89f69e908077d6fa0",
+  "files": {
+    "examples/native_mixed_sefer.rs": "a85e2c96ea556500d1234f224b13f9db793b48516da7c4b45978b5b923d8561e",
+    "examples/native_mixed_mimalloc.rs": "a6dff9409ba7462e40a8e7ba227e3ccff913410567a44dfc5524898dfb7f2ffe",
+    "examples/_shared/native_mixed_driver.rs": "77eb8dbe5c63c0d813046c76394fe6756c87532f8721d93504308853fd9b97d8",
+    "examples/_shared/paired_ab_workload.rs": "2fa5402c9c4ff01c484b53991072a6178ce1f989342da333c465f320da5f92b0",
+    "docs/design/2026-10-25-native-mixed-calibration-prereg.md": "1577eac1fe36e15655f1ce282b2bc88acc69b38c4f5635f4491492053a62156e"
+  },
+  "features": "production",
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+  "os": "10.0.19045",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+  "cargo": "cargo 1.97.0 (c980f4866 2026-06-30)\n",
+  "pilot_repeats": 16,
+  "target_ns": 100000000,
+  "AA_blocks": 10,
+  "meaningful_fraction": 0.05,
+  "max_halfwidth_fraction": 0.025
+}

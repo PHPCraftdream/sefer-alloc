@@ -1,0 +1,673 @@
+# Source/build paths normalized; numeric data unchanged.
+# callgrind format
+version: 1
+creator: callgrind-3.22.0
+pid: 578645
+cmd:  <workspace>/.rush/own-free/baseline/target/release/examples/own_free_profile mimalloc rt 100000
+part: 1
+
+
+desc: I1 cache: 
+desc: D1 cache: 
+desc: LL cache: 
+
+desc: Timerange: Basic block 0 - 2505102
+desc: Trigger: Program termination
+
+positions: line
+events: Ir
+summary: 3125976
+
+
+ob=(1) /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+fl=(1) ???
+fn=(0) 0x000000000001f540
+cob=(6) <workspace>/.rush/own-free/baseline/target/release/examples/own_free_profile
+cfi=(162) ???
+cfn=(534) (below main)
+calls=1 0 
+0 3125976
+
+ob=(6)
+fl=(290) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/arena.c
+fn=(1284) _mi_arenas_page_free
+1032 8
++9 3
++1 1
+cfi=(287) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c
+cfn=(1228) _mi_page_stats_bin
+calls=17 181 
+* 20
+* 4
+cfi=(173) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c
+cfn=(1286) __mi_stat_decrease
+calls=17 60 
+* 11
++1 3
+cfi=(173)
+cfn=(1286)
+calls=17 60 
+* 11
++34 2
+cfi=(186) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-map.c
+cfn=(1288) _mi_page_map_unregister
+calls=17 410 
+* 74
++1 3
++28 6
+cfn=(1298) _mi_arenas_free
+calls=17 1244 
+* 340
++1 7
+fi=(182) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h
+908 2
+fe=(290)
+190 1
+fi=(182)
+910 3
+cfi=(167) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c
+cfn=(706) mi_heap_main
+calls=17 451 
+* 20
+fe=(290)
+649 1
+1084 1
+649 2
+1084 2
+cfi=(291) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.c
+cfn=(1294) mi_bitmap_clear
+calls=17 +96 
+* 77
++1 3
+fi=(182)
+725 3
+474 2
+725 2
+fe=(290)
+1105 1
+197 2
+fi=(182)
+725 1
+fe=(290)
+
+fn=(1304) _mi_arenas_collect
+1302 6
+2022 1
+1302 5
++1 5
+2022 1
+cfi=(171) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c
+cfn=(574) mi_option_get
+calls=18 271 
+* 35
+* 3
+cfi=(171)
+cfn=(574)
+calls=18 271 
+* 35
+* 1
+2166 1
+cfi=(167)
+cfn=(592) _mi_preloading
+calls=18 987 
+* 3
+* 5
+1304 11
+2169 1
+cfi=(173)
+cfn=(600) _mi_clock_now
+calls=18 522 
+* 37
+* 1
++1 1
++1 8
+
+fn=(1298)
+1244 8
++2 4
+fi=(297) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/types.h
+263 1
+fe=(290)
+1251 2
++4 2
++44 6
+-40 2
+190 1
+1265 2
++6 4
++6 1
+191 1
+1277 1
++6 4
+cfi=(291)
+cfn=(1302) mi_bbitmap_setN
+calls=17 1674 
+* 79
++1 2
+2022 2
+cfi=(171)
+cfn=(574)
+calls=17 271 
+* 35
+* 3
+cfi=(171)
+cfn=(574)
+calls=17 271 
+* 35
+* 1
++39 5
+cfi=(167)
+cfn=(592)
+calls=17 987 
+* 3
+* 2
++3 2
++6 1
+cfi=(173)
+cfn=(600)
+calls=17 522 
+* 37
+* 1
++2 3
++4 2
++5 5
+cfi=(291)
+cfn=(1192) mi_bitmap_setN
+calls=1 1093 
+* 82
+* 1
+
+fl=(171)
+fn=(574)
+271 48
++2 8
++3 32
++3 8
++1 44
+
+fl=(271) <workspace>/worktrees/own-free-cost/examples/own_free_profile.rs
+fn=(1010) own_free_profile::main
+cfn=(1256) own_free_profile::w_free_rt::<mimalloc::MiMalloc>
+calls=1 12 
+64 31
+cfn=(1256)
+calls=99999 12 
+64 3101242
+cfn=(1256)
+calls=768 12 
+71 24703
+
+fn=(1256)
+12 302304
+fi=(336) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs
++49 100768
+cfi=(295) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c
+cfn=(1258) mi_free
+calls=100768 207 
+* 2219064
+fi=(296) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs
+491 201536
+fe=(271)
+16 302304
+
+fl=(270) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs
+fn=(1008) std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+fi=(337) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs
+cfi=(271)
+cfn=(1010)
+calls=1 103 
+250 3125976
+fe=(270)
+
+fl=(173)
+fn=(600)
+522 2
++1 2
+cfi=(172) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c
+cfn=(602) _mi_prim_clock_now
+calls=38 691 
+* 70
+
+fn=(1286)
+60 2
+-26 4
++2 6
++1 4
++1 4
++24 2
+
+fl=(198) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs
+fn=(762) std::rt::lang_start_internal
+fi=(337)
+cfn=(1006) std::rt::lang_start::<()>::{closure#0}
+calls=1 206 
+287 3125976
+fe=(198)
+
+fn=(1006)
+cfi=(270)
+cfn=(1008)
+calls=1 162 
+206 3125976
+
+fl=(172)
+fn=(602)
+691 4
++3 2
+-3 10
++3 4
+cob=(2) /usr/lib/x86_64-linux-gnu/libc.so.6
+cfi=(174) ./time/../sysdeps/unix/sysv/linux/clock_gettime.c
+cfn=(606) clock_gettime@@GLIBC_2.17
+calls=38 30 
+* 22
+* 2
++4 16
++1 10
+
+fl=(186)
+fn=(1288)
+410 1
++4 2
+fi=(182)
+690 2
+-4 1
+489 5
+725 2
+474 2
+fe=(186)
+-82 1
+fi=(182)
+642 1
++2 1
+fe=(186)
+392 1
+fi=(182)
+642 1
+fe=(186)
+378 1
++14 1
+fi=(182)
+643 1
+fe=(186)
+392 1
+-14 1
+cfn=(1216) mi_page_map_set_range_prim
+calls=17 -21 
+* 49
+
+fn=(1216)
+357 11
++2 7
+211 1
++1 2
++9 2
++8 3
++98 3
++40 1
++2 1
+-3 2
++5 1
+-12 3
++15 1
++1 11
+
+fl=(291)
+fn=(1296) mi_bitmap_clearN
+1123 3
++4 1
+-4 8
+fi=(293) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.h
+118 3
++4 1
+fe=(291)
+1127 2
++9 1
+-1 4
++9 1
+-8 3
++1 4
++1 1
+369 2
+1139 1
++1 2
++7 12
+83 1
+362 1
+83 1
+364 1
+104 1
+-21 1
++21 7
++1 1
++1 1
+-1 1
++1 2
+369 1
+1133 1
++1 1
+-1 1
++1 1
++2 2
+
+fn=(1192)
+1093 7
++4 1
+-4 3
+fi=(293)
+118 3
++4 1
+fe=(291)
+1097 2
++10 1
+82 1
+1106 1
+-1 2
+82 3
+1110 1
++1 1
+277 1
+83 1
++12 1
+-12 1
+277 1
+83 1
++12 1
+1116 2
+-9 3
++1 4
++1 2
+351 2
+-74 1
+95 2
+277 1
++2 1
+95 3
++1 1
+280 1
+96 1
+280 2
++71 2
+1118 2
++2 12
+-17 1
++1 1
+-1 1
++1 1
++3 2
+
+fn=(1294)
+1180 1
++1 2
+cfn=(1296)
+calls=17 -58 
+* 74
+
+fn=(1302)
+1674 8
++4 1
+-4 3
+fi=(293)
+273 1
++4 1
+fe=(291)
+1678 2
++9 1
+-1 5
+82 4
+1688 3
++1 1
+945 2
++1 3
+277 1
+83 2
+277 1
+83 1
++12 1
+1632 2
++1 2
++61 1
+-7 5
++10 9
+-13 1
++1 1
+-1 1
++1 1
++2 2
++1 3
+351 2
+-74 1
+95 1
+277 1
++2 1
+95 1
++1 1
+281 1
++70 1
+
+fl=(289) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c
+fn=(1266) _mi_page_retire
+432 21
++5 42
+-5 63
+fi=(182)
+830 21
++67 21
+-82 21
+-17 21
+fi=(287)
+175 42
+fi=(182)
+797 42
+fi=(287)
+175 42
+cfi=(182)
+cfn=(1074) mi_bin
+calls=21 512 
+* 270
+* 63
+49 21
+190 21
+49 21
+fe=(289)
+449 42
++1 84
++16 1
++1 1
+-1 1
+cfn=(1278) _mi_page_free
+calls=1 -65 
+* 831
+-16 42
++5 100
++2 60
++2 45
++1 49
++7 40
+
+fn=(1278)
+401 3
+fi=(182)
+830 1
+fe=(289)
+401 7
+fi=(182)
+830 1
+fi=(287)
+260 1
+fi=(182)
+897 1
+fi=(287)
+260 4
++1 3
++1 2
++7 1
++2 1
+-1 1
++1 1
+fi=(182)
+830 1
++10 1
++22 1
+-47 1
++55 2
++1 2
+fe=(289)
+418 3
+cfi=(290)
+cfn=(1284)
+calls=17 1032 
+* 616
++1 1
++1 1
+-1 1
++1 1
+-1 1
++1 5
+-1 1
+cfi=(290)
+cfn=(1304)
+calls=17 1302 
+* 160
+fi=(182)
+842 2
+fi=(287)
+262 2
++1 2
+fe=(289)
+
+fl=(182)
+fn=(1074)
+512 66
+fi=(287)
+71 44
++1 48
++7 28
++7 14
++2 14
++4 56
++2 14
+fe=(182)
+
+fl=(167)
+fn=(592)
+987 2
++2 4
+
+fn=(684) _mi_subproc
+425 1
+fi=(185) <home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h
+-16 2
+fe=(167)
++22 2
++4 2
++2 1
+
+fn=(704) _mi_subproc_heap_main
+439 1
++1 1
++1 2
++8 1
+
+fn=(706)
+451 3
++1 1
+cfn=(684)
+calls=19 -27 
+* 8
++1 1
+-1 2
+cfn=(704)
+calls=19 -13 
+* 5
+
+fl=(162)
+fn=(534)
+cob=(2)
+cfi=(163) ./csu/../csu/libc-start.c
+cfn=(536) __libc_start_main@@GLIBC_2.34
+calls=1 242 
+0 3125976
+
+fn=(760) main
+cfi=(198)
+cfn=(762)
+calls=1 152 
+0 3125976
+
+fl=(295)
+fn=(1258)
+207 100768
+fi=(182)
+648 100768
+-4 100768
+fe=(295)
+207 100768
+fi=(182)
+644 100768
++4 100768
+-6 201536
++1 100768
++11 100768
+fe=(295)
+181 201536
+fi=(185)
+301 100768
+fi=(182)
+815 100768
+fe=(295)
+186 201536
+fi=(182)
+1069 201536
+fe=(295)
+43 100768
+-1 100768
++1 100768
+210 100747
+44 140
++1 21
+cfi=(289)
+cfn=(1266)
+calls=21 432 
+* 2028
+
+fl=(287)
+fn=(1228)
+181 1
+fi=(182)
+797 1
++1 1
+-1 1
+fe=(287)
+182 2
+cfi=(182)
+cfn=(1074)
+calls=34 512 
+* 14
+
+ob=(2)
+fl=(194) ./csu/../sysdeps/nptl/libc_start_call_main.h
+fn=(752) (below main)
+cob=(6)
+cfi=(162)
+cfn=(760)
+calls=1 0 
+58 3125976
+
+fl=(163)
+fn=(536)
+cfi=(194)
+cfn=(752)
+calls=1 29 
+360 3125976
+
+fl=(174)
+fn=(606)
+30 2
++8 4
++2 4
++28 4
++1 4
+-25 4
+
+totals: 3125976

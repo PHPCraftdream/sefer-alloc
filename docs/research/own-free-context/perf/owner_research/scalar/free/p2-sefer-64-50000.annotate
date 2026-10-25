@@ -1,0 +1,52 @@
+--------------------------------------------------------------------------------
+Profile data file '<workspace>/.rush/own-free-single/candidate/p2-sefer-64-50000.callgrind' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 1100112
+Trigger: Program termination
+Profiled target:  <workspace>/.rush/own-free-single/candidate/target/release/examples/own_free_profile sefer 64 50000 (PID 594686, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                 
+--------------------------------------------------------------------------------
+2,600,879 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                  file:function
+--------------------------------------------------------------------------------
+1,000,320 (38.46%)  src/registry/heap_core/free/dealloc_own_base.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  650,208 (25.00%)  examples/own_free_profile.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> [<workspace>/.rush/own-free-single/candidate/target/release/examples/own_free_profile]
+  200,062 ( 7.69%)  src/alloc_core/segment/segment_header/segment_header_views.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  150,073 ( 5.77%)  src/alloc_core/segment/segment_table/segment_table_impl.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  150,050 ( 5.77%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  150,048 ( 5.77%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  100,032 ( 3.85%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  100,032 ( 3.85%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   50,016 ( 1.92%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   50,016 ( 1.92%)  src/global/tls_heap.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+       20 ( 0.00%)  src/alloc_core/segment/segment_table/hash.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:own_free_profile::w_free64::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        .           ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        .           ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [<workspace>/.rush/own-free-single/candidate/target/release/examples/own_free_profile]
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [<workspace>/.rush/own-free-single/candidate/target/release/examples/own_free_profile]
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [<workspace>/.rush/own-free-single/candidate/target/release/examples/own_free_profile]
+        .           ???:(below main) [<workspace>/.rush/own-free-single/candidate/target/release/examples/own_free_profile]
+        .           ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        .           ???:main [<workspace>/.rush/own-free-single/candidate/target/release/examples/own_free_profile]
+        .           examples/own_free_profile.rs:own_free_profile::main [<workspace>/.rush/own-free-single/candidate/target/release/examples/own_free_profile]
+
+--------------------------------------------------------------------------------
+# TRUNCATED — source listings omitted; full output: rebuild with reproduction/profile.sh then callgrind_annotate --auto=yes --threshold=100 <profile>.callgrind

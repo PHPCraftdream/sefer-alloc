@@ -1,0 +1,30 @@
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+const dir='.rush/native-owner', id=JSON.parse(fs.readFileSync(`${dir}/leaf-symbols.json`));
+const receipt=JSON.parse(fs.readFileSync('worktrees/native-alloc-leaf/docs/perf/native_alloc_leaf/attempt1/binary.json'));
+const bytes=fs.readFileSync(id.image),sha=crypto.createHash('sha256').update(bytes).digest('hex');
+assert.equal(sha,id.sha256);assert.equal(sha,receipt.sha256);
+const main=id.symbols.find(s=>s.name.includes('own_free_wall4main'));assert(main);
+const image=process.cwd()+'/'+id.image, linux='/mnt/'+image[0].toLowerCase()+image.slice(2).replaceAll('\\','/');
+const p=spawnSync('wsl.exe',['-e','objdump','-d',linux],{encoding:'utf8',maxBuffer:32*1024*1024});assert.equal(p.status,0,p.stderr);
+fs.writeFileSync(`${dir}/leaf-full.asm`,p.stdout.replaceAll(linux,'<image>'),{flag:'wx'});
+const lines=p.stdout.split('\n').flatMap(text=>{const m=/^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2}\s+)+)\s*(.*)$/.exec(text);return m?[{text,rva:parseInt(m[1],16)-id.image_base,op:m[3].trim()}]:[];});
+const mainAsm=fs.readFileSync(`${dir}/leaf-main.asm`,'utf8');
+const targets=new Set([...mainAsm.matchAll(/\bcall\s+0x([0-9a-f]+)/g)].map(m=>parseInt(m[1],16)-id.image_base));
+const hits=lines.filter(l=>l.rva<main.rva&&l.op.includes('%gs:0x58'));
+const found=[];
+for(const hit of hits){
+ const starts=[...targets].filter(r=>r<=hit.rva).sort((a,b)=>b-a);const start=starts[0];
+ if(start===undefined||hit.rva-start>256||found.some(f=>f.start===start))continue;
+ const begin=lines.findIndex(l=>l.rva===start);assert(begin>=0);
+ let end=begin;while(end<lines.length&&lines[end].op!=='int3')end++;
+ assert(end>begin&&end<lines.length);
+ const code=lines.slice(begin,end),file=`${dir}/leaf-${start.toString(16)}.asm`;
+ fs.writeFileSync(file,code.map(l=>l.text).join('\n')+'\n',{flag:'wx'});
+ found.push({start,end:lines[end].rva,file,bytes:lines[end].rva-start,prologue:code.slice(0,10).map(l=>l.op),calls:code.filter(l=>/^call\b/.test(l.op)).map(l=>l.op),stack:code.filter(l=>/^(push|pop)\b|\b(add|sub)\s+.*%rsp/.test(l.op)).map(l=>l.op)});
+}
+assert.equal(found.length,6,'Проверить mapping wrappers вручную');
+fs.writeFileSync(`${dir}/leaf-functions.json`,JSON.stringify({sha256:sha,boundary:'main direct call target through first int3 alignment padding; manually review full body',functions:found},null,2),{flag:'wx'});
+console.log(JSON.stringify(found,null,2));

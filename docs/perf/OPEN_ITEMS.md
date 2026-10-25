@@ -117,6 +117,10 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ## Open items
 
+**Native owner-path round (2026-10-25, task #29).** Полная per-item disposition: `docs/design/2026-10-25-native-owner-round-start.md`; остальные status/trigger сохраняются. Optional Windows TLS check item 39 выполнен по существующим PE: нативная TLS-последовательность без lazy-init call на проверенном обычном пути; registry binding не переоткрывается. Windows frame-tax items 102/67 учитываются новым alloc-entry исследованием, не продолжением непринятого B. Evidence: `docs/perf/NATIVE_OWNER_CODEGEN_READ.md`. Это static codegen receipt, не timing/CI/portability acceptance.
+
+**Native mixed round (2026-10-25, task #32).** Полный ранее прочитанный snapshot перепроверен SHA-256; неизвестных изменений в обоих indexes и ACTIVE/thematic файлах нет, изменённые notes/closure прочитаны. Per-record disposition: `docs/design/2026-10-25-native-mixed-round-start.md`, hashes: `docs/perf/native_mixed_round_start.json`. Items 81/103/104 учитываются calibration/attribution, не автоматическим promotion; S1 уже принят, R3 отвергнут, 117/118 не являются базой. Остальные status/trigger сохраняются, U31 требует отдельного protocol/model proof.
+
 ### [A] Active / high-value
 
 104. **[A] B4 events — refill/flush событие в mstress стоит в 5–6 раз дороже, чем в larson.** (Filed 2026-10-20, `docs/perf/B4_EVENTS_COST.md`.)
@@ -3176,6 +3180,10 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 <!-- B4-30-CARD-END -->
 
 ## Recently resolved (closure trail — do not re-list as open)
+
+- **119 — Native mixed calibration/attribution: CLOSED / JUDGE FAIL / PRODUCT CANDIDATE NOT OPENED (2026-10-25, tasks #33–#36).** Installed A/A не прошёл frozen sensitivity gate; WSL Ir и CPU diagnostic не установили causal native bottleneck. Старые verdicts не пересматриваются; full closure: `OPEN_ITEMS_ARCHIVE.md` §L119, raw/CSV/generators: `docs/research/native-mixed-judge/perf/native_mixed/`.
+
+- **118 — Native alloc leaf entry: CLOSED / INCONCLUSIVE / DO NOT PROMOTE (2026-10-25, tasks #30–#31).** Leaf/codegen и снижение alloc/full-workload Ir подтверждены; все пять native workload CI пересекают ноль, выигрыш не установлен. Полная история: `OPEN_ITEMS_ARCHIVE.md` §L118; evidence: `docs/research/native-alloc-leaf/perf/NATIVE_ALLOC_LEAF_NATIVE.md`.
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
 is a one-line pointer; the complete closure text (root cause, verification,

@@ -1,0 +1,16 @@
+{
+  "captured_before_build": "2026-10-25T08:15:35.029Z",
+  "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+  "patch_sha256": "e9e61b7cdc0c9b997dcf8012900f246f1c68b526cedfd887698e0084a969abac",
+  "features": "production",
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+  "os": "10.0.19045",
+  "target": "x86_64-pc-windows-msvc",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+  "cargo": "cargo 1.97.0 (c980f4866 2026-06-30)\n",
+  "files": {
+    "examples/own_free_wall.rs": "320b251f5c0a8e70af02b8fc35f93dfd9f27940f82629d859d01750550ac29dd",
+    "examples/own_free_profile.rs": "a99e08fa6de845b90baec6646b6e5aada674a2193ec43849e75b19f3f4fcd71e",
+    "tests/native_alloc_leaf.rs": "45ac46b6adf5fe06c8ed689fbd25490e70b3094f7c6503c1e685e681c60f49d8"
+  }
+}

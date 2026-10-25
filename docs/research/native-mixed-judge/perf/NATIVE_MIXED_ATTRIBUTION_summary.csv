@@ -1,0 +1,10 @@
+arm,category,ir120,ir241,delta_ir_per_full_round,calls120,calls241,base,features,cpu,os,profiles
+"sefer","TOTAL",794345187,1588199760,6560781.5950413225,"NA","NA","f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",4
+"sefer","self:rust_dealloc",389202416,778404240,3216544,4961007,9922007,"f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",4
+"sefer","self:workload_container",277866548,555733126,2296418,121,242,"f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",4
+"sefer","refill",69199606,138310038,571160.5950413223,59059,118107,"f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",4
+"sefer","flush",55174886,110341206,455920,118107,236203,"f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",4
+"sefer","drain",58755223,117591303,486248.5950413223,59059,118107,"f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",4
+"sefer","discovery",88273,88273,0,72,72,"f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",4
+"mimalloc","TOTAL",1460992354,2914255949,12010442.933884298,"NA","NA","f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",4
+"mimalloc","self:workload_container",140465754,280931508,1160874,121,242,"f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",4

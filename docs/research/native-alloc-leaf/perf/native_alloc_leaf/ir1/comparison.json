@@ -1,0 +1,242 @@
+[
+  {
+    "arm": "sefer",
+    "mode": "rt",
+    "axis": "alloc",
+    "before": 55.51408,
+    "after": 51.59112,
+    "delta": -3.9229600000000033
+  },
+  {
+    "arm": "sefer",
+    "mode": "rt",
+    "axis": "free",
+    "before": 87.35896,
+    "after": 87.35896,
+    "delta": 0
+  },
+  {
+    "arm": "sefer",
+    "mode": "rt",
+    "axis": "pair",
+    "before": 187.87354,
+    "after": 183.95114,
+    "delta": -3.922399999999982
+  },
+  {
+    "arm": "sefer",
+    "mode": "16",
+    "axis": "alloc",
+    "before": 22,
+    "after": 20,
+    "delta": -2
+  },
+  {
+    "arm": "sefer",
+    "mode": "16",
+    "axis": "free",
+    "before": 52,
+    "after": 52,
+    "delta": 0
+  },
+  {
+    "arm": "sefer",
+    "mode": "16",
+    "axis": "pair",
+    "before": 96.00032,
+    "after": 94.00088,
+    "delta": -1.999440000000007
+  },
+  {
+    "arm": "sefer",
+    "mode": "64",
+    "axis": "alloc",
+    "before": 22,
+    "after": 20,
+    "delta": -2
+  },
+  {
+    "arm": "sefer",
+    "mode": "64",
+    "axis": "free",
+    "before": 52,
+    "after": 52,
+    "delta": 0
+  },
+  {
+    "arm": "sefer",
+    "mode": "64",
+    "axis": "pair",
+    "before": 96.00032,
+    "after": 94.00088,
+    "delta": -1.999440000000007
+  },
+  {
+    "arm": "sefer",
+    "mode": "bulk64",
+    "axis": "alloc",
+    "before": 96.734375,
+    "after": 93.15625,
+    "delta": -3.578125
+  },
+  {
+    "arm": "sefer",
+    "mode": "bulk64",
+    "axis": "free",
+    "before": 124.8125,
+    "after": 124.8125,
+    "delta": 0
+  },
+  {
+    "arm": "sefer",
+    "mode": "bulk64",
+    "axis": "pair",
+    "before": 238.65625,
+    "after": 235.078125,
+    "delta": -3.578125
+  },
+  {
+    "arm": "sefer",
+    "mode": "bulk16k",
+    "axis": "alloc",
+    "before": 168.546875,
+    "after": 166.65625,
+    "delta": -1.890625
+  },
+  {
+    "arm": "sefer",
+    "mode": "bulk16k",
+    "axis": "free",
+    "before": 235.625,
+    "after": 235.625,
+    "delta": 0
+  },
+  {
+    "arm": "sefer",
+    "mode": "bulk16k",
+    "axis": "pair",
+    "before": 421.28125,
+    "after": 419.390625,
+    "delta": -1.890625
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "rt",
+    "axis": "alloc",
+    "before": 53.6713,
+    "after": 53.6713,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "rt",
+    "axis": "free",
+    "before": 31.00214,
+    "after": 31.00214,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "rt",
+    "axis": "pair",
+    "before": 126.67404,
+    "after": 126.67376,
+    "delta": -0.0002800000000036107
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "16",
+    "axis": "alloc",
+    "before": 45.69138,
+    "after": 45.69138,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "16",
+    "axis": "free",
+    "before": 28,
+    "after": 28,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "16",
+    "axis": "pair",
+    "before": 91.69198,
+    "after": 91.6917,
+    "delta": -0.0002800000000036107
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "64",
+    "axis": "alloc",
+    "before": 48.40878,
+    "after": 48.40878,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "64",
+    "axis": "free",
+    "before": 28,
+    "after": 28,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "64",
+    "axis": "pair",
+    "before": 94.40938,
+    "after": 94.4091,
+    "delta": -0.0002800000000036107
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "bulk64",
+    "axis": "alloc",
+    "before": 48.609375,
+    "after": 48.609375,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "bulk64",
+    "axis": "free",
+    "before": 31.890625,
+    "after": 31.890625,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "bulk64",
+    "axis": "pair",
+    "before": 95.59375,
+    "after": 95.59375,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "bulk16k",
+    "axis": "alloc",
+    "before": 435.78796875,
+    "after": 435.78796875,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "bulk16k",
+    "axis": "free",
+    "before": 73.1875,
+    "after": 73.1875,
+    "delta": 0
+  },
+  {
+    "arm": "mimalloc",
+    "mode": "bulk16k",
+    "axis": "pair",
+    "before": 524.06828125,
+    "after": 524.06828125,
+    "delta": 0
+  }
+]

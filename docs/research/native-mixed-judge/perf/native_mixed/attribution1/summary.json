@@ -1,0 +1,83 @@
+[
+  {
+    "arm": "sefer",
+    "category": "TOTAL",
+    "ir120": 794345187,
+    "ir241": 1588199760,
+    "delta_ir_per_full_round": 6560781.5950413225,
+    "calls120": null,
+    "calls241": null
+  },
+  {
+    "arm": "sefer",
+    "category": "self:rust_dealloc",
+    "ir120": 389202416,
+    "ir241": 778404240,
+    "delta_ir_per_full_round": 3216544,
+    "calls120": 4961007,
+    "calls241": 9922007
+  },
+  {
+    "arm": "sefer",
+    "category": "self:workload_container",
+    "ir120": 277866548,
+    "ir241": 555733126,
+    "delta_ir_per_full_round": 2296418,
+    "calls120": 121,
+    "calls241": 242
+  },
+  {
+    "arm": "sefer",
+    "category": "refill",
+    "ir120": 69199606,
+    "ir241": 138310038,
+    "delta_ir_per_full_round": 571160.5950413223,
+    "calls120": 59059,
+    "calls241": 118107
+  },
+  {
+    "arm": "sefer",
+    "category": "flush",
+    "ir120": 55174886,
+    "ir241": 110341206,
+    "delta_ir_per_full_round": 455920,
+    "calls120": 118107,
+    "calls241": 236203
+  },
+  {
+    "arm": "sefer",
+    "category": "drain",
+    "ir120": 58755223,
+    "ir241": 117591303,
+    "delta_ir_per_full_round": 486248.5950413223,
+    "calls120": 59059,
+    "calls241": 118107
+  },
+  {
+    "arm": "sefer",
+    "category": "discovery",
+    "ir120": 88273,
+    "ir241": 88273,
+    "delta_ir_per_full_round": 0,
+    "calls120": 72,
+    "calls241": 72
+  },
+  {
+    "arm": "mimalloc",
+    "category": "TOTAL",
+    "ir120": 1460992354,
+    "ir241": 2914255949,
+    "delta_ir_per_full_round": 12010442.933884298,
+    "calls120": null,
+    "calls241": null
+  },
+  {
+    "arm": "mimalloc",
+    "category": "self:workload_container",
+    "ir120": 140465754,
+    "ir241": 280931508,
+    "delta_ir_per_full_round": 1160874,
+    "calls120": 121,
+    "calls241": 242
+  }
+]
