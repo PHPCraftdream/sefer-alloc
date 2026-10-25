@@ -64,8 +64,10 @@ pub fn tsc_now() -> u64 {
 }
 
 /// `true` iff CPUID leaf 0x80000007 EDX bit 8 (Invariant TSC) is set.
+#[allow(unused_unsafe)] // `unsafe` is required on the MSRV, redundant later.
 pub fn tsc_invariant() -> bool {
-    (__cpuid_count(0x8000_0007, 0).edx & (1 << 8)) != 0
+    // SAFETY: CPUID always exists on x86_64, no side effects.
+    (unsafe { __cpuid_count(0x8000_0007, 0) }.edx & (1 << 8)) != 0
 }
 
 #[cfg(windows)]
@@ -114,7 +116,7 @@ pub fn portion_ns(q0: i64, q1: i64, ticks: u64, window_ticks: u64) -> f64 {
     }
     #[cfg(not(windows))]
     {
-        let _ = (q0, q1);
+        let _ = (q0, q1, ticks);
         0.0
     }
 }

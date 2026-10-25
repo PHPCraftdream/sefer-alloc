@@ -43,7 +43,7 @@
 //! allocated by the SAME shim set (`// SAFETY:` per site). No timer unsafe
 //! is exercised here.
 
-#![cfg(feature = "production")]
+#![cfg(all(feature = "production", target_arch = "x86_64"))]
 
 #[global_allocator]
 static HARNESS: HarnessAlloc = HarnessAlloc;
