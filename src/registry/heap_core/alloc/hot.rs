@@ -82,6 +82,20 @@ impl HeapCore {
         // `set_state`, class bits already correct per И1). Reclaim rejects MAG
         // blocks (same deferred-clear discipline as `alloc_batch`), so the
         // parked blocks are safe in flight between drain and park.
+        // B4 (b4-provenance): magazine refill event — path counters plus the
+        // heap-private depot shadow (measurement-only).
+        #[cfg(all(
+            feature = "bench-internals",
+            feature = "alloc-global",
+            feature = "fastbin"
+        ))]
+        {
+            crate::registry::heap_core::diag::DEPOT_REFILL_EVENTS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::registry::heap_core::diag::DEPOT_REFILL_BLOCKS_TOTAL
+                .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
+            self.depot_on_refill(c, n as u64);
+        }
         let issued = self.tcache.classes[c].slots[new_cnt];
         let base = os::segment_base_of_ptr(issued);
         let off = (issued as usize - base as usize) as u32;

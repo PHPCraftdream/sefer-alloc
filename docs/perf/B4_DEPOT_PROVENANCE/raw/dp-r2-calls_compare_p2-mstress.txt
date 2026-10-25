@@ -1,0 +1,7 @@
+# dp-r2-calls_compare_p2-mstress.txt — prod(full) vs ctr calls=, size 50000 & 100000
+flush_class_internal n=50000: prod_calls=6435 ctr_calls=6435 -> EXACT
+refill_magazine_slow n=50000: prod_calls=9699 ctr_calls=9699 -> EXACT
+try_drain_freelist_batch n=50000: prod_calls=3250 ctr_calls=3250 -> EXACT
+flush_class_internal n=100000: prod_calls=12765 ctr_calls=12765 -> EXACT
+refill_magazine_slow n=100000: prod_calls=19194 ctr_calls=19194 -> EXACT
+try_drain_freelist_batch n=100000: prod_calls=6419 ctr_calls=6419 -> EXACT

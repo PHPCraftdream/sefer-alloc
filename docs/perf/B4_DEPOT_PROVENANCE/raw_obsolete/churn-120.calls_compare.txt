@@ -1,0 +1,10 @@
+pair churn-120
+prod dp-p3-churn.churn.120.cg_summary.txt
+GROUP flush_class_internal SELF_IR=48678943 CALLS=0
+GROUP refill_magazine_slow SELF_IR=2894962 CALLS=59063
+GROUP try_drain_freelist_batch SELF_IR=0 CALLS=59060
+ctr  dp-p6-churn.churn.120.ctr.cg_summary.txt
+GROUP flush_class_internal SELF_IR=48678943 CALLS=0
+GROUP refill_magazine_slow SELF_IR=3190627 CALLS=118111
+GROUP try_drain_freelist_batch SELF_IR=56591515 CALLS=0
+VERDICT MISMATCH

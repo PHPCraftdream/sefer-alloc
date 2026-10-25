@@ -28,7 +28,25 @@ impl HeapCore {
         // hints. Retire detached records before flushing magazines or releasing
         // reservations; a pre-publication producer keeps its outstanding credit.
         #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-        let _ = self.drain_sidecar_ingress();
+        {
+            #[cfg_attr(
+                not(all(feature = "bench-internals", feature = "fastbin")),
+                allow(unused_variables)
+            )]
+            let reclaimed = self.drain_sidecar_ingress();
+            // B4 (b4-provenance): INVALIDATION for the heap-private depot
+            // shadow — a remote free was reclaimed here (pending publication
+            // consumed); blocks can now leave the shared stream without
+            // passing the depot candidate set.
+            #[cfg(all(
+                feature = "bench-internals",
+                feature = "alloc-global",
+                feature = "fastbin"
+            ))]
+            if reclaimed > 0 {
+                self.depot_invalidate();
+            }
+        }
         self.trim_cold_retention();
     }
 
@@ -57,6 +75,17 @@ impl HeapCore {
             .drain_sidecar_ingress_bounded(&mut self.background_cursor, budget);
         #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]
         let result = (0, 0);
+        // B4 (b4-provenance): INVALIDATION for the heap-private depot shadow —
+        // same remote-reclaim reason as `trim_for_recycle` above.
+        #[cfg(all(
+            feature = "bench-internals",
+            feature = "alloc-global",
+            feature = "fastbin",
+            feature = "alloc-xthread"
+        ))]
+        if result.1 > 0 {
+            self.depot_invalidate();
+        }
         // Ph4c mutant catcher #12: count every bounded step so a mutant that
         // runs `with_core` (hence this step) twice per maintained slot in
         // `maintenance_pass` becomes observable (measurement-only, Relaxed).
@@ -86,5 +115,14 @@ impl HeapCore {
         }
         #[cfg(feature = "alloc-segment-directory")]
         self.core.release_directory_for_cold_trim();
+        // B4 (b4-provenance): INVALIDATION for the heap-private depot shadow —
+        // cold trim = teardown flush + small-segment pool drain + large-cache
+        // evict: segment reclaim/teardown, no depot residency survives.
+        #[cfg(all(
+            feature = "bench-internals",
+            feature = "alloc-global",
+            feature = "fastbin"
+        ))]
+        self.depot_invalidate();
     }
 }

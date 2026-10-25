@@ -1226,6 +1226,25 @@ required-features = ["alloc-global"]
 name = "paired_ab_sefer"
 required-features = ["alloc-global"]
 
+# B4 D0 depot-provenance chunk 2 (task b4-provenance): same installed
+# churn+Vec workload as native-mixed-judge's native_mixed_sefer (workload
+# `include!`d from the byte-identical examples/_shared files), SEFER arm.
+[[example]]
+name = "dp_native_mixed_sefer"
+required-features = ["alloc-global"]
+
+# B4 D0 chunk 2: counters variant of the same workload (DEPOT_* deltas, no
+# wall-clock) — needs the bench-internals gate to read the counters.
+[[example]]
+name = "dp_native_mixed_counters"
+required-features = ["alloc-global", "production", "bench-internals", "internals"]
+
+# B4 D0 chunk 2: larson/mstress T in {1,2,4} with DEPOT_* counter deltas;
+# workload vendored verbatim from malloc-bench-rs (see module doc).
+[[example]]
+name = "dp_depot_probe"
+required-features = ["alloc-global", "production", "bench-internals", "internals"]
+
 [[example]]
 name = "paired_ab_mimalloc"
 

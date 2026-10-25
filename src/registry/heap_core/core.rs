@@ -263,6 +263,17 @@ impl HeapCore {
     #[must_use]
     pub(crate) fn new(id: u32) -> Option<Self> {
         let core = AllocCore::new_with_owner(id)?;
+        // B4 (b4-provenance): the heap-private depot shadow lives OUT of
+        // `HeapCore` (the R34-18 9216 B stack-pressure pin leaves < 48 B of
+        // `--all-features` headroom — see `state/depot_shadow.rs`); its
+        // per-slot state is freshly zeroed here, exactly like the former
+        // inline field initialiser.
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "fastbin",
+            feature = "bench-internals"
+        ))]
+        crate::registry::heap_core::state::depot_shadow::depot_shadow_reset_for_heap(id);
         Some(Self {
             id,
             core,
@@ -298,6 +309,13 @@ impl HeapCore {
         config: crate::alloc_core::LargeCacheConfig,
     ) -> Option<Self> {
         let core = AllocCore::new_with_config_for_owner(config, id)?;
+        // B4 (b4-provenance): fresh depot-shadow reset — see `Self::new`.
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "fastbin",
+            feature = "bench-internals"
+        ))]
+        crate::registry::heap_core::state::depot_shadow::depot_shadow_reset_for_heap(id);
         Some(Self {
             id,
             core,

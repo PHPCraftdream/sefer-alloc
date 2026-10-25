@@ -1,0 +1,55 @@
+stem dp-p5-mstress.mstress.100000.ctr
+cmd ~/ab/tgtp-dp-p5-mstress/release/examples/dp_depot_cg sefer mstress 100000
+--- PROGRAM TOTALS ---
+40,810,760 (100.0%)  PROGRAM TOTALS
+--- workload stdout (iters source) ---
+sefer 1026381
+--- callgrind_annotate (inclusive) lines for the 3 target functions ---
+10,546,504 (25.84%)  ~/ab/dp-p5-mstress/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [~/ab/tgtp-dp-p5-mstress/release/examples/dp_depot_cg]
+ 9,509,594 (23.30%)  ~/ab/dp-p5-mstress/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> [~/ab/tgtp-dp-p5-mstress/release/examples/dp_depot_cg]
+ 9,381,634 (22.99%)  ~/ab/dp-p5-mstress/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [~/ab/tgtp-dp-p5-mstress/release/examples/dp_depot_cg]
+ 8,772,637 (21.50%)  ~/ab/dp-p5-mstress/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+ 8,454,921 (20.72%)  ~/ab/dp-p5-mstress/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [~/ab/tgtp-dp-p5-mstress/release/examples/dp_depot_cg]
+ 5,971,653 (14.63%)  ~/ab/dp-p5-mstress/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [~/ab/tgtp-dp-p5-mstress/release/examples/dp_depot_cg]
+ 1,614,024 ( 3.95%)  ~/ab/dp-p5-mstress/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+ 1,124,622 ( 2.76%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   768,886 ( 1.88%)  ~/ab/dp-p5-mstress/src/alloc_core/config/continuation_bounds.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   656,634 ( 1.61%)  ~/ab/dp-p5-mstress/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   639,102 ( 1.57%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   569,736 ( 1.40%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   492,966 ( 1.21%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   459,952 ( 1.13%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   415,826 ( 1.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   409,856 ( 1.00%)  ~/ab/dp-p5-mstress/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+   332,361 ( 0.81%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   307,538 ( 0.75%)  ~/ab/dp-p5-mstress/src/registry/heap_core/state/depot_shadow.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+   307,020 ( 0.75%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   293,722 ( 0.72%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   204,680 ( 0.50%)  ~/ab/dp-p5-mstress/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   202,448 ( 0.50%)  ~/ab/dp-p5-mstress/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    88,809 ( 0.22%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    88,809 ( 0.22%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    76,776 ( 0.19%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+    76,590 ( 0.19%)  ~/ab/dp-p5-mstress/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    63,828 ( 0.16%)  ~/ab/dp-p5-mstress/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    50,696 ( 0.12%)  ~/ab/dp-p5-mstress/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    38,295 ( 0.09%)  ~/ab/dp-p5-mstress/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    32,381 ( 0.08%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+    25,840 ( 0.06%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+    25,530 ( 0.06%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    19,194 ( 0.05%)  ~/ab/dp-p5-mstress/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+    19,011 ( 0.05%)  ~/ab/dp-p5-mstress/src/alloc_core/segment/segment_header/segment_header_meta_fields.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    19,011 ( 0.05%)  ~/ab/dp-p5-mstress/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    19,011 ( 0.05%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    12,796 ( 0.03%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+    12,796 ( 0.03%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+    12,734 ( 0.03%)  ~/ab/dp-p5-mstress/examples/dp_depot_cg.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    12,674 ( 0.03%)  ~/ab/dp-p5-mstress/src/registry/segment_route/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+--- SELF Ir and CALLS per target group (from raw callgrind file) ---
+GROUP flush_class_internal SELF_IR=0 CALLS=3455
+GROUP refill_magazine_slow SELF_IR=660888 CALLS=6398
+GROUP try_drain_freelist_batch SELF_IR=0 CALLS=6419
+--- INCL Ir per target group (sum of annotate inclusive rows) ---
+GROUP flush_class_internal INCL_IR=8853439
+GROUP refill_magazine_slow INCL_IR=39178088
+GROUP try_drain_freelist_batch INCL_IR=14721107

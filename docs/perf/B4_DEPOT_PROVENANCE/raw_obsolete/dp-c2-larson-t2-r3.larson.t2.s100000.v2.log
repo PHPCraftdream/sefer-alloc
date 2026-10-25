@@ -1,0 +1,10 @@
+git_diff_sha256 e16db45a06e3275059420f597a84abbfa2ffc0c064130846fab7b160429b2ad3
+features production,bench-internals,internals
+rustc rustc 1.98.1 (48a229cea 2026-09-01)
+cpu 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+os Linux 6.18.33.2-microsoft-standard-WSL2
+cmd ~//ab/tgt-dp-c2-larson-t2-r3/release/examples/dp_depot_probe larson 2 100000
+example dp_depot_probe
+larson ops_actual=212500
+{"workload":"larson","threads":2,"steps":100000,"ops_actual":212500,"working_set":768,"mstress_blocks":512,"depot_flush_overflow_events":3234,"depot_flush_overflow_blocks":25872,"depot_flush_swap_top_events":163,"depot_flush_swap_top_blocks":163,"depot_flush_batched_events":0,"depot_flush_batched_blocks":0,"depot_flush_teardown_events":62,"depot_flush_teardown_blocks":653,"depot_refill_events":2468,"depot_refill_blocks_total":39188,"depot_refill_blocks_drained":36211,"depot_refill_blocks_carved":2977,"depot_refill_carve_events":287}
+{"absorbed_k":[18168, 23528, 25136, 25576],"real_k":[7704, 2344, 736, 296],"fully_absorbed_ev_k":[2271, 2941, 3142, 3197],"refill_from_depot_k":[11648, 15352, 16128, 16136],"refill_drain_k":[27540, 23836, 23060, 23052],"refill_fully_k":[0, 463, 539, 540],"invalidations":168}

@@ -1,0 +1,655 @@
+--------------------------------------------------------------------------------
+Profile data file '~/ab/cg.dp-r2-p3-churn.td.241.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 282478711
+Trigger: Program termination
+Profiled target:  ~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer 241 (PID 685503, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                   
+--------------------------------------------------------------------------------
+117,591,327 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                   file:function
+--------------------------------------------------------------------------------
+41,644,595 (35.41%)  ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+16,352,142 (13.91%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+14,541,343 (12.37%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+10,702,485 ( 9.10%)  ~/ab/dp-r2-p3-churn/src/alloc_core/config/continuation_bounds.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+10,505,407 ( 8.93%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+ 7,759,350 ( 6.60%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+ 5,105,696 ( 4.34%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+ 4,217,575 ( 3.59%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+ 3,777,120 ( 3.21%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   944,280 ( 0.80%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   365,624 ( 0.31%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   354,105 ( 0.30%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_header/segment_header_meta_fields.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   354,105 ( 0.30%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   354,105 ( 0.30%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   236,070 ( 0.20%)  ~/ab/dp-r2-p3-churn/src/registry/segment_route/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   236,070 ( 0.20%)  ~/ab/dp-r2-p3-churn/src/registry/segment_route/small_sidecar.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   118,035 ( 0.10%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    23,220 ( 0.02%)  ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+         .           ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         .           ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         .           ~/ab/dp-r2-p3-churn/examples/_shared/native_mixed_driver.rs:dp_native_mixed_sefer::main [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           ~/ab/dp-r2-p3-churn/examples/_shared/paired_ab_workload.rs:dp_native_mixed_sefer::run_workload [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           ~/ab/dp-r2-p3-churn/examples/dp_native_mixed_sefer.rs:__rustc::__rust_alloc [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           ~/ab/dp-r2-p3-churn/examples/dp_native_mixed_sefer.rs:__rustc::__rust_realloc [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+         .           ~/ab/dp-r2-p3-churn/src/global/sefer_alloc/global_alloc.rs:__rustc::__rust_realloc
+         .           ~/ab/dp-r2-p3-churn/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::realloc
+         .           ~/ab/dp-r2-p3-churn/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           ~/ab/dp-r2-p3-churn/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           ~/ab/dp-r2-p3-churn/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           ~/ab/dp-r2-p3-churn/src/registry/heap_core/alloc/hot.rs:__rustc::__rust_alloc
+         .           ~/ab/dp-r2-p3-churn/src/registry/heap_core/alloc/hot.rs:dp_native_mixed_sefer::run_workload
+         .           ~/ab/dp-r2-p3-churn/src/registry/heap_core/free/realloc.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::realloc [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/alloc.rs:<alloc::raw_vec::RawVecInner>::finish_grow
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/alloc.rs:std::env::args_os
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/alloc.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:<alloc::raw_vec::RawVec<*mut u8>>::grow_one [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:<alloc::raw_vec::RawVecInner>::finish_grow [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:<alloc::raw_vec::RawVecInner>::grow_amortized [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/mod.rs:dp_native_mixed_sefer::run_workload
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/env.rs:dp_native_mixed_sefer::main
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/env.rs:std::env::args_os [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/stack_overflow.rs:std::rt::lang_start_internal
+         .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/stack_overflow/thread_info.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           ???:(below main) [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+         .           ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         .           ???:main [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small/directory.rs
+--------------------------------------------------------------------------------
+Ir              
+
+-- line 146 ----------------------------------------
+     .                                     // fully initialised), `AllocCore`'s owner-only discipline
+     .                                     // (neither `Send` nor `Sync`) rules out a concurrent
+     .                                     // reader/writer, and no other reference to the sidecar is
+     .                                     // live across this call.
+     .                                     // R2-12: the returned reference is OWNER-TIED (`&'a` from `self`), not `'static` — the sidecar's VM span is released when this core drops its `directory_sidecar_vm` token.
+     .               pub(in crate::alloc_core) fn directory_mut(
+     .                   &mut self,
+     .               ) -> Option<&mut crate::alloc_core::segment_directory::SegmentDirectory> {
+23,220 ( 0.02%)          if self.directory_sidecar.is_null() {
+     .                       None
+     .                   } else {
+     .                       // SAFETY: see the `#[allow(unsafe_code)]` justification above.
+     .                       Some(unsafe { crate::alloc_core::sidecar::deref_mut(self.directory_sidecar, &*self) })
+     .                   }
+     .               }
+     .           
+     .               // ── R7-A2: centralized empty↔non-empty transition helpers ──────────────
+-- line 162 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/registry/heap_core/alloc/hot.rs
+--------------------------------------------------------------------------------
+Ir 
+
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/alloc_core/config/continuation_bounds.rs
+--------------------------------------------------------------------------------
+Ir                 
+
+-- line 15 ----------------------------------------
+        .                           crate::alloc_core::segment_header::Layout::primordial_meta_end()
+        .                       }
+        .                       _ => crate::alloc_core::segment_header::Layout::small_meta_end(),
+        .                   };
+        .                   let bump = crate::alloc_core::segment_header::SegmentMeta::new(base).bump_of();
+        .                   // Owner-exclusive pop/drain only change bitmap, live credits, and sidecar publication.
+        .                   // Neither carves nor resets bump, and no callback permits owner reentry.
+        .                   let hi = bump.min(crate::alloc_core::os::SEGMENT);
+  236,070 ( 0.20%)          if hi < lo {
+        .                       crate::alloc_core::fatal::fatal(
+        .                           b"node: free-list continuation out of range or misaligned\n",
+        .                       );
+        .                   }
+  118,035 ( 0.10%)          Self { lo, span: hi - lo }
+        .               }
+        .           
+        .               /// In `[meta end, bump)` and `MIN_BLOCK`-aligned. Class-stride divisibility
+        .               /// is checked only by hardened's `valid_free_node` (iai cost, PR #57).
+        .               #[inline(always)]
+        .               pub(crate) fn contains_aligned(&self, off: usize) -> bool {
+5,642,460 ( 4.80%)          off.wrapping_sub(self.lo) < self.span && off & (MIN_BLOCK - 1) == 0
+        .               }
+        .           }
+
+4,705,920 ( 4.00%)  <counts for unidentified lines in ~/ab/dp-r2-p3-churn/src/alloc_core/config/continuation_bounds.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_header/segment_header_meta_fields.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 46 ----------------------------------------
+      .               /// Add `n` to `live_count` in ONE load+store (E1, task W4 — batched carve).
+      .               /// Equivalent to `n` sequential [`inc_live`](Self::inc_live) calls: the
+      .               /// counter is owner-only, so intermediate values are unobservable.
+      .               #[inline(always)]
+      .               pub(crate) fn add_live(&mut self, n: u32) {
+      .                   let v = self.live_count_of();
+      .                   let limit =
+      .                       (crate::alloc_core::os::SEGMENT / crate::alloc_core::size_classes::MIN_BLOCK) as u32;
+354,105 ( 0.30%)          let Some(new) = v.checked_add(n).filter(|&sum| sum <= limit) else {
+      .                       fatal(b"segment_header_meta_fields: add_live live_count overflow\n");
+      .                   };
+      .                   self.set_live_count(new);
+      .               }
+      .           
+      .               /// Decrement `live_count` (a block was freed) and return the NEW value.
+      .               /// Underflow is terminal: a valid owner-side retirement has a credit.
+      .               #[inline(always)]
+-- line 62 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/registry/heap_core/free/realloc.rs
+--------------------------------------------------------------------------------
+Ir 
+
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_table/route_slots.rs
+--------------------------------------------------------------------------------
+Ir                 
+
+-- line 183 ----------------------------------------
+        .                   prepared.then_some(IssueTransaction::prepared(index, base, offset, class))
+        .               }
+        .           
+        .               /// Run-level twin of [`Self::prepare_small_issue`]: the fatal guards (live
+        .               /// slot, matching root, Small sidecar) run ONCE per refill batch; the
+        .               /// per-block OOM moves to `RoutedIssueRun::prepare_for` (leaf changes).
+        .               pub(super) fn prepare_small_issue_run(&self, base: *mut u8, class: u8) -> RoutedIssueRun<'_> {
+        .                   let index = SegmentHeader::segment_id_at(base) as usize;
+  236,070 ( 0.20%)          if index >= self.cap {
+        .                       fatal(b"route_slots: issue run index out of range\n");
+        .                   }
+        .                   // SAFETY: owner-only access to an initialized live route slot.
+        .                   let route = unsafe { &*self.slots.add(index) }
+        .                       .as_ref()
+        .                       .unwrap_or_else(|| fatal(b"route_slots: issue run on empty route slot\n"));
+  236,070 ( 0.20%)          if route.root() != base {
+        .                       fatal(b"route_slots: issue run base does not match route root\n");
+        .                   }
+        .                   let sidecar = route
+        .                       .small_sidecar()
+        .                       .unwrap_or_else(|| fatal(b"route_slots: issue run on non-Small route\n"));
+        .                   RoutedIssueRun {
+        .                       classes: sidecar.classes(),
+        .                       class,
+-- line 206 ----------------------------------------
+-- line 287 ----------------------------------------
+        .           }
+        .           
+        .           impl RoutedIssueRun<'_> {
+        .               /// Fallible per-block half: promote the block's leaf if the run has not
+        .               /// seen it yet (OOM-shaped `false`, same as the per-block prepare).
+        .               pub(super) fn prepare_for(&mut self, offset: u32) -> bool {
+        .                   let off = offset as usize;
+        .                   let granule = off / MIN_BLOCK;
+5,665,680 ( 4.82%)          if off >= SEGMENT || !off.is_multiple_of(MIN_BLOCK) {
+        .                       return false;
+        .                   }
+        .                   // The hoist: same-leaf blocks cost two shifts + compare, zero atomics.
+        .                   if self
+        .                       .cursor
+        .                       .as_ref()
+        .                       .is_some_and(|c| c.leaf_idx() == LeafCursor::leaf_index(granule))
+        .                   {
+        .                       #[cfg(all(feature = "internals", feature = "bench-internals"))]
+        .                       if ClassLeaves::fail_prepare_injected() {
+        .                           return false;
+        .                       }
+        .                       return true;
+        .                   }
+  731,248 ( 0.62%)          match self.classes.prepare_leaf(granule, self.class) {
+        .                       Some(cursor) => {
+        .                           self.cursor = Some(cursor);
+        .                           true
+        .                       }
+        .                       None => false,
+        .                   }
+        .               }
+        .           
+-- line 318 ----------------------------------------
+
+7,672,275 ( 6.52%)  <counts for unidentified lines in ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_table/route_slots.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/registry/segment_route/directory.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 182 ----------------------------------------
+      .                               addr,
+      .                               entry.payload,
+      .                               0,
+      .                           ))
+      .                       && addr.checked_add(size).is_some_and(|end| end <= entry.end)
+      .               }
+      .           
+      .               pub(super) fn small_sidecar(&self) -> Option<&SmallSidecar> {
+236,070 ( 0.20%)          if matches!(self.kind(), RouteKind::Large) {
+      .                       return None;
+      .                   }
+      .                   let ptr = self
+      .                       .entry()
+      .                       .sidecar
+      .                       .load(Ordering::Relaxed)
+      .                       .cast::<SmallSidecar>();
+      .                   // SAFETY: this counted handle retains the System allocation; only
+-- line 198 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/registry/segment_route/small_sidecar.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 78 ----------------------------------------
+      .               fn bitmap(&self) -> SidecarBitmap<'_> {
+      .                   SidecarBitmap::from_leaves(&self.pending, &self.classes)
+      .                       .unwrap_or_else(|| fatal(b"small_sidecar: sidecar bitmap leaf layout mismatch\n"))
+      .               }
+      .           
+      .               /// Owner-only batch-issue seam over the class leaves; producers never
+      .               /// touch it.
+      .               pub(crate) fn classes(&self) -> &ClassLeaves {
+118,035 ( 0.10%)          &self.classes
+      .               }
+      .           
+      .               /// Crate-private owner-only, fallible preparation before any issue
+      .               /// transaction mutates its freelist, bitmap, bump, live credit, directory,
+      .               /// or output; public owner mutation is carried only by
+      .               /// `RouteRegistration::prepare_small` (which is `!Sync` via its
+      .               /// `PhantomData<Cell<()>>` owner marker, so exclusive-owner sharing across
+      .               /// threads stays type-enforced).
+-- line 94 ----------------------------------------
+
+118,035 ( 0.10%)  <counts for unidentified lines in ~/ab/dp-r2-p3-churn/src/registry/segment_route/small_sidecar.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/alloc_core/segment/bitmap/state_byte.rs
+--------------------------------------------------------------------------------
+Ir                 
+
+-- line 111 ----------------------------------------
+        .               pub(crate) fn read(&self, off: u32) -> u8 {
+        .                   Node::read_u8(Node::offset(self.bytes, (off >> GRANULE_SHIFT) as usize))
+        .               }
+        .           
+        .               /// Write the state byte of the granule at payload offset `off`.
+        .               #[inline(always)]
+        .               pub(crate) fn write(&self, off: u32, class_idx: usize, state: u8) {
+        .                   Node::write_u8(
+3,777,120 ( 3.21%)              Node::offset(self.bytes, (off >> GRANULE_SHIFT) as usize),
+        .                       Self::encode(class_idx, state),
+        .                   );
+        .               }
+        .           
+        .               /// Rewrite ONLY the state bits of the granule's byte, preserving the
+        .               /// class field. Used where the caller has no class index in hand
+        .               /// (alloc-issue: the block was stored under its own class, and a
+        .               /// LIVE/MAG byte is never zero — invariant И1 — so the class bits are
+-- line 127 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/examples/_shared/paired_ab_workload.rs
+--------------------------------------------------------------------------------
+Ir 
+
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/global/sefer_alloc/global_alloc.rs
+--------------------------------------------------------------------------------
+Ir 
+
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/examples/_shared/native_mixed_driver.rs
+--------------------------------------------------------------------------------
+Ir 
+
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_table/segment_table_impl.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 379 ----------------------------------------
+      .           
+      .               /// Run-level twin of `prepare_small_issue` for whole-batch refills: the
+      .               /// fatal route guards (live slot, matching root, Small sidecar) run once
+      .               /// per run. Infallible; per-block OOM moves to `IssueRun::prepare_for`
+      .               /// (leaf changes).
+      .               #[cfg_attr(not(debug_assertions), inline(always))]
+      .               pub(crate) fn prepare_small_issue_run(&self, base: *mut u8, class_idx: usize) -> IssueRun<'_> {
+      .                   #[cfg(feature = "alloc-global")]
+236,070 ( 0.20%)          if let Some(routes) = &self.routes {
+      .                       let class = u8::try_from(class_idx)
+      .                           .unwrap_or_else(|_| fatal(b"segment_table: small class index exceeds u8\n"));
+      .                       let index = SegmentHeader::segment_id_at(base) as usize;
+236,070 ( 0.20%)              if self.base_at(index) != base {
+      .                           fatal(b"segment_table: prepare base is not the segment base\n");
+      .                       }
+118,035 ( 0.10%)              let inner = routes.prepare_small_issue_run(base, class);
+      .                       return IssueRun::routed(index, base, inner);
+      .                   }
+      .                   let _ = (base, class_idx);
+      .                   IssueRun::unrouted(base)
+      .               }
+      .           
+      .               /// R6-T05 (SEC-1): free-side class-identity check against the owner route
+      .               /// class map. `true` means "no objection" — including every configuration
+-- line 402 ----------------------------------------
+-- line 968 ----------------------------------------
+      .               /// call regardless.) `base_at` sidesteps needing `bases()` here at all:
+      .               /// each call is a self-contained pointer read with no returned borrow,
+      .               /// so the caller can freely interleave `base_at(i)` reads with
+      .               /// `recycle(...)` calls in the same index-driven loop — no pre-collect
+      .               /// buffer needed, and no bound on how many segments can be recycled in
+      .               /// one scan.
+      .               #[inline(always)]
+      .               pub(crate) fn base_at(&self, i: usize) -> *mut u8 {
+236,070 ( 0.20%)          if i >= self.count as usize {
+      .                       return core::ptr::null_mut();
+      .                   }
+118,035 ( 0.10%)          let slot = Self::slot_ptr(self.slots, i) as *const *mut u8;
+      .                   crate::alloc_core::node::Node::read_struct::<*mut u8>(slot)
+      .               }
+      .           
+      .               // -----------------------------------------------------------------------
+      .               // Private helpers
+      .               // -----------------------------------------------------------------------
+      .           
+      .               /// Address of slot `i` within the registry array. Pure pointer arithmetic
+-- line 987 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_header/segment_header_views.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 30 ----------------------------------------
+      .                   // membership, but nothing
+      .                   // to validate the `kind` BYTE of a base that IS ours but has been
+      .                   // corrupted in place — so this decode must reject on its own.
+      .                   // Unexpected kind bytes become `Unknown`; callers must interpret that
+      .                   // sentinel according to their own contract: some reject/abort when an
+      .                   // active slot violates its invariant, while fallback candidate checks
+      .                   // may treat it as stale and return `None`. Unknown is not universally
+      .                   // a no-op.
+354,105 ( 0.30%)          match b {
+      .                       0 => SegmentKind::Primordial,
+      .                       1 => SegmentKind::Small,
+      .                       2 => SegmentKind::Large,
+      .                       _ => SegmentKind::Unknown,
+      .                   }
+      .               }
+      .           
+      .               medium_promotion_reachable! {
+-- line 46 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/examples/dp_native_mixed_sefer.rs
+--------------------------------------------------------------------------------
+Ir 
+
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small_magazine.rs
+--------------------------------------------------------------------------------
+Ir 
+
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+--------------------------------------------------------------------------------
+Ir                  
+
+-- line 517 ----------------------------------------
+         .                       .unwrap_or(0)
+         .               }
+         .           
+         .               /// `Err` is only an uncommitted class-spill OOM; hardened validation
+         .               /// failures abort rather than being converted to an empty drain.
+         .               /// S1: `issue_state` = state byte committed per popped block — LIVE for
+         .               /// batch paths, MAG for the magazine refill (parks n−1 blocks; see
+         .               /// `finish_magazine_refill`). Same as `alloc_batch`'s deferred-clear.
+   826,756 ( 0.70%)      pub(in crate::alloc_core) fn try_drain_freelist_batch(
+         .                   &mut self,
+         .                   segment: *mut u8,
+         .                   class_idx: usize,
+         .                   out: &mut [*mut u8],
+         .                   issue_state: u8,
+         .               ) -> Result<usize, ()> {
+   236,216 ( 0.20%)          if out.is_empty() {
+         .                       return Ok(0);
+         .                   }
+         .                   let mut meta = SegmentMeta::new(segment);
+         .                   let mut bt = meta.bin_table();
+         .                   // Run-level protocol (B4-R3): fatal route guards run once in
+         .                   // `prepare_small_issue_run`; per-block `prepare_for` promotes only on
+         .                   // a leaf CHANGE, `run.commit` is one Release store (see `IssueRun`);
+         .                   // `issue_small` re-derives the id in all builds.
+         .           
+         .                   {
+         .                       // Read the head ONCE.
+         .                       let mut head_off = bt.head(class_idx);
+   236,216 ( 0.20%)              if head_off == FREE_LIST_NULL {
+         .                           return Ok(0);
+         .                       }
+         .                       let mut run = self.table.prepare_small_issue_run(segment, class_idx);
+         .                       // Prepare every spill on the still-owned chain. On OOM head, bitmap, live count and
+         .                       // output stay unchanged; promoted leaves are valid zero-filled copies for a retry.
+         .                       #[cfg(not(feature = "hardened"))]
+         .                       let bounds =
+         .                           crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
+         .                       let mut probe = head_off;
+         .                       #[cfg(feature = "hardened")]
+         .                       let mut slow = head_off;
+         .                       let mut probed = 0usize;
+ 3,871,935 ( 3.29%)              while probed < out.len() && probe != FREE_LIST_NULL {
+         .                           #[cfg(feature = "hardened")]
+         .                           if !Self::valid_free_node(segment, probe, class_idx) {
+         .                               Self::free_list_corrupted();
+         .                           }
+         .                           let block = Node::deref(segment, probe as usize);
+         .                           let Some(nn) = NonNull::new(block) else {
+         .                               break;
+         .                           };
+-- line 566 ----------------------------------------
+-- line 586 ----------------------------------------
+         .                                   );
+         .                               }
+         .                               if probe != FREE_LIST_NULL && probe == slow {
+         .                                   Self::free_list_corrupted();
+         .                               }
+         .                           }
+         .                           #[cfg(not(feature = "hardened"))]
+         .                           {
+ 3,777,120 ( 3.21%)                      probe = if next.is_null() {
+         .                                   FREE_LIST_NULL
+         .                               } else {
+         .                                   Node::continuation_offset_or_fatal(segment, next, bounds)
+         .                               };
+         .                           }
+         .                           probed += 1;
+         .                       }
+         .                       // B4 (в): the state byte is written per block below.
+         .                       let mut k = 0usize;
+ 7,318,170 ( 6.22%)              while k < out.len() && head_off != FREE_LIST_NULL {
+ 1,888,560 ( 1.61%)                  let block_ptr = Node::deref(segment, head_off as usize);
+         .                           let block_nn = match NonNull::new(block_ptr) {
+         .                               Some(nn) => nn,
+         .                               // Corrupt offset only: commit what we have (defence-in-depth);
+         .                               // `head` stays on this node so nothing is lost.
+         .                               None => break,
+         .                           };
+         .                           // Dependent load: read `next` BEFORE recording (block body is
+         .                           // never written on the pop path — race-free against ourselves).
+         .                           let next = Node::read_next(block_nn);
+         .                           // B4 (в)/S1: issue = commit `issue_state` (LIVE, or MAG when
+         .                           // the caller parks the batch in a magazine).
+         .                           meta.state_byte().write(head_off, class_idx, issue_state);
+         .                           run.commit(head_off);
+ 1,888,560 ( 1.61%)                  out[k] = block_ptr;
+ 1,888,560 ( 1.61%)                  k += 1;
+         .                           // The probe pass above validated this same chain link by link.
+11,331,360 ( 9.64%)                  head_off = if next.is_null() {
+         .                               FREE_LIST_NULL
+         .                           } else {
+         .                               next.addr().wrapping_sub(segment.addr()) as u32
+         .                           };
+         .                       }
+         .                       // Write the new head ONCE: the first un-popped node, or NULL.
+         .                       bt.set_head(class_idx, head_off);
+         .                       // B4-M (P1-2): MAG state-byte writes of this drain, one add per batch.
+-- line 630 ----------------------------------------
+-- line 634 ----------------------------------------
+         .                               .fetch_add(k as u64, core::sync::atomic::Ordering::Relaxed);
+         .                       }
+         .                       // R7-A2: directory bitmap maintenance — the old head was non-null
+         .                       // (early return above), so the only transition is non-empty→empty
+         .                       // when the drain exhausted the chain (head_off == FREE_LIST_NULL);
+         .                       // `let _ = run` ends its borrow before the `&mut self` publish.
+         .                       let _ = run;
+         .                       #[cfg(feature = "alloc-segment-directory")]
+   236,070 ( 0.20%)              if head_off == FREE_LIST_NULL {
+         .                           let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+         .                           self.publish_empty(segment, class_idx, slot_idx);
+         .                       }
+         .                       // `inc_live` ONCE by `k` (D1): exactly `k` blocks handed out; a
+         .                       // popped block always comes from a COMMITTED payload (a decommitted
+         .                       // segment's freelist is empty), so no recommit is needed here.
+         .                       // Batch `add_live(k)` ≡ `k` per-block `inc_live`s (D1 note there).
+         .                       meta.add_live(k as u32);
+         .                       Ok(k)
+         .                   }
+ 1,062,972 ( 0.90%)      }
+         .           
+         .               /// Carve a fresh `block_size`-aligned block from the current small
+         .               /// segment's bump cursor. Returns None if the segment is full.
+         .               ///
+         .               /// On a page boundary crossing, marks the freshly entered page as owned by
+         .               /// `class_idx` in the page map (the page-dedication rule).
+         .               ///
+         .               /// R12-11 (task #262): `class_idx` is used ONLY for that diagnostic-only
+-- line 661 ----------------------------------------
+
+ 7,082,100 ( 6.02%)  <counts for unidentified lines in ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: ~/ab/dp-r2-p3-churn/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs
+--------------------------------------------------------------------------------
+Ir                 
+
+-- line 179 ----------------------------------------
+        .                   }
+        .                   #[cfg(all(feature = "internals", feature = "bench-internals"))]
+        .                   if FAIL_PREPARE_AFTER
+        .                       .try_with(Self::fail_countdown)
+        .                       .unwrap_or(false)
+        .                   {
+        .                       return None;
+        .                   }
+  365,624 ( 0.31%)          if !self.prepared(granule, class) {
+        .                       let leaf = granule / LEAF_GRANULES;
+        .                       #[cfg(all(feature = "internals", feature = "bench-internals"))]
+        .                       if FAIL_NEXT_SPILLS.try_with(Self::fail_next).unwrap_or(false)
+        .                           || FAIL_SPILL_AFTER
+        .                               .try_with(Self::fail_countdown)
+        .                               .unwrap_or(false)
+        .                       {
+        .                           return None;
+-- line 195 ----------------------------------------
+-- line 203 ----------------------------------------
+        .                   // prepare/promote above succeeded, so the leaf pointer is published.
+        .                   NonNull::new(ptr).map(|leaf| LeafCursor { leaf_idx, leaf })
+        .               }
+        .           
+        .               /// Re-resolve a leaf's cursor without promoting; `None` if the leaf was
+        .               /// never promoted (the batch commit trap: commit never blindly stores
+        .               /// through a stale or absent backing).
+        .               pub(crate) fn resolve_leaf(&self, granule: usize) -> Option<LeafCursor> {
+  641,968 ( 0.55%)          if granule >= LEAVES * LEAF_GRANULES {
+        .                       return None;
+        .                   }
+        .                   let leaf_idx = granule / LEAF_GRANULES;
+        .                   NonNull::new(self.mixed[leaf_idx].load(Ordering::Acquire))
+        .                       .map(|leaf| LeafCursor { leaf_idx, leaf })
+        .               }
+        .           
+        .               /// Per-block batch issue: one Release store, no promotion and no prepared
+-- line 219 ----------------------------------------
+-- line 221 ----------------------------------------
+        .               pub(crate) fn issue_in(&self, cursor: &LeafCursor, granule: usize, class: u8) {
+        .                   debug_assert_eq!(cursor.leaf_idx(), LeafCursor::leaf_index(granule));
+        .                   debug_assert!(usize::from(class) < SMALL_CLASS_COUNT);
+        .                   debug_assert!(granule < LEAVES * LEAF_GRANULES);
+        .                   // SAFETY: the cursor's leaf pointer was Release-published by the
+        .                   // owner's promotion and stays owned through the route's last pin,
+        .                   // exactly like `issue()`'s deref; the run holds `&self`, so the leaf
+        .                   // cannot be dropped mid-run.
+1,888,560 ( 1.61%)          unsafe { &*cursor.leaf.as_ptr().add(granule % LEAF_GRANULES) }
+        .                       .store(class + 1, Ordering::Release);
+        .               }
+        .           
+        .               pub(crate) fn issue(&self, granule: usize, class: u8) -> bool {
+        .                   if granule >= LEAVES * LEAF_GRANULES || usize::from(class) >= SMALL_CLASS_COUNT {
+        .                       return false;
+        .                   }
+        .                   let leaf = granule / LEAF_GRANULES;
+-- line 237 ----------------------------------------
+
+2,209,544 ( 1.88%)  <counts for unidentified lines in ~/ab/dp-r2-p3-churn/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs>
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./csu/../csu/libc-start.c
+  ./csu/../sysdeps/nptl/libc_start_call_main.h
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/alloc.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/mod.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/env.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/stack_overflow.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/stack_overflow/thread_info.rs
+
+--------------------------------------------------------------------------------
+Ir                  
+--------------------------------------------------------------------------------
+56,131,215 (47.73%)  events annotated
+

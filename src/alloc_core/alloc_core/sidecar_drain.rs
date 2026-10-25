@@ -371,6 +371,15 @@ impl AllocCore {
                 if Self::reclaim_sidecar_record(base, record.offset, record.class) {
                     changed_classes |= 1u64 << record.class;
                     reclaimed += 1;
+                    // B4 (b4-provenance, R1): REMOTE bin-ingress BLOCKS — a
+                    // pending publication of a foreign free is pulled into
+                    // the owning segment's freelist/bin here (one increment
+                    // per reclaimed record). Reclaim in this tree IS this
+                    // remote-pending sidecar drain, so this is the single
+                    // block-level site for the remote provenance.
+                    #[cfg(all(feature = "bench-internals", feature = "alloc-global"))]
+                    crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_REMOTE_BLOCKS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     observer.record_reclaimed();
                 }
             }
@@ -379,6 +388,25 @@ impl AllocCore {
             }
         }
         observer.finish();
+        // B4 (b4-provenance, R4): REMOTE bin-ingress EVENTS — the SINGLE
+        // counting point, one increment PER CALL with `reclaimed > 0`. All
+        // three caller paths flow through `consume_small_cuts_impl` and are
+        // therefore counted uniformly: the strict trim pass
+        // (`drain_sidecar_ingress`), the bounded maintenance step
+        // (`drain_sidecar_ingress_bounded`) and the discovery drain
+        // (`find_segment` → `drain_segment_sidecar`, scan.rs). The former
+        // per-caller increments in strict/bounded are removed (they missed
+        // the discovery path entirely). NOTE: `reclaimed` here counts Small
+        // sidecar records only; Large-retirement increments a DIFFERENT
+        // `reclaimed` (in the strict/bounded CALLERS), so a Large retirement
+        // alone never fires this event — REMOTE EVENTS/BLOCKS count ONLY
+        // Small sidecar reclaim (Large has no ingress counter at all: it
+        // never pushes a Small block into a bin).
+        #[cfg(all(feature = "bench-internals", feature = "alloc-global"))]
+        if reclaimed > 0 {
+            crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_REMOTE_EVENTS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
         (changed_classes, reclaimed)
     }
 
@@ -464,6 +492,14 @@ impl AllocCore {
         if cursor.0 == end {
             *cursor = (0, self.sidecar_word_hint(0));
         }
+        // B4 (b4-provenance, R1/R4): REMOTE bin-ingress EVENTS are counted
+        // at the SINGLE point inside `consume_small_cuts_impl` (see it) —
+        // no per-caller increment here anymore. NOTE on the return value:
+        // `reclaimed` INCLUDES Large-retirement (`retire_large_route`
+        // above) — that is production return semantics and is NOT Small
+        // bin-ingress; DEPOT_BIN_INGRESS_REMOTE_EVENTS/BLOCKS count ONLY
+        // Small sidecar reclaim (Large never enters a Small bin, so it has
+        // no ingress counter by design).
         (reclaimed, units)
     }
 
@@ -530,6 +566,11 @@ impl AllocCore {
                 SegmentKind::Unknown => fatal(b"sidecar_drain: unknown segment kind\n"),
             }
         }
+        // B4 (b4-provenance, R1/R4): REMOTE bin-ingress EVENTS are counted
+        // at the SINGLE point inside `consume_small_cuts_impl` — no
+        // per-caller increment here anymore. NOTE: this fn's `reclaimed`
+        // INCLUDES Large-retirement (production return semantics, NOT
+        // Small bin-ingress); see `consume_small_cuts_impl`.
         reclaimed
     }
 

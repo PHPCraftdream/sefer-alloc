@@ -1,0 +1,10 @@
+pair mstress-50000
+prod dp-p2-mstress.mstress.50000.cg_summary.txt
+GROUP flush_class_internal SELF_IR=0 CALLS=31
+GROUP refill_magazine_slow SELF_IR=214691 CALLS=3233
+GROUP try_drain_freelist_batch SELF_IR=2886484 CALLS=0
+ctr  dp-p5-mstress.mstress.50000.ctr.cg_summary.txt
+GROUP flush_class_internal SELF_IR=0 CALLS=31
+GROUP refill_magazine_slow SELF_IR=184281 CALLS=3233
+GROUP try_drain_freelist_batch SELF_IR=3323816 CALLS=0
+VERDICT MATCH

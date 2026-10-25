@@ -147,6 +147,7 @@ fn churn_write(size: usize) {
         // usize::MAX/2) alignment (8), satisfying `GlobalAlloc::alloc`'s
         // preconditions.
         let p = unsafe { std::alloc::alloc(layout) };
+        assert!(!p.is_null(), "benchmark allocation failed");
         if !p.is_null() {
             // SAFETY: `p` is a freshly allocated block of at least 16 bytes
             // (every SIZES entry is >= 16), so the first two u64 words are
@@ -169,6 +170,7 @@ fn churn_write(size: usize) {
         }
         // SAFETY: same layout preconditions as the prefill alloc above.
         let p = unsafe { std::alloc::alloc(layout) };
+        assert!(!p.is_null(), "benchmark allocation failed");
         if !p.is_null() {
             // SAFETY: same bounds/volatility reasoning as the prefill write.
             unsafe { std::ptr::write_volatile(p.cast::<u64>(), 0xA5A5_A5A5_A5A5_A5A5) };
@@ -180,6 +182,7 @@ fn churn_write(size: usize) {
     black_box(&live);
 
     for &p in &live {
+        assert!(!p.is_null(), "benchmark allocation failed");
         if !p.is_null() {
             // SAFETY: `p` is still live (every slot was freed-and-replaced,
             // never freed twice) and was allocated with this same `layout`.

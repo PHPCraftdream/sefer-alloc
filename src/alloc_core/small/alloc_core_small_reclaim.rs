@@ -69,6 +69,21 @@ impl AllocCore {
         });
         Node::write_next(block, next);
         bins.set_head(class_idx, offset);
+        // B4 (b4-provenance, R4): SUBSTRATE bin-ingress total — this is the
+        // SECOND (and only other, next to `AllocCore::dealloc_small` and
+        // the `flush_run` splice) physical Small-block bin-entry point: a
+        // remote-reclaimed record is pushed straight onto the freelist
+        // here and CANNOT route through `dealloc_small` (it is not a free
+        // call; the block is LIVE until the write below). Counting every
+        // physical entry site makes the identity in `diag/counters.rs`
+        // exact: `SUBSTRATE_PUSHES == own_overflow + own_batch + remote
+        // + swap_top + teardown + OTHER` with OTHER == 0 (examples assert
+        // it). Relaxed, measurement-only, no behavior change. The
+        // `registry::heap_core::diag` path needs `alloc-global` (also
+        // implied by `alloc-xthread` above).
+        #[cfg(all(feature = "bench-internals", feature = "alloc-global"))]
+        crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_SUBSTRATE_PUSHES
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         // B4 (в): commit LIVE → FREE in the state byte.
         meta.state_byte().write(
             offset,

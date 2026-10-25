@@ -1,0 +1,43 @@
+git_diff_sha256 e7dc9d00b4f766e5783bf3ac431c0daf972a069af94af9cb60ffc21a4f1529f2
+tree_sha256 59248117087f4c3d73af54311d9f45b53e220261d242c4c43beee07ec6c6a447
+features production
+toggle --toggle-collect=*try_drain_freelist_batch*
+compress-strings=no compress-pos=no
+cmd ~/ab/tgt-dp-r2-p2-mstress/release/examples/dp_depot_cg sefer mstress 50000
+--- PROGRAM TOTALS ---
+3,670,629 (100.0%)  PROGRAM TOTALS
+--- workload stdout ---
+sefer 974535
+--- annotate (inclusive) lines for the 3 target functions ---
+1,117,590 (30.45%)  ~/ab/dp-r2-p2-mstress/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [~/ab/tgt-dp-r2-p2-mstress/release/examples/dp_depot_cg]
+  542,272 (14.77%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  458,032 (12.48%)  ~/ab/dp-r2-p2-mstress/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  286,277 ( 7.80%)  ~/ab/dp-r2-p2-mstress/src/alloc_core/config/continuation_bounds.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  285,336 ( 7.77%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  281,940 ( 7.68%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  275,767 ( 7.51%)  ~/ab/dp-r2-p2-mstress/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  207,452 ( 5.65%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  101,232 ( 2.76%)  ~/ab/dp-r2-p2-mstress/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   43,930 ( 1.20%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+   25,376 ( 0.69%)  ~/ab/dp-r2-p2-mstress/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    9,516 ( 0.26%)  ~/ab/dp-r2-p2-mstress/src/alloc_core/segment/segment_header/segment_header_meta_fields.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    9,516 ( 0.26%)  ~/ab/dp-r2-p2-mstress/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    9,516 ( 0.26%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    6,344 ( 0.17%)  ~/ab/dp-r2-p2-mstress/src/registry/segment_route/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    6,344 ( 0.17%)  ~/ab/dp-r2-p2-mstress/src/registry/segment_route/small_sidecar.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    3,172 ( 0.09%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    1,017 ( 0.03%)  ~/ab/dp-r2-p2-mstress/src/alloc_core/small/alloc_core_small/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+        .           ~/ab/dp-r2-p2-mstress/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+        .           ~/ab/dp-r2-p2-mstress/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [~/ab/tgt-dp-r2-p2-mstress/release/examples/dp_depot_cg]
+        .           ~/ab/dp-r2-p2-mstress/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [~/ab/tgt-dp-r2-p2-mstress/release/examples/dp_depot_cg]
+        .           ~/ab/dp-r2-p2-mstress/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> [~/ab/tgt-dp-r2-p2-mstress/release/examples/dp_depot_cg]
+ 22,750 ( 0.62%)      pub(in crate::alloc_core) fn try_drain_freelist_batch(
+--- SELF Ir and CALLS per target group (from raw callgrind file) ---
+GROUP flush_class_internal SELF_IR=0 CALLS=0
+GROUP refill_magazine_slow SELF_IR=11011887 CALLS=9699
+GROUP try_drain_freelist_batch SELF_IR=3670629 CALLS=3250
+--- INCL Ir per target group (sum of annotate inclusive rows) ---
+GROUP flush_class_internal INCL_IR=0
+GROUP refill_magazine_slow INCL_IR=0
+GROUP try_drain_freelist_batch INCL_IR=3693379
+TOGGLE_TOTAL_IR=3670629

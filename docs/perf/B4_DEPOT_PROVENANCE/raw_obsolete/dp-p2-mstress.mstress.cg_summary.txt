@@ -1,0 +1,3 @@
+MARGINAL Ir/step (mstress T=1): 0
+MARGINAL Ir/step (mstress T=1): 0
+MARGINAL Ir/step (mstress T=1): 368

@@ -566,6 +566,23 @@ impl HeapCore {
                             self.core
                                 .flush_class_internal(c, core::slice::from_ref(&evicted));
                         }
+                        // B4 (b4-provenance): provenance of this flush = own
+                        // swap-top eviction. INVALIDATION for the heap-private
+                        // depot shadow: the evicted block left the magazine
+                        // WITHOUT passing the (hypothetical) depot candidate
+                        // set, so depot residency can no longer be counted.
+                        #[cfg(all(
+                            feature = "bench-internals",
+                            feature = "alloc-global",
+                            feature = "fastbin"
+                        ))]
+                        {
+                            crate::registry::heap_core::diag::DEPOT_FLUSH_SWAP_TOP_EVENTS
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                            crate::registry::heap_core::diag::DEPOT_FLUSH_SWAP_TOP_BLOCKS
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                            self.depot_invalidate();
+                        }
                         // The current block takes the evicted slot; `count`
                         // is unchanged — the magazine still holds exactly
                         // `cap` blocks (byte budget preserved).
@@ -619,6 +636,21 @@ impl HeapCore {
                         self.core
                             .flush_class_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
                     };
+                    // B4 (b4-provenance): provenance of this flush = own
+                    // overflow half-flush (FLUSH_N blocks); feed the
+                    // heap-private depot shadow (measurement-only).
+                    #[cfg(all(
+                        feature = "bench-internals",
+                        feature = "alloc-global",
+                        feature = "fastbin"
+                    ))]
+                    {
+                        crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_OWN_OVERFLOW_EVENTS
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_OWN_OVERFLOW_BLOCKS
+                            .fetch_add(FLUSH_N as u64, core::sync::atomic::Ordering::Relaxed);
+                        self.depot_on_overflow_flush(c, FLUSH_N as u64);
+                    }
                     // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
                     let remaining = TCACHE_CAP - FLUSH_N;
                     for i in 0..remaining {

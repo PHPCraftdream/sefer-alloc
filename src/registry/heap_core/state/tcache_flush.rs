@@ -101,7 +101,29 @@ impl HeapCore {
             {
                 self.tcache.classes[c].virgin_mask = 0;
             }
+            // B4 (b4-provenance): provenance of this flush = teardown/trim
+            // (`flush_all_tcache`, the production teardown-trim primitive).
+            #[cfg(all(
+                feature = "bench-internals",
+                feature = "alloc-global",
+                feature = "fastbin"
+            ))]
+            {
+                crate::registry::heap_core::diag::DEPOT_FLUSH_TEARDOWN_EVENTS
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                crate::registry::heap_core::diag::DEPOT_FLUSH_TEARDOWN_BLOCKS
+                    .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
+            }
         }
+        // B4 (b4-provenance): INVALIDATION for the heap-private depot shadow —
+        // a teardown/trim flush releases the whole magazine (and the pool /
+        // large cache follow), so no depot residency survives it.
+        #[cfg(all(
+            feature = "bench-internals",
+            feature = "alloc-global",
+            feature = "fastbin"
+        ))]
+        self.depot_invalidate();
     }
 
     /// TEST-ONLY (P5): force-flush every class's magazine back to the

@@ -1,0 +1,7 @@
+wsl-snapshot/examples/dp_depot_cg.rs 57e844bca1f96fb1c2a5f2810b7fe0ffa0d8d3af91a0681be6fad6ed4945ab26
+wsl-snapshot/Cargo.toml.cg-patch c7ee5c3d4dfe45326503fc0a7788eb656196083048bf2fac0c60a925b77737f0
+# Restore (WSL):
+#   mkdir -p ~/ab/dp-r2-p1-larson && tar -xf <repo>/.rush/wsl/dp-r2-p1-larson.tar -C ~/ab/dp-r2-p1-larson
+#   (snapshot Cargo.toml INCLUDES the cg-round patch:
+#    [[example]] name = "dp_depot_cg" + path entry; the example file is
+#    examples/dp_depot_cg.rs in the snapshot).

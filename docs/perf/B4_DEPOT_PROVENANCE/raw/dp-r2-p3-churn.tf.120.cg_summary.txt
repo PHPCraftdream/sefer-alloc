@@ -1,0 +1,35 @@
+git_diff_sha256 e7dc9d00b4f766e5783bf3ac431c0daf972a069af94af9cb60ffc21a4f1529f2
+tree_sha256 59248117087f4c3d73af54311d9f45b53e220261d242c4c43beee07ec6c6a447
+features production
+toggle --toggle-collect=*flush_class_internal*
+compress-strings=no compress-pos=no
+cmd ~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer 120
+--- PROGRAM TOTALS ---
+55,175,670 (100.0%)  PROGRAM TOTALS
+--- workload stdout ---
+{"arm":"sefer","repeats":120,"warmup_rounds":1,"workload_ns":2334311369,"segments_reserved_total":1,"rss_kib":30968,"commit_kib":72792,"completed":true}
+--- annotate (inclusive) lines for the 3 target functions ---
+32,489,870 (58.88%)  ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+ 5,905,779 (10.70%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 4,252,077 ( 7.71%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 3,071,010 ( 5.57%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 2,834,877 ( 5.14%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 2,716,543 ( 4.92%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 1,889,918 ( 3.43%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   708,648 ( 1.28%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   590,540 ( 1.07%)  ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   354,324 ( 0.64%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   236,216 ( 0.43%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+   118,096 ( 0.21%)  ~/ab/dp-r2-p3-churn/examples/dp_native_mixed_sefer.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+     7,760 ( 0.01%)  ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+        12 ( 0.00%)  ~/ab/dp-r2-p3-churn/src/lib.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+3,070,808 ( 5.57%)      pub(crate) unsafe fn flush_class_internal(&mut self, class_idx: usize, blocks: &[*mut u8]) {
+--- SELF Ir and CALLS per target group (from raw callgrind file) ---
+GROUP flush_class_internal SELF_IR=55175670 CALLS=118108
+GROUP refill_magazine_slow SELF_IR=0 CALLS=0
+GROUP try_drain_freelist_batch SELF_IR=0 CALLS=0
+--- INCL Ir per target group (sum of annotate inclusive rows) ---
+GROUP flush_class_internal INCL_IR=58246478
+GROUP refill_magazine_slow INCL_IR=0
+GROUP try_drain_freelist_batch INCL_IR=0
+TOGGLE_TOTAL_IR=55175670

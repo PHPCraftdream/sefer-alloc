@@ -1,0 +1,10 @@
+git_diff_sha256 e7dc9d00b4f766e5783bf3ac431c0daf972a069af94af9cb60ffc21a4f1529f2
+tree_sha256 59248117087f4c3d73af54311d9f45b53e220261d242c4c43beee07ec6c6a447
+features production,bench-internals,internals
+rustc rustc 1.98.1 (48a229cea 2026-09-01)
+cpu 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+os Linux 6.18.33.2-microsoft-standard-WSL2
+cmd ~//ab/tgt-dp-r2-c7/release/examples/dp_native_mixed_counters 120
+example dp_native_mixed_counters
+{"arm":"sefer","repeats":120,"warmup_rounds":1,"depot_bin_ingress_own_overflow_events":118096,"depot_bin_ingress_own_overflow_blocks":944768,"depot_flush_swap_top_events":0,"depot_flush_swap_top_blocks":0,"depot_bin_ingress_own_batch_events":0,"depot_bin_ingress_own_batch_blocks":0,"depot_bin_ingress_remote_events":0,"depot_bin_ingress_remote_blocks":0,"depot_flush_teardown_events":0,"depot_flush_teardown_blocks":0,"depot_refill_events":59056,"depot_refill_blocks_total":944896,"depot_refill_blocks_drained":943792,"depot_refill_blocks_carved":1104,"depot_refill_carve_events":69}
+{"absorbed_k":[30976, 61952, 123904, 247808],"real_k":[913792, 882816, 820864, 696960],"fully_absorbed_ev_k":[3872, 7744, 15488, 30976],"refill_from_depot_k":[30944, 61888, 123776, 247552],"refill_drain_k":[913952, 883008, 821120, 697344],"refill_fully_k":[0, 3868, 7736, 15472],"invalidations":0,"unmapped":0}

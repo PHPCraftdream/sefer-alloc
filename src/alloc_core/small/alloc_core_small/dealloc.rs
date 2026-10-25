@@ -143,6 +143,22 @@ impl AllocCore {
         };
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off);
+        // B4 (b4-provenance, R4): SUBSTRATE bin-ingress total — this is
+        // ONE of the physical Small-block bin-entry points (the others:
+        // the `flush_run` splice and `reclaim_sidecar_record`); counting
+        // every entry site satisfies exactly
+        // `SUBSTRATE_PUSHES == own_overflow + own_batch + remote
+        //   + swap_top + teardown + OTHER` with OTHER a computed oracle
+        // (examples assert OTHER == 0). See
+        // `registry/heap_core/diag/counters.rs`. Relaxed, measurement-only,
+        // no behavior change. (Note: swap-top eviction and teardown flush
+        // reach the bin via `flush_class_internal` → `dealloc_small`, so
+        // they are counted BOTH here and in their provenance counters —
+        // the attribution converges.) The `registry::heap_core::diag` path
+        // needs `alloc-global`, hence the extra feature gate.
+        #[cfg(all(feature = "bench-internals", feature = "alloc-global"))]
+        crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_SUBSTRATE_PUSHES
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         // B4 (в): commit LIVE → FREE in the state byte (was bitmap mark_free).
         meta.state_byte().write(
             off,

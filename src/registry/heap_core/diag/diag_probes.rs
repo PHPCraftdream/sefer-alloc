@@ -744,4 +744,257 @@ impl HeapCore {
             )
         };
     }
+
+    // ── B4 depot provenance (task b4-provenance, chunk 1): thin
+    // process-wide delegations to the `DEPOT_*` counter bank in
+    // `diag/counters.rs`, so tests / macro-bench workloads can read the
+    // flush/refill path-activation counters (same pattern as
+    // `dbg_s1_refill_events` above). MEASUREMENT-ONLY, Relaxed loads.
+
+    /// MEASUREMENT-ONLY: `(events, blocks)` of the OWN-THREAD magazine
+    /// overflow half-flush (`dealloc_own_base.rs`, `cnt == TCACHE_CAP`,
+    /// FLUSH_N blocks) — the OWN-OVERFLOW bin-ingress provenance. See
+    /// `DEPOT_BIN_INGRESS_OWN_OVERFLOW_*` in `diag/counters.rs`.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_depot_bin_ingress_own_overflow() -> (u64, u64) {
+        use crate::registry::heap_core::diag::{
+            DEPOT_BIN_INGRESS_OWN_OVERFLOW_BLOCKS, DEPOT_BIN_INGRESS_OWN_OVERFLOW_EVENTS,
+        };
+        use core::sync::atomic::Ordering;
+        (
+            DEPOT_BIN_INGRESS_OWN_OVERFLOW_EVENTS.load(Ordering::Relaxed),
+            DEPOT_BIN_INGRESS_OWN_OVERFLOW_BLOCKS.load(Ordering::Relaxed),
+        )
+    }
+
+    /// MEASUREMENT-ONLY: `(events, blocks)` of the R1-01 swap-top eviction
+    /// (1 block each; bypasses the depot candidate set — invalidates the
+    /// heap-private shadow). See `DEPOT_FLUSH_SWAP_TOP_*`.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_depot_flush_swap_top() -> (u64, u64) {
+        use crate::registry::heap_core::diag::{
+            DEPOT_FLUSH_SWAP_TOP_BLOCKS, DEPOT_FLUSH_SWAP_TOP_EVENTS,
+        };
+        use core::sync::atomic::Ordering;
+        (
+            DEPOT_FLUSH_SWAP_TOP_EVENTS.load(Ordering::Relaxed),
+            DEPOT_FLUSH_SWAP_TOP_BLOCKS.load(Ordering::Relaxed),
+        )
+    }
+
+    /// MEASUREMENT-ONLY: `(events, blocks)` of `dealloc_batch`'s staged
+    /// overflow flushes (bin-direct, bypasses the depot candidate set) —
+    /// the OWN-BATCH bin-ingress provenance (the batch's OWN thread's
+    /// frees; NEVER a remote count). See `DEPOT_BIN_INGRESS_OWN_BATCH_*`.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_depot_bin_ingress_own_batch() -> (u64, u64) {
+        use crate::registry::heap_core::diag::{
+            DEPOT_BIN_INGRESS_OWN_BATCH_BLOCKS, DEPOT_BIN_INGRESS_OWN_BATCH_EVENTS,
+        };
+        use core::sync::atomic::Ordering;
+        (
+            DEPOT_BIN_INGRESS_OWN_BATCH_EVENTS.load(Ordering::Relaxed),
+            DEPOT_BIN_INGRESS_OWN_BATCH_BLOCKS.load(Ordering::Relaxed),
+        )
+    }
+
+    /// MEASUREMENT-ONLY: `(events, blocks)` of REMOTE bin ingress — a
+    /// pending publication of a foreign free drained by the OWNING thread
+    /// into its freelist/bin. EVENTS (R4): ONE per reclaiming pass at the
+    /// SINGLE point inside `consume_small_cuts_impl` — covers ALL caller
+    /// paths: strict trim, bounded maintenance AND the discovery drain
+    /// (`find_segment` → `drain_segment_sidecar`). BLOCKS: one per
+    /// reclaimed sidecar record (`consume_small_cuts_impl`). Reclaim in
+    /// this tree IS this remote-pending sidecar drain — no separate
+    /// `DEPOT_BIN_INGRESS_RECLAIM` counter exists. NOTE (R4): both count
+    /// ONLY Small sidecar reclaim — Large-retirement inflates the
+    /// strict/bounded `reclaimed` return value but is NOT counted here
+    /// (Large never pushes a Small block into a bin and has no ingress
+    /// counter). See `DEPOT_BIN_INGRESS_REMOTE_*`.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_depot_bin_ingress_remote() -> (u64, u64) {
+        use crate::registry::heap_core::diag::{
+            DEPOT_BIN_INGRESS_REMOTE_BLOCKS, DEPOT_BIN_INGRESS_REMOTE_EVENTS,
+        };
+        use core::sync::atomic::Ordering;
+        (
+            DEPOT_BIN_INGRESS_REMOTE_EVENTS.load(Ordering::Relaxed),
+            DEPOT_BIN_INGRESS_REMOTE_BLOCKS.load(Ordering::Relaxed),
+        )
+    }
+
+    /// MEASUREMENT-ONLY (R4): SUBSTRATE bin-ingress total — physical
+    /// Small-block pushes into bins, incremented at EVERY physical
+    /// bin-entry point (after `bt.set_head`): `dealloc_small`, the
+    /// `flush_run` splice (own-overflow / own-batch / swap-top / teardown
+    /// flushes) and `reclaim_sidecar_record` (remote reclaim). Identity
+    /// (see `diag/counters.rs`):
+    /// `SUBSTRATE_PUSHES == own_overflow + own_batch + remote + swap_top
+    /// + teardown + OTHER`, where `OTHER = max(0, SUBSTRATE_PUSHES −
+    /// Σ(attributed))` is COMPUTED (no static); examples assert
+    /// `OTHER == 0` as the provenance-completeness oracle.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_depot_bin_ingress_substrate_pushes() -> u64 {
+        crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_SUBSTRATE_PUSHES
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// MEASUREMENT-ONLY: tripwire counter — depot-shadow hooks reached with
+    /// a heap id mapping to NO shadow row (neither a registry slot nor the
+    /// dedicated `OWNER_ID_FALLBACK` row). Zero in every configuration this
+    /// tree can produce; see `state/depot_shadow.rs` ("Row mapping").
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
+    #[must_use]
+    pub fn dbg_depot_shadow_unmapped() -> u64 {
+        crate::registry::heap_core::diag::DEPOT_SHADOW_UNMAPPED_EVENTS
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// MEASUREMENT-ONLY: `(events, blocks)` of `flush_all_tcache`
+    /// (teardown/trim). See `DEPOT_FLUSH_TEARDOWN_*`.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_depot_flush_teardown() -> (u64, u64) {
+        use crate::registry::heap_core::diag::{
+            DEPOT_FLUSH_TEARDOWN_BLOCKS, DEPOT_FLUSH_TEARDOWN_EVENTS,
+        };
+        use core::sync::atomic::Ordering;
+        (
+            DEPOT_FLUSH_TEARDOWN_EVENTS.load(Ordering::Relaxed),
+            DEPOT_FLUSH_TEARDOWN_BLOCKS.load(Ordering::Relaxed),
+        )
+    }
+
+    /// MEASUREMENT-ONLY: `(events, blocks_total, blocks_drained,
+    /// blocks_carved, carve_events)` of magazine refills (issue_state ==
+    /// MAG only). `blocks_drained` counts bin-drain blocks (own-flushed AND
+    /// remote-pending — no per-block provenance marker exists, by design);
+    /// `blocks_carved`/`carve_events` flag virgin carves (depot never
+    /// participates). See `DEPOT_REFILL_*`.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_depot_refill_stats() -> (u64, u64, u64, u64, u64) {
+        use crate::registry::heap_core::diag::{
+            DEPOT_REFILL_BLOCKS_CARVED, DEPOT_REFILL_BLOCKS_DRAINED, DEPOT_REFILL_BLOCKS_TOTAL,
+            DEPOT_REFILL_CARVE_EVENTS, DEPOT_REFILL_EVENTS,
+        };
+        use core::sync::atomic::Ordering;
+        (
+            DEPOT_REFILL_EVENTS.load(Ordering::Relaxed),
+            DEPOT_REFILL_BLOCKS_TOTAL.load(Ordering::Relaxed),
+            DEPOT_REFILL_BLOCKS_DRAINED.load(Ordering::Relaxed),
+            DEPOT_REFILL_BLOCKS_CARVED.load(Ordering::Relaxed),
+            DEPOT_REFILL_CARVE_EVENTS.load(Ordering::Relaxed),
+        )
+    }
+
+    /// MEASUREMENT-ONLY (B4 chunk 1b): process-wide STATIC MIRROR of the
+    /// per-K depot-shadow aggregates — the cross-heap sum of every
+    /// `DepotShadow` update, collected from sites reachable through the
+    /// installed `#[global_allocator] SeferAlloc` facade (where the
+    /// heap-private `dbg_depot_shadow_snapshot` is not).
+    ///
+    /// Returns `(flush_blocks_absorbed[4], flush_blocks_real[4],
+    /// flush_events_fully_absorbed[4], refill_blocks_from_depot[4],
+    /// refill_blocks_drain[4], refill_fully_from_depot[4],
+    /// invalidation_events)`, K ∈ {1,2,4,8} innermost.
+    ///
+    /// ## Consistency with the `DEPOT_*` path counters
+    ///
+    /// Only the magazine OVERFLOW half-flush (`dbg_depot_bin_ingress_own_overflow`)
+    /// feeds the shadow's flush hook; swap-top / batched / teardown flushes
+    /// bypass the depot candidate set and merely invalidate residency.
+    /// Therefore
+    /// `sum_k(flush_blocks_absorbed[k] + flush_blocks_real[k]) ==
+    /// dbg_depot_bin_ingress_own_overflow().1` (blocks), process-global. Likewise the
+    /// shadow refill hook fires at exactly the `dbg_depot_refill_stats()`
+    /// sites, so `sum_k(refill_blocks_from_depot[k] +
+    /// refill_blocks_drain[k]) == dbg_depot_refill_stats().1`, and
+    /// `invalidation_events` counts every residency reset (teardown,
+    /// swap-top, batched, remote reclaim — i.e. all `depot_invalidate`
+    /// call sites). The mirror is process-global: multi-heap runs
+    /// aggregate all heaps' events.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    #[allow(clippy::type_complexity)] // measurement-only dbg tuple snapshot
+    pub fn dbg_depot_shadow_aggregates() -> (
+        [u64; 4],
+        [u64; 4],
+        [u64; 4],
+        [u64; 4],
+        [u64; 4],
+        [u64; 4],
+        u64,
+    ) {
+        use crate::registry::heap_core::diag::{
+            DEPOT_SHADOW_FLUSH_BLOCKS_ABSORBED, DEPOT_SHADOW_FLUSH_BLOCKS_REAL,
+            DEPOT_SHADOW_FLUSH_EVENTS_FULLY_ABSORBED, DEPOT_SHADOW_INVALIDATION_EVENTS,
+            DEPOT_SHADOW_REFILL_BLOCKS_DRAIN, DEPOT_SHADOW_REFILL_BLOCKS_FROM_DEPOT,
+            DEPOT_SHADOW_REFILL_FULLY_FROM_DEPOT,
+        };
+        use core::sync::atomic::{AtomicU64, Ordering};
+        let l = |a: &[AtomicU64; 4]| {
+            [
+                a[0].load(Ordering::Relaxed),
+                a[1].load(Ordering::Relaxed),
+                a[2].load(Ordering::Relaxed),
+                a[3].load(Ordering::Relaxed),
+            ]
+        };
+        (
+            l(&DEPOT_SHADOW_FLUSH_BLOCKS_ABSORBED),
+            l(&DEPOT_SHADOW_FLUSH_BLOCKS_REAL),
+            l(&DEPOT_SHADOW_FLUSH_EVENTS_FULLY_ABSORBED),
+            l(&DEPOT_SHADOW_REFILL_BLOCKS_FROM_DEPOT),
+            l(&DEPOT_SHADOW_REFILL_BLOCKS_DRAIN),
+            l(&DEPOT_SHADOW_REFILL_FULLY_FROM_DEPOT),
+            DEPOT_SHADOW_INVALIDATION_EVENTS.load(Ordering::Relaxed),
+        )
+    }
 }

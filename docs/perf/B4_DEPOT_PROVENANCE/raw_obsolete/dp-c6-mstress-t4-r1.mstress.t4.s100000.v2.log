@@ -1,0 +1,10 @@
+git_diff_sha256 e16db45a06e3275059420f597a84abbfa2ffc0c064130846fab7b160429b2ad3
+features production,bench-internals,internals
+rustc rustc 1.98.1 (48a229cea 2026-09-01)
+cpu 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+os Linux 6.18.33.2-microsoft-standard-WSL2
+cmd ~//ab/tgt-dp-c6-mstress-t4-r1/release/examples/dp_depot_probe mstress 4 100000
+example dp_depot_probe
+mstress ops_actual=579305
+{"workload":"mstress","threads":4,"steps":100000,"ops_actual":579305,"working_set":768,"mstress_blocks":512,"depot_flush_overflow_events":53753,"depot_flush_overflow_blocks":430024,"depot_flush_swap_top_events":189,"depot_flush_swap_top_blocks":189,"depot_flush_batched_events":0,"depot_flush_batched_blocks":0,"depot_flush_teardown_events":124,"depot_flush_teardown_blocks":1374,"depot_refill_events":28221,"depot_refill_blocks_total":451115,"depot_refill_blocks_drained":445853,"depot_refill_blocks_carved":5262,"depot_refill_carve_events":560}
+{"absorbed_k":[118552, 215680, 318264, 398704],"real_k":[311472, 214344, 111760, 31320],"fully_absorbed_ev_k":[14819, 26960, 39783, 49838],"refill_from_depot_k":[108000, 200840, 299592, 377752],"refill_drain_k":[343115, 250275, 151523, 73363],"refill_fully_k":[0, 11605, 17440, 22516],"invalidations":200}

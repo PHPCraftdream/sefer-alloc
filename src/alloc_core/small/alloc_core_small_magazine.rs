@@ -297,6 +297,11 @@ impl AllocCore {
                 };
                 if n != 0 {
                     filled += n;
+                    #[cfg(feature = "bench-internals")]
+                    if issue_state == StateByte::MAG {
+                        crate::registry::heap_core::diag::DEPOT_REFILL_BLOCKS_DRAINED
+                            .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
+                    }
                     continue;
                 }
                 // B4 §11: probe the per-class discovery cursor BEFORE the scan
@@ -313,6 +318,11 @@ impl AllocCore {
                 };
                 if n != 0 {
                     filled += n;
+                    #[cfg(feature = "bench-internals")]
+                    if issue_state == StateByte::MAG {
+                        crate::registry::heap_core::diag::DEPOT_REFILL_BLOCKS_DRAINED
+                            .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
+                    }
                     continue;
                 }
                 // `find_segment_with_free` consumes sidecar publications before
@@ -333,6 +343,11 @@ impl AllocCore {
                     };
                     if n != 0 {
                         filled += n;
+                        #[cfg(feature = "bench-internals")]
+                        if issue_state == StateByte::MAG {
+                            crate::registry::heap_core::diag::DEPOT_REFILL_BLOCKS_DRAINED
+                                .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
+                        }
                         continue;
                     }
                 }
@@ -378,6 +393,13 @@ impl AllocCore {
                     }
                 }
                 filled += n;
+                #[cfg(feature = "bench-internals")]
+                if issue_state == StateByte::MAG {
+                    crate::registry::heap_core::diag::DEPOT_REFILL_BLOCKS_CARVED
+                        .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
+                    crate::registry::heap_core::diag::DEPOT_REFILL_CARVE_EVENTS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                }
                 continue;
             }
             // 3. Current segment is full: reserve a fresh one and retry the
@@ -407,6 +429,13 @@ impl AllocCore {
                             }
                         }
                         filled += n;
+                        #[cfg(feature = "bench-internals")]
+                        if issue_state == StateByte::MAG {
+                            crate::registry::heap_core::diag::DEPOT_REFILL_BLOCKS_CARVED
+                                .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
+                            crate::registry::heap_core::diag::DEPOT_REFILL_CARVE_EVENTS
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        }
                         continue;
                     }
                     // A fresh segment that cannot fit even one block indicates
@@ -440,6 +469,11 @@ impl AllocCore {
                             };
                             if n != 0 {
                                 filled += n;
+                                #[cfg(feature = "bench-internals")]
+                                if issue_state == StateByte::MAG {
+                                    crate::registry::heap_core::diag::DEPOT_REFILL_BLOCKS_DRAINED
+                                        .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
+                                }
                                 continue;
                             }
                         }
@@ -754,6 +788,18 @@ impl AllocCore {
         // final `set_head` of the last sequential `dealloc_small` in the run.
         if let Some(off) = last_accepted {
             bt.set_head(class_idx, off);
+            // B4 (b4-provenance, R4): SUBSTRATE bin-ingress total — this
+            // splice IS a physical Small-block bin entry for each accepted
+            // block (byte-identical to N sequential `dealloc_small` pushes,
+            // but done WITHOUT calling `dealloc_small`), so it must count
+            // here for the identity in `diag/counters.rs` to be exact:
+            // `SUBSTRATE_PUSHES == own_overflow + own_batch + remote
+            // + swap_top + teardown + OTHER`, OTHER == 0. Relaxed,
+            // measurement-only, no behavior change. The
+            // `registry::heap_core::diag` path needs `alloc-global`.
+            #[cfg(all(feature = "bench-internals", feature = "alloc-global"))]
+            crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_SUBSTRATE_PUSHES
+                .fetch_add(accepted_count as u64, core::sync::atomic::Ordering::Relaxed);
             // R7-A2: directory bitmap maintenance — the new head is always
             // non-null (`off`), so the only transition is empty→non-empty
             // when old_head was FREE_LIST_NULL.

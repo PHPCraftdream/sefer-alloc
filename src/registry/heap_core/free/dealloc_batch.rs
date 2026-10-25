@@ -381,6 +381,22 @@ impl HeapCore {
                 unsafe {
                     self.core.flush_class_internal(c, &stage[..staged])
                 };
+                // B4 (b4-provenance): provenance of this flush = batched
+                // (bin-direct) free — blocks never entered the depot
+                // candidate set. INVALIDATION for the heap-private depot
+                // shadow (measurement-only).
+                #[cfg(all(
+                    feature = "bench-internals",
+                    feature = "alloc-global",
+                    feature = "fastbin"
+                ))]
+                {
+                    crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_OWN_BATCH_EVENTS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_OWN_BATCH_BLOCKS
+                        .fetch_add(staged as u64, core::sync::atomic::Ordering::Relaxed);
+                    self.depot_invalidate();
+                }
                 staged = 0;
             }
             stage[staged] = block;
@@ -396,6 +412,20 @@ impl HeapCore {
             unsafe {
                 self.core.flush_class_internal(c, &stage[..staged])
             };
+            // B4 (b4-provenance): same batched-flush provenance + shadow
+            // INVALIDATION as the mid-loop staging flush above.
+            #[cfg(all(
+                feature = "bench-internals",
+                feature = "alloc-global",
+                feature = "fastbin"
+            ))]
+            {
+                crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_OWN_BATCH_EVENTS
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                crate::registry::heap_core::diag::DEPOT_BIN_INGRESS_OWN_BATCH_BLOCKS
+                    .fetch_add(staged as u64, core::sync::atomic::Ordering::Relaxed);
+                self.depot_invalidate();
+            }
         }
     }
 }

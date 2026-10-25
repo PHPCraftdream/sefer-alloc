@@ -6,3 +6,11 @@ mod ownership;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub(crate) mod tcache;
 mod tcache_flush;
+// B4 (task b4-provenance): heap-private shadow depot simulation —
+// measurement-only, compiled out entirely without `bench-internals`.
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "bench-internals"
+))]
+pub(crate) mod depot_shadow;

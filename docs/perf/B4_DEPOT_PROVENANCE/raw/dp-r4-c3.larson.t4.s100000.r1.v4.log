@@ -1,0 +1,11 @@
+git_diff_sha256 2c8d7c76333ef2832896e95853b1f6929204fe255e2d10a8d25481ec05be5844
+tree_sha256 5441d8c29b7a64179ecada4d1aafdcfe0efc27678db25da09eac47b8370d9e9b
+features production,bench-internals,internals
+rustc rustc 1.98.1 (48a229cea 2026-09-01)
+cpu 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+os Linux 6.18.33.2-microsoft-standard-WSL2
+cmd ~//ab/tgt-dp-r4-dp-r4-c3/release/examples/dp_depot_probe larson 4 100000
+example dp_depot_probe
+larson ops_actual=425000
+{"workload":"larson","threads":4,"steps":100000,"ops_actual":425000,"working_set":768,"mstress_blocks":512,"depot_bin_ingress_own_overflow_events":6413,"depot_bin_ingress_own_overflow_blocks":51304,"depot_flush_swap_top_events":349,"depot_flush_swap_top_blocks":349,"depot_bin_ingress_own_batch_events":0,"depot_bin_ingress_own_batch_blocks":0,"depot_bin_ingress_remote_events":578,"depot_bin_ingress_remote_blocks":24703,"depot_flush_teardown_events":124,"depot_flush_teardown_blocks":1335,"depot_refill_events":4913,"depot_refill_blocks_total":77988,"depot_refill_blocks_drained":71978,"depot_refill_blocks_carved":6010,"depot_refill_carve_events":588,"depot_bin_ingress_pushes":77691,"depot_bin_ingress_other_blocks":0}
+{"absorbed_k":[36248, 47032, 50032, 50840],"real_k":[15056, 4272, 1272, 464],"fully_absorbed_ev_k":[4531, 5879, 6254, 6355],"refill_from_depot_k":[23248, 30904, 32376, 32384],"refill_drain_k":[54740, 47084, 45612, 45604],"refill_fully_k":[0, 957, 1098, 1099],"invalidations":359,"unmapped":0}

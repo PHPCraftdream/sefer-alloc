@@ -1,0 +1,59 @@
+git_diff_sha256 e7dc9d00b4f766e5783bf3ac431c0daf972a069af94af9cb60ffc21a4f1529f2
+tree_sha256 59248117087f4c3d73af54311d9f45b53e220261d242c4c43beee07ec6c6a447
+features production,bench-internals,internals
+toggle none
+compress-strings=no compress-pos=no
+cmd ~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer 241
+--- PROGRAM TOTALS ---
+1,655,564,040 (100.0%)  PROGRAM TOTALS
+--- workload stdout ---
+{"arm":"sefer","repeats":241,"warmup_rounds":1,"workload_ns":5377471286,"segments_reserved_total":1,"rss_kib":30980,"commit_kib":73600,"completed":true}
+--- annotate (inclusive) lines for the 3 target functions ---
+ 64,974,014 ( 3.92%)  ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+ 43,305,044 ( 2.62%)  ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+ 22,461,207 ( 1.36%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+ 19,032,390 ( 1.15%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+ 15,880,545 ( 0.96%)  ~/ab/dp-r2-p3-churn/src/alloc_core/config/continuation_bounds.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+ 11,810,579 ( 0.71%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 10,623,369 ( 0.64%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  8,503,533 ( 0.51%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  7,759,350 ( 0.47%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  6,673,272 ( 0.40%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  6,141,506 ( 0.37%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  5,669,181 ( 0.34%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  5,432,751 ( 0.33%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  4,606,212 ( 0.28%)  ~/ab/dp-r2-p3-churn/src/registry/heap_core/state/depot_shadow.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+  3,969,986 ( 0.24%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  3,780,259 ( 0.23%)  ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+  3,779,454 ( 0.23%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  3,777,120 ( 0.23%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+  3,425,132 ( 0.21%)  ~/ab/dp-r2-p3-churn/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+  2,480,268 ( 0.15%)  ~/ab/dp-r2-p3-churn/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+  1,889,728 ( 0.11%)  ~/ab/dp-r2-p3-churn/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> [~/ab/tgt-dp-r2-p3-churn/release/examples/dp_native_mixed_sefer]
+  1,471,476 ( 0.09%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+  1,417,296 ( 0.09%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+  1,417,224 ( 0.09%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+  1,181,020 ( 0.07%)  ~/ab/dp-r2-p3-churn/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    944,280 ( 0.06%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    708,612 ( 0.04%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    590,832 ( 0.04%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+    472,578 ( 0.03%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+    472,432 ( 0.03%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/convert/num.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+    472,408 ( 0.03%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    365,624 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    365,624 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    354,324 ( 0.02%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+    354,105 ( 0.02%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_header/segment_header_meta_fields.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    354,105 ( 0.02%)  ~/ab/dp-r2-p3-churn/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    354,105 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    236,216 ( 0.01%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+    236,192 ( 0.01%)  ~/ab/dp-r2-p3-churn/examples/dp_native_mixed_sefer.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    236,070 ( 0.01%)  ~/ab/dp-r2-p3-churn/src/registry/segment_route/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+--- SELF Ir and CALLS per target group (from raw callgrind file) ---
+GROUP flush_class_internal SELF_IR=110341990 CALLS=236204
+GROUP refill_magazine_slow SELF_IR=456940894 CALLS=354324
+GROUP try_drain_freelist_batch SELF_IR=136833521 CALLS=118108
+--- INCL Ir per target group (sum of annotate inclusive rows) ---
+GROUP flush_class_internal INCL_IR=118136698
+GROUP refill_magazine_slow INCL_IR=22260181
+GROUP try_drain_freelist_batch INCL_IR=138605141

@@ -1,0 +1,72 @@
+# r4_behavior_parity.txt — chunk R4 (b4-provenance)
+# Purpose: prove that the R4 code delta vs the callgrind era (e7dc9d00
+# git_diff_sha256 / tree 592481... — the OLD pair recorded in the v3
+# logs and raw/tree_manifest_cg_era.txt) contains NO production-behavior
+# change, so calls= from the OLD callgrind production build remain valid
+# for the NEW tree.
+#
+# NEW counter-build identity pair (v4 logs):
+#   git_diff_sha256 2c8d7c76333ef2832896e95853b1f6929204fe255e2d10a8d25481ec05be5844
+#   tree_sha256     5441d8c29b7a64179ecada4d1aafdcfe0efc27678db25da09eac47b8370d9e9b
+# OLD (cg-era) identity pair (v3 logs):
+#   git_diff_sha256 e7dc9d00b4f766e5783bf3ac431c0daf972a069af94af9cb60ffc21a4f1529f2
+#   tree_sha256     59248117087f4c3d73af54311d9f45b53e220261d242c4c43beee07ec6c6a447
+#
+# The R4 delta vs the e7dc9d00 era reduces to:
+#  (i) REMOTE EVENTS increment MOVED into consume_small_cuts_impl
+#      (src/alloc_core/alloc_core/sidecar_drain.rs): the two per-caller
+#      increments (strict drain_sidecar_ingress, bounded
+#      drain_sidecar_ingress_bounded) removed; one increment per call
+#      with reclaimed>0 added at the end of consume_small_cuts_impl.
+#      All three hunks are inside #[cfg(all(feature = "bench-internals",
+#      feature = "alloc-global"))] blocks; only comments otherwise.
+#  (ii) NEW DEPOT_BIN_INGRESS_SUBSTRATE_PUSHES counter (pure Relaxed
+#      fetch_add observers, all under
+#      #[cfg(all(feature = "bench-internals", feature = "alloc-global"))]):
+#      src/registry/heap_core/diag/counters.rs (static + docs),
+#      src/registry/heap_core/diag/mod.rs (re-export),
+#      src/registry/heap_core/diag/diag_probes.rs (reader
+#      dbg_depot_bin_ingress_substrate_pushes, internals-gated),
+#      src/alloc_core/small/alloc_core_small/dealloc.rs,
+#      src/alloc_core/small/alloc_core_small_magazine.rs (flush_run splice),
+#      src/alloc_core/small/alloc_core_small_reclaim.rs.
+#  (iii) Non-src changes: examples/dp_depot_probe.rs and
+#      examples/dp_native_mixed_counters.rs (new JSON fields
+#      depot_bin_ingress_pushes / depot_bin_ingress_other_blocks +
+#      OTHER==0 assert), tests/b4_depot_provenance_counters.rs (new
+#      tests), docs/perf/* (raw logs, manifests, this file).
+#
+# NO hunk outside #[cfg(feature = "bench-internals")] (directly or via
+# the alloc-global conjunct) touches executable production code in src/:
+# every src/ hunk is either a comment or a bench-gated Relaxed counter
+# increment. Therefore the production configuration (--features
+# production) compiles to IDENTICAL machine code as the e7dc9d00-era
+# production build, and the OLD callgrind calls= data stay valid. The
+# counter build (production,bench-internals,internals) differs from the
+# old counter build ONLY by the new Relaxed increments + the relocated
+# EVENTS increment (same events counted once, one site earlier/later in
+# the same function).
+#
+# Current git diff (R4 delta vs origin/main f80c681b), file list:
+# ---
+ Cargo.toml                                        |  19 ++
+ docs/perf/OPEN_ITEMS.md                           |   8 +
+ examples/_shared/paired_ab_workload.rs            |   3 +
+ src/alloc_core/alloc_core/sidecar_drain.rs        |  41 ++++
+ src/alloc_core/small/alloc_core_small/dealloc.rs  |  16 ++
+ src/alloc_core/small/alloc_core_small_magazine.rs |  46 ++++
+ src/alloc_core/small/alloc_core_small_reclaim.rs  |  15 ++
+ src/registry/heap_core/alloc/hot.rs               |  14 ++
+ src/registry/heap_core/core.rs                    |  18 ++
+ src/registry/heap_core/diag/counters.rs           | 205 ++++++++++++++++++
+ src/registry/heap_core/diag/diag_probes.rs        | 253 ++++++++++++++++++++++
+ src/registry/heap_core/diag/mod.rs                |  13 +-
+ src/registry/heap_core/free/dealloc_batch.rs      |  30 +++
+ src/registry/heap_core/free/dealloc_own_base.rs   |  32 +++
+ src/registry/heap_core/state/mod.rs               |   8 +
+ src/registry/heap_core/state/ownership.rs         |  40 +++-
+ src/registry/heap_core/state/tcache_flush.rs      |  22 ++
+ 17 files changed, 781 insertions(+), 2 deletions(-)
+# ---
+# Current git diff sha256:
+2c8d7c76333ef2832896e95853b1f6929204fe255e2d10a8d25481ec05be5844  -

@@ -1,0 +1,1 @@
+{"arm":"sefer","repeats":120,"warmup_rounds":1,"workload_ns":2552286500,"segments_reserved_total":1,"rss_kib":29976,"commit_kib":71820,"completed":true}
