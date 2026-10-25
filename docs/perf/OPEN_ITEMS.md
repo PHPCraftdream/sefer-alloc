@@ -3175,6 +3175,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > <!-- B4-30-CARD-NUMBERS-END -->
 <!-- B4-30-CARD-END -->
 
+112. **[A] J1′ — single-process interleaved native judge (sefer vs mimalloc): sefer is slower on every admitted kernel, worst on bulk/churn.** (Filed 2026-10-25, `docs/perf/B4_INTERLEAVE_JUDGE.md`. Number chosen ≥108 due to possible conflicts with parallel branches.)
+   > **Current state**
+   > - **Status:** OPEN `[A]` — measurement infrastructure delivered and calibrated on the owner's Windows machine; no runtime change.
+   > - **Current verdict:** 20000 blocks per mode, ABBA/BAAB exact, activation oracle 0 mismatches. A/A passes (|median| ≤ 1 %, CI half-width ≤ 1 %) on 9 of 11 kernels, largest admitted half-width 0.00351. t_mimalloc / t_sefer: pair16 0.8930, pair64 0.9117, larson-mix 0.9110, churn1024 0.7917, churn256 0.6936, bulk64 0.5889, churn64 0.5455, churn16 0.5300, bulk16k 0.4276 — all `MIMALLOC_FASTER`. Not admitted: vec512 (point 1.8171), pair_rt (point 1.0866).
+   > - **Open sub-item (P2):** the correctness test's simulation section does not check `run_block`'s own four portions against the same execution (the judge's runtime oracle does, 0 mismatches) — see the report's "Known limitation".
+   > - **Next trigger:** task A1 — attribute the bulk/churn gap (instructions vs memory: Ir/op, D1/LL misses, refill/flush/carve/drain events per op) on the same kernels; any candidate from it is judged by this judge with its A/A pre-registration.
+   > - **Evidence:** docs/perf/B4_INTERLEAVE_JUDGE.md, docs/perf/B4_INTERLEAVE_JUDGE_summary.csv, docs/perf/b4_interleave_p2/ (MANIFEST.txt with raw sha256, excerpt_*.jsonl, generator_stdout.txt), examples/b4_interleave_judge/, examples/_shared/b4_interleave_core.rs, scripts/b4_interleave_{run,table}.mjs, tests/b4_interleave_judge_correctness.rs.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

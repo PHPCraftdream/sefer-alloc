@@ -1,0 +1,9 @@
+# J1' phase 2 raw manifest (storage tier 3: each raw > 2 MiB, not committed).
+# sha256  bytes  file
+411607ecfb3964adbf464af3aac908017f606aababde62db595ec9cd7d317c9e  85829297  docs/perf/_raw_b4_interleave_p2_aa_sefer.jsonl
+0fafab0dde903caebfe5976fdf12d1c3a47859e98021b1c5ab8d757c8f074675  85019952  docs/perf/_raw_b4_interleave_p2_aa_mi.jsonl
+379084a6d7796021d66537f503db5a5f3ad9e90d4d2967981772bdaa9201abf7  84753292  docs/perf/_raw_b4_interleave_p2_ab.jsonl
+# Committed excerpts: excerpt_<mode>.jsonl = header line + all 11 kernels' records for block 0
+# (verbatim lines). Full raw reproducible via:
+#   CARGO_TARGET_DIR=<target> node scripts/b4_interleave_run.mjs --blocks 20000 --profile release --run-timeout 3600 --out-prefix docs/perf/_raw_b4_interleave_p2
+# Table: node scripts/b4_interleave_table.mjs --aa-sefer <aa_sefer> --aa-mi <aa_mi> --ab <ab>  (stdout: generator_stdout.txt)

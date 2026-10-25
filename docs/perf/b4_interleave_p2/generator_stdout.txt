@@ -1,0 +1,21 @@
+# B4 INTERLEAVE JUDGE — blocks/mode: aa_sefer=20000 aa_mi=20000 ab=20000 bootstrap=2000 seed=24301
+# identity (from judge headers): head=f80c681b799ef4ef7fa08d79c06896fdf1104fe9 sha(diff)=7efc4addda20 exe=2aa304bd7000 profile=release rustc="rustc 1.97.0 (2d8144b78 2026-07-07)" cpu="11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz" os="windows x86_64"
+# pre-registered A/A threshold: |median| <= 0.01, CI half-width <= 0.01; A = sefer, B = mimalloc, ratio = t_mimalloc / t_sefer; verdict (admitted kernels only): MIMALLOC_FASTER iff upper 95 % CI of ln(t_B/t_A) < 0, SEFER_FASTER iff lower 95 % CI > 0, else EQUAL_CI_HAS_0
+# order balance: STRICT (ABBA = BAAB = N/2 per kernel, exact by construction, order_seed=0xb4d5eed); activation oracle: 100 % exact
+
+| Kernel | A/A sefer median | CI | half | trimmed | A/A mi median | CI | half | trimmed | A/B median | CI | trimmed | ratio | Допущена | Вердикт A/B |
+|---|---:|---|---:|---:|---:|---|---:|---:|---:|---|---:|---:|---|---|
+| pair16 | -0.00031 | -0.00041 … -0.00024 | 0.00008 | -0.00090 | 0.00088 | 0.00075 … 0.00102 | 0.00014 | 0.00088 | -0.11316 | -0.11335 … -0.11297 | -0.11685 | 0.8930 | да | MIMALLOC_FASTER |
+| pair64 | -0.00025 | -0.00031 … -0.00019 | 0.00006 | -0.00125 | -0.00013 | -0.00028 … 0.00007 | 0.00017 | -0.00019 | -0.09244 | -0.09344 … -0.09150 | -0.05370 | 0.9117 | да | MIMALLOC_FASTER |
+| pair_rt | 0.00012 | 0.00000 … 0.00019 | 0.00009 | 0.00103 | -0.00234 | -0.01858 … 0.01190 | 0.01524 | 0.00074 | 0.08309 | 0.08011 … 0.08656 | 0.12057 | 1.0866 | НЕТ | не допущена |
+| bulk64 | 0.00327 | 0.00260 … 0.00396 | 0.00068 | 0.00458 | -0.00016 | -0.00028 … -0.00007 | 0.00011 | -0.00031 | -0.52953 | -0.53382 … -0.52544 | -0.55716 | 0.5889 | да | MIMALLOC_FASTER |
+| bulk16k | -0.00147 | -0.00440 … 0.00143 | 0.00292 | -0.00124 | 0.00040 | -0.00045 … 0.00118 | 0.00082 | 0.00023 | -0.84949 | -0.85298 … -0.84609 | -0.85639 | 0.4276 | да | MIMALLOC_FASTER |
+| churn16 | -0.00133 | -0.00357 … 0.00064 | 0.00211 | -0.00306 | 0.00000 | -0.00168 … 0.00169 | 0.00168 | -0.00270 | -0.63496 | -0.63633 … -0.63342 | -0.65004 | 0.5300 | да | MIMALLOC_FASTER |
+| churn64 | -0.00133 | -0.00210 … -0.00057 | 0.00077 | -0.00130 | 0.00225 | 0.00189 … 0.00276 | 0.00043 | 0.00241 | -0.60603 | -0.61057 … -0.59991 | -0.58886 | 0.5455 | да | MIMALLOC_FASTER |
+| churn256 | -0.00257 | -0.00394 … -0.00115 | 0.00140 | -0.00314 | 0.00324 | 0.00225 … 0.00415 | 0.00095 | 0.00435 | -0.36593 | -0.37245 … -0.35860 | -0.29460 | 0.6936 | да | MIMALLOC_FASTER |
+| churn1024 | -0.00394 | -0.00607 … -0.00205 | 0.00201 | -0.00426 | -0.00186 | -0.00516 … 0.00186 | 0.00351 | -0.00282 | -0.23355 | -0.23847 … -0.22895 | -0.18902 | 0.7917 | да | MIMALLOC_FASTER |
+| vec512 | 0.00378 | -0.00970 … 0.01241 | 0.01106 | 0.00485 | -0.02201 | -0.03353 … -0.01191 | 0.01081 | -0.01780 | 0.59726 | 0.59263 … 0.60162 | 0.62989 | 1.8171 | НЕТ | не допущена |
+| larson | -0.00286 | -0.00561 … -0.00018 | 0.00272 | -0.00429 | -0.00021 | -0.00130 … 0.00093 | 0.00112 | 0.00005 | -0.09327 | -0.09627 … -0.09021 | -0.08280 | 0.9110 | да | MIMALLOC_FASTER |
+
+# verdict summary: MIMALLOC_FASTER 9 / SEFER_FASTER 0 / 11 kernels; not admitted: 2 / 11 (a kernel is admitted iff BOTH A/A calibrations pass the pre-registered threshold)
+# wrote docs\perf\B4_INTERLEAVE_JUDGE_summary.csv
