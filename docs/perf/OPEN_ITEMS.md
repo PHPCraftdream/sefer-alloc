@@ -119,6 +119,16 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+970. **[A] B4 gap attribution (sefer vs mimalloc) — атрибуция v2 (toggle-окно)
+   выполнена; открыт латентный механизм на churn и отсутствие наблюдателей на
+   flush/drain.** (Filed 2026-10-25, `docs/perf/B4_GAP_ATTRIBUTION.md`.)
+
+   > **Current state**
+   > - **Status:** open (атрибуция v2 выполнена — callgrind toggle-окно внутри `gp_kernel_probe::kernel_*`, судьё-точные сиды/прогрев; правки runtime не входили в объём).
+   > - **Current:** time_ratio (mi/sefer, судья J1′, ИЗМЕРЕНО): pair16 0.893, pair64 0.912, larson 0.911, churn1024 0.792, churn256 0.694, bulk64 0.589, churn64 0.546, churn16 0.530, bulk16k 0.428. Классификация (пороги 0.1/0.7 заданы владельцем ДО замеров; скрипт v2 написан после первых полно-процессных замеров — история в отчёте): bulk16k — «instructions» (Ir_ratio 0.353, EstCycles_ratio 0.426); остальные 8 — «not_explained»; «memory/latency» не присвоен. На churn16/64/1024/256 модель противоречит времени (на churn16/64 Ir_ratio 1.585 — у sefer МЕНЬШЕ инструкций при большем времени) → латентный механизм, callgrind не виден (ОЦЕНКА). Кэш-модель пустая: D1mr+D1mw ≤ 1.206/op, LL = 0.000/op (ИЗМЕРЕНО). Refill кросс-валидирован двойным источником — callgrind calls= И dbg_s1_refill_events сходятся: larson 94, bulk64 960, bulk16k 40920 (ИЗМЕРЕНО); mag_byte_writes 1504/15360/654720. Функционально (toggle, sefer): bulk16k пара drain/flush ≈ 44.7 % маржинального Ir (`try_drain_freelist_batch` 24.46 %, `src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:525` + `flush_class_internal` 20.20 %, `src/alloc_core/small/alloc_core_small_magazine.rs:565`), bulk64 ≈ 38.1 %; churn — шимы + ядро пробы ≈ 96–100 %, batch-функций нет. v1 (полно-процессное окно) отклонена ревью; её данные — `docs/perf/b4_gap/v1_fullprocess_*`.
+   > - **Next trigger:** (1) добавить bench-internals счётчики на `try_drain_freelist_batch` и `flush_class_internal` — сейчас их частоты известны только из callgrind calls= (bulk64 flush 1920/окно 0.047/op; bulk16k flush 81840 0.062/op; larson drain 95 0.005/op); (2) латентный механизм на churn — проверять железными счётчиками (perf/LBR или Windows-аналог), callgrind его не видит; (3) если drain/flush станет целью оптимизации — целиться в Ir/op из таблиц `docs/perf/B4_GAP_ATTRIBUTION_table.generated.md`.
+   > - **Evidence:** `docs/perf/B4_GAP_ATTRIBUTION.md` (v2); `docs/perf/B4_GAP_ATTRIBUTION_table.generated.md`; `scripts/b4_gap_attribution_table.mjs` (v2, assert'ы арифметики, rc=0; без аргументов rc=2); raw в репозитории: `docs/perf/b4_gap/` (identity.txt, gp_r2_*.csv, v1_fullprocess_*, MANIFEST.sha256 — sha256sum -c OK, rc=0).
+
 104. **[A] B4 events — refill/flush событие в mstress стоит в 5–6 раз дороже, чем в larson.** (Filed 2026-10-20, `docs/perf/B4_EVENTS_COST.md`.)
 
    > **Current state**

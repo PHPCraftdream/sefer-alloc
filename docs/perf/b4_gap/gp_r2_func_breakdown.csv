@@ -1,0 +1,89 @@
+# identity: HEAD=26108a2043f1c78fce2be7c447e61c85e0454a7f DIFF_SHA256=6a6133c626a75729ee97a54659581012b81bf245b6de42835abb8171f5e9dd86 UNTRACKED_SHA256=b91094ff604985ea6d2fbdb0b098a42f286433d8b24ddfa52cb980052c9b0366
+kernel,arm,func,file_line,self_ir_p40,self_ir_p80,self_ir_delta,share_of_marginal_ir
+pair16,sefer,sefer_a_dealloc,examples/_shared/b4_interleave_core.rs:181 (inst.:190),4366385,6045745,1679360,51.55%
+pair16,sefer,sefer_a_alloc,examples/_shared/b4_interleave_core.rs:154 (inst.:190),2396166,3317766,921600,28.29%
+pair16,sefer,kernel_pair,examples/_shared/b4_interleave_core.rs:566,1014832,1405152,390320,11.98%
+pair16,sefer,./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms,not located in worktree (mi/libc),733508,999748,266240,8.17%
+pair16,mi,???:mi_free,not located in worktree (mi/libc),1277952,1769472,491520,23.33%
+pair16,mi,???:mi_theap_malloc_aligned,not located in worktree (mi/libc),1171040,1621440,450400,21.38%
+pair16,mi,kernel_pair,examples/_shared/b4_interleave_core.rs:566,1014832,1405152,390320,18.52%
+pair64,sefer,sefer_a_dealloc,examples/_shared/b4_interleave_core.rs:181 (inst.:190),4366385,6045745,1679360,51.55%
+pair64,sefer,sefer_a_alloc,examples/_shared/b4_interleave_core.rs:154 (inst.:190),2396166,3317766,921600,28.29%
+pair64,sefer,kernel_pair,examples/_shared/b4_interleave_core.rs:566,1014832,1405152,390320,11.98%
+pair64,sefer,./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms,not located in worktree (mi/libc),733508,999748,266240,8.17%
+pair64,mi,???:mi_free,not located in worktree (mi/libc),1277952,1769472,491520,22.78%
+pair64,mi,???:mi_theap_malloc_aligned,not located in worktree (mi/libc),1169792,1619712,449920,20.85%
+pair64,mi,kernel_pair,examples/_shared/b4_interleave_core.rs:566,1014832,1405152,390320,18.09%
+larson,sefer,sefer_a_dealloc,examples/_shared/b4_interleave_core.rs:181 (inst.:190),2125884,2969117,843233,39.46%
+larson,sefer,kernel_larson,examples/_shared/b4_interleave_core.rs:754,1570824,2176464,605640,28.34%
+larson,sefer,sefer_a_alloc,examples/_shared/b4_interleave_core.rs:154 (inst.:190),1195842,1655608,459766,21.51%
+larson,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch,src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:525,171029,291814,120785,5.65%
+larson,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal,src/alloc_core/small/alloc_core_small_magazine.rs:565,139087,226480,87393,4.09%
+larson,sefer,registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0},not located in worktree (mi/libc),15455,21232,5777,0.27%
+larson,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar,src/alloc_core/small/alloc_core_small/find_segment/scan.rs:152,156961,159831,2870,0.13%
+larson,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch,src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:866,66954,67446,492,0.02%
+larson,sefer,./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms,not located in worktree (mi/libc),41284,41284,0,0.00%
+larson,sefer,registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded,src/alloc_core/alloc_core/sidecar_drain.rs:572,13325,0,-13325,-0.62%
+larson,mi,kernel_larson,examples/_shared/b4_interleave_core.rs:754,1570824,2176464,605640,41.29%
+larson,mi,???:mi_free,not located in worktree (mi/libc),568842,794122,225280,15.36%
+larson,mi,???:mi_theap_malloc_aligned,not located in worktree (mi/libc),577466,800176,222710,15.18%
+churn1024,sefer,sefer_a_dealloc,examples/_shared/b4_interleave_core.rs:181 (inst.:190),388401,545841,157440,48.29%
+churn1024,sefer,sefer_a_alloc,examples/_shared/b4_interleave_core.rs:154 (inst.:190),224481,310881,86400,26.50%
+churn1024,sefer,kernel_churn,examples/_shared/b4_interleave_core.rs:647,212440,294640,82200,25.21%
+churn1024,sefer,./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms,not located in worktree (mi/libc),2734,2734,0,0.00%
+churn1024,sefer,./malloc/./malloc/malloc.c:_int_malloc,not located in worktree (mi/libc),9511,9511,0,0.00%
+churn1024,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch,src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:866,15376,15376,0,0.00%
+churn1024,sefer,./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms,not located in worktree (mi/libc),41284,41284,0,0.00%
+churn1024,sefer,./malloc/./malloc/malloc.c:malloc,not located in worktree (mi/libc),2970,2970,0,0.00%
+churn1024,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar,src/alloc_core/small/alloc_core_small/find_segment/scan.rs:152,18691,18691,0,0.00%
+churn1024,sefer,alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote,src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:138,2624,0,-2624,-0.80%
+churn1024,mi,???:mi_page_queue_find_free_ex,not located in worktree (mi/libc),376827,665235,288408,22.49%
+churn1024,mi,???:_mi_malloc_generic,not located in worktree (mi/libc),224441,360310,135869,10.59%
+churn1024,mi,???:_mi_page_free_collect,not located in worktree (mi/libc),123079,225515,102436,7.99%
+churn256,sefer,sefer_a_dealloc,examples/_shared/b4_interleave_core.rs:181 (inst.:190),1070641,1490481,419840,48.43%
+churn256,sefer,sefer_a_alloc,examples/_shared/b4_interleave_core.rs:154 (inst.:190),598881,829281,230400,26.58%
+churn256,sefer,kernel_churn,examples/_shared/b4_interleave_core.rs:647,561880,778480,216600,24.99%
+churn256,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch,src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:866,13696,13696,0,0.00%
+churn256,sefer,./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms,not located in worktree (mi/libc),41284,41284,0,0.00%
+churn256,mi,kernel_churn,examples/_shared/b4_interleave_core.rs:647,561880,778480,216600,24.56%
+churn256,mi,???:_mi_malloc_generic,not located in worktree (mi/libc),379237,509127,129890,14.73%
+churn256,mi,???:mi_free,not located in worktree (mi/libc),287254,399902,112648,12.77%
+bulk64,sefer,sefer_a_dealloc,examples/_shared/b4_interleave_core.rs:181 (inst.:190),4461233,6177073,1715840,33.03%
+bulk64,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch,src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:525,2811377,3893937,1082560,20.84%
+bulk64,sefer,sefer_a_alloc,examples/_shared/b4_interleave_core.rs:154 (inst.:190),2368710,3279750,911040,17.54%
+bulk64,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal,src/alloc_core/small/alloc_core_small_magazine.rs:565,2334592,3232512,897920,17.28%
+bulk64,sefer,kernel_bulk,examples/_shared/b4_interleave_core.rs:602,1087424,1505664,418240,8.05%
+bulk64,sefer,registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded,src/alloc_core/alloc_core/sidecar_drain.rs:572,162305,224705,62400,1.20%
+bulk64,sefer,registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0},not located in worktree (mi/libc),152405,210965,58560,1.13%
+bulk64,sefer,registry::heap_core::core::HeapCore>::refill_magazine_slow,src/registry/heap_core/alloc/hot.rs:674,87395,120995,33600,0.65%
+bulk64,mi,???:mi_free,not located in worktree (mi/libc),1173120,1624320,451200,24.01%
+bulk64,mi,???:mi_theap_malloc_aligned,not located in worktree (mi/libc),1169792,1619712,449920,23.94%
+bulk64,mi,kernel_bulk,examples/_shared/b4_interleave_core.rs:602,1087424,1505664,418240,22.25%
+churn64,sefer,sefer_a_dealloc,examples/_shared/b4_interleave_core.rs:181 (inst.:190),1070641,1490481,419840,48.43%
+churn64,sefer,sefer_a_alloc,examples/_shared/b4_interleave_core.rs:154 (inst.:190),598881,829281,230400,26.58%
+churn64,sefer,kernel_churn,examples/_shared/b4_interleave_core.rs:647,561880,778480,216600,24.99%
+churn64,sefer,./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms,not located in worktree (mi/libc),41284,41284,0,0.00%
+churn64,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch,src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:866,13456,0,-13456,-1.55%
+churn64,mi,???:_mi_malloc_generic,not located in worktree (mi/libc),765937,1124421,358484,26.08%
+churn64,mi,kernel_churn,examples/_shared/b4_interleave_core.rs:647,561880,778480,216600,15.76%
+churn64,mi,???:mi_theap_malloc_zero_aligned_at_generic,not located in worktree (mi/libc),459480,674520,215040,15.65%
+churn16,sefer,sefer_a_dealloc,examples/_shared/b4_interleave_core.rs:181 (inst.:190),1070641,1490481,419840,48.43%
+churn16,sefer,sefer_a_alloc,examples/_shared/b4_interleave_core.rs:154 (inst.:190),598881,829281,230400,26.58%
+churn16,sefer,kernel_churn,examples/_shared/b4_interleave_core.rs:647,561880,778480,216600,24.99%
+churn16,sefer,./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms,not located in worktree (mi/libc),41284,41284,0,0.00%
+churn16,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch,src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:866,13396,0,-13396,-1.55%
+churn16,mi,???:_mi_malloc_generic,not located in worktree (mi/libc),763834,1122318,358484,26.08%
+churn16,mi,kernel_churn,examples/_shared/b4_interleave_core.rs:647,561880,778480,216600,15.76%
+churn16,mi,???:mi_theap_malloc_zero_aligned_at_generic,not located in worktree (mi/libc),458220,673260,215040,15.65%
+bulk16k,sefer,sefer_a_dealloc,examples/_shared/b4_interleave_core.rs:181 (inst.:190),143765697,199060177,55294480,29.23%
+bulk16k,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch,src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:525,119197933,165478053,46280120,24.46%
+bulk16k,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal,src/alloc_core/small/alloc_core_small_magazine.rs:565,99370544,137589984,38219440,20.20%
+bulk16k,sefer,sefer_a_alloc,examples/_shared/b4_interleave_core.rs:154 (inst.:190),75506814,104547894,29041080,15.35%
+bulk16k,sefer,kernel_bulk,examples/_shared/b4_interleave_core.rs:602,34084440,47193840,13109400,6.93%
+bulk16k,sefer,registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded,src/alloc_core/alloc_core/sidecar_drain.rs:572,6915545,9575345,2659800,1.41%
+bulk16k,sefer,registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0},not located in worktree (mi/libc),6512501,9008621,2496120,1.32%
+bulk16k,sefer,registry::heap_core::core::HeapCore>::refill_magazine_slow,src/registry/heap_core/alloc/hot.rs:674,3723755,5155955,1432200,0.76%
+bulk16k,sefer,alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar,src/alloc_core/small/alloc_core_small/find_segment/scan.rs:152,4805107,4805107,0,0.00%
+bulk16k,mi,???:mi_free,not located in worktree (mi/libc),37506144,51931584,14425440,21.60%
+bulk16k,mi,???:mi_theap_malloc_aligned,not located in worktree (mi/libc),37433136,51830496,14397360,21.55%
+bulk16k,mi,kernel_bulk,examples/_shared/b4_interleave_core.rs:602,34084440,47193840,13109400,19.63%

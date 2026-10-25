@@ -71,12 +71,17 @@ static HARNESS: HarnessAlloc = HarnessAlloc;
 
 use std::io::Write;
 
+/// Timed runner for the shared warmup loop (discards the timings; behavior
+/// identical to the previous inline `run_portion` calls).
+fn run_judge_portion(table: &'static ShimTable, kernel: Kernel, seed: u64) {
+    let _ = run_portion(table, kernel, seed);
+}
+
 const DEFAULT_BLOCKS: u64 = 20_000;
 const DRY_RUN_BLOCKS: u64 = 24;
 const DEFAULT_ORDER_SEED: u64 = 0x0B4D_5EED;
-/// Warmup portions per (arm, kernel) before the window: enough to reach the
-/// allocator's steady state (magazines/refills populated, working set live).
-const WARMUP_PORTIONS: u64 = 32;
+// Warmup portions per (arm, kernel): the value lives in the shared core
+// (`WARMUP_PORTIONS`, include!-ed above) so the probe can mirror it exactly.
 
 // ── Minimal SHA-256 (FIPS 180-4), for the self-hash of the judge exe. ──────
 mod sha256 {
@@ -426,13 +431,7 @@ fn main() {
         larson: [false; LARSON_LIVE],
     };
     for k in ALL_KERNELS {
-        for w in 0..WARMUP_PORTIONS {
-            let ws = args.seed.wrapping_add(w.wrapping_mul(PORTION_SEED_G));
-            run_portion(a, k, ws);
-            let _ = simulate_portion_calls(&mut st_a, k, ws);
-            run_portion(b, k, ws);
-            let _ = simulate_portion_calls(&mut st_b, k, ws);
-        }
+        judge_warmup_kernel(a, b, k, args.seed, &mut st_a, &mut st_b, run_judge_portion);
     }
 
     let mut block_no: u64 = 0;
@@ -445,10 +444,7 @@ fn main() {
     while block_no < args.blocks {
         for (ki, k) in ALL_KERNELS.into_iter().enumerate() {
             let abba = orders[ki][block_no as usize];
-            let portion_seed = args
-                .seed
-                .wrapping_add(block_no.wrapping_mul(0x1000_0000_0000_0001))
-                .rotate_left(ki as u32);
+            let portion_seed = judge_block_seed(args.seed, ki as u32, block_no);
             let rec = run_block(a, b, k, block_no, portion_seed, abba);
             if rec.harness_allocs != 0 {
                 window_alloc_fail += 1;

@@ -309,6 +309,7 @@ pub fn order_is_abba(rng: &mut XorShift64) -> bool {
 /// Golden-ratio multiplier for a block's second portion seed.
 pub const PORTION_SEED_G: u64 = 0x9E37_79B9_7F4A_7C15;
 
+include!("b4_judge_seed_contract.rs");
 /// Per-shim-set ring occupancy for the activation oracle: one state per arm.
 pub struct RingState {
     pub churn: [bool; CHURN_LIVE],

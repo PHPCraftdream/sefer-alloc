@@ -1,0 +1,27 @@
+# identity: HEAD=26108a2043f1c78fce2be7c447e61c85e0454a7f DIFF_SHA256=6a6133c626a75729ee97a54659581012b81bf245b6de42835abb8171f5e9dd86 UNTRACKED_SHA256=b91094ff604985ea6d2fbdb0b098a42f286433d8b24ddfa52cb980052c9b0366
+kernel,func,calls80,calls40,calls_delta,ops_delta,calls_per_op
+pair16,(1034) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow,1,1,0,40960,0.000000
+pair16,(1038) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>,1,1,0,40960,0.000000
+pair16,(1042) <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch,1,1,0,40960,0.000000
+pair16,(1050) <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch,1,1,0,40960,0.000000
+pair64,(1034) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow,1,1,0,40960,0.000000
+pair64,(1038) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>,1,1,0,40960,0.000000
+pair64,(1042) <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch,1,1,0,40960,0.000000
+pair64,(1050) <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch,1,1,0,40960,0.000000
+larson,(1034) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow,299,205,94,20480,0.004590
+larson,(1038) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>,299,205,94,20480,0.004590
+larson,(1042) <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch,342,247,95,20480,0.004639
+churn1024,(1034) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow,16,16,0,3840,0.000000
+churn1024,(1038) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>,16,16,0,3840,0.000000
+churn256,(1038) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>,16,16,0,10240,0.000000
+churn256,(1040) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0},16,16,0,10240,0.000000
+bulk64,(1034) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow,3457,2497,960,40960,0.023438
+bulk64,(1038) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>,3457,2497,960,40960,0.023438
+bulk64,(1056) <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal,6912,4992,1920,40960,0.046875
+churn64,(1038) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>,16,16,0,10240,0.000000
+churn64,(1040) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0},16,16,0,10240,0.000000
+churn16,(1034) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow,16,16,0,10240,0.000000
+churn16,(1038) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>,16,16,0,10240,0.000000
+bulk16k,(1034) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow,147313,106393,40920,1310720,0.031219
+bulk16k,(1038) <sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>,147313,106393,40920,1310720,0.031219
+bulk16k,(1056) <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal,294624,212784,81840,1310720,0.062439
