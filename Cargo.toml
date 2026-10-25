@@ -202,6 +202,13 @@ alloc-xthread = ["alloc-core"]
 alloc-global = ["alloc-core", "alloc-xthread"]
 # Opt-in prototype (Ph1b): exact System object + out-of-object descriptor for
 # narrow requests. NOT part of `production`.
+# B4-ablate phase 1: gating feature for the judge's `ab_variant` /
+# `aa_variant` modes (arm B = `sefer_alloc_variant`, the patched COPY of this
+# crate generated OUTSIDE the repo tree under `.rush/variant/`). Default OFF:
+# plain judge builds do not reference the variant statics at all, so existing
+# mode paths and codegen are unchanged. Enable together with `production` for
+# ablation runs.
+ablate = []
 exact-object-proto = ["alloc-global", "std"]
 # R10-7 follow-up: the tcache-aware batch allocation API
 # (`SeferAlloc::alloc_batch` / `dealloc_batch` + the underlying
@@ -996,6 +1003,20 @@ proc-memstat = { path = "crates/proc-memstat" }
 # so a probe binary has ONE "measure + report" dependency and the emit format
 # can never drift from what `scripts/*.mjs` parse. NOT a runtime dep.
 proc-probe = { path = "crates/proc-probe" }
+# B4-ablate phase 1: the generated COPY of this crate, produced by
+# `scripts/b4_ablate_make_variant.mjs` from `src/` + an ablation patch. The
+# copy lives OUTSIDE the repository tree (`<repo>/../.rush/variant/<variant>/`,
+# reached from this manifest by the RELATIVE path `../../.rush/variant/null`)
+# so it never breaks `scripts/verify-structure-limits.mjs` or the dbg-hooks
+# scanner. The generated package is its own workspace root (NOT a member
+# here); a path dev-dependency may point outside the workspace directory.
+# Dev-only — the judge example (`ab_variant` / `aa_variant` modes, feature
+# `ablate`) and the `b4_ablate_variant_null` smoke test drive its `SeferAlloc`
+# static NEXT TO this crate's own `SeferAlloc`, in ONE process. `production`
+# is enabled so the copy exposes the same allocator face as the judge's main
+# arm. NOT a runtime dep; run the generator before building (any variant,
+# including `null`, satisfies this path).
+sefer-alloc-variant = { path = "../../.rush/variant/null", features = ["production"] }
 
 # Phase 3b-II: loom model-checks the publication PROTOCOL (generation/value
 # ordering) of the epoch tier. loom and crossbeam-epoch do NOT compose (loom
@@ -2676,6 +2697,13 @@ required-features = ["production"]
 # requirement as the judge example (the sefer arm static needs `production`).
 [[test]]
 name = "b4_interleave_judge_correctness"
+required-features = ["production"]
+
+# B4-ablate phase 1: variant-copy smoke test — `sefer_alloc_variant` links
+# NEXT TO `sefer_alloc` in one binary and serves small alloc/free. Needs the
+# `production` face of both crates (`SeferAlloc` is `alloc-global`-gated).
+[[test]]
+name = "b4_ablate_variant_null"
 required-features = ["production"]
 
 # B4 J1′: "as the user ships it" codegen profile — the judge can be run under

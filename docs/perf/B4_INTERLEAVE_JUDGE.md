@@ -226,6 +226,27 @@ construction guarantee restored (the judge now REQUIRES an even N).
   shim set with the block's OWN recorded layout (churn/larson sizes stored
   per slot, vec capacity per arm). The correctness test verifies this.
 
+## v2: счётчик оракула без lock (review fix)
+
+Что изменилось: shim-счётчик оракула (`SHIM_CALLS`, по одному на shim-набор)
+переведён с атомарного `AtomicU64::fetch_add` на thread-local неатомарные
+ячейки (`thread_local!` + `Cell<[u64; SHIM_SLOTS]>`, const-init, чтение через
+`shim_calls_total(slot)`). Шимы остаются `#[inline(never)]`, число наборов
+(`SHIM_SLOTS = 6`) и identity-логика не меняются; судья и correctness-тест
+однопоточные, поэтому все чтения дельт (before/after каждой порции) и финальный
+`RESULT` остаются в том же потоке.
+
+Почему: `lock inc` атомарного инкремента (~20 тактов/op) выполнялся на КАЖДЫЙ
+вызов шима и попадал в измеряемое окно ОБОИХ плеч — чистый измерительный шум,
+одинаковый по конструкции, но смещавший отношения к 1 и сужавший наблюдаемую
+разницу. Неатомарный thread-local инкремент убирает `lock` из тела шимов
+(проверено по пост-LTO asm: в `sefer_a_*`/`mi_*`/`variant_*` шимах инструкций
+`lock` нет).
+
+Валидность: результаты фазы 2 J1′ v1 остаются валидными как есть (смещение
+симметрично по плечам и не меняет знака вердиктов), но перемеряются
+оркестратором в v2.
+
 ## Phase 2 commands (exact, via `scripts/b4_interleave_run.mjs`)
 
 ```sh

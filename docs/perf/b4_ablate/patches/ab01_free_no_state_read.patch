@@ -1,0 +1,51 @@
+# ab01_free_no_state_read — B4-ablate churn ablation (МЕРАТОЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность может нарушаться (double-free больше не
+# ловится oracle-2 на own free; возможна двойная выдача блока из magazine).
+# Не для production.
+#
+# Что убирает: чтение байта состояния + точное сравнение
+# encode(c, LIVE) + вложенную классификацию reject'ов в `small_free_guard`
+# (src/registry/heap_core/free/dealloc_own_base.rs:348-367).
+#
+# Гипотеза: зависимая загрузка байта состояния (load-to-use chain
+# base -> state_byte -> compare) — заметная доля времени own free на churn,
+# невидимая в Ir (callgrind: sefer < mimalloc по Ir, но время хуже).
+#
+# Ожидаемое направление: время churn16/64 ВНИЗ (если байт-оракул дорог) или
+# ~0 (если он скрывается под другими зависимостями).
+diff --git a/src/registry/heap_core/free/dealloc_own_base.rs b/src/registry/heap_core/free/dealloc_own_base.rs
+index 79871880..f6372233 100644
+--- a/src/registry/heap_core/free/dealloc_own_base.rs
++++ b/src/registry/heap_core/free/dealloc_own_base.rs
+@@ -345,26 +345,13 @@ pub(super) fn small_free_guard(
+     // byte whose state is LIVE but whose CLASS field differs — the base's
+     // wrong-class Accept-branch reject. Both surface as
+     // `RejectNoOpSilent` (callers treat it identically minus the counter).
+-    let byte = meta.state_byte().read(off);
+-    let expected = crate::alloc_core::state_byte::StateByte::encode(
+-        c,
+-        crate::alloc_core::state_byte::StateByte::LIVE,
+-    );
++    // ABLATION ab01_free_no_state_read: the M2 state-byte oracle (load +
++    // exact encode(c, LIVE) compare + nested reject classification) is
++    // REMOVED FOR MEASUREMENT ONLY. Correctness may break (double frees are
++    // no longer caught here) — never for production.
+     if (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) != 0 {
+         return SmallFreeGuard::RejectNoOpSilent;
+     }
+-    if byte != expected {
+-        if byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::LIVE {
+-            return SmallFreeGuard::RejectNoOpSilent;
+-        }
+-        if byte == 0 {
+-            if (off as usize) < meta.bump_of() {
+-                return SmallFreeGuard::RejectNoOpSilent;
+-            }
+-            return SmallFreeGuard::RejectNoOp;
+-        }
+-        return SmallFreeGuard::RejectNoOp;
+-    }
+     if (off as usize) >= meta.bump_of() {
+         return SmallFreeGuard::RejectNoOp;
+     }

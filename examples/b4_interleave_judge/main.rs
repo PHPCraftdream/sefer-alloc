@@ -31,10 +31,24 @@
 //! - `aa_sefer`  — sefer×sefer A/A calibration (two identical-shaped shim
 //!   sets against the SAME static; pure harness-symmetry control).
 //! - `aa_mi`     — mimalloc×mimalloc A/A calibration.
+//! - `ab_variant` — sefer vs `sefer_alloc_variant` (b4-ablate; feature
+//!   `ablate`): the patched COPY of the crate generated
+//!   outside the repo tree under `.rush/variant/`, driven in the SAME
+//!   process through its own
+//!   identically-shaped shim sets (slots 4/5).
+//! - `aa_variant` — variant×variant A/A ablation control (feature `ablate`).
+//!   Raw header carries `"variant"`/`"variant_name"` (the generated patch
+//!   name) and `"variant_sha256"` (identity of the copy under
+//!   `.rush/variant/current/src/`, from `ab_variant_identity.rs`); records
+//!   carry `"variant_name"` only. When built WITH the `ablate` feature the
+//!   variant fields are a property of the binary build and are reported in
+//!   every mode; without `ablate` all three are `"-"`.
 //!
 //! ## CLI
 //! ```text
-//! --mode ab|aa_sefer|aa_mi     default: ab
+//! --mode ab|aa_sefer|aa_mi|ab_variant|aa_variant   default: ab
+//!                             (ab_variant / aa_variant need --features
+//!                              production,ablate at build time)
 //! --blocks N                   default 20000 (dry-run: 24); MUST be even
 //! --seed S                     default 0xB411_0001; recorded into raw (hex)
 //! --order-seed S               default 0x0B4D_5EED; recorded into raw (hex)
@@ -55,7 +69,13 @@
 //! judge itself (mode, blocks, seed, order seed, HEAD sha, CPU brand string,
 //! OS/arch, source-diff sha, sha256 of its own exe, features, profile,
 //! rustc version, invariant TSC, QPC frequency, RT_MIN/RT_MAX and all
-//! portion constants). The generator takes identity ONLY from this header
+//! portion constants) plus the ablation identity: `"variant"` /
+//! `"variant_name"` (the generated patch name; under the `ablate` feature
+//! this identifies the binary build and is reported in every mode, otherwise
+//! "-") and `"variant_sha256"` (sha256 of the variant copy, same rule). Every
+//! raw RECORD additionally carries `"variant_name"` (single source of truth
+//! is the header; the record field only makes each line self-describing).
+//! The generator takes identity ONLY from this header
 //! and asserts every field matches across the three raws (including blocks).
 //!
 //! Pre-registered A/A threshold (fixed BEFORE phase 2, see the report):
@@ -247,6 +267,7 @@ pub mod judge {
         profile: String,
         rustc: String,
         os_version: String,
+        kernels: Vec<Kernel>,
     }
 
     fn need(it: &mut impl Iterator<Item = String>, flag: &str) -> String {
@@ -266,6 +287,8 @@ pub mod judge {
         let mut profile = String::new();
         let mut rustc = String::new();
         let mut os_version = String::new();
+        // Default: the FULL registry (bit-identical to the pre-flag runs).
+        let mut kernel_names: Option<Vec<String>> = None;
         let mut it = std::env::args().skip(1);
         while let Some(a) = it.next() {
             match a.as_str() {
@@ -285,6 +308,34 @@ pub mod judge {
                 "--profile" => profile = need(&mut it, "--profile"),
                 "--rustc" => rustc = need(&mut it, "--rustc"),
                 "--os-version" => os_version = need(&mut it, "--os-version"),
+                "--kernels" => {
+                    let raw = need(&mut it, "--kernels");
+                    let names: Vec<String> = raw
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    assert!(
+                        !names.is_empty(),
+                        "--kernels must be a non-empty comma-separated list of kernel names"
+                    );
+                    for n in &names {
+                        assert!(
+                            Kernel::parse(n).is_some(),
+                            "--kernels: unknown kernel `{n}` (registry: {})",
+                            ALL_KERNELS
+                                .iter()
+                                .map(|k| k.name())
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        );
+                    }
+                    let mut seen = std::collections::BTreeSet::new();
+                    for n in &names {
+                        assert!(seen.insert(n.clone()), "--kernels: duplicate kernel `{n}`");
+                    }
+                    kernel_names = Some(names);
+                }
                 "--dry-run" => dry_run = true,
                 other => panic!("unknown arg {other}"),
             }
@@ -328,6 +379,20 @@ pub mod judge {
             "--os-version must be `unknown` or `NN.N.NNNN`, got `{os_version}`"
         );
         out = out.replace("<mode>", mode.name());
+        // --kernels is a FILTER over the registry: the original ALL_KERNELS
+        // order is preserved (see the CLI doc — seeds / orders stay compatible).
+        let kernels: Vec<Kernel> = match &kernel_names {
+            None => ALL_KERNELS.to_vec(),
+            Some(names) => ALL_KERNELS
+                .iter()
+                .copied()
+                .filter(|k| names.iter().any(|n| n == k.name()))
+                .collect(),
+        };
+        assert!(
+            kernels.len() == kernel_names.as_ref().map_or(ALL_KERNELS.len(), Vec::len),
+            "--kernels: some names did not resolve to registry kernels"
+        );
         Args {
             mode,
             blocks,
@@ -341,6 +406,7 @@ pub mod judge {
             profile,
             rustc,
             os_version,
+            kernels,
         }
     }
 
@@ -379,11 +445,14 @@ pub mod judge {
         // Seeds are hex strings (the generator parses them as BigInt).
         writeln!(
         out,
-        "{{\"header\":true,\"mode\":\"{}\",\"blocks\":{},\"seed\":\"{:#x}\",\"order_seed\":\"{:#x}\",\
+        "{{\"header\":true,\"mode\":\"{}\",\"variant\":\"{}\",\"variant_name\":\"{}\",\"variant_sha256\":\"{}\",\"blocks\":{},\"seed\":\"{:#x}\",\"order_seed\":\"{:#x}\",\
          \"head_sha\":\"{}\",\"cpu\":\"{}\",\"os\":\"{}\",\
          \"source_diff_sha256\":\"{}\",\"exe_sha256\":\"{}\",\"features\":\"{}\",\"profile\":\"{}\",\"rustc\":\"{}\",\"os_version\":\"{}\",\
          \"tsc_invariant\":{},\"qpc_freq\":{},\"pair_ops\":{},\"bulk64_n\":{},\"bulk64_passes\":{},\"bulk16k_n\":{},\"bulk16k_passes\":{},\"churn_live\":{},\"churn_ops\":{},\"churn1024_ops\":{},\"vec_elems\":{},\"vec_cycles\":{},\"larson_live\":{},\"larson_ops\":{},\"larson_min\":{},\"larson_max\":{},\"larson_step\":{},\"rt_min\":{},\"rt_max\":{},\"rt_granule\":{},\"portion_seed_g\":\"{:#x}\",\"larson_align\":{},\"vec_align\":{},\"churn_align\":{},\"pair_align\":{},\"warmup_portions\":{},\"kernels\":{}}}",
         args.mode.name(),
+        args.mode.variant(),
+        args.mode.variant_name(),
+        args.mode.variant_sha256(),
         args.blocks,
         args.seed,
         args.order_seed,
@@ -422,7 +491,7 @@ pub mod judge {
         CHURN_ALIGN,
         PAIR_ALIGN,
         WARMUP_PORTIONS,
-        ALL_KERNELS.len(),
+        args.kernels.len(),
     )
     .expect("write header");
 
@@ -444,13 +513,13 @@ pub mod judge {
             churn: [false; CHURN_LIVE],
             larson: [false; LARSON_LIVE],
         };
-        for k in ALL_KERNELS {
+        for k in &args.kernels {
             for w in 0..WARMUP_PORTIONS {
                 let ws = args.seed.wrapping_add(w.wrapping_mul(PORTION_SEED_G));
-                run_portion(a, k, ws);
-                let _ = simulate_portion_calls(&mut st_a, k, ws);
-                run_portion(b, k, ws);
-                let _ = simulate_portion_calls(&mut st_b, k, ws);
+                run_portion(a, *k, ws);
+                let _ = simulate_portion_calls(&mut st_a, *k, ws);
+                run_portion(b, *k, ws);
+                let _ = simulate_portion_calls(&mut st_b, *k, ws);
             }
         }
 
@@ -462,12 +531,21 @@ pub mod judge {
         let mut ns_samples: Vec<Vec<f64>> = vec![Vec::new(); ALL_KERNELS.len()];
 
         while block_no < args.blocks {
-            for (ki, k) in ALL_KERNELS.into_iter().enumerate() {
-                let abba = orders[ki][block_no as usize];
+            for k in args.kernels.iter().copied() {
+                // `orders` and the portion-seed rotation are indexed by the
+                // kernel's REGISTRY index (ALL_KERNELS), NOT the filtered
+                // position — filtered runs are bit-identical to full runs.
+                let reg_ki = ALL_KERNELS
+                    .iter()
+                    .position(|x| x.name() == k.name())
+                    .expect("registry");
+                let abba = orders[reg_ki][block_no as usize];
+                // Portion seed rotates by the REGISTRY index (not the filtered
+                // position) — identical to full runs.
                 let portion_seed = args
                     .seed
                     .wrapping_add(block_no.wrapping_mul(0x1000_0000_0000_0001))
-                    .rotate_left(ki as u32);
+                    .rotate_left(reg_ki as u32);
                 let rec = run_block(a, b, k, block_no, portion_seed, abba);
                 if rec.harness_allocs != 0 {
                     window_alloc_fail += 1;
@@ -499,12 +577,12 @@ pub mod judge {
                     }
                 }
                 if args.dry_run {
-                    ns_samples[ki].push(rec.a1_ns);
-                    ns_samples[ki].push(rec.a2_ns);
+                    ns_samples[reg_ki].push(rec.a1_ns);
+                    ns_samples[reg_ki].push(rec.a2_ns);
                 }
                 writeln!(
                 out,
-                "{{\"kernel\":\"{}\",\"mode\":\"{}\",\"order\":\"{}\",\"block\":{},\"seed\":\"{:#x}\",\
+                "{{\"kernel\":\"{}\",\"mode\":\"{}\",\"variant\":\"{}\",\"variant_name\":\"{}\",\"order\":\"{}\",\"block\":{},\"seed\":\"{:#x}\",\
                  \"a1\":{},\"b1\":{},\"b2\":{},\"a2\":{},\"a1_ns\":{:.1},\"b1_ns\":{:.1},\
                  \"b2_ns\":{:.1},\"a2_ns\":{:.1},\"harness_allocs\":{},\
                  \"a1_calls\":{},\"b1_calls\":{},\"b2_calls\":{},\"a2_calls\":{},\
@@ -512,6 +590,8 @@ pub mod judge {
                  \"a1_foreign\":{},\"b1_foreign\":{},\"b2_foreign\":{},\"a2_foreign\":{}}}",
                 rec.kernel,
                 args.mode.name(),
+                args.mode.variant(),
+                args.mode.variant_name(),
                 rec.order,
                 rec.block,
                 rec.seed,
@@ -557,19 +637,23 @@ pub mod judge {
             "activation oracle FAILED: {oracle_fail} portions with a wrong shim-call count"
         );
 
-        let total = args.blocks * ALL_KERNELS.len() as u64;
+        let total = args.blocks * args.kernels.len() as u64;
         let (sa, sb) = match args.mode {
             Mode::Ab => (0, 2),
             Mode::AaSefer => (0, 1),
             Mode::AaMi => (2, 3),
+            #[cfg(feature = "ablate")]
+            Mode::AbVariant => (0, 4),
+            #[cfg(feature = "ablate")]
+            Mode::AaVariant => (4, 5),
         };
-        let ca = SHIM_CALLS[sa].load(Ordering::Relaxed);
-        let cb = SHIM_CALLS[sb].load(Ordering::Relaxed);
+        let ca = shim_calls_total(sa);
+        let cb = shim_calls_total(sb);
         println!(
         "RESULT blocks={} orders_abba={} orders_baab={} harness_window_allocs=0 foreign_window_calls=0 oracle_mismatches=0 shim_calls_a={} shim_calls_b={}",
         total,
-        args.blocks / 2 * ALL_KERNELS.len() as u64,
-        args.blocks / 2 * ALL_KERNELS.len() as u64,
+        args.blocks / 2 * args.kernels.len() as u64,
+        args.blocks / 2 * args.kernels.len() as u64,
         ca,
         cb
     );
@@ -577,7 +661,11 @@ pub mod judge {
         if args.dry_run {
             // Portion-sizing helper: median portion ns per kernel (dry-run only;
             // the chosen portion constants stay the pre-registered ones).
-            for (ki, k) in ALL_KERNELS.into_iter().enumerate() {
+            for k in args.kernels.iter().copied() {
+                let ki = ALL_KERNELS
+                    .iter()
+                    .position(|x| x.name() == k.name())
+                    .expect("registry");
                 let mut s = ns_samples[ki].clone();
                 s.retain(|v| *v > 0.0);
                 s.sort_by(|x, y| x.partial_cmp(y).unwrap());
@@ -590,6 +678,15 @@ pub mod judge {
         out.flush().expect("flush raw");
         // Explicit teardown: every live block of every arm freed with its OWN
         // recorded layout, before the process exits.
-        teardown_arms([&SEFER_A_TABLE, &SEFER_B_TABLE, &MI_A_TABLE, &MI_B_TABLE]);
+        teardown_arms([
+            &SEFER_A_TABLE,
+            &SEFER_B_TABLE,
+            &MI_A_TABLE,
+            &MI_B_TABLE,
+            #[cfg(feature = "ablate")]
+            &VARIANT_A_TABLE,
+            #[cfg(feature = "ablate")]
+            &VARIANT_B_TABLE,
+        ]);
     }
 }

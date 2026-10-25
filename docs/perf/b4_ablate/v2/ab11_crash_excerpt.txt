@@ -1,0 +1,2 @@
+judge process (mode aa_variant, variant ab11_alloc_pop_no_bookkeeping, rep 0, --blocks 2000 --seed 0xb4110001 --order-seed 0xb4d5eed --kernels churn16,churn64,pair16) exited with status=3221226505 (0xC0000409, fail-fast abort)
+stderr: segment_header_meta_fields: sub_live live_count underflow
