@@ -1,0 +1,36 @@
+# B4 ABLATE — process-replicated (J1′ v2): variant=null reps=20 blocks/process=2000 bootstrap=2000 (over processes) seed=24301
+# identity: head=d47924a2f6ec3b353ce6d0c3d82057e109f690a2 sha(diff)=e3b0c44298fc exe=94338761149a variant_sha=013c51eb1655 profile=release rustc="rustc 1.97.0 (2d8144b78 2026-07-07)" cpu="11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz"
+# statistic: per-process median of ln(t_B/t_A) (A = sefer base, B = variant), then median over 20 processes; admission |median| <= 0.01 and CI half <= 0.01 for aa_sefer AND aa_variant; oracle exact, balance exact
+| Kernel | A/A sefer median % [CI] | A/A variant median % [CI] | A/B median % [CI] | per-process A/B min…max % | ratio t_B/t_A | A ticks/call | B−A ticks/call [CI] | Admitted | Verdict |
+|---|---|---|---|---|---:|---:|---|---|---|
+| churn16 | -1.28 [-1.45, -1.09] | -0.39 [-0.66, -0.28] | -0.38 [-0.85, -0.12] | -2.60…9.91 | 0.9962 | 17.40 | -0.07 [-0.15, -0.00] | NO | not admitted |
+| churn64 | -0.85 [-0.97, -0.73] | -0.30 [-0.56, -0.18] | 0.49 [0.12, 0.69] | -0.52…14.96 | 1.0049 | 16.99 | 0.08 [0.02, 0.12] | yes | BASE_FASTER |
+| pair16 | -0.41 [-0.47, -0.37] | -0.28 [-0.38, -0.25] | 0.21 [0.16, 0.30] | -0.49…0.40 | 1.0021 | 9.41 | 0.02 [0.02, 0.03] | yes | BASE_FASTER |
+| bulk64 | -0.15 [-0.26, -0.10] | -0.10 [-0.17, -0.06] | 1.46 [1.32, 1.71] | 0.47…16.91 | 1.0147 | 18.23 | 0.27 [0.24, 0.31] | yes | BASE_FASTER |
+| bulk16k | 0.09 [0.02, 0.12] | -0.09 [-0.14, -0.03] | 0.76 [0.60, 0.99] | -0.02…9.04 | 1.0077 | 22.18 | 0.17 [0.13, 0.21] | yes | BASE_FASTER |
+# wrote <out-dir>/b4_ablate/summary_null.csv
+# appended 5 rows to <summary>
+# B4 ABLATE — process-replicated (J1′ v2): variant=b1_depot4 reps=20 blocks/process=2000 bootstrap=2000 (over processes) seed=24301
+# identity: head=d47924a2f6ec3b353ce6d0c3d82057e109f690a2 sha(diff)=e3b0c44298fc exe=bbdd4b76e227 variant_sha=8c05dde564e6 profile=release rustc="rustc 1.97.0 (2d8144b78 2026-07-07)" cpu="11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz"
+# statistic: per-process median of ln(t_B/t_A) (A = sefer base, B = variant), then median over 20 processes; admission |median| <= 0.01 and CI half <= 0.01 for aa_sefer AND aa_variant; oracle exact, balance exact
+| Kernel | A/A sefer median % [CI] | A/A variant median % [CI] | A/B median % [CI] | per-process A/B min…max % | ratio t_B/t_A | A ticks/call | B−A ticks/call [CI] | Admitted | Verdict |
+|---|---|---|---|---|---:|---:|---|---|---|
+| churn16 | -0.97 [-1.29, -0.78] | -1.09 [-1.53, -0.61] | -3.77 [-5.54, -3.12] | -8.26…11.87 | 0.9630 | 17.50 | -0.63 [-0.93, -0.52] | NO | not admitted |
+| churn64 | -0.89 [-1.02, -0.73] | 0.06 [-1.43, 1.86] | -12.26 [-12.70, -11.48] | -13.51…-1.32 | 0.8846 | 16.87 | -1.92 [-2.02, -1.84] | NO | not admitted |
+| pair16 | -0.46 [-0.52, -0.41] | 0.73 [0.62, 0.93] | 2.29 [2.21, 2.50] | 1.66…8.11 | 1.0232 | 9.37 | 0.22 [0.21, 0.24] | yes | BASE_FASTER |
+| bulk64 | 0.17 [0.07, 0.22] | -0.17 [-0.32, -0.08] | -55.81 [-56.12, -55.22] | -57.24…-27.75 | 0.5723 | 18.00 | -7.61 [-7.72, -7.57] | yes | VARIANT_FASTER |
+| bulk16k | 0.06 [0.02, 0.10] | -0.10 [-0.15, -0.05] | 3.53 [2.86, 5.62] | -0.48…9.47 | 1.0360 | 21.68 | 0.79 [0.66, 1.22] | yes | BASE_FASTER |
+# wrote <out-dir>/b4_ablate/summary_b1_depot4.csv
+# appended 5 rows to <summary>
+# B4 ABLATE — process-replicated (J1′ v2): variant=b1_depot8 reps=20 blocks/process=2000 bootstrap=2000 (over processes) seed=24301
+# identity: head=d47924a2f6ec3b353ce6d0c3d82057e109f690a2 sha(diff)=e3b0c44298fc exe=42f095283010 variant_sha=14d77fc031ac profile=release rustc="rustc 1.97.0 (2d8144b78 2026-07-07)" cpu="11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz"
+# statistic: per-process median of ln(t_B/t_A) (A = sefer base, B = variant), then median over 20 processes; admission |median| <= 0.01 and CI half <= 0.01 for aa_sefer AND aa_variant; oracle exact, balance exact
+| Kernel | A/A sefer median % [CI] | A/A variant median % [CI] | A/B median % [CI] | per-process A/B min…max % | ratio t_B/t_A | A ticks/call | B−A ticks/call [CI] | Admitted | Verdict |
+|---|---|---|---|---|---:|---:|---|---|---|
+| churn16 | -1.01 [-1.25, -0.79] | -0.51 [-0.67, -0.36] | -13.04 [-15.00, -11.78] | -16.90…-0.23 | 0.8778 | 17.91 | -2.16 [-2.48, -2.03] | NO | not admitted |
+| churn64 | -1.00 [-1.12, -0.89] | -0.13 [-0.90, 0.00] | -28.08 [-28.72, -27.13] | -29.68…-16.55 | 0.7552 | 17.35 | -4.27 [-4.33, -4.17] | NO | not admitted |
+| pair16 | -0.37 [-0.45, -0.32] | 0.89 [0.79, 0.97] | 2.53 [2.36, 2.79] | 1.79…5.30 | 1.0257 | 9.68 | 0.24 [0.23, 0.27] | yes | BASE_FASTER |
+| bulk64 | 0.23 [0.16, 0.33] | 0.07 [-0.09, 0.17] | -55.74 [-56.07, -55.30] | -56.75…-39.39 | 0.5727 | 18.53 | -7.85 [-7.93, -7.76] | yes | VARIANT_FASTER |
+| bulk16k | 0.11 [0.07, 0.14] | -0.00 [-0.06, 0.04] | 2.96 [2.39, 4.73] | -0.70…10.61 | 1.0300 | 22.72 | 0.70 [0.56, 1.14] | yes | BASE_FASTER |
+# wrote <out-dir>/b4_ablate/summary_b1_depot8.csv
+# appended 5 rows to <summary>
