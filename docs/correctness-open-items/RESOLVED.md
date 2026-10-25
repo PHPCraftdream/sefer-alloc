@@ -15,6 +15,15 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 255 — CLOSED (2026-10-25)
+
+255. **[T] Flaky `thread_exit_releases_cached_pins_and_balances` (`tests/b4_r1_pin_cache.rs`): the refs baseline could include a preceding test's cached pin.** (Filed and closed 2026-10-25, PR #97 CI, check-matrix row `test-r8-fastbin-no-decommit`: `left: 4, right: 5`.)
+
+    > **Current state**
+    > - **Status:** CLOSED (2026-10-25, same commit as the fix).
+    > - **Mechanism:** the baseline `refs` was read right after taking the probes. An Entry with no foreign pins has `refs == 2` (owner registration + probe; cf. `tests/con01_exit_stranded_lock.rs:132`). The failing run read 3: a preceding test's thread still held a cached pin for a recycled segment — its TLS `Drop` runs after its `SerialGuard` is released — and released it before the worker's report (owner 1 + probe 1 + worker cache 1 + observation 1 = 4, against an expected 3 + 2).
+    > - **Fix:** the test waits (60 s bound, named panic) until each probe reads exactly `UNPINNED_REFS = 2` and uses that as the baseline. The exact oracles are unchanged; the forget-drop mutant still fails the post-join wait.
+
 ### 249 — CLOSED (2026-10-20)
 
 249. **[T] B4-MT heap-route-pin-cache (`src/registry/heap_core_xthread/heap_route_pin_cache.rs`) has NO loom model: the X-pin GO rests its model coverage on the TLS pin-cache path only.** (Filed 2026-10-20, B4-MT final phase, `docs/perf/B4_MT_PIN_NOTOWN.md` §5/§8.)

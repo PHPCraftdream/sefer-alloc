@@ -519,10 +519,23 @@ fn thread_exit_releases_cached_pins_and_balances() {
                 .unwrap()
         })
         .collect();
-    let base_refs: Vec<usize> = probes
-        .iter()
-        .map(RouteDirectory::dbg_route_pin_refs)
-        .collect();
+    // Baseline = the owner registration + this probe. A PRECEDING test's
+    // thread may still hold a cached pin for these bases: its TLS Drop runs
+    // after its SerialGuard is released (CI flake: refs 3 at baseline, 4 at
+    // the worker's report). Wait until that stale pin is gone.
+    const UNPINNED_REFS: usize = 2;
+    let deadline = Instant::now() + Duration::from_secs(60);
+    for probe in &probes {
+        while RouteDirectory::dbg_route_pin_refs(probe) != UNPINNED_REFS {
+            assert!(
+                Instant::now() < deadline,
+                "stale foreign pins did not drain: refs {} != {UNPINNED_REFS}",
+                RouteDirectory::dbg_route_pin_refs(probe)
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+    let base_refs: Vec<usize> = vec![UNPINNED_REFS; probes.len()];
     use std::sync::mpsc;
     let (tx, rx) = mpsc::channel::<Vec<(usize, usize)>>();
     let worker_addrs: Vec<usize> = groups.iter().flat_map(|(_, v)| v.clone()).collect();
