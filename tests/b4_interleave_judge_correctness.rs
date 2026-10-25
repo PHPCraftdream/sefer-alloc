@@ -46,7 +46,47 @@
 #![cfg(all(feature = "production", target_arch = "x86_64"))]
 
 #[global_allocator]
-static HARNESS: HarnessAlloc = HarnessAlloc;
+static HARNESS: ThreadCountingHarness = ThreadCountingHarness;
+
+std::thread_local! {
+    /// This thread's harness `alloc`/`realloc` calls. The window oracle is
+    /// "THIS thread's harness did not allocate": libtest's own threads share
+    /// the process-global `HARNESS_ALLOCS` and may allocate concurrently
+    /// (CI: +4 in the pair16 window, not reproducible locally).
+    static THIS_THREAD_ALLOCS: core::cell::Cell<u64> = const { core::cell::Cell::new(0) };
+}
+
+/// `HarnessAlloc` plus the per-thread counter above.
+struct ThreadCountingHarness;
+
+fn bump_this_thread() {
+    // `try_with`: allocations during this thread's TLS teardown are not counted.
+    let _ = THIS_THREAD_ALLOCS.try_with(|c| c.set(c.get() + 1));
+}
+
+/// This thread's harness allocation count.
+fn this_thread_harness_allocs() -> u64 {
+    THIS_THREAD_ALLOCS.with(core::cell::Cell::get)
+}
+
+unsafe impl GlobalAlloc for ThreadCountingHarness {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        bump_this_thread();
+        // SAFETY: forwards the caller's contract unchanged.
+        unsafe { HarnessAlloc.alloc(layout) }
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: forwards the caller's contract unchanged.
+        unsafe { HarnessAlloc.dealloc(ptr, layout) }
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        bump_this_thread();
+        // SAFETY: forwards the caller's contract unchanged.
+        unsafe { HarnessAlloc.realloc(ptr, layout, new_size) }
+    }
+}
 
 include!("../examples/_shared/b4_interleave_core.rs");
 
@@ -441,7 +481,7 @@ fn judge_core_correctness_and_oracles() {
     //    live-block counts match the expectation, layout contract holds for
     //    every free/realloc, harness counter unmoved, SHIM_CALLS unmoved
     //    (the tracking shims bypass the judge counters).
-    let mut harness_mark = HARNESS_ALLOCS.load(Ordering::Relaxed);
+    let mut harness_mark = this_thread_harness_allocs();
     for t in &TEST_TABLES {
         for k in ALL_KERNELS {
             let (deltas, _) = portion_body(t, k, 0xDEAD_BEEF);
@@ -483,7 +523,7 @@ fn judge_core_correctness_and_oracles() {
                 _ => track_assert_empty(k.name()),
             }
             assert_eq!(
-                HARNESS_ALLOCS.load(Ordering::Relaxed),
+                this_thread_harness_allocs(),
                 harness_mark,
                 "{} / {}: harness allocated during the kernel body",
                 t.name,
@@ -493,7 +533,7 @@ fn judge_core_correctness_and_oracles() {
             // live block freed with its recorded layout.
             teardown_arms(track_teardown);
             track_assert_empty(k.name());
-            harness_mark = HARNESS_ALLOCS.load(Ordering::Relaxed);
+            harness_mark = this_thread_harness_allocs();
         }
     }
 
@@ -518,20 +558,20 @@ fn judge_core_correctness_and_oracles() {
             // Window oracle per portion_body call (the seeds Vec itself is a
             // harness allocation and lives OUTSIDE the checked windows).
             for &s in &seeds {
-                let h = HARNESS_ALLOCS.load(Ordering::Relaxed);
+                let h = this_thread_harness_allocs();
                 portion_body(t, k, s);
                 assert_eq!(
-                    HARNESS_ALLOCS.load(Ordering::Relaxed),
+                    this_thread_harness_allocs(),
                     h,
                     "{}: harness allocated during a warmup portion",
                     k.name()
                 );
             }
-            let h = HARNESS_ALLOCS.load(Ordering::Relaxed);
+            let h = this_thread_harness_allocs();
             let before = TRACK_CALLS.load(Ordering::Relaxed);
             portion_body(t, k, 0xAAAA);
             assert_eq!(
-                HARNESS_ALLOCS.load(Ordering::Relaxed),
+                this_thread_harness_allocs(),
                 h,
                 "{}: harness allocated during the steady-state portion",
                 k.name()
@@ -590,10 +630,10 @@ fn judge_core_correctness_and_oracles() {
         for t in [&TEST_TABLES[0], &TEST_TABLES[1]] {
             let mut before = TRACK_CALLS.load(Ordering::Relaxed);
             let mut check_portion = |t: &'static ShimTable, k: Kernel, seed: u64| {
-                let h = HARNESS_ALLOCS.load(Ordering::Relaxed);
+                let h = this_thread_harness_allocs();
                 portion_body(t, k, seed);
                 assert_eq!(
-                    HARNESS_ALLOCS.load(Ordering::Relaxed),
+                    this_thread_harness_allocs(),
                     h,
                     "{} / {}: harness allocated during a transition portion",
                     k.name(),
