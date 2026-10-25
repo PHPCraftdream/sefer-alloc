@@ -78,3 +78,17 @@ churn64 −1.00 %); второй прогон выполнен с `--no-null-gat
   b1_depot4,b1_depot8 --no-null-gate`, затем `node
   scripts/b4_ablate_vs_null.mjs --dir <dir> --variant <v> --reps 20
   --kernels churn16,churn64,pair16,bulk64,bulk16k`.
+
+## sefer против mimalloc в том же бинаре (ОЦЕНКА для депо)
+
+Режим `ab` судьи (A = sefer без патча, B = mimalloc), 20 процессов ×
+2000 блоков, сводка `scripts/b4_rep_stats_quick.mjs` (медиана по процессам,
+bootstrap по процессам; ad-hoc, не гейт), вывод —
+`docs/perf/b1_depot/sefer_vs_mi_stdout.txt`. t_mimalloc/t_sefer: pair16
+0.790, churn16 0.566, churn64 0.560, bulk64 0.473, bulk16k 0.404.
+
+Если умножить время sefer на эффект depot8 (таблица выше), получается
+ОЦЕНКА t_mimalloc/t_depot8: bulk64 0.473/0.564 = 0.84, churn64
+0.560/0.751 = 0.75, churn16 0.566/0.881 = 0.64, pair16 0.790/1.024 = 0.77,
+bulk16k 0.404/1.022 = 0.40. Депо сокращает разрыв, но не закрывает его ни
+на одном ядре; bulk16k (16384 блоков, глубже любого склада) не меняется.
