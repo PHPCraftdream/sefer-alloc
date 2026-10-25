@@ -2653,3 +2653,9 @@ name = "r6_t40_sidecar_system_alloc"
 path = "tests/r6_t40_sidecar_system_alloc.rs"
 required-features = ["production", "internals", "bench-internals"]
 
+
+# B4 A3 PMU probe (measurement only): one allocator static, churn kernel
+# with a configurable live set, run under perf stat / perf record.
+[[example]]
+name = "b4_pmu_probe"
+required-features = ["production"]
