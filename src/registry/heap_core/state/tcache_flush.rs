@@ -49,6 +49,14 @@ impl HeapCore {
         self.tcache_hits = Some(counter);
     }
 
+    /// B4 depot (DP-3): bind this heap to its owning slot's depot storage.
+    /// Called once per materialised slot by `bind_slot_counters`; the binding
+    /// survives recycle (the `HeapCore` stays in the slot).
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub(crate) fn bind_depot(&mut self, depot: &'static mut super::depot::Depot) {
+        self.depot = Some(depot);
+    }
+
     /// W3: plant the stable handle to THIS heap's slot-resident large-segment
     /// cache hit counter (forwarded into the inner `AllocCore`). Same contract
     /// as [`bind_tcache_hits`](Self::bind_tcache_hits). Gated on
@@ -65,8 +73,9 @@ impl HeapCore {
     /// Flush every tcache class's magazine back to the substrate via
     /// `flush_class` → `dealloc_small` → `dec_live` → `maybe_decommit`.
     ///
-    /// After this call, every magazine slot is empty (`count[c] == 0` for
-    /// all classes) and the blocks have been returned to their owning
+    /// After this call, every magazine slot and every parked depot magazine
+    /// is empty (`count[c] == 0` for all classes) and the blocks have been
+    /// returned to their owning
     /// segments. If any segment reaches `live_count == 0` during the flush,
     /// decommit/release fires (or the segment is pooled, subject to the
     /// pool's cap).
@@ -79,27 +88,33 @@ impl HeapCore {
     pub(crate) fn flush_all_tcache(&mut self) {
         use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
         for c in 0..SMALL_CLASS_COUNT {
-            let n = self.tcache.classes[c].count as usize;
-            if n == 0 {
-                continue;
-            }
-            // B4 (в): the former magazine-bitmap clear pre-pass is gone —
-            // `flush_class` itself commits LIVE/MAG → FREE via the state byte.
-            // SAFETY (R6-MS-3): every slot in `slots[0..n]` is a valid live
-            // small-class-`c` allocation owned by this core's magazine; the
-            // teardown trim returns each to the substrate exactly once.
-            #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
-            unsafe {
-                self.core
-                    .flush_class_internal(c, &self.tcache.classes[c].slots[0..n])
-            };
-            self.tcache.classes[c].count = 0;
-            // R13-3 (task #273): every slot in this class's magazine was just
-            // returned to the substrate — reset the virgin mask to empty,
-            // maintaining "bits >= count are 0" for `count == 0`.
-            #[cfg(feature = "virgin-zero-skip")]
-            {
-                self.tcache.classes[c].virgin_mask = 0;
+            // B4 depot (DP-3): parked magazines are reloaded one by one into the
+            // emptied magazine and flushed the same way.
+            loop {
+                let n = self.tcache.classes[c].count as usize;
+                if n != 0 {
+                    // B4 (в): the former magazine-bitmap clear pre-pass is gone —
+                    // `flush_class` itself commits LIVE/MAG → FREE via the state byte.
+                    // SAFETY (R6-MS-3): every slot in `slots[0..n]` is a valid live
+                    // small-class-`c` allocation owned by this core's magazine; the
+                    // teardown trim returns each to the substrate exactly once.
+                    #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+                    unsafe {
+                        self.core
+                            .flush_class_internal(c, &self.tcache.classes[c].slots[0..n])
+                    };
+                    self.tcache.classes[c].count = 0;
+                    // R13-3 (task #273): every slot in this class's magazine was just
+                    // returned to the substrate — reset the virgin mask to empty,
+                    // maintaining "bits >= count are 0" for `count == 0`.
+                    #[cfg(feature = "virgin-zero-skip")]
+                    {
+                        self.tcache.classes[c].virgin_mask = 0;
+                    }
+                }
+                if !self.depot_reload(c) {
+                    break;
+                }
             }
         }
     }

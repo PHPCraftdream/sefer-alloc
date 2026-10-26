@@ -525,6 +525,24 @@ impl HeapCore {
                         }
                         return;
                     }
+                    // B4 depot (DP-3): park the full magazine whole (cold),
+                    // then `block` starts the next one. `block` itself is not
+                    // parked into a body-write path: only `slots` pointers move.
+                    if cnt == TCACHE_CAP
+                        && self.tcache.classes[c].parked
+                            < crate::registry::heap_core::state::depot::DEPOT_CAP[c]
+                        && self.depot_park(c)
+                    {
+                        meta.state_byte().write(
+                            off,
+                            c,
+                            crate::alloc_core::state_byte::StateByte::MAG,
+                        );
+                        self.tcache.classes[c].slots[0] = block;
+                        self.tcache.classes[c].count = 1;
+                        // `depot_park` cleared the mask; `block` is not virgin.
+                        return;
+                    }
                     // ── R1-01: free-side byte-budget cap reached ───────
                     // `cnt == cap < TCACHE_CAP`: this class's per-refill byte
                     // budget (`FREE_PARK_CAP`) is exhausted, but the physical

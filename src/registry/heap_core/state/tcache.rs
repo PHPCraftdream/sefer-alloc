@@ -242,6 +242,11 @@ pub(crate) struct PerClass {
     /// FIRST in declaration order under `#[repr(C)]` so it lands at struct
     /// offset 0, preceding the pointer array at offset 8.
     pub(crate) count: u8,
+    /// B4 depot (DP-5 iteration 2): full magazines of this class parked in
+    /// the slot's depot (`0..=DEPOT_CAP[c]`). Sits in the padding byte after
+    /// `count` (no size change), so the overflow / miss branches gate the
+    /// cold depot calls without leaving this line.
+    pub(crate) parked: u8,
     /// R13-3 (task #273): magazine-resident virginity bitmask, ONE bit per
     /// `slots` index (bit `i` set ⟺ `slots[i]` is a genuinely virgin —
     /// never-before-served, `Node::zero`-skippable — block, per the
@@ -314,6 +319,10 @@ const _: () = assert!(
     ::core::mem::offset_of!(PerClass, count) == 0,
     "PerClass::count must sit at offset 0 (repr(C), declared first) for the documented magazine cache-line locality"
 );
+const _: () = assert!(
+    ::core::mem::offset_of!(PerClass, parked) == 1,
+    "PerClass::parked must use the pad byte after count (offset 1)"
+);
 #[cfg(feature = "virgin-zero-skip")]
 const _: () = assert!(
     ::core::mem::offset_of!(PerClass, virgin_mask) == 2,
@@ -334,6 +343,7 @@ impl PerClass {
     const fn new() -> Self {
         Self {
             count: 0,
+            parked: 0,
             slots: [::core::ptr::null_mut(); TCACHE_CAP],
             #[cfg(feature = "virgin-zero-skip")]
             virgin_mask: 0,

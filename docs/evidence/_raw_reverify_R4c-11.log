@@ -1,13 +1,13 @@
-E0_METADATA {"id":"R4c-11","head":"b0923a3cfc41c92f575a94a6184679ae367c86cd","tree":"62fe326c5cfd8ea42a009331ade6d40f98558c27","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4c-11","head":"b0923a3cfc41c92f575a94a6184679ae367c86cd","tree":"62fe326c5cfd8ea42a009331ade6d40f98558c27","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4c-11.json","recipe_sha256":"eda6e031292dd9b17e36771e06a00216c10b8998f97f4d44d0ea9de5aaf7a7b6","registry_activation_hash":"4eb7eb006207aaf2752a2fd1ea3e02800049170f87c17f044bde75d9a734eb2a"}
+E0_METADATA {"id":"R4c-11","head":"54cc330aa2aa53dba040620d7ac4a3ed0e531eb1","tree":"42c4b84a1d4006939c15bdda4c3d5e195ccc1115","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (76456a688 2026-10-25)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-26 for version 1.101.0-nightly (76456a688 2026-10-25)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4c-11","head":"54cc330aa2aa53dba040620d7ac4a3ed0e531eb1","tree":"42c4b84a1d4006939c15bdda4c3d5e195ccc1115","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4c-11.json","recipe_sha256":"eda6e031292dd9b17e36771e06a00216c10b8998f97f4d44d0ea9de5aaf7a7b6","registry_activation_hash":"4eb7eb006207aaf2752a2fd1ea3e02800049170f87c17f044bde75d9a734eb2a"}
 
 E0_STEP {"id":"R4c-11","kind":"baseline","name":"generation bump test baseline","argv":["cargo","test","--locked","--features","alloc-global internals","--test","registry_basic","recycle_then_claim_reuses_slot_and_bumps_generation","--","--exact","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test recycle_then_claim_reuses_slot_and_bumps_generation .* ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.04s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-065cb8d46fff9c1d)
+[1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-684afeaa3149324d)
 
 running 1 test
 test recycle_then_claim_reuses_slot_and_bumps_generation ... ok
@@ -16,19 +16,20 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; fini
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAwLjA0cwobWzFtG1szM213YXJuaW5nG1swbTogdGhlIGZvbGxvd2luZyBwYWNrYWdlcyBjb250YWluIGNvZGUgdGhhdCB3aWxsIGJlIHJlamVjdGVkIGJ5IGEgZnV0dXJlIHZlcnNpb24gb2YgUnVzdDogcHJvYy1tYWNyby1lcnJvcjIgdjIuMC4xChtbMW0bWzkybW5vdGUbWzBtOiB0byBzZWUgd2hhdCB0aGUgcHJvYmxlbXMgd2VyZSwgdXNlIHRoZSBvcHRpb24gYC0tZnV0dXJlLWluY29tcGF0LXJlcG9ydGAsIG9yIHJ1biBgY2FyZ28gcmVwb3J0IGZ1dHVyZS1pbmNvbXBhdGliaWxpdGllcyAtLWlkIDFgChtbMW0bWzkybSAgICAgUnVubmluZxtbMG0gdGVzdHMvcmVnaXN0cnlfYmFzaWMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL3JlZ2lzdHJ5X2Jhc2ljLTY4NGFmZWFhMzE0OTMyNGQpCgpydW5uaW5nIDEgdGVzdAp0ZXN0IHJlY3ljbGVfdGhlbl9jbGFpbV9yZXVzZXNfc2xvdF9hbmRfYnVtcHNfZ2VuZXJhdGlvbiAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gMSBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDQgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjAwcwoK
 
 E0_STEP {"id":"R4c-11","kind":"mutant","name":"generation fixed at zero mutant","argv":["cargo","test","--locked","--features","alloc-global internals","--test","registry_basic","recycle_then_claim_reuses_slot_and_bumps_generation","--","--exact","--nocapture"],"env":{},"expect":{"exit":101,"stdoutRegex":["thread 'recycle_then_claim_reuses_slot_and_bumps_generation' .*panicked at tests/registry_basic.rs"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.98s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.76s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-065cb8d46fff9c1d)
+[1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-684afeaa3149324d)
 
 running 1 test
 
-thread 'recycle_then_claim_reuses_slot_and_bumps_generation' (10456) panicked at tests/registry_basic.rs:180:5:
+thread 'recycle_then_claim_reuses_slot_and_bumps_generation' (10755) panicked at tests/registry_basic.rs:180:5:
 assertion `left == right` failed: first claim of a fresh slot must produce generation 1 (started at 0, bumped once)
   left: 0
  right: 1
@@ -37,19 +38,20 @@ claim: heap lease dropped while panicking
 [1m[91merror[0m: test failed, to rerun pass `--test registry_basic`
 
 Caused by:
-  process didn't exit successfully: `/home/runner/work/sefer-alloc/sefer-alloc/target/debug/deps/registry_basic-065cb8d46fff9c1d recycle_then_claim_reuses_slot_and_bumps_generation --exact --nocapture` (signal: 6, SIGABRT: process abort signal)
+  process didn't exit successfully: `/home/runner/work/sefer-alloc/sefer-alloc/target/debug/deps/registry_basic-684afeaa3149324d recycle_then_claim_reuses_slot_and_bumps_generation --exact --nocapture` (signal: 6, SIGABRT: process abort signal)
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R4c-11","kind":"restored","sha256":"d6919ff926aa1a6711dc8ab85c5bb787fae7df37c1b73529d444900343221fff"}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuNzZzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yZWdpc3RyeV9iYXNpYy5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcmVnaXN0cnlfYmFzaWMtNjg0YWZlYWEzMTQ5MzI0ZCkKCnJ1bm5pbmcgMSB0ZXN0Cgp0aHJlYWQgJ3JlY3ljbGVfdGhlbl9jbGFpbV9yZXVzZXNfc2xvdF9hbmRfYnVtcHNfZ2VuZXJhdGlvbicgKDEwNzU1KSBwYW5pY2tlZCBhdCB0ZXN0cy9yZWdpc3RyeV9iYXNpYy5yczoxODA6NToKYXNzZXJ0aW9uIGBsZWZ0ID09IHJpZ2h0YCBmYWlsZWQ6IGZpcnN0IGNsYWltIG9mIGEgZnJlc2ggc2xvdCBtdXN0IHByb2R1Y2UgZ2VuZXJhdGlvbiAxIChzdGFydGVkIGF0IDAsIGJ1bXBlZCBvbmNlKQogIGxlZnQ6IDAKIHJpZ2h0OiAxCm5vdGU6IHJ1biB3aXRoIGBSVVNUX0JBQ0tUUkFDRT0xYCBlbnZpcm9ubWVudCB2YXJpYWJsZSB0byBkaXNwbGF5IGEgYmFja3RyYWNlCmNsYWltOiBoZWFwIGxlYXNlIGRyb3BwZWQgd2hpbGUgcGFuaWNraW5nChtbMW0bWzkxbWVycm9yG1swbTogdGVzdCBmYWlsZWQsIHRvIHJlcnVuIHBhc3MgYC0tdGVzdCByZWdpc3RyeV9iYXNpY2AKCkNhdXNlZCBieToKICBwcm9jZXNzIGRpZG4ndCBleGl0IHN1Y2Nlc3NmdWxseTogYC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jL3RhcmdldC9kZWJ1Zy9kZXBzL3JlZ2lzdHJ5X2Jhc2ljLTY4NGFmZWFhMzE0OTMyNGQgcmVjeWNsZV90aGVuX2NsYWltX3JldXNlc19zbG90X2FuZF9idW1wc19nZW5lcmF0aW9uIC0tZXhhY3QgLS1ub2NhcHR1cmVgIChzaWduYWw6IDYsIFNJR0FCUlQ6IHByb2Nlc3MgYWJvcnQgc2lnbmFsKQo=
+E0_METADATA {"id":"R4c-11","kind":"restored","sha256":"183c75ca6c70380810923821fb186afbf87cb2cbef8f5e29e8ad01190611dc86"}
 
 E0_STEP {"id":"R4c-11","kind":"restored-baseline","name":"generation bump test baseline","argv":["cargo","test","--locked","--features","alloc-global internals","--test","registry_basic","recycle_then_claim_reuses_slot_and_bumps_generation","--","--exact","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test recycle_then_claim_reuses_slot_and_bumps_generation .* ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.02s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.76s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-065cb8d46fff9c1d)
+[1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-684afeaa3149324d)
 
 running 1 test
 test recycle_then_claim_reuses_slot_and_bumps_generation ... ok
@@ -58,3 +60,4 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; fini
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuNzZzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yZWdpc3RyeV9iYXNpYy5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcmVnaXN0cnlfYmFzaWMtNjg0YWZlYWEzMTQ5MzI0ZCkKCnJ1bm5pbmcgMSB0ZXN0CnRlc3QgcmVjeWNsZV90aGVuX2NsYWltX3JldXNlc19zbG90X2FuZF9idW1wc19nZW5lcmF0aW9uIC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgNCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDBzCgo=

@@ -3215,10 +3215,10 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 117. **B1-D depot prototype (K full magazines per class) — measured, production pending owner budget decision.** (Filed 2026-10-25, branch `b4-ablate`@734dd363, report copied to main.)
    > **Current state**
-   > - **Status:** measurement done (prototype patch, single-thread judge only, not production-safe); production decision open.
-   > - **Current verdict:** K=8 net of null (20 processes × 2000 blocks, bootstrap over processes, ИЗМЕРЕНО): bulk64 −57.2 %, churn64 −28.6 %, churn16 −12.7 %, pair16 +2.3 %, bulk16k +2.2 %. Estimated t_mimalloc/t_depot8: bulk64 0.84, churn64 0.75, churn16 0.64, pair16 0.77, bulk16k 0.40 — depot narrows but does not close the gap on any kernel (ОЦЕНКА).
-   > - **Next trigger:** owner decision on the memory budget of the K=8 depots and the acceptance threshold; then a production-safe implementation judged by the v2 protocol.
-   > - **Evidence:** docs/perf/B1_DEPOT_PROTOTYPE.md, docs/perf/b1_depot/ (raw, CSV, stdout), docs/perf/b4_ablate/patches/b1_depot{4,8}.patch (branch `b4-ablate`@734dd363).
+   > - **Status:** GO at the DP-5 gate (2026-10-26, attempt 2; attempt 1 NO-GO on bulk16k, fixed by gating the cold depot calls); DP-6 (PR, CI, merge) pending. Production code: branch `b4-depot`.
+   > - **Current verdict:** production depot net of null (20 processes × 2000 blocks): bulk64 faster 1.778×, churn64 1.481×, churn16 1.278×, larson 1.099×, pair16/pair64 1.004×/1.003× faster, bulk16k 1.008× faster, no kernel slower; vs mimalloc bulk64 0.445 → 0.778, churn64 0.555 → 0.748 (t_mi/t_sefer; mimalloc still faster on 9/11).
+   > - **Next trigger:** DP-6 — PR from `b4-depot`, CI green on the landing SHA (incl. Miri/Kani/Loom depot rows and the EV-1 reverify of R-Ph3a-native), then close this card.
+   > - **Evidence:** `docs/perf/B1_DEPOT_PRODUCTION_GATE.md` (+ `_summary.csv`, `b1_depot_gate/`), `docs/design/2026-10-26-depot-design.md`, `docs/perf/B1_DEPOT_PROTOTYPE.md`.
 
 ## Recently resolved (closure trail — do not re-list as open)
 

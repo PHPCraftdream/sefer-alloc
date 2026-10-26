@@ -165,6 +165,7 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/queries.rs::dbg_live_count_for",
   "src/registry/heap_core/diag/queries.rs::dbg_tcache_virgin_mask",
   "src/registry/heap_core/diag/queries.rs::dbg_tcache_count",
+  "src/registry/heap_core/diag/queries.rs::dbg_depot_len",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",

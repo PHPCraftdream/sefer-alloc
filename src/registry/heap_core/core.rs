@@ -90,7 +90,7 @@ pub(crate) type TcacheHitCounter = ::core::sync::atomic::AtomicU64;
 /// 2. a raw-pointer / `!Send`-typed field: bind it to `_` in the pattern
 ///    and add it to the audit's exclusion list with the reason it carries
 ///    no thread-affine resource (today: `core: AllocCore`,
-///    `tcache: Tcache`);
+///    `tcache: Tcache`, `depot: Option<&'static mut Depot>`);
 /// 3. re-check the stack-pressure pin below.
 pub struct HeapCore {
     /// The owning slot's index in the registry. Used by `HeapLease`'s `Drop` implementation to release the
@@ -138,6 +138,9 @@ pub struct HeapCore {
     /// list (none handed out, none in magazine).
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub(crate) tcache: crate::registry::heap_core::state::tcache::Tcache,
+    /// Bound slot-lifetime cold depot; `None` for standalone heaps.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub(crate) depot: Option<&'static mut crate::registry::heap_core::state::depot::Depot>,
 
     /// TEST/DIAGNOSTIC-ONLY (task C1 → #133 → W3): stable handle to THIS
     /// heap's magazine HIT counter, which now lives in the owning slot's
@@ -276,6 +279,8 @@ impl HeapCore {
             large_hot_cursor: 0,
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
+            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            depot: None,
             // W3: the counter now lives in the owning HeapSlot; this handle
             // is planted by `HeapRegistry::claim_lease` (via `bind_tcache_hits`)
             // right after the slot binds. `None` until then (never observed on
@@ -311,6 +316,8 @@ impl HeapCore {
             large_hot_cursor: 0,
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
+            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            depot: None,
             // W3: the counter now lives in the owning HeapSlot; this handle
             // is planted by `HeapRegistry::claim_lease` (via `bind_tcache_hits`)
             // right after the slot binds. `None` until then (never observed on

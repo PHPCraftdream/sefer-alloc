@@ -1020,6 +1020,11 @@ name = "locality"
 harness = false
 
 [[test]]
+name = "heap_core_depot"
+path = "tests/heap_core_depot.rs"
+required-features = ["alloc-global", "fastbin", "internals", "bench-internals", "alloc-decommit"]
+
+[[test]]
 name = "con01_exit_detector_probe"
 harness = false
 required-features = ["alloc-global"]
@@ -1049,6 +1054,14 @@ required-features = ["alloc-global", "internals", "bench-internals"]
 # selection model as `miri_global_box_acceptance`.
 [[test]]
 name = "miri_r1_01_cap_frame"
+harness = false
+test = false
+required-features = ["alloc-global", "fastbin", "internals", "bench-internals"]
+
+# B4 depot (DP-4) Box/Drop Miri witness: park, reload, thread-exit drain,
+# recycled-slot binding reuse; same explicit selection model as above.
+[[test]]
+name = "miri_depot_cycle"
 harness = false
 test = false
 required-features = ["alloc-global", "fastbin", "internals", "bench-internals"]

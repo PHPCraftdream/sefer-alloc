@@ -139,9 +139,19 @@ fn pollute(buf: &mut [u64], seed: u64) -> u64 {
     acc
 }
 
+#[cfg(target_arch = "x86_64")]
 fn rdtsc() -> u64 {
     // SAFETY: RDTSC is unprivileged on x86_64.
     unsafe { core::arch::x86_64::_rdtsc() }
+}
+
+// The probe's numbers are x86_64 TSC ticks and are measured only there; other
+// targets (aarch64 CI, Apple silicon) get a monotonic-nanosecond stand-in so
+// `cargo test` can build every example.
+#[cfg(not(target_arch = "x86_64"))]
+fn rdtsc() -> u64 {
+    static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    T0.get_or_init(Instant::now).elapsed().as_nanos() as u64
 }
 
 fn inter(a: &[String]) {

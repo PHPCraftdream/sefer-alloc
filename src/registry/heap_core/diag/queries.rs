@@ -199,6 +199,17 @@ impl HeapCore {
         crate::alloc_core::AllocCore::dbg_large_sidecar_slot_inspections()
     }
 
+    /// TEST-ONLY (B4 DP-3): number of full magazines parked in the depot for
+    /// class `c`; 0 for an unbound heap or a class outside the depot.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
+    pub fn dbg_depot_len(&self, c: usize) -> usize {
+        if c >= crate::registry::heap_core::state::depot::DEPOT_CLASSES {
+            return 0;
+        }
+        self.tcache.classes[c].parked as usize
+    }
+
     /// TEST-ONLY (P7): read the magazine count for class `c`. Widened to
     /// `u16` at this test-only boundary (task #53 shrank the internal
     /// storage to `u8` — see `PerClass::count` — but keeps this accessor's
