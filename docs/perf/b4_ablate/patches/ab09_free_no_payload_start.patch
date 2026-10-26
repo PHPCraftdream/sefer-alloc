@@ -1,0 +1,37 @@
+# ab09_free_no_payload_start — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность может нарушаться (free в metadata-регион
+# сегмента принимается). Не для production.
+#
+# Что убирает: выбор payload_start (Primordial/Small meta end) и reject
+# `off < payload_start` в `small_free_guard`
+# (src/registry/heap_core/free/dealloc_own_base.rs:315-322). Константы
+# сворачиваются при компиляции, остаётся один compare.
+#
+# Гипотеза: остаточные guard-сравнения на входе free (payload_start) стоят
+# измеримых тактов на churn.
+#
+# Ожидаемое направление: время churn16/64 слегка ВНИЗ или ~0 (ветка почти
+# всегда предсказуема — проверяем, платим ли мы за compare вообще).
+diff --git a/src/registry/heap_core/free/dealloc_own_base.rs b/src/registry/heap_core/free/dealloc_own_base.rs
+index 79871880..61e2624b 100644
+--- a/src/registry/heap_core/free/dealloc_own_base.rs
++++ b/src/registry/heap_core/free/dealloc_own_base.rs
+@@ -312,14 +312,9 @@ pub(super) fn small_free_guard(
+     // flushed-bitmap).
+     let off = (ptr as usize - base as usize) as u32;
+     let meta = SegmentMeta::new(base);
+-    let payload_start = if matches!(&kind, BlockKind::Primordial) {
+-        SegmentLayout::primordial_meta_end()
+-    } else {
+-        SegmentLayout::small_meta_end()
+-    };
+-    if (off as usize) < payload_start {
+-        return SmallFreeGuard::RejectNoOp;
+-    }
++    // ABLATION ab09_free_no_payload_start: the payload_start selection +
++    // its reject comparison are REMOVED FOR MEASUREMENT ONLY — never for
++    // production.
+     // B4 variant (в): the M2 double-free oracles collapse into ONE check on
+     // the authoritative STATE BYTE. The alignment check above (H1, hardened)
+     // plus the byte's class field (encoded at every issue site) subsume the

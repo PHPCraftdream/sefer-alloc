@@ -563,8 +563,8 @@ pub mod judge {
             Mode::AaSefer => (0, 1),
             Mode::AaMi => (2, 3),
         };
-        let ca = SHIM_CALLS[sa].load(Ordering::Relaxed);
-        let cb = SHIM_CALLS[sb].load(Ordering::Relaxed);
+        let ca = shim_calls_total(sa);
+        let cb = shim_calls_total(sb);
         println!(
         "RESULT blocks={} orders_abba={} orders_baab={} harness_window_allocs=0 foreign_window_calls=0 oracle_mismatches=0 shim_calls_a={} shim_calls_b={}",
         total,

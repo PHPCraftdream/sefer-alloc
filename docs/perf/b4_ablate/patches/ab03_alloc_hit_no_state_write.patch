@@ -1,0 +1,35 @@
+# ab03_alloc_hit_no_state_write — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность может нарушаться (выданный блок остаётся MAG;
+# oracle-2 free перестаёт отличать magazine-резидентность). Не для production.
+#
+# Что убирает: store MAG→LIVE (set_state) в байт состояния на hit-плече
+# magazine alloc (src/registry/heap_core/alloc/hot.rs:45-47,
+# `clear_magazine_on_issue`).
+#
+# Гипотеза: alloc-стор churn-пары платит ту же store-цену, что и free; если
+# ab02 (free-стор) даёт выигрыш, а ab03 — нет (или наоборот), это локализует,
+# какой именно store дорог.
+#
+# Ожидаемое направление: время churn16/64 ВНИЗ при дорогом issue-store; иначе ~0.
+diff --git a/src/registry/heap_core/alloc/hot.rs b/src/registry/heap_core/alloc/hot.rs
+index 7c268935..0282d3b0 100644
+--- a/src/registry/heap_core/alloc/hot.rs
++++ b/src/registry/heap_core/alloc/hot.rs
+@@ -39,12 +39,10 @@ impl HeapCore {
+             Some(base),
+             "small magazine block must map to its segment base"
+         );
+-        let off = issued.addr() - base.addr();
+-        // B4 (в): flip the state byte MAG → LIVE at issue, preserving the
+-        // class field (written by the block's own MAG/FREE store).
+-        SegmentMeta::new(base)
+-            .state_byte()
+-            .set_state(off as u32, crate::alloc_core::state_byte::StateByte::LIVE);
++        let _off = issued.addr() - base.addr();
++        // ABLATION ab03_alloc_hit_no_state_write: the MAG -> LIVE state-byte
++        // store at issue (clear_magazine_on_issue) is REMOVED FOR MEASUREMENT
++        // ONLY — never for production.
+     }
+ 
+     /// Task #2002: the shared tail of [`refill_magazine_slow`](Self::refill_magazine_slow)

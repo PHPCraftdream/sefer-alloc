@@ -1,0 +1,28 @@
+# ab07_free_no_bump_check — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность может нарушаться (stale/uncarved free
+# принимается как валидный). Не для production.
+#
+# Что убирает: M2 oracle-1.5 — загрузку `bump_of()` и сравнение `off >= bump`
+# в хвосте `small_free_guard` (src/registry/heap_core/free/dealloc_own_base.rs:368-370).
+#
+# Гипотеза: вторая зависимая загрузка метаданных (bump) после байта состояния —
+# чистая latency-надбавка; сравнение покажет вклад этой ступени цепочки.
+#
+# Ожидаемое направление: время churn16/64 ВНИЗ при дорогом bump-чтении; иначе ~0.
+diff --git a/src/registry/heap_core/free/dealloc_own_base.rs b/src/registry/heap_core/free/dealloc_own_base.rs
+index 79871880..a322b68b 100644
+--- a/src/registry/heap_core/free/dealloc_own_base.rs
++++ b/src/registry/heap_core/free/dealloc_own_base.rs
+@@ -365,9 +365,8 @@ pub(super) fn small_free_guard(
+         }
+         return SmallFreeGuard::RejectNoOp;
+     }
+-    if (off as usize) >= meta.bump_of() {
+-        return SmallFreeGuard::RejectNoOp;
+-    }
++    // ABLATION ab07_free_no_bump_check: the free-side bump-range check is
++    // REMOVED FOR MEASUREMENT ONLY — never for production.
+ 
+     SmallFreeGuard::Accept { off }
+ }

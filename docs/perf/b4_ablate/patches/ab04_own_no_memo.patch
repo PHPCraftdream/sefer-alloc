@@ -1,0 +1,36 @@
+# ab04_own_no_memo — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность поиска владельца сохраняется (ответ даёт
+# own_cache/hash_find), убрана только single-entry memo-проверка N9. Скорость
+# деградирует намеренно — не для production.
+#
+# Что убирает: N9 single-entry last-segment memo (одно сравнение last_key) в
+# `canonical_base_of_mut` (src/alloc_core/segment/segment_table/segment_table_impl.rs:801-813).
+#
+# Гипотеза: memo-hit — самый быстрый путь поиска владельца; если удаление одного
+# сравнения ощутимо замедляет churn, цепочка owner-lookup (3 зависимые загрузки:
+# memo -> own_cache -> state) — узкое место own free.
+#
+# Ожидаемое направление: время churn16/64 ВВЕРХ (абляция добавляет работу);
+# величина роста оценивает вклад memo-сравнения и всей цепочки.
+diff --git a/src/alloc_core/segment/segment_table/segment_table_impl.rs b/src/alloc_core/segment/segment_table/segment_table_impl.rs
+index 4b8ac5ec..815afa21 100644
+--- a/src/alloc_core/segment/segment_table/segment_table_impl.rs
++++ b/src/alloc_core/segment/segment_table/segment_table_impl.rs
+@@ -804,13 +804,9 @@ impl SegmentTable {
+         // key. Eviction is co-located with `own_cache` in `own_cache_clear`.
+         // Single compare: `last_key == LAST_EMPTY_KEY` encodes EMPTY, which
+         // neither a real SEGMENT-aligned base nor a null key can match.
+-        if self.last_key == key.addr() {
+-            // The memo is part of Tier-1: count its hits with the own_cache hits.
+-            #[cfg(feature = "bench-internals")]
+-            crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
+-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+-            return Some(self.last_root);
+-        }
++        // ABLATION ab04_own_no_memo: the N9 single-entry memo hit arm is
++        // REMOVED FOR MEASUREMENT ONLY — every lookup falls through to the
++        // own_cache / hash_find. Never for production.
+         let index = Self::cache_index(key);
+         let (cached_key, cached_root) = self.own_cache[index];
+         if cached_key == key.addr() {

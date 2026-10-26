@@ -1,0 +1,10 @@
+# B4 ABLATE — process-replicated (J1′ v2): variant=null reps=20 blocks/process=2000 bootstrap=2000 (over processes) seed=24301
+# identity: head=412fe33e2ed6bd0c111ff77718cbf580217e944e sha(diff)=609dbfb075aa exe=1d4dc450b76f variant_sha=013c51eb1655 profile=release rustc="rustc 1.97.0 (2d8144b78 2026-07-07)" cpu="11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz"
+# statistic: per-process median of ln(t_B/t_A) (A = sefer base, B = variant), then median over 20 processes; admission |median| <= 0.01 and CI half <= 0.01 for aa_sefer AND aa_variant; oracle exact, balance exact
+
+| Kernel | A/A sefer median % [CI] | A/A variant median % [CI] | A/B median % [CI] | per-process A/B min…max % | ratio t_B/t_A | A ticks/call | B−A ticks/call [CI] | Admitted | Verdict |
+|---|---|---|---|---|---:|---:|---|---|---|
+| churn16 | -1.02 [-1.40, -0.88] | -0.25 [-0.37, 0.10] | -1.02 [-1.48, -0.69] | -5.04…1.97 | 0.9898 | 16.26 | -0.18 [-0.25, -0.11] | NO | not admitted |
+| churn64 | -0.78 [-1.01, -0.53] | -0.17 [-0.48, 0.20] | 0.06 [-0.32, 0.29] | -8.22…0.75 | 1.0006 | 18.11 | 0.01 [-0.06, 0.05] | yes | EQUAL_CI_HAS_0 |
+| pair16 | -0.50 [-0.73, -0.42] | -0.15 [-0.21, -0.00] | 0.06 [-0.03, 0.15] | -0.52…2.30 | 1.0006 | 10.16 | 0.01 [-0.00, 0.02] | yes | EQUAL_CI_HAS_0 |
+# wrote docs/perf/b4_ablate/v2/rerun_null/summary_null.csv

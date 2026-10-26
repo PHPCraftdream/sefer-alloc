@@ -2687,3 +2687,11 @@ required-features = ["production"]
 inherits = "release"
 lto = false
 codegen-units = 16
+
+# B4 A3 PMU probe (measurement only): one allocator static, churn kernel
+# with a configurable live set, run under perf stat / perf record.
+# See docs/perf/B4_A3_CROSS_CLASS.md and docs/perf/b4_pmu/; the probe's run
+# scripts live on the measurement branch b4-pmu.
+[[example]]
+name = "b4_pmu_probe"
+required-features = ["production"]

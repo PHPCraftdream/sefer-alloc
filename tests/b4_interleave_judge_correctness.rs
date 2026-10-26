@@ -886,3 +886,38 @@ fn judge_core_correctness_and_oracles() {
         }
     }
 }
+
+// ── 10. Oracle-counter sanity ───────────────────────────────────────────────
+/// The judge's shim-call counter (v2: thread-local `Cell<u64>`, plain
+/// increments, no lock) counts EXACTLY the shim invocations of THIS thread:
+/// N alloc+dealloc pairs through an arm's table must move that arm's slot by
+/// exactly `2·N` and every foreign slot by 0. The test runs on its own
+/// thread like the single-threaded judge, so the thread-local read is the
+/// same thread the shims ran on (`shim_calls_total` contract).
+#[test]
+fn judge_shim_call_counter_counts_calls() {
+    const N: u64 = 100;
+    for t in [&SEFER_A_TABLE, &SEFER_B_TABLE, &MI_A_TABLE, &MI_B_TABLE] {
+        let mut before_all = [0u64; 4];
+        for (i, b) in before_all.iter_mut().enumerate() {
+            *b = shim_calls_total(i);
+        }
+        for i in 0..N {
+            let sz = 64 + i as usize;
+            let p = unsafe { (t.alloc)(black_box(sz), PAIR_ALIGN) };
+            assert!(!p.is_null(), "{}: alloc failed", t.name);
+            unsafe { (t.dealloc)(p, sz, PAIR_ALIGN) };
+        }
+        let delta = shim_calls_total(t.call_slot) - before_all[t.call_slot];
+        assert_eq!(
+            delta,
+            2 * N,
+            "{}: counter moved by {delta}, expected exactly 2·N",
+            t.name
+        );
+        for &f in foreign_slots(t.call_slot).iter() {
+            let fd = shim_calls_total(f) - before_all[f];
+            assert_eq!(fd, 0, "{}: foreign slot {f} moved by {fd}", t.name);
+        }
+    }
+}

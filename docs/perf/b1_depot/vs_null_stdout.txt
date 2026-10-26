@@ -1,0 +1,24 @@
+# B4 ABLATE — variant net of null: variant=b1_depot4 reps=20 blocks/process=2000 bootstrap=2000
+# identity: head=d47924a2f6ec3b353ce6d0c3d82057e109f690a2 sha(diff)=e3b0c44298fc variant_sha=8c05dde564e6 exe=bbdd4b76e227 null_exe=94338761149a
+# effect = median_processes ln(t_variant/t_sefer) − median_processes ln(t_null/t_sefer); NET_FASTER iff CI upper < 0, NET_SLOWER iff CI lower > 0
+
+| Kernel | variant A/B % | null A/B % [CI] | effect % [CI] | ratio exp(effect) | precise | verdict |
+|---|---:|---|---|---:|---|---|
+| churn16 | -3.77 | -0.38 [-0.89, -0.12] | -3.39 [-5.01, -2.51] | 0.9667 | yes | NET_FASTER |
+| churn64 | -12.26 | 0.49 [0.12, 0.69] | -12.76 [-13.27, -11.86] | 0.8802 | yes | NET_FASTER |
+| pair16 | 2.29 | 0.21 [0.16, 0.30] | 2.08 [1.96, 2.30] | 1.0210 | yes | NET_SLOWER |
+| bulk64 | -55.81 | 1.46 [1.29, 1.71] | -57.28 [-57.71, -56.68] | 0.5640 | yes | NET_FASTER |
+| bulk16k | 3.53 | 0.76 [0.60, 0.99] | 2.77 [2.07, 4.92] | 1.0281 | yes | NET_SLOWER |
+
+# B4 ABLATE — variant net of null: variant=b1_depot8 reps=20 blocks/process=2000 bootstrap=2000
+# identity: head=d47924a2f6ec3b353ce6d0c3d82057e109f690a2 sha(diff)=e3b0c44298fc variant_sha=14d77fc031ac exe=42f095283010 null_exe=94338761149a
+# effect = median_processes ln(t_variant/t_sefer) − median_processes ln(t_null/t_sefer); NET_FASTER iff CI upper < 0, NET_SLOWER iff CI lower > 0
+
+| Kernel | variant A/B % | null A/B % [CI] | effect % [CI] | ratio exp(effect) | precise | verdict |
+|---|---:|---|---|---:|---|---|
+| churn16 | -13.04 | -0.38 [-0.89, -0.12] | -12.65 [-14.67, -11.24] | 0.8811 | yes | NET_FASTER |
+| churn64 | -28.08 | 0.49 [0.12, 0.69] | -28.57 [-29.28, -27.51] | 0.7515 | yes | NET_FASTER |
+| pair16 | 2.53 | 0.21 [0.16, 0.30] | 2.32 [2.12, 2.57] | 1.0235 | yes | NET_SLOWER |
+| bulk64 | -55.74 | 1.46 [1.29, 1.71] | -57.20 [-57.61, -56.70] | 0.5644 | yes | NET_FASTER |
+| bulk16k | 2.96 | 0.76 [0.60, 0.99] | 2.19 [1.55, 3.97] | 1.0222 | yes | NET_SLOWER |
+

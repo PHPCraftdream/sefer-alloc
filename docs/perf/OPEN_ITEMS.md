@@ -3177,11 +3177,47 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 112. **[A] J1′ — single-process interleaved native judge (sefer vs mimalloc): sefer is slower on every admitted kernel, worst on bulk/churn.** (Filed 2026-10-25, `docs/perf/B4_INTERLEAVE_JUDGE.md`. Number chosen ≥108 due to possible conflicts with parallel branches.)
    > **Current state**
-   > - **Status:** OPEN `[A]` — measurement infrastructure delivered and calibrated on the owner's Windows machine; no runtime change.
-   > - **Current verdict:** 20000 blocks per mode, ABBA/BAAB exact, activation oracle 0 mismatches. A/A passes (|median| ≤ 1 %, CI half-width ≤ 1 %) on 9 of 11 kernels, largest admitted half-width 0.00351. t_mimalloc / t_sefer: pair16 0.8930, pair64 0.9117, larson-mix 0.9110, churn1024 0.7917, churn256 0.6936, bulk64 0.5889, churn64 0.5455, churn16 0.5300, bulk16k 0.4276 — all `MIMALLOC_FASTER`. Not admitted: vec512 (point 1.8171), pair_rt (point 1.0866).
+   > - **Status:** OPEN `[A]` — v1 results delivered and calibrated (no runtime change); protocol superseded by v2 (process as the unit of replication), v2 phase-2 runs on this judge not yet executed. v1 numbers are compressed by the `lock inc` call counter and do NOT account for between-process spread.
+   > - **Current verdict (v1, superseded as headline):** 20000 blocks per mode, ABBA/BAAB exact, activation oracle 0 mismatches. A/A passes (|median| ≤ 1 %, CI half-width ≤ 1 %) on 9 of 11 kernels, largest admitted half-width 0.00351. t_mimalloc / t_sefer: pair16 0.8930, pair64 0.9117, larson-mix 0.9110, churn1024 0.7917, churn256 0.6936, bulk64 0.5889, churn64 0.5455, churn16 0.5300, bulk16k 0.4276 — all `MIMALLOC_FASTER`. Not admitted: vec512 (point 1.8171), pair_rt (point 1.0866).
+   > - **v2 protocol (ИЗМЕРЕНО on branch `b4-ablate`):** null copy-vs-itself on identical code gave +0.46 % and −1.83 % on churn16 with in-process CI half-width ≈ 0.1 %, while separate processes showed up to +17 % — between-process spread dominates. v2: 20 processes × 2000 blocks, distinct order seeds, median over blocks within a process, then median over processes, bootstrap 95 % over processes. Report: docs/perf/B4_INTERLEAVE_JUDGE.md § "v2" (результаты v2 пусты до прогона фазы 2).
    > - **Open sub-item (P2):** the correctness test's simulation section does not check `run_block`'s own four portions against the same execution (the judge's runtime oracle does, 0 mismatches) — see the report's "Known limitation".
-   > - **Next trigger:** task A1 — attribute the bulk/churn gap (instructions vs memory: Ir/op, D1/LL misses, refill/flush/carve/drain events per op) on the same kernels; any candidate from it is judged by this judge with its A/A pre-registration.
-   > - **Evidence:** docs/perf/B4_INTERLEAVE_JUDGE.md, docs/perf/B4_INTERLEAVE_JUDGE_summary.csv, docs/perf/b4_interleave_p2/ (MANIFEST.txt with raw sha256, excerpt_*.jsonl, generator_stdout.txt), examples/b4_interleave_judge/, examples/_shared/b4_interleave_core.rs, scripts/b4_interleave_{run,table}.mjs, tests/b4_interleave_judge_correctness.rs.
+   > - **Next trigger:** run judge phase 2 under the v2 protocol (R=20, blocks=2000, all 11 kernels, RUSTFLAGS `-C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5`, A/A admission gate ON); churn attribution — inter-class transfer (item 116).
+   > - **Evidence:** docs/perf/B4_INTERLEAVE_JUDGE.md, docs/perf/B4_INTERLEAVE_JUDGE_summary.csv, docs/perf/b4_interleave_p2/, docs/perf/B4_ABLATE_CHURN.md (v2-protocol report, copy of branch `b4-ablate`@734dd363), examples/b4_interleave_judge/, examples/_shared/b4_interleave_core.rs, scripts/b4_interleave_{run,table}.mjs, tests/b4_interleave_judge_correctness.rs.
+
+113. **D0 depot provenance — NO-GO by pre-registration (absorb gate missed).** (Filed 2026-10-25; archive on a local branch.)
+   > **Current state**
+   > - **Status:** NO-GO by the pre-registered absorb gate; archive lives on a local branch (report not in main). Owner question (K=4) open.
+   > - **Current verdict:** mstress T=1 K=2 absorb 49512/101872 = 48.6 % < 50 % pre-registered threshold — gate failed. K=4 absorb 73.5 % — open question to the owner whether the threshold should be revisited.
+   > - **Next trigger:** owner decision on the K=4 absorb question (73.5 %) and whether the 50 % gate is re-registered; otherwise D0 stays NO-GO.
+   > - **Evidence:** local archive branch (mstress T=1 K=2 absorb 49512/101872 = 48.6 %; K=4 absorb 73.5 %); related context in main: docs/perf/B1_DEPOT_PROTOTYPE.md.
+
+114. **A1 attribution — directional: bulk = drain+flush instructions; churn ≠ instructions.** (Filed 2026-10-25.)
+   > **Current state**
+   > - **Status:** OPEN `[A]` — attribution direction fixed by measurement, detailed account pending.
+   > - **Current verdict (directional):** on bulk the gap is instructions on the drain+flush path (Ir/op, callgrind); on churn sefer has FEWER instructions than mimalloc (84.65 vs 134.21 Ir/op, D1/LL misses ≈ 0) yet is slower in wall-clock — the churn gap is NOT instructions. Superseded in part by item 116: the judge's churn kernels share one slot ring, so their gap is inter-class transfer (drain + flush), the same mechanism as bulk.
+   > - **Next trigger:** process-replicated time measurement on churn (v2 protocol, item 112) plus targeted latency experiments (dependent-load chains, store-forwarding).
+   > - **Evidence:** docs/perf/B4_ABLATE_CHURN.md (intro + docs/perf/b4_ablate/asm_notes.md; copy of branch `b4-ablate`@734dd363).
+
+115. **A2 ablation campaign — done; methodological result: between-process spread, process as the unit of replication.** (Filed 2026-10-25, branch `b4-ablate`@734dd363, report copied to main.)
+   > **Current state**
+   > - **Status:** DONE (measurement); no runtime change. Headline result is the protocol, not a single ablation verdict.
+   > - **Current verdict:** no checked single own-free/alloc step explains the churn gap with mimalloc (largest admitted single step ab06 −2.28 % = 0.35 ticks of 15.70; sum of admitted churn64 savings 0.51 of 17.7 ticks — ИЗМЕРЕНО). Methodological result: between-process spread (null copy-vs-itself +0.46 %/−1.83 % at in-process CI ≈ 0.1 %; separate processes up to +17 %) forces process replication: 20 processes × 2000 blocks, median per process, bootstrap over processes. Ad-hoc sefer-vs-mimalloc in the same binary (20×2000): t_mimalloc/t_sefer churn16 0.532, churn64 0.481, pair16 0.809.
+   > - **Next trigger:** v2 phase-2 runs on the full kernel set (item 112); candidate fix for inter-class transfer (items 116/117).
+   > - **Evidence:** docs/perf/B4_ABLATE_CHURN.md, docs/perf/B4_ABLATE_CHURN_summary.csv, docs/perf/b4_ablate/ (patches, asm_notes.md, v2/), scripts/b4_ablate_*.mjs (branch `b4-ablate`@734dd363).
+
+116. **A3 cross-class transfer — churn in the judge is partly inter-class block migration.** (Filed 2026-10-25, branch `b4-pmu`@32eed166, probe + raw copied to main.)
+   > **Current state**
+   > - **Status:** DONE `[A]` (measurement); no runtime change.
+   > - **Current verdict:** single-class churn L=256: sefer 21–22 ticks/op, mimalloc 39–40 (sefer ≈ 1.9× faster, ИЗМЕРЕНО). Mixed 16/64 over ONE ring, portions of 128: sefer 33–38, mimalloc 18–20 — direction flips, because the churn16/churn64 kernels share the CHURN_SLOTS ring and every migrated block passes magazine → reset → refill → issue in sefer. perf: sefer IPC ≈ 4.7 single-class; ~1/3 of sefer time on the mixed run is `try_drain_freelist_batch` + `flush_class_internal` (perf annotate, ОЦЕНКА).
+   > - **Next trigger:** judge fix candidate — depot (item 117) or class-partitioned rings; re-measure churn under the v2 protocol.
+   > - **Evidence:** docs/perf/B4_A3_CROSS_CLASS.md, docs/perf/b4_pmu/_raw_*.txt, examples/b4_pmu_probe.rs, scripts/b4_pmu_summary.mjs (raw measured on branch `b4-pmu`@32eed166; run scripts live there).
+
+117. **B1-D depot prototype (K full magazines per class) — measured, production pending owner budget decision.** (Filed 2026-10-25, branch `b4-ablate`@734dd363, report copied to main.)
+   > **Current state**
+   > - **Status:** measurement done (prototype patch, single-thread judge only, not production-safe); production decision open.
+   > - **Current verdict:** K=8 net of null (20 processes × 2000 blocks, bootstrap over processes, ИЗМЕРЕНО): bulk64 −57.2 %, churn64 −28.6 %, churn16 −12.7 %, pair16 +2.3 %, bulk16k +2.2 %. Estimated t_mimalloc/t_depot8: bulk64 0.84, churn64 0.75, churn16 0.64, pair16 0.77, bulk16k 0.40 — depot narrows but does not close the gap on any kernel (ОЦЕНКА).
+   > - **Next trigger:** owner decision on the memory budget of the K=8 depots and the acceptance threshold; then a production-safe implementation judged by the v2 protocol.
+   > - **Evidence:** docs/perf/B1_DEPOT_PROTOTYPE.md, docs/perf/b1_depot/ (raw, CSV, stdout), docs/perf/b4_ablate/patches/b1_depot{4,8}.patch (branch `b4-ablate`@734dd363).
 
 ## Recently resolved (closure trail — do not re-list as open)
 

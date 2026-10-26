@@ -1,0 +1,33 @@
+# ab02_free_no_state_write — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность может нарушаться (блок остаётся LIVE в байте
+# состояния после push в magazine; oracle/reclaim расходятся). Не для production.
+#
+# Что убирает: store LIVE→MAG в байт состояния на горячем push-пути
+# (`cnt < cap`) own free (src/registry/heap_core/free/dealloc_own_base.rs:501-505).
+#
+# Гипотеза: store после зависимой цепочки загрузок вызывает store-forwarding
+# паузу/задержку retirement на own free; Ir это не видит.
+#
+# Ожидаемое направление: время churn16/64 ВНИЗ при дорогом store; иначе ~0.
+diff --git a/src/registry/heap_core/free/dealloc_own_base.rs b/src/registry/heap_core/free/dealloc_own_base.rs
+index 79871880..94b9b842 100644
+--- a/src/registry/heap_core/free/dealloc_own_base.rs
++++ b/src/registry/heap_core/free/dealloc_own_base.rs
+@@ -496,13 +496,9 @@ impl HeapCore {
+                     if cnt < cap {
+                         // Legit free → push. NO key stamp, NO block-body write.
+                         //
+-                        // B4 variant (в): mark this block MAG in the state
+-                        // byte (was RAD-5's magazine-bitmap set).
+-                        meta.state_byte().write(
+-                            off,
+-                            c,
+-                            crate::alloc_core::state_byte::StateByte::MAG,
+-                        );
++                        // ABLATION ab02_free_no_state_write: the LIVE -> MAG
++                        // state-byte store on the hot push is REMOVED FOR
++                        // MEASUREMENT ONLY — never for production.
+                         // R6-T13: identity mask (`cnt < cap <= TCACHE_CAP`); skips bounds check.
+                         self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block;
+                         self.tcache.classes[c].count = (cnt + 1) as u8;

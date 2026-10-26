@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 // B4 J1′ interleave judge — ONE-SHOT phase-2 runner (used by the orchestrator).
 //
+// REQUIRED ENVIRONMENT: RUSTFLAGS must contain BOTH
+//   -C llvm-args=-align-all-functions=6
+//   -C llvm-args=-align-all-nofallthru-blocks=5
+// (function alignment is part of the measured configuration identity; a
+// build without these flags is NOT comparable, so the runner refuses to
+// start: exit != 0 with a clear message).
+//
 // EVERY child command runs with a hard timeout and a checked exit code
 // (non-zero or timeout → throw with the captured output). CARGO_TARGET_DIR
 // must be set in the environment or the runner aborts before doing anything.
@@ -22,6 +29,14 @@
 //        [--features production] [--seed 0xb4110001] [--order-seed 0x0b4d5eed]
 //        [--out-prefix docs/perf/_raw_b4_interleave] [--cargo cargo]
 //        [--skip-build] [--build-timeout 900] [--run-timeout 900]
+//        [--reps <R>]
+//
+// --reps <R> (PROCESS-REPLICATED mode): each mode (aa_sefer, aa_mi, ab) is
+// run R times as R INDEPENDENT judge processes with order seed = base + i
+// (i = 0..R-1), raw files <dir>/<mode>_r<i>.jsonl (dir = dirname of the
+// out-prefix), then the process-replicated generator
+// scripts/b4_interleave_rep_table.mjs is invoked (--dir <dir> --reps R).
+// WITHOUT --reps the legacy single-process path is preserved exactly.
 //
 // CLI: --skip-build is a FLAG (no value); the other options take exactly one
 // value; ANY unknown argument (or a flag-like value) is an error. Timeouts
@@ -29,13 +44,15 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 
 // Strict parser: explicit list of flags vs options-with-a-value.
 const FLAGS = new Set(["--skip-build"]);
 const OPTS = new Set([
   "--blocks", "--profile", "--features", "--seed", "--order-seed",
-  "--out-prefix", "--cargo", "--build-timeout", "--run-timeout",
+  "--out-prefix", "--cargo", "--build-timeout", "--run-timeout", "--reps",
 ]);
 const argv = process.argv.slice(2);
 const opt = {};
@@ -77,8 +94,24 @@ const buildTimeout = secondsOpt("--build-timeout", 900);
 const runTimeout = secondsOpt("--run-timeout", 900);
 const skipBuild = opt["--skip-build"] === true;
 
+const repsOpt = opt["--reps"];
+let reps = null; // null = legacy single-process path
+if (repsOpt !== undefined) {
+  reps = Number(repsOpt);
+  if (!Number.isInteger(reps) || reps < 3)
+    throw new Error(`--reps must be an integer >= 3 (process replication), got ${repsOpt}`);
+}
 const targetDir = process.env.CARGO_TARGET_DIR;
 if (!targetDir) throw new Error("CARGO_TARGET_DIR must be set (shared target dir, NOT in the repo)");
+
+// RUSTFLAGS gate: both alignment flags are part of the measured identity.
+const rf = process.env.RUSTFLAGS ?? "";
+const RF1 = "-C llvm-args=-align-all-functions=6";
+const RF2 = "-C llvm-args=-align-all-nofallthru-blocks=5";
+if (!rf.includes(RF1) || !rf.includes(RF2))
+  throw new Error(
+    `RUSTFLAGS must contain BOTH "${RF1}" AND "${RF2}" (found: ${JSON.stringify(rf)}); ` +
+    `set e.g. RUSTFLAGS=${JSON.stringify(RF1 + " " + RF2)} and rebuild`);
 
 // run(cmd, args, {timeout, label}): spawnSync with a hard timeout; throws
 // with stdout+stderr on a non-zero exit, a signal or a timeout.
@@ -134,22 +167,53 @@ console.log(`[run] source_diff_sha256=${diffSha}`);
 console.log(`[run] ${rustc}`);
 console.log(`[run] os_version=${osVersionStr}`);
 
-// 3. Three judge runs, sequentially.
-for (const mode of ["aa_sefer", "aa_mi", "ab"]) {
-  const out = `${outPrefix}_${mode}.jsonl`;
-  console.log(`[run] judge --mode ${mode} --blocks ${blocks} -> ${out}`);
-  runAndEcho(exe,
-    ["--mode", mode, "--blocks", blocks, "--seed", seed, "--order-seed", orderSeed,
-     "--out", out, "--head-sha", headSha,
-     "--source-diff-sha", diffSha, "--features", features, "--profile", profile, "--rustc", rustc,
-     "--os-version", osVersionStr],
-    { timeout: runTimeout, label: `judge-${mode}` });
+// 3+4. Judge runs and the generator.
+if (reps !== null) {
+  // PROCESS-REPLICATED path: R independent judge processes per mode with
+  // order seed = base + i, raw files <dir>/<mode>_r<i>.jsonl.
+  // Parse the order seed as BigInt: 64-bit seeds exceed Number's safe range.
+  // BigInt() accepts both "0x..." and decimal strings.
+  const baseSeed = BigInt(orderSeed);
+  if (baseSeed < 0n)
+    throw new Error(`--order-seed must be a non-negative integer, got ${orderSeed}`);
+  const outDir = path.dirname(outPrefix);
+  fs.mkdirSync(outDir, { recursive: true });
+  for (const mode of ["aa_sefer", "aa_mi", "ab"]) {
+    for (let i = 0; i < reps; i++) {
+      const out = path.join(outDir, `${mode}_r${i}.jsonl`);
+      const os = `0x${(BigInt(baseSeed) + BigInt(i)).toString(16)}`;
+      console.log(`[run] judge --mode ${mode} --blocks ${blocks} --order-seed ${os} -> ${out}`);
+      runAndEcho(exe,
+        ["--mode", mode, "--blocks", blocks, "--seed", seed, "--order-seed", os,
+         "--out", out, "--head-sha", headSha,
+         "--source-diff-sha", diffSha, "--features", features, "--profile", profile, "--rustc", rustc,
+         "--os-version", osVersionStr],
+        { timeout: runTimeout, label: `judge-${mode}-r${i}` });
+    }
+  }
+  const kernels = "pair16,pair64,pair_rt,bulk64,bulk16k,churn16,churn64,churn256,churn1024,vec512,larson";
+  console.log(`[run] generator (process-replicated, reps=${reps}, order seeds base..base+${reps - 1})`);
+  runAndEcho(process.execPath,
+    ["scripts/b4_interleave_rep_table.mjs", "--dir", outDir, "--reps", String(reps),
+     "--kernels", kernels, "--csv", "docs/perf/B4_INTERLEAVE_JUDGE_rep_summary.csv"],
+    { timeout: 300000, label: "generator-rep" });
+} else {
+  // LEGACY single-process path: three runs, one shared order seed.
+  fs.mkdirSync(path.dirname(outPrefix), { recursive: true });
+  for (const mode of ["aa_sefer", "aa_mi", "ab"]) {
+    const out = `${outPrefix}_${mode}.jsonl`;
+    console.log(`[run] judge --mode ${mode} --blocks ${blocks} -> ${out}`);
+    runAndEcho(exe,
+      ["--mode", mode, "--blocks", blocks, "--seed", seed, "--order-seed", orderSeed,
+       "--out", out, "--head-sha", headSha,
+       "--source-diff-sha", diffSha, "--features", features, "--profile", profile, "--rustc", rustc,
+       "--os-version", osVersionStr],
+      { timeout: runTimeout, label: `judge-${mode}` });
+  }
+  console.log("[run] generator");
+  runAndEcho(process.execPath,
+    ["scripts/b4_interleave_table.mjs", "--aa-sefer", `${outPrefix}_aa_sefer.jsonl`,
+     "--aa-mi", `${outPrefix}_aa_mi.jsonl`, "--ab", `${outPrefix}_ab.jsonl`],
+    { timeout: 300000, label: "generator" });
 }
-
-// 4. Generator over the three raws.
-console.log("[run] generator");
-runAndEcho(process.execPath,
-  ["scripts/b4_interleave_table.mjs", "--aa-sefer", `${outPrefix}_aa_sefer.jsonl`,
-   "--aa-mi", `${outPrefix}_aa_mi.jsonl`, "--ab", `${outPrefix}_ab.jsonl`],
-  { timeout: 300000, label: "generator" });
 console.log("[run] OK");

@@ -1,0 +1,49 @@
+# ab06_own_no_kind_at — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность МОЖЕТ НАРУШАТЬСЯ — Large-frees больше не
+# различаются в canonical_block_of (kind_at-загрузка и ветка удалены, всегда
+# non-Large маска off). Не для production.
+#
+# Что убирает: загрузку заголовка сегмента `SegmentHeader::kind_at(base)` и
+# ветку Large/non-Large в `canonical_block_of`
+# (src/alloc_core/alloc_core/mem/mem_impl.rs:56-72). На churn (только small)
+# ветка всегда идёт по else-плечу, но загрузка kind-байта — зависимая после
+# canonical_base_of_mut.
+#
+# Гипотеза: kind_at — зависимая загрузка в цепочке owner-lookup; её скрытая
+# latency видна во времени, но не в Ir.
+#
+# Ожидаемое направление: время churn16/64 ВНИЗ, если kind_at дорог; иначе ~0.
+# (В churn-плече Large-frees нет, поэтому порча Large-пути на замер не влияет.)
+diff --git a/src/alloc_core/alloc_core/mem/mem_impl.rs b/src/alloc_core/alloc_core/mem/mem_impl.rs
+index 9f29d0a2..523170d7 100644
+--- a/src/alloc_core/alloc_core/mem/mem_impl.rs
++++ b/src/alloc_core/alloc_core/mem/mem_impl.rs
+@@ -53,23 +53,10 @@ impl AllocCore {
+         // `root == candidate` and `ptr - root == ptr & (SEGMENT - 1)`.
+         // That equality is what makes the mask exact (debug-asserted below);
+         // `off < SEGMENT` keeps `block` inside `root`'s reservation.
+-        let off = if SegmentHeader::kind_at(base) == SegmentKind::Large {
+-            // R6-MS-1 (T22): bound the caller-derived offset BEFORE
+-            // `Node::deref`'s `add` — a foreign address sharing the 4 MiB key
+-            // window must reject without forming an out-of-bounds witness.
+-            let off = ptr.addr().wrapping_sub(base.addr());
+-            if off >= SegmentHeader::span_usable_at(base) {
+-                return None;
+-            }
+-            off
+-        } else {
+-            debug_assert_eq!(
+-                base.addr(),
+-                candidate.addr(),
+-                "X-span: non-Large root must equal its SEGMENT-aligned key"
+-            );
+-            ptr.addr() & (os::SEGMENT - 1)
+-        };
++        // ABLATION ab06_own_no_kind_at: the `kind_at` read + Large branch
++        // are REMOVED FOR MEASUREMENT ONLY — the offset is always the known
++        // non-Large mask. Large routing may break — never for production.
++        let off = ptr.addr() & (os::SEGMENT - 1);
+         // NOTE: the root == key assert is non-Large only — a Large root need
+         // NOT equal the raw key-window base (biased payload keys); there the
+         // `off >= span` guard and the byte/bitmap checks keep this safe.

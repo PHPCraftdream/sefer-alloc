@@ -503,3 +503,84 @@ every portion of every block exactly (`examples/b4_interleave_judge/main.rs`
 `expected_block_calls` → `oracle_mismatches`, hard `assert_eq!` before exit),
 and all three phase-2 runs report 0 mismatches, so the measured data is covered;
 the test gap is filed as an open item, not closed.
+
+## v2: процесс — единица репликации, счётчик без lock, выравнивание
+
+Версия протокола фазы 2, в которой единицей репликации становится ПРОЦЕСС
+(детали абляционной реализации и отчёт — измерительная ветка `b4-ablate`,
+`docs/perf/B4_ABLATE_CHURN.md`, скопированная в этот каталог). Что меняется
+и почему:
+
+- **Мотив (ИЗМЕРЕНО, ветка `b4-ablate`):** два прогона null-варианта по
+  схеме v1 (один процесс, 10000 блоков, bootstrap по блокам) на одном и том
+  же коде дали копия-против-себя +0.46 % и −1.83 % на churn16 при
+  внутрипроцессной полуширине CI ≈ 0.1 %; отдельные процессы по 4000 блоков
+  показывали до +17 % (churn64) для копии против оригинала. Разброс между
+  процессами на порядок больше CI внутри процесса: состояние, от которого
+  зависит время (вероятнее всего размещение адресов), фиксировано на весь
+  процесс. Следствие: результаты v1 (фаза 2, раздел выше) сжаты
+  `lock inc`-счётчиком вызовов и НЕ учитывают межпроцессный разброс — их
+  нельзя читать как точные относительные величины, только как направления.
+- **Протокол v2:** 20 процессов × 2000 блоков, различные order seeds
+  (`0x0b4d5eed + i`); медиана `ln(t_B/t_A)` по блокам внутри процесса,
+  затем медиана по процессам и bootstrap 95 % CI по ПРОЦЕССАМ
+  (≥ 2000 resamples); порог допуска прежний (|median ln| ≤ 1 %,
+  полуширина ≤ 1 %). Порождающий скрипт таблиц main-судьи —
+  `scripts/b4_interleave_rep_table.mjs` (абляционный вариант —
+  `scripts/b4_ablate_rep_table.mjs`, ветка `b4-ablate`).
+- **Счётчик без lock:** шимы судьи считают вызовы thread-local `Cell<u64>`
+  (const-init), lock-инструкций в телах шимов нет — см. asm-таблицу v2 в
+  `docs/perf/b4_ablate/asm_notes.md` (единственный `lock` в таблице — CAS
+  самого mimalloc в `mi_free`).
+- **Выравнивание обязательно:** RUSTFLAGS
+  `-C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5`
+  на всех сборках фазы 2 — иначе межпроцессный разброс смешивается с шумом
+  раскладки кода.
+
+### Команды фазы 2 v2 для оркестратора
+
+Вся фаза 2 v2 main-судьи — один runner:
+
+```
+CARGO_TARGET_DIR=<TARGET-DIR> RUSTFLAGS="-C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5" \
+  node scripts/b4_interleave_run.mjs --reps 20 --blocks 2000 --out-prefix <OUT-PREFIX-ВНЕ-РЕПОЗИТОРИЯ>
+```
+
+- Runner сам запускает 20 процессов × 3 режима (`aa_sefer`, `aa_mi`, `ab`)
+  с order seeds `0x0b4d5eed + i` и затем вызывает генератор
+  `scripts/b4_interleave_rep_table.mjs`.
+- Ядра (все 11, `ALL_KERNELS` в
+  `examples/_shared/b4_interleave_core.rs` /
+  `examples/_shared/b4_interleave_kernels.rs`):
+  `pair16, pair64, pair_rt, bulk64, bulk16k, churn16, churn64, churn256,
+  churn1024, vec512, larson`.
+- RUSTFLAGS обязательны: runner проверяет их и падает при отсутствии.
+- Null-гейта в main-судье нет — это механизм абляционной ветки.
+
+#### Абляционные команды (ветка `b4-ablate`), не фаза 2 main-судьи
+
+```
+CARGO_TARGET_DIR=<TARGET-DIR> node scripts/b4_ablate_run.mjs \
+  --out-dir <OUT> --blocks 2000 --reps 20 \
+  --kernels churn16,churn64,pair16,bulk64,bulk16k
+```
+
+- Null-гейт (`--expect-admitted` на null) останавливает прогон, если A/A
+  sefer×sefer выходит за 1 %; на churn у этой пары слотов систематический
+  сдвиг −0.5…−1.1 % (ИЗМЕРЕНО, 20 процессов), поэтому B1-D прогнан с
+  `--no-null-gate`, а эффект считан за вычетом null
+  (`scripts/b4_ablate_vs_null.mjs`) — см. `docs/perf/B1_DEPOT_PROTOTYPE.md`,
+  раздел «Метод». `--out-dir` — каталог сырых jsonl ВНЕ репозитория.
+- Таблицы и свод: `node scripts/b4_ablate_rep_table.mjs` /
+  `node scripts/b4_ablate_vs_null.mjs` (ветка `b4-ablate`).
+
+### Результаты v2
+
+(пусто — прогоны фазы 2 v2 на судье этого документа не выполнялись; отчёты
+A2 и B1-D с результатами v2-протокола — `docs/perf/B4_ABLATE_CHURN.md` и
+`docs/perf/B1_DEPOT_PROTOTYPE.md`.)
+
+Явная пометка о ядре churn: **ядра churn* делят общее кольцо слотов
+(CHURN_SLOTS)** — их части читаются поверх одного и того же множества блоков,
+поэтому churn в судье — частично межклассовый перенос (атрибуция — A3,
+`docs/perf/B4_A3_CROSS_CLASS.md`, карточка 116).

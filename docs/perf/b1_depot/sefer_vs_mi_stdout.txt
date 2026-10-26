@@ -1,0 +1,5 @@
+pair16 R=20 median=-23.64% CI=[-23.83, -23.38] half=0.23% ratio=0.7895 min=-29.18 max=-22.19
+bulk64 R=20 median=-74.93% CI=[-75.39, -74.52] half=0.44% ratio=0.4727 min=-78.87 max=-72.81
+bulk16k R=20 median=-90.70% CI=[-91.13, -90.10] half=0.52% ratio=0.4037 min=-93.71 max=-88.45
+churn16 R=20 median=-56.89% CI=[-57.43, -56.54] half=0.45% ratio=0.5662 min=-73.94 max=-55.51
+churn64 R=20 median=-57.93% CI=[-58.77, -56.35] half=1.21% ratio=0.5603 min=-84.96 max=-54.04

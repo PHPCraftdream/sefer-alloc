@@ -1,0 +1,30 @@
+# ab08_dealloc_tls_no_range_check — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность может нарушаться (null/TORN-указатели идут в
+# Own-плечо; downstream publish_foreign для null по-прежнему no-op, но контракт
+# резолвера нарушен). Не для production.
+#
+# Что убирает: Э2-проверку диапазона TLS-указателя (`wrapping_sub(1) <
+# usize::MAX - 1`, ~2 инструкции) в `current_for_dealloc`
+# (src/global/tls_heap.rs:385) — заменена на простое `!p.is_null()`.
+#
+# Гипотеза: TLS-диспетчеризация (thread_local чтение + диапазонная проверка) —
+# измеримая константа на каждом free; вклад виден только во времени.
+#
+# Ожидаемое направление: время churn16/64 слегка ВНИЗ (~1-2 цикла/free) или ~0.
+diff --git a/src/global/tls_heap.rs b/src/global/tls_heap.rs
+index 968c83bc..bbce0b8f 100644
+--- a/src/global/tls_heap.rs
++++ b/src/global/tls_heap.rs
+@@ -382,7 +382,10 @@ pub(crate) fn current_for_dealloc() -> CurrentHeapForDealloc {
+         // to the cold arm below, where THIS resolver (unlike
+         // `current_for_alloc`) maps BOTH to `ForeignNoBind` — neither binds
+         // a slot nor resolves the fallback pointer.
+-        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeapForDealloc::Own(p),
++        // ABLATION ab08_dealloc_tls_no_range_check: the Э2 range check is
++        // REMOVED FOR MEASUREMENT ONLY (null still rejected; TORN is NOT) —
++        // never for production.
++        Ok(p) if !p.is_null() => CurrentHeapForDealloc::Own(p),
+         // null (first call ever, on this thread) OR TORN (slot already
+         // recycled): both are "no live heap of our own to consult" — route
+         // as foreign, no bind, no fallback lock.
