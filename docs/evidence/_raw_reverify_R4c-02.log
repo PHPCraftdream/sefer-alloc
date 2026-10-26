@@ -1,132 +1,136 @@
-E0_METADATA {"id":"R4c-02","head":"b0923a3cfc41c92f575a94a6184679ae367c86cd","tree":"62fe326c5cfd8ea42a009331ade6d40f98558c27","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4c-02","head":"b0923a3cfc41c92f575a94a6184679ae367c86cd","tree":"62fe326c5cfd8ea42a009331ade6d40f98558c27","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"Loom (--cfg loom --release)","recipe":"docs/evidence/reverify-recipes/R4c-02.json","recipe_sha256":"5d20da0edc66589b8917444ed4daad98a8b45d39d0b757d15044e3449fa9c741","registry_activation_hash":"728334ba9dc792527eee7d2948936078b3ae44734bc3b00c7c5ba896be74b2b2"}
+E0_METADATA {"id":"R4c-02","head":"54cc330aa2aa53dba040620d7ac4a3ed0e531eb1","tree":"42c4b84a1d4006939c15bdda4c3d5e195ccc1115","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (76456a688 2026-10-25)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-26 for version 1.101.0-nightly (76456a688 2026-10-25)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4c-02","head":"54cc330aa2aa53dba040620d7ac4a3ed0e531eb1","tree":"42c4b84a1d4006939c15bdda4c3d5e195ccc1115","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"Loom (--cfg loom --release)","recipe":"docs/evidence/reverify-recipes/R4c-02.json","recipe_sha256":"5d20da0edc66589b8917444ed4daad98a8b45d39d0b757d15044e3449fa9c741","registry_activation_hash":"728334ba9dc792527eee7d2948936078b3ae44734bc3b00c7c5ba896be74b2b2"}
 
 E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_r8_maintenance_lease target","argv":["cargo","test","--release","--features","alloc-global,alloc-xthread,internals,tagged-index-stack/loom","--test","loom_r8_maintenance_lease"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[33mwarning[0m[1m: associated function `from_initialized` is never used[0m
-  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:59:19
+  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:63:19
    [1m[94m|[0m
-[1m[94m50[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
+[1m[94m54[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
    [1m[94m|[0m [1m[94m--------------------------[0m [1m[94massociated function in this implementation[0m
 [1m[94m...[0m
-[1m[94m59[0m [1m[94m|[0m     pub(crate) fn from_initialized(
+[1m[94m63[0m [1m[94m|[0m     pub(crate) fn from_initialized(
    [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^[0m
    [1m[94m|[0m
    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 [1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 4.23s
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 3.34s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/loom_r8_maintenance_lease.rs (target/release/deps/loom_r8_maintenance_lease-432be7b5d285326b)
+[1m[92m     Running[0m tests/loom_r8_maintenance_lease.rs (target/release/deps/loom_r8_maintenance_lease-8b72fc22f2aa93b6)
 
 running 1 test
 test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBhc3NvY2lhdGVkIGZ1bmN0aW9uIGBmcm9tX2luaXRpYWxpemVkYCBpcyBuZXZlciB1c2VkG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtc3JjL2FsbG9jX2NvcmUvc2VnbWVudC9yZW1vdGVfYml0bWFwL3NpZGVjYXJfYml0bWFwLnJzOjYzOjE5CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTU0G1swbSAbWzFtG1s5NG18G1swbSBpbXBsPCdhPiBTaWRlY2FyQml0bWFwPCdhPiB7CiAgIBtbMW0bWzk0bXwbWzBtIBtbMW0bWzk0bS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tG1swbSAbWzFtG1s5NG1hc3NvY2lhdGVkIGZ1bmN0aW9uIGluIHRoaXMgaW1wbGVtZW50YXRpb24bWzBtChtbMW0bWzk0bS4uLhtbMG0KG1sxbRtbOTRtNjMbWzBtIBtbMW0bWzk0bXwbWzBtICAgICBwdWIoY3JhdGUpIGZuIGZyb21faW5pdGlhbGl6ZWQoCiAgIBtbMW0bWzk0bXwbWzBtICAgICAgICAgICAgICAgICAgIBtbMW0bWzMzbV5eXl5eXl5eXl5eXl5eXl4bWzBtCiAgIBtbMW0bWzk0bXwbWzBtCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYCNbd2FybihkZWFkX2NvZGUpXWAgKHBhcnQgb2YgYCNbd2Fybih1bnVzZWQpXWApIG9uIGJ5IGRlZmF1bHQKChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgc2VmZXItYWxsb2NgIChsaWIpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGByZWxlYXNlYCBwcm9maWxlIFtvcHRpbWl6ZWRdIHRhcmdldChzKSBpbiAzLjM0cwobWzFtG1szM213YXJuaW5nG1swbTogdGhlIGZvbGxvd2luZyBwYWNrYWdlcyBjb250YWluIGNvZGUgdGhhdCB3aWxsIGJlIHJlamVjdGVkIGJ5IGEgZnV0dXJlIHZlcnNpb24gb2YgUnVzdDogcHJvYy1tYWNyby1lcnJvcjIgdjIuMC4xChtbMW0bWzkybW5vdGUbWzBtOiB0byBzZWUgd2hhdCB0aGUgcHJvYmxlbXMgd2VyZSwgdXNlIHRoZSBvcHRpb24gYC0tZnV0dXJlLWluY29tcGF0LXJlcG9ydGAsIG9yIHJ1biBgY2FyZ28gcmVwb3J0IGZ1dHVyZS1pbmNvbXBhdGliaWxpdGllcyAtLWlkIDFgChtbMW0bWzkybSAgICAgUnVubmluZxtbMG0gdGVzdHMvbG9vbV9yOF9tYWludGVuYW5jZV9sZWFzZS5ycyAodGFyZ2V0L3JlbGVhc2UvZGVwcy9sb29tX3I4X21haW50ZW5hbmNlX2xlYXNlLThiNzJmYzIyZjJhYTkzYjYpCgpydW5uaW5nIDEgdGVzdAp0ZXN0IGNsYWltX21haW50ZW5hbmNlX2FuZF9yZWN5Y2xlX2hhdmVfb25lX211dGF0b3JfYW5kX3B1Ymxpc2hfcGF5bG9hZCAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gMSBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjAycwoK
 
 E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_r11_ph4a_heap_lease target","argv":["cargo","test","--release","--features","alloc-global,alloc-xthread,internals,tagged-index-stack/loom","--test","loom_r11_ph4a_heap_lease"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["test lease_drop_release_pairs_with_claim_and_maintenance_acquires \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[33mwarning[0m[1m: associated function `from_initialized` is never used[0m
-  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:59:19
+  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:63:19
    [1m[94m|[0m
-[1m[94m50[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
+[1m[94m54[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
    [1m[94m|[0m [1m[94m--------------------------[0m [1m[94massociated function in this implementation[0m
 [1m[94m...[0m
-[1m[94m59[0m [1m[94m|[0m     pub(crate) fn from_initialized(
+[1m[94m63[0m [1m[94m|[0m     pub(crate) fn from_initialized(
    [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^[0m
    [1m[94m|[0m
    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 [1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 4.23s
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 3.34s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/loom_r11_ph4a_heap_lease.rs (target/release/deps/loom_r11_ph4a_heap_lease-8421d708094381c5)
+[1m[92m     Running[0m tests/loom_r11_ph4a_heap_lease.rs (target/release/deps/loom_r11_ph4a_heap_lease-46a5073bf96b58c3)
 
 running 1 test
 test lease_drop_release_pairs_with_claim_and_maintenance_acquires ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBhc3NvY2lhdGVkIGZ1bmN0aW9uIGBmcm9tX2luaXRpYWxpemVkYCBpcyBuZXZlciB1c2VkG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtc3JjL2FsbG9jX2NvcmUvc2VnbWVudC9yZW1vdGVfYml0bWFwL3NpZGVjYXJfYml0bWFwLnJzOjYzOjE5CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTU0G1swbSAbWzFtG1s5NG18G1swbSBpbXBsPCdhPiBTaWRlY2FyQml0bWFwPCdhPiB7CiAgIBtbMW0bWzk0bXwbWzBtIBtbMW0bWzk0bS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tG1swbSAbWzFtG1s5NG1hc3NvY2lhdGVkIGZ1bmN0aW9uIGluIHRoaXMgaW1wbGVtZW50YXRpb24bWzBtChtbMW0bWzk0bS4uLhtbMG0KG1sxbRtbOTRtNjMbWzBtIBtbMW0bWzk0bXwbWzBtICAgICBwdWIoY3JhdGUpIGZuIGZyb21faW5pdGlhbGl6ZWQoCiAgIBtbMW0bWzk0bXwbWzBtICAgICAgICAgICAgICAgICAgIBtbMW0bWzMzbV5eXl5eXl5eXl5eXl5eXl4bWzBtCiAgIBtbMW0bWzk0bXwbWzBtCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYCNbd2FybihkZWFkX2NvZGUpXWAgKHBhcnQgb2YgYCNbd2Fybih1bnVzZWQpXWApIG9uIGJ5IGRlZmF1bHQKChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgc2VmZXItYWxsb2NgIChsaWIpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGByZWxlYXNlYCBwcm9maWxlIFtvcHRpbWl6ZWRdIHRhcmdldChzKSBpbiAzLjM0cwobWzFtG1szM213YXJuaW5nG1swbTogdGhlIGZvbGxvd2luZyBwYWNrYWdlcyBjb250YWluIGNvZGUgdGhhdCB3aWxsIGJlIHJlamVjdGVkIGJ5IGEgZnV0dXJlIHZlcnNpb24gb2YgUnVzdDogcHJvYy1tYWNyby1lcnJvcjIgdjIuMC4xChtbMW0bWzkybW5vdGUbWzBtOiB0byBzZWUgd2hhdCB0aGUgcHJvYmxlbXMgd2VyZSwgdXNlIHRoZSBvcHRpb24gYC0tZnV0dXJlLWluY29tcGF0LXJlcG9ydGAsIG9yIHJ1biBgY2FyZ28gcmVwb3J0IGZ1dHVyZS1pbmNvbXBhdGliaWxpdGllcyAtLWlkIDFgChtbMW0bWzkybSAgICAgUnVubmluZxtbMG0gdGVzdHMvbG9vbV9yMTFfcGg0YV9oZWFwX2xlYXNlLnJzICh0YXJnZXQvcmVsZWFzZS9kZXBzL2xvb21fcjExX3BoNGFfaGVhcF9sZWFzZS00NmE1MDczYmY5NmI1OGMzKQoKcnVubmluZyAxIHRlc3QKdGVzdCBsZWFzZV9kcm9wX3JlbGVhc2VfcGFpcnNfd2l0aF9jbGFpbV9hbmRfbWFpbnRlbmFuY2VfYWNxdWlyZXMgLi4uIG9rCgp0ZXN0IHJlc3VsdDogb2suIDEgcGFzc2VkOyAwIGZhaWxlZDsgMCBpZ25vcmVkOyAwIG1lYXN1cmVkOyAwIGZpbHRlcmVkIG91dDsgZmluaXNoZWQgaW4gMC4wMnMKCg==
 
 E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_r11_ph4b_publish_recycle_drain target","argv":["cargo","test","--release","--features","alloc-global,alloc-xthread,internals,tagged-index-stack/loom","--test","loom_r11_ph4b_publish_recycle_drain"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["test publication_survives_recycle_and_is_consumed_exactly_once \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[33mwarning[0m[1m: associated function `from_initialized` is never used[0m
-  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:59:19
+  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:63:19
    [1m[94m|[0m
-[1m[94m50[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
+[1m[94m54[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
    [1m[94m|[0m [1m[94m--------------------------[0m [1m[94massociated function in this implementation[0m
 [1m[94m...[0m
-[1m[94m59[0m [1m[94m|[0m     pub(crate) fn from_initialized(
+[1m[94m63[0m [1m[94m|[0m     pub(crate) fn from_initialized(
    [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^[0m
    [1m[94m|[0m
    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 [1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 0.07s
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 0.05s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/loom_r11_ph4b_publish_recycle_drain.rs (target/release/deps/loom_r11_ph4b_publish_recycle_drain-6a7c9cfb0d9ad308)
+[1m[92m     Running[0m tests/loom_r11_ph4b_publish_recycle_drain.rs (target/release/deps/loom_r11_ph4b_publish_recycle_drain-151a56fb0a8c5936)
 
 running 1 test
 test publication_survives_recycle_and_is_consumed_exactly_once ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBhc3NvY2lhdGVkIGZ1bmN0aW9uIGBmcm9tX2luaXRpYWxpemVkYCBpcyBuZXZlciB1c2VkG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtc3JjL2FsbG9jX2NvcmUvc2VnbWVudC9yZW1vdGVfYml0bWFwL3NpZGVjYXJfYml0bWFwLnJzOjYzOjE5CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTU0G1swbSAbWzFtG1s5NG18G1swbSBpbXBsPCdhPiBTaWRlY2FyQml0bWFwPCdhPiB7CiAgIBtbMW0bWzk0bXwbWzBtIBtbMW0bWzk0bS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tG1swbSAbWzFtG1s5NG1hc3NvY2lhdGVkIGZ1bmN0aW9uIGluIHRoaXMgaW1wbGVtZW50YXRpb24bWzBtChtbMW0bWzk0bS4uLhtbMG0KG1sxbRtbOTRtNjMbWzBtIBtbMW0bWzk0bXwbWzBtICAgICBwdWIoY3JhdGUpIGZuIGZyb21faW5pdGlhbGl6ZWQoCiAgIBtbMW0bWzk0bXwbWzBtICAgICAgICAgICAgICAgICAgIBtbMW0bWzMzbV5eXl5eXl5eXl5eXl5eXl4bWzBtCiAgIBtbMW0bWzk0bXwbWzBtCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYCNbd2FybihkZWFkX2NvZGUpXWAgKHBhcnQgb2YgYCNbd2Fybih1bnVzZWQpXWApIG9uIGJ5IGRlZmF1bHQKChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgc2VmZXItYWxsb2NgIChsaWIpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgcmVsZWFzZWAgcHJvZmlsZSBbb3B0aW1pemVkXSB0YXJnZXQocykgaW4gMC4wNXMKG1sxbRtbMzNtd2FybmluZxtbMG06IHRoZSBmb2xsb3dpbmcgcGFja2FnZXMgY29udGFpbiBjb2RlIHRoYXQgd2lsbCBiZSByZWplY3RlZCBieSBhIGZ1dHVyZSB2ZXJzaW9uIG9mIFJ1c3Q6IHByb2MtbWFjcm8tZXJyb3IyIHYyLjAuMQobWzFtG1s5Mm1ub3RlG1swbTogdG8gc2VlIHdoYXQgdGhlIHByb2JsZW1zIHdlcmUsIHVzZSB0aGUgb3B0aW9uIGAtLWZ1dHVyZS1pbmNvbXBhdC1yZXBvcnRgLCBvciBydW4gYGNhcmdvIHJlcG9ydCBmdXR1cmUtaW5jb21wYXRpYmlsaXRpZXMgLS1pZCAxYAobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2xvb21fcjExX3BoNGJfcHVibGlzaF9yZWN5Y2xlX2RyYWluLnJzICh0YXJnZXQvcmVsZWFzZS9kZXBzL2xvb21fcjExX3BoNGJfcHVibGlzaF9yZWN5Y2xlX2RyYWluLTE1MWE1NmZiMGE4YzU5MzYpCgpydW5uaW5nIDEgdGVzdAp0ZXN0IHB1YmxpY2F0aW9uX3N1cnZpdmVzX3JlY3ljbGVfYW5kX2lzX2NvbnN1bWVkX2V4YWN0bHlfb25jZSAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gMSBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjAycwoK
 
 E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_r11_registry_claim target","argv":["cargo","test","--release","--features","alloc-global,alloc-xthread,internals,tagged-index-stack/loom","--test","loom_r11_registry_claim"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["test completed_free_publication_cannot_leave_false_full_or_two_owners \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[33mwarning[0m[1m: associated function `from_initialized` is never used[0m
-  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:59:19
+  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:63:19
    [1m[94m|[0m
-[1m[94m50[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
+[1m[94m54[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
    [1m[94m|[0m [1m[94m--------------------------[0m [1m[94massociated function in this implementation[0m
 [1m[94m...[0m
-[1m[94m59[0m [1m[94m|[0m     pub(crate) fn from_initialized(
+[1m[94m63[0m [1m[94m|[0m     pub(crate) fn from_initialized(
    [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^[0m
    [1m[94m|[0m
    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 [1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 4.11s
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 3.32s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/loom_r11_registry_claim.rs (target/release/deps/loom_r11_registry_claim-a874ac8a1ea15e9d)
+[1m[92m     Running[0m tests/loom_r11_registry_claim.rs (target/release/deps/loom_r11_registry_claim-0fc3674eee61052d)
 
 running 1 test
 test completed_free_publication_cannot_leave_false_full_or_two_owners ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBhc3NvY2lhdGVkIGZ1bmN0aW9uIGBmcm9tX2luaXRpYWxpemVkYCBpcyBuZXZlciB1c2VkG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtc3JjL2FsbG9jX2NvcmUvc2VnbWVudC9yZW1vdGVfYml0bWFwL3NpZGVjYXJfYml0bWFwLnJzOjYzOjE5CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTU0G1swbSAbWzFtG1s5NG18G1swbSBpbXBsPCdhPiBTaWRlY2FyQml0bWFwPCdhPiB7CiAgIBtbMW0bWzk0bXwbWzBtIBtbMW0bWzk0bS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tG1swbSAbWzFtG1s5NG1hc3NvY2lhdGVkIGZ1bmN0aW9uIGluIHRoaXMgaW1wbGVtZW50YXRpb24bWzBtChtbMW0bWzk0bS4uLhtbMG0KG1sxbRtbOTRtNjMbWzBtIBtbMW0bWzk0bXwbWzBtICAgICBwdWIoY3JhdGUpIGZuIGZyb21faW5pdGlhbGl6ZWQoCiAgIBtbMW0bWzk0bXwbWzBtICAgICAgICAgICAgICAgICAgIBtbMW0bWzMzbV5eXl5eXl5eXl5eXl5eXl4bWzBtCiAgIBtbMW0bWzk0bXwbWzBtCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYCNbd2FybihkZWFkX2NvZGUpXWAgKHBhcnQgb2YgYCNbd2Fybih1bnVzZWQpXWApIG9uIGJ5IGRlZmF1bHQKChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgc2VmZXItYWxsb2NgIChsaWIpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGByZWxlYXNlYCBwcm9maWxlIFtvcHRpbWl6ZWRdIHRhcmdldChzKSBpbiAzLjMycwobWzFtG1szM213YXJuaW5nG1swbTogdGhlIGZvbGxvd2luZyBwYWNrYWdlcyBjb250YWluIGNvZGUgdGhhdCB3aWxsIGJlIHJlamVjdGVkIGJ5IGEgZnV0dXJlIHZlcnNpb24gb2YgUnVzdDogcHJvYy1tYWNyby1lcnJvcjIgdjIuMC4xChtbMW0bWzkybW5vdGUbWzBtOiB0byBzZWUgd2hhdCB0aGUgcHJvYmxlbXMgd2VyZSwgdXNlIHRoZSBvcHRpb24gYC0tZnV0dXJlLWluY29tcGF0LXJlcG9ydGAsIG9yIHJ1biBgY2FyZ28gcmVwb3J0IGZ1dHVyZS1pbmNvbXBhdGliaWxpdGllcyAtLWlkIDFgChtbMW0bWzkybSAgICAgUnVubmluZxtbMG0gdGVzdHMvbG9vbV9yMTFfcmVnaXN0cnlfY2xhaW0ucnMgKHRhcmdldC9yZWxlYXNlL2RlcHMvbG9vbV9yMTFfcmVnaXN0cnlfY2xhaW0tMGZjMzY3NGVlZTYxMDUyZCkKCnJ1bm5pbmcgMSB0ZXN0CnRlc3QgY29tcGxldGVkX2ZyZWVfcHVibGljYXRpb25fY2Fubm90X2xlYXZlX2ZhbHNlX2Z1bGxfb3JfdHdvX293bmVycyAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gMSBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjAwcwoK
 
 E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_registry_free_slots target","argv":["cargo","test","--release","--features","alloc-global,alloc-xthread,tagged-index-stack/loom","--test","loom_registry_free_slots"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["test registry_free_slots_claim_recycle_is_conservative_under_contention \\.\\.\\. ok","test recycled_slot_is_not_published_until_it_is_free \\.\\.\\. ok","test result: ok\\. 2 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
 [1m[33mwarning[0m[1m: associated function `from_initialized` is never used[0m
-  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:59:19
+  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:63:19
    [1m[94m|[0m
-[1m[94m50[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
+[1m[94m54[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
    [1m[94m|[0m [1m[94m--------------------------[0m [1m[94massociated function in this implementation[0m
 [1m[94m...[0m
-[1m[94m59[0m [1m[94m|[0m     pub(crate) fn from_initialized(
+[1m[94m63[0m [1m[94m|[0m     pub(crate) fn from_initialized(
    [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^[0m
    [1m[94m|[0m
    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
@@ -144,16 +148,17 @@ E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_registry_free_slots target
     [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^[0m
 
 [1m[33mwarning[0m: `sefer-alloc` (lib) generated 2 warnings
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 7.50s
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 5.87s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/loom_registry_free_slots.rs (target/release/deps/loom_registry_free_slots-6e65e7f18175c201)
+[1m[92m     Running[0m tests/loom_registry_free_slots.rs (target/release/deps/loom_registry_free_slots-c741c6021c64b1c6)
 
 running 2 tests
 test recycled_slot_is_not_published_until_it_is_free ... ok
 test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.26s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.43s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1szM213YXJuaW5nG1swbRtbMW06IGFzc29jaWF0ZWQgZnVuY3Rpb24gYGZyb21faW5pdGlhbGl6ZWRgIGlzIG5ldmVyIHVzZWQbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1zcmMvYWxsb2NfY29yZS9zZWdtZW50L3JlbW90ZV9iaXRtYXAvc2lkZWNhcl9iaXRtYXAucnM6NjM6MTkKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtNTQbWzBtIBtbMW0bWzk0bXwbWzBtIGltcGw8J2E+IFNpZGVjYXJCaXRtYXA8J2E+IHsKICAgG1sxbRtbOTRtfBtbMG0gG1sxbRtbOTRtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0bWzBtIBtbMW0bWzk0bWFzc29jaWF0ZWQgZnVuY3Rpb24gaW4gdGhpcyBpbXBsZW1lbnRhdGlvbhtbMG0KG1sxbRtbOTRtLi4uG1swbQobWzFtG1s5NG02MxtbMG0gG1sxbRtbOTRtfBtbMG0gICAgIHB1YihjcmF0ZSkgZm4gZnJvbV9pbml0aWFsaXplZCgKICAgG1sxbRtbOTRtfBtbMG0gICAgICAgICAgICAgICAgICAgG1sxbRtbMzNtXl5eXl5eXl5eXl5eXl5eXhtbMG0KICAgG1sxbRtbOTRtfBtbMG0KICAgG1sxbRtbOTRtPSAbWzBtG1sxbW5vdGUbWzBtOiBgI1t3YXJuKGRlYWRfY29kZSldYCAocGFydCBvZiBgI1t3YXJuKHVudXNlZCldYCkgb24gYnkgZGVmYXVsdAoKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBtZXRob2RzIGBkYmdfaXNfcmVhZHlgIGFuZCBgZGJnX3JvbGxiYWNrX3JlZW50ZXJhYmxlYCBhcmUgbmV2ZXIgdXNlZBtbMG0KICAgG1sxbRtbOTRtLS0+IBtbMG1zcmMvcmVnaXN0cnkvYm9vdHN0cmFwL2xvb21fc2hpbS5yczoxOTQ6MTkKICAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bSA5NBtbMG0gG1sxbRtbOTRtfBtbMG0gaW1wbDxUPiBPbmNlUHRyQ2VsbDxUPiB7CiAgICAbWzFtG1s5NG18G1swbSAbWzFtG1s5NG0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tG1swbSAbWzFtG1s5NG1tZXRob2RzIGluIHRoaXMgaW1wbGVtZW50YXRpb24bWzBtChtbMW0bWzk0bS4uLhtbMG0KG1sxbRtbOTRtMTk0G1swbSAbWzFtG1s5NG18G1swbSAgICAgcHViKGNyYXRlKSBmbiBkYmdfaXNfcmVhZHkoJnNlbGYpIC0+IGJvb2wgewogICAgG1sxbRtbOTRtfBtbMG0gICAgICAgICAgICAgICAgICAgG1sxbRtbMzNtXl5eXl5eXl5eXl5eG1swbQobWzFtG1s5NG0uLi4bWzBtChtbMW0bWzk0bTIwNhtbMG0gG1sxbRtbOTRtfBtbMG0gICAgIHB1YihjcmF0ZSkgZm4gZGJnX3JvbGxiYWNrX3JlZW50ZXJhYmxlKCZzZWxmKSAtPiBSb2xsYmFja1Byb2JlIHsKICAgIBtbMW0bWzk0bXwbWzBtICAgICAgICAgICAgICAgICAgIBtbMW0bWzMzbV5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXhtbMG0KChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgc2VmZXItYWxsb2NgIChsaWIpIGdlbmVyYXRlZCAyIHdhcm5pbmdzChtbMW0bWzkybSAgICBGaW5pc2hlZBtbMG0gYHJlbGVhc2VgIHByb2ZpbGUgW29wdGltaXplZF0gdGFyZ2V0KHMpIGluIDUuODdzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9sb29tX3JlZ2lzdHJ5X2ZyZWVfc2xvdHMucnMgKHRhcmdldC9yZWxlYXNlL2RlcHMvbG9vbV9yZWdpc3RyeV9mcmVlX3Nsb3RzLWM3NDFjNjAyMWM2NGIxYzYpCgpydW5uaW5nIDIgdGVzdHMKdGVzdCByZWN5Y2xlZF9zbG90X2lzX25vdF9wdWJsaXNoZWRfdW50aWxfaXRfaXNfZnJlZSAuLi4gb2sKdGVzdCByZWdpc3RyeV9mcmVlX3Nsb3RzX2NsYWltX3JlY3ljbGVfaXNfY29uc2VydmF0aXZlX3VuZGVyX2NvbnRlbnRpb24gLi4uIG9rCgp0ZXN0IHJlc3VsdDogb2suIDIgcGFzc2VkOyAwIGZhaWxlZDsgMCBpZ25vcmVkOyAwIG1lYXN1cmVkOyAwIGZpbHRlcmVkIG91dDsgZmluaXNoZWQgaW4gMi40M3MKCg==

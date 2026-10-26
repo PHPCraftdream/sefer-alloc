@@ -1,14 +1,14 @@
-E0_METADATA {"id":"R6a-M8","head":"b0923a3cfc41c92f575a94a6184679ae367c86cd","tree":"62fe326c5cfd8ea42a009331ade6d40f98558c27","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R6a-M8","head":"b0923a3cfc41c92f575a94a6184679ae367c86cd","tree":"62fe326c5cfd8ea42a009331ade6d40f98558c27","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R6a-M8.json","recipe_sha256":"86ab0c7aeb26a0d36b9bf5953fb942bad964f00f7976c018fafc1cf79ad89672","registry_activation_hash":"ef38d37742035c53b718c488cb054b41bd5e2edc6cfee313691f1be1db49eaf7"}
+E0_METADATA {"id":"R6a-M8","head":"54cc330aa2aa53dba040620d7ac4a3ed0e531eb1","tree":"42c4b84a1d4006939c15bdda4c3d5e195ccc1115","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (76456a688 2026-10-25)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-26 for version 1.101.0-nightly (76456a688 2026-10-25)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R6a-M8","head":"54cc330aa2aa53dba040620d7ac4a3ed0e531eb1","tree":"42c4b84a1d4006939c15bdda4c3d5e195ccc1115","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R6a-M8.json","recipe_sha256":"86ab0c7aeb26a0d36b9bf5953fb942bad964f00f7976c018fafc1cf79ad89672","registry_activation_hash":"ef38d37742035c53b718c488cb054b41bd5e2edc6cfee313691f1be1db49eaf7"}
 
 E0_STEP {"id":"R6a-M8","kind":"baseline","name":"r11 spawn failure retry baseline","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r11_ph4b_spawn_failure_retry_releases_leases"],"env":{},"expect":{"exit":0,"stdoutRegex":["test spawn_failure_leaves_no_half_activation_and_retry_releases_leases \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.27s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.14s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph4b_spawn_failure_retry_releases_leases.rs (target/debug/deps/r11_ph4b_spawn_failure_retry_releases_leases-6b55a929e97ea8f4)
+[1m[92m     Running[0m tests/r11_ph4b_spawn_failure_retry_releases_leases.rs (target/debug/deps/r11_ph4b_spawn_failure_retry_releases_leases-f29cabe019c0fe0e)
 
 running 1 test
 test spawn_failure_leaves_no_half_activation_and_retry_releases_leases ... ok
@@ -17,15 +17,16 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuMTRzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGg0Yl9zcGF3bl9mYWlsdXJlX3JldHJ5X3JlbGVhc2VzX2xlYXNlcy5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcjExX3BoNGJfc3Bhd25fZmFpbHVyZV9yZXRyeV9yZWxlYXNlc19sZWFzZXMtZjI5Y2FiZTAxOWMwZmUwZSkKCnJ1bm5pbmcgMSB0ZXN0CnRlc3Qgc3Bhd25fZmFpbHVyZV9sZWF2ZXNfbm9faGFsZl9hY3RpdmF0aW9uX2FuZF9yZXRyeV9yZWxlYXNlc19sZWFzZXMgLi4uIG9rCgp0ZXN0IHJlc3VsdDogb2suIDEgcGFzc2VkOyAwIGZhaWxlZDsgMCBpZ25vcmVkOyAwIG1lYXN1cmVkOyAwIGZpbHRlcmVkIG91dDsgZmluaXNoZWQgaW4gMC4wMHMKCg==
 
 E0_STEP {"id":"R6a-M8","kind":"mutant","name":"StartingGuard drop without rollback mutant","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r11_ph4b_spawn_failure_retry_releases_leases"],"env":{},"expect":{"exit":101,"stdoutRegex":["test spawn_failure_leaves_no_half_activation_and_retry_releases_leases \\.\\.\\. FAILED"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.30s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.00s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph4b_spawn_failure_retry_releases_leases.rs (target/debug/deps/r11_ph4b_spawn_failure_retry_releases_leases-6b55a929e97ea8f4)
+[1m[92m     Running[0m tests/r11_ph4b_spawn_failure_retry_releases_leases.rs (target/debug/deps/r11_ph4b_spawn_failure_retry_releases_leases-f29cabe019c0fe0e)
 
 running 1 test
 test spawn_failure_leaves_no_half_activation_and_retry_releases_leases ... FAILED
@@ -34,7 +35,7 @@ failures:
 
 ---- spawn_failure_leaves_no_half_activation_and_retry_releases_leases stdout ----
 
-thread 'spawn_failure_leaves_no_half_activation_and_retry_releases_leases' (11346) panicked at tests/r11_ph4b_spawn_failure_retry_releases_leases.rs:84:37:
+thread 'spawn_failure_leaves_no_half_activation_and_retry_releases_leases' (11599) panicked at tests/r11_ph4b_spawn_failure_retry_releases_leases.rs:84:37:
 retry activation after Spawn failure: InProgress
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
@@ -47,16 +48,17 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 [1m[91merror[0m: test failed, to rerun pass `--test r11_ph4b_spawn_failure_retry_releases_leases`
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDEuMDBzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGg0Yl9zcGF3bl9mYWlsdXJlX3JldHJ5X3JlbGVhc2VzX2xlYXNlcy5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcjExX3BoNGJfc3Bhd25fZmFpbHVyZV9yZXRyeV9yZWxlYXNlc19sZWFzZXMtZjI5Y2FiZTAxOWMwZmUwZSkKCnJ1bm5pbmcgMSB0ZXN0CnRlc3Qgc3Bhd25fZmFpbHVyZV9sZWF2ZXNfbm9faGFsZl9hY3RpdmF0aW9uX2FuZF9yZXRyeV9yZWxlYXNlc19sZWFzZXMgLi4uIEZBSUxFRAoKZmFpbHVyZXM6CgotLS0tIHNwYXduX2ZhaWx1cmVfbGVhdmVzX25vX2hhbGZfYWN0aXZhdGlvbl9hbmRfcmV0cnlfcmVsZWFzZXNfbGVhc2VzIHN0ZG91dCAtLS0tCgp0aHJlYWQgJ3NwYXduX2ZhaWx1cmVfbGVhdmVzX25vX2hhbGZfYWN0aXZhdGlvbl9hbmRfcmV0cnlfcmVsZWFzZXNfbGVhc2VzJyAoMTE1OTkpIHBhbmlja2VkIGF0IHRlc3RzL3IxMV9waDRiX3NwYXduX2ZhaWx1cmVfcmV0cnlfcmVsZWFzZXNfbGVhc2VzLnJzOjg0OjM3OgpyZXRyeSBhY3RpdmF0aW9uIGFmdGVyIFNwYXduIGZhaWx1cmU6IEluUHJvZ3Jlc3MKbm90ZTogcnVuIHdpdGggYFJVU1RfQkFDS1RSQUNFPTFgIGVudmlyb25tZW50IHZhcmlhYmxlIHRvIGRpc3BsYXkgYSBiYWNrdHJhY2UKCgpmYWlsdXJlczoKICAgIHNwYXduX2ZhaWx1cmVfbGVhdmVzX25vX2hhbGZfYWN0aXZhdGlvbl9hbmRfcmV0cnlfcmVsZWFzZXNfbGVhc2VzCgp0ZXN0IHJlc3VsdDogRkFJTEVELiAwIHBhc3NlZDsgMSBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDBzCgobWzFtG1s5MW1lcnJvchtbMG06IHRlc3QgZmFpbGVkLCB0byByZXJ1biBwYXNzIGAtLXRlc3QgcjExX3BoNGJfc3Bhd25fZmFpbHVyZV9yZXRyeV9yZWxlYXNlc19sZWFzZXNgCg==
 E0_METADATA {"id":"R6a-M8","kind":"restored","sha256":"2449c82d63e82974e7b1de9b759f2bb0fff732a784a9a3fa0a64b4b0c262aa29"}
 
 E0_STEP {"id":"R6a-M8","kind":"restored-baseline","name":"r11 spawn failure retry baseline","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r11_ph4b_spawn_failure_retry_releases_leases"],"env":{},"expect":{"exit":0,"stdoutRegex":["test spawn_failure_leaves_no_half_activation_and_retry_releases_leases \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.25s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.98s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph4b_spawn_failure_retry_releases_leases.rs (target/debug/deps/r11_ph4b_spawn_failure_retry_releases_leases-6b55a929e97ea8f4)
+[1m[92m     Running[0m tests/r11_ph4b_spawn_failure_retry_releases_leases.rs (target/debug/deps/r11_ph4b_spawn_failure_retry_releases_leases-f29cabe019c0fe0e)
 
 running 1 test
 test spawn_failure_leaves_no_half_activation_and_retry_releases_leases ... ok
@@ -65,3 +67,4 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuOThzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGg0Yl9zcGF3bl9mYWlsdXJlX3JldHJ5X3JlbGVhc2VzX2xlYXNlcy5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcjExX3BoNGJfc3Bhd25fZmFpbHVyZV9yZXRyeV9yZWxlYXNlc19sZWFzZXMtZjI5Y2FiZTAxOWMwZmUwZSkKCnJ1bm5pbmcgMSB0ZXN0CnRlc3Qgc3Bhd25fZmFpbHVyZV9sZWF2ZXNfbm9faGFsZl9hY3RpdmF0aW9uX2FuZF9yZXRyeV9yZWxlYXNlc19sZWFzZXMgLi4uIG9rCgp0ZXN0IHJlc3VsdDogb2suIDEgcGFzc2VkOyAwIGZhaWxlZDsgMCBpZ25vcmVkOyAwIG1lYXN1cmVkOyAwIGZpbHRlcmVkIG91dDsgZmluaXNoZWQgaW4gMC4wMHMKCg==
