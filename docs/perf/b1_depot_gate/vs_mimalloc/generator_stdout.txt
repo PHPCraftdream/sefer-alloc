@@ -1,0 +1,21 @@
+# B4 INTERLEAVE JUDGE — process-replicated: reps=20 blocks/process=2000 bootstrap=2000 (over processes) seed=24301
+# identity: head=d0bec415386ca347d76c9612f2cd711019fc5d6b sha(diff)=e3b0c44298fc exe=d7f54acfbf0a profile=release rustc="rustc 1.97.0 (2d8144b78 2026-07-07)" cpu="11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz" os="windows x86_64"
+# statistic: per-process median of ln(t_B/t_A) over blocks, then median over 20 processes; 95 % percentile bootstrap over processes; A = sefer, B = mimalloc; ratio = t_mimalloc / t_sefer = exp(median)
+# admission: |median| <= 0.01 AND CI half-width <= 0.01 for aa_sefer AND aa_mi; verdict (admitted only): MIMALLOC_FASTER iff upper CI < 0, SEFER_FASTER iff lower CI > 0, else EQUAL_CI_HAS_0
+
+| Kernel | A/A sefer median % [CI] | A/A mi median % [CI] | A/B median % [CI] | per-process A/B min…max % | t_mi/t_sefer | A/B A ticks/call [CI] | A/B B ticks/call [CI] | Admitted | Verdict |
+|---|---|---|---|---|---:|---|---|---|---|
+| pair16 | 0.27 [0.23, 0.31] | 0.20 [0.17, 0.27] | -23.01 [-23.16, -22.56] | -31.86…-21.82 | 0.7944 | 9.54 [9.46, 9.59] | 7.60 [7.54, 7.63] | yes | MIMALLOC_FASTER |
+| pair64 | 0.28 [0.23, 0.34] | 0.40 [0.28, 0.45] | -7.94 [-8.68, -7.49] | -17.77…-5.10 | 0.9237 | 9.56 [9.49, 9.62] | 8.84 [8.78, 8.97] | yes | MIMALLOC_FASTER |
+| pair_rt | 0.84 [0.72, 1.01] | 0.12 [-0.13, 0.45] | 33.62 [32.70, 33.95] | 23.24…40.13 | 1.3996 | 9.72 [9.65, 9.75] | 13.61 [13.50, 13.70] | yes | SEFER_FASTER |
+| bulk64 | 0.23 [0.18, 0.32] | -0.05 [-0.23, 0.07] | -25.13 [-25.43, -24.81] | -35.27…-16.46 | 0.7778 | 9.89 [9.81, 9.95] | 7.71 [7.63, 7.83] | yes | MIMALLOC_FASTER |
+| bulk16k | -0.09 [-0.21, 0.04] | 0.11 [-0.09, 0.16] | -87.63 [-88.42, -87.45] | -92.70…-85.91 | 0.4163 | 22.23 [22.06, 22.67] | 9.14 [9.00, 9.22] | yes | MIMALLOC_FASTER |
+| churn16 | -0.61 [-0.83, -0.27] | -0.10 [-0.91, 0.24] | -56.14 [-57.08, -55.65] | -60.68…-54.90 | 0.5704 | 18.93 [18.65, 19.13] | 10.65 [10.57, 10.75] | yes | MIMALLOC_FASTER |
+| churn64 | 0.04 [-0.37, 0.21] | -0.31 [-0.46, -0.19] | -28.99 [-32.57, -26.96] | -37.69…-24.32 | 0.7483 | 15.15 [15.07, 15.39] | 13.13 [12.92, 13.36] | yes | MIMALLOC_FASTER |
+| churn256 | -0.20 [-0.36, 0.10] | 0.24 [-0.00, 0.52] | -49.15 [-49.85, -48.50] | -51.87…-46.14 | 0.6117 | 19.58 [19.33, 19.76] | 11.92 [11.83, 12.12] | yes | MIMALLOC_FASTER |
+| churn1024 | -0.23 [-0.62, 0.19] | -0.13 [-0.63, 0.11] | -42.30 [-42.90, -41.89] | -46.32…-39.33 | 0.6551 | 26.14 [25.93, 26.55] | 17.01 [16.84, 17.20] | yes | MIMALLOC_FASTER |
+| vec512 | -1.42 [-2.10, -0.53] | -0.65 [-1.24, 0.07] | 26.87 [25.13, 30.84] | 21.02…51.35 | 1.3083 | 34.40 [34.06, 34.70] | 45.32 [44.23, 47.37] | NO | not admitted |
+| larson | -0.01 [-0.13, 0.11] | 0.34 [0.01, 0.44] | -11.65 [-12.70, -11.30] | -14.89…-5.85 | 0.8901 | 16.96 [16.58, 17.30] | 14.49 [14.27, 14.81] | yes | MIMALLOC_FASTER |
+
+# verdict summary: MIMALLOC_FASTER 9 / SEFER_FASTER 1 / 11 kernels; not admitted: 1 / 11
+# wrote rep_summary_depot.csv
