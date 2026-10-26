@@ -1,0 +1,182 @@
+# B1-a: flush_class_internal single pass (run end detected inside flush_run), no per-accept counter/Option; same per-block guards in the same order.
+diff --git a/src/alloc_core/small/alloc_core_small_magazine.rs b/src/alloc_core/small/alloc_core_small_magazine.rs
+index 85146c1b..b33c5021 100644
+--- a/src/alloc_core/small/alloc_core_small_magazine.rs
++++ b/src/alloc_core/small/alloc_core_small_magazine.rs
+@@ -611,17 +611,10 @@ impl AllocCore {
+                 continue; // defensive: skip nulls (matches per-block path)
+             }
+             let candidate = os::segment_base_of_ptr(ptr);
+-            // Detect the run of consecutive same-segment blocks starting at `i`.
+-            // Nulls terminate a run (they are handled by the outer loop as
+-            // no-ops, exactly as the per-block path skips them).
+-            let mut run_end = i + 1;
+-            while run_end < blocks.len() {
+-                let q = blocks[run_end];
+-                if q.is_null() || os::segment_base_of_ptr(q) != candidate {
+-                    break;
+-                }
+-                run_end += 1;
+-            }
++            // The run of consecutive same-segment blocks starting at `i` ends
++            // at the first null or other-segment entry (nulls are handled by
++            // the outer loop as no-ops, exactly as the per-block path skips
++            // them). B1-a: `flush_run` detects the end in its own pass.
+             // L-4: if an EARLIER run in this call already recycled `base`,
+             // skip this run entirely — `base`'s metadata may be unmapped
+             // (released leg) or in a state a blind re-run must not assume
+@@ -634,22 +627,35 @@ impl AllocCore {
+             let already_recycled = recycled_bases[..recycled_n].contains(&candidate);
+             if !already_recycled {
+                 if let Some(base) = self.table.canonical_base_of(candidate) {
+-                    let recycled_now = self.flush_run(class_idx, base, &blocks[i..run_end]);
++                    let (run_end, recycled_now) =
++                        self.flush_run(class_idx, base, candidate, blocks, i);
+                     if recycled_now && recycled_n < RECYCLED_CAP {
+                         recycled_bases[recycled_n] = candidate;
+                         recycled_n += 1;
+                     }
++                    i = run_end;
++                    continue;
++                }
++            }
++            // Skipped run: step over it untouched.
++            i += 1;
++            while i < blocks.len() {
++                let q = blocks[i];
++                if q.is_null() || os::segment_base_of_ptr(q) != candidate {
++                    break;
+                 }
++                i += 1;
+             }
+-            i = run_end;
+         }
+     }
+ 
+     /// Flush ONE run of blocks that all share segment `base` (Э8). See
+-    /// `flush_class` for splice and batched-credit policy reasoning. Every
+-    /// block in `run` is non-null and has `segment_base_of_ptr(block) == base`.
++    /// `flush_class` for splice and batched-credit policy reasoning. The run
++    /// starts at `blocks[start]` (non-null, `segment_base_of_ptr == candidate`)
++    /// and ends at the first null or other-segment entry; returns that end
++    /// index (B1-a: detected in this pass, no separate pre-scan).
+     ///
+-    /// L-4 (UBFIX-11): returns `true` iff this run's flush triggered
++    /// L-4 (UBFIX-11): the returned flag is `true` iff this run's flush triggered
+     /// `release_or_pool_empty_segment(base)` (i.e. the segment reached
+     /// `live_count == 0` and was pooled or released). `flush_class`
+     /// uses this to record `base` and skip any LATER same-`base` run within
+@@ -662,7 +668,14 @@ impl AllocCore {
+     #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+     #[inline]
+     #[must_use]
+-    fn flush_run(&mut self, class_idx: usize, base: *mut u8, run: &[*mut u8]) -> bool {
++    fn flush_run(
++        &mut self,
++        class_idx: usize,
++        base: *mut u8,
++        candidate: *mut u8,
++        blocks: &[*mut u8],
++        start: usize,
++    ) -> (usize, bool) {
+         let meta = SegmentMeta::new(base);
+         let mut bt = meta.bin_table();
+         // B4 (в): the alloc-bitmap hoist is gone — flush_run now guards and
+@@ -693,7 +706,6 @@ impl AllocCore {
+         // block links to this (matching the first sequential `dealloc_small`,
+         // whose `old_head` is exactly this value).
+         let old_head = bt.head(class_idx);
+-        let mut last_accepted: Option<u32> = None;
+         // N3-b (split-n8b): thread the PREVIOUS block's pointer through the
+         // pass instead of re-deriving it per block from `prev_off`. The
+         // linked value and provenance are byte-identical: the hoisted
+@@ -705,17 +717,27 @@ impl AllocCore {
+         } else {
+             Node::deref(base, old_head as usize)
+         };
+-        // Count accepted blocks for one owner-side credit retirement after `set_head`.
+-        let mut accepted_count: usize = 0;
++        // Rejected blocks of the run (cold); accepted = run length − rejected,
++        // retired once after `set_head` (B1-a: no per-accept counter update).
++        let mut rejected: usize = 0;
++        let tag = class_idx as u8 + 1;
+         let span: usize = bump.saturating_sub(payload_start);
+ 
+-        for &ptr in run {
++        let mut end = start;
++        while end < blocks.len() {
++            let ptr = blocks[end];
++            // Run end: first null or other-segment entry (`blocks[start]` passes).
++            if ptr.is_null() || os::segment_base_of_ptr(ptr) != candidate {
++                break;
++            }
++            end += 1;
+             let off = (ptr as usize - base as usize) as u32;
+             // Guards 0+1 (per-block, split-n8c): the hoisted span check.
+             // `off < payload_start` wraps to a huge value ≥ span; `off >= bump`
+             // yields ≥ span. With a corrupted `bump < payload_start`, span is
+             // 0 and every offset is rejected — same strength as the old pair.
+             if (off as usize).wrapping_sub(payload_start) >= span {
++                rejected += 1;
+                 continue;
+             }
+             // Guard 2 (per-block): accept only a currently-issued block of
+@@ -723,16 +745,18 @@ impl AllocCore {
+             // a LIVE or MAG state (B4 (в); the zero/unissued byte, a foreign
+             // class, and an already-FREE block are all rejected/skipped).
+             let sb = meta.state_byte().read(off);
+-            if sb & 0x3F != class_idx as u8 + 1
+-                || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE
+-            {
++            if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
++                rejected += 1;
+                 continue;
+             }
+             // `ptr` identifies the offset only. Link through the stored
+             // reservation root, which covers the entire free-list word.
+             let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
+                 Some(nn) => nn,
+-                None => continue,
++                None => {
++                    rejected += 1;
++                    continue;
++                }
+             };
+             // Link this accepted block at the head of the run-local chain: its
+             // `next` is the PRIOR accepted block (or the captured `old_head`
+@@ -746,16 +770,18 @@ impl AllocCore {
+                 crate::alloc_core::state_byte::StateByte::FREE,
+             );
+             prev_ptr = block_nn.as_ptr();
+-            last_accepted = Some(off);
+-            accepted_count += 1;
+         }
++        let accepted_count = end - start - rejected;
+ 
+         // Write the new head ONCE (only if ≥1 block was accepted). Mirrors the
+         // final `set_head` of the last sequential `dealloc_small` in the run.
+-        if let Some(off) = last_accepted {
+-            bt.set_head(class_idx, off);
++        if accepted_count != 0 {
++            // `prev_ptr` is the last accepted block, `Node::deref(base, off)`,
++            // so this is exactly its `off`.
++            let last_off = (prev_ptr.addr() - base.addr()) as u32;
++            bt.set_head(class_idx, last_off);
+             // R7-A2: directory bitmap maintenance — the new head is always
+-            // non-null (`off`), so the only transition is empty→non-empty
++            // non-null (`last_off`), so the only transition is empty→non-empty
+             // when old_head was FREE_LIST_NULL.
+             #[cfg(feature = "alloc-segment-directory")]
+             if old_head == FREE_LIST_NULL {
+@@ -776,9 +802,9 @@ impl AllocCore {
+                 let _ = self.release_or_pool_empty_segment(base);
+                 // L-4 (UBFIX-11): report the recycle to `flush_class` so it can
+                 // skip any later same-`base` run within this call.
+-                return true;
++                return (end, true);
+             }
+         }
+-        false
++        (end, false)
+     }
+ }
