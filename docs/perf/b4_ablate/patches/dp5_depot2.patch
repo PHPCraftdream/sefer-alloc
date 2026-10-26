@@ -1,0 +1,663 @@
+# dp5_depot2 — production depot, DP-5 iteration 2 (parked count in PerClass), branch b4-depot @d0bec415 vs base cb6371e5, src/ only.
+# DP-5 gate variant: identical to the shipped code under test.
+diff --git a/src/kani_proofs.rs b/src/kani_proofs.rs
+index 3eb9ef7f..9a1d2502 100644
+--- a/src/kani_proofs.rs
++++ b/src/kani_proofs.rs
+@@ -11,6 +11,10 @@
+ //!   publications and a fresh reachable snapshot. `internals` exposes only
+ //!   its local-word constructor; the proved methods are unchanged.
+ //!
++//! - `depot_proofs` checks the B4 magazine depot store with its parked
++//!   count (И-D1 capacity, И-D2 exact LIFO round trip, class isolation);
++//!   not the `HeapSlot` binding or the MAG/live accounting around it.
++//!
+ //! These proofs do not establish concurrent memory ordering, reservation
+ //! lifetime, ownership authority, or reclamation safety.
+ 
+@@ -339,3 +343,76 @@ mod saturation_proofs {
+         );
+     }
+ }
++
++#[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
++mod depot_proofs {
++    use crate::registry::heap_core::{Depot, DEPOT_CLASSES, DEPOT_K, TCACHE_CAP};
++
++    fn any_magazine() -> [*mut u8; TCACHE_CAP] {
++        let mut m = [core::ptr::null_mut(); TCACHE_CAP];
++        for slot in &mut m {
++            *slot = kani::any::<usize>() as *mut u8;
++        }
++        m
++    }
++
++    /// И-D1: a park succeeds iff the class holds fewer than `DEPOT_K[c]`
++    /// magazines, and the parked count never exceeds that bound.
++    #[kani::proof]
++    #[kani::unwind(17)]
++    fn depot_park_respects_capacity() {
++        let mut d = Depot::empty();
++        let c: usize = kani::any();
++        kani::assume(c < DEPOT_CLASSES);
++        let mut n: u8 = 0;
++        let attempts: usize = kani::any();
++        kani::assume(attempts <= 9);
++        let mag = any_magazine();
++        let mut i = 0;
++        while i < attempts {
++            let before = n;
++            let ok = d.depot_park(c, &mut n, &mag);
++            assert_eq!(ok, (before as usize) < DEPOT_K[c] as usize);
++            assert_eq!(n, if ok { before + 1 } else { before });
++            assert!(n as usize <= DEPOT_K[c] as usize);
++            i += 1;
++        }
++    }
++
++    /// И-D2: reload returns exactly the magazines parked, last-in first-out,
++    /// then reports empty; destination and count are untouched on an empty
++    /// reload. Another class's stored magazine is not disturbed.
++    #[kani::proof]
++    #[kani::unwind(17)]
++    fn depot_reload_returns_parked_magazines_lifo() {
++        let mut d = Depot::empty();
++        let c: usize = kani::any();
++        let other: usize = kani::any();
++        kani::assume(c < DEPOT_CLASSES && other < DEPOT_CLASSES && other != c);
++        let mut n: u8 = 0;
++        let mut n_other: u8 = 0;
++        let a = any_magazine();
++        let b = any_magazine();
++        let o = any_magazine();
++        assert!(d.depot_park(other, &mut n_other, &o));
++        assert!(d.depot_park(c, &mut n, &a));
++        let two = DEPOT_K[c] >= 2;
++        if two {
++            assert!(d.depot_park(c, &mut n, &b));
++        }
++        let mut out = [core::ptr::null_mut(); TCACHE_CAP];
++        if two {
++            assert!(d.depot_reload(c, &mut n, &mut out));
++            assert!(out == b);
++        }
++        assert!(d.depot_reload(c, &mut n, &mut out));
++        assert!(out == a);
++        let sentinel = any_magazine();
++        let mut untouched = sentinel;
++        assert!(!d.depot_reload(c, &mut n, &mut untouched));
++        assert!(untouched == sentinel);
++        assert_eq!(n, 0);
++        assert!(d.depot_reload(other, &mut n_other, &mut out));
++        assert!(out == o);
++    }
++}
+diff --git a/src/lib.rs b/src/lib.rs
+index d7b3582a..739930e4 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -308,6 +308,7 @@
+ //      lease-drop (LIVE→FREE) protocol depend on) is a prose contract; a safe CAS of `state` LIVE→FREE
+ //      from the wrong place breaks it. (Non-test fields are `pub(crate)` to keep
+ //      this membrane inside the crate — see that module's M7 note.)
++//      Its owner-only `depot` storage (B4 DP-3) rests on the same contract.
+ //  In short: the membrane pattern concentrates the *unsafe blocks* into a
+ //  small named set of `#![allow(unsafe_code)]` files (tier 1, inventoried
+ //  above) PLUS item-scoped `#[allow(unsafe_code)]` sites (tier 2 — individual
+diff --git a/src/registry/bootstrap/ensure.rs b/src/registry/bootstrap/ensure.rs
+index ce3bdc62..56dd809d 100644
+--- a/src/registry/bootstrap/ensure.rs
++++ b/src/registry/bootstrap/ensure.rs
+@@ -91,6 +91,7 @@ pub(super) fn ensure_chunk_slow(
+         //   heap        = MaybeUninit::uninit() (zero is fine)
+         //   initialised = 0 = false
+         //   remote.tcache_hits / remote.large_cache_hits = 0
++        //   depot       = all-zero = empty Depot (B4 DP-3)
+         // — genuinely nothing to write; OS-zeroed pages ARE a valid state. The
+         // reservation is PAGE-aligned (>= `align_of::<RegistryChunk>()` <= 64)
+         // and leaked for the process lifetime, so the `&'static` references
+diff --git a/src/registry/heap_core/alloc/hot.rs b/src/registry/heap_core/alloc/hot.rs
+index 7c268935..800d72f0 100644
+--- a/src/registry/heap_core/alloc/hot.rs
++++ b/src/registry/heap_core/alloc/hot.rs
+@@ -497,6 +497,11 @@ impl HeapCore {
+     #[cold]
+     #[inline(never)]
+     fn refill_magazine_slow_virgin(&mut self, c: usize) -> (*mut u8, bool) {
++        // B4 depot (DP-3): a parked magazine holds freed blocks — never virgin
++        // (`depot_reload` clears the mask).
++        if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
++            return (self.finish_magazine_refill(c, TCACHE_CAP), false);
++        }
+         // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
+         // rationale — identical placement, identical cheap-when-empty shape).
+         self.drain_large_sidecar_ingress_hot_bounded();
+@@ -672,6 +677,10 @@ impl HeapCore {
+     #[cold]
+     #[inline(never)]
+     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
++        // B4 depot (DP-3): reload a parked full magazine (blocks stay MAG).
++        if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
++            return self.finish_magazine_refill(c, TCACHE_CAP);
++        }
+         // Bounded Large-only probe; Small discovery occurs in the refill.
+         self.drain_large_sidecar_ingress_hot_bounded();
+ 
+diff --git a/src/registry/heap_core/core.rs b/src/registry/heap_core/core.rs
+index c1722b9f..4fa88c50 100644
+--- a/src/registry/heap_core/core.rs
++++ b/src/registry/heap_core/core.rs
+@@ -90,7 +90,7 @@ pub(crate) type TcacheHitCounter = ::core::sync::atomic::AtomicU64;
+ /// 2. a raw-pointer / `!Send`-typed field: bind it to `_` in the pattern
+ ///    and add it to the audit's exclusion list with the reason it carries
+ ///    no thread-affine resource (today: `core: AllocCore`,
+-///    `tcache: Tcache`);
++///    `tcache: Tcache`, `depot: Option<&'static mut Depot>`);
+ /// 3. re-check the stack-pressure pin below.
+ pub struct HeapCore {
+     /// The owning slot's index in the registry. Used by `HeapLease`'s `Drop` implementation to release the
+@@ -138,6 +138,9 @@ pub struct HeapCore {
+     /// list (none handed out, none in magazine).
+     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+     pub(crate) tcache: crate::registry::heap_core::state::tcache::Tcache,
++    /// Bound slot-lifetime cold depot; `None` for standalone heaps.
++    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++    pub(crate) depot: Option<&'static mut crate::registry::heap_core::state::depot::Depot>,
+ 
+     /// TEST/DIAGNOSTIC-ONLY (task C1 → #133 → W3): stable handle to THIS
+     /// heap's magazine HIT counter, which now lives in the owning slot's
+@@ -276,6 +279,8 @@ impl HeapCore {
+             large_hot_cursor: 0,
+             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
++            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++            depot: None,
+             // W3: the counter now lives in the owning HeapSlot; this handle
+             // is planted by `HeapRegistry::claim_lease` (via `bind_tcache_hits`)
+             // right after the slot binds. `None` until then (never observed on
+@@ -311,6 +316,8 @@ impl HeapCore {
+             large_hot_cursor: 0,
+             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
++            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++            depot: None,
+             // W3: the counter now lives in the owning HeapSlot; this handle
+             // is planted by `HeapRegistry::claim_lease` (via `bind_tcache_hits`)
+             // right after the slot binds. `None` until then (never observed on
+diff --git a/src/registry/heap_core/diag/queries.rs b/src/registry/heap_core/diag/queries.rs
+index 0dad3255..8b2f1e0d 100644
+--- a/src/registry/heap_core/diag/queries.rs
++++ b/src/registry/heap_core/diag/queries.rs
+@@ -199,6 +199,17 @@ impl HeapCore {
+         crate::alloc_core::AllocCore::dbg_large_sidecar_slot_inspections()
+     }
+ 
++    /// TEST-ONLY (B4 DP-3): number of full magazines parked in the depot for
++    /// class `c`; 0 for an unbound heap or a class outside the depot.
++    #[doc(hidden)]
++    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
++    pub fn dbg_depot_len(&self, c: usize) -> usize {
++        if c >= crate::registry::heap_core::state::depot::DEPOT_CLASSES {
++            return 0;
++        }
++        self.tcache.classes[c].parked as usize
++    }
++
+     /// TEST-ONLY (P7): read the magazine count for class `c`. Widened to
+     /// `u16` at this test-only boundary (task #53 shrank the internal
+     /// storage to `u8` — see `PerClass::count` — but keeps this accessor's
+diff --git a/src/registry/heap_core/free/dealloc_own_base.rs b/src/registry/heap_core/free/dealloc_own_base.rs
+index 79871880..0155d479 100644
+--- a/src/registry/heap_core/free/dealloc_own_base.rs
++++ b/src/registry/heap_core/free/dealloc_own_base.rs
+@@ -525,6 +525,24 @@ impl HeapCore {
+                         }
+                         return;
+                     }
++                    // B4 depot (DP-3): park the full magazine whole (cold),
++                    // then `block` starts the next one. `block` itself is not
++                    // parked into a body-write path: only `slots` pointers move.
++                    if cnt == TCACHE_CAP
++                        && self.tcache.classes[c].parked
++                            < crate::registry::heap_core::state::depot::DEPOT_CAP[c]
++                        && self.depot_park(c)
++                    {
++                        meta.state_byte().write(
++                            off,
++                            c,
++                            crate::alloc_core::state_byte::StateByte::MAG,
++                        );
++                        self.tcache.classes[c].slots[0] = block;
++                        self.tcache.classes[c].count = 1;
++                        // `depot_park` cleared the mask; `block` is not virgin.
++                        return;
++                    }
+                     // ── R1-01: free-side byte-budget cap reached ───────
+                     // `cnt == cap < TCACHE_CAP`: this class's per-refill byte
+                     // budget (`FREE_PARK_CAP`) is exhausted, but the physical
+diff --git a/src/registry/heap_core/mod.rs b/src/registry/heap_core/mod.rs
+index c13643fa..1965caf3 100644
+--- a/src/registry/heap_core/mod.rs
++++ b/src/registry/heap_core/mod.rs
+@@ -12,6 +12,12 @@ pub(crate) mod diag;
+ // any more.
+ mod free;
+ mod state;
++#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++pub(crate) use self::state::depot::Depot;
++#[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
++pub(crate) use self::state::depot::{DEPOT_CLASSES, DEPOT_K};
++#[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
++pub(crate) use self::state::tcache::TCACHE_CAP;
+ 
+ pub use self::core::HeapCore;
+ 
+diff --git a/src/registry/heap_core/state/depot.rs b/src/registry/heap_core/state/depot.rs
+new file mode 100644
+index 00000000..eb6f4f05
+--- /dev/null
++++ b/src/registry/heap_core/state/depot.rs
+@@ -0,0 +1,121 @@
++//! Per-slot cold magazine depot storage, separate from `HeapCore`.
++
++use crate::alloc_core::size_classes::{SIZE_CLASS_TABLE, SMALL_CLASS_COUNT};
++use crate::registry::heap_core::state::tcache::TCACHE_CAP;
++
++pub(crate) const DEPOT_CLASSES: usize = 8;
++pub(crate) const DEPOT_K_MAX: u8 = 8;
++pub(crate) const DEPOT_K: [u8; DEPOT_CLASSES] = [8, 8, 8, 8, 8, 8, 7, 1];
++pub(crate) const DEPOT_BUDGET_BYTES: usize = 64 * 1024;
++/// `DEPOT_K` widened to every small class (0 = no depot), so the inline
++/// overflow gate needs no separate `c < DEPOT_CLASSES` test.
++pub(crate) const DEPOT_CAP: [u8; SMALL_CLASS_COUNT] = {
++    let mut t = [0u8; SMALL_CLASS_COUNT];
++    let mut c = 0;
++    while c < DEPOT_CLASSES {
++        t[c] = DEPOT_K[c];
++        c += 1;
++    }
++    t
++};
++
++const fn depot_bytes() -> usize {
++    let mut total = 0;
++    let mut c = 0;
++    while c < DEPOT_CLASSES {
++        total += SIZE_CLASS_TABLE[c] * TCACHE_CAP * DEPOT_K[c] as usize;
++        c += 1;
++    }
++    total
++}
++
++const _: () = assert!(DEPOT_CLASSES <= SIZE_CLASS_TABLE.len());
++const _: () = assert!(DEPOT_K[0] <= DEPOT_K_MAX);
++const _: () = assert!(DEPOT_K[1] <= DEPOT_K_MAX);
++const _: () = assert!(DEPOT_K[2] <= DEPOT_K_MAX);
++const _: () = assert!(DEPOT_K[3] <= DEPOT_K_MAX);
++const _: () = assert!(DEPOT_K[4] <= DEPOT_K_MAX);
++const _: () = assert!(DEPOT_K[5] <= DEPOT_K_MAX);
++const _: () = assert!(DEPOT_K[6] <= DEPOT_K_MAX);
++const _: () = assert!(DEPOT_K[7] <= DEPOT_K_MAX);
++const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[0] == 16);
++const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[1] == 32);
++const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[2] == 48);
++const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[3] == 64);
++const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[4] == 80);
++const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[5] == 112);
++const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[6] == 144);
++const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[7] == 192);
++const _: () = assert!(depot_bytes() <= DEPOT_BUDGET_BYTES);
++const _: () =
++    assert!(crate::registry::heap_core::state::tcache::FREE_PARK_CAP[0] == TCACHE_CAP as u8);
++const _: () =
++    assert!(crate::registry::heap_core::state::tcache::FREE_PARK_CAP[1] == TCACHE_CAP as u8);
++const _: () =
++    assert!(crate::registry::heap_core::state::tcache::FREE_PARK_CAP[2] == TCACHE_CAP as u8);
++const _: () =
++    assert!(crate::registry::heap_core::state::tcache::FREE_PARK_CAP[3] == TCACHE_CAP as u8);
++const _: () =
++    assert!(crate::registry::heap_core::state::tcache::FREE_PARK_CAP[4] == TCACHE_CAP as u8);
++const _: () =
++    assert!(crate::registry::heap_core::state::tcache::FREE_PARK_CAP[5] == TCACHE_CAP as u8);
++const _: () =
++    assert!(crate::registry::heap_core::state::tcache::FREE_PARK_CAP[6] == TCACHE_CAP as u8);
++const _: () =
++    assert!(crate::registry::heap_core::state::tcache::FREE_PARK_CAP[7] == TCACHE_CAP as u8);
++
++/// Classes `0..8` map to sizes 16, 32, 48, 64, 80, 112, 144, and 192 B.
++/// With K `[8,8,8,8,8,8,7,1]`, weighted block-bytes are 4,016; multiplying
++/// by 16 gives 64,256 B, within the 65,536 B depot budget.
++///
++/// Only the pointer arrays live here; each class's parked count is
++/// `PerClass::parked` in the owner's magazine line (DP-5 iteration 2), so the
++/// hot-path gates read it without touching this store.
++pub(crate) struct Depot {
++    mags: [[[*mut u8; TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
++}
++
++impl Depot {
++    /// Kani-only: the all-zero empty depot an OS-zeroed registry slot holds.
++    #[cfg(kani)]
++    pub(crate) const fn empty() -> Self {
++        Self {
++            mags: [[[core::ptr::null_mut(); TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
++        }
++    }
++
++    /// Park `magazine` as class `c`'s next entry; `n` is that class's parked
++    /// count. Fails (no change) when the class already holds `DEPOT_K[c]`.
++    #[inline]
++    pub(crate) fn depot_park(
++        &mut self,
++        c: usize,
++        n: &mut u8,
++        magazine: &[*mut u8; TCACHE_CAP],
++    ) -> bool {
++        let i = *n as usize;
++        if i >= DEPOT_K[c] as usize {
++            return false;
++        }
++        self.mags[c][i] = *magazine;
++        *n += 1;
++        true
++    }
++
++    /// Move class `c`'s most recently parked magazine into `magazine`.
++    /// Fails (no change) when `n == 0`.
++    #[inline]
++    pub(crate) fn depot_reload(
++        &mut self,
++        c: usize,
++        n: &mut u8,
++        magazine: &mut [*mut u8; TCACHE_CAP],
++    ) -> bool {
++        if *n == 0 {
++            return false;
++        }
++        *n -= 1;
++        *magazine = self.mags[c][*n as usize];
++        true
++    }
++}
+diff --git a/src/registry/heap_core/state/depot_paths.rs b/src/registry/heap_core/state/depot_paths.rs
+new file mode 100644
+index 00000000..613abdf1
+--- /dev/null
++++ b/src/registry/heap_core/state/depot_paths.rs
+@@ -0,0 +1,55 @@
++//! Cold owner-side parking and reload for full magazines.
++
++use crate::registry::heap_core::state::depot::{DEPOT_CLASSES, DEPOT_K};
++use crate::registry::heap_core::state::tcache::TCACHE_CAP;
++use crate::registry::heap_core::HeapCore;
++
++impl HeapCore {
++    /// Park a full magazine for a class with configured depot capacity.
++    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++    #[cold]
++    #[inline(never)]
++    pub(crate) fn depot_park(&mut self, c: usize) -> bool {
++        if c >= DEPOT_CLASSES || DEPOT_K[c] == 0 {
++            return false;
++        }
++        let Some(depot) = self.depot.as_deref_mut() else {
++            return false;
++        };
++        let class = &mut self.tcache.classes[c];
++        if class.count as usize != TCACHE_CAP {
++            return false;
++        }
++        if !depot.depot_park(c, &mut class.parked, &class.slots) {
++            return false;
++        }
++        #[cfg(feature = "virgin-zero-skip")]
++        {
++            class.virgin_mask = 0;
++        }
++        true
++    }
++
++    /// Reload a parked full magazine; its blocks remain MAG and live.
++    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++    #[cold]
++    #[inline(never)]
++    pub(crate) fn depot_reload(&mut self, c: usize) -> bool {
++        if c >= DEPOT_CLASSES || DEPOT_K[c] == 0 {
++            return false;
++        }
++        let Some(depot) = self.depot.as_deref_mut() else {
++            return false;
++        };
++        let class = &mut self.tcache.classes[c];
++        if class.count != 0 || !depot.depot_reload(c, &mut class.parked, &mut class.slots) {
++            return false;
++        }
++        #[cfg(feature = "virgin-zero-skip")]
++        {
++            class.virgin_mask = 0;
++        }
++        class.count = TCACHE_CAP as u8;
++        true
++    }
++}
+diff --git a/src/registry/heap_core/state/mod.rs b/src/registry/heap_core/state/mod.rs
+index 424d78bc..86e4320c 100644
+--- a/src/registry/heap_core/state/mod.rs
++++ b/src/registry/heap_core/state/mod.rs
+@@ -2,6 +2,10 @@
+ //! (`ownership`) and the tcache/magazine lifecycle (`tcache`,
+ //! `tcache_flush`). Re-export policy lives in the parent `heap_core/mod.rs`.
+ 
++#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++pub(crate) mod depot;
++#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++mod depot_paths;
+ mod ownership;
+ #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+ pub(crate) mod tcache;
+diff --git a/src/registry/heap_core/state/tcache.rs b/src/registry/heap_core/state/tcache.rs
+index b9a70981..bb7905fa 100644
+--- a/src/registry/heap_core/state/tcache.rs
++++ b/src/registry/heap_core/state/tcache.rs
+@@ -242,6 +242,11 @@ pub(crate) struct PerClass {
+     /// FIRST in declaration order under `#[repr(C)]` so it lands at struct
+     /// offset 0, preceding the pointer array at offset 8.
+     pub(crate) count: u8,
++    /// B4 depot (DP-5 iteration 2): full magazines of this class parked in
++    /// the slot's depot (`0..=DEPOT_CAP[c]`). Sits in the padding byte after
++    /// `count` (no size change), so the overflow / miss branches gate the
++    /// cold depot calls without leaving this line.
++    pub(crate) parked: u8,
+     /// R13-3 (task #273): magazine-resident virginity bitmask, ONE bit per
+     /// `slots` index (bit `i` set ⟺ `slots[i]` is a genuinely virgin —
+     /// never-before-served, `Node::zero`-skippable — block, per the
+@@ -314,6 +319,10 @@ const _: () = assert!(
+     ::core::mem::offset_of!(PerClass, count) == 0,
+     "PerClass::count must sit at offset 0 (repr(C), declared first) for the documented magazine cache-line locality"
+ );
++const _: () = assert!(
++    ::core::mem::offset_of!(PerClass, parked) == 1,
++    "PerClass::parked must use the pad byte after count (offset 1)"
++);
+ #[cfg(feature = "virgin-zero-skip")]
+ const _: () = assert!(
+     ::core::mem::offset_of!(PerClass, virgin_mask) == 2,
+@@ -334,6 +343,7 @@ impl PerClass {
+     const fn new() -> Self {
+         Self {
+             count: 0,
++            parked: 0,
+             slots: [::core::ptr::null_mut(); TCACHE_CAP],
+             #[cfg(feature = "virgin-zero-skip")]
+             virgin_mask: 0,
+diff --git a/src/registry/heap_core/state/tcache_flush.rs b/src/registry/heap_core/state/tcache_flush.rs
+index fc917c69..8e5f25ad 100644
+--- a/src/registry/heap_core/state/tcache_flush.rs
++++ b/src/registry/heap_core/state/tcache_flush.rs
+@@ -49,6 +49,14 @@ impl HeapCore {
+         self.tcache_hits = Some(counter);
+     }
+ 
++    /// B4 depot (DP-3): bind this heap to its owning slot's depot storage.
++    /// Called once per materialised slot by `bind_slot_counters`; the binding
++    /// survives recycle (the `HeapCore` stays in the slot).
++    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++    pub(crate) fn bind_depot(&mut self, depot: &'static mut super::depot::Depot) {
++        self.depot = Some(depot);
++    }
++
+     /// W3: plant the stable handle to THIS heap's slot-resident large-segment
+     /// cache hit counter (forwarded into the inner `AllocCore`). Same contract
+     /// as [`bind_tcache_hits`](Self::bind_tcache_hits). Gated on
+@@ -65,8 +73,9 @@ impl HeapCore {
+     /// Flush every tcache class's magazine back to the substrate via
+     /// `flush_class` → `dealloc_small` → `dec_live` → `maybe_decommit`.
+     ///
+-    /// After this call, every magazine slot is empty (`count[c] == 0` for
+-    /// all classes) and the blocks have been returned to their owning
++    /// After this call, every magazine slot and every parked depot magazine
++    /// is empty (`count[c] == 0` for all classes) and the blocks have been
++    /// returned to their owning
+     /// segments. If any segment reaches `live_count == 0` during the flush,
+     /// decommit/release fires (or the segment is pooled, subject to the
+     /// pool's cap).
+@@ -79,27 +88,33 @@ impl HeapCore {
+     pub(crate) fn flush_all_tcache(&mut self) {
+         use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
+         for c in 0..SMALL_CLASS_COUNT {
+-            let n = self.tcache.classes[c].count as usize;
+-            if n == 0 {
+-                continue;
+-            }
+-            // B4 (в): the former magazine-bitmap clear pre-pass is gone —
+-            // `flush_class` itself commits LIVE/MAG → FREE via the state byte.
+-            // SAFETY (R6-MS-3): every slot in `slots[0..n]` is a valid live
+-            // small-class-`c` allocation owned by this core's magazine; the
+-            // teardown trim returns each to the substrate exactly once.
+-            #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+-            unsafe {
+-                self.core
+-                    .flush_class_internal(c, &self.tcache.classes[c].slots[0..n])
+-            };
+-            self.tcache.classes[c].count = 0;
+-            // R13-3 (task #273): every slot in this class's magazine was just
+-            // returned to the substrate — reset the virgin mask to empty,
+-            // maintaining "bits >= count are 0" for `count == 0`.
+-            #[cfg(feature = "virgin-zero-skip")]
+-            {
+-                self.tcache.classes[c].virgin_mask = 0;
++            // B4 depot (DP-3): parked magazines are reloaded one by one into the
++            // emptied magazine and flushed the same way.
++            loop {
++                let n = self.tcache.classes[c].count as usize;
++                if n != 0 {
++                    // B4 (в): the former magazine-bitmap clear pre-pass is gone —
++                    // `flush_class` itself commits LIVE/MAG → FREE via the state byte.
++                    // SAFETY (R6-MS-3): every slot in `slots[0..n]` is a valid live
++                    // small-class-`c` allocation owned by this core's magazine; the
++                    // teardown trim returns each to the substrate exactly once.
++                    #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
++                    unsafe {
++                        self.core
++                            .flush_class_internal(c, &self.tcache.classes[c].slots[0..n])
++                    };
++                    self.tcache.classes[c].count = 0;
++                    // R13-3 (task #273): every slot in this class's magazine was just
++                    // returned to the substrate — reset the virgin mask to empty,
++                    // maintaining "bits >= count are 0" for `count == 0`.
++                    #[cfg(feature = "virgin-zero-skip")]
++                    {
++                        self.tcache.classes[c].virgin_mask = 0;
++                    }
++                }
++                if !self.depot_reload(c) {
++                    break;
++                }
+             }
+         }
+     }
+diff --git a/src/registry/heap_registry/claim.rs b/src/registry/heap_registry/claim.rs
+index 5e7c1f7a..312bf9f6 100644
+--- a/src/registry/heap_registry/claim.rs
++++ b/src/registry/heap_registry/claim.rs
+@@ -768,6 +768,12 @@ impl Drop for HeapLease {
+ /// registry array, so `&slot.<counter>` is a sound `&'static` for the process
+ /// lifetime.
+ ///
++/// B4 depot (DP-3): the same call binds the heap to its slot's `depot`
++/// storage as an owner-only `&'static mut Depot`. Unlike the counters,
++/// nothing reads `depot` through `&HeapSlot`: after publication it is reached
++/// only through the current owner's `&mut HeapCore`, and the binding survives
++/// recycle because the `HeapCore` stays materialised in the slot.
++///
+ /// # Safety
+ ///
+ /// `heap` must point at the `HeapCore` just written into `slot`'s `UnsafeCell`
+@@ -786,6 +792,14 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
+     // not-yet-published `HeapCore` in `slot`. This exclusive `&mut` is the only
+     // live reference to it.
+     let heap_ref: &mut HeapCore = unsafe { &mut *heap };
++    // SAFETY: `slot` lives in a registry chunk that is leaked, never moved or
++    // freed (`bootstrap/chunk.rs`), and OS-zeroed: all-zero is a valid empty
++    // `Depot`. This is the slot's first materialisation (single caller, under
++    // the INITIALIZING CAS win, before `initialised` is published), so no other
++    // reference to `slot.depot` exists; afterwards only the holder of
++    // `&mut HeapCore` reaches it through this binding.
++    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++    heap_ref.bind_depot(unsafe { &mut *slot.depot.get() });
+     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+     heap_ref.bind_tcache_hits(&slot.remote.tcache_hits);
+     #[cfg(feature = "alloc-decommit")]
+diff --git a/src/registry/heap_slot.rs b/src/registry/heap_slot.rs
+index 61534500..454a8504 100644
+--- a/src/registry/heap_slot.rs
++++ b/src/registry/heap_slot.rs
+@@ -83,6 +83,8 @@ use core::mem::MaybeUninit;
+ use core::sync::atomic::AtomicU64;
+ use core::sync::atomic::{AtomicBool, AtomicU8};
+ 
++#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++use super::heap_core::Depot;
+ use super::heap_core::HeapCore;
+ 
+ /// The lease-state machine of a registry slot (the values carried by
+@@ -234,6 +236,11 @@ pub struct HeapSlot {
+     /// `&HeapSlot`, and `MaybeUninit` so a `FREE` slot carries no live
+     /// (expensive-to-construct) `HeapCore`.
+     pub(crate) heap: UnsafeCell<MaybeUninit<HeapCore>>,
++    /// B4 depot (DP-3): parked full magazines of this slot's heap, kept
++    /// outside `HeapCore` (stack-pressure pin). OS-zeroed = empty. Bound once
++    /// into the heap by `bind_slot_counters`; reached only via `&mut HeapCore`.
++    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++    pub(crate) depot: UnsafeCell<Depot>,
+     /// Release-published "heap is materialised" flag (task #133 hardening).
+     ///
+     /// Starts `false` and becomes `true` EXACTLY ONCE, at the end of the
+@@ -307,6 +314,9 @@ impl HeapSlot {
+ // the single writer. `MaybeUninit` adds no new hazard: the registry's contract
+ // is that `heap` is read only by the INITIALIZING winner or while state is
+ // LIVE/MAINTENANCE (the latter two require prior full initialisation).
++// `depot` (B4 DP-3) follows the same single-writer rule: it is bound into the
++// heap before `initialised` is published and is touched only through that
++// heap's `&mut HeapCore`; no `&HeapSlot` reader and no remote producer reads it.
+ //
+ // This single-writer invariant ADDITIONALLY rests on `state`, `generation`,
+ // and every `Registry` control atomic being `pub(crate)`
+@@ -334,6 +344,8 @@ impl HeapSlot {
+ // NUMA-node cache is a plain value invalidated at claim time, R11-5.
+ //   - `core: AllocCore` (segment roots, table slots, large-cache sidecar)
+ //   - `tcache: Tcache` (`PerClass::slots: [*mut u8; TCACHE_CAP]`)
++//   - `depot: Option<&'static mut Depot>` (owner-only binding to this slot's
++//     parked-magazine pointer arrays)
+ // The `#[cfg]` arms mirror `HeapCore`'s field gates exactly (see
+ // `heap_core/core.rs`).
+ const _: fn(&HeapCore) = |hc| {
+@@ -351,6 +363,8 @@ const _: fn(&HeapCore) = |hc| {
+         large_hot_cursor,
+         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+             tcache: _,
++        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++            depot: _,
+         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+         tcache_hits,
+     } = hc;
