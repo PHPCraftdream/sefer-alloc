@@ -1,12 +1,12 @@
 // B4 J1′ interleave judge — KERNEL BODIES + live-slot tables.
 // PURE MOVE out of `b4_interleave_core.rs` (≤1000-line cap); included
-// verbatim from that file (`include!`), same single scope.
+// verbatim from the end of that file (`include!`), same single scope.
 
 // Live-slot storage: `thread_local!` + `Cell<*mut u8>`, const-init arrays
 // (no TLS allocation inside the window); PER ARM — a shared ring would free
 // a live pointer CROSS-ALLOCATOR (violates the caller's GlobalAlloc contract).
-/// Live-arm count of the slot tables = the number of shim sets
-/// ([`SHIM_SLOTS`]).
+/// Live-arm count of the slot tables = the number of shim sets ([`SHIM_SLOTS`];
+/// the two extra `ablate` arms reuse the same tables).
 const ARMS: usize = SHIM_SLOTS;
 
 thread_local! {
@@ -274,84 +274,6 @@ fn kernel_larson(t: &ShimTable, ops: u64, seed: u64) -> u64 {
     acc
 }
 
-/// Non-timed body of ONE portion: call deltas + checksum (test entry point).
-#[inline(never)]
-pub fn portion_body(table: &'static ShimTable, kernel: Kernel, seed: u64) -> ([u64; 4], u64) {
-    let mut before = [0u64; 4];
-    for (i, b) in before.iter_mut().enumerate() {
-        *b = shim_calls_total(i);
-    }
-    let t = black_box(table);
-    let ops = kernel.ops();
-    let acc = match kernel {
-        Kernel::Pair16 => kernel_pair(t, ops, seed, 16),
-        Kernel::Pair64 => kernel_pair(t, ops, seed, 64),
-        Kernel::PairRt => kernel_pair(t, ops, seed, 0),
-        Kernel::Bulk64 => kernel_bulk(t, ops, seed, BULK64_N),
-        Kernel::Bulk16k => kernel_bulk(t, ops, seed, BULK16K_N),
-        Kernel::Churn16 => kernel_churn(t, ops, seed, 16),
-        Kernel::Churn64 => kernel_churn(t, ops, seed, 64),
-        Kernel::Churn256 => kernel_churn(t, ops, seed, 256),
-        Kernel::Churn1024 => kernel_churn(t, ops, seed, 1024),
-        Kernel::VecGrow => kernel_vec(t, ops, seed),
-        Kernel::Larson => kernel_larson(t, ops, seed),
-    };
-    black_box(acc);
-    let mut deltas = [0u64; 4];
-    for (i, d) in deltas.iter_mut().enumerate() {
-        *d = shim_calls_total(i) - before[i];
-    }
-    (deltas, acc)
-}
-
-/// The FOREIGN shim slots for a portion driven by `slot` (must stay 0).
-pub fn foreign_slots(slot: usize) -> [usize; 3] {
-    match slot {
-        0 => [1, 2, 3],
-        1 => [0, 2, 3],
-        2 => [0, 1, 3],
-        _ => [0, 1, 2],
-    }
-}
-
-/// Sum of the foreign shim-call deltas of one portion (must be 0).
-pub fn foreign_delta(deltas: &[u64; 4], slot: usize) -> u64 {
-    foreign_slots(slot).iter().map(|&i| deltas[i]).sum()
-}
-
-/// One timed portion: ticks + ns + call deltas + foreign delta (0 required).
-#[inline(never)]
-pub fn run_portion(
-    table: &'static ShimTable,
-    kernel: Kernel,
-    seed: u64,
-) -> (u64, f64, [u64; 4], u64) {
-    let q0 = qpc_ms();
-    let t0 = tsc_now();
-    let (deltas, _) = portion_body(table, kernel, seed);
-    let t1 = tsc_now();
-    let q1 = qpc_ms();
-    let ticks = t1.wrapping_sub(t0);
-    let foreign = foreign_delta(&deltas, table.call_slot);
-    assert_eq!(
-        foreign,
-        0,
-        "{} / {}: foreign shim calls inside the portion window ({foreign})",
-        table.name,
-        kernel.name()
-    );
-    (ticks, portion_ns(q0, q1, ticks, ticks), deltas, foreign)
-}
-
-#[cfg(windows)]
-fn qpc_ms() -> i64 {
-    qpc::now()
-}
-#[cfg(not(windows))]
-fn qpc_ms() -> i64 {
-    0
-}
-
 // Read accessors for the live-slot tables (safe Cell reads for the
 // test-side in-window payload/occupancy checks).
 
@@ -385,7 +307,7 @@ pub fn larson_slot(arm: usize, idx: usize) -> Option<(*mut u8, usize)> {
 
 /// Explicit teardown: frees EVERY live block of every arm through its OWN
 /// shim table with the block's OWN recorded layout. Judge calls before exit.
-pub fn teardown_arms(tables: [&'static ShimTable; 4]) {
+pub fn teardown_arms<const N: usize>(tables: [&'static ShimTable; N]) {
     for (arm, t) in tables.iter().enumerate() {
         CHURN_SLOTS.with(|s| {
             CHURN_SIZES.with(|z| {

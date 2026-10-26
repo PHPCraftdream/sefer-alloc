@@ -202,6 +202,8 @@ alloc-xthread = ["alloc-core"]
 alloc-global = ["alloc-core", "alloc-xthread"]
 # Opt-in prototype (Ph1b): exact System object + out-of-object descriptor for
 # narrow requests. NOT part of `production`.
+# B4-ablate (measurement branch only): judge `ab_variant` / `aa_variant` modes.
+ablate = []
 exact-object-proto = ["alloc-global", "std"]
 # R10-7 follow-up: the tcache-aware batch allocation API
 # (`SeferAlloc::alloc_batch` / `dealloc_batch` + the underlying
@@ -996,6 +998,8 @@ proc-memstat = { path = "crates/proc-memstat" }
 # so a probe binary has ONE "measure + report" dependency and the emit format
 # can never drift from what `scripts/*.mjs` parse. NOT a runtime dep.
 proc-probe = { path = "crates/proc-probe" }
+# B4-ablate (measurement branch only): generated patched copy, outside the tree.
+sefer-alloc-variant = { path = "../../.rush/variant/null", features = ["production"] }
 
 # Phase 3b-II: loom model-checks the publication PROTOCOL (generation/value
 # ordering) of the epoch tier. loom and crossbeam-epoch do NOT compose (loom
@@ -2719,4 +2723,9 @@ required-features = ["production"]
 # See docs/perf/B4_25_REMOTE_CEILING.md and docs/perf/b4_25_ceiling/.
 [[example]]
 name = "b425_mt_probe"
+required-features = ["production"]
+
+# B4-ablate (measurement branch only).
+[[test]]
+name = "b4_ablate_variant_null"
 required-features = ["production"]
