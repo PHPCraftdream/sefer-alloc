@@ -3182,7 +3182,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **v2 result (ИЗМЕРЕНО 2026-10-26, 20 processes × 2000 blocks, commit `af6c5a24`):** admitted 8 of 11; SEFER_FASTER on pair_rt (t_mi/t_sefer 1.382) and vec512 (1.169); MIMALLOC_FASTER on pair64 0.926, larson 0.841, pair16 0.792, churn256 0.558, churn16 0.442, bulk16k 0.409; not admitted: bulk64, churn64, churn1024 (A/A outside 1 %). Table: docs/perf/B4_INTERLEAVE_JUDGE.md, section «Результаты v2».
    > - **v2 protocol (ИЗМЕРЕНО on branch `b4-ablate`):** null copy-vs-itself on identical code gave +0.46 % and −1.83 % on churn16 with in-process CI half-width ≈ 0.1 %, while separate processes showed up to +17 % — between-process spread dominates. v2: 20 processes × 2000 blocks, distinct order seeds, median over blocks within a process, then median over processes, bootstrap 95 % over processes. Report: docs/perf/B4_INTERLEAVE_JUDGE.md § "v2" (результаты v2 пусты до прогона фазы 2).
    > - **Open sub-item (P2):** the correctness test's simulation section does not check `run_block`'s own four portions against the same execution (the judge's runtime oracle does, 0 mismatches) — see the report's "Known limitation".
-   > - **Next trigger:** re-judge every runtime candidate (first: the depot, item 117) under the v2 protocol; churn attribution — inter-class transfer (item 116).
+   > - **Next trigger:** re-judge every runtime candidate under the v2 protocol (the depot, item 117, was judged and shipped — closed 2026-10-26); churn attribution — inter-class transfer (item 116).
    > - **Evidence:** docs/perf/B4_INTERLEAVE_JUDGE.md, docs/perf/B4_INTERLEAVE_JUDGE_summary.csv, docs/perf/b4_interleave_p2/, docs/perf/B4_ABLATE_CHURN.md (v2-protocol report, copy of branch `b4-ablate`@734dd363), examples/b4_interleave_judge/, examples/_shared/b4_interleave_core.rs, scripts/b4_interleave_{run,table}.mjs, tests/b4_interleave_judge_correctness.rs.
 
 113. **D0 depot provenance — NO-GO by pre-registration (absorb gate missed).** (Filed 2026-10-25; archive on a local branch.)
@@ -3213,19 +3213,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** judge fix candidate — depot (item 117) or class-partitioned rings; re-measure churn under the v2 protocol.
    > - **Evidence:** docs/perf/B4_A3_CROSS_CLASS.md, docs/perf/b4_pmu/_raw_*.txt, examples/b4_pmu_probe.rs, scripts/b4_pmu_summary.mjs (raw measured on branch `b4-pmu`@32eed166; run scripts live there).
 
-117. **B1-D depot prototype (K full magazines per class) — measured, production pending owner budget decision.** (Filed 2026-10-25, branch `b4-ablate`@734dd363, report copied to main.)
-   > **Current state**
-   > - **Status:** GO at the DP-5 gate (2026-10-26, attempt 2; attempt 1 NO-GO on bulk16k, fixed by gating the cold depot calls); DP-6 (PR, CI, merge) pending. Production code: branch `b4-depot`.
-   > - **Current verdict:** production depot net of null (20 processes × 2000 blocks): bulk64 faster 1.778×, churn64 1.481×, churn16 1.278×, larson 1.099×, pair16/pair64 1.004×/1.003× faster, bulk16k 1.008× faster, no kernel slower; vs mimalloc bulk64 0.445 → 0.778, churn64 0.555 → 0.748 (t_mi/t_sefer; mimalloc still faster on 9/11).
-   > - **Next trigger:** DP-6 — PR from `b4-depot`, CI green on the landing SHA (incl. Miri/Kani/Loom depot rows and the EV-1 reverify of R-Ph3a-native), then close this card.
-   > - **Evidence:** `docs/perf/B1_DEPOT_PRODUCTION_GATE.md` (+ `_summary.csv`, `b1_depot_gate/`), `docs/design/2026-10-26-depot-design.md`, `docs/perf/B1_DEPOT_PROTOTYPE.md`.
-
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
+
+- **Item 117 — B1-D magazine depot (Bonwick): GO, shipped `perf(runtime)`, closed 2026-10-26** (PR #100, landing `02b1f144`, CI run 40369754081 green; net of null bulk64 faster 1.778×, churn64 1.481×, no kernel slower). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A117.
 
 - **Item 105 — B4-MT X-notown (256-битный notown-фильтр SegmentTable): NO-GO, closed 2026-10-20** (thrash64 w_free +5 Ir > +2; src откачен). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A105.
 
