@@ -209,8 +209,50 @@ fn inter(a: &[String]) {
     );
 }
 
+/// Bulk mode (the judge's bulk kernel): allocate `n` blocks of `size`, write
+/// the first 8 bytes, then free them in allocation order; `passes` times.
+/// Usage: b4_pmu_probe bulk <sefer|mi> <size> <n> <passes>
+/// Prints `bulk alloc size n passes ns_per_block checksum`.
+fn bulk(a: &[String]) {
+    let (alloc, dealloc): ArmPair = match a[2].as_str() {
+        "sefer" => (sefer_alloc, sefer_dealloc),
+        "mi" => (mi_alloc, mi_dealloc),
+        other => panic!("unknown allocator {other}"),
+    };
+    let size: usize = a[3].parse().expect("size");
+    let n: usize = a[4].parse().expect("n");
+    let passes: u64 = a[5].parse().expect("passes");
+    let mut slots: Vec<*mut u8> = vec![core::ptr::null_mut(); n];
+    let mut acc = 0u64;
+    let mut run = |passes: u64| {
+        for _ in 0..passes {
+            for s in slots.iter_mut() {
+                let p = alloc(size);
+                assert!(!p.is_null(), "alloc({size}) returned null");
+                // SAFETY: fresh `size`-byte block.
+                unsafe { core::ptr::write_bytes(p, 0xA5, 8.min(size)) };
+                acc = acc.wrapping_add(p as u64);
+                *s = p;
+            }
+            for s in slots.iter() {
+                dealloc(*s, size);
+            }
+        }
+    };
+    run((passes / 10).max(1));
+    let t0 = Instant::now();
+    run(passes);
+    let ns = t0.elapsed().as_nanos() as f64 / (passes as f64 * n as f64);
+    println!("bulk {} {size} {n} {passes} {ns:.3} {acc:x}", a[2]);
+}
+
 fn main() {
     let a: Vec<String> = std::env::args().collect();
+    if a.get(1).map(String::as_str) == Some("bulk") {
+        assert!(a.len() >= 6, "usage: b4_pmu_probe bulk <sefer|mi> <size> <n> <passes>");
+        bulk(&a);
+        return;
+    }
     if a.get(1).map(String::as_str) == Some("inter") {
         assert!(
             a.len() >= 7,

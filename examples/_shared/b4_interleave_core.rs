@@ -128,9 +128,12 @@ pub static SEFER: sefer_alloc::SeferAlloc = sefer_alloc::SeferAlloc::new();
 /// mimalloc arm static (the comparison baseline).
 pub static MI: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-/// Number of shim sets: 0=sefer_a, 1=sefer_b, 2=mi_a, 3=mi_b (A/A modes
-/// use two sets against the SAME static).
-pub const SHIM_SLOTS: usize = 4;
+/// Number of shim sets: 0=sefer_a, 1=sefer_b, 2=mi_a, 3=mi_b and, with the
+/// `ablate` feature, 4=variant_a, 5=variant_b (the sefer-alloc COPY
+/// generated under `.rush/variant/`). A/A modes use two sets against the
+/// SAME static.
+/// Slots 4/5 stay at zero without the feature (never incremented).
+pub const SHIM_SLOTS: usize = 6;
 
 // Shim-call counters per shim SET (see `SHIM_SLOTS` for the layout).
 // v2: thread-local NON-atomic cells — the judge is single-threaded, and the
@@ -258,12 +261,67 @@ pub const MI_B_TABLE: ShimTable = ShimTable {
     call_slot: 3,
 };
 
+// ── Ablation arm (feature `ablate`): the sefer-alloc COPY, in-process ───────
+// `sefer_alloc_variant` is the patched copy of the crate generated
+// outside the repo tree under `.rush/variant/` (relative path
+// dev-dependency). The judge drives its
+// `GlobalAlloc` face through the SAME identically-shaped shim sets as the
+// `sefer` arm; the oracle / balance / identity logic is untouched.
+
+/// Variant arm static (the generated sefer-alloc copy, `production` set).
+#[cfg(feature = "ablate")]
+pub static VARIANT: sefer_alloc_variant::SeferAlloc = sefer_alloc_variant::SeferAlloc::new();
+
+#[cfg(feature = "ablate")]
+shim_set!(
+    variant_a_alloc,
+    variant_a_realloc,
+    variant_a_dealloc,
+    VARIANT,
+    4,
+    "variant_a"
+);
+#[cfg(feature = "ablate")]
+shim_set!(
+    variant_b_alloc,
+    variant_b_realloc,
+    variant_b_dealloc,
+    VARIANT,
+    5,
+    "variant_b"
+);
+
+/// A/B ablation: sefer vs the generated variant (same-shape shim sets).
+#[cfg(feature = "ablate")]
+pub const VARIANT_A_TABLE: ShimTable = ShimTable {
+    name: "variant",
+    alloc: variant_a_alloc,
+    realloc: variant_a_realloc,
+    dealloc: variant_a_dealloc,
+    call_slot: 4,
+};
+/// A/A ablation control: variant×variant (two sets against the SAME static).
+#[cfg(feature = "ablate")]
+pub const VARIANT_B_TABLE: ShimTable = ShimTable {
+    name: "variant",
+    alloc: variant_b_alloc,
+    realloc: variant_b_realloc,
+    dealloc: variant_b_dealloc,
+    call_slot: 5,
+};
+
 /// Judge mode: which pair of shim tables the block runner drives.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Ab,      // sefer vs mimalloc (the actual judge)
     AaSefer, // sefer×sefer A/A calibration (control)
     AaMi,    // mimalloc×mimalloc A/A calibration (control)
+    /// sefer vs the generated variant copy (b4-ablate; feature `ablate`).
+    #[cfg(feature = "ablate")]
+    AbVariant,
+    /// variant×variant A/A ablation control (feature `ablate`).
+    #[cfg(feature = "ablate")]
+    AaVariant,
 }
 impl Mode {
     pub fn name(self) -> &'static str {
@@ -271,6 +329,10 @@ impl Mode {
             Mode::Ab => "ab",
             Mode::AaSefer => "aa_sefer",
             Mode::AaMi => "aa_mi",
+            #[cfg(feature = "ablate")]
+            Mode::AbVariant => "ab_variant",
+            #[cfg(feature = "ablate")]
+            Mode::AaVariant => "aa_variant",
         }
     }
 
@@ -279,6 +341,10 @@ impl Mode {
             Mode::Ab => (&SEFER_A_TABLE, &MI_A_TABLE),
             Mode::AaSefer => (&SEFER_A_TABLE, &SEFER_B_TABLE),
             Mode::AaMi => (&MI_A_TABLE, &MI_B_TABLE),
+            #[cfg(feature = "ablate")]
+            Mode::AbVariant => (&SEFER_A_TABLE, &VARIANT_A_TABLE),
+            #[cfg(feature = "ablate")]
+            Mode::AaVariant => (&VARIANT_A_TABLE, &VARIANT_B_TABLE),
         }
     }
 
@@ -287,10 +353,74 @@ impl Mode {
             "ab" => Some(Mode::Ab),
             "aa_sefer" => Some(Mode::AaSefer),
             "aa_mi" => Some(Mode::AaMi),
+            #[cfg(feature = "ablate")]
+            "ab_variant" => Some(Mode::AbVariant),
+            #[cfg(feature = "ablate")]
+            "aa_variant" => Some(Mode::AaVariant),
             _ => None,
         }
     }
+
+    /// The variant name recorded into the raw `variant` / `variant_name`
+    /// fields. Under the `ablate` feature this is a property of the BINARY
+    /// BUILD (the generated copy version), so it is written in EVERY mode;
+    /// "-" only when built without `ablate`.
+    pub fn variant(self) -> &'static str {
+        #[cfg(feature = "ablate")]
+        {
+            let _ = self;
+            VARIANT_NAME
+        }
+        #[cfg(not(feature = "ablate"))]
+        {
+            let _ = self;
+            "-"
+        }
+    }
+
+    /// Alias of [`Mode::variant`] kept under the explicit raw-field name.
+    pub fn variant_name(self) -> &'static str {
+        self.variant()
+    }
+
+    /// The sha256 identity of the generated variant copy (from
+    /// `ab_variant_identity.rs`); written in every mode under the `ablate`
+    /// feature, "-" otherwise.
+    pub fn variant_sha256(self) -> &'static str {
+        #[cfg(feature = "ablate")]
+        {
+            let _ = self;
+            VARIANT_SHA256
+        }
+        #[cfg(not(feature = "ablate"))]
+        {
+            let _ = self;
+            "-"
+        }
+    }
 }
+
+// Ablation variant identity (the patch name + sha256 of the generated copy
+// under docs/perf/b4_ablate/patches/). The generator
+// (scripts/b4_ablate_make_variant.mjs) writes the real identity OUTSIDE the
+// repository tree, at `<repo>/../.rush/variant/current/src/
+// ab_variant_identity.rs`, mirrored on EVERY generation (any variant,
+// including `null`); it is `include!`-ed here so the judge records the ACTUAL
+// variant (name + sha256 of the copy) into the raw header / raw records
+// instead of a hardcoded constant. The `current/` component keeps the path
+// STABLE and variant-independent. `CARGO_MANIFEST_DIR` is the sefer-alloc
+// crate root both for the judge example and for test crates that `include!`
+// this file, so the relative hop is `../../.rush/variant/current`.
+#[cfg(feature = "ablate")]
+mod ab_variant_identity {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../.rush/variant/current/src/ab_variant_identity.rs"
+    ));
+}
+#[cfg(feature = "ablate")]
+#[allow(unused_imports)]
+use ab_variant_identity::{VARIANT_NAME, VARIANT_SHA256};
 
 // PRNG: xorshift64* (same algorithm as benches/global_alloc.rs).
 
@@ -496,6 +626,92 @@ impl Kernel {
             Kernel::Larson => 2 * LARSON_OPS,
         }
     }
+}
+
+/// Non-timed body of ONE portion: call deltas + checksum (test entry point).
+#[inline(never)]
+pub fn portion_body(
+    table: &'static ShimTable,
+    kernel: Kernel,
+    seed: u64,
+) -> ([u64; SHIM_SLOTS], u64) {
+    let mut before = [0u64; SHIM_SLOTS];
+    for (i, b) in before.iter_mut().enumerate() {
+        *b = shim_calls_total(i);
+    }
+    let t = black_box(table);
+    let ops = kernel.ops();
+    let acc = match kernel {
+        Kernel::Pair16 => kernel_pair(t, ops, seed, 16),
+        Kernel::Pair64 => kernel_pair(t, ops, seed, 64),
+        Kernel::PairRt => kernel_pair(t, ops, seed, 0),
+        Kernel::Bulk64 => kernel_bulk(t, ops, seed, BULK64_N),
+        Kernel::Bulk16k => kernel_bulk(t, ops, seed, BULK16K_N),
+        Kernel::Churn16 => kernel_churn(t, ops, seed, 16),
+        Kernel::Churn64 => kernel_churn(t, ops, seed, 64),
+        Kernel::Churn256 => kernel_churn(t, ops, seed, 256),
+        Kernel::Churn1024 => kernel_churn(t, ops, seed, 1024),
+        Kernel::VecGrow => kernel_vec(t, ops, seed),
+        Kernel::Larson => kernel_larson(t, ops, seed),
+    };
+    black_box(acc);
+    let mut deltas = [0u64; SHIM_SLOTS];
+    for (i, d) in deltas.iter_mut().enumerate() {
+        *d = shim_calls_total(i) - before[i];
+    }
+    (deltas, acc)
+}
+
+/// The FOREIGN shim slots for a portion driven by `slot` (must stay 0).
+pub fn foreign_slots(slot: usize) -> [usize; SHIM_SLOTS - 1] {
+    match slot {
+        0 => [1, 2, 3, 4, 5],
+        1 => [0, 2, 3, 4, 5],
+        2 => [0, 1, 3, 4, 5],
+        #[cfg(feature = "ablate")]
+        4 => [0, 1, 2, 3, 5],
+        #[cfg(feature = "ablate")]
+        5 => [0, 1, 2, 3, 4],
+        _ => [0, 1, 2, 4, 5],
+    }
+}
+
+/// Sum of the foreign shim-call deltas of one portion (must be 0).
+pub fn foreign_delta(deltas: &[u64; SHIM_SLOTS], slot: usize) -> u64 {
+    foreign_slots(slot).iter().map(|&i| deltas[i]).sum()
+}
+
+/// One timed portion: ticks + ns + call deltas + foreign delta (0 required).
+#[inline(never)]
+pub fn run_portion(
+    table: &'static ShimTable,
+    kernel: Kernel,
+    seed: u64,
+) -> (u64, f64, [u64; SHIM_SLOTS], u64) {
+    let q0 = qpc_ms();
+    let t0 = tsc_now();
+    let (deltas, _) = portion_body(table, kernel, seed);
+    let t1 = tsc_now();
+    let q1 = qpc_ms();
+    let ticks = t1.wrapping_sub(t0);
+    let foreign = foreign_delta(&deltas, table.call_slot);
+    assert_eq!(
+        foreign,
+        0,
+        "{} / {}: foreign shim calls inside the portion window ({foreign})",
+        table.name,
+        kernel.name()
+    );
+    (ticks, portion_ns(q0, q1, ticks, ticks), deltas, foreign)
+}
+
+#[cfg(windows)]
+fn qpc_ms() -> i64 {
+    qpc::now()
+}
+#[cfg(not(windows))]
+fn qpc_ms() -> i64 {
+    0
 }
 
 // Kernel bodies + live-slot tables: PURE MOVE to
