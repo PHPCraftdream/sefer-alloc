@@ -754,6 +754,23 @@ byte-preserved from the former inline card with the review-fix corrections
 
 ---
 
+### A117
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (one-line pointer;
+item 117 removed from the main index). Former inline card byte-preserved
+below, followed by the closure record.*
+
+117. **B1-D depot prototype (K full magazines per class) — measured, production pending owner budget decision.** (Filed 2026-10-25, branch `b4-ablate`@734dd363, report copied to main.)
+   > **Current state**
+   > - **Status:** GO at the DP-5 gate (2026-10-26, attempt 2; attempt 1 NO-GO on bulk16k, fixed by gating the cold depot calls); DP-6 (PR, CI, merge) pending. Production code: branch `b4-depot`.
+   > - **Current verdict:** production depot net of null (20 processes × 2000 blocks): bulk64 faster 1.778×, churn64 1.481×, churn16 1.278×, larson 1.099×, pair16/pair64 1.004×/1.003× faster, bulk16k 1.008× faster, no kernel slower; vs mimalloc bulk64 0.445 → 0.778, churn64 0.555 → 0.748 (t_mi/t_sefer; mimalloc still faster on 9/11).
+   > - **Next trigger:** DP-6 — PR from `b4-depot`, CI green on the landing SHA (incl. Miri/Kani/Loom depot rows and the EV-1 reverify of R-Ph3a-native), then close this card.
+   > - **Evidence:** `docs/perf/B1_DEPOT_PRODUCTION_GATE.md` (+ `_summary.csv`, `b1_depot_gate/`), `docs/design/2026-10-26-depot-design.md`, `docs/perf/B1_DEPOT_PROTOTYPE.md`.
+
+   > **Closure (2026-10-26):** CLOSED — GO, shipped as `perf(runtime)`. PR #100 (`b4-depot` → `main`) merged; landing SHA `02b1f14426d33656980fcf3b1e98e383b81eb061`, CI run 40369754081 success (57 jobs), PR head `d7c69f8b` green on 66 checks incl. Miri SB/TB depot rows, Kani `depot_proofs` and the Loom depot model. The depot made 25 evidence rows src-stale (R-Ph3a-native, R-Ph3b, R4a/R4b/R4c, R6a-M8); all 25 were reverified through the EV-1 runner (run 40351392508, E0 PASS at `54cc330a`) in the same PR. Not measured: the depot's RSS/commit cost (8 KiB of pointers per slot, +512 KiB virtual per 64-slot chunk — ОЦЕНКА by layout, not a measurement). Related open question: item 113 (D0, K=4) is subsumed by the depot but awaits the owner's formal closure.
+
+---
+
 ## [D] Deferred designs
 
 ### D2
