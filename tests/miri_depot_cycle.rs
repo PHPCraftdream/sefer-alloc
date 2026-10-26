@@ -27,8 +27,9 @@ fn parked_class0() -> usize {
 }
 
 /// Drops enough 16 B boxes to park `ROUNDS_TO_FILL` full magazines, then
-/// re-allocates them (each miss reloads a parked magazine).
-fn cycle(tag: u8) {
+/// re-allocates them (each miss reloads a parked magazine). Returns the number
+/// of magazines still parked when the thread is about to exit.
+fn cycle(tag: u8) -> usize {
     let n = MAG * (ROUNDS_TO_FILL + 1) + 1;
     let mut boxes: Vec<Box<[u8; 16]>> = Vec::with_capacity(n);
     for i in 0..n {
@@ -48,14 +49,14 @@ fn cycle(tag: u8) {
     while let Some(b) = boxes.pop() {
         drop(b);
     }
-    assert!(parked_class0() > 0, "depot holds magazines before exit");
+    parked_class0()
 }
 
 fn main() {
-    cycle(1);
+    assert!(cycle(1) > 0, "depot holds magazines before exit");
     // Thread exit drains its depot; the next thread may claim the recycled
     // slot and reuse its retained binding.
-    std::thread::spawn(|| cycle(2)).join().unwrap();
-    std::thread::spawn(|| cycle(3)).join().unwrap();
+    assert!(std::thread::spawn(|| cycle(2)).join().unwrap() > 0);
+    assert!(std::thread::spawn(|| cycle(3)).join().unwrap() > 0);
     println!("[miri_depot_cycle] COMPLETE depot_cycle");
 }
