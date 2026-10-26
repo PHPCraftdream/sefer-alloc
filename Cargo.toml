@@ -1058,6 +1058,14 @@ harness = false
 test = false
 required-features = ["alloc-global", "fastbin", "internals", "bench-internals"]
 
+# B4 depot (DP-4) Box/Drop Miri witness: park, reload, thread-exit drain,
+# recycled-slot binding reuse; same explicit selection model as above.
+[[test]]
+name = "miri_depot_cycle"
+harness = false
+test = false
+required-features = ["alloc-global", "fastbin", "internals", "bench-internals"]
+
 # PG-1 W0: MODEL-LIMIT probe — Box tcache reuse while the freeing by-value
 # frame is still live, vs after return, vs a same-frame control. Selector =
 # first argument, one scenario per process; `test = false` keeps ordinary

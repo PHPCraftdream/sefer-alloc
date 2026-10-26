@@ -11,6 +11,10 @@
 //!   publications and a fresh reachable snapshot. `internals` exposes only
 //!   its local-word constructor; the proved methods are unchanged.
 //!
+//! - `depot_proofs` checks the B4 magazine depot store (И-D1 capacity,
+//!   И-D2 exact LIFO round trip, class isolation); not the `HeapSlot`
+//!   binding or the MAG/live accounting around it.
+//!
 //! These proofs do not establish concurrent memory ordering, reservation
 //! lifetime, ownership authority, or reclamation safety.
 
@@ -337,5 +341,72 @@ mod saturation_proofs {
             hint.is_saturated(),
             "fresh reachable snapshot marks saturation"
         );
+    }
+}
+
+#[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
+mod depot_proofs {
+    use crate::registry::heap_core::{Depot, DEPOT_CLASSES, DEPOT_K, TCACHE_CAP};
+
+    fn any_magazine() -> [*mut u8; TCACHE_CAP] {
+        let mut m = [core::ptr::null_mut(); TCACHE_CAP];
+        for slot in &mut m {
+            *slot = kani::any::<usize>() as *mut u8;
+        }
+        m
+    }
+
+    /// И-D1: a park succeeds iff the class holds fewer than `DEPOT_K[c]`
+    /// magazines; no class ever exceeds its bound; other classes are untouched.
+    #[kani::proof]
+    #[kani::unwind(17)]
+    fn depot_park_respects_capacity() {
+        let mut d = Depot::empty();
+        let c: usize = kani::any();
+        kani::assume(c < DEPOT_CLASSES);
+        let attempts: usize = kani::any();
+        kani::assume(attempts <= 9);
+        let mag = any_magazine();
+        let mut i = 0;
+        while i < attempts {
+            let before = d.len(c);
+            let ok = d.depot_park(c, &mag);
+            assert_eq!(ok, before < DEPOT_K[c] as usize);
+            assert_eq!(d.len(c), if ok { before + 1 } else { before });
+            assert!(d.len(c) <= DEPOT_K[c] as usize);
+            i += 1;
+        }
+        let other: usize = kani::any();
+        kani::assume(other < DEPOT_CLASSES && other != c);
+        assert_eq!(d.len(other), 0);
+    }
+
+    /// И-D2: reload returns exactly the magazines parked, last-in first-out,
+    /// then reports empty; the destination is untouched on an empty reload.
+    #[kani::proof]
+    #[kani::unwind(17)]
+    fn depot_reload_returns_parked_magazines_lifo() {
+        let mut d = Depot::empty();
+        let c: usize = kani::any();
+        kani::assume(c < DEPOT_CLASSES);
+        let a = any_magazine();
+        let b = any_magazine();
+        assert!(d.depot_park(c, &a));
+        let two = DEPOT_K[c] >= 2;
+        if two {
+            assert!(d.depot_park(c, &b));
+        }
+        let mut out = [core::ptr::null_mut(); TCACHE_CAP];
+        if two {
+            assert!(d.depot_reload(c, &mut out));
+            assert!(out == b);
+        }
+        assert!(d.depot_reload(c, &mut out));
+        assert!(out == a);
+        let sentinel = any_magazine();
+        let mut untouched = sentinel;
+        assert!(!d.depot_reload(c, &mut untouched));
+        assert!(untouched == sentinel);
+        assert_eq!(d.len(c), 0);
     }
 }

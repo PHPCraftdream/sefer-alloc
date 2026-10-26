@@ -21,6 +21,9 @@ const narrow = (borrows) => green('miri-core', 'miri_global_box_acceptance', 'al
 const r101 = (borrows) => green('miri-core', 'miri_r1_01_cap_frame', 'alloc-global fastbin internals bench-internals', {
   borrows, marker: '[miri_r1_01_cap_frame] COMPLETE r1_01_cap_frame',
 });
+const depot = (borrows) => green('miri-core', 'miri_depot_cycle', 'alloc-global fastbin internals bench-internals', {
+  borrows, marker: '[miri_depot_cycle] COMPLETE depot_cycle',
+});
 const plainFeatures = 'alloc-global alloc-xthread alloc-decommit internals bench-internals';
 export const MIRI_TARGETS = [
   green('miri-core', 'region_invariants'),
@@ -28,6 +31,8 @@ export const MIRI_TARGETS = [
   narrow('tb'),
   r101('sb'),
   r101('tb'),
+  depot('sb'),
+  depot('tb'),
   paused('alloc-global internals bench-internals', 'sb'),
   paused('alloc-global internals bench-internals', 'tb'),
   paused('production internals bench-internals', 'sb'),

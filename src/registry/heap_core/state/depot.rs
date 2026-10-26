@@ -62,6 +62,15 @@ pub(crate) struct Depot {
 }
 
 impl Depot {
+    /// Kani-only: the all-zero empty depot an OS-zeroed registry slot holds.
+    #[cfg(kani)]
+    pub(crate) const fn empty() -> Self {
+        Self {
+            mags: [[[core::ptr::null_mut(); TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
+            n: [0; DEPOT_CLASSES],
+        }
+    }
+
     #[inline]
     pub(crate) fn len(&self, c: usize) -> usize {
         self.n[c] as usize

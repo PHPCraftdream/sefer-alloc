@@ -3164,6 +3164,26 @@ jobs:
           cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_r1_01_cap_frame 2>&1 | tee "$RUNNER_TEMP/miri-r101-cap-frame-tree.log"
           grep -F "[miri_r1_01_cap_frame] COMPLETE r1_01_cap_frame" "$RUNNER_TEMP/miri-r101-cap-frame-tree.log"
         shell: bash
+      - name: installed Box depot park/reload/recycle witness (SB)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+        run: |
+          # B4 depot (DP-4): Box drops park full magazines, misses reload them,
+          # thread exit drains the depot and the next thread reuses the slot's
+          # retained &'static mut Depot binding. `fastbin` is REQUIRED.
+          set -o pipefail
+          cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_depot_cycle 2>&1 | tee "$RUNNER_TEMP/miri-depot-cycle.log"
+          grep -F "[miri_depot_cycle] COMPLETE depot_cycle" "$RUNNER_TEMP/miri-depot-cycle.log"
+        shell: bash
+      - name: installed Box depot park/reload/recycle witness under TreeBorrows
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+        run: |
+          # B4 depot witness under TreeBorrows; see the SB step above.
+          set -o pipefail
+          cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_depot_cycle 2>&1 | tee "$RUNNER_TEMP/miri-depot-cycle-tree.log"
+          grep -F "[miri_depot_cycle] COMPLETE depot_cycle" "$RUNNER_TEMP/miri-depot-cycle-tree.log"
+        shell: bash
       - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - alloc-global - strict Stacked Borrows)
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
@@ -3436,7 +3456,7 @@ jobs:
       - name: cargo kani setup
         run: cargo kani setup
       - name: cargo kani (all harnesses)
-        run: cargo kani --features "alloc-core experimental alloc-global internals"
+        run: cargo kani --features "alloc-core experimental alloc-global internals fastbin"
 
   loom-alloc-global:
     needs: changes
@@ -3594,11 +3614,15 @@ jobs:
             --test loom_r19_registry_free_set \
             --test loom_r20_heap_reuse_spill \
             --test loom_r11_ph4a_heap_lease \
+            --test loom_depot_recycle_handoff \
             --test loom_r11_ph4b_publish_recycle_drain \
             --test loom_r11_small_sidecar 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
           grep -F "test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test lease_drop_release_pairs_with_claim_and_maintenance_acquires ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test depot_drained_before_release_is_seen_empty_by_next_owner ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test negative_relaxed_release_races_on_depot - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test negative_release_before_drain_leaks_parked_state - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test publication_survives_recycle_and_is_consumed_exactly_once ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test owner_only_membership_survives_late_terminal_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test clean_bit_clear_mutant_is_rejected ... ok" "$RUNNER_TEMP/loom-registry.log"
