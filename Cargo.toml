@@ -2653,3 +2653,37 @@ name = "r6_t40_sidecar_system_alloc"
 path = "tests/r6_t40_sidecar_system_alloc.rs"
 required-features = ["production", "internals", "bench-internals"]
 
+
+# B4 J1′ (interleave judge): ONE-process, fine-portion ABBA/BAAB-interleaved
+# native judge — sefer (production) vs mimalloc. Both arms live in the same
+# binary as statics reached only through identically-shaped `#[inline(never)]`
+# shims (the `__rust_alloc` face shape of an installed allocator); the load
+# kernels are one shared `#[inline(never)]` function per kernel, generic over
+# a black-boxed shim table, so the machine code of the workload is identical
+# for both arms. `#[global_allocator]` is a counting System wrapper (the
+# harness allocates only BEFORE the window; per-block oracle: zero in-window
+# harness allocations). A/A calibration modes (sefer×sefer, mimalloc×
+# mimalloc via two identical-shaped shim sets against the same static) carry
+# the pre-registered threshold |median| ≤ 1 % and CI half-width ≤ 1 %.
+# Core (`examples/_shared/b4_interleave_core.rs`) is `include!`d verbatim
+# into this example AND into `tests/b4_interleave_judge_correctness.rs`.
+# See docs/perf/B4_INTERLEAVE_JUDGE.md and scripts/b4_interleave_table.mjs.
+[[example]]
+name = "b4_interleave_judge"
+required-features = ["production"]
+
+# B4 J1′ judge core correctness + oracle test (no timing); same feature
+# requirement as the judge example (the sefer arm static needs `production`).
+[[test]]
+name = "b4_interleave_judge_correctness"
+required-features = ["production"]
+
+# B4 J1′: "as the user ships it" codegen profile — the judge can be run under
+# either the repo `release` profile (lto = thin, codegen-units = 1, the
+# DEFAULT for phase 2) or this profile, which mirrors a plain user build
+# (`lto = false`, `codegen-units = 16`). Inherits everything else from
+# `release`; existing profiles are untouched.
+[profile.bench-user]
+inherits = "release"
+lto = false
+codegen-units = 16
