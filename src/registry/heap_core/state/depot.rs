@@ -1,12 +1,23 @@
 //! Per-slot cold magazine depot storage, separate from `HeapCore`.
 
-use crate::alloc_core::size_classes::SIZE_CLASS_TABLE;
+use crate::alloc_core::size_classes::{SIZE_CLASS_TABLE, SMALL_CLASS_COUNT};
 use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 
 pub(crate) const DEPOT_CLASSES: usize = 8;
 pub(crate) const DEPOT_K_MAX: u8 = 8;
 pub(crate) const DEPOT_K: [u8; DEPOT_CLASSES] = [8, 8, 8, 8, 8, 8, 7, 1];
 pub(crate) const DEPOT_BUDGET_BYTES: usize = 64 * 1024;
+/// `DEPOT_K` widened to every small class (0 = no depot), so the inline
+/// overflow gate needs no separate `c < DEPOT_CLASSES` test.
+pub(crate) const DEPOT_CAP: [u8; SMALL_CLASS_COUNT] = {
+    let mut t = [0u8; SMALL_CLASS_COUNT];
+    let mut c = 0;
+    while c < DEPOT_CLASSES {
+        t[c] = DEPOT_K[c];
+        c += 1;
+    }
+    t
+};
 
 const fn depot_bytes() -> usize {
     let mut total = 0;
@@ -56,9 +67,12 @@ const _: () =
 /// Classes `0..8` map to sizes 16, 32, 48, 64, 80, 112, 144, and 192 B.
 /// With K `[8,8,8,8,8,8,7,1]`, weighted block-bytes are 4,016; multiplying
 /// by 16 gives 64,256 B, within the 65,536 B depot budget.
+///
+/// Only the pointer arrays live here; each class's parked count is
+/// `PerClass::parked` in the owner's magazine line (DP-5 iteration 2), so the
+/// hot-path gates read it without touching this store.
 pub(crate) struct Depot {
     mags: [[[*mut u8; TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
-    n: [u8; DEPOT_CLASSES],
 }
 
 impl Depot {
@@ -67,34 +81,41 @@ impl Depot {
     pub(crate) const fn empty() -> Self {
         Self {
             mags: [[[core::ptr::null_mut(); TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
-            n: [0; DEPOT_CLASSES],
         }
     }
 
+    /// Park `magazine` as class `c`'s next entry; `n` is that class's parked
+    /// count. Fails (no change) when the class already holds `DEPOT_K[c]`.
     #[inline]
-    pub(crate) fn len(&self, c: usize) -> usize {
-        self.n[c] as usize
-    }
-
-    #[inline]
-    pub(crate) fn depot_park(&mut self, c: usize, magazine: &[*mut u8; TCACHE_CAP]) -> bool {
-        let n = self.len(c);
-        if n >= DEPOT_K[c] as usize {
+    pub(crate) fn depot_park(
+        &mut self,
+        c: usize,
+        n: &mut u8,
+        magazine: &[*mut u8; TCACHE_CAP],
+    ) -> bool {
+        let i = *n as usize;
+        if i >= DEPOT_K[c] as usize {
             return false;
         }
-        self.mags[c][n] = *magazine;
-        self.n[c] = (n + 1) as u8;
+        self.mags[c][i] = *magazine;
+        *n += 1;
         true
     }
 
+    /// Move class `c`'s most recently parked magazine into `magazine`.
+    /// Fails (no change) when `n == 0`.
     #[inline]
-    pub(crate) fn depot_reload(&mut self, c: usize, magazine: &mut [*mut u8; TCACHE_CAP]) -> bool {
-        let n = self.len(c);
-        if n == 0 {
+    pub(crate) fn depot_reload(
+        &mut self,
+        c: usize,
+        n: &mut u8,
+        magazine: &mut [*mut u8; TCACHE_CAP],
+    ) -> bool {
+        if *n == 0 {
             return false;
         }
-        self.n[c] = (n - 1) as u8;
-        *magazine = self.mags[c][n - 1];
+        *n -= 1;
+        *magazine = self.mags[c][*n as usize];
         true
     }
 }

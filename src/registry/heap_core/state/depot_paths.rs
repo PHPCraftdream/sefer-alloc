@@ -20,7 +20,7 @@ impl HeapCore {
         if class.count as usize != TCACHE_CAP {
             return false;
         }
-        if !depot.depot_park(c, &class.slots) {
+        if !depot.depot_park(c, &mut class.parked, &class.slots) {
             return false;
         }
         #[cfg(feature = "virgin-zero-skip")]
@@ -42,7 +42,7 @@ impl HeapCore {
             return false;
         };
         let class = &mut self.tcache.classes[c];
-        if class.count != 0 || !depot.depot_reload(c, &mut class.slots) {
+        if class.count != 0 || !depot.depot_reload(c, &mut class.parked, &mut class.slots) {
             return false;
         }
         #[cfg(feature = "virgin-zero-skip")]

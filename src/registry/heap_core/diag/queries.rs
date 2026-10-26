@@ -207,7 +207,7 @@ impl HeapCore {
         if c >= crate::registry::heap_core::state::depot::DEPOT_CLASSES {
             return 0;
         }
-        self.depot.as_deref().map_or(0, |d| d.len(c))
+        self.tcache.classes[c].parked as usize
     }
 
     /// TEST-ONLY (P7): read the magazine count for class `c`. Widened to

@@ -499,7 +499,7 @@ impl HeapCore {
     fn refill_magazine_slow_virgin(&mut self, c: usize) -> (*mut u8, bool) {
         // B4 depot (DP-3): a parked magazine holds freed blocks — never virgin
         // (`depot_reload` clears the mask).
-        if self.depot_reload(c) {
+        if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
             return (self.finish_magazine_refill(c, TCACHE_CAP), false);
         }
         // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
@@ -678,7 +678,7 @@ impl HeapCore {
     #[inline(never)]
     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
         // B4 depot (DP-3): reload a parked full magazine (blocks stay MAG).
-        if self.depot_reload(c) {
+        if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
             return self.finish_magazine_refill(c, TCACHE_CAP);
         }
         // Bounded Large-only probe; Small discovery occurs in the refill.
