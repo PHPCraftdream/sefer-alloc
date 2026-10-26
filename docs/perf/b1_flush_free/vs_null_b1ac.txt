@@ -1,0 +1,18 @@
+# B4 ABLATE — variant net of null: variant=b1ac reps=20 blocks/process=2000 bootstrap=2000
+# identity: head=cd90113ca28e7b0623f214dce5a014fdb1a50e7a sha(diff)=e3b0c44298fc variant_sha=fcb0a95e1c91 exe=0a15deea2234 null_exe=15acf1ac60d2
+# effect = median_processes ln(t_variant/t_sefer) − median_processes ln(t_null/t_sefer); NET_FASTER iff CI upper < 0, NET_SLOWER iff CI lower > 0
+
+| Kernel | variant A/B % | null A/B % [CI] | effect % [CI] | ratio exp(effect) | precise | verdict |
+|---|---:|---|---|---:|---|---|
+| pair16 | -3.99 | -0.05 [-0.08, -0.01] | -3.95 [-4.01, -3.83] | 0.9613 | yes | NET_FASTER |
+| pair64 | -3.99 | -0.12 [-0.13, -0.09] | -3.87 [-3.93, -3.81] | 0.9620 | yes | NET_FASTER |
+| pair_rt | -4.14 | 0.13 [-0.02, 0.26] | -4.27 [-4.46, -3.97] | 0.9582 | yes | NET_FASTER |
+| bulk64 | -0.16 | -0.32 [-0.44, -0.15] | 0.17 [-0.04, 0.35] | 1.0017 | yes | EQUAL_CI_HAS_0 |
+| bulk16k | -8.64 | 0.05 [-0.09, 0.34] | -8.69 [-9.39, -7.82] | 0.9168 | yes | NET_FASTER |
+| churn16 | -3.62 | 1.11 [-0.10, 1.92] | -4.73 [-5.92, -3.11] | 0.9538 | NO | imprecise |
+| churn64 | -4.02 | -0.34 [-1.01, 0.56] | -3.68 [-4.77, -2.56] | 0.9639 | yes | NET_FASTER |
+| churn256 | -1.56 | 0.13 [-0.36, 0.95] | -1.70 [-2.67, -1.12] | 0.9832 | yes | NET_FASTER |
+| churn1024 | -1.95 | 0.63 [-0.10, 1.43] | -2.58 [-3.42, -1.74] | 0.9745 | yes | NET_FASTER |
+| vec512 | 0.13 | 0.87 [0.73, 1.64] | -0.74 [-1.52, 0.15] | 0.9927 | yes | EQUAL_CI_HAS_0 |
+| larson | -1.15 | 0.58 [-0.35, 1.38] | -1.73 [-2.53, -0.65] | 0.9828 | yes | NET_FASTER |
+# wrote vsnull_b1ac.csv
