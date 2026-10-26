@@ -1,0 +1,47 @@
+# b1_depot8_layout — MEASUREMENT ONLY: depot8 struct fields + relaxed HeapCore size
+# assert, WITHOUT the depot logic in free/refill. Separates the layout cost of
+# depot8 from its code (pair16 +2.3 % question).
+diff --git a/src/registry/heap_core/core.rs b/src/registry/heap_core/core.rs
+index c1722b9f..a39acfd8 100644
+--- a/src/registry/heap_core/core.rs
++++ b/src/registry/heap_core/core.rs
+@@ -245,7 +245,7 @@ pub struct HeapCore {
+ // Fixed by freeing each non-primordial segment inline during the walk instead
+ // of buffering reservations first — see `Drop for AllocCore` in
+ // `src/alloc_core/alloc_core/lifecycle.rs`.)
+-const _: () = assert!(size_of::<HeapCore>() <= 9216);
++const _: () = assert!(size_of::<HeapCore>() <= 9216 + 8192); // MEASUREMENT-ONLY depot
+ 
+ impl HeapCore {
+     /// Construct a fresh heap value bound to slot `id`. Bootstraps the
+diff --git a/src/registry/heap_core/state/tcache.rs b/src/registry/heap_core/state/tcache.rs
+index b9a70981..770cceaa 100644
+--- a/src/registry/heap_core/state/tcache.rs
++++ b/src/registry/heap_core/state/tcache.rs
+@@ -352,8 +352,17 @@ pub(crate) struct Tcache {
+     /// rationale). (P3: the former `alloc_streak` companion array was
+     /// removed with the P7 bulk-mode bypass — see the module-level note.)
+     pub(crate) classes: [PerClass; SMALL_CLASS_COUNT],
++    /// MEASUREMENT-ONLY depot prototype: full magazines parked per class.
++    pub(crate) depot: [[[*mut u8; TCACHE_CAP]; DEPOT_K]; DEPOT_CLASSES],
++    /// Number of parked magazines per depot class.
++    pub(crate) depot_n: [u8; DEPOT_CLASSES],
+ }
+ 
++/// MEASUREMENT-ONLY: depot depth (full magazines per class).
++pub(crate) const DEPOT_K: usize = 8;
++/// MEASUREMENT-ONLY: classes `0..DEPOT_CLASSES` get a depot.
++pub(crate) const DEPOT_CLASSES: usize = 8;
++
+ impl Tcache {
+     /// Construct an empty magazine (all counts zero, all slots null).
+     /// `const fn` so it can be used in `HeapCore::new` with zero allocation
+@@ -361,6 +370,8 @@ impl Tcache {
+     pub(crate) const fn new() -> Self {
+         Self {
+             classes: [PerClass::new(); SMALL_CLASS_COUNT],
++            depot: [[[core::ptr::null_mut(); TCACHE_CAP]; DEPOT_K]; DEPOT_CLASSES],
++            depot_n: [0; DEPOT_CLASSES],
+         }
+     }
+ }
