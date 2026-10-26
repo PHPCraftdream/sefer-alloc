@@ -1,0 +1,64 @@
+# tree: b4-bulk@cd90113c (git archive); rustc: rustc 1.98.1 (48a229cea 2026-09-01); valgrind: valgrind-3.22.0; cpu:  11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+# command: valgrind --tool=callgrind <probe> bulk sefer 64 16384 40  (44 passes x 16384 = 720896 alloc+free pairs)
+# variant=base src_sha256=f6e1e0dcdeda76677984912712bca9db1551a0c91ae26d98d9c7e01e11348cc1
+# variant=base exe_sha256=a5f54e5865aeda314202bfc1e3ce4498fb95a7a3533736e528af6046541b340a
+== variant=base
+218,908,287 (100.0%)  PROGRAM TOTALS
+58,378,543 (26.67%)  ???:b4_pmu_probe::sefer_dealloc
+45,503,174 (20.79%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+41,898,306 (19.14%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+30,458,387 (13.91%)  ???:b4_pmu_probe::sefer_alloc
+18,088,990 ( 8.26%)  ???:b4_pmu_probe::main
+ 9,502,963 ( 4.34%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [libc.so.6]
+ 4,784,632 ( 2.19%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+ 2,948,154 ( 1.35%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+ 2,745,289 ( 1.25%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+ 2,022,489 ( 0.92%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+ 1,116,725 ( 0.51%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>
+# variant=b1a_flush src_sha256=d205e690efe5fe979f01496bb28f3a26263cac8ea5ec74392538ef86692f5e82
+# variant=b1a_flush exe_sha256=469b0529f142ba74d7961006269bc1d74bbb7f6e661cecb41b9dda2273003ee4
+== variant=b1a_flush
+211,047,191 (100.0%)  PROGRAM TOTALS
+58,378,543 (27.66%)  ???:b4_pmu_probe::sefer_dealloc
+45,503,174 (21.56%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+34,037,156 (16.13%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+30,458,387 (14.43%)  ???:b4_pmu_probe::sefer_alloc
+18,088,990 ( 8.57%)  ???:b4_pmu_probe::main
+ 9,502,979 ( 4.50%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [libc.so.6]
+ 4,784,632 ( 2.27%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+ 2,948,154 ( 1.40%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+ 2,745,289 ( 1.30%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+ 2,022,489 ( 0.96%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+ 1,116,725 ( 0.53%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>
+# variant=b1c_free_cold src_sha256=cbb1e32b0801a84637c7040eb7847dbf11751e4a1eb9824261ea60d9330c2150
+# variant=b1c_free_cold exe_sha256=5b6a24b3a47844cb3009d640177df0e43ed8564f83d20d343538f68e67559f6b
+== variant=b1c_free_cold
+212,608,759 (100.0%)  PROGRAM TOTALS
+49,024,495 (23.06%)  ???:b4_pmu_probe::sefer_dealloc
+45,503,174 (21.40%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+39,933,266 (18.78%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+30,458,387 (14.33%)  ???:b4_pmu_probe::sefer_alloc
+18,088,990 ( 8.51%)  ???:b4_pmu_probe::main
+ 9,502,979 ( 4.47%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [libc.so.6]
+ 5,019,520 ( 2.36%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full
+ 4,784,632 ( 2.25%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+ 2,948,154 ( 1.39%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+ 2,745,289 ( 1.29%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+ 2,022,489 ( 0.95%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+ 1,116,725 ( 0.53%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>
+# variant=b1ac src_sha256=1521f023cc2aac62fbdb2dd2604b289a481c620eb5e778a0c5e1d631993d8ad4
+# variant=b1ac exe_sha256=29313dbbadf2b1d76afde05979d99e0415ad9206b7bbf4f5e4c45b13f9be4aef
+== variant=b1ac
+207,518,537 (100.0%)  PROGRAM TOTALS
+49,024,495 (23.62%)  ???:b4_pmu_probe::sefer_dealloc
+45,503,174 (21.93%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+34,841,036 (16.79%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+30,458,387 (14.68%)  ???:b4_pmu_probe::sefer_alloc
+18,088,990 ( 8.72%)  ???:b4_pmu_probe::main
+ 9,502,978 ( 4.58%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [libc.so.6]
+ 5,019,520 ( 2.42%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full
+ 4,784,632 ( 2.31%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+ 2,948,154 ( 1.42%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+ 2,745,289 ( 1.32%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+ 2,022,489 ( 0.97%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+ 1,116,725 ( 0.54%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}>

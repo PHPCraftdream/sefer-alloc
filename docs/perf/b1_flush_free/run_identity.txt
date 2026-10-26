@@ -1,0 +1,8 @@
+b4_ablate_make_variant: variant=b1ac files=181 changed_files=2 sha256=fcb0a95e1c91610845c0812f916427e1736db6a6e0d469a626ef74e78c6404bb added=230 removed=184 patch(+/-)=230/184
+b4_ablate_make_variant: variant=b1a_flush files=181 changed_files=1 sha256=0a5e91bd3f94080ce2fc918b0676eba4a007f2bd175e9b3ffbf0534872c51f6d added=58 removed=32 patch(+/-)=58/32
+b4_ablate_make_variant: variant=b1c_free_cold files=181 changed_files=1 sha256=2888694f2d9afc8cdc6b936bc913860bd09863b1402329dac70d10f0d62e18f0 added=172 removed=152 patch(+/-)=172/152
+b4_ablate_make_variant: variant=null files=181 changed_files=0 sha256=bbe63ab2c705252e4d2dff51d636bfb17f7a8eec329c695bf520c52167a48ab0
+[run] head_sha=cd90113ca28e7b0623f214dce5a014fdb1a50e7a
+[run] os_version=10.0.19045
+[run] rustc 1.97.0 (2d8144b78 2026-07-07)
+[run] source_diff_sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (stable: the variant copy lives outside the repo tree, git diff does not include it)
