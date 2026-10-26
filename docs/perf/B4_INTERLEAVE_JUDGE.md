@@ -576,9 +576,47 @@ CARGO_TARGET_DIR=<TARGET-DIR> node scripts/b4_ablate_run.mjs \
 
 ### Результаты v2
 
-(пусто — прогоны фазы 2 v2 на судье этого документа не выполнялись; отчёты
-A2 и B1-D с результатами v2-протокола — `docs/perf/B4_ABLATE_CHURN.md` и
-`docs/perf/B1_DEPOT_PROTOTYPE.md`.)
+Фаза 2 v2 выполнена 2026-10-26: i7-11800H, Windows 10.0.19045, rustc 1.97.0,
+`--features production`, release, RUSTFLAGS выравнивания. Identity —
+коммит `af6c5a24` этой ветки (`sha(diff)=e3b0c442…` = пустой diff). 20
+процессов на режим × 2000 блоков. Сырьё (60 jsonl, 483 МБ) — tier 3, sha256
+и размеры — `docs/perf/b4_interleave_v2/MANIFEST.txt`; свод —
+`docs/perf/B4_INTERLEAVE_JUDGE_rep_summary.csv`. Вывод генератора дословно:
+
+```text
+# B4 INTERLEAVE JUDGE — process-replicated: reps=20 blocks/process=2000 bootstrap=2000 (over processes) seed=24301
+# identity: head=af6c5a249214612c8de2d914b60d68e90115ec80 sha(diff)=e3b0c44298fc exe=60f6e26e9db4 profile=release rustc="rustc 1.97.0 (2d8144b78 2026-07-07)" cpu="11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz" os="windows x86_64"
+# statistic: per-process median of ln(t_B/t_A) over blocks, then median over 20 processes; 95 % percentile bootstrap over processes; A = sefer, B = mimalloc; ratio = t_mimalloc / t_sefer = exp(median)
+# admission: |median| <= 0.01 AND CI half-width <= 0.01 for aa_sefer AND aa_mi; verdict (admitted only): MIMALLOC_FASTER iff upper CI < 0, SEFER_FASTER iff lower CI > 0, else EQUAL_CI_HAS_0
+| Kernel | A/A sefer median % [CI] | A/A mi median % [CI] | A/B median % [CI] | per-process A/B min…max % | t_mi/t_sefer | A/B A ticks/call [CI] | A/B B ticks/call [CI] | Admitted | Verdict |
+|---|---|---|---|---|---:|---|---|---|---|
+| pair16 | 0.48 [0.40, 0.61] | -0.33 [-0.40, -0.28] | -23.29 [-23.42, -23.06] | -24.79…-20.89 | 0.7922 | 9.10 [9.08, 9.12] | 7.25 [7.21, 7.27] | yes | MIMALLOC_FASTER |
+| pair64 | 0.26 [0.16, 0.44] | -0.19 [-0.25, -0.09] | -7.69 [-8.35, -7.21] | -9.52…-5.71 | 0.9260 | 9.09 [9.07, 9.11] | 8.44 [8.42, 8.52] | yes | MIMALLOC_FASTER |
+| pair_rt | 0.64 [0.50, 0.89] | -0.49 [-0.85, 0.16] | 32.36 [31.94, 32.80] | 31.04…40.20 | 1.3821 | 9.32 [9.28, 9.35] | 12.86 [12.81, 12.91] | yes | SEFER_FASTER |
+| bulk64 | 1.49 [1.39, 1.59] | -0.35 [-0.50, -0.17] | -80.92 [-81.36, -80.73] | -82.29…-78.35 | 0.4452 | 16.76 [16.74, 16.81] | 7.44 [7.41, 7.50] | NO | not admitted |
+| bulk16k | 0.10 [0.06, 0.22] | 0.23 [0.14, 0.41] | -89.29 [-90.34, -88.55] | -91.39…-86.44 | 0.4094 | 21.29 [21.11, 21.37] | 8.66 [8.57, 8.71] | yes | MIMALLOC_FASTER |
+| churn16 | -0.28 [-0.50, -0.08] | -0.96 [-1.42, -0.38] | -81.58 [-82.15, -81.14] | -84.28…-79.42 | 0.4423 | 23.31 [23.21, 23.47] | 10.32 [10.26, 10.35] | yes | MIMALLOC_FASTER |
+| churn64 | 0.30 [0.07, 0.35] | -1.07 [-1.43, -0.81] | -58.84 [-60.47, -57.80] | -65.00…-55.06 | 0.5552 | 21.93 [21.74, 22.04] | 12.72 [12.64, 12.85] | NO | not admitted |
+| churn256 | 0.52 [0.37, 0.63] | -0.07 [-0.48, 0.16] | -58.42 [-59.09, -58.17] | -62.13…-57.51 | 0.5575 | 20.46 [20.36, 20.48] | 11.39 [11.34, 11.45] | yes | MIMALLOC_FASTER |
+| churn1024 | 0.19 [-0.04, 0.56] | -1.73 [-2.20, -1.33] | -45.65 [-46.25, -44.63] | -47.85…-43.36 | 0.6335 | 25.23 [25.13, 25.30] | 15.99 [15.88, 16.08] | NO | not admitted |
+| vec512 | -0.76 [-1.10, -0.26] | 0.27 [-0.67, 1.10] | 15.62 [14.69, 17.26] | 13.05…21.89 | 1.1691 | 32.84 [32.75, 33.25] | 38.39 [38.11, 38.86] | yes | SEFER_FASTER |
+| larson | 0.03 [-0.04, 0.09] | -0.18 [-0.33, 0.02] | -17.36 [-17.68, -16.39] | -20.11…-13.91 | 0.8406 | 16.15 [16.10, 16.30] | 13.60 [13.52, 13.70] | yes | MIMALLOC_FASTER |
+# verdict summary: MIMALLOC_FASTER 6 / SEFER_FASTER 2 / 11 kernels; not admitted: 3 / 11
+# wrote docs/perf/B4_INTERLEAVE_JUDGE_rep_summary.csv
+```
+
+Что это значит (по допущенным ядрам, ИЗМЕРЕНО):
+
+- sefer быстрее mimalloc на `pair_rt` (размер во время выполнения,
+  t_mi/t_sefer 1.382) и `vec512` (realloc-рост, 1.169).
+- mimalloc быстрее на остальных шести: `pair64` 0.926, `larson` 0.841,
+  `pair16` 0.792, `churn256` 0.558, `churn16` 0.442, `bulk16k` 0.409.
+- Не допущены (A/A вне порога): `bulk64` (A/A sefer +1.49 %), `churn64`
+  (A/A mi −1.07 %), `churn1024` (A/A mi −1.73 %); их отношения —
+  только направление.
+- Отставание на churn* и bulk* — межклассовый перенос и сброс/пополнение
+  магазина (карточки 116, 117); на `pair16` разница 1.85 тика на вызов
+  (9.10 против 7.25).
 
 Явная пометка о ядре churn: **ядра churn* делят общее кольцо слотов
 (CHURN_SLOTS)** — их части читаются поверх одного и того же множества блоков,
