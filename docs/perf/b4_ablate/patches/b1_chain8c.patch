@@ -1,0 +1,120 @@
+# b1_chain8c — MEASUREMENT ONLY (cold-path chain prototype, classes 0..8, K=8).
+# Correctness outside a single-thread judge run is NOT maintained.
+diff --git a/src/registry/heap_core/alloc/hot.rs b/src/registry/heap_core/alloc/hot.rs
+index 7c268935..82bb852d 100644
+--- a/src/registry/heap_core/alloc/hot.rs
++++ b/src/registry/heap_core/alloc/hot.rs
+@@ -672,6 +672,10 @@ impl HeapCore {
+     #[cold]
+     #[inline(never)]
+     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
++        // MEASUREMENT-ONLY: reload a parked full magazine (blocks are MAG).
++        if c < crate::registry::heap_core::state::tcache::DEPOT_CLASSES && self.depot_reload(c) {
++            return self.finish_magazine_refill(c, TCACHE_CAP);
++        }
+         // Bounded Large-only probe; Small discovery occurs in the refill.
+         self.drain_large_sidecar_ingress_hot_bounded();
+ 
+@@ -698,6 +702,49 @@ impl HeapCore {
+         self.finish_magazine_refill(c, n)
+     }
+ 
++    /// MEASUREMENT-ONLY: park the full magazine of class `c` (cold).
++    #[cold]
++    #[inline(never)]
++    pub(crate) fn depot_park(&mut self, c: usize) -> bool {
++        use crate::registry::heap_core::state::tcache::{DEPOT_K, TCACHE_CAP};
++        let _ = TCACHE_CAP;
++        let d = self.tcache.depot_n[c] as usize;
++        if d >= DEPOT_K {
++            return false;
++        }
++        let slots = self.tcache.classes[c].slots;
++        let mut next = self.tcache.chain_head[c];
++        let mut i = TCACHE_CAP;
++        while i > 0 {
++            i -= 1;
++            let b = core::ptr::NonNull::new(slots[i]).expect("magazine slot");
++            crate::alloc_core::node::Node::write_next(b, next);
++            next = slots[i];
++        }
++        self.tcache.chain_head[c] = next;
++        self.tcache.depot_n[c] = (d + 1) as u8;
++        true
++    }
++
++    /// MEASUREMENT-ONLY: reload a parked magazine of class `c` (cold).
++    #[cold]
++    #[inline(never)]
++    pub(crate) fn depot_reload(&mut self, c: usize) -> bool {
++        let d = self.tcache.depot_n[c] as usize;
++        if d == 0 {
++            return false;
++        }
++        let mut p = self.tcache.chain_head[c];
++        for i in 0..TCACHE_CAP {
++            let b = core::ptr::NonNull::new(p).expect("chain node");
++            self.tcache.classes[c].slots[i] = p;
++            p = crate::alloc_core::node::Node::read_next(b);
++        }
++        self.tcache.chain_head[c] = p;
++        self.tcache.depot_n[c] = (d - 1) as u8;
++        true
++    }
++
+     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+     #[cold]
+     pub(super) fn refill_with_large_rescue(
+diff --git a/src/registry/heap_core/free/dealloc_own_base.rs b/src/registry/heap_core/free/dealloc_own_base.rs
+index 79871880..98d54117 100644
+--- a/src/registry/heap_core/free/dealloc_own_base.rs
++++ b/src/registry/heap_core/free/dealloc_own_base.rs
+@@ -594,6 +594,16 @@ impl HeapCore {
+                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                         return;
+                     }
++                    // MEASUREMENT-ONLY: park the full magazine (cold path).
++                    if c < crate::registry::heap_core::state::tcache::DEPOT_CLASSES
++                        && self.depot_park(c)
++                    {
++                        meta.state_byte()
++                            .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
++                        self.tcache.classes[c].slots[0] = block;
++                        self.tcache.classes[c].count = 1;
++                        return;
++                    }
+                     // ── Magazine overflow (cnt == TCACHE_CAP) ──────────
+                     // P3 (task #147): the P7 dealloc-side bulk-mode bypass is
+                     // RETIRED together with the alloc-side bypass and the
+diff --git a/src/registry/heap_core/state/tcache.rs b/src/registry/heap_core/state/tcache.rs
+index b9a70981..36afe03c 100644
+--- a/src/registry/heap_core/state/tcache.rs
++++ b/src/registry/heap_core/state/tcache.rs
+@@ -352,8 +352,18 @@ pub(crate) struct Tcache {
+     /// rationale). (P3: the former `alloc_streak` companion array was
+     /// removed with the P7 bulk-mode bypass — see the module-level note.)
+     pub(crate) classes: [PerClass; SMALL_CLASS_COUNT],
++    /// MEASUREMENT-ONLY chain prototype: head of the per-class chain of full
++    /// magazines linked through block bodies (16 blocks per magazine).
++    pub(crate) chain_head: [*mut u8; DEPOT_CLASSES],
++    /// Chained magazines per class.
++    pub(crate) depot_n: [u8; DEPOT_CLASSES],
+ }
+ 
++/// MEASUREMENT-ONLY: depth (full magazines per class).
++pub(crate) const DEPOT_K: usize = 8;
++/// MEASUREMENT-ONLY: classes `0..DEPOT_CLASSES` participate.
++pub(crate) const DEPOT_CLASSES: usize = 8;
++
+ impl Tcache {
+     /// Construct an empty magazine (all counts zero, all slots null).
+     /// `const fn` so it can be used in `HeapCore::new` with zero allocation
+@@ -361,6 +371,8 @@ impl Tcache {
+     pub(crate) const fn new() -> Self {
+         Self {
+             classes: [PerClass::new(); SMALL_CLASS_COUNT],
++            chain_head: [core::ptr::null_mut(); DEPOT_CLASSES],
++            depot_n: [0; DEPOT_CLASSES],
+         }
+     }
+ }
