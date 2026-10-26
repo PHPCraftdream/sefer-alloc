@@ -1,0 +1,53 @@
+# ab05_own_no_own_cache — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность поиска владельца сохраняется (hash_find
+# отвечает так же), скорость намеренно деградирует. Не для production.
+#
+# Что убирает: ОБА Tier-1 fast-плеча поиска владельца — N9 memo И direct-mapped
+# own_cache — в `canonical_base_of_mut`; каждый own free/alloc попадает в
+# hash-пробу (src/alloc_core/segment/segment_table/segment_table_impl.rs:801-826).
+#
+# Гипотеза: разница (ab05 − null) оценивает ПОЛНУЮ цепочку owner-lookup в
+# терминах времени, а (ab05 − ab04) — вклад own_cache-сравнения; вместе с
+# callgrind-Ir это отделяет latency цепочки зависимых загрузок от счётчика
+# инструкций.
+#
+# Ожидаемое направление: время churn16/64 заметно ВВЕРХ (абляция добавляет
+# hash-пробу на каждый free/alloc); масштаб роста = цена всей Tier-1.
+diff --git a/src/alloc_core/segment/segment_table/segment_table_impl.rs b/src/alloc_core/segment/segment_table/segment_table_impl.rs
+index 4b8ac5ec..047aac57 100644
+--- a/src/alloc_core/segment/segment_table/segment_table_impl.rs
++++ b/src/alloc_core/segment/segment_table/segment_table_impl.rs
+@@ -804,26 +804,13 @@ impl SegmentTable {
+         // key. Eviction is co-located with `own_cache` in `own_cache_clear`.
+         // Single compare: `last_key == LAST_EMPTY_KEY` encodes EMPTY, which
+         // neither a real SEGMENT-aligned base nor a null key can match.
+-        if self.last_key == key.addr() {
+-            // The memo is part of Tier-1: count its hits with the own_cache hits.
+-            #[cfg(feature = "bench-internals")]
+-            crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
+-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+-            return Some(self.last_root);
+-        }
++        // ABLATION ab04_own_no_memo: the N9 single-entry memo hit arm is
++        // REMOVED FOR MEASUREMENT ONLY — every lookup falls through to the
++        // own_cache / hash_find. Never for production.
+         let index = Self::cache_index(key);
+-        let (cached_key, cached_root) = self.own_cache[index];
+-        if cached_key == key.addr() {
+-            #[cfg(feature = "bench-internals")]
+-            crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
+-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+-            // N9-v3: arm the memo on an exact-base own_cache hit only.
+-            if cached_root.addr() == key.addr() {
+-                self.last_key = key.addr();
+-                self.last_root = cached_root;
+-            }
+-            return Some(cached_root);
+-        }
++        // ABLATION ab05_own_no_own_cache: BOTH Tier-1 hit arms (memo +
++        // own_cache) are REMOVED FOR MEASUREMENT ONLY — every lookup goes to
++        // hash_find. Never for production.
+         #[cfg(feature = "bench-internals")]
+         crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
+             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);

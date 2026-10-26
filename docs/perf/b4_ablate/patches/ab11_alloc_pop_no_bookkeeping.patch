@@ -1,0 +1,47 @@
+# ab11_alloc_pop_no_bookkeeping — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность деградирует заведомо — декремент `count`
+# убран, magazine никогда не «пустеет» по счётчику (глубина завышена, блоки
+# выдаются повторно). Не для production.
+#
+# Что убирает (группой, hit-плечо magazine pop на alloc,
+# src/registry/heap_core/alloc/hot.rs:247 и :301-304):
+#   1) store `count = new_cnt` (декремент глубины);
+#   2) очистку бита virgin_mask `&= !(1u16 << new_cnt)` на issue.
+# ОСТАЁТСЯ: чтение count, чтение слота `slots[new_cnt & (TCACHE_CAP-1)]`,
+# clear_magazine_on_issue, alloc-stats-счётчик.
+#
+# Гипотеза: dependent store декремента + mask-AND на каждом hit стоят
+# измеримых тактов на churn-alloc.
+#
+# Ожидаемое направление: время churn16/64 ВНИЗ; иначе ~0.
+diff --git a/src/registry/heap_core/alloc/hot.rs b/src/registry/heap_core/alloc/hot.rs
+index 7c268935..9ea22e51 100644
+--- a/src/registry/heap_core/alloc/hot.rs
++++ b/src/registry/heap_core/alloc/hot.rs
+@@ -244,7 +244,12 @@ impl HeapCore {
+                         // No owner bookkeeping: routing goes through terminal
+                         // descriptors, not the header `owner_state`.
+                         let new_cnt = cnt - 1;
+-                        self.tcache.classes[c].count = new_cnt as u8;
++                        // ABLATION ab11_alloc_pop_no_bookkeeping: the count
++                        // decrement and the virgin_mask clear on issue
++                        // REMOVED FOR MEASUREMENT ONLY. `count` never drops,
++                        // the magazine never "empties" by counter — blocks
++                        // are re-issued from a stale depth. Never for
++                        // production.
+                         // Э5 (task #145): load+store instead of `fetch_add` — no
+                         // `lock xadd` on the churn hot path. SOUND because this
+                         // thread is the SOLE WRITER of ITS OWN counter: it is a
+@@ -298,10 +303,7 @@ impl HeapCore {
+                         // index could be misread through. Single `u16` AND,
+                         // compiled out entirely (the field does not exist)
+                         // when `virgin-zero-skip` is off.
+-                        #[cfg(feature = "virgin-zero-skip")]
+-                        {
+-                            self.tcache.classes[c].virgin_mask &= !(1u16 << new_cnt);
+-                        }
++                        // (ab11: virgin_mask clear on issue removed — see above.)
+                         // RAD-5 (E4) GO/NO-GO EXPERIMENT: clear the
+                         // magazine-residency bit — this block leaves the
+                         // magazine for the caller. THE HOT PATH: this runs on

@@ -1,0 +1,45 @@
+# ab12_free_no_park_budget_g13 — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: free паркует блоки без G13-бюджета байт (до полного
+# TCACHE_CAP), free-side глубина растёт — метрики байт-бюджета врут. Не для
+# production.
+#
+# Что убирает (G13, free-сторона own free,
+# src/registry/heap_core/free/dealloc_own_base.rs:495):
+#   `let cap = FREE_PARK_CAP[c] as usize` → `let cap = TCACHE_CAP`
+#   (константное сворачивание: `cnt < cap` всегда истинно, swap-top
+#   overflow-ветка :546-580 становится мёртвой; import FREE_PARK_CAP убран).
+# Alloc-сторона (`hot.rs:507`, `hot.rs:681`) и dealloc_batch НЕ тронуты.
+#
+# Гипотеза: бюджет free-park (G13) стоит измеримых тактов на churn free
+# (load из static-таблицы + сравнение + мёртвая-if-убрана ветка).
+#
+# Ожидаемое направление: время churn16/64 ВНИЗ или ~0.
+diff --git a/src/registry/heap_core/free/dealloc_own_base.rs b/src/registry/heap_core/free/dealloc_own_base.rs
+index 79871880..a579d8ae 100644
+--- a/src/registry/heap_core/free/dealloc_own_base.rs
++++ b/src/registry/heap_core/free/dealloc_own_base.rs
+@@ -429,7 +429,8 @@ impl HeapCore {
+         debug_assert_eq!(self.core.canonical_root_for(block), Some(root));
+         {
+             use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
+-            use crate::registry::heap_core::state::tcache::{FLUSH_N, FREE_PARK_CAP, TCACHE_CAP};
++            // ab12: FREE_PARK_CAP no longer used on this free path.
++            use crate::registry::heap_core::state::tcache::{FLUSH_N, TCACHE_CAP};
+             let size = layout.size().max(MIN_BLOCK);
+             let align = layout.align();
+             // C1 (0.3.0): gate removed — see the matching comment in `alloc`'s
+@@ -492,7 +493,12 @@ impl HeapCore {
+                     // small classes (unchanged behaviour) and smaller for
+                     // large small-classes, mirroring D3's refill-side budget
+                     // — see `FREE_PARK_CAP`'s doc comment.
+-                    let cap = FREE_PARK_CAP[c] as usize;
++                    // ABLATION ab12_free_no_park_budget_g13: FREE_PARK_CAP
++                    // budget REMOVED FOR MEASUREMENT ONLY — cap is always
++                    // TCACHE_CAP, so `cnt < cap` folds to true and the
++                    // swap-top overflow branch below is dead. Frees park
++                    // without the G13 byte budget. Never for production.
++                    let cap = TCACHE_CAP;
+                     if cnt < cap {
+                         // Legit free → push. NO key stamp, NO block-body write.
+                         //

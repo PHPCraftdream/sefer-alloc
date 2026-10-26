@@ -1,0 +1,50 @@
+# ab10_free_push_no_bookkeeping — B4-ablate churn ablation (ИЗМЕРИТЕЛЬНЫЙ, НЕ ДЛЯ PRODUCTION).
+#
+# ТОЛЬКО ДЛЯ ЗАМЕРА: корректность magazine деградирует заведомо — инкремент
+# `count` убран, счётчик не растёт, глубина по счётчику занижена; блоки могут
+# выдаваться повторно/теряться, oracle/reclaim расходятся. Не для production.
+#
+# Что убирает (группой, push-ветка `cnt < cap` own free,
+# src/registry/heap_core/free/dealloc_own_base.rs:508 и :522-525):
+#   1) store `count = cnt+1` (bookkeeping-инкремент глубины magazine);
+#   2) очистку бита virgin_mask `&= !(1u16 << cnt)` (defensive no-op, R13-3).
+# ОСТАЁТСЯ: запись слота `slots[cnt & (TCACHE_CAP-1)] = block` (без неё pop
+# выдаёт мусор — это не замер, а порча) и store MAG в state-byte.
+#
+# Гипотеза: пара bookkeeping-записей (count + mask) на hot push стоит
+# измеримых тактов (dependent store после load cnt).
+#
+# Ожидаемое направление: время churn16/64 ВНИЗ; иначе ~0.
+diff --git a/src/registry/heap_core/free/dealloc_own_base.rs b/src/registry/heap_core/free/dealloc_own_base.rs
+index 79871880..09bbf008 100644
+--- a/src/registry/heap_core/free/dealloc_own_base.rs
++++ b/src/registry/heap_core/free/dealloc_own_base.rs
+@@ -503,9 +503,15 @@ impl HeapCore {
+                             c,
+                             crate::alloc_core::state_byte::StateByte::MAG,
+                         );
++                        // ABLATION ab10_free_push_no_bookkeeping: the count
++                        // increment and the virgin_mask clear on the hot push
++                        // REMOVED FOR MEASUREMENT ONLY. `count` stays stale
++                        // (the magazine counter never grows past its value at
++                        // ablation start), so pop-side depth accounting
++                        // degrades — blocks may be re-issued/lost. Never for
++                        // production.
+                         // R6-T13: identity mask (`cnt < cap <= TCACHE_CAP`); skips bounds check.
+                         self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block;
+-                        self.tcache.classes[c].count = (cnt + 1) as u8;
+                         // R13-3 (task #273): a pushed-back block was
+                         // previously issued (it is being FREED right now) —
+                         // by the dispatch conjunct (§2 of both virgin-skip
+@@ -519,10 +525,7 @@ impl HeapCore {
+                         // load-bearing clear, kept explicit so the invariant
+                         // is visibly re-asserted at every mutation site
+                         // rather than relying on readers to re-derive it.
+-                        #[cfg(feature = "virgin-zero-skip")]
+-                        {
+-                            self.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
+-                        }
++                        // (ab10: virgin_mask clear removed too — see above.)
+                         return;
+                     }
+                     // ── R1-01: free-side byte-budget cap reached ───────

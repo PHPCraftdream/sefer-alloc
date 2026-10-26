@@ -1,0 +1,13 @@
+# b4-ablate `null` variant patch — the NO-OP control.
+#
+# The variant generator (scripts/b4_ablate_make_variant.mjs) applies this
+# patch to the generated copy of `src/` under .rush/variant/<variant>/src/.
+# This file
+# intentionally contains NO diff hunks: `null` means "bit-identical copy of
+# the main crate" (the A/B ablation baseline). The generator treats a patch
+# file with zero `@@` hunks as "no textual changes" and still records the
+# sha256 identity header, so the `null` variant is fully measured the same
+# way as any real variant.
+#
+# Real variants MUST replace hunks here in unified-diff (`git diff`) format,
+# generated relative to the copied `src/` tree.
