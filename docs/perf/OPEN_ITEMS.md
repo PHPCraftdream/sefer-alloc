@@ -3215,9 +3215,9 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 117. **B1-D depot prototype (K full magazines per class) — measured, production pending owner budget decision.** (Filed 2026-10-25, branch `b4-ablate`@734dd363, report copied to main.)
    > **Current state**
-   > - **Status:** measurement done (prototype patch, single-thread judge only, not production-safe); production decision open.
+   > - **Status:** IN PROGRESS — owner approved a production depot (2026-10-26: ≈64 KiB/thread, bulk64/churn64 ≥ 1.25× faster, pair16/pair64/larson ≤ +1 %); pre-registration `docs/design/2026-10-26-depot-design.md`; DP-2 picked array storage S2 (branch `b4-ablate`@5952aae6); DP-3 production code on branch `b4-depot`; DP-4 (miri/kani/loom) and the DP-5 gate pending.
    > - **Current verdict:** K=8 net of null (20 processes × 2000 blocks, bootstrap over processes, ИЗМЕРЕНО): bulk64 −57.2 %, churn64 −28.6 %, churn16 −12.7 %, pair16 +2.3 %, bulk16k +2.2 %. Estimated t_mimalloc/t_depot8: bulk64 0.84, churn64 0.75, churn16 0.64, pair16 0.77, bulk16k 0.40 — depot narrows but does not close the gap on any kernel (ОЦЕНКА).
-   > - **Next trigger:** owner decision on the memory budget of the K=8 depots and the acceptance threshold; then a production-safe implementation judged by the v2 protocol.
+   > - **Next trigger:** DP-5 gate (J1′ v2, net of null) on the DP-3 code; GO/NO-GO per the pre-registered thresholds.
    > - **Evidence:** docs/perf/B1_DEPOT_PROTOTYPE.md, docs/perf/b1_depot/ (raw, CSV, stdout), docs/perf/b4_ablate/patches/b1_depot{4,8}.patch (branch `b4-ablate`@734dd363).
 
 ## Recently resolved (closure trail — do not re-list as open)

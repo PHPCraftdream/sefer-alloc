@@ -73,13 +73,43 @@ fn l16() -> Layout {
     Layout::from_size_align(16, 8).unwrap()
 }
 
+/// B4 depot (DP-3): fill class 0's depot from fresh LIVE blocks and leave the
+/// magazine empty, so later full-magazine frees take the legacy overflow arm.
+/// Returns the still-live helper blocks.
+fn fill_depot_class0(heap: &mut HeapCore) -> Vec<*mut u8> {
+    const DEPOT_K0: usize = 8;
+    let mut warm = Vec::new();
+    for _ in 0..16 * (DEPOT_K0 + 1) {
+        let q = heap.alloc(l16());
+        assert!(!q.is_null());
+        warm.push(q);
+    }
+    let mut freed = 0;
+    while heap.dbg_depot_len(0) < DEPOT_K0 {
+        assert!(freed < warm.len(), "depot never filled");
+        unsafe { heap.dealloc(warm[freed], l16()) };
+        freed += 1;
+    }
+    let mut live = warm.split_off(freed);
+    while heap.dbg_tcache_count(0) > 0 {
+        let q = heap.alloc(l16());
+        assert!(!q.is_null());
+        live.push(q);
+    }
+    live
+}
+
 /// Allocate `2 * cap` blocks and free them all: the first `cap` frees park
 /// in the magazine, the rest route straight to the substrate bins (R1-01
 /// park cap). Then drain the magazine (those blocks are held LIVE by the
 /// caller) — the tcache is empty and the bins hold EXACTLY the second half.
 /// Returns both address sets; the miss-refill below drains precisely the
 /// binned half, so `issued` is guaranteed to be one of them.
-fn park_half_bin_half(heap: &mut HeapCore) -> (Vec<*mut u8>, Vec<*mut u8>, usize) {
+///
+/// B4 depot (DP-3): the depot is filled before the frees (so they route as
+/// without a depot) and emptied after the magazine drain (so the next miss is
+/// a genuine substrate refill); its blocks are returned held-live (4th item).
+fn park_half_bin_half(heap: &mut HeapCore) -> (Vec<*mut u8>, Vec<*mut u8>, usize, Vec<*mut u8>) {
     let cap = heap.dbg_free_park_cap(0).expect("small class 0");
     let n = 2 * cap;
     let mut ps = Vec::new();
@@ -88,6 +118,7 @@ fn park_half_bin_half(heap: &mut HeapCore) -> (Vec<*mut u8>, Vec<*mut u8>, usize
         assert!(!p.is_null());
         ps.push(p);
     }
+    let mut depot_held = fill_depot_class0(heap);
     for &p in &ps {
         unsafe { heap.dealloc(p, l16()) };
     }
@@ -99,7 +130,12 @@ fn park_half_bin_half(heap: &mut HeapCore) -> (Vec<*mut u8>, Vec<*mut u8>, usize
         live.push(p);
     }
     assert_eq!(heap.dbg_tcache_count(0), 0, "magazine must be empty now");
-    (ps, live, cap)
+    while heap.dbg_tcache_count(0) > 0 || heap.dbg_depot_len(0) > 0 {
+        let p = heap.alloc(l16());
+        assert!(!p.is_null());
+        depot_held.push(p);
+    }
+    (ps, live, cap, depot_held)
 }
 
 /// S1: refill-issued block is LIVE; hits from the retained set are LIVE.
@@ -110,7 +146,7 @@ fn s1_refill_issued_live_retained_parked() {
     let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
     let heap = lease.core();
 
-    let (ps, live, _cap) = park_half_bin_half(heap);
+    let (ps, live, _cap, depot_held) = park_half_bin_half(heap);
 
     // Counter window (P1-2): only the miss-refill below may write MAG bytes.
     let mag_writes_before = HeapCore::dbg_s1_mag_byte_writes();
@@ -205,6 +241,9 @@ fn s1_refill_issued_live_retained_parked() {
         unsafe { heap.dealloc(p, l16()) };
     }
     for &p in &live {
+        unsafe { heap.dealloc(p, l16()) };
+    }
+    for &p in &depot_held {
         unsafe { heap.dealloc(p, l16()) };
     }
 }

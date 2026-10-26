@@ -716,7 +716,7 @@ hard compile error in every configuration:
 | [`src/registry/bootstrap/registry.rs`](src/registry/bootstrap/registry.rs) | The `Registry` struct: `MAX_HEAPS`, per-chunk slot resolution, and process-global metadata. New claims use fallible `slot_or_none` and can reach fallback on chunk OOM; infallible `slot` retains an abort only as an invariant tripwire for already-materialised chunks. | `alloc-global` |
 | [`src/registry/bootstrap/ensure.rs`](src/registry/bootstrap/ensure.rs) | The process-global `ensure()` accessor, the per-chunk materialisation slow path (`ensure_chunk_slow`), and the test-only dbg hooks (OOM injection, sentinel-rollback probe, slot introspection) | `alloc-global` |
 | [`src/registry/bootstrap/loom_shim.rs`](src/registry/bootstrap/loom_shim.rs) | R1-07: `--cfg loom`-only const-capable stand-in for `once_ptr_cell::OncePtrCell` (loom's real atomics have no const constructor, so the const `static REGISTRY` initializer needs this shim under loom builds) — `unsafe impl Send`/`Sync` for the `AtomicPtr`-backed cell + three `NonNull::new_unchecked` sites, each proved by the preceding `is_ready` check; never on a loom-modeled interleaving itself | `alloc-global`, and only under `--cfg loom` |
-| [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync` impl on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off. `HeapSlot` is deliberately not `Send`. | `alloc-global` |
+| [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync` impl on `HeapSlot` under the atomic single-writer protocol; slot `UnsafeCell` hand-off, including owner-only Depot storage. `HeapSlot` is deliberately not `Send`. | `alloc-global` |
 | [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | file owns the lease-claim path: slot picking + the `FREE → LIVE` CAS (`claim_lease` / `claim_lease_with_config`), OOM push-back, the config-conflict rollback guard, and `HeapLease` (its `Drop` performs the `LIVE → FREE` Release CAS) — the pointer handoff `*mut HeapCore` out of a slot's `UnsafeCell`. The legacy raw-pointer surface (`claim` / `claim_with_config` / `unsafe fn recycle` / `HeapLease::into_raw`) was removed (task #2119) | `alloc-global` |
 | [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries and sidecars; shard-lock pin acquisition prevents load/increment UAF. Numeric foreign-free lookup uses this directory. | `alloc-global` |
 | [`src/registry/segment_route/small_sidecar.rs`](src/registry/segment_route/small_sidecar.rs) | In-place construction of the pending words and adaptive class map before publication. | `alloc-global` |
@@ -1419,7 +1419,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **453 integration test files**,
+needs its acceptance run. The present tree contains **454 integration test files**,
 **98 example binaries**, **34 benches**, and **21 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1429,7 +1429,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (453 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (454 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (98 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

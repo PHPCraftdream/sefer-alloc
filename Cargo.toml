@@ -1020,6 +1020,11 @@ name = "locality"
 harness = false
 
 [[test]]
+name = "heap_core_depot"
+path = "tests/heap_core_depot.rs"
+required-features = ["alloc-global", "fastbin", "internals", "bench-internals", "alloc-decommit"]
+
+[[test]]
 name = "con01_exit_detector_probe"
 harness = false
 required-features = ["alloc-global"]

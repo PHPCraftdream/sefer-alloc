@@ -12,6 +12,8 @@ pub(crate) mod diag;
 // any more.
 mod free;
 mod state;
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+pub(crate) use self::state::depot::Depot;
 
 pub use self::core::HeapCore;
 

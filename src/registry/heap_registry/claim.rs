@@ -768,6 +768,12 @@ impl Drop for HeapLease {
 /// registry array, so `&slot.<counter>` is a sound `&'static` for the process
 /// lifetime.
 ///
+/// B4 depot (DP-3): the same call binds the heap to its slot's `depot`
+/// storage as an owner-only `&'static mut Depot`. Unlike the counters,
+/// nothing reads `depot` through `&HeapSlot`: after publication it is reached
+/// only through the current owner's `&mut HeapCore`, and the binding survives
+/// recycle because the `HeapCore` stays materialised in the slot.
+///
 /// # Safety
 ///
 /// `heap` must point at the `HeapCore` just written into `slot`'s `UnsafeCell`
@@ -786,6 +792,14 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     // not-yet-published `HeapCore` in `slot`. This exclusive `&mut` is the only
     // live reference to it.
     let heap_ref: &mut HeapCore = unsafe { &mut *heap };
+    // SAFETY: `slot` lives in a registry chunk that is leaked, never moved or
+    // freed (`bootstrap/chunk.rs`), and OS-zeroed: all-zero is a valid empty
+    // `Depot`. This is the slot's first materialisation (single caller, under
+    // the INITIALIZING CAS win, before `initialised` is published), so no other
+    // reference to `slot.depot` exists; afterwards only the holder of
+    // `&mut HeapCore` reaches it through this binding.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    heap_ref.bind_depot(unsafe { &mut *slot.depot.get() });
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     heap_ref.bind_tcache_hits(&slot.remote.tcache_hits);
     #[cfg(feature = "alloc-decommit")]

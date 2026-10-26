@@ -27,7 +27,7 @@
 use core::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sefer_alloc::registry::{bootstrap, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry};
 
 static SERIAL: AtomicBool = AtomicBool::new(false);
 
@@ -53,6 +53,46 @@ const TCACHE_CAP: usize = 16;
 
 fn l16() -> Layout {
     Layout::from_size_align(16, 8).unwrap()
+}
+
+/// B4 depot (DP-3): fill class 0's depot from fresh LIVE blocks and leave the
+/// magazine empty, so the test's next full-magazine free takes the legacy
+/// overflow arm exactly as before the depot. Call it only AFTER the test has
+/// allocated its own blocks: any later magazine miss reloads from the depot.
+/// Returns the still-live helper blocks; free them at the end of the test.
+fn fill_depot_class0(heap: &mut HeapCore) -> Vec<*mut u8> {
+    const DEPOT_K0: usize = 8;
+    let mut warm = Vec::new();
+    for _ in 0..TCACHE_CAP * (DEPOT_K0 + 1) {
+        let q = heap.alloc(l16());
+        assert!(!q.is_null());
+        warm.push(q);
+    }
+    let mut freed = 0;
+    while heap.dbg_depot_len(0) < DEPOT_K0 {
+        assert!(freed < warm.len(), "depot never filled");
+        // SAFETY: each warm block is live and freed exactly once.
+        unsafe { heap.dealloc(warm[freed], l16()) };
+        freed += 1;
+    }
+    let mut live = warm.split_off(freed);
+    // The park that filled the depot left the current free alone in the
+    // magazine; pop it (a magazine hit, no reload) to empty the magazine.
+    while heap.dbg_tcache_count(0) > 0 {
+        let q = heap.alloc(l16());
+        assert!(!q.is_null());
+        live.push(q);
+    }
+    assert_eq!(heap.dbg_depot_len(0), DEPOT_K0, "precondition: depot full");
+    live
+}
+
+/// Frees the helper blocks returned by [`fill_depot_class0`].
+fn release(heap: &mut HeapCore, blocks: &[*mut u8]) {
+    for &q in blocks {
+        // SAFETY: live helper block, freed exactly once.
+        unsafe { heap.dealloc(q, l16()) };
+    }
 }
 
 // ── MAG transitions ───────────────────────────────────────────────────────
@@ -166,6 +206,7 @@ fn ts1_overflow_flush_writes_free() {
         assert!(!p.is_null());
         ps.push(p);
     }
+    let warm = fill_depot_class0(heap);
     for &p in &ps {
         // SAFETY: live, single free each.
         unsafe { heap.dealloc(p, l16()) };
@@ -210,6 +251,7 @@ fn ts1_overflow_flush_writes_free() {
         // SAFETY: live, single free each.
         unsafe { heap.dealloc(p, l16()) };
     }
+    release(heap, &warm);
     drop(lease);
 }
 
@@ -415,6 +457,7 @@ fn ts1_reject_double_free_after_flush() {
         assert!(!p.is_null());
         ps.push(p);
     }
+    let warm = fill_depot_class0(heap);
     for &p in &ps {
         // SAFETY: live, single free each.
         unsafe { heap.dealloc(p, l16()) };
@@ -433,6 +476,14 @@ fn ts1_reject_double_free_after_flush() {
         heap.dbg_is_free_for(f),
         "flushed block must still read FREE"
     );
+    // B4 depot: take the magazine and the depot out first (blocks stay LIVE),
+    // so the storm below refills from the bin holding `f`, as before the depot.
+    let mut drained = Vec::new();
+    while heap.dbg_tcache_count(0) > 0 || heap.dbg_depot_len(0) > 0 {
+        let q = heap.alloc(l16());
+        assert!(!q.is_null());
+        drained.push(q);
+    }
     // The block is issued at most once in the following reissue storm.
     let mut re = Vec::new();
     for _ in 0..flushed.len() + 4 {
@@ -453,6 +504,8 @@ fn ts1_reject_double_free_after_flush() {
         // SAFETY: live, single free each.
         unsafe { heap.dealloc(p, l16()) };
     }
+    release(heap, &drained);
+    release(heap, &warm);
     drop(lease);
 }
 
@@ -606,6 +659,7 @@ fn ts1_reject_overflow_push_double_free() {
         assert!(!q.is_null());
         ps.push(q);
     }
+    let warm = fill_depot_class0(heap);
     for q in &ps[..TCACHE_CAP] {
         // SAFETY: live, single free each.
         unsafe { heap.dealloc(*q, l16()) };
@@ -666,6 +720,7 @@ fn ts1_reject_overflow_push_double_free() {
         // SAFETY: live, single free each.
         unsafe { heap.dealloc(q, l16()) };
     }
+    release(heap, &warm);
     drop(lease);
 }
 

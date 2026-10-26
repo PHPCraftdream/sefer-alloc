@@ -91,6 +91,7 @@ pub(super) fn ensure_chunk_slow(
         //   heap        = MaybeUninit::uninit() (zero is fine)
         //   initialised = 0 = false
         //   remote.tcache_hits / remote.large_cache_hits = 0
+        //   depot       = all-zero = empty Depot (B4 DP-3)
         // — genuinely nothing to write; OS-zeroed pages ARE a valid state. The
         // reservation is PAGE-aligned (>= `align_of::<RegistryChunk>()` <= 64)
         // and leaked for the process lifetime, so the `&'static` references

@@ -308,6 +308,7 @@
 //      lease-drop (LIVE→FREE) protocol depend on) is a prose contract; a safe CAS of `state` LIVE→FREE
 //      from the wrong place breaks it. (Non-test fields are `pub(crate)` to keep
 //      this membrane inside the crate — see that module's M7 note.)
+//      Its owner-only `depot` storage (B4 DP-3) rests on the same contract.
 //  In short: the membrane pattern concentrates the *unsafe blocks* into a
 //  small named set of `#![allow(unsafe_code)]` files (tier 1, inventoried
 //  above) PLUS item-scoped `#[allow(unsafe_code)]` sites (tier 2 — individual

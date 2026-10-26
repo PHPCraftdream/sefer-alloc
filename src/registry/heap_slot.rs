@@ -83,6 +83,8 @@ use core::mem::MaybeUninit;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::{AtomicBool, AtomicU8};
 
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+use super::heap_core::Depot;
 use super::heap_core::HeapCore;
 
 /// The lease-state machine of a registry slot (the values carried by
@@ -234,6 +236,11 @@ pub struct HeapSlot {
     /// `&HeapSlot`, and `MaybeUninit` so a `FREE` slot carries no live
     /// (expensive-to-construct) `HeapCore`.
     pub(crate) heap: UnsafeCell<MaybeUninit<HeapCore>>,
+    /// B4 depot (DP-3): parked full magazines of this slot's heap, kept
+    /// outside `HeapCore` (stack-pressure pin). OS-zeroed = empty. Bound once
+    /// into the heap by `bind_slot_counters`; reached only via `&mut HeapCore`.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub(crate) depot: UnsafeCell<Depot>,
     /// Release-published "heap is materialised" flag (task #133 hardening).
     ///
     /// Starts `false` and becomes `true` EXACTLY ONCE, at the end of the
@@ -307,6 +314,9 @@ impl HeapSlot {
 // the single writer. `MaybeUninit` adds no new hazard: the registry's contract
 // is that `heap` is read only by the INITIALIZING winner or while state is
 // LIVE/MAINTENANCE (the latter two require prior full initialisation).
+// `depot` (B4 DP-3) follows the same single-writer rule: it is bound into the
+// heap before `initialised` is published and is touched only through that
+// heap's `&mut HeapCore`; no `&HeapSlot` reader and no remote producer reads it.
 //
 // This single-writer invariant ADDITIONALLY rests on `state`, `generation`,
 // and every `Registry` control atomic being `pub(crate)`
@@ -334,6 +344,8 @@ impl HeapSlot {
 // NUMA-node cache is a plain value invalidated at claim time, R11-5.
 //   - `core: AllocCore` (segment roots, table slots, large-cache sidecar)
 //   - `tcache: Tcache` (`PerClass::slots: [*mut u8; TCACHE_CAP]`)
+//   - `depot: Option<&'static mut Depot>` (owner-only binding to this slot's
+//     parked-magazine pointer arrays)
 // The `#[cfg]` arms mirror `HeapCore`'s field gates exactly (see
 // `heap_core/core.rs`).
 const _: fn(&HeapCore) = |hc| {
@@ -351,6 +363,8 @@ const _: fn(&HeapCore) = |hc| {
         large_hot_cursor,
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: _,
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            depot: _,
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         tcache_hits,
     } = hc;

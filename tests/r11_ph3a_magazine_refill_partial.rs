@@ -45,8 +45,9 @@ fn owner_state(ptr: *mut u8, c: usize) -> (usize, u32, u32) {
 /// segment's live count is exactly their sum. `held` is non-empty and its
 /// first entry names the segment under observation.
 fn assert_accounted(heap: &HeapCore, held: &[*mut u8], c: usize) {
+    // B4 depot (DP-3): parked magazines are live-credited too (16 blocks each).
     #[cfg(feature = "fastbin")]
-    let resident = heap.dbg_tcache_count(c) as usize;
+    let resident = heap.dbg_tcache_count(c) as usize + 16 * heap.dbg_depot_len(c);
     #[cfg(not(feature = "fastbin"))]
     let resident = {
         let _ = heap; // no magazine exists without `fastbin`
@@ -62,6 +63,32 @@ fn assert_accounted(heap: &HeapCore, held: &[*mut u8], c: usize) {
 #[cfg(feature = "fastbin")]
 fn resident(heap: &HeapCore, c: usize) -> usize {
     heap.dbg_tcache_count(c) as usize
+}
+
+/// B4 depot (DP-3): park full magazines of class `c` from held blocks until
+/// the depot is full, then pop the magazine empty (hits only); every block
+/// that stays outside the depot is returned to `held`.
+#[cfg(feature = "fastbin")]
+fn fill_depot(heap: &mut HeapCore, held: &mut Vec<*mut u8>, c: usize) {
+    let mut fresh = Vec::new();
+    for _ in 0..16 * 9 {
+        let ptr = heap.alloc(layout());
+        assert!(!ptr.is_null());
+        fresh.push(ptr);
+    }
+    let mut freed = 0;
+    while heap.dbg_depot_len(c) < 8 {
+        assert!(freed < fresh.len(), "depot never filled");
+        // SAFETY: `fresh[freed]` came from this heap with this layout, freed once.
+        unsafe { heap.dealloc(fresh[freed], layout()) };
+        freed += 1;
+    }
+    held.extend_from_slice(&fresh[freed..]);
+    while heap.dbg_tcache_count(c) > 0 {
+        let ptr = heap.alloc(layout());
+        assert!(!ptr.is_null());
+        held.push(ptr);
+    }
 }
 
 #[cfg(feature = "fastbin")]
@@ -128,6 +155,10 @@ fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
     // (`FLUSH_N = TCACHE_CAP / 2 = want / 2`), exactly one under the
     // straight-to-substrate policy.
     let k = if overflow { want / 2 } else { 1 };
+    // B4 depot (DP-3): fill this class's depot first, so the overflow below
+    // takes the flush arm instead of parking the full magazine.
+    fill_depot(heap, &mut held, c);
+    assert_accounted(heap, &held, c);
     for _ in 0..(want + 1) {
         take_one(heap, &mut held, layout());
     }
@@ -138,6 +169,13 @@ fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
         held.push(ptr);
     }
     assert_eq!(resident(heap, c), 0, "the magazine must be empty here");
+    // ...and empty the depot (reloads, no substrate refill), so the armed miss
+    // below is a genuine substrate refill.
+    while resident(heap, c) > 0 || heap.dbg_depot_len(c) > 0 {
+        let ptr = heap.alloc(layout());
+        assert!(!ptr.is_null());
+        held.push(ptr);
+    }
     assert_ne!(
         owner_state(anchor, c).2,
         u32::MAX,
