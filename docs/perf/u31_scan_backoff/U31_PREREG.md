@@ -114,3 +114,31 @@ only skips work.
 Replication rule, fixed now: one independent larson-only run, 40 processes ×
 2000 blocks, fresh order seed; threshold 3 for larson is judged on that run
 alone, and both runs are reported. No other kernel is re-run.
+
+## Amendment 3 — v1 verdict and variant v2 (before any v2 measurement)
+
+**v1 (`37bf5a10`) is NO-GO by threshold 5.** Threshold 1 (growth16 Ir
+27 102 575 ≤ 71 983 361), 2 (growth16 time ratio 0.339 [0.331, 0.346]),
+3 (with the amendment-2 larson replication −0.25 % [−0.59, +0.55]) and 4 (no MT
+cell slower) and the oracle passed, and so did `segments_reserved_total`
+(median 10 = 10) and growth16 peak RSS (1.000). MT peak RSS failed:
+`ph6b_mt_ab` under WSL `/usr/bin/time`, 100 ABBA quads, paired median ratio
+1.094 [1.032, 1.158] > 1.05 (an earlier 20-quad run gave 0.997 [0.903,
+1.262], imprecise; both are reported). Mechanism: in MT remote frees arrive
+between scans; after one empty scan v1 lets the owner carve 1/8 of the whole
+drained range while new publications wait.
+
+**Variant v2** (same file, same header `u32`, now `start | end << 15 |
+streak << 30` in 256-byte units):
+
+- an empty scan extends a saturating streak, a reclaiming drain resets it
+  and closes the window; the window opens only on the third consecutive
+  empty scan;
+- the window is 1/16 of the drained payload range (was 1/8);
+- the no-carve rule and everything else are unchanged.
+
+Thresholds 1–5 and the oracle are unchanged and are judged on v2 alone with
+every measurement repeated: callgrind, growth16 time (100 quads), the
+11-kernel ablation (20 processes; the amendment-2 rule applies again to any
+kernel left imprecise on a no-harm rule), MT time quads (100 + 50 null),
+segments, and peak RSS with 100 quads for MT and 20 for growth16.

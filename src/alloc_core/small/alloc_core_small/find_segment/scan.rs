@@ -493,7 +493,8 @@ impl AllocCore {
         #[cfg(feature = "alloc-stats")]
         let routed_miss_scan = _scan_context.routed_miss_scan;
         // U31: sidecar range drained by this scan and whether any drain
-        // reclaimed; an all-`Skipped` miss opens the deferral window below.
+        // reclaimed; an all-`Skipped` miss extends the empty-scan streak and,
+        // once it is long enough, opens the deferral window below.
         #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
         let defer_drains = _scan_context.defer_drains;
         #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
@@ -594,7 +595,13 @@ impl AllocCore {
                             Self::sidecar_payload_start_word(base) * SIDECAR_WORD_BYTES,
                         ),
                     );
-                    match self.drain_segment_sidecar(base) {
+                    let outcome = self.drain_segment_sidecar(base);
+                    // U31: a reclaiming drain resets small_cur's empty-scan streak.
+                    if !reclaimed && !matches!(outcome, SidecarDrainOutcome::Skipped) {
+                        reclaimed = true;
+                        self.reset_sidecar_defer_streak();
+                    }
+                    match outcome {
                         // Decommitted+released: `base` is unmapped — skip the
                         // BinTable check in THIS scan. Decommitted+pooled: `base`
                         // is still live/registered/committed (R1-03) — fall
@@ -602,14 +609,8 @@ impl AllocCore {
                         // segment gets, so a just-emptied segment can be reused
                         // in this very scan (see `SidecarDrainOutcome`'s doc).
                         #[cfg(feature = "alloc-decommit")]
-                        SidecarDrainOutcome::Decommitted { pooled: false } => {
-                            reclaimed = true;
-                            continue;
-                        }
-                        #[cfg(feature = "alloc-decommit")]
-                        SidecarDrainOutcome::Decommitted { pooled: true } => reclaimed = true,
-                        SidecarDrainOutcome::Drained => reclaimed = true,
-                        SidecarDrainOutcome::Skipped => {}
+                        SidecarDrainOutcome::Decommitted { pooled: false } => continue,
+                        _ => {}
                     }
                 }
                 let meta = SegmentMeta::new(base);
@@ -713,7 +714,7 @@ impl AllocCore {
                 }
                 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
                 if drained_bytes != 0 && !reclaimed {
-                    self.open_sidecar_defer_window(drained_bytes);
+                    self.note_empty_sidecar_scan(drained_bytes);
                 }
             }
             fallback
@@ -727,7 +728,7 @@ impl AllocCore {
             }
             #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
             if drained_bytes != 0 && !reclaimed {
-                self.open_sidecar_defer_window(drained_bytes);
+                self.note_empty_sidecar_scan(drained_bytes);
             }
             None
         }

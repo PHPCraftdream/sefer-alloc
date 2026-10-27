@@ -6,16 +6,17 @@
 ))]
 
 //! U31 (docs/perf/OPEN_ITEMS.md item 90): after a routed linear scan whose
-//! sidecar drains reclaimed nothing, the owner defers the drains while
-//! `small_cur` carves `drained range / 8` more. Pins three properties on a
-//! real routed `AllocCore`:
+//! sidecar drains reclaimed nothing (three in a row), the owner defers the
+//! drains while `small_cur` carves `drained range / 16` more. Pins four
+//! properties on a real routed `AllocCore`:
 //!
 //! 1. activation — a growing heap defers most discovery drains, so the
 //!    drain count falls far below the discovery count (base: equal);
-//! 2. bound — the window never reaches past 1/8 of the payload range
+//! 2. bound — the window never reaches past 1/16 of the payload range
 //!    drained so far (`end - bump <= (bump - payload start) / 8 + one refill`);
 //! 3. liveness — a free published while the window is open is reissued
-//!    once the bump passes the window end (plus one refill batch).
+//!    once the bump passes the window end (plus one refill batch);
+//! 4. reset — the drain that reclaims it resets the empty-scan streak.
 //!
 //! A repeated discovery with no carve in between is never deferred; that
 //! half is pinned by the publish-then-discover protocol tests
@@ -46,7 +47,7 @@ fn u31_defers_empty_drains_within_bound_and_reissues_published_free() {
     // Warm-up block fixes the segment and its payload start.
     let first = core.alloc(class_zero);
     assert!(!first.is_null());
-    let (payload_start, _, _) = core.dbg_sidecar_defer_window();
+    let (payload_start, _, _, _) = core.dbg_sidecar_defer_window();
     let mut live = vec![first];
 
     // 1 + 2: grow the heap; check the bound after every allocation.
@@ -56,12 +57,12 @@ fn u31_defers_empty_drains_within_bound_and_reissues_published_free() {
         let ptr = core.alloc(class_zero);
         assert!(!ptr.is_null());
         live.push(ptr);
-        let (bump, _, until) = core.dbg_sidecar_defer_window();
+        let (bump, _, until, _) = core.dbg_sidecar_defer_window();
         if until > bump {
             let range = bump - payload_start;
             assert!(
-                until - bump <= range / 8 + refill_bytes,
-                "window {} past bump {bump} exceeds 1/8 of drained range {range}",
+                until - bump <= range / 16 + refill_bytes,
+                "window {} past bump {bump} exceeds 1/16 of drained range {range}",
                 until - bump
             );
         }
@@ -82,7 +83,7 @@ fn u31_defers_empty_drains_within_bound_and_reissues_published_free() {
     // 3: open a window, publish a free inside it, keep allocating.
     let mut guard = 0;
     while {
-        let (bump, _, until) = core.dbg_sidecar_defer_window();
+        let (bump, _, until, _) = core.dbg_sidecar_defer_window();
         until <= bump
     } {
         let ptr = core.alloc(class_zero);
@@ -91,7 +92,7 @@ fn u31_defers_empty_drains_within_bound_and_reissues_published_free() {
         guard += 1;
         assert!(guard < 65_536, "window never opened");
     }
-    let (_, _, until_at_publish) = core.dbg_sidecar_defer_window();
+    let (_, _, until_at_publish, _) = core.dbg_sidecar_defer_window();
     let victim = live.remove(live.len() / 2);
     // SAFETY: `victim` is a live class-zero block of `core`; its single free
     // is transferred to the sidecar here and never freed directly.
@@ -102,7 +103,12 @@ fn u31_defers_empty_drains_within_bound_and_reissues_published_free() {
         assert!(!ptr.is_null());
         live.push(ptr);
         if ptr == victim {
-            reissued_at = Some(core.dbg_sidecar_defer_window().0);
+            let (bump, _, _, streak) = core.dbg_sidecar_defer_window();
+            assert_eq!(
+                streak, 0,
+                "the reclaiming drain must reset the empty-scan streak"
+            );
+            reissued_at = Some(bump);
             break;
         }
     }
