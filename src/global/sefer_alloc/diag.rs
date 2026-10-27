@@ -79,6 +79,15 @@ impl SeferAlloc {
         ]
     }
 
+    /// U31 activation oracle: routed linear scans whose sidecar drains were
+    /// deferred by the owner's window (`B4_U31_DEFERRED_SCANS`). Diagnostic
+    /// only (Relaxed).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_b4_u31_deferred_scans() -> u64 {
+        crate::alloc_core::B4_U31_DEFERRED_SCANS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// B4 §11 test-only: this thread's current heap's discovery-cursor slot
     /// for `class_idx` (`None` = no heap bound or no cursor recorded).
     #[doc(hidden)]

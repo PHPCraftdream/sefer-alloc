@@ -98,7 +98,7 @@ const _: () = assert!(NO_NODE_RAW == u32::MAX);
 /// debug_assert_eq! in the hit path):
 /// - `span_usable`, `reserved_capacity`, `reservation`, `reservation_len`
 ///
-/// **Carried forward, inert for Large (9 fields)** — Large segments never
+/// **Carried forward, inert for Large (10 fields)** — Large segments never
 /// use these; the stale values are never read:
 /// - `kind` (already `Large`; cache only holds former Large segments)
 /// - `live_count`, `decommitted` (Large has no small-segment decommit)
@@ -106,6 +106,7 @@ const _: () = assert!(NO_NODE_RAW == u32::MAX);
 /// - `committed_payload_end` (Large has no lazy-commit frontier)
 /// - `node_id` (re-stamped under `numa-aware`; otherwise inert)
 /// - `payload_virgin` (Large has no virgin-zero-skip)
+/// - `sidecar_defer_until` (U31 small-only owner window; Large never scans)
 const _: () = {
     let SegmentHeader {
         bump,
@@ -127,6 +128,7 @@ const _: () = {
         segment_id,
         node_id,
         payload_virgin,
+        sidecar_defer_until,
     } = SegmentHeader::large(0, 0, 0, 0, 0, 0, core::ptr::null_mut(), 0);
     let _ = (
         bump,
@@ -148,5 +150,6 @@ const _: () = {
         segment_id,
         node_id,
         payload_virgin,
+        sidecar_defer_until,
     );
 };
