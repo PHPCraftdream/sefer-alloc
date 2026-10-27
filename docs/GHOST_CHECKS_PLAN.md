@@ -206,6 +206,7 @@ id, протокол, файл, путь функции, вид правила (
 | R7 twin | `cfg(loom)`- и `cfg(not(loom))`-двойники одного элемента дают одинаковую нормализованную последовательность атомарных операций и ordering; разрешённые отличия — только из явного списка с причиной | `loom_shim::OncePtrCell` против `once_ptr_cell::OncePtrCell`; двойники в `tagged-index-stack` |
 | R8 model bind | константы и шаги теневой модели с пометкой `ghost-bind` равны прод-значениям правил R1/R3 | `DROP_ORDERING` в `loom_r11_ph4a_heap_lease.rs` равен ordering в `claim.rs` |
 | R9 hygiene | ghost-элементы только под ghost-`cfg`; нет ghost-полей в структурах с пином раскладки; аргументы ghost-макросов не пишут в прод-данные | ghost-поле в `HeapCore` — красный |
+| R10 declaration | тип поля или `static` (в том числе внутри `thread_local!`) и его инициализатор совпадают с шаблоном | `LOCAL` — `Cell<*mut HeapCore>` с `const`-инициализацией без `Drop` (решение «LOCAL без Drop»); `LeaseReleaseGuard.lease` — `Cell<Option<HeapLease>>` |
 
 Ограничение `syn`: типов нет, поэтому правила привязаны к путям функций,
 именам полей-получателей и шаблонам выражений. Неоднозначность (два

@@ -1,0 +1,1 @@
+{"id": "fixture/r10-static", "kind": "R10", "file": "$SRC", "decl": {"static": "SLOT", "thread_local": true}, "ty": "^Cell<usize>$", "init": "^const\\{", "not_ty": "RefCell"}

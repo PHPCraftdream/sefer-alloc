@@ -1,0 +1,86 @@
+{
+  "id": "R4b-14",
+  "registryActivationHash": "d93ec259e7636408399a57652273d7e2082ca3ac907e92b1d27d200e1edf432f",
+  "steps": [
+    {
+      "name": "loom_r11_ph4b_publish_recycle_drain target",
+      "env": {
+        "RUSTFLAGS": "--cfg loom"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--release",
+        "--features",
+        "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+        "--test",
+        "loom_r11_ph4b_publish_recycle_drain"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test publication_survives_recycle_and_is_consumed_exactly_once \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "tests/loom_r11_ph4b_publish_recycle_drain.rs",
+    "find": "cas(slot, Free, Live, Ordering::AcqRel, Ordering::Acquire)",
+    "replace": "cas(slot, Free, Live, Ordering::Release, Ordering::Acquire)",
+    "steps": [
+      {
+        "name": "compile L2 claim without Acquire",
+        "env": {
+          "RUSTFLAGS": "--cfg loom"
+        },
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--features",
+          "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+          "--test",
+          "loom_r11_ph4b_publish_recycle_drain",
+          "--no-run"
+        ],
+        "expect": {
+          "exit": 0,
+          "stdoutRegex": [
+            "Finished"
+          ]
+        }
+      },
+      {
+        "name": "L2 claim without Acquire loom runtime",
+        "env": {
+          "RUSTFLAGS": "--cfg loom"
+        },
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--features",
+          "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+          "--test",
+          "loom_r11_ph4b_publish_recycle_drain",
+          "--",
+          "--nocapture"
+        ],
+        "expect": {
+          "exitNonZero": true,
+          "stdoutRegex": [
+            "Causality violation|Concurrent (read|write) access"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "Causality violation|Concurrent (read|write) access"
+      ]
+    }
+  }
+}

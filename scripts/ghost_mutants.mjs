@@ -1,7 +1,9 @@
 // Real-code mutant double confirmation (docs/GHOST_CHECKS_PLAN.md §4.3). Every
 // catalog rule may list `mutants`: an exact text replacement in a production
 // file plus a runtime checker (a loom/miri/kani command). For each mutant this
-// script applies the replacement in place, then requires BOTH
+// script applies the replacement in place (plus any `also` replacements: the
+// same change propagated into a shadow model, as its R8 binding demands), then
+// requires BOTH
 //   1. `ghost-lint check` to report a violation of that rule, and
 //   2. the checker to fail with output matching `expect`,
 // and restores the file byte-for-byte afterwards (also on error). A mutant that
@@ -35,13 +37,16 @@ const lint = lintBinary();
 const results = [];
 let red = 0;
 for (const m of work) {
-  const path = join(REPO_ROOT, m.file);
-  const orig = readFileSync(path, 'utf8');
-  assert.ok(orig.includes(m.from), `${m.rule}/${m.id}: anchor not found in ${m.file} (production changed — update the mutant)`);
-  assert.equal(orig.split(m.from).length, 2, `${m.rule}/${m.id}: anchor is not unique in ${m.file}`);
+  const edits = [m, ...(m.also || [])].map((e) => {
+    const path = join(REPO_ROOT, e.file);
+    const orig = readFileSync(path, 'utf8');
+    assert.ok(orig.includes(e.from), `${m.rule}/${m.id}: anchor not found in ${e.file} (source changed — update the mutant)`);
+    assert.equal(orig.split(e.from).length, 2, `${m.rule}/${m.id}: anchor is not unique in ${e.file}`);
+    return { ...e, path, orig };
+  });
   const row = { rule: m.rule, mutant: m.id, lint: null, checker: null };
   try {
-    writeFileSync(path, orig.replace(m.from, m.to));
+    for (const e of edits) writeFileSync(e.path, e.orig.replace(e.from, e.to));
     const l = spawnSync(lint, ['check', '--root', REPO_ROOT], { encoding: 'utf8' });
     row.lint = l.status !== 0 && l.stdout.includes(`[${m.rule}]`) ? 'RED' : 'GREEN';
     if (!lintOnly) {
@@ -52,9 +57,9 @@ for (const m of work) {
       if (row.checker !== 'RED') row.checker_tail = text.split('\n').slice(-12).join('\n');
     }
   } finally {
-    writeFileSync(path, orig);
+    for (const e of edits) writeFileSync(e.path, e.orig);
   }
-  assert.equal(readFileSync(path, 'utf8'), orig, `${m.file} not restored`);
+  for (const e of edits) assert.equal(readFileSync(e.path, 'utf8'), e.orig, `${e.file} not restored`);
   const ok = row.lint === 'RED' && (lintOnly || row.checker === 'RED');
   if (ok) red++;
   console.log(`${ok ? 'CAUGHT ' : 'MISSED '} ${m.rule}/${m.id}: lint ${row.lint}${lintOnly ? '' : `, ${m.checker.name} ${row.checker}`}`);

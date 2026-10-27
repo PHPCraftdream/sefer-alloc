@@ -1,24 +1,26 @@
 {
   "id": "R4b-09",
-  "registryActivationHash": "9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd",
+  "registryActivationHash": "546f9eda46fa21dc1df4f8c59b4231cbea184074fc773aacfcb75c784295f004",
   "steps": [
     {
-      "name": "rollback LOCAL-before-drop source-pin baseline",
+      "name": "ghost-lint catalog baseline",
       "env": {},
       "argv": [
         "cargo",
         "test",
         "--locked",
-        "--features",
-        "production internals",
+        "-p",
+        "ghost-lint",
         "--test",
-        "r11_ph4b_local_no_drop_pinned"
+        "catalog_holds",
+        "--",
+        "--nocapture"
       ],
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "test finish_bind_rollback_unpublishes_local_before_the_lease_drop \\.\\.\\. ok",
-          "test result: ok\\. 3 passed; 0 failed"
+          "check: \\d+ rule\\(s\\), 0 violation\\(s\\)",
+          "test result: ok\\. 1 passed; 0 failed"
         ]
       }
     }
@@ -29,25 +31,23 @@
     "replace": "        drop(lease);\n        let _ = LOCAL.try_with(|c| c.set(core::ptr::null_mut()));\n        // Rollback mutant R4b-09: release BEFORE unpublish (must trip the pin).",
     "steps": [
       {
-        "name": "rollback releases lease before unpublishing LOCAL mutant",
+        "name": "release before unpublish mutant",
         "env": {},
         "argv": [
           "cargo",
           "test",
           "--locked",
-          "--features",
-          "production internals",
+          "-p",
+          "ghost-lint",
           "--test",
-          "r11_ph4b_local_no_drop_pinned",
-          "finish_bind_rollback_unpublishes_local_before_the_lease_drop",
+          "catalog_holds",
           "--",
-          "--exact",
           "--nocapture"
         ],
         "expect": {
-          "exit": 101,
+          "exitNonZero": true,
           "stdoutRegex": [
-            "test finish_bind_rollback_unpublishes_local_before_the_lease_drop \\.\\.\\. FAILED"
+            "\\[teardown\\/rollback-unpublish-first\\]"
           ]
         }
       }
@@ -55,7 +55,7 @@
     "expect": {
       "exitNonZero": true,
       "stdoutRegex": [
-        "test finish_bind_rollback_unpublishes_local_before_the_lease_drop \\.\\.\\. FAILED"
+        "\\[teardown\\/rollback-unpublish-first\\]"
       ]
     }
   }

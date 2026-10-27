@@ -28,21 +28,21 @@ R0-24,protocol,C1,NOT_RUN|PASS,false,waiver: W+3; witness не выбран (ш�
 R0-25,cost,COST,NOT_RUN|PASS|CONDITIONAL,false,агрегат стоимости; закрывается строками R6b-01..07
 R0-26,platform,C7,NOT_RUN|PASS,false,кросс-платформенная матрица не прогонялась
 R4a-01,ordering,C5,CONDITIONAL|PASS,false,waiver: Miri lease lifecycle; переприёмка Ph4c = R4c-03
-R4a-05,ordering,C5,PASS,true,мутант M1 пойман loom-ловцом DROP_ORDERING
+R4a-05,ordering,C5,PASS,true,мутант M1 пойман loom-ловцом (связанная строка heap-lease/drop-release)
 R4a-06,ordering,C5,PASS,true,мутант M2 пойман loom-моделью
 R4a-07,ordering,C5,PASS,true,мутант M3 пойман loom-моделью
 R4a-08,ordering,C5,PASS|CONDITIONAL,true,мутант M4 пойман loom-моделью
 R4a-09,ordering,C5,PASS,true,мутант M5 пойман loom-моделью
-R4a-10,ordering,C5,PASS|CONDITIONAL,true,source-pin Release у CAS LIVE->FREE в HeapLease::drop
+R4a-10,ordering,C5,PASS|CONDITIONAL,true,ghost-lint R1 heap-lease/drop-release: Release у CAS LIVE->FREE в HeapLease::drop
 R4b-06,protocol,C5,CONDITIONAL|PASS,false,waiver: изолированный child-раннер; pending не двигаются без worker
 R4b-07,protocol,C4,CONDITIONAL|PASS,false,waiver: spawn-ошибка без полуактивации; мутант M8 = R6a-M8
 R4b-08,ordering,C5,PASS,true,мутант M-A пойман crash-ом (abort дочернего процесса)
-R4b-09,ordering,C5,CONDITIONAL|PASS,false,waiver: мутант M-B пойман source-pin
+R4b-09,ordering,C5,CONDITIONAL|PASS,false,waiver: мутант M-B пойман ghost-lint R3 teardown/rollback-unpublish-first
 R4b-10,protocol,C5,INCONCLUSIVE,false,waiver: ловец слаб (trim идемпотентен; 0 vs 1 не различает); закрыто оракулом Ph4c R4c-01
-R4b-11,ordering,C5,PASS|CONDITIONAL,true,source-pin teardown-порядка torn -> trim -> release
-R4b-12,ordering,C5,PASS|CONDITIONAL,true,source-pin GUARD take/set-перемещение
-R4b-13,ordering,C5,INCONCLUSIVE,false,"waiver: loom-модель наблюдает data-целостность, не S2-упорядочивание state-CAS; частично закрыто source-pin R4a-10/R4b-11"
-R4b-14,ordering,C5,INCONCLUSIVE,false,waiver: аналогично L1; частично закрыто source-pin
+R4b-11,ordering,C5,PASS|CONDITIONAL,true,ghost-lint R3 teardown-порядка torn -> trim -> release
+R4b-12,ordering,C5,PASS|CONDITIONAL,true,ghost-lint R10 GUARD Cell<Option<HeapLease>> (take/set-перемещение)
+R4b-13,ordering,C5,PASS,true,L1 пойман loom-моделью Ph4b (core-ячейка) и ghost-lint R1/R8
+R4b-14,ordering,C5,PASS,true,L2 пойман loom-моделью Ph4b (core-ячейка) и ghost-lint R1/R8
 R4b-15,ordering,C5,PASS,true,L3: CAS-loser не drain'ит (loom красный)
 R4c-01,protocol,C5,PASS|CONDITIONAL,true,оракул trim при re-claim consume ровно один раз
 R4c-04,protocol,C5,PASS,false,waiver: Miri-свидетель lease teardown (Ph4b); собственного мутанта нет — протокол закрыт loom/source-pin строками R4a-05/R4a-10/R4b-11; описание исправлено: это НЕ ingress-оракул

@@ -19,9 +19,7 @@
       "loom": [
         "tests/loom_r11_ph4a_heap_lease.rs"
       ],
-      "pins": [
-        "tests/r11_ph4a_drop_ordering_pinned.rs"
-      ],
+      "pins": [],
       "registry": [
         "R4a-05",
         "R4a-06",
@@ -31,9 +29,9 @@
         "R4c-09"
       ],
       "real_under_loom": "no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone",
-      "decision": "partial-translate",
+      "decision": "keep+R8",
       "phase": "G3",
-      "reason": "translate the HeapSlot state machine (heap_slot.rs cas_state + the claim/drop call-site orderings) via #[path]; registry bootstrap stays a shadow model bound by R8"
+      "reason": "G3: HeapSlot::cas_state only passes the orderings through, so translating it under loom adds nothing; the orderings live at the claim/drop call sites, which need the registry bootstrap. R1 pins every cas_state call site of claim_impl, HeapLease::drop and push_back_after_oom (R4: a lost drop CAS is fatal); R8 binds the drop and claim lines of both shadow models (heap-lease/model-bind, recycle-drain/model-bind). The text pin r11_ph4a_drop_ordering_pinned is removed: its mutants turn heap-lease/drop-release and heap-lease/drop-lost-cas-fatal red."
     },
     {
       "id": "P2",
@@ -76,10 +74,7 @@
       "loom": [
         "tests/loom_r11_ph4b_publish_recycle_drain.rs"
       ],
-      "pins": [
-        "tests/r11_ph4b_teardown_ordering_pinned.rs",
-        "tests/r11_ph4b_local_no_drop_pinned.rs"
-      ],
+      "pins": [],
       "registry": [
         "R4b-03",
         "R4b-13",
@@ -87,9 +82,9 @@
         "R4b-15"
       ],
       "real_under_loom": "no: drain runs through HeapCore + AllocCore segment tables",
-      "decision": "keep+R8+ghost",
+      "decision": "keep+R8",
       "phase": "G3",
-      "reason": "R4b-13/14 are INCONCLUSIVE because L1/L2 mutants in claim.rs are not seen by the model; R1 on the cas_state call sites catches them in prod code, R8 binds the model constants, ghost_event! counts consumption under the real drain (miri)",
+      "reason": "G3: L1/L2 (R4b-13/14) are caught by the Ph4b model through a core cell every lease holder writes, and by R1 in claim.rs; R8 keeps the model lines equal to prod. The teardown order is R3/R4 on LeaseReleaseGuard::drop and finish_bind, the LOCAL/GUARD declarations are R10. The text pins r11_ph4b_teardown_ordering_pinned and r11_ph4b_local_no_drop_pinned are removed: their mutants turn those rules red. Exactly-once consumption under the real drain is P7/P10 (G6).",
       "atomics": "its orderings are P1 (HeapSlot::cas_state call sites) and P7 (sidecar publish/cut); trim/drain order and consumption are sequence/ghost properties (R3, ghost_event!)"
     },
     {
@@ -1277,6 +1272,488 @@
         "tests/loom_route_pin_unlink.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p5_model_bind"
+    },
+    {
+      "id": "heap-lease/drop-release",
+      "kind": "R1",
+      "protocol": "P1",
+      "file": "src/registry/heap_registry/claim.rs",
+      "fn": "HeapLease::drop",
+      "site": {
+        "name": "cas_state",
+        "args": "^SlotState::Live,SlotState::Free,"
+      },
+      "orderings": [
+        "Release",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "LIVE",
+        "FREE",
+        "Release",
+        "claimant",
+        "happens-before"
+      ],
+      "reason": "S2: every owner write to the core happens-before the next claimant; the LIVE -> FREE CAS is the Release half of that edge",
+      "tests": [
+        "tests/loom_r11_ph4b_publish_recycle_drain.rs",
+        "tests/loom_r11_ph4a_heap_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p1_drop_release",
+      "mutants": [
+        {
+          "id": "L1-relaxed-drop",
+          "file": "src/registry/heap_registry/claim.rs",
+          "from": "                SlotState::Live,\n                SlotState::Free,\n                Ordering::Release,\n",
+          "to": "                SlotState::Live,\n                SlotState::Free,\n                Ordering::Relaxed,\n",
+          "also": [
+            {
+              "file": "tests/loom_r11_ph4b_publish_recycle_drain.rs",
+              "from": "cas(slot, Live, Free, Ordering::Release, Ordering::Relaxed)",
+              "to": "cas(slot, Live, Free, Ordering::Relaxed, Ordering::Relaxed)"
+            }
+          ],
+          "checker": {
+            "name": "loom loom_r11_ph4b_publish_recycle_drain",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+              "--test",
+              "loom_r11_ph4b_publish_recycle_drain"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "Causality violation|Concurrent (read|write) access"
+          }
+        }
+      ]
+    },
+    {
+      "id": "heap-lease/drop-lost-cas-fatal",
+      "kind": "R4",
+      "protocol": "P1",
+      "file": "src/registry/heap_registry/claim.rs",
+      "fn": "HeapLease::drop",
+      "action": {
+        "name": "fatal",
+        "args": "rollback"
+      },
+      "guard": "^self\\.slot\\.cas_state\\(SlotState::Live,SlotState::Free,.*\\)\\.is_err\\(\\)$",
+      "terms": [
+        "fatal",
+        "lost",
+        "CAS",
+        "single-writer"
+      ],
+      "reason": "a lost LIVE -> FREE CAS means a second mutator exists; the drop aborts instead of continuing",
+      "tests": [
+        "tests/loom_r11_ph4b_publish_recycle_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p1_drop_lost_cas_fatal"
+    },
+    {
+      "id": "heap-lease/claim-free-live",
+      "kind": "R1",
+      "protocol": "P1",
+      "file": "src/registry/heap_registry/claim.rs",
+      "fn": "HeapRegistry::claim_impl",
+      "site": {
+        "name": "cas_state",
+        "args": "^SlotState::Free,SlotState::Live,"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "FREE",
+        "LIVE",
+        "Acquire",
+        "claimant",
+        "happens-before"
+      ],
+      "reason": "the claimant's FREE -> LIVE success ordering is the Acquire half of S2: it observes every write of the previous holder",
+      "tests": [
+        "tests/loom_r11_ph4b_publish_recycle_drain.rs",
+        "tests/loom_r11_ph4a_heap_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p1_claim_free_live",
+      "mutants": [
+        {
+          "id": "L2-claim-without-acquire",
+          "file": "src/registry/heap_registry/claim.rs",
+          "from": "                            SlotState::Free,\n                            SlotState::Live,\n                            Ordering::AcqRel,\n",
+          "to": "                            SlotState::Free,\n                            SlotState::Live,\n                            Ordering::Release,\n",
+          "also": [
+            {
+              "file": "tests/loom_r11_ph4b_publish_recycle_drain.rs",
+              "from": "cas(slot, Free, Live, Ordering::AcqRel, Ordering::Acquire)",
+              "to": "cas(slot, Free, Live, Ordering::Release, Ordering::Acquire)"
+            }
+          ],
+          "checker": {
+            "name": "loom loom_r11_ph4b_publish_recycle_drain",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+              "--test",
+              "loom_r11_ph4b_publish_recycle_drain"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "Causality violation|Concurrent (read|write) access"
+          }
+        }
+      ]
+    },
+    {
+      "id": "heap-lease/claim-empty-init",
+      "kind": "R1",
+      "protocol": "P1",
+      "file": "src/registry/heap_registry/claim.rs",
+      "fn": "HeapRegistry::claim_impl",
+      "site": {
+        "name": "cas_state",
+        "args": "^SlotState::Empty,SlotState::Initializing,"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "EMPTY",
+        "INITIALIZING",
+        "Acquire",
+        "first claim"
+      ],
+      "reason": "exactly one first claimant wins EMPTY -> INITIALIZING and becomes the sole constructor of the core",
+      "tests": [
+        "tests/loom_r11_ph4a_heap_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p1_claim_empty_init"
+    },
+    {
+      "id": "heap-lease/claim-recover-init",
+      "kind": "R1",
+      "protocol": "P1",
+      "file": "src/registry/heap_registry/claim.rs",
+      "fn": "HeapRegistry::claim_impl",
+      "site": {
+        "name": "cas_state",
+        "args": "^SlotState::Live,SlotState::Initializing,"
+      },
+      "orderings": [
+        "Release",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "LIVE",
+        "INITIALIZING",
+        "Release",
+        "recovery"
+      ],
+      "reason": "a FREE slot whose core was never published is re-entered as INITIALIZING by the winner that already holds it",
+      "tests": [
+        "tests/loom_r11_ph4a_heap_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p1_claim_recover_init"
+    },
+    {
+      "id": "heap-lease/claim-publish-live",
+      "kind": "R1",
+      "protocol": "P1",
+      "file": "src/registry/heap_registry/claim.rs",
+      "fn": "HeapRegistry::claim_impl",
+      "site": {
+        "name": "cas_state",
+        "args": "^SlotState::Initializing,SlotState::Live,"
+      },
+      "orderings": [
+        "Release",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "INITIALIZING",
+        "LIVE",
+        "Release",
+        "initialised"
+      ],
+      "reason": "the constructed core is published with the LIVE state after the initialised Release store",
+      "tests": [
+        "tests/loom_r11_ph4a_heap_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p1_claim_publish_live"
+    },
+    {
+      "id": "heap-lease/oom-rollback-release",
+      "kind": "R1",
+      "protocol": "P1",
+      "file": "src/registry/heap_registry/claim.rs",
+      "fn": "push_back_after_oom",
+      "site": {
+        "name": "cas_state",
+        "args": "^SlotState::Initializing,SlotState::Free,"
+      },
+      "orderings": [
+        "Release",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "INITIALIZING",
+        "FREE",
+        "Release",
+        "OOM"
+      ],
+      "reason": "a failed construction hands the slot back as FREE with Release; the next claimant reads initialised before choosing a path",
+      "tests": [
+        "tests/loom_r11_ph4a_heap_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p1_oom_rollback_release"
+    },
+    {
+      "id": "heap-lease/model-bind",
+      "kind": "R8",
+      "protocol": "P1",
+      "model": "tests/loom_r11_ph4a_heap_lease.rs",
+      "binds": [
+        {
+          "rule": "heap-lease/drop-release"
+        },
+        {
+          "rule": "heap-lease/claim-free-live"
+        }
+      ],
+      "terms": [
+        "model",
+        "Release",
+        "Acquire"
+      ],
+      "reason": "the Ph4a shadow model keeps the production orderings of the drop and claim CAS",
+      "tests": [
+        "tests/loom_r11_ph4a_heap_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p1_model_bind"
+    },
+    {
+      "id": "recycle-drain/model-bind",
+      "kind": "R8",
+      "protocol": "P3",
+      "model": "tests/loom_r11_ph4b_publish_recycle_drain.rs",
+      "binds": [
+        {
+          "rule": "heap-lease/drop-release"
+        },
+        {
+          "rule": "heap-lease/claim-free-live"
+        }
+      ],
+      "terms": [
+        "model",
+        "Release",
+        "Acquire",
+        "core"
+      ],
+      "reason": "the Ph4b shadow model keeps the production orderings of the drop and claim CAS; its core cell makes a weakened one a loom causality violation (R4b-13/R4b-14)",
+      "tests": [
+        "tests/loom_r11_ph4b_publish_recycle_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p3_model_bind"
+    },
+    {
+      "id": "teardown/torn-before-trim",
+      "kind": "R3",
+      "protocol": "P3",
+      "file": "src/global/tls_heap.rs",
+      "fn": "LeaseReleaseGuard::drop",
+      "before": {
+        "name": "mark_local_torn",
+        "kind": "call"
+      },
+      "after": {
+        "name": "trim_for_recycle"
+      },
+      "terms": [
+        "TORN",
+        "mark_local_torn",
+        "trim_for_recycle",
+        "before"
+      ],
+      "reason": "LOCAL is poisoned before any owner-side mutation of the teardown, so a later resolver never aliases the next claimant",
+      "tests": [
+        "tests/regression_r4_3_teardown_trim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p3_torn_before_trim"
+    },
+    {
+      "id": "teardown/torn-before-release",
+      "kind": "R3",
+      "protocol": "P3",
+      "file": "src/global/tls_heap.rs",
+      "fn": "LeaseReleaseGuard::drop",
+      "before": {
+        "name": "mark_local_torn",
+        "kind": "call"
+      },
+      "after": {
+        "name": "drop",
+        "kind": "call",
+        "args": "^lease$"
+      },
+      "terms": [
+        "TORN",
+        "mark_local_torn",
+        "drop(lease)",
+        "release"
+      ],
+      "reason": "every release of the slot (early process-exit or terminal) follows the TORN stamp",
+      "tests": [
+        "tests/regression_r4_3_teardown_trim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p3_torn_before_release"
+    },
+    {
+      "id": "teardown/trim-before-release",
+      "kind": "R3",
+      "protocol": "P3",
+      "file": "src/global/tls_heap.rs",
+      "fn": "LeaseReleaseGuard::drop",
+      "before": {
+        "name": "trim_for_recycle"
+      },
+      "after": {
+        "name": "drop",
+        "kind": "call",
+        "args": "^lease$",
+        "unguarded": true
+      },
+      "terms": [
+        "trim_for_recycle",
+        "drop(lease)",
+        "sole owner",
+        "LIVE",
+        "FREE"
+      ],
+      "reason": "the terminal sidecar cut and cache trim run while this thread is still the sole owner; no core mutation after LIVE -> FREE",
+      "tests": [
+        "tests/regression_r4_3_teardown_trim.rs",
+        "tests/loom_r11_ph4b_publish_recycle_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p3_trim_before_release"
+    },
+    {
+      "id": "teardown/early-release-on-exit",
+      "kind": "R4",
+      "protocol": "P3",
+      "file": "src/global/tls_heap.rs",
+      "fn": "LeaseReleaseGuard::drop",
+      "action": {
+        "name": "drop",
+        "kind": "call",
+        "args": "^lease$",
+        "guard": "."
+      },
+      "guard": "^super::process_exit_in_progress\\(\\)$",
+      "terms": [
+        "process_exit_in_progress",
+        "drop(lease)",
+        "early",
+        "trim"
+      ],
+      "reason": "the only release that skips the trim is the process-exit early return",
+      "tests": [
+        "tests/regression_r4_3_teardown_trim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p3_early_release_on_exit"
+    },
+    {
+      "id": "teardown/rollback-unpublish-first",
+      "kind": "R3",
+      "protocol": "P3",
+      "file": "src/global/tls_heap.rs",
+      "fn": "finish_bind",
+      "before": {
+        "name": "set",
+        "args": "null_mut\\(\\)"
+      },
+      "after": {
+        "name": "drop",
+        "kind": "call",
+        "args": "^lease$",
+        "guard": "^!armed$"
+      },
+      "terms": [
+        "LOCAL",
+        "null",
+        "drop(lease)",
+        "rollback",
+        "before"
+      ],
+      "reason": "the GUARD-arming rollback un-publishes LOCAL before it releases the slot, so no stale published pointer outlives the lease",
+      "tests": [
+        "tests/regression_r4_3_teardown_trim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p3_rollback_unpublish_first"
+    },
+    {
+      "id": "teardown/local-dropless",
+      "kind": "R10",
+      "protocol": "P3",
+      "file": "src/global/tls_heap.rs",
+      "decl": {
+        "static": "LOCAL",
+        "thread_local": true
+      },
+      "ty": "^Cell<\\*mutHeapCore>$",
+      "init": "^const\\{Cell::new\\(core::ptr::null_mut\\(\\)\\)\\}$",
+      "terms": [
+        "LOCAL",
+        "const",
+        "Drop",
+        "Cell",
+        "TORN"
+      ],
+      "reason": "owner decision \"LOCAL without Drop\": a const-initialised raw Cell registers no destructor, stays readable for the TORN stamp and has no borrow state",
+      "tests": [
+        "tests/regression_r4_3_teardown_trim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p3_local_dropless"
+    },
+    {
+      "id": "teardown/guard-lease-cell",
+      "kind": "R10",
+      "protocol": "P3",
+      "file": "src/global/tls_heap.rs",
+      "decl": {
+        "owner": "LeaseReleaseGuard",
+        "field": "lease"
+      },
+      "ty": "^Cell<Option<HeapLease>>$",
+      "terms": [
+        "GUARD",
+        "Cell",
+        "take",
+        "HeapLease",
+        "exactly once"
+      ],
+      "reason": "the guard moves the lease out with take(), so the LIVE -> FREE CAS runs exactly once at the explicit drop",
+      "tests": [
+        "tests/regression_r4_3_teardown_trim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p3_guard_lease_cell"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

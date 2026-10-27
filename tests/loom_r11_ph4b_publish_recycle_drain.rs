@@ -12,9 +12,14 @@
 //!   pending for the next owner — it is never lost and never consumed twice;
 //! - the CAS loser never drains: only the winner of the granting CAS may
 //!   touch the core (`active` must always observe 0 on entry);
-//! - the owner's Release publication of `LIVE → FREE` pairs with the
-//!   claimant's Acquire CAS (a mutant weakening it to `Relaxed` — chunk-C
-//!   mutant M1 — loses the payload happens-before and goes red).
+//! - every lease holder's core write happens-before the next holder's: the
+//!   owner's Release `LIVE → FREE` pairs with the claimant's Acquire
+//!   `FREE → LIVE`. The two lines marked `ghost-bind` carry the production
+//!   orderings (rule R8 checks them against the R1 rules on
+//!   `src/registry/heap_registry/claim.rs`); weakening either one (mutants
+//!   L1/L2 of `scripts/ghost_mutants.mjs`) turns the `core` cell into a loom
+//!   causality violation. The owner writes `core` after its own drain and the
+//!   claimant before its drain, so the `pending` swaps add no edge between them.
 #![cfg(all(loom, feature = "alloc-global", feature = "internals"))]
 
 use loom::cell::UnsafeCell;
@@ -22,10 +27,8 @@ use loom::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 use sefer_alloc::registry::heap_slot::SlotState;
+use sefer_alloc::registry::heap_slot::SlotState::{Free, Live};
 
-/// Publication ordering of the Drop's LIVE→FREE CAS. `Release` at rest; the
-/// chunk-C mutant flips this to `Relaxed` and the model below must go red.
-const DROP_ORDERING: Ordering = Ordering::Release;
 /// The single value a publication carries (the S1 happens-before payload).
 const PUBLISHED: u64 = 42;
 
@@ -41,6 +44,38 @@ struct Slot {
     torn: AtomicBool,
     /// Test oracle: how many drains consumed a publication (0 or 1).
     consumed: AtomicUsize,
+    /// Owner-private core metadata (the `HeapCore` stand-in): every lease
+    /// holder mutates it, so only the S2 edge orders consecutive holders.
+    core: UnsafeCell<u64>,
+}
+
+/// One state CAS (`HeapSlot::cas_state`).
+fn cas(slot: &Slot, from: SlotState, to: SlotState, success: Ordering, failure: Ordering) -> bool {
+    slot.state
+        .compare_exchange(from as u8, to as u8, success, failure)
+        .is_ok()
+}
+
+/// `claim_impl`'s FREE → LIVE grant; a loser gets no authority.
+fn claim(slot: &Slot) -> bool {
+    // ghost-bind: heap-lease/claim-free-live
+    cas(slot, Free, Live, Ordering::AcqRel, Ordering::Acquire)
+}
+
+/// `HeapLease::drop`: Release-publish the holder's writes (S2), authority ends.
+fn release(slot: &Slot) {
+    // ghost-bind: heap-lease/drop-release
+    let won = cas(slot, Live, Free, Ordering::Release, Ordering::Relaxed);
+    assert!(won, "a lease holder's LIVE -> FREE CAS cannot lose");
+}
+
+/// A lease holder's core mutation (trim, drain bookkeeping).
+fn touch_core(slot: &Slot) {
+    slot.core.with_mut(|pointer| {
+        // SAFETY: the lease holder is the only core mutator (S1); the previous
+        // holder's writes happen-before via its Release drop and this Acquire claim.
+        unsafe { *pointer += 1 };
+    });
 }
 
 /// One owner-side bounded drain (`trim_for_recycle` / claimant's re-claim
@@ -75,66 +110,34 @@ fn publisher(slot: &Slot) {
     slot.pending.fetch_or(1, Ordering::AcqRel);
 }
 
-/// Owner: binds (FREE → LIVE), stamps TORN, runs one trim drain, then drops
-/// the lease — the Release `LIVE → FREE` CAS (`HeapLease::drop`).
+/// Owner: binds (FREE → LIVE), stamps TORN, runs one trim drain, trims its
+/// core, then drops the lease — the Release `LIVE → FREE` CAS.
 fn owner_binds_trims_and_recycles(slot: &Slot) {
-    if slot
-        .state
-        .compare_exchange(
-            SlotState::Free as u8,
-            SlotState::Live as u8,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        )
-        .is_err()
-    {
+    if !claim(slot) {
         return; // lost claimant CAS — no authority, no core access
     }
     // S1: only the CAS winner runs its body.
     assert_eq!(slot.active.fetch_add(1, Ordering::Relaxed), 0);
     // mark_local_torn: poisons this thread's TLS cache; no ordering duty.
     slot.torn.store(true, Ordering::Relaxed);
-    drain_once(slot); // trim_for_recycle
+    drain_once(slot); // trim_for_recycle: terminal sidecar cut
+    touch_core(slot); // trim_for_recycle: owner cache trim
     assert_eq!(slot.active.fetch_sub(1, Ordering::Relaxed), 1);
-    // HeapLease::drop: Release-publish the owner writes (S2), authority ends.
-    assert!(slot
-        .state
-        .compare_exchange(
-            SlotState::Live as u8,
-            SlotState::Free as u8,
-            DROP_ORDERING,
-            Ordering::Relaxed
-        )
-        .is_ok());
+    release(slot);
 }
 
-/// Claimant: races for the recycled slot; on a win, runs its bounded drain
-/// and drops its own lease. A CAS loser returns without draining.
+/// Claimant: races for the recycled slot; on a win, mutates its core, runs
+/// its bounded drain and drops its own lease. A CAS loser returns without
+/// draining.
 fn claimant_claims_and_drains(slot: &Slot) {
-    if slot
-        .state
-        .compare_exchange(
-            SlotState::Free as u8,
-            SlotState::Live as u8,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        )
-        .is_err()
-    {
+    if !claim(slot) {
         return; // the loser must never enter the drain
     }
     assert_eq!(slot.active.fetch_add(1, Ordering::Relaxed), 0);
+    touch_core(slot);
     drain_once(slot);
     assert_eq!(slot.active.fetch_sub(1, Ordering::Relaxed), 1);
-    assert!(slot
-        .state
-        .compare_exchange(
-            SlotState::Live as u8,
-            SlotState::Free as u8,
-            DROP_ORDERING,
-            Ordering::Relaxed
-        )
-        .is_ok());
+    release(slot);
 }
 
 #[test]
@@ -149,6 +152,7 @@ fn publication_survives_recycle_and_is_consumed_exactly_once() {
             payload: UnsafeCell::new(0),
             torn: AtomicBool::new(false),
             consumed: AtomicUsize::new(0),
+            core: UnsafeCell::new(0),
         });
         let publisher_slot = slot.clone();
         let producer = thread::spawn(move || publisher(&publisher_slot));
@@ -171,6 +175,15 @@ fn publication_survives_recycle_and_is_consumed_exactly_once() {
             consumed + pending,
             1,
             "the publication must be consumed exactly once or survive pending"
+        );
+        // Every winner mutated the core exactly once; a loser never did.
+        let holders = slot.core.with(|pointer| {
+            // SAFETY: all threads joined; no lease holder remains.
+            unsafe { *pointer }
+        });
+        assert!(
+            (1..=2).contains(&holders),
+            "core holders {holders} outside 1..=2"
         );
     });
 }

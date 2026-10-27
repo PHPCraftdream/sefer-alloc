@@ -1,27 +1,26 @@
 {
   "id": "R4b-11",
-  "registryActivationHash": "9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd",
+  "registryActivationHash": "38dbebee8f3c96ad5980ef2ec1d92d64bc83e2d3fbff53f46afbd76fc6614868",
   "steps": [
     {
-      "name": "teardown source-pin baseline",
+      "name": "ghost-lint catalog baseline",
       "env": {},
       "argv": [
         "cargo",
         "test",
         "--locked",
-        "--features",
-        "production internals",
+        "-p",
+        "ghost-lint",
         "--test",
-        "r11_ph4b_teardown_ordering_pinned",
+        "catalog_holds",
         "--",
         "--nocapture"
       ],
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "test teardown_stamps_torn_then_trims_then_releases_the_slot .* ok",
-          "test lease_release_cas_is_release_ordered .* ok",
-          "test result: ok. "
+          "check: \\d+ rule\\(s\\), 0 violation\\(s\\)",
+          "test result: ok\\. 1 passed; 0 failed"
         ]
       }
     }
@@ -32,24 +31,23 @@
     "replace": "        let _ = self;\n        if super::process_exit_in_progress() {",
     "steps": [
       {
-        "name": "TORN stamp omitted mutant",
+        "name": "teardown without TORN stamp mutant",
         "env": {},
         "argv": [
           "cargo",
           "test",
           "--locked",
-          "--features",
-          "production internals",
+          "-p",
+          "ghost-lint",
           "--test",
-          "r11_ph4b_teardown_ordering_pinned",
+          "catalog_holds",
           "--",
           "--nocapture"
         ],
         "expect": {
-          "exit": 101,
+          "exitNonZero": true,
           "stdoutRegex": [
-            "test teardown_stamps_torn_then_trims_then_releases_the_slot .* FAILED",
-            "test result: FAILED. "
+            "\\[teardown\\/torn-before-release\\]"
           ]
         }
       }
@@ -57,7 +55,7 @@
     "expect": {
       "exitNonZero": true,
       "stdoutRegex": [
-        "test teardown_stamps_torn_then_trims_then_releases_the_slot .* FAILED"
+        "\\[teardown\\/torn-before-release\\]"
       ]
     }
   }

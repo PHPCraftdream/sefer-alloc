@@ -1,4 +1,4 @@
-//! Rule kinds R1–R9 (docs/GHOST_CHECKS_PLAN.md §4.2) evaluated over [`FileFacts`].
+//! Rule kinds R1–R10 (docs/GHOST_CHECKS_PLAN.md §4.2) evaluated over [`FileFacts`].
 //! A rule names its place by file and fn path (`Owner::name`); a path that
 //! matches no fn, or more than one without a `cfg` selector, is itself a
 //! violation — an ambiguous catalog entry must not match silently.
@@ -45,13 +45,17 @@ fn re(pat: &str) -> Result<Regex, String> {
     Regex::new(pat).map_err(|e| format!("bad regex {pat:?}: {e}"))
 }
 
-/// An event selector: `name` (exact), optional `receiver` regex, `kind`, `orderings`.
+/// An event selector: `name` (exact), optional `receiver` regex, `kind`, `orderings`,
+/// `args` regex, `guard` regex (some enclosing branch condition matches) and
+/// `unguarded` (no enclosing branch at all).
 struct Pattern {
     name: Option<String>,
     receiver: Option<Regex>,
     kind: Option<EventKind>,
     orderings: Option<Vec<String>>,
     args: Option<Regex>,
+    guard: Option<Regex>,
+    unguarded: bool,
 }
 
 impl Pattern {
@@ -72,6 +76,8 @@ impl Pattern {
             kind,
             orderings: v.get("orderings").map(|_| strs(v, "orderings")),
             args: s(v, "args").map(re).transpose()?,
+            guard: s(v, "guard").map(re).transpose()?,
+            unguarded: v.get("unguarded").and_then(Value::as_bool).unwrap_or(false),
         })
     }
 
@@ -87,6 +93,11 @@ impl Pattern {
                 .args
                 .as_ref()
                 .is_none_or(|r| r.is_match(&e.args.join(",")))
+            && self
+                .guard
+                .as_ref()
+                .is_none_or(|r| e.guards.iter().any(|g| r.is_match(g)))
+            && (!self.unguarded || e.guards.is_empty())
     }
 }
 
@@ -480,6 +491,88 @@ fn check_inner(rule: &Value, src: &dyn Sources) -> Result<Vec<Violation>, String
                 }
             }
         }
+        // R10: a declaration keeps its shape — a struct field (`owner`, `field`) or a
+        // static (`static`, also inside `thread_local!`) has a type matching `ty`,
+        // an initializer matching `init`, and a type not matching `not_ty`.
+        "R10" => {
+            let d = rule.get("decl").ok_or("R10 needs decl")?;
+            let facts = src.facts(file)?;
+            let (what, line, ty, init) = if let Some(name) = s(d, "static") {
+                let hits: Vec<_> = facts.statics.iter().filter(|x| x.name == name).collect();
+                if hits.len() != 1 {
+                    return Err(format!("{} statics named {name} in {file}", hits.len()));
+                }
+                let x = hits[0];
+                if let Some(tl) = d.get("thread_local").and_then(Value::as_bool) {
+                    if tl != x.thread_local {
+                        out.push(v(
+                            rule,
+                            file,
+                            x.line,
+                            format!(
+                                "static {name}: thread_local is {}, rule requires {tl}",
+                                x.thread_local
+                            ),
+                        ));
+                    }
+                }
+                (
+                    format!("static {name}"),
+                    x.line,
+                    x.ty.clone(),
+                    Some(x.init.clone()),
+                )
+            } else {
+                let owner = s(d, "owner").ok_or("R10 decl needs static or owner")?;
+                let field = s(d, "field").ok_or("R10 decl needs field")?;
+                let hits: Vec<_> = facts
+                    .fields
+                    .iter()
+                    .filter(|x| x.owner == owner && x.field == field)
+                    .collect();
+                if hits.len() != 1 {
+                    return Err(format!("{} fields {owner}.{field} in {file}", hits.len()));
+                }
+                (
+                    format!("{owner}.{field}"),
+                    hits[0].line,
+                    hits[0].ty.clone(),
+                    None,
+                )
+            };
+            if let Some(r) = s(rule, "ty").map(re).transpose()? {
+                if !r.is_match(&ty) {
+                    out.push(v(
+                        rule,
+                        file,
+                        line,
+                        format!("{what}: type {ty} does not match {}", r.as_str()),
+                    ));
+                }
+            }
+            if let Some(r) = s(rule, "not_ty").map(re).transpose()? {
+                if r.is_match(&ty) {
+                    out.push(v(
+                        rule,
+                        file,
+                        line,
+                        format!("{what}: type {ty} matches forbidden {}", r.as_str()),
+                    ));
+                }
+            }
+            if let Some(r) = s(rule, "init").map(re).transpose()? {
+                match &init {
+                    Some(i) if r.is_match(i) => {}
+                    Some(i) => out.push(v(
+                        rule,
+                        file,
+                        line,
+                        format!("{what}: initializer {i} does not match {}", r.as_str()),
+                    )),
+                    None => return Err("R10 init applies to statics only".into()),
+                }
+            }
+        }
         // R9: ghost hygiene — no ghost fields, ghost macro arguments do not write,
         // `ghost::` outside macros only under a ghost cfg.
         "R9" => {
@@ -574,6 +667,22 @@ pub fn spans(rule: &Value, file: &str, src: &dyn Sources) -> Vec<(usize, usize)>
                         }
                     }
                 }
+            }
+        }
+        "R10" if s(rule, "file") == Some(file) => {
+            if let (Ok(facts), Some(d)) = (src.facts(file), rule.get("decl")) {
+                let line = match s(d, "static") {
+                    Some(n) => facts.statics.iter().find(|x| x.name == n).map(|x| x.line),
+                    None => facts
+                        .fields
+                        .iter()
+                        .find(|x| {
+                            Some(x.owner.as_str()) == s(d, "owner")
+                                && Some(x.field.as_str()) == s(d, "field")
+                        })
+                        .map(|x| x.line),
+                };
+                out.extend(line.map(|l| (l, l)));
             }
         }
         "R8" if s(rule, "model") == Some(file) => {

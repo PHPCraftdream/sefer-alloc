@@ -72,6 +72,19 @@ pub struct FnFacts {
 pub struct FieldDecl {
     pub owner: String,
     pub field: String,
+    /// Declared type, whitespace removed.
+    pub ty: String,
+    pub line: usize,
+}
+
+/// A `static` item, also one declared inside `thread_local! { .. }`.
+#[derive(Clone, Debug)]
+pub struct StaticDecl {
+    pub name: String,
+    /// Declared type and initializer, whitespace removed.
+    pub ty: String,
+    pub init: String,
+    pub thread_local: bool,
     pub line: usize,
 }
 
@@ -86,6 +99,7 @@ pub struct GhostPathUse {
 pub struct FileFacts {
     pub fns: Vec<FnFacts>,
     pub fields: Vec<FieldDecl>,
+    pub statics: Vec<StaticDecl>,
     /// `ghost::...` paths used outside a ghost macro, with their cfg context.
     pub ghost_paths: Vec<GhostPathUse>,
 }
@@ -227,6 +241,16 @@ impl Collector {
         self.cfg_stack.pop();
     }
 
+    fn push_static(&mut self, i: &syn::ItemStatic, thread_local: bool) {
+        self.facts.statics.push(StaticDecl {
+            name: i.ident.to_string(),
+            ty: norm(&i.ty),
+            init: norm(&i.expr),
+            thread_local,
+            line: i.ident.span().start().line,
+        });
+    }
+
     fn visit_macro_tokens(&mut self, mac: &syn::Macro) {
         let name = mac
             .path
@@ -309,11 +333,39 @@ impl<'ast> Visit<'ast> for Collector {
                 self.facts.fields.push(FieldDecl {
                     owner: i.ident.to_string(),
                     field: id.to_string(),
+                    ty: norm(&f.ty),
                     line: id.span().start().line,
                 });
             }
         }
         syn::visit::visit_item_struct(self, i);
+    }
+
+    fn visit_item_static(&mut self, i: &'ast syn::ItemStatic) {
+        self.push_static(i, false);
+        syn::visit::visit_item_static(self, i);
+    }
+
+    fn visit_item_macro(&mut self, i: &'ast syn::ItemMacro) {
+        let is_tls = i
+            .mac
+            .path
+            .segments
+            .last()
+            .is_some_and(|s| s.ident == "thread_local");
+        if is_tls {
+            let parsed = i.mac.parse_body_with(|input: syn::parse::ParseStream| {
+                let mut items = Vec::new();
+                while !input.is_empty() {
+                    items.push(input.parse::<syn::ItemStatic>()?);
+                }
+                Ok(items)
+            });
+            for s in parsed.iter().flatten() {
+                self.push_static(s, true);
+            }
+        }
+        syn::visit::visit_item_macro(self, i);
     }
 
     fn visit_block(&mut self, b: &'ast syn::Block) {

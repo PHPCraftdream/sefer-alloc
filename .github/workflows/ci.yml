@@ -155,7 +155,7 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha }}"
           [ -z "$BASE" ] && BASE="${{ github.event.before }}"
           git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE=HEAD^
-          if [ "${{ github.event_name }}" = schedule ] || git diff --name-only "$BASE" HEAD | grep -qE '^(docs/verification/ghost-rules\.json|src/registry/segment_route/directory/|tests/route_pin_last_ref_miri\.rs|scripts/ghost_mutants\.mjs)'; then
+          if [ "${{ github.event_name }}" = schedule ] || git diff --name-only "$BASE" HEAD | grep -qE '^(docs/verification/ghost-rules\.json|src/registry/segment_route/directory/|src/registry/heap_registry/claim\.rs|tests/route_pin_last_ref_miri\.rs|tests/loom_r11_ph4[ab]_[a-z_]+\.rs|scripts/ghost_mutants\.mjs)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.mutants.outputs.run == 'true'
