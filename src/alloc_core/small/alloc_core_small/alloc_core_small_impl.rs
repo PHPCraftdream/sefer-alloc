@@ -517,7 +517,9 @@ impl AllocCore {
             .unwrap_or(0)
     }
 
-    /// `Err` is only an uncommitted class-spill OOM; hardened validation
+    /// `Err` is only a class-spill OOM on the FIRST block (nothing changed);
+    /// a spill OOM on a later block returns the committed prefix as a short
+    /// drain with the refused block left as the head. Hardened validation
     /// failures abort rather than being converted to an empty drain.
     /// S1: `issue_state` = state byte committed per popped block — LIVE for
     /// batch paths, MAG for the magazine refill (parks n−1 blocks; see
@@ -546,84 +548,73 @@ impl AllocCore {
                 return Ok(0);
             }
             let mut run = self.table.prepare_small_issue_run(segment, class_idx);
-            // Prepare every spill on the still-owned chain. On OOM head, bitmap, live count and
-            // output stay unchanged; promoted leaves are valid zero-filled copies for a retry.
+            // B2-R1: one pass. Each link is validated (fatal on corruption, as
+            // before) and its leaf prepared BEFORE its block is committed; an
+            // OOM on the first block is `Err` with nothing changed, an OOM
+            // later stops the batch at that block (it stays the head, the
+            // committed prefix is a normal short drain).
             #[cfg(not(feature = "hardened"))]
             let bounds =
                 crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
-            let mut probe = head_off;
             #[cfg(feature = "hardened")]
             let mut slow = head_off;
-            let mut probed = 0usize;
-            while probed < out.len() && probe != FREE_LIST_NULL {
+            let mut k = 0usize;
+            while k < out.len() && head_off != FREE_LIST_NULL {
                 #[cfg(feature = "hardened")]
-                if !Self::valid_free_node(segment, probe, class_idx) {
+                if !Self::valid_free_node(segment, head_off, class_idx) {
                     Self::free_list_corrupted();
                 }
-                let block = Node::deref(segment, probe as usize);
-                let Some(nn) = NonNull::new(block) else {
+                let block_ptr = Node::deref(segment, head_off as usize);
+                let Some(block_nn) = NonNull::new(block_ptr) else {
                     break;
                 };
-                if !run.prepare_for(probe) {
-                    return Err(());
+                if !run.prepare_for(head_off) {
+                    if k == 0 {
+                        return Err(());
+                    }
+                    break;
                 }
-                let next = Node::read_next(nn);
+                // Dependent load: block bodies are never written on the pop path.
+                let next = Node::read_next(block_nn);
                 #[cfg(feature = "hardened")]
-                {
-                    let next_off = Self::free_continuation(segment, probe, class_idx, next);
+                let next_off = {
+                    let next_off = Self::free_continuation(segment, head_off, class_idx, next);
                     if next_off == bt.head(class_idx) {
                         Self::free_list_corrupted();
                     }
-                    probe = next_off;
-                    if probed % 2 == 1 {
+                    // `slow` trails the head over links the head already
+                    // validated and committed (no longer FREE), so it follows
+                    // the raw continuation; a revisit of a committed block is
+                    // also caught by `valid_free_node`'s FREE check above.
+                    if k % 2 == 1 {
                         let slow_block = NonNull::new(Node::deref(segment, slow as usize))
                             .unwrap_or_else(|| Self::free_list_corrupted());
-                        slow = Self::free_continuation(
-                            segment,
-                            slow,
-                            class_idx,
-                            Node::read_next(slow_block),
-                        );
+                        let slow_next = Node::read_next(slow_block);
+                        slow = if slow_next.is_null() {
+                            FREE_LIST_NULL
+                        } else {
+                            Node::continuation_offset(segment, slow_next)
+                                .unwrap_or_else(|| Self::free_list_corrupted())
+                        };
                     }
-                    if probe != FREE_LIST_NULL && probe == slow {
+                    if next_off != FREE_LIST_NULL && next_off == slow {
                         Self::free_list_corrupted();
                     }
-                }
-                #[cfg(not(feature = "hardened"))]
-                {
-                    probe = if next.is_null() {
-                        FREE_LIST_NULL
-                    } else {
-                        Node::continuation_offset_or_fatal(segment, next, bounds)
-                    };
-                }
-                probed += 1;
-            }
-            // B4 (в): the state byte is written per block below.
-            let mut k = 0usize;
-            while k < out.len() && head_off != FREE_LIST_NULL {
-                let block_ptr = Node::deref(segment, head_off as usize);
-                let block_nn = match NonNull::new(block_ptr) {
-                    Some(nn) => nn,
-                    // Corrupt offset only: commit what we have (defence-in-depth);
-                    // `head` stays on this node so nothing is lost.
-                    None => break,
+                    next_off
                 };
-                // Dependent load: read `next` BEFORE recording (block body is
-                // never written on the pop path — race-free against ourselves).
-                let next = Node::read_next(block_nn);
+                #[cfg(not(feature = "hardened"))]
+                let next_off = if next.is_null() {
+                    FREE_LIST_NULL
+                } else {
+                    Node::continuation_offset_or_fatal(segment, next, bounds)
+                };
                 // B4 (в)/S1: issue = commit `issue_state` (LIVE, or MAG when
                 // the caller parks the batch in a magazine).
                 meta.state_byte().write(head_off, class_idx, issue_state);
                 run.commit(head_off);
                 out[k] = block_ptr;
                 k += 1;
-                // The probe pass above validated this same chain link by link.
-                head_off = if next.is_null() {
-                    FREE_LIST_NULL
-                } else {
-                    next.addr().wrapping_sub(segment.addr()) as u32
-                };
+                head_off = next_off;
             }
             // Write the new head ONCE: the first un-popped node, or NULL.
             bt.set_head(class_idx, head_off);
