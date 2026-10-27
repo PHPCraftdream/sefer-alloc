@@ -97,3 +97,20 @@ thresholds 1–5 and the oracle are unchanged:
    on real drain scans unchanged.
 
 Every number used for the verdict is measured on the final variant commit.
+
+## Amendment 2 (after the 11-kernel ablation, before any replication)
+
+The ablation (20 processes × 2000 blocks, `u31-abl@f77b9a0f`) left threshold 3
+unresolved on one kernel only: larson effect +1.14 % [−1.25, +3.79], marked
+imprecise by the null (null A/B +1.03 % [−0.52, +2.91]); the rule needs
+effect ≤ +1 % and CI upper ≤ +1.5 %. Every other kernel meets its rule.
+
+Activation per process (judge built with `bench-internals`, `ab_variant`,
+2000 blocks, ИЗМЕРЕНО): larson 98 discoveries in both arms, 75 of them deferred
+by the variant; the deferred scans found nothing in the base either (single
+thread, no remote frees), so both arms issue the same blocks — the variant
+only skips work.
+
+Replication rule, fixed now: one independent larson-only run, 40 processes ×
+2000 blocks, fresh order seed; threshold 3 for larson is judged on that run
+alone, and both runs are reported. No other kernel is re-run.
