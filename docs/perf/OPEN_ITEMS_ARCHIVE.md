@@ -771,6 +771,23 @@ below, followed by the closure record.*
 
 ---
 
+### A118
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (one-line pointer;
+item 118 removed from the main index). Former inline card byte-preserved
+below, followed by the closure record.*
+
+118. **[A] B1 — single-pass flush runs + cold full-magazine free tail: GO, shipping `perf(runtime)`.** (Filed 2026-10-26, `docs/perf/B1_FLUSH_FREE_GATE.md`.)
+   > **Current state**
+   > - **Status:** GO by pre-registration (`docs/perf/b1_flush_free/B1_PREREG.md`); code in the same PR as this card (`07fe2907`). Close after CI is green on the landing SHA.
+   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks):** b1ac faster on 9 of 11 kernels, slower on none — bulk16k 1.091×, pair_rt 1.044×, pair16 1.040×, pair64 1.039×, churn16 1.048× (null imprecise), churn64 1.037×, churn1024 1.026×, churn256 1.017×, larson 1.017×; bulk64 and vec512 equal. Callgrind bulk 64 B: 303.7 → 287.9 Ir per alloc+free pair (free −6.0, flush −9.8). Against mimalloc (main judge, `07fe2907`): sefer faster on pair_rt 1.446×, larson equal (CI has 0), mimalloc still faster on 8 of 11 (bulk16k 2.187×, churn16 1.720×).
+   > - **Next trigger:** after landing — close this card; the next bulk targets are the drain (`try_drain_freelist_batch`, 63.1 Ir/pair) and the per-refill sidecar checks (U31).
+   > - **Evidence:** docs/perf/B1_FLUSH_FREE_GATE.md, docs/perf/B1_FLUSH_FREE_GATE_summary.csv, docs/perf/B1_FLUSH_FREE_GATE_summary_callgrind.csv, docs/perf/b1_flush_free/, scripts/b1_flush_free_gate_report.mjs, tests/b1_flush_run_accounting.rs.
+
+   > **Closure (2026-10-27):** CLOSED — GO, shipped as `perf(runtime)`. PR #102 (`b1-flush-free` → `main`) merged; landing SHA `18adf60256b600691774b49a91c393f7fce5a4d1`, CI run 40420170627 success; PR head `2df24be3` green (CI run 40398861188). B1-c made R-Ph3b src-stale (`dealloc_own_base.rs`); reverified through the EV-1 runner (run 40390357161, E0 PASS at `d69137ce`) in the same PR. Not measured: MT kernels (remote frees) and RSS — B1 changes no storage.
+
+---
+
 ## [D] Deferred designs
 
 ### D2
