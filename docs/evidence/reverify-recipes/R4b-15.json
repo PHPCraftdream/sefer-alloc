@@ -32,17 +32,55 @@
     "steps": [
       {
         "name": "compile L3 loom model mutant",
-        "env": {"RUSTFLAGS": "--cfg loom"},
-        "argv": ["cargo", "test", "--release", "--features", "alloc-global,alloc-xthread,internals,tagged-index-stack/loom", "--test", "loom_r11_ph4b_publish_recycle_drain", "--no-run"],
-        "expect": {"exit": 0, "stdoutRegex": ["Finished"]}
+        "env": {
+          "RUSTFLAGS": "--cfg loom"
+        },
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--features",
+          "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+          "--test",
+          "loom_r11_ph4b_publish_recycle_drain",
+          "--no-run"
+        ],
+        "expect": {
+          "exit": 0,
+          "stdoutRegex": [
+            "Finished"
+          ]
+        }
       },
       {
         "name": "L3 CAS loser authority guard loom runtime",
-        "env": {"RUSTFLAGS": "--cfg loom"},
-        "argv": ["cargo", "test", "--release", "--features", "alloc-global,alloc-xthread,internals,tagged-index-stack/loom", "--test", "loom_r11_ph4b_publish_recycle_drain", "--", "--nocapture"],
-        "expect": {"exitNonZero": true, "stdoutRegex": ["Exactly one mutator|assertion.*active|assertion failed"]}
+        "env": {
+          "RUSTFLAGS": "--cfg loom"
+        },
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--features",
+          "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+          "--test",
+          "loom_r11_ph4b_publish_recycle_drain",
+          "--",
+          "--nocapture"
+        ],
+        "expect": {
+          "exitNonZero": true,
+          "stdoutRegex": [
+            "Causality violation|Exactly one mutator|assertion.*active|assertion failed"
+          ]
+        }
       }
     ],
-    "expect": {"exitNonZero": true, "stdoutRegex": ["Exactly one mutator|assertion.*active|assertion failed"]}
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "Causality violation|Exactly one mutator|assertion.*active|assertion failed"
+      ]
+    }
   }
 }

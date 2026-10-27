@@ -1,73 +1,68 @@
-E0_METADATA {"id":"R4b-12","head":"03beee283885aa397250828decc0f5013809dda2","tree":"9de66e624a2b8664426af80de83b3ed0e69b4b30","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4b-12","head":"03beee283885aa397250828decc0f5013809dda2","tree":"9de66e624a2b8664426af80de83b3ed0e69b4b30","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4b-12.json","recipe_sha256":"c7b4e17e743608d8aa15a852d85c61aae076679fbb417c22770a3b9a933ede13","registry_activation_hash":"9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd"}
+E0_METADATA {"id":"R4b-12","head":"1bcad61d60985080dffdd5835fe15e75048dc339","tree":"171ab406812484d7cf171b60530d8a75612adb9c","setup":""}
+E0_METADATA {"id":"R4b-12","head":"1bcad61d60985080dffdd5835fe15e75048dc339","tree":"171ab406812484d7cf171b60530d8a75612adb9c","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4b-12.json","recipe_sha256":"fe18f06865a3519298245dd19f304576c6b5335c20296fef2ae35bdd951d4200","registry_activation_hash":"67d3dbd48638e8ba7ad3f2c65f8866d100a8e580532c80a6870e4630fbcc91c7"}
 
-E0_STEP {"id":"R4b-12","kind":"baseline","name":"typed guard lease storage source-pin baseline","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4b_local_no_drop_pinned"],"env":{},"expect":{"exit":0,"stdoutRegex":["test guard_stores_the_typed_lease_option \\.\\.\\. ok","test result: ok\\. 3 passed; 0 failed"]}}
+E0_STEP {"id":"R4b-12","kind":"baseline","name":"ghost-lint catalog baseline","argv":["cargo","test","--locked","-p","ghost-lint","--test","catalog_holds","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["check: \\d+ rule\\(s\\), 0 violation\\(s\\)","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.18s
-[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph4b_local_no_drop_pinned.rs (target/debug/deps/r11_ph4b_local_no_drop_pinned-45ec29f729f0051a)
-
-running 3 tests
-test guard_stores_the_typed_lease_option ... ok
-test local_is_a_const_initialised_dropless_raw_cell ... ok
-test finish_bind_rollback_unpublishes_local_before_the_lease_drop ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-
-E0_STEP_END {"code":0,"signal":null,"error":null}
-
-E0_STEP {"id":"R4b-12","kind":"mutant","name":"guard lease storage aliased type mutant","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4b_local_no_drop_pinned","guard_stores_the_typed_lease_option","--","--exact","--nocapture"],"env":{},"expect":{"exit":101,"stdoutRegex":["test guard_stores_the_typed_lease_option \\.\\.\\. FAILED"]}}
-[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
-[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.10s
-[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph4b_local_no_drop_pinned.rs (target/debug/deps/r11_ph4b_local_no_drop_pinned-45ec29f729f0051a)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+[1m[92m     Running[0m tests/catalog_holds.rs (target/debug/deps/catalog_holds-0cd6a38a3347a0df)
 
 running 1 test
+[ghost-lint] check: 26 rule(s), 0 violation(s)
 
-thread 'guard_stores_the_typed_lease_option' (9620) panicked at tests/r11_ph4b_local_no_drop_pinned.rs:82:5:
-LeaseReleaseGuard must hold the typed HeapLease in a Cell<Option<_>> (take-then-drop teardown, no borrow state): struct LeaseReleaseGuard {
-    /// The typed lease for the heap this thread bound via
-    /// [`bind_slow_tagged`]. Read ONLY in `Drop` (never in `LOCAL`-reading
-    /// code paths). Storing it here is what makes the guard robust to
-    /// `LOCAL` being torn down first.
-    lease: GuardLease,
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-test guard_stores_the_typed_lease_option ... FAILED
+test catalog_rules_hold_on_the_repository ... ok
 
-failures:
-
-failures:
-    guard_stores_the_typed_lease_option
-
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
-
-[1m[91merror[0m: test failed, to rerun pass `--test r11_ph4b_local_no_drop_pinned`
-
-E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R4b-12","kind":"restored","sha256":"82990501c6b43ec089ed4a67a9e35fae84d23e235e75b10e69b7dee6eeb82637"}
-
-E0_STEP {"id":"R4b-12","kind":"restored-baseline","name":"typed guard lease storage source-pin baseline","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4b_local_no_drop_pinned"],"env":{},"expect":{"exit":0,"stdoutRegex":["test guard_stores_the_typed_lease_option \\.\\.\\. ok","test result: ok\\. 3 passed; 0 failed"]}}
-[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
-[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.10s
-[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph4b_local_no_drop_pinned.rs (target/debug/deps/r11_ph4b_local_no_drop_pinned-45ec29f729f0051a)
-
-running 3 tests
-test guard_stores_the_typed_lease_option ... ok
-test local_is_a_const_initialised_dropless_raw_cell ... ok
-test finish_bind_rollback_unpublishes_local_before_the_lease_drop ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAwLjA0cwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CltnaG9zdC1saW50XSBjaGVjazogMjYgcnVsZShzKSwgMCB2aW9sYXRpb24ocykKCnRlc3QgY2F0YWxvZ19ydWxlc19ob2xkX29uX3RoZV9yZXBvc2l0b3J5IC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDEuNDZzCgo=
+
+E0_STEP {"id":"R4b-12","kind":"mutant","name":"guard lease type mutant","argv":["cargo","test","--locked","-p","ghost-lint","--test","catalog_holds","--","--nocapture"],"env":{},"expect":{"exitNonZero":true,"stdoutRegex":["\\[teardown\\/guard-lease-cell\\]"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+[1m[92m     Running[0m tests/catalog_holds.rs (target/debug/deps/catalog_holds-0cd6a38a3347a0df)
+
+running 1 test
+src/global/tls_heap.rs:220: [teardown/guard-lease-cell] LeaseReleaseGuard.lease: type GuardLease does not match ^Cell<Option<HeapLease>>$
+[ghost-lint] check: 26 rule(s), 1 violation(s)
+
+
+thread 'catalog_rules_hold_on_the_repository' (6977) panicked at crates/ghost-lint/tests/catalog_holds.rs:17:5:
+ghost-lint check found violations:
+src/global/tls_heap.rs:220: [teardown/guard-lease-cell] LeaseReleaseGuard.lease: type GuardLease does not match ^Cell<Option<HeapLease>>$
+[ghost-lint] check: 26 rule(s), 1 violation(s)
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test catalog_rules_hold_on_the_repository ... FAILED
+
+failures:
+
+failures:
+    catalog_rules_hold_on_the_repository
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
+
+[1m[91merror[0m: test failed, to rerun pass `-p ghost-lint --test catalog_holds`
+
+E0_STEP_END {"code":101,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAwLjAzcwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CnNyYy9nbG9iYWwvdGxzX2hlYXAucnM6MjIwOiBbdGVhcmRvd24vZ3VhcmQtbGVhc2UtY2VsbF0gTGVhc2VSZWxlYXNlR3VhcmQubGVhc2U6IHR5cGUgR3VhcmRMZWFzZSBkb2VzIG5vdCBtYXRjaCBeQ2VsbDxPcHRpb248SGVhcExlYXNlPj4kCltnaG9zdC1saW50XSBjaGVjazogMjYgcnVsZShzKSwgMSB2aW9sYXRpb24ocykKCgp0aHJlYWQgJ2NhdGFsb2dfcnVsZXNfaG9sZF9vbl90aGVfcmVwb3NpdG9yeScgKDY5NzcpIHBhbmlja2VkIGF0IGNyYXRlcy9naG9zdC1saW50L3Rlc3RzL2NhdGFsb2dfaG9sZHMucnM6MTc6NToKZ2hvc3QtbGludCBjaGVjayBmb3VuZCB2aW9sYXRpb25zOgpzcmMvZ2xvYmFsL3Rsc19oZWFwLnJzOjIyMDogW3RlYXJkb3duL2d1YXJkLWxlYXNlLWNlbGxdIExlYXNlUmVsZWFzZUd1YXJkLmxlYXNlOiB0eXBlIEd1YXJkTGVhc2UgZG9lcyBub3QgbWF0Y2ggXkNlbGw8T3B0aW9uPEhlYXBMZWFzZT4+JApbZ2hvc3QtbGludF0gY2hlY2s6IDI2IHJ1bGUocyksIDEgdmlvbGF0aW9uKHMpCgpub3RlOiBydW4gd2l0aCBgUlVTVF9CQUNLVFJBQ0U9MWAgZW52aXJvbm1lbnQgdmFyaWFibGUgdG8gZGlzcGxheSBhIGJhY2t0cmFjZQp0ZXN0IGNhdGFsb2dfcnVsZXNfaG9sZF9vbl90aGVfcmVwb3NpdG9yeSAuLi4gRkFJTEVECgpmYWlsdXJlczoKCmZhaWx1cmVzOgogICAgY2F0YWxvZ19ydWxlc19ob2xkX29uX3RoZV9yZXBvc2l0b3J5Cgp0ZXN0IHJlc3VsdDogRkFJTEVELiAwIHBhc3NlZDsgMSBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDEuNDZzCgobWzFtG1s5MW1lcnJvchtbMG06IHRlc3QgZmFpbGVkLCB0byByZXJ1biBwYXNzIGAtcCBnaG9zdC1saW50IC0tdGVzdCBjYXRhbG9nX2hvbGRzYAo=
+E0_METADATA {"id":"R4b-12","kind":"restored","sha256":"82990501c6b43ec089ed4a67a9e35fae84d23e235e75b10e69b7dee6eeb82637"}
+
+E0_STEP {"id":"R4b-12","kind":"restored-baseline","name":"ghost-lint catalog baseline","argv":["cargo","test","--locked","-p","ghost-lint","--test","catalog_holds","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["check: \\d+ rule\\(s\\), 0 violation\\(s\\)","test result: ok\\. 1 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+[1m[92m     Running[0m tests/catalog_holds.rs (target/debug/deps/catalog_holds-0cd6a38a3347a0df)
+
+running 1 test
+[ghost-lint] check: 26 rule(s), 0 violation(s)
+
+test catalog_rules_hold_on_the_repository ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAwLjAzcwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CltnaG9zdC1saW50XSBjaGVjazogMjYgcnVsZShzKSwgMCB2aW9sYXRpb24ocykKCnRlc3QgY2F0YWxvZ19ydWxlc19ob2xkX29uX3RoZV9yZXBvc2l0b3J5IC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDEuNDZzCgo=

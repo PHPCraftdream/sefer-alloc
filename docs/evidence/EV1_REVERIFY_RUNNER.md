@@ -24,8 +24,8 @@
 | R4c-16 | мутант №8 без initialised-гейта (src/registry/heap_registry/claim.rs) | PASS | маркер сделан платформонезависимым (п.3) |
 | R5b-19 | C6 fallback OOM (src/global/fallback.rs) | PASS | впервые прогнан на CI (r20-gates 39239743215): baseline ok, мутант убит; метаданные строки исправлены по рецепту (features, scope crate-internal), добавлена строка source_scope |
 | R4a-09 | нет | PASS (исторический) | мутанта/рецепта нет: файла docs/evidence/reverify-recipes/R4a-09.json в worktree не существует (проверено ls — файл отсутствует), stale-recycler сценарий недоступен; исторический PASS сохраняется без перепроверки |
-| R4b-13 | нет | INCONCLUSIVE | loom-оракул Ph4b явно не наблюдал S2 HB-ребро (нет S2-оракула) — не обновлять |
-| R4b-14 | нет | INCONCLUSIVE | та же причина, что R4b-13 |
+| R4b-13 | L1 Release->Relaxed в связанной строке drop модели Ph4b (tests/loom_r11_ph4b_publish_recycle_drain.rs) | PASS | G3: в модели появилась core-ячейка держателя аренды — S2-оракул; прежде INCONCLUSIVE |
+| R4b-14 | L2 claim без Acquire в связанной строке модели Ph4b | PASS | G3: та же core-ячейка; прежде INCONCLUSIVE |
 
 ## 3. Финальные команды этого раунда (Windows, worktrees/ev1)
 

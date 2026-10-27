@@ -1,72 +1,82 @@
-E0_METADATA {"id":"R4a-10","head":"54cc330aa2aa53dba040620d7ac4a3ed0e531eb1","tree":"42c4b84a1d4006939c15bdda4c3d5e195ccc1115","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (76456a688 2026-10-25)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-26 for version 1.101.0-nightly (76456a688 2026-10-25)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4a-10","head":"54cc330aa2aa53dba040620d7ac4a3ed0e531eb1","tree":"42c4b84a1d4006939c15bdda4c3d5e195ccc1115","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4a-10.json","recipe_sha256":"e6855a6c36716217ebcba45a08ff25046179f370e9c7c3d8b9fddcee8975ffd3","registry_activation_hash":"92ef1071c1e1b2f9ecdbbd99fea478b57943f6941bdd2210323bc8b065459223"}
+E0_METADATA {"id":"R4a-10","head":"1bcad61d60985080dffdd5835fe15e75048dc339","tree":"171ab406812484d7cf171b60530d8a75612adb9c","setup":""}
+E0_METADATA {"id":"R4a-10","head":"1bcad61d60985080dffdd5835fe15e75048dc339","tree":"171ab406812484d7cf171b60530d8a75612adb9c","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4a-10.json","recipe_sha256":"1bf3bb4f65dc43912f6d7a7442e079e72bde2f98d8eb984fef5d4b364632ec28","registry_activation_hash":"46a568980f2a803bdae9249492515a91039966e48bea3c7c7b0ad626f3051593"}
 
-E0_STEP {"id":"R4a-10","kind":"baseline","name":"lease drop ordering source pin baseline","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4a_drop_ordering_pinned","--","--test-threads=1","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test result: ok. 2 passed; 0 failed"]}}
+E0_STEP {"id":"R4a-10","kind":"baseline","name":"ghost-lint catalog baseline","argv":["cargo","test","--locked","-p","ghost-lint","--test","catalog_holds","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["check: \\d+ rule\\(s\\), 0 violation\\(s\\)","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.17s
-[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph4a_drop_ordering_pinned.rs (target/debug/deps/r11_ph4a_drop_ordering_pinned-6fdaf577ca1fdc84)
+[1m[92m   Compiling[0m proc-macro2 v1.0.106
+[1m[92m   Compiling[0m memchr v2.8.2
+[1m[92m   Compiling[0m zmij v1.0.21
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m quote v1.0.46
+[1m[92m   Compiling[0m serde_core v1.0.228
+[1m[92m   Compiling[0m regex-syntax v0.8.11
+[1m[92m   Compiling[0m serde_json v1.0.150
+[1m[92m   Compiling[0m aho-corasick v1.1.4
+[1m[92m   Compiling[0m itoa v1.0.18
+[1m[92m   Compiling[0m syn v2.0.118
+[1m[92m   Compiling[0m regex-automata v0.4.14
+[1m[92m   Compiling[0m regex v1.12.4
+[1m[92m   Compiling[0m ghost-lint v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/ghost-lint)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 6.15s
+[1m[92m     Running[0m tests/catalog_holds.rs (target/debug/deps/catalog_holds-0cd6a38a3347a0df)
 
-running 2 tests
-test lease_drop_aborts_on_a_lost_cas ... ok
-test lease_drop_publishes_live_to_free_with_release ... ok
+running 1 test
+[ghost-lint] check: 26 rule(s), 0 violation(s)
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test catalog_rules_hold_on_the_repository ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
-E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuMTdzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGg0YV9kcm9wX29yZGVyaW5nX3Bpbm5lZC5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcjExX3BoNGFfZHJvcF9vcmRlcmluZ19waW5uZWQtNmZkYWY1NzdjYTFmZGM4NCkKCnJ1bm5pbmcgMiB0ZXN0cwp0ZXN0IGxlYXNlX2Ryb3BfYWJvcnRzX29uX2FfbG9zdF9jYXMgLi4uIG9rCnRlc3QgbGVhc2VfZHJvcF9wdWJsaXNoZXNfbGl2ZV90b19mcmVlX3dpdGhfcmVsZWFzZSAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gMiBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjAwcwoK
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBwcm9jLW1hY3JvMiB2MS4wLjEwNgobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIG1lbWNociB2Mi44LjIKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB6bWlqIHYxLjAuMjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB1bmljb2RlLWlkZW50IHYxLjAuMjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBxdW90ZSB2MS4wLjQ2ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VyZGVfY29yZSB2MS4wLjIyOAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJlZ2V4LXN5bnRheCB2MC44LjExChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VyZGVfanNvbiB2MS4wLjE1MAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGFoby1jb3Jhc2ljayB2MS4xLjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBpdG9hIHYxLjAuMTgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzeW4gdjIuMC4xMTgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSByZWdleC1hdXRvbWF0YSB2MC40LjE0ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmVnZXggdjEuMTIuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGdob3N0LWxpbnQgdjAuMS4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvZ2hvc3QtbGludCkKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiA2LjE1cwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CltnaG9zdC1saW50XSBjaGVjazogMjYgcnVsZShzKSwgMCB2aW9sYXRpb24ocykKCnRlc3QgY2F0YWxvZ19ydWxlc19ob2xkX29uX3RoZV9yZXBvc2l0b3J5IC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDEuNDZzCgo=
 
-E0_STEP {"id":"R4a-10","kind":"mutant","name":"HeapLease drop publishes FREE with Relaxed mutant","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4a_drop_ordering_pinned","--","--test-threads=1","--nocapture"],"env":{},"expect":{"exit":101,"stdoutRegex":["the LIVE→FREE publication must be Release"]}}
+E0_STEP {"id":"R4a-10","kind":"mutant","name":"HeapLease drop publishes FREE with Relaxed mutant","argv":["cargo","test","--locked","-p","ghost-lint","--test","catalog_holds","--","--nocapture"],"env":{},"expect":{"exitNonZero":true,"stdoutRegex":["\\[heap-lease/drop-release\\]"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.99s
-[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph4a_drop_ordering_pinned.rs (target/debug/deps/r11_ph4a_drop_ordering_pinned-6fdaf577ca1fdc84)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+[1m[92m     Running[0m tests/catalog_holds.rs (target/debug/deps/catalog_holds-0cd6a38a3347a0df)
 
-running 2 tests
-test lease_drop_aborts_on_a_lost_cas ... ok
-test lease_drop_publishes_live_to_free_with_release ... 
-thread 'lease_drop_publishes_live_to_free_with_release' (9428) panicked at tests/r11_ph4a_drop_ordering_pinned.rs:45:5:
-assertion `left == right` failed: the LIVE→FREE publication must be Release (S2): ["cas_state(\n                SlotState::Live", "SlotState::Free", "Ordering::Relaxed", "Ordering::Relaxed"]
-  left: "Ordering::Relaxed"
- right: "Ordering::Release"
+running 1 test
+src/registry/heap_registry/claim.rs:733: [heap-lease/drop-release] HeapLease::drop: self.slot.cas_state ordering ["Relaxed", "Relaxed"], rule requires ["Release", "Relaxed"]
+[ghost-lint] check: 26 rule(s), 1 violation(s)
+
+
+thread 'catalog_rules_hold_on_the_repository' (6775) panicked at crates/ghost-lint/tests/catalog_holds.rs:17:5:
+ghost-lint check found violations:
+src/registry/heap_registry/claim.rs:733: [heap-lease/drop-release] HeapLease::drop: self.slot.cas_state ordering ["Relaxed", "Relaxed"], rule requires ["Release", "Relaxed"]
+[ghost-lint] check: 26 rule(s), 1 violation(s)
+
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-FAILED
+test catalog_rules_hold_on_the_repository ... FAILED
 
 failures:
 
 failures:
-    lease_drop_publishes_live_to_free_with_release
+    catalog_rules_hold_on_the_repository
 
-test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.45s
 
-[1m[91merror[0m: test failed, to rerun pass `--test r11_ph4a_drop_ordering_pinned`
+[1m[91merror[0m: test failed, to rerun pass `-p ghost-lint --test catalog_holds`
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuOTlzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGg0YV9kcm9wX29yZGVyaW5nX3Bpbm5lZC5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcjExX3BoNGFfZHJvcF9vcmRlcmluZ19waW5uZWQtNmZkYWY1NzdjYTFmZGM4NCkKCnJ1bm5pbmcgMiB0ZXN0cwp0ZXN0IGxlYXNlX2Ryb3BfYWJvcnRzX29uX2FfbG9zdF9jYXMgLi4uIG9rCnRlc3QgbGVhc2VfZHJvcF9wdWJsaXNoZXNfbGl2ZV90b19mcmVlX3dpdGhfcmVsZWFzZSAuLi4gCnRocmVhZCAnbGVhc2VfZHJvcF9wdWJsaXNoZXNfbGl2ZV90b19mcmVlX3dpdGhfcmVsZWFzZScgKDk0MjgpIHBhbmlja2VkIGF0IHRlc3RzL3IxMV9waDRhX2Ryb3Bfb3JkZXJpbmdfcGlubmVkLnJzOjQ1OjU6CmFzc2VydGlvbiBgbGVmdCA9PSByaWdodGAgZmFpbGVkOiB0aGUgTElWReKGkkZSRUUgcHVibGljYXRpb24gbXVzdCBiZSBSZWxlYXNlIChTMik6IFsiY2FzX3N0YXRlKFxuICAgICAgICAgICAgICAgIFNsb3RTdGF0ZTo6TGl2ZSIsICJTbG90U3RhdGU6OkZyZWUiLCAiT3JkZXJpbmc6OlJlbGF4ZWQiLCAiT3JkZXJpbmc6OlJlbGF4ZWQiXQogIGxlZnQ6ICJPcmRlcmluZzo6UmVsYXhlZCIKIHJpZ2h0OiAiT3JkZXJpbmc6OlJlbGVhc2UiCm5vdGU6IHJ1biB3aXRoIGBSVVNUX0JBQ0tUUkFDRT0xYCBlbnZpcm9ubWVudCB2YXJpYWJsZSB0byBkaXNwbGF5IGEgYmFja3RyYWNlCkZBSUxFRAoKZmFpbHVyZXM6CgpmYWlsdXJlczoKICAgIGxlYXNlX2Ryb3BfcHVibGlzaGVzX2xpdmVfdG9fZnJlZV93aXRoX3JlbGVhc2UKCnRlc3QgcmVzdWx0OiBGQUlMRUQuIDEgcGFzc2VkOyAxIGZhaWxlZDsgMCBpZ25vcmVkOyAwIG1lYXN1cmVkOyAwIGZpbHRlcmVkIG91dDsgZmluaXNoZWQgaW4gMC4wMHMKChtbMW0bWzkxbWVycm9yG1swbTogdGVzdCBmYWlsZWQsIHRvIHJlcnVuIHBhc3MgYC0tdGVzdCByMTFfcGg0YV9kcm9wX29yZGVyaW5nX3Bpbm5lZGAK
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAwLjAzcwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CnNyYy9yZWdpc3RyeS9oZWFwX3JlZ2lzdHJ5L2NsYWltLnJzOjczMzogW2hlYXAtbGVhc2UvZHJvcC1yZWxlYXNlXSBIZWFwTGVhc2U6OmRyb3A6IHNlbGYuc2xvdC5jYXNfc3RhdGUgb3JkZXJpbmcgWyJSZWxheGVkIiwgIlJlbGF4ZWQiXSwgcnVsZSByZXF1aXJlcyBbIlJlbGVhc2UiLCAiUmVsYXhlZCJdCltnaG9zdC1saW50XSBjaGVjazogMjYgcnVsZShzKSwgMSB2aW9sYXRpb24ocykKCgp0aHJlYWQgJ2NhdGFsb2dfcnVsZXNfaG9sZF9vbl90aGVfcmVwb3NpdG9yeScgKDY3NzUpIHBhbmlja2VkIGF0IGNyYXRlcy9naG9zdC1saW50L3Rlc3RzL2NhdGFsb2dfaG9sZHMucnM6MTc6NToKZ2hvc3QtbGludCBjaGVjayBmb3VuZCB2aW9sYXRpb25zOgpzcmMvcmVnaXN0cnkvaGVhcF9yZWdpc3RyeS9jbGFpbS5yczo3MzM6IFtoZWFwLWxlYXNlL2Ryb3AtcmVsZWFzZV0gSGVhcExlYXNlOjpkcm9wOiBzZWxmLnNsb3QuY2FzX3N0YXRlIG9yZGVyaW5nIFsiUmVsYXhlZCIsICJSZWxheGVkIl0sIHJ1bGUgcmVxdWlyZXMgWyJSZWxlYXNlIiwgIlJlbGF4ZWQiXQpbZ2hvc3QtbGludF0gY2hlY2s6IDI2IHJ1bGUocyksIDEgdmlvbGF0aW9uKHMpCgpub3RlOiBydW4gd2l0aCBgUlVTVF9CQUNLVFJBQ0U9MWAgZW52aXJvbm1lbnQgdmFyaWFibGUgdG8gZGlzcGxheSBhIGJhY2t0cmFjZQp0ZXN0IGNhdGFsb2dfcnVsZXNfaG9sZF9vbl90aGVfcmVwb3NpdG9yeSAuLi4gRkFJTEVECgpmYWlsdXJlczoKCmZhaWx1cmVzOgogICAgY2F0YWxvZ19ydWxlc19ob2xkX29uX3RoZV9yZXBvc2l0b3J5Cgp0ZXN0IHJlc3VsdDogRkFJTEVELiAwIHBhc3NlZDsgMSBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDEuNDVzCgobWzFtG1s5MW1lcnJvchtbMG06IHRlc3QgZmFpbGVkLCB0byByZXJ1biBwYXNzIGAtcCBnaG9zdC1saW50IC0tdGVzdCBjYXRhbG9nX2hvbGRzYAo=
 E0_METADATA {"id":"R4a-10","kind":"restored","sha256":"183c75ca6c70380810923821fb186afbf87cb2cbef8f5e29e8ad01190611dc86"}
 
-E0_STEP {"id":"R4a-10","kind":"restored-baseline","name":"lease drop ordering source pin baseline","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4a_drop_ordering_pinned","--","--test-threads=1","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test result: ok. 2 passed; 0 failed"]}}
+E0_STEP {"id":"R4a-10","kind":"restored-baseline","name":"ghost-lint catalog baseline","argv":["cargo","test","--locked","-p","ghost-lint","--test","catalog_holds","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["check: \\d+ rule\\(s\\), 0 violation\\(s\\)","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.91s
-[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph4a_drop_ordering_pinned.rs (target/debug/deps/r11_ph4a_drop_ordering_pinned-6fdaf577ca1fdc84)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+[1m[92m     Running[0m tests/catalog_holds.rs (target/debug/deps/catalog_holds-0cd6a38a3347a0df)
 
-running 2 tests
-test lease_drop_aborts_on_a_lost_cas ... ok
-test lease_drop_publishes_live_to_free_with_release ... ok
+running 1 test
+[ghost-lint] check: 26 rule(s), 0 violation(s)
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test catalog_rules_hold_on_the_repository ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.47s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
-E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuOTFzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGg0YV9kcm9wX29yZGVyaW5nX3Bpbm5lZC5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcjExX3BoNGFfZHJvcF9vcmRlcmluZ19waW5uZWQtNmZkYWY1NzdjYTFmZGM4NCkKCnJ1bm5pbmcgMiB0ZXN0cwp0ZXN0IGxlYXNlX2Ryb3BfYWJvcnRzX29uX2FfbG9zdF9jYXMgLi4uIG9rCnRlc3QgbGVhc2VfZHJvcF9wdWJsaXNoZXNfbGl2ZV90b19mcmVlX3dpdGhfcmVsZWFzZSAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gMiBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjAwcwoK
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAwLjAzcwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CltnaG9zdC1saW50XSBjaGVjazogMjYgcnVsZShzKSwgMCB2aW9sYXRpb24ocykKCnRlc3QgY2F0YWxvZ19ydWxlc19ob2xkX29uX3RoZV9yZXBvc2l0b3J5IC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDEuNDdzCgo=
