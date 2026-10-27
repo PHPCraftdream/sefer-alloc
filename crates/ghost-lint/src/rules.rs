@@ -253,6 +253,12 @@ fn check_inner(rule: &Value, src: &dyn Sources) -> Result<Vec<Violation>, String
             let f = target(src, file, rule)?;
             let before = Pattern::from(rule.get("before").ok_or("R3 needs before")?)?;
             let after = Pattern::from(rule.get("after").ok_or("R3 needs after")?)?;
+            // `nested_before`: `before` may also sit in a branch nested inside the
+            // anchor's own block (it ran earlier in the same iteration when taken).
+            let nested = rule
+                .get("nested_before")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let afters: Vec<&Event> = f
                 .events
                 .iter()
@@ -271,7 +277,8 @@ fn check_inner(rule: &Value, src: &dyn Sources) -> Result<Vec<Violation>, String
                     !b.in_ghost
                         && before.matches(b)
                         && (b.line, b.column) < (a.line, a.column)
-                        && a.blocks.starts_with(&b.blocks)
+                        && (a.blocks.starts_with(&b.blocks)
+                            || (nested && b.blocks.starts_with(&a.blocks)))
                 });
                 if !ok {
                     out.push(v(rule, file, a.line, format!("{}: {}.{} is not preceded by the required operation in a dominating position", f.path, a.receiver, a.name)));
@@ -448,6 +455,41 @@ fn check_inner(rule: &Value, src: &dyn Sources) -> Result<Vec<Violation>, String
                 Regex::new(&format!(r"\b({})\b", ORDERINGS.join("|"))).expect("static regex");
             for bnd in binds {
                 let rid = s(bnd, "rule").ok_or("bind needs rule")?;
+                // A step bind (an R3 rule): the lines after the tag call the
+                // rule's `before` and then its `after` in that order.
+                if let Some(r3) = src.rule(rid).filter(|r| s(r, "kind") == Some("R3")) {
+                    let tag = format!("ghost-bind: {rid}");
+                    let name = |k: &str| {
+                        r3.get(k)
+                            .and_then(|p| s(p, "name"))
+                            .map(|n| format!("{n}("))
+                    };
+                    let (before, after) = (
+                        name("before").ok_or("R3 before.name")?,
+                        name("after").ok_or("R3 after.name")?,
+                    );
+                    let at: Vec<usize> = lines
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains(&tag))
+                        .map(|(i, _)| i)
+                        .collect();
+                    if at.is_empty() {
+                        out.push(v(rule, model, 0, format!("no `// {tag}` in {model}")));
+                    }
+                    for i in at {
+                        let code: String = lines[i + 1..lines.len().min(i + 7)]
+                            .iter()
+                            .map(|l| l.split("//").next().unwrap_or(""))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let ok = matches!((code.find(&before), code.find(&after)), (Some(b), Some(a)) if b < a);
+                        if !ok {
+                            out.push(v(rule, model, i + 1, format!("model step {rid}: {before}..) must precede {after}..) after the tag")));
+                        }
+                    }
+                    continue;
+                }
                 let want = match bnd.get("orderings") {
                     Some(_) => strs(bnd, "orderings"),
                     None => {
