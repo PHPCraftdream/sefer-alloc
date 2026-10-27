@@ -41,16 +41,23 @@ function build(tree, target) {
   return bin;
 }
 
-// Symbol noise that differs between two builds of the same code: legacy hashes
-// (`17h<hash>E`), v0 crate disambiguators (`Cs<base62>_`) and ThinLTO promotion
-// suffixes (`.llvm.<n>`).
-const symbols = (t) => t.replace(/17h[0-9a-f]{16}E/g, '17hXE').replace(/Cs[0-9A-Za-z]+_/g, 'CsX_').replace(/\.llvm\.\d+/g, '');
+// Symbol noise that differs between two builds of the same code (objdump -C
+// demangles): crate disambiguators (`[a1b2]`), legacy hashes (`::h<16 hex>`),
+// ThinLTO promotion suffixes (`.llvm.<n>`) and module paths — a pure move of an
+// item between modules renames its symbol without changing a byte of code, so
+// only the last path segment is kept and same-named functions compare as a
+// multiset of bodies.
+export const symbols = (t) => t
+  .replace(/\[[0-9a-f]+\]/g, '')
+  .replace(/::h[0-9a-f]{16}\b/g, '')
+  .replace(/\.llvm\.\d+/g, '')
+  .replace(/(?:[A-Za-z_][A-Za-z0-9_]*::)+(?=[A-Za-z_<])/g, '');
 
-// function name -> normalized body
+// function name -> sorted bodies of every function with that (shortened) name
 export function normalize(objdump) {
   const fns = new Map();
   let name = null, body = [];
-  const flush = () => { if (name !== null) fns.set(name, (fns.get(name) ?? '') + body.join('\n')); };
+  const flush = () => { if (name !== null) { if (!fns.has(name)) fns.set(name, []); fns.get(name).push(body.join('\n')); } };
   for (const line of objdump.split('\n')) {
     const h = /^[0-9a-f]+ <(.+)>:$/.exec(line);
     if (h) { flush(); name = symbols(h[1]); body = []; continue; }
@@ -66,11 +73,12 @@ export function normalize(objdump) {
       .replace(/\s+/g, ' ').trim());
   }
   flush();
+  for (const [k, v] of fns) fns.set(k, v.sort().join('\n--\n'));
   return fns;
 }
 
 function disasm(bin) {
-  return normalize(run('objdump', ['-d', '--no-show-raw-insn', '-M', 'intel', '-j', '.text', bin]));
+  return normalize(run('objdump', ['-d', '-C', '--no-show-raw-insn', '-M', 'intel', '-j', '.text', bin]));
 }
 
 function irTotal(bin, dir, tag) {
@@ -87,10 +95,11 @@ const sha = (s) => createHash('sha256').update(s).digest('hex');
 
 // Normalization must erase build noise and nothing else: each pair below is
 // [base, head, should-compare-equal].
-const fn = (body) => `0000000000001000 <_RNvCsAbc123_5crate1f.llvm.42>:\n${body}\n`;
+const fn = (body, path = 'registry::directory::') => `0000000000001000 <sefer_alloc[a1b2c3]::${path}f.llvm.42>:\n${body}\n`;
 const NORMALIZE_CASES = [
   ['llvm suffix, rip displacement, call address', fn('    1000:\tlock xchg DWORD PTR [rip+0x84a48],esi # 84a48 <REG.llvm.111+0x10>\n    1008:\tcall 2a0 <g.llvm.5>'),
-    fn('    1000:\tlock xchg DWORD PTR [rip+0x91a48],esi # 91a48 <REG.llvm.999+0x10>\n    1008:\tcall 3b0 <g.llvm.6>').replace('Abc123', 'Zz9'), true],
+    fn('    1000:\tlock xchg DWORD PTR [rip+0x91a48],esi # 91a48 <REG.llvm.999+0x10>\n    1008:\tcall 3b0 <g.llvm.6>', 'registry::directory::route_directory::').replace('a1b2c3', 'ffee99'), true],
+  ['two same-named functions in either order', fn('    1000:\tret') + fn('    2000:\tnop'), fn('    3000:\tnop') + fn('    4000:\tret'), true],
   ['immediate changed', fn('    1000:\tmov eax,0x10'), fn('    1000:\tmov eax,0x18'), false],
   ['struct offset changed', fn('    1000:\tmov rax,QWORD PTR [rdi+0x10]'), fn('    1000:\tmov rax,QWORD PTR [rdi+0x18]'), false],
   ['ordering changed (xchg -> mov)', fn('    1000:\txchg DWORD PTR [rdi],esi'), fn('    1000:\tmov DWORD PTR [rdi],esi'), false],
