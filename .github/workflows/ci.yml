@@ -1905,6 +1905,23 @@ jobs:
   # failures in later rows" (the explicit 0.3.0-hardening-pass lesson
   # this repo learned the hard way once already). The job's own overall
   # conclusion still correctly reports failure if any step failed.
+  # Ghost build (docs/GHOST_CHECKS_PLAN.md §3): the whole suite with
+  # `--cfg sefer_ghost`, so every ghost check in production code runs on every
+  # test, not only in the miri/loom targets. Also compiles every test that
+  # path-mounts src/ (it must mount src/ghost/ too).
+  test-ghost:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
+    name: test (ghost build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: test (production internals bench-internals batch-api, --cfg sefer_ghost)
+        env:
+          RUSTFLAGS: "--cfg sefer_ghost"
+        run: cargo test --no-fail-fast --features "production internals bench-internals batch-api"
+
   test-core:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
