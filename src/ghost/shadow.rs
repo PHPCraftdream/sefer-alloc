@@ -11,6 +11,8 @@ const SLOTS: usize = 1024;
 
 static KEYS: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
 static VALS: [AtomicI64; SLOTS] = [const { AtomicI64::new(0) }; SLOTS];
+/// Events dropped because every slot was taken.
+static OVERFLOW: AtomicU64 = AtomicU64::new(0);
 
 /// Nonzero slot key for `(rule, key)`: FNV-1a of the rule id mixed with the key.
 fn slot_key(rule: &str, key: u64) -> u64 {
@@ -46,10 +48,14 @@ pub fn record(rule: &'static str, key: u64, delta: i64) {
             Err(_) => i = (i + 1) % SLOTS,
         }
     }
-    fail(
-        rule,
-        format_args!("ghost shadow table full ({SLOTS} slots)"),
-    )
+    // A full table drops the event instead of failing an unrelated long run;
+    // a harness that checks counts also checks `overflowed() == 0`.
+    OVERFLOW.fetch_add(1, Relaxed);
+}
+
+/// Events dropped on a full table since the last `reset`.
+pub fn overflowed() -> u64 {
+    OVERFLOW.load(Relaxed)
 }
 
 /// Current counter of `(rule, key)`; 0 if never recorded.
@@ -68,6 +74,7 @@ pub fn count(rule: &'static str, key: u64) -> i64 {
 
 /// Clears the table (a harness calls this at the start of each model iteration).
 pub fn reset() {
+    OVERFLOW.store(0, Relaxed);
     for i in 0..SLOTS {
         VALS[i].store(0, Relaxed);
         KEYS[i].store(0, Relaxed);

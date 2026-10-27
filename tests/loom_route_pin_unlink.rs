@@ -1,6 +1,6 @@
 //! Item 186 (R6-CC-8.3) shadow model: route pin acquisition under the shard
 //! lock versus unlink and last-pin release. Mirrors
-//! `src/registry/segment_route/directory.rs`: `lookup` checks index membership
+//! `src/registry/segment_route/directory/route_directory.rs`: `lookup` checks index membership
 //! and increments `refs` under the shard lock (`EntryHandle::pin_from_array`),
 //! `remove` unlinks under the same lock and the caller drops the owner
 //! reference only after the lock is released, and `EntryHandle::drop` frees
@@ -49,6 +49,7 @@ impl Route {
 
     /// Production `EntryHandle::drop`: the final count frees the route.
     fn unpin(&self) {
+        // ghost-bind: route-pin/drop-acqrel
         if self.refs.fetch_sub(1, Ordering::AcqRel) == 1 {
             self.freed.store(true, Ordering::Release);
         }
@@ -59,6 +60,7 @@ impl Route {
     fn unlink_and_release_owner(&self) {
         {
             let _guard = self.lock.lock().unwrap();
+            // ghost-bind: route-pin/unlink-release
             self.linked.store(false, Ordering::Release);
         }
         self.unpin();

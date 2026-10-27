@@ -15,7 +15,7 @@
 //!   (the Acquire gate) and `publish_small_borrowed` (the borrow structure
 //!   that holds the pin across the whole publication RMW; the model never
 //!   breaks it).
-//! - `src/registry/segment_route/directory.rs` — `RouteDirectory`
+//! - `src/registry/segment_route/directory/` (`route_directory.rs`, `blocks.rs`) — `RouteDirectory`
 //!   (`lookup`, `register_route`, `remove` with the unlink + `linked`
 //!   Release-clear under the shard lock), `Entry`/`EntryHandle` (counted
 //!   refs; final drop frees the sidecar; NO drain on owner-ref drop).
@@ -39,7 +39,7 @@
 //!
 //! # Seams (each is import-level / declaration-level only; no production
 //! statement changed)
-//! - Atomics: `directory.rs`, `pin.rs`, `small_sidecar.rs`,
+//! - Atomics: `directory/`, `pin.rs`, `small_sidecar.rs`,
 //!   `large_state.rs` resolve `Atomic*`/`Ordering` through `super`; the
 //!   production `segment_route/mod.rs` re-exports the core atomics under
 //!   the same names (a no-op there), and THIS root re-exports the loom
@@ -402,8 +402,13 @@ mod reservation_state;
 mod sidecar_bitmap;
 
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/directory.rs"]
+#[path = "../src/registry/segment_route/directory/mod.rs"]
 mod directory;
+
+// Ghost checks in the included production files (docs/GHOST_CHECKS_PLAN.md):
+// cfg(loom) is a ghost build, so their assertions run inside every schedule.
+#[path = "../src/ghost/mod.rs"]
+mod ghost;
 #[allow(dead_code)]
 #[path = "../src/registry/segment_route/large_state.rs"]
 mod large_state;
@@ -787,7 +792,7 @@ fn loom_actual_negative_skip_linked_gate_writes_zombie_bit() {
 /// gate load's ordering — so it proved nothing). What IS order-dependent,
 /// and what these two tests isolate, is the consequence of the gate load
 /// reading `false`: under Acquire it synchronizes with `remove`'s
-/// Release clear (`directory.rs:983`), so every write sequenced before the
+/// Release clear (`directory/route_directory.rs:723`), so every write sequenced before the
 /// clear — the unlink of the route index under the shard lock — is visible
 /// to the gate reader; under Relaxed the same `false` read carries no such
 /// edge and the reader may still see the PRE-unlink index. That is the
@@ -799,7 +804,7 @@ fn loom_actual_negative_skip_linked_gate_writes_zombie_bit() {
 ///
 /// Shadow of the production shape: `linked` starts true with the route
 /// indexed; the owner unlinks the index (plain/Relaxed index write) and
-/// then clears `linked` with Release, exactly `directory.rs:981-983`.
+/// then clears `linked` with Release, exactly `directory/route_directory.rs:721-723`.
 /// RED (Relaxed): the producer reads `false` without an acquire edge and
 /// may still observe `index == LINKED` — the unlink witness is lost.
 #[test]
@@ -828,7 +833,7 @@ fn loom_shadow_relaxed_gate_false_read_misses_index_unlink() {
             let linked = Arc::clone(&linked);
             thread::spawn(move || {
                 // Production `remove` under the shard lock: unlink first,
-                // then the Release clear (`directory.rs:981-983`).
+                // then the Release clear (`directory/route_directory.rs:721-723`).
                 index.store(INDEX_UNLINKED, Ordering::Relaxed);
                 linked.store(false, Ordering::Release);
             })

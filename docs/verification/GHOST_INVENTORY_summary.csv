@@ -1,6 +1,6 @@
 metric,value
-ordering_sites,645
-files,87
+ordering_sites,648
+files,88
 scopes,44
 protocols,22
 unclaimed,0
@@ -12,7 +12,7 @@ shadow_protocols,15
 protocols_without_model,3
 class_cache,6
 class_counter,232
-class_ghost,7
+class_ghost,10
 class_id,9
 class_kani,1
 class_lock-local,40

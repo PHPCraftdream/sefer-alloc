@@ -45,7 +45,7 @@
 //! bookkeeping BEFORE any issue — the slot's `RouteSlots` handle array,
 //! each route entry, and its Small sidecar or Large descriptor word — via
 //! explicit `System` allocations (`segment_table/route_slots.rs`,
-//! `segment_route/directory.rs`) and OS-backed reservations, which bypass
+//! `segment_route/directory/`) and OS-backed reservations, which bypass
 //! the installed allocator by construction and therefore cannot recurse.
 //! There is no per-thread handle left to install at claim time (the
 //! former cross-thread free-stack plant is gone); the claim-time bind

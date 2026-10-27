@@ -147,6 +147,25 @@ jobs:
           git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE="$HEAD^"
           node scripts/verify-invariant-trailers.mjs "$BASE..$HEAD"
       - run: RUSTFLAGS="--cfg sefer_ghost" cargo test --locked --features internals --test ghost_infra
+      # Real-code mutants (plan §4.3): when the catalog or a protected file
+      # changes, every catalog mutant must be caught by BOTH the linter and its
+      # loom/miri checker. Scheduled runs exercise the same step every week.
+      - id: mutants
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          [ -z "$BASE" ] && BASE="${{ github.event.before }}"
+          git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE=HEAD^
+          if [ "${{ github.event_name }}" = schedule ] || git diff --name-only "$BASE" HEAD | grep -qE '^(docs/verification/ghost-rules\.json|src/registry/segment_route/directory/|tests/route_pin_last_ref_miri\.rs|scripts/ghost_mutants\.mjs)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.mutants.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - if: steps.mutants.outputs.run == 'true'
+        run: node scripts/ghost_mutants.mjs --out "$RUNNER_TEMP/ghost_mutants.json"
+        env:
+          GHOST_LINT: target/debug/ghost-lint
 
   # Ghost-checks zero-cost proof (plan §6): the production build of
   # examples/ghost_zero_cost_probe.rs has the same normalized .text and the same
@@ -1886,6 +1905,23 @@ jobs:
   # failures in later rows" (the explicit 0.3.0-hardening-pass lesson
   # this repo learned the hard way once already). The job's own overall
   # conclusion still correctly reports failure if any step failed.
+  # Ghost build (docs/GHOST_CHECKS_PLAN.md §3): the whole suite with
+  # `--cfg sefer_ghost`, so every ghost check in production code runs on every
+  # test, not only in the miri/loom targets. Also compiles every test that
+  # path-mounts src/ (it must mount src/ghost/ too).
+  test-ghost:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
+    name: test (ghost build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: test (production internals bench-internals batch-api, --cfg sefer_ghost)
+        env:
+          RUSTFLAGS: "--cfg sefer_ghost"
+        run: cargo test --no-fail-fast --features "production internals bench-internals batch-api"
+
   test-core:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
@@ -3389,6 +3425,9 @@ jobs:
       # Ghost-checks G1 (docs/GHOST_CHECKS_PLAN.md): ghost macros + shadow table, cfg(miri) is a ghost build.
       - name: ghost_infra
         run: cargo miri test --features "internals" --test ghost_infra
+      # Ghost-checks G2: P5 last-reference free vs a concurrent pin drop (real directory).
+      - name: route_pin_last_ref_miri
+        run: cargo miri test --features "alloc-global internals" --test route_pin_last_ref_miri
       # VER-03: explicit GREEN targets, matching scripts/miri-matrix.mjs.
       # Inherit strict provenance and Stacked Borrows from this job.
       - name: r11_ph4a_lease_miri

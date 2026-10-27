@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-645 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 87 files of `src/**` and
+648 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 88 files of `src/**` and
 `crates/*/src/**`; each is claimed by exactly one of 44 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/645 |
-| counter | 232 | 232/645 |
-| ghost | 7 | 7/645 |
-| id | 9 | 9/645 |
-| kani | 1 | 1/645 |
-| lock-local | 40 | 40/645 |
-| non-atomic | 2 | 2/645 |
-| protocol | 168 | 168/645 |
-| test-hook | 173 | 173/645 |
-| twin | 7 | 7/645 |
-| **claimed** | **645** | 645/645 |
-| unclaimed | 0 | 0/645 |
-| claimed twice | 0 | 0/645 |
+| cache | 6 | 6/648 |
+| counter | 232 | 232/648 |
+| ghost | 10 | 10/648 |
+| id | 9 | 9/648 |
+| kani | 1 | 1/648 |
+| lock-local | 40 | 40/648 |
+| non-atomic | 2 | 2/648 |
+| protocol | 168 | 168/648 |
+| test-hook | 173 | 173/648 |
+| twin | 7 | 7/648 |
+| **claimed** | **648** | 648/648 |
+| unclaimed | 0 | 0/648 |
+| claimed twice | 0 | 0/648 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -41,7 +41,7 @@ harness; `non-atomic` — named scanner false positives.
 | P2 | MaintenanceLease FREE->MAINTENANCE | S | 4 | 1 | 0 | R4c-19 | no: same registry bootstrap as P1 | keep+R8 | G4 |
 | P3 | publish \|\| recycle \|\| drain (TORN stamp, trim, drop, claimant drain) | S | 0 | 1 | 2 | R4b-03 R4b-13 R4b-14 R4b-15 | no: drain runs through HeapCore + AllocCore segment tables | keep+R8+ghost | G3 |
 | P4 | registry claim/selector, free-set, spill, saturation | S | 41 | 5 | 0 | R4c-02 | partial: FreeSlotHint and SaturationHint are self-contained structs on core atomics (translatable via #[path]); stack.rs scans walk the static registry | translate(free_slot_hint, saturation) + keep+R8(stack scans) | G5 |
-| P5 | route pin: lookup \|\| unlink \|\| last-pin release | S | 39 | 1 | 0 | — | likely: EntryHandle/Entry are plain structs over core atomics; ShardLock is a spin lock on one AtomicBool | translate | G2 |
+| P5 | route pin: lookup \|\| unlink \|\| last-pin release | A+S | 39 | 2 | 0 | — | yes: tests/loom_b4_r1_pin_cache.rs includes directory/ and src/ghost/ | translate (done in G2: real directory under loom via loom_b4_r1_pin_cache with ghost checks compiled in; last-reference free under miri) | G2 |
 | P6 | route pin cache fast path | A | 0 | 1 | 0 | — | yes (already #[path]) | ghost | G6 |
 | P7 | sidecar bitmap: publish / guarded cut / scan | A+S | 8 | 3 | 1 | R0-21 | yes (loom_sidecar_bitmap_actual.rs) | ghost + retire shadow | G6 |
 | P8 | small sidecar: leaf pointer publication, pin lifetime | S | 14 | 1 | 0 | R0-22 | partial: ClassLeaves allocates leaves through the OS seam (cfg(loom) twin, P18) | translate | G6 |
@@ -112,15 +112,15 @@ Decision: **translate(free_slot_hint, saturation) + keep+R8(stack scans)** — t
 
 ### P5 — route pin: lookup || unlink || last-pin release
 
-Prod: `src/registry/segment_route/directory.rs::pin_from_array`, `src/registry/segment_route/directory.rs::drop`, `src/registry/segment_route/directory.rs::remove`, `src/registry/segment_route/pin.rs::linked`, `src/registry/segment_route/shard_lock.rs`.
+Prod: `src/registry/segment_route/directory/route_directory.rs::pin_from_array`, `src/registry/segment_route/directory/route_directory.rs::drop`, `src/registry/segment_route/directory/route_directory.rs::remove`, `src/registry/segment_route/pin.rs::linked`, `src/registry/segment_route/shard_lock.rs`.
 
 - I1 a pin is taken only under the shard lock while the entry is indexed (refs fetch_update AcqRel)
 - I2 the sidecar is freed only by the thread whose fetch_sub(AcqRel) returns 1
 - I3 lookup after remove never yields a pin; linked is cleared with Release before unlink
 - I4 Block/BlockIndex/spare atomics are Relaxed and touched only under the shard lock
-- loom: `tests/loom_route_pin_unlink.rs`
+- loom: `tests/loom_route_pin_unlink.rs`, `tests/loom_b4_r1_pin_cache.rs`
 
-Decision: **translate** — pilot: correctness item 186
+Decision: **translate (done in G2: real directory under loom via loom_b4_r1_pin_cache with ghost checks compiled in; last-reference free under miri)** — pilot: correctness item 186
 
 ### P6 — route pin cache fast path
 
@@ -333,4 +333,4 @@ Decision: **translate (with P5)** — loom_route_pin_unlink models it as loom::s
 | `nonatomic/mock-record` | non-atomic | — | 2 | false positive: mock::record(Op::Release ...) — Release is an enum variant, not an ordering |
 | `id/region-id` | id | — | 1 | region id minting: Relaxed fetch_update gives uniqueness |
 | `counter/registry-high-water` | counter | — | 1 | stats read of the registry count: Relaxed is enough for a high-water report |
-| `ghost/shadow` | ghost | — | 7 | ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1) |
+| `ghost/shadow` | ghost | — | 10 | ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1) |
