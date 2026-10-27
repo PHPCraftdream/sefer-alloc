@@ -74,3 +74,26 @@ linear scans > 0; discovery scans ≤ 128 (base 8 192); scan words ≤ 65 536
 (base 8 390 656).
 
 GO = 1 ∧ 2 ∧ 3 ∧ 4 ∧ 5 ∧ oracle.
+
+## Amendment 1 (before any time measurement)
+
+A preliminary callgrind of draft v1 (`6259076c` before amend; window =
+drained bump high water incl. metadata / 8) gave growth16 n = 131072
+26 972 679 Ir (ИЗМЕРЕНО, `.rush` scratch, not evidence). Two design changes
+were made after it and after the local test suite, before any wall-clock run;
+thresholds 1–5 and the oracle are unchanged:
+
+1. The window is sized by the drained **payload** range
+   (`bump − payload start` per segment), not the bump high water, so the
+   metadata region no longer inflates it.
+2. The window is a pair `(start, end)` packed in 128-byte units in the same
+   `u32`: drains are deferred only while `start < bump < end`. A repeated
+   discovery with no carve since the empty scan always drains (the
+   publish-then-discover protocol tests `r10_active_kind_late_publish`,
+   `b4_u31_trigger_growth16_oracle` drive no carve in between).
+   `tests/r12_o4_routed_miss_counters.rs` carves between the empty scan and
+   the publication by construction; it now closes the window through a
+   `bench-internals` hook before its legs, so its classification checks run
+   on real drain scans unchanged.
+
+Every number used for the verdict is measured on the final variant commit.

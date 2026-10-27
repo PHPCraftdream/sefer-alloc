@@ -561,16 +561,17 @@ pub(crate) struct SegmentHeader {
     /// accessor discipline — the 1-bit payload is not worth a bitfield here.
     #[cfg_attr(not(feature = "virgin-zero-skip"), allow(dead_code))]
     pub payload_virgin: u32,
-    /// U31 (OPEN_ITEMS item 90): owner-only bump threshold below which the
-    /// routed linear scan defers this segment-as-`small_cur`'s sidecar drains
-    /// (0 = no window). Occupies the former tail padding: the header stays
-    /// 144 bytes. Never read by a producer; a stale value only delays drains
-    /// while this segment can still carve (see `scan_backoff.rs`).
+    /// U31 (OPEN_ITEMS item 90): owner-only sidecar-drain deferral window of
+    /// this segment as `small_cur`, two bump offsets in 128-byte units packed
+    /// as `start | end << 16` (0 = no window; see `scan_backoff.rs`).
+    /// Occupies the former tail padding: the header stays 144 bytes. Never
+    /// read by a producer; a stale value only delays drains while this
+    /// segment can still carve.
     #[cfg_attr(
         not(all(feature = "alloc-global", feature = "alloc-xthread")),
         allow(dead_code)
     )]
-    pub sidecar_defer_until: u32,
+    pub sidecar_defer_window: u32,
 }
 
 /// Sentinel for `SegmentHeader::node_id`: "no NUMA node / feature disabled /
@@ -638,7 +639,7 @@ impl SegmentHeader {
             // uninitialised/dirty memory".
             payload_virgin: 0,
             // U31: no deferral window on a fresh header.
-            sidecar_defer_until: 0,
+            sidecar_defer_window: 0,
         }
     }
 
@@ -722,7 +723,7 @@ impl SegmentHeader {
             // docs' §1 "why Large and Small differ structurally").
             payload_virgin: 0,
             // U31: no deferral window on a fresh header.
-            sidecar_defer_until: 0,
+            sidecar_defer_window: 0,
         }
     }
 

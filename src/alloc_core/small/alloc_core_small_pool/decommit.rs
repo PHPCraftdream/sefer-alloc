@@ -214,7 +214,7 @@ impl AllocCore {
         // U31: a threshold from the previous lifetime must not defer drains
         // after the bump restarts at the payload start.
         #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-        meta.set_sidecar_defer_until(0);
+        meta.set_sidecar_defer_window(0);
         // 2b. Empty every class free list.
         let mut bt = meta.bin_table();
         for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {

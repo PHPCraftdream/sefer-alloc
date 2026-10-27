@@ -106,7 +106,7 @@ const _: () = assert!(NO_NODE_RAW == u32::MAX);
 /// - `committed_payload_end` (Large has no lazy-commit frontier)
 /// - `node_id` (re-stamped under `numa-aware`; otherwise inert)
 /// - `payload_virgin` (Large has no virgin-zero-skip)
-/// - `sidecar_defer_until` (U31 small-only owner window; Large never scans)
+/// - `sidecar_defer_window` (U31 small-only owner window; Large never scans)
 const _: () = {
     let SegmentHeader {
         bump,
@@ -128,7 +128,7 @@ const _: () = {
         segment_id,
         node_id,
         payload_virgin,
-        sidecar_defer_until,
+        sidecar_defer_window,
     } = SegmentHeader::large(0, 0, 0, 0, 0, 0, core::ptr::null_mut(), 0);
     let _ = (
         bump,
@@ -150,6 +150,6 @@ const _: () = {
         segment_id,
         node_id,
         payload_virgin,
-        sidecar_defer_until,
+        sidecar_defer_window,
     );
 };
