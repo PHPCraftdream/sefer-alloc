@@ -128,9 +128,9 @@
       "id": "P5",
       "name": "route pin: lookup || unlink || last-pin release",
       "prod": [
-        "src/registry/segment_route/directory.rs::pin_from_array",
-        "src/registry/segment_route/directory.rs::drop",
-        "src/registry/segment_route/directory.rs::remove",
+        "src/registry/segment_route/directory/route_directory.rs::pin_from_array",
+        "src/registry/segment_route/directory/route_directory.rs::drop",
+        "src/registry/segment_route/directory/route_directory.rs::remove",
         "src/registry/segment_route/pin.rs::linked",
         "src/registry/segment_route/shard_lock.rs"
       ],
@@ -621,7 +621,7 @@
       "class": "protocol",
       "protocol": "P5",
       "files": [
-        "src/registry/segment_route/directory.rs"
+        "src/registry/segment_route/directory/*.rs"
       ],
       "receiver": "refs$|linked$",
       "reason": "pin refcount and linked flag"
@@ -631,7 +631,7 @@
       "class": "lock-local",
       "protocol": "P5",
       "files": [
-        "src/registry/segment_route/directory.rs"
+        "src/registry/segment_route/directory/*.rs"
       ],
       "receiver_not": "refs$|linked$|B4_DIRECTORY_LOOKUPS$|next_incarnation$",
       "orderings": [

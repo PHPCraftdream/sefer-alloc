@@ -8,7 +8,7 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 ## 1. Ordering sites
 
 645 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 87 files of `src/**` and
+`HeapSlot::cas_state` whose arguments name an ordering) in 88 files of `src/**` and
 `crates/*/src/**`; each is claimed by exactly one of 44 scopes.
 
 | class | sites | of all sites |
@@ -112,7 +112,7 @@ Decision: **translate(free_slot_hint, saturation) + keep+R8(stack scans)** — t
 
 ### P5 — route pin: lookup || unlink || last-pin release
 
-Prod: `src/registry/segment_route/directory.rs::pin_from_array`, `src/registry/segment_route/directory.rs::drop`, `src/registry/segment_route/directory.rs::remove`, `src/registry/segment_route/pin.rs::linked`, `src/registry/segment_route/shard_lock.rs`.
+Prod: `src/registry/segment_route/directory/route_directory.rs::pin_from_array`, `src/registry/segment_route/directory/route_directory.rs::drop`, `src/registry/segment_route/directory/route_directory.rs::remove`, `src/registry/segment_route/pin.rs::linked`, `src/registry/segment_route/shard_lock.rs`.
 
 - I1 a pin is taken only under the shard lock while the entry is indexed (refs fetch_update AcqRel)
 - I2 the sidecar is freed only by the thread whose fetch_sub(AcqRel) returns 1
