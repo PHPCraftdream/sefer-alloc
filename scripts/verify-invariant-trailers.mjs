@@ -163,12 +163,17 @@ const ruleMap = (text) => new Map(((text ? JSON.parse(text) : {}).rules || []).m
 const params = (r) => JSON.stringify(Object.fromEntries(Object.entries(r || {}).filter(([k]) => !PARAM_SKIP.has(k)).sort()));
 
 function ghostIdsAt(rev) {
+  // Whole-file match: rustfmt puts the id on the line after `ghost_assert!(`.
   const ids = new Set();
-  let out = '';
-  try { out = git(['grep', '-h', '-o', '-E', 'ghost_(assert|event)!\\(\\s*"[^"]+"', rev, '--', 'src', 'crates']); } catch { /* no match */ }
-  for (const m of out.matchAll(/"([^"]+)"/g)) ids.add(m[1]);
+  let files = '';
+  try { files = git(['grep', '-l', '-E', 'ghost_(assert|event)!', rev, '--', 'src', 'crates']); } catch { /* no match */ }
+  for (const f of files.split('\n').filter(Boolean)) {
+    for (const id of ghostIdsIn(show(rev, f.slice(rev.length + 1)) || '')) ids.add(id);
+  }
   return ids;
 }
+
+const ghostIdsIn = (text) => [...text.matchAll(/ghost_(?:assert|event)!\(\s*"([^"]+)"/g)].map((m) => m[1]);
 
 function fixtureOwner(path, rulesNow) {
   const m = /^tests\/ghost_lint_fixtures\/([^/]+)\//.exec(path);
@@ -254,13 +259,14 @@ function selfTest() {
   const h = parseHunks('diff --git a/f.rs b/f.rs\n@@ -3,2 +3,0 @@\n@@ -10 +9,3 @@\n');
   assert.deepEqual(h.get('f.rs').removed, [[3, 4], [10, 10]], 'hunk removed ranges');
   assert.deepEqual(h.get('f.rs').added, [[3, 4], [9, 11]], 'hunk added ranges');
-  return ok + 2;
+  assert.deepEqual(ghostIdsIn('x::ghost_assert!(\n    "a/b",\n    c);\nghost_event!("c/d", k, 1);'), ['a/b', 'c/d'], 'ghost id parser (rustfmt-wrapped call)');
+  return ok + 3;
 }
 
 function main() {
   const argv = process.argv.slice(2);
   const n = selfTest();
-  console.log(`[verify-invariant-trailers] self-test OK (${n} cases: ${SELF_TEST.length - 2} linter mutants rejected, 2 clean, 2 parsers)`);
+  console.log(`[verify-invariant-trailers] self-test OK (${n} cases: ${SELF_TEST.length - 2} linter mutants rejected, 2 clean, 3 parsers)`);
   if (argv.includes('--self-test')) return;
   const range = argv.find((a) => a.includes('..')) || 'origin/main..HEAD';
   const shas = git(['rev-list', '--no-merges', '--reverse', range]).split('\n').filter(Boolean);
