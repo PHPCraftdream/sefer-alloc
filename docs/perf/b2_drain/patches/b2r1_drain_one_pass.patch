@@ -1,0 +1,116 @@
+# B2-R1: try_drain_freelist_batch in one pass (validate + prepare + commit per link); OOM on block 0 -> Err unchanged, later -> short drain.
+diff --git a/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs b/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+index 7cbe41d1..e7151689 100644
+--- a/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
++++ b/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+@@ -546,36 +546,41 @@ impl AllocCore {
+                 return Ok(0);
+             }
+             let mut run = self.table.prepare_small_issue_run(segment, class_idx);
+-            // Prepare every spill on the still-owned chain. On OOM head, bitmap, live count and
+-            // output stay unchanged; promoted leaves are valid zero-filled copies for a retry.
++            // B2-R1: one pass. Each link is validated (fatal on corruption, as
++            // before) and its leaf prepared BEFORE its block is committed; an
++            // OOM on the first block is `Err` with nothing changed, an OOM
++            // later stops the batch at that block (it stays the head, the
++            // committed prefix is a normal short drain).
+             #[cfg(not(feature = "hardened"))]
+             let bounds =
+                 crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
+-            let mut probe = head_off;
+             #[cfg(feature = "hardened")]
+             let mut slow = head_off;
+-            let mut probed = 0usize;
+-            while probed < out.len() && probe != FREE_LIST_NULL {
++            let mut k = 0usize;
++            while k < out.len() && head_off != FREE_LIST_NULL {
+                 #[cfg(feature = "hardened")]
+-                if !Self::valid_free_node(segment, probe, class_idx) {
++                if !Self::valid_free_node(segment, head_off, class_idx) {
+                     Self::free_list_corrupted();
+                 }
+-                let block = Node::deref(segment, probe as usize);
+-                let Some(nn) = NonNull::new(block) else {
++                let block_ptr = Node::deref(segment, head_off as usize);
++                let Some(block_nn) = NonNull::new(block_ptr) else {
+                     break;
+                 };
+-                if !run.prepare_for(probe) {
+-                    return Err(());
++                if !run.prepare_for(head_off) {
++                    if k == 0 {
++                        return Err(());
++                    }
++                    break;
+                 }
+-                let next = Node::read_next(nn);
++                // Dependent load: block bodies are never written on the pop path.
++                let next = Node::read_next(block_nn);
+                 #[cfg(feature = "hardened")]
+-                {
+-                    let next_off = Self::free_continuation(segment, probe, class_idx, next);
++                let next_off = {
++                    let next_off = Self::free_continuation(segment, head_off, class_idx, next);
+                     if next_off == bt.head(class_idx) {
+                         Self::free_list_corrupted();
+                     }
+-                    probe = next_off;
+-                    if probed % 2 == 1 {
++                    if k % 2 == 1 {
+                         let slow_block = NonNull::new(Node::deref(segment, slow as usize))
+                             .unwrap_or_else(|| Self::free_list_corrupted());
+                         slow = Self::free_continuation(
+@@ -585,45 +590,24 @@ impl AllocCore {
+                             Node::read_next(slow_block),
+                         );
+                     }
+-                    if probe != FREE_LIST_NULL && probe == slow {
++                    if next_off != FREE_LIST_NULL && next_off == slow {
+                         Self::free_list_corrupted();
+                     }
+-                }
++                    next_off
++                };
+                 #[cfg(not(feature = "hardened"))]
+-                {
+-                    probe = if next.is_null() {
+-                        FREE_LIST_NULL
+-                    } else {
+-                        Node::continuation_offset_or_fatal(segment, next, bounds)
+-                    };
+-                }
+-                probed += 1;
+-            }
+-            // B4 (в): the state byte is written per block below.
+-            let mut k = 0usize;
+-            while k < out.len() && head_off != FREE_LIST_NULL {
+-                let block_ptr = Node::deref(segment, head_off as usize);
+-                let block_nn = match NonNull::new(block_ptr) {
+-                    Some(nn) => nn,
+-                    // Corrupt offset only: commit what we have (defence-in-depth);
+-                    // `head` stays on this node so nothing is lost.
+-                    None => break,
++                let next_off = if next.is_null() {
++                    FREE_LIST_NULL
++                } else {
++                    Node::continuation_offset_or_fatal(segment, next, bounds)
+                 };
+-                // Dependent load: read `next` BEFORE recording (block body is
+-                // never written on the pop path — race-free against ourselves).
+-                let next = Node::read_next(block_nn);
+                 // B4 (в)/S1: issue = commit `issue_state` (LIVE, or MAG when
+                 // the caller parks the batch in a magazine).
+                 meta.state_byte().write(head_off, class_idx, issue_state);
+                 run.commit(head_off);
+                 out[k] = block_ptr;
+                 k += 1;
+-                // The probe pass above validated this same chain link by link.
+-                head_off = if next.is_null() {
+-                    FREE_LIST_NULL
+-                } else {
+-                    next.addr().wrapping_sub(segment.addr()) as u32
+-                };
++                head_off = next_off;
+             }
+             // Write the new head ONCE: the first un-popped node, or NULL.
+             bt.set_head(class_idx, head_off);
