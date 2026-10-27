@@ -58,7 +58,12 @@ export const symbols = (t) => t
 // (`<CONST+0x62c>`) is a position in the constant pool (strings, panic
 // locations), which moves when an unrelated string changes length; offsets into
 // mutable statics stay, they select fields.
-export function normalize(objdump, rodata = new Set()) {
+// `roRanges`: [start, end) of the .rodata / .data.rel.ro sections — a target
+// inside them is the constant pool whatever symbol objdump names it by
+// (anonymous strings resolve to the nearest preceding symbol, e.g.
+// `<__abi_tag+0x566e>`).
+export function normalize(objdump, rodata = new Set(), roRanges = []) {
+  const inRo = (hex) => { const x = parseInt(hex, 16); return roRanges.some(([lo, hi]) => x >= lo && x < hi); };
   const fns = new Map();
   let name = null, body = [];
   const flush = () => { if (name !== null) { if (!fns.has(name)) fns.set(name, []); fns.get(name).push(body.join('\n')); } };
@@ -72,6 +77,7 @@ export function normalize(objdump, rodata = new Set()) {
     // targets (`call 1a2b <f>`, `# 84a38 <SYM>`). Immediates, struct offsets
     // and `<sym+0x..>` offsets stay — they are code.
     body.push(symbols(m[1])
+      .replace(/# ([0-9a-f]+) <[^<>]+>/g, (all, addr) => (inRo(addr) ? '# RO' : all))
       .replace(/\[rip([+-])0x[0-9a-f]+\]/g, '[rip$1X]')
       .replace(/\b[0-9a-f]+ </g, 'ADDR <')
       .replace(/<([^<>+]+)\+0x[0-9a-f]+>/g, (all, sym) => (rodata.has(sym) ? `<${sym}+R>` : all))
@@ -93,8 +99,17 @@ function rodataSymbols(bin) {
   return names;
 }
 
+function rodataRanges(bin) {
+  const out = [];
+  for (const line of run('objdump', ['-h', bin]).split('\n')) {
+    const m = /^\s*\d+\s+(\.rodata\S*|\.data\.rel\.ro\S*)\s+([0-9a-f]+)\s+([0-9a-f]+)\s/.exec(line);
+    if (m) out.push([parseInt(m[3], 16), parseInt(m[3], 16) + parseInt(m[2], 16)]);
+  }
+  return out;
+}
+
 function disasm(bin) {
-  return normalize(run('objdump', ['-d', '-C', '--no-show-raw-insn', '-M', 'intel', '-j', '.text', bin]), rodataSymbols(bin));
+  return normalize(run('objdump', ['-d', '-C', '--no-show-raw-insn', '-M', 'intel', '-j', '.text', bin]), rodataSymbols(bin), rodataRanges(bin));
 }
 
 function irTotal(bin, dir, tag) {
@@ -125,10 +140,13 @@ const NORMALIZE_CASES = [
   ['ordering changed (xchg -> mov)', fn('    1000:\txchg DWORD PTR [rdi],esi'), fn('    1000:\tmov DWORD PTR [rdi],esi'), false],
   ['offset within a mutable static changed', fn('    1000:\tlea rax,[rip+0x10] # 5000 <REG+0x10>'), fn('    1000:\tlea rax,[rip+0x10] # 5000 <REG+0x18>'), false],
   ['offset into a read-only constant moved', fn('    1000:\tlea rdi,[rip+0x10] # 5000 <CONST+0x62c>'), fn('    1000:\tlea rdi,[rip+0x10] # 5000 <CONST+0x604>'), true],
+  ['anonymous constant named by an unrelated symbol moved', fn('    1000:\tlea rdi,[rip+0x10] # 596a <__abi_tag+0x566e>'), fn('    1000:\tlea rdi,[rip+0x10] # 5999 <__abi_tag+0x569d>'), true],
+  ['same nearest symbol, target outside the constant pool moved', fn('    1000:\tlea rdi,[rip+0x10] # 9000 <__abi_tag+0x8d04>'), fn('    1000:\tlea rdi,[rip+0x10] # 9008 <__abi_tag+0x8d0c>'), false],
 ];
+const RO_RANGES = [[0x5340, 0x8000]];
 for (const [name, x, y, same] of NORMALIZE_CASES) {
   const ro = new Set(['CONST']);
-  const a = [...normalize(x, ro)].join('|'), b = [...normalize(y, ro)].join('|');
+  const a = [...normalize(x, ro, RO_RANGES)].join('|'), b = [...normalize(y, ro, RO_RANGES)].join('|');
   assert.equal(a === b, same, `normalize self-test "${name}": expected ${same ? 'equal' : 'different'}`);
 }
 console.log(`[ghost-zero-cost] normalize self-test OK (${NORMALIZE_CASES.length} cases)`);
