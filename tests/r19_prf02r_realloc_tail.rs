@@ -78,8 +78,10 @@ fn realloc_tail_and_inplace_activation() {
     assert_eq!(heap.dbg_tcache_count(0), 1, "old block parked exactly once");
     assert_eq!(move_total.checked_sub(1 + alloc_total), Some(tail));
 
-    // Promotion alloc_large has no mutable ownership lookup until the single
-    // explicit stamp. Old class-0 cache is below overflow/budget thresholds.
+    // Promotion alloc_large performs no mutable ownership lookup: the explicit
+    // owner stamp that used to count here was removed by R6-T01 (1730c1ca), so
+    // the window holds the realloc ingress only. Old class-0 cache is below
+    // overflow/budget thresholds.
     assert!(sefer_alloc::registry::HeapCore::dbg_promotion_compiled());
     let promotions = AllocCore::dbg_promotion_count();
     let before = total();
@@ -91,7 +93,7 @@ fn realloc_tail_and_inplace_activation() {
     assert_eq!(heap.dbg_kind_at_tag(promoted), 2, "physical Large required");
     assert_eq!(AllocCore::dbg_promotion_count() - promotions, 1);
     assert_eq!(heap.dbg_tcache_count(0), 2);
-    assert_eq!(promote_total.checked_sub(2), Some(tail));
+    assert_eq!(promote_total.checked_sub(1), Some(tail));
     let large = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let large_ptr = heap.alloc(large);
     assert!(!large_ptr.is_null());
@@ -100,11 +102,9 @@ fn realloc_tail_and_inplace_activation() {
     // SAFETY: uniquely live owned Large block, freed once with its exact layout.
     unsafe { heap.dealloc(large_ptr, large) };
     let large_total = total() - before;
-    assert_eq!(
-        large_total,
-        2 + tail,
-        "ingress + substrate, plus A body lookup"
-    );
+    // One lookup: the routing ingress (`owned_block_of`); the Large substrate
+    // free reuses that `OwnedBlock` and no longer re-resolves the root.
+    assert_eq!(large_total, 1 + tail, "ingress only, plus A body lookup");
     println!("arm={arm} large_free={large_total}");
     println!("arm={arm} inplace={inplace_total} alloc={alloc_total} move={move_total} promote={promote_total} tail={tail}");
     // Deliberately retain LIVE lease and allocations, matching activation fixture;
