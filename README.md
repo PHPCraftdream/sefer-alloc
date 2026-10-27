@@ -777,7 +777,7 @@ item-scoped regions.
 | [`src/alloc_core/small/alloc_core_small/find_segment/scan.rs`](src/alloc_core/small/alloc_core_small/find_segment/scan.rs) | 1 | `find_segment_with_free_impl` — calls the `unsafe fn`s `os::read_directory_node_bucket` / `os::read_directory_class_words` (R17-2, task #319) |
 | [`src/alloc_core/small/alloc_core_small/directory.rs`](src/alloc_core/small/alloc_core_small/directory.rs) | 3 | `maybe_materialize_directory` / `directory` / `directory_mut` — internal call-site blocks into `sidecar::deref[_mut]` (R14-9, task #294) |
 | [`src/alloc_core/small/alloc_core_small_diag.rs`](src/alloc_core/small/alloc_core_small_diag.rs) | 4 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_state_bytes_for` / `dbg_payload_start_for` — `unsafe fn` declarations (the two former bitmap-dump hooks were removed with the B4 dead bitmaps; `dbg_state_bytes_for` is the state-byte successor) |
-| [`src/alloc_core/small/alloc_core_small_magazine.rs`](src/alloc_core/small/alloc_core_small_magazine.rs) | 2 | `flush_class` test boundary and `flush_class_internal` crate-private production implementation; both are `unsafe fn` boundaries with caller-pointer contracts. |
+| [`src/alloc_core/small/alloc_core_small_magazine.rs`](src/alloc_core/small/alloc_core_small_magazine.rs) | 3 | `flush_class` test boundary, the checked `flush_class_internal` (batch free) and `flush_magazine_internal` (magazine-resident blocks only, invariant I-MAG, ghost check `mag-flush/mag-resident`); all are `unsafe fn` boundaries with caller-pointer contracts. |
 | [`src/alloc_core/small/alloc_core_small_pool/decommit.rs`](src/alloc_core/small/alloc_core_small_pool/decommit.rs) | 1 | `dbg_force_decommit_retain_for` (R29-8, task #439, gated `bench-internals`) — `unsafe fn` boundary: decommits a caller-pointer's segment payload via `decommit_empty_segment_impl` with NO `live_count` check, so the `live_count == 0` precondition lives in the `# Safety` contract, not the body |
 | [`src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`](src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs) | 5 | The R29-3 (task #434) segment-lifecycle-decomposition `unsafe fn` boundary `dbg_decomp_decommit_payload` (decommit a caller-supplied segment base's payload) — gated `bench-internals`, forwarding its `# Safety` contract verbatim to the `HeapCore`-level delegation of the same name in `heap_core/diag/diag_probes.rs`; plus the R31-6 (task #469) sibling `unsafe fn` boundary `dbg_decomp_recommit_payload` (recommit a caller-supplied segment base's payload — a real `VirtualAlloc(MEM_COMMIT)` on Windows, a documented no-op on Unix/miri — the counterpart `examples/r29_3_decomposition_gate.rs`'s Measurement B re-fault loop was missing, which crashed that example on Windows); plus `dbg_decomp_release` — `unsafe fn` again as of R31-15 (task #486): R31-4's move-consuming `ReservedSmallSegment` handle closed unforgeability and double-release but NOT owner-binding (a handle reserved on one `AllocCore` could be released on a DIFFERENT `AllocCore`, both safe API calls, corrupting the wrong heap's pool/directory/`SegmentTable` state — a CONFIRMED P0 soundness defect), so the `# Safety` contract ("handle reserved on THIS SAME `AllocCore`, still live/unreleased") is back, layered with a release-build (non-`debug_assert!`) owner-id check as defence-in-depth (see `src/alloc_core/small/reserved_small_segment.rs`'s module doc, "Owner-binding" section); plus two task #504 (F11 step 2) `unsafe fn` boundaries, `dbg_decomp_win_commit_only` (commits a caller-supplied segment base's `[PAGE, SEGMENT)` range — documented raw-pointer precondition) and `dbg_decomp_win_release_only` (releases a caller-supplied `(reservation_ptr, reservation_len)` pair — same double-release/wrong-reservation hazard class as `dbg_decomp_release`), both gated `bench-internals`, isolating `VirtualAlloc(MEM_RESERVE)` from `VirtualAlloc(MEM_COMMIT)` for the Windows-native decomposition gate. |
 | [`src/alloc_core/alloc_core/sidecar_test_hooks.rs`](src/alloc_core/alloc_core/sidecar_test_hooks.rs) | 1 | Test-only terminal-sidecar publication boundary. |
@@ -799,7 +799,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **101** tier-2 item-scoped allows across **32**
+`src/`, 6 in `crates/`) plus **102** tier-2 item-scoped allows across **32**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1420,7 +1420,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **460 integration test files**,
+needs its acceptance run. The present tree contains **461 integration test files**,
 **99 example binaries**, **34 benches**, and **22 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1430,7 +1430,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (460 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (461 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (99 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

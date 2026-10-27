@@ -10,6 +10,11 @@
 // Linux only (objdump, valgrind). The probe source is taken from HEAD for both
 // sides so the harness is identical; only the allocator source differs.
 //
+// A range that declares an intended production change (a `perf(runtime)`,
+// `perf(opt-in)` or `fix(perf)` subject, CLAUDE.md R30-12; such commits owe a
+// gate report) still gets the full diff and Ir delta printed, but they do not
+// gate: the strict identity applies to ghost-only ranges.
+//
 //   node scripts/ghost_zero_cost.mjs --base origin/main [--require-ir] [--out FILE.json]
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -132,12 +137,20 @@ for (const [name, x, y, same] of NORMALIZE_CASES) {
   assert.equal(a === b, same, `normalize self-test "${name}": expected ${same ? 'equal' : 'different'}`);
 }
 console.log(`[ghost-zero-cost] normalize self-test OK (${NORMALIZE_CASES.length} cases)`);
+
+export const declaresRuntimeChange = (subject) => /^(perf\((runtime|opt-in)\)|fix\(perf\)):/.test(subject);
+for (const [subject, want] of [['perf(runtime): magazine flush', true], ['perf(opt-in): x', true], ['fix(perf): layout', true],
+  ['test(verification): ghost-checks G2', false], ['perf(docs): measure', false], ['bench(perf): gate', false]]) {
+  assert.equal(declaresRuntimeChange(subject), want, `subject self-test "${subject}"`);
+}
 if (argv.includes('--self-test')) process.exit(0);
 
 const work = mkdtempSync(join(tmpdir(), 'ghost-zero-cost-'));
 try {
   const baseSha = run('git', ['rev-parse', base], { cwd: REPO_ROOT }).trim();
   const headTree = run('git', ['write-tree'], { cwd: REPO_ROOT }).trim();
+  const intended = run('git', ['log', '--format=%h %s', `${baseSha}..HEAD`], { cwd: REPO_ROOT })
+    .split('\n').filter((l) => declaresRuntimeChange(l.slice(l.indexOf(' ') + 1)));
   const baseDir = join(work, 'base');
   run('git', ['worktree', 'add', '--detach', baseDir, baseSha], { cwd: REPO_ROOT, stdio: 'ignore' });
   // Same harness on both sides: the probe from HEAD, registered in base's manifest if absent.
@@ -178,7 +191,10 @@ try {
     console.log('[ghost-zero-cost] valgrind not found: Ir not measured');
     if (requireIr) process.exitCode = 1;
   } else if (summary.ir_delta !== 0) { console.error(`[ghost-zero-cost] RED: Ir delta ${summary.ir_delta}`); process.exitCode = 1; }
-  if (!process.exitCode) console.log(`[ghost-zero-cost] OK: ${summary.identical} functions identical, Ir delta ${summary.ir_delta}`);
+  if (process.exitCode && intended.length && (irBase !== null || !requireIr)) {
+    console.log(`[ghost-zero-cost] INTENDED production change, not gating (${intended.join('; ')}): ${summary.differing + summary.only_base + summary.only_head} functions differ, Ir delta ${summary.ir_delta}`);
+    process.exitCode = 0;
+  } else if (!process.exitCode) console.log(`[ghost-zero-cost] OK: ${summary.identical} functions identical, Ir delta ${summary.ir_delta}`);
 } finally {
   spawnSync('git', ['worktree', 'remove', '--force', join(work, 'base')], { cwd: REPO_ROOT });
   rmSync(work, { recursive: true, force: true });

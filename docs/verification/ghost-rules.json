@@ -538,6 +538,33 @@
       "decision": "translate (with P5)",
       "phase": "G2",
       "reason": "loom_route_pin_unlink models it as loom::sync::Mutex; the pilot runs the real ShardLock"
+    },
+    {
+      "id": "P23",
+      "name": "magazine residency (I-MAG): magazine flush without per-block re-checks",
+      "prod": [
+        "src/alloc_core/small/alloc_core_small_magazine.rs::flush_magazine_internal",
+        "src/alloc_core/small/alloc_core_small_magazine.rs::flush_run",
+        "src/registry/heap_core/free/dealloc_own_base.rs::free_magazine_full",
+        "src/registry/heap_core/free/dealloc_own_base.rs::small_free_guard",
+        "src/registry/heap_core/state/tcache_flush.rs::flush_all_tcache"
+      ],
+      "invariants": [
+        "I1 every magazine slot holds a block start of its class inside [payload_start, bump) of a live small segment of this heap, state byte encode(class, MAG) (written by the free-time push after the M2 oracles, by batch fill and by magazine refill)",
+        "I2 flush_magazine_internal is called only on magazine slots; the batch-free staging buffer (LIVE blocks, possible in-call duplicates) keeps the checked flush_class_internal"
+      ],
+      "class": "A",
+      "loom": [],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "n/a: single-thread heap-owned state; checked on the real source under miri and the native ghost build",
+      "decision": "ghost check + sole-path rule (GR-1): the per-block re-checks leave production, I-MAG is asserted by ghost check mag-flush/mag-resident",
+      "phase": "GR-1",
+      "reason": "GR-0: the re-checks cost about 9% of growth16 Ir and are always true on magazine slots",
+      "miri": [
+        "tests/miri_mag_flush_resident.rs"
+      ],
+      "atomics": "none: the magazine and state bytes are owner-thread state"
     }
   ],
   "scopes": [
@@ -1277,6 +1304,76 @@
         "tests/loom_route_pin_unlink.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p5_model_bind"
+    },
+    {
+      "id": "mag-flush/sole-path",
+      "kind": "R5",
+      "protocol": "P23",
+      "files": [
+        "src/**"
+      ],
+      "target": {
+        "name": "flush_magazine_internal"
+      },
+      "allowed": [
+        "HeapCore::free_magazine_full",
+        "HeapCore::flush_all_tcache"
+      ],
+      "terms": [
+        "flush_magazine_internal",
+        "magazine",
+        "MAG",
+        "batch"
+      ],
+      "reason": "only magazine slots (MAG-resident, I-MAG) skip the per-block re-checks; batch-free staging must use the checked flush",
+      "tests": [
+        "tests/miri_mag_flush_resident.rs",
+        "tests/batch_tcache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_sole_path",
+      "mutants": [
+        {
+          "id": "batch-unchecked-flush",
+          "file": "src/registry/heap_core/free/dealloc_batch.rs",
+          "from": "                    self.core.flush_class_internal(c, &stage[..staged])\n                };\n                staged = 0;",
+          "to": "                    self.core.flush_magazine_internal(c, &stage[..staged])\n                };\n                staged = 0;",
+          "checker": {
+            "name": "ghost build batch_tcache",
+            "cmd": [
+              "cargo",
+              "test",
+              "--features",
+              "alloc-global fastbin internals bench-internals batch-api",
+              "--test",
+              "batch_tcache"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg sefer_ghost",
+              "CARGO_TARGET_DIR": "target/ghost"
+            },
+            "expect": "ghost check mag-flush/mag-resident failed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "mag-flush/ghost-check",
+      "kind": "R6",
+      "protocol": "P23",
+      "file": "src/alloc_core/small/alloc_core_small_magazine.rs",
+      "fn": "AllocCore::flush_run",
+      "ghost": "mag-flush/mag-resident",
+      "terms": [
+        "ghost",
+        "MAG",
+        "span",
+        "state byte"
+      ],
+      "reason": "the unchecked flush keeps its ghost I-MAG check; dropping it would leave the removed re-checks unverified",
+      "tests": [
+        "tests/miri_mag_flush_resident.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_ghost_check"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

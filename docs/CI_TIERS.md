@@ -106,6 +106,7 @@ the smoke row covers those scenarios.
 | `test-core` | test (core tiers) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-feature-isolation` | test (feature isolation) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-gated-bodies` | test (gated bodies + all-features) | `fast`: source, tests, benches, examples, fuzz, build scripts |
+| `test-ghost` | test (ghost build) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-hardened` | test (hardened tier) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-workspace` | test workspace members | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-xthread` | test (xthread progression) | `fast`: source, tests, benches, examples, fuzz, build scripts |

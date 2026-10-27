@@ -24,6 +24,9 @@ const r101 = (borrows) => green('miri-core', 'miri_r1_01_cap_frame', 'alloc-glob
 const depot = (borrows) => green('miri-core', 'miri_depot_cycle', 'alloc-global fastbin internals bench-internals', {
   borrows, marker: '[miri_depot_cycle] COMPLETE depot_cycle',
 });
+const magFlush = green('miri-core', 'miri_mag_flush_resident', 'alloc-global fastbin internals bench-internals', {
+  borrows: 'sb', marker: '[miri_mag_flush_resident] COMPLETE mag_flush_resident',
+});
 const plainFeatures = 'alloc-global alloc-xthread alloc-decommit internals bench-internals';
 export const MIRI_TARGETS = [
   green('miri-core', 'region_invariants'),
@@ -33,6 +36,7 @@ export const MIRI_TARGETS = [
   r101('tb'),
   depot('sb'),
   depot('tb'),
+  magFlush,
   paused('alloc-global internals bench-internals', 'sb'),
   paused('alloc-global internals bench-internals', 'tb'),
   paused('production internals bench-internals', 'sb'),

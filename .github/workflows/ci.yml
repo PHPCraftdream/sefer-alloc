@@ -1905,6 +1905,27 @@ jobs:
   # failures in later rows" (the explicit 0.3.0-hardening-pass lesson
   # this repo learned the hard way once already). The job's own overall
   # conclusion still correctly reports failure if any step failed.
+  # Ghost build (docs/GHOST_CHECKS_PLAN.md §3): the whole suite with
+  # `--cfg sefer_ghost`, so every ghost check in production code runs on every
+  # test, not only under miri/loom. GR-1's I-MAG check is what catches a
+  # batch-free path switched to the unchecked magazine flush.
+  test-ghost:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
+    name: test (ghost build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: test (production internals bench-internals batch-api, --cfg sefer_ghost)
+        env:
+          RUSTFLAGS: "--cfg sefer_ghost"
+        run: cargo test --no-fail-fast --features "production internals bench-internals batch-api"
+      - name: GR-1 magazine flush activation (ghost build)
+        env:
+          RUSTFLAGS: "--cfg sefer_ghost"
+        run: cargo test --features "alloc-global fastbin internals bench-internals" --test miri_mag_flush_resident
+
   test-core:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
@@ -3272,6 +3293,17 @@ jobs:
           set -o pipefail
           cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_depot_cycle 2>&1 | tee "$RUNNER_TEMP/miri-depot-cycle-tree.log"
           grep -F "[miri_depot_cycle] COMPLETE depot_cycle" "$RUNNER_TEMP/miri-depot-cycle-tree.log"
+        shell: bash
+      - name: GR-1 magazine flush without re-checks keeps I-MAG (ghost check, SB)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+        run: |
+          # GR-1: flush_magazine_internal skips the per-block span/state-byte
+          # re-checks; ghost check mag-flush/mag-resident asserts every flushed
+          # block is MAG-resident on real Box drops (three flush sites must fire).
+          set -o pipefail
+          cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_mag_flush_resident 2>&1 | tee "$RUNNER_TEMP/miri-mag-flush.log"
+          grep -F "[miri_mag_flush_resident] COMPLETE mag_flush_resident" "$RUNNER_TEMP/miri-mag-flush.log"
         shell: bash
       - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - alloc-global - strict Stacked Borrows)
         env:
