@@ -1,0 +1,3 @@
+{"id": "fixture/r8-lease-model", "kind": "R8", "model": "$SRC", "binds": [{"rule": "fixture/r1-lease-drop-release"}],
+ "catalog_rules": [{"id": "fixture/r1-lease-drop-release", "kind": "R1", "file": "src/x.rs", "fn": "Lease::drop",
+   "site": {"name": "cas_state"}, "orderings": ["Release", "Relaxed"]}]}

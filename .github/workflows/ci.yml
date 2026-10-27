@@ -121,6 +121,62 @@ jobs:
       - run: node scripts/r20_r6_ab_iai_run.mjs --selftest
       - run: cargo test --locked --test no_stale_doc_references --test r1_03_pool_docs_contract --test unsafe_allow_placement
 
+  # Ghost checks (docs/GHOST_CHECKS_PLAN.md §7): the per-site semantic lint over the
+  # tree, its fixture self-test (every rule rejects its mutants), and the ghost
+  # macros' own self-test in a ghost build. Cheap, every change.
+  ghost-guard:
+    name: ghost-guard (semantic lint + ghost self-test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: cargo build --locked -q -p ghost-lint
+      - run: target/debug/ghost-lint check
+      - run: target/debug/ghost-lint selftest
+      - run: node scripts/verify-invariant-trailers-mutants.mjs
+      # Invariant-Check trailers (plan §5) over the commits of this PR / push.
+      - run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          [ -z "$BASE" ] && BASE="${{ github.event.before }}" && HEAD="${{ github.sha }}"
+          git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE="$HEAD^"
+          node scripts/verify-invariant-trailers.mjs "$BASE..$HEAD"
+      - run: RUSTFLAGS="--cfg sefer_ghost" cargo test --locked --features internals --test ghost_infra
+
+  # Ghost-checks zero-cost proof (plan §6): the production build of
+  # examples/ghost_zero_cost_probe.rs has the same normalized .text and the same
+  # callgrind Ir at the merge base and at the head of the change.
+  ghost-zero-cost:
+    name: ghost-zero-cost (.text diff + Ir vs base)
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: sudo apt-get update -q && sudo apt-get install -y -q valgrind binutils
+      - run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          [ -z "$BASE" ] && BASE="${{ github.event.before }}"
+          git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE=HEAD^
+          node scripts/ghost_zero_cost.mjs --base "$BASE" --require-ir --out "$RUNNER_TEMP/ghost_zero_cost.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ghost-zero-cost
+          path: ${{ runner.temp }}/ghost_zero_cost.json
+          if-no-files-found: ignore
+
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest

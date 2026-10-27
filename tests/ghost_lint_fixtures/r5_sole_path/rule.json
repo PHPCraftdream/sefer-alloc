@@ -1,0 +1,2 @@
+{"id": "fixture/r5-depot-owner-only", "kind": "R5", "files": ["$SRC"], "target": {"name": "depot"},
+ "allowed": ["Core::trim_for_recycle", "Core::owner_flush"]}

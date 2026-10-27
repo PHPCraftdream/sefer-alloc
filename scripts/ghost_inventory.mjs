@@ -194,6 +194,7 @@ const globRe = (g) => new RegExp('^' + g.replace(/[.+^$()|[\]\\]/g, '\\$&').repl
 // A scope claims a site when every present selector matches: file glob, item/fn/receiver regex, op, ordering.
 export function claims(scope, site) {
   if (!scope.files.some((g) => globRe(g).test(site.file))) return false;
+  if (scope.exclude && scope.exclude.some((g) => globRe(g).test(site.file))) return false;
   if (scope.fn && !new RegExp(scope.fn).test(site.fn)) return false;
   if (scope.fn_not && new RegExp(scope.fn_not).test(site.fn)) return false;
   if (scope.receiver_not && new RegExp(scope.receiver_not).test(site.receiver)) return false;

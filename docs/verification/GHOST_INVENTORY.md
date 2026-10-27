@@ -7,24 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-638 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 86 files of `src/**` and
-`crates/*/src/**`; each is claimed by exactly one of 43 scopes.
+645 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 87 files of `src/**` and
+`crates/*/src/**`; each is claimed by exactly one of 44 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/638 |
-| counter | 232 | 232/638 |
-| id | 9 | 9/638 |
-| kani | 1 | 1/638 |
-| lock-local | 40 | 40/638 |
-| non-atomic | 2 | 2/638 |
-| protocol | 168 | 168/638 |
-| test-hook | 173 | 173/638 |
-| twin | 7 | 7/638 |
-| **claimed** | **638** | 638/638 |
-| unclaimed | 0 | 0/638 |
-| claimed twice | 0 | 0/638 |
+| cache | 6 | 6/645 |
+| counter | 232 | 232/645 |
+| ghost | 7 | 7/645 |
+| id | 9 | 9/645 |
+| kani | 1 | 1/645 |
+| lock-local | 40 | 40/645 |
+| non-atomic | 2 | 2/645 |
+| protocol | 168 | 168/645 |
+| test-hook | 173 | 173/645 |
+| twin | 7 | 7/645 |
+| **claimed** | **645** | 645/645 |
+| unclaimed | 0 | 0/645 |
+| claimed twice | 0 | 0/645 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -332,3 +333,4 @@ Decision: **translate (with P5)** — loom_route_pin_unlink models it as loom::s
 | `nonatomic/mock-record` | non-atomic | — | 2 | false positive: mock::record(Op::Release ...) — Release is an enum variant, not an ordering |
 | `id/region-id` | id | — | 1 | region id minting: Relaxed fetch_update gives uniqueness |
 | `counter/registry-high-water` | counter | — | 1 | stats read of the registry count: Relaxed is enough for a high-water report |
+| `ghost/shadow` | ghost | — | 7 | ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1) |

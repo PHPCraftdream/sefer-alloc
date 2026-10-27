@@ -1,0 +1,2 @@
+{"id": "fixture/r4-last-ref-free", "kind": "R4", "file": "$SRC", "fn": "EntryHandle::drop",
+ "action": {"name": "free_sidecar"}, "guard": "fetch_sub\\(1,Ordering::AcqRel\\)==1$"}

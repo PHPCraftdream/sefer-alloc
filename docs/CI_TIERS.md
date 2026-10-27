@@ -94,11 +94,13 @@ the smoke row covers those scenarios.
 | `docs-consistency` | docs consistency (always) | every change |
 | `evidence-registry` | evidence-registry | every change |
 | `fmt` | rustfmt | every change |
+| `ghost-guard` | ghost-guard (semantic lint + ghost self-test) | every change |
 | `licenses` | license compatibility (only when dependencies changed) | every change |
 | `check-matrix` | check-matrix (manifest-driven, non-clippy rows) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `clippy` | clippy | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `docs` | rustdoc | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `fuzz-build` | fuzz targets build (nightly) | `fast`: source, tests, benches, examples, fuzz, build scripts |
+| `ghost-zero-cost` | ghost-zero-cost (.text diff + Ir vs base) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `global-regressions` | global allocator regressions (G1/G3) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `no_std` | no_std core build | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-core` | test (core tiers) | `fast`: source, tests, benches, examples, fuzz, build scripts |
@@ -142,6 +144,7 @@ the smoke row covers those scenarios.
 | `fuzz-run` | fuzz targets run (weekly, 10 min/target) | weekly schedule or manual dispatch only |
 | `numa-real-kernel` | NUMA on real Linux kernel (numactl smoke + env-guarded tests) | weekly schedule or manual dispatch only |
 | `tis-weak-memory-wallclock-gate` | tagged-index-stack weak-memory wall-clock A/B gate (arm64) | manual dispatch only |
+<!-- ci-tiers:end -->
 <!-- ci-tiers:end -->
 
 `docs-consistency` re-generates the table and fails if it differs from `ci.yml`

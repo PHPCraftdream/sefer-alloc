@@ -1,0 +1,2 @@
+{"id": "fixture/r3-drain-before-release", "kind": "R3", "file": "$SRC", "fn": "Core::trim_for_recycle",
+ "before": {"name": "flush_all_tcache"}, "after": {"name": "cas_state"}}

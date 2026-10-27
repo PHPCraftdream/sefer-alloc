@@ -1,0 +1,2 @@
+{"id": "fixture/r1-lease-drop-release", "kind": "R1", "file": "$SRC", "fn": "Lease::drop",
+ "site": {"name": "cas_state", "receiver": "slot$"}, "orderings": ["Release", "Relaxed"], "count": 1}
