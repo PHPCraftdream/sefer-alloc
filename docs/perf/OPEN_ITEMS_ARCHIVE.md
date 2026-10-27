@@ -805,6 +805,24 @@ below, followed by the closure record.*
 
 ---
 
+### A90
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (one-line pointer;
+item 90 removed from the main index). Former inline card byte-preserved
+below, followed by the closure record.*
+
+90. **[A] U31 (R6-PF-2) — owner-side deferral of the routed discovery scan's sidecar drains: v2 GO, shipping `perf(runtime)`.** (Filed 2026-10-15, round-6 src review; U31 gate 2026-10-27, `docs/perf/U31_SCAN_BACKOFF_GATE.md`.)
+
+   > **Current state**
+   > - **Status:** GO by pre-registration (`docs/perf/u31_scan_backoff/U31_PREREG.md`, amendments 1–3) for v2; code in the same PR as this card (`e25e7729`). Close after CI is green on the landing SHA. v1 (`37bf5a10`, window after one empty scan, 1/8) was NO-GO on threshold 5 (MT peak RSS 1.094 [1.028, 1.163] over 100 quads).
+   > - **Current verdict (ИЗМЕРЕНО, base main `29b82b7d`):** growth16 n=131072 Ir 102 833 374 → 27 271 824 (faster 3.771×; vs mimalloc slower 2.232×, was 8.42×); time over 100 ABBA process quads faster 2.932× [0.338, 0.347] (alloc loop 4.956×); J1′ v2 ablation net of null — no kernel past its threshold (bulk64 +0.83 %, bulk16k +0.67 %; larson imprecise, its 40-process replication −0.54 % [−1.16, +0.06]); MT `ph6b_mt_ab` no cell slower, larson T8 faster 1.072×, mstress T8 1.045×; MT peak RSS 0.975 [0.935, 1.019], growth16 1.001, segments 10 = 10. Oracle: discovery drains 8192 → 128 (deferred 8064), words 8 390 656 → 34 287. No producer, atomic or `unsafe` change, so no new loom/kani model: a deferred drain only leaves a published word for a later owner drain (liveness pinned by `tests/u31_sidecar_defer_window.rs`).
+   > - **Next trigger:** after landing — close this card. Remaining growth16 gap vs mimalloc (2.23× Ir): attribute the non-scan part of the refill/carve path.
+   > - **Evidence:** `docs/perf/U31_SCAN_BACKOFF_GATE.md`, `docs/perf/U31_SCAN_BACKOFF_GATE_summary.csv`, `docs/perf/u31_scan_backoff/`, `scripts/u31_scan_backoff_report.mjs`, `tests/u31_sidecar_defer_window.rs`; trigger — `docs/perf/B4_U31_TRIGGER.md`; origin — `docs/agent_reviews_round6/performance_review.md` R6-PF-2.
+
+   > **Closure (2026-10-27):** CLOSED — v2 GO, shipped as `perf(runtime)`. PR #108 (`u31` → `main`) merged; landing SHA `6e64d47c45f2bbebf44af4924091a829022aac32`, CI run 40487577871 success; PR head `8a95cb93` green (31 checks, incl. Miri, loom, kani, TSan). U31 made R-Ph3a-native, R-Ph3b and R4c-08 src-stale; reverified through the EV-1 runner (run 40471983792, E0 PASS) with receipts in the same PR. Remaining growth16 gap vs mimalloc (2.23× Ir) is outside the scan: carve and flush (task U32).
+
+---
+
 ## [D] Deferred designs
 
 ### D2
