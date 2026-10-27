@@ -1,0 +1,22 @@
+== variant=base
+196,304,482 (100.0%)  PROGRAM TOTALS
+49,024,495 (24.97%)  ???:b4_pmu_probe::sefer_dealloc [/home/user/ab/gr1bulk-probe]
+38,876,302 (19.80%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [/home/user/ab/gr1bulk-probe]
+34,841,036 (17.75%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [/home/user/ab/gr1bulk-probe]
+30,458,387 (15.52%)  ???:b4_pmu_probe::sefer_alloc [/home/user/ab/gr1bulk-probe]
+ 5,019,520 ( 2.56%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [/home/user/ab/gr1bulk-probe]
+ 2,948,154 ( 1.50%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [/home/user/ab/gr1bulk-probe]
+ 2,745,289 ( 1.40%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [/home/user/ab/gr1bulk-probe]
+ 2,022,489 ( 1.03%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [/home/user/ab/gr1bulk-probe]
+ 1,116,725 ( 0.57%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> [/home/user/ab/gr1bulk-probe]
+== variant=gr1
+181,565,962 (100.0%)  PROGRAM TOTALS
+49,024,495 (27.00%)  ???:b4_pmu_probe::sefer_dealloc [/home/user/ab/gr1bulk-probe]
+38,876,302 (21.41%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [/home/user/ab/gr1bulk-probe]
+30,458,387 (16.78%)  ???:b4_pmu_probe::sefer_alloc [/home/user/ab/gr1bulk-probe]
+20,100,383 (11.07%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_impl::<false> [/home/user/ab/gr1bulk-probe]
+ 5,019,520 ( 2.76%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [/home/user/ab/gr1bulk-probe]
+ 2,948,154 ( 1.62%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [/home/user/ab/gr1bulk-probe]
+ 2,745,289 ( 1.51%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [/home/user/ab/gr1bulk-probe]
+ 2,022,489 ( 1.11%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [/home/user/ab/gr1bulk-probe]
+ 1,116,725 ( 0.62%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> [/home/user/ab/gr1bulk-probe]

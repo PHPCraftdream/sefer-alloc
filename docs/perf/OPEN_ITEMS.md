@@ -3212,6 +3212,13 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** a target workload with more than one segment of live blocks freed out of order, where the J1′ judge shows a free-path gap to mimalloc.
    > - **Evidence:** docs/perf/M1_SEGMENT_MAP_ASSESSMENT.md, docs/perf/M1_SEGMENT_MAP_ASSESSMENT_summary.csv, docs/perf/m1_segment_map/_raw_m1_memo_miss.txt, scripts/m1_memo_miss_report.mjs.
 
+121. **[L] GR-1 — magazine flush without the per-block span/state-byte re-checks: honest reject (NO-GO on time).** (Filed 2026-10-27, `docs/perf/GR1_MAG_FLUSH_GATE.md`.)
+   > **Current state**
+   > - **Status:** NO-GO by the pre-registration; the re-checks stay in production.
+   > - **Current verdict (ИЗМЕРЕНО):** J1′ v2 net of null, 20 processes: bulk64 slower 1.023× (CI +1.72…+2.51 %), bulk16k slower 1.035× (CI +2.58…+4.56 %); faster pair16, churn1024 1.014×, larson 1.014×; 6 kernels equal. Callgrind: growth16 −9.0 % Ir at n = 131072 (27 268 129 → 24 810 596), bulk flush 48.3 → 27.9 Ir per pair (−42 %), total −7.5 %. Fewer instructions, more time on bulk.
+   > - **Next trigger:** PMU counters on bulk64/bulk16k (cache misses, store-bound cycles) show the slowdown is code layout of the variant copy rather than memory-bound flush, or a judge kernel where flush Ir dominates time.
+   > - **Evidence:** docs/perf/GR1_MAG_FLUSH_GATE.md, docs/perf/GR1_MAG_FLUSH_GATE_summary*.csv, docs/perf/gr1_mag_flush/ (pre-registration, patch, raw callgrind, JSONL manifest), scripts/gr1_mag_flush_gate_report.mjs (raw measured on branch `gr1-meas`@23141261).
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
