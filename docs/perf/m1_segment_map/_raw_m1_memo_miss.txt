@@ -1,0 +1,74 @@
+# M1 assessment raw: callgrind --dump-instr, examples/b4_pmu_probe.rs on b4-bulk@cd90113c + docs/perf/b1_flush_free/patches/b1ac.patch (= main 18adf602 src modulo one tail return), WSL, rustc 1.98.1, valgrind-3.22.0
+# exe sha256 29313dbbadf2b1d76afde05979d99e0415ad9206b7bbf4f5e4c45b13f9be4aef (docs/perf/b1_flush_free/_raw_callgrind_bulk.txt, variant=b1ac)
+# entry = exec count of sefer_dealloc's first instruction (0x29700); memo_miss = exec count of the first instruction after the last-segment memo compare fails (0x29760, the own_cache probe)
+# commands: valgrind --tool=callgrind --dump-instr=yes <probe> {bulk sefer 64 16384 40 | bulk sefer 64 262144 4 | sefer 768 512 2000000 | sefer 256 1024 2000000 | sefer 262144 64 2000000}
+bulk64_16k entry=720896 memo_miss=2 rate=0.00000
+bulk64_256k entry=1310720 memo_miss=36 rate=0.00003
+rand768_512 entry=2200768 memo_miss=2 rate=0.00000
+rand256_1024 entry=2200256 memo_miss=2 rate=0.00000
+rand262144_64 entry=2462144 memo_miss=1715333 rate=0.69668
+# hot path excerpt (b1ac, bulk 64 B x 16384, Ir per free):
+ 29700   1.00  push   %rbp
+ 29701   1.00  mov    %rsp,%rbp
+ 29704   1.00  push   %r14
+ 29706   1.00  push   %rbx
+ 29707   1.00  mov    %rdi,%rax
+ 2970a   1.00  mov    $0xffffffffffffffc8,%rcx
+ 29711   1.00  mov    %fs:(%rcx),%rdi
+ 29715   1.00  lea    -0x1(%rdi),%rcx
+ 29719   1.00  cmp    $0xfffffffffffffffd,%rcx
+ 2971d   1.00  ja     299c0 <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0x2c0>
+ 29723   1.00  mov    %rax,%rcx
+ 29726   1.00  and    $0xffffffffffc00000,%rcx
+ 2972d   1.00  cmp    %rcx,0x130(%rdi)
+ 29734   1.00  jne    29760 <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0x60>
+ 29736   1.00  mov    0x138(%rdi),%r8
+ 2973d   1.00  movzbl 0x1c(%r8),%r10d
+ 29742   1.00  cmp    $0x2,%r10d
+ 29746   1.00  je     2979e <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0x9e>
+ 29748   1.00  jmp    29888 <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0x188>
+ 29760   0.00  mov    %rcx,%r9
+ 29763   0.00  shr    $0x16,%r9
+ 29767   0.00  mov    %r9d,%edx
+ 2976a   0.00  and    $0xf,%edx
+ 2976d   0.00  shl    $0x4,%edx
+ 29770   0.00  cmp    %rcx,0x30(%rdi,%rdx,1)
+ 29775   0.00  jne    297e0 <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0xe0>
+ 29777   0.00  mov    0x38(%rdi,%rdx,1),%r8
+ 2977c   0.00  cmp    %rcx,%r8
+# memo-miss path excerpt (rand262144_64, 16 MiB live, random free order; Ir per free; total 79.0 per free):
+total 79.0 per unit
+ 29700   1.00  push   %rbp
+ 29701   1.00  mov    %rsp,%rbp
+ 29704   1.00  push   %r14
+ 29706   1.00  push   %rbx
+ 29707   1.00  mov    %rdi,%rax
+ 2970a   1.00  mov    $0xffffffffffffffc8,%rcx
+ 29711   1.00  mov    %fs:(%rcx),%rdi
+ 29715   1.00  lea    -0x1(%rdi),%rcx
+ 29719   1.00  cmp    $0xfffffffffffffffd,%rcx
+ 2971d   1.00  ja     299c0 <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0x2c0>
+ 29723   1.00  mov    %rax,%rcx
+ 29726   1.00  and    $0xffffffffffc00000,%rcx
+ 2972d   1.00  cmp    %rcx,0x130(%rdi)
+ 29734   1.00  jne    29760 <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0x60>
+ 29736   0.30  mov    0x138(%rdi),%r8
+ 2973d   0.30  movzbl 0x1c(%r8),%r10d
+ 29742   0.30  cmp    $0x2,%r10d
+ 29746   0.30  je     2979e <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0x9e>
+ 29748   0.30  jmp    29888 <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0x188>
+ 29760   0.70  mov    %rcx,%r9
+ 29763   0.70  shr    $0x16,%r9
+ 29767   0.70  mov    %r9d,%edx
+ 2976a   0.70  and    $0xf,%edx
+ 2976d   0.70  shl    $0x4,%edx
+ 29770   0.70  cmp    %rcx,0x30(%rdi,%rdx,1)
+ 29775   0.70  jne    297e0 <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0xe0>
+ 29777   0.70  mov    0x38(%rdi,%rdx,1),%r8
+ 2977c   0.70  cmp    %rcx,%r8
+ 2977f   0.70  jne    2978f <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0x8f>
+ 29781   0.70  mov    %rcx,0x130(%rdi)
+ 29788   0.70  mov    %r8,0x138(%rdi)
+ 2978f   0.70  movzbl 0x1c(%r8),%r10d
+ 29794   0.70  cmp    $0x2,%r10d
+ 29798   0.70  jne    29888 <_RNvCseaIuHBuLmaG_12b4_pmu_probe13sefer_dealloc+0x188>

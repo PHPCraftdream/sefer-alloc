@@ -3213,6 +3213,13 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** judge fix candidate — depot (item 117) or class-partitioned rings; re-measure churn under the v2 protocol.
    > - **Evidence:** docs/perf/B4_A3_CROSS_CLASS.md, docs/perf/b4_pmu/_raw_*.txt, examples/b4_pmu_probe.rs, scripts/b4_pmu_summary.mjs (raw measured on branch `b4-pmu`@32eed166; run scripts live there).
 
+119. **[L] M1 — address-indexed segment map instead of the own_cache hash on free: honest reject for the judge kernels.** (Filed 2026-10-27, `docs/perf/M1_SEGMENT_MAP_ASSESSMENT.md`.)
+   > **Current state**
+   > - **Status:** NO-GO for G1 (judge kernels), no prototype; revisit only on the trigger below.
+   > - **Current verdict (ИЗМЕРЕНО, callgrind exec counts, main after B1):** free checks the heap's last-segment memo first (one compare); own_cache is reached only on a memo miss — 36/1,310,720 at most on judge-like loads (bulk in order up to 16 MiB, random churn 768 × 512 B and 256 × 1024 B), upper bound of M1's saving 0.0004 Ir/free. Control (16 MiB live, random free order): 1,715,333/2,462,144 = 69.7 % misses at 15.1 Ir per miss (10.5 Ir/free). The ADR v2 §2.1 estimate (own_cache 10 Ir per free, −3…−4 Ir) predates the N9 memo.
+   > - **Next trigger:** a target workload with more than one segment of live blocks freed out of order, where the J1′ judge shows a free-path gap to mimalloc.
+   > - **Evidence:** docs/perf/M1_SEGMENT_MAP_ASSESSMENT.md, docs/perf/M1_SEGMENT_MAP_ASSESSMENT_summary.csv, docs/perf/m1_segment_map/_raw_m1_memo_miss.txt, scripts/m1_memo_miss_report.mjs.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
