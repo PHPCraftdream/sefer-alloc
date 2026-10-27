@@ -14,10 +14,10 @@ pub mod alloc_core;
 #[cfg(feature = "experimental")]
 #[path = "../src/concurrent/mod.rs"]
 mod concurrent;
-#[path = "../src/global/mod.rs"]
-pub mod global;
 #[path = "../src/ghost/mod.rs"]
 mod ghost;
+#[path = "../src/global/mod.rs"]
+pub mod global;
 #[path = "../src/registry/mod.rs"]
 pub mod registry;
 pub use alloc_core::{AllocCore, LargeCacheConfig, SegmentLayout};
