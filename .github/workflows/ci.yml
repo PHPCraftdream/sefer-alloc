@@ -2190,6 +2190,15 @@ jobs:
           --test r14_4_promotion_move_leg_reduction
           --test r6_t20_medium_promotion_predicate
           --no-fail-fast
+      # R19-PRF02R lookup-count oracle (tier-1 own_cache counters need
+      # `bench-internals`): no other row builds it, which is how it went stale
+      # after R6-T01 removed the promotion stamp. Default arm B only.
+      - name: test (--features "production medium-classes bench-internals", PRF-02R)
+        if: ${{ !cancelled() }}
+        run: >-
+          cargo test --features "production medium-classes internals bench-internals"
+          --test r19_prf02r_realloc_tail
+          --no-fail-fast
       # `internals` added (R34-3/task #522):
       # `r14_4_promotion_move_leg_reduction.rs` reaches
       # `sefer_alloc::registry::HeapCore` directly.
