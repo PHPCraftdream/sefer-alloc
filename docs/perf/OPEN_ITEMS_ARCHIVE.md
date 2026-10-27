@@ -788,6 +788,23 @@ below, followed by the closure record.*
 
 ---
 
+### A120
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (one-line pointer;
+item 120 removed from the main index). Former inline card byte-preserved
+below, followed by the closure record.*
+
+120. **[A] B2 — one-pass freelist drain: GO, shipping `perf(runtime)`.** (Filed 2026-10-27, `docs/perf/B2_DRAIN_GATE.md`.)
+   > **Current state**
+   > - **Status:** GO by pre-registration (`docs/perf/b2_drain/B2_PREREG.md`); code in the same PR as this card (`dbf4f3b0`). Close after CI is green on the landing SHA.
+   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks):** faster on 7 of 11 kernels, slower on none — churn1024 1.133× (null imprecise), churn256 1.062×, bulk16k 1.036×, churn64 1.018×, churn16 1.016×, larson 1.014×, pair_rt 1.003×; pair16, pair64, bulk64, vec512 equal. Callgrind bulk 64 B: drain 63.1 → 53.9 Ir per alloc+free pair (total 287.9 → 278.7). Against mimalloc (main judge, `dbf4f3b0`): sefer faster on pair_rt 1.437× and vec512 1.182×; mimalloc faster on 9 of 11 (bulk16k 2.104×, churn16 1.664×). Contract change on the spill-OOM path only (refusal after the first block → short drain).
+   > - **Next trigger:** after landing — close this card. Remaining bulk/churn gap: free 68 + 7, flush 48.3, drain 53.9, alloc 42.3 Ir/pair vs mimalloc ~126 total; per-refill sidecar checks (U31).
+   > - **Evidence:** docs/perf/B2_DRAIN_GATE.md, docs/perf/B2_DRAIN_GATE_summary.csv, docs/perf/B2_DRAIN_GATE_summary_callgrind.csv, docs/perf/b2_drain/, scripts/b2_drain_gate_report.mjs, tests/r11_p3_small_sidecar_preflight.rs.
+
+   > **Closure (2026-10-27):** CLOSED — GO, shipped as `perf(runtime)`. PR #105 (`b2-drain-prod` → `main`) merged; landing SHA `7fdf1768384a91a961aa0ba427f6a580693512e2`, CI run 40448993969 success; PR head `debf46c5` green (CI run 40437573502, incl. Miri core/fastbin, the hardened tier and all-features). B2 made R-Ph3a-native src-stale (`alloc_core_small_impl.rs`); reverified through the EV-1 runner (run 40432408954, E0 PASS) in the same PR. A hardened-only defect found during the PR (the Floyd slow pointer re-validated already-issued blocks) was fixed before landing; the cycle death tests stay green. Not measured: MT kernels with remote frees and RSS — B2 changes no storage.
+
+---
+
 ## [D] Deferred designs
 
 ### D2
