@@ -54,7 +54,11 @@ export const symbols = (t) => t
   .replace(/(?:[A-Za-z_][A-Za-z0-9_]*::)+(?=[A-Za-z_<])/g, '');
 
 // function name -> sorted bodies of every function with that (shortened) name
-export function normalize(objdump) {
+// `rodata`: names of read-only data symbols — an offset into one of them
+// (`<CONST+0x62c>`) is a position in the constant pool (strings, panic
+// locations), which moves when an unrelated string changes length; offsets into
+// mutable statics stay, they select fields.
+export function normalize(objdump, rodata = new Set()) {
   const fns = new Map();
   let name = null, body = [];
   const flush = () => { if (name !== null) { if (!fns.has(name)) fns.set(name, []); fns.get(name).push(body.join('\n')); } };
@@ -70,6 +74,7 @@ export function normalize(objdump) {
     body.push(symbols(m[1])
       .replace(/\[rip([+-])0x[0-9a-f]+\]/g, '[rip$1X]')
       .replace(/\b[0-9a-f]+ </g, 'ADDR <')
+      .replace(/<([^<>+]+)\+0x[0-9a-f]+>/g, (all, sym) => (rodata.has(sym) ? `<${sym}+R>` : all))
       .replace(/\s+/g, ' ').trim());
   }
   flush();
@@ -77,13 +82,28 @@ export function normalize(objdump) {
   return fns;
 }
 
+function rodataSymbols(bin) {
+  const names = new Set();
+  for (const line of run('objdump', ['-t', '-C', bin]).split('\n')) {
+    // .rodata (strings, tables) and .data.rel.ro (panic locations, vtables):
+    // constants after relocation.
+    const m = /^[0-9a-f]+\s.{7}\s(\.rodata\S*|\.data\.rel\.ro\S*)\s+[0-9a-f]+\s+(?:\.hidden\s+)?(.+)$/.exec(line);
+    if (m) names.add(symbols(m[2].trim()));
+  }
+  return names;
+}
+
 function disasm(bin) {
-  return normalize(run('objdump', ['-d', '-C', '--no-show-raw-insn', '-M', 'intel', '-j', '.text', bin]));
+  return normalize(run('objdump', ['-d', '-C', '--no-show-raw-insn', '-M', 'intel', '-j', '.text', bin]), rodataSymbols(bin));
 }
 
 function irTotal(bin, dir, tag) {
   const outFile = join(dir, `cg.${tag}.out`);
-  const r = spawnSync('valgrind', ['--tool=callgrind', `--callgrind-out-file=${outFile}`, bin], { encoding: 'utf8' });
+  // Same path for both runs: the binary's own path is part of process startup
+  // (argv, auxv) and moves libc's memchr/memcpy Ir by a few units.
+  const probe = join(dir, 'probe');
+  copyFileSync(bin, probe);
+  const r = spawnSync('valgrind', ['--tool=callgrind', `--callgrind-out-file=${outFile}`, probe], { encoding: 'utf8' });
   if (r.error) return null;
   assert.equal(r.status, 0, `probe under callgrind failed (${tag}): ${r.stderr}`);
   const m = /^summary:\s*(\d+)/m.exec(readFileSync(outFile, 'utf8')) || /^totals:\s*(\d+)/m.exec(readFileSync(outFile, 'utf8'));
@@ -103,10 +123,12 @@ const NORMALIZE_CASES = [
   ['immediate changed', fn('    1000:\tmov eax,0x10'), fn('    1000:\tmov eax,0x18'), false],
   ['struct offset changed', fn('    1000:\tmov rax,QWORD PTR [rdi+0x10]'), fn('    1000:\tmov rax,QWORD PTR [rdi+0x18]'), false],
   ['ordering changed (xchg -> mov)', fn('    1000:\txchg DWORD PTR [rdi],esi'), fn('    1000:\tmov DWORD PTR [rdi],esi'), false],
-  ['offset within a symbol changed', fn('    1000:\tlea rax,[rip+0x10] # 5000 <REG+0x10>'), fn('    1000:\tlea rax,[rip+0x10] # 5000 <REG+0x18>'), false],
+  ['offset within a mutable static changed', fn('    1000:\tlea rax,[rip+0x10] # 5000 <REG+0x10>'), fn('    1000:\tlea rax,[rip+0x10] # 5000 <REG+0x18>'), false],
+  ['offset into a read-only constant moved', fn('    1000:\tlea rdi,[rip+0x10] # 5000 <CONST+0x62c>'), fn('    1000:\tlea rdi,[rip+0x10] # 5000 <CONST+0x604>'), true],
 ];
 for (const [name, x, y, same] of NORMALIZE_CASES) {
-  const a = [...normalize(x)].join('|'), b = [...normalize(y)].join('|');
+  const ro = new Set(['CONST']);
+  const a = [...normalize(x, ro)].join('|'), b = [...normalize(y, ro)].join('|');
   assert.equal(a === b, same, `normalize self-test "${name}": expected ${same ? 'equal' : 'different'}`);
 }
 console.log(`[ghost-zero-cost] normalize self-test OK (${NORMALIZE_CASES.length} cases)`);
