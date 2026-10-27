@@ -34,9 +34,13 @@ macro_rules! ghost_assert {
     };
 }
 
+// `()` rather than nothing, so a check can stand where an expression is
+// expected (a match arm); the arguments are still not evaluated.
 #[cfg(not(any(loom, miri, kani, sefer_ghost)))]
 macro_rules! ghost_assert {
-    ($($t:tt)*) => {};
+    ($($t:tt)*) => {
+        ()
+    };
 }
 
 #[cfg(all(any(loom, miri, sefer_ghost), not(kani)))]
@@ -48,7 +52,9 @@ macro_rules! ghost_event {
 
 #[cfg(any(kani, not(any(loom, miri, sefer_ghost))))]
 macro_rules! ghost_event {
-    ($($t:tt)*) => {};
+    ($($t:tt)*) => {
+        ()
+    };
 }
 
 #[allow(unused_imports)]

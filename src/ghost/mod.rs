@@ -17,4 +17,4 @@ pub(crate) use macros::{ghost_assert, ghost_event};
 pub use probe::probe;
 #[cfg(any(loom, miri, sefer_ghost))]
 #[allow(unused_imports)]
-pub use shadow::{count, fail, record, reset};
+pub use shadow::{count, fail, overflowed, record, reset};

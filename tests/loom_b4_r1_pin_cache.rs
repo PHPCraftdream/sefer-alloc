@@ -404,6 +404,11 @@ mod sidecar_bitmap;
 #[allow(dead_code)]
 #[path = "../src/registry/segment_route/directory/mod.rs"]
 mod directory;
+
+// Ghost checks in the included production files (docs/GHOST_CHECKS_PLAN.md):
+// cfg(loom) is a ghost build, so their assertions run inside every schedule.
+#[path = "../src/ghost/mod.rs"]
+mod ghost;
 #[allow(dead_code)]
 #[path = "../src/registry/segment_route/large_state.rs"]
 mod large_state;

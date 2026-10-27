@@ -147,13 +147,18 @@ impl EntryHandle {
         // SAFETY: caller holds the shard lock, which excludes unlink and
         // release of the owner reference while the count is incremented.
         let entry = unsafe { &*ptr };
-        if entry
+        match entry
             .refs
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_add(1))
-            .is_err()
         {
+            // Item 186: a pin is only ever taken while some reference is alive.
+            Ok(_old) => crate::ghost::ghost_assert!(
+                "route-pin/no-resurrection",
+                _old != 0,
+                "pin taken on an entry whose last reference is gone"
+            ),
             // A valid free must never silently lose its route on exhaustion.
-            fatal(b"directory: pin reference count overflow\n");
+            Err(_) => fatal(b"directory: pin reference count overflow\n"),
         }
         Self {
             ptr: AtomicPtr::new(ptr),
@@ -222,9 +227,17 @@ impl Drop for EntryHandle {
         // SAFETY: this handle owns one count. Owner unlink happens before its
         // count is dropped; pins can only be acquired while linked under lock.
         let entry = unsafe { &*ptr };
-        if entry.refs.fetch_sub(1, Ordering::AcqRel) != 1 {
+        let prev = entry.refs.fetch_sub(1, Ordering::AcqRel);
+        crate::ghost::ghost_assert!(
+            "route-pin/refs-no-underflow",
+            prev != 0,
+            "route entry refs underflow"
+        );
+        if prev != 1 {
             return;
         }
+        // Freed exactly once per entry (the Loom harness checks the count).
+        crate::ghost::ghost_event!("route-pin/sidecar-freed", ptr.addr(), 1);
         let sidecar = entry.sidecar.load(Ordering::Relaxed);
         Self::free_sidecar(entry.kind, sidecar);
         // SAFETY: only the final ref reaches here. Exact original System
