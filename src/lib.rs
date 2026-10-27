@@ -247,10 +247,13 @@
 //                             (under `alloc-global`)
 //      * `registry::heap_registry::claim` — `*mut HeapCore` pointer handoff out
 //                             of a slot (the `FREE → LIVE` claim). (under `alloc-global`)
-//      * `registry::segment_route::directory` — System-backed route entry,
-//                             sidecar and sorted pointer-array allocation/
-//                             reclamation; numeric foreign lookup pins under
-//                             the shard lock.
+//      * `registry::segment_route::directory::route_directory` — System-backed
+//                             route entry and sidecar allocation/reclamation;
+//                             numeric foreign lookup pins under the shard lock.
+//                             (under `alloc-global`)
+//      * `registry::segment_route::directory::blocks` — System-backed sorted
+//                             pointer-array blocks, block index and spares,
+//                             mutated only under the shard lock.
 //                             (under `alloc-global`)
 //      * `registry::segment_route::small_sidecar` — in-place construction of
 //                             pending atomics and the owner class map.
