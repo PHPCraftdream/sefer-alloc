@@ -1066,6 +1066,14 @@ harness = false
 test = false
 required-features = ["alloc-global", "fastbin", "internals", "bench-internals"]
 
+# GR-1: magazine flush without per-block re-checks; ghost check asserts I-MAG
+# under Miri on real Box drops (three flush sites, activation oracle).
+[[test]]
+name = "miri_mag_flush_resident"
+harness = false
+test = false
+required-features = ["alloc-global", "fastbin", "internals", "bench-internals"]
+
 # PG-1 W0: MODEL-LIMIT probe — Box tcache reuse while the freeing by-value
 # frame is still live, vs after return, vs a same-frame control. Selector =
 # first argument, one scenario per process; `test = false` keeps ordinary
