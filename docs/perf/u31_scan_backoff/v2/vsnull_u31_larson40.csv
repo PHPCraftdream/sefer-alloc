@@ -1,0 +1,2 @@
+variant,kernel,reps,variant_ab_median,null_ab_median,null_ci_lo,null_ci_hi,effect,effect_ci_lo,effect_ci_hi,ratio,precise,verdict
+u31_scan_backoff,larson,40,0.00803037803287154,0.013468582788546577,0.009443240467741726,0.0165805497407681,-0.005438204755675037,-0.011551811082202091,0.0005540339227831266,0.9945765555112349,yes,EQUAL_CI_HAS_0
