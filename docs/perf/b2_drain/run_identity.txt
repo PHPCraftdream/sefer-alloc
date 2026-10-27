@@ -1,0 +1,6 @@
+b4_ablate_make_variant: variant=b2r1_drain_one_pass files=181 changed_files=1 sha256=826b64f4ce2722802b7611eee6297d00e2e50d780ac4e5a3457d673d38b6bba9 added=28 removed=44 patch(+/-)=28/44
+b4_ablate_make_variant: variant=null files=181 changed_files=0 sha256=8b23cd57f6e45cd1a7d8915cc69104ebc57a3311d32ee28610816a3a345e4ec8
+[run] head_sha=8dd5b2b4d9c5e19c066b1a0f28f9ddbefa42a5c2
+[run] os_version=10.0.19045
+[run] rustc 1.97.0 (2d8144b78 2026-07-07)
+[run] source_diff_sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (stable: the variant copy lives outside the repo tree, git diff does not include it)

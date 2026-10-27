@@ -1,0 +1,3 @@
+variant,free_ir,free_magazine_full_ir,flush_class_internal_ir,try_drain_freelist_batch_ir,alloc_ir,total_ir,pairs
+base,49024495,5019520,34841036,45503174,30458387,207516469,720896
+b2r1_drain_one_pass,49024495,5019520,34841036,38876302,30458387,200891678,720896
