@@ -295,3 +295,11 @@ Item 188 is CLOSED (2026-10-13); it is not a current record here — its closure
     > - **Current:** `tests/regression_r6_t22_foreign_window_key_miri.rs` exists and is selected by `scripts/miri-matrix.mjs` (`exact-span-large`, internals); no green miri-alloc-core CI receipt was inspected in this audit.
     > - **Next trigger:** confirm a green miri-alloc-core CI run executing this case under the specified features; only then close this proof-only item.
     > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-1 (Miri aspect); task R6-T22.
+
+256. **[T] Loom shadow models are not mechanically bound to production code; no per-site semantic lint and no commit-level justification for protocol code.** (Filed 2026-10-27, plan `docs/GHOST_CHECKS_PLAN.md`.)
+
+    > **Current state**
+    > - **Status:** OPEN — plan written, no phase started (G0 inventory is next).
+    > - **Current:** 14 protocols of the plan's inventory have shadow-model coverage (P7 also has actual-source harnesses); 3 actual-source loom tests cover P6 and part of P7; 2 evidence rows are INCONCLUSIVE because a production mutant is not caught by its shadow model (R4b-13: `Release → Relaxed` in the `HeapLease` Drop-CAS; R4b-14: weakened claim-CAS `Acquire`, both under `tests/loom_r11_ph4b_publish_recycle_drain.rs`); 4 text source pins (`tests/r11_ph4a_drop_ordering_pinned.rs`, `r11_ph4b_teardown_ordering_pinned.rs`, `r11_ph4b_local_no_drop_pinned.rs`, `r11_ph5b_c5_sidecar_ordering_pinned.rs`) match one code shape only; `cfg(loom)` twins in `src/registry/bootstrap/` and `crates/{once-ptr-cell,tagged-index-stack}` are not compared with their production twins.
+    > - **Next trigger:** G0 of the plan (invariant-level inventory and rule catalogue); G1 needs the owner's decision on a direct `syn` dev-dependency for `crates/ghost-lint` (plan §10).
+    > - **Evidence:** `docs/GHOST_CHECKS_PLAN.md` §2 (inventory), §8 (phases and exit criteria), §9 (metrics); `docs/evidence/registry.csv` rows R4b-13/R4b-14 and the 15 `scope = shadow-model` rows.
