@@ -49,6 +49,7 @@ impl Route {
 
     /// Production `EntryHandle::drop`: the final count frees the route.
     fn unpin(&self) {
+        // ghost-bind: route-pin/drop-acqrel
         if self.refs.fetch_sub(1, Ordering::AcqRel) == 1 {
             self.freed.store(true, Ordering::Release);
         }
@@ -59,6 +60,7 @@ impl Route {
     fn unlink_and_release_owner(&self) {
         {
             let _guard = self.lock.lock().unwrap();
+            // ghost-bind: route-pin/unlink-release
             self.linked.store(false, Ordering::Release);
         }
         self.unpin();

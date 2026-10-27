@@ -42,6 +42,8 @@ export const MIRI_TARGETS = [
   green('miri-core', 'segment_directory_a5_miri', 'alloc-segment-directory internals'),
   // Ghost-checks G1: the ghost macros and shadow table under miri (cfg(miri) is a ghost build).
   green('miri-core', 'ghost_infra', 'internals'),
+  // Ghost-checks G2 (P5 route pins, item 186): last-reference free vs a concurrent pin drop on the real directory.
+  green('miri-core', 'route_pin_last_ref_miri', 'alloc-global internals'),
   ...['regression_large_align_no_segment_exhaustion', 'regression_page_aligned_no_segment_exhaustion',
     'regression_realloc_cross_class_shrink', 'stress_boundary_sweep']
     .map((test) => green('miri-alloc-core', test, 'alloc-core')),

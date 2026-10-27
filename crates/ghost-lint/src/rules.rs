@@ -63,6 +63,7 @@ impl Pattern {
             Some("macro") => Some(EventKind::Macro),
             Some("assign") => Some(EventKind::Assign),
             Some("mut_borrow") => Some(EventKind::MutBorrow),
+            Some("return_if") => Some(EventKind::ReturnIf),
             Some(o) => return Err(format!("unknown event kind {o}")),
         };
         Ok(Pattern {
@@ -266,11 +267,17 @@ fn check_inner(rule: &Value, src: &dyn Sources) -> Result<Vec<Violation>, String
                 }
             }
         }
-        // R4: every `action` event sits under a branch whose condition matches `guard`.
+        // R4: every `action` event sits under a branch whose condition matches
+        // `guard`, or after an early exit `if <c> { return }` (same or enclosing
+        // block) whose condition matches `guard_return`.
         "R4" => {
             let f = target(src, file, rule)?;
             let action = Pattern::from(rule.get("action").ok_or("R4 needs action")?)?;
-            let guard = re(s(rule, "guard").ok_or("R4 needs guard")?)?;
+            let guard = re(s(rule, "guard").unwrap_or("$^"))?;
+            let guard_return = s(rule, "guard_return").map(re).transpose()?;
+            if s(rule, "guard").is_none() && guard_return.is_none() {
+                return Err("R4 needs guard or guard_return".into());
+            }
             let acts: Vec<&Event> = f
                 .events
                 .iter()
@@ -285,7 +292,16 @@ fn check_inner(rule: &Value, src: &dyn Sources) -> Result<Vec<Violation>, String
                 ));
             }
             for a in acts {
-                if !a.guards.iter().any(|g| guard.is_match(g)) {
+                let early = guard_return.as_ref().is_some_and(|gr| {
+                    f.events.iter().any(|r| {
+                        r.kind == EventKind::ReturnIf
+                            && !r.in_ghost
+                            && (r.line, r.column) < (a.line, a.column)
+                            && a.blocks.starts_with(&r.blocks)
+                            && r.args.first().is_some_and(|c| gr.is_match(c))
+                    })
+                });
+                if !early && !a.guards.iter().any(|g| guard.is_match(g)) {
                     out.push(v(
                         rule,
                         file,

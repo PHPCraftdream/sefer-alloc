@@ -140,16 +140,20 @@
         "I3 lookup after remove never yields a pin; linked is cleared with Release before unlink",
         "I4 Block/BlockIndex/spare atomics are Relaxed and touched only under the shard lock"
       ],
-      "class": "S",
+      "class": "A+S",
       "loom": [
-        "tests/loom_route_pin_unlink.rs"
+        "tests/loom_route_pin_unlink.rs",
+        "tests/loom_b4_r1_pin_cache.rs"
       ],
       "pins": [],
       "registry": [],
-      "real_under_loom": "likely: EntryHandle/Entry are plain structs over core atomics; ShardLock is a spin lock on one AtomicBool",
-      "decision": "translate",
+      "real_under_loom": "yes: tests/loom_b4_r1_pin_cache.rs includes directory/ and src/ghost/",
+      "decision": "translate (done in G2: real directory under loom via loom_b4_r1_pin_cache with ghost checks compiled in; last-reference free under miri)",
       "phase": "G2",
-      "reason": "pilot: correctness item 186"
+      "reason": "pilot: correctness item 186",
+      "miri": [
+        "tests/route_pin_last_ref_miri.rs"
+      ]
     },
     {
       "id": "P6",
@@ -1013,6 +1017,266 @@
       "exclude": [
         "crates/ghost-lint/**"
       ]
+    },
+    {
+      "id": "route-pin/drop-acqrel",
+      "kind": "R1",
+      "protocol": "P5",
+      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "fn": "EntryHandle::drop",
+      "site": {
+        "name": "fetch_sub",
+        "receiver": "refs$"
+      },
+      "orderings": [
+        "AcqRel"
+      ],
+      "count": 1,
+      "terms": [
+        "fetch_sub",
+        "AcqRel",
+        "last reference",
+        "happens-before"
+      ],
+      "reason": "the last dropper must observe every other holder's accesses before it frees the Entry and sidecar: Release on every decrement, Acquire on the final one",
+      "tests": [
+        "tests/route_pin_last_ref_miri.rs",
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p5_drop_acqrel",
+      "mutants": [
+        {
+          "id": "relaxed-decrement",
+          "file": "src/registry/segment_route/directory/route_directory.rs",
+          "from": "let prev = entry.refs.fetch_sub(1, Ordering::AcqRel);",
+          "to": "let prev = entry.refs.fetch_sub(1, Ordering::Relaxed);",
+          "checker": {
+            "name": "miri route_pin_last_ref_miri",
+            "cmd": [
+              "cargo",
+              "+nightly",
+              "miri",
+              "test",
+              "--features",
+              "alloc-global internals",
+              "--test",
+              "route_pin_last_ref_miri"
+            ],
+            "expect": "Data race detected"
+          }
+        }
+      ]
+    },
+    {
+      "id": "route-pin/pin-acqrel",
+      "kind": "R1",
+      "protocol": "P5",
+      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "fn": "EntryHandle::pin_from_array",
+      "site": {
+        "name": "fetch_update",
+        "receiver": "refs$"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "fetch_update",
+        "AcqRel",
+        "shard lock",
+        "pin"
+      ],
+      "reason": "a pin increment is a counted reference the final decrement synchronizes with",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p5_pin_acqrel"
+    },
+    {
+      "id": "route-pin/unlink-release",
+      "kind": "R1",
+      "protocol": "P5",
+      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "fn": "RouteDirectory::remove",
+      "site": {
+        "name": "store",
+        "receiver": "linked$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "linked",
+        "Release",
+        "unlink",
+        "Acquire"
+      ],
+      "reason": "the unlink is published with Release; RoutePin::linked reads it with Acquire (cached fast path gate)",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs",
+        "tests/loom_route_pin_unlink.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p5_unlink_release"
+    },
+    {
+      "id": "route-pin/last-ref-free",
+      "kind": "R4",
+      "protocol": "P5",
+      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "fn": "EntryHandle::drop",
+      "action": {
+        "name": "free_sidecar"
+      },
+      "guard_return": "^prev!=1$",
+      "terms": [
+        "last reference",
+        "prev",
+        "free_sidecar",
+        "return"
+      ],
+      "reason": "the sidecar is freed only after the early return of every non-final decrement (item 186)",
+      "tests": [
+        "tests/route_pin_last_ref_miri.rs",
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p5_last_ref_free",
+      "mutants": [
+        {
+          "id": "free-before-count-check",
+          "file": "src/registry/segment_route/directory/route_directory.rs",
+          "from": "        if prev != 1 {\n            return;\n        }\n",
+          "to": "        let sidecar = entry.sidecar.load(Ordering::Relaxed);\n        Self::free_sidecar(entry.kind, sidecar);\n        if prev != 1 {\n            return;\n        }\n",
+          "checker": {
+            "name": "miri route_pin_last_ref_miri",
+            "cmd": [
+              "cargo",
+              "+nightly",
+              "miri",
+              "test",
+              "--features",
+              "alloc-global internals",
+              "--test",
+              "route_pin_last_ref_miri"
+            ],
+            "expect": "Undefined Behavior"
+          }
+        }
+      ]
+    },
+    {
+      "id": "route-pin/decrement-before-free",
+      "kind": "R3",
+      "protocol": "P5",
+      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "fn": "EntryHandle::drop",
+      "before": {
+        "name": "fetch_sub",
+        "receiver": "refs$"
+      },
+      "after": {
+        "name": "free_sidecar"
+      },
+      "terms": [
+        "fetch_sub",
+        "free_sidecar",
+        "before",
+        "last reference"
+      ],
+      "reason": "free_sidecar is dominated by the reference decrement in the same or an enclosing block",
+      "tests": [
+        "tests/route_pin_last_ref_miri.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p5_decrement_before_free"
+    },
+    {
+      "id": "route-pin/free-sole-path",
+      "kind": "R5",
+      "protocol": "P5",
+      "files": [
+        "src/registry/segment_route/**"
+      ],
+      "target": {
+        "name": "free_sidecar"
+      },
+      "allowed": [
+        "EntryHandle::drop",
+        "EntryHandle::new"
+      ],
+      "terms": [
+        "free_sidecar",
+        "EntryHandle::drop",
+        "EntryHandle::new",
+        "only"
+      ],
+      "reason": "only the last reference (or the constructor's own OOM rollback) frees a sidecar",
+      "tests": [
+        "tests/route_pin_last_ref_miri.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p5_free_sole_path"
+    },
+    {
+      "id": "route-pin/ghost-drop",
+      "kind": "R6",
+      "protocol": "P5",
+      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "fn": "EntryHandle::drop",
+      "ghost": "route-pin/refs-no-underflow",
+      "terms": [
+        "ghost",
+        "underflow",
+        "prev"
+      ],
+      "reason": "the drop keeps its ghost underflow check (and the freed-once event the harness counts)",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs",
+        "tests/route_pin_last_ref_miri.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p5_ghost_drop"
+    },
+    {
+      "id": "route-pin/ghost-pin",
+      "kind": "R6",
+      "protocol": "P5",
+      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "fn": "EntryHandle::pin_from_array",
+      "ghost": "route-pin/no-resurrection",
+      "terms": [
+        "ghost",
+        "resurrection",
+        "pin"
+      ],
+      "reason": "the pin keeps its ghost no-resurrection check (item 186)",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p5_ghost_pin"
+    },
+    {
+      "id": "route-pin/model-bind",
+      "kind": "R8",
+      "protocol": "P5",
+      "model": "tests/loom_route_pin_unlink.rs",
+      "binds": [
+        {
+          "rule": "route-pin/drop-acqrel"
+        },
+        {
+          "rule": "route-pin/unlink-release"
+        }
+      ],
+      "terms": [
+        "model",
+        "AcqRel",
+        "Release"
+      ],
+      "reason": "the shadow model of item 186 keeps the production orderings of the decrement and the unlink",
+      "tests": [
+        "tests/loom_route_pin_unlink.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p5_model_bind"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

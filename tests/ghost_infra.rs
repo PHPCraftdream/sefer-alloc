@@ -41,6 +41,7 @@ fn ghost_macros_record_fail_and_reset() {
         "the event before the failing check was recorded"
     );
 
+    assert_eq!(ghost::overflowed(), 0, "no event dropped");
     ghost::reset();
     assert_eq!(ghost::count("ghost/probe", 7), 0, "reset clears the table");
 }

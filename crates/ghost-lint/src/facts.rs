@@ -32,6 +32,8 @@ pub enum EventKind {
     Macro,
     Assign,
     MutBorrow,
+    /// `if <cond> { ..; return }` with no else: an early exit guarding what follows.
+    ReturnIf,
 }
 
 #[derive(Clone, Debug)]
@@ -426,6 +428,21 @@ impl<'ast> Visit<'ast> for Collector {
     fn visit_expr_if(&mut self, i: &'ast syn::ExprIf) {
         self.visit_expr(&i.cond);
         let cond = norm(&i.cond);
+        let exits = i.else_branch.is_none()
+            && matches!(
+                i.then_branch.stmts.last(),
+                Some(syn::Stmt::Expr(syn::Expr::Return(_), _))
+            );
+        if exits {
+            self.push(
+                EventKind::ReturnIf,
+                "return".into(),
+                String::new(),
+                Vec::new(),
+                vec![cond.clone()],
+                i.if_token.span,
+            );
+        }
         self.guards.push(cond.clone());
         self.visit_block(&i.then_branch);
         self.guards.pop();
