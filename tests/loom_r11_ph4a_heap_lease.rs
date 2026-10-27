@@ -11,6 +11,7 @@ use loom::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 use sefer_alloc::registry::heap_slot::SlotState;
+use sefer_alloc::registry::heap_slot::SlotState::{Free, Live};
 
 struct Slot {
     state: AtomicU8,
@@ -20,25 +21,21 @@ struct Slot {
     payload: UnsafeCell<usize>,
 }
 
-/// Publication ordering of the Drop's LIVE→FREE CAS. `Release` at rest;
-/// mutant M1 (task #2091 chunk C) temporarily flips this to `Relaxed` and the
-/// model below must go red (owner payload write vs. next claimant read loses
-/// its happens-before edge → loom data race).
-const DROP_ORDERING: Ordering = Ordering::Release;
+/// One state CAS (`HeapSlot::cas_state`). The two lease CAS lines below are
+/// marked `ghost-bind`: rule R8 checks their orderings against the R1 rules on
+/// `src/registry/heap_registry/claim.rs`. Weakening the Release drop loses
+/// the owner-payload write vs. next-claimant read edge → loom data race.
+fn cas(slot: &Slot, from: SlotState, to: SlotState, success: Ordering, failure: Ordering) -> bool {
+    slot.state
+        .compare_exchange(from as u8, to as u8, success, failure)
+        .is_ok()
+}
 
 /// HeapLease shadow: winning CAS grants authority; Drop is the Release
 /// LIVE→FREE publication (`HeapLease::drop`).
 fn owner_take_and_drop(slot: &Slot) {
-    if slot
-        .state
-        .compare_exchange(
-            SlotState::Free as u8,
-            SlotState::Live as u8,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        )
-        .is_err()
-    {
+    // ghost-bind: heap-lease/claim-free-live
+    if !cas(slot, Free, Live, Ordering::AcqRel, Ordering::Acquire) {
         return; // lost claimant CAS — no authority, no core access
     }
     // S1: only the CAS winner runs its body.
@@ -54,15 +51,9 @@ fn owner_take_and_drop(slot: &Slot) {
     });
     // Drop: Release-publish the owner writes (S2), then authority ends.
     assert_eq!(slot.active.fetch_sub(1, Ordering::Relaxed), 1);
-    assert!(slot
-        .state
-        .compare_exchange(
-            SlotState::Live as u8,
-            SlotState::Free as u8,
-            DROP_ORDERING,
-            Ordering::Relaxed
-        )
-        .is_ok());
+    // ghost-bind: heap-lease/drop-release
+    let won = cas(slot, Live, Free, Ordering::Release, Ordering::Relaxed);
+    assert!(won, "a lease holder's LIVE -> FREE CAS cannot lose");
 }
 
 #[test]

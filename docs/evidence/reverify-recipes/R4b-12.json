@@ -1,24 +1,26 @@
 {
   "id": "R4b-12",
-  "registryActivationHash": "9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd",
+  "registryActivationHash": "67d3dbd48638e8ba7ad3f2c65f8866d100a8e580532c80a6870e4630fbcc91c7",
   "steps": [
     {
-      "name": "typed guard lease storage source-pin baseline",
+      "name": "ghost-lint catalog baseline",
       "env": {},
       "argv": [
         "cargo",
         "test",
         "--locked",
-        "--features",
-        "production internals",
+        "-p",
+        "ghost-lint",
         "--test",
-        "r11_ph4b_local_no_drop_pinned"
+        "catalog_holds",
+        "--",
+        "--nocapture"
       ],
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "test guard_stores_the_typed_lease_option \\.\\.\\. ok",
-          "test result: ok\\. 3 passed; 0 failed"
+          "check: \\d+ rule\\(s\\), 0 violation\\(s\\)",
+          "test result: ok\\. 1 passed; 0 failed"
         ]
       }
     }
@@ -29,25 +31,23 @@
     "replace": "    lease: GuardLease,\n}\n\ntype GuardLease = Cell<Option<HeapLease>>;",
     "steps": [
       {
-        "name": "guard lease storage aliased type mutant",
+        "name": "guard lease type mutant",
         "env": {},
         "argv": [
           "cargo",
           "test",
           "--locked",
-          "--features",
-          "production internals",
+          "-p",
+          "ghost-lint",
           "--test",
-          "r11_ph4b_local_no_drop_pinned",
-          "guard_stores_the_typed_lease_option",
+          "catalog_holds",
           "--",
-          "--exact",
           "--nocapture"
         ],
         "expect": {
-          "exit": 101,
+          "exitNonZero": true,
           "stdoutRegex": [
-            "test guard_stores_the_typed_lease_option \\.\\.\\. FAILED"
+            "\\[teardown\\/guard-lease-cell\\]"
           ]
         }
       }
@@ -55,7 +55,7 @@
     "expect": {
       "exitNonZero": true,
       "stdoutRegex": [
-        "test guard_stores_the_typed_lease_option \\.\\.\\. FAILED"
+        "\\[teardown\\/guard-lease-cell\\]"
       ]
     }
   }

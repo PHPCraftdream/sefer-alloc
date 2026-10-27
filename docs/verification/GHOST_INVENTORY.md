@@ -37,9 +37,9 @@ harness; `non-atomic` — named scanner false positives.
 
 | id | protocol | class | sites | loom tests | text pins | registry rows | real code under loom | decision | phase |
 |---|---|---|---:|---:|---:|---|---|---|---|
-| P1 | HeapLease FREE->LIVE claim / LIVE->FREE Release drop | S | 12 | 1 | 1 | R4a-05 R4a-06 R4a-07 R4a-08 R4a-09 R4c-09 | no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone | partial-translate | G3 |
+| P1 | HeapLease FREE->LIVE claim / LIVE->FREE Release drop | S | 12 | 1 | 0 | R4a-05 R4a-06 R4a-07 R4a-08 R4a-09 R4c-09 | no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone | keep+R8 | G3 |
 | P2 | MaintenanceLease FREE->MAINTENANCE | S | 4 | 1 | 0 | R4c-19 | no: same registry bootstrap as P1 | keep+R8 | G4 |
-| P3 | publish \|\| recycle \|\| drain (TORN stamp, trim, drop, claimant drain) | S | 0 | 1 | 2 | R4b-03 R4b-13 R4b-14 R4b-15 | no: drain runs through HeapCore + AllocCore segment tables | keep+R8+ghost | G3 |
+| P3 | publish \|\| recycle \|\| drain (TORN stamp, trim, drop, claimant drain) | S | 0 | 1 | 0 | R4b-03 R4b-13 R4b-14 R4b-15 | no: drain runs through HeapCore + AllocCore segment tables | keep+R8 | G3 |
 | P4 | registry claim/selector, free-set, spill, saturation | S | 41 | 5 | 0 | R4c-02 | partial: FreeSlotHint and SaturationHint are self-contained structs on core atomics (translatable via #[path]); stack.rs scans walk the static registry | translate(free_slot_hint, saturation) + keep+R8(stack scans) | G5 |
 | P5 | route pin: lookup \|\| unlink \|\| last-pin release | A+S | 39 | 2 | 0 | — | yes: tests/loom_b4_r1_pin_cache.rs includes directory/ and src/ghost/ | translate (done in G2: real directory under loom via loom_b4_r1_pin_cache with ghost checks compiled in; last-reference free under miri) | G2 |
 | P6 | route pin cache fast path | A | 0 | 1 | 0 | — | yes (already #[path]) | ghost | G6 |
@@ -74,7 +74,7 @@ Prod: `src/registry/heap_registry/claim.rs::claim_impl`, `src/registry/heap_regi
 - I3 only the lease holder mutates slot metadata between claim and drop
 - loom: `tests/loom_r11_ph4a_heap_lease.rs`
 
-Decision: **partial-translate** — translate the HeapSlot state machine (heap_slot.rs cas_state + the claim/drop call-site orderings) via #[path]; registry bootstrap stays a shadow model bound by R8
+Decision: **keep+R8** — G3: HeapSlot::cas_state only passes the orderings through, so translating it under loom adds nothing; the orderings live at the claim/drop call sites, which need the registry bootstrap. R1 pins every cas_state call site of claim_impl, HeapLease::drop and push_back_after_oom (R4: a lost drop CAS is fatal); R8 binds the drop and claim lines of both shadow models (heap-lease/model-bind, recycle-drain/model-bind). The text pin r11_ph4a_drop_ordering_pinned is removed: its mutants turn heap-lease/drop-release and heap-lease/drop-lost-cas-fatal red.
 
 ### P2 — MaintenanceLease FREE->MAINTENANCE
 
@@ -96,7 +96,7 @@ Prod: `src/registry/heap_core/state/ownership.rs::trim_for_recycle`, `src/regist
 - no atomic sites of its own: its orderings are P1 (HeapSlot::cas_state call sites) and P7 (sidecar publish/cut); trim/drain order and consumption are sequence/ghost properties (R3, ghost_event!)
 - loom: `tests/loom_r11_ph4b_publish_recycle_drain.rs`
 
-Decision: **keep+R8+ghost** — R4b-13/14 are INCONCLUSIVE because L1/L2 mutants in claim.rs are not seen by the model; R1 on the cas_state call sites catches them in prod code, R8 binds the model constants, ghost_event! counts consumption under the real drain (miri)
+Decision: **keep+R8** — G3: L1/L2 (R4b-13/14) are caught by the Ph4b model through a core cell every lease holder writes, and by R1 in claim.rs; R8 keeps the model lines equal to prod. The teardown order is R3/R4 on LeaseReleaseGuard::drop and finish_bind, the LOCAL/GUARD declarations are R10. The text pins r11_ph4b_teardown_ordering_pinned and r11_ph4b_local_no_drop_pinned are removed: their mutants turn those rules red. Exactly-once consumption under the real drain is P7/P10 (G6).
 
 ### P4 — registry claim/selector, free-set, spill, saturation
 

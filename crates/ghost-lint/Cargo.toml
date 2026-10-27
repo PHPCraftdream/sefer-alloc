@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
-description = "Repository tool: per-site semantic lint rules (R1-R9) for sefer-alloc's ghost-checks plan (docs/GHOST_CHECKS_PLAN.md). Not published."
+description = "Repository tool: per-site semantic lint rules (R1-R10) for sefer-alloc's ghost-checks plan (docs/GHOST_CHECKS_PLAN.md). Not published."
 publish = false
 
 [lints]
