@@ -1,0 +1,1 @@
+{"id": "fixture/r6-last-ref-ghost", "kind": "R6", "file": "$SRC", "fn": "EntryHandle::drop", "ghost": "route-pin/last-ref-free"}

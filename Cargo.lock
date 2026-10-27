@@ -455,6 +455,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ghost-lint"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "regex",
+ "serde_json",
+ "syn",
+]
+
+[[package]]
 name = "globalalloc-model"
 version = "0.1.0"
 dependencies = [

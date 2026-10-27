@@ -86,7 +86,7 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/aligned-vmem", "crates/numa-shim", "crates/malloc-bench-rs", "crates/sefer-region", "crates/once-ptr-cell", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat", "crates/proc-probe"]
+members = ["crates/aligned-vmem", "crates/numa-shim", "crates/malloc-bench-rs", "crates/sefer-region", "crates/once-ptr-cell", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat", "crates/proc-probe", "crates/ghost-lint"]
 resolver = "2"
 
 # Task #711 (once-ptr-cell round-closing review, §C10 drift hazard): `loom`
@@ -113,7 +113,7 @@ loom = "0.7"
 # same task-#962 cfg-flag pattern; `numa_shim_mock` is set via
 # `RUSTFLAGS="--cfg numa_shim_mock"` and required IN ADDITION to the
 # `numa-aware-mock` feature by the mock-gated integration tests).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)', 'cfg(r19_prf01_producer_control)', 'cfg(r20_prf01_c3_producer_control)', 'cfg(r20_prf01_c3_oracle)', 'cfg(prf04_heap_reuse_oracle)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)', 'cfg(r19_prf01_producer_control)', 'cfg(r20_prf01_c3_producer_control)', 'cfg(r20_prf01_c3_oracle)', 'cfg(prf04_heap_reuse_oracle)', 'cfg(sefer_ghost)'] }
 
 [lints]
 # Inherit the workspace-shared lint table above ([workspace.lints.rust]).
@@ -1182,6 +1182,12 @@ required-features = ["alloc-global"]
 # Gated so the default build does not try to compile it without the feature.
 [[example]]
 name = "global_allocator"
+required-features = ["alloc-global"]
+
+# Ghost-checks zero-cost proof (docs/GHOST_CHECKS_PLAN.md §6): deterministic
+# single-thread workload for scripts/ghost_zero_cost.mjs (.text diff + Ir).
+[[example]]
+name = "ghost_zero_cost_probe"
 required-features = ["alloc-global"]
 
 # B4 collapse diagnosis: bimodal larson collapse probe (SeferAlloc-only, per-

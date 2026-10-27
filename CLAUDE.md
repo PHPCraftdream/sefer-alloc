@@ -1100,6 +1100,30 @@ Core instructions, mandatory for all code in this repository. They
   precision concern rather than a regression" — see the benchmark-hook rule
   above) are both precedents already in this file for declining exactly this
   kind of retroactive cleanup.
+- **Ghost checks and per-site semantic lint (`docs/GHOST_CHECKS_PLAN.md`).**
+  Cross-thread protocol code is held by three layers: ghost checks
+  (`crate::ghost::ghost_assert!` / `ghost_event!`, compiled only under
+  `cfg(any(loom, miri, kani, sefer_ghost))`, nothing in production), the
+  per-site rules of `docs/verification/ghost-rules.json` checked by
+  `crates/ghost-lint` (`check`, `selftest`; CI job `ghost-guard`), and the
+  ordering-site inventory (`node scripts/ghost_inventory.mjs --check`: every
+  atomic/ordering site is claimed by exactly one catalog scope). Rules for
+  writing such code — including for sub-agents, whose prompts must repeat them:
+  1. A new or changed atomic/ordering site needs a catalog scope (the inventory
+     is red otherwise); a site that carries a protocol needs a rule.
+  2. Ghost code never writes production data, adds no field to a production
+     struct (layout pins must hold in every build), allocates nothing and
+     uses `core` atomics only (rule R9).
+  3. Every catalog rule has a fixture case in `tests/ghost_lint_fixtures/`
+     whose mutants it rejects; a rule a mutant cannot turn red is a defect.
+  4. A commit that touches a place a rule protects carries an
+     `Invariant-Check:` trailer per touched rule (`Change`, `Why` in the
+     rule's invariant terms, `Covered-by` naming the loom/miri/kani test,
+     ghost id and fixture) — the model that changed the code writes it
+     (plan §5; linter `scripts/verify-invariant-trailers.mjs`).
+  5. A ghost PR must keep production machine-identical: CI job
+     `ghost-zero-cost` (normalized `.text` diff + callgrind Ir of
+     `examples/ghost_zero_cost_probe.rs` against the base) must be green.
 - Do not bump project or dependency versions without an explicit request.
 - Verification-first: every invariant (I1–I7) is covered by proptest and/or
   unit test; the core is run under miri.

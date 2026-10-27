@@ -40,6 +40,8 @@ export const MIRI_TARGETS = [
   green('miri-core', 'narrow_domain_unchecked_storage', '', { pkg: 'tagged-index-stack' }),
   green('miri-core', 'decommit_miri_cycle', 'alloc-core alloc-decommit internals'),
   green('miri-core', 'segment_directory_a5_miri', 'alloc-segment-directory internals'),
+  // Ghost-checks G1: the ghost macros and shadow table under miri (cfg(miri) is a ghost build).
+  green('miri-core', 'ghost_infra', 'internals'),
   ...['regression_large_align_no_segment_exhaustion', 'regression_page_aligned_no_segment_exhaustion',
     'regression_realloc_cross_class_shrink', 'stress_boundary_sweep']
     .map((test) => green('miri-alloc-core', test, 'alloc-core')),

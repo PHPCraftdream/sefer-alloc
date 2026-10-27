@@ -1,0 +1,2 @@
+{"id": "fixture/r2-publish-inventory", "kind": "R2", "file": "$SRC", "fn": "Sidecar::publish",
+ "sites": [{"name": "store", "orderings": ["Release"]}, {"name": "fetch_or", "orderings": ["AcqRel"]}]}

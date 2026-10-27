@@ -1,0 +1,2 @@
+{"id": "fixture/r7-cell-get-twin", "kind": "R7",
+ "a": {"file": "$SRC", "fn": "Cell::get", "cfg": "^loom$"}, "b": {"file": "$SRC", "fn": "Cell::get", "cfg": "not"}}

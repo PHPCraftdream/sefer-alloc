@@ -842,7 +842,10 @@
         "crates/*/src/**"
       ],
       "fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",
-      "reason": "dbg_*/for_test/internals-only hooks"
+      "reason": "dbg_*/for_test/internals-only hooks",
+      "exclude": [
+        "src/ghost/**"
+      ]
     },
     {
       "id": "hook/inject-flags",
@@ -852,7 +855,10 @@
         "crates/*/src/**"
       ],
       "receiver": "^(.*::)?(DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE)$",
-      "reason": "fault-injection / test-control flags"
+      "reason": "fault-injection / test-control flags",
+      "exclude": [
+        "src/ghost/**"
+      ]
     },
     {
       "id": "cache/page-size",
@@ -886,7 +892,10 @@
         "fetch_update",
         "store"
       ],
-      "reason": "unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed"
+      "reason": "unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed",
+      "exclude": [
+        "src/ghost/**"
+      ]
     },
     {
       "id": "counter/statics",
@@ -900,7 +909,10 @@
       "orderings": [
         "Relaxed"
       ],
-      "reason": "statistics / diagnostic counters: Relaxed, no protocol reads them"
+      "reason": "statistics / diagnostic counters: Relaxed, no protocol reads them",
+      "exclude": [
+        "src/ghost/**"
+      ]
     },
     {
       "id": "counter/per-heap",
@@ -972,9 +984,37 @@
       ],
       "fn": "^heaps_claimed_high_water$",
       "reason": "stats read of the registry count: Relaxed is enough for a high-water report"
+    },
+    {
+      "id": "ghost/shadow",
+      "class": "ghost",
+      "files": [
+        "src/ghost/**"
+      ],
+      "reason": "ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1)"
     }
   ],
-  "rules": [],
+  "rules": [
+    {
+      "id": "ghost/hygiene",
+      "kind": "R9",
+      "protocol": "-",
+      "files": [
+        "src/**",
+        "crates/*/src/**"
+      ],
+      "reason": "plan §3.1/§4.2 R9: no ghost fields in prod structs, ghost macro arguments never write, ghost:: paths outside the macros only under a ghost cfg",
+      "fixtures": "tests/ghost_lint_fixtures/r9_hygiene",
+      "terms": [
+        "ghost",
+        "cfg",
+        "write"
+      ],
+      "exclude": [
+        "crates/ghost-lint/**"
+      ]
+    }
+  ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",
   "test_fn_doc": "sites inside functions matching test_fn are claimed by test_fn_scope only",
   "test_fn_scope": "hook/test-fns"
