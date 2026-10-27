@@ -58,7 +58,7 @@ const PURE_OBSERVERS = [
   // Read-only Relaxed load of the cold-path giveup counter.
   "src/global/fallback.rs::dbg_exit_lock_giveups",
   // Read-only Relaxed descriptor count; the borrowed RoutePin retains its lifetime.
-  "src/registry/segment_route/directory.rs::dbg_route_pin_refs",
+  "src/registry/segment_route/directory/route_directory.rs::dbg_route_pin_refs",
   // Read-only Relaxed load of Entry.refs through the owner-held RouteRegistration's own EntryHandle; no address-keyed lookup, no pointer dereference beyond the already-owned entry.
   "src/registry/segment_route/registration.rs::dbg_entry_refs_relaxed",
   "crates/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
@@ -186,7 +186,7 @@ const SAFE_MUTATORS = [
     "src/global/sefer_alloc/diag.rs::dbg_background_maintenance_current_thread",
     "delegates only to the production bounded background_maintenance_step for current_for_trim's current-thread exclusive live HeapCore; no FREE-slot lease or lifecycle mutation; bench-internals + internals gated"
   ],  [
-    "src/registry/segment_route/directory.rs::dbg_with_shard_of_locked_for_test",
+    "src/registry/segment_route/directory/route_directory.rs::dbg_with_shard_of_locked_for_test",
     "bench-internals-only ordinary shard guard; pointer address is only a shard key, never dereferenced; callback receives no protected data; reentry or a stranded holder risks liveness, not memory safety; unwind releases the guard"
   ],
   ["src/registry/bootstrap/registry.rs::dbg_slot_state", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic state, without borrowing the core"],
@@ -416,9 +416,9 @@ export const REVIEWED_SURFACE = [
     ['src/registry/heap_core/diag/diag_probes.rs', ['dbg_promotion_compiled', 'dbg_promotion_macro_gate'], 'observer', 'compile-time predicate'],
     ['src/global/maintenance_service.rs', ['passes_for_test', 'fallback_visits_for_test'], 'observer', 'atomic diagnostic counters'],
     ['src/global/maintenance_service.rs', ['wait_after_for_test'], 'mutator', 'locks/waits on production completion condition'],
-    ['src/registry/segment_route/directory.rs', ['fail_next_registration_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
-    ['src/registry/segment_route/directory.rs', ['with_initial_incarnation_for_test'], 'mutator', 'constructs isolated directory with chosen initial incarnation'],
-    ['src/registry/segment_route/directory.rs', ['retained_pointer_capacity_for_test', 'moved_pointer_cells_for_test', 'shard_index_for_test', 'live_route_census_for_test'], 'observer', 'directory capacity/census under its locks'],
+    ['src/registry/segment_route/directory/route_directory.rs', ['fail_next_registration_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
+    ['src/registry/segment_route/directory/route_directory.rs', ['with_initial_incarnation_for_test'], 'mutator', 'constructs isolated directory with chosen initial incarnation'],
+    ['src/registry/segment_route/directory/route_directory.rs', ['retained_pointer_capacity_for_test', 'moved_pointer_cells_for_test', 'shard_index_for_test', 'live_route_census_for_test'], 'observer', 'directory capacity/census under its locks'],
     ['src/registry/segment_route/small_sidecar.rs', ['class_at_for_test', 'mixed_leaves_for_test', 'system_totals_for_test'], 'observer', 'sidecar class/counter observations'],
     ['src/registry/segment_route/registration.rs', ['class_at_global_address_for_test'], 'observer', 'lookup pins independent sidecar before class read'],
     ['src/registry/segment_route/large_state.rs', ['word_for_test'], 'observer', 'atomic terminal state snapshot'],
@@ -429,7 +429,7 @@ export const REVIEWED_SURFACE = [
   ...[
     ['src/alloc_core/segment/segment_table/harness.rs', ['attach_routes_for_test', 'register_route_for_test'], 'mutator', 'exclusive owned fixture delegates to real attachment/registration; synthetic address keys never dereferenced and descriptors unlinked on drop'],
     ['src/global/maintenance_service.rs', ['try_fallback_step_for_test', 'fail_next_start_for_test', 'pause_start_for_test', 'wait_start_paused_for_test', 'fail_worker_for_test'], 'mutator', 'bounded maintenance step or explicit startup/worker fault injection; synchronization retained'],
-    ['src/registry/segment_route/directory.rs', ['fail_next_registrations_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
+    ['src/registry/segment_route/directory/route_directory.rs', ['fail_next_registrations_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
     ['src/registry/segment_route/small_sidecar.rs', ['fail_spill_after_for_test', 'fail_next_spills_for_test', 'fail_prepare_after_for_test'], 'mutator', 'atomic fallible preparation/spill fault injection'],
     ['src/registry/segment_route/small_sidecar.rs', ['spill_failures_remaining_for_test'], 'observer', 'atomic injection countdown'],
     ['src/registry/segment_route/small_sidecar.rs', ['owner_state_for_test'], 'unsafe', 'caller owns mapped reservation; raw metadata snapshot'],
@@ -445,8 +445,8 @@ export const REVIEWED_SURFACE = [
     ['src/concurrent/lock_free/lock_free_region.rs', ['_reset_page_arc_clones_for_tests'], 'mutator', 'TLS diagnostic counter only'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['bench-internals'] }))),
   { id: 'src/alloc_core/segment/segment_table/harness.rs::hide_root_for_test', kind: 'mutator', reason: 'isolated numeric harness; no dereference; external alloc_core module path requires internals, not a compilation gate', gates: [] },
-  { id: 'src/registry/segment_route/directory.rs::register', kind: 'mutator', reason: 'internals-only public form of the crate-only register_route; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
-  { id: 'src/registry/segment_route/directory.rs::lookup', kind: 'observer', reason: 'the real production lookup path; the pointer is only a numeric shard key, never dereferenced', gates: [] },
+  { id: 'src/registry/segment_route/directory/route_directory.rs::register', kind: 'mutator', reason: 'internals-only public form of the crate-only register_route; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
+  { id: 'src/registry/segment_route/directory/route_directory.rs::lookup', kind: 'observer', reason: 'the real production lookup path; the pointer is only a numeric shard key, never dereferenced', gates: [] },
   { id: 'src/registry/segment_route/pin.rs::contains_payload', kind: 'observer', reason: 'pure span-geometry comparison of the caller pointer against the pinned entry bounds; no dereference', gates: [] },
   { id: 'src/registry/heap_core/alloc/batch.rs::alloc_batch', kind: 'mutator', reason: 'production batch allocation path; writes issued block pointers into the caller-owned out slice', gates: [] },
   { id: 'src/alloc_core/segment/segment_table/harness.rs::insert', kind: 'mutator', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
@@ -846,7 +846,7 @@ function selfCheck() {
   function signatureCheck() {
     // R6-T38 signature rule: safe crate-public fns with raw-pointer parameters
     // are inventoried regardless of name.
-    const directory = 'src/registry/segment_route/directory.rs';
+    const directory = 'src/registry/segment_route/directory/route_directory.rs';
     const signature = '#[cfg(feature = "internals")]\nimpl RouteDirectory {\n  pub fn register(&self, root: *mut u8, len: usize, route_ptr: *mut u8, owner: usize) {}\n}';
     const signatureHook = scanFile(directory, signature);
     assert.equal(signatureHook.hooks.length, 1);

@@ -1,6 +1,6 @@
 //! Item 186 (R6-CC-8.3) shadow model: route pin acquisition under the shard
 //! lock versus unlink and last-pin release. Mirrors
-//! `src/registry/segment_route/directory.rs`: `lookup` checks index membership
+//! `src/registry/segment_route/directory/route_directory.rs`: `lookup` checks index membership
 //! and increments `refs` under the shard lock (`EntryHandle::pin_from_array`),
 //! `remove` unlinks under the same lock and the caller drops the owner
 //! reference only after the lock is released, and `EntryHandle::drop` frees
