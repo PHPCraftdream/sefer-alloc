@@ -3386,6 +3386,9 @@ jobs:
       # even when the directory sidecar is never actually reserved.
       - name: segment_directory_a5_miri
         run: cargo miri test --features "alloc-segment-directory internals" --test segment_directory_a5_miri
+      # Ghost-checks G1 (docs/GHOST_CHECKS_PLAN.md): ghost macros + shadow table, cfg(miri) is a ghost build.
+      - name: ghost_infra
+        run: cargo miri test --features "internals" --test ghost_infra
       # VER-03: explicit GREEN targets, matching scripts/miri-matrix.mjs.
       # Inherit strict provenance and Stacked Borrows from this job.
       - name: r11_ph4a_lease_miri
