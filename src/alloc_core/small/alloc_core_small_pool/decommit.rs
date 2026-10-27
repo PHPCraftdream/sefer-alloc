@@ -211,6 +211,10 @@ impl AllocCore {
         // exactly the granule range that can carry non-zero state bytes.
         let bump_before_reset = meta.bump_of();
         meta.set_bump(payload_start);
+        // U31: a threshold from the previous lifetime must not defer drains
+        // after the bump restarts at the payload start.
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        meta.set_sidecar_defer_window(0);
         // 2b. Empty every class free list.
         let mut bt = meta.bin_table();
         for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {

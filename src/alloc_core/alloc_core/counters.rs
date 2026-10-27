@@ -78,6 +78,12 @@ pub(crate) static B4_U31_SCAN_NO_PENDING: core::sync::atomic::AtomicU64 =
 pub(crate) static B4_U31_DISCOVERY_SCANS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// U31 activation oracle: routed linear scans that skipped their sidecar
+/// drains because the owner's deferral window was open (`scan_backoff.rs`).
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_U31_DEFERRED_SCANS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): route-directory
 /// lookups (`RouteDirectory::lookup`).
 #[cfg(feature = "bench-internals")]

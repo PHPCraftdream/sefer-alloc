@@ -1,0 +1,9 @@
+base: main 29b82b7da3b8f4ee003bec99abc0abf67164c6bc (short 29b82b7d)
+v2 commit: e25e7729c38a87fc6990bbe3c93ed133d3b07d73
+v1 measured: u31 37bf5a10 (prereg 2230eb4e + amendment 1); NO-GO on threshold 5
+v2 measured: u31 e25e7729 (amendment 3); ablation patches: u31-abl f77b9a0f (v1), 5d9f3160 (v2)
+rustc: rustc 1.97.0 (2d8144b78 2026-07-07)
+os: Windows 10 Pro 10.0.19045 (native runs); WSL2 Linux 6.18.33.2-microsoft-standard-WSL2 x86_64 (callgrind, peak RSS)
+cpu: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+RUSTFLAGS (native builds): -C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5
+features: production internals (u31_growth_wall, ph6b_mt_ab); production bench-internals internals (callgrind probe ut_u31_probe); production ablate (judge)

@@ -75,6 +75,12 @@ fn routed_miss_scan_outcomes_are_exclusive_and_classified() {
         live.push(ptr);
     }
 
+    // U31: the setup above ran empty multi-segment scans, so small_cur's
+    // sidecar-drain deferral window may be open. Close it so (c) runs a real
+    // drain scan; (b) — no carve since (c) — then drains as well (the
+    // no-carve rule in scan_backoff.rs).
+    core.dbg_close_sidecar_defer_window();
+
     // (c) Nothing: the directory is right, the scan finds no block.
     let before = snap();
     assert!(core.dbg_find_segment_with_free(0).is_none());

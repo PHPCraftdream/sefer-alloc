@@ -1,0 +1,29 @@
+git_diff_sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+bin ~/ab/tgt-ut-u31v3/release/examples/ut_u31_probe
+IR_TOTAL sefer 32768 7234186
+SELF_IR scan.rs=135163 bitmap_scan.rs=54089 sum=189252 total=7234186
+ATTR_TOTALS RESIDUAL annotated=4540600 program=7234186 uncovered=2693586
+IR_TOTAL sefer 65536 13909097
+SELF_IR scan.rs=266664 bitmap_scan.rs=104327 sum=370991 total=13909097
+ATTR_TOTALS RESIDUAL annotated=8925604 program=13909097 uncovered=4983493
+IR_TOTAL sefer 131072 27271824
+SELF_IR scan.rs=529276 bitmap_scan.rs=214173 sum=743449 total=27271824
+ATTR_TOTALS RESIDUAL annotated=17704242 program=27271824 uncovered=9567582
+IR_TOTAL mimalloc 32768 3431756
+SELF_IR scan.rs=0 bitmap_scan.rs=0 sum=0 total=3431756
+ATTR_TOTALS RESIDUAL annotated=2718903 program=3431756 uncovered=712853
+IR_TOTAL mimalloc 65536 6359774
+SELF_IR scan.rs=0 bitmap_scan.rs=0 sum=0 total=6359774
+ATTR_TOTALS RESIDUAL annotated=5285559 program=6359774 uncovered=1074215
+IR_TOTAL mimalloc 131072 12216509
+SELF_IR scan.rs=0 bitmap_scan.rs=0 sum=0 total=12216509
+ATTR_TOTALS RESIDUAL annotated=10419523 program=12216509 uncovered=1796986
+COUNTERS {"mode":"sefer","growth16_n":32768,"find_segment_calls":2048,"scan_calls":105,"scan_words":8638,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":32768,"u31_scan_segments":105,"u31_holders_base":105,"u31_scan_no_pending":105,"u31_discovery_scans":105}
+{"growth16_n":32768,"u31_deferred_scans":1943}
+COUNTERS {"mode":"sefer","growth16_n":65536,"find_segment_calls":4096,"scan_calls":116,"scan_words":16666,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":65536,"u31_scan_segments":116,"u31_holders_base":116,"u31_scan_no_pending":116,"u31_discovery_scans":116}
+{"growth16_n":65536,"u31_deferred_scans":3980}
+COUNTERS {"mode":"sefer","growth16_n":131072,"find_segment_calls":8192,"scan_calls":128,"scan_words":34287,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":131072,"u31_scan_segments":128,"u31_holders_base":128,"u31_scan_no_pending":128,"u31_discovery_scans":128}
+{"growth16_n":131072,"u31_deferred_scans":8064}

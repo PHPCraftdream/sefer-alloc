@@ -26,6 +26,9 @@ struct LinearScanContext {
     periodic_revalidation_active: bool,
     #[cfg(feature = "alloc-stats")]
     routed_miss_scan: bool,
+    /// U31: skip the sidecar drains (deferral window open; never on rescue).
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    defer_drains: bool,
 }
 
 #[derive(Default)]
@@ -229,6 +232,19 @@ impl AllocCore {
         // directory path can use it.
         #[cfg(feature = "numa-aware")]
         let my_node = self.current_node_cached();
+        // U31: decided before any drain; the OOM rescue scan never defers.
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        let defer_drains = {
+            #[cfg(feature = "alloc-segment-directory")]
+            let rescue = _context.rescue;
+            #[cfg(not(feature = "alloc-segment-directory"))]
+            let rescue = false;
+            !rescue
+                && self.table.is_routed()
+                && self.sidecar_drains_deferred(
+                    crate::alloc_core::size_classes::SizeClasses::block_size(class_idx),
+                )
+        };
         #[cfg(feature = "alloc-segment-directory")]
         if !self.directory_sidecar.is_null() {
             if let Some(base) = self.scan_directory_candidates(
@@ -287,6 +303,8 @@ impl AllocCore {
                 periodic_revalidation_active,
                 #[cfg(feature = "alloc-stats")]
                 routed_miss_scan,
+                #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+                defer_drains,
             },
         );
         if let Some(base) = found {
@@ -474,6 +492,24 @@ impl AllocCore {
         let periodic_revalidation_active = _scan_context.periodic_revalidation_active;
         #[cfg(feature = "alloc-stats")]
         let routed_miss_scan = _scan_context.routed_miss_scan;
+        // U31: sidecar range drained by this scan and whether any drain
+        // reclaimed; an all-`Skipped` miss extends the empty-scan streak and,
+        // once it is long enough, opens the deferral window below.
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        let defer_drains = _scan_context.defer_drains;
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        let mut drained_bytes = 0usize;
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        let mut reclaimed = false;
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            feature = "bench-internals"
+        ))]
+        if defer_drains {
+            crate::alloc_core::B4_U31_DEFERRED_SCANS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
         // Guarded fallback covers routed negative-directory, rescue, and
         // no-directory modes. Enumerate active-Small slots; each canonical
         // root is read fresh before a possible recycle; no iterator, root
@@ -551,8 +587,21 @@ impl AllocCore {
                 let was_nonempty = routed_miss_scan && pre_nonempty;
                 // Consume only this canonical candidate before inspecting its bins.
                 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-                if !pre_nonempty {
-                    match self.drain_segment_sidecar(base) {
+                if !pre_nonempty && !defer_drains {
+                    // Scanned payload range, read before the drain can release
+                    // the reservation.
+                    drained_bytes = drained_bytes.saturating_add(
+                        SegmentMeta::new(base).bump_of().saturating_sub(
+                            Self::sidecar_payload_start_word(base) * SIDECAR_WORD_BYTES,
+                        ),
+                    );
+                    let outcome = self.drain_segment_sidecar(base);
+                    // U31: a reclaiming drain resets small_cur's empty-scan streak.
+                    if !reclaimed && !matches!(outcome, SidecarDrainOutcome::Skipped) {
+                        reclaimed = true;
+                        self.reset_sidecar_defer_streak();
+                    }
+                    match outcome {
                         // Decommitted+released: `base` is unmapped — skip the
                         // BinTable check in THIS scan. Decommitted+pooled: `base`
                         // is still live/registered/committed (R1-03) — fall
@@ -561,9 +610,7 @@ impl AllocCore {
                         // in this very scan (see `SidecarDrainOutcome`'s doc).
                         #[cfg(feature = "alloc-decommit")]
                         SidecarDrainOutcome::Decommitted { pooled: false } => continue,
-                        #[cfg(feature = "alloc-decommit")]
-                        SidecarDrainOutcome::Decommitted { pooled: true } => {}
-                        SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
+                        _ => {}
                     }
                 }
                 let meta = SegmentMeta::new(base);
@@ -665,6 +712,10 @@ impl AllocCore {
                     crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_NOTHING
                         .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 }
+                #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+                if drained_bytes != 0 && !reclaimed {
+                    self.note_empty_sidecar_scan(drained_bytes);
+                }
             }
             fallback
         }
@@ -674,6 +725,10 @@ impl AllocCore {
             if routed_miss_scan {
                 crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_NOTHING
                     .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            }
+            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+            if drained_bytes != 0 && !reclaimed {
+                self.note_empty_sidecar_scan(drained_bytes);
             }
             None
         }

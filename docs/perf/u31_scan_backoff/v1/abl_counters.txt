@@ -1,0 +1,11 @@
+pair16 U31_COUNTERS base_find=1 base_scan=1 base_words=0 var_find=1 var_scan=1 var_words=0 var_deferred=0
+pair64 U31_COUNTERS base_find=1 base_scan=1 base_words=0 var_find=1 var_scan=1 var_words=0 var_deferred=0
+pair_rt U31_COUNTERS base_find=7 base_scan=7 base_words=25 var_find=7 var_scan=6 var_words=20 var_deferred=1
+bulk64 U31_COUNTERS base_find=4 base_scan=4 base_words=6 var_find=4 var_scan=4 var_words=6 var_deferred=0
+bulk16k U31_COUNTERS base_find=1024 base_scan=1024 base_words=523776 var_find=1024 var_scan=46 var_words=8123 var_deferred=978
+churn16 U31_COUNTERS base_find=16 base_scan=16 base_words=36 var_find=16 var_scan=14 var_words=28 var_deferred=2
+churn64 U31_COUNTERS base_find=16 base_scan=16 base_words=120 var_find=16 var_scan=13 var_words=84 var_deferred=3
+churn256 U31_COUNTERS base_find=16 base_scan=16 base_words=480 var_find=16 var_scan=13 var_words=336 var_deferred=3
+churn1024 U31_COUNTERS base_find=16 base_scan=16 base_words=1920 var_find=16 var_scan=13 var_words=1344 var_deferred=3
+vec512 U31_COUNTERS base_find=9 base_scan=9 base_words=134 var_find=9 var_scan=9 var_words=134 var_deferred=0
+larson U31_COUNTERS base_find=98 base_scan=98 base_words=18577 var_find=98 var_scan=23 var_words=2372 var_deferred=75

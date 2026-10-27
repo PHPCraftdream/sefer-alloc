@@ -263,6 +263,22 @@ impl SegmentMeta {
         Node::write_usize(Node::offset(self.base, off) as *mut usize, value);
     }
 
+    /// U31: owner-only packed sidecar-drain deferral window (0 = none).
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[inline(always)]
+    pub(crate) fn sidecar_defer_window_of(&self) -> u32 {
+        let off = core::mem::offset_of!(SegmentHeader, sidecar_defer_window);
+        Node::read_u32(Node::offset(self.base, off) as *const u32)
+    }
+
+    /// U31: set the owner-only packed deferral window.
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[inline(always)]
+    pub(crate) fn set_sidecar_defer_window(&mut self, value: u32) {
+        let off = core::mem::offset_of!(SegmentHeader, sidecar_defer_window);
+        Node::write_u32(Node::offset(self.base, off) as *mut u32, value);
+    }
+
     /// The page-map view.
     ///
     /// R12-11 (task #262): diagnostic-only — see `PageMap`'s struct doc.

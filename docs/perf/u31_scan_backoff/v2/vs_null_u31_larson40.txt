@@ -1,0 +1,9 @@
+# B4 ABLATE — variant net of null: variant=u31_scan_backoff reps=40 blocks/process=2000 bootstrap=2000
+# identity: head=5d9f3160856cfb779f5db58df2c446c66ddfb76d sha(diff)=e3b0c44298fc variant_sha=98416f01ddc5 exe=1bb3ff292baf null_exe=25f9c460ba5b
+# effect = median_processes ln(t_variant/t_sefer) − median_processes ln(t_null/t_sefer); NET_FASTER iff CI upper < 0, NET_SLOWER iff CI lower > 0
+
+| Kernel | variant A/B % | null A/B % [CI] | effect % [CI] | ratio exp(effect) | precise | verdict |
+|---|---:|---|---|---:|---|---|
+| larson | 0.80 | 1.35 [0.94, 1.66] | -0.54 [-1.16, 0.06] | 0.9946 | yes | EQUAL_CI_HAS_0 |
+# wrote vsnull_u31_larson40.csv
+RC=0

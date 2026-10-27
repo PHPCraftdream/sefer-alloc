@@ -1,0 +1,10 @@
+        #[cfg(all(feature = "ablate", feature = "bench-internals"))]
+        {
+            let b = sefer_alloc::SeferAlloc::dbg_b4_collapse_counters();
+            let v = sefer_alloc_variant::SeferAlloc::dbg_b4_collapse_counters();
+            println!(
+                "U31_COUNTERS base_find={} base_scan={} base_words={} var_find={} var_scan={} var_words={} var_deferred={}",
+                b[0], b[1], b[2], v[0], v[1], v[2],
+                sefer_alloc_variant::SeferAlloc::dbg_b4_u31_deferred_scans()
+            );
+        }
