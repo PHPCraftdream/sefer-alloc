@@ -105,6 +105,11 @@ jobs:
       - run: node scripts/verify-miri-target-wiring.mjs
       - run: node scripts/verify-root-package-list.mjs
       - run: node scripts/verify-no-bare-abort.mjs
+      # Ghost-checks G0 (docs/GHOST_CHECKS_PLAN.md): every ordering site claimed by exactly one
+      # catalog scope, the scanner's self-test and mutants, and the generated inventory is fresh.
+      - run: node scripts/ghost_inventory.mjs --check --report docs/verification/GHOST_INVENTORY.md
+      - run: node scripts/ghost_inventory_mutants.mjs
+      - run: git diff --exit-code -- docs/verification/
       # B4-30 fix8 (P2-4): cargo-free gate for the measurement-logic pin of
       # tests/b4_30_first_alloc_min_stack.rs. RC=1 on any change to the
       # measurement logic (REPEATS, stride window, anchors, budget mapping)

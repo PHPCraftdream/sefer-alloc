@@ -1,0 +1,981 @@
+{
+  "version": 1,
+  "doc": "Ghost-checks catalog (docs/GHOST_CHECKS_PLAN.md). `protocols` — G0 inventory to invariant level; `scopes` — every atomic/ordering site in src/** and crates/*/src/** claimed by exactly one scope (scripts/ghost_inventory.mjs --check); `rules` — per-site lint rules, filled from G1 on.",
+  "protocols": [
+    {
+      "id": "P1",
+      "name": "HeapLease FREE->LIVE claim / LIVE->FREE Release drop",
+      "prod": [
+        "src/registry/heap_registry/claim.rs::claim_impl",
+        "src/registry/heap_registry/claim.rs::drop",
+        "src/registry/heap_slot.rs::cas_state"
+      ],
+      "invariants": [
+        "I1 exactly one thread wins FREE->LIVE for a slot; a losing CAS performs no metadata write, no drain and no drop",
+        "I2 every owner write to slot metadata happens-before the next claimant's first read: LIVE->FREE is a Release CAS paired with the claimant's Acquire success ordering",
+        "I3 only the lease holder mutates slot metadata between claim and drop"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_r11_ph4a_heap_lease.rs"
+      ],
+      "pins": [
+        "tests/r11_ph4a_drop_ordering_pinned.rs"
+      ],
+      "registry": [
+        "R4a-05",
+        "R4a-06",
+        "R4a-07",
+        "R4a-08",
+        "R4a-09",
+        "R4c-09"
+      ],
+      "real_under_loom": "no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone",
+      "decision": "partial-translate",
+      "phase": "G3",
+      "reason": "translate the HeapSlot state machine (heap_slot.rs cas_state + the claim/drop call-site orderings) via #[path]; registry bootstrap stays a shadow model bound by R8"
+    },
+    {
+      "id": "P2",
+      "name": "MaintenanceLease FREE->MAINTENANCE",
+      "prod": [
+        "src/registry/heap_registry/claim.rs::try_maintenance_at",
+        "src/registry/heap_registry/claim.rs::drop"
+      ],
+      "invariants": [
+        "I1 a failed FREE->MAINTENANCE CAS never creates a second metadata mutator",
+        "I2 MAINTENANCE->FREE is a Release CAS; the next LIVE claimant observes every maintenance write"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_r8_maintenance_lease.rs"
+      ],
+      "pins": [],
+      "registry": [
+        "R4c-19"
+      ],
+      "real_under_loom": "no: same registry bootstrap as P1",
+      "decision": "keep+R8",
+      "phase": "G4",
+      "reason": "shares HeapSlot::cas_state with P1; the model's orderings are bound to the try_maintenance_at / MaintenanceLease::drop call sites"
+    },
+    {
+      "id": "P3",
+      "name": "publish || recycle || drain (TORN stamp, trim, drop, claimant drain)",
+      "prod": [
+        "src/registry/heap_core/state/ownership.rs::trim_for_recycle",
+        "src/registry/heap_core_xthread/sidecar_drain.rs",
+        "src/registry/heap_registry/claim.rs::drop"
+      ],
+      "invariants": [
+        "I1 a publication made before, during or after the owner's trim is consumed exactly once (trim or claimant drain) or survives pending for the next owner",
+        "I2 trim_for_recycle drains before the LIVE->FREE Release",
+        "I3 only the current lease holder drains"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_r11_ph4b_publish_recycle_drain.rs"
+      ],
+      "pins": [
+        "tests/r11_ph4b_teardown_ordering_pinned.rs",
+        "tests/r11_ph4b_local_no_drop_pinned.rs"
+      ],
+      "registry": [
+        "R4b-03",
+        "R4b-13",
+        "R4b-14",
+        "R4b-15"
+      ],
+      "real_under_loom": "no: drain runs through HeapCore + AllocCore segment tables",
+      "decision": "keep+R8+ghost",
+      "phase": "G3",
+      "reason": "R4b-13/14 are INCONCLUSIVE because L1/L2 mutants in claim.rs are not seen by the model; R1 on the cas_state call sites catches them in prod code, R8 binds the model constants, ghost_event! counts consumption under the real drain (miri)",
+      "atomics": "its orderings are P1 (HeapSlot::cas_state call sites) and P7 (sidecar publish/cut); trim/drain order and consumption are sequence/ghost properties (R3, ghost_event!)"
+    },
+    {
+      "id": "P4",
+      "name": "registry claim/selector, free-set, spill, saturation",
+      "prod": [
+        "src/registry/heap_registry/stack.rs",
+        "src/registry/bootstrap/free_slot_hint.rs",
+        "src/registry/bootstrap/saturation.rs",
+        "src/registry/heap_registry/claim.rs::claim_impl"
+      ],
+      "invariants": [
+        "I1 count only grows (bump_count CAS) and every slot below count is initialised before it is published (initialised Release / Acquire)",
+        "I2 a free-set bit is set only after the slot is FREE (publish Release) and a taker clears it with AcqRel before claiming",
+        "I3 the summary word never hides a non-empty word (clear_summary_recheck re-publishes)",
+        "I4 saturation is monotone until publish_claimable clears it"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_r11_registry_claim.rs",
+        "tests/loom_r6_selector_model.rs",
+        "tests/loom_r19_registry_free_set.rs",
+        "tests/loom_r20_heap_reuse_spill.rs",
+        "tests/loom_registry_free_slots.rs"
+      ],
+      "pins": [],
+      "registry": [
+        "R4c-02"
+      ],
+      "real_under_loom": "partial: FreeSlotHint and SaturationHint are self-contained structs on core atomics (translatable via #[path]); stack.rs scans walk the static registry",
+      "decision": "translate(free_slot_hint, saturation) + keep+R8(stack scans)",
+      "phase": "G5",
+      "reason": "two of five models can run the real struct; the scan/claim composition needs the registry"
+    },
+    {
+      "id": "P5",
+      "name": "route pin: lookup || unlink || last-pin release",
+      "prod": [
+        "src/registry/segment_route/directory.rs::pin_from_array",
+        "src/registry/segment_route/directory.rs::drop",
+        "src/registry/segment_route/directory.rs::remove",
+        "src/registry/segment_route/pin.rs::linked",
+        "src/registry/segment_route/shard_lock.rs"
+      ],
+      "invariants": [
+        "I1 a pin is taken only under the shard lock while the entry is indexed (refs fetch_update AcqRel)",
+        "I2 the sidecar is freed only by the thread whose fetch_sub(AcqRel) returns 1",
+        "I3 lookup after remove never yields a pin; linked is cleared with Release before unlink",
+        "I4 Block/BlockIndex/spare atomics are Relaxed and touched only under the shard lock"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_route_pin_unlink.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "likely: EntryHandle/Entry are plain structs over core atomics; ShardLock is a spin lock on one AtomicBool",
+      "decision": "translate",
+      "phase": "G2",
+      "reason": "pilot: correctness item 186"
+    },
+    {
+      "id": "P6",
+      "name": "route pin cache fast path",
+      "prod": [
+        "src/registry/heap_core_xthread/route_pin_cache.rs"
+      ],
+      "invariants": [
+        "I1 a cached pin is reused only while it holds its own ref; eviction drops exactly one ref",
+        "I2 the cache is thread-local; no cross-thread access"
+      ],
+      "class": "A",
+      "loom": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "yes (already #[path])",
+      "decision": "ghost",
+      "phase": "G6",
+      "reason": "real source already runs; add ghost checks + R5",
+      "atomics": "the cache is thread-local; the only cross-thread word it touches is P5's Entry::refs through EntryHandle (its own atomics are counters)"
+    },
+    {
+      "id": "P7",
+      "name": "sidecar bitmap: publish / guarded cut / scan",
+      "prod": [
+        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+        "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs",
+        "src/alloc_core/segment/remote_bitmap/bitmap_cut.rs"
+      ],
+      "invariants": [
+        "I1 every published offset is cut exactly once",
+        "I2 publish is fetch_or AcqRel after the class store Release; cut is swap AcqRel"
+      ],
+      "class": "A+S",
+      "loom": [
+        "tests/loom_sidecar_bitmap_actual.rs",
+        "tests/loom_b4_scan_skip_empty_publish.rs",
+        "tests/loom_sidecar_bitmap.rs"
+      ],
+      "pins": [
+        "tests/r11_ph5b_c5_sidecar_ordering_pinned.rs"
+      ],
+      "registry": [
+        "R0-21"
+      ],
+      "real_under_loom": "yes (loom_sidecar_bitmap_actual.rs)",
+      "decision": "ghost + retire shadow",
+      "phase": "G6",
+      "reason": "real source covers the shadow model; the shadow loom_sidecar_bitmap.rs is retired only after its mutants go red on the actual-source test"
+    },
+    {
+      "id": "P8",
+      "name": "small sidecar: leaf pointer publication, pin lifetime",
+      "prod": [
+        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+        "src/registry/segment_route/small_sidecar.rs"
+      ],
+      "invariants": [
+        "I1 a leaf pointer is published (mixed store Release, present fetch_or Release) only after the leaf is fully initialised",
+        "I2 a reader resolves a leaf only with Acquire and only while holding a route pin"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_r11_small_sidecar.rs"
+      ],
+      "pins": [],
+      "registry": [
+        "R0-22"
+      ],
+      "real_under_loom": "partial: ClassLeaves allocates leaves through the OS seam (cfg(loom) twin, P18)",
+      "decision": "translate",
+      "phase": "G6",
+      "reason": "ClassLeaves already has a loom twin for leaf init; the model can drive the real struct"
+    },
+    {
+      "id": "P9",
+      "name": "terminal Large: phase word",
+      "prod": [
+        "src/alloc_core/large/reservation_state.rs",
+        "src/registry/segment_route/large_state.rs",
+        "src/alloc_core/segment/segment_header/terminal_words.rs",
+        "src/registry/segment_route/pin.rs::publish_large"
+      ],
+      "invariants": [
+        "I1 the phase word moves only along the transition relation (kani large_state_proofs)",
+        "I2 every transition CAS is AcqRel/Acquire; a terminal publication is the producer's last reservation access"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "pins": [],
+      "registry": [
+        "R0-21"
+      ],
+      "real_under_loom": "yes: LargeReservationState wraps one &AtomicU64",
+      "decision": "translate",
+      "phase": "G6",
+      "reason": "state word struct is self-contained"
+    },
+    {
+      "id": "P10",
+      "name": "terminal owner drain: owner credits || cut",
+      "prod": [
+        "src/alloc_core/alloc_core/sidecar_drain.rs",
+        "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs::next_cut"
+      ],
+      "invariants": [
+        "I1 credits are mutated only by the owner (plain fields, no atomics)",
+        "I2 a terminal cut consumes each pending bit once"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "pins": [],
+      "registry": [
+        "R0-21",
+        "R5b-10"
+      ],
+      "real_under_loom": "no: credits live in AllocCore",
+      "decision": "keep+R5",
+      "phase": "G6",
+      "reason": "invariant is a sole-writer property: R5 pins credit writes to owner functions",
+      "atomics": "owner credits are plain fields of AllocCore; the cut is P7's BitmapScan::next_cut swap"
+    },
+    {
+      "id": "P11",
+      "name": "active-kind index membership || terminal publication",
+      "prod": [
+        "src/alloc_core/segment/segment_table/active_kind_index.rs",
+        "src/alloc_core/segment/segment_table/active_kind_ops.rs",
+        "src/alloc_core/alloc_core/sidecar_drain.rs"
+      ],
+      "invariants": [
+        "I1 the owner alone owns the membership bit (plain)",
+        "I2 a segment is removed from the active-kind index only after its pending credit is consumed or it is reservation-dead"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_active_kind_index.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "no: index is part of SegmentTable",
+      "decision": "keep+R5+R3",
+      "phase": "G6",
+      "reason": "membership is owner-plain; R3 pins 'consume pending before clear'",
+      "atomics": "membership is a plain owner bit in SegmentTable; producer side is P7's pending fetch_or"
+    },
+    {
+      "id": "P12",
+      "name": "depot across slot recycle",
+      "prod": [
+        "src/registry/heap_core/state/depot.rs",
+        "src/registry/heap_core/state/depot_paths.rs",
+        "src/registry/heap_core/state/ownership.rs::trim_for_recycle"
+      ],
+      "invariants": [
+        "I1 the depot is empty at LIVE->FREE (drained in trim_for_recycle before the Release)",
+        "I2 only the current lease holder touches the depot"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_depot_recycle_handoff.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "no: owner-only plain storage bound as &'static mut",
+      "decision": "keep+R8+R3+R5",
+      "phase": "G4",
+      "reason": "no atomics of its own; R3 (drain before Release) and R5 (depot only from owner paths)",
+      "atomics": "the depot is plain owner-only storage; its cross-thread safety is P1's LIVE->FREE Release / claim Acquire"
+    },
+    {
+      "id": "P13",
+      "name": "epoch region remote-free pending flag (false full)",
+      "prod": [
+        "src/concurrent/epoch/epoch_region.rs::drain_remote_free",
+        "src/concurrent/epoch/epoch_region.rs::remote_evict"
+      ],
+      "invariants": [
+        "I1 a remote eviction sets remote_free_pending after pushing to the remote list (under the list mutex)",
+        "I2 a full region drains the remote list before reporting full"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_r11_epoch_false_full.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "no: crossbeam-epoch (P14)",
+      "decision": "keep+R8",
+      "phase": "G8",
+      "reason": "loom and crossbeam-epoch are incompatible"
+    },
+    {
+      "id": "P14",
+      "name": "epoch AtomicSlot generation/value publication",
+      "prod": [
+        "src/concurrent/epoch/hand.rs",
+        "src/concurrent/epoch/epoch_region.rs"
+      ],
+      "invariants": [
+        "I1 value is stored Release before generation is observed; readers load generation Acquire, value Acquire, generation Acquire (seqlock-style recheck)",
+        "I2 eviction CASes generation AcqRel then swaps value AcqRel"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_epoch.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "no: crossbeam-epoch",
+      "decision": "keep+R8",
+      "phase": "G8",
+      "reason": "permanent shadow"
+    },
+    {
+      "id": "P15",
+      "name": "sharded region generation-CAS eviction, token blocks",
+      "prod": [
+        "src/concurrent/sharded/sharded_region.rs"
+      ],
+      "invariants": [
+        "I1 a shard claim CAS (Acquire) pairs with the guard's Release store",
+        "I2 TOKEN_BACKING_DEATHS is bumped Release after a token block dies; claimers prune with Acquire"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_sharded.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "no: crossbeam-epoch",
+      "decision": "keep+R8",
+      "phase": "G8",
+      "reason": "permanent shadow"
+    },
+    {
+      "id": "P16",
+      "name": "summary-hint C''' (not shipped)",
+      "prod": [],
+      "invariants": [],
+      "class": "none",
+      "loom": [
+        "tests/loom_sidecar_summary.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "n/a",
+      "decision": "archive",
+      "phase": "-",
+      "reason": "owner decision 2026-10-27: kept as an archived model of a rejected protocol (docs/perf/OPEN_ITEMS.md item 82); not in the rule catalog"
+    },
+    {
+      "id": "P17",
+      "name": "bootstrap const OncePtrCell stand-in under loom",
+      "prod": [
+        "src/registry/bootstrap/loom_shim.rs",
+        "src/registry/bootstrap/ensure.rs",
+        "src/registry/bootstrap/registry.rs"
+      ],
+      "invariants": [
+        "I1 the loom stand-in performs the same atomic sequence and orderings as crates/once-ptr-cell (load Acquire, CAS Acquire/Relaxed, store Release, rollback store Release)"
+      ],
+      "class": "T",
+      "loom": [],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "is the loom twin",
+      "decision": "R7",
+      "phase": "G7",
+      "reason": "twin equivalence"
+    },
+    {
+      "id": "P18",
+      "name": "cfg(loom) twins in crates and leaf init",
+      "prod": [
+        "crates/once-ptr-cell/src/imp.rs",
+        "crates/tagged-index-stack/src/imp.rs",
+        "crates/aligned-vmem/src/mock.rs",
+        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+        "src/registry/heap_core_xthread/route_pin_cache.rs"
+      ],
+      "invariants": [
+        "I1 each loom twin has the same normalized atomic sequence as its prod item; allowed differences are listed with a reason"
+      ],
+      "class": "T",
+      "loom": [
+        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "crates/tagged-index-stack/tests/loom_aba.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "crate tests run the real crate under loom",
+      "decision": "R7",
+      "phase": "G7",
+      "reason": "twin equivalence"
+    },
+    {
+      "id": "P19",
+      "name": "fallback heap one-time init + fallback lock (global/fallback.rs)",
+      "prod": [
+        "src/global/fallback.rs::heap_ptr_impl",
+        "src/global/fallback.rs::try_with_heap",
+        "src/global/fallback.rs::acquire",
+        "src/global/fallback.rs::drop"
+      ],
+      "invariants": [
+        "I1 INIT_STATE: exactly one initialiser wins the CAS (Acquire/Relaxed); the heap is published with a Release store, readers load Acquire; a panicking init rolls back with Release",
+        "I2 LOCK: test-and-set spin lock, CAS Acquire on acquire, Release store on drop"
+      ],
+      "class": "none",
+      "loom": [],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "unknown (G0 finding: no loom model exists)",
+      "decision": "new-model",
+      "phase": "G6",
+      "reason": "G0 finding: protocol with Acquire/Release pairs and no loom/shadow model; covered today only by r6_*/con01_* integration tests"
+    },
+    {
+      "id": "P20",
+      "name": "maintenance service start/worker state",
+      "prod": [
+        "src/global/maintenance_service.rs::start",
+        "src/global/maintenance_service.rs::worker",
+        "src/global/maintenance_service.rs::drop"
+      ],
+      "invariants": [
+        "I1 STATE: one starter wins the CAS (AcqRel/Acquire); the worker publishes its exit with a Release store; running() loads Acquire",
+        "I2 PASSES is bumped Release after a completed pass; waiters load Acquire"
+      ],
+      "class": "none",
+      "loom": [],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "unknown (G0 finding: no loom model exists)",
+      "decision": "new-model",
+      "phase": "G6",
+      "reason": "G0 finding: covered only by r6_t35_start_confirmation_bound / r8_autonomous_maintenance integration tests"
+    },
+    {
+      "id": "P21",
+      "name": "exact-object shard lock + live hint",
+      "prod": [
+        "src/global/exact_object/exact_shard.rs"
+      ],
+      "invariants": [
+        "I1 lock: CAS-weak Acquire/Relaxed, release store Release",
+        "I2 live_hint is a hint: stored Release under the lock, read Acquire; a stale hint only costs a lock round"
+      ],
+      "class": "none",
+      "loom": [],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "likely: ExactShard is a small struct",
+      "decision": "new-model",
+      "phase": "G6",
+      "reason": "G0 finding: lock protocol with no loom model"
+    },
+    {
+      "id": "P22",
+      "name": "route ShardLock (spin lock over the directory shard)",
+      "prod": [
+        "src/registry/segment_route/shard_lock.rs"
+      ],
+      "invariants": [
+        "I1 CAS-weak Acquire/Relaxed on lock, Release store on ShardGuard drop",
+        "I2 lock_unless_exiting never spins forever during process exit"
+      ],
+      "class": "S",
+      "loom": [
+        "tests/loom_route_pin_unlink.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "yes: one AtomicBool",
+      "decision": "translate (with P5)",
+      "phase": "G2",
+      "reason": "loom_route_pin_unlink models it as loom::sync::Mutex; the pilot runs the real ShardLock"
+    }
+  ],
+  "scopes": [
+    {
+      "id": "P1/heap-slot-cas",
+      "class": "protocol",
+      "protocol": "P1",
+      "files": [
+        "src/registry/heap_slot.rs"
+      ],
+      "fn": "^cas_state$",
+      "reason": "the one CAS on HeapSlot::state; orderings come from call sites"
+    },
+    {
+      "id": "P1/claim-call-sites",
+      "class": "protocol",
+      "protocol": "P1",
+      "files": [
+        "src/registry/heap_registry/claim.rs"
+      ],
+      "fn": "^(claim_impl|drop|push_back_after_oom|claim_lease_with_config)$",
+      "receiver_not": "^(reuse_hint|reg\\.reuse_hint|ensure\\(\\)\\.reuse_hint|super::counters::.*|CONFIG_CONFLICTS|DBG_INJECT_CTOR_OOM)$",
+      "reason": "claim CASes, generation/initialised publication, lease drops"
+    },
+    {
+      "id": "P2/maintenance",
+      "class": "protocol",
+      "protocol": "P2",
+      "files": [
+        "src/registry/heap_registry/claim.rs"
+      ],
+      "fn": "^try_maintenance_at$",
+      "reason": "FREE->MAINTENANCE claim"
+    },
+    {
+      "id": "P4/reuse-hint",
+      "class": "protocol",
+      "protocol": "P4",
+      "files": [
+        "src/registry/heap_registry/claim.rs"
+      ],
+      "receiver": "reuse_hint$",
+      "reason": "reuse hint swap (Relaxed by design: a hint, validated by the state CAS)"
+    },
+    {
+      "id": "P4/stack-scans",
+      "class": "protocol",
+      "protocol": "P4",
+      "files": [
+        "src/registry/heap_registry/stack.rs",
+        "src/registry/heap_registry/maintenance.rs"
+      ],
+      "reason": "count/initialised/state scans, bump_count, hint spill"
+    },
+    {
+      "id": "P4/free-slot-hint",
+      "class": "protocol",
+      "protocol": "P4",
+      "files": [
+        "src/registry/bootstrap/free_slot_hint.rs"
+      ],
+      "reason": "free-set bitmap + summary"
+    },
+    {
+      "id": "P4/saturation",
+      "class": "protocol",
+      "protocol": "P4",
+      "files": [
+        "src/registry/bootstrap/saturation.rs"
+      ],
+      "reason": "saturation hint"
+    },
+    {
+      "id": "P4/registry-walk",
+      "class": "protocol",
+      "protocol": "P4",
+      "files": [
+        "src/registry/heap_registry/counters.rs"
+      ],
+      "fn": "^walk_initialised_slots$",
+      "reason": "stats walk relies on count/initialised Acquire publication"
+    },
+    {
+      "id": "P5/directory-pin",
+      "class": "protocol",
+      "protocol": "P5",
+      "files": [
+        "src/registry/segment_route/directory.rs"
+      ],
+      "receiver": "refs$|linked$",
+      "reason": "pin refcount and linked flag"
+    },
+    {
+      "id": "P5/directory-locked",
+      "class": "lock-local",
+      "protocol": "P5",
+      "files": [
+        "src/registry/segment_route/directory.rs"
+      ],
+      "receiver_not": "refs$|linked$|B4_DIRECTORY_LOOKUPS$|next_incarnation$",
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "Block/BlockIndex/spare/ptr/root/sidecar atomics are Relaxed and touched under the shard lock or via an owned pin (I4)"
+    },
+    {
+      "id": "P5/pin-linked",
+      "class": "protocol",
+      "protocol": "P5",
+      "files": [
+        "src/registry/segment_route/pin.rs"
+      ],
+      "reason": "RoutePin::linked Acquire"
+    },
+    {
+      "id": "P22/shard-lock",
+      "class": "protocol",
+      "protocol": "P22",
+      "files": [
+        "src/registry/segment_route/shard_lock.rs"
+      ],
+      "receiver": "locked$",
+      "reason": "spin lock"
+    },
+    {
+      "id": "P7/sidecar-bitmap",
+      "class": "protocol",
+      "protocol": "P7",
+      "files": [
+        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+        "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs"
+      ],
+      "reason": "publish fetch_or / class store / cut swap"
+    },
+    {
+      "id": "P8/leaf-classes",
+      "class": "protocol",
+      "protocol": "P8",
+      "files": [
+        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs"
+      ],
+      "receiver_not": "^(ALLOC_BYTES|ZEROED_BYTES|FREE_BYTES|ALLOC_COUNT|FREE_COUNT)$",
+      "fn_not": "^drop$",
+      "reason": "leaf publication"
+    },
+    {
+      "id": "P8/leaf-classes-drop",
+      "class": "lock-local",
+      "protocol": "P8",
+      "files": [
+        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs"
+      ],
+      "fn": "^drop$",
+      "reason": "Drop has &mut self: exclusive, Relaxed reads are sufficient"
+    },
+    {
+      "id": "P9/large-state",
+      "class": "protocol",
+      "protocol": "P9",
+      "files": [
+        "src/alloc_core/large/reservation_state.rs",
+        "src/registry/segment_route/large_state.rs",
+        "src/alloc_core/segment/segment_header/terminal_words.rs"
+      ],
+      "reason": "phase word"
+    },
+    {
+      "id": "P9/segment-magic",
+      "class": "protocol",
+      "protocol": "P9",
+      "files": [
+        "src/alloc_core/alloc_core/mem/mem_impl.rs",
+        "src/alloc_core/large/alloc_core_large.rs"
+      ],
+      "receiver": "^Node::atomic_u32_at",
+      "reason": "segment magic is retired with a Release store before the segment is released/reclaimed"
+    },
+    {
+      "id": "P9/kani",
+      "class": "kani",
+      "files": [
+        "src/kani_proofs.rs"
+      ],
+      "reason": "proof harness reads"
+    },
+    {
+      "id": "P13/epoch-pending",
+      "class": "protocol",
+      "protocol": "P13",
+      "files": [
+        "src/concurrent/epoch/epoch_region.rs"
+      ],
+      "receiver": "remote_free_pending$",
+      "reason": "false-full flag"
+    },
+    {
+      "id": "P14/epoch-len",
+      "class": "protocol",
+      "protocol": "P14",
+      "files": [
+        "src/concurrent/epoch/epoch_region.rs"
+      ],
+      "receiver": "len$",
+      "reason": "region length"
+    },
+    {
+      "id": "P14/atomic-slot",
+      "class": "protocol",
+      "protocol": "P14",
+      "files": [
+        "src/concurrent/epoch/hand.rs"
+      ],
+      "fn_not": "_for_tests?$",
+      "reason": "generation/value publication"
+    },
+    {
+      "id": "P15/sharded",
+      "class": "protocol",
+      "protocol": "P15",
+      "files": [
+        "src/concurrent/sharded/sharded_region.rs"
+      ],
+      "receiver_not": "^(PRUNE_CLAIM_CHECKS|NEXT_SHARDED_REGION_ID|self\\.inner\\.next_shard)$",
+      "reason": "shard claims, token blocks"
+    },
+    {
+      "id": "P15/sharded-rr",
+      "class": "id",
+      "files": [
+        "src/concurrent/sharded/sharded_region.rs"
+      ],
+      "receiver": "^self\\.inner\\.next_shard$",
+      "reason": "round-robin start index, Relaxed fetch_add: any value is correct"
+    },
+    {
+      "id": "P17/loom-shim",
+      "class": "twin",
+      "protocol": "P17",
+      "files": [
+        "src/registry/bootstrap/loom_shim.rs"
+      ],
+      "reason": "cfg(loom) OncePtrCell stand-in"
+    },
+    {
+      "id": "P18/once-ptr-cell",
+      "class": "protocol",
+      "protocol": "P18",
+      "files": [
+        "crates/once-ptr-cell/src/imp.rs"
+      ],
+      "reason": "one-time pointer cell (the real crate; its loom tests run it)"
+    },
+    {
+      "id": "P18/tagged-index-stack",
+      "class": "protocol",
+      "protocol": "P18",
+      "files": [
+        "crates/tagged-index-stack/src/imp.rs"
+      ],
+      "receiver_not": "^(BACKOFF_SPIN_COUNT|POP_RETRY_COUNT|PUSH_RETRY_COUNT)$",
+      "reason": "Treiber stack with tagged head"
+    },
+    {
+      "id": "P19/fallback",
+      "class": "protocol",
+      "protocol": "P19",
+      "files": [
+        "src/global/fallback.rs"
+      ],
+      "receiver": "^(INIT_STATE|LOCK)$",
+      "reason": "fallback init + lock"
+    },
+    {
+      "id": "P20/maintenance-service",
+      "class": "protocol",
+      "protocol": "P20",
+      "files": [
+        "src/global/maintenance_service.rs"
+      ],
+      "receiver": "^(STATE|PASSES)$",
+      "reason": "service state + pass counter used as a wait condition"
+    },
+    {
+      "id": "P21/exact-shard",
+      "class": "protocol",
+      "protocol": "P21",
+      "files": [
+        "src/global/exact_object/exact_shard.rs"
+      ],
+      "reason": "shard lock + live hint"
+    },
+    {
+      "id": "hook/maintenance-service",
+      "class": "test-hook",
+      "files": [
+        "src/global/maintenance_service.rs"
+      ],
+      "receiver": "^(FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS)$",
+      "reason": "fault/pause injection and test observers (FAIL_START swap is armed only by fail_next_start_for_test)"
+    },
+    {
+      "id": "hook/test-fns",
+      "class": "test-hook",
+      "files": [
+        "src/**",
+        "crates/*/src/**"
+      ],
+      "fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",
+      "reason": "dbg_*/for_test/internals-only hooks"
+    },
+    {
+      "id": "hook/inject-flags",
+      "class": "test-hook",
+      "files": [
+        "src/**",
+        "crates/*/src/**"
+      ],
+      "receiver": "^(.*::)?(DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE)$",
+      "reason": "fault-injection / test-control flags"
+    },
+    {
+      "id": "cache/page-size",
+      "class": "cache",
+      "files": [
+        "crates/aligned-vmem/src/page_size.rs",
+        "crates/aligned-vmem/src/page_size_override.rs"
+      ],
+      "receiver": "^PAGE_SIZE_CACHE$",
+      "reason": "idempotent cache of a process constant; Relaxed: every writer stores the same value"
+    },
+    {
+      "id": "cache/process-exit",
+      "class": "cache",
+      "files": [
+        "src/global/process_exit.rs"
+      ],
+      "receiver": "^QUERY$",
+      "reason": "resolved function pointer cache (windows); Relaxed: idempotent"
+    },
+    {
+      "id": "id/generators",
+      "class": "id",
+      "files": [
+        "src/**",
+        "crates/*/src/**"
+      ],
+      "receiver": "^(.*::)?(NEXT_[A-Z_]+|DBG_RESERVATION_OWNER_ID_COUNTER)$|next_incarnation$",
+      "ops": [
+        "fetch_add",
+        "fetch_update",
+        "store"
+      ],
+      "reason": "unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed"
+    },
+    {
+      "id": "counter/statics",
+      "class": "counter",
+      "files": [
+        "src/**",
+        "crates/*/src/**"
+      ],
+      "receiver": "^(.*::)?[A-Z][A-Z0-9_]*(\\[.*\\])?$",
+      "receiver_not": "^(.*::)?(INIT_STATE|LOCK|STATE|PASSES|PAGE_SIZE_CACHE|QUERY|NEXT_[A-Z_]+|DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE|DBG_RESERVATION_OWNER_ID_COUNTER|TOKEN_BACKING_DEATHS|LIVE_TOKEN_BLOCKS|TARGET)$",
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "statistics / diagnostic counters: Relaxed, no protocol reads them"
+    },
+    {
+      "id": "counter/per-heap",
+      "class": "counter",
+      "files": [
+        "src/registry/heap_core/alloc/hot.rs",
+        "src/registry/heap_core/alloc/batch.rs",
+        "src/registry/heap_core/state/tcache_flush.rs",
+        "src/registry/heap_registry/counters.rs",
+        "src/alloc_core/large/alloc_core_large.rs",
+        "src/alloc_core/large/alloc_core_large_cache_eviction.rs",
+        "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs"
+      ],
+      "receiver": "^(hits|c|ctr|slot.remote.(tcache_hits|large_cache_hits))$",
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "per-heap hit counters published Relaxed (owner-written, read by stats)"
+    },
+    {
+      "id": "counter/pin-cache-macro",
+      "class": "counter",
+      "files": [
+        "src/registry/heap_core_xthread/route_pin_cache.rs"
+      ],
+      "reason": "macro_rules! count bumps a static counter",
+      "item": "^macro_rules! count$"
+    },
+    {
+      "id": "hook/terminal-gate",
+      "class": "test-hook",
+      "files": [
+        "src/registry/segment_route/terminal_publication_gate.rs"
+      ],
+      "reason": "test gate that pauses a producer after publication"
+    },
+    {
+      "id": "node/atomic-read",
+      "class": "lock-local",
+      "files": [
+        "src/alloc_core/platform/node.rs"
+      ],
+      "reason": "Node::read_struct_with_atomic_word: Relaxed read of a word whose ordering the caller establishes"
+    },
+    {
+      "id": "nonatomic/mock-record",
+      "class": "non-atomic",
+      "files": [
+        "crates/aligned-vmem/src/api/release.rs",
+        "crates/aligned-vmem/src/reservation.rs"
+      ],
+      "receiver": "mock$",
+      "reason": "false positive: mock::record(Op::Release ...) — Release is an enum variant, not an ordering"
+    },
+    {
+      "id": "id/region-id",
+      "class": "id",
+      "files": [
+        "crates/sefer-region/src/region.rs"
+      ],
+      "receiver": "^counter$",
+      "reason": "region id minting: Relaxed fetch_update gives uniqueness"
+    },
+    {
+      "id": "counter/registry-high-water",
+      "class": "counter",
+      "files": [
+        "src/registry/heap_registry/counters.rs"
+      ],
+      "fn": "^heaps_claimed_high_water$",
+      "reason": "stats read of the registry count: Relaxed is enough for a high-water report"
+    }
+  ],
+  "rules": [],
+  "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",
+  "test_fn_doc": "sites inside functions matching test_fn are claimed by test_fn_scope only",
+  "test_fn_scope": "hook/test-fns"
+}

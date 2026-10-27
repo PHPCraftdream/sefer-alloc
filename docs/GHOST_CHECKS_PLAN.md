@@ -1,6 +1,6 @@
 # План: призрачные проверки, смысловые линтеры под каждое место, линтер сообщений коммитов
 
-Статус: **план принят** (2026-10-27), G0 в работе. Пункт в индексе
+Статус: **план принят** (2026-10-27), G0 выполнен (инвентарь и каталог), дальше G1. Пункт в индексе
 корректности — `docs/CORRECTNESS_OPEN_ITEMS.md` item 256.
 
 ## 0. Зачем
@@ -98,6 +98,12 @@ miri/kani). Если краснеет только один из двух, пр�
 | P16 | summary-hint C‴ | **не отгружен** (`docs/perf/OPEN_ITEMS.md` item 82, NO-GO) | `loom_sidecar_summary.rs` | — | — |
 | P17 | bootstrap: const-стенд `OncePtrCell` под loom | `src/registry/bootstrap/{loom_shim,registry,ensure}.rs` | ничего не сравнивает стенд с настоящим `once_ptr_cell` | T | — |
 | P18 | `cfg(loom)`-двойники в крейтах | `crates/once-ptr-cell/src/imp.rs`, `crates/tagged-index-stack/src/imp.rs`, `crates/aligned-vmem/src/mock.rs`, `leaf_classes.rs` (инициализация листа), `route_pin_cache.rs` (`loom::thread_local!`) | собственные loom-тесты крейтов; эквивалентность двойников не проверяется | T | — |
+| P19 | fallback-куча: однократная инициализация и замок | `src/global/fallback.rs` | только интеграционные тесты (`r6_*`, `con01_*`) | — | — |
+| P20 | служба обслуживания: старт и состояние воркера | `src/global/maintenance_service.rs` | только интеграционные тесты (`r6_t35_*`, `r8_autonomous_maintenance`) | — | — |
+| P21 | exact-object: замок шарда и `live_hint` | `src/global/exact_object/exact_shard.rs` | нет | — | — |
+| P22 | `ShardLock` каталога маршрутов | `src/registry/segment_route/shard_lock.rs` | `loom_route_pin_unlink.rs` (как `loom::sync::Mutex`) | S | — |
+
+P19–P22 найдены в G0 сканером всех мест с ordering. Актуальный инвентарь (классы мест, решения, инварианты) — генерируемый `docs/verification/GHOST_INVENTORY.md` (`node scripts/ghost_inventory.mjs --check --report docs/verification/GHOST_INVENTORY.md`); таблица выше — исходная версия плана с этим дополнением.
 
 Счёт: класс A (реальный исходник) — 3 теста, они покрывают P6 и часть P7; класс S — 14 протоколов (у P7 теневая модель есть наряду с реальными); класс T — 2 группы (P17, P18).
 P16 моделирует отвергнутый протокол; его судьбу решает владелец (§10).
@@ -303,7 +309,7 @@ Invariant-Check: route-pin/last-ref-free
 | G3 | P1 + P3 (аренда кучи, publish ‖ recycle ‖ drain) | **R4b-13 и R4b-14 переходят из INCONCLUSIVE в PASS**: мутанты L1/L2 пойманы линтером (R1) и ghost-проверкой или R8-моделью; текстовые пины `r11_ph4a/ph4b_*` перекрыты и сняты по §4.3 |
 | G4 | P12 (склад), P2 (maintenance lease) | мутанты «drain после Release» и «Relaxed drop» краснеют в обоих слоях |
 | G5 | P4 (реестр: claim, selector, free-set, spill, saturation; 5 моделей) | у каждой модели решение из G0 выполнено; ordering каждого CAS закреплён R1 и привязан R8 |
-| G6 | P6–P11 (кэш pin, sidecar bitmap, small sidecar, terminal Large, owner drain, active-kind) | у протоколов класса A — ghost-проверки и правила; теневые P8–P11 переведены или привязаны R8; пин `r11_ph5b_c5` перекрыт |
+| G6 | P6–P11 (кэш pin, sidecar bitmap, small sidecar, terminal Large, owner drain, active-kind); P19–P21 (fallback, служба обслуживания, exact-shard) — новые модели на реальном коде | у протоколов класса A — ghost-проверки и правила; теневые P8–P11 переведены или привязаны R8; пин `r11_ph5b_c5` перекрыт |
 | G7 | P17, P18 (двойники `cfg(loom)` в bootstrap и крейтах) | R7 сравнивает каждую пару двойников; разрешённые отличия перечислены с причиной; мутант «Relaxed только в loom-двойнике» краснеет |
 | G8 | P14, P15 (epoch, sharded — loom и crossbeam несовместимы) | модели остаются, все их ordering и шаги привязаны R8; мутант в прод-коде краснеет в линтере |
 
