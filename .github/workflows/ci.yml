@@ -4680,7 +4680,8 @@ jobs:
           node scripts/license-check-workspaces.mjs --list > "$RUNNER_TEMP/workspaces.txt"
           while read -r dir; do
             echo "::group::$dir"
-            cargo deny --manifest-path "$dir/Cargo.toml" --locked check --config deny.toml licenses bans sources
+            # No --config: its position differs across cargo-deny versions; the default is <cwd>/deny.toml (repo root).
+            cargo deny --manifest-path "$dir/Cargo.toml" --locked check licenses bans sources
             echo "::endgroup::"
           done < "$RUNNER_TEMP/workspaces.txt"
       - name: Record the passed fingerprint
