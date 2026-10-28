@@ -188,7 +188,9 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha }}"
           [ -z "$BASE" ] && BASE="${{ github.event.before }}"
           git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE=HEAD^
-          node scripts/ghost_zero_cost.mjs --base "$BASE" --require-ir --out "$RUNNER_TEMP/ghost_zero_cost.json"
+          PR_HEAD="${{ github.event.pull_request.head.sha }}"
+          [ -z "$PR_HEAD" ] && PR_HEAD=HEAD
+          node scripts/ghost_zero_cost.mjs --base "$BASE" --allow-declared-runtime --head "$PR_HEAD" --require-ir --out "$RUNNER_TEMP/ghost_zero_cost.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
