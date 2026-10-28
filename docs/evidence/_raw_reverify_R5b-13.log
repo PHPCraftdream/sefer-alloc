@@ -1,96 +1,68 @@
-E0_METADATA {"id":"R5b-13","head":"00d309f9ed462f2e2922a3a720f6bd17e5c3eedc","tree":"c5214efff0f3cc3f5b860841755a333ef3becc2a","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R5b-13","head":"00d309f9ed462f2e2922a3a720f6bd17e5c3eedc","tree":"c5214efff0f3cc3f5b860841755a333ef3becc2a","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R5b-13.json","recipe_sha256":"e7d2803e90a791c1a9ef148ae451f55194da6c5dc72cbc3ecd6062a86cf0a5d9","registry_activation_hash":"e517e4d17cca3eee88ddc364b83c74707f75e0d6b37fad3160821fa75479b053"}
+E0_METADATA {"id":"R5b-13","head":"a338b5751d60030d392801d4c495772b2162ce4b","tree":"1b3b16df6a22be14ce7aeae5155fc5be1f96e523","setup":""}
+E0_METADATA {"id":"R5b-13","head":"a338b5751d60030d392801d4c495772b2162ce4b","tree":"1b3b16df6a22be14ce7aeae5155fc5be1f96e523","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R5b-13.json","recipe_sha256":"b635c86dceab55275d91c2eec578631b01d86504967a84e10c9f8a13f15e662b","registry_activation_hash":"efa41e804798351c98846ffe0133bfc3a05e5a4bfd6448777f420085e00ac94d"}
 
-E0_STEP {"id":"R5b-13","kind":"baseline","name":"source pin baseline","argv":["cargo","test","--locked","--test","r11_ph5b_c5_sidecar_ordering_pinned","--features","production"],"env":{},"expect":{"exit":0,"stdoutRegex":["8 passed; 0 failed","test producer_publish_is_acqrel_fetch_or \\.\\.\\. ok"]}}
+E0_STEP {"id":"R5b-13","kind":"baseline","name":"ghost-lint catalog baseline","argv":["cargo","test","--locked","-p","ghost-lint","--test","catalog_holds","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["check: \\d+ rule\\(s\\), 0 violation\\(s\\)","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.07s
-[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph5b_c5_sidecar_ordering_pinned.rs (target/debug/deps/r11_ph5b_c5_sidecar_ordering_pinned-9b7bcc835ae2f72f)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+[1m[92m     Running[0m tests/catalog_holds.rs (target/debug/deps/catalog_holds-0cd6a38a3347a0df)
 
-running 8 tests
-test owner_cut_is_acqrel_swap ... ok
-test drop_walks_presence_bits_not_the_full_slot_array ... ok
-test class_leaves_ordering_inventory_is_exact ... ok
-test owner_issue_class_store_is_release ... ok
-test mixed_leaf_published_after_its_initialization ... ok
-test producer_publish_is_acqrel_fetch_or ... ok
-test promotion_sets_presence_bit_after_leaf_publication ... ok
-test production_small_sidecar_uses_class_leaves ... ok
+running 1 test
+[ghost-lint] check: 66 rule(s), 0 violation(s)
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test catalog_rules_hold_on_the_repository ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAwLjAycwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CltnaG9zdC1saW50XSBjaGVjazogNjYgcnVsZShzKSwgMCB2aW9sYXRpb24ocykKCnRlc3QgY2F0YWxvZ19ydWxlc19ob2xkX29uX3RoZV9yZXBvc2l0b3J5IC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuODBzCgo=
 
-E0_STEP {"id":"R5b-13","kind":"mutant","name":"producer pin mutant","argv":["cargo","test","--locked","--test","r11_ph5b_c5_sidecar_ordering_pinned","--features","production"],"env":{},"expect":{"exit":101,"stdoutRegex":["test producer_publish_is_acqrel_fetch_or \\.\\.\\. FAILED","test result: FAILED\\. 7 passed; 1 failed"]}}
+E0_STEP {"id":"R5b-13","kind":"mutant","name":"R5b-13 mutant","argv":["cargo","test","--locked","-p","ghost-lint","--test","catalog_holds","--","--nocapture"],"env":{},"expect":{"exitNonZero":true,"stdoutRegex":["\\[sidecar\\/publish-acqrel\\]"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.16s
-[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph5b_c5_sidecar_ordering_pinned.rs (target/debug/deps/r11_ph5b_c5_sidecar_ordering_pinned-9b7bcc835ae2f72f)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+[1m[92m     Running[0m tests/catalog_holds.rs (target/debug/deps/catalog_holds-0cd6a38a3347a0df)
 
-running 8 tests
-test owner_cut_is_acqrel_swap ... ok
-test owner_issue_class_store_is_release ... ok
-test drop_walks_presence_bits_not_the_full_slot_array ... ok
-test mixed_leaf_published_after_its_initialization ... ok
-test class_leaves_ordering_inventory_is_exact ... ok
-test producer_publish_is_acqrel_fetch_or ... FAILED
-test promotion_sets_presence_bit_after_leaf_publication ... ok
-test production_small_sidecar_uses_class_leaves ... ok
+running 1 test
+src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:125: [sidecar/publish-acqrel] SidecarBitmap::publish: self.pending[granule/64].fetch_or ordering ["Relaxed"], rule requires ["AcqRel"]
+[ghost-lint] check: 66 rule(s), 1 violation(s)
 
-failures:
 
----- producer_publish_is_acqrel_fetch_or stdout ----
+thread 'catalog_rules_hold_on_the_repository' (4691) panicked at crates/ghost-lint/tests/catalog_holds.rs:17:5:
+ghost-lint check found violations:
+src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:125: [sidecar/publish-acqrel] SidecarBitmap::publish: self.pending[granule/64].fetch_or ordering ["Relaxed"], rule requires ["AcqRel"]
+[ghost-lint] check: 66 rule(s), 1 violation(s)
 
-thread 'producer_publish_is_acqrel_fetch_or' (9239) panicked at tests/r11_ph5b_c5_sidecar_ordering_pinned.rs:208:5:
-producer publication must be an AcqRel fetch_or on the pending word:
-fn publish(&self, offset: u32) -> bool {
-        let Some(granule) = Self::granule(offset) else {
-            return false;
-        };
-        if self.classes.encoded(granule) == 0 {
-            return false;
-        }
-        self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::Relaxed);
-        true
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-
+test catalog_rules_hold_on_the_repository ... FAILED
 
 failures:
-    producer_publish_is_acqrel_fetch_or
 
-test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+failures:
+    catalog_rules_hold_on_the_repository
 
-[1m[91merror[0m: test failed, to rerun pass `--test r11_ph5b_c5_sidecar_ordering_pinned`
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+
+[1m[91merror[0m: test failed, to rerun pass `-p ghost-lint --test catalog_holds`
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R5b-13","kind":"restored","sha256":"5a474ab260eabfcffe9ee924dc39d71ccb30f7c69ef5282f36ab8d967e3cd9ab"}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAwLjAycwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CnNyYy9hbGxvY19jb3JlL3NlZ21lbnQvcmVtb3RlX2JpdG1hcC9zaWRlY2FyX2JpdG1hcC5yczoxMjU6IFtzaWRlY2FyL3B1Ymxpc2gtYWNxcmVsXSBTaWRlY2FyQml0bWFwOjpwdWJsaXNoOiBzZWxmLnBlbmRpbmdbZ3JhbnVsZS82NF0uZmV0Y2hfb3Igb3JkZXJpbmcgWyJSZWxheGVkIl0sIHJ1bGUgcmVxdWlyZXMgWyJBY3FSZWwiXQpbZ2hvc3QtbGludF0gY2hlY2s6IDY2IHJ1bGUocyksIDEgdmlvbGF0aW9uKHMpCgoKdGhyZWFkICdjYXRhbG9nX3J1bGVzX2hvbGRfb25fdGhlX3JlcG9zaXRvcnknICg0NjkxKSBwYW5pY2tlZCBhdCBjcmF0ZXMvZ2hvc3QtbGludC90ZXN0cy9jYXRhbG9nX2hvbGRzLnJzOjE3OjU6Cmdob3N0LWxpbnQgY2hlY2sgZm91bmQgdmlvbGF0aW9uczoKc3JjL2FsbG9jX2NvcmUvc2VnbWVudC9yZW1vdGVfYml0bWFwL3NpZGVjYXJfYml0bWFwLnJzOjEyNTogW3NpZGVjYXIvcHVibGlzaC1hY3FyZWxdIFNpZGVjYXJCaXRtYXA6OnB1Ymxpc2g6IHNlbGYucGVuZGluZ1tncmFudWxlLzY0XS5mZXRjaF9vciBvcmRlcmluZyBbIlJlbGF4ZWQiXSwgcnVsZSByZXF1aXJlcyBbIkFjcVJlbCJdCltnaG9zdC1saW50XSBjaGVjazogNjYgcnVsZShzKSwgMSB2aW9sYXRpb24ocykKCm5vdGU6IHJ1biB3aXRoIGBSVVNUX0JBQ0tUUkFDRT0xYCBlbnZpcm9ubWVudCB2YXJpYWJsZSB0byBkaXNwbGF5IGEgYmFja3RyYWNlCnRlc3QgY2F0YWxvZ19ydWxlc19ob2xkX29uX3RoZV9yZXBvc2l0b3J5IC4uLiBGQUlMRUQKCmZhaWx1cmVzOgoKZmFpbHVyZXM6CiAgICBjYXRhbG9nX3J1bGVzX2hvbGRfb25fdGhlX3JlcG9zaXRvcnkKCnRlc3QgcmVzdWx0OiBGQUlMRUQuIDAgcGFzc2VkOyAxIGZhaWxlZDsgMCBpZ25vcmVkOyAwIG1lYXN1cmVkOyAwIGZpbHRlcmVkIG91dDsgZmluaXNoZWQgaW4gMC44MHMKChtbMW0bWzkxbWVycm9yG1swbTogdGVzdCBmYWlsZWQsIHRvIHJlcnVuIHBhc3MgYC1wIGdob3N0LWxpbnQgLS10ZXN0IGNhdGFsb2dfaG9sZHNgCg==
+E0_METADATA {"id":"R5b-13","kind":"restored","sha256":"c81bda9e41b744760172f41ab14b2a8d936eb4ed30fa33b3a5f71a123c035538"}
 
-E0_STEP {"id":"R5b-13","kind":"restored-baseline","name":"source pin baseline","argv":["cargo","test","--locked","--test","r11_ph5b_c5_sidecar_ordering_pinned","--features","production"],"env":{},"expect":{"exit":0,"stdoutRegex":["8 passed; 0 failed","test producer_publish_is_acqrel_fetch_or \\.\\.\\. ok"]}}
+E0_STEP {"id":"R5b-13","kind":"restored-baseline","name":"ghost-lint catalog baseline","argv":["cargo","test","--locked","-p","ghost-lint","--test","catalog_holds","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["check: \\d+ rule\\(s\\), 0 violation\\(s\\)","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.15s
-[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph5b_c5_sidecar_ordering_pinned.rs (target/debug/deps/r11_ph5b_c5_sidecar_ordering_pinned-9b7bcc835ae2f72f)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+[1m[92m     Running[0m tests/catalog_holds.rs (target/debug/deps/catalog_holds-0cd6a38a3347a0df)
 
-running 8 tests
-test owner_cut_is_acqrel_swap ... ok
-test owner_issue_class_store_is_release ... ok
-test drop_walks_presence_bits_not_the_full_slot_array ... ok
-test mixed_leaf_published_after_its_initialization ... ok
-test class_leaves_ordering_inventory_is_exact ... ok
-test producer_publish_is_acqrel_fetch_or ... ok
-test promotion_sets_presence_bit_after_leaf_publication ... ok
-test production_small_sidecar_uses_class_leaves ... ok
+running 1 test
+[ghost-lint] check: 66 rule(s), 0 violation(s)
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test catalog_rules_hold_on_the_repository ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAwLjAycwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CltnaG9zdC1saW50XSBjaGVjazogNjYgcnVsZShzKSwgMCB2aW9sYXRpb24ocykKCnRlc3QgY2F0YWxvZ19ydWxlc19ob2xkX29uX3RoZV9yZXBvc2l0b3J5IC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuODFzCgo=
