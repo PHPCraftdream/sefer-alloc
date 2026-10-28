@@ -352,6 +352,7 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 | `.headroom_bytes(N)` | `256 MiB` | Anti-thrash floor — the decay step does NOT release bytes below this level. Higher headroom = more memory retained between ticks (less aggressive trimming). |
 | `.decay_interval_ms(N)` | `1000` ms | Monotonic elapsed-time period for counting due decay steps, not minimum spacing between invocations. Each eligible clock check processes up to eight due intervals; the timer advances by `due × interval`, retaining the remainder and excess whole-interval debt for later invocations. A step computes the current excess and FIFO-evicts whole spans toward `excess × rate`. |
 | `.decay_rate_percent(N)` | `10` % | Fraction of the excess released per tick, integer percent in `[1, 100]` (clamped). `10` ⇒ release 10 % per tick (self-damping exponential decay); `100` ⇒ flush all excess in one tick. |
+| `.depot_budget_bytes(N)` | `1 MiB` | Per-heap (per-thread) byte budget for full small-class magazines parked **above** the fixed depot floor, so a free burst larger than one magazine refills from parked magazines instead of round-tripping through segment free lists. `0` turns the overflow off. Rounded down to 256 B, capped at 16,774,912 B. Needs `fastbin` + `alloc-decommit` (ignored otherwise). See [Depot overflow budget](#depot-overflow-budget-fastbin--alloc-decommit). |
 | `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: above headroom, the first eligible call primes a nonzero-interval timer; subsequent clock checks occur every 64th eligible large alloc/free and process bounded catch-up inline. A zero interval bypasses the stride and runs one step per eligible call, including the first. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
 
 The model is **"allocate fast, release slowly"**: each tick removes a
@@ -1604,6 +1605,73 @@ already equals 4, so a lone `.pool_segments(8)` (without also raising
 that changes nothing observable. Both knobs must be raised together, as
 in the recipe above. This exact trap is encoded as a CI guard:
 `tests/small_segment_pool.rs::paired_knob_promotion_is_not_a_noop`.
+
+### Depot overflow budget (`fastbin` + `alloc-decommit`)
+
+Every thread heap keeps a magazine of up to 16 free blocks per small size
+class. When a free finds the magazine full, the full magazine is parked in
+the heap's **depot** and the freed block starts a new one; when an
+allocation finds the magazine empty, a parked magazine is reloaded whole.
+Neither direction touches the segment free lists or the freed blocks'
+bodies (only the per-block state byte changes), which is why a parked
+round-trip is much cheaper than flushing blocks back to their segments and
+draining them again.
+
+The depot has two parts:
+
+- **The floor** — a fixed number of magazines per class (8 for the six
+  smallest classes, then 7, 1, and 2 for 240..1024 B), 241,408 B of parked
+  blocks per heap at most. Always on with `fastbin`.
+- **The overflow** — magazines parked above the floor, bounded by
+  `LargeCacheConfig::depot_budget_bytes` (bytes of parked blocks, shared by
+  all classes of the heap). Default **1 MiB**.
+
+What the setting changes:
+
+| Setting | Effect |
+|---|---|
+| `0` | No overflow: a free burst beyond the floor flushes whole magazines to their segments, as before this setting existed. |
+| `1 MiB` (default) | A burst of up to ~1 MiB of small blocks per thread (on top of the floor) is parked and reissued without segment traffic. |
+| larger | Larger bursts stay parked; the per-thread retention grows by the same amount (see below). |
+
+How it behaves:
+
+- **Per heap, not per process.** Each thread's heap has its own budget;
+  with T threads the overflow can hold up to T × budget.
+- **First claim wins.** The budget is fixed when a thread's heap is first
+  created; a recycled heap keeps the budget it was created with and a
+  conflicting request is counted by `config_conflicts_total` (same rule as
+  the other `LargeCacheConfig` knobs).
+- **No fairness between classes.** Whichever classes park first use the
+  budget; a class whose ring is full, or that finds the budget used up,
+  flushes as with `0`.
+- **Decay.** Overflow records of a class that parked nothing during a decay
+  epoch (at least 256 cold events — magazine refills and parks — or twice
+  the records held) lose half of their low-water mark over the next events,
+  oldest first, at most 4 magazines per event. The floor never decays.
+  A thread that only hits its magazines (no cold events) keeps its overflow
+  until it does — retention is bounded by the budget, not by time.
+- **Trim, thread exit and heap recycle** empty the overflow and the floor
+  and return the overflow's committed record pages to the OS (lazily on
+  Darwin and the BSDs); the address range (≈ 1.5 × budget, reserved on the
+  first overflow park) stays with the heap slot.
+- **What the budget does not bound.** It counts the bytes of parked blocks.
+  The overflow's own record pages (128 B per parked magazine, committed on
+  demand) come on top, and a parked block keeps its whole segment
+  resident, so a sparse pattern (every k-th block freed) can hold more
+  segment memory than the budget suggests.
+
+```rust
+use sefer_alloc::{LargeCacheConfig, SeferAlloc};
+
+// Off: only the fixed floor.
+static GLOBAL: SeferAlloc =
+    SeferAlloc::with_config(LargeCacheConfig::new().depot_budget_bytes(0));
+```
+
+**Measurements:** pending — the speed (J1′ v2 against mimalloc and
+against the floor-only depot) and RSS (budget sweep 0 / 512 KiB / 1 MiB /
+2 MiB) results land with this setting's gate report and replace this line.
 
 ---
 

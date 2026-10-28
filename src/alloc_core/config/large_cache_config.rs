@@ -452,8 +452,8 @@ impl LargeCacheConfig {
     /// overflow; values are rounded down to 256 B and capped at
     /// 16,774,912 B. Applied when the thread's heap is first created (a
     /// recycled heap keeps the budget it was created with — see
-    /// `config_conflicts_total`). Measurements: README "Depot overflow
-    /// budget".
+    /// `config_conflicts_total`). Behaviour and measurements: README
+    /// "Depot overflow budget".
     #[must_use]
     pub const fn depot_budget_bytes(mut self, bytes: usize) -> Self {
         self.depot_budget_bytes = Some(bytes);

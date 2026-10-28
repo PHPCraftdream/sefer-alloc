@@ -16,6 +16,13 @@ mod state;
 pub(crate) use self::state::depot::Depot;
 #[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
 pub(crate) use self::state::depot::{DEPOT_CLASSES, DEPOT_K};
+#[cfg(all(
+    kani,
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+pub(crate) use self::state::depot_overflow::DepotOverflow;
 #[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
 pub(crate) use self::state::tcache::TCACHE_CAP;
 

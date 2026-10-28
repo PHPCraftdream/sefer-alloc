@@ -28,6 +28,8 @@ const BYTES: usize = 0;
 const PARKS: usize = 1;
 const OS_REFUSALS: usize = 4;
 const COMMITTED: usize = 8;
+const S_MAG: u8 = 1;
+const S_FREE: u8 = 2;
 
 fn l(size: usize) -> Layout {
     Layout::from_size_align(size, 8).unwrap()
@@ -46,11 +48,30 @@ fn free_all(heap: &mut HeapCore, size: usize, v: &[*mut u8]) {
     }
 }
 
-/// Reissue `n` blocks of `size` and check none repeats; then free them.
-fn reissue_unique(heap: &mut HeapCore, size: usize, n: usize) {
-    let again = alloc_n(heap, size, n);
+/// Every freed block of class `c` is accounted for: parked (MAG — in the
+/// live magazine or the depot) or flushed (FREE), none left LIVE; the
+/// magazine and the depot hold exactly the parked ones, and those come back
+/// first, each once. Then free them again.
+fn account_and_reissue(heap: &mut HeapCore, size: usize, c: usize, freed: &[*mut u8]) {
+    let mut parked = HashSet::new();
+    for &p in freed {
+        match heap.dbg_state_byte_state_for(p) {
+            Some(S_MAG) => {
+                parked.insert(p as usize);
+            }
+            Some(S_FREE) => {}
+            s => panic!("freed block {p:?} reads {s:?}"),
+        }
+    }
+    let resident = MAG * heap.dbg_depot_len(c) + usize::from(heap.dbg_tcache_count(c));
+    assert_eq!(
+        parked.len(),
+        resident,
+        "magazine + depot hold exactly the parked blocks"
+    );
+    let again = alloc_n(heap, size, resident);
     let got: HashSet<usize> = again.iter().map(|p| *p as usize).collect();
-    assert_eq!(got.len(), n, "no duplicate address");
+    assert_eq!(got, parked, "the parked blocks come back, each once");
     free_all(heap, size, &again);
 }
 
@@ -76,7 +97,7 @@ fn refused_reserve_and_commit_keep_blocks_and_recover() {
     assert_eq!(s1[PARKS], s0[PARKS], "nothing parked in the overflow");
     assert_eq!((s1[BYTES], s1[COMMITTED]), (0, 0));
     assert_eq!(heap.dbg_depot_len(C64), FLOOR, "the floor still parks");
-    reissue_unique(heap, 64, n);
+    account_and_reissue(heap, 64, C64, &blocks);
 
     // 2. Trim clears the refusal; the next park reserves and commits.
     heap.dbg_flush_all();
@@ -85,7 +106,7 @@ fn refused_reserve_and_commit_keep_blocks_and_recover() {
     let s2 = heap.dbg_depot_overflow();
     assert_eq!(s2[PARKS] - s1[PARKS], 2, "the overflow works after trim");
     assert!(s2[COMMITTED] > 0);
-    reissue_unique(heap, 64, n);
+    account_and_reissue(heap, 64, C64, &blocks);
     heap.dbg_flush_all();
 
     // 3. Commit refused for class 16's first record page (trim decommitted
@@ -102,7 +123,7 @@ fn refused_reserve_and_commit_keep_blocks_and_recover() {
     assert!(s4[PARKS] > s3[PARKS], "a later park committed and parked");
     let page = s4[COMMITTED] as usize;
     assert!(page >= 4096 && page.is_power_of_two(), "one page committed");
-    reissue_unique(heap, 16, n16);
+    account_and_reissue(heap, 16, C16, &b16);
     heap.dbg_flush_all();
 
     // 4. Commit refused with records already parked: fill class 16's first
@@ -131,7 +152,7 @@ fn refused_reserve_and_commit_keep_blocks_and_recover() {
         );
         assert_eq!(s6[BYTES] as usize, per_page * 16 * MAG);
         free_all(heap, 16, &all[n_fill + 1..]);
-        reissue_unique(heap, 16, n_fill + MAG);
+        account_and_reissue(heap, 16, C16, &all);
         heap.dbg_flush_all();
     }
     assert_eq!(heap.dbg_depot_overflow()[BYTES], 0);

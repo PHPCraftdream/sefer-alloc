@@ -433,8 +433,7 @@ mod depot_proofs {
 mod depot_overflow_proofs {
     use crate::alloc_core::size_classes::SIZE_CLASS_TABLE;
     use crate::alloc_core::LargeCacheConfig;
-    use crate::registry::heap_core::state::depot_overflow::DepotOverflow;
-    use crate::registry::heap_core::{DEPOT_CLASSES, DEPOT_K, TCACHE_CAP};
+    use crate::registry::heap_core::{DepotOverflow, DEPOT_CLASSES, DEPOT_K, TCACHE_CAP};
 
     const CAP: usize = 3;
     const STEPS: usize = 5;
@@ -472,11 +471,10 @@ mod depot_overflow_proofs {
             } else if op % 3 == 1 && n > 0 {
                 o.reload(c, n, &mut out);
                 back -= 1;
-                assert_eq!(out[0] as usize, model[back]);
-                assert_eq!(out[TCACHE_CAP - 1] as usize, model[back]);
+                assert!(out == [model[back] as *mut u8; TCACHE_CAP]);
             } else if n > 0 {
                 o.pop_oldest(c, n, &mut out);
-                assert_eq!(out[0] as usize, model[front]);
+                assert!(out == [model[front] as *mut u8; TCACHE_CAP]);
                 front += 1;
             }
             assert_eq!(o.bytes(), (back - front) * mb);

@@ -153,7 +153,8 @@ impl HeapCore {
         let Some(depot) = self.depot.as_deref_mut() else {
             return;
         };
-        // Empty overflow: no record to decay, every watermark and debt is 0.
+        // Empty overflow: no record to decay; every low-water mark and debt
+        // is 0 (committed pages stay until trim).
         if !depot.ovf.active() || depot.ovf.bytes() == 0 {
             return;
         }

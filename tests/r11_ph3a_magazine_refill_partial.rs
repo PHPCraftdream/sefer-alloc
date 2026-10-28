@@ -25,6 +25,23 @@ use core::alloc::Layout;
 use sefer_alloc::registry::segment_route::{RouteDirectory, SmallSidecar};
 use sefer_alloc::registry::{HeapCore, HeapRegistry};
 
+/// G1-K7: heaps in this binary run with the depot overflow off (budget 0),
+/// so a full magazine past the depot floor flushes to the substrate as these
+/// checks expect; the overflow has its own binaries
+/// (`tests/g1_k7_depot_overflow*.rs`). One config per binary.
+fn claim_floor_only() -> Option<sefer_alloc::registry::HeapLease> {
+    #[cfg(feature = "alloc-decommit")]
+    {
+        HeapRegistry::dbg_claim_lease_with_config(
+            sefer_alloc::alloc_core::LargeCacheConfig::new().depot_budget_bytes(0),
+        )
+    }
+    #[cfg(not(feature = "alloc-decommit"))]
+    {
+        HeapRegistry::dbg_claim_lease()
+    }
+}
+
 const CLASS_SIZE: usize = 32;
 
 fn layout() -> Layout {
@@ -103,7 +120,7 @@ fn take_one(heap: &mut HeapCore, held: &mut Vec<*mut u8>, layout: Layout) -> *mu
 #[cfg(feature = "fastbin")]
 #[test]
 fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
     let c = heap.dbg_class_for(layout()).expect("32B is a small class");
     let want = heap.dbg_refill_n_for_class(c);
@@ -270,7 +287,7 @@ fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
 #[cfg(not(feature = "fastbin"))]
 #[test]
 fn magazine_refill_refusal_is_a_scalar_oom_with_a_full_rollback() {
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
     let c = 1usize; // the 32B class, per the shared fixture layout.
     let anchor = heap.alloc(layout());
