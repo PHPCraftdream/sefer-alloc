@@ -3,10 +3,10 @@
 use crate::alloc_core::size_classes::{SIZE_CLASS_TABLE, SMALL_CLASS_COUNT};
 use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 
-// G1-K5 ceiling probe: the depot covers every class up to 1216 B with K = 8.
+// G1-K5a: one depot magazine (K = 1) for every class from 240 B to 1024 B.
 const fn depot_classes() -> usize {
     let mut n = 0;
-    while n < SIZE_CLASS_TABLE.len() && SIZE_CLASS_TABLE[n] <= 1216 {
+    while n < SIZE_CLASS_TABLE.len() && SIZE_CLASS_TABLE[n] <= 1024 {
         n += 1;
     }
     n
@@ -14,12 +14,16 @@ const fn depot_classes() -> usize {
 pub(crate) const DEPOT_CLASSES: usize = depot_classes();
 pub(crate) const DEPOT_K_MAX: u8 = 8;
 pub(crate) const DEPOT_K: [u8; DEPOT_CLASSES] = {
-    let mut k = [8u8; DEPOT_CLASSES];
-    k[6] = 7;
-    k[7] = 1;
+    let mut k = [1u8; DEPOT_CLASSES];
+    let small = [8u8, 8, 8, 8, 8, 8, 7, 1];
+    let mut c = 0;
+    while c < small.len() {
+        k[c] = small[c];
+        c += 1;
+    }
     k
 };
-pub(crate) const DEPOT_BUDGET_BYTES: usize = 2 * 1024 * 1024;
+pub(crate) const DEPOT_BUDGET_BYTES: usize = 160 * 1024;
 /// `DEPOT_K` widened to every small class (0 = no depot), so the inline
 /// overflow gate needs no separate `c < DEPOT_CLASSES` test.
 pub(crate) const DEPOT_CAP: [u8; SMALL_CLASS_COUNT] = {
