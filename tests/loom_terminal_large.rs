@@ -7,8 +7,8 @@
 //! "alloc-core alloc-xthread tagged-index-stack/loom" --test loom_terminal_large`.
 //!
 //! # Seams (import- and declaration-level; no production statement changed)
-//! - `reservation_state.rs` takes `AtomicU64`/`Ordering` from `super`; the
-//!   `alloc_core::large` module below re-exports loom's.
+//! - `reservation_state.rs` takes `AtomicU64`/`Ordering` from `super`, the
+//!   crate root here, which re-exports loom's.
 //! - `terminal_words.rs` needs `fatal`, `Node`, `SegmentHeader`, `SegmentMeta`
 //!   and `align_up_const`: compile-only shims. They back the header-word
 //!   accessors (`init_*_terminal`, `large_state_atomic`), which no test calls;
@@ -66,32 +66,41 @@ mod alloc_core {
         }
     }
 
+    // Root-mounted production files (a `#[path]` inside a nested inline module
+    // resolves through a `tests/<module>/` directory that does not exist).
     pub(crate) mod segment_header {
-        pub(crate) struct SegmentHeader {
-            _word: u64,
-        }
-        pub(crate) struct SegmentMeta {
-            pub base: *mut u8,
-        }
-        pub(crate) const fn align_up_const(n: usize, a: usize) -> usize {
-            (n + a - 1) & !(a - 1)
-        }
-        #[path = "../../../src/alloc_core/segment/segment_header/terminal_words.rs"]
-        mod terminal_words;
-        pub(crate) use terminal_words::{
+        pub(crate) use crate::terminal_words::{
             large_generation, large_phase, next_large_generation, pack_large_state, LargePhase,
         };
     }
 
     pub(crate) mod large {
-        pub(crate) use crate::{AtomicU64, Ordering};
-        #[path = "../../../src/alloc_core/large/reservation_state.rs"]
-        pub(crate) mod reservation_state;
+        pub(crate) use crate::reservation_state;
     }
 }
 
-use alloc_core::large::reservation_state::LargeReservationState;
+// `terminal_words.rs` resolves `super::{align_up_const, SegmentHeader,
+// SegmentMeta}` here; compile-only shims for the header-word accessors.
+pub(crate) struct SegmentHeader {
+    _word: u64,
+}
+pub(crate) struct SegmentMeta {
+    pub base: *mut u8,
+}
+pub(crate) const fn align_up_const(n: usize, a: usize) -> usize {
+    (n + a - 1) & !(a - 1)
+}
+
+#[allow(dead_code)]
+#[path = "../src/alloc_core/segment/segment_header/terminal_words.rs"]
+mod terminal_words;
+
+// `reservation_state.rs` resolves `super::{AtomicU64, Ordering}`: loom's, above.
+#[path = "../src/alloc_core/large/reservation_state.rs"]
+mod reservation_state;
+
 use alloc_core::segment_header::{pack_large_state, LargePhase};
+use reservation_state::LargeReservationState;
 
 const GENERATION: u64 = 11;
 

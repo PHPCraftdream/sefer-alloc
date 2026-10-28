@@ -31,11 +31,8 @@
 //! - `src/registry/segment_route/{error,kind,route_record,route_scan,
 //!   route_cut,large_state}.rs` and
 //!   `src/alloc_core/large/reservation_state.rs` — the compile cascade of
-//!   the files above. `large_state.rs`/`reservation_state.rs` stay on core
-//!   atomics on purpose: the Large branch never executes (only Small routes
-//!   are registered). `reservation_state.rs` takes its atomics from `super`
-//!   (the actual-source Large model `tests/loom_terminal_large.rs` binds loom
-//!   ones); here its `large` seam module re-exports the core ones.
+//!   the files above. Both take their atomics from `super` (loom here); the
+//!   Large branch never executes (only Small routes are registered).
 //!
 //! # Seams (each is import-level / declaration-level only; no production
 //! statement changed)
@@ -210,7 +207,7 @@ mod alloc_core {
     }
     pub(crate) mod reservation_state {
         // The real wrapper, source-included at this crate's root.
-        pub(crate) use crate::large::reservation_state::LargeReservationState;
+        pub(crate) use crate::reservation_state::LargeReservationState;
     }
     pub(crate) mod remote_bitmap {
         pub(crate) use crate::bitmap_cut::BitmapCut;
@@ -400,14 +397,9 @@ mod bitmap_record;
 #[allow(dead_code)]
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_scan.rs"]
 mod bitmap_scan;
-// Core-atomics seam for `reservation_state.rs` (it takes them from `super`),
-// matching `large_state.rs`, which stays on core atomics.
-mod large {
-    pub(crate) use core::sync::atomic::{AtomicU64, Ordering};
-    #[allow(dead_code)]
-    #[path = "../../src/alloc_core/large/reservation_state.rs"]
-    pub(crate) mod reservation_state;
-}
+#[allow(dead_code)]
+#[path = "../src/alloc_core/large/reservation_state.rs"]
+mod reservation_state;
 #[allow(dead_code)]
 #[path = "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs"]
 mod sidecar_bitmap;

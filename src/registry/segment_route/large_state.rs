@@ -1,6 +1,6 @@
 //! Owning word for the existing LargeReservationState transition protocol.
 
-use core::sync::atomic::{AtomicU64, Ordering};
+use super::{AtomicU64, Ordering};
 
 use crate::alloc_core::reservation_state::LargeReservationState;
 use crate::alloc_core::segment_header::{large_generation, pack_large_state, LargePhase};

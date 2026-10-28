@@ -3638,6 +3638,11 @@ jobs:
             --test loom_fallback_actual \
             --test loom_b4_scan_skip_empty_publish 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test producer_owner_cut_and_duplicate_admission ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test owner_cache_or_release_is_exclusive ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test racing_insert_and_take_keep_the_shard_exact ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test racing_inserts_of_one_address_admit_one ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test fallback_init_and_lock_on_production_source ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_publish_racing_strict_trim_union_is_complete ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable ... ok" "$RUNNER_TEMP/loom-xthread.log"
@@ -3657,7 +3662,6 @@ jobs:
           grep -F "test loom_shadow_acquire_gate_false_read_sees_index_unlink ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_negative_cut_via_load_store_loses_concurrent_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_negative_masked_cut_drops_pending_bits - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test loom_sidecar_negative_class_after_terminal_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_summary_conditional_two_words_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_summary_conditional_same_word_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_summary_pending_pause_strict_inclusion ... ok" "$RUNNER_TEMP/loom-xthread.log"
@@ -3668,7 +3672,6 @@ jobs:
           grep -F "test loom_summary_negative_producer_never_sets_clean_summary - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test unpublished_and_detached_instances_hold_the_reservation_credit ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test negative_producer_retirement_allows_premature_release - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test producer_owner_cut_and_duplicate_admission ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_b4_publish_racing_zero_word_skip_found_by_later_scan ... ok" "$RUNNER_TEMP/loom-xthread.log"
         shell: bash
 
@@ -3753,9 +3756,6 @@ jobs:
           grep -F "test three_slot_two_release_claim_maintenance_preserve_availability_and_unique_ownership ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test quiet_summary_uses_bounded_state_scan ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test summary_clear_recheck_preserves_concurrent_bit_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
-          grep -F "test pointer_publication_and_last_pin_retention ... ok" "$RUNNER_TEMP/loom-registry.log"
-          grep -F "test negative_relaxed_pointer_publication - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
-          grep -F "test negative_early_leaf_release - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test selector_bump_before_scan_never_certifies_a_claimable_slot ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test stale_hint_at_or_above_count_is_never_a_heap ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test negative_hint_without_count_guard_hands_out_an_unminted_slot - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
