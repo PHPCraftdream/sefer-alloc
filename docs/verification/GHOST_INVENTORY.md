@@ -57,11 +57,11 @@ harness; `non-atomic` — named scanner false positives.
 | P18 | cfg(loom) twins in crates and leaf init | T | 20 | 2 | 0 | — | crate tests run the real crate under loom | R7 | G7 |
 | P19 | fallback heap one-time init + fallback lock (global/fallback.rs) | none | 11 | 0 | 0 | — | unknown (G0 finding: no loom model exists) | new-model | G6 |
 | P20 | maintenance service start/worker state | none | 6 | 0 | 0 | — | unknown (G0 finding: no loom model exists) | new-model | G6 |
-| P21 | exact-object shard lock + live hint | none | 7 | 0 | 0 | — | likely: ExactShard is a small struct | new-model | G6 |
+| P21 | exact-object shard lock + live hint | A | 7 | 1 | 0 | — | yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super) | ghost | G6 |
 | P22 | route ShardLock (spin lock over the directory shard) | S | 5 | 1 | 0 | — | yes: one AtomicBool | translate (with P5) | G2 |
 
 Shadow-model protocols (class contains S): 13 of 22, each with a decision.
-Protocols with neither a loom nor a shadow model: P19, P20, P21 (3 of 22).
+Protocols with neither a loom nor a shadow model: P19, P20 (2 of 22).
 
 ## 3. Invariants and prod places
 
@@ -273,8 +273,9 @@ Prod: `src/global/exact_object/exact_shard.rs`.
 
 - I1 lock: CAS-weak Acquire/Relaxed, release store Release
 - I2 live_hint is a hint: stored Release under the lock, read Acquire; a stale hint only costs a lock round
+- loom: `tests/loom_exact_shard_actual.rs`
 
-Decision: **new-model** — G0 finding: lock protocol with no loom model
+Decision: **ghost** — G6d: new actual-source loom model; the UnsafeCell stand-in records a loom access per get(), so an unordered critical section is a causality violation; ghost event exact-shard/held (+1 acquire, -1 release) ledger; R1 on the lock CAS/store and hint loads, R4 inner access after the lock, R3 hint stored before release, R6 on the events.
 
 ### P22 — route ShardLock (spin lock over the directory shard)
 

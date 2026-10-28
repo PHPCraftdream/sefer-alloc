@@ -503,14 +503,16 @@
         "I1 lock: CAS-weak Acquire/Relaxed, release store Release",
         "I2 live_hint is a hint: stored Release under the lock, read Acquire; a stale hint only costs a lock round"
       ],
-      "class": "none",
-      "loom": [],
+      "class": "A",
+      "loom": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
       "pins": [],
       "registry": [],
-      "real_under_loom": "likely: ExactShard is a small struct",
-      "decision": "new-model",
+      "real_under_loom": "yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super)",
+      "decision": "ghost",
       "phase": "G6",
-      "reason": "G0 finding: lock protocol with no loom model"
+      "reason": "G6d: new actual-source loom model; the UnsafeCell stand-in records a loom access per get(), so an unordered critical section is a causality violation; ghost event exact-shard/held (+1 acquire, -1 release) ledger; R1 on the lock CAS/store and hint loads, R4 inner access after the lock, R3 hint stored before release, R6 on the events."
     },
     {
       "id": "P22",
@@ -4152,6 +4154,342 @@
           }
         }
       ]
+    },
+    {
+      "id": "exact-shard/acquire-cas",
+      "kind": "R1",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::acquire_unless_exiting",
+      "site": {
+        "name": "compare_exchange_weak",
+        "receiver": "^self\\.lock$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "lock",
+        "Acquire",
+        "CAS",
+        "critical section"
+      ],
+      "reason": "the shard lock is taken by a CAS-weak with Acquire on success, which orders this critical section after the previous holder release",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "relaxed-acquire",
+          "file": "src/global/exact_object/exact_shard.rs",
+          "from": "    fn acquire_unless_exiting(&self) -> bool {\n        let mut spins = 0u32;\n        while self\n            .lock\n            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)",
+          "to": "    fn acquire_unless_exiting(&self) -> bool {\n        let mut spins = 0u32;\n        while self\n            .lock\n            .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)",
+          "checker": {
+            "name": "loom loom_exact_shard_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_exact_shard_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_acquire_cas"
+    },
+    {
+      "id": "exact-shard/release-store",
+      "kind": "R1",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::release",
+      "site": {
+        "name": "store",
+        "receiver": "^self\\.lock$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "lock",
+        "Release",
+        "critical section",
+        "holder"
+      ],
+      "reason": "the holder releases the shard lock with a Release store, publishing its table writes to the next holder",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "relaxed-release",
+          "file": "src/global/exact_object/exact_shard.rs",
+          "from": "        self.lock.store(false, Ordering::Release);\n",
+          "to": "        self.lock.store(false, Ordering::Relaxed);\n",
+          "checker": {
+            "name": "loom loom_exact_shard_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_exact_shard_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_release_store"
+    },
+    {
+      "id": "exact-shard/hint-acquire",
+      "kind": "R1",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::peek",
+      "site": {
+        "name": "load",
+        "receiver": "^self\\.live_hint$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "live_hint",
+        "Acquire",
+        "hint",
+        "empty"
+      ],
+      "reason": "the lock-free empty answer reads the live hint with Acquire; a stale hint only costs a lock round",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_hint_acquire"
+    },
+    {
+      "id": "exact-shard/take-hint-acquire",
+      "kind": "R1",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::take",
+      "site": {
+        "name": "load",
+        "receiver": "^self\\.live_hint$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "live_hint",
+        "Acquire",
+        "hint",
+        "empty"
+      ],
+      "reason": "take reads the live hint with Acquire before its lock-free empty answer",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_take_hint_acquire"
+    },
+    {
+      "id": "exact-shard/insert-under-lock",
+      "kind": "R4",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::insert",
+      "action": {
+        "name": "get",
+        "receiver": "^self\\.inner$"
+      },
+      "guard_return": "^!self\\.acquire_unless_exiting\\(\\)$",
+      "terms": [
+        "lock",
+        "inner",
+        "acquire",
+        "return"
+      ],
+      "reason": "insert touches the descriptor array only after the early return for a refused lock, i.e. while holding the shard lock",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_insert_under_lock"
+    },
+    {
+      "id": "exact-shard/peek-under-lock",
+      "kind": "R4",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::peek",
+      "action": {
+        "name": "get",
+        "receiver": "^self\\.inner$"
+      },
+      "guard_return": "^!self\\.acquire_unless_exiting\\(\\)$",
+      "terms": [
+        "lock",
+        "inner",
+        "acquire",
+        "return"
+      ],
+      "reason": "peek touches the descriptor array only after the early return for a refused lock, i.e. while holding the shard lock",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_peek_under_lock"
+    },
+    {
+      "id": "exact-shard/take-under-lock",
+      "kind": "R4",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::take",
+      "action": {
+        "name": "get",
+        "receiver": "^self\\.inner$"
+      },
+      "guard_return": "^!self\\.acquire_unless_exiting\\(\\)$",
+      "terms": [
+        "lock",
+        "inner",
+        "acquire",
+        "return"
+      ],
+      "reason": "take touches the descriptor array only after the early return for a refused lock, i.e. while holding the shard lock",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_take_under_lock"
+    },
+    {
+      "id": "exact-shard/insert-hint-before-release",
+      "kind": "R3",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::insert",
+      "before": {
+        "name": "store",
+        "receiver": "^self\\.live_hint$"
+      },
+      "after": {
+        "name": "release"
+      },
+      "terms": [
+        "live_hint",
+        "lock",
+        "release",
+        "before"
+      ],
+      "reason": "insert stores the live hint while still holding the lock, so the hint is never ahead of the table a later holder sees",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_insert_hint_before_release"
+    },
+    {
+      "id": "exact-shard/take-hint-before-release",
+      "kind": "R3",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::take",
+      "before": {
+        "name": "store",
+        "receiver": "^self\\.live_hint$"
+      },
+      "after": {
+        "name": "release"
+      },
+      "terms": [
+        "live_hint",
+        "lock",
+        "release",
+        "before"
+      ],
+      "reason": "take stores the live hint while still holding the lock, so the hint is never ahead of the table a later holder sees",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_take_hint_before_release"
+    },
+    {
+      "id": "exact-shard/ghost-acquire",
+      "kind": "R6",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::acquire_unless_exiting",
+      "ghost": "exact-shard/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "acquire",
+        "released"
+      ],
+      "reason": "a successful acquire records exact-shard/held +1; the loom ledger checks every acquire is released exactly once",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "acquire-without-ghost-event",
+          "file": "src/global/exact_object/exact_shard.rs",
+          "from": "        // Ghost: one holder per lock word; every acquire is released once.\n        crate::ghost::ghost_event!(\"exact-shard/held\", core::ptr::from_ref(self).addr(), 1);\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_exact_shard_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_exact_shard_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_ghost_acquire"
+    },
+    {
+      "id": "exact-shard/ghost-release",
+      "kind": "R6",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::release",
+      "ghost": "exact-shard/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "release",
+        "acquire"
+      ],
+      "reason": "release records exact-shard/held -1, the other side of the acquire ledger",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_ghost_release"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

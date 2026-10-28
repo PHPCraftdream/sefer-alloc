@@ -5,8 +5,8 @@
 
 use super::insert_outcome::InsertOutcome;
 use crate::alloc_core::fatal::fatal;
-use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+// Sync primitives through `super` so the actual-source loom model binds loom ones.
+use super::{spin_loop, yield_now, AtomicBool, AtomicUsize, Ordering, UnsafeCell};
 use std::alloc::{GlobalAlloc, Layout, System};
 
 const EMPTY: usize = 0;
@@ -197,8 +197,9 @@ impl ExactShard {
             .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            core::hint::spin_loop();
+            spin_loop();
         }
+        crate::ghost::ghost_event!("exact-shard/held", core::ptr::from_ref(self).addr(), 1);
     }
 
     /// Spin, then `yield_now`, then refuse once the process is exiting: a
@@ -212,14 +213,16 @@ impl ExactShard {
         {
             if spins < 64 {
                 spins += 1;
-                core::hint::spin_loop();
+                spin_loop();
             } else if crate::global::process_exit_in_progress() {
                 crate::global::fallback::record_exit_lock_giveup();
                 return false;
             } else {
-                std::thread::yield_now();
+                yield_now();
             }
         }
+        // Ghost: one holder per lock word; every acquire is released once.
+        crate::ghost::ghost_event!("exact-shard/held", core::ptr::from_ref(self).addr(), 1);
         true
     }
 
@@ -232,6 +235,7 @@ impl ExactShard {
     }
 
     fn release(&self) {
+        crate::ghost::ghost_event!("exact-shard/held", core::ptr::from_ref(self).addr(), -1);
         self.lock.store(false, Ordering::Release);
     }
 
