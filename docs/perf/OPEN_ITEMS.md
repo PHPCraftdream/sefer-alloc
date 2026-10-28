@@ -3216,7 +3216,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > **Current state**
    > - **Status:** NO-GO by the pre-registration; the re-checks stay in production.
    > - **Current verdict (ИЗМЕРЕНО):** J1′ v2 net of null, 20 processes: bulk64 slower 1.023× (CI +1.72…+2.51 %), bulk16k slower 1.035× (CI +2.58…+4.56 %); faster pair16, churn1024 1.014×, larson 1.014×; 6 kernels equal. Callgrind: growth16 −9.0 % Ir at n = 131072 (27 268 129 → 24 810 596), bulk flush 48.3 → 27.9 Ir per pair (−42 %), total −7.5 %. Fewer instructions, more time on bulk.
-   > - **Next trigger:** PMU counters on bulk64/bulk16k (cache misses, store-bound cycles) show the slowdown is code layout of the variant copy rather than memory-bound flush, or a judge kernel where flush Ir dominates time.
+   > - **PMU look (ИЗМЕРЕНО 2026-10-28, `docs/perf/G1_IDEAS.md` §5, on top of K1):** bulk16k instructions 0.912×, cycles 0.966×, but `exe_activity.bound_on_stores` 5.156× and `resource_stalls.sb` 4.533× (mixed 256/1024: 2.939× / 2.887×); frontend counters not worse. The variant's flush is store-buffer bound, not a code-layout effect — the trigger below is NOT met.
+   > - **Next trigger:** a flush variant that removes STORES per block (not loads), or a judge kernel where flush Ir dominates time.
    > - **Evidence:** docs/perf/GR1_MAG_FLUSH_GATE.md, docs/perf/GR1_MAG_FLUSH_GATE_summary*.csv, docs/perf/gr1_mag_flush/ (pre-registration, patch, raw callgrind, JSONL manifest), scripts/gr1_mag_flush_gate_report.mjs (raw measured on branch `gr1-meas`@23141261).
 
 122. **[L] U32 — `try_carve_batch` issuing its bump run per leaf instead of per block: honest reject (NO-GO on time).** (Filed 2026-10-28, `docs/perf/U32_CARVE_RANGE_GATE.md`.)
