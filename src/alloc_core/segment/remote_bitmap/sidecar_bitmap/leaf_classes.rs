@@ -49,12 +49,17 @@ impl LeafCursor {
     /// Blocks of a `stride`-granule run starting at `granule` that start in
     /// `granule`'s leaf, capped at `remaining` (`stride > 0`).
     pub(crate) fn blocks_in_leaf(granule: usize, stride: usize, remaining: usize) -> usize {
-        debug_assert!(stride > 0);
-        if stride >= LEAF_GRANULES {
-            return remaining.min(1);
+        debug_assert!(stride > 0 && remaining > 0);
+        // Counted by stepping, not dividing: a run rarely holds more than a
+        // refill batch, and a 64-bit divide costs more than the steps.
+        let end = (granule / LEAF_GRANULES + 1) * LEAF_GRANULES;
+        let mut k = 1;
+        let mut next = granule + stride;
+        while k < remaining && next < end {
+            k += 1;
+            next += stride;
         }
-        let left = LEAF_GRANULES - granule % LEAF_GRANULES;
-        left.div_ceil(stride).min(remaining)
+        k
     }
 }
 
