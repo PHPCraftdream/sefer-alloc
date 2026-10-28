@@ -3247,6 +3247,13 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** a variant that keeps the Layout class as the (parallel) index and uses the byte only for the reject branch while still cutting `class_for` instructions (e.g. saturating SIZE2CLASS sentinel instead of the bounds-check branch, no redundant `.max(MIN_BLOCK)`), judged by J1′ v2.
    > - **Evidence:** docs/perf/G1_IDEAS.md §6, docs/perf/g1_pmu/k2/ (raw perf stat and callgrind logs, compare table and CSV), scripts/g1_fe_compare.mjs.
 
+128. **[L] G1-K6 — flush without the per-call `recycled_bases` zeroing and the `prev_ptr` stack spill: NO-GO by ceiling (below the layout-noise floor).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §7.)
+   > **Current state**
+   > - **Status:** NO-GO before the judge; patch `docs/perf/g1_pmu/k6/k6_flush_stores.patch` (over `g1-k5`@`2bc830cc`), production unchanged.
+   > - **Current verdict (ИЗМЕРЕНО, perf stat, b4_pmu_probe, sefer arm, 7 interleaved repeats, judge alignment flags):** instructions change only on bulk16k (0.990×), cycles there 0.993×; the control shapes that never call flush (pair16, mixed — instructions 1.000×) move +2.5 … +5.3 % in cycles from code layout alone, more than the whole K6 effect (+8.5 % on pair16 without alignment flags).
+   > - **Next trigger:** none for K6. Method note: a probe A/B must carry a control shape that does not execute the changed code; its shift is the noise floor (also the likely cause of the bulk64 null-copy artifact in items 125/127).
+   > - **Evidence:** docs/perf/G1_IDEAS.md §7, docs/perf/g1_pmu/k6/ (raw perf stat logs aligned/unaligned, compare tables and CSVs, `fe_pair.sh`, `build_only.sh`, patch).
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
