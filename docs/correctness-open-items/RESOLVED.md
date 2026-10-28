@@ -24,6 +24,16 @@ same-day item-number-range split. The split reversed item 86's
     > - **Mechanism:** XNU's `MACH_TASK_BASIC_INFO` fills `resident_size` from the `phys_mem` ledger balance and `resident_size_max` from its lifetime max (`osfmk/kern/task.c`); the balance changes on every credit, the lifetime max only in `ledger_entry_check_new_balance` (`osfmk/kern/ledger.c`), which runs later. A read in that window returns max < balance.
     > - **Fix:** the backend reports `peak_rss = max(resident_size_max, resident_size)` (`crates/proc-memstat/src/lib.rs`); docs, README matrix and the crate CHANGELOG say so. The existing assertion `peak_rss >= rss` is the oracle that failed before the fix.
 
+### 257 — CLOSED (2026-10-28)
+
+257. **[T] License CI covered only the root Cargo workspace: `fuzz/` and the 14 compile_fail fixtures (each its own workspace and Cargo.lock) and the third-party GitHub Actions were never license-checked.** (Filed and closed 2026-10-28, owner question "do we check third-party licenses in CI".)
+
+    > **Current state**
+    > - **Status:** CLOSED (2026-10-28, same commit as the fix).
+    > - **Mechanism:** the `licenses` job ran `cargo deny check` once, against the root manifest, so the resolved graphs of `fuzz/Cargo.lock` and the fixture locks were invisible to it, and no check read `uses:`. Running cargo-deny on `fuzz/` found a real unreviewed license: `libfuzzer-sys` is `(MIT OR Apache-2.0) AND NCSA`, and NCSA was not allowed. The fixtures failed only as `unlicensed` (our own `publish = false` crates without a license field).
+    > - **Fix:** the job runs cargo-deny once per tracked Cargo.lock (`scripts/license-check-workspaces.mjs --list`); `--check` (every run) fails on a `[workspace]` manifest without a tracked lock, an action not in its reviewed `ACTIONS` list, an action license `deny.toml` does not allow, and a stale list entry; `deny.toml` allows NCSA for `libfuzzer-sys` only (fuzz harness, never distributed) and ignores our own unpublished crates (`[licenses.private]`); the fingerprint hashes every tracked lock and both scripts. Selftests cover each check and its mutant (workspace without lock, unknown action, disallowed license, stale entry, AND/OR semantics; fingerprint: second-workspace change, new and moved workspace).
+    > - **Not covered:** tools the CI installs and runs but does not distribute (cargo-deny, cargo-hack, valgrind and others); code copied by hand from other projects (review only — a search found none besides the attributed Contributor Covenant text in `CODE_OF_CONDUCT.md`).
+
 ### 255 — CLOSED (2026-10-25)
 
 255. **[T] Flaky `thread_exit_releases_cached_pins_and_balances` (`tests/b4_r1_pin_cache.rs`): the refs baseline could include a preceding test's cached pin.** (Filed and closed 2026-10-25, PR #97 CI, check-matrix row `test-r8-fastbin-no-decommit`: `left: 4, right: 5`.)
