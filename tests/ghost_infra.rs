@@ -44,4 +44,27 @@ fn ghost_macros_record_fail_and_reset() {
     assert_eq!(ghost::overflowed(), 0, "no event dropped");
     ghost::reset();
     assert_eq!(ghost::count("ghost/probe", 7), 0, "reset clears the table");
+
+    // A zero delta changes no count and takes no slot (per-word scan events).
+    for k in 0..2_000u64 {
+        ghost::record("ghost/zero", k, 0);
+    }
+    assert_eq!(ghost::count("ghost/zero", 1), 0);
+    assert_eq!(ghost::overflowed(), 0, "zero deltas take no slot");
+    // More keys than slots: the excess is dropped and counted, never lost
+    // silently, and each event costs a bounded probe.
+    const KEYS: u64 = 1_100;
+    for k in 0..KEYS {
+        ghost::record("ghost/fill", k, 1);
+    }
+    let kept = (0..KEYS)
+        .filter(|&k| ghost::count("ghost/fill", k) == 1)
+        .count() as u64;
+    assert!(ghost::overflowed() > 0, "a crowded table drops events");
+    assert_eq!(
+        kept + ghost::overflowed(),
+        KEYS,
+        "every event is kept or counted as dropped"
+    );
+    ghost::reset();
 }
