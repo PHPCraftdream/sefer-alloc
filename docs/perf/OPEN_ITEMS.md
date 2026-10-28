@@ -3219,6 +3219,13 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** PMU counters on bulk64/bulk16k (cache misses, store-bound cycles) show the slowdown is code layout of the variant copy rather than memory-bound flush, or a judge kernel where flush Ir dominates time.
    > - **Evidence:** docs/perf/GR1_MAG_FLUSH_GATE.md, docs/perf/GR1_MAG_FLUSH_GATE_summary*.csv, docs/perf/gr1_mag_flush/ (pre-registration, patch, raw callgrind, JSONL manifest), scripts/gr1_mag_flush_gate_report.mjs (raw measured on branch `gr1-meas`@23141261).
 
+122. **[L] U32 — `try_carve_batch` issuing its bump run per leaf instead of per block: honest reject (NO-GO on time).** (Filed 2026-10-28, `docs/perf/U32_CARVE_RANGE_GATE.md`.)
+   > **Current state**
+   > - **Status:** NO-GO by the pre-registration (v1 and v2); the per-block leaf check stays in production.
+   > - **Current verdict (ИЗМЕРЕНО):** growth16 process judge, n = 131072: v1 (`div_ceil` per leaf) slower +4.18 % (CI +1.36…+6.82 %, 40 pairs), v2 (stepping count) +0.60 % (CI −0.85…+2.09 %, 120 pairs); nulls −2.80 % [−4.59, 4.51] and −0.28 % [−2.65, 1.64]. Alloc-phase median up ≈4 % in both. Callgrind: v1 −9.13 % Ir (27 268 133 → 24 778 802), v2 −3.53 % (→ 26 304 242); growth16 Sefer/mimalloc 2.23× → 2.15× (v2) by Ir only. Second case after GR-1 (item 121) of fewer instructions without less time.
+   > - **Next trigger:** PMU counters (cache misses, page faults) on the growth16 probe show the fresh-heap alloc phase is bound by carve instructions rather than first-touch/metadata misses, or a carve-dominated judge kernel exists where Ir tracks time.
+   > - **Evidence:** docs/perf/U32_CARVE_RANGE_GATE.md, docs/perf/U32_CARVE_RANGE_GATE_summary.csv, docs/perf/u32_carve_range/ (pre-registration, both patches, judge JSONL, callgrind logs), scripts/u32_gate_report.mjs (raw measured on branches `u32`@bb8aacab and `u32-meas`@d9189f4d).
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

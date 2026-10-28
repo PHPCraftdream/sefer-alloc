@@ -1,0 +1,26 @@
+git_diff_sha256 commit-bb8aacab0de274e22b90dfac721876adadc8e48f
+bin ~/ab/tgt-ut-u32-c2/release/examples/ut_u31_probe
+IR_TOTAL sefer 32768 6991174
+SELF_IR scan.rs=135163 bitmap_scan.rs=54089 sum=189252 total=6991174
+ATTR_TOTALS RESIDUAL annotated=4486342 program=6991174 uncovered=2504832
+IR_TOTAL sefer 65536 13424549
+SELF_IR scan.rs=266664 bitmap_scan.rs=104327 sum=370991 total=13424549
+ATTR_TOTALS RESIDUAL annotated=8820274 program=13424549 uncovered=4604275
+IR_TOTAL sefer 131072 26304242
+SELF_IR scan.rs=529276 bitmap_scan.rs=214173 sum=743449 total=26304242
+ATTR_TOTALS RESIDUAL annotated=17496768 program=26304242 uncovered=8807474
+IR_TOTAL mimalloc 32768 3430280
+SELF_IR scan.rs=0 bitmap_scan.rs=0 sum=0 total=3430280
+ATTR_TOTALS RESIDUAL annotated=2715717 program=3430280 uncovered=714563
+IR_TOTAL mimalloc 65536 6358298
+SELF_IR scan.rs=0 bitmap_scan.rs=0 sum=0 total=6358298
+ATTR_TOTALS RESIDUAL annotated=5282373 program=6358298 uncovered=1075925
+IR_TOTAL mimalloc 131072 12215033
+SELF_IR scan.rs=0 bitmap_scan.rs=0 sum=0 total=12215033
+ATTR_TOTALS RESIDUAL annotated=10416337 program=12215033 uncovered=1798696
+COUNTERS {"mode":"sefer","growth16_n":32768,"find_segment_calls":2048,"scan_calls":105,"scan_words":8638,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":32768,"u31_scan_segments":105,"u31_holders_base":105,"u31_scan_no_pending":105,"u31_discovery_scans":105}
+COUNTERS {"mode":"sefer","growth16_n":65536,"find_segment_calls":4096,"scan_calls":116,"scan_words":16666,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":65536,"u31_scan_segments":116,"u31_holders_base":116,"u31_scan_no_pending":116,"u31_discovery_scans":116}
+COUNTERS {"mode":"sefer","growth16_n":131072,"find_segment_calls":8192,"scan_calls":128,"scan_words":34287,"foreign_publish_ok":0,"directory_lookups":0,"shard_lock_spins":0,"shard_lock_yields":0}
+{"growth16_n":131072,"u31_scan_segments":128,"u31_holders_base":128,"u31_scan_no_pending":128,"u31_discovery_scans":128}
