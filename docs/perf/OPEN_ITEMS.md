@@ -3239,6 +3239,13 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** close on a green landing CI. Open sub-item: bulk64's +1.8 % comes with unchanged instructions and no drain call on that kernel (route Ir 0 in both variants) — re-check with PMU (frontend/DSB counters) if a later candidate also moves bulk64 without changing its instructions.
    > - **Evidence:** docs/perf/G1_K1_DRAIN_GATE.md, docs/perf/G1_K1_DRAIN_GATE_summary.csv, docs/perf/G1_K1_DRAIN_GATE_summary_callgrind.csv, docs/perf/g1_k1/, scripts/g1_k1_gate_report.mjs, tests/g1_k1_drain_class_code.rs.
 
+127. **[A] G1-K5 — magazine depot for classes 240..1024 B (K = 2): GO, shipping `perf(runtime)`.** (Filed 2026-10-28, `docs/perf/G1_K5_DEPOT_GATE.md`.)
+   > **Current state**
+   > - **Status:** GO by pre-registration (`docs/perf/g1_k5/G1_K5_PREREG.md`); code in the same PR as this card, stacked on K1 (item 125). Close after CI is green on the landing SHA.
+   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k5-meas`@`319517f7`):** churn1024 faster 1.110×, churn256 1.090× (CI −9.76…−6.49 %), larson 1.080×, churn16 1.030×; pair16, pair64, pair_rt, bulk16k, churn64, vec512 equal; bulk64 slower 1.016× (CI +1.15…+1.86 %, within the +2 % tolerance; instructions unchanged, the null copy's A/B is −1.71 % — same pattern as K1). Against mimalloc (`g1-k5`): larson mimalloc faster 1.019× (was 1.103×), churn1024 1.130× (was 1.288×). Parked-block bound per thread 64 256 → 241 408 B; RSS not measured.
+   > - **Next trigger:** close on a green landing CI. Shared open sub-item with item 125: bulk64's +1.6…+1.8 % with unchanged instructions in two consecutive ablations points at the null copy's layout on that kernel — check the harness (a second null build, or a swapped-slot null) before the next bulk64-sensitive gate.
+   > - **Evidence:** docs/perf/G1_K5_DEPOT_GATE.md, docs/perf/G1_K5_DEPOT_GATE_summary.csv, docs/perf/G1_K5_DEPOT_GATE_summary_callgrind.csv, docs/perf/g1_k5/, scripts/g1_k5_gate_report.mjs, tests/heap_core_depot.rs.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
