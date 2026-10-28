@@ -366,7 +366,9 @@ fn check_inner(rule: &Value, src: &dyn Sources) -> Result<Vec<Violation>, String
                     }
                 }
             }
-            if seen == 0 {
+            // `forbid`: the target must not occur at all (no anchor needed).
+            let forbid = rule.get("forbid").and_then(Value::as_bool).unwrap_or(false);
+            if seen == 0 && !forbid {
                 out.push(v(
                     rule,
                     file,
