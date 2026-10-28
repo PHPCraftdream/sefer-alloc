@@ -56,7 +56,7 @@ harness; `non-atomic` — named scanner false positives.
 | P17 | bootstrap const OncePtrCell stand-in under loom | T | 7 | 0 | 0 | — | is the loom twin | R7 | G7 |
 | P18 | cfg(loom) twins in crates and leaf init | T | 20 | 2 | 0 | — | crate tests run the real crate under loom | R7 | G7 |
 | P19 | fallback heap one-time init + fallback lock (global/fallback.rs) | A | 11 | 1 | 0 | — | yes: tests/loom_fallback_actual.rs compiles fallback.rs onto per-execution loom stand-ins for its statics (sync names through super) | ghost | G6 |
-| P20 | maintenance service start/worker state | none | 6 | 0 | 0 | — | unknown (G0 finding: no loom model exists) | new-model | G6 |
+| P20 | maintenance service start/worker state | none | 6 | 0 | 0 | — | no: process-wide static STATE plus std Mutex/Condvar wait_timeout_while and a detached std::thread worker in an infinite periodic loop | rules + integration tests | G6 |
 | P21 | exact-object shard lock + live hint | A | 7 | 1 | 0 | — | yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super) | ghost | G6 |
 | P22 | route ShardLock (spin lock over the directory shard) | S | 5 | 1 | 0 | — | yes: one AtomicBool | translate (with P5) | G2 |
 
@@ -266,7 +266,7 @@ Prod: `src/global/maintenance_service.rs::start`, `src/global/maintenance_servic
 - I1 STATE: one starter wins the CAS (AcqRel/Acquire); the worker publishes its exit with a Release store; running() loads Acquire
 - I2 PASSES is bumped Release after a completed pass; waiters load Acquire
 
-Decision: **new-model** — G0 finding: covered only by r6_t35_start_confirmation_bound / r8_autonomous_maintenance integration tests
+Decision: **rules + integration tests** — G6d: an actual-source loom model needs the worker loop and the std thread/condvar seams restructured in production, out of scope for an imports-only phase; every STATE site is pinned by R1 (start CAS, starter wait load, rollback, RUNNING store, running()), and R3 keeps RUNNING stored under CONTROL (before the notify in the same block); behaviour stays covered by r6_t35_start_confirmation_bound and r8_autonomous_maintenance.
 
 ### P21 — exact-object shard lock + live hint
 

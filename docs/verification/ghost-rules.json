@@ -490,10 +490,10 @@
       "loom": [],
       "pins": [],
       "registry": [],
-      "real_under_loom": "unknown (G0 finding: no loom model exists)",
-      "decision": "new-model",
+      "real_under_loom": "no: process-wide static STATE plus std Mutex/Condvar wait_timeout_while and a detached std::thread worker in an infinite periodic loop",
+      "decision": "rules + integration tests",
       "phase": "G6",
-      "reason": "G0 finding: covered only by r6_t35_start_confirmation_bound / r8_autonomous_maintenance integration tests"
+      "reason": "G6d: an actual-source loom model needs the worker loop and the std thread/condvar seams restructured in production, out of scope for an imports-only phase; every STATE site is pinned by R1 (start CAS, starter wait load, rollback, RUNNING store, running()), and R3 keeps RUNNING stored under CONTROL (before the notify in the same block); behaviour stays covered by r6_t35_start_confirmation_bound and r8_autonomous_maintenance."
     },
     {
       "id": "P21",
@@ -4908,6 +4908,169 @@
         }
       ],
       "fixtures": "tests/ghost_lint_fixtures/p19_ghost_release"
+    },
+    {
+      "id": "maintenance-service/start-cas",
+      "kind": "R1",
+      "fn": "MaintenanceService::start",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "^STATE$"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "STATE",
+        "starter",
+        "CAS",
+        "AcqRel"
+      ],
+      "reason": "one starter wins the IDLE -> STARTING CAS; a loser reads RUNNING or an in-progress start",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_start_cas"
+    },
+    {
+      "id": "maintenance-service/start-wait-acquire",
+      "kind": "R1",
+      "fn": "MaintenanceService::start",
+      "site": {
+        "name": "load",
+        "receiver": "^STATE$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "STATE",
+        "RUNNING",
+        "Acquire",
+        "wait"
+      ],
+      "reason": "the starter waits for RUNNING with an Acquire load, pairing with the worker Release store",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_start_wait_acquire"
+    },
+    {
+      "id": "maintenance-service/rollback-release",
+      "kind": "R1",
+      "fn": "StartingGuard::drop",
+      "site": {
+        "name": "store",
+        "receiver": "^STATE$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "STATE",
+        "IDLE",
+        "rollback",
+        "Release"
+      ],
+      "reason": "a failed start rolls STATE back to IDLE with Release so a later start can win the CAS",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_rollback_release"
+    },
+    {
+      "id": "maintenance-service/running-release",
+      "kind": "R1",
+      "fn": "MaintenanceService::worker",
+      "site": {
+        "name": "store",
+        "receiver": "^STATE$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "STATE",
+        "RUNNING",
+        "worker",
+        "Release"
+      ],
+      "reason": "the worker publishes RUNNING with Release before any maintenance pass",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_running_release"
+    },
+    {
+      "id": "maintenance-service/running-acquire",
+      "kind": "R1",
+      "fn": "MaintenanceService::running",
+      "site": {
+        "name": "load",
+        "receiver": "^STATE$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "STATE",
+        "RUNNING",
+        "Acquire",
+        "running"
+      ],
+      "reason": "running() reports the guarantee only from an Acquire load of RUNNING",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_running_acquire"
+    },
+    {
+      "id": "maintenance-service/running-under-control",
+      "kind": "R3",
+      "fn": "MaintenanceService::worker",
+      "before": {
+        "name": "control"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^STATE$"
+      },
+      "nested_before": true,
+      "terms": [
+        "RUNNING",
+        "control",
+        "mutex",
+        "before"
+      ],
+      "reason": "the worker stores RUNNING while holding the CONTROL mutex, so the starter condvar wait cannot miss it",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_running_under_control"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",
