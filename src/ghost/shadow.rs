@@ -8,6 +8,10 @@
 use core::sync::atomic::{AtomicI64, AtomicU64, Ordering::Relaxed};
 
 const SLOTS: usize = 1024;
+/// Longest probe sequence: a key not found within it is dropped (counted in
+/// `OVERFLOW`), so a crowded table costs O(MAX_PROBE), not O(SLOTS), per
+/// event — under miri every probe is an interpreted atomic.
+const MAX_PROBE: usize = 64;
 
 static KEYS: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
 static VALS: [AtomicI64; SLOTS] = [const { AtomicI64::new(0) }; SLOTS];
@@ -33,9 +37,14 @@ pub fn fail(rule: &'static str, msg: core::fmt::Arguments<'_>) -> ! {
 
 /// Adds `delta` to the counter of `(rule, key)`.
 pub fn record(rule: &'static str, key: u64, delta: i64) {
+    // A zero delta changes no count; skipping it keeps per-word scan events
+    // (`sidecar/cut-bits` of an empty word) from filling the table.
+    if delta == 0 {
+        return;
+    }
     let k = slot_key(rule, key);
     let mut i = (k as usize) % SLOTS;
-    for _ in 0..SLOTS {
+    for _ in 0..MAX_PROBE {
         match KEYS[i].compare_exchange(0, k, Relaxed, Relaxed) {
             Ok(_) => {
                 VALS[i].fetch_add(delta, Relaxed);
@@ -48,7 +57,7 @@ pub fn record(rule: &'static str, key: u64, delta: i64) {
             Err(_) => i = (i + 1) % SLOTS,
         }
     }
-    // A full table drops the event instead of failing an unrelated long run;
+    // A crowded table drops the event instead of failing an unrelated long run;
     // a harness that checks counts also checks `overflowed() == 0`.
     OVERFLOW.fetch_add(1, Relaxed);
 }
@@ -62,7 +71,7 @@ pub fn overflowed() -> u64 {
 pub fn count(rule: &'static str, key: u64) -> i64 {
     let k = slot_key(rule, key);
     let mut i = (k as usize) % SLOTS;
-    for _ in 0..SLOTS {
+    for _ in 0..MAX_PROBE {
         match KEYS[i].load(Relaxed) {
             0 => return 0,
             cur if cur == k => return VALS[i].load(Relaxed),
