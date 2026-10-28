@@ -14,7 +14,7 @@ const fn depot_classes() -> usize {
 pub(crate) const DEPOT_CLASSES: usize = depot_classes();
 pub(crate) const DEPOT_K_MAX: u8 = 8;
 pub(crate) const DEPOT_K: [u8; DEPOT_CLASSES] = {
-    let mut k = [2u8; DEPOT_CLASSES];
+    let mut k = [4u8; DEPOT_CLASSES];
     let small = [8u8, 8, 8, 8, 8, 8, 7, 1];
     let mut c = 0;
     while c < small.len() {
@@ -23,7 +23,7 @@ pub(crate) const DEPOT_K: [u8; DEPOT_CLASSES] = {
     }
     k
 };
-pub(crate) const DEPOT_BUDGET_BYTES: usize = 256 * 1024;
+pub(crate) const DEPOT_BUDGET_BYTES: usize = 448 * 1024;
 /// `DEPOT_K` widened to every small class (0 = no depot), so the inline
 /// overflow gate needs no separate `c < DEPOT_CLASSES` test.
 pub(crate) const DEPOT_CAP: [u8; SMALL_CLASS_COUNT] = {
