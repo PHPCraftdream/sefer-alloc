@@ -245,10 +245,10 @@
       "registry": [
         "R0-21"
       ],
-      "real_under_loom": "yes: LargeReservationState wraps one &AtomicU64",
+      "real_under_loom": "yes: tests/loom_terminal_large.rs compiles reservation_state.rs and terminal_words.rs onto loom atomics",
       "decision": "translate",
       "phase": "G6",
-      "reason": "state word struct is self-contained"
+      "reason": "G6c: tests/loom_terminal_large.rs now runs the production LargeReservationState and phase codec on loom atomics (reservation_state.rs takes its atomics from super); ghost event large/pending (+1 publish, -1 claim) checked by a per-word ledger; R2 x5 exact ordered-op tables, R4 x3 phase checks before each observed-word CAS, R6 x2 on the events."
     },
     {
       "id": "P10",
@@ -3751,6 +3751,337 @@
         "tests/loom_active_kind_index.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p11_model_bind"
+    },
+    {
+      "id": "large/publish-pending-inventory",
+      "kind": "R2",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::publish_pending",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "phase word",
+        "AcqRel",
+        "Acquire"
+      ],
+      "reason": "the producer terminal LIVE -> PENDING CAS is AcqRel/Acquire and the only ordered operation of publish_pending",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_publish_pending_inventory"
+    },
+    {
+      "id": "large/claim-pending-inventory",
+      "kind": "R2",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::claim_pending",
+      "sites": [
+        {
+          "name": "load",
+          "orderings": [
+            "Acquire"
+          ]
+        },
+        {
+          "name": "compare_exchange",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "phase word",
+        "AcqRel",
+        "Acquire"
+      ],
+      "reason": "the owner claim reads the word with Acquire and moves PENDING -> CONSUMING with one AcqRel/Acquire CAS",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_claim_pending_inventory"
+    },
+    {
+      "id": "large/claim-live-inventory",
+      "kind": "R2",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::claim_live",
+      "sites": [
+        {
+          "name": "load",
+          "orderings": [
+            "Acquire"
+          ]
+        },
+        {
+          "name": "compare_exchange",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "phase word",
+        "AcqRel",
+        "Acquire"
+      ],
+      "reason": "the owner LIVE claim reads with Acquire and moves LIVE -> CONSUMING with one AcqRel/Acquire CAS",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_claim_live_inventory"
+    },
+    {
+      "id": "large/begin-reuse-inventory",
+      "kind": "R2",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::begin_reuse",
+      "sites": [
+        {
+          "name": "load",
+          "orderings": [
+            "Acquire"
+          ]
+        },
+        {
+          "name": "compare_exchange",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "phase word",
+        "AcqRel",
+        "Acquire"
+      ],
+      "reason": "cache reuse reads with Acquire and moves CACHED(g) -> INITIALIZING(g+1) with one AcqRel/Acquire CAS",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_begin_reuse_inventory"
+    },
+    {
+      "id": "large/transition-inventory",
+      "kind": "R2",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::transition",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "phase word",
+        "AcqRel",
+        "Acquire"
+      ],
+      "reason": "every fixed transition (cache, release, reuse finish) is one AcqRel/Acquire CAS from the exact expected word",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_transition_inventory"
+    },
+    {
+      "id": "large/claim-pending-guard",
+      "kind": "R4",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::claim_pending",
+      "action": {
+        "name": "compare_exchange"
+      },
+      "guard_return": "^large_phase\\(observed\\)!=Some\\(LargePhase::Pending\\)$",
+      "terms": [
+        "phase",
+        "Pending",
+        "CAS",
+        "return"
+      ],
+      "reason": "the owner claims only a word it observed in PENDING; claiming LIVE would consume an obligation no producer published",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "mutants": [
+        {
+          "id": "claim-without-pending-check",
+          "file": "src/alloc_core/large/reservation_state.rs",
+          "from": "        if large_phase(observed) != Some(LargePhase::Pending) {\n            return None;\n        }\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_terminal_large",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_terminal_large"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_claim_pending_guard"
+    },
+    {
+      "id": "large/claim-live-guard",
+      "kind": "R4",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::claim_live",
+      "action": {
+        "name": "compare_exchange"
+      },
+      "guard_return": "^large_phase\\(observed\\)!=Some\\(LargePhase::Live\\)$",
+      "terms": [
+        "phase",
+        "Live",
+        "CAS",
+        "return"
+      ],
+      "reason": "the owner LIVE claim consumes only a word observed in LIVE, never a PENDING obligation a producer already published",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_claim_live_guard"
+    },
+    {
+      "id": "large/begin-reuse-guard",
+      "kind": "R4",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::begin_reuse",
+      "action": {
+        "name": "compare_exchange"
+      },
+      "guard_return": "^large_phase\\(observed\\)!=Some\\(LargePhase::Cached\\)$",
+      "terms": [
+        "phase",
+        "Cached",
+        "CAS",
+        "return"
+      ],
+      "reason": "reuse starts only from CACHED, so a consumed or released reservation is never re-issued",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_begin_reuse_guard"
+    },
+    {
+      "id": "large/ghost-publish",
+      "kind": "R6",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::publish_pending",
+      "ghost": "large/pending",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "publication",
+        "claimed",
+        "exactly once"
+      ],
+      "reason": "publish_pending records large/pending +1 per successful terminal publication; the loom ledger checks each is claimed exactly once",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "mutants": [
+        {
+          "id": "publish-without-ghost-event",
+          "file": "src/alloc_core/large/reservation_state.rs",
+          "from": "        crate::ghost::ghost_event!(\n            \"large/pending\",\n            core::ptr::from_ref(self.word).addr(),\n            i64::from(published)\n        );\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_terminal_large",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_terminal_large"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_ghost_publish"
+    },
+    {
+      "id": "large/ghost-claim",
+      "kind": "R6",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::claim_pending",
+      "ghost": "large/pending",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "claim",
+        "publication",
+        "exactly once"
+      ],
+      "reason": "claim_pending records large/pending -1 per successful claim, the other side of the exactly-once ledger",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "mutants": [
+        {
+          "id": "claim-without-ghost-event",
+          "file": "src/alloc_core/large/reservation_state.rs",
+          "from": "        crate::ghost::ghost_event!(\n            \"large/pending\",\n            core::ptr::from_ref(self.word).addr(),\n            -i64::from(claimed.is_some())\n        );\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_terminal_large",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_terminal_large"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_ghost_claim"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

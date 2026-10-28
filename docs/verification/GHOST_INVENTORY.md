@@ -45,7 +45,7 @@ harness; `non-atomic` — named scanner false positives.
 | P6 | route pin cache fast path | A | 0 | 1 | 0 | — | yes (already #[path]) | ghost | G6 |
 | P7 | sidecar bitmap: publish / guarded cut / scan | A+S | 8 | 3 | 0 | R0-21 | yes (loom_sidecar_bitmap_actual.rs) | ghost + retire shadow | G6 |
 | P8 | small sidecar: leaf pointer publication, pin lifetime | S | 14 | 1 | 0 | R0-22 | partial: ClassLeaves allocates leaves through the OS seam (cfg(loom) twin, P18) | translate | G6 |
-| P9 | terminal Large: phase word | S | 15 | 1 | 0 | R0-21 | yes: LargeReservationState wraps one &AtomicU64 | translate | G6 |
+| P9 | terminal Large: phase word | S | 15 | 1 | 0 | R0-21 | yes: tests/loom_terminal_large.rs compiles reservation_state.rs and terminal_words.rs onto loom atomics | translate | G6 |
 | P10 | terminal owner drain: owner credits \|\| cut | S | 0 | 1 | 0 | R0-21 R5b-10 | no: credits live in AllocCore | keep+R5 | G6 |
 | P11 | active-kind index membership \|\| terminal publication | S | 0 | 1 | 0 | — | no: index is part of SegmentTable | keep+R5+R3 | G6 |
 | P12 | depot across slot recycle | S | 0 | 1 | 0 | — | no: owner-only plain storage bound as &'static mut | keep+R8+R3+R5 | G4 |
@@ -161,7 +161,7 @@ Prod: `src/alloc_core/large/reservation_state.rs`, `src/registry/segment_route/l
 - I2 every transition CAS is AcqRel/Acquire; a terminal publication is the producer's last reservation access
 - loom: `tests/loom_terminal_large.rs`
 
-Decision: **translate** — state word struct is self-contained
+Decision: **translate** — G6c: tests/loom_terminal_large.rs now runs the production LargeReservationState and phase codec on loom atomics (reservation_state.rs takes its atomics from super); ghost event large/pending (+1 publish, -1 claim) checked by a per-word ledger; R2 x5 exact ordered-op tables, R4 x3 phase checks before each observed-word CAS, R6 x2 on the events.
 
 ### P10 — terminal owner drain: owner credits || cut
 

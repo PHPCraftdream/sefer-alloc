@@ -167,6 +167,13 @@ mod hand_proofs {
 ))]
 #[path = "alloc_core/large/reservation_state.rs"]
 mod proof_reservation_state;
+// `proof_reservation_state` takes its atomics from `super`.
+#[cfg(all(
+    kani,
+    feature = "alloc-core",
+    not(all(feature = "alloc-global", feature = "internals"))
+))]
+use core::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(all(kani, feature = "alloc-core"))]
 mod large_state_proofs {
