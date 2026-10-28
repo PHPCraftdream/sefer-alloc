@@ -3226,6 +3226,13 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** PMU counters (cache misses, page faults) on the growth16 probe show the fresh-heap alloc phase is bound by carve instructions rather than first-touch/metadata misses, or a carve-dominated judge kernel exists where Ir tracks time.
    > - **Evidence:** docs/perf/U32_CARVE_RANGE_GATE.md, docs/perf/U32_CARVE_RANGE_GATE_summary.csv, docs/perf/u32_carve_range/ (pre-registration, both patches, judge JSONL, callgrind logs), scripts/u32_gate_report.mjs (raw measured on branches `u32`@bb8aacab and `u32-meas`@d9189f4d).
 
+123. **[L] B4-25 — remote frees of the refill class straight into magazine/depot, bypassing the bin: not prototyped (ceiling below the judge's resolution).** (Filed 2026-10-28, `docs/perf/B4_25_REMOTE_CEILING.md`.)
+   > **Current state**
+   > - **Status:** NO-GO by ceiling; no prototype, production unchanged. Trigger check, not a pre-registered merge gate.
+   > - **Current verdict (ИЗМЕРЕНО, callgrind, main `75e35ef3` + probe, `b4-25`@`a82ac944`):** the whole remote-reception path (publish, scan, reclaim into the bin) adds at most 0.74 % Ir per thread over its T=1 level (mstress T=4: 132 308 / 17 943 810; mstress T=2 0.73 %, larson 0.55 % / 0.43 %); B4-25 removes only the bin `next` write/read part of it. Sefer/mimalloc Ir ratio does not grow with T (mstress 1.53× → 1.47× → 1.50×, larson 1.26× → 1.21× → 1.15×): the MT gap is the single-thread gap. Path active: `HeapCore::publish_foreign` calls 0 at T=1, 4 999 / 9 790 (mstress T=2/4), 3 126 / 5 457 (larson).
+   > - **Next trigger:** a time measurement (process judge or PMU) shows the Sefer/mimalloc gap growing with T on a workload with remote frees, i.e. a cross-core cost callgrind cannot see.
+   > - **Evidence:** docs/perf/B4_25_REMOTE_CEILING.md, docs/perf/B4_25_REMOTE_CEILING_summary.csv, docs/perf/b4_25_ceiling/ (raw callgrind log with ORACLE lines, run and oracle scripts), scripts/b4_25_ceiling_report.mjs, examples/b425_mt_probe.rs.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
