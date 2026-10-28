@@ -1,0 +1,1 @@
+{"catalog": "bootstrap/init-twin", "a": {"file": "$SRC", "fn": "Shim::init"}, "b": {"file": "$SRC", "fn": "Real::init"}}

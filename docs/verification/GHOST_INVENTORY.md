@@ -238,7 +238,7 @@ Prod: `src/registry/bootstrap/loom_shim.rs`, `src/registry/bootstrap/ensure.rs`,
 
 - I1 the loom stand-in performs the same atomic sequence and orderings as crates/once-ptr-cell (load Acquire, CAS Acquire/Relaxed, store Release, rollback store Release)
 
-Decision: **R7** — twin equivalence
+Decision: **R7** — G7: R7 twins pin the bootstrap loom stand-in to crates/once-ptr-cell op by op: get, the init loop (real get_or_try_init slow path init_slow), and the rollback guard drop.
 
 ### P18 — cfg(loom) twins in crates and leaf init
 
@@ -247,7 +247,7 @@ Prod: `crates/once-ptr-cell/src/imp.rs`, `crates/tagged-index-stack/src/imp.rs`,
 - I1 each loom twin has the same normalized atomic sequence as its prod item; allowed differences are listed with a reason
 - loom: `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs`
 
-Decision: **R7** — twin equivalence
+Decision: **R7** — G7: the crate twins are import-level (core vs loom atomics) around one shared implementation, so the loom tests run the shipped code; the only cfg(loom) twin items are the non-const constructors, pinned by R7 (no ordered op in either). leaf_classes initialises loom atomics in a cfg(loom) loop inside promote (covered by the promote R2 inventory, G6a); route_pin_cache CACHE twins are R10 (G6b); aligned-vmem mock is a cfg(mock) fault-injection layer, not a loom twin.
 
 ### P19 — fallback heap one-time init + fallback lock (global/fallback.rs)
 

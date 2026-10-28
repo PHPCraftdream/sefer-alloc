@@ -1,0 +1,1 @@
+{"catalog": "bootstrap/rollback-twin", "a": {"file": "$SRC", "fn": "Shim::drop"}, "b": {"file": "$SRC", "fn": "Real::drop"}}

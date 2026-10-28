@@ -423,7 +423,7 @@
       "real_under_loom": "is the loom twin",
       "decision": "R7",
       "phase": "G7",
-      "reason": "twin equivalence"
+      "reason": "G7: R7 twins pin the bootstrap loom stand-in to crates/once-ptr-cell op by op: get, the init loop (real get_or_try_init slow path init_slow), and the rollback guard drop."
     },
     {
       "id": "P18",
@@ -448,7 +448,7 @@
       "real_under_loom": "crate tests run the real crate under loom",
       "decision": "R7",
       "phase": "G7",
-      "reason": "twin equivalence"
+      "reason": "G7: the crate twins are import-level (core vs loom atomics) around one shared implementation, so the loom tests run the shipped code; the only cfg(loom) twin items are the non-const constructors, pinned by R7 (no ordered op in either). leaf_classes initialises loom atomics in a cfg(loom) loop inside promote (covered by the promote R2 inventory, G6a); route_pin_cache CACHE twins are R10 (G6b); aligned-vmem mock is a cfg(mock) fault-injection layer, not a loom twin."
     },
     {
       "id": "P19",
@@ -5071,6 +5071,133 @@
         "tests/r8_autonomous_maintenance.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p20_running_under_control"
+    },
+    {
+      "id": "bootstrap/get-twin",
+      "kind": "R7",
+      "protocol": "P17",
+      "a": {
+        "file": "src/registry/bootstrap/loom_shim.rs",
+        "fn": "OncePtrCell::get"
+      },
+      "b": {
+        "file": "crates/once-ptr-cell/src/imp.rs",
+        "fn": "OncePtrCell::get"
+      },
+      "terms": [
+        "twin",
+        "loom",
+        "Acquire",
+        "get"
+      ],
+      "reason": "the bootstrap loom stand-in reads the cell with the same Acquire load as crates/once-ptr-cell",
+      "tests": [
+        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "tests/loom_r11_registry_claim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p17_get_twin"
+    },
+    {
+      "id": "bootstrap/init-twin",
+      "kind": "R7",
+      "protocol": "P17",
+      "a": {
+        "file": "src/registry/bootstrap/loom_shim.rs",
+        "fn": "OncePtrCell::get_or_try_init"
+      },
+      "b": {
+        "file": "crates/once-ptr-cell/src/imp.rs",
+        "fn": "OncePtrCell::init_slow"
+      },
+      "terms": [
+        "twin",
+        "loom",
+        "CAS",
+        "publish"
+      ],
+      "reason": "the stand-in init loop performs the same ordered sequence as the real slow path: Acquire load, Acquire/Relaxed CAS, Release publish or rollback, Acquire loser spin",
+      "tests": [
+        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "tests/loom_r11_registry_claim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p17_init_twin"
+    },
+    {
+      "id": "bootstrap/rollback-twin",
+      "kind": "R7",
+      "protocol": "P17",
+      "a": {
+        "file": "src/registry/bootstrap/loom_shim.rs",
+        "fn": "RollbackGuard::drop"
+      },
+      "b": {
+        "file": "crates/once-ptr-cell/src/imp.rs",
+        "fn": "RollbackGuard::drop"
+      },
+      "terms": [
+        "twin",
+        "loom",
+        "rollback",
+        "Release"
+      ],
+      "reason": "the stand-in rollback guard releases the sentinel with the same Release store as the real one",
+      "tests": [
+        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "tests/loom_r11_registry_claim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p17_rollback_twin"
+    },
+    {
+      "id": "once-ptr-cell/new-twin",
+      "kind": "R7",
+      "protocol": "P18",
+      "a": {
+        "file": "crates/once-ptr-cell/src/imp.rs",
+        "fn": "OncePtrCell::new",
+        "cfg": "not\\s*\\(\\s*loom\\s*\\)"
+      },
+      "b": {
+        "file": "crates/once-ptr-cell/src/imp.rs",
+        "fn": "OncePtrCell::new",
+        "cfg": "(^|& )loom$"
+      },
+      "terms": [
+        "twin",
+        "loom",
+        "const",
+        "constructor"
+      ],
+      "reason": "the const and the loom constructors differ only in constness; neither performs an ordered operation, so the loom tests run the shipped protocol",
+      "tests": [
+        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p18_new_twin"
+    },
+    {
+      "id": "tagged-index-stack/head-new-twin",
+      "kind": "R7",
+      "protocol": "P18",
+      "a": {
+        "file": "crates/tagged-index-stack/src/imp.rs",
+        "fn": "StackHead::new",
+        "cfg": "not\\s*\\(\\s*loom\\s*\\)"
+      },
+      "b": {
+        "file": "crates/tagged-index-stack/src/imp.rs",
+        "fn": "StackHead::new",
+        "cfg": "(^|& )loom$"
+      },
+      "terms": [
+        "twin",
+        "loom",
+        "const",
+        "constructor"
+      ],
+      "reason": "the const and the loom head constructors differ only in constness and perform no ordered operation",
+      "tests": [
+        "crates/tagged-index-stack/tests/loom_aba.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p18_head_new_twin"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",
