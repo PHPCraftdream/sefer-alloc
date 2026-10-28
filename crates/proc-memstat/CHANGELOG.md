@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- **macOS `peak_rss` could read below `rss`.** XNU fills
+  `resident_size` and `resident_size_max` from the same `phys_mem` ledger,
+  but only the balance is updated on every credit; the lifetime max is raised
+  later, in `ledger_entry_check_new_balance`, so a read in between saw
+  `resident_size_max < resident_size` (CI, `macos-latest`: peak 1982464,
+  rss 1998848). `peak_rss` is now `max(resident_size_max, resident_size)`;
+  `tests/platform_contract.rs` already asserts `peak_rss >= rss`.
+
 ## 0.1.0 - 2026-09-09
 
 First release. Everything below is new in this version; nothing has shipped
