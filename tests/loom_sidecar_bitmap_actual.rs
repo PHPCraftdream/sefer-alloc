@@ -12,7 +12,7 @@
 //! (`BitmapScan::next_cut`: plain `load(Acquire)` then `swap(0, AcqRel)` only
 //! when the word is nonzero — the bench feature is off, so the guarded
 //! production arm compiles, not the bench baseline). In particular this is
-//! not the load-before-swap shadow in `tests/loom_sidecar_bitmap.rs`.
+//! not a load-before-swap shadow.
 //!
 //! Negative shadow controls demonstrate the load+store and masking loss
 //! mechanisms; they do not mutate or validate the actual-source implementation.

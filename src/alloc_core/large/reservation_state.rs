@@ -1,6 +1,7 @@
 //! Per-reservation Large phase transitions; no predecessor links or payload access.
 
-use core::sync::atomic::{AtomicU64, Ordering};
+// Atomics through `super` so the actual-source loom model can bind loom ones.
+use super::{AtomicU64, Ordering};
 
 use crate::alloc_core::segment_header::{
     large_generation, large_phase, next_large_generation, pack_large_state, LargePhase,
@@ -40,14 +41,21 @@ impl<'a> LargeReservationState<'a> {
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub fn publish_pending(&self, generation: u64) -> bool {
-        self.word
+        let published = self
+            .word
             .compare_exchange(
                 pack_large_state(LargePhase::Live, generation),
                 pack_large_state(LargePhase::Pending, generation),
                 Ordering::AcqRel,
                 Ordering::Acquire,
             )
-            .is_ok()
+            .is_ok();
+        crate::ghost::ghost_event!(
+            "large/pending",
+            core::ptr::from_ref(self.word).addr(),
+            i64::from(published)
+        );
+        published
     }
 
     /// Only a table-scan owner with the heap lease may claim this obligation.
@@ -61,7 +69,8 @@ impl<'a> LargeReservationState<'a> {
             return None;
         }
         let generation = large_generation(observed);
-        self.word
+        let claimed = self
+            .word
             .compare_exchange(
                 observed,
                 pack_large_state(LargePhase::Consuming, generation),
@@ -69,7 +78,13 @@ impl<'a> LargeReservationState<'a> {
                 Ordering::Acquire,
             )
             .ok()
-            .map(|_| generation)
+            .map(|_| generation);
+        crate::ghost::ghost_event!(
+            "large/pending",
+            core::ptr::from_ref(self.word).addr(),
+            -i64::from(claimed.is_some())
+        );
+        claimed
     }
 
     /// Owner-only claim of a LIVE word — the PHYSICAL-reservation reading

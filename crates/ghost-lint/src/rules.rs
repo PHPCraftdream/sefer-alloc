@@ -377,23 +377,40 @@ fn check_inner(rule: &Value, src: &dyn Sources) -> Result<Vec<Violation>, String
                 ));
             }
         }
-        // R6: the named fn carries a ghost macro with this rule's ghost id.
+        // R6: the named fn carries a ghost macro with this rule's ghost id
+        // (`count`: exactly that many).
         "R6" => {
             let f = target(src, file, rule)?;
             let gid = s(rule, "ghost").ok_or("R6 needs ghost")?;
             let lit = format!("\"{gid}\"");
-            let found = f.events.iter().any(|e| {
-                e.kind == EventKind::Macro
-                    && GHOST_MACROS.contains(&e.name.as_str())
-                    && e.args.first() == Some(&lit)
-            });
-            if !found {
+            let found = f
+                .events
+                .iter()
+                .filter(|e| {
+                    e.kind == EventKind::Macro
+                        && GHOST_MACROS.contains(&e.name.as_str())
+                        && e.args.first() == Some(&lit)
+                })
+                .count();
+            if found == 0 {
                 out.push(v(
                     rule,
                     file,
                     f.start,
                     format!("{}: no ghost_assert!/ghost_event! with id {gid}", f.path),
                 ));
+            } else if let Some(n) = rule.get("count").and_then(Value::as_u64) {
+                if found as u64 != n {
+                    out.push(v(
+                        rule,
+                        file,
+                        f.start,
+                        format!(
+                            "{}: {found} ghost macro(s) with id {gid}, rule requires {n}",
+                            f.path
+                        ),
+                    ));
+                }
             }
         }
         // R7: two twins have the same normalized sequence of ordered operations.
@@ -538,34 +555,39 @@ fn check_inner(rule: &Value, src: &dyn Sources) -> Result<Vec<Violation>, String
         // R10: a declaration keeps its shape — a struct field (`owner`, `field`) or a
         // static (`static`, also inside `thread_local!`) has a type matching `ty`,
         // an initializer matching `init`, and a type not matching `not_ty`.
+        // `decl.count`: that many same-named statics (cfg twins), each checked.
         "R10" => {
             let d = rule.get("decl").ok_or("R10 needs decl")?;
             let facts = src.facts(file)?;
-            let (what, line, ty, init) = if let Some(name) = s(d, "static") {
+            let decls = if let Some(name) = s(d, "static") {
                 let hits: Vec<_> = facts.statics.iter().filter(|x| x.name == name).collect();
-                if hits.len() != 1 {
+                let want = d.get("count").and_then(Value::as_u64).unwrap_or(1);
+                if hits.len() as u64 != want {
                     return Err(format!("{} statics named {name} in {file}", hits.len()));
                 }
-                let x = hits[0];
-                if let Some(tl) = d.get("thread_local").and_then(Value::as_bool) {
-                    if tl != x.thread_local {
-                        out.push(v(
-                            rule,
-                            file,
-                            x.line,
-                            format!(
-                                "static {name}: thread_local is {}, rule requires {tl}",
-                                x.thread_local
-                            ),
-                        ));
+                let mut decls = Vec::new();
+                for x in hits {
+                    if let Some(tl) = d.get("thread_local").and_then(Value::as_bool) {
+                        if tl != x.thread_local {
+                            out.push(v(
+                                rule,
+                                file,
+                                x.line,
+                                format!(
+                                    "static {name}: thread_local is {}, rule requires {tl}",
+                                    x.thread_local
+                                ),
+                            ));
+                        }
                     }
+                    decls.push((
+                        format!("static {name}"),
+                        x.line,
+                        x.ty.clone(),
+                        Some(x.init.clone()),
+                    ));
                 }
-                (
-                    format!("static {name}"),
-                    x.line,
-                    x.ty.clone(),
-                    Some(x.init.clone()),
-                )
+                decls
             } else {
                 let owner = s(d, "owner").ok_or("R10 decl needs static or owner")?;
                 let field = s(d, "field").ok_or("R10 decl needs field")?;
@@ -577,43 +599,45 @@ fn check_inner(rule: &Value, src: &dyn Sources) -> Result<Vec<Violation>, String
                 if hits.len() != 1 {
                     return Err(format!("{} fields {owner}.{field} in {file}", hits.len()));
                 }
-                (
+                vec![(
                     format!("{owner}.{field}"),
                     hits[0].line,
                     hits[0].ty.clone(),
                     None,
-                )
+                )]
             };
-            if let Some(r) = s(rule, "ty").map(re).transpose()? {
-                if !r.is_match(&ty) {
-                    out.push(v(
-                        rule,
-                        file,
-                        line,
-                        format!("{what}: type {ty} does not match {}", r.as_str()),
-                    ));
+            for (what, line, ty, init) in decls {
+                if let Some(r) = s(rule, "ty").map(re).transpose()? {
+                    if !r.is_match(&ty) {
+                        out.push(v(
+                            rule,
+                            file,
+                            line,
+                            format!("{what}: type {ty} does not match {}", r.as_str()),
+                        ));
+                    }
                 }
-            }
-            if let Some(r) = s(rule, "not_ty").map(re).transpose()? {
-                if r.is_match(&ty) {
-                    out.push(v(
-                        rule,
-                        file,
-                        line,
-                        format!("{what}: type {ty} matches forbidden {}", r.as_str()),
-                    ));
+                if let Some(r) = s(rule, "not_ty").map(re).transpose()? {
+                    if r.is_match(&ty) {
+                        out.push(v(
+                            rule,
+                            file,
+                            line,
+                            format!("{what}: type {ty} matches forbidden {}", r.as_str()),
+                        ));
+                    }
                 }
-            }
-            if let Some(r) = s(rule, "init").map(re).transpose()? {
-                match &init {
-                    Some(i) if r.is_match(i) => {}
-                    Some(i) => out.push(v(
-                        rule,
-                        file,
-                        line,
-                        format!("{what}: initializer {i} does not match {}", r.as_str()),
-                    )),
-                    None => return Err("R10 init applies to statics only".into()),
+                if let Some(r) = s(rule, "init").map(re).transpose()? {
+                    match &init {
+                        Some(i) if r.is_match(i) => {}
+                        Some(i) => out.push(v(
+                            rule,
+                            file,
+                            line,
+                            format!("{what}: initializer {i} does not match {}", r.as_str()),
+                        )),
+                        None => return Err("R10 init applies to statics only".into()),
+                    }
                 }
             }
         }

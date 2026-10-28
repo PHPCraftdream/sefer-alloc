@@ -170,7 +170,7 @@
       "real_under_loom": "yes (already #[path])",
       "decision": "ghost",
       "phase": "G6",
-      "reason": "real source already runs; add ghost checks + R5",
+      "reason": "G6b: the real cache records ghost event pin-cache/held (+1 when a pin enters a slot, -1 when it leaves) keyed by segment base; the actual-source loom model checks the ledger against Entry::refs (one reference per occupied slot; 0 after the unlink fallback and after the TLS destructor). R6 with counts keeps every event per fn; R10 pins both cfg twins of CACHE as thread_local RefCell<PinCache>; R4/R5 keep inserts on the non-fallback slow path.",
       "atomics": "the cache is thread-local; the only cross-thread word it touches is P5's Entry::refs through EntryHandle (its own atomics are counters)"
     },
     {
@@ -185,20 +185,19 @@
         "I1 every published offset is cut exactly once",
         "I2 publish is fetch_or AcqRel after the class store Release; cut is swap AcqRel"
       ],
-      "class": "A+S",
+      "class": "A",
       "loom": [
         "tests/loom_sidecar_bitmap_actual.rs",
-        "tests/loom_b4_scan_skip_empty_publish.rs",
-        "tests/loom_sidecar_bitmap.rs"
+        "tests/loom_b4_scan_skip_empty_publish.rs"
       ],
       "pins": [],
       "registry": [
         "R0-21"
       ],
       "real_under_loom": "yes (loom_sidecar_bitmap_actual.rs)",
-      "decision": "ghost + retire shadow",
+      "decision": "ghost",
       "phase": "G6",
-      "reason": "G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it)."
+      "reason": "G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it). G6c: the shadow loom_sidecar_bitmap.rs is retired; its negative control (a class published after the terminal bit) is the real-code mutant of sidecar/publish-requires-issue, red under loom_sidecar_bitmap_actual."
     },
     {
       "id": "P8",
@@ -211,18 +210,19 @@
         "I1 a leaf pointer is published (mixed store Release, present fetch_or Release) only after the leaf is fully initialised",
         "I2 a reader resolves a leaf only with Acquire and only while holding a route pin"
       ],
-      "class": "S",
+      "class": "A",
       "loom": [
-        "tests/loom_r11_small_sidecar.rs"
+        "tests/loom_sidecar_bitmap_actual.rs",
+        "tests/loom_b4_r1_pin_cache.rs"
       ],
       "pins": [],
       "registry": [
         "R0-22"
       ],
-      "real_under_loom": "partial: ClassLeaves allocates leaves through the OS seam (cfg(loom) twin, P18)",
+      "real_under_loom": "yes: loom_sidecar_bitmap_actual compiles leaf_classes.rs (its cfg(loom) leaf construction is P18) and loom_b4_r1_pin_cache the small sidecar behind real route pins",
       "decision": "translate",
       "phase": "G6",
-      "reason": "G6a: ClassLeaves ordered-op inventory per fn (R2 x6), initialise-before-publish and publish-before-presence in promote (R3), Drop walks presence bits (R3); R5 forbids the Dense constructor in production and keeps from_leaves in SmallSidecar::bitmap. Translation of the small-sidecar model follows in G6c."
+      "reason": "G6a: ClassLeaves ordered-op inventory per fn (R2 x6), initialise-before-publish and publish-before-presence in promote (R3), Drop walks presence bits (R3); R5 forbids the Dense constructor in production and keeps from_leaves in SmallSidecar::bitmap. Translation of the small-sidecar model follows in G6c. G6c: the shadow loom_r11_small_sidecar.rs is retired. Leaf publication runs as actual source in loom_sidecar_bitmap_actual (the prepare-race test): a Relaxed mixed-leaf store is a loom causality violation there (mutant on class-leaves/promote-inventory); the pin lifetime is loom_b4_r1_pin_cache O4 plus route-pin/last-ref-free (miri), which replace the shadow early-release control."
     },
     {
       "id": "P9",
@@ -245,10 +245,10 @@
       "registry": [
         "R0-21"
       ],
-      "real_under_loom": "yes: LargeReservationState wraps one &AtomicU64",
+      "real_under_loom": "yes: tests/loom_terminal_large.rs compiles reservation_state.rs and terminal_words.rs onto loom atomics",
       "decision": "translate",
       "phase": "G6",
-      "reason": "state word struct is self-contained"
+      "reason": "G6c: tests/loom_terminal_large.rs now runs the production LargeReservationState and phase codec on loom atomics (reservation_state.rs takes its atomics from super); ghost event large/pending (+1 publish, -1 claim) checked by a per-word ledger; R2 x5 exact ordered-op tables, R4 x3 phase checks before each observed-word CAS, R6 x2 on the events."
     },
     {
       "id": "P10",
@@ -273,7 +273,7 @@
       "real_under_loom": "no: credits live in AllocCore",
       "decision": "keep+R5",
       "phase": "G6",
-      "reason": "invariant is a sole-writer property: R5 pins credit writes to owner functions",
+      "reason": "G6b: credits stay a plain owner-only u32 (R10 on SegmentHeader.live_count); R5 pins every credit mutator (set_live_count, add_live, inc_live, sub_live, dec_live) to its owner functions; R4 keeps the drain release inside the empty-segment check; the shadow model binds the publish and cut orderings to P7 (R8).",
       "atomics": "owner credits are plain fields of AllocCore; the cut is P7's BitmapScan::next_cut swap"
     },
     {
@@ -297,7 +297,7 @@
       "real_under_loom": "no: index is part of SegmentTable",
       "decision": "keep+R5+R3",
       "phase": "G6",
-      "reason": "membership is owner-plain; R3 pins 'consume pending before clear'",
+      "reason": "G6b: membership words stay plain owner u64s (R10); R5 pins ActiveKindIndex::set/clear to register/unregister/recycle; R3 (nested_before) keeps every cut consumed before finish_small_drain in all three owner drains; the shadow model binds the publish and cut orderings to P7 (R8).",
       "atomics": "membership is a plain owner bit in SegmentTable; producer side is P7's pending fetch_or"
     },
     {
@@ -366,7 +366,7 @@
       "real_under_loom": "no: crossbeam-epoch",
       "decision": "keep+R8",
       "phase": "G8",
-      "reason": "permanent shadow"
+      "reason": "G8: permanent shadow (loom cannot run crossbeam-epoch); R1 pins every AtomicSlot install / eviction / seqlock-read ordering in hand.rs and R8 binds the loom_epoch model lines to them."
     },
     {
       "id": "P15",
@@ -387,7 +387,7 @@
       "real_under_loom": "no: crossbeam-epoch",
       "decision": "keep+R8",
       "phase": "G8",
-      "reason": "permanent shadow"
+      "reason": "G8: permanent shadow; R1 pins the shard claim / bind CAS, the release store and the token-death Release / Acquire pair in sharded_region.rs; R8 binds the loom_sharded generation-CAS model lines to the AtomicSlot rules."
     },
     {
       "id": "P16",
@@ -423,7 +423,7 @@
       "real_under_loom": "is the loom twin",
       "decision": "R7",
       "phase": "G7",
-      "reason": "twin equivalence"
+      "reason": "G7: R7 twins pin the bootstrap loom stand-in to crates/once-ptr-cell op by op: get, the init loop (real get_or_try_init slow path init_slow), and the rollback guard drop."
     },
     {
       "id": "P18",
@@ -448,7 +448,7 @@
       "real_under_loom": "crate tests run the real crate under loom",
       "decision": "R7",
       "phase": "G7",
-      "reason": "twin equivalence"
+      "reason": "G7: the crate twins are import-level (core vs loom atomics) around one shared implementation, so the loom tests run the shipped code; the only cfg(loom) twin items are the non-const constructors, pinned by R7 (no ordered op in either). leaf_classes initialises loom atomics in a cfg(loom) loop inside promote (covered by the promote R2 inventory, G6a); route_pin_cache CACHE twins are R10 (G6b); aligned-vmem mock is a cfg(mock) fault-injection layer, not a loom twin."
     },
     {
       "id": "P19",
@@ -463,14 +463,16 @@
         "I1 INIT_STATE: exactly one initialiser wins the CAS (Acquire/Relaxed); the heap is published with a Release store, readers load Acquire; a panicking init rolls back with Release",
         "I2 LOCK: test-and-set spin lock, CAS Acquire on acquire, Release store on drop"
       ],
-      "class": "none",
-      "loom": [],
+      "class": "A",
+      "loom": [
+        "tests/loom_fallback_actual.rs"
+      ],
       "pins": [],
       "registry": [],
-      "real_under_loom": "unknown (G0 finding: no loom model exists)",
-      "decision": "new-model",
+      "real_under_loom": "yes: tests/loom_fallback_actual.rs compiles fallback.rs onto per-execution loom stand-ins for its statics (sync names through super)",
+      "decision": "ghost",
       "phase": "G6",
-      "reason": "G0 finding: protocol with Acquire/Release pairs and no loom/shadow model; covered today only by r6_*/con01_* integration tests"
+      "reason": "G6d: new actual-source loom model; HeapCore stand-in holds a loom cell every closure writes, so a heap access not ordered by READY or by the lock is a causality violation; ghost events fallback/init-won and fallback/held; R1 on every INIT_STATE / LOCK site, R3 write before READY, R4 try_with_heap only after READY, R6 on the events."
     },
     {
       "id": "P20",
@@ -488,10 +490,10 @@
       "loom": [],
       "pins": [],
       "registry": [],
-      "real_under_loom": "unknown (G0 finding: no loom model exists)",
-      "decision": "new-model",
+      "real_under_loom": "no: process-wide static STATE plus std Mutex/Condvar wait_timeout_while and a detached std::thread worker in an infinite periodic loop",
+      "decision": "rules + integration tests",
       "phase": "G6",
-      "reason": "G0 finding: covered only by r6_t35_start_confirmation_bound / r8_autonomous_maintenance integration tests"
+      "reason": "G6d: an actual-source loom model needs the worker loop and the std thread/condvar seams restructured in production, out of scope for an imports-only phase; every STATE site is pinned by R1 (start CAS, starter wait load, rollback, RUNNING store, running()), and R3 keeps RUNNING stored under CONTROL (before the notify in the same block); behaviour stays covered by r6_t35_start_confirmation_bound and r8_autonomous_maintenance."
     },
     {
       "id": "P21",
@@ -503,14 +505,16 @@
         "I1 lock: CAS-weak Acquire/Relaxed, release store Release",
         "I2 live_hint is a hint: stored Release under the lock, read Acquire; a stale hint only costs a lock round"
       ],
-      "class": "none",
-      "loom": [],
+      "class": "A",
+      "loom": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
       "pins": [],
       "registry": [],
-      "real_under_loom": "likely: ExactShard is a small struct",
-      "decision": "new-model",
+      "real_under_loom": "yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super)",
+      "decision": "ghost",
       "phase": "G6",
-      "reason": "G0 finding: lock protocol with no loom model"
+      "reason": "G6d: new actual-source loom model; the UnsafeCell stand-in records a loom access per get(), so an unordered critical section is a causality violation; ghost event exact-shard/held (+1 acquire, -1 release) ledger; R1 on the lock CAS/store and hint loads, R4 inner access after the lock, R3 hint stored before release, R6 on the events."
     },
     {
       "id": "P22",
@@ -2867,7 +2871,31 @@
         "tests/class_leaves_publication_miri.rs",
         "tests/loom_sidecar_bitmap_actual.rs"
       ],
-      "fixtures": "tests/ghost_lint_fixtures/p8_promote_inventory"
+      "fixtures": "tests/ghost_lint_fixtures/p8_promote_inventory",
+      "mutants": [
+        {
+          "id": "relaxed-leaf-publication",
+          "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+          "from": "        self.mixed[leaf].store(fresh, Ordering::Release);\n",
+          "to": "        self.mixed[leaf].store(fresh, Ordering::Relaxed);\n",
+          "checker": {
+            "name": "loom loom_sidecar_bitmap_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_sidecar_bitmap_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
     },
     {
       "id": "class-leaves/issue-inventory",
@@ -3110,6 +3138,2402 @@
         "tests/class_leaves_publication_miri.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p8_uses_class_leaves"
+    },
+    {
+      "id": "pin-cache/ghost-sweep",
+      "kind": "R6",
+      "protocol": "P6",
+      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "fn": "PinCache::sweep_dead_slots",
+      "ghost": "pin-cache/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "pin",
+        "slot",
+        "exactly one"
+      ],
+      "reason": "PinCache::sweep_dead_slots records pin-cache/held for each pin entering (+1) or leaving (-1) a slot (1); the loom ledger checks the cache holds exactly one reference per occupied slot",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p6_ghost_sweep"
+    },
+    {
+      "id": "pin-cache/ghost-drop",
+      "kind": "R6",
+      "protocol": "P6",
+      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "fn": "PinCache::drop",
+      "ghost": "pin-cache/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "pin",
+        "slot",
+        "exactly one"
+      ],
+      "reason": "PinCache::drop records pin-cache/held for each pin entering (+1) or leaving (-1) a slot (1); the loom ledger checks the cache holds exactly one reference per occupied slot",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "mutants": [
+        {
+          "id": "tls-drop-without-ghost-event",
+          "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+          "from": "            crate::ghost::ghost_event!(\"pin-cache/held\", slot.base, -i64::from(slot.pin.is_some()));\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_b4_r1_pin_cache",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_b4_r1_pin_cache"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p6_ghost_drop"
+    },
+    {
+      "id": "pin-cache/ghost-publish",
+      "kind": "R6",
+      "protocol": "P6",
+      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "fn": "publish_cached",
+      "ghost": "pin-cache/held",
+      "count": 2,
+      "terms": [
+        "ghost",
+        "held",
+        "pin",
+        "slot",
+        "exactly one"
+      ],
+      "reason": "publish_cached records pin-cache/held for each pin entering (+1) or leaving (-1) a slot (2); the loom ledger checks the cache holds exactly one reference per occupied slot",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "mutants": [
+        {
+          "id": "unlink-fallback-without-ghost-event",
+          "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+          "from": "                    count!(PIN_CACHE_UNLINK_FALLBACKS);\n                    slot.pin = None;\n                    crate::ghost::ghost_event!(\"pin-cache/held\", slot.base, -1);\n",
+          "to": "                    count!(PIN_CACHE_UNLINK_FALLBACKS);\n                    slot.pin = None;\n",
+          "checker": {
+            "name": "loom loom_b4_r1_pin_cache",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_b4_r1_pin_cache"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p6_ghost_publish"
+    },
+    {
+      "id": "pin-cache/ghost-insert",
+      "kind": "R6",
+      "protocol": "P6",
+      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "fn": "cache_insert",
+      "ghost": "pin-cache/held",
+      "count": 4,
+      "terms": [
+        "ghost",
+        "held",
+        "pin",
+        "slot",
+        "exactly one"
+      ],
+      "reason": "cache_insert records pin-cache/held for each pin entering (+1) or leaving (-1) a slot (4); the loom ledger checks the cache holds exactly one reference per occupied slot",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p6_ghost_insert"
+    },
+    {
+      "id": "pin-cache/ghost-evict",
+      "kind": "R6",
+      "protocol": "P6",
+      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "fn": "cache_evict",
+      "ghost": "pin-cache/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "pin",
+        "slot",
+        "exactly one"
+      ],
+      "reason": "cache_evict records pin-cache/held for each pin entering (+1) or leaving (-1) a slot (1); the loom ledger checks the cache holds exactly one reference per occupied slot",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p6_ghost_evict"
+    },
+    {
+      "id": "pin-cache/tls-decl",
+      "kind": "R10",
+      "protocol": "P6",
+      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "decl": {
+        "static": "CACHE",
+        "thread_local": true,
+        "count": 2
+      },
+      "ty": "^RefCell<PinCache>$",
+      "init": "^(const\\{)?RefCell::new\\(PinCache::EMPTY\\)\\}?$",
+      "terms": [
+        "thread_local",
+        "RefCell",
+        "PinCache",
+        "cross-thread"
+      ],
+      "reason": "both cfg twins of CACHE are thread_local RefCell<PinCache>: the cache has no cross-thread access, a reentrant borrow degrades to a miss",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p6_tls_decl"
+    },
+    {
+      "id": "pin-cache/insert-non-fallback",
+      "kind": "R4",
+      "protocol": "P6",
+      "file": "src/registry/heap_core_xthread/routing.rs",
+      "fn": "HeapCore::publish_foreign_uncached",
+      "action": {
+        "name": "cache_insert"
+      },
+      "guard": "^cacheable$",
+      "terms": [
+        "cache_insert",
+        "cacheable",
+        "fallback",
+        "Small"
+      ],
+      "reason": "the slow path caches a pin only when the route is not owned by the fallback heap, so slots hold Small/Primordial non-fallback routes only",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p6_insert_non_fallback"
+    },
+    {
+      "id": "pin-cache/insert-sole-path",
+      "kind": "R5",
+      "protocol": "P6",
+      "files": [
+        "src/**"
+      ],
+      "target": {
+        "name": "cache_insert",
+        "kind": "call"
+      },
+      "allowed": [
+        "HeapCore::publish_foreign_uncached",
+        "RoutePin::dbg_cache_insert_for_test"
+      ],
+      "terms": [
+        "cache_insert",
+        "lookup",
+        "only"
+      ],
+      "reason": "a pin enters the cache only from the fresh-lookup slow path (and its doc-hidden test forwarder)",
+      "tests": [
+        "tests/loom_b4_r1_pin_cache.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p6_insert_sole_path"
+    },
+    {
+      "id": "owner-drain/credit-plain",
+      "kind": "R10",
+      "protocol": "P10",
+      "file": "src/alloc_core/segment/segment_header/segment_header_impl.rs",
+      "decl": {
+        "owner": "SegmentHeader",
+        "field": "live_count"
+      },
+      "ty": "^u32$",
+      "terms": [
+        "credit",
+        "live_count",
+        "owner",
+        "plain"
+      ],
+      "reason": "outstanding credits are a plain owner-only u32; making it atomic would invite a producer-side mutation",
+      "tests": [
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p10_credit_plain"
+    },
+    {
+      "id": "owner-drain/credit-store",
+      "kind": "R5",
+      "protocol": "P10",
+      "files": [
+        "src/**"
+      ],
+      "target": {
+        "name": "set_live_count",
+        "kind": "method"
+      },
+      "allowed": [
+        "SegmentMeta::add_live",
+        "SegmentMeta::sub_live"
+      ],
+      "terms": [
+        "credit",
+        "live_count",
+        "add_live",
+        "sub_live",
+        "only"
+      ],
+      "reason": "live_count is stored only by the checked add_live/sub_live accessors",
+      "tests": [
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p10_credit_store"
+    },
+    {
+      "id": "owner-drain/credit-issue",
+      "kind": "R5",
+      "protocol": "P10",
+      "files": [
+        "src/**"
+      ],
+      "target": {
+        "name": "add_live",
+        "kind": "method"
+      },
+      "allowed": [
+        "SegmentMeta::inc_live",
+        "AllocCore::try_drain_freelist_batch",
+        "AllocCore::try_carve_batch"
+      ],
+      "terms": [
+        "credit",
+        "issue",
+        "carve",
+        "owner"
+      ],
+      "reason": "credits are issued only by the owner carve/refill paths",
+      "tests": [
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p10_credit_issue"
+    },
+    {
+      "id": "owner-drain/credit-issue-one",
+      "kind": "R5",
+      "protocol": "P10",
+      "files": [
+        "src/**"
+      ],
+      "target": {
+        "name": "inc_live",
+        "kind": "method"
+      },
+      "allowed": [
+        "AllocCore::pop_free",
+        "AllocCore::carve_block"
+      ],
+      "terms": [
+        "credit",
+        "issue",
+        "pop",
+        "owner"
+      ],
+      "reason": "single credits are issued only by the owner allocation paths",
+      "tests": [
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p10_credit_issue_one"
+    },
+    {
+      "id": "owner-drain/credit-retire-batch",
+      "kind": "R5",
+      "protocol": "P10",
+      "files": [
+        "src/**"
+      ],
+      "target": {
+        "name": "sub_live",
+        "kind": "method"
+      },
+      "allowed": [
+        "SegmentMeta::dec_live",
+        "AllocCore::flush_run"
+      ],
+      "terms": [
+        "credit",
+        "retire",
+        "flush",
+        "owner"
+      ],
+      "reason": "batched credit retirement happens only in the owner flush and dec_live",
+      "tests": [
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p10_credit_retire_batch"
+    },
+    {
+      "id": "owner-drain/credit-retire",
+      "kind": "R5",
+      "protocol": "P10",
+      "files": [
+        "src/**"
+      ],
+      "target": {
+        "name": "dec_live",
+        "kind": "method"
+      },
+      "allowed": [
+        "AllocCore::dealloc_small",
+        "AllocCore::reclaim_sidecar_record"
+      ],
+      "terms": [
+        "credit",
+        "retire",
+        "reclaim",
+        "owner",
+        "local free"
+      ],
+      "reason": "one credit is retired only by the owner local free and the owner sidecar record reclaim",
+      "tests": [
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p10_credit_retire"
+    },
+    {
+      "id": "owner-drain/release-after-empty",
+      "kind": "R4",
+      "protocol": "P10",
+      "file": "src/alloc_core/alloc_core/sidecar_drain.rs",
+      "fn": "AllocCore::finish_small_drain",
+      "action": {
+        "name": "release_or_pool_empty_segment"
+      },
+      "guard": "Self::dec_live_and_maybe_decommit\\(base,self\\.small_cur\\)",
+      "terms": [
+        "credit",
+        "live_count",
+        "empty",
+        "release",
+        "reservation"
+      ],
+      "reason": "the drain releases or pools the reservation only inside the empty-segment check (no outstanding credit, not the carve target, Small)",
+      "tests": [
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p10_release_after_empty"
+    },
+    {
+      "id": "active-kind/plain-small",
+      "kind": "R10",
+      "protocol": "P11",
+      "file": "src/alloc_core/segment/segment_table/active_kind_index.rs",
+      "decl": {
+        "owner": "ActiveKindIndex",
+        "field": "small"
+      },
+      "ty": "^\\[u64;WORDS\\]$",
+      "terms": [
+        "membership",
+        "owner",
+        "plain",
+        "small"
+      ],
+      "reason": "the small membership words are plain owner-only u64s, written only through &mut SegmentTable",
+      "tests": [
+        "tests/loom_active_kind_index.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p11_plain_small"
+    },
+    {
+      "id": "active-kind/plain-large",
+      "kind": "R10",
+      "protocol": "P11",
+      "file": "src/alloc_core/segment/segment_table/active_kind_index.rs",
+      "decl": {
+        "owner": "ActiveKindIndex",
+        "field": "large"
+      },
+      "ty": "^\\[u64;WORDS\\]$",
+      "terms": [
+        "membership",
+        "owner",
+        "plain",
+        "large"
+      ],
+      "reason": "the large membership words are plain owner-only u64s, written only through &mut SegmentTable",
+      "tests": [
+        "tests/loom_active_kind_index.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p11_plain_large"
+    },
+    {
+      "id": "active-kind/set-sole-path",
+      "kind": "R5",
+      "protocol": "P11",
+      "files": [
+        "src/**"
+      ],
+      "target": {
+        "name": "set",
+        "kind": "call",
+        "receiver": "^ActiveKindIndex$"
+      },
+      "allowed": [
+        "SegmentTable::register_payload",
+        "SegmentHashHarness::active_set"
+      ],
+      "terms": [
+        "membership",
+        "set",
+        "register",
+        "owner"
+      ],
+      "reason": "a membership bit is set only when the owner registers a segment (and by the doc-hidden harness)",
+      "tests": [
+        "tests/loom_active_kind_index.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p11_set_sole_path"
+    },
+    {
+      "id": "active-kind/clear-sole-path",
+      "kind": "R5",
+      "protocol": "P11",
+      "files": [
+        "src/**"
+      ],
+      "target": {
+        "name": "clear",
+        "kind": "call",
+        "receiver": "^ActiveKindIndex$"
+      },
+      "allowed": [
+        "SegmentTable::unregister",
+        "SegmentTable::recycle",
+        "SegmentHashHarness::active_clear"
+      ],
+      "terms": [
+        "membership",
+        "clear",
+        "unregister",
+        "recycle",
+        "owner"
+      ],
+      "reason": "a membership bit is cleared only when the owner unregisters or recycles the segment (and by the doc-hidden harness)",
+      "tests": [
+        "tests/loom_active_kind_index.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p11_clear_sole_path"
+    },
+    {
+      "id": "active-kind/consume-before-finish-drain",
+      "kind": "R3",
+      "protocol": "P11",
+      "file": "src/alloc_core/alloc_core/sidecar_drain.rs",
+      "fn": "AllocCore::drain_sidecar_ingress",
+      "before": {
+        "name": "consume_small_cuts"
+      },
+      "after": {
+        "name": "finish_small_drain"
+      },
+      "nested_before": true,
+      "terms": [
+        "consume",
+        "pending",
+        "cut",
+        "finish_small_drain",
+        "before"
+      ],
+      "reason": "AllocCore::drain_sidecar_ingress consumes every cut it detached before the finalization that may release the segment and clear its active-kind bit",
+      "tests": [
+        "tests/loom_active_kind_index.rs",
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p11_consume_before_finish_drain"
+    },
+    {
+      "id": "active-kind/consume-before-finish-bounded",
+      "kind": "R3",
+      "protocol": "P11",
+      "file": "src/alloc_core/alloc_core/sidecar_drain.rs",
+      "fn": "AllocCore::drain_sidecar_ingress_bounded",
+      "before": {
+        "name": "consume_one_small_cut"
+      },
+      "after": {
+        "name": "finish_small_drain"
+      },
+      "nested_before": true,
+      "terms": [
+        "consume",
+        "pending",
+        "cut",
+        "finish_small_drain",
+        "before"
+      ],
+      "reason": "AllocCore::drain_sidecar_ingress_bounded consumes every cut it detached before the finalization that may release the segment and clear its active-kind bit",
+      "tests": [
+        "tests/loom_active_kind_index.rs",
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p11_consume_before_finish_bounded"
+    },
+    {
+      "id": "active-kind/consume-before-finish-scan",
+      "kind": "R3",
+      "protocol": "P11",
+      "file": "src/alloc_core/small/alloc_core_small/find_segment/scan.rs",
+      "fn": "AllocCore::drain_segment_sidecar",
+      "before": {
+        "name": "consume_small_cuts"
+      },
+      "after": {
+        "name": "finish_small_drain"
+      },
+      "nested_before": true,
+      "terms": [
+        "consume",
+        "pending",
+        "cut",
+        "finish_small_drain",
+        "before"
+      ],
+      "reason": "AllocCore::drain_segment_sidecar consumes every cut it detached before the finalization that may release the segment and clear its active-kind bit",
+      "tests": [
+        "tests/loom_active_kind_index.rs",
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p11_consume_before_finish_scan"
+    },
+    {
+      "id": "owner-drain/model-bind",
+      "kind": "R8",
+      "protocol": "P10",
+      "model": "tests/loom_terminal_owner_drain.rs",
+      "binds": [
+        {
+          "rule": "sidecar/publish-acqrel"
+        },
+        {
+          "rule": "sidecar/cut-acqrel"
+        }
+      ],
+      "terms": [
+        "model",
+        "AcqRel",
+        "publish",
+        "cut"
+      ],
+      "reason": "the owner-drain shadow model keeps the production orderings of the producer publish and the owner cut",
+      "tests": [
+        "tests/loom_terminal_owner_drain.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p10_model_bind"
+    },
+    {
+      "id": "active-kind/model-bind",
+      "kind": "R8",
+      "protocol": "P11",
+      "model": "tests/loom_active_kind_index.rs",
+      "binds": [
+        {
+          "rule": "sidecar/publish-acqrel"
+        },
+        {
+          "rule": "sidecar/cut-acqrel"
+        }
+      ],
+      "terms": [
+        "model",
+        "AcqRel",
+        "publish",
+        "cut"
+      ],
+      "reason": "the active-kind shadow model keeps the production orderings of the producer publish and the owner cut",
+      "tests": [
+        "tests/loom_active_kind_index.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p11_model_bind"
+    },
+    {
+      "id": "large/publish-pending-inventory",
+      "kind": "R2",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::publish_pending",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "phase word",
+        "AcqRel",
+        "Acquire"
+      ],
+      "reason": "the producer terminal LIVE -> PENDING CAS is AcqRel/Acquire and the only ordered operation of publish_pending",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_publish_pending_inventory"
+    },
+    {
+      "id": "large/claim-pending-inventory",
+      "kind": "R2",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::claim_pending",
+      "sites": [
+        {
+          "name": "load",
+          "orderings": [
+            "Acquire"
+          ]
+        },
+        {
+          "name": "compare_exchange",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "phase word",
+        "AcqRel",
+        "Acquire"
+      ],
+      "reason": "the owner claim reads the word with Acquire and moves PENDING -> CONSUMING with one AcqRel/Acquire CAS",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_claim_pending_inventory"
+    },
+    {
+      "id": "large/claim-live-inventory",
+      "kind": "R2",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::claim_live",
+      "sites": [
+        {
+          "name": "load",
+          "orderings": [
+            "Acquire"
+          ]
+        },
+        {
+          "name": "compare_exchange",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "phase word",
+        "AcqRel",
+        "Acquire"
+      ],
+      "reason": "the owner LIVE claim reads with Acquire and moves LIVE -> CONSUMING with one AcqRel/Acquire CAS",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_claim_live_inventory"
+    },
+    {
+      "id": "large/begin-reuse-inventory",
+      "kind": "R2",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::begin_reuse",
+      "sites": [
+        {
+          "name": "load",
+          "orderings": [
+            "Acquire"
+          ]
+        },
+        {
+          "name": "compare_exchange",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "phase word",
+        "AcqRel",
+        "Acquire"
+      ],
+      "reason": "cache reuse reads with Acquire and moves CACHED(g) -> INITIALIZING(g+1) with one AcqRel/Acquire CAS",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_begin_reuse_inventory"
+    },
+    {
+      "id": "large/transition-inventory",
+      "kind": "R2",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::transition",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "phase word",
+        "AcqRel",
+        "Acquire"
+      ],
+      "reason": "every fixed transition (cache, release, reuse finish) is one AcqRel/Acquire CAS from the exact expected word",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_transition_inventory"
+    },
+    {
+      "id": "large/claim-pending-guard",
+      "kind": "R4",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::claim_pending",
+      "action": {
+        "name": "compare_exchange"
+      },
+      "guard_return": "^large_phase\\(observed\\)!=Some\\(LargePhase::Pending\\)$",
+      "terms": [
+        "phase",
+        "Pending",
+        "CAS",
+        "return"
+      ],
+      "reason": "the owner claims only a word it observed in PENDING; claiming LIVE would consume an obligation no producer published",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "mutants": [
+        {
+          "id": "claim-without-pending-check",
+          "file": "src/alloc_core/large/reservation_state.rs",
+          "from": "        if large_phase(observed) != Some(LargePhase::Pending) {\n            return None;\n        }\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_terminal_large",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_terminal_large"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_claim_pending_guard"
+    },
+    {
+      "id": "large/claim-live-guard",
+      "kind": "R4",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::claim_live",
+      "action": {
+        "name": "compare_exchange"
+      },
+      "guard_return": "^large_phase\\(observed\\)!=Some\\(LargePhase::Live\\)$",
+      "terms": [
+        "phase",
+        "Live",
+        "CAS",
+        "return"
+      ],
+      "reason": "the owner LIVE claim consumes only a word observed in LIVE, never a PENDING obligation a producer already published",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_claim_live_guard"
+    },
+    {
+      "id": "large/begin-reuse-guard",
+      "kind": "R4",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::begin_reuse",
+      "action": {
+        "name": "compare_exchange"
+      },
+      "guard_return": "^large_phase\\(observed\\)!=Some\\(LargePhase::Cached\\)$",
+      "terms": [
+        "phase",
+        "Cached",
+        "CAS",
+        "return"
+      ],
+      "reason": "reuse starts only from CACHED, so a consumed or released reservation is never re-issued",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_begin_reuse_guard"
+    },
+    {
+      "id": "large/ghost-publish",
+      "kind": "R6",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::publish_pending",
+      "ghost": "large/pending",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "publication",
+        "claimed",
+        "exactly once"
+      ],
+      "reason": "publish_pending records large/pending +1 per successful terminal publication; the loom ledger checks each is claimed exactly once",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "mutants": [
+        {
+          "id": "publish-without-ghost-event",
+          "file": "src/alloc_core/large/reservation_state.rs",
+          "from": "        crate::ghost::ghost_event!(\n            \"large/pending\",\n            core::ptr::from_ref(self.word).addr(),\n            i64::from(published)\n        );\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_terminal_large",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_terminal_large"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_ghost_publish"
+    },
+    {
+      "id": "large/ghost-claim",
+      "kind": "R6",
+      "protocol": "P9",
+      "file": "src/alloc_core/large/reservation_state.rs",
+      "fn": "LargeReservationState::claim_pending",
+      "ghost": "large/pending",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "claim",
+        "publication",
+        "exactly once"
+      ],
+      "reason": "claim_pending records large/pending -1 per successful claim, the other side of the exactly-once ledger",
+      "tests": [
+        "tests/loom_terminal_large.rs"
+      ],
+      "mutants": [
+        {
+          "id": "claim-without-ghost-event",
+          "file": "src/alloc_core/large/reservation_state.rs",
+          "from": "        crate::ghost::ghost_event!(\n            \"large/pending\",\n            core::ptr::from_ref(self.word).addr(),\n            -i64::from(claimed.is_some())\n        );\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_terminal_large",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_terminal_large"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p9_ghost_claim"
+    },
+    {
+      "id": "sidecar/publish-requires-issue",
+      "kind": "R4",
+      "protocol": "P7",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+      "fn": "SidecarBitmap::publish",
+      "action": {
+        "name": "fetch_or"
+      },
+      "guard_return": "^self\\.classes\\.encoded\\(granule\\)==0$",
+      "terms": [
+        "issued",
+        "class",
+        "publish",
+        "return"
+      ],
+      "reason": "a producer sets the pending bit only after the early return for a granule whose class was never issued, so a cut never yields a record without a class",
+      "tests": [
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p7_publish_requires_issue",
+      "mutants": [
+        {
+          "id": "publish-unissued",
+          "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+          "from": "        if self.classes.encoded(granule) == 0 {\n            return false;\n        }\n        self.pending",
+          "to": "        self.pending",
+          "checker": {
+            "name": "loom loom_sidecar_bitmap_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_sidecar_bitmap_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
+    },
+    {
+      "id": "exact-shard/acquire-cas",
+      "kind": "R1",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::acquire_unless_exiting",
+      "site": {
+        "name": "compare_exchange_weak",
+        "receiver": "^self\\.lock$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "lock",
+        "Acquire",
+        "CAS",
+        "critical section"
+      ],
+      "reason": "the shard lock is taken by a CAS-weak with Acquire on success, which orders this critical section after the previous holder release",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "relaxed-acquire",
+          "file": "src/global/exact_object/exact_shard.rs",
+          "from": "    fn acquire_unless_exiting(&self) -> bool {\n        let mut spins = 0u32;\n        while self\n            .lock\n            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)",
+          "to": "    fn acquire_unless_exiting(&self) -> bool {\n        let mut spins = 0u32;\n        while self\n            .lock\n            .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)",
+          "checker": {
+            "name": "loom loom_exact_shard_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_exact_shard_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_acquire_cas"
+    },
+    {
+      "id": "exact-shard/release-store",
+      "kind": "R1",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::release",
+      "site": {
+        "name": "store",
+        "receiver": "^self\\.lock$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "lock",
+        "Release",
+        "critical section",
+        "holder"
+      ],
+      "reason": "the holder releases the shard lock with a Release store, publishing its table writes to the next holder",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "relaxed-release",
+          "file": "src/global/exact_object/exact_shard.rs",
+          "from": "        self.lock.store(false, Ordering::Release);\n",
+          "to": "        self.lock.store(false, Ordering::Relaxed);\n",
+          "checker": {
+            "name": "loom loom_exact_shard_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_exact_shard_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_release_store"
+    },
+    {
+      "id": "exact-shard/hint-acquire",
+      "kind": "R1",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::peek",
+      "site": {
+        "name": "load",
+        "receiver": "^self\\.live_hint$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "live_hint",
+        "Acquire",
+        "hint",
+        "empty"
+      ],
+      "reason": "the lock-free empty answer reads the live hint with Acquire; a stale hint only costs a lock round",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_hint_acquire"
+    },
+    {
+      "id": "exact-shard/take-hint-acquire",
+      "kind": "R1",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::take",
+      "site": {
+        "name": "load",
+        "receiver": "^self\\.live_hint$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "live_hint",
+        "Acquire",
+        "hint",
+        "empty"
+      ],
+      "reason": "take reads the live hint with Acquire before its lock-free empty answer",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_take_hint_acquire"
+    },
+    {
+      "id": "exact-shard/insert-under-lock",
+      "kind": "R4",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::insert",
+      "action": {
+        "name": "get",
+        "receiver": "^self\\.inner$"
+      },
+      "guard_return": "^!self\\.acquire_unless_exiting\\(\\)$",
+      "terms": [
+        "lock",
+        "inner",
+        "acquire",
+        "return"
+      ],
+      "reason": "insert touches the descriptor array only after the early return for a refused lock, i.e. while holding the shard lock",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_insert_under_lock"
+    },
+    {
+      "id": "exact-shard/peek-under-lock",
+      "kind": "R4",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::peek",
+      "action": {
+        "name": "get",
+        "receiver": "^self\\.inner$"
+      },
+      "guard_return": "^!self\\.acquire_unless_exiting\\(\\)$",
+      "terms": [
+        "lock",
+        "inner",
+        "acquire",
+        "return"
+      ],
+      "reason": "peek touches the descriptor array only after the early return for a refused lock, i.e. while holding the shard lock",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_peek_under_lock"
+    },
+    {
+      "id": "exact-shard/take-under-lock",
+      "kind": "R4",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::take",
+      "action": {
+        "name": "get",
+        "receiver": "^self\\.inner$"
+      },
+      "guard_return": "^!self\\.acquire_unless_exiting\\(\\)$",
+      "terms": [
+        "lock",
+        "inner",
+        "acquire",
+        "return"
+      ],
+      "reason": "take touches the descriptor array only after the early return for a refused lock, i.e. while holding the shard lock",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_take_under_lock"
+    },
+    {
+      "id": "exact-shard/insert-hint-before-release",
+      "kind": "R3",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::insert",
+      "before": {
+        "name": "store",
+        "receiver": "^self\\.live_hint$"
+      },
+      "after": {
+        "name": "release"
+      },
+      "terms": [
+        "live_hint",
+        "lock",
+        "release",
+        "before"
+      ],
+      "reason": "insert stores the live hint while still holding the lock, so the hint is never ahead of the table a later holder sees",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_insert_hint_before_release"
+    },
+    {
+      "id": "exact-shard/take-hint-before-release",
+      "kind": "R3",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::take",
+      "before": {
+        "name": "store",
+        "receiver": "^self\\.live_hint$"
+      },
+      "after": {
+        "name": "release"
+      },
+      "terms": [
+        "live_hint",
+        "lock",
+        "release",
+        "before"
+      ],
+      "reason": "take stores the live hint while still holding the lock, so the hint is never ahead of the table a later holder sees",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_take_hint_before_release"
+    },
+    {
+      "id": "exact-shard/ghost-acquire",
+      "kind": "R6",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::acquire_unless_exiting",
+      "ghost": "exact-shard/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "acquire",
+        "released"
+      ],
+      "reason": "a successful acquire records exact-shard/held +1; the loom ledger checks every acquire is released exactly once",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "acquire-without-ghost-event",
+          "file": "src/global/exact_object/exact_shard.rs",
+          "from": "        // Ghost: one holder per lock word; every acquire is released once.\n        crate::ghost::ghost_event!(\"exact-shard/held\", core::ptr::from_ref(self).addr(), 1);\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_exact_shard_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_exact_shard_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_ghost_acquire"
+    },
+    {
+      "id": "exact-shard/ghost-release",
+      "kind": "R6",
+      "protocol": "P21",
+      "file": "src/global/exact_object/exact_shard.rs",
+      "fn": "ExactShard::release",
+      "ghost": "exact-shard/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "release",
+        "acquire"
+      ],
+      "reason": "release records exact-shard/held -1, the other side of the acquire ledger",
+      "tests": [
+        "tests/loom_exact_shard_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p21_ghost_release"
+    },
+    {
+      "id": "fallback/init-cas",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "heap_ptr_impl",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "^INIT_STATE$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "INIT_STATE",
+        "CAS",
+        "initialiser",
+        "Acquire"
+      ],
+      "reason": "exactly one first caller wins the UNINIT -> INITIALIZING CAS and becomes the sole initialiser",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_init_cas"
+    },
+    {
+      "id": "fallback/publish-release",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "heap_ptr_impl",
+      "site": {
+        "name": "store",
+        "receiver": "^INIT_STATE$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 2,
+      "terms": [
+        "READY",
+        "Release",
+        "publish",
+        "rollback"
+      ],
+      "reason": "the initialiser publishes READY (or rolls back to UNINIT after OOM) with Release, so a reader that acquires READY sees the written heap",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "relaxed-ready",
+          "file": "src/global/fallback.rs",
+          "from": "                    INIT_STATE.store(FallbackInitState::Ready as u8, Ordering::Release);\n",
+          "to": "                    INIT_STATE.store(FallbackInitState::Ready as u8, Ordering::Relaxed);\n",
+          "checker": {
+            "name": "loom loom_fallback_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_fallback_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_publish_release"
+    },
+    {
+      "id": "fallback/ready-acquire",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "heap_ptr_impl",
+      "site": {
+        "name": "load",
+        "receiver": "^INIT_STATE$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 2,
+      "terms": [
+        "READY",
+        "Acquire",
+        "fast path",
+        "waiter"
+      ],
+      "reason": "the fast path and the losers wait loop read the state with Acquire, pairing with the READY publication",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_ready_acquire"
+    },
+    {
+      "id": "fallback/try-ready-acquire",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "try_with_heap",
+      "site": {
+        "name": "load",
+        "receiver": "^INIT_STATE$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "READY",
+        "Acquire",
+        "try_with_heap",
+        "heap"
+      ],
+      "reason": "try_with_heap reaches the heap only after an Acquire load observed READY",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_try_ready_acquire"
+    },
+    {
+      "id": "fallback/rollback-release",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "InitStateGuard::drop",
+      "site": {
+        "name": "store",
+        "receiver": "^INIT_STATE$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "rollback",
+        "UNINIT",
+        "Release",
+        "unwind"
+      ],
+      "reason": "an unwinding initialiser rolls the state back to UNINIT with Release so losers re-race instead of spinning",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_rollback_release"
+    },
+    {
+      "id": "fallback/lock-acquire",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "LockGuard::acquire",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "^LOCK$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "LOCK",
+        "Acquire",
+        "CAS",
+        "closure"
+      ],
+      "reason": "the fallback lock is taken by a CAS with Acquire on success, ordering this closure after the previous holder",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "relaxed-lock",
+          "file": "src/global/fallback.rs",
+          "from": "            if LOCK\n                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)",
+          "to": "            if LOCK\n                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)",
+          "checker": {
+            "name": "loom loom_fallback_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_fallback_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_lock_acquire"
+    },
+    {
+      "id": "fallback/lock-try",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "LockGuard::try_acquire",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "^LOCK$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "LOCK",
+        "Acquire",
+        "CAS",
+        "try"
+      ],
+      "reason": "the non-waiting acquire takes the lock with the same Acquire CAS",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_lock_try"
+    },
+    {
+      "id": "fallback/unlock-release",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "LockGuard::drop",
+      "site": {
+        "name": "store",
+        "receiver": "^LOCK$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "LOCK",
+        "Release",
+        "holder",
+        "closure"
+      ],
+      "reason": "the guard drop releases the lock with a Release store, publishing the closure heap writes to the next holder",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "relaxed-unlock",
+          "file": "src/global/fallback.rs",
+          "from": "        LOCK.store(false, Ordering::Release);\n",
+          "to": "        LOCK.store(false, Ordering::Relaxed);\n",
+          "checker": {
+            "name": "loom loom_fallback_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_fallback_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_unlock_release"
+    },
+    {
+      "id": "fallback/write-before-ready",
+      "kind": "R3",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "heap_ptr_impl",
+      "before": {
+        "name": "write"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^INIT_STATE$",
+        "args": "Ready"
+      },
+      "nested_before": true,
+      "terms": [
+        "heap",
+        "write",
+        "READY",
+        "before"
+      ],
+      "reason": "the heap is written into FALLBACK before READY is published",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_write_before_ready"
+    },
+    {
+      "id": "fallback/try-requires-ready",
+      "kind": "R4",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "try_with_heap",
+      "action": {
+        "name": "try_acquire"
+      },
+      "guard_return": "^INIT_STATE\\.load\\(Ordering::Acquire\\)!=",
+      "terms": [
+        "READY",
+        "try_with_heap",
+        "return",
+        "heap"
+      ],
+      "reason": "try_with_heap takes the lock and the heap only after the early return for a state that is not READY",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_try_requires_ready"
+    },
+    {
+      "id": "fallback/ghost-init",
+      "kind": "R6",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "heap_ptr_impl",
+      "ghost": "fallback/init-won",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "initialiser",
+        "won",
+        "exactly one"
+      ],
+      "reason": "the CAS winner records fallback/init-won; the loom model checks one initialiser per published heap",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_ghost_init"
+    },
+    {
+      "id": "fallback/ghost-acquired",
+      "kind": "R6",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "LockGuard::acquired",
+      "ghost": "fallback/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "acquire",
+        "released"
+      ],
+      "reason": "every acquired guard records fallback/held +1; the ledger checks each acquire is released once",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_ghost_acquired"
+    },
+    {
+      "id": "fallback/ghost-release",
+      "kind": "R6",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "LockGuard::drop",
+      "ghost": "fallback/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "release",
+        "acquire"
+      ],
+      "reason": "the guard drop records fallback/held -1, the other side of the acquire ledger",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "release-without-ghost-event",
+          "file": "src/global/fallback.rs",
+          "from": "        crate::ghost::ghost_event!(\"fallback/held\", 0, -1);\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_fallback_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_fallback_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_ghost_release"
+    },
+    {
+      "id": "maintenance-service/start-cas",
+      "kind": "R1",
+      "fn": "MaintenanceService::start",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "^STATE$"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "STATE",
+        "starter",
+        "CAS",
+        "AcqRel"
+      ],
+      "reason": "one starter wins the IDLE -> STARTING CAS; a loser reads RUNNING or an in-progress start",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_start_cas"
+    },
+    {
+      "id": "maintenance-service/start-wait-acquire",
+      "kind": "R1",
+      "fn": "MaintenanceService::start",
+      "site": {
+        "name": "load",
+        "receiver": "^STATE$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "STATE",
+        "RUNNING",
+        "Acquire",
+        "wait"
+      ],
+      "reason": "the starter waits for RUNNING with an Acquire load, pairing with the worker Release store",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_start_wait_acquire"
+    },
+    {
+      "id": "maintenance-service/rollback-release",
+      "kind": "R1",
+      "fn": "StartingGuard::drop",
+      "site": {
+        "name": "store",
+        "receiver": "^STATE$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "STATE",
+        "IDLE",
+        "rollback",
+        "Release"
+      ],
+      "reason": "a failed start rolls STATE back to IDLE with Release so a later start can win the CAS",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_rollback_release"
+    },
+    {
+      "id": "maintenance-service/running-release",
+      "kind": "R1",
+      "fn": "MaintenanceService::worker",
+      "site": {
+        "name": "store",
+        "receiver": "^STATE$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "STATE",
+        "RUNNING",
+        "worker",
+        "Release"
+      ],
+      "reason": "the worker publishes RUNNING with Release before any maintenance pass",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_running_release"
+    },
+    {
+      "id": "maintenance-service/running-acquire",
+      "kind": "R1",
+      "fn": "MaintenanceService::running",
+      "site": {
+        "name": "load",
+        "receiver": "^STATE$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "STATE",
+        "RUNNING",
+        "Acquire",
+        "running"
+      ],
+      "reason": "running() reports the guarantee only from an Acquire load of RUNNING",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_running_acquire"
+    },
+    {
+      "id": "maintenance-service/running-under-control",
+      "kind": "R3",
+      "fn": "MaintenanceService::worker",
+      "before": {
+        "name": "control"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^STATE$"
+      },
+      "nested_before": true,
+      "terms": [
+        "RUNNING",
+        "control",
+        "mutex",
+        "before"
+      ],
+      "reason": "the worker stores RUNNING while holding the CONTROL mutex, so the starter condvar wait cannot miss it",
+      "protocol": "P20",
+      "file": "src/global/maintenance_service.rs",
+      "tests": [
+        "tests/r6_t35_start_confirmation_bound.rs",
+        "tests/r8_autonomous_maintenance.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p20_running_under_control"
+    },
+    {
+      "id": "bootstrap/get-twin",
+      "kind": "R7",
+      "protocol": "P17",
+      "a": {
+        "file": "src/registry/bootstrap/loom_shim.rs",
+        "fn": "OncePtrCell::get"
+      },
+      "b": {
+        "file": "crates/once-ptr-cell/src/imp.rs",
+        "fn": "OncePtrCell::get"
+      },
+      "terms": [
+        "twin",
+        "loom",
+        "Acquire",
+        "get"
+      ],
+      "reason": "the bootstrap loom stand-in reads the cell with the same Acquire load as crates/once-ptr-cell",
+      "tests": [
+        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "tests/loom_r11_registry_claim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p17_get_twin"
+    },
+    {
+      "id": "bootstrap/init-twin",
+      "kind": "R7",
+      "protocol": "P17",
+      "a": {
+        "file": "src/registry/bootstrap/loom_shim.rs",
+        "fn": "OncePtrCell::get_or_try_init"
+      },
+      "b": {
+        "file": "crates/once-ptr-cell/src/imp.rs",
+        "fn": "OncePtrCell::init_slow"
+      },
+      "terms": [
+        "twin",
+        "loom",
+        "CAS",
+        "publish"
+      ],
+      "reason": "the stand-in init loop performs the same ordered sequence as the real slow path: Acquire load, Acquire/Relaxed CAS, Release publish or rollback, Acquire loser spin",
+      "tests": [
+        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "tests/loom_r11_registry_claim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p17_init_twin"
+    },
+    {
+      "id": "bootstrap/rollback-twin",
+      "kind": "R7",
+      "protocol": "P17",
+      "a": {
+        "file": "src/registry/bootstrap/loom_shim.rs",
+        "fn": "RollbackGuard::drop"
+      },
+      "b": {
+        "file": "crates/once-ptr-cell/src/imp.rs",
+        "fn": "RollbackGuard::drop"
+      },
+      "terms": [
+        "twin",
+        "loom",
+        "rollback",
+        "Release"
+      ],
+      "reason": "the stand-in rollback guard releases the sentinel with the same Release store as the real one",
+      "tests": [
+        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "tests/loom_r11_registry_claim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p17_rollback_twin"
+    },
+    {
+      "id": "once-ptr-cell/new-twin",
+      "kind": "R7",
+      "protocol": "P18",
+      "a": {
+        "file": "crates/once-ptr-cell/src/imp.rs",
+        "fn": "OncePtrCell::new",
+        "cfg": "not\\s*\\(\\s*loom\\s*\\)"
+      },
+      "b": {
+        "file": "crates/once-ptr-cell/src/imp.rs",
+        "fn": "OncePtrCell::new",
+        "cfg": "(^|& )loom$"
+      },
+      "terms": [
+        "twin",
+        "loom",
+        "const",
+        "constructor"
+      ],
+      "reason": "the const and the loom constructors differ only in constness; neither performs an ordered operation, so the loom tests run the shipped protocol",
+      "tests": [
+        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p18_new_twin"
+    },
+    {
+      "id": "tagged-index-stack/head-new-twin",
+      "kind": "R7",
+      "protocol": "P18",
+      "a": {
+        "file": "crates/tagged-index-stack/src/imp.rs",
+        "fn": "StackHead::new",
+        "cfg": "not\\s*\\(\\s*loom\\s*\\)"
+      },
+      "b": {
+        "file": "crates/tagged-index-stack/src/imp.rs",
+        "fn": "StackHead::new",
+        "cfg": "(^|& )loom$"
+      },
+      "terms": [
+        "twin",
+        "loom",
+        "const",
+        "constructor"
+      ],
+      "reason": "the const and the loom head constructors differ only in constness and perform no ordered operation",
+      "tests": [
+        "crates/tagged-index-stack/tests/loom_aba.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p18_head_new_twin"
+    },
+    {
+      "id": "epoch/install-release",
+      "kind": "R1",
+      "protocol": "P14",
+      "file": "src/concurrent/epoch/hand.rs",
+      "fn": "AtomicSlot::install",
+      "site": {
+        "name": "store",
+        "receiver": "value$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "install",
+        "value",
+        "Release",
+        "publish"
+      ],
+      "reason": "install publishes the value with Release; a reader that acquires it sees the installed object",
+      "tests": [
+        "tests/loom_epoch.rs",
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_install_release"
+    },
+    {
+      "id": "epoch/evict-cas",
+      "kind": "R1",
+      "protocol": "P14",
+      "file": "src/concurrent/epoch/hand.rs",
+      "fn": "AtomicSlot::try_evict_at",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "generation$"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "evict",
+        "generation",
+        "CAS",
+        "AcqRel"
+      ],
+      "reason": "eviction bumps the generation with an AcqRel CAS from the expected generation; a stale evictor fails and leaves the value",
+      "tests": [
+        "tests/loom_epoch.rs",
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_evict_cas"
+    },
+    {
+      "id": "epoch/evict-swap",
+      "kind": "R1",
+      "protocol": "P14",
+      "file": "src/concurrent/epoch/hand.rs",
+      "fn": "AtomicSlot::try_evict_at",
+      "site": {
+        "name": "swap",
+        "receiver": "value$"
+      },
+      "orderings": [
+        "AcqRel"
+      ],
+      "count": 1,
+      "terms": [
+        "evict",
+        "value",
+        "swap",
+        "AcqRel"
+      ],
+      "reason": "only the winning evictor swaps the value out with AcqRel and takes ownership of it",
+      "tests": [
+        "tests/loom_epoch.rs",
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_evict_swap"
+    },
+    {
+      "id": "epoch/read-generation",
+      "kind": "R1",
+      "protocol": "P14",
+      "file": "src/concurrent/epoch/hand.rs",
+      "fn": "AtomicSlot::read_with",
+      "site": {
+        "name": "load",
+        "receiver": "generation$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 2,
+      "terms": [
+        "seqlock",
+        "generation",
+        "Acquire",
+        "recheck"
+      ],
+      "reason": "the reader loads the generation with Acquire before and after the value (seqlock recheck)",
+      "tests": [
+        "tests/loom_epoch.rs",
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_read_generation"
+    },
+    {
+      "id": "epoch/read-value",
+      "kind": "R1",
+      "protocol": "P14",
+      "file": "src/concurrent/epoch/hand.rs",
+      "fn": "AtomicSlot::read_with",
+      "site": {
+        "name": "load",
+        "receiver": "value$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "seqlock",
+        "value",
+        "Acquire",
+        "reader"
+      ],
+      "reason": "the reader loads the value with Acquire between the two generation loads",
+      "tests": [
+        "tests/loom_epoch.rs",
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_read_value"
+    },
+    {
+      "id": "epoch/model-bind",
+      "kind": "R8",
+      "protocol": "P14",
+      "model": "tests/loom_epoch.rs",
+      "binds": [
+        {
+          "rule": "epoch/install-release"
+        },
+        {
+          "rule": "epoch/evict-cas"
+        },
+        {
+          "rule": "epoch/evict-swap"
+        },
+        {
+          "rule": "epoch/read-generation"
+        },
+        {
+          "rule": "epoch/read-value"
+        }
+      ],
+      "terms": [
+        "model",
+        "AcqRel",
+        "Acquire",
+        "Release"
+      ],
+      "reason": "the epoch shadow model (loom cannot run crossbeam-epoch) keeps the production orderings of install, eviction and the seqlock read",
+      "tests": [
+        "tests/loom_epoch.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_model_bind"
+    },
+    {
+      "id": "sharded/model-bind",
+      "kind": "R8",
+      "protocol": "P15",
+      "model": "tests/loom_sharded.rs",
+      "binds": [
+        {
+          "rule": "epoch/install-release"
+        },
+        {
+          "rule": "epoch/evict-cas"
+        },
+        {
+          "rule": "epoch/evict-swap"
+        },
+        {
+          "rule": "epoch/read-generation"
+        },
+        {
+          "rule": "epoch/read-value"
+        }
+      ],
+      "terms": [
+        "model",
+        "AcqRel",
+        "Acquire",
+        "Release"
+      ],
+      "reason": "the sharded shadow model of the generation-CAS eviction keeps the production AtomicSlot orderings",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_model_bind"
+    },
+    {
+      "id": "sharded/claim-cas",
+      "kind": "R1",
+      "protocol": "P15",
+      "file": "src/concurrent/sharded/sharded_region.rs",
+      "fn": "ShardedRegion::claim_or_get_shard",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "occupied$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "shard",
+        "claim",
+        "CAS",
+        "Acquire"
+      ],
+      "reason": "a shard is claimed by a CAS with Acquire on success, pairing with the previous token release",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_claim_cas"
+    },
+    {
+      "id": "sharded/bind-cas",
+      "kind": "R1",
+      "protocol": "P15",
+      "file": "src/concurrent/sharded/sharded_region.rs",
+      "fn": "ShardedRegion::bind_current_thread_to_shard",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "slots\\["
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "shard",
+        "bind",
+        "CAS",
+        "Acquire"
+      ],
+      "reason": "binding the current thread claims its shard with the same Acquire CAS",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_bind_cas"
+    },
+    {
+      "id": "sharded/release-store",
+      "kind": "R1",
+      "protocol": "P15",
+      "file": "src/concurrent/sharded/sharded_region.rs",
+      "fn": "ErasedGuard::drop",
+      "site": {
+        "name": "store",
+        "receiver": "occupied$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "shard",
+        "release",
+        "Release",
+        "token"
+      ],
+      "reason": "a dying token releases its shard with Release, publishing its shard writes to the next claimer",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_release_store"
+    },
+    {
+      "id": "sharded/death-release",
+      "kind": "R1",
+      "protocol": "P15",
+      "file": "src/concurrent/sharded/sharded_region.rs",
+      "fn": "TokenBlock::drop",
+      "site": {
+        "name": "fetch_add",
+        "receiver": "^TOKEN_BACKING_DEATHS$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "token",
+        "death",
+        "Release",
+        "prune"
+      ],
+      "reason": "a token block death is counted with Release after its claims are released; claimers prune with Acquire",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_death_release"
+    },
+    {
+      "id": "sharded/prune-acquire",
+      "kind": "R1",
+      "protocol": "P15",
+      "file": "src/concurrent/sharded/sharded_region.rs",
+      "fn": "prune_dead_claims",
+      "site": {
+        "name": "load",
+        "receiver": "^TOKEN_BACKING_DEATHS$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "token",
+        "death",
+        "Acquire",
+        "prune"
+      ],
+      "reason": "pruning reads the death epoch with Acquire, pairing with the Release death count",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_prune_acquire"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

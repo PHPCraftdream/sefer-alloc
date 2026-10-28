@@ -1,0 +1,85 @@
+{
+  "id": "R0-22",
+  "registryActivationHash": "f9b162cab4ae264ac13cb0dc2d2d065698726b65865fd7d090437bdebda998e6",
+  "steps": [
+    {
+      "name": "loom_sidecar_bitmap_actual target",
+      "env": {
+        "RUSTFLAGS": "--cfg loom"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--release",
+        "--features",
+        "alloc-core,alloc-xthread,tagged-index-stack/loom",
+        "--test",
+        "loom_sidecar_bitmap_actual"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "7 passed; 0 failed",
+          "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok",
+          "test loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable ... ok"
+        ]
+      }
+    },
+    {
+      "name": "loom_b4_r1_pin_cache target",
+      "env": {
+        "RUSTFLAGS": "--cfg loom"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--release",
+        "--features",
+        "alloc-core,alloc-xthread,tagged-index-stack/loom",
+        "--test",
+        "loom_b4_r1_pin_cache"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "4 passed; 0 failed",
+          "test loom_actual_cached_pin_publish_delivery_survives_unlink_race ... ok"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+    "find": "        self.mixed[leaf].store(fresh, Ordering::Release);\n",
+    "replace": "        self.mixed[leaf].store(fresh, Ordering::Relaxed);\n",
+    "steps": [
+      {
+        "name": "loom_sidecar_bitmap_actual mutant",
+        "env": {
+          "RUSTFLAGS": "--cfg loom"
+        },
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--features",
+          "alloc-core,alloc-xthread,tagged-index-stack/loom",
+          "--test",
+          "loom_sidecar_bitmap_actual"
+        ],
+        "expect": {
+          "exitNonZero": true,
+          "stdoutRegex": [
+            "test result: FAILED"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "test result: FAILED"
+      ]
+    }
+  }
+}

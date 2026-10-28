@@ -1,5 +1,5 @@
 id,paths,scope_base,anchors,note
-R0-21,src/alloc_core/segment/remote_bitmap;src/alloc_core/large/reservation_state.rs;src/registry/segment_route/large_state.rs,,,"Loom shadow models of the sidecar bitmap, Large phase word and owner credits; production sources they transcribe"
+R0-21,src/alloc_core/segment/remote_bitmap;src/alloc_core/large/reservation_state.rs;src/alloc_core/segment/segment_header/terminal_words.rs;src/registry/segment_route/large_state.rs,,,"Loom models of the sidecar bitmap and the terminal Large phase word on the actual sources, plus the owner-credit shadow; production sources they mount or transcribe"
 R4a-08,src/registry/heap_registry,,,Mutant of the initialised gate in the registry claim path; registry claim sources
 R4b-11,src/global/tls_heap.rs;src/registry/heap_registry/claim.rs,,src/global/tls_heap.rs::impl Drop for LeaseReleaseGuard;src/registry/heap_registry/claim.rs::impl Drop for HeapLease,ghost-lint rules on the teardown order torn -> trim -> release and the Release LIVE->FREE
 R4c-05,src/registry/segment_route;src/registry/heap_core_xthread;src/alloc_core/segment/remote_bitmap,,,"Miri regression of remote Large/Small frees against owner reconciliation (route directory, xthread routing, sidecar bitmap)"
@@ -38,3 +38,5 @@ R5b-19,src/global/fallback.rs,,,Fallback heap OOM injector bypass mutant
 R6a-M8,src/global/maintenance_service.rs;src/registry/heap_registry,,,StartingGuard rollback on spawn failure
 R4b-13,src/registry/heap_registry/claim.rs;src/registry/heap_slot.rs,,,"Loom shadow model of publish/recycle/drain, L1 drop ordering bound to claim.rs by ghost-lint R8"
 R4b-14,src/registry/heap_registry/claim.rs;src/registry/heap_slot.rs,,,"Loom shadow model of publish/recycle/drain, L2 claim ordering bound to claim.rs by ghost-lint R8"
+R0-22,src/alloc_core/segment/remote_bitmap;src/registry/heap_core_xthread/route_pin_cache.rs;src/registry/segment_route/directory,,,"Loom actual-source models of leaf pointer publication, pin-cache last-pin retention and early leaf release"
+R5b-10,src/alloc_core/segment/remote_bitmap;src/registry/segment_route/large_state.rs,,,"Loom model of owner-only credits against terminal bitmap cuts; its ghost-bind lines carry the production publish and cut orderings"

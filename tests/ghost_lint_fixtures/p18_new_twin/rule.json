@@ -1,0 +1,1 @@
+{"catalog": "once-ptr-cell/new-twin", "a": {"file": "$SRC", "fn": "OncePtrCell::new", "cfg": "not\\s*\\(\\s*loom\\s*\\)"}, "b": {"file": "$SRC", "fn": "OncePtrCell::new", "cfg": "(^|& )loom$"}}

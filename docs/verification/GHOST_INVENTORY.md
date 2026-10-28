@@ -43,9 +43,9 @@ harness; `non-atomic` — named scanner false positives.
 | P4 | registry claim/selector, free-set, spill, saturation | S | 41 | 6 | 0 | R4c-02 | partial: FreeSlotHint and SaturationHint are self-contained structs on core atomics (translatable via #[path]); stack.rs scans walk the static registry | translate(free_slot_hint, saturation) + keep+R8(stack scans) | G5 |
 | P5 | route pin: lookup \|\| unlink \|\| last-pin release | A+S | 39 | 2 | 0 | — | yes: tests/loom_b4_r1_pin_cache.rs includes directory/ and src/ghost/ | translate (done in G2: real directory under loom via loom_b4_r1_pin_cache with ghost checks compiled in; last-reference free under miri) | G2 |
 | P6 | route pin cache fast path | A | 0 | 1 | 0 | — | yes (already #[path]) | ghost | G6 |
-| P7 | sidecar bitmap: publish / guarded cut / scan | A+S | 8 | 3 | 0 | R0-21 | yes (loom_sidecar_bitmap_actual.rs) | ghost + retire shadow | G6 |
-| P8 | small sidecar: leaf pointer publication, pin lifetime | S | 14 | 1 | 0 | R0-22 | partial: ClassLeaves allocates leaves through the OS seam (cfg(loom) twin, P18) | translate | G6 |
-| P9 | terminal Large: phase word | S | 15 | 1 | 0 | R0-21 | yes: LargeReservationState wraps one &AtomicU64 | translate | G6 |
+| P7 | sidecar bitmap: publish / guarded cut / scan | A | 8 | 2 | 0 | R0-21 | yes (loom_sidecar_bitmap_actual.rs) | ghost | G6 |
+| P8 | small sidecar: leaf pointer publication, pin lifetime | A | 14 | 2 | 0 | R0-22 | yes: loom_sidecar_bitmap_actual compiles leaf_classes.rs (its cfg(loom) leaf construction is P18) and loom_b4_r1_pin_cache the small sidecar behind real route pins | translate | G6 |
+| P9 | terminal Large: phase word | S | 15 | 1 | 0 | R0-21 | yes: tests/loom_terminal_large.rs compiles reservation_state.rs and terminal_words.rs onto loom atomics | translate | G6 |
 | P10 | terminal owner drain: owner credits \|\| cut | S | 0 | 1 | 0 | R0-21 R5b-10 | no: credits live in AllocCore | keep+R5 | G6 |
 | P11 | active-kind index membership \|\| terminal publication | S | 0 | 1 | 0 | — | no: index is part of SegmentTable | keep+R5+R3 | G6 |
 | P12 | depot across slot recycle | S | 0 | 1 | 0 | — | no: owner-only plain storage bound as &'static mut | keep+R8+R3+R5 | G4 |
@@ -55,13 +55,13 @@ harness; `non-atomic` — named scanner false positives.
 | P16 | summary-hint C''' (not shipped) | none | 0 | 1 | 0 | — | n/a | archive | - |
 | P17 | bootstrap const OncePtrCell stand-in under loom | T | 7 | 0 | 0 | — | is the loom twin | R7 | G7 |
 | P18 | cfg(loom) twins in crates and leaf init | T | 20 | 2 | 0 | — | crate tests run the real crate under loom | R7 | G7 |
-| P19 | fallback heap one-time init + fallback lock (global/fallback.rs) | none | 11 | 0 | 0 | — | unknown (G0 finding: no loom model exists) | new-model | G6 |
-| P20 | maintenance service start/worker state | none | 6 | 0 | 0 | — | unknown (G0 finding: no loom model exists) | new-model | G6 |
-| P21 | exact-object shard lock + live hint | none | 7 | 0 | 0 | — | likely: ExactShard is a small struct | new-model | G6 |
+| P19 | fallback heap one-time init + fallback lock (global/fallback.rs) | A | 11 | 1 | 0 | — | yes: tests/loom_fallback_actual.rs compiles fallback.rs onto per-execution loom stand-ins for its statics (sync names through super) | ghost | G6 |
+| P20 | maintenance service start/worker state | none | 6 | 0 | 0 | — | no: process-wide static STATE plus std Mutex/Condvar wait_timeout_while and a detached std::thread worker in an infinite periodic loop | rules + integration tests | G6 |
+| P21 | exact-object shard lock + live hint | A | 7 | 1 | 0 | — | yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super) | ghost | G6 |
 | P22 | route ShardLock (spin lock over the directory shard) | S | 5 | 1 | 0 | — | yes: one AtomicBool | translate (with P5) | G2 |
 
-Shadow-model protocols (class contains S): 15 of 22, each with a decision.
-Protocols with neither a loom nor a shadow model: P19, P20, P21 (3 of 22).
+Shadow-model protocols (class contains S): 13 of 22, each with a decision.
+Protocols with neither a loom nor a shadow model: P20 (1 of 22).
 
 ## 3. Invariants and prod places
 
@@ -131,7 +131,7 @@ Prod: `src/registry/heap_core_xthread/route_pin_cache.rs`.
 - no atomic sites of its own: the cache is thread-local; the only cross-thread word it touches is P5's Entry::refs through EntryHandle (its own atomics are counters)
 - loom: `tests/loom_b4_r1_pin_cache.rs`
 
-Decision: **ghost** — real source already runs; add ghost checks + R5
+Decision: **ghost** — G6b: the real cache records ghost event pin-cache/held (+1 when a pin enters a slot, -1 when it leaves) keyed by segment base; the actual-source loom model checks the ledger against Entry::refs (one reference per occupied slot; 0 after the unlink fallback and after the TLS destructor). R6 with counts keeps every event per fn; R10 pins both cfg twins of CACHE as thread_local RefCell<PinCache>; R4/R5 keep inserts on the non-fallback slow path.
 
 ### P7 — sidecar bitmap: publish / guarded cut / scan
 
@@ -139,9 +139,9 @@ Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`, `src/alloc_core/
 
 - I1 every published offset is cut exactly once
 - I2 publish is fetch_or AcqRel after the class store Release; cut is swap AcqRel
-- loom: `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_sidecar_bitmap.rs`
+- loom: `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`
 
-Decision: **ghost + retire shadow** — G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it).
+Decision: **ghost** — G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it). G6c: the shadow loom_sidecar_bitmap.rs is retired; its negative control (a class published after the terminal bit) is the real-code mutant of sidecar/publish-requires-issue, red under loom_sidecar_bitmap_actual.
 
 ### P8 — small sidecar: leaf pointer publication, pin lifetime
 
@@ -149,9 +149,9 @@ Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `sr
 
 - I1 a leaf pointer is published (mixed store Release, present fetch_or Release) only after the leaf is fully initialised
 - I2 a reader resolves a leaf only with Acquire and only while holding a route pin
-- loom: `tests/loom_r11_small_sidecar.rs`
+- loom: `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_b4_r1_pin_cache.rs`
 
-Decision: **translate** — G6a: ClassLeaves ordered-op inventory per fn (R2 x6), initialise-before-publish and publish-before-presence in promote (R3), Drop walks presence bits (R3); R5 forbids the Dense constructor in production and keeps from_leaves in SmallSidecar::bitmap. Translation of the small-sidecar model follows in G6c.
+Decision: **translate** — G6a: ClassLeaves ordered-op inventory per fn (R2 x6), initialise-before-publish and publish-before-presence in promote (R3), Drop walks presence bits (R3); R5 forbids the Dense constructor in production and keeps from_leaves in SmallSidecar::bitmap. Translation of the small-sidecar model follows in G6c. G6c: the shadow loom_r11_small_sidecar.rs is retired. Leaf publication runs as actual source in loom_sidecar_bitmap_actual (the prepare-race test): a Relaxed mixed-leaf store is a loom causality violation there (mutant on class-leaves/promote-inventory); the pin lifetime is loom_b4_r1_pin_cache O4 plus route-pin/last-ref-free (miri), which replace the shadow early-release control.
 
 ### P9 — terminal Large: phase word
 
@@ -161,7 +161,7 @@ Prod: `src/alloc_core/large/reservation_state.rs`, `src/registry/segment_route/l
 - I2 every transition CAS is AcqRel/Acquire; a terminal publication is the producer's last reservation access
 - loom: `tests/loom_terminal_large.rs`
 
-Decision: **translate** — state word struct is self-contained
+Decision: **translate** — G6c: tests/loom_terminal_large.rs now runs the production LargeReservationState and phase codec on loom atomics (reservation_state.rs takes its atomics from super); ghost event large/pending (+1 publish, -1 claim) checked by a per-word ledger; R2 x5 exact ordered-op tables, R4 x3 phase checks before each observed-word CAS, R6 x2 on the events.
 
 ### P10 — terminal owner drain: owner credits || cut
 
@@ -172,7 +172,7 @@ Prod: `src/alloc_core/alloc_core/sidecar_drain.rs`, `src/alloc_core/segment/remo
 - no atomic sites of its own: owner credits are plain fields of AllocCore; the cut is P7's BitmapScan::next_cut swap
 - loom: `tests/loom_terminal_owner_drain.rs`
 
-Decision: **keep+R5** — invariant is a sole-writer property: R5 pins credit writes to owner functions
+Decision: **keep+R5** — G6b: credits stay a plain owner-only u32 (R10 on SegmentHeader.live_count); R5 pins every credit mutator (set_live_count, add_live, inc_live, sub_live, dec_live) to its owner functions; R4 keeps the drain release inside the empty-segment check; the shadow model binds the publish and cut orderings to P7 (R8).
 
 ### P11 — active-kind index membership || terminal publication
 
@@ -183,7 +183,7 @@ Prod: `src/alloc_core/segment/segment_table/active_kind_index.rs`, `src/alloc_co
 - no atomic sites of its own: membership is a plain owner bit in SegmentTable; producer side is P7's pending fetch_or
 - loom: `tests/loom_active_kind_index.rs`
 
-Decision: **keep+R5+R3** — membership is owner-plain; R3 pins 'consume pending before clear'
+Decision: **keep+R5+R3** — G6b: membership words stay plain owner u64s (R10); R5 pins ActiveKindIndex::set/clear to register/unregister/recycle; R3 (nested_before) keeps every cut consumed before finish_small_drain in all three owner drains; the shadow model binds the publish and cut orderings to P7 (R8).
 
 ### P12 — depot across slot recycle
 
@@ -214,7 +214,7 @@ Prod: `src/concurrent/epoch/hand.rs`, `src/concurrent/epoch/epoch_region.rs`.
 - I2 eviction CASes generation AcqRel then swaps value AcqRel
 - loom: `tests/loom_epoch.rs`
 
-Decision: **keep+R8** — permanent shadow
+Decision: **keep+R8** — G8: permanent shadow (loom cannot run crossbeam-epoch); R1 pins every AtomicSlot install / eviction / seqlock-read ordering in hand.rs and R8 binds the loom_epoch model lines to them.
 
 ### P15 — sharded region generation-CAS eviction, token blocks
 
@@ -224,7 +224,7 @@ Prod: `src/concurrent/sharded/sharded_region.rs`.
 - I2 TOKEN_BACKING_DEATHS is bumped Release after a token block dies; claimers prune with Acquire
 - loom: `tests/loom_sharded.rs`
 
-Decision: **keep+R8** — permanent shadow
+Decision: **keep+R8** — G8: permanent shadow; R1 pins the shard claim / bind CAS, the release store and the token-death Release / Acquire pair in sharded_region.rs; R8 binds the loom_sharded generation-CAS model lines to the AtomicSlot rules.
 
 ### P16 — summary-hint C''' (not shipped)
 
@@ -238,7 +238,7 @@ Prod: `src/registry/bootstrap/loom_shim.rs`, `src/registry/bootstrap/ensure.rs`,
 
 - I1 the loom stand-in performs the same atomic sequence and orderings as crates/once-ptr-cell (load Acquire, CAS Acquire/Relaxed, store Release, rollback store Release)
 
-Decision: **R7** — twin equivalence
+Decision: **R7** — G7: R7 twins pin the bootstrap loom stand-in to crates/once-ptr-cell op by op: get, the init loop (real get_or_try_init slow path init_slow), and the rollback guard drop.
 
 ### P18 — cfg(loom) twins in crates and leaf init
 
@@ -247,7 +247,7 @@ Prod: `crates/once-ptr-cell/src/imp.rs`, `crates/tagged-index-stack/src/imp.rs`,
 - I1 each loom twin has the same normalized atomic sequence as its prod item; allowed differences are listed with a reason
 - loom: `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs`
 
-Decision: **R7** — twin equivalence
+Decision: **R7** — G7: the crate twins are import-level (core vs loom atomics) around one shared implementation, so the loom tests run the shipped code; the only cfg(loom) twin items are the non-const constructors, pinned by R7 (no ordered op in either). leaf_classes initialises loom atomics in a cfg(loom) loop inside promote (covered by the promote R2 inventory, G6a); route_pin_cache CACHE twins are R10 (G6b); aligned-vmem mock is a cfg(mock) fault-injection layer, not a loom twin.
 
 ### P19 — fallback heap one-time init + fallback lock (global/fallback.rs)
 
@@ -255,8 +255,9 @@ Prod: `src/global/fallback.rs::heap_ptr_impl`, `src/global/fallback.rs::try_with
 
 - I1 INIT_STATE: exactly one initialiser wins the CAS (Acquire/Relaxed); the heap is published with a Release store, readers load Acquire; a panicking init rolls back with Release
 - I2 LOCK: test-and-set spin lock, CAS Acquire on acquire, Release store on drop
+- loom: `tests/loom_fallback_actual.rs`
 
-Decision: **new-model** — G0 finding: protocol with Acquire/Release pairs and no loom/shadow model; covered today only by r6_*/con01_* integration tests
+Decision: **ghost** — G6d: new actual-source loom model; HeapCore stand-in holds a loom cell every closure writes, so a heap access not ordered by READY or by the lock is a causality violation; ghost events fallback/init-won and fallback/held; R1 on every INIT_STATE / LOCK site, R3 write before READY, R4 try_with_heap only after READY, R6 on the events.
 
 ### P20 — maintenance service start/worker state
 
@@ -265,7 +266,7 @@ Prod: `src/global/maintenance_service.rs::start`, `src/global/maintenance_servic
 - I1 STATE: one starter wins the CAS (AcqRel/Acquire); the worker publishes its exit with a Release store; running() loads Acquire
 - I2 PASSES is bumped Release after a completed pass; waiters load Acquire
 
-Decision: **new-model** — G0 finding: covered only by r6_t35_start_confirmation_bound / r8_autonomous_maintenance integration tests
+Decision: **rules + integration tests** — G6d: an actual-source loom model needs the worker loop and the std thread/condvar seams restructured in production, out of scope for an imports-only phase; every STATE site is pinned by R1 (start CAS, starter wait load, rollback, RUNNING store, running()), and R3 keeps RUNNING stored under CONTROL (before the notify in the same block); behaviour stays covered by r6_t35_start_confirmation_bound and r8_autonomous_maintenance.
 
 ### P21 — exact-object shard lock + live hint
 
@@ -273,8 +274,9 @@ Prod: `src/global/exact_object/exact_shard.rs`.
 
 - I1 lock: CAS-weak Acquire/Relaxed, release store Release
 - I2 live_hint is a hint: stored Release under the lock, read Acquire; a stale hint only costs a lock round
+- loom: `tests/loom_exact_shard_actual.rs`
 
-Decision: **new-model** — G0 finding: lock protocol with no loom model
+Decision: **ghost** — G6d: new actual-source loom model; the UnsafeCell stand-in records a loom access per get(), so an unordered critical section is a causality violation; ghost event exact-shard/held (+1 acquire, -1 release) ledger; R1 on the lock CAS/store and hint loads, R4 inner access after the lock, R3 hint stored before release, R6 on the events.
 
 ### P22 — route ShardLock (spin lock over the directory shard)
 

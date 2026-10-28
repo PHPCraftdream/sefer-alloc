@@ -1,0 +1,30 @@
+{
+  "id": "R5b-10",
+  "registryActivationHash": "de55ce993d6f955c2762868db3d6870fc8b1cc5fc3a1348920c445ad5b3413e6",
+  "steps": [
+    {
+      "name": "loom_terminal_owner_drain target",
+      "env": {
+        "RUSTFLAGS": "--cfg loom"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--release",
+        "--features",
+        "alloc-core,alloc-xthread,tagged-index-stack/loom",
+        "--test",
+        "loom_terminal_owner_drain"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "2 passed; 0 failed",
+          "test unpublished_and_detached_instances_hold_the_reservation_credit ... ok",
+          "test negative_producer_retirement_allows_premature_release - should panic ... ok"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

@@ -1,0 +1,1 @@
+{"catalog": "tagged-index-stack/head-new-twin", "a": {"file": "$SRC", "fn": "StackHead::new", "cfg": "not\\s*\\(\\s*loom\\s*\\)"}, "b": {"file": "$SRC", "fn": "StackHead::new", "cfg": "(^|& )loom$"}}

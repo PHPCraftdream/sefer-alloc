@@ -31,11 +31,8 @@
 //! - `src/registry/segment_route/{error,kind,route_record,route_scan,
 //!   route_cut,large_state}.rs` and
 //!   `src/alloc_core/large/reservation_state.rs` — the compile cascade of
-//!   the files above. `large_state.rs`/`reservation_state.rs` stay fully on
-//!   core atomics on purpose: the Large branch never executes (only Small
-//!   routes are registered) and `reservation_state.rs` cannot take atomics
-//!   from `super` in production (its `super` is the crate root), so a seam
-//!   there would need a `src/lib.rs` reexport — out of scope.
+//!   the files above. Both take their atomics from `super` (loom here); the
+//!   Large branch never executes (only Small routes are registered).
 //!
 //! # Seams (each is import-level / declaration-level only; no production
 //! statement changed)
@@ -126,6 +123,12 @@
 //!   pin died at thread exit (owner pin only). The pin is never released
 //!   before its `fetch_or` (borrow structure), and no drain is added at
 //!   owner-ref drop (production has none).
+//! - (O5, ghost ledger) the production cache records ghost event
+//!   `pin-cache/held` (+1 when a pin enters a slot, -1 when it leaves),
+//!   keyed by segment base. The ledger is 1 while the producer's cache holds
+//!   the pin and 0 once the unlink fallback or the TLS destructor dropped it,
+//!   and `Entry::refs` equals the other holders plus the ledger: the cache
+//!   holds exactly one reference per occupied slot.
 //!
 //! # Mutant recipes (CI applies these to the PRODUCTION files; local loom
 //! runs are not part of this workspace's permitted commands)
@@ -536,6 +539,12 @@ fn drain(pin: &RoutePin) -> Vec<(u32, u8)> {
     out
 }
 
+/// O5: this execution's `pin-cache/held` ledger for `base` (the ghost table is
+/// process global, so the harness reads deltas from a per-execution snapshot).
+fn held(base: usize, at_start: i64) -> i64 {
+    ghost::count("pin-cache/held", base as u64) - at_start
+}
+
 fn bounded_model() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(2);
@@ -545,6 +554,7 @@ fn bounded_model() {
         let span = Span::new();
         let ptr = span.ptr();
         let base = ptr.addr();
+        let held0 = ghost::count("pin-cache/held", base as u64);
 
         // OWNER setup: production registration + issue; the granule goes
         // LIVE with class 0 (encode 1), so `SmallSidecar::publish` accepts
@@ -584,6 +594,7 @@ fn bounded_model() {
                 let pin = dir.lookup(ptr).expect("producer lookup before unlink");
                 let incarnation = pin.incarnation();
                 route_pin_cache::cache_insert(pin, base, incarnation);
+                assert_eq!(held(base, held0), 1, "O5: the cache holds one pin");
                 ack.store(true, Ordering::Release);
                 for attempt in 0..2u8 {
                     if attempt == 1 {
@@ -641,6 +652,11 @@ fn bounded_model() {
         // The post-unlink miss empties the producer cache; the independent
         // linked-cache TLS-destructor witness is checked below.
         assert_eq!(pin_refs(&owner_pin), 1, "O4: exactly the drain pin left");
+        assert_eq!(
+            held(base, held0),
+            0,
+            "O5: the unlinked cached pin left the cache with its ghost event"
+        );
 
         // D2: final drain after join (recovers every bit published after
         // D1 — including a legal stale-gate publication from attempt 1).
@@ -698,6 +714,7 @@ fn bounded_model() {
                 let pin = dir.lookup(ptr).expect("exit producer lookup");
                 let incarnation = pin.incarnation();
                 route_pin_cache::cache_insert(pin, base, incarnation);
+                assert_eq!(held(base, held0), 1, "O5: the cache holds one pin");
                 // SAFETY: this is the current issued allocation instance at offset 0;
                 // the pin remains borrowed through its terminal publication RMW.
                 let outcome = unsafe { route_pin_cache::publish_cached(ptr) };
@@ -715,6 +732,11 @@ fn bounded_model() {
             pin_refs(&exit_owner_pin),
             2,
             "O4: linked cached pin released at thread exit"
+        );
+        assert_eq!(
+            held(base, held0),
+            0,
+            "O5: the TLS destructor released the cached pin with its ghost event"
         );
         drop(exit_registration);
         assert_eq!(

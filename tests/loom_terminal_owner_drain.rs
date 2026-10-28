@@ -1,6 +1,7 @@
 //! Reduced-geometry model of owner-only credits versus terminal bitmap cuts.
 //! Credits are atomic only so the negative control can model the forbidden
 //! producer mutation; the positive protocol has exactly one owner mutator.
+//! The `ghost-bind` lines carry the production publish and cut orderings (R8).
 #![cfg(loom)]
 
 use loom::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -24,11 +25,13 @@ fn credit_lifetime(producer_retires_credit: bool) {
                 producer_live.load(Ordering::Acquire),
                 "reservation released before terminal publication"
             );
+            // ghost-bind: sidecar/publish-acqrel
             producer_pending.fetch_or(1, Ordering::AcqRel);
             // After the terminal RMW the producer touches only the independent
             // sidecar/pin. In particular it never reads producer_live again.
         });
 
+        // ghost-bind: sidecar/cut-acqrel
         let detached = pending.swap(0, Ordering::AcqRel);
         // Detach alone does not retire an instance. It remains credited until
         // logical free-list insertion/mark-free commits on the owning thread.
@@ -42,6 +45,7 @@ fn credit_lifetime(producer_retires_credit: bool) {
             reservation_live.store(false, Ordering::Release);
         }
         producer.join().unwrap();
+        // ghost-bind: sidecar/cut-acqrel
         let later = pending.swap(0, Ordering::AcqRel);
         assert_eq!(detached | later, 1);
         assert_eq!(detached & later, 0);
