@@ -191,16 +191,14 @@
         "tests/loom_b4_scan_skip_empty_publish.rs",
         "tests/loom_sidecar_bitmap.rs"
       ],
-      "pins": [
-        "tests/r11_ph5b_c5_sidecar_ordering_pinned.rs"
-      ],
+      "pins": [],
       "registry": [
         "R0-21"
       ],
       "real_under_loom": "yes (loom_sidecar_bitmap_actual.rs)",
       "decision": "ghost + retire shadow",
       "phase": "G6",
-      "reason": "real source covers the shadow model; the shadow loom_sidecar_bitmap.rs is retired only after its mutants go red on the actual-source test"
+      "reason": "G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it)."
     },
     {
       "id": "P8",
@@ -224,7 +222,7 @@
       "real_under_loom": "partial: ClassLeaves allocates leaves through the OS seam (cfg(loom) twin, P18)",
       "decision": "translate",
       "phase": "G6",
-      "reason": "ClassLeaves already has a loom twin for leaf init; the model can drive the real struct"
+      "reason": "G6a: ClassLeaves ordered-op inventory per fn (R2 x6), initialise-before-publish and publish-before-presence in promote (R3), Drop walks presence bits (R3); R5 forbids the Dense constructor in production and keeps from_leaves in SmallSidecar::bitmap. Translation of the small-sidecar model follows in G6c."
     },
     {
       "id": "P9",
@@ -2649,6 +2647,469 @@
         "tests/loom_registry_free_slots.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p4_free_slots_model_bind"
+    },
+    {
+      "id": "sidecar/publish-acqrel",
+      "kind": "R1",
+      "protocol": "P7",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+      "fn": "SidecarBitmap::publish",
+      "site": {
+        "name": "fetch_or",
+        "receiver": "pending"
+      },
+      "orderings": [
+        "AcqRel"
+      ],
+      "count": 1,
+      "terms": [
+        "publish",
+        "AcqRel",
+        "pending",
+        "linearization"
+      ],
+      "reason": "the producer terminal RMW is the linearization point and its last access to the reservation; AcqRel orders it against the owner cut (linter-only: no runtime model observes a weakened producer RMW — the removed text pin was text-only too; miri class_leaves_publication_miri stays green under the Relaxed mutant)",
+      "tests": [
+        "tests/loom_sidecar_bitmap_actual.rs",
+        "tests/loom_b4_scan_skip_empty_publish.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p7_publish_acqrel"
+    },
+    {
+      "id": "sidecar/issue-release",
+      "kind": "R1",
+      "protocol": "P7",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+      "fn": "SidecarBitmap::issue",
+      "site": {
+        "name": "store"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "issue",
+        "class",
+        "Release",
+        "handoff"
+      ],
+      "reason": "the owner issues the class code with Release; the allocation handoff carries it to the producer that publishes",
+      "tests": [
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p7_issue_release"
+    },
+    {
+      "id": "sidecar/cut-acqrel",
+      "kind": "R1",
+      "protocol": "P7",
+      "file": "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs",
+      "fn": "BitmapScan::next_cut",
+      "site": {
+        "name": "swap",
+        "args": "^0,"
+      },
+      "orderings": [
+        "AcqRel"
+      ],
+      "count": 3,
+      "terms": [
+        "cut",
+        "swap",
+        "AcqRel",
+        "pending"
+      ],
+      "reason": "the owner cut is an AcqRel swap(0): it acquires every producer RMW it consumes and leaves later bits pending",
+      "tests": [
+        "tests/loom_sidecar_bitmap_actual.rs",
+        "tests/loom_b4_scan_skip_empty_publish.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p7_cut_acqrel"
+    },
+    {
+      "id": "sidecar/ghost-published",
+      "kind": "R6",
+      "protocol": "P7",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+      "fn": "SidecarBitmap::publish",
+      "ghost": "sidecar/published",
+      "terms": [
+        "ghost",
+        "publication",
+        "cut",
+        "exactly once"
+      ],
+      "reason": "publish keeps its ghost event; the actual-source loom ledger checks every publication is cut exactly once",
+      "tests": [
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p7_ghost_published",
+      "mutants": [
+        {
+          "id": "publish-without-ghost-event",
+          "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+          "from": "        crate::ghost::ghost_event!(\n            \"sidecar/published\",\n            core::ptr::from_ref(&self.pending[granule / 64]).addr(),\n            1\n        );\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_sidecar_bitmap_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_sidecar_bitmap_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sidecar/ghost-cut",
+      "kind": "R6",
+      "protocol": "P7",
+      "file": "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs",
+      "fn": "BitmapScan::next_cut",
+      "ghost": "sidecar/cut-bits",
+      "terms": [
+        "ghost",
+        "cut",
+        "bits",
+        "exactly once"
+      ],
+      "reason": "next_cut keeps its ghost event for the bits it consumed",
+      "tests": [
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p7_ghost_cut"
+    },
+    {
+      "id": "class-leaves/prepared-inventory",
+      "kind": "R2",
+      "protocol": "P8",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "fn": "ClassLeaves::prepared",
+      "sites": [
+        {
+          "name": "load",
+          "orderings": [
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "ordering",
+        "leaf",
+        "prepared"
+      ],
+      "reason": "ClassLeaves::prepared performs exactly this set of ordered operations; a new or weakened one must update the catalog",
+      "tests": [
+        "tests/class_leaves_publication_miri.rs",
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_prepared_inventory"
+    },
+    {
+      "id": "class-leaves/prepare-inventory",
+      "kind": "R2",
+      "protocol": "P8",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "fn": "ClassLeaves::prepare",
+      "sites": [],
+      "terms": [
+        "inventory",
+        "ordering",
+        "leaf",
+        "prepare"
+      ],
+      "reason": "ClassLeaves::prepare performs exactly this set of ordered operations; a new or weakened one must update the catalog",
+      "tests": [
+        "tests/class_leaves_publication_miri.rs",
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_prepare_inventory"
+    },
+    {
+      "id": "class-leaves/promote-inventory",
+      "kind": "R2",
+      "protocol": "P8",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "fn": "ClassLeaves::promote",
+      "sites": [
+        {
+          "name": "store",
+          "orderings": [
+            "Release"
+          ]
+        },
+        {
+          "name": "fetch_or",
+          "orderings": [
+            "Release"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "ordering",
+        "leaf",
+        "promote"
+      ],
+      "reason": "ClassLeaves::promote performs exactly this set of ordered operations; a new or weakened one must update the catalog",
+      "tests": [
+        "tests/class_leaves_publication_miri.rs",
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_promote_inventory"
+    },
+    {
+      "id": "class-leaves/issue-inventory",
+      "kind": "R2",
+      "protocol": "P8",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "fn": "ClassLeaves::issue",
+      "sites": [
+        {
+          "name": "load",
+          "orderings": [
+            "Acquire"
+          ]
+        },
+        {
+          "name": "store",
+          "orderings": [
+            "Release"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "ordering",
+        "leaf",
+        "issue"
+      ],
+      "reason": "ClassLeaves::issue performs exactly this set of ordered operations; a new or weakened one must update the catalog",
+      "tests": [
+        "tests/class_leaves_publication_miri.rs",
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_issue_inventory"
+    },
+    {
+      "id": "class-leaves/encoded-inventory",
+      "kind": "R2",
+      "protocol": "P8",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "fn": "ClassLeaves::encoded",
+      "sites": [
+        {
+          "name": "load",
+          "orderings": [
+            "Acquire"
+          ]
+        },
+        {
+          "name": "load",
+          "orderings": [
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "ordering",
+        "leaf",
+        "encoded"
+      ],
+      "reason": "ClassLeaves::encoded performs exactly this set of ordered operations; a new or weakened one must update the catalog",
+      "tests": [
+        "tests/class_leaves_publication_miri.rs",
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_encoded_inventory"
+    },
+    {
+      "id": "class-leaves/drop-inventory",
+      "kind": "R2",
+      "protocol": "P8",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "fn": "ClassLeaves::drop",
+      "sites": [
+        {
+          "name": "load",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "ordering",
+        "leaf",
+        "drop"
+      ],
+      "reason": "ClassLeaves::drop performs exactly this set of ordered operations; a new or weakened one must update the catalog",
+      "tests": [
+        "tests/class_leaves_publication_miri.rs",
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_drop_inventory"
+    },
+    {
+      "id": "class-leaves/init-before-publish",
+      "kind": "R3",
+      "protocol": "P8",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "fn": "ClassLeaves::promote",
+      "before": {
+        "name": "write_bytes"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^self\\.mixed\\[leaf\\]$"
+      },
+      "terms": [
+        "initialize",
+        "leaf",
+        "Release",
+        "publish",
+        "before"
+      ],
+      "reason": "every byte of a fresh leaf is initialised before its pointer is Release-published",
+      "tests": [
+        "tests/class_leaves_publication_miri.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_init_before_publish",
+      "nested_before": true
+    },
+    {
+      "id": "class-leaves/publish-before-presence",
+      "kind": "R3",
+      "protocol": "P8",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "fn": "ClassLeaves::promote",
+      "before": {
+        "name": "store",
+        "receiver": "^self\\.mixed\\[leaf\\]$"
+      },
+      "after": {
+        "name": "fetch_or",
+        "receiver": "^self\\.present\\["
+      },
+      "terms": [
+        "presence",
+        "bit",
+        "leaf",
+        "publication",
+        "after"
+      ],
+      "reason": "the presence bit is set only after the leaf pointer is published, so a reader that sees the bit sees the whole leaf",
+      "tests": [
+        "tests/class_leaves_publication_miri.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_publish_before_presence"
+    },
+    {
+      "id": "class-leaves/drop-walks-presence",
+      "kind": "R3",
+      "protocol": "P8",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "fn": "ClassLeaves::drop",
+      "before": {
+        "name": "iter",
+        "receiver": "^self\\.present$"
+      },
+      "after": {
+        "name": "load",
+        "receiver": "^self\\.mixed\\[leaf\\]$"
+      },
+      "terms": [
+        "drop",
+        "presence",
+        "bits",
+        "leaf"
+      ],
+      "reason": "Drop frees exactly the leaves named by presence bits instead of scanning every slot",
+      "tests": [
+        "tests/class_leaves_publication_miri.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_drop_walks_presence"
+    },
+    {
+      "id": "small-sidecar/no-dense-in-prod",
+      "kind": "R5",
+      "protocol": "P8",
+      "files": [
+        "src/**"
+      ],
+      "forbid": true,
+      "target": {
+        "name": "from_initialized",
+        "kind": "call"
+      },
+      "allowed": [],
+      "terms": [
+        "Dense",
+        "from_initialized",
+        "production",
+        "ClassLeaves"
+      ],
+      "reason": "the Dense class-map constructor is a test backing only; production sidecars borrow ClassLeaves",
+      "tests": [
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_no_dense_in_prod"
+    },
+    {
+      "id": "small-sidecar/uses-class-leaves",
+      "kind": "R5",
+      "protocol": "P8",
+      "files": [
+        "src/**"
+      ],
+      "target": {
+        "name": "from_leaves",
+        "kind": "call"
+      },
+      "allowed": [
+        "SmallSidecar::bitmap"
+      ],
+      "terms": [
+        "from_leaves",
+        "ClassLeaves",
+        "SmallSidecar",
+        "bitmap"
+      ],
+      "reason": "the production small sidecar builds its bitmap over ClassLeaves, in SmallSidecar::bitmap only",
+      "tests": [
+        "tests/class_leaves_publication_miri.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p8_uses_class_leaves"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

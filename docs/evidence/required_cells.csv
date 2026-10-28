@@ -69,7 +69,7 @@ R5b-08,free,C3,PASS,true,C3 bypass-free-list-pop KILLED
 R5b-09-sb,model-limit,C4,MODEL-LIMIT,false,C4-гейт: клетки в спайке PG-2
 R5b-09-tb,model-limit,C4,MODEL-LIMIT,false,C4-гейт: клетки в спайке PG-2
 R5b-11,protocol,C5,PASS,true,C5 lost-publication нативный оракул
-R5b-12,ordering,C5,PASS,false,"waiver: source-pin трёх атомарных рёбер; позитив-клетка, мутант закрыт парной строкой реестра"
+R5b-12,ordering,C5,PASS,false,"waiver: ghost-lint правила трёх атомарных рёбер; позитив-клетка, мутант закрыт парной строкой реестра"
 R5b-13,ordering,C5,PASS,true,publish fetch_or AcqRel->Relaxed красный
 R5b-14,ordering,C5,PASS,true,bitmap_scan cut swap AcqRel->Relaxed красный
 R5b-15,ordering,C5,CONDITIONAL|PASS,false,waiver: reportedly KILLED в prior evidence без сырого лога; не независимое подтверждение

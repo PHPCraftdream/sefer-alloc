@@ -45,12 +45,16 @@ mod alloc_core {
 // The included production files resolve `super` at this root module.
 pub(crate) use loom::sync::atomic::{AtomicPtr, AtomicU64, AtomicU8, Ordering};
 
+// Ghost checks in the included production files (docs/GHOST_CHECKS_PLAN.md):
+// ghost builds (loom, miri, --cfg sefer_ghost) compile them.
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_cut.rs"]
 mod bitmap_cut;
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_record.rs"]
 mod bitmap_record;
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_scan.rs"]
 mod bitmap_scan;
+#[path = "../src/ghost/mod.rs"]
+mod ghost;
 #[path = "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs"]
 mod sidecar_bitmap;
 
@@ -154,6 +158,48 @@ fn drain(map: &SidecarBitmap<'_>, high_water: usize, records: &mut Vec<(usize, B
     }
 }
 
+/// Ghost ledger over the production `sidecar/published` / `sidecar/cut-bits`
+/// events (keyed by pending-word address): within one execution every
+/// publication is consumed by exactly one cut bit. The ghost table is process
+/// global, so the ledger compares deltas from a per-execution snapshot.
+struct GhostLedger(Vec<(i64, i64)>);
+
+impl GhostLedger {
+    fn counts(words: &[AtomicU64]) -> Vec<(i64, i64)> {
+        words
+            .iter()
+            .map(|w| {
+                let key = core::ptr::from_ref(w).addr() as u64;
+                (
+                    ghost::count("sidecar/published", key),
+                    ghost::count("sidecar/cut-bits", key),
+                )
+            })
+            .collect()
+    }
+
+    fn new(words: &[AtomicU64]) -> Self {
+        Self(Self::counts(words))
+    }
+
+    fn assert_balanced(&self, words: &[AtomicU64], published: i64) {
+        let now = Self::counts(words);
+        let mut total = 0;
+        for (word, ((p0, c0), (p1, c1))) in self.0.iter().zip(&now).enumerate() {
+            assert_eq!(
+                p1 - p0,
+                c1 - c0,
+                "word {word}: every publication is cut exactly once"
+            );
+            total += p1 - p0;
+        }
+        assert_eq!(
+            total, published,
+            "ghost publications match the successful publishes"
+        );
+    }
+}
+
 fn assert_union(records: &[(usize, BitmapRecord)], expected: &[(usize, u64, u8)]) {
     let mut seen = records.to_vec();
     seen.sort_by_key(|(word, record)| (*word, record.offset));
@@ -173,6 +219,7 @@ fn assert_union(records: &[(usize, BitmapRecord)], expected: &[(usize, u64, u8)]
 fn loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup() {
     loom::model(move || {
         let backing = Arc::new(Backing::new());
+        let ledger = GhostLedger::new(&backing.words);
         let map = backing.bitmap();
         assert_eq!(SidecarBitmap::WORDS, 3);
         assert!(map.issue(0, 3));
@@ -201,6 +248,7 @@ fn loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup() {
         let mut drained = Vec::new();
         drain(&map, HIGH_WATER, &mut drained);
         assert!(drained.is_empty(), "third discovery finds nothing");
+        ledger.assert_balanced(&backing.words, 2);
     });
 }
 
@@ -208,6 +256,7 @@ fn loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup() {
 fn loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup() {
     loom::model(move || {
         let backing = Arc::new(Backing::new());
+        let ledger = GhostLedger::new(&backing.words);
         let map = backing.bitmap();
         assert!(map.issue(0, 3));
         assert!(map.issue(64 * 16, 5));
@@ -234,6 +283,7 @@ fn loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup() {
         let mut drained = Vec::new();
         drain(&map, HIGH_WATER, &mut drained);
         assert!(drained.is_empty(), "third discovery finds nothing");
+        ledger.assert_balanced(&backing.words, 2);
     });
 }
 
@@ -241,6 +291,7 @@ fn loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup() {
 fn loom_actual_publish_racing_strict_trim_union_is_complete() {
     loom::model(move || {
         let backing = Arc::new(Backing::new());
+        let ledger = GhostLedger::new(&backing.words);
         let map = backing.bitmap();
         assert!(map.issue(0, 3));
         assert!(map.issue(1024, 6));
@@ -269,6 +320,7 @@ fn loom_actual_publish_racing_strict_trim_union_is_complete() {
         let mut drained = Vec::new();
         drain(&map, HIGH_WATER, &mut drained);
         assert!(drained.is_empty(), "discovery after recovery finds nothing");
+        ledger.assert_balanced(&backing.words, 2);
     });
 
     loom::model(move || {

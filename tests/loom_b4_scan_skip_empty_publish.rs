@@ -56,12 +56,16 @@ mod alloc_core {
 // The included production files resolve `super` at this root module.
 pub(crate) use loom::sync::atomic::{AtomicPtr, AtomicU64, AtomicU8, Ordering};
 
+// Ghost checks in the included production files (docs/GHOST_CHECKS_PLAN.md):
+// ghost builds (loom, miri, --cfg sefer_ghost) compile them.
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_cut.rs"]
 mod bitmap_cut;
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_record.rs"]
 mod bitmap_record;
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_scan.rs"]
 mod bitmap_scan;
+#[path = "../src/ghost/mod.rs"]
+mod ghost;
 #[path = "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs"]
 mod sidecar_bitmap;
 

@@ -1,6 +1,6 @@
 //! Reduced shadow of pending-bit publication/cuts, not the real ClassLeaves.
 //! Positive cases are ordering-insensitive: one thread issues and reads classes.
-//! Production orderings are pinned by r11_ph5b_c5_sidecar_ordering_pinned;
+//! Production orderings are pinned by the ghost-lint rules sidecar/*-acqrel (docs/verification/ghost-rules.json);
 //! class_leaves_publication_miri exercises real mixed-leaf initialization.
 #![cfg(loom)]
 

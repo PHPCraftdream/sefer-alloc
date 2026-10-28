@@ -1,29 +1,26 @@
 {
   "id": "R5b-12",
-  "registryActivationHash": "529de092d76bc2c59360f16d22d27155d64db5b7301b4cc4efc657d0dd4c7fbd",
+  "registryActivationHash": "7f87c4cea0c4e8ce3b1f9b0d9bd2c1ee3ca89780c4c57d54a0b7788b2c23523f",
   "steps": [
     {
-      "name": "production source-pin baseline",
+      "name": "ghost-lint catalog baseline",
       "env": {},
       "argv": [
         "cargo",
         "test",
         "--locked",
+        "-p",
+        "ghost-lint",
         "--test",
-        "r11_ph5b_c5_sidecar_ordering_pinned",
-        "--features",
-        "production"
+        "catalog_holds",
+        "--",
+        "--nocapture"
       ],
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "8 passed; 0 failed",
-          "test mixed_leaf_published_after_its_initialization \\.\\.\\. ok",
-          "test owner_cut_is_acqrel_swap \\.\\.\\. ok",
-          "test class_leaves_ordering_inventory_is_exact \\.\\.\\. ok",
-          "test owner_issue_class_store_is_release \\.\\.\\. ok",
-          "test producer_publish_is_acqrel_fetch_or \\.\\.\\. ok",
-          "test production_small_sidecar_uses_class_leaves \\.\\.\\. ok"
+          "check: \\d+ rule\\(s\\), 0 violation\\(s\\)",
+          "test result: ok\\. 1 passed; 0 failed"
         ]
       }
     }
