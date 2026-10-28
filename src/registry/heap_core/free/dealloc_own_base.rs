@@ -56,6 +56,11 @@ pub(super) enum SmallFreeGuard {
     /// All guards passed. `off` is the block's segment-relative offset,
     /// already computed here so the caller does not re-derive it for the
     /// magazine push that follows.
+    // G1-K2: without `hardened` only the batch free (`batch-api`) builds it.
+    #[cfg_attr(
+        not(any(feature = "hardened", feature = "batch-api")),
+        allow(dead_code)
+    )]
     Accept { off: u32 },
     /// Rejected as a benign no-op (double-free / interior-pointer /
     /// hardened Large-kind contract violation) — already fully handled; the
@@ -197,6 +202,12 @@ pub(super) enum SmallFreeGuard {
 /// `RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md` §8.4 for that design history.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[inline(always)]
+// G1-K2: without `hardened` the scalar free uses `small_free_guard_by_byte`;
+// this exact-class guard serves `hardened` and the batch free.
+#[cfg_attr(
+    not(any(feature = "hardened", feature = "batch-api")),
+    allow(dead_code)
+)]
 pub(super) fn small_free_guard(
     base: *mut u8,
     ptr: *mut u8,
@@ -427,129 +438,161 @@ impl HeapCore {
     pub(crate) fn dealloc_own_thread_with_base(&mut self, owned: OwnedBlock, layout: Layout) {
         let (root, block) = (owned.root(), owned.block());
         debug_assert_eq!(self.core.canonical_root_for(block), Some(root));
+        // G1-K2: without `hardened` the class comes from the block's state byte,
+        // not the caller's Layout (see `small_free_guard_by_byte`).
+        #[cfg(not(feature = "hardened"))]
         {
-            use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
-            use crate::registry::heap_core::state::tcache::{FREE_PARK_CAP, TCACHE_CAP};
-            let size = layout.size().max(MIN_BLOCK);
-            let align = layout.align();
-            // C1 (0.3.0): gate removed — see the matching comment in `alloc`'s
-            // magazine fast path above for the full soundness argument
-            // (`class_for` guarantees `block_size % align == 0` for any
-            // `Some(c)` it returns, so keying the magazine by class alone is
-            // sound for any align it accepted, not just align<=16).
-            //
-            // Ph3b: the class is computed first because the magazine push
-            // below needs it, but it NO LONGER decides Small-vs-Large —
-            // `small_free_guard` does, from the segment header's `kind` byte
-            // via `BlockKind` (see its F7 branch and the pre-route above it).
-            {
-                if let Some(c) = SizeClasses::class_for(size, align) {
-                    let cnt = self.tcache.classes[c].count as usize;
-
-                    // Task #2002: F7 (task #25; R17-4/task #321; R18-3/task
-                    // #330) Large-kind routing, H1 (task #167) interior-pointer
-                    // guard, and the M2 (Э6, P6.1) double-free oracle pair —
-                    // now the shared `small_free_guard` this file defines
-                    // above, called identically from `dealloc_batch_small`
-                    // (`free/dealloc_batch.rs`). See that function's doc
-                    // comment for the full guard-by-guard rationale (case
-                    // split for F7's legitimate-promotion vs. contract-
-                    // violation branches, H1's interior-pointer blind spot in
-                    // the M2 oracles, the Э6 double-free-oracle redesign
-                    // history, and the RESIDUAL M2 LIMIT this pair does NOT
-                    // cover — task #164/X7).
-                    let (off, meta) = match small_free_guard(root, block, c, layout) {
-                        SmallFreeGuard::Accept { off } => {
-                            // B4 variant (в): the state byte encodes the class
-                            // at every issue site, and `small_free_guard`
-                            // requires an exact LIVE match on (class, state) —
-                            // the former `small_class_matches`/`divides`
-                            // class-identity re-check is subsumed.
-                            (off, SegmentMeta::new(root))
-                        }
-                        SmallFreeGuard::RejectNoOp => {
-                            // R6-T55: local no-op reject — internal counter,
-                            // not the public foreign/unroutable stat. The
-                            // guard's Large-interior cases surface HERE, so
-                            // this is one increment per rejected free.
-                            #[cfg(any(feature = "internals", feature = "bench-internals"))]
-                            crate::alloc_core::LOCAL_REJECT_FREES
-                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                            return;
-                        }
-                        // F4: the base's wrong-class Accept-branch reject did
-                        // not bump the counter — same no-op, no increment.
-                        SmallFreeGuard::RejectNoOpSilent => {
-                            return;
-                        }
-                        SmallFreeGuard::RouteToLargeFree => {
-                            route_to_large_free(self, block, layout, root);
-                            return;
-                        }
-                    };
-
-                    // R1-01: free-side byte budget. `cap` is `TCACHE_CAP` for
-                    // small classes (unchanged behaviour) and smaller for
-                    // large small-classes, mirroring D3's refill-side budget
-                    // — see `FREE_PARK_CAP`'s doc comment.
-                    let cap = FREE_PARK_CAP[c] as usize;
-                    if cnt < cap {
-                        // Legit free → push. NO key stamp, NO block-body write.
-                        //
-                        // B4 variant (в): mark this block MAG in the state
-                        // byte (was RAD-5's magazine-bitmap set).
-                        meta.state_byte().write(
-                            off,
-                            c,
-                            crate::alloc_core::state_byte::StateByte::MAG,
-                        );
-                        // R6-T13: identity mask (`cnt < cap <= TCACHE_CAP`); skips bounds check.
-                        self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block;
-                        self.tcache.classes[c].count = (cnt + 1) as u8;
-                        // R13-3 (task #273): a pushed-back block was
-                        // previously issued (it is being FREED right now) —
-                        // by the dispatch conjunct (§2 of both virgin-skip
-                        // design docs) it is NEVER virgin, regardless of the
-                        // bit any earlier occupant of physical slot `cnt`
-                        // left behind. `PerClass::virgin_mask`'s own
-                        // invariant ("bits >= count are 0") already
-                        // guarantees bit `cnt` reads 0 here (it was `>=
-                        // count` the instant before this push bumped
-                        // `count`) — this is a defensive no-op AND, not a
-                        // load-bearing clear, kept explicit so the invariant
-                        // is visibly re-asserted at every mutation site
-                        // rather than relying on readers to re-derive it.
-                        #[cfg(feature = "virgin-zero-skip")]
-                        {
-                            self.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
-                        }
+            let (off, c) =
+                match super::small_free_guard_by_byte::small_free_guard_by_byte(root, block) {
+                    Ok(accepted) => accepted,
+                    Err(SmallFreeGuard::RouteToLargeFree) => {
+                        route_to_large_free(self, block, layout, root);
                         return;
                     }
-                    // B1-c: magazine full (depot park, R1-01 swap-top, overflow
-                    // half-flush) runs out of line, so the push fast path above
-                    // keeps no callee-saved registers. Same order, same guards.
-                    self.free_magazine_full(c, cnt, off, root, block);
-                    return;
+                    Err(SmallFreeGuard::RejectNoOp) => {
+                        // R6-T55: local no-op reject — internal counter.
+                        #[cfg(any(feature = "internals", feature = "bench-internals"))]
+                        crate::alloc_core::LOCAL_REJECT_FREES
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        return;
+                    }
+                    // RejectNoOpSilent (the guard never returns Accept as Err).
+                    Err(_) => return,
+                };
+            self.push_own_small(c, off, root, block);
+        }
+        #[cfg(feature = "hardened")]
+        {
+            {
+                use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
+                let size = layout.size().max(MIN_BLOCK);
+                let align = layout.align();
+                // C1 (0.3.0): gate removed — see the matching comment in `alloc`'s
+                // magazine fast path above for the full soundness argument
+                // (`class_for` guarantees `block_size % align == 0` for any
+                // `Some(c)` it returns, so keying the magazine by class alone is
+                // sound for any align it accepted, not just align<=16).
+                //
+                // Ph3b: the class is computed first because the magazine push
+                // below needs it, but it NO LONGER decides Small-vs-Large —
+                // `small_free_guard` does, from the segment header's `kind` byte
+                // via `BlockKind` (see its F7 branch and the pre-route above it).
+                {
+                    if let Some(c) = SizeClasses::class_for(size, align) {
+                        // Task #2002: F7 (task #25; R17-4/task #321; R18-3/task
+                        // #330) Large-kind routing, H1 (task #167) interior-pointer
+                        // guard, and the M2 (Э6, P6.1) double-free oracle pair —
+                        // now the shared `small_free_guard` this file defines
+                        // above, called identically from `dealloc_batch_small`
+                        // (`free/dealloc_batch.rs`). See that function's doc
+                        // comment for the full guard-by-guard rationale (case
+                        // split for F7's legitimate-promotion vs. contract-
+                        // violation branches, H1's interior-pointer blind spot in
+                        // the M2 oracles, the Э6 double-free-oracle redesign
+                        // history, and the RESIDUAL M2 LIMIT this pair does NOT
+                        // cover — task #164/X7).
+                        let off = match small_free_guard(root, block, c, layout) {
+                            SmallFreeGuard::Accept { off } => {
+                                // B4 variant (в): the state byte encodes the class
+                                // at every issue site, and `small_free_guard`
+                                // requires an exact LIVE match on (class, state) —
+                                // the former `small_class_matches`/`divides`
+                                // class-identity re-check is subsumed.
+                                off
+                            }
+                            SmallFreeGuard::RejectNoOp => {
+                                // R6-T55: local no-op reject — internal counter,
+                                // not the public foreign/unroutable stat. The
+                                // guard's Large-interior cases surface HERE, so
+                                // this is one increment per rejected free.
+                                #[cfg(any(feature = "internals", feature = "bench-internals"))]
+                                crate::alloc_core::LOCAL_REJECT_FREES
+                                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                return;
+                            }
+                            // F4: the base's wrong-class Accept-branch reject did
+                            // not bump the counter — same no-op, no increment.
+                            SmallFreeGuard::RejectNoOpSilent => {
+                                return;
+                            }
+                            SmallFreeGuard::RouteToLargeFree => {
+                                route_to_large_free(self, block, layout, root);
+                                return;
+                            }
+                        };
+
+                        self.push_own_small(c, off, root, block);
+                        return;
+                    }
                 }
             }
+            // Large / non-small / non-fastbin: free directly at the witness root.
+            // PF-10: `root` is the table-derived canonical root from the
+            // `OwnedBlock` witness; do not re-resolve it in the substrate.
+            // SAFETY: dealloc/realloc callers keep the witnessed allocation live
+            // and bind its block/layout to the free contract. The magazine guards
+            // returned above for small fastbin blocks. The entry
+            // `debug_assert_eq!(canonical_root_for(block), Some(root))` proves the
+            // precondition.
+            #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc_at_base`.
+            unsafe {
+                self.core.dealloc_at_base(block, layout, root)
+            };
         }
-        // Large / non-small / non-fastbin: free directly at the witness root.
-        // PF-10: `root` is the table-derived canonical root from the
-        // `OwnedBlock` witness; do not re-resolve it in the substrate.
-        // SAFETY: dealloc/realloc callers keep the witnessed allocation live
-        // and bind its block/layout to the free contract. The magazine guards
-        // returned above for small fastbin blocks. The entry
-        // `debug_assert_eq!(canonical_root_for(block), Some(root))` proves the
-        // precondition.
-        #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc_at_base`.
-        unsafe {
-            self.core.dealloc_at_base(block, layout, root)
-        };
     }
 }
 
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 impl HeapCore {
+    /// Magazine push of an accepted own-thread free (class `c`, offset `off`
+    /// in the segment at `root`): park in the magazine, or take the
+    /// full-magazine tail. Shared by the Layout-classified (`hardened`) and the
+    /// state-byte-classified (G1-K2) guards.
+    #[inline(always)]
+    fn push_own_small(&mut self, c: usize, off: u32, root: *mut u8, block: *mut u8) {
+        use crate::registry::heap_core::state::tcache::{FREE_PARK_CAP, TCACHE_CAP};
+        let meta = SegmentMeta::new(root);
+        let cnt = self.tcache.classes[c].count as usize;
+        // R1-01: free-side byte budget. `cap` is `TCACHE_CAP` for
+        // small classes (unchanged behaviour) and smaller for
+        // large small-classes, mirroring D3's refill-side budget
+        // — see `FREE_PARK_CAP`'s doc comment.
+        let cap = FREE_PARK_CAP[c] as usize;
+        if cnt < cap {
+            // Legit free → push. NO key stamp, NO block-body write.
+            //
+            // B4 variant (в): mark this block MAG in the state
+            // byte (was RAD-5's magazine-bitmap set).
+            meta.state_byte()
+                .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
+            // R6-T13: identity mask (`cnt < cap <= TCACHE_CAP`); skips bounds check.
+            self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block;
+            self.tcache.classes[c].count = (cnt + 1) as u8;
+            // R13-3 (task #273): a pushed-back block was
+            // previously issued (it is being FREED right now) —
+            // by the dispatch conjunct (§2 of both virgin-skip
+            // design docs) it is NEVER virgin, regardless of the
+            // bit any earlier occupant of physical slot `cnt`
+            // left behind. `PerClass::virgin_mask`'s own
+            // invariant ("bits >= count are 0") already
+            // guarantees bit `cnt` reads 0 here (it was `>=
+            // count` the instant before this push bumped
+            // `count`) — this is a defensive no-op AND, not a
+            // load-bearing clear, kept explicit so the invariant
+            // is visibly re-asserted at every mutation site
+            // rather than relying on readers to re-derive it.
+            #[cfg(feature = "virgin-zero-skip")]
+            {
+                self.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
+            }
+            return;
+        }
+        // B1-c: magazine full (depot park, R1-01 swap-top, overflow
+        // half-flush) runs out of line, so the push fast path above
+        // keeps no callee-saved registers. Same order, same guards.
+        self.free_magazine_full(c, cnt, off, root, block);
+    }
+
     /// The full-magazine tail of [`dealloc_own_thread_with_base`](Self::dealloc_own_thread_with_base)
     /// (B1-c): `small_free_guard` already accepted `block` (class `c`, offset
     /// `off` in the segment at `root`) and the push found `cnt == FREE_PARK_CAP[c]`.

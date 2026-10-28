@@ -15,4 +15,6 @@ mod dealloc_batch;
 pub(crate) mod dealloc;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 mod dealloc_own_base;
+#[cfg(all(feature = "alloc-global", feature = "fastbin", not(feature = "hardened")))]
+mod small_free_guard_by_byte;
 mod realloc;

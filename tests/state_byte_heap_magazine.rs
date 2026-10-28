@@ -509,15 +509,12 @@ fn ts1_reject_double_free_after_flush() {
     drop(lease);
 }
 
-/// wrong class (aligned start of ANOTHER class): the own-free oracle
-/// requires the byte to carry THIS class's class field and LIVE state —
-/// a 64B-class free of a 16B block is rejected, the block stays issued
-/// (LIVE) and a free with the CORRECT class afterwards still works.
+/// wrong class (aligned start of ANOTHER class) under `hardened`: the
+/// own-free oracle requires the byte to carry THIS layout's class field and
+/// LIVE state — a 64B-class free of a 16B block is rejected, the block stays
+/// issued (LIVE) and a free with the CORRECT class afterwards still works.
 #[test]
-// F12 (chunk 3): production too — the wrong-class reject is the state byte's
-// CLASS-FIELD compare in `small_free_guard`, UNCONDITIONAL since F1/F4 (not
-// a `hardened`-only H1 semantics), so the same counterfactual runs in every
-// configuration.
+#[cfg(feature = "hardened")]
 fn ts1_reject_wrong_class_stays_live() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
@@ -546,6 +543,50 @@ fn ts1_reject_wrong_class_stays_live() {
     let cleanup = heap.alloc(l16());
     // SAFETY: live or freshly parked; single free.
     unsafe { heap.dealloc(cleanup, l16()) };
+    drop(lease);
+}
+
+/// G1-K2, without `hardened`: the own-thread free takes the class from the
+/// block's state byte, so a 64B-layout free of a 16B block frees it into its
+/// TRUE class (parked MAG in the class-0 magazine, never in the 64B class),
+/// and the later "correct" free is a double free the MAG byte rejects.
+#[test]
+#[cfg(not(feature = "hardened"))]
+fn ts1_wrong_class_frees_into_true_class() {
+    let _g = SerialGuard::acquire();
+    let _ = bootstrap::ensure();
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
+
+    let l64 = Layout::from_size_align(64, 8).unwrap();
+    let c64 = heap.dbg_class_for(l64).expect("64B is a small class");
+    assert_ne!(c64, 0);
+    let p = heap.alloc(l16());
+    assert!(!p.is_null());
+    let parked64 = heap.dbg_tcache_count(c64);
+    // SAFETY: deliberate contract-violation probe (wrong Layout).
+    unsafe { heap.dealloc(p, l64) };
+    assert!(
+        heap.dbg_tcache_contains(0, p),
+        "the block goes back to its true class (class-0 magazine)"
+    );
+    assert!(
+        !heap.dbg_tcache_contains(c64, p),
+        "the Layout's class must not receive the block"
+    );
+    assert_eq!(heap.dbg_tcache_count(c64), parked64);
+    // The block is MAG now: a second free (correct Layout) is a double free.
+    // SAFETY: deliberate double-free probe; the MAG byte rejects it.
+    unsafe { heap.dealloc(p, l16()) };
+    let again = heap.alloc(l16());
+    assert_eq!(again, p, "the block is reissued once");
+    let next = heap.alloc(l16());
+    assert_ne!(next, p, "the rejected double free parked no second copy");
+    // SAFETY: both are live with this layout; single frees.
+    unsafe {
+        heap.dealloc(next, l16());
+        heap.dealloc(again, l16());
+    }
     drop(lease);
 }
 
