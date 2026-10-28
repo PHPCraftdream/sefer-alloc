@@ -19,11 +19,15 @@ on a schedule and on demand.
   ARCHITECTURE and `ci.yml`. A documents-only change still cannot publish a stale count.
 - Concurrency: a newer push to the same PR cancels the older run (`cancel-in-progress` only for
   `pull_request`; main, schedule and dispatch runs are never cancelled).
-- `licenses` (license compatibility, plus cargo-deny `bans` and `sources`) is always on, but its check
-  runs only when the dependency set changed since a run that passed. `scripts/license-check-fingerprint.mjs`
-  hashes every input the verdict depends on: `Cargo.lock`, `deny.toml`, the workspace members'
-  name/version/license/license-file/publish, the cargo-deny version, the `licenses` job text and the script
-  itself. A pass stores an Actions-cache marker keyed `license-check-<fingerprint>`; a run that finds the
+- `licenses` (license compatibility of third-party code, plus cargo-deny `bans` and `sources`) is always
+  on. It covers every Cargo workspace with a tracked `Cargo.lock` (root, `fuzz/`, the compile_fail
+  fixtures) and every third-party GitHub Action: `scripts/license-check-workspaces.mjs --check` runs every
+  time and fails on a workspace without a tracked lock, on an action missing from its reviewed list, and on
+  an action whose license `deny.toml` does not allow. The cargo-deny check runs only when the dependency set
+  changed since a run that passed. `scripts/license-check-fingerprint.mjs`
+  hashes every input the verdict depends on: every tracked `Cargo.lock`, `deny.toml`, the workspace members'
+  name/version/license/license-file/publish, the cargo-deny version, the `licenses` job text and both
+  scripts. A pass stores an Actions-cache marker keyed `license-check-<fingerprint>`; a run that finds the
   marker skips the check and says so in its step summary. A miss (a new dependency set, or an evicted
   marker) runs the check. Pull-request caches are visible only to that pull request, so `main` keeps its own
   markers. Advisories stay in `deny` on every run: the advisory database moves without the graph changing.

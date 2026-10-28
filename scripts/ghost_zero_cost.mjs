@@ -10,7 +10,10 @@
 // Linux only (objdump, valgrind). The probe source is taken from HEAD for both
 // sides so the harness is identical; only the allocator source differs.
 //
-//   node scripts/ghost_zero_cost.mjs --base origin/main [--require-ir] [--out FILE.json]
+//   node scripts/ghost_zero_cost.mjs --base origin/main [--allow-declared-runtime [--head SHA] [--classify-only]] [--require-ir] [--out FILE.json]
+// `--allow-declared-runtime`: pass without building when the commits BASE..HEAD
+// (merges excluded; `--head` = the PR head, not the merge ref) fall under the
+// fail-closed exception of scripts/ghost_diff.mjs (`zeroCostSkip`).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -18,6 +21,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { REPO_ROOT } from './lib.mjs';
+import { changedLines, endpointsMismatch, zeroCostSkip } from './ghost_diff.mjs';
 
 const EXAMPLE = 'ghost_zero_cost_probe';
 const RUSTFLAGS = '-C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5';
@@ -150,7 +154,72 @@ for (const [name, x, y, same] of NORMALIZE_CASES) {
   assert.equal(a === b, same, `normalize self-test "${name}": expected ${same ? 'equal' : 'different'}`);
 }
 console.log(`[ghost-zero-cost] normalize self-test OK (${NORMALIZE_CASES.length} cases)`);
+
+const L = (...pairs) => new Map(pairs);
+const ok = ['perf(runtime): G1-K1 — drain'];
+const SKIP_CASES = [
+  ['perf(runtime), production-only lines', ok, L(['src/a.rs', ['    let y = 1;']]), true],
+  ['perf(opt-in) among docs/bench/test commits', ['docs: x', 'bench(perf): y', 'test(evidence): z', 'perf(opt-in): w'], L(['src/a.rs', ['x']]), true],
+  ['fix(perf), debug_assert line', ['fix(perf): z'], L(['src/a.rs', ['    #[cfg(debug_assertions)]', '    debug_assert!(ok);']]), true],
+  ['docs-only paths with a runtime subject', ok, L(['docs/x.md', ['loom ghost shadow']]), true],
+  ['no runtime subject', ['test(verification): ghost-checks G6d'], L(['src/a.rs', ['x']]), false],
+  ['bare perf scope is not a declaration', ['perf(docs): measure'], L(['src/a.rs', ['x']]), false],
+  ['prefix must lead the subject', ['docs: mention perf(runtime): later'], L(['src/a.rs', ['x']]), false],
+  ['runtime + fix(verification) commit', [...ok, 'fix(verification): Linux-safe mounts'], L(['src/a.rs', ['use super::AtomicU64;']]), false],
+  ['runtime + test(ghost-lint) commit', [...ok, 'test(ghost-lint): rule'], L(['src/a.rs', ['x']]), false],
+  ['runtime + scoped list containing loom', [...ok, 'test(alloc, loom): model'], L(['src/a.rs', ['x']]), false],
+  ['runtime + non-conventional subject', [...ok, 'WIP stuff'], L(['src/a.rs', ['x']]), false],
+  ['ghost macro line', ok, L(['src/a.rs', ['    crate::ghost::ghost_assert!(x, "r");']]), false],
+  ['ghost macro with a space before the bang', ok, L(['src/a.rs', ['    ghost_event !(Pub, id);']]), false],
+  ['cfg split across lines (token alone)', ok, L(['src/a.rs', ['#[cfg(any(', '    loom,', '))]']]), false],
+  ['Loom in another case', ok, L(['crates/x/src/lib.rs', ['#[cfg(Loom)]']]), false],
+  ['shadow model call', ok, L(['src/a.rs', ['    shadow::record(x);']]), false],
+  ['file under src/ghost', ok, L(['src/ghost/macros.rs', ['// note']]), false],
+  ['root Cargo.toml changed', ok, L(['Cargo.toml', ['production = []']]), false],
+  ['crate Cargo.lock changed', ok, L(['crates/ghost-lint/Cargo.lock', ['x']]), false],
+  ['build.rs changed', ok, L(['build.rs', ['x']]), false],
+  ['.cargo config changed', ok, L(['.cargo/config.toml', ['rustflags']]), false],
+  ['rust-toolchain changed', ok, L(['rust-toolchain.toml', ['x']]), false],
+];
+for (const [name, subj, changed, skip] of SKIP_CASES) assert.equal(zeroCostSkip(subj, changed) !== null, skip, `zeroCostSkip self-test "${name}"`);
+const HUNK = 'diff --git a/src/a b/src/a\n--- a/src/a\n+++ b/src/a\n@@ -1,2 +1,2 @@\n-old\n+new\n@@ -9 +9 @@\n+--x\n';
+assert.deepEqual(changedLines(HUNK), ['old', 'new', '--x'], 'changedLines self-test: headers skipped, hunk lines kept (including a line starting with --)');
+const B = 'b'.repeat(40), H = 'h'.repeat(40), M = 'm'.repeat(40);
+const END_CASES = [
+  ['checkout is the head', { base: B, head: H, checkout: H, parents: [B], dirty: [] }, true],
+  ['checkout is the PR merge ref', { base: B, head: H, checkout: M, parents: [B, H], dirty: [] }, true],
+  ['merge with swapped parents', { base: B, head: H, checkout: M, parents: [H, B], dirty: [] }, false],
+  ['checkout differs from the head', { base: B, head: H, checkout: M, parents: [B], dirty: [] }, false],
+  ['unstaged change', { base: B, head: H, checkout: H, parents: [B], dirty: [' M src/a.rs'] }, false],
+  ['staged change', { base: B, head: H, checkout: H, parents: [B], dirty: ['M  src/ghost/x.rs'] }, false],
+  ['untracked file', { base: B, head: H, checkout: H, parents: [B], dirty: ['?? src/new.rs'] }, false],
+];
+for (const [name, e, ok] of END_CASES) assert.equal(endpointsMismatch(e) === null, ok, `endpointsMismatch self-test "${name}"`);
+console.log(`[ghost-zero-cost] scope self-test OK (${SKIP_CASES.length} + ${END_CASES.length} cases + changedLines)`);
 if (argv.includes('--self-test')) process.exit(0);
+
+if (argv.includes('--allow-declared-runtime')) {
+  const head = opt('--head', 'HEAD');
+  const g = (args) => run('git', args, { cwd: REPO_ROOT });
+  const subjects = g(['log', '--no-merges', '--format=%s', `${base}..${head}`]).split('\n').filter(Boolean);
+  const paths = g(['diff', '--name-only', '-z', '--no-renames', base, head]).split('\0').filter(Boolean);
+  const changed = new Map(paths.map((p) => [p, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', base, head, '--', p]))]));
+  const resolve = (r) => g(['rev-parse', '--verify', `${r}^{commit}`]).trim();
+  const checkout = resolve('HEAD');
+  const parents = g(['rev-list', '--parents', '-n', '1', checkout]).trim().split(' ').slice(1);
+  const dirty = g(['status', '--porcelain', '--untracked-files=all']).split('\n').filter(Boolean);
+  const mismatch = endpointsMismatch({ base: resolve(base), head: resolve(head), checkout, parents, dirty });
+  const reason = mismatch ? null : zeroCostSkip(subjects, changed);
+  if (mismatch) console.log(`[ghost-zero-cost] exception not applicable: ${mismatch}`);
+  if (reason) {
+    console.log(`[ghost-zero-cost] SKIP: ${reason}`);
+    if (out) writeFileSync(out, JSON.stringify({ base, head, checkout, skipped: true, reason, subjects, paths }, null, 2) + '\n');
+    process.exit(0);
+  }
+  console.log('[ghost-zero-cost] exception does not apply: the zero-cost proof is required');
+  // Local dry run of the scope decision: never builds.
+  if (argv.includes('--classify-only')) process.exit(0);
+}
 
 const work = mkdtempSync(join(tmpdir(), 'ghost-zero-cost-'));
 try {

@@ -285,6 +285,20 @@ Invariant-Check: route-pin/last-ref-free
 
 Нарушение любого пункта — PR не сливается.
 
+Область гейта (`ghost-zero-cost`, `scripts/ghost_diff.mjs`): исключение
+fail-closed. Доказательство пропускается, только если в собственных коммитах
+PR (без merge, до `pull_request.head.sha`) одновременно: есть объявление
+изменения рантайма префиксом R30-12 (`perf(runtime)`, `perf(opt-in)`,
+`fix(perf)`); у каждого коммита conventional-префикс и ни один не помечен
+scope `verification` / `ghost*` / `loom` / `miri` / `kani`; не изменены
+`Cargo.toml`, `Cargo.lock`, `build.rs`, `.cargo/`, `rust-toolchain*` и файлы
+`src/ghost/`; ни одна изменённая строка в `src/` и `crates/` не содержит
+`ghost`, `shadow`, `sefer_ghost`, `loom`, `miri`, `kani` (без учёта регистра).
+Любое сомнение — доказательство обязательно; ghost- и verification-изменения
+разводятся с изменениями рантайма по разным PR. Это исключение политики, а не
+доказательство отсутствия ghost-кода: оно опирается на линтер префиксов и на
+то, что ghost-макросы вне `cfg(any(loom, miri, kani, sefer_ghost))` пусты.
+
 ## 7. CI
 
 - Новая задача `ghost-guard` в постоянном ярусе (дешёвая): `ghost-lint
