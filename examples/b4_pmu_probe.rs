@@ -22,6 +22,16 @@
 //! `size` over the SAME ring (the judge's churn kernels share one ring, so
 //! its churn16 portions free blocks left by churn64 portions). Prints
 //! `inter live size portion pollute_kib sefer_ticks_per_op mi_ticks_per_op`.
+//!
+//! Bulk mode (G1): b4_pmu_probe bulk <sefer|mi> <n> <size> <passes>
+//! Per pass: allocate `n` blocks of `size`, write 8 bytes each, free them in
+//! allocation order (the J1′ bulk kernel). Prints
+//! `bulk alloc n size passes ns_per_op checksum` (op = one alloc or free).
+//!
+//! Mixed mode (G1): b4_pmu_probe mixed <sefer|mi> <live> <size> <size2> <portion> <ops>
+//! The `churn_sz` kernel over ONE ring, alternating `size` / `size2` every
+//! `portion` ops (the J1′ churn kernels share one ring). Prints
+//! `mixed alloc live size/size2 portion ops ns_per_op checksum`.
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::time::Instant;
@@ -209,8 +219,103 @@ fn inter(a: &[String]) {
     );
 }
 
+fn arm(name: &str) -> ArmPair {
+    match name {
+        "sefer" => (sefer_alloc, sefer_dealloc),
+        "mi" => (mi_alloc, mi_dealloc),
+        other => panic!("unknown allocator {other}"),
+    }
+}
+
+#[inline(never)]
+fn bulk_pass(
+    alloc: fn(usize) -> *mut u8,
+    dealloc: fn(*mut u8, usize),
+    slots: &mut [*mut u8],
+    size: usize,
+) -> u64 {
+    let mut acc = 0u64;
+    for s in slots.iter_mut() {
+        let p = alloc(size);
+        assert!(!p.is_null(), "alloc({size}) returned null");
+        // SAFETY: fresh `size`-byte block, size >= 8.
+        unsafe { core::ptr::write_bytes(p, 0xA5, 8) };
+        *s = p;
+        acc = acc.wrapping_add(p as u64);
+    }
+    for s in slots.iter() {
+        dealloc(*s, size);
+    }
+    acc
+}
+
+fn bulk(a: &[String]) {
+    assert!(
+        a.len() >= 6,
+        "usage: b4_pmu_probe bulk <sefer|mi> <n> <size> <passes>"
+    );
+    let (al, de) = arm(&a[2]);
+    let n: usize = a[3].parse().expect("n");
+    let size: usize = a[4].parse().expect("size");
+    let passes: u64 = a[5].parse().expect("passes");
+    assert!(n >= 1 && size >= 8);
+    let mut slots = vec![core::ptr::null_mut::<u8>(); n];
+    let mut acc = 0u64;
+    for _ in 0..(passes / 10).max(4) {
+        acc ^= bulk_pass(al, de, &mut slots, size);
+    }
+    let t0 = Instant::now();
+    for _ in 0..passes {
+        acc ^= bulk_pass(al, de, &mut slots, size);
+    }
+    let ns = t0.elapsed().as_nanos() as f64 / (2 * n as u64 * passes.max(1)) as f64;
+    println!("bulk {} {n} {size} {passes} {ns:.3} {acc:x}", a[2]);
+}
+
+fn mixed(a: &[String]) {
+    assert!(
+        a.len() >= 8,
+        "usage: b4_pmu_probe mixed <sefer|mi> <live> <size> <size2> <portion> <ops>"
+    );
+    let (al, de) = arm(&a[2]);
+    let live: usize = a[3].parse().expect("live");
+    let size: usize = a[4].parse().expect("size");
+    let size2: usize = a[5].parse().expect("size2");
+    let portion: u64 = a[6].parse().expect("portion");
+    let ops: u64 = a[7].parse().expect("ops");
+    assert!(live >= 1 && size >= 1 && size2 >= 1 && portion >= 1);
+    let mut slots: Vec<(*mut u8, usize)> = (0..live).map(|_| (al(size), size)).collect();
+    let run = |slots: &mut Vec<(*mut u8, usize)>, total: u64, salt: u64| {
+        let mut acc = 0u64;
+        let mut k = 0u64;
+        while k * portion < total {
+            let sz = if k.is_multiple_of(2) { size } else { size2 };
+            acc ^= churn_sz(al, de, slots, sz, portion, salt + k);
+            k += 1;
+        }
+        (acc, k * portion)
+    };
+    let (warm, _) = run(&mut slots, (ops / 10).max(10_000), 0x55);
+    let t0 = Instant::now();
+    let (acc, done) = run(&mut slots, ops, 0xb4a3);
+    let ns = t0.elapsed().as_nanos() as f64 / done.max(1) as f64;
+    for (p, sz) in slots {
+        de(p, sz);
+    }
+    println!(
+        "mixed {} {live} {size}/{size2} {portion} {done} {ns:.3} {:x}",
+        a[2],
+        acc ^ warm
+    );
+}
+
 fn main() {
     let a: Vec<String> = std::env::args().collect();
+    match a.get(1).map(String::as_str) {
+        Some("bulk") => return bulk(&a),
+        Some("mixed") => return mixed(&a),
+        _ => {}
+    }
     if a.get(1).map(String::as_str) == Some("inter") {
         assert!(
             a.len() >= 7,
@@ -223,11 +328,7 @@ fn main() {
         a.len() >= 5,
         "usage: b4_pmu_probe <sefer|mi> <live> <size> <ops> [seed]"
     );
-    let (alloc, dealloc): ArmPair = match a[1].as_str() {
-        "sefer" => (sefer_alloc, sefer_dealloc),
-        "mi" => (mi_alloc, mi_dealloc),
-        other => panic!("unknown allocator {other}"),
-    };
+    let (alloc, dealloc): ArmPair = arm(&a[1]);
     let live: usize = a[2].parse().expect("live");
     let size: usize = a[3].parse().expect("size");
     let ops: u64 = a[4].parse().expect("ops");
