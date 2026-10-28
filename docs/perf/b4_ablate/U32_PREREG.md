@@ -45,3 +45,24 @@ all 11 kernels), effect = variant median − null median
 4. No harm, other kernels: not (CI lower > 0 AND effect > +2 %).
 
 GO = 1 ∧ 2 ∧ 3 ∧ 4. Judge A n = 32768 is reported, not gated.
+
+## Result of `u32_carve_range` (v1) — judge A, recorded before v2 was written
+
+| run | effect % [95 % CI] |
+|---|---|
+| null, n = 131072, 40 pairs | −2.80 [−4.59, 4.51] |
+| v1, n = 131072, 40 pairs | +4.18 [1.36, 6.82] |
+| v1, n = 32768, 40 pairs | +1.05 [−5.24, 3.58] |
+
+Threshold 1 fails (CI upper > 0): v1 is NO-GO; judge B was not run for it.
+Suspected cause: `LeafCursor::blocks_in_leaf` divides (`div_ceil`, a 64-bit
+`div` per leaf, one instruction to callgrind, tens of cycles to the CPU).
+
+## v2 `u32_carve_range_v2` — pre-registration (before any measurement of v2)
+
+Code: `u32` @ `bb8aacab` (v1 + `blocks_in_leaf` counts by stepping, no
+divide); judge patch `docs/perf/b4_ablate/patches/u32_carve_range_v2.patch`.
+The v1 null shows ±4.5 % process noise, so judge A for v2 uses 120 ABBA pairs
+for both the null (base vs base) and v2 at n = 131072; n = 32768 stays at 40
+pairs, reported only. Thresholds 1–4 and GO rule unchanged. Callgrind of v2 is
+measured after this file and reported, not gated.
