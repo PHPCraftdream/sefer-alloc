@@ -14,7 +14,10 @@
 //   - A/B verdict (A = sefer, B = mimalloc, ln(t_B/t_A)): MIMALLOC_FASTER
 //     iff the UPPER 95 % CI bound < 0, SEFER_FASTER iff the LOWER bound > 0,
 //     else EQUAL_CI_HAS_0 — issued ONLY for admitted kernels; not-admitted
-//     kernels get «не допущена» and NO verdict.
+//     kernels get «не допущена» and NO verdict. SIGNIFICANCE CRITERION (both
+//     modes): the 95 % CI OF THE RATIO exp(median ln((b1+b2)/(a1+a2))) does
+//     NOT contain 1 — EQUIVALENTLY, the CI of the log-ratio does not
+//     contain 0 (never phrase it as «0 outside the CI» without the scale).
 // Bootstrap resamples must be ≥ 2000 (smaller values are an error).
 //
 // Completeness / integrity asserts over the raw data:
@@ -54,12 +57,41 @@
 //     formula the judge uses (seed + block·0x1000000000000001, rotl64 by
 //     the kernel's registry index) — BigInt port below (rotl64 only).
 //
-// Usage:
+// Usage (classic J1′ mode — unchanged):
 //   node scripts/b4_interleave_table.mjs --aa-sefer <raw.jsonl> \
 //        --aa-mi <raw.jsonl> --ab <raw.jsonl> [--bootstrap 2000] [--seed 0x5EED]
+//
+// Usage (ABLATE mode, feature "ablate", judge modes ab_variant/aa_variant):
+//   node scripts/b4_interleave_table.mjs --aa-sefer <raw.jsonl> \
+//        --aa-variant <raw.jsonl> --ab-variant <raw.jsonl> \
+//        [--bootstrap 2000] [--seed 0x5EED]
+// Ablate specifics:
+//   - expected modes: aa_sefer (sefer×sefer calibration), aa_variant
+//     (variant×variant), ab_variant (sefer base vs variant);
+//   - extra identity: variant_name and variant_sha256 must be PRESENT, EQUAL
+//     across all three raws, and neither "-" nor empty;
+//   - admission: BOTH A/A calibrations (aa_sefer AND aa_variant) pass the
+//     threshold on a kernel;
+//   - verdict (admitted kernels only, A = sefer base, B = variant):
+//     VARIANT_FASTER iff upper 95 % CI of ln(t_B/t_A) < 0, BASE_FASTER iff
+//     lower bound > 0, else EQUAL_CI_HAS_0. Significant iff the 95 % CI of
+//     the RATIO does not contain 1 (⇔ CI of the log does not contain 0);
+//   - CSV keeps the classic column layout (the aa_mi_* slots carry the
+//     aa_variant stats) and APPENDS explicit aa_variant_* columns plus
+//     variant_name / variant_sha256.
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import path from "node:path";
+
+// Usage errors exit non-zero WITHOUT a stack trace (runner contract).
+process.on("uncaughtException", (e) => {
+  console.error(`error: ${e?.message ?? e}`);
+  process.exit(1);
+});
+
+function usage() {
+  console.error("usage: node scripts/b4_interleave_table.mjs --aa-sefer <raw.jsonl> (--aa-mi <raw.jsonl> --ab <raw.jsonl> | --aa-variant <raw.jsonl> --ab-variant <raw.jsonl>) [--bootstrap 2000] [--seed 0x5EED] [--kernels <csv>] [--csv <path>] [--summary-append <path>] [--expect-admitted]");
+}
 
 const args = {};
 for (let i = 2; i < process.argv.length; i++) {
@@ -67,12 +99,31 @@ for (let i = 2; i < process.argv.length; i++) {
   if (a === "--aa-sefer") args.aaSefer = process.argv[++i];
   else if (a === "--aa-mi") args.aaMi = process.argv[++i];
   else if (a === "--ab") args.ab = process.argv[++i];
+  else if (a === "--aa-variant") args.aaVariant = process.argv[++i];
+  else if (a === "--ab-variant") args.abVariant = process.argv[++i];
   else if (a === "--bootstrap") args.bootstrap = Number(process.argv[++i]);
   else if (a === "--seed") args.seed = Number(process.argv[++i]);
-  else throw new Error(`unknown arg ${a}`);
+  else if (a === "--kernels") args.kernels = process.argv[++i];
+  else if (a === "--csv") args.csv = process.argv[++i];
+  else if (a === "--summary-append") args.summaryAppend = process.argv[++i];
+  else if (a === "--expect-admitted") args.expectAdmitted = true;
+  else { usage(); throw new Error(`unknown arg ${a}`); }
 }
-for (const [k, v] of [["--aa-sefer", args.aaSefer], ["--aa-mi", args.aaMi], ["--ab", args.ab]]) {
-  if (!v) throw new Error(`${k} <raw.jsonl> is required (all THREE raws at once)`);
+
+// TWO input contracts, mutually exclusive:
+//   classic: --aa-sefer + --aa-mi + --ab (modes aa_sefer/aa_mi/ab)
+//   ablate:  --aa-sefer + --aa-variant + --ab-variant (aa_sefer/aa_variant/ab_variant)
+const ABLATE = args.abVariant !== undefined || args.aaVariant !== undefined;
+const classicGiven = args.aaMi !== undefined || args.ab !== undefined;
+if (ABLATE && classicGiven) {
+  usage();
+  throw new Error("cannot mix classic (--aa-mi/--ab) and ablate (--aa-variant/--ab-variant) inputs");
+}
+const required = ABLATE
+  ? [["--aa-sefer", args.aaSefer], ["--aa-variant", args.aaVariant], ["--ab-variant", args.abVariant]]
+  : [["--aa-sefer", args.aaSefer], ["--aa-mi", args.aaMi], ["--ab", args.ab]];
+for (const [k, v] of required) {
+  if (!v) { usage(); throw new Error(`${k} <raw.jsonl> is required (all THREE raws at once)`); }
 }
 
 const BOOTSTRAP = args.bootstrap ?? 2000;
@@ -88,6 +139,26 @@ const KERNEL_NAMES = [
   "pair16", "pair64", "pair_rt", "bulk64", "bulk16k",
   "churn16", "churn64", "churn256", "churn1024", "vec512", "larson",
 ];
+
+// --kernels <csv>: FILTER of the table rows (registry order preserved — the
+// portion-seed formula uses REGISTRY indices, so filtering never re-derives
+// seeds). Identity checks are unchanged; the raws must contain EXACTLY the
+// selected kernels (header `kernels` count included).
+const KERN_LIST = args.kernels === undefined
+  ? KERNEL_NAMES
+  : (() => {
+      const names = args.kernels.split(",").map((s) => s.trim()).filter(Boolean);
+      if (names.length === 0) throw new Error("--kernels must be a non-empty csv of kernel names");
+      const seen = new Set();
+      for (const n of names) {
+        if (!KERNEL_NAMES.includes(n))
+          throw new Error(`--kernels: unknown kernel ${JSON.stringify(n)} (registry: ${KERNEL_NAMES.join(",")})`);
+        if (seen.has(n)) throw new Error(`--kernels: duplicate kernel ${JSON.stringify(n)}`);
+        seen.add(n);
+      }
+      // Preserve the REGISTRY order (filter, do not reorder).
+      return KERNEL_NAMES.filter((n) => seen.has(n));
+    })();
 
 // ── mulberry32 (seeded bootstrap resampling) ────────────────────────────────
 function mulberry32(seed) {
@@ -165,11 +236,19 @@ function readRaw(p, expectedMode) {
   return { path: p, header, recs };
 }
 
-const raws = {
-  aa_sefer: readRaw(args.aaSefer, "aa_sefer"),
-  aa_mi: readRaw(args.aaMi, "aa_mi"),
-  ab: readRaw(args.ab, "ab"),
-};
+const raws = ABLATE
+  ? {
+      aa_sefer: readRaw(args.aaSefer, "aa_sefer"),
+      aa_variant: readRaw(args.aaVariant, "aa_variant"),
+      ab: readRaw(args.abVariant, "ab_variant"),
+    }
+  : {
+      aa_sefer: readRaw(args.aaSefer, "aa_sefer"),
+      aa_mi: readRaw(args.aaMi, "aa_mi"),
+      ab: readRaw(args.ab, "ab"),
+    };
+// The second (non-sefer A/A) raw, by whatever name the active contract calls it.
+const OTHER_KEY = ABLATE ? "aa_variant" : "aa_mi";
 
 // ── identity: from the headers only; ALL fields required; equal across raws
 // (mode EXCEPTED, blocks INCLUDED) ───────────────────────────────────────────
@@ -183,16 +262,31 @@ const IDENTITY_FIELDS = [
   "rt_granule", "portion_seed_g", "larson_align", "vec_align", "churn_align",
   "pair_align", "warmup_portions", "kernels",
 ];
+const OTHER_MODES = ABLATE ? ["aa_variant", "ab"] : ["aa_mi", "ab"];
 const id0 = raws.aa_sefer.header;
 for (const f of IDENTITY_FIELDS) {
   if (id0[f] === undefined)
     throw new Error(`aa_sefer header: REQUIRED identity field ${f} is MISSING`);
-  for (const m of ["aa_mi", "ab"]) {
+  for (const m of OTHER_MODES) {
     const h = raws[m].header;
     if (h[f] === undefined)
       throw new Error(`${m} header: REQUIRED identity field ${f} is MISSING`);
     if (JSON.stringify(id0[f]) !== JSON.stringify(h[f]))
       throw new Error(`identity MISMATCH on ${f}: aa_sefer=${JSON.stringify(id0[f])} ${m}=${JSON.stringify(h[f])}`);
+  }
+}
+// Ablate-only identity: the variant must be one and the same in ALL three
+// raws, and must actually be set (not the non-ablate placeholder "-").
+if (ABLATE) {
+  const v0 = raws.aa_sefer.header;
+  for (const f of ["variant_name", "variant_sha256"]) {
+    if (typeof v0[f] !== "string" || v0[f] === "" || v0[f] === "-")
+      throw new Error(`ablate: aa_sefer header ${f} must be a non-empty string other than "-", got ${JSON.stringify(v0[f])}`);
+    for (const m of OTHER_MODES) {
+      const h = raws[m].header;
+      if (h[f] !== v0[f])
+        throw new Error(`ablate: ${f} MISMATCH: aa_sefer=${JSON.stringify(v0[f])} ${m}=${JSON.stringify(h[f])}`);
+    }
   }
 }
 for (const f of ["source_diff_sha256", "exe_sha256"]) {
@@ -219,6 +313,8 @@ for (const f of ["seed", "order_seed", "portion_seed_g"]) {
 const BLOCKS = id0.blocks;
 if (!Number.isSafeInteger(BLOCKS) || BLOCKS <= 0) throw new Error(`header blocks invalid: ${BLOCKS}`);
 if (BLOCKS % 2 !== 0) throw new Error(`header blocks must be EVEN (strict balance), got ${BLOCKS}`);
+if (id0.kernels !== KERN_LIST.length)
+  throw new Error(`header kernels count ${id0.kernels} != selected kernels ${KERN_LIST.length} (--kernels)`);
 
 // ── BigInt port of the judge's PORTION-SEED FORMULA (rotl64 only — the
 // simulation itself lives ONLY in Rust, see the header comment) ────────────
@@ -261,9 +357,9 @@ for (const kn of Object.keys(EXPECTED_CALLS)) {
 // ── per-raw completeness asserts ────────────────────────────────────────────
 function checkRaw(m, { header, recs, path: p }) {
   const n = header.blocks;
-  if (recs.length !== 11 * n)
-    throw new Error(`${p} (${m}): total records ${recs.length} != 11 × N = ${11 * n}`);
-  for (const kn of KERNEL_NAMES) {
+  if (recs.length !== KERN_LIST.length * n)
+    throw new Error(`${p} (${m}): total records ${recs.length} != ${KERN_LIST.length} × N = ${KERN_LIST.length * n}`);
+  for (const kn of KERN_LIST) {
     const rs = recs.filter((r) => r.kernel === kn);
     if (rs.length !== n)
       throw new Error(`${p} / ${kn}: ${rs.length} blocks, header N=${n}`);
@@ -343,73 +439,161 @@ function kernelStats(rs) {
   return { n: rs.length, med, ci, tm: trimmedMean(xs) };
 }
 
-const stats = KERNEL_NAMES.map((name) => {
+// ABSOLUTE per-call metric (review item 4): per block, the difference of
+// MEDIAN ticks per shim call, B minus A: (b_ticks/calls_b) − (a_ticks/calls_a)
+// with b_ticks = b1+b2, a_ticks = a1+a2 and the SAME call counters the ratio
+// uses (*_calls == *_exp, activation oracle). Unit: TICKS PER CALL (not a
+// ratio; no log). Median over blocks + the same seeded bootstrap CI.
+function absdiffs(rs) {
+  return rs.map((r) => {
+    const callsA = r.a1_calls + r.a2_calls;
+    const callsB = r.b1_calls + r.b2_calls;
+    if (!(callsA > 0) || !(callsB > 0)) throw new Error("absdiff: zero shim-call count in a block");
+    return (r.b1 + r.b2) / callsB - (r.a1 + r.a2) / callsA;
+  });
+}
+
+function absdiffStats(rs) {
+  const xs = absdiffs(rs);
+  return { med: median([...xs].sort((a, b) => a - b)), ci: bootstrapCI(xs, BOOTSTRAP, SEED) };
+}
+
+const stats = KERN_LIST.map((name) => {
   const aaSefer = kernelStats(raws.aa_sefer.recs.filter((r) => r.kernel === name));
-  const aaMi = kernelStats(raws.aa_mi.recs.filter((r) => r.kernel === name));
+  const aaOther = kernelStats(raws[OTHER_KEY].recs.filter((r) => r.kernel === name));
   const ab = kernelStats(raws.ab.recs.filter((r) => r.kernel === name));
+  const abAbs = absdiffStats(raws.ab.recs.filter((r) => r.kernel === name));
   const aaPass = (s) => Math.abs(s.med) <= AA_MEDIAN_MAX && s.ci.half <= AA_HALFWIDTH_MAX;
-  const admitted = aaPass(aaSefer) && aaPass(aaMi);
-  // A = sefer (shim table 0), B = mimalloc (table 2); ln(t_B/t_A) < 0 ⇒ B faster.
+  // Ablate admission: BOTH the sefer A/A and the variant A/A pass on the kernel.
+  const admitted = aaPass(aaSefer) && aaPass(aaOther);
+  // SIGNIFICANCE: the 95 % bootstrap CI OF THE RATIO exp(median ln((b1+b2)/(a1+a2)))
+  // does NOT contain 1 — equivalent to the CI of the LOG-ratio not containing 0
+  // (do not phrase it as "0 outside the CI" without the scale).
+  // A = sefer base (shim table 0), B = variant; ln(t_B/t_A) < 0 ⇒ B faster.
   const verdict = !admitted
     ? "не допущена"
     : ab.ci.hi < 0
-      ? "MIMALLOC_FASTER"
+      ? (ABLATE ? "VARIANT_FASTER" : "MIMALLOC_FASTER")
       : ab.ci.lo > 0
-        ? "SEFER_FASTER"
+        ? (ABLATE ? "BASE_FASTER" : "SEFER_FASTER")
         : "EQUAL_CI_HAS_0";
-  return { name, aaSefer, aaMi, ab, admitted, verdict };
+  return { name, aaSefer, aaOther, ab, abAbs, admitted, verdict };
 });
 
+// --expect-admitted: machine-readable gate (null calibration "copy ==
+// original"): non-zero exit if ANY selected kernel is not admitted. For the
+// null variant the copy is the original, so the A/B itself must ALSO pass the
+// same pre-registered A/A threshold (|median ln| ≤ AA_MEDIAN_MAX, CI
+// half-width ≤ AA_HALFWIDTH_MAX) — checked here with a distinct message.
+if (args.expectAdmitted) {
+  const bad = stats.filter((s) => !s.admitted);
+  if (bad.length > 0) {
+    console.error(`EXPECT_ADMITTED FAILED: not admitted: ${bad.map((s) => s.name).join(", ")}`);
+    process.exit(2);
+  }
+  if (ABLATE && id0.variant_name === "null") {
+    const badAb = stats.filter(
+      (s) => Math.abs(s.ab.med) > AA_MEDIAN_MAX || s.ab.ci.half > AA_HALFWIDTH_MAX
+    );
+    if (badAb.length > 0) {
+      console.error(
+        `NULL_GATE FAILED (variant "null" must be a copy of the original): ab_variant outside the A/A threshold on: ${badAb.map((s) => s.name).join(", ")}`
+      );
+      process.exit(3);
+    }
+  }
+}
+
 // ── output ──────────────────────────────────────────────────────────────────
-console.log(`# B4 INTERLEAVE JUDGE — blocks/mode: aa_sefer=${raws.aa_sefer.header.blocks} aa_mi=${raws.aa_mi.header.blocks} ab=${raws.ab.header.blocks} bootstrap=${BOOTSTRAP} seed=${SEED}`);
+const A_LABEL = ABLATE ? "variant" : "mimalloc";
+const B_FASTER = ABLATE ? "VARIANT_FASTER" : "MIMALLOC_FASTER";
+const A_FASTER = ABLATE ? "BASE_FASTER" : "SEFER_FASTER";
+console.log(`# B4 INTERLEAVE JUDGE${ABLATE ? " (ablate)" : ""} — blocks/mode: aa_sefer=${raws.aa_sefer.header.blocks} ${OTHER_KEY}=${raws[OTHER_KEY].header.blocks} ${raws.ab.header.mode}=${raws.ab.header.blocks} bootstrap=${BOOTSTRAP} seed=${SEED}${ABLATE ? ` variant=${id0.variant_name}` : ""}`);
 console.log(`# identity (from judge headers): head=${id0.head_sha} sha(diff)=${id0.source_diff_sha256.slice(0, 12)} exe=${id0.exe_sha256.slice(0, 12)} profile=${id0.profile} rustc="${id0.rustc}" cpu="${id0.cpu}" os="${id0.os}"`);
-console.log(`# pre-registered A/A threshold: |median| <= ${AA_MEDIAN_MAX}, CI half-width <= ${AA_HALFWIDTH_MAX}; A = sefer, B = mimalloc, ratio = t_mimalloc / t_sefer; verdict (admitted kernels only): MIMALLOC_FASTER iff upper 95 % CI of ln(t_B/t_A) < 0, SEFER_FASTER iff lower 95 % CI > 0, else EQUAL_CI_HAS_0`);
+console.log(`# pre-registered A/A threshold: |median| <= ${AA_MEDIAN_MAX}, CI half-width <= ${AA_HALFWIDTH_MAX}; A = sefer base, B = ${A_LABEL}, ratio = t_B / t_A; verdict (admitted kernels only): ${B_FASTER} iff upper 95 % CI of ln(t_B/t_A) < 0, ${A_FASTER} iff lower 95 % CI > 0, else EQUAL_CI_HAS_0; SIGNIFICANT iff the 95 % CI OF THE RATIO does not contain 1 (equivalent: CI of the log does not contain 0)`);
 console.log(`# order balance: STRICT (ABBA = BAAB = N/2 per kernel, exact by construction, order_seed=${id0.order_seed}); activation oracle: 100 % exact`);
 console.log("");
-console.log("| Kernel | A/A sefer median | CI | half | trimmed | A/A mi median | CI | half | trimmed | A/B median | CI | trimmed | ratio | Допущена | Вердикт A/B |");
-console.log("|---|---:|---|---:|---:|---:|---|---:|---:|---:|---|---:|---:|---|---|");
+console.log(`| Kernel | A/A sefer median | CI | half | trimmed | A/A ${A_LABEL} median | CI | half | trimmed | A/B median | CI | trimmed | ratio | B−A ticks/call | Допущена | Вердикт A/B |`);
+console.log("|---|---:|---|---:|---:|---:|---|---:|---:|---:|---|---:|---:|---:|---|---|");
 for (const s of stats) {
   const f = (x) => x.toFixed(5);
   console.log(
     `| ${s.name} | ${f(s.aaSefer.med)} | ${f(s.aaSefer.ci.lo)} … ${f(s.aaSefer.ci.hi)} | ${f(s.aaSefer.ci.half)} | ${f(s.aaSefer.tm)}`
-    + ` | ${f(s.aaMi.med)} | ${f(s.aaMi.ci.lo)} … ${f(s.aaMi.ci.hi)} | ${f(s.aaMi.ci.half)} | ${f(s.aaMi.tm)}`
+    + ` | ${f(s.aaOther.med)} | ${f(s.aaOther.ci.lo)} … ${f(s.aaOther.ci.hi)} | ${f(s.aaOther.ci.half)} | ${f(s.aaOther.tm)}`
     + ` | ${f(s.ab.med)} | ${f(s.ab.ci.lo)} … ${f(s.ab.ci.hi)} | ${f(s.ab.tm)} | ${Math.exp(s.ab.med).toFixed(4)}`
+    + ` | ${s.abAbs.med.toFixed(1)}`
     + ` | ${s.admitted ? "да" : "НЕТ"} | ${s.verdict} |`
   );
 }
 console.log("");
-const miFaster = stats.filter((s) => s.verdict === "MIMALLOC_FASTER").length;
-const seferFaster = stats.filter((s) => s.verdict === "SEFER_FASTER").length;
+const otherFaster = stats.filter((s) => s.verdict === B_FASTER).length;
+const seferFaster = stats.filter((s) => s.verdict === A_FASTER).length;
 console.log(
-  `# verdict summary: MIMALLOC_FASTER ${miFaster} / SEFER_FASTER ${seferFaster} / ${stats.length} kernels; not admitted: ${stats.filter((s) => !s.admitted).length} / ${stats.length}`
-  + ` (a kernel is admitted iff BOTH A/A calibrations pass the pre-registered threshold)`
+  `# verdict summary: ${B_FASTER} ${otherFaster} / ${A_FASTER} ${seferFaster} / ${stats.length} kernels; not admitted: ${stats.filter((s) => !s.admitted).length} / ${stats.length}`
+  + ` (a kernel is admitted iff BOTH A/A calibrations pass the pre-registered threshold${ABLATE ? ": aa_sefer AND aa_variant" : ""})`
 );
 
 const csvDir = "docs/perf";
 mkdirSync(csvDir, { recursive: true });
-const csvPath = path.join(csvDir, "B4_INTERLEAVE_JUDGE_summary.csv");
+const csvPath = args.csv ?? path.join(csvDir, ABLATE ? "B4_ABLATE_summary.csv" : "B4_INTERLEAVE_JUDGE_summary.csv");
+mkdirSync(path.dirname(csvPath), { recursive: true });
 const id = id0;
+// Classic layout preserved: in ablate mode the aa_mi_* slots carry the
+// aa_variant stats (second A/A arm), and the explicit aa_variant_* columns
+// (plus variant identity) are APPENDED — no classic column is removed.
+const extraHeader = ABLATE
+  ? ["aa_variant_median", "aa_variant_ci_lo", "aa_variant_ci_hi", "aa_variant_half", "aa_variant_trimmed_mean", "variant_name", "variant_sha256"]
+  : [];
 const rows = [
   ["kernel", "aa_sefer_median", "aa_sefer_ci_lo", "aa_sefer_ci_hi", "aa_sefer_half", "aa_sefer_trimmed_mean",
    "aa_mi_median", "aa_mi_ci_lo", "aa_mi_ci_hi", "aa_mi_half", "aa_mi_trimmed_mean",
    "ab_median", "ab_ci_lo", "ab_ci_hi", "ab_ci_half", "ab_trimmed_mean", "ab_ratio",
+   "absdiff_median", "absdiff_ci_lo", "absdiff_ci_hi",
    "admitted", "ab_verdict",
    "blocks_aa_sefer", "blocks_aa_mi", "blocks_ab", "bootstrap", "seed", "order_seed",
    "head_sha", "cpu", "os", "os_version",
-   "source_diff_sha256", "exe_sha256", "features", "profile", "rustc", "tsc_invariant", "qpc_freq"],
+   "source_diff_sha256", "exe_sha256", "features", "profile", "rustc", "tsc_invariant", "qpc_freq",
+   ...extraHeader],
   ...stats.map((s) => [
     s.name,
     s.aaSefer.med.toFixed(6), s.aaSefer.ci.lo.toFixed(6), s.aaSefer.ci.hi.toFixed(6), s.aaSefer.ci.half.toFixed(6), s.aaSefer.tm.toFixed(6),
-    s.aaMi.med.toFixed(6), s.aaMi.ci.lo.toFixed(6), s.aaMi.ci.hi.toFixed(6), s.aaMi.ci.half.toFixed(6), s.aaMi.tm.toFixed(6),
+    s.aaOther.med.toFixed(6), s.aaOther.ci.lo.toFixed(6), s.aaOther.ci.hi.toFixed(6), s.aaOther.ci.half.toFixed(6), s.aaOther.tm.toFixed(6),
     s.ab.med.toFixed(6), s.ab.ci.lo.toFixed(6), s.ab.ci.hi.toFixed(6), s.ab.ci.half.toFixed(6),
     s.ab.tm.toFixed(6), Math.exp(s.ab.med).toFixed(6),
+    s.abAbs.med.toFixed(3), s.abAbs.ci.lo.toFixed(3), s.abAbs.ci.hi.toFixed(3),
     s.admitted ? "yes" : "no", s.verdict,
-    raws.aa_sefer.header.blocks, raws.aa_mi.header.blocks, raws.ab.header.blocks,
+    raws.aa_sefer.header.blocks, raws[OTHER_KEY].header.blocks, raws.ab.header.blocks,
     String(BOOTSTRAP), String(SEED), id.order_seed,
     id.head_sha, `"${id.cpu}"`, `"${id.os}"`, `"${id.os_version}"`,
     id.source_diff_sha256, id.exe_sha256, `"${id.features}"`, id.profile, `"${id.rustc}"`,
     id.tsc_invariant, id.qpc_freq,
+    ...(ABLATE
+      ? [s.aaOther.med.toFixed(6), s.aaOther.ci.lo.toFixed(6), s.aaOther.ci.hi.toFixed(6), s.aaOther.ci.half.toFixed(6), s.aaOther.tm.toFixed(6),
+         id.variant_name, id.variant_sha256]
+      : []),
   ]),
 ];
 writeFileSync(csvPath, rows.map((r) => r.join(",")).join("\n") + "\n");
 console.log(`# wrote ${csvPath}`);
+
+// --summary-append <path>: APPEND one row per selected kernel to a shared
+// cross-variant summary (header written only when the file is created).
+if (args.summaryAppend !== undefined) {
+  const sumHeader = [
+    "variant", "variant_sha256", "kernel", "admitted",
+    "ratio", "ratio_ci_lo", "ratio_ci_hi",
+    "absdiff_median", "absdiff_ci_lo", "absdiff_ci_hi", "verdict",
+  ];
+  const sumRows = stats.map((s) => [
+    id.variant_name, id.variant_sha256, s.name, s.admitted ? "yes" : "no",
+    Math.exp(s.ab.med).toFixed(6), Math.exp(s.ab.ci.lo).toFixed(6), Math.exp(s.ab.ci.hi).toFixed(6),
+    s.abAbs.med.toFixed(3), s.abAbs.ci.lo.toFixed(3), s.abAbs.ci.hi.toFixed(3), s.verdict,
+  ]);
+  let prev = "";
+  if (existsSync(args.summaryAppend)) prev = readFileSync(args.summaryAppend, "utf8");
+  const body = sumRows.map((r) => r.join(",")).join("\n") + "\n";
+  const out = (prev === "" ? sumHeader.join(",") + "\n" : prev) + body;
+  mkdirSync(path.dirname(args.summaryAppend), { recursive: true });
+  writeFileSync(args.summaryAppend, out);
+  console.log(`# appended ${sumRows.length} rows to ${args.summaryAppend}`);
+}

@@ -1090,12 +1090,23 @@ dependencies = [
  "proc-memstat",
  "proc-probe",
  "proptest",
+ "sefer-alloc-variant",
  "sefer-region",
  "serde_json",
  "size-classes",
  "slotmap",
  "tagged-index-stack",
  "tokio",
+]
+
+[[package]]
+name = "sefer-alloc-variant"
+version = "0.3.0"
+dependencies = [
+ "aligned-vmem",
+ "once-ptr-cell",
+ "sefer-region",
+ "size-classes",
 ]
 
 [[package]]
