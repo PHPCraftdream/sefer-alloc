@@ -193,6 +193,18 @@ impl<'a> IssueRun<'a> {
         true
     }
 
+    /// Debug witness for drain (G1-K1): the block at `offset` already holds
+    /// this run's class code. Unrouted: no codes exist, always `true`.
+    #[cfg(debug_assertions)]
+    pub(crate) fn code_present(&self, offset: u32) -> bool {
+        #[cfg(feature = "alloc-global")]
+        if let Some(inner) = &self.routed {
+            return inner.code_present(offset);
+        }
+        let _ = offset;
+        true
+    }
+
     /// Infallible per-block half: one Release class store on the routed path,
     /// a documented no-op unrouted.
     #[cfg_attr(not(debug_assertions), inline(always))]

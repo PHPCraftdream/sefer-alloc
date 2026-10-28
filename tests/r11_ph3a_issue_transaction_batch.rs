@@ -187,11 +187,13 @@ fn batch_carve_short_room_commits_exactly_the_room() {
     release(&mut core, anchor, CLASS0);
 }
 
-/// A prepare refusal inside a batch producer returns `Err` (surfaced as `0`)
+/// A prepare refusal inside the carve producer returns `Err` (surfaced as `0`)
 /// with the output buffer still holding the caller's pattern, then a retry
-/// after the one-shot disarm commits a full batch.
+/// after the one-shot disarm commits a full batch. G1-K1: the drain producer
+/// consults no prepare (its blocks keep the class code of their first issue),
+/// so an armed refusal survives a whole drain and lands on the next carve.
 fn batch_prepare_refusal_rolls_back_state_and_leaves_the_output_pattern() {
-    // (a) drain producer over a non-empty chain.
+    // (a) drain producer over a non-empty chain: the refusal is not consumed.
     {
         let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
         let anchor = core.dbg_r11_scalar_carve_for_test(0).unwrap();
@@ -201,7 +203,6 @@ fn batch_prepare_refusal_rolls_back_state_and_leaves_the_output_pattern() {
             release(&mut core, ptr, CLASS0);
         }
         let state = core.dbg_r11_issue_state_for_test(0).unwrap();
-        let directory = core.dbg_directory_get_bit(0, 0);
         let system = SmallSidecar::system_totals_for_test();
         let table_before = core.dbg_table_count();
 
@@ -209,28 +210,26 @@ fn batch_prepare_refusal_rolls_back_state_and_leaves_the_output_pattern() {
         let mut out = [anchor; SMALL_OUT];
         // SAFETY: `anchor` is a live allocation of this exclusively owned core.
         let k = unsafe { core.dbg_drain_freelist_batch(anchor, 0, &mut out) };
-
-        assert_eq!(k, 0, "an uncommitted prepare must issue nothing");
-        assert_eq!(out, [anchor; SMALL_OUT], "the pattern must survive");
-        assert_eq!(core.dbg_r11_issue_state_for_test(0), Some(state));
-        assert_eq!(core.dbg_directory_get_bit(0, 0), directory);
-        assert_eq!(SmallSidecar::system_totals_for_test(), system);
-        assert_eq!(core.dbg_table_count(), table_before);
-        assert!(
-            blocks.iter().all(|&ptr| core.dbg_is_free_for(ptr)),
-            "the whole chain must stay free through the refusal",
-        );
-
-        let mut retry = [anchor; SMALL_OUT];
-        // SAFETY: `anchor` still names the same live allocation.
-        let k = unsafe { core.dbg_drain_freelist_batch(anchor, 0, &mut retry) };
-        assert_eq!(k, SMALL_OUT, "the retry drains the untouched chain");
+        assert_eq!(k, SMALL_OUT, "drain ignores an armed prepare refusal");
         assert_eq!(
             core.dbg_live_count_for(anchor),
             Some(state.1 + k as u32),
-            "live credits grow by exactly the committed batch size",
+            "live credits grow by exactly the drained batch size",
         );
-        for ptr in &retry[..k] {
+        assert_eq!(SmallSidecar::system_totals_for_test(), system);
+        assert_eq!(core.dbg_table_count(), table_before);
+
+        // The refusal is still armed: the next carve's first prepare takes it.
+        let mut carved = [anchor; SMALL_OUT];
+        assert_eq!(
+            core.dbg_carve_batch(0, &mut carved),
+            0,
+            "the drain must not have consumed the armed refusal",
+        );
+        assert_eq!(carved, [anchor; SMALL_OUT], "the pattern must survive");
+        SmallSidecar::fail_prepare_after_for_test(0);
+
+        for ptr in &out[..k] {
             release(&mut core, *ptr, CLASS0);
         }
         release(&mut core, anchor, CLASS0);

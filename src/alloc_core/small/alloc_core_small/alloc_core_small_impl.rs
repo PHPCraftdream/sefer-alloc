@@ -537,9 +537,7 @@ impl AllocCore {
         let mut meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
         // Run-level protocol (B4-R3): fatal route guards run once in
-        // `prepare_small_issue_run`; per-block `prepare_for` promotes only on
-        // a leaf CHANGE, `run.commit` is one Release store (see `IssueRun`);
-        // `issue_small` re-derives the id in all builds.
+        // `prepare_small_issue_run`; drain stores no class code (G1-K1).
 
         {
             // Read the head ONCE.
@@ -547,12 +545,14 @@ impl AllocCore {
             if head_off == FREE_LIST_NULL {
                 return Ok(0);
             }
-            let mut run = self.table.prepare_small_issue_run(segment, class_idx);
+            // G1-K1: the run is built for its once-per-batch route guards only.
+            // A bin-`c` block was issued as class `c` before it was freed, so
+            // its start granule already holds class code `c + 1`; drain does
+            // not re-store it (carve, the first issue, does).
+            let run = self.table.prepare_small_issue_run(segment, class_idx);
             // B2-R1: one pass. Each link is validated (fatal on corruption, as
-            // before) and its leaf prepared BEFORE its block is committed; an
-            // OOM on the first block is `Err` with nothing changed, an OOM
-            // later stops the batch at that block (it stays the head, the
-            // committed prefix is a normal short drain).
+            // before) before its block is committed. G1-K1: no leaf is
+            // prepared, so drain no longer fails on a spill OOM.
             #[cfg(not(feature = "hardened"))]
             let bounds =
                 crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
@@ -568,12 +568,11 @@ impl AllocCore {
                 let Some(block_nn) = NonNull::new(block_ptr) else {
                     break;
                 };
-                if !run.prepare_for(head_off) {
-                    if k == 0 {
-                        return Err(());
-                    }
-                    break;
-                }
+                #[cfg(debug_assertions)]
+                debug_assert!(
+                    run.code_present(head_off),
+                    "bin block at offset {head_off} lacks class code {class_idx}"
+                );
                 // Dependent load: block bodies are never written on the pop path.
                 let next = Node::read_next(block_nn);
                 #[cfg(feature = "hardened")]
@@ -611,7 +610,6 @@ impl AllocCore {
                 // B4 (в)/S1: issue = commit `issue_state` (LIVE, or MAG when
                 // the caller parks the batch in a magazine).
                 meta.state_byte().write(head_off, class_idx, issue_state);
-                run.commit(head_off);
                 out[k] = block_ptr;
                 k += 1;
                 head_off = next_off;
