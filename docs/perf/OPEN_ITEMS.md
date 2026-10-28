@@ -3257,7 +3257,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 129. **[A] G1-P0 — the magazine <-> segment transfer sets bulk16k time: "transfer = 0" ceiling is 1.75× (measured, not shipped).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §9.)
    > **Current state**
    > - **Status:** OPEN `[A]` — ceiling measured; shippable form not chosen; production unchanged.
-   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 × 2000, pre-registered `g1_pmu/p0/G1_P0_PREREG.md`):** class-64 depot K = 1024 → bulk16k −56.13 % [−56.62, −54.74], churn64 −5.90 %, bulk64 −2.76 %, no kernel slower beyond pair64 +0.07 %. Main judge vs mimalloc on that tree: bulk16k t_mi/t_sefer 0.8729, larson 1.0293.
+   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 × 2000, pre-registered `g1_pmu/p0/G1_P0_PREREG.md`):** class-64 depot K = 1024 → bulk16k effect −56.13 [−56.62, −54.74] in the script's 100·ln units (time ratio 0.5705, 1.75× faster), churn64 −5.90, bulk64 −2.76, no kernel slower beyond pair64 +0.07. Main judge vs mimalloc on that tree: bulk16k t_mi/t_sefer 0.8729, larson 1.0293.
    > - **Next trigger:** a shippable form (budgeted depot with trim/decay and lazily allocated storage, or a body-write-free free set) chosen with @oh and the rush reviewer; per-thread retention budget is the owner's decision; then a perf(runtime) gate with RSS measured.
    > - **Evidence:** docs/perf/G1_IDEAS.md §9, docs/perf/g1_pmu/p0/ (prereg, patch, manifests, vs-null table and CSV, vs-mimalloc generator output, PMU and callgrind raws).
 
