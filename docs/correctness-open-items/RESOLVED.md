@@ -15,6 +15,15 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 258 — CLOSED (2026-10-28)
+
+258. **[T] Flaky `macos_snapshot_reports_the_documented_counters` (`crates/proc-memstat/tests/platform_contract.rs`): macOS `peak_rss` could read below `rss`.** (Filed and closed 2026-10-28, PR #122 CI, job `proc-memstat gates (macos-latest)`: `peak_rss (1982464) must be >= live rss (1998848)`.)
+
+    > **Current state**
+    > - **Status:** CLOSED (2026-10-28, same commit as the fix).
+    > - **Mechanism:** XNU's `MACH_TASK_BASIC_INFO` fills `resident_size` from the `phys_mem` ledger balance and `resident_size_max` from its lifetime max (`osfmk/kern/task.c`); the balance changes on every credit, the lifetime max only in `ledger_entry_check_new_balance` (`osfmk/kern/ledger.c`), which runs later. A read in that window returns max < balance.
+    > - **Fix:** the backend reports `peak_rss = max(resident_size_max, resident_size)` (`crates/proc-memstat/src/lib.rs`); docs, README matrix and the crate CHANGELOG say so. The existing assertion `peak_rss >= rss` is the oracle that failed before the fix.
+
 ### 257 — CLOSED (2026-10-28)
 
 257. **[T] License CI covered only the root Cargo workspace: `fuzz/` and the 14 compile_fail fixtures (each its own workspace and Cargo.lock) and the third-party GitHub Actions were never license-checked.** (Filed and closed 2026-10-28, owner question "do we check third-party licenses in CI".)
