@@ -45,6 +45,17 @@ impl LeafCursor {
     pub(crate) fn leaf_index(granule: usize) -> usize {
         granule / LEAF_GRANULES
     }
+
+    /// Blocks of a `stride`-granule run starting at `granule` that start in
+    /// `granule`'s leaf, capped at `remaining` (`stride > 0`).
+    pub(crate) fn blocks_in_leaf(granule: usize, stride: usize, remaining: usize) -> usize {
+        debug_assert!(stride > 0);
+        if stride >= LEAF_GRANULES {
+            return remaining.min(1);
+        }
+        let left = LEAF_GRANULES - granule % LEAF_GRANULES;
+        left.div_ceil(stride).min(remaining)
+    }
 }
 
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
@@ -230,6 +241,31 @@ impl ClassLeaves {
             .store(class + 1, Ordering::Release);
     }
 
+    /// Contiguous-run twin of [`Self::issue_in`]: the same Release store for
+    /// `count` blocks `stride` granules apart from `granule`, all inside the
+    /// cursor's leaf (see [`LeafCursor::blocks_in_leaf`]).
+    pub(crate) fn issue_run_in(
+        &self,
+        cursor: &LeafCursor,
+        granule: usize,
+        stride: usize,
+        count: usize,
+        class: u8,
+    ) {
+        debug_assert_eq!(cursor.leaf_idx(), LeafCursor::leaf_index(granule));
+        debug_assert!(usize::from(class) < SMALL_CLASS_COUNT);
+        let first = granule % LEAF_GRANULES;
+        if count == 0 || first + (count - 1) * stride >= LEAF_GRANULES {
+            fatal(b"leaf_classes: issue run leaves its leaf\n");
+        }
+        for j in 0..count {
+            // SAFETY: as in `issue_in`; the check above keeps every index
+            // inside the cursor's LEAF_GRANULES-byte leaf.
+            unsafe { &*cursor.leaf.as_ptr().add(first + j * stride) }
+                .store(class + 1, Ordering::Release);
+        }
+    }
+
     pub(crate) fn issue(&self, granule: usize, class: u8) -> bool {
         if granule >= LEAVES * LEAF_GRANULES || usize::from(class) >= SMALL_CLASS_COUNT {
             return false;
@@ -293,6 +329,25 @@ impl ClassLeaves {
     pub(crate) fn fail_prepare_injected() -> bool {
         FAIL_PREPARE_AFTER
             .try_with(Self::fail_countdown)
+            .unwrap_or(false)
+    }
+
+    /// Run twin of [`Self::fail_prepare_injected`]: `k` same-leaf blocks
+    /// consume the countdown at once. The run aborts at the first refusal and
+    /// same-leaf blocks promote nothing, so which of the `k` refused is
+    /// unobservable.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(crate) fn fail_prepare_injected_n(k: usize) -> bool {
+        FAIL_PREPARE_AFTER
+            .try_with(|n| {
+                let left = n.get();
+                if left == 0 || left > k {
+                    n.set(left.saturating_sub(k));
+                    return false;
+                }
+                n.set(0);
+                true
+            })
             .unwrap_or(false)
     }
 

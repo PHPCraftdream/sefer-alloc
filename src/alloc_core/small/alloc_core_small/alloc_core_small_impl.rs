@@ -873,17 +873,15 @@ impl AllocCore {
         }
         let room = (SEGMENT - aligned_start) / block_size;
         let n = out.len().min(room);
-        // Run-level protocol (B4-R3): guards once per run, per-block
-        // `prepare_for` promotes only on a leaf CHANGE, `run.commit` is one
-        // Release store (see `IssueRun`). A successful promotion is retained
-        // even if later OS commit fails; no class code or issue credit
-        // changes until the carve commits.
+        // Run-level protocol (B4-R3, U32): guards once per run; the bump run
+        // is contiguous, so `prepare_range` promotes once per leaf and
+        // `commit_range` resolves once per leaf, then one Release store per
+        // block (see `IssueRun`). A successful promotion is retained even if
+        // later OS commit fails; no class code or issue credit changes until
+        // the carve commits.
         let mut run = self.table.prepare_small_issue_run(segment, class_idx);
-        for i in 0..n {
-            let off = aligned_start + i * block_size;
-            if !run.prepare_for(off as u32) {
-                return Err(());
-            }
+        if !run.prepare_range(aligned_start as u32, block_size as u32, n) {
+            return Err(());
         }
         // Recommit ONCE at run start if the segment's payload was decommitted
         // (identical to `carve_block`'s per-block check — the flag cannot change
@@ -962,6 +960,7 @@ impl AllocCore {
         let mut pm = meta.page_map();
         #[cfg(feature = "page-map-diag")]
         let mut prev_page = usize::MAX;
+        run.commit_range(aligned_start as u32, block_size as u32, n);
         for (i, slot) in out[..n].iter_mut().enumerate() {
             let off = aligned_start + i * block_size;
             #[cfg(feature = "page-map-diag")]
@@ -975,7 +974,6 @@ impl AllocCore {
                 }
             }
             let ptr = Node::deref(segment, off);
-            run.commit(off as u32);
             // B4 (в)/S1: freshly carved blocks commit `issue_state` (see doc).
             meta.state_byte().write(off as u32, class_idx, issue_state);
             *slot = ptr;

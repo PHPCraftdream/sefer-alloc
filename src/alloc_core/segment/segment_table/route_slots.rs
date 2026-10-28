@@ -342,6 +342,79 @@ impl RoutedIssueRun<'_> {
         self.classes
             .issue_in(self.cursor.as_ref().unwrap(), granule, self.class);
     }
+
+    /// Bump-run twin of `n` [`Self::prepare_for`] calls at `start + i *
+    /// stride`: the same refusals, but one leaf check per leaf instead of per
+    /// block.
+    pub(super) fn prepare_range(&mut self, start: u32, stride: u32, n: usize) -> bool {
+        let Some((first, step)) = run_granules(start, stride, n) else {
+            return n == 0;
+        };
+        let mut i = 0;
+        while i < n {
+            let granule = first + i * step;
+            let k = LeafCursor::blocks_in_leaf(granule, step, n - i);
+            let leaf = LeafCursor::leaf_index(granule);
+            // Blocks a same-leaf `prepare_for` would have skipped.
+            let mut skipped = k;
+            if !self.cursor.as_ref().is_some_and(|c| c.leaf_idx() == leaf) {
+                match self.classes.prepare_leaf(granule, self.class) {
+                    Some(cursor) => self.cursor = Some(cursor),
+                    None => return false,
+                }
+                skipped -= 1;
+            }
+            #[cfg(all(feature = "internals", feature = "bench-internals"))]
+            if ClassLeaves::fail_prepare_injected_n(skipped) {
+                return false;
+            }
+            let _ = skipped;
+            i += k;
+        }
+        true
+    }
+
+    /// Bump-run twin of `n` [`Self::commit`] calls: each leaf is resolved
+    /// once, then its blocks take the same per-block Release store.
+    pub(super) fn commit_range(&mut self, start: u32, stride: u32, n: usize) {
+        let Some((first, step)) = run_granules(start, stride, n) else {
+            if n != 0 {
+                fatal(b"route_slots: batch issue run out of segment\n");
+            }
+            return;
+        };
+        let mut i = 0;
+        while i < n {
+            let granule = first + i * step;
+            let k = LeafCursor::blocks_in_leaf(granule, step, n - i);
+            let leaf = LeafCursor::leaf_index(granule);
+            if !self.cursor.as_ref().is_some_and(|c| c.leaf_idx() == leaf) {
+                let cursor = self.classes.resolve_leaf(granule).unwrap_or_else(|| {
+                    fatal(b"route_slots: batch issue commit on unprepared leaf\n")
+                });
+                self.cursor = Some(cursor);
+            }
+            self.classes
+                .issue_run_in(self.cursor.as_ref().unwrap(), granule, step, k, self.class);
+            i += k;
+        }
+    }
+}
+
+/// First granule and granule stride of a run of `n > 0` blocks at `start +
+/// i * stride`, or `None` when a block would leave the segment or break
+/// `MIN_BLOCK` alignment (where `prepare_for` refuses).
+fn run_granules(start: u32, stride: u32, n: usize) -> Option<(usize, usize)> {
+    let (start, stride) = (start as usize, stride as usize);
+    if n == 0
+        || stride == 0
+        || !start.is_multiple_of(MIN_BLOCK)
+        || !stride.is_multiple_of(MIN_BLOCK)
+    {
+        return None;
+    }
+    let last = (n - 1).checked_mul(stride)?.checked_add(start)?;
+    (last < SEGMENT).then_some((start / MIN_BLOCK, stride / MIN_BLOCK))
 }
 
 impl Drop for RouteSlots {

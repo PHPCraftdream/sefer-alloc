@@ -210,4 +210,34 @@ impl<'a> IssueRun<'a> {
         #[cfg(not(feature = "alloc-global"))]
         let _ = offset;
     }
+
+    /// [`Self::prepare_for`] over the bump run `start + i * stride`, `i < n`,
+    /// with one leaf check per leaf. Unrouted: `true`, as per block.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(crate) fn prepare_range(&mut self, start: u32, stride: u32, n: usize) -> bool {
+        #[cfg(feature = "alloc-global")]
+        if let Some(inner) = &mut self.routed {
+            return inner.prepare_range(start, stride, n);
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        let _ = (start, stride, n);
+        true
+    }
+
+    /// [`Self::commit`] over the same bump run, one leaf resolve per leaf.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(crate) fn commit_range(&mut self, start: u32, stride: u32, n: usize) {
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(
+            self.index,
+            SegmentHeader::segment_id_at(self.base) as usize,
+            "batch commit: run index must still be its segment's stamped id",
+        );
+        #[cfg(feature = "alloc-global")]
+        if let Some(inner) = &mut self.routed {
+            inner.commit_range(start, stride, n);
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        let _ = (start, stride, n);
+    }
 }
