@@ -84,7 +84,7 @@ Prod: `src/registry/heap_registry/claim.rs::try_maintenance_at`, `src/registry/h
 - I2 MAINTENANCE->FREE is a Release CAS; the next LIVE claimant observes every maintenance write
 - loom: `tests/loom_r8_maintenance_lease.rs`
 
-Decision: **keep+R8** — shares HeapSlot::cas_state with P1; the model's orderings are bound to the try_maintenance_at / MaintenanceLease::drop call sites
+Decision: **keep+R8** — G4: R1 on the FREE -> MAINTENANCE claim (try_maintenance_at) and the MAINTENANCE -> FREE recycle (MaintenanceLease::drop), R4 makes a lost recycle CAS fatal; R8 binds the R8 maintenance model lines to both P2 and P1 rules. The Relaxed-drop mutant is red in the linter and, propagated to the model, a loom causality violation.
 
 ### P3 — publish || recycle || drain (TORN stamp, trim, drop, claimant drain)
 
@@ -194,7 +194,7 @@ Prod: `src/registry/heap_core/state/depot.rs`, `src/registry/heap_core/state/dep
 - no atomic sites of its own: the depot is plain owner-only storage; its cross-thread safety is P1's LIVE->FREE Release / claim Acquire
 - loom: `tests/loom_depot_recycle_handoff.rs`
 
-Decision: **keep+R8+R3+R5** — no atomics of its own; R3 (drain before Release) and R5 (depot only from owner paths)
+Decision: **keep+R8+R3+R5** — G4: no atomics of its own. R3 depot/flush-reloads-parked keeps the teardown flush draining every parked magazine; R5 depot/owner-only-access and depot/bind-once keep the depot reachable only through the owner paths and bound once; the drain-before-Release order is G3 teardown/trim-before-release, which the depot model now binds as an R8 step together with the drop/claim orderings.
 
 ### P13 — epoch region remote-free pending flag (false full)
 

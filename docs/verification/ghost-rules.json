@@ -55,7 +55,7 @@
       "real_under_loom": "no: same registry bootstrap as P1",
       "decision": "keep+R8",
       "phase": "G4",
-      "reason": "shares HeapSlot::cas_state with P1; the model's orderings are bound to the try_maintenance_at / MaintenanceLease::drop call sites"
+      "reason": "G4: R1 on the FREE -> MAINTENANCE claim (try_maintenance_at) and the MAINTENANCE -> FREE recycle (MaintenanceLease::drop), R4 makes a lost recycle CAS fatal; R8 binds the R8 maintenance model lines to both P2 and P1 rules. The Relaxed-drop mutant is red in the linter and, propagated to the model, a loom causality violation."
     },
     {
       "id": "P3",
@@ -322,7 +322,7 @@
       "real_under_loom": "no: owner-only plain storage bound as &'static mut",
       "decision": "keep+R8+R3+R5",
       "phase": "G4",
-      "reason": "no atomics of its own; R3 (drain before Release) and R5 (depot only from owner paths)",
+      "reason": "G4: no atomics of its own. R3 depot/flush-reloads-parked keeps the teardown flush draining every parked magazine; R5 depot/owner-only-access and depot/bind-once keep the depot reachable only through the owner paths and bound once; the drain-before-Release order is G3 teardown/trim-before-release, which the depot model now binds as an R8 step together with the drop/claim orderings.",
       "atomics": "the depot is plain owner-only storage; its cross-thread safety is P1's LIVE->FREE Release / claim Acquire"
     },
     {
@@ -1330,6 +1330,35 @@
             },
             "expect": "Causality violation|Concurrent (read|write) access"
           }
+        },
+        {
+          "id": "relaxed-drop-depot",
+          "file": "src/registry/heap_registry/claim.rs",
+          "from": "                SlotState::Live,\n                SlotState::Free,\n                Ordering::Release,\n",
+          "to": "                SlotState::Live,\n                SlotState::Free,\n                Ordering::Relaxed,\n",
+          "also": [
+            {
+              "file": "tests/loom_depot_recycle_handoff.rs",
+              "from": "const DROP_LEASE: (Ordering, Ordering) = (Ordering::Release, Ordering::Relaxed);",
+              "to": "const DROP_LEASE: (Ordering, Ordering) = (Ordering::Relaxed, Ordering::Relaxed);"
+            }
+          ],
+          "checker": {
+            "name": "loom loom_depot_recycle_handoff",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+              "--test",
+              "loom_depot_recycle_handoff"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "Causality violation|Concurrent (read|write) access"
+          }
         }
       ]
     },
@@ -1650,9 +1679,41 @@
       "reason": "the terminal sidecar cut and cache trim run while this thread is still the sole owner; no core mutation after LIVE -> FREE",
       "tests": [
         "tests/regression_r4_3_teardown_trim.rs",
-        "tests/loom_r11_ph4b_publish_recycle_drain.rs"
+        "tests/loom_r11_ph4b_publish_recycle_drain.rs",
+        "tests/loom_depot_recycle_handoff.rs"
       ],
-      "fixtures": "tests/ghost_lint_fixtures/p3_trim_before_release"
+      "fixtures": "tests/ghost_lint_fixtures/p3_trim_before_release",
+      "mutants": [
+        {
+          "id": "teardown-without-trim",
+          "file": "src/global/tls_heap.rs",
+          "from": "        lease.core().trim_for_recycle();\n",
+          "to": "",
+          "also": [
+            {
+              "file": "tests/loom_depot_recycle_handoff.rs",
+              "from": "        trim_for_recycle(lease.slot);\n        drop(lease);\n    } else {",
+              "to": "        drop(lease);\n        trim_for_recycle(slot);\n    } else {"
+            }
+          ],
+          "checker": {
+            "name": "loom loom_depot_recycle_handoff",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+              "--test",
+              "loom_depot_recycle_handoff"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "Causality violation|Concurrent (read|write) access"
+          }
+        }
+      ]
     },
     {
       "id": "teardown/early-release-on-exit",
@@ -1754,6 +1815,275 @@
         "tests/regression_r4_3_teardown_trim.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p3_guard_lease_cell"
+    },
+    {
+      "id": "maintenance-lease/claim-acqrel",
+      "kind": "R1",
+      "protocol": "P2",
+      "file": "src/registry/heap_registry/claim.rs",
+      "fn": "HeapRegistry::try_maintenance_at",
+      "site": {
+        "name": "cas_state",
+        "args": "^SlotState::Free,SlotState::Maintenance,"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "FREE",
+        "MAINTENANCE",
+        "Acquire",
+        "mutator"
+      ],
+      "reason": "the maintenance taker wins FREE -> MAINTENANCE once and acquires every write of the previous holder; a failed CAS creates no second mutator",
+      "tests": [
+        "tests/loom_r8_maintenance_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p2_claim_acqrel"
+    },
+    {
+      "id": "maintenance-lease/drop-release",
+      "kind": "R1",
+      "protocol": "P2",
+      "file": "src/registry/heap_registry/claim.rs",
+      "fn": "MaintenanceLease::drop",
+      "site": {
+        "name": "cas_state",
+        "args": "^SlotState::Maintenance,SlotState::Free,"
+      },
+      "orderings": [
+        "Release",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "MAINTENANCE",
+        "FREE",
+        "Release",
+        "claimant"
+      ],
+      "reason": "MAINTENANCE -> FREE publishes every maintenance write with Release to the next LIVE claimant",
+      "tests": [
+        "tests/loom_r8_maintenance_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p2_drop_release",
+      "mutants": [
+        {
+          "id": "relaxed-maintenance-drop",
+          "file": "src/registry/heap_registry/claim.rs",
+          "from": "                SlotState::Maintenance,\n                SlotState::Free,\n                Ordering::Release,\n",
+          "to": "                SlotState::Maintenance,\n                SlotState::Free,\n                Ordering::Relaxed,\n",
+          "also": [
+            {
+              "file": "tests/loom_r8_maintenance_lease.rs",
+              "from": "const RECYCLE: (Ordering, Ordering) = (Ordering::Release, Ordering::Relaxed);",
+              "to": "const RECYCLE: (Ordering, Ordering) = (Ordering::Relaxed, Ordering::Relaxed);"
+            }
+          ],
+          "checker": {
+            "name": "loom loom_r8_maintenance_lease",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+              "--test",
+              "loom_r8_maintenance_lease"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "Causality violation|Concurrent (read|write) access"
+          }
+        }
+      ]
+    },
+    {
+      "id": "maintenance-lease/drop-lost-cas-fatal",
+      "kind": "R4",
+      "protocol": "P2",
+      "file": "src/registry/heap_registry/claim.rs",
+      "fn": "MaintenanceLease::drop",
+      "action": {
+        "name": "fatal",
+        "args": "rollback"
+      },
+      "guard": "^self\\.slot\\.cas_state\\(SlotState::Maintenance,SlotState::Free,.*\\)\\.is_err\\(\\)$",
+      "terms": [
+        "fatal",
+        "lost",
+        "CAS",
+        "mutator"
+      ],
+      "reason": "a lost MAINTENANCE -> FREE CAS means a second mutator exists; the drop aborts",
+      "tests": [
+        "tests/loom_r8_maintenance_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p2_drop_lost_cas_fatal"
+    },
+    {
+      "id": "maintenance-lease/model-bind",
+      "kind": "R8",
+      "protocol": "P2",
+      "model": "tests/loom_r8_maintenance_lease.rs",
+      "binds": [
+        {
+          "rule": "maintenance-lease/claim-acqrel"
+        },
+        {
+          "rule": "heap-lease/claim-free-live"
+        },
+        {
+          "rule": "maintenance-lease/drop-release"
+        },
+        {
+          "rule": "heap-lease/drop-release"
+        }
+      ],
+      "terms": [
+        "model",
+        "Release",
+        "Acquire",
+        "MAINTENANCE"
+      ],
+      "reason": "the R8 maintenance model keeps the production claim and recycle orderings of both the LIVE and the MAINTENANCE lease",
+      "tests": [
+        "tests/loom_r8_maintenance_lease.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p2_model_bind"
+    },
+    {
+      "id": "depot/flush-reloads-parked",
+      "kind": "R3",
+      "protocol": "P12",
+      "file": "src/registry/heap_core/state/tcache_flush.rs",
+      "fn": "HeapCore::flush_all_tcache",
+      "before": {
+        "name": "flush_class_internal"
+      },
+      "after": {
+        "name": "depot_reload"
+      },
+      "terms": [
+        "depot",
+        "parked",
+        "flush",
+        "depot_reload",
+        "empty"
+      ],
+      "reason": "the teardown flush reloads every parked magazine into the emptied magazine and flushes it too, so the depot is empty at LIVE -> FREE",
+      "tests": [
+        "tests/heap_core_depot.rs",
+        "tests/loom_depot_recycle_handoff.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_flush_reloads_parked",
+      "mutants": [
+        {
+          "id": "flush-skips-depot",
+          "file": "src/registry/heap_core/state/tcache_flush.rs",
+          "from": "                if !self.depot_reload(c) {\n                    break;\n                }\n",
+          "to": "                break;\n",
+          "checker": {
+            "name": "cargo test heap_core_depot",
+            "cmd": [
+              "cargo",
+              "test",
+              "--features",
+              "production internals bench-internals",
+              "--test",
+              "heap_core_depot"
+            ],
+            "expect": "test result: FAILED|process didn't exit successfully"
+          }
+        }
+      ],
+      "nested_before": true
+    },
+    {
+      "id": "depot/owner-only-access",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "as_deref_mut",
+        "receiver": "depot$"
+      },
+      "allowed": [
+        "HeapCore::depot_park",
+        "HeapCore::depot_reload"
+      ],
+      "terms": [
+        "depot",
+        "owner",
+        "lease",
+        "depot_park",
+        "depot_reload"
+      ],
+      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths, so only the current lease holder touches it",
+      "tests": [
+        "tests/heap_core_depot.rs",
+        "tests/loom_depot_recycle_handoff.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_owner_only_access"
+    },
+    {
+      "id": "depot/bind-once",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "depot",
+        "kind": "assign"
+      },
+      "allowed": [
+        "HeapCore::bind_depot"
+      ],
+      "terms": [
+        "depot",
+        "bind",
+        "slot",
+        "owner"
+      ],
+      "reason": "the heap's depot pointer is set only by bind_depot, before the slot's core is published",
+      "tests": [
+        "tests/heap_core_depot.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_bind_once"
+    },
+    {
+      "id": "depot/model-bind",
+      "kind": "R8",
+      "protocol": "P12",
+      "model": "tests/loom_depot_recycle_handoff.rs",
+      "binds": [
+        {
+          "rule": "heap-lease/claim-free-live"
+        },
+        {
+          "rule": "heap-lease/drop-release"
+        },
+        {
+          "rule": "teardown/trim-before-release"
+        }
+      ],
+      "terms": [
+        "model",
+        "Release",
+        "depot",
+        "trim_for_recycle"
+      ],
+      "reason": "the depot model keeps the production claim/drop orderings and the teardown order trim_for_recycle before drop(lease)",
+      "tests": [
+        "tests/loom_depot_recycle_handoff.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_model_bind"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

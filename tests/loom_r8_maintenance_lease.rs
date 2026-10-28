@@ -1,5 +1,8 @@
 //! Production-equivalent state/CAS ordering, including failed MAINTENANCE
-//! claims: a failed CAS must never create a second metadata mutator.
+//! claims: a failed CAS must never create a second metadata mutator. The
+//! `ghost-bind` lines carry the production orderings of the LIVE and
+//! MAINTENANCE claim / recycle CAS (rule R8 against the R1 rules on
+//! `src/registry/heap_registry/claim.rs`).
 #![cfg(all(loom, feature = "alloc-global", feature = "internals"))]
 
 use loom::cell::UnsafeCell;
@@ -7,6 +10,13 @@ use loom::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 use sefer_alloc::registry::heap_slot::SlotState;
+
+// ghost-bind: maintenance-lease/claim-acqrel
+// ghost-bind: heap-lease/claim-free-live
+const CLAIM: (Ordering, Ordering) = (Ordering::AcqRel, Ordering::Acquire);
+// ghost-bind: maintenance-lease/drop-release
+// ghost-bind: heap-lease/drop-release
+const RECYCLE: (Ordering, Ordering) = (Ordering::Release, Ordering::Relaxed);
 
 struct Slot {
     state: AtomicU8,
@@ -17,12 +27,7 @@ struct Slot {
 fn take_and_recycle(slot: &Slot, desired: u8) {
     if slot
         .state
-        .compare_exchange(
-            SlotState::Free as u8,
-            desired,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        )
+        .compare_exchange(SlotState::Free as u8, desired, CLAIM.0, CLAIM.1)
         .is_err()
     {
         return;
@@ -41,12 +46,7 @@ fn take_and_recycle(slot: &Slot, desired: u8) {
     assert_eq!(slot.active.fetch_sub(1, Ordering::Relaxed), 1);
     assert!(slot
         .state
-        .compare_exchange(
-            desired,
-            SlotState::Free as u8,
-            Ordering::Release,
-            Ordering::Relaxed
-        )
+        .compare_exchange(desired, SlotState::Free as u8, RECYCLE.0, RECYCLE.1)
         .is_ok());
 }
 
