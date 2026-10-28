@@ -4,6 +4,8 @@
 #![allow(unused_imports, dead_code)]
 
 const MAX_HEAPS: usize = 4096;
+// The mounted hint files take their atomics from `super`.
+use core::sync::atomic::{AtomicU64, Ordering};
 
 #[allow(dead_code, unused_imports)]
 #[path = "../src/registry/bootstrap/free_slot_hint.rs"]

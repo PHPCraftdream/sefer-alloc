@@ -2,7 +2,8 @@
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 #![forbid(unsafe_code)]
 
-use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+// The mounted hint file takes its atomics from `super`.
+use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 use sefer_alloc::registry::heap_registry::{pick_with_hint_spill, SaturationHint};
 
 const MAX_HEAPS: usize = 4096;
