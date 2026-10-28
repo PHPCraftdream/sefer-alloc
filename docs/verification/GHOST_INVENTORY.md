@@ -55,13 +55,13 @@ harness; `non-atomic` — named scanner false positives.
 | P16 | summary-hint C''' (not shipped) | none | 0 | 1 | 0 | — | n/a | archive | - |
 | P17 | bootstrap const OncePtrCell stand-in under loom | T | 7 | 0 | 0 | — | is the loom twin | R7 | G7 |
 | P18 | cfg(loom) twins in crates and leaf init | T | 20 | 2 | 0 | — | crate tests run the real crate under loom | R7 | G7 |
-| P19 | fallback heap one-time init + fallback lock (global/fallback.rs) | none | 11 | 0 | 0 | — | unknown (G0 finding: no loom model exists) | new-model | G6 |
+| P19 | fallback heap one-time init + fallback lock (global/fallback.rs) | A | 11 | 1 | 0 | — | yes: tests/loom_fallback_actual.rs compiles fallback.rs onto per-execution loom stand-ins for its statics (sync names through super) | ghost | G6 |
 | P20 | maintenance service start/worker state | none | 6 | 0 | 0 | — | unknown (G0 finding: no loom model exists) | new-model | G6 |
 | P21 | exact-object shard lock + live hint | A | 7 | 1 | 0 | — | yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super) | ghost | G6 |
 | P22 | route ShardLock (spin lock over the directory shard) | S | 5 | 1 | 0 | — | yes: one AtomicBool | translate (with P5) | G2 |
 
 Shadow-model protocols (class contains S): 13 of 22, each with a decision.
-Protocols with neither a loom nor a shadow model: P19, P20 (2 of 22).
+Protocols with neither a loom nor a shadow model: P20 (1 of 22).
 
 ## 3. Invariants and prod places
 
@@ -255,8 +255,9 @@ Prod: `src/global/fallback.rs::heap_ptr_impl`, `src/global/fallback.rs::try_with
 
 - I1 INIT_STATE: exactly one initialiser wins the CAS (Acquire/Relaxed); the heap is published with a Release store, readers load Acquire; a panicking init rolls back with Release
 - I2 LOCK: test-and-set spin lock, CAS Acquire on acquire, Release store on drop
+- loom: `tests/loom_fallback_actual.rs`
 
-Decision: **new-model** — G0 finding: protocol with Acquire/Release pairs and no loom/shadow model; covered today only by r6_*/con01_* integration tests
+Decision: **ghost** — G6d: new actual-source loom model; HeapCore stand-in holds a loom cell every closure writes, so a heap access not ordered by READY or by the lock is a causality violation; ghost events fallback/init-won and fallback/held; R1 on every INIT_STATE / LOCK site, R3 write before READY, R4 try_with_heap only after READY, R6 on the events.
 
 ### P20 — maintenance service start/worker state
 

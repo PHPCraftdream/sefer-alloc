@@ -9,7 +9,7 @@ dead_scopes,0
 protocol_errors,0
 prod_paths_checked,57
 shadow_protocols,13
-protocols_without_model,2
+protocols_without_model,1
 class_cache,6
 class_counter,232
 class_ghost,10

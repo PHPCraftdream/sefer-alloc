@@ -52,7 +52,8 @@
 
 use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+// Sync primitives through `super` so the actual-source loom model binds loom ones.
+use super::{spin_loop, yield_now, AtomicBool, AtomicU64, AtomicU8, Ordering};
 
 use crate::registry::HeapCore;
 
@@ -219,6 +220,8 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
             )
             .is_ok();
         if won {
+            // Ghost: exactly one initialiser wins per published heap.
+            crate::ghost::ghost_event!("fallback/init-won", 0, 1);
             // F-8 (R34-17/task #536): arm the init-state rollback guard BEFORE
             // the fallible init. If anything between here and the READY publish
             // unwinds (`HeapCore::new`, the in-place `write`, the
@@ -251,7 +254,7 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
             // losers deterministically reach the wait loop below.
             #[cfg(all(feature = "internals", feature = "bench-internals"))]
             while DBG_HOLD_FALLBACK_INIT.load(Ordering::Acquire) {
-                std::thread::yield_now();
+                yield_now();
             }
             // We are the sole initialiser. Construct the HeapCore in place.
             // The fallback is NOT a registry slot, so it cannot carry a slot
@@ -352,7 +355,7 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
         let mut spins: u32 = 0;
         while INIT_STATE.load(Ordering::Acquire) == FallbackInitState::Initializing as u8 {
             if lock_tight_spin(&mut spins) {
-                core::hint::spin_loop();
+                spin_loop();
             } else {
                 if super::process_exit_in_progress() {
                     record_exit_lock_giveup();
@@ -361,7 +364,7 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
                 {
                     #[cfg(all(feature = "internals", feature = "bench-internals"))]
                     DBG_FALLBACK_INIT_WAIT_YIELDS.fetch_add(1, Ordering::Relaxed);
-                    std::thread::yield_now();
+                    yield_now();
                 }
             }
         }
@@ -515,6 +518,8 @@ impl super::SeferAlloc {
 
 impl LockGuard {
     fn acquired() -> Self {
+        // Ghost: one holder of LOCK at a time; every acquire is released once.
+        crate::ghost::ghost_event!("fallback/held", 0, 1);
         LOCK_ACQUISITIONS.fetch_add(1, Ordering::Relaxed);
         LockGuard
     }
@@ -555,7 +560,7 @@ impl LockGuard {
                 if lock_tight_spin(&mut spins) {
                     // Exponential pause, doubling to a small ceiling.
                     for _ in 0..(1u32 << backoff.min(6)) {
-                        core::hint::spin_loop();
+                        spin_loop();
                     }
                     backoff = backoff.saturating_add(1);
                 } else {
@@ -566,7 +571,7 @@ impl LockGuard {
                         record_exit_lock_giveup();
                         return None;
                     }
-                    std::thread::yield_now();
+                    yield_now();
                 }
             }
         }
@@ -575,6 +580,7 @@ impl LockGuard {
 
 impl Drop for LockGuard {
     fn drop(&mut self) {
+        crate::ghost::ghost_event!("fallback/held", 0, -1);
         LOCK.store(false, Ordering::Release);
     }
 }

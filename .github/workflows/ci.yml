@@ -155,7 +155,7 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha }}"
           [ -z "$BASE" ] && BASE="${{ github.event.before }}"
           git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE=HEAD^
-          if [ "${{ github.event_name }}" = schedule ] || git diff --name-only "$BASE" HEAD | grep -qE '^(docs/verification/ghost-rules\.json|src/registry/segment_route/directory/|src/registry/heap_registry/claim\.rs|src/global/tls_heap\.rs|src/registry/heap_core/state/tcache_flush\.rs|src/registry/bootstrap/(free_slot_hint|saturation)\.rs|tests/loom_registry_hints_actual\.rs|src/alloc_core/segment/remote_bitmap/(sidecar_bitmap|bitmap_scan)\.rs|tests/loom_sidecar_bitmap_actual\.rs|tests/route_pin_last_ref_miri\.rs|tests/loom_r11_ph4[ab]_[a-z_]+\.rs|tests/loom_depot_recycle_handoff\.rs|tests/loom_r8_maintenance_lease\.rs|src/registry/heap_core_xthread/route_pin_cache\.rs|tests/loom_b4_r1_pin_cache\.rs|src/global/exact_object/exact_shard\.rs|tests/loom_exact_shard_actual\.rs|src/alloc_core/large/reservation_state\.rs|tests/loom_terminal_large\.rs|scripts/ghost_mutants\.mjs)'; then
+          if [ "${{ github.event_name }}" = schedule ] || git diff --name-only "$BASE" HEAD | grep -qE '^(docs/verification/ghost-rules\.json|src/registry/segment_route/directory/|src/registry/heap_registry/claim\.rs|src/global/tls_heap\.rs|src/registry/heap_core/state/tcache_flush\.rs|src/registry/bootstrap/(free_slot_hint|saturation)\.rs|tests/loom_registry_hints_actual\.rs|src/alloc_core/segment/remote_bitmap/(sidecar_bitmap|bitmap_scan)\.rs|tests/loom_sidecar_bitmap_actual\.rs|tests/route_pin_last_ref_miri\.rs|tests/loom_r11_ph4[ab]_[a-z_]+\.rs|tests/loom_depot_recycle_handoff\.rs|tests/loom_r8_maintenance_lease\.rs|src/registry/heap_core_xthread/route_pin_cache\.rs|tests/loom_b4_r1_pin_cache\.rs|src/global/exact_object/exact_shard\.rs|tests/loom_exact_shard_actual\.rs|src/global/fallback\.rs|tests/loom_fallback_actual\.rs|src/alloc_core/large/reservation_state\.rs|tests/loom_terminal_large\.rs|scripts/ghost_mutants\.mjs)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.mutants.outputs.run == 'true'
@@ -3635,6 +3635,7 @@ jobs:
             --test loom_terminal_owner_drain \
             --test loom_terminal_large \
             --test loom_exact_shard_actual \
+            --test loom_fallback_actual \
             --test loom_b4_scan_skip_empty_publish 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"

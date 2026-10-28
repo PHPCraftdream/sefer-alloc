@@ -463,14 +463,16 @@
         "I1 INIT_STATE: exactly one initialiser wins the CAS (Acquire/Relaxed); the heap is published with a Release store, readers load Acquire; a panicking init rolls back with Release",
         "I2 LOCK: test-and-set spin lock, CAS Acquire on acquire, Release store on drop"
       ],
-      "class": "none",
-      "loom": [],
+      "class": "A",
+      "loom": [
+        "tests/loom_fallback_actual.rs"
+      ],
       "pins": [],
       "registry": [],
-      "real_under_loom": "unknown (G0 finding: no loom model exists)",
-      "decision": "new-model",
+      "real_under_loom": "yes: tests/loom_fallback_actual.rs compiles fallback.rs onto per-execution loom stand-ins for its statics (sync names through super)",
+      "decision": "ghost",
       "phase": "G6",
-      "reason": "G0 finding: protocol with Acquire/Release pairs and no loom/shadow model; covered today only by r6_*/con01_* integration tests"
+      "reason": "G6d: new actual-source loom model; HeapCore stand-in holds a loom cell every closure writes, so a heap access not ordered by READY or by the lock is a causality violation; ghost events fallback/init-won and fallback/held; R1 on every INIT_STATE / LOCK site, R3 write before READY, R4 try_with_heap only after READY, R6 on the events."
     },
     {
       "id": "P20",
@@ -4490,6 +4492,422 @@
         "tests/loom_exact_shard_actual.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p21_ghost_release"
+    },
+    {
+      "id": "fallback/init-cas",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "heap_ptr_impl",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "^INIT_STATE$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "INIT_STATE",
+        "CAS",
+        "initialiser",
+        "Acquire"
+      ],
+      "reason": "exactly one first caller wins the UNINIT -> INITIALIZING CAS and becomes the sole initialiser",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_init_cas"
+    },
+    {
+      "id": "fallback/publish-release",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "heap_ptr_impl",
+      "site": {
+        "name": "store",
+        "receiver": "^INIT_STATE$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 2,
+      "terms": [
+        "READY",
+        "Release",
+        "publish",
+        "rollback"
+      ],
+      "reason": "the initialiser publishes READY (or rolls back to UNINIT after OOM) with Release, so a reader that acquires READY sees the written heap",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "relaxed-ready",
+          "file": "src/global/fallback.rs",
+          "from": "                    INIT_STATE.store(FallbackInitState::Ready as u8, Ordering::Release);\n",
+          "to": "                    INIT_STATE.store(FallbackInitState::Ready as u8, Ordering::Relaxed);\n",
+          "checker": {
+            "name": "loom loom_fallback_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_fallback_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_publish_release"
+    },
+    {
+      "id": "fallback/ready-acquire",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "heap_ptr_impl",
+      "site": {
+        "name": "load",
+        "receiver": "^INIT_STATE$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 2,
+      "terms": [
+        "READY",
+        "Acquire",
+        "fast path",
+        "waiter"
+      ],
+      "reason": "the fast path and the losers wait loop read the state with Acquire, pairing with the READY publication",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_ready_acquire"
+    },
+    {
+      "id": "fallback/try-ready-acquire",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "try_with_heap",
+      "site": {
+        "name": "load",
+        "receiver": "^INIT_STATE$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "READY",
+        "Acquire",
+        "try_with_heap",
+        "heap"
+      ],
+      "reason": "try_with_heap reaches the heap only after an Acquire load observed READY",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_try_ready_acquire"
+    },
+    {
+      "id": "fallback/rollback-release",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "InitStateGuard::drop",
+      "site": {
+        "name": "store",
+        "receiver": "^INIT_STATE$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "rollback",
+        "UNINIT",
+        "Release",
+        "unwind"
+      ],
+      "reason": "an unwinding initialiser rolls the state back to UNINIT with Release so losers re-race instead of spinning",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_rollback_release"
+    },
+    {
+      "id": "fallback/lock-acquire",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "LockGuard::acquire",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "^LOCK$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "LOCK",
+        "Acquire",
+        "CAS",
+        "closure"
+      ],
+      "reason": "the fallback lock is taken by a CAS with Acquire on success, ordering this closure after the previous holder",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "relaxed-lock",
+          "file": "src/global/fallback.rs",
+          "from": "            if LOCK\n                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)",
+          "to": "            if LOCK\n                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)",
+          "checker": {
+            "name": "loom loom_fallback_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_fallback_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_lock_acquire"
+    },
+    {
+      "id": "fallback/lock-try",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "LockGuard::try_acquire",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "^LOCK$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "LOCK",
+        "Acquire",
+        "CAS",
+        "try"
+      ],
+      "reason": "the non-waiting acquire takes the lock with the same Acquire CAS",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_lock_try"
+    },
+    {
+      "id": "fallback/unlock-release",
+      "kind": "R1",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "LockGuard::drop",
+      "site": {
+        "name": "store",
+        "receiver": "^LOCK$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "LOCK",
+        "Release",
+        "holder",
+        "closure"
+      ],
+      "reason": "the guard drop releases the lock with a Release store, publishing the closure heap writes to the next holder",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "relaxed-unlock",
+          "file": "src/global/fallback.rs",
+          "from": "        LOCK.store(false, Ordering::Release);\n",
+          "to": "        LOCK.store(false, Ordering::Relaxed);\n",
+          "checker": {
+            "name": "loom loom_fallback_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_fallback_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_unlock_release"
+    },
+    {
+      "id": "fallback/write-before-ready",
+      "kind": "R3",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "heap_ptr_impl",
+      "before": {
+        "name": "write"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^INIT_STATE$",
+        "args": "Ready"
+      },
+      "nested_before": true,
+      "terms": [
+        "heap",
+        "write",
+        "READY",
+        "before"
+      ],
+      "reason": "the heap is written into FALLBACK before READY is published",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_write_before_ready"
+    },
+    {
+      "id": "fallback/try-requires-ready",
+      "kind": "R4",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "try_with_heap",
+      "action": {
+        "name": "try_acquire"
+      },
+      "guard_return": "^INIT_STATE\\.load\\(Ordering::Acquire\\)!=",
+      "terms": [
+        "READY",
+        "try_with_heap",
+        "return",
+        "heap"
+      ],
+      "reason": "try_with_heap takes the lock and the heap only after the early return for a state that is not READY",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_try_requires_ready"
+    },
+    {
+      "id": "fallback/ghost-init",
+      "kind": "R6",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "heap_ptr_impl",
+      "ghost": "fallback/init-won",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "initialiser",
+        "won",
+        "exactly one"
+      ],
+      "reason": "the CAS winner records fallback/init-won; the loom model checks one initialiser per published heap",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_ghost_init"
+    },
+    {
+      "id": "fallback/ghost-acquired",
+      "kind": "R6",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "LockGuard::acquired",
+      "ghost": "fallback/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "acquire",
+        "released"
+      ],
+      "reason": "every acquired guard records fallback/held +1; the ledger checks each acquire is released once",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_ghost_acquired"
+    },
+    {
+      "id": "fallback/ghost-release",
+      "kind": "R6",
+      "protocol": "P19",
+      "file": "src/global/fallback.rs",
+      "fn": "LockGuard::drop",
+      "ghost": "fallback/held",
+      "count": 1,
+      "terms": [
+        "ghost",
+        "held",
+        "release",
+        "acquire"
+      ],
+      "reason": "the guard drop records fallback/held -1, the other side of the acquire ledger",
+      "tests": [
+        "tests/loom_fallback_actual.rs"
+      ],
+      "mutants": [
+        {
+          "id": "release-without-ghost-event",
+          "file": "src/global/fallback.rs",
+          "from": "        crate::ghost::ghost_event!(\"fallback/held\", 0, -1);\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_fallback_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_fallback_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p19_ghost_release"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",
