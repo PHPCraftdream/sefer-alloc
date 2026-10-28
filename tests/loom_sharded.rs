@@ -52,6 +52,9 @@ use loom::thread;
 /// Sentinel for "vacant" (the null pointer in the real `AtomicSlot`). A reader
 /// that loads this resolves to `None` (I2 — tombstone).
 const VACANT: usize = 0;
+// The production eviction CAS orderings (success, failure), bound by R8.
+// ghost-bind: epoch/evict-cas
+const EVICT_CAS: (Ordering, Ordering) = (Ordering::AcqRel, Ordering::Acquire);
 
 /// A value-tag distinguishing the two publications. The owner publishes `PUB0`
 /// at gen 0 and `PUB1` at gen 1; a stale gen-0 remover must NEVER swap out
@@ -77,6 +80,7 @@ impl Slot {
     /// Mirror of `AtomicSlot::install`: store the value (Release). Generation
     /// is unchanged — a handle minted now carries the current generation.
     fn install(&self, value: usize) {
+        // ghost-bind: epoch/install-release
         self.value.store(value, Ordering::Release);
     }
 
@@ -89,17 +93,15 @@ impl Slot {
     /// - `None` on CAS failure (stale handle → no-op).
     fn try_evict_at(&self, expected_gen: u64) -> Option<usize> {
         let next = expected_gen + 1;
-        let cas = self.generation.compare_exchange(
-            expected_gen,
-            next,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        );
+        let cas = self
+            .generation
+            .compare_exchange(expected_gen, next, EVICT_CAS.0, EVICT_CAS.1);
         if cas.is_err() {
             return None;
         }
         // CAS won: swap the value. The swapped value MUST have been published
         // at `expected_gen` — that is the invariant the test asserts.
+        // ghost-bind: epoch/evict-swap
         Some(self.value.swap(VACANT, Ordering::AcqRel))
     }
 
@@ -127,11 +129,14 @@ impl Slot {
 
     /// Mirror of `AtomicSlot::read_with` (seqlock validation) at `expected_gen`.
     fn read_with(&self, expected_gen: u64) -> Option<usize> {
+        // ghost-bind: epoch/read-generation
         let g1 = self.generation.load(Ordering::Acquire);
         if g1 != expected_gen {
             return None;
         }
+        // ghost-bind: epoch/read-value
         let v = self.value.load(Ordering::Acquire);
+        // ghost-bind: epoch/read-generation
         let g2 = self.generation.load(Ordering::Acquire);
         if g2 != g1 {
             return None;

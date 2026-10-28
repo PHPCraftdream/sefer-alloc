@@ -52,6 +52,9 @@ use loom::thread;
 /// Sentinel for "vacant" (the null pointer in the real `AtomicSlot`). A reader
 /// that loads this resolves to `None` (I2 — tombstone).
 const VACANT: usize = 0;
+// The production eviction CAS orderings (success, failure), bound by R8.
+// ghost-bind: epoch/evict-cas
+const EVICT_CAS: (Ordering, Ordering) = (Ordering::AcqRel, Ordering::Acquire);
 
 /// Abstract publication state inspired by a single `AtomicSlot<T>`:
 /// a generation counter and a value word. We use `AtomicUsize` for the value
@@ -76,6 +79,7 @@ impl PubState {
     /// Abstract `AtomicSlot::install`: store the value (Release). Generation
     /// is unchanged — a handle minted now carries the current generation.
     fn install(&self, value: usize) {
+        // ghost-bind: epoch/install-release
         self.value.store(value, Ordering::Release);
     }
 
@@ -87,14 +91,10 @@ impl PubState {
     fn evict(&self, expected_gen: u64) {
         if self
             .generation
-            .compare_exchange(
-                expected_gen,
-                expected_gen + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
+            .compare_exchange(expected_gen, expected_gen + 1, EVICT_CAS.0, EVICT_CAS.1)
             .is_ok()
         {
+            // ghost-bind: epoch/evict-swap
             self.value.swap(VACANT, Ordering::AcqRel);
         }
     }
@@ -103,11 +103,14 @@ impl PubState {
     /// load gen (g1) → load value → re-load gen (g2); accept only if
     /// `g1 == expected_gen && g1 == g2`. Returns the resolved value or `None`.
     fn read_with(&self, expected_gen: u64) -> Option<usize> {
+        // ghost-bind: epoch/read-generation
         let g1 = self.generation.load(Ordering::Acquire);
         if g1 != expected_gen {
             return None;
         }
+        // ghost-bind: epoch/read-value
         let v = self.value.load(Ordering::Acquire);
+        // ghost-bind: epoch/read-generation
         let g2 = self.generation.load(Ordering::Acquire);
         if g2 != g1 {
             return None;

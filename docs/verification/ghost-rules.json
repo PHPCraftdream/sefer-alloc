@@ -366,7 +366,7 @@
       "real_under_loom": "no: crossbeam-epoch",
       "decision": "keep+R8",
       "phase": "G8",
-      "reason": "permanent shadow"
+      "reason": "G8: permanent shadow (loom cannot run crossbeam-epoch); R1 pins every AtomicSlot install / eviction / seqlock-read ordering in hand.rs and R8 binds the loom_epoch model lines to them."
     },
     {
       "id": "P15",
@@ -387,7 +387,7 @@
       "real_under_loom": "no: crossbeam-epoch",
       "decision": "keep+R8",
       "phase": "G8",
-      "reason": "permanent shadow"
+      "reason": "G8: permanent shadow; R1 pins the shard claim / bind CAS, the release store and the token-death Release / Acquire pair in sharded_region.rs; R8 binds the loom_sharded generation-CAS model lines to the AtomicSlot rules."
     },
     {
       "id": "P16",
@@ -5198,6 +5198,342 @@
         "crates/tagged-index-stack/tests/loom_aba.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p18_head_new_twin"
+    },
+    {
+      "id": "epoch/install-release",
+      "kind": "R1",
+      "protocol": "P14",
+      "file": "src/concurrent/epoch/hand.rs",
+      "fn": "AtomicSlot::install",
+      "site": {
+        "name": "store",
+        "receiver": "value$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "install",
+        "value",
+        "Release",
+        "publish"
+      ],
+      "reason": "install publishes the value with Release; a reader that acquires it sees the installed object",
+      "tests": [
+        "tests/loom_epoch.rs",
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_install_release"
+    },
+    {
+      "id": "epoch/evict-cas",
+      "kind": "R1",
+      "protocol": "P14",
+      "file": "src/concurrent/epoch/hand.rs",
+      "fn": "AtomicSlot::try_evict_at",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "generation$"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "evict",
+        "generation",
+        "CAS",
+        "AcqRel"
+      ],
+      "reason": "eviction bumps the generation with an AcqRel CAS from the expected generation; a stale evictor fails and leaves the value",
+      "tests": [
+        "tests/loom_epoch.rs",
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_evict_cas"
+    },
+    {
+      "id": "epoch/evict-swap",
+      "kind": "R1",
+      "protocol": "P14",
+      "file": "src/concurrent/epoch/hand.rs",
+      "fn": "AtomicSlot::try_evict_at",
+      "site": {
+        "name": "swap",
+        "receiver": "value$"
+      },
+      "orderings": [
+        "AcqRel"
+      ],
+      "count": 1,
+      "terms": [
+        "evict",
+        "value",
+        "swap",
+        "AcqRel"
+      ],
+      "reason": "only the winning evictor swaps the value out with AcqRel and takes ownership of it",
+      "tests": [
+        "tests/loom_epoch.rs",
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_evict_swap"
+    },
+    {
+      "id": "epoch/read-generation",
+      "kind": "R1",
+      "protocol": "P14",
+      "file": "src/concurrent/epoch/hand.rs",
+      "fn": "AtomicSlot::read_with",
+      "site": {
+        "name": "load",
+        "receiver": "generation$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 2,
+      "terms": [
+        "seqlock",
+        "generation",
+        "Acquire",
+        "recheck"
+      ],
+      "reason": "the reader loads the generation with Acquire before and after the value (seqlock recheck)",
+      "tests": [
+        "tests/loom_epoch.rs",
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_read_generation"
+    },
+    {
+      "id": "epoch/read-value",
+      "kind": "R1",
+      "protocol": "P14",
+      "file": "src/concurrent/epoch/hand.rs",
+      "fn": "AtomicSlot::read_with",
+      "site": {
+        "name": "load",
+        "receiver": "value$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "seqlock",
+        "value",
+        "Acquire",
+        "reader"
+      ],
+      "reason": "the reader loads the value with Acquire between the two generation loads",
+      "tests": [
+        "tests/loom_epoch.rs",
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_read_value"
+    },
+    {
+      "id": "epoch/model-bind",
+      "kind": "R8",
+      "protocol": "P14",
+      "model": "tests/loom_epoch.rs",
+      "binds": [
+        {
+          "rule": "epoch/install-release"
+        },
+        {
+          "rule": "epoch/evict-cas"
+        },
+        {
+          "rule": "epoch/evict-swap"
+        },
+        {
+          "rule": "epoch/read-generation"
+        },
+        {
+          "rule": "epoch/read-value"
+        }
+      ],
+      "terms": [
+        "model",
+        "AcqRel",
+        "Acquire",
+        "Release"
+      ],
+      "reason": "the epoch shadow model (loom cannot run crossbeam-epoch) keeps the production orderings of install, eviction and the seqlock read",
+      "tests": [
+        "tests/loom_epoch.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p14_model_bind"
+    },
+    {
+      "id": "sharded/model-bind",
+      "kind": "R8",
+      "protocol": "P15",
+      "model": "tests/loom_sharded.rs",
+      "binds": [
+        {
+          "rule": "epoch/install-release"
+        },
+        {
+          "rule": "epoch/evict-cas"
+        },
+        {
+          "rule": "epoch/evict-swap"
+        },
+        {
+          "rule": "epoch/read-generation"
+        },
+        {
+          "rule": "epoch/read-value"
+        }
+      ],
+      "terms": [
+        "model",
+        "AcqRel",
+        "Acquire",
+        "Release"
+      ],
+      "reason": "the sharded shadow model of the generation-CAS eviction keeps the production AtomicSlot orderings",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_model_bind"
+    },
+    {
+      "id": "sharded/claim-cas",
+      "kind": "R1",
+      "protocol": "P15",
+      "file": "src/concurrent/sharded/sharded_region.rs",
+      "fn": "ShardedRegion::claim_or_get_shard",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "occupied$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "shard",
+        "claim",
+        "CAS",
+        "Acquire"
+      ],
+      "reason": "a shard is claimed by a CAS with Acquire on success, pairing with the previous token release",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_claim_cas"
+    },
+    {
+      "id": "sharded/bind-cas",
+      "kind": "R1",
+      "protocol": "P15",
+      "file": "src/concurrent/sharded/sharded_region.rs",
+      "fn": "ShardedRegion::bind_current_thread_to_shard",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "slots\\["
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "shard",
+        "bind",
+        "CAS",
+        "Acquire"
+      ],
+      "reason": "binding the current thread claims its shard with the same Acquire CAS",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_bind_cas"
+    },
+    {
+      "id": "sharded/release-store",
+      "kind": "R1",
+      "protocol": "P15",
+      "file": "src/concurrent/sharded/sharded_region.rs",
+      "fn": "ErasedGuard::drop",
+      "site": {
+        "name": "store",
+        "receiver": "occupied$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "shard",
+        "release",
+        "Release",
+        "token"
+      ],
+      "reason": "a dying token releases its shard with Release, publishing its shard writes to the next claimer",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_release_store"
+    },
+    {
+      "id": "sharded/death-release",
+      "kind": "R1",
+      "protocol": "P15",
+      "file": "src/concurrent/sharded/sharded_region.rs",
+      "fn": "TokenBlock::drop",
+      "site": {
+        "name": "fetch_add",
+        "receiver": "^TOKEN_BACKING_DEATHS$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "token",
+        "death",
+        "Release",
+        "prune"
+      ],
+      "reason": "a token block death is counted with Release after its claims are released; claimers prune with Acquire",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_death_release"
+    },
+    {
+      "id": "sharded/prune-acquire",
+      "kind": "R1",
+      "protocol": "P15",
+      "file": "src/concurrent/sharded/sharded_region.rs",
+      "fn": "prune_dead_claims",
+      "site": {
+        "name": "load",
+        "receiver": "^TOKEN_BACKING_DEATHS$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "token",
+        "death",
+        "Acquire",
+        "prune"
+      ],
+      "reason": "pruning reads the death epoch with Acquire, pairing with the Release death count",
+      "tests": [
+        "tests/loom_sharded.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p15_prune_acquire"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

@@ -214,7 +214,7 @@ Prod: `src/concurrent/epoch/hand.rs`, `src/concurrent/epoch/epoch_region.rs`.
 - I2 eviction CASes generation AcqRel then swaps value AcqRel
 - loom: `tests/loom_epoch.rs`
 
-Decision: **keep+R8** — permanent shadow
+Decision: **keep+R8** — G8: permanent shadow (loom cannot run crossbeam-epoch); R1 pins every AtomicSlot install / eviction / seqlock-read ordering in hand.rs and R8 binds the loom_epoch model lines to them.
 
 ### P15 — sharded region generation-CAS eviction, token blocks
 
@@ -224,7 +224,7 @@ Prod: `src/concurrent/sharded/sharded_region.rs`.
 - I2 TOKEN_BACKING_DEATHS is bumped Release after a token block dies; claimers prune with Acquire
 - loom: `tests/loom_sharded.rs`
 
-Decision: **keep+R8** — permanent shadow
+Decision: **keep+R8** — G8: permanent shadow; R1 pins the shard claim / bind CAS, the release store and the token-death Release / Acquire pair in sharded_region.rs; R8 binds the loom_sharded generation-CAS model lines to the AtomicSlot rules.
 
 ### P16 — summary-hint C''' (not shipped)
 
