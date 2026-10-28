@@ -87,6 +87,7 @@ const AA_HALFWIDTH_MAX = 0.01; // 95 % CI half-width ≤ 1 %
 const KERNEL_NAMES = [
   "pair16", "pair64", "pair_rt", "bulk64", "bulk16k",
   "churn16", "churn64", "churn256", "churn1024", "vec512", "larson",
+  "bulk64k", "bulk16k_32",
 ];
 
 // ── mulberry32 (seeded bootstrap resampling) ────────────────────────────────
@@ -183,7 +184,16 @@ const IDENTITY_FIELDS = [
   "rt_granule", "portion_seed_g", "larson_align", "vec_align", "churn_align",
   "pair_align", "warmup_portions", "kernels",
 ];
+// G1-K7 kernels' header constants: absent in raws written before them, so
+// required only to agree across raws (and present when those kernels run).
+const OPTIONAL_IDENTITY_FIELDS = [
+  "bulk64k_n", "bulk64k_passes", "bulk16k32_n", "bulk16k32_passes",
+];
 const id0 = raws.aa_sefer.header;
+for (const f of OPTIONAL_IDENTITY_FIELDS)
+  for (const m of ["aa_mi", "ab"])
+    if (JSON.stringify(id0[f]) !== JSON.stringify(raws[m].header[f]))
+      throw new Error(`identity MISMATCH on ${f}: aa_sefer=${JSON.stringify(id0[f])} ${m}=${JSON.stringify(raws[m].header[f])}`);
 for (const f of IDENTITY_FIELDS) {
   if (id0[f] === undefined)
     throw new Error(`aa_sefer header: REQUIRED identity field ${f} is MISSING`);
@@ -246,6 +256,8 @@ const EXPECTED_CALLS = {
   pair_rt: 2 * id0.pair_ops,
   bulk64: 2 * id0.bulk64_n * id0.bulk64_passes,
   bulk16k: 2 * id0.bulk16k_n * id0.bulk16k_passes,
+  bulk64k: 2 * id0.bulk64k_n * id0.bulk64k_passes,
+  bulk16k_32: 2 * id0.bulk16k32_n * id0.bulk16k32_passes,
   churn16: 2 * id0.churn_ops,
   churn64: 2 * id0.churn_ops,
   churn256: 2 * id0.churn_ops,
@@ -253,6 +265,9 @@ const EXPECTED_CALLS = {
   vec512: vecPerCycle * id0.vec_cycles,
   larson: 2 * id0.larson_ops,
 };
+// Raws written before the G1-K7 kernels carry no constants for them.
+if (id0.bulk64k_n === undefined) delete EXPECTED_CALLS.bulk64k;
+if (id0.bulk16k32_n === undefined) delete EXPECTED_CALLS.bulk16k_32;
 for (const kn of Object.keys(EXPECTED_CALLS)) {
   if (!Number.isSafeInteger(EXPECTED_CALLS[kn]))
     throw new Error(`analytic expectation for ${kn} is not a safe integer`);
