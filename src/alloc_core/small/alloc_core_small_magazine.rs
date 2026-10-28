@@ -563,6 +563,36 @@ impl AllocCore {
     #[inline]
     #[allow(unsafe_code)] // Caller-pointer contract, unchanged production body.
     pub(crate) unsafe fn flush_class_internal(&mut self, class_idx: usize, blocks: &[*mut u8]) {
+        self.flush_class_impl::<true>(class_idx, blocks);
+    }
+
+    /// Magazine-resident flush: [`flush_class_internal`](Self::flush_class_internal)
+    /// without its per-block span/state-byte re-checks (GR-1).
+    ///
+    /// # Safety
+    ///
+    /// Every entry must be a block currently resident in this heap's magazine
+    /// for `class_idx` (invariant I-MAG): a block start of class `class_idx`
+    /// in a live small segment of this core, inside `[payload_start, bump)`,
+    /// whose state byte is `encode(class_idx, MAG)`. Every magazine entry
+    /// passed the free-time M2 oracles (`small_free_guard`) or came from a
+    /// refill/batch fill that committed MAG, and MAG blocks are never on a
+    /// free list and never issued, so the re-checks are always true here;
+    /// ghost check `mag-flush/mag-resident` asserts it in loom/miri/kani
+    /// builds. A slice that can hold LIVE blocks or in-call duplicates (the
+    /// batch-free staging buffer) must use `flush_class_internal`.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    #[inline]
+    #[allow(unsafe_code)] // Caller contract: magazine-resident blocks only (I-MAG).
+    pub(crate) unsafe fn flush_magazine_internal(&mut self, class_idx: usize, blocks: &[*mut u8]) {
+        self.flush_class_impl::<false>(class_idx, blocks);
+    }
+
+    /// Shared body of the two flush entry points; `CHECKED` keeps the
+    /// per-block re-checks (see `flush_run`).
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    #[inline]
+    fn flush_class_impl<const CHECKED: bool>(&mut self, class_idx: usize, blocks: &[*mut u8]) {
         // L-4 (UBFIX-11): a per-CALL record of segment bases already recycled
         // (decommitted-and-released OR pooled) by an EARLIER run within this
         // same `flush_class` invocation. `flush_class` groups `blocks` into
@@ -628,7 +658,7 @@ impl AllocCore {
             if !already_recycled {
                 if let Some(base) = self.table.canonical_base_of(candidate) {
                     let (run_end, recycled_now) =
-                        self.flush_run(class_idx, base, candidate, blocks, i);
+                        self.flush_run::<CHECKED>(class_idx, base, candidate, blocks, i);
                     if recycled_now && recycled_n < RECYCLED_CAP {
                         recycled_bases[recycled_n] = candidate;
                         recycled_n += 1;
@@ -668,7 +698,7 @@ impl AllocCore {
     #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline]
     #[must_use]
-    fn flush_run(
+    fn flush_run<const CHECKED: bool>(
         &mut self,
         class_idx: usize,
         base: *mut u8,
@@ -732,22 +762,37 @@ impl AllocCore {
             }
             end += 1;
             let off = (ptr as usize - base as usize) as u32;
-            // Guards 0+1 (per-block, split-n8c): the hoisted span check.
-            // `off < payload_start` wraps to a huge value ≥ span; `off >= bump`
-            // yields ≥ span. With a corrupted `bump < payload_start`, span is
-            // 0 and every offset is rejected — same strength as the old pair.
-            if (off as usize).wrapping_sub(payload_start) >= span {
-                rejected += 1;
-                continue;
-            }
-            // Guard 2 (per-block): accept only a currently-issued block of
-            // this class — its byte must carry this class's class field and
-            // a LIVE or MAG state (B4 (в); the zero/unissued byte, a foreign
-            // class, and an already-FREE block are all rejected/skipped).
-            let sb = meta.state_byte().read(off);
-            if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
-                rejected += 1;
-                continue;
+            if CHECKED {
+                // Guards 0+1 (per-block, split-n8c): the hoisted span check.
+                // `off < payload_start` wraps to a huge value ≥ span; `off >= bump`
+                // yields ≥ span. With a corrupted `bump < payload_start`, span is
+                // 0 and every offset is rejected — same strength as the old pair.
+                if (off as usize).wrapping_sub(payload_start) >= span {
+                    rejected += 1;
+                    continue;
+                }
+                // Guard 2 (per-block): accept only a currently-issued block of
+                // this class — its byte must carry this class's class field and
+                // a LIVE or MAG state (B4 (в); the zero/unissued byte, a foreign
+                // class, and an already-FREE block are all rejected/skipped).
+                let sb = meta.state_byte().read(off);
+                if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
+                    rejected += 1;
+                    continue;
+                }
+            } else {
+                // GR-1: I-MAG makes both re-checks true; checked in ghost builds.
+                crate::ghost::ghost_assert!(
+                    "mag-flush/mag-resident",
+                    (off as usize).wrapping_sub(payload_start) < span
+                        && meta.state_byte().read(off)
+                            == crate::alloc_core::state_byte::StateByte::encode(
+                                class_idx,
+                                crate::alloc_core::state_byte::StateByte::MAG
+                            ),
+                    "magazine flush of a block that is not MAG-resident in class {}",
+                    class_idx
+                );
             }
             // `ptr` identifies the offset only. Link through the stored
             // reservation root, which covers the entire free-list word.

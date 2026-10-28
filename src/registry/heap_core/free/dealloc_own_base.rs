@@ -617,10 +617,11 @@ impl HeapCore {
             // once here via a one-element batch, same guarantee
             // as the overflow path's flush of resident slots
             // below.
+            crate::ghost::ghost_event!("mag-flush/mag-resident", 2, 1);
             #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
             unsafe {
                 self.core
-                    .flush_class_internal(c, core::slice::from_ref(&evicted));
+                    .flush_magazine_internal(c, core::slice::from_ref(&evicted));
             }
             // The current block takes the evicted slot; `count`
             // is unchanged — the magazine still holds exactly
@@ -667,10 +668,11 @@ impl HeapCore {
         // valid live small-class-`c` allocation owned by this core's
         // magazine (just freed into it under the alloc-xthread/fastbin
         // path); each is returned to the substrate exactly once here.
+        crate::ghost::ghost_event!("mag-flush/mag-resident", 1, FLUSH_N);
         #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
         unsafe {
             self.core
-                .flush_class_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
+                .flush_magazine_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
         };
         // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
         let remaining = TCACHE_CAP - FLUSH_N;

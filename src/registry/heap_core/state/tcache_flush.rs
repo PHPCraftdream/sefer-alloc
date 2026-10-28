@@ -98,10 +98,11 @@ impl HeapCore {
                     // SAFETY (R6-MS-3): every slot in `slots[0..n]` is a valid live
                     // small-class-`c` allocation owned by this core's magazine; the
                     // teardown trim returns each to the substrate exactly once.
+                    crate::ghost::ghost_event!("mag-flush/mag-resident", 3, n);
                     #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
                     unsafe {
                         self.core
-                            .flush_class_internal(c, &self.tcache.classes[c].slots[0..n])
+                            .flush_magazine_internal(c, &self.tcache.classes[c].slots[0..n])
                     };
                     self.tcache.classes[c].count = 0;
                     // R13-3 (task #273): every slot in this class's magazine was just
