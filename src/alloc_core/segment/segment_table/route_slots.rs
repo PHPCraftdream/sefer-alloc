@@ -316,6 +316,13 @@ impl RoutedIssueRun<'_> {
         }
     }
 
+    /// Debug witness: the start granule at `offset` holds this run's class
+    /// code (see [`IssueRun::code_present`](super::issue_transaction::IssueRun::code_present)).
+    #[cfg(debug_assertions)]
+    pub(super) fn code_present(&self, offset: u32) -> bool {
+        self.classes.encoded(offset as usize / MIN_BLOCK) == self.class + 1
+    }
+
     /// Infallible per-block half: one Release class store. On a leaf CHANGE
     /// (non-monotonic freelist offsets, or a skipped prepare) the leaf is
     /// re-resolved first, and a never-promoted leaf fatals — a skipped

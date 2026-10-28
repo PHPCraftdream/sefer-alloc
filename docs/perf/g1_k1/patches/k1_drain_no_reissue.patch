@@ -1,0 +1,103 @@
+# G1-K1: try_drain_freelist_batch stops re-storing the unchanged ClassLeaves class code per drained block (no prepare_for/commit); once-per-batch route guards kept; debug witness that the code is present.
+diff --git a/src/alloc_core/segment/segment_table/issue_transaction.rs b/src/alloc_core/segment/segment_table/issue_transaction.rs
+index 02aa5721..98e93d75 100644
+--- a/src/alloc_core/segment/segment_table/issue_transaction.rs
++++ b/src/alloc_core/segment/segment_table/issue_transaction.rs
+@@ -193,6 +193,18 @@ impl<'a> IssueRun<'a> {
+         true
+     }
+ 
++    /// Debug witness for drain (G1-K1): the block at `offset` already holds
++    /// this run's class code. Unrouted: no codes exist, always `true`.
++    #[cfg(debug_assertions)]
++    pub(crate) fn code_present(&self, offset: u32) -> bool {
++        #[cfg(feature = "alloc-global")]
++        if let Some(inner) = &self.routed {
++            return inner.code_present(offset);
++        }
++        let _ = offset;
++        true
++    }
++
+     /// Infallible per-block half: one Release class store on the routed path,
+     /// a documented no-op unrouted.
+     #[cfg_attr(not(debug_assertions), inline(always))]
+diff --git a/src/alloc_core/segment/segment_table/route_slots.rs b/src/alloc_core/segment/segment_table/route_slots.rs
+index 53d36fc5..5a14f718 100644
+--- a/src/alloc_core/segment/segment_table/route_slots.rs
++++ b/src/alloc_core/segment/segment_table/route_slots.rs
+@@ -316,6 +316,13 @@ impl RoutedIssueRun<'_> {
+         }
+     }
+ 
++    /// Debug witness: the start granule at `offset` holds this run's class
++    /// code (see [`IssueRun::code_present`](super::issue_transaction::IssueRun::code_present)).
++    #[cfg(debug_assertions)]
++    pub(super) fn code_present(&self, offset: u32) -> bool {
++        self.classes.encoded(offset as usize / MIN_BLOCK) == self.class + 1
++    }
++
+     /// Infallible per-block half: one Release class store. On a leaf CHANGE
+     /// (non-monotonic freelist offsets, or a skipped prepare) the leaf is
+     /// re-resolved first, and a never-promoted leaf fatals — a skipped
+diff --git a/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs b/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+index 7058ff28..00381849 100644
+--- a/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
++++ b/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+@@ -537,9 +537,7 @@ impl AllocCore {
+         let mut meta = SegmentMeta::new(segment);
+         let mut bt = meta.bin_table();
+         // Run-level protocol (B4-R3): fatal route guards run once in
+-        // `prepare_small_issue_run`; per-block `prepare_for` promotes only on
+-        // a leaf CHANGE, `run.commit` is one Release store (see `IssueRun`);
+-        // `issue_small` re-derives the id in all builds.
++        // `prepare_small_issue_run`; drain stores no class code (G1-K1).
+ 
+         {
+             // Read the head ONCE.
+@@ -547,12 +545,14 @@ impl AllocCore {
+             if head_off == FREE_LIST_NULL {
+                 return Ok(0);
+             }
+-            let mut run = self.table.prepare_small_issue_run(segment, class_idx);
++            // G1-K1: the run is built for its once-per-batch route guards only.
++            // A bin-`c` block was issued as class `c` before it was freed, so
++            // its start granule already holds class code `c + 1`; drain does
++            // not re-store it (carve, the first issue, does).
++            let run = self.table.prepare_small_issue_run(segment, class_idx);
+             // B2-R1: one pass. Each link is validated (fatal on corruption, as
+-            // before) and its leaf prepared BEFORE its block is committed; an
+-            // OOM on the first block is `Err` with nothing changed, an OOM
+-            // later stops the batch at that block (it stays the head, the
+-            // committed prefix is a normal short drain).
++            // before) before its block is committed. G1-K1: no leaf is
++            // prepared, so drain no longer fails on a spill OOM.
+             #[cfg(not(feature = "hardened"))]
+             let bounds =
+                 crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
+@@ -568,12 +568,11 @@ impl AllocCore {
+                 let Some(block_nn) = NonNull::new(block_ptr) else {
+                     break;
+                 };
+-                if !run.prepare_for(head_off) {
+-                    if k == 0 {
+-                        return Err(());
+-                    }
+-                    break;
+-                }
++                #[cfg(debug_assertions)]
++                debug_assert!(
++                    run.code_present(head_off),
++                    "bin block at offset {head_off} lacks class code {class_idx}"
++                );
+                 // Dependent load: block bodies are never written on the pop path.
+                 let next = Node::read_next(block_nn);
+                 #[cfg(feature = "hardened")]
+@@ -611,7 +610,6 @@ impl AllocCore {
+                 // B4 (в)/S1: issue = commit `issue_state` (LIVE, or MAG when
+                 // the caller parks the batch in a magazine).
+                 meta.state_byte().write(head_off, class_idx, issue_state);
+-                run.commit(head_off);
+                 out[k] = block_ptr;
+                 k += 1;
+                 head_off = next_off;
