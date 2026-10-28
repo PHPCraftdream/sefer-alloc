@@ -1,0 +1,41 @@
+E0_METADATA {"id":"R5b-10","head":"51d658cf81411d866b296dc4a98f49aa1b39ce82","tree":"c581c190368f00e0af2905e7ed415119a4d4da82","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (41089d07a 2026-10-27)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-28 for version 1.101.0-nightly (41089d07a 2026-10-27)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R5b-10","head":"51d658cf81411d866b296dc4a98f49aa1b39ce82","tree":"c581c190368f00e0af2905e7ed415119a4d4da82","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"Loom (--cfg loom --release)","recipe":"docs/evidence/reverify-recipes/R5b-10.json","recipe_sha256":"13cdd1e93dd13844f4a0aa3b9a2011584c2b89e8558069a7897c04b12b2ed9b0","registry_activation_hash":"de55ce993d6f955c2762868db3d6870fc8b1cc5fc3a1348920c445ad5b3413e6"}
+
+E0_STEP {"id":"R5b-10","kind":"baseline","name":"loom_terminal_owner_drain target","argv":["cargo","test","--release","--features","alloc-core,alloc-xthread,tagged-index-stack/loom","--test","loom_terminal_owner_drain"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["2 passed; 0 failed","test unpublished_and_detached_instances_hold_the_reservation_credit ... ok","test negative_producer_retirement_allows_premature_release - should panic ... ok"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: unused import: `alloc_core::FOREIGN_OR_UNROUTABLE_FREES`[0m
+   [1m[94m--> [0msrc/alloc_core/mod.rs:175:16
+    [1m[94m|[0m
+[1m[94m175[0m [1m[94m|[0m pub(crate) use alloc_core::FOREIGN_OR_UNROUTABLE_FREES;
+    [1m[94m|[0m                [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: method `reclaim_large_segment` is never used[0m
+   [1m[94m--> [0msrc/alloc_core/large/alloc_core_large.rs:765:19
+    [1m[94m|[0m
+[1m[94m127[0m [1m[94m|[0m impl AllocCore {
+    [1m[94m|[0m [1m[94m--------------[0m [1m[94mmethod in this implementation[0m
+[1m[94m...[0m
+[1m[94m765[0m [1m[94m|[0m     pub(crate) fn reclaim_large_segment(&mut self, base: *mut u8) {
+    [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `sefer-alloc` (lib) generated 2 warnings (run `cargo fix --lib -p sefer-alloc` to apply 1 suggestion)
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 6.22s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/loom_terminal_owner_drain.rs (target/release/deps/loom_terminal_owner_drain-1d10558a0bd40e75)
+
+running 2 tests
+test unpublished_and_detached_instances_hold_the_reservation_credit ... ok
+test negative_producer_retirement_allows_premature_release - should panic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiB1bnVzZWQgaW1wb3J0OiBgYWxsb2NfY29yZTo6Rk9SRUlHTl9PUl9VTlJPVVRBQkxFX0ZSRUVTYBtbMG0KICAgG1sxbRtbOTRtLS0+IBtbMG1zcmMvYWxsb2NfY29yZS9tb2QucnM6MTc1OjE2CiAgICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0xNzUbWzBtIBtbMW0bWzk0bXwbWzBtIHB1YihjcmF0ZSkgdXNlIGFsbG9jX2NvcmU6OkZPUkVJR05fT1JfVU5ST1VUQUJMRV9GUkVFUzsKICAgIBtbMW0bWzk0bXwbWzBtICAgICAgICAgICAgICAgIBtbMW0bWzMzbV5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXhtbMG0KICAgIBtbMW0bWzk0bXwbWzBtCiAgICAbWzFtG1s5NG09IBtbMG0bWzFtbm90ZRtbMG06IGAjW3dhcm4odW51c2VkX2ltcG9ydHMpXWAgKHBhcnQgb2YgYCNbd2Fybih1bnVzZWQpXWApIG9uIGJ5IGRlZmF1bHQKChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWV0aG9kIGByZWNsYWltX2xhcmdlX3NlZ21lbnRgIGlzIG5ldmVyIHVzZWQbWzBtCiAgIBtbMW0bWzk0bS0tPiAbWzBtc3JjL2FsbG9jX2NvcmUvbGFyZ2UvYWxsb2NfY29yZV9sYXJnZS5yczo3NjU6MTkKICAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTEyNxtbMG0gG1sxbRtbOTRtfBtbMG0gaW1wbCBBbGxvY0NvcmUgewogICAgG1sxbRtbOTRtfBtbMG0gG1sxbRtbOTRtLS0tLS0tLS0tLS0tLS0bWzBtIBtbMW0bWzk0bW1ldGhvZCBpbiB0aGlzIGltcGxlbWVudGF0aW9uG1swbQobWzFtG1s5NG0uLi4bWzBtChtbMW0bWzk0bTc2NRtbMG0gG1sxbRtbOTRtfBtbMG0gICAgIHB1YihjcmF0ZSkgZm4gcmVjbGFpbV9sYXJnZV9zZWdtZW50KCZtdXQgc2VsZiwgYmFzZTogKm11dCB1OCkgewogICAgG1sxbRtbOTRtfBtbMG0gICAgICAgICAgICAgICAgICAgG1sxbRtbMzNtXl5eXl5eXl5eXl5eXl5eXl5eXl5eG1swbQogICAgG1sxbRtbOTRtfBtbMG0KICAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYCNbd2FybihkZWFkX2NvZGUpXWAgKHBhcnQgb2YgYCNbd2Fybih1bnVzZWQpXWApIG9uIGJ5IGRlZmF1bHQKChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgc2VmZXItYWxsb2NgIChsaWIpIGdlbmVyYXRlZCAyIHdhcm5pbmdzIChydW4gYGNhcmdvIGZpeCAtLWxpYiAtcCBzZWZlci1hbGxvY2AgdG8gYXBwbHkgMSBzdWdnZXN0aW9uKQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlZmVyLWFsbG9jIHYwLjMuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MpChtbMW0bWzkybSAgICBGaW5pc2hlZBtbMG0gYHJlbGVhc2VgIHByb2ZpbGUgW29wdGltaXplZF0gdGFyZ2V0KHMpIGluIDYuMjJzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9sb29tX3Rlcm1pbmFsX293bmVyX2RyYWluLnJzICh0YXJnZXQvcmVsZWFzZS9kZXBzL2xvb21fdGVybWluYWxfb3duZXJfZHJhaW4tMWQxMDU1OGEwYmQ0MGU3NSkKCnJ1bm5pbmcgMiB0ZXN0cwp0ZXN0IHVucHVibGlzaGVkX2FuZF9kZXRhY2hlZF9pbnN0YW5jZXNfaG9sZF90aGVfcmVzZXJ2YXRpb25fY3JlZGl0IC4uLiBvawp0ZXN0IG5lZ2F0aXZlX3Byb2R1Y2VyX3JldGlyZW1lbnRfYWxsb3dzX3ByZW1hdHVyZV9yZWxlYXNlIC0gc2hvdWxkIHBhbmljIC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAyIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDBzCgo=
