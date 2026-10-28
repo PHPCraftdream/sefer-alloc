@@ -185,20 +185,19 @@
         "I1 every published offset is cut exactly once",
         "I2 publish is fetch_or AcqRel after the class store Release; cut is swap AcqRel"
       ],
-      "class": "A+S",
+      "class": "A",
       "loom": [
         "tests/loom_sidecar_bitmap_actual.rs",
-        "tests/loom_b4_scan_skip_empty_publish.rs",
-        "tests/loom_sidecar_bitmap.rs"
+        "tests/loom_b4_scan_skip_empty_publish.rs"
       ],
       "pins": [],
       "registry": [
         "R0-21"
       ],
       "real_under_loom": "yes (loom_sidecar_bitmap_actual.rs)",
-      "decision": "ghost + retire shadow",
+      "decision": "ghost",
       "phase": "G6",
-      "reason": "G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it)."
+      "reason": "G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it). G6c: the shadow loom_sidecar_bitmap.rs is retired; its negative control (a class published after the terminal bit) is the real-code mutant of sidecar/publish-requires-issue, red under loom_sidecar_bitmap_actual."
     },
     {
       "id": "P8",
@@ -211,18 +210,19 @@
         "I1 a leaf pointer is published (mixed store Release, present fetch_or Release) only after the leaf is fully initialised",
         "I2 a reader resolves a leaf only with Acquire and only while holding a route pin"
       ],
-      "class": "S",
+      "class": "A",
       "loom": [
-        "tests/loom_r11_small_sidecar.rs"
+        "tests/loom_sidecar_bitmap_actual.rs",
+        "tests/loom_b4_r1_pin_cache.rs"
       ],
       "pins": [],
       "registry": [
         "R0-22"
       ],
-      "real_under_loom": "partial: ClassLeaves allocates leaves through the OS seam (cfg(loom) twin, P18)",
+      "real_under_loom": "yes: loom_sidecar_bitmap_actual compiles leaf_classes.rs (its cfg(loom) leaf construction is P18) and loom_b4_r1_pin_cache the small sidecar behind real route pins",
       "decision": "translate",
       "phase": "G6",
-      "reason": "G6a: ClassLeaves ordered-op inventory per fn (R2 x6), initialise-before-publish and publish-before-presence in promote (R3), Drop walks presence bits (R3); R5 forbids the Dense constructor in production and keeps from_leaves in SmallSidecar::bitmap. Translation of the small-sidecar model follows in G6c."
+      "reason": "G6a: ClassLeaves ordered-op inventory per fn (R2 x6), initialise-before-publish and publish-before-presence in promote (R3), Drop walks presence bits (R3); R5 forbids the Dense constructor in production and keeps from_leaves in SmallSidecar::bitmap. Translation of the small-sidecar model follows in G6c. G6c: the shadow loom_r11_small_sidecar.rs is retired. Leaf publication runs as actual source in loom_sidecar_bitmap_actual (the prepare-race test): a Relaxed mixed-leaf store is a loom causality violation there (mutant on class-leaves/promote-inventory); the pin lifetime is loom_b4_r1_pin_cache O4 plus route-pin/last-ref-free (miri), which replace the shadow early-release control."
     },
     {
       "id": "P9",
@@ -2867,7 +2867,31 @@
         "tests/class_leaves_publication_miri.rs",
         "tests/loom_sidecar_bitmap_actual.rs"
       ],
-      "fixtures": "tests/ghost_lint_fixtures/p8_promote_inventory"
+      "fixtures": "tests/ghost_lint_fixtures/p8_promote_inventory",
+      "mutants": [
+        {
+          "id": "relaxed-leaf-publication",
+          "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+          "from": "        self.mixed[leaf].store(fresh, Ordering::Release);\n",
+          "to": "        self.mixed[leaf].store(fresh, Ordering::Relaxed);\n",
+          "checker": {
+            "name": "loom loom_sidecar_bitmap_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_sidecar_bitmap_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
     },
     {
       "id": "class-leaves/issue-inventory",
@@ -4082,6 +4106,52 @@
         }
       ],
       "fixtures": "tests/ghost_lint_fixtures/p9_ghost_claim"
+    },
+    {
+      "id": "sidecar/publish-requires-issue",
+      "kind": "R4",
+      "protocol": "P7",
+      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+      "fn": "SidecarBitmap::publish",
+      "action": {
+        "name": "fetch_or"
+      },
+      "guard_return": "^self\\.classes\\.encoded\\(granule\\)==0$",
+      "terms": [
+        "issued",
+        "class",
+        "publish",
+        "return"
+      ],
+      "reason": "a producer sets the pending bit only after the early return for a granule whose class was never issued, so a cut never yields a record without a class",
+      "tests": [
+        "tests/loom_sidecar_bitmap_actual.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p7_publish_requires_issue",
+      "mutants": [
+        {
+          "id": "publish-unissued",
+          "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+          "from": "        if self.classes.encoded(granule) == 0 {\n            return false;\n        }\n        self.pending",
+          "to": "        self.pending",
+          "checker": {
+            "name": "loom loom_sidecar_bitmap_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core,alloc-xthread,tagged-index-stack/loom",
+              "--test",
+              "loom_sidecar_bitmap_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

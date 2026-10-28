@@ -3628,7 +3628,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: |
           cargo test --release --features "alloc-core alloc-xthread tagged-index-stack/loom" \
-            --test loom_sidecar_bitmap \
             --test loom_sidecar_bitmap_actual \
             --test loom_sidecar_summary \
             --test loom_route_pin_unlink \
@@ -3636,7 +3635,6 @@ jobs:
             --test loom_terminal_owner_drain \
             --test loom_terminal_large \
             --test loom_b4_scan_skip_empty_publish 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test loom_sidecar_class_publication_and_two_producers ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_publish_racing_strict_trim_union_is_complete ... ok" "$RUNNER_TEMP/loom-xthread.log"
@@ -3728,8 +3726,7 @@ jobs:
             --test loom_registry_hints_actual \
             --test loom_r11_ph4a_heap_lease \
             --test loom_depot_recycle_handoff \
-            --test loom_r11_ph4b_publish_recycle_drain \
-            --test loom_r11_small_sidecar 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
+            --test loom_r11_ph4b_publish_recycle_drain 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
           grep -F "test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test publication_racing_summary_clear_is_never_lost_or_duplicated ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test publications_in_two_words_both_stay_reachable ... ok" "$RUNNER_TEMP/loom-registry.log"

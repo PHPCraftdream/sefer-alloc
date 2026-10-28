@@ -1,9 +1,9 @@
 {
   "id": "R0-21",
-  "registryActivationHash": "1d55dacd5cf06b9cd89ce397f6f6b099c4f1c97fa010257c1c114d3c7399530a",
+  "registryActivationHash": "819f0b6fc4539ebd2597abcfa573b7fc979c5e6e0e25faeb0139fa6bfa699ab8",
   "steps": [
     {
-      "name": "loom_sidecar_bitmap target",
+      "name": "loom_sidecar_bitmap_actual target",
       "env": {
         "RUSTFLAGS": "--cfg loom"
       },
@@ -14,14 +14,14 @@
         "--features",
         "alloc-core,alloc-xthread,tagged-index-stack/loom",
         "--test",
-        "loom_sidecar_bitmap"
+        "loom_sidecar_bitmap_actual"
       ],
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "3 passed; 0 failed",
-          "test loom_sidecar_class_publication_and_two_producers \\.\\.\\. ok",
-          "test loom_sidecar_negative_class_after_terminal_bit - should panic \\.\\.\\. ok"
+          "7 passed; 0 failed",
+          "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok",
+          "test loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable ... ok"
         ]
       }
     },
@@ -71,5 +71,38 @@
       }
     }
   ],
-  "mutant": null
+  "mutant": {
+    "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+    "find": "        if self.classes.encoded(granule) == 0 {\n            return false;\n        }\n        self.pending",
+    "replace": "        self.pending",
+    "steps": [
+      {
+        "name": "loom_sidecar_bitmap_actual mutant",
+        "env": {
+          "RUSTFLAGS": "--cfg loom"
+        },
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--features",
+          "alloc-core,alloc-xthread,tagged-index-stack/loom",
+          "--test",
+          "loom_sidecar_bitmap_actual"
+        ],
+        "expect": {
+          "exitNonZero": true,
+          "stdoutRegex": [
+            "test result: FAILED"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "test result: FAILED"
+      ]
+    }
+  }
 }

@@ -43,8 +43,8 @@ harness; `non-atomic` — named scanner false positives.
 | P4 | registry claim/selector, free-set, spill, saturation | S | 41 | 6 | 0 | R4c-02 | partial: FreeSlotHint and SaturationHint are self-contained structs on core atomics (translatable via #[path]); stack.rs scans walk the static registry | translate(free_slot_hint, saturation) + keep+R8(stack scans) | G5 |
 | P5 | route pin: lookup \|\| unlink \|\| last-pin release | A+S | 39 | 2 | 0 | — | yes: tests/loom_b4_r1_pin_cache.rs includes directory/ and src/ghost/ | translate (done in G2: real directory under loom via loom_b4_r1_pin_cache with ghost checks compiled in; last-reference free under miri) | G2 |
 | P6 | route pin cache fast path | A | 0 | 1 | 0 | — | yes (already #[path]) | ghost | G6 |
-| P7 | sidecar bitmap: publish / guarded cut / scan | A+S | 8 | 3 | 0 | R0-21 | yes (loom_sidecar_bitmap_actual.rs) | ghost + retire shadow | G6 |
-| P8 | small sidecar: leaf pointer publication, pin lifetime | S | 14 | 1 | 0 | R0-22 | partial: ClassLeaves allocates leaves through the OS seam (cfg(loom) twin, P18) | translate | G6 |
+| P7 | sidecar bitmap: publish / guarded cut / scan | A | 8 | 2 | 0 | R0-21 | yes (loom_sidecar_bitmap_actual.rs) | ghost | G6 |
+| P8 | small sidecar: leaf pointer publication, pin lifetime | A | 14 | 2 | 0 | R0-22 | yes: loom_sidecar_bitmap_actual compiles leaf_classes.rs (its cfg(loom) leaf construction is P18) and loom_b4_r1_pin_cache the small sidecar behind real route pins | translate | G6 |
 | P9 | terminal Large: phase word | S | 15 | 1 | 0 | R0-21 | yes: tests/loom_terminal_large.rs compiles reservation_state.rs and terminal_words.rs onto loom atomics | translate | G6 |
 | P10 | terminal owner drain: owner credits \|\| cut | S | 0 | 1 | 0 | R0-21 R5b-10 | no: credits live in AllocCore | keep+R5 | G6 |
 | P11 | active-kind index membership \|\| terminal publication | S | 0 | 1 | 0 | — | no: index is part of SegmentTable | keep+R5+R3 | G6 |
@@ -60,7 +60,7 @@ harness; `non-atomic` — named scanner false positives.
 | P21 | exact-object shard lock + live hint | none | 7 | 0 | 0 | — | likely: ExactShard is a small struct | new-model | G6 |
 | P22 | route ShardLock (spin lock over the directory shard) | S | 5 | 1 | 0 | — | yes: one AtomicBool | translate (with P5) | G2 |
 
-Shadow-model protocols (class contains S): 15 of 22, each with a decision.
+Shadow-model protocols (class contains S): 13 of 22, each with a decision.
 Protocols with neither a loom nor a shadow model: P19, P20, P21 (3 of 22).
 
 ## 3. Invariants and prod places
@@ -139,9 +139,9 @@ Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`, `src/alloc_core/
 
 - I1 every published offset is cut exactly once
 - I2 publish is fetch_or AcqRel after the class store Release; cut is swap AcqRel
-- loom: `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_sidecar_bitmap.rs`
+- loom: `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`
 
-Decision: **ghost + retire shadow** — G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it).
+Decision: **ghost** — G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it). G6c: the shadow loom_sidecar_bitmap.rs is retired; its negative control (a class published after the terminal bit) is the real-code mutant of sidecar/publish-requires-issue, red under loom_sidecar_bitmap_actual.
 
 ### P8 — small sidecar: leaf pointer publication, pin lifetime
 
@@ -149,9 +149,9 @@ Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `sr
 
 - I1 a leaf pointer is published (mixed store Release, present fetch_or Release) only after the leaf is fully initialised
 - I2 a reader resolves a leaf only with Acquire and only while holding a route pin
-- loom: `tests/loom_r11_small_sidecar.rs`
+- loom: `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_b4_r1_pin_cache.rs`
 
-Decision: **translate** — G6a: ClassLeaves ordered-op inventory per fn (R2 x6), initialise-before-publish and publish-before-presence in promote (R3), Drop walks presence bits (R3); R5 forbids the Dense constructor in production and keeps from_leaves in SmallSidecar::bitmap. Translation of the small-sidecar model follows in G6c.
+Decision: **translate** — G6a: ClassLeaves ordered-op inventory per fn (R2 x6), initialise-before-publish and publish-before-presence in promote (R3), Drop walks presence bits (R3); R5 forbids the Dense constructor in production and keeps from_leaves in SmallSidecar::bitmap. Translation of the small-sidecar model follows in G6c. G6c: the shadow loom_r11_small_sidecar.rs is retired. Leaf publication runs as actual source in loom_sidecar_bitmap_actual (the prepare-race test): a Relaxed mixed-leaf store is a loom causality violation there (mutant on class-leaves/promote-inventory); the pin lifetime is loom_b4_r1_pin_cache O4 plus route-pin/last-ref-free (miri), which replace the shadow early-release control.
 
 ### P9 — terminal Large: phase word
 

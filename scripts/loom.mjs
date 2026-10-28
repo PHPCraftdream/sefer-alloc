@@ -39,7 +39,6 @@ const FEATURES = {
   // crate's real-type suite IS
   // the coverage for the shipping code (the shadow model is deleted).
   loom_aba: `${CRATE_PREFIX}tagged-index-stack`,
-  loom_sidecar_bitmap: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_sidecar_bitmap_actual: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_sidecar_summary: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_route_pin_unlink: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
@@ -58,7 +57,6 @@ const FEATURES = {
   loom_r11_ph4a_heap_lease: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_depot_recycle_handoff: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_ph4b_publish_recycle_drain: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
-  loom_r11_small_sidecar: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_sharded: 'experimental,tagged-index-stack/loom',
   loom_epoch: 'experimental,tagged-index-stack/loom',
   loom_r11_epoch_false_full: 'experimental,tagged-index-stack/loom',

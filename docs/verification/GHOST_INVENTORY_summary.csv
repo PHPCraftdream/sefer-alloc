@@ -8,7 +8,7 @@ claimed_twice,0
 dead_scopes,0
 protocol_errors,0
 prod_paths_checked,57
-shadow_protocols,15
+shadow_protocols,13
 protocols_without_model,3
 class_cache,6
 class_counter,232
