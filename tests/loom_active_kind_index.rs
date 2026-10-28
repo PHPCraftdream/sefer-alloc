@@ -1,3 +1,6 @@
+//! Shadow model of the owner-only active-kind membership bit versus a terminal
+//! publication. The `ghost-bind` lines carry the production publish and cut
+//! orderings (R8).
 #![cfg(loom)]
 
 use loom::sync::atomic::{AtomicBool, Ordering};
@@ -20,6 +23,7 @@ fn model(clear_clean_bit: bool) -> bool {
         let producer = thread::spawn(move || {
             producer_saw_live.store(producer_live.load(Ordering::Acquire), Ordering::Release);
             thread::yield_now();
+            // ghost-bind: sidecar/publish-acqrel
             producer_pending.fetch_or(true, Ordering::AcqRel);
             // Terminal publication is the last reservation access.
         });
@@ -27,6 +31,7 @@ fn model(clear_clean_bit: bool) -> bool {
         // The owner alone owns this plain (non-atomic) membership bit.
         let mut active = true;
         let mut credits = 1;
+        // ghost-bind: sidecar/cut-acqrel
         if pending.swap(false, Ordering::AcqRel) {
             credits -= 1;
             active = false;
@@ -37,6 +42,7 @@ fn model(clear_clean_bit: bool) -> bool {
         }
         let removed_with_credit = !active && credits != 0;
         producer.join().unwrap();
+        // ghost-bind: sidecar/cut-acqrel
         if active && pending.swap(false, Ordering::AcqRel) {
             credits -= 1;
             active = false;

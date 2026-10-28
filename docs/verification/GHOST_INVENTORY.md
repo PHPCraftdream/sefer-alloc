@@ -131,7 +131,7 @@ Prod: `src/registry/heap_core_xthread/route_pin_cache.rs`.
 - no atomic sites of its own: the cache is thread-local; the only cross-thread word it touches is P5's Entry::refs through EntryHandle (its own atomics are counters)
 - loom: `tests/loom_b4_r1_pin_cache.rs`
 
-Decision: **ghost** — real source already runs; add ghost checks + R5
+Decision: **ghost** — G6b: the real cache records ghost event pin-cache/held (+1 when a pin enters a slot, -1 when it leaves) keyed by segment base; the actual-source loom model checks the ledger against Entry::refs (one reference per occupied slot; 0 after the unlink fallback and after the TLS destructor). R6 with counts keeps every event per fn; R10 pins both cfg twins of CACHE as thread_local RefCell<PinCache>; R4/R5 keep inserts on the non-fallback slow path.
 
 ### P7 — sidecar bitmap: publish / guarded cut / scan
 
@@ -172,7 +172,7 @@ Prod: `src/alloc_core/alloc_core/sidecar_drain.rs`, `src/alloc_core/segment/remo
 - no atomic sites of its own: owner credits are plain fields of AllocCore; the cut is P7's BitmapScan::next_cut swap
 - loom: `tests/loom_terminal_owner_drain.rs`
 
-Decision: **keep+R5** — invariant is a sole-writer property: R5 pins credit writes to owner functions
+Decision: **keep+R5** — G6b: credits stay a plain owner-only u32 (R10 on SegmentHeader.live_count); R5 pins every credit mutator (set_live_count, add_live, inc_live, sub_live, dec_live) to its owner functions; R4 keeps the drain release inside the empty-segment check; the shadow model binds the publish and cut orderings to P7 (R8).
 
 ### P11 — active-kind index membership || terminal publication
 
@@ -183,7 +183,7 @@ Prod: `src/alloc_core/segment/segment_table/active_kind_index.rs`, `src/alloc_co
 - no atomic sites of its own: membership is a plain owner bit in SegmentTable; producer side is P7's pending fetch_or
 - loom: `tests/loom_active_kind_index.rs`
 
-Decision: **keep+R5+R3** — membership is owner-plain; R3 pins 'consume pending before clear'
+Decision: **keep+R5+R3** — G6b: membership words stay plain owner u64s (R10); R5 pins ActiveKindIndex::set/clear to register/unregister/recycle; R3 (nested_before) keeps every cut consumed before finish_small_drain in all three owner drains; the shadow model binds the publish and cut orderings to P7 (R8).
 
 ### P12 — depot across slot recycle
 

@@ -34,6 +34,10 @@
 //! Thread exit: the `thread_local!` `Drop` releases every retained pin count
 //! through the existing `EntryHandle::drop` protocol (`refs.fetch_sub`), the
 //! ONLY release path — no new refcount code exists here.
+//!
+//! Ghost builds record `pin-cache/held` (+1 when a pin enters a slot, -1 when
+//! it leaves), keyed by segment base; `tests/loom_b4_r1_pin_cache.rs` checks it
+//! against `Entry::refs`.
 use crate::registry::segment_route::RoutePin;
 use core::cell::RefCell;
 
@@ -94,6 +98,7 @@ impl PinCache {
         for slot in &mut self.slots {
             if slot.pin.as_ref().is_some_and(|pin| !pin.linked()) {
                 slot.pin = None;
+                crate::ghost::ghost_event!("pin-cache/held", slot.base, -1);
                 count!(PIN_CACHE_SWEEPS);
             }
         }
@@ -111,6 +116,7 @@ impl Drop for PinCache {
         // counter never preceding the release it reports.
         let retained = self.slots.iter().filter(|slot| slot.pin.is_some()).count() as u64;
         for slot in &mut self.slots {
+            crate::ghost::ghost_event!("pin-cache/held", slot.base, -i64::from(slot.pin.is_some()));
             slot.pin = None;
         }
         #[cfg(not(all(feature = "internals", feature = "bench-internals")))]
@@ -223,6 +229,7 @@ pub(crate) unsafe fn publish_cached(ptr: *mut u8) -> CachedPublication {
                     // protocol) and fall back to a fresh lookup.
                     count!(PIN_CACHE_UNLINK_FALLBACKS);
                     slot.pin = None;
+                    crate::ghost::ghost_event!("pin-cache/held", slot.base, -1);
                     count!(PIN_CACHE_MISSES);
                     return CachedPublication::Miss;
                 }
@@ -230,6 +237,7 @@ pub(crate) unsafe fn publish_cached(ptr: *mut u8) -> CachedPublication {
                     // Defense in depth; the field is immutable so this never
                     // fires today.
                     slot.pin = None;
+                    crate::ghost::ghost_event!("pin-cache/held", slot.base, -1);
                     count!(PIN_CACHE_MISSES);
                     return CachedPublication::Miss;
                 }
@@ -268,20 +276,24 @@ pub(crate) fn cache_insert(pin: RoutePin, base: usize, incarnation: u64) {
         cache.sweep_dead_slots();
         if let Some(slot) = cache.slots.iter_mut().find(|slot| slot.base == base) {
             if slot.pin.take().is_some() {
+                crate::ghost::ghost_event!("pin-cache/held", slot.base, -1);
                 count!(PIN_CACHE_EVICTIONS);
             }
             slot.incarnation = incarnation;
             slot.pin = Some(pin);
+            crate::ghost::ghost_event!("pin-cache/held", slot.base, 1);
         } else {
             let victim = cache.next_victim;
             cache.next_victim = (victim + 1) % PIN_CACHE_SLOTS;
             let slot = &mut cache.slots[victim];
             if slot.pin.take().is_some() {
+                crate::ghost::ghost_event!("pin-cache/held", slot.base, -1);
                 count!(PIN_CACHE_EVICTIONS);
             }
             slot.base = base;
             slot.incarnation = incarnation;
             slot.pin = Some(pin);
+            crate::ghost::ghost_event!("pin-cache/held", slot.base, 1);
         }
         count!(PIN_CACHE_INSERTS);
         Ok(())
@@ -304,6 +316,7 @@ pub(crate) fn cache_evict(base: usize) {
             .find(|slot| slot.base == base && slot.pin.is_some())
         {
             slot.pin = None;
+            crate::ghost::ghost_event!("pin-cache/held", slot.base, -1);
             count!(PIN_CACHE_EVICTIONS);
         }
     });
