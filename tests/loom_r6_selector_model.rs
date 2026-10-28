@@ -9,6 +9,13 @@ use loom::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
+// ghost-bind: saturation/mark-cas
+const SAT_MARK: (Ordering, Ordering) = (Ordering::AcqRel, Ordering::Acquire);
+// ghost-bind: saturation/publish-acqrel
+const SAT_PUBLISH: (Ordering, Ordering) = (Ordering::AcqRel, Ordering::Acquire);
+// ghost-bind: registry/bump-count-cas
+const BUMP: (Ordering, Ordering) = (Ordering::AcqRel, Ordering::Acquire);
+
 const FREE: u8 = 0;
 const LIVE: u8 = 1;
 const NO_HINT: u64 = 2;
@@ -22,14 +29,17 @@ struct RegistryModel {
 
 impl RegistryModel {
     fn claim(&self) -> bool {
+        // ghost-bind: registry/hint-take-spill
         let hinted = self.hint.swap(NO_HINT, Ordering::AcqRel);
         if hinted < NO_HINT
             && self.states[hinted as usize]
+                // ghost-bind: heap-lease/claim-free-live
                 .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
         {
             return true;
         }
+        // ghost-bind: saturation/rmw-read
         if self.saturation.fetch_or(0, Ordering::Acquire) & 1 != 0 {
             return false;
         }
@@ -39,6 +49,7 @@ impl RegistryModel {
             if self.spill.fetch_and(!bit, Ordering::AcqRel) & bit != 0 {
                 let slot = bits.trailing_zeros() as usize;
                 if self.states[slot]
+                    // ghost-bind: heap-lease/claim-free-live
                     .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
                     .is_ok()
                 {
@@ -49,6 +60,7 @@ impl RegistryModel {
         let snapshot = self.saturation.load(Ordering::Acquire);
         for slot in &self.states {
             if slot
+                // ghost-bind: heap-lease/claim-free-live
                 .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
             {
@@ -56,18 +68,16 @@ impl RegistryModel {
             }
         }
         if snapshot & 1 == 0 {
-            let _ = self.saturation.compare_exchange(
-                snapshot,
-                snapshot | 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            );
+            let _ =
+                self.saturation
+                    .compare_exchange(snapshot, snapshot | 1, SAT_MARK.0, SAT_MARK.1);
         }
         false
     }
 
     fn recycle_one(&self) {
         assert!(self.states[1]
+            // ghost-bind: heap-lease/drop-release
             .compare_exchange(LIVE, FREE, Ordering::Release, Ordering::Relaxed)
             .is_ok());
         let displaced = self.hint.swap(1, Ordering::Relaxed);
@@ -77,12 +87,10 @@ impl RegistryModel {
         let mut old = self.saturation.load(Ordering::Acquire);
         loop {
             let next = (old + 2) & !1;
-            match self.saturation.compare_exchange_weak(
-                old,
-                next,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
+            match self
+                .saturation
+                .compare_exchange_weak(old, next, SAT_PUBLISH.0, SAT_PUBLISH.1)
+            {
                 Ok(_) => return,
                 Err(actual) => old = actual,
             }
@@ -110,6 +118,7 @@ fn completed_free_publication_cannot_leave_false_full_or_two_owners() {
         // Model a displaced/consumed hint: completed availability publication
         // must independently defeat any stale negative-scan certification.
         reg.hint.store(NO_HINT, Ordering::Relaxed);
+        // ghost-bind: saturation/rmw-read
         assert_eq!(reg.saturation.fetch_or(0, Ordering::Acquire) & 1, 0);
         assert_eq!(reg.states[0].load(Ordering::Acquire), LIVE);
         if first {
@@ -191,12 +200,10 @@ impl SelectorModel {
             if count as usize >= SEL_MAX {
                 return None;
             }
-            match self.count.compare_exchange_weak(
-                count,
-                count + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
+            match self
+                .count
+                .compare_exchange_weak(count, count + 1, BUMP.0, BUMP.1)
+            {
                 Ok(_) => return Some(count as usize),
                 Err(actual) => count = actual,
             }
@@ -209,6 +216,7 @@ impl SelectorModel {
             return false;
         }
         if self.states[slot]
+            // ghost-bind: heap-lease/claim-free-live
             .compare_exchange(from, LIVE, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
         {
@@ -227,6 +235,7 @@ impl SelectorModel {
     /// hint swap → `candidate < before` → spill take → `before == max &&
     /// is_saturated()` → bump → `snapshot()` → scan → `try_mark_saturated`.
     fn claim(&self, mutants: SelectorMutants) -> bool {
+        // ghost-bind: registry/hint-take-spill
         let candidate = self.hint.swap(NO_HINT, Ordering::AcqRel) as usize;
         let before = (self.count.load(Ordering::Acquire) as usize).min(SEL_MAX);
         if candidate < SEL_MAX && (mutants.hint_without_count_guard || candidate < before) {
@@ -282,18 +291,16 @@ impl SelectorModel {
     fn is_saturated(&self) -> bool {
         // RMW read like production `is_saturated`: it cannot return a value
         // older than a completed publisher's RMW in the modification order.
+        // ghost-bind: saturation/rmw-read
         self.saturation.fetch_or(0, Ordering::Acquire) & 1 != 0
     }
 
     /// Commit a negative scan only if no availability publication raced it.
     fn try_mark_saturated(&self, snapshot: u64) {
         if snapshot & 1 == 0 {
-            let _ = self.saturation.compare_exchange(
-                snapshot,
-                snapshot | 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            );
+            let _ =
+                self.saturation
+                    .compare_exchange(snapshot, snapshot | 1, SAT_MARK.0, SAT_MARK.1);
         }
     }
 }

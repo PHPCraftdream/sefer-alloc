@@ -155,7 +155,7 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha }}"
           [ -z "$BASE" ] && BASE="${{ github.event.before }}"
           git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE=HEAD^
-          if [ "${{ github.event_name }}" = schedule ] || git diff --name-only "$BASE" HEAD | grep -qE '^(docs/verification/ghost-rules\.json|src/registry/segment_route/directory/|src/registry/heap_registry/claim\.rs|src/global/tls_heap\.rs|src/registry/heap_core/state/tcache_flush\.rs|tests/route_pin_last_ref_miri\.rs|tests/loom_r11_ph4[ab]_[a-z_]+\.rs|tests/loom_depot_recycle_handoff\.rs|tests/loom_r8_maintenance_lease\.rs|scripts/ghost_mutants\.mjs)'; then
+          if [ "${{ github.event_name }}" = schedule ] || git diff --name-only "$BASE" HEAD | grep -qE '^(docs/verification/ghost-rules\.json|src/registry/segment_route/directory/|src/registry/heap_registry/claim\.rs|src/global/tls_heap\.rs|src/registry/heap_core/state/tcache_flush\.rs|src/registry/bootstrap/(free_slot_hint|saturation)\.rs|tests/loom_registry_hints_actual\.rs|tests/route_pin_last_ref_miri\.rs|tests/loom_r11_ph4[ab]_[a-z_]+\.rs|tests/loom_depot_recycle_handoff\.rs|tests/loom_r8_maintenance_lease\.rs|scripts/ghost_mutants\.mjs)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.mutants.outputs.run == 'true'
@@ -3725,11 +3725,15 @@ jobs:
             --test loom_r6_selector_model \
             --test loom_r19_registry_free_set \
             --test loom_r20_heap_reuse_spill \
+            --test loom_registry_hints_actual \
             --test loom_r11_ph4a_heap_lease \
             --test loom_depot_recycle_handoff \
             --test loom_r11_ph4b_publish_recycle_drain \
             --test loom_r11_small_sidecar 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
           grep -F "test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test publication_racing_summary_clear_is_never_lost_or_duplicated ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test publications_in_two_words_both_stay_reachable ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test saturation_is_committed_only_after_every_completed_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test lease_drop_release_pairs_with_claim_and_maintenance_acquires ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test depot_drained_before_release_is_seen_empty_by_next_owner ... ok" "$RUNNER_TEMP/loom-registry.log"

@@ -1,14 +1,18 @@
 //! Bounded, non-authoritative FREE-slot hints; ownership still requires the slot-state CAS.
 
-use core::mem::{align_of, size_of};
-use core::sync::atomic::{AtomicU64, Ordering};
+// Atomics come from `super` so the actual-source loom test can substitute
+// loom atomics (`tests/loom_registry_hints_actual.rs`).
+use super::{AtomicU64, Ordering};
 
 use super::MAX_HEAPS;
 
 const WORDS: usize = MAX_HEAPS / 64;
 const TAKE_ATTEMPTS: usize = 2 * WORDS;
 const _: () = assert!(MAX_HEAPS == WORDS * 64 && WORDS <= 64);
-const _: () = assert!(align_of::<FreeSlotHint>() == 64 && size_of::<FreeSlotHint>() == 576);
+#[cfg(not(loom))]
+const _: () = assert!(
+    core::mem::align_of::<FreeSlotHint>() == 64 && core::mem::size_of::<FreeSlotHint>() == 576
+);
 
 #[repr(align(64))]
 #[doc(hidden)]

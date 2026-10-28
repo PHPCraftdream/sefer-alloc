@@ -108,7 +108,8 @@
         "tests/loom_r6_selector_model.rs",
         "tests/loom_r19_registry_free_set.rs",
         "tests/loom_r20_heap_reuse_spill.rs",
-        "tests/loom_registry_free_slots.rs"
+        "tests/loom_registry_free_slots.rs",
+        "tests/loom_registry_hints_actual.rs"
       ],
       "pins": [],
       "registry": [
@@ -117,7 +118,7 @@
       "real_under_loom": "partial: FreeSlotHint and SaturationHint are self-contained structs on core atomics (translatable via #[path]); stack.rs scans walk the static registry",
       "decision": "translate(free_slot_hint, saturation) + keep+R8(stack scans)",
       "phase": "G5",
-      "reason": "two of five models can run the real struct; the scan/claim composition needs the registry"
+      "reason": "G5: free_slot_hint.rs and saturation.rs take their atomics from `super` and run as actual source under loom (tests/loom_registry_hints_actual.rs: no lost or duplicated free-set publication, saturation only after every completed publication); every CAS / RMW of the free set, the saturation hint, bump_count and the hint swaps is pinned by R1, and all five shadow models bind those lines through R8. The stack scans stay shadow models: they walk the process-static registry."
     },
     {
       "id": "P5",
@@ -2084,6 +2085,570 @@
         "tests/loom_depot_recycle_handoff.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p12_model_bind"
+    },
+    {
+      "id": "free-set/publish-word",
+      "kind": "R1",
+      "protocol": "P4",
+      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "fn": "FreeSlotHint::publish",
+      "site": {
+        "name": "fetch_or",
+        "receiver": "words\\[word\\]$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "publish",
+        "Release",
+        "FREE",
+        "word"
+      ],
+      "reason": "a free-set bit is published with Release after the slot is FREE",
+      "tests": [
+        "tests/loom_registry_hints_actual.rs",
+        "tests/loom_r19_registry_free_set.rs",
+        "tests/loom_r20_heap_reuse_spill.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_publish_word"
+    },
+    {
+      "id": "free-set/publish-summary",
+      "kind": "R1",
+      "protocol": "P4",
+      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "fn": "FreeSlotHint::publish",
+      "site": {
+        "name": "fetch_or",
+        "receiver": "summary$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "publish",
+        "summary",
+        "Release",
+        "reachable"
+      ],
+      "reason": "the summary bit makes the published word reachable to takers",
+      "tests": [
+        "tests/loom_registry_hints_actual.rs",
+        "tests/loom_r19_registry_free_set.rs",
+        "tests/loom_r20_heap_reuse_spill.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_publish_summary",
+      "mutants": [
+        {
+          "id": "publish-without-summary",
+          "file": "src/registry/bootstrap/free_slot_hint.rs",
+          "from": "        self.summary.fetch_or(1u64 << word, Ordering::Release);\n    }\n\n    #[cold]",
+          "to": "    }\n\n    #[cold]",
+          "checker": {
+            "name": "loom loom_registry_hints_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+              "--test",
+              "loom_registry_hints_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
+    },
+    {
+      "id": "free-set/take-acqrel",
+      "kind": "R1",
+      "protocol": "P4",
+      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "fn": "FreeSlotHint::take_nonempty",
+      "site": {
+        "name": "fetch_and",
+        "receiver": "words"
+      },
+      "orderings": [
+        "AcqRel"
+      ],
+      "count": 1,
+      "terms": [
+        "take",
+        "AcqRel",
+        "once",
+        "bit"
+      ],
+      "reason": "a taker clears the bit with AcqRel; only the taker that saw it set returns the index",
+      "tests": [
+        "tests/loom_registry_hints_actual.rs",
+        "tests/loom_r19_registry_free_set.rs",
+        "tests/loom_r20_heap_reuse_spill.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_take_acqrel"
+    },
+    {
+      "id": "free-set/summary-clear-acqrel",
+      "kind": "R1",
+      "protocol": "P4",
+      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "fn": "FreeSlotHint::clear_summary_recheck",
+      "site": {
+        "name": "fetch_and",
+        "receiver": "summary$"
+      },
+      "orderings": [
+        "AcqRel"
+      ],
+      "count": 1,
+      "terms": [
+        "summary",
+        "AcqRel",
+        "clear",
+        "recheck"
+      ],
+      "reason": "clearing a summary bit is an AcqRel RMW ordered before the word recheck",
+      "tests": [
+        "tests/loom_registry_hints_actual.rs",
+        "tests/loom_r19_registry_free_set.rs",
+        "tests/loom_r20_heap_reuse_spill.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_summary_clear_acqrel"
+    },
+    {
+      "id": "free-set/recheck-republish",
+      "kind": "R4",
+      "protocol": "P4",
+      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "fn": "FreeSlotHint::clear_summary_recheck",
+      "action": {
+        "name": "fetch_or",
+        "receiver": "summary$"
+      },
+      "guard": "^self\\.words\\[word\\]\\.load\\(Ordering::Acquire\\)!=0$",
+      "terms": [
+        "summary",
+        "recheck",
+        "republish",
+        "non-empty"
+      ],
+      "reason": "I3: after clearing a summary bit the word is re-read and a non-empty word is re-published, so the summary never hides a published bit",
+      "tests": [
+        "tests/loom_registry_hints_actual.rs",
+        "tests/loom_r19_registry_free_set.rs",
+        "tests/loom_r20_heap_reuse_spill.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_recheck_republish",
+      "mutants": [
+        {
+          "id": "clear-without-recheck",
+          "file": "src/registry/bootstrap/free_slot_hint.rs",
+          "from": "        if self.words[word].load(Ordering::Acquire) != 0 {\n            self.summary.fetch_or(1u64 << word, Ordering::Release);\n        }\n",
+          "to": "",
+          "checker": {
+            "name": "loom loom_registry_hints_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+              "--test",
+              "loom_registry_hints_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
+    },
+    {
+      "id": "free-set/forget-acqrel",
+      "kind": "R1",
+      "protocol": "P4",
+      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "fn": "FreeSlotHint::forget",
+      "site": {
+        "name": "fetch_and"
+      },
+      "orderings": [
+        "AcqRel"
+      ],
+      "count": 1,
+      "terms": [
+        "forget",
+        "AcqRel",
+        "claim",
+        "bit"
+      ],
+      "reason": "a claimant that took the slot another way withdraws its bit with AcqRel",
+      "tests": [
+        "tests/loom_r19_registry_free_set.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_forget_acqrel"
+    },
+    {
+      "id": "saturation/rmw-read",
+      "kind": "R1",
+      "protocol": "P4",
+      "file": "src/registry/bootstrap/saturation.rs",
+      "fn": "SaturationHint::is_saturated",
+      "site": {
+        "name": "fetch_or"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "RMW",
+        "stale",
+        "Acquire",
+        "saturated"
+      ],
+      "reason": "an RMW cannot read a value older than a completed publisher RMW; a plain load could give a stale negative verdict",
+      "tests": [
+        "tests/loom_r11_registry_claim.rs",
+        "tests/loom_r6_selector_model.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_rmw_read"
+    },
+    {
+      "id": "saturation/publish-acqrel",
+      "kind": "R1",
+      "protocol": "P4",
+      "file": "src/registry/bootstrap/saturation.rs",
+      "fn": "SaturationHint::publish_claimable",
+      "site": {
+        "name": "fetch_update"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "publish_claimable",
+        "version",
+        "AcqRel",
+        "saturation"
+      ],
+      "reason": "one RMW changes the version and clears saturation",
+      "tests": [
+        "tests/loom_registry_hints_actual.rs",
+        "tests/loom_r11_registry_claim.rs",
+        "tests/loom_r6_selector_model.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_publish_acqrel"
+    },
+    {
+      "id": "saturation/mark-cas",
+      "kind": "R1",
+      "protocol": "P4",
+      "file": "src/registry/bootstrap/saturation.rs",
+      "fn": "SaturationHint::try_mark_saturated",
+      "site": {
+        "name": "compare_exchange"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "saturated",
+        "snapshot",
+        "CAS",
+        "publication"
+      ],
+      "reason": "I4: a negative scan is committed only by a CAS from its snapshot, so a racing publication wins",
+      "tests": [
+        "tests/loom_registry_hints_actual.rs",
+        "tests/loom_r11_registry_claim.rs",
+        "tests/loom_r6_selector_model.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_mark_cas",
+      "mutants": [
+        {
+          "id": "mark-without-cas",
+          "file": "src/registry/bootstrap/saturation.rs",
+          "from": "            let _ = self.0.compare_exchange(\n                snapshot,\n                snapshot | 1,\n                Ordering::AcqRel,\n                Ordering::Acquire,\n            );\n",
+          "to": "            self.0.store(snapshot | 1, Ordering::Release);\n",
+          "checker": {
+            "name": "loom loom_registry_hints_actual",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+              "--test",
+              "loom_registry_hints_actual"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
+    },
+    {
+      "id": "registry/bump-count-cas",
+      "kind": "R1",
+      "protocol": "P4",
+      "file": "src/registry/heap_registry/stack.rs",
+      "fn": "bump_count",
+      "site": {
+        "name": "compare_exchange_weak"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "count",
+        "grows",
+        "CAS",
+        "AcqRel"
+      ],
+      "reason": "I1: count only grows through one CAS; the winner owns the minted index",
+      "tests": [
+        "tests/loom_r6_selector_model.rs",
+        "tests/loom_r19_registry_free_set.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_bump_count_cas"
+    },
+    {
+      "id": "registry/hint-take-spill",
+      "kind": "R1",
+      "protocol": "P4",
+      "file": "src/registry/heap_registry/stack.rs",
+      "fn": "pick_with_hint_spill",
+      "site": {
+        "name": "swap",
+        "receiver": "hint$"
+      },
+      "orderings": [
+        "AcqRel"
+      ],
+      "count": 1,
+      "terms": [
+        "hint",
+        "swap",
+        "AcqRel",
+        "spill"
+      ],
+      "reason": "the production selector (claim.rs pick_slot) takes the reuse hint with an AcqRel swap; the state CAS still decides ownership (pick_with_saturation is an internals-only model and is not pinned)",
+      "tests": [
+        "tests/loom_r6_selector_model.rs",
+        "tests/loom_r19_registry_free_set.rs",
+        "tests/loom_r20_heap_reuse_spill.rs",
+        "tests/loom_r11_registry_claim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_hint_take_spill"
+    },
+    {
+      "id": "registry/claim-model-bind",
+      "kind": "R8",
+      "protocol": "P4",
+      "model": "tests/loom_r11_registry_claim.rs",
+      "binds": [
+        {
+          "rule": "heap-lease/claim-free-live"
+        },
+        {
+          "rule": "heap-lease/drop-release"
+        },
+        {
+          "rule": "registry/hint-take-spill"
+        },
+        {
+          "rule": "saturation/mark-cas"
+        },
+        {
+          "rule": "saturation/publish-acqrel"
+        },
+        {
+          "rule": "saturation/rmw-read"
+        }
+      ],
+      "terms": [
+        "model",
+        "orderings",
+        "registry"
+      ],
+      "reason": "the loom_r11_registry_claim.rs shadow model keeps the production orderings of every registry atomic it transcribes",
+      "tests": [
+        "tests/loom_r11_registry_claim.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_claim_model_bind"
+    },
+    {
+      "id": "registry/selector-model-bind",
+      "kind": "R8",
+      "protocol": "P4",
+      "model": "tests/loom_r6_selector_model.rs",
+      "binds": [
+        {
+          "rule": "heap-lease/claim-free-live"
+        },
+        {
+          "rule": "heap-lease/drop-release"
+        },
+        {
+          "rule": "registry/bump-count-cas"
+        },
+        {
+          "rule": "registry/hint-take-spill"
+        },
+        {
+          "rule": "saturation/mark-cas"
+        },
+        {
+          "rule": "saturation/publish-acqrel"
+        },
+        {
+          "rule": "saturation/rmw-read"
+        }
+      ],
+      "terms": [
+        "model",
+        "orderings",
+        "registry"
+      ],
+      "reason": "the loom_r6_selector_model.rs shadow model keeps the production orderings of every registry atomic it transcribes",
+      "tests": [
+        "tests/loom_r6_selector_model.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_selector_model_bind"
+    },
+    {
+      "id": "registry/free-set-model-bind",
+      "kind": "R8",
+      "protocol": "P4",
+      "model": "tests/loom_r19_registry_free_set.rs",
+      "binds": [
+        {
+          "rule": "free-set/publish-summary"
+        },
+        {
+          "rule": "free-set/publish-word"
+        },
+        {
+          "rule": "free-set/summary-clear-acqrel"
+        },
+        {
+          "rule": "free-set/take-acqrel"
+        },
+        {
+          "rule": "heap-lease/claim-free-live"
+        },
+        {
+          "rule": "heap-lease/drop-release"
+        },
+        {
+          "rule": "maintenance-lease/claim-acqrel"
+        },
+        {
+          "rule": "maintenance-lease/drop-release"
+        },
+        {
+          "rule": "registry/bump-count-cas"
+        },
+        {
+          "rule": "registry/hint-take-spill"
+        }
+      ],
+      "terms": [
+        "model",
+        "orderings",
+        "registry"
+      ],
+      "reason": "the loom_r19_registry_free_set.rs shadow model keeps the production orderings of every registry atomic it transcribes",
+      "tests": [
+        "tests/loom_r19_registry_free_set.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_free_set_model_bind"
+    },
+    {
+      "id": "registry/spill-model-bind",
+      "kind": "R8",
+      "protocol": "P4",
+      "model": "tests/loom_r20_heap_reuse_spill.rs",
+      "binds": [
+        {
+          "rule": "free-set/publish-summary"
+        },
+        {
+          "rule": "free-set/publish-word"
+        },
+        {
+          "rule": "free-set/summary-clear-acqrel"
+        },
+        {
+          "rule": "free-set/take-acqrel"
+        },
+        {
+          "rule": "heap-lease/claim-free-live"
+        },
+        {
+          "rule": "heap-lease/drop-release"
+        },
+        {
+          "rule": "maintenance-lease/claim-acqrel"
+        },
+        {
+          "rule": "maintenance-lease/drop-release"
+        },
+        {
+          "rule": "registry/hint-take-spill"
+        }
+      ],
+      "terms": [
+        "model",
+        "orderings",
+        "registry"
+      ],
+      "reason": "the loom_r20_heap_reuse_spill.rs shadow model keeps the production orderings of every registry atomic it transcribes",
+      "tests": [
+        "tests/loom_r20_heap_reuse_spill.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_spill_model_bind"
+    },
+    {
+      "id": "registry/free-slots-model-bind",
+      "kind": "R8",
+      "protocol": "P4",
+      "model": "tests/loom_registry_free_slots.rs",
+      "binds": [
+        {
+          "rule": "heap-lease/claim-free-live"
+        },
+        {
+          "rule": "heap-lease/drop-release"
+        }
+      ],
+      "terms": [
+        "model",
+        "orderings",
+        "registry"
+      ],
+      "reason": "the loom_registry_free_slots.rs shadow model keeps the production orderings of every registry atomic it transcribes",
+      "tests": [
+        "tests/loom_registry_free_slots.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p4_free_slots_model_bind"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

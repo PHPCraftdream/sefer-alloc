@@ -1,6 +1,7 @@
 //! Versioned, non-authoritative full-registry hint.
 
-use core::sync::atomic::{AtomicU64, Ordering};
+// Atomics come from `super` (see `free_slot_hint.rs`).
+use super::{AtomicU64, Ordering};
 
 const DISABLED: u64 = u64::MAX;
 const LAST_VERSION: u64 = u64::MAX - 3;

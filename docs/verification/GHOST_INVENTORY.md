@@ -40,7 +40,7 @@ harness; `non-atomic` — named scanner false positives.
 | P1 | HeapLease FREE->LIVE claim / LIVE->FREE Release drop | S | 12 | 1 | 0 | R4a-05 R4a-06 R4a-07 R4a-08 R4a-09 R4c-09 | no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone | keep+R8 | G3 |
 | P2 | MaintenanceLease FREE->MAINTENANCE | S | 4 | 1 | 0 | R4c-19 | no: same registry bootstrap as P1 | keep+R8 | G4 |
 | P3 | publish \|\| recycle \|\| drain (TORN stamp, trim, drop, claimant drain) | S | 0 | 1 | 0 | R4b-03 R4b-13 R4b-14 R4b-15 | no: drain runs through HeapCore + AllocCore segment tables | keep+R8 | G3 |
-| P4 | registry claim/selector, free-set, spill, saturation | S | 41 | 5 | 0 | R4c-02 | partial: FreeSlotHint and SaturationHint are self-contained structs on core atomics (translatable via #[path]); stack.rs scans walk the static registry | translate(free_slot_hint, saturation) + keep+R8(stack scans) | G5 |
+| P4 | registry claim/selector, free-set, spill, saturation | S | 41 | 6 | 0 | R4c-02 | partial: FreeSlotHint and SaturationHint are self-contained structs on core atomics (translatable via #[path]); stack.rs scans walk the static registry | translate(free_slot_hint, saturation) + keep+R8(stack scans) | G5 |
 | P5 | route pin: lookup \|\| unlink \|\| last-pin release | A+S | 39 | 2 | 0 | — | yes: tests/loom_b4_r1_pin_cache.rs includes directory/ and src/ghost/ | translate (done in G2: real directory under loom via loom_b4_r1_pin_cache with ghost checks compiled in; last-reference free under miri) | G2 |
 | P6 | route pin cache fast path | A | 0 | 1 | 0 | — | yes (already #[path]) | ghost | G6 |
 | P7 | sidecar bitmap: publish / guarded cut / scan | A+S | 8 | 3 | 1 | R0-21 | yes (loom_sidecar_bitmap_actual.rs) | ghost + retire shadow | G6 |
@@ -106,9 +106,9 @@ Prod: `src/registry/heap_registry/stack.rs`, `src/registry/bootstrap/free_slot_h
 - I2 a free-set bit is set only after the slot is FREE (publish Release) and a taker clears it with AcqRel before claiming
 - I3 the summary word never hides a non-empty word (clear_summary_recheck re-publishes)
 - I4 saturation is monotone until publish_claimable clears it
-- loom: `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_registry_free_slots.rs`
+- loom: `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`
 
-Decision: **translate(free_slot_hint, saturation) + keep+R8(stack scans)** — two of five models can run the real struct; the scan/claim composition needs the registry
+Decision: **translate(free_slot_hint, saturation) + keep+R8(stack scans)** — G5: free_slot_hint.rs and saturation.rs take their atomics from `super` and run as actual source under loom (tests/loom_registry_hints_actual.rs: no lost or duplicated free-set publication, saturation only after every completed publication); every CAS / RMW of the free set, the saturation hint, bump_count and the hint swaps is pinned by R1, and all five shadow models bind those lines through R8. The stack scans stay shadow models: they walk the process-static registry.
 
 ### P5 — route pin: lookup || unlink || last-pin release
 
