@@ -3216,7 +3216,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > **Current state**
    > - **Status:** NO-GO by the pre-registration; the re-checks stay in production.
    > - **Current verdict (ИЗМЕРЕНО):** J1′ v2 net of null, 20 processes: bulk64 slower 1.023× (CI +1.72…+2.51 %), bulk16k slower 1.035× (CI +2.58…+4.56 %); faster pair16, churn1024 1.014×, larson 1.014×; 6 kernels equal. Callgrind: growth16 −9.0 % Ir at n = 131072 (27 268 129 → 24 810 596), bulk flush 48.3 → 27.9 Ir per pair (−42 %), total −7.5 %. Fewer instructions, more time on bulk.
-   > - **Next trigger:** PMU counters on bulk64/bulk16k (cache misses, store-bound cycles) show the slowdown is code layout of the variant copy rather than memory-bound flush, or a judge kernel where flush Ir dominates time.
+   > - **PMU look (ИЗМЕРЕНО 2026-10-28, `docs/perf/G1_IDEAS.md` §5, on top of K1):** bulk16k instructions 0.912×, cycles 0.966×, but `exe_activity.bound_on_stores` 5.156× and `resource_stalls.sb` 4.533× (mixed 256/1024: 2.939× / 2.887×); frontend counters not worse. The variant's flush is store-buffer bound, not a code-layout effect — the trigger below is NOT met.
+   > - **Next trigger:** a flush variant that removes STORES per block (not loads), or a judge kernel where flush Ir dominates time.
    > - **Evidence:** docs/perf/GR1_MAG_FLUSH_GATE.md, docs/perf/GR1_MAG_FLUSH_GATE_summary*.csv, docs/perf/gr1_mag_flush/ (pre-registration, patch, raw callgrind, JSONL manifest), scripts/gr1_mag_flush_gate_report.mjs (raw measured on branch `gr1-meas`@23141261).
 
 122. **[L] U32 — `try_carve_batch` issuing its bump run per leaf instead of per block: honest reject (NO-GO on time).** (Filed 2026-10-28, `docs/perf/U32_CARVE_RANGE_GATE.md`.)
@@ -3232,12 +3233,40 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Current verdict (ИЗМЕРЕНО, callgrind, main `75e35ef3` + probe, `b4-25`@`a82ac944`):** the whole remote-reception path (publish, scan, reclaim into the bin) adds at most 0.74 % Ir per thread over its T=1 level (mstress T=4: 132 308 / 17 943 810; mstress T=2 0.73 %, larson 0.55 % / 0.43 %); B4-25 removes only the bin `next` write/read part of it. Sefer/mimalloc Ir ratio does not grow with T (mstress 1.53× → 1.47× → 1.50×, larson 1.26× → 1.21× → 1.15×): the MT gap is the single-thread gap. Path active: `HeapCore::publish_foreign` calls 0 at T=1, 4 999 / 9 790 (mstress T=2/4), 3 126 / 5 457 (larson).
    > - **Next trigger:** a time measurement (process judge or PMU) shows the Sefer/mimalloc gap growing with T on a workload with remote frees, i.e. a cross-core cost callgrind cannot see.
    > - **Evidence:** docs/perf/B4_25_REMOTE_CEILING.md, docs/perf/B4_25_REMOTE_CEILING_summary.csv, docs/perf/b4_25_ceiling/ (raw callgrind log with ORACLE lines, run and oracle scripts), scripts/b4_25_ceiling_report.mjs, examples/b425_mt_probe.rs.
+124. **[A] G1 contemplation — on the judge's kernel shapes sefer's time gap to mimalloc is extra instructions on the free and magazine-transfer paths, not cache misses.** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md`.)
+   > **Current state**
+   > - **Status:** OPEN `[A]` — measurement done, candidates K1–K3 ranked; no runtime change.
+   > - **Current verdict (ИЗМЕРЕНО, perf stat + callgrind, probe `examples/b4_pmu_probe.rs` modes `bulk`/`mixed`, main `37780bc7` + probe, `g1-pmu`@`dfb89621`, WSL i7-11800H):** cycles/op sefer/mi track instructions/op — bulk16k 2.006× / 2.452×, bulk64 1.340× / 1.501×, pair16 1.200× / 1.313×, mixed 16/64 1.433× / 1.343×, mixed 256/1024 1.902× / 1.882×; single-class churn16 0.547× / 0.559× (sefer faster). IPC ≈ 4.5 both, stalls a few % of cycles. Per call (pair16): free ≈ 65 Ir vs ≈ 25, alloc ≈ 37 vs ≈ 44. bulk16k: magazine → bin → magazine transfer ≈ 92 Ir per alloc+free pair; drain re-stores the unchanged `ClassLeaves` class code ≈ 15–20 Ir per block.
+   > - **Next trigger:** K1 (drain without the redundant class-code re-issue) judged by J1′ v2 against main and against mimalloc; K2 (free class from the state byte) needs an owner decision (wrong-Layout free becomes a free into the true class instead of a silent no-op).
+   > - **Evidence:** docs/perf/G1_IDEAS.md, docs/perf/g1_pmu/ (raw perf stat and callgrind logs, run scripts, `G1_PMU_table.md`, `G1_PMU_summary.csv`), scripts/g1_pmu_summary.mjs, examples/b4_pmu_probe.rs.
+
 125. **[A] G1-K1 — drain without the redundant ClassLeaves class-code re-issue: GO, shipping `perf(runtime)`.** (Filed 2026-10-28, `docs/perf/G1_K1_DRAIN_GATE.md`.)
    > **Current state**
    > - **Status:** GO by pre-registration (`docs/perf/g1_k1/G1_K1_PREREG.md`); code in the same PR as this card. Close after CI is green on the landing SHA.
    > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k1-meas`@`afe594b4`):** faster on 7 of 11 — bulk16k 1.071× (CI −7.35…−6.41 %), churn256 1.064×, churn1024 1.060×, churn16 1.031×, churn64 1.014×, larson 1.009×, pair_rt 1.003×; pair16, pair64 equal; slower bulk64 1.018× (CI +1.54…+2.00 %, within the pre-registered +2 % tolerance) and vec512 1.005× (not admitted by the main judge). Callgrind: bulk16k −10.63 % Ir, mixed 256/1024 −8.97 %, bulk64 +0.02 %. Against mimalloc (`g1-k1`@`c0c4eacf`): bulk16k mimalloc faster 1.955× (was 2.104× in the B2 run, different runs).
    > - **Next trigger:** close on a green landing CI. Open sub-item: bulk64's +1.8 % comes with unchanged instructions and no drain call on that kernel (route Ir 0 in both variants) — re-check with PMU (frontend/DSB counters) if a later candidate also moves bulk64 without changing its instructions.
    > - **Evidence:** docs/perf/G1_K1_DRAIN_GATE.md, docs/perf/G1_K1_DRAIN_GATE_summary.csv, docs/perf/G1_K1_DRAIN_GATE_summary_callgrind.csv, docs/perf/g1_k1/, scripts/g1_k1_gate_report.mjs, tests/g1_k1_drain_class_code.rs.
+
+126. **[L] G1-K2 — free class from the state byte instead of `class_for(layout)`: honest reject (NO-GO by PMU, latency).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §6.)
+   > **Current state**
+   > - **Status:** NO-GO before the judge; prototype on branch `g1-k2`@`a707eb13`, production unchanged. Design chosen with @oh and the rush reviewer: option (b), non-`hardened` only; `hardened` and the batch free keep the exact Layout check.
+   > - **Current verdict (ИЗМЕРЕНО, perf stat, b4_pmu_probe, K2 vs K1, sefer arm, 3 repeats):** instructions −6 … −10 % on every shape, cycles bulk64 0.904×, mixed 256/1024 0.954×, bulk16k 0.969×, but pair16 1.140× (ns/op 1.162×, 3/3 repeats slower) and churn16 1.052×. The state byte just written by alloc becomes the index of the magazine count load: store→load latency on the critical path. The pre-registered "pair16 ≤ +1 %" bar cannot pass.
+   > - **Next trigger:** a variant that keeps the Layout class as the (parallel) index and uses the byte only for the reject branch while still cutting `class_for` instructions (e.g. saturating SIZE2CLASS sentinel instead of the bounds-check branch, no redundant `.max(MIN_BLOCK)`), judged by J1′ v2.
+   > - **Evidence:** docs/perf/G1_IDEAS.md §6, docs/perf/g1_pmu/k2/ (raw perf stat and callgrind logs, compare table and CSV), scripts/g1_fe_compare.mjs.
+
+128. **[L] G1-K6 — flush without the per-call `recycled_bases` zeroing and the `prev_ptr` stack spill: NO-GO by ceiling (below the layout-noise floor).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §7.)
+   > **Current state**
+   > - **Status:** NO-GO before the judge; patch `docs/perf/g1_pmu/k6/k6_flush_stores.patch` (over `g1-k5`@`2bc830cc`), production unchanged.
+   > - **Current verdict (ИЗМЕРЕНО, perf stat, b4_pmu_probe, sefer arm, 7 interleaved repeats, judge alignment flags):** instructions change only on bulk16k (0.990×), cycles there 0.993×; the control shapes that never call flush (pair16, mixed — instructions 1.000×) move +2.5 … +5.3 % in cycles from code layout alone, more than the whole K6 effect (+8.5 % on pair16 without alignment flags).
+   > - **Next trigger:** none for K6. Method note: a probe A/B must carry a control shape that does not execute the changed code; its shift is the noise floor (also the likely cause of the bulk64 null-copy artifact in items 125/127).
+   > - **Evidence:** docs/perf/G1_IDEAS.md §7, docs/perf/g1_pmu/k6/ (raw perf stat logs aligned/unaligned, compare tables and CSVs, `fe_pair.sh`, `build_only.sh`, patch).
+
+129. **[A] G1-P0 — the magazine <-> segment transfer sets bulk16k time: "transfer = 0" ceiling is 1.75× (measured, not shipped).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §9.)
+   > **Current state**
+   > - **Status:** OPEN `[A]` — ceiling measured; shippable form not chosen; production unchanged.
+   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 × 2000, pre-registered `g1_pmu/p0/G1_P0_PREREG.md`):** class-64 depot K = 1024 → bulk16k effect −56.13 [−56.62, −54.74] in the script's 100·ln units (time ratio 0.5705, 1.75× faster), churn64 −5.90, bulk64 −2.76, no kernel slower beyond pair64 +0.07. Main judge vs mimalloc on that tree: bulk16k t_mi/t_sefer 0.8729, larson 1.0293.
+   > - **Next trigger:** a shippable form (budgeted depot with trim/decay and lazily allocated storage, or a body-write-free free set) chosen with @oh and the rush reviewer; per-thread retention budget is the owner's decision; then a perf(runtime) gate with RSS measured.
+   > - **Evidence:** docs/perf/G1_IDEAS.md §9, docs/perf/g1_pmu/p0/ (prereg, patch, manifests, vs-null table and CSV, vs-mimalloc generator output, PMU and callgrind raws).
 
 ## Recently resolved (closure trail — do not re-list as open)
 

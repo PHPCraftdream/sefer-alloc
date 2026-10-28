@@ -1,0 +1,83 @@
+diff --git a/src/alloc_core/small/alloc_core_small_magazine.rs b/src/alloc_core/small/alloc_core_small_magazine.rs
+index b33c5021..12302513 100644
+--- a/src/alloc_core/small/alloc_core_small_magazine.rs
++++ b/src/alloc_core/small/alloc_core_small_magazine.rs
+@@ -599,8 +599,10 @@ impl AllocCore {
+         // bases once the array is full (`recycled_n == CAP`) — the excess
+         // just loses the double-free containment for anything beyond the
+         // 16th distinct recycled base, it does not corrupt anything.
++        // G1-K6: built on the first recycle only; the common no-recycle call
++        // writes no array (flush is store-bound).
+         const RECYCLED_CAP: usize = 16;
+-        let mut recycled_bases: [*mut u8; RECYCLED_CAP] = [core::ptr::null_mut(); RECYCLED_CAP];
++        let mut recycled_bases: Option<[*mut u8; RECYCLED_CAP]> = None;
+         let mut recycled_n: usize = 0;
+ 
+         let mut i = 0;
+@@ -624,13 +626,16 @@ impl AllocCore {
+             // state); the batched run path must do it explicitly because it
+             // hoists metadata reads ONCE per run, before any per-block guard
+             // could observe the segment having vanished mid-batch.
+-            let already_recycled = recycled_bases[..recycled_n].contains(&candidate);
++            let already_recycled = recycled_bases
++                .as_ref()
++                .is_some_and(|r| r[..recycled_n].contains(&candidate));
+             if !already_recycled {
+                 if let Some(base) = self.table.canonical_base_of(candidate) {
+                     let (run_end, recycled_now) =
+                         self.flush_run(class_idx, base, candidate, blocks, i);
+                     if recycled_now && recycled_n < RECYCLED_CAP {
+-                        recycled_bases[recycled_n] = candidate;
++                        recycled_bases.get_or_insert([core::ptr::null_mut(); RECYCLED_CAP])
++                            [recycled_n] = candidate;
+                         recycled_n += 1;
+                     }
+                     i = run_end;
+@@ -717,9 +722,10 @@ impl AllocCore {
+         } else {
+             Node::deref(base, old_head as usize)
+         };
+-        // Rejected blocks of the run (cold); accepted = run length − rejected,
+-        // retired once after `set_head` (B1-a: no per-accept counter update).
+-        let mut rejected: usize = 0;
++        // Accepted blocks of the run, retired once after `set_head`. G1-K6:
++        // counted on accept (not as run length − rejected) so `start` is dead
++        // in the loop and `prev_ptr` stays in a register.
++        let mut accepted_count: usize = 0;
+         let tag = class_idx as u8 + 1;
+         let span: usize = bump.saturating_sub(payload_start);
+ 
+@@ -737,7 +743,6 @@ impl AllocCore {
+             // yields ≥ span. With a corrupted `bump < payload_start`, span is
+             // 0 and every offset is rejected — same strength as the old pair.
+             if (off as usize).wrapping_sub(payload_start) >= span {
+-                rejected += 1;
+                 continue;
+             }
+             // Guard 2 (per-block): accept only a currently-issued block of
+@@ -746,7 +751,6 @@ impl AllocCore {
+             // class, and an already-FREE block are all rejected/skipped).
+             let sb = meta.state_byte().read(off);
+             if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
+-                rejected += 1;
+                 continue;
+             }
+             // `ptr` identifies the offset only. Link through the stored
+@@ -754,7 +758,6 @@ impl AllocCore {
+             let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
+                 Some(nn) => nn,
+                 None => {
+-                    rejected += 1;
+                     continue;
+                 }
+             };
+@@ -770,8 +773,8 @@ impl AllocCore {
+                 crate::alloc_core::state_byte::StateByte::FREE,
+             );
+             prev_ptr = block_nn.as_ptr();
++            accepted_count += 1;
+         }
+-        let accepted_count = end - start - rejected;
+ 
+         // Write the new head ONCE (only if ≥1 block was accepted). Mirrors the
+         // final `set_head` of the last sequential `dealloc_small` in the run.
