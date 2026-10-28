@@ -1,0 +1,250 @@
+# U32: try_carve_batch issues its bump run per leaf (IssueRun::prepare_range/commit_range) instead of per block.
+diff --git a/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs b/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs
+index de8592b0..df025654 100644
+--- a/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs
++++ b/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs
+@@ -45,6 +45,17 @@ impl LeafCursor {
+     pub(crate) fn leaf_index(granule: usize) -> usize {
+         granule / LEAF_GRANULES
+     }
++
++    /// Blocks of a `stride`-granule run starting at `granule` that start in
++    /// `granule`'s leaf, capped at `remaining` (`stride > 0`).
++    pub(crate) fn blocks_in_leaf(granule: usize, stride: usize, remaining: usize) -> usize {
++        debug_assert!(stride > 0);
++        if stride >= LEAF_GRANULES {
++            return remaining.min(1);
++        }
++        let left = LEAF_GRANULES - granule % LEAF_GRANULES;
++        left.div_ceil(stride).min(remaining)
++    }
+ }
+ 
+ #[cfg(all(feature = "internals", feature = "bench-internals"))]
+@@ -230,6 +241,31 @@ impl ClassLeaves {
+             .store(class + 1, Ordering::Release);
+     }
+ 
++    /// Contiguous-run twin of [`Self::issue_in`]: the same Release store for
++    /// `count` blocks `stride` granules apart from `granule`, all inside the
++    /// cursor's leaf (see [`LeafCursor::blocks_in_leaf`]).
++    pub(crate) fn issue_run_in(
++        &self,
++        cursor: &LeafCursor,
++        granule: usize,
++        stride: usize,
++        count: usize,
++        class: u8,
++    ) {
++        debug_assert_eq!(cursor.leaf_idx(), LeafCursor::leaf_index(granule));
++        debug_assert!(usize::from(class) < SMALL_CLASS_COUNT);
++        let first = granule % LEAF_GRANULES;
++        if count == 0 || first + (count - 1) * stride >= LEAF_GRANULES {
++            fatal(b"leaf_classes: issue run leaves its leaf\n");
++        }
++        for j in 0..count {
++            // SAFETY: as in `issue_in`; the check above keeps every index
++            // inside the cursor's LEAF_GRANULES-byte leaf.
++            unsafe { &*cursor.leaf.as_ptr().add(first + j * stride) }
++                .store(class + 1, Ordering::Release);
++        }
++    }
++
+     pub(crate) fn issue(&self, granule: usize, class: u8) -> bool {
+         if granule >= LEAVES * LEAF_GRANULES || usize::from(class) >= SMALL_CLASS_COUNT {
+             return false;
+@@ -296,6 +332,25 @@ impl ClassLeaves {
+             .unwrap_or(false)
+     }
+ 
++    /// Run twin of [`Self::fail_prepare_injected`]: `k` same-leaf blocks
++    /// consume the countdown at once. The run aborts at the first refusal and
++    /// same-leaf blocks promote nothing, so which of the `k` refused is
++    /// unobservable.
++    #[cfg(all(feature = "internals", feature = "bench-internals"))]
++    pub(crate) fn fail_prepare_injected_n(k: usize) -> bool {
++        FAIL_PREPARE_AFTER
++            .try_with(|n| {
++                let left = n.get();
++                if left == 0 || left > k {
++                    n.set(left.saturating_sub(k));
++                    return false;
++                }
++                n.set(0);
++                true
++            })
++            .unwrap_or(false)
++    }
++
+     #[cfg(all(feature = "internals", feature = "bench-internals"))]
+     pub(crate) fn fail_prepare_after(count: usize) {
+         let _ = FAIL_PREPARE_AFTER.try_with(|n| n.set(count));
+diff --git a/src/alloc_core/segment/segment_table/issue_transaction.rs b/src/alloc_core/segment/segment_table/issue_transaction.rs
+index 02aa5721..1e5ee692 100644
+--- a/src/alloc_core/segment/segment_table/issue_transaction.rs
++++ b/src/alloc_core/segment/segment_table/issue_transaction.rs
+@@ -210,4 +210,34 @@ impl<'a> IssueRun<'a> {
+         #[cfg(not(feature = "alloc-global"))]
+         let _ = offset;
+     }
++
++    /// [`Self::prepare_for`] over the bump run `start + i * stride`, `i < n`,
++    /// with one leaf check per leaf. Unrouted: `true`, as per block.
++    #[cfg_attr(not(debug_assertions), inline(always))]
++    pub(crate) fn prepare_range(&mut self, start: u32, stride: u32, n: usize) -> bool {
++        #[cfg(feature = "alloc-global")]
++        if let Some(inner) = &mut self.routed {
++            return inner.prepare_range(start, stride, n);
++        }
++        #[cfg(not(feature = "alloc-global"))]
++        let _ = (start, stride, n);
++        true
++    }
++
++    /// [`Self::commit`] over the same bump run, one leaf resolve per leaf.
++    #[cfg_attr(not(debug_assertions), inline(always))]
++    pub(crate) fn commit_range(&mut self, start: u32, stride: u32, n: usize) {
++        #[cfg(debug_assertions)]
++        debug_assert_eq!(
++            self.index,
++            SegmentHeader::segment_id_at(self.base) as usize,
++            "batch commit: run index must still be its segment's stamped id",
++        );
++        #[cfg(feature = "alloc-global")]
++        if let Some(inner) = &mut self.routed {
++            inner.commit_range(start, stride, n);
++        }
++        #[cfg(not(feature = "alloc-global"))]
++        let _ = (start, stride, n);
++    }
+ }
+diff --git a/src/alloc_core/segment/segment_table/route_slots.rs b/src/alloc_core/segment/segment_table/route_slots.rs
+index 53d36fc5..d9daf2a5 100644
+--- a/src/alloc_core/segment/segment_table/route_slots.rs
++++ b/src/alloc_core/segment/segment_table/route_slots.rs
+@@ -342,6 +342,79 @@ impl RoutedIssueRun<'_> {
+         self.classes
+             .issue_in(self.cursor.as_ref().unwrap(), granule, self.class);
+     }
++
++    /// Bump-run twin of `n` [`Self::prepare_for`] calls at `start + i *
++    /// stride`: the same refusals, but one leaf check per leaf instead of per
++    /// block.
++    pub(super) fn prepare_range(&mut self, start: u32, stride: u32, n: usize) -> bool {
++        let Some((first, step)) = run_granules(start, stride, n) else {
++            return n == 0;
++        };
++        let mut i = 0;
++        while i < n {
++            let granule = first + i * step;
++            let k = LeafCursor::blocks_in_leaf(granule, step, n - i);
++            let leaf = LeafCursor::leaf_index(granule);
++            // Blocks a same-leaf `prepare_for` would have skipped.
++            let mut skipped = k;
++            if !self.cursor.as_ref().is_some_and(|c| c.leaf_idx() == leaf) {
++                match self.classes.prepare_leaf(granule, self.class) {
++                    Some(cursor) => self.cursor = Some(cursor),
++                    None => return false,
++                }
++                skipped -= 1;
++            }
++            #[cfg(all(feature = "internals", feature = "bench-internals"))]
++            if ClassLeaves::fail_prepare_injected_n(skipped) {
++                return false;
++            }
++            let _ = skipped;
++            i += k;
++        }
++        true
++    }
++
++    /// Bump-run twin of `n` [`Self::commit`] calls: each leaf is resolved
++    /// once, then its blocks take the same per-block Release store.
++    pub(super) fn commit_range(&mut self, start: u32, stride: u32, n: usize) {
++        let Some((first, step)) = run_granules(start, stride, n) else {
++            if n != 0 {
++                fatal(b"route_slots: batch issue run out of segment\n");
++            }
++            return;
++        };
++        let mut i = 0;
++        while i < n {
++            let granule = first + i * step;
++            let k = LeafCursor::blocks_in_leaf(granule, step, n - i);
++            let leaf = LeafCursor::leaf_index(granule);
++            if !self.cursor.as_ref().is_some_and(|c| c.leaf_idx() == leaf) {
++                let cursor = self.classes.resolve_leaf(granule).unwrap_or_else(|| {
++                    fatal(b"route_slots: batch issue commit on unprepared leaf\n")
++                });
++                self.cursor = Some(cursor);
++            }
++            self.classes
++                .issue_run_in(self.cursor.as_ref().unwrap(), granule, step, k, self.class);
++            i += k;
++        }
++    }
++}
++
++/// First granule and granule stride of a run of `n > 0` blocks at `start +
++/// i * stride`, or `None` when a block would leave the segment or break
++/// `MIN_BLOCK` alignment (where `prepare_for` refuses).
++fn run_granules(start: u32, stride: u32, n: usize) -> Option<(usize, usize)> {
++    let (start, stride) = (start as usize, stride as usize);
++    if n == 0
++        || stride == 0
++        || !start.is_multiple_of(MIN_BLOCK)
++        || !stride.is_multiple_of(MIN_BLOCK)
++    {
++        return None;
++    }
++    let last = (n - 1).checked_mul(stride)?.checked_add(start)?;
++    (last < SEGMENT).then_some((start / MIN_BLOCK, stride / MIN_BLOCK))
+ }
+ 
+ impl Drop for RouteSlots {
+diff --git a/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs b/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+index 7058ff28..ba3a3889 100644
+--- a/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
++++ b/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+@@ -873,17 +873,15 @@ impl AllocCore {
+         }
+         let room = (SEGMENT - aligned_start) / block_size;
+         let n = out.len().min(room);
+-        // Run-level protocol (B4-R3): guards once per run, per-block
+-        // `prepare_for` promotes only on a leaf CHANGE, `run.commit` is one
+-        // Release store (see `IssueRun`). A successful promotion is retained
+-        // even if later OS commit fails; no class code or issue credit
+-        // changes until the carve commits.
++        // Run-level protocol (B4-R3, U32): guards once per run; the bump run
++        // is contiguous, so `prepare_range` promotes once per leaf and
++        // `commit_range` resolves once per leaf, then one Release store per
++        // block (see `IssueRun`). A successful promotion is retained even if
++        // later OS commit fails; no class code or issue credit changes until
++        // the carve commits.
+         let mut run = self.table.prepare_small_issue_run(segment, class_idx);
+-        for i in 0..n {
+-            let off = aligned_start + i * block_size;
+-            if !run.prepare_for(off as u32) {
+-                return Err(());
+-            }
++        if !run.prepare_range(aligned_start as u32, block_size as u32, n) {
++            return Err(());
+         }
+         // Recommit ONCE at run start if the segment's payload was decommitted
+         // (identical to `carve_block`'s per-block check — the flag cannot change
+@@ -962,6 +960,7 @@ impl AllocCore {
+         let mut pm = meta.page_map();
+         #[cfg(feature = "page-map-diag")]
+         let mut prev_page = usize::MAX;
++        run.commit_range(aligned_start as u32, block_size as u32, n);
+         for (i, slot) in out[..n].iter_mut().enumerate() {
+             let off = aligned_start + i * block_size;
+             #[cfg(feature = "page-map-diag")]
+@@ -975,7 +974,6 @@ impl AllocCore {
+                 }
+             }
+             let ptr = Node::deref(segment, off);
+-            run.commit(off as u32);
+             // B4 (в)/S1: freshly carved blocks commit `issue_state` (see doc).
+             meta.state_byte().write(off as u32, class_idx, issue_state);
+             *slot = ptr;

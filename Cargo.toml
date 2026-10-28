@@ -2723,3 +2723,7 @@ required-features = ["production"]
 [[test]]
 name = "b4_ablate_variant_null"
 required-features = ["production"]
+
+[[example]]
+name = "u32_growth_time_probe"
+required-features = ["production"]
