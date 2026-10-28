@@ -25,16 +25,21 @@ pub(crate) const DEPOT_K: [u8; DEPOT_CLASSES] = {
     }
     k
 };
-pub(crate) const DEPOT_BUDGET_BYTES: usize = 240 * 1024;
+pub(crate) const DEPOT_BUDGET_BYTES: usize = 2 * 1024 * 1024;
+/// G1-P0 (ceiling probe, not shipped): class 3 (64 B) parks up to `BIG_K`
+/// magazines in a separate array.
+pub(crate) const BIG_CLASS: usize = 3;
+pub(crate) const BIG_K: usize = 1024;
 /// `DEPOT_K` widened to every small class (0 = no depot), so the inline
 /// overflow gate needs no separate `c < DEPOT_CLASSES` test.
-pub(crate) const DEPOT_CAP: [u8; SMALL_CLASS_COUNT] = {
-    let mut t = [0u8; SMALL_CLASS_COUNT];
+pub(crate) const DEPOT_CAP: [u16; SMALL_CLASS_COUNT] = {
+    let mut t = [0u16; SMALL_CLASS_COUNT];
     let mut c = 0;
     while c < DEPOT_CLASSES {
-        t[c] = DEPOT_K[c];
+        t[c] = DEPOT_K[c] as u16;
         c += 1;
     }
+    t[BIG_CLASS] = BIG_K as u16;
     t
 };
 
@@ -42,7 +47,7 @@ const fn depot_bytes() -> usize {
     let mut total = 0;
     let mut c = 0;
     while c < DEPOT_CLASSES {
-        total += SIZE_CLASS_TABLE[c] * TCACHE_CAP * DEPOT_K[c] as usize;
+        total += SIZE_CLASS_TABLE[c] * TCACHE_CAP * DEPOT_CAP[c] as usize;
         c += 1;
     }
     total
@@ -59,7 +64,7 @@ const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[5] == 11
 const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[6] == 144);
 const _: () = assert!(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[7] == 192);
 const _: () = assert!(depot_bytes() <= DEPOT_BUDGET_BYTES);
-const _: () = assert!(depot_bytes() == 241_408);
+const _: () = assert!(depot_bytes() == 241_408 - 64 * 16 * 8 + 64 * 16 * BIG_K);
 // Every depot class parks full magazines: its K fits the store and its free
 // park cap is the whole magazine.
 const _: () = {
@@ -81,6 +86,7 @@ const _: () = {
 /// hot-path gates read it without touching this store.
 pub(crate) struct Depot {
     mags: [[[*mut u8; TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
+    big: [[*mut u8; TCACHE_CAP]; BIG_K],
 }
 
 impl Depot {
@@ -89,6 +95,7 @@ impl Depot {
     pub(crate) const fn empty() -> Self {
         Self {
             mags: [[[core::ptr::null_mut(); TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
+            big: [[core::ptr::null_mut(); TCACHE_CAP]; BIG_K],
         }
     }
 
@@ -98,14 +105,18 @@ impl Depot {
     pub(crate) fn depot_park(
         &mut self,
         c: usize,
-        n: &mut u8,
+        n: &mut u16,
         magazine: &[*mut u8; TCACHE_CAP],
     ) -> bool {
         let i = *n as usize;
-        if i >= DEPOT_K[c] as usize {
+        if i >= DEPOT_CAP[c] as usize {
             return false;
         }
-        self.mags[c][i] = *magazine;
+        if c == BIG_CLASS {
+            self.big[i] = *magazine;
+        } else {
+            self.mags[c][i] = *magazine;
+        }
         *n += 1;
         true
     }
@@ -116,14 +127,18 @@ impl Depot {
     pub(crate) fn depot_reload(
         &mut self,
         c: usize,
-        n: &mut u8,
+        n: &mut u16,
         magazine: &mut [*mut u8; TCACHE_CAP],
     ) -> bool {
         if *n == 0 {
             return false;
         }
         *n -= 1;
-        *magazine = self.mags[c][*n as usize];
+        *magazine = if c == BIG_CLASS {
+            self.big[*n as usize]
+        } else {
+            self.mags[c][*n as usize]
+        };
         true
     }
 }

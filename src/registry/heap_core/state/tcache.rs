@@ -246,7 +246,7 @@ pub(crate) struct PerClass {
     /// the slot's depot (`0..=DEPOT_CAP[c]`). Sits in the padding byte after
     /// `count` (no size change), so the overflow / miss branches gate the
     /// cold depot calls without leaving this line.
-    pub(crate) parked: u8,
+    pub(crate) parked: u16,
     /// R13-3 (task #273): magazine-resident virginity bitmask, ONE bit per
     /// `slots` index (bit `i` set ⟺ `slots[i]` is a genuinely virgin —
     /// never-before-served, `Node::zero`-skippable — block, per the
@@ -320,12 +320,12 @@ const _: () = assert!(
     "PerClass::count must sit at offset 0 (repr(C), declared first) for the documented magazine cache-line locality"
 );
 const _: () = assert!(
-    ::core::mem::offset_of!(PerClass, parked) == 1,
-    "PerClass::parked must use the pad byte after count (offset 1)"
+    ::core::mem::offset_of!(PerClass, parked) == 2,
+    "G1-P0: PerClass::parked is u16 at offset 2"
 );
 #[cfg(feature = "virgin-zero-skip")]
 const _: () = assert!(
-    ::core::mem::offset_of!(PerClass, virgin_mask) == 2,
+    ::core::mem::offset_of!(PerClass, virgin_mask) == 4,
     "PerClass::virgin_mask must sit at offset 2 (repr(C), declared second, after u8 count + 1 pad byte)"
 );
 // R2-17: this is the concrete pin the crate-root gate in `src/lib.rs` exists
