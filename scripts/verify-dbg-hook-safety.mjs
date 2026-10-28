@@ -188,6 +188,10 @@ const PURE_OBSERVERS = [
 // Safe mutators: each retained reviewed invariant justification is authoritative.
 const SAFE_MUTATORS = [
   [
+    "src/registry/heap_core/diag/diag_probes.rs::dbg_arm_depot_overflow_faults",
+    "G1-K7 test fault: stores Relaxed fail-next counts consulted only before a depot-overflow reservation and (aligned-vmem's existing hook, as dbg_arm_commit_fail) before a real page commit; both take existing OS-refusal paths; no pointer, no metadata write; compiled only with the test-only lazy-commit-fault-injection feature"
+  ],
+  [
     "src/global/sefer_alloc/diag.rs::dbg_background_maintenance_current_thread",
     "delegates only to the production bounded background_maintenance_step for current_for_trim's current-thread exclusive live HeapCore; no FREE-slot lease or lifecycle mutation; bench-internals + internals gated"
   ],  [

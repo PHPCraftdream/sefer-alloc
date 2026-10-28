@@ -43,8 +43,9 @@
 ///   never LIVE; this invariant applies at completed-operation boundaries.
 /// - **И3 (MAG exactness at operation boundaries):** for a nonzero state byte,
 ///   `state == MAG` exactly on granules currently resident in a tcache
-///   magazine, and nowhere else; this invariant applies at completed-operation
-///   boundaries.
+///   magazine — the live one or a full one parked in the heap's depot (its
+///   floor or, under `alloc-decommit`, its overflow) — and nowhere else; this
+///   invariant applies at completed-operation boundaries.
 /// - **И4 (FREE exactness at operation boundaries):** for a nonzero state byte,
 ///   `state == FREE` exactly on granules currently on a bin / free list of the
 ///   segment, and nowhere else; this invariant applies at completed-operation

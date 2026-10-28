@@ -512,6 +512,9 @@ impl HeapCore {
         // by construction (`tests/r6_t39_free_park_cap_equals_refill.rs`
         // pins it); read the table instead of dividing on every refill miss.
         let want = crate::registry::heap_core::state::tcache::FREE_PARK_CAP[c] as usize;
+        // G1-K7: a segment refill is a cold event for the overflow decay.
+        #[cfg(feature = "alloc-decommit")]
+        self.depot_tick();
         let mut virgin_mask: u16 = 0;
         let n = self.refill_with_large_rescue(|heap| {
             let cur = &mut heap.tcache.classes[c];

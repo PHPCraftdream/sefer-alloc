@@ -126,7 +126,11 @@ impl HeapCore {
 
     /// G1-K7: decommit the depot overflow's record pages and reset its rings
     /// once the teardown drain has emptied the depot.
-    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "alloc-decommit"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit"
+    ))]
     fn depot_release_overflow_pages(&mut self) {
         if let Some(depot) = self.depot.as_deref_mut() {
             depot.ovf.release_pages();
@@ -149,7 +153,8 @@ impl HeapCore {
         let Some(depot) = self.depot.as_deref_mut() else {
             return;
         };
-        if !depot.ovf.active() {
+        // Empty overflow: no record to decay, every watermark and debt is 0.
+        if !depot.ovf.active() || depot.ovf.bytes() == 0 {
             return;
         }
         let mut lens = [0usize; DEPOT_CLASSES];

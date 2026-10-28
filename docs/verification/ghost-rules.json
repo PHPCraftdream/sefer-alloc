@@ -2083,6 +2083,82 @@
       "nested_before": true
     },
     {
+      "id": "depot/overflow-reset-after-release",
+      "kind": "R3",
+      "protocol": "P12",
+      "file": "src/registry/heap_core/state/depot_overflow.rs",
+      "fn": "DepotOverflow::release_pages",
+      "before": {
+        "name": "decommit_depot_overflow"
+      },
+      "after": {
+        "name": "reset_rings"
+      },
+      "terms": [
+        "overflow",
+        "reset",
+        "decommit",
+        "reset_rings",
+        "re-commit"
+      ],
+      "reason": "G1-K7: after the record pages are decommitted every ring and commit watermark is reset, so the next park re-commits before writing a record instead of writing a decommitted page",
+      "tests": [
+        "tests/g1_k7_depot_overflow.rs",
+        "tests/g1_k7_depot_overflow_faults.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_overflow_reset_after_release",
+      "mutants": [
+        {
+          "id": "skip-reset",
+          "file": "src/registry/heap_core/state/depot_overflow.rs",
+          "from": "            c += 1;\n        }\n        self.reset_rings();\n",
+          "to": "            c += 1;\n        }\n",
+          "checker": {
+            "name": "cargo test g1_k7_depot_overflow",
+            "cmd": [
+              "cargo",
+              "test",
+              "--features",
+              "production internals bench-internals",
+              "--test",
+              "g1_k7_depot_overflow"
+            ],
+            "expect": "test result: FAILED|process didn't exit successfully"
+          }
+        }
+      ],
+      "nested_before": true
+    },
+    {
+      "id": "depot/no-decay-in-teardown",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "depot_tick"
+      },
+      "allowed": [
+        "HeapCore::refill_magazine_slow",
+        "HeapCore::refill_magazine_slow_virgin",
+        "HeapCore::free_magazine_full"
+      ],
+      "terms": [
+        "decay",
+        "depot_tick",
+        "teardown",
+        "refill",
+        "free"
+      ],
+      "reason": "G1-K7: the overflow decay runs only on the owner's cold refill and free events, never inside the teardown drain (flush_all_tcache / depot_reload), so the drain alone empties the depot",
+      "tests": [
+        "tests/g1_k7_depot_overflow.rs",
+        "tests/g1_k7_depot_overflow_order.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_no_decay_in_teardown"
+    },
+    {
       "id": "depot/bind-once",
       "kind": "R5",
       "protocol": "P12",

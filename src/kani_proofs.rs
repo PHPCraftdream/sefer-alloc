@@ -423,3 +423,80 @@ mod depot_proofs {
         assert!(out == o);
     }
 }
+
+#[cfg(all(
+    kani,
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+mod depot_overflow_proofs {
+    use crate::alloc_core::size_classes::SIZE_CLASS_TABLE;
+    use crate::alloc_core::LargeCacheConfig;
+    use crate::registry::heap_core::state::depot_overflow::DepotOverflow;
+    use crate::registry::heap_core::{DEPOT_CLASSES, DEPOT_K, TCACHE_CAP};
+
+    const CAP: usize = 3;
+    const STEPS: usize = 5;
+
+    /// И-O1: the ring against a queue model — park appends iff the ring and
+    /// the budget have room, reload returns the newest record, decay the
+    /// oldest (the ring wraps once decay moved its head), and the parked
+    /// byte count is always `len * magazine bytes`.
+    #[kani::proof]
+    #[kani::unwind(18)]
+    fn overflow_ring_matches_a_queue() {
+        let mut buf = [[core::ptr::null_mut::<u8>(); TCACHE_CAP]; CAP];
+        let c: usize = kani::any();
+        kani::assume(c < DEPOT_CLASSES);
+        let budget: usize = kani::any();
+        kani::assume(budget <= 1 << 30);
+        let mb = SIZE_CLASS_TABLE[c] * TCACHE_CAP;
+        let mut o = DepotOverflow::kani_on_buffer(buf.as_mut_ptr().cast(), c, CAP as u16);
+        let mut model = [0usize; STEPS];
+        let (mut front, mut back) = (0usize, 0usize);
+        let mut out = [core::ptr::null_mut::<u8>(); TCACHE_CAP];
+        let mut step = 0;
+        while step < STEPS {
+            let n = back - front;
+            let op: u8 = kani::any();
+            if op % 3 == 0 {
+                let id = step + 1;
+                let mag = [id as *mut u8; TCACHE_CAP];
+                let room = n < CAP && o.bytes() + mb <= budget;
+                assert_eq!(o.park(c, n, &mag, budget), room);
+                if room {
+                    model[back] = id;
+                    back += 1;
+                }
+            } else if op % 3 == 1 && n > 0 {
+                o.reload(c, n, &mut out);
+                back -= 1;
+                assert_eq!(out[0] as usize, model[back]);
+                assert_eq!(out[TCACHE_CAP - 1] as usize, model[back]);
+            } else if n > 0 {
+                o.pop_oldest(c, n, &mut out);
+                assert_eq!(out[0] as usize, model[front]);
+                front += 1;
+            }
+            assert_eq!(o.bytes(), (back - front) * mb);
+            step += 1;
+        }
+        kani::cover!(front > 0 && back - front == CAP, "the ring wrapped full");
+    }
+
+    /// И-O2: for every request the resolved budget is a multiple of 256 B
+    /// and floor + overflow ring of any depot class fits `PerClass::parked`.
+    #[kani::proof]
+    fn resolved_budget_fits_the_parked_counter() {
+        let req: usize = kani::any();
+        let c: usize = kani::any();
+        kani::assume(c < DEPOT_CLASSES);
+        let b = LargeCacheConfig::new()
+            .depot_budget_bytes(req)
+            .resolved_depot_budget_bytes();
+        assert_eq!(b % 256, 0);
+        assert!(b <= req);
+        assert!(DEPOT_K[c] as usize + DepotOverflow::cap_for(b, c) <= u16::MAX as usize);
+    }
+}

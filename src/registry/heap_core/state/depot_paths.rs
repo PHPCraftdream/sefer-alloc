@@ -6,6 +6,27 @@ use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
+    /// Whether a full magazine of class `c` can park: room in the floor, or
+    /// a non-zero budget whose share for `c` still has room. The free path's
+    /// inline gate (the shared byte budget is checked in `depot_park`).
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    pub(crate) fn depot_may_park(&self, c: usize) -> bool {
+        let k = crate::registry::heap_core::state::depot::DEPOT_CAP[c] as usize;
+        let parked = self.tcache.classes[c].parked as usize;
+        if parked < k {
+            return true;
+        }
+        #[cfg(feature = "alloc-decommit")]
+        {
+            use crate::registry::heap_core::state::depot_overflow::DepotOverflow;
+            let budget = self.depot_budget as usize;
+            k != 0 && budget != 0 && parked - k < DepotOverflow::cap_for(budget, c)
+        }
+        #[cfg(not(feature = "alloc-decommit"))]
+        false
+    }
+
     /// Park a full magazine: into the floor while it has room, then into the
     /// overflow within the heap's budget. `false` (no change) otherwise.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]

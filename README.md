@@ -793,14 +793,14 @@ item-scoped regions.
 | [`src/registry/heap_core_xthread/routing.rs`](src/registry/heap_core_xthread/routing.rs) | 3 | Unique-transfer foreign publication boundaries: `dealloc_routing`'s call-site block, `publish_foreign` (cached-pin fast path + uncached fallback), and `publish_foreign_uncached`. |
 | [`src/registry/heap_core_xthread/route_pin_cache.rs`](src/registry/heap_core_xthread/route_pin_cache.rs) | 1 | `publish_cached` — the per-thread cached-pin publication boundary: publishes through a still-linked cached pin without a directory lookup (the Release `linked = false` store on unlink under the shard lock is what makes the cached path sound). |
 | [`src/registry/heap_core_xthread/sidecar_drain.rs`](src/registry/heap_core_xthread/sidecar_drain.rs) | 2 | Test-only sidecar publication and synthetic detached-record reclaim boundaries. |
-| [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 9 | Exclusive current-heap trim and diagnostic delegation sites. |
+| [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 10 | Exclusive current-heap trim and diagnostic delegation sites. |
 | [`crates/tagged-index-stack/src/imp.rs`](crates/tagged-index-stack/src/imp.rs) | 10 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` trait and bridge make all three hooks `unsafe fn`; the bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. The shared `push_index_impl` and `pop_index_impl` are the caller-side proof regions, while `StackOps::push_index` and `ArrayIndexStack::push` carry the public unsafe boundaries; the direct `ArrayIndexStack` sealed-hook implementation is the ninth region. The tenth is `store_next_for_test`, a `--cfg loom`-only raw link-cell write forwarder used solely by the loom tiny-tag counterfactual (an `unsafe fn`, not a safe one, since misuse can double-issue an index). The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **105** tier-2 item-scoped allows across **33**
+`src/`, 6 in `crates/`) plus **106** tier-2 item-scoped allows across **33**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1421,7 +1421,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **461 integration test files**,
+needs its acceptance run. The present tree contains **463 integration test files**,
 **100 example binaries**, **34 benches**, and **23 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1431,7 +1431,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (461 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (463 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (100 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

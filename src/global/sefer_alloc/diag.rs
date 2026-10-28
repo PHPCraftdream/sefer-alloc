@@ -651,4 +651,30 @@ impl SeferAlloc {
             0
         }
     }
+
+    /// G1-K7 MEASUREMENT-ONLY: the calling thread's own heap's depot budget
+    /// `(resolved, effective)` and overflow counters (see
+    /// `HeapCore::dbg_depot_overflow`) — the R26-4 read-back through the real
+    /// `#[global_allocator]` path. `None` on the fallback heap.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "fastbin",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_current_depot_overflow(&self) -> Option<((usize, usize), [u64; 9])> {
+        if let CurrentHeap::Own(heap) = self.current_heap() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread — same justification as
+            // `dbg_current_large_cache_extension_materialised` above.
+            #[allow(unsafe_code)]
+            unsafe {
+                Some(((*heap).dbg_depot_budget(), (*heap).dbg_depot_overflow()))
+            }
+        } else {
+            None
+        }
+    }
 }

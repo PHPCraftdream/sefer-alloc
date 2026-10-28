@@ -122,9 +122,9 @@ fn overflow_parks_up_to_budget_then_flushes_and_reloads_only_freed_blocks() {
         "overflow holds exactly the budget"
     );
     assert_eq!(after[PARKS] - before[PARKS], OVF64 as u64);
-    assert!(
-        after[BUDGET_REFUSALS] > before[BUDGET_REFUSALS],
-        "over budget -> flush"
+    assert_eq!(
+        after[BUDGET_REFUSALS], before[BUDGET_REFUSALS],
+        "a full ring is refused inline, with no cold call"
     );
     // Reissue: every block comes back exactly once, only freed ones.
     let freed: HashSet<usize> = blocks.iter().map(|p| *p as usize).collect();
@@ -136,6 +136,38 @@ fn overflow_parks_up_to_budget_then_flushes_and_reloads_only_freed_blocks() {
     assert_eq!(reloaded[RELOADS] - after[RELOADS], OVF64 as u64);
     assert_eq!(reloaded[BYTES], 0);
     free_all(heap, 64, &again);
+    heap.dbg_flush_all();
+    drop(lease);
+}
+
+#[test]
+fn a_second_class_is_refused_by_the_shared_budget() {
+    let _s = Serial::lock();
+    let mut lease = claim();
+    let heap = lease.core();
+    heap.dbg_flush_all();
+    let n64 = 16 * (1 + FLOOR64 + OVF64);
+    let b64 = alloc_n(heap, 64, n64);
+    free_all(heap, 64, &b64);
+    assert_eq!(heap.dbg_depot_overflow()[BYTES] as usize, BUDGET);
+    let before = heap.dbg_depot_overflow();
+    // Class 16's own ring (64 records) has room; the heap's budget does not.
+    let n16 = 16 * (1 + 8 + 2);
+    let b16 = alloc_n(heap, 16, n16);
+    free_all(heap, 16, &b16);
+    let after = heap.dbg_depot_overflow();
+    assert!(
+        after[BUDGET_REFUSALS] > before[BUDGET_REFUSALS],
+        "over budget -> flush"
+    );
+    assert_eq!(after[PARKS], before[PARKS], "nothing parked over budget");
+    assert_eq!(heap.dbg_depot_len(C16), 8, "class 16 keeps only its floor");
+    let again = alloc_n(heap, 16, n16);
+    let got: HashSet<usize> = again.iter().map(|p| *p as usize).collect();
+    assert_eq!(got.len(), n16, "no duplicate address");
+    free_all(heap, 16, &again);
+    let again64 = alloc_n(heap, 64, n64);
+    free_all(heap, 64, &again64);
     heap.dbg_flush_all();
     drop(lease);
 }

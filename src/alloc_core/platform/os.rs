@@ -956,6 +956,27 @@ pub(crate) fn commit_depot_overflow(base: *mut u8, start: usize, end: usize) -> 
 ))]
 pub(crate) fn decommit_depot_overflow(base: *mut u8, start: usize, end: usize) {
     // SAFETY: as in `commit_depot_overflow`; the caller holds no live record
-    // in the range and will re-commit before writing it again.
-    unsafe { vmem::decommit(base, start, end) };
+    // in the range and will re-commit before writing it again. The contents
+    // are never read after this, so the lazy advice is enough where the eager
+    // one is advisory-only (Darwin and the BSDs, CORRECTNESS_OPEN_ITEMS 48).
+    #[cfg(any(
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    unsafe {
+        vmem::decommit_lazy(base, start, end)
+    };
+    #[cfg(not(any(
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    )))]
+    unsafe {
+        vmem::decommit(base, start, end)
+    };
 }

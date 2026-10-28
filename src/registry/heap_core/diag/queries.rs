@@ -227,7 +227,8 @@ impl HeapCore {
 
     /// TEST-ONLY (G1-K7): depot-overflow counters `[bytes parked, parks,
     /// reloads, budget refusals, OS refusals, decay-flushed records,
-    /// ingress checks, page decommits]`; all 0 for an unbound heap.
+    /// ingress checks, decommit calls, committed record bytes]`; all 0 for an
+    /// unbound heap.
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-global",
@@ -235,9 +236,9 @@ impl HeapCore {
         feature = "alloc-decommit",
         feature = "internals"
     ))]
-    pub fn dbg_depot_overflow(&self) -> [u64; 8] {
+    pub fn dbg_depot_overflow(&self) -> [u64; 9] {
         let Some(depot) = self.depot.as_deref() else {
-            return [0; 8];
+            return [0; 9];
         };
         let o = &depot.ovf;
         let s = o.stats;
@@ -250,6 +251,7 @@ impl HeapCore {
             s.decay_flushed,
             s.ingress_checks,
             s.decommits,
+            o.committed_bytes() as u64,
         ]
     }
 

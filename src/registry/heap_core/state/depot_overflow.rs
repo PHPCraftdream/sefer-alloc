@@ -20,6 +20,20 @@ pub(crate) const EPOCH_MIN: u32 = 256;
 /// Decay flushes at most this many records per cold event.
 pub(crate) const DECAY_WORK: u32 = 4;
 
+/// TEST-ONLY fault hook: the next `n` overflow reservations fail as if the
+/// OS refused them (the commit side uses `aligned-vmem`'s own hook).
+#[cfg(feature = "lazy-commit-fault-injection")]
+pub(crate) static RESERVE_FAIL_NEXT: core::sync::atomic::AtomicU32 =
+    core::sync::atomic::AtomicU32::new(0);
+
+#[cfg(feature = "lazy-commit-fault-injection")]
+fn reserve_fault_fires() -> bool {
+    use core::sync::atomic::Ordering::Relaxed;
+    RESERVE_FAIL_NEXT
+        .fetch_update(Relaxed, Relaxed, |n| n.checked_sub(1))
+        .is_ok()
+}
+
 const _: () = assert!(REC == 128);
 const _: () = assert!(DEPOT_CLASSES <= 32);
 
@@ -32,6 +46,7 @@ pub(crate) struct OverflowStats {
     pub(crate) os_refusals: u64,
     pub(crate) decay_flushed: u64,
     pub(crate) ingress_checks: u64,
+    /// Decommit calls issued (not proof the OS dropped the pages).
     pub(crate) decommits: u64,
 }
 
@@ -87,10 +102,28 @@ impl DepotOverflow {
         }
     }
 
+    /// Kani-only: an overflow whose class `c` ring of `cap` records lives,
+    /// fully committed, at `base` (a local buffer of `cap` records).
+    #[cfg(kani)]
+    pub(crate) fn kani_on_buffer(base: *mut u8, c: usize, cap: u16) -> Self {
+        let mut o = Self::empty();
+        o.base = base;
+        o.cap[c] = cap;
+        o.committed[c] = cap as u32 * REC as u32;
+        o.epoch_len = EPOCH_MIN;
+        o
+    }
+
     /// Bytes of blocks currently parked in the overflow.
-    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub(crate) fn bytes(&self) -> usize {
         self.bytes
+    }
+
+    /// Record bytes currently committed (all classes; the reservation's
+    /// first page counts once it exists).
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    pub(crate) fn committed_bytes(&self) -> usize {
+        self.committed.iter().map(|&b| b as usize).sum()
     }
 
     /// Whether a reservation exists (decay and teardown work only then).
@@ -125,7 +158,15 @@ impl DepotOverflow {
         if total == 0 {
             return false;
         }
-        match crate::alloc_core::os::reserve_depot_overflow(total.next_multiple_of(page)) {
+        #[cfg(feature = "lazy-commit-fault-injection")]
+        let reserved = if reserve_fault_fires() {
+            None
+        } else {
+            crate::alloc_core::os::reserve_depot_overflow(total.next_multiple_of(page))
+        };
+        #[cfg(not(feature = "lazy-commit-fault-injection"))]
+        let reserved = crate::alloc_core::os::reserve_depot_overflow(total.next_multiple_of(page));
+        match reserved {
             Some(base) => {
                 self.base = base;
                 // The first page is committed by the reservation.
@@ -216,6 +257,8 @@ impl DepotOverflow {
         }
         self.bytes -= mag_bytes(c);
         self.low[c] = self.low[c].min((n - 1) as u16);
+        // Debt never exceeds the ring: a reload consumes what decay would.
+        self.debt[c] = self.debt[c].min((n - 1) as u16);
         self.stats.reloads += 1;
     }
 
@@ -293,8 +336,8 @@ impl DepotOverflow {
     }
 
     /// After the depot is fully drained: return the committed record pages to
-    /// the OS and reset rings, watermarks and decay state. The reservation and
-    /// its layout stay for reuse.
+    /// the OS, then reset rings, watermarks and decay state (the next park
+    /// re-commits). The reservation and its layout stay for reuse.
     pub(crate) fn release_pages(&mut self) {
         debug_assert_eq!(self.bytes, 0, "overflow must be drained first");
         if !self.active() {
@@ -309,12 +352,17 @@ impl DepotOverflow {
                 crate::alloc_core::os::decommit_depot_overflow(self.base, off, off + have);
                 self.stats.decommits += 1;
             }
-            self.committed[c] = 0;
-            self.head[c] = 0;
-            self.low[c] = 0;
-            self.debt[c] = 0;
             c += 1;
         }
+        self.reset_rings();
+    }
+
+    /// Empty every ring and drop every commit watermark to 0.
+    fn reset_rings(&mut self) {
+        self.committed = [0; DEPOT_CLASSES];
+        self.head = [0; DEPOT_CLASSES];
+        self.low = [0; DEPOT_CLASSES];
+        self.debt = [0; DEPOT_CLASSES];
         self.parked_in_epoch = 0;
         self.events = 0;
         self.epoch_len = EPOCH_MIN;
