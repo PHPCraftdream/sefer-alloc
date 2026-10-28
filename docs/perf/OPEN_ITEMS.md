@@ -3240,6 +3240,13 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** K1 (drain without the redundant class-code re-issue) judged by J1′ v2 against main and against mimalloc; K2 (free class from the state byte) needs an owner decision (wrong-Layout free becomes a free into the true class instead of a silent no-op).
    > - **Evidence:** docs/perf/G1_IDEAS.md, docs/perf/g1_pmu/ (raw perf stat and callgrind logs, run scripts, `G1_PMU_table.md`, `G1_PMU_summary.csv`), scripts/g1_pmu_summary.mjs, examples/b4_pmu_probe.rs.
 
+126. **[L] G1-K2 — free class from the state byte instead of `class_for(layout)`: honest reject (NO-GO by PMU, latency).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §6.)
+   > **Current state**
+   > - **Status:** NO-GO before the judge; prototype on branch `g1-k2`@`a707eb13`, production unchanged. Design chosen with @oh and the rush reviewer: option (b), non-`hardened` only; `hardened` and the batch free keep the exact Layout check.
+   > - **Current verdict (ИЗМЕРЕНО, perf stat, b4_pmu_probe, K2 vs K1, sefer arm, 3 repeats):** instructions −6 … −10 % on every shape, cycles bulk64 0.904×, mixed 256/1024 0.954×, bulk16k 0.969×, but pair16 1.140× (ns/op 1.162×, 3/3 repeats slower) and churn16 1.052×. The state byte just written by alloc becomes the index of the magazine count load: store→load latency on the critical path. The pre-registered "pair16 ≤ +1 %" bar cannot pass.
+   > - **Next trigger:** a variant that keeps the Layout class as the (parallel) index and uses the byte only for the reject branch while still cutting `class_for` instructions (e.g. saturating SIZE2CLASS sentinel instead of the bounds-check branch, no redundant `.max(MIN_BLOCK)`), judged by J1′ v2.
+   > - **Evidence:** docs/perf/G1_IDEAS.md §6, docs/perf/g1_pmu/k2/ (raw perf stat and callgrind logs, compare table and CSV), scripts/g1_fe_compare.mjs.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

@@ -2,6 +2,8 @@
 // G1-K3: PMU base vs variant, sefer arm, from two raw logs of
 // docs/perf/g1_pmu/k3/g1_fe.sh. Median over repeats per (scenario, event);
 // `cycles` pools all three event groups. Prints variant/base per event.
+// Also reads docs/perf/g1_pmu/g1_pmu.sh logs (both arms): only the
+// `sefer` arm is compared.
 // Usage: node scripts/g1_fe_compare.mjs <base.log> <variant.log> [--csv <out>]
 import fs from "node:fs";
 
@@ -22,6 +24,7 @@ function load(f) {
   for (const l of fs.readFileSync(f, "utf8").split("\n")) {
     const x = l.trim().split(/\s+/);
     if (x[0] === "identity") identity = x[1];
+    if ((x[0] === "EV" || x[0] === "RUN") && x[3] !== "sefer") continue;
     if (x[0] === "EV") add(`${x[2]}|${x[5].replace(/:u$/, "")}`, Number(x[6]));
     if (x[0] === "RUN") add(`${x[2]}|ns/op`, Number(x[x.length - 2]));
   }
