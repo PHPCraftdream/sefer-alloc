@@ -123,6 +123,12 @@ impl<'a> SidecarBitmap<'a> {
             return false;
         }
         self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);
+        // Ghost: one publication per word; the owner's cuts must consume exactly these.
+        crate::ghost::ghost_event!(
+            "sidecar/published",
+            core::ptr::from_ref(&self.pending[granule / 64]).addr(),
+            1
+        );
         true
     }
 

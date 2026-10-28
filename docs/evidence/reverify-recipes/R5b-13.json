@@ -1,24 +1,26 @@
 {
   "id": "R5b-13",
-  "registryActivationHash": "e517e4d17cca3eee88ddc364b83c74707f75e0d6b37fad3160821fa75479b053",
+  "registryActivationHash": "efa41e804798351c98846ffe0133bfc3a05e5a4bfd6448777f420085e00ac94d",
   "steps": [
     {
-      "name": "source pin baseline",
+      "name": "ghost-lint catalog baseline",
       "env": {},
       "argv": [
         "cargo",
         "test",
         "--locked",
+        "-p",
+        "ghost-lint",
         "--test",
-        "r11_ph5b_c5_sidecar_ordering_pinned",
-        "--features",
-        "production"
+        "catalog_holds",
+        "--",
+        "--nocapture"
       ],
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "8 passed; 0 failed",
-          "test producer_publish_is_acqrel_fetch_or \\.\\.\\. ok"
+          "check: \\d+ rule\\(s\\), 0 violation\\(s\\)",
+          "test result: ok\\. 1 passed; 0 failed"
         ]
       }
     }
@@ -29,22 +31,23 @@
     "replace": "self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::Relaxed);",
     "steps": [
       {
-        "name": "producer pin mutant",
+        "name": "R5b-13 mutant",
         "env": {},
         "argv": [
           "cargo",
           "test",
           "--locked",
+          "-p",
+          "ghost-lint",
           "--test",
-          "r11_ph5b_c5_sidecar_ordering_pinned",
-          "--features",
-          "production"
+          "catalog_holds",
+          "--",
+          "--nocapture"
         ],
         "expect": {
-          "exit": 101,
+          "exitNonZero": true,
           "stdoutRegex": [
-            "test producer_publish_is_acqrel_fetch_or \\.\\.\\. FAILED",
-            "test result: FAILED\\. 7 passed; 1 failed"
+            "\\[sidecar\\/publish-acqrel\\]"
           ]
         }
       }
@@ -52,8 +55,7 @@
     "expect": {
       "exitNonZero": true,
       "stdoutRegex": [
-        "test producer_publish_is_acqrel_fetch_or \\.\\.\\. FAILED",
-        "test result: FAILED\\. 7 passed; 1 failed"
+        "\\[sidecar\\/publish-acqrel\\]"
       ]
     }
   }

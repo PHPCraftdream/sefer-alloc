@@ -32,6 +32,12 @@ mod alloc_core {
 #[path = "../src/alloc_core/segment/remote_bitmap/mod.rs"]
 mod remote_bitmap;
 
+// Ghost checks in the included production files (docs/GHOST_CHECKS_PLAN.md):
+// ghost builds (miri, --cfg sefer_ghost) compile them.
+#[allow(dead_code, unused_imports)]
+#[path = "../src/ghost/mod.rs"]
+mod ghost;
+
 mod tests {
     use super::remote_bitmap::{BitmapRecord, SidecarBitmap};
     use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};

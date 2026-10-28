@@ -43,7 +43,7 @@ harness; `non-atomic` — named scanner false positives.
 | P4 | registry claim/selector, free-set, spill, saturation | S | 41 | 6 | 0 | R4c-02 | partial: FreeSlotHint and SaturationHint are self-contained structs on core atomics (translatable via #[path]); stack.rs scans walk the static registry | translate(free_slot_hint, saturation) + keep+R8(stack scans) | G5 |
 | P5 | route pin: lookup \|\| unlink \|\| last-pin release | A+S | 39 | 2 | 0 | — | yes: tests/loom_b4_r1_pin_cache.rs includes directory/ and src/ghost/ | translate (done in G2: real directory under loom via loom_b4_r1_pin_cache with ghost checks compiled in; last-reference free under miri) | G2 |
 | P6 | route pin cache fast path | A | 0 | 1 | 0 | — | yes (already #[path]) | ghost | G6 |
-| P7 | sidecar bitmap: publish / guarded cut / scan | A+S | 8 | 3 | 1 | R0-21 | yes (loom_sidecar_bitmap_actual.rs) | ghost + retire shadow | G6 |
+| P7 | sidecar bitmap: publish / guarded cut / scan | A+S | 8 | 3 | 0 | R0-21 | yes (loom_sidecar_bitmap_actual.rs) | ghost + retire shadow | G6 |
 | P8 | small sidecar: leaf pointer publication, pin lifetime | S | 14 | 1 | 0 | R0-22 | partial: ClassLeaves allocates leaves through the OS seam (cfg(loom) twin, P18) | translate | G6 |
 | P9 | terminal Large: phase word | S | 15 | 1 | 0 | R0-21 | yes: LargeReservationState wraps one &AtomicU64 | translate | G6 |
 | P10 | terminal owner drain: owner credits \|\| cut | S | 0 | 1 | 0 | R0-21 R5b-10 | no: credits live in AllocCore | keep+R5 | G6 |
@@ -141,7 +141,7 @@ Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`, `src/alloc_core/
 - I2 publish is fetch_or AcqRel after the class store Release; cut is swap AcqRel
 - loom: `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_sidecar_bitmap.rs`
 
-Decision: **ghost + retire shadow** — real source covers the shadow model; the shadow loom_sidecar_bitmap.rs is retired only after its mutants go red on the actual-source test
+Decision: **ghost + retire shadow** — G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it).
 
 ### P8 — small sidecar: leaf pointer publication, pin lifetime
 
@@ -151,7 +151,7 @@ Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `sr
 - I2 a reader resolves a leaf only with Acquire and only while holding a route pin
 - loom: `tests/loom_r11_small_sidecar.rs`
 
-Decision: **translate** — ClassLeaves already has a loom twin for leaf init; the model can drive the real struct
+Decision: **translate** — G6a: ClassLeaves ordered-op inventory per fn (R2 x6), initialise-before-publish and publish-before-presence in promote (R3), Drop walks presence bits (R3); R5 forbids the Dense constructor in production and keeps from_leaves in SmallSidecar::bitmap. Translation of the small-sidecar model follows in G6c.
 
 ### P9 — terminal Large: phase word
 

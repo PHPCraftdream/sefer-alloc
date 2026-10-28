@@ -6,7 +6,7 @@ R4c-05,src/registry/segment_route;src/registry/heap_core_xthread;src/alloc_core/
 R4c-06,src/registry/segment_route;src/registry/heap_core_xthread;src/alloc_core/segment/remote_bitmap,,,"Miri regression of two remote producers against the owner (route directory, xthread routing, sidecar bitmap)"
 R4c-07,src/registry/segment_route;src/registry/heap_core_xthread;src/alloc_core/segment/remote_bitmap,,,"Miri regression of remote Large publication against owner Small allocations (route directory, xthread routing, sidecar bitmap)"
 R4c-08,src/alloc_core/small/alloc_core_small_pool/decommit.rs,,src/alloc_core/small/alloc_core_small_pool/decommit.rs::fn dbg_is_decommitted_for,Miri decommit lifecycle and provenance-less diagnostic key
-R5b-12,src/alloc_core/segment/remote_bitmap,,,Source pin of the C5 sidecar atomic edges and ClassLeaves orderings
+R5b-12,src/alloc_core/segment/remote_bitmap,,,ghost-lint rules on the C5 sidecar atomic edges and ClassLeaves orderings
 R5b-13,src/alloc_core/segment/remote_bitmap,,"src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs::.fetch_or(1 << (granule % 64), Ordering::AcqRel)",Producer publish AcqRel fetch_or; the mutant weakens it to Relaxed
 R5b-14,src/alloc_core/segment/remote_bitmap,,"src/alloc_core/segment/remote_bitmap/bitmap_scan.rs::(pending.swap(0, Ordering::AcqRel), false, true)",Owner cut AcqRel swap(0); the mutant weakens it to Relaxed
 R4c-10,src/registry/heap_registry,,src/registry/heap_registry/claim.rs::impl Drop for HeapLease,Mutant of the reuse-hint publication (swap + spill) in the HeapLease drop; registry claim/recycle sources

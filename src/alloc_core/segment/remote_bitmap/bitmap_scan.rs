@@ -113,6 +113,12 @@ impl<'a> BitmapScan<'a> {
             });
             pending.swap(0, Ordering::AcqRel)
         };
+        // Ghost: the bits this cut consumed from the word (see `sidecar/published`).
+        crate::ghost::ghost_event!(
+            "sidecar/cut-bits",
+            core::ptr::from_ref(pending).addr(),
+            bits.count_ones()
+        );
         #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
         SCAN_COUNTS.with(|counts| {
             if let Some(mut current) = counts.get() {
