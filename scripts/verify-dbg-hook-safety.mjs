@@ -166,6 +166,11 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/queries.rs::dbg_tcache_virgin_mask",
   "src/registry/heap_core/diag/queries.rs::dbg_tcache_count",
   "src/registry/heap_core/diag/queries.rs::dbg_depot_len",
+  // G1-K7: read-only copies of the resolved budget and owner-only counters.
+  "src/registry/heap_core/diag/queries.rs::dbg_depot_budget",
+  "src/registry/heap_core/diag/queries.rs::dbg_depot_overflow",
+  // G1-K7: pure const resolution of a by-value config.
+  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_depot_budget",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",

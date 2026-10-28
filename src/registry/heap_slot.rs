@@ -345,7 +345,8 @@ impl HeapSlot {
 //   - `core: AllocCore` (segment roots, table slots, large-cache sidecar)
 //   - `tcache: Tcache` (`PerClass::slots: [*mut u8; TCACHE_CAP]`)
 //   - `depot: Option<&'static mut Depot>` (owner-only binding to this slot's
-//     parked-magazine pointer arrays)
+//     parked-magazine pointer arrays and depot-overflow control)
+//   - `depot_budget: u32` (resolved depot-overflow budget, G1-K7)
 // The `#[cfg]` arms mirror `HeapCore`'s field gates exactly (see
 // `heap_core/core.rs`).
 const _: fn(&HeapCore) = |hc| {
@@ -365,6 +366,12 @@ const _: fn(&HeapCore) = |hc| {
             tcache: _,
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             depot: _,
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "fastbin",
+            feature = "alloc-decommit"
+        ))]
+        depot_budget,
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         tcache_hits,
     } = hc;
@@ -379,6 +386,12 @@ const _: fn(&HeapCore) = |hc| {
     assert_send(large_hot_cursor);
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     assert_send(tcache_hits);
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit"
+    ))]
+    assert_send(depot_budget);
 };
 unsafe impl Sync for HeapSlot {}
 

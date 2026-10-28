@@ -500,6 +500,8 @@ impl HeapCore {
         // B4 depot (DP-3): a parked magazine holds freed blocks — never virgin
         // (`depot_reload` clears the mask).
         if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
+            #[cfg(feature = "alloc-decommit")]
+            self.depot_tick();
             return (self.finish_magazine_refill(c, TCACHE_CAP), false);
         }
         // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
@@ -679,6 +681,9 @@ impl HeapCore {
     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
         // B4 depot (DP-3): reload a parked full magazine (blocks stay MAG).
         if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
+            // G1-K7: a depot reload is a cold event for the overflow decay.
+            #[cfg(feature = "alloc-decommit")]
+            self.depot_tick();
             return self.finish_magazine_refill(c, TCACHE_CAP);
         }
         // Bounded Large-only probe; Small discovery occurs in the refill.
@@ -688,6 +693,9 @@ impl HeapCore {
         // by construction (`tests/r6_t39_free_park_cap_equals_refill.rs`
         // pins it); read the table instead of dividing on every refill miss.
         let want = crate::registry::heap_core::state::tcache::FREE_PARK_CAP[c] as usize;
+        // G1-K7: a segment refill is a cold event for the overflow decay.
+        #[cfg(feature = "alloc-decommit")]
+        self.depot_tick();
         // Write directly into this class's empty magazine. Residency checks
         // belong to the owner retirement primitive, not a caller closure.
         let n = self.refill_with_large_rescue(|heap| {

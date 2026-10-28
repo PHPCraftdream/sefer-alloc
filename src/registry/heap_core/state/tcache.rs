@@ -228,9 +228,9 @@ pub(crate) static FREE_PARK_CAP: [u8; SMALL_CLASS_COUNT] = {
 /// 128+ bytes from `slots[0]`, outside its 64-byte line. That historical
 /// shallow-slot observation does not describe full-capacity churn.
 /// `#[repr(C)]` fixes the field order to declaration order:
-/// `count` at offset 0, `virgin_mask` (when present) at offset 2 (1 pad
-/// byte after the u8 `count` — `virgin_mask`'s `u16` needs 2-byte alignment,
-/// so the compiler inserts one padding byte at offset 1), `slots`
+/// `count` at offset 0, one padding byte at offset 1 (`parked`'s `u16`
+/// needs 2-byte alignment), `parked` at offset 2, `virgin_mask` (when
+/// present) at offset 4, `slots`
 /// padded up to its own 8-byte alignment and starting at offset 8 in both
 /// configurations — see the `offset_of!` const-asserts on [`PerClass`]
 /// immediately below, which pin this rather than leaving it aspirational.
@@ -243,10 +243,11 @@ pub(crate) struct PerClass {
     /// offset 0, preceding the pointer array at offset 8.
     pub(crate) count: u8,
     /// B4 depot (DP-5 iteration 2): full magazines of this class parked in
-    /// the slot's depot (`0..=DEPOT_CAP[c]`). Sits in the padding byte after
-    /// `count` (no size change), so the overflow / miss branches gate the
-    /// cold depot calls without leaving this line.
-    pub(crate) parked: u8,
+    /// the slot's depot — the floor (`0..=DEPOT_K[c]`) plus, under G1-K7, the
+    /// overflow above it (`parked - DEPOT_K[c]` records). `u16` in the padding
+    /// after `count` (no size change), so the overflow / miss branches gate
+    /// the cold depot calls without leaving this line.
+    pub(crate) parked: u16,
     /// R13-3 (task #273): magazine-resident virginity bitmask, ONE bit per
     /// `slots` index (bit `i` set ⟺ `slots[i]` is a genuinely virgin —
     /// never-before-served, `Node::zero`-skippable — block, per the
@@ -320,13 +321,13 @@ const _: () = assert!(
     "PerClass::count must sit at offset 0 (repr(C), declared first) for the documented magazine cache-line locality"
 );
 const _: () = assert!(
-    ::core::mem::offset_of!(PerClass, parked) == 1,
-    "PerClass::parked must use the pad byte after count (offset 1)"
+    ::core::mem::offset_of!(PerClass, parked) == 2,
+    "PerClass::parked (u16) must use the padding after count (offset 2)"
 );
 #[cfg(feature = "virgin-zero-skip")]
 const _: () = assert!(
-    ::core::mem::offset_of!(PerClass, virgin_mask) == 2,
-    "PerClass::virgin_mask must sit at offset 2 (repr(C), declared second, after u8 count + 1 pad byte)"
+    ::core::mem::offset_of!(PerClass, virgin_mask) == 4,
+    "PerClass::virgin_mask must sit at offset 4 (repr(C), after u8 count, pad and u16 parked)"
 );
 // R2-17: this is the concrete pin the crate-root gate in `src/lib.rs` exists
 // to host — `slots` reaches offset 8 only on a 64-bit `repr(C)` ABI, and the

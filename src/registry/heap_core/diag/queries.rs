@@ -210,6 +210,49 @@ impl HeapCore {
         self.tcache.classes[c].parked as usize
     }
 
+    /// TEST-ONLY (G1-K7): `(resolved, effective)` depot-overflow budget in
+    /// bytes. Effective is 0 for a heap without a bound depot (standalone /
+    /// fallback heaps), where the budget is inert.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit",
+        feature = "internals"
+    ))]
+    pub fn dbg_depot_budget(&self) -> (usize, usize) {
+        let resolved = self.depot_budget as usize;
+        (resolved, if self.depot.is_some() { resolved } else { 0 })
+    }
+
+    /// TEST-ONLY (G1-K7): depot-overflow counters `[bytes parked, parks,
+    /// reloads, budget refusals, OS refusals, decay-flushed records,
+    /// ingress checks, page decommits]`; all 0 for an unbound heap.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit",
+        feature = "internals"
+    ))]
+    pub fn dbg_depot_overflow(&self) -> [u64; 8] {
+        let Some(depot) = self.depot.as_deref() else {
+            return [0; 8];
+        };
+        let o = &depot.ovf;
+        let s = o.stats;
+        [
+            o.bytes() as u64,
+            s.parks,
+            s.reloads,
+            s.budget_refusals,
+            s.os_refusals,
+            s.decay_flushed,
+            s.ingress_checks,
+            s.decommits,
+        ]
+    }
+
     /// TEST-ONLY (P7): read the magazine count for class `c`. Widened to
     /// `u16` at this test-only boundary (task #53 shrank the internal
     /// storage to `u8` — see `PerClass::count` — but keeps this accessor's

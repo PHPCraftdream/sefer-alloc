@@ -569,9 +569,10 @@ impl HeapCore {
         // B4 depot (DP-3): park the full magazine whole (cold),
         // then `block` starts the next one. `block` itself is not
         // parked into a body-write path: only `slots` pointers move.
+        // G1-K7: every depot class tries; `depot_park` fills the floor, then
+        // the overflow within the heap's budget.
         if cnt == TCACHE_CAP
-            && self.tcache.classes[c].parked
-                < crate::registry::heap_core::state::depot::DEPOT_CAP[c]
+            && crate::registry::heap_core::state::depot::DEPOT_CAP[c] != 0
             && self.depot_park(c)
         {
             meta.state_byte()
@@ -579,6 +580,10 @@ impl HeapCore {
             self.tcache.classes[c].slots[0] = block;
             self.tcache.classes[c].count = 1;
             // `depot_park` cleared the mask; `block` is not virgin.
+            // Decay runs only now, after `block` is MAG in the live magazine:
+            // it flushes long-parked overflow records, never `block`.
+            #[cfg(feature = "alloc-decommit")]
+            self.depot_tick();
             return;
         }
         // ── R1-01: free-side byte-budget cap reached ───────

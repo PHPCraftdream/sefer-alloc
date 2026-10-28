@@ -910,3 +910,52 @@ pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
     // and is a no-op that reports success under miri.
     unsafe { vmem::recommit(base, start_offset, end_offset) }
 }
+
+// ── G1-K7: depot-overflow record storage ───────────────────────────────────
+//
+// One lazily committed reservation per heap slot, holding only magazine
+// records (the control lives in the slot's zero-valid `Depot`). Like the
+// registry heaps it serves, the span lives for the process (bounded by
+// `MAX_HEAPS`); trim decommits its pages, the address range is kept.
+
+/// Reserve `len` bytes (a multiple of the runtime page size) for a heap's
+/// depot-overflow records, committing only the first page. Returns the base,
+/// or `None` on OOM (the overflow then stays off for this heap).
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+pub(crate) fn reserve_depot_overflow(len: usize) -> Option<*mut u8> {
+    let r = vmem::reserve_aligned_lazy(len, vmem::page_size(), vmem::page_size())?;
+    let (base, _len, _align) = r.into_reservation().into_parts();
+    Some(base)
+}
+
+/// Commit `[base + start, base + end)` of a depot-overflow reservation
+/// (page-aligned offsets inside the span returned by
+/// [`reserve_depot_overflow`]); `false` on commit failure (nothing changes).
+#[must_use]
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+pub(crate) fn commit_depot_overflow(base: *mut u8, start: usize, end: usize) -> bool {
+    // SAFETY: `base` is a live depot-overflow reservation (never released)
+    // and the caller passes page-aligned offsets inside it.
+    unsafe { vmem::commit_range(base, start, end) }
+}
+
+/// Decommit `[base + start, base + end)` of a depot-overflow reservation once
+/// every record in the range is empty (teardown after the depot is drained).
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+pub(crate) fn decommit_depot_overflow(base: *mut u8, start: usize, end: usize) {
+    // SAFETY: as in `commit_depot_overflow`; the caller holds no live record
+    // in the range and will re-commit before writing it again.
+    unsafe { vmem::decommit(base, start, end) };
+}

@@ -2018,7 +2018,9 @@
       },
       "allowed": [
         "HeapCore::depot_park",
-        "HeapCore::depot_reload"
+        "HeapCore::depot_reload",
+        "HeapCore::depot_tick",
+        "HeapCore::depot_release_overflow_pages"
       ],
       "terms": [
         "depot",
@@ -2027,12 +2029,58 @@
         "depot_park",
         "depot_reload"
       ],
-      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths, so only the current lease holder touches it",
+      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths (park, reload, the G1-K7 overflow decay tick and the teardown page release), so only the current lease holder touches it",
       "tests": [
         "tests/heap_core_depot.rs",
         "tests/loom_depot_recycle_handoff.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p12_owner_only_access"
+    },
+    {
+      "id": "depot/overflow-release-after-drain",
+      "kind": "R3",
+      "protocol": "P12",
+      "file": "src/registry/heap_core/state/tcache_flush.rs",
+      "fn": "HeapCore::flush_all_tcache",
+      "before": {
+        "name": "depot_reload"
+      },
+      "after": {
+        "name": "depot_release_overflow_pages"
+      },
+      "terms": [
+        "depot",
+        "overflow",
+        "drain",
+        "depot_release_overflow_pages",
+        "decommit"
+      ],
+      "reason": "G1-K7: the overflow's record pages are decommitted only after the teardown drain reloaded and flushed every parked magazine, so no live record is lost",
+      "tests": [
+        "tests/g1_k7_depot_overflow.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_overflow_release_after_drain",
+      "mutants": [
+        {
+          "id": "release-before-drain",
+          "file": "src/registry/heap_core/state/tcache_flush.rs",
+          "from": "        use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;\n",
+          "to": "        use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;\n        #[cfg(feature = \"alloc-decommit\")]\n        self.depot_release_overflow_pages();\n",
+          "checker": {
+            "name": "cargo test g1_k7_depot_overflow",
+            "cmd": [
+              "cargo",
+              "test",
+              "--features",
+              "production internals bench-internals",
+              "--test",
+              "g1_k7_depot_overflow"
+            ],
+            "expect": "test result: FAILED|process didn't exit successfully"
+          }
+        }
+      ],
+      "nested_before": true
     },
     {
       "id": "depot/bind-once",

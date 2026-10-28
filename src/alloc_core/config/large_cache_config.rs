@@ -211,7 +211,22 @@ pub struct LargeCacheConfig {
     /// (pool ENABLED, 4 segments / 16 MiB) — so `production` gets pooling on by
     /// default with no explicit opt-in.
     pub(crate) pool: SmallSegmentPoolConfig,
+
+    /// G1-K7: per-heap byte budget of the magazine-depot overflow (blocks
+    /// parked above the fixed per-class depot floor). `None` uses
+    /// [`DEFAULT_DEPOT_BUDGET_BYTES`]; `Some(0)` disables the overflow.
+    pub(crate) depot_budget_bytes: Option<usize>,
 }
+
+/// G1-K7: default depot-overflow budget per heap (1 MiB of parked blocks).
+pub(crate) const DEFAULT_DEPOT_BUDGET_BYTES: usize = 1024 * 1024;
+/// G1-K7: bytes of the smallest full magazine (16 blocks of 16 B); the
+/// budget resolves to a multiple of it.
+pub(crate) const DEPOT_BUDGET_GRAIN: usize = 256;
+/// G1-K7: budget ceiling — `(u16::MAX - DEPOT_K_MAX) * 256`, so a class's
+/// `PerClass::parked: u16` holds its floor plus the whole overflow even for
+/// 16 B blocks (pinned against the registry constants in `state/depot.rs`).
+pub(crate) const DEPOT_BUDGET_MAX: usize = (u16::MAX as usize - 8) * DEPOT_BUDGET_GRAIN;
 
 #[cfg(feature = "alloc-decommit")]
 impl Default for LargeCacheConfig {
@@ -251,6 +266,7 @@ impl LargeCacheConfig {
             decay_rate_percent: None,
             mode: None,
             pool: SmallSegmentPoolConfig::DEFAULT,
+            depot_budget_bytes: None,
         }
     }
 
@@ -420,7 +436,56 @@ impl LargeCacheConfig {
         self
     }
 
+    /// Set the per-thread byte budget of the magazine-depot overflow (G1-K7).
+    ///
+    /// Each thread's heap keeps freed small blocks (16..1024 B) in its
+    /// magazines and a fixed per-class depot (241,408 B at most). When that
+    /// fills, up to `bytes` more of freed blocks stay parked in the depot
+    /// overflow instead of going back to their segments, so a later burst of
+    /// allocations of the same class is served by copying pointers rather
+    /// than walking free lists. Larger values speed up alloc/free cycles over
+    /// large cohorts (e.g. 16 384 blocks of 64 B) and hold more memory per
+    /// thread between bursts; parked blocks also keep their segments from
+    /// being released. Overflow that stays unused decays back over the
+    /// heap's next cold events; `trim`, thread exit and slot recycle empty
+    /// it. Default 1 MiB; `0` disables the
+    /// overflow; values are rounded down to 256 B and capped at
+    /// 16,774,912 B. Applied when the thread's heap is first created (a
+    /// recycled heap keeps the budget it was created with — see
+    /// `config_conflicts_total`). Measurements: README "Depot overflow
+    /// budget".
+    #[must_use]
+    pub const fn depot_budget_bytes(mut self, bytes: usize) -> Self {
+        self.depot_budget_bytes = Some(bytes);
+        self
+    }
+
+    /// TEST-ONLY (G1-K7): the resolved depot-overflow budget of this config.
+    #[doc(hidden)]
+    #[cfg(feature = "internals")]
+    #[must_use]
+    pub const fn dbg_resolved_depot_budget(&self) -> usize {
+        self.resolved_depot_budget_bytes()
+    }
+
     // ── Resolution helpers (pub(crate)) ──────────────────────────────────────
+
+    /// Resolve the depot-overflow budget (G1-K7): default when unset, then
+    /// capped at [`DEPOT_BUDGET_MAX`] and rounded down to
+    /// [`DEPOT_BUDGET_GRAIN`].
+    #[must_use]
+    pub(crate) const fn resolved_depot_budget_bytes(&self) -> usize {
+        let b = match self.depot_budget_bytes {
+            Some(v) => v,
+            None => DEFAULT_DEPOT_BUDGET_BYTES,
+        };
+        let b = if b > DEPOT_BUDGET_MAX {
+            DEPOT_BUDGET_MAX
+        } else {
+            b
+        };
+        b / DEPOT_BUDGET_GRAIN * DEPOT_BUDGET_GRAIN
+    }
 
     /// Resolve the byte budget. `None` = unbounded (no admission limit).
     ///

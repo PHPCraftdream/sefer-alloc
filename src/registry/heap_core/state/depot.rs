@@ -74,14 +74,33 @@ const _: () = {
 /// Classes `0..8` map to sizes 16, 32, 48, 64, 80, 112, 144, and 192 B with
 /// K `[8,8,8,8,8,8,7,1]` (64,256 B of parked blocks); classes `8..18`
 /// (240..1024 B) add K = 2 (177,152 B). Total 241,408 B, within the
-/// 245,760 B depot budget.
+/// 245,760 B depot budget — the depot FLOOR. Under G1-K7 the overflow
+/// ([`DepotOverflow`](crate::registry::heap_core::state::depot_overflow::DepotOverflow))
+/// parks further full magazines above it within the heap's budget.
 ///
-/// Only the pointer arrays live here; each class's parked count is
-/// `PerClass::parked` in the owner's magazine line (DP-5 iteration 2), so the
-/// hot-path gates read it without touching this store.
+/// Only the pointer arrays live here; each class's parked count (floor plus
+/// overflow) is `PerClass::parked` in the owner's magazine line (DP-5
+/// iteration 2), so the hot-path gates read it without touching this store.
+/// All-zero is the valid empty state (the registry slot is OS-zeroed).
 pub(crate) struct Depot {
     mags: [[[*mut u8; TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) ovf: crate::registry::heap_core::state::depot_overflow::DepotOverflow,
 }
+
+// The overflow budget ceiling keeps `parked: u16` in range: floor plus a full
+// overflow ring of 16 B magazines.
+#[cfg(feature = "alloc-decommit")]
+const _: () = assert!(
+    DEPOT_K_MAX as usize
+        + crate::alloc_core::large_cache_config::DEPOT_BUDGET_MAX
+            / crate::alloc_core::large_cache_config::DEPOT_BUDGET_GRAIN
+        <= u16::MAX as usize
+);
+#[cfg(feature = "alloc-decommit")]
+const _: () = assert!(
+    crate::alloc_core::large_cache_config::DEPOT_BUDGET_GRAIN == SIZE_CLASS_TABLE[0] * TCACHE_CAP
+);
 
 impl Depot {
     /// Kani-only: the all-zero empty depot an OS-zeroed registry slot holds.
@@ -89,41 +108,38 @@ impl Depot {
     pub(crate) const fn empty() -> Self {
         Self {
             mags: [[[core::ptr::null_mut(); TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
+            #[cfg(feature = "alloc-decommit")]
+            ovf: crate::registry::heap_core::state::depot_overflow::DepotOverflow::empty(),
         }
     }
 
-    /// Park `magazine` as class `c`'s next entry; `n` is that class's parked
-    /// count. Fails (no change) when the class already holds `DEPOT_K[c]`.
+    /// Park `magazine` as class `c`'s floor entry `n` (the class's current
+    /// floor count). Fails (no change) when the floor already holds
+    /// `DEPOT_K[c]`.
     #[inline]
-    pub(crate) fn depot_park(
+    pub(crate) fn floor_park(
         &mut self,
         c: usize,
-        n: &mut u8,
+        n: usize,
         magazine: &[*mut u8; TCACHE_CAP],
     ) -> bool {
-        let i = *n as usize;
-        if i >= DEPOT_K[c] as usize {
+        if n >= DEPOT_K[c] as usize {
             return false;
         }
-        self.mags[c][i] = *magazine;
-        *n += 1;
+        self.mags[c][n] = *magazine;
         true
     }
 
-    /// Move class `c`'s most recently parked magazine into `magazine`.
-    /// Fails (no change) when `n == 0`.
+    /// Move class `c`'s newest floor entry into `magazine`; `n` is the
+    /// class's current floor count (`1..=DEPOT_K[c]`).
     #[inline]
-    pub(crate) fn depot_reload(
+    pub(crate) fn floor_reload(
         &mut self,
         c: usize,
-        n: &mut u8,
+        n: usize,
         magazine: &mut [*mut u8; TCACHE_CAP],
-    ) -> bool {
-        if *n == 0 {
-            return false;
-        }
-        *n -= 1;
-        *magazine = self.mags[c][*n as usize];
-        true
+    ) {
+        debug_assert!(n > 0 && n <= DEPOT_K[c] as usize);
+        *magazine = self.mags[c][n - 1];
     }
 }

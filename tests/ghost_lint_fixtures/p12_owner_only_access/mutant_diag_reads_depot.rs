@@ -1,4 +1,4 @@
-// expect: only ["HeapCore::depot_park", "HeapCore::depot_reload"]
+// expect: only ["HeapCore::depot_park", "HeapCore::depot_reload", "HeapCore::depot_tick", "HeapCore::depot_release_overflow_pages"]
 impl HeapCore {
     pub(crate) fn depot_park(&mut self, c: usize) -> bool {
         let Some(depot) = self.depot.as_deref_mut() else {
