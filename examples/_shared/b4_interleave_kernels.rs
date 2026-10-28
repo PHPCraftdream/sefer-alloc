@@ -18,8 +18,8 @@ thread_local! {
         const { [const { [const { Cell::new(0) }; CHURN_LIVE] }; ARMS] };
     static LARSON_SLOTS: [[Cell<*mut u8>; LARSON_LIVE]; ARMS] =
         const { [const { [const { Cell::new(core::ptr::null_mut()) }; LARSON_LIVE] }; ARMS] };
-    static BULK_SLOTS: [[Cell<*mut u8>; BULK16K_N]; ARMS] =
-        const { [const { [const { Cell::new(core::ptr::null_mut()) }; BULK16K_N] }; ARMS] };
+    static BULK_SLOTS: [[Cell<*mut u8>; BULK64K_N]; ARMS] =
+        const { [const { [const { Cell::new(core::ptr::null_mut()) }; BULK64K_N] }; ARMS] };
     static VEC_SLOT: [Cell<*mut u8>; ARMS] =
         const { [const { Cell::new(core::ptr::null_mut()) }; ARMS] };
     /// Current capacity (bytes/8) of the vec slot: teardown dealloc and
@@ -78,7 +78,7 @@ fn kernel_pair(t: &ShimTable, ops: u64, seed: u64, size: usize) -> u64 {
 
 /// bulk: N live blocks per pass × `passes`, freeing each cohort per pass.
 #[inline(never)]
-fn kernel_bulk(t: &ShimTable, passes: u64, seed: u64, n: usize) -> u64 {
+fn kernel_bulk(t: &ShimTable, passes: u64, seed: u64, n: usize, size: usize) -> u64 {
     let mut rng = XorShift64::new(seed);
     let mut acc: u64 = 0;
     let mut pass: u64 = 0;
@@ -88,15 +88,15 @@ fn kernel_bulk(t: &ShimTable, passes: u64, seed: u64, n: usize) -> u64 {
             let mut i = 0;
             while i < n {
                 let p = unsafe {
-                    // SAFETY: __rust_alloc face, size 64 align 8.
-                    (t.alloc)(64, 8)
+                    // SAFETY: __rust_alloc face, `size` >= 32, align 8.
+                    (t.alloc)(size, 8)
                 };
                 if p.is_null() {
-                    panic!("{}: bulk alloc(64) returned null", t.name);
+                    panic!("{}: bulk alloc({size}) returned null", t.name);
                 }
                 slots[arm][i].set(p);
                 unsafe {
-                    // SAFETY: fresh 64-byte allocation.
+                    // SAFETY: fresh `size`-byte allocation, size >= 8.
                     core::ptr::write_bytes(p, 0xA5, 8);
                 }
                 acc = acc.wrapping_add(p as u64);
@@ -107,8 +107,8 @@ fn kernel_bulk(t: &ShimTable, passes: u64, seed: u64, n: usize) -> u64 {
                 let p = slots[arm][j].get();
                 unsafe {
                     // SAFETY: p from the alloc above (null panics): layout
-                    // is exactly (64, 8) of the same shim set.
-                    (t.dealloc)(p, 64, 8)
+                    // is exactly (size, 8) of the same shim set.
+                    (t.dealloc)(p, size, 8)
                 };
                 slots[arm][j].set(core::ptr::null_mut());
                 j += 1;

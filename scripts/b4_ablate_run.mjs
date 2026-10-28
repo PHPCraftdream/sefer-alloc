@@ -130,6 +130,7 @@ const kernels = opt["--kernels"] ?? DEFAULT_KERNELS;
 const KNOWN_KERNELS = new Set([
   "pair16", "pair64", "pair_rt", "bulk64", "bulk16k",
   "churn16", "churn64", "churn256", "churn1024", "vec512", "larson",
+  "bulk64k", "bulk16k_32",
 ]);
 {
   const names = kernels.split(",").map((s) => s.trim()).filter(Boolean);
