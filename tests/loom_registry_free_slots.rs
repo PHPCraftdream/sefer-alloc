@@ -20,6 +20,9 @@ use loom::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
+// ghost-bind: heap-lease/drop-release
+const DROP_LEASE: (Ordering, Ordering) = (Ordering::Release, Ordering::Relaxed);
+
 use tagged_index_stack::{StackHead, StackOps, StackStorage, TAIL};
 
 const INDEX_BITS: u32 = 16;
@@ -130,6 +133,7 @@ impl RegistryModel {
             if self
                 .slot(index)
                 .state
+                // ghost-bind: heap-lease/claim-free-live
                 .compare_exchange(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
             {
@@ -146,12 +150,8 @@ impl RegistryModel {
     fn recycle(&self, index: u32, owner: u32) {
         let slot = self.slot(index);
         assert_eq!(
-            slot.state.compare_exchange(
-                STATE_LIVE,
-                STATE_FREE,
-                Ordering::Release,
-                Ordering::Relaxed,
-            ),
+            slot.state
+                .compare_exchange(STATE_LIVE, STATE_FREE, DROP_LEASE.0, DROP_LEASE.1,),
             Ok(STATE_LIVE),
             "recycle must own the slot's LIVE state"
         );

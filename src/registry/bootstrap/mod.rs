@@ -56,6 +56,9 @@
 //   verbatim; the module path becomes `bootstrap::chunk`).
 // - [`loom_shim`] — the `#[cfg(loom)]` const-capable `OncePtrCell` stand-in
 //   needed by the static initializer.
+// The atomics `free_slot_hint` and `saturation` take from `super`.
+pub(crate) use core::sync::atomic::{AtomicU64, Ordering};
+
 mod chunk;
 mod ensure;
 mod free_slot_hint;

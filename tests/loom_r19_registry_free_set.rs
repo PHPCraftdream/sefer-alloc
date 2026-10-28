@@ -8,6 +8,9 @@ use loom::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
+// ghost-bind: registry/bump-count-cas
+const BUMP: (Ordering, Ordering) = (Ordering::AcqRel, Ordering::Acquire);
+
 const FREE: u8 = 0;
 const LIVE: u8 = 1;
 const MAINT: u8 = 2;
@@ -43,7 +46,9 @@ impl Registry {
     }
 
     fn publish_word(&self, slot: usize) {
+        // ghost-bind: free-set/publish-word
         self.word.fetch_or(1 << slot, Ordering::Release);
+        // ghost-bind: free-set/publish-summary
         self.summary.fetch_or(1, Ordering::Release);
     }
 
@@ -62,8 +67,10 @@ impl Registry {
     }
 
     fn clear_summary_recheck(&self) {
+        // ghost-bind: free-set/summary-clear-acqrel
         self.summary.fetch_and(!1, Ordering::AcqRel);
         if self.word.load(Ordering::Acquire) & MASK != 0 {
+            // ghost-bind: free-set/publish-summary
             self.summary.fetch_or(1, Ordering::Release);
         }
     }
@@ -79,6 +86,7 @@ impl Registry {
                 continue;
             }
             let bit = 1u64 << bits.trailing_zeros();
+            // ghost-bind: free-set/take-acqrel
             let old = self.word.fetch_and(!bit, Ordering::AcqRel);
             if check_old && old & bit == 0 {
                 continue;
@@ -95,10 +103,12 @@ impl Registry {
         if early {
             self.publish_word(0);
             assert!(self.state[0]
+                // ghost-bind: heap-lease/drop-release
                 .compare_exchange(LIVE, FREE, Ordering::Release, Ordering::Relaxed)
                 .is_ok());
         } else {
             assert!(self.state[0]
+                // ghost-bind: heap-lease/drop-release
                 .compare_exchange(LIVE, FREE, Ordering::Release, Ordering::Relaxed)
                 .is_ok());
             self.publish_word(0);
@@ -108,11 +118,13 @@ impl Registry {
     fn consume_published_candidate(&self) {
         if let Some(slot) = self.take_nonempty(true) {
             let _ =
+                // ghost-bind: heap-lease/claim-free-live
                 self.state[slot].compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire);
         }
     }
 
     fn claim(&self) {
+        // ghost-bind: registry/hint-take-spill
         let hinted = self.hint.swap(NO_HINT, Ordering::AcqRel) as usize;
         let (candidate, from_scan) = if hinted < 3 {
             (Some(hinted), false)
@@ -126,6 +138,7 @@ impl Registry {
         };
         if let Some(slot) = candidate {
             if self.state[slot]
+                // ghost-bind: heap-lease/claim-free-live
                 .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
             {
@@ -149,6 +162,7 @@ impl Registry {
 
     fn maintain(&self) {
         if self.state[2]
+            // ghost-bind: maintenance-lease/claim-acqrel
             .compare_exchange(FREE, MAINT, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
         {
@@ -163,6 +177,7 @@ impl Registry {
                 "maintenance releases ownership"
             );
             assert!(self.state[2]
+                // ghost-bind: maintenance-lease/drop-release
                 .compare_exchange(MAINT, FREE, Ordering::Release, Ordering::Relaxed)
                 .is_ok());
             let displaced = self.hint.swap(2, Ordering::Relaxed);
@@ -224,6 +239,7 @@ fn spill_model(store_mutant: bool) {
         let registry = Registry::new();
         registry.hint.store(0, Ordering::Relaxed);
         assert!(registry.state[0]
+            // ghost-bind: heap-lease/drop-release
             .compare_exchange(LIVE, FREE, Ordering::Release, Ordering::Relaxed)
             .is_ok());
         registry.release(1, LIVE, store_mutant);
@@ -288,9 +304,11 @@ fn consumption_model(ignore_old: bool) {
         );
         // Mutant duplicates candidate values, not ownership: retain the real CAS.
         let first = registry.state[0]
+            // ghost-bind: heap-lease/claim-free-live
             .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
             .is_ok();
         let second = registry.state[0]
+            // ghost-bind: heap-lease/claim-free-live
             .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
             .is_ok();
         assert!(
@@ -316,6 +334,7 @@ impl Registry {
     /// monopolise discovery — the recovery scan still reaches any
     /// initialised FREE slot.
     fn ctor_oom_claim(&self, saw: &AtomicUsize) {
+        // ghost-bind: registry/hint-take-spill
         let hinted = self.hint.swap(NO_HINT, Ordering::AcqRel) as usize;
         let candidate = if hinted < 3 {
             Some(hinted)
@@ -324,6 +343,7 @@ impl Registry {
         };
         if let Some(slot) = candidate {
             if self.state[slot]
+                // ghost-bind: heap-lease/claim-free-live
                 .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
             {
@@ -338,6 +358,7 @@ impl Registry {
                 // Constructor OOM: give the slot back, publish into the
                 // BITMAP only — never the hint.
                 assert!(self.state[slot]
+                    // ghost-bind: heap-lease/drop-release
                     .compare_exchange(LIVE, FREE, Ordering::Release, Ordering::Relaxed)
                     .is_ok());
                 assert_eq!(
@@ -353,6 +374,7 @@ impl Registry {
                 {
                     saw.store(1, Ordering::Relaxed);
                     if self.state[i]
+                        // ghost-bind: heap-lease/claim-free-live
                         .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
                         .is_ok()
                     {
@@ -451,12 +473,10 @@ impl Registry {
             if count as usize >= 3 {
                 return None;
             }
-            match self.count.compare_exchange_weak(
-                count,
-                count + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
+            match self
+                .count
+                .compare_exchange_weak(count, count + 1, BUMP.0, BUMP.1)
+            {
                 Ok(_) => return Some(count as usize),
                 Err(actual) => count = actual,
             }
@@ -511,6 +531,7 @@ impl Registry {
         }
         if let Some(idx) = self.recovery_scan(failed, saw) {
             if self.state[idx]
+                // ghost-bind: heap-lease/claim-free-live
                 .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
             {

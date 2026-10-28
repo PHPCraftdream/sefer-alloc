@@ -37,12 +37,15 @@ impl Pool {
     }
 
     fn publish_word(&self, slot: usize) {
+        // ghost-bind: free-set/publish-word
         self.word.fetch_or(1 << slot, Ordering::Release);
+        // ghost-bind: free-set/publish-summary
         self.summary.fetch_or(1, Ordering::Release);
     }
 
     fn release(&self, slot: usize, spill: bool) {
         assert!(self.state[slot]
+            // ghost-bind: heap-lease/drop-release
             .compare_exchange(LIVE, FREE, Ordering::Release, Ordering::Relaxed)
             .is_ok());
         let displaced = if spill {
@@ -63,20 +66,25 @@ impl Pool {
             }
             let word = self.word.load(Ordering::Acquire) & MASK;
             if word == 0 {
+                // ghost-bind: free-set/summary-clear-acqrel
                 self.summary.fetch_and(!1, Ordering::AcqRel);
                 if self.word.load(Ordering::Acquire) & MASK != 0 {
+                    // ghost-bind: free-set/publish-summary
                     self.summary.fetch_or(1, Ordering::Release);
                 }
                 continue;
             }
             let bit = 1u64 << word.trailing_zeros();
+            // ghost-bind: free-set/take-acqrel
             let old = self.word.fetch_and(!bit, Ordering::AcqRel);
             if check_old && old & bit == 0 {
                 continue;
             }
             if old == bit {
+                // ghost-bind: free-set/summary-clear-acqrel
                 self.summary.fetch_and(!1, Ordering::AcqRel);
                 if self.word.load(Ordering::Acquire) & MASK != 0 {
+                    // ghost-bind: free-set/publish-summary
                     self.summary.fetch_or(1, Ordering::Release);
                 }
             }
@@ -86,6 +94,7 @@ impl Pool {
     }
 
     fn pick(&self) -> (Option<usize>, Source) {
+        // ghost-bind: registry/hint-take-spill
         let hinted = self.hint.swap(EMPTY, Ordering::AcqRel) as usize;
         if hinted < 3 {
             return (Some(hinted), Source::Hint);
@@ -107,6 +116,7 @@ impl Pool {
         let (candidate, source) = self.pick();
         if let Some(slot) = candidate {
             if self.state[slot]
+                // ghost-bind: heap-lease/claim-free-live
                 .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
             {
@@ -124,6 +134,7 @@ impl Pool {
 
     fn maintain(&self) {
         if self.state[2]
+            // ghost-bind: maintenance-lease/claim-acqrel
             .compare_exchange(FREE, MAINT, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
         {
@@ -138,6 +149,7 @@ impl Pool {
                 "maintenance releases ownership"
             );
             assert!(self.state[2]
+                // ghost-bind: maintenance-lease/drop-release
                 .compare_exchange(MAINT, FREE, Ordering::Release, Ordering::Relaxed)
                 .is_ok());
             let displaced = self.hint.swap(2, Ordering::Relaxed);
@@ -227,8 +239,10 @@ fn summary_clear_recheck_preserves_concurrent_bit_publication() {
         let c = Arc::clone(&pool);
         let clear = thread::spawn(move || {
             if c.word.load(Ordering::Acquire) == 0 {
+                // ghost-bind: free-set/summary-clear-acqrel
                 c.summary.fetch_and(!1, Ordering::AcqRel);
                 if c.word.load(Ordering::Acquire) != 0 {
+                    // ghost-bind: free-set/publish-summary
                     c.summary.fetch_or(1, Ordering::Release);
                 }
             }
