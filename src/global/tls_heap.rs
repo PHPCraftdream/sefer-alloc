@@ -415,7 +415,7 @@ pub(crate) fn current_for_alloc_with_config(
         // cold Fallback (must NOT re-arm the recycled guard). Byte-identical
         // #129 mapping.
         Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeap::Own(p),
-        Ok(p) if p.is_null() => bind_slow_tagged_with_config(*config),
+        Ok(p) if p.is_null() => bind_slow_tagged_with_config(config),
         Ok(_) => CurrentHeap::Fallback, // p == TORN
         Err(_) => CurrentHeap::Fallback,
     }
@@ -484,16 +484,21 @@ fn bind_slow_tagged() -> CurrentHeap {
 /// re-claim the existing `HeapCore` is reused as-is.
 ///
 /// Only present under `alloc-decommit`.
+///
+/// FG-1/B: `config` arrives by reference and is copied here, not at the call
+/// site — a by-value argument made every `alloc` reserve a 0x70-byte stack
+/// frame for the copy, on the hot path too.
 #[cfg(feature = "alloc-decommit")]
 #[cold]
-fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> CurrentHeap {
+#[inline(never)]
+fn bind_slow_tagged_with_config(config: &crate::alloc_core::LargeCacheConfig) -> CurrentHeap {
     if super::process_exit_in_progress() {
         return CurrentHeap::Fallback;
     }
     if !saturation_retry_allowed() {
         return CurrentHeap::Fallback;
     }
-    finish_bind(HeapRegistry::claim_lease_with_config(config))
+    finish_bind(HeapRegistry::claim_lease_with_config(*config))
 }
 
 /// Shared post-claim logic: store the [`HeapLease`] into the `LeaseReleaseGuard`,
