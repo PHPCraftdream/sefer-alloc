@@ -76,7 +76,7 @@ rather than filled in with a "nearest analogue".
 |----------|-------|----------------|-----------------|------------|
 | Linux    | `/proc/thread-self/status` `VmRSS` | `VmSize` (`Some`) | `None` | `VmHWM` (`Some`) |
 | Windows  | `K32GetProcessMemoryInfo` `WorkingSetSize` | `None` | `PagefileUsage` (`Some`) | `PeakWorkingSetSize` (`Some`) |
-| macOS    | `task_info(MACH_TASK_BASIC_INFO)` `resident_size` | `virtual_size` (`Some`) | `None` | `resident_size_max` (`Some`) |
+| macOS    | `task_info(MACH_TASK_BASIC_INFO)` `resident_size` | `virtual_size` (`Some`) | `None` | `max(resident_size_max, resident_size)` (`Some`) |
 | other / miri | `0` | `None` | `None` | `None` (honest fallback) |
 
 The `None`s are structural, not unimplemented: `PROCESS_MEMORY_COUNTERS` has no

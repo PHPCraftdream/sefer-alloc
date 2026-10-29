@@ -50,7 +50,7 @@
 //! |----------|-------|----------------|-----------------|------------|
 //! | Linux    | `/proc/thread-self/status` `VmRSS` | `VmSize` (`Some`) | `None` | `VmHWM` (`Some`) |
 //! | Windows  | `K32GetProcessMemoryInfo` `WorkingSetSize` | `None` | `PagefileUsage` (`Some`) | `PeakWorkingSetSize` (`Some`) |
-//! | macOS    | `task_info(MACH_TASK_BASIC_INFO)` `resident_size` | `virtual_size` (`Some`) | `None` | `resident_size_max` (`Some`) |
+//! | macOS    | `task_info(MACH_TASK_BASIC_INFO)` `resident_size` | `virtual_size` (`Some`) | `None` | `max(resident_size_max, resident_size)` (`Some`) |
 //! | other    | `0` | `None` | `None` | `None` |
 //!
 //! **Why the `commit_charge` column is `None` on two of the three platforms.**
@@ -157,7 +157,8 @@ pub struct MemStat {
     /// Peak (high-water) resident set size in bytes, where the OS exposes it
     /// (Windows `PeakWorkingSetSize`, Linux `/proc/thread-self/status`
     /// `VmHWM`, macOS
-    /// `resident_size_max`); `None` on platforms without a peak-RSS counter.
+    /// `max(resident_size_max, resident_size)`); `None` on platforms without
+    /// a peak-RSS counter. Never below `rss` on these three platforms.
     pub peak_rss: Option<u64>,
 }
 
@@ -517,7 +518,13 @@ mod platform {
                     // it is address space, not commit charge, and this flavor
                     // exposes no commit-charge counter at all.
                     commit_charge: None,
-                    peak_rss: Some(info.resident_size_max),
+                    // XNU fills both from the `phys_mem` ledger: `resident_size`
+                    // is its balance, updated on every credit;
+                    // `resident_size_max` is its lifetime max, raised only when
+                    // `ledger_entry_check_new_balance` runs later, so it can
+                    // trail the balance. A high-water mark is never below the
+                    // current value.
+                    peak_rss: Some(info.resident_size_max.max(info.resident_size)),
                 })
             }
         }

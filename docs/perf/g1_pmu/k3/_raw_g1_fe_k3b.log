@@ -1,0 +1,319 @@
+identity commit-0ddcb479
+bin_sha256 d869e32299a113cca589cb99bb37d6ea18351b4932cb0fbfbcdbc955bf32b30f
+features production
+cpu 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+RUN 1 bulk16k sefer 1 bulk sefer 16384 64 300 5.846 0
+EV 1 bulk16k sefer 1 cycles:u 269531374
+EV 1 bulk16k sefer 1 instructions:u 1059200233
+EV 1 bulk16k sefer 1 cycle_activity.stalls_total:u 34753013
+EV 1 bulk16k sefer 1 cycle_activity.stalls_mem_any:u 23615110
+EV 1 bulk16k sefer 1 exe_activity.bound_on_stores:u 13400798
+EV 1 bulk16k sefer 1 branch-misses:u 135209
+RUN 1 bulk16k sefer 2 bulk sefer 16384 64 300 5.801 0
+EV 1 bulk16k sefer 2 cycles:u 262793200
+EV 1 bulk16k sefer 2 idq.dsb_uops:u 917714792
+EV 1 bulk16k sefer 2 idq.mite_uops:u 6680592
+EV 1 bulk16k sefer 2 dsb2mite_switches.penalty_cycles:u 1303068
+EV 1 bulk16k sefer 2 icache_data.stalls:u 294916
+EV 1 bulk16k sefer 2 decode.lcp:u 128
+RUN 1 bulk16k sefer 3 bulk sefer 16384 64 300 5.957 0
+EV 1 bulk16k sefer 3 cycles:u 266081147
+EV 1 bulk16k sefer 3 uops_issued.any:u 956968814
+EV 1 bulk16k sefer 3 uops_retired.slots:u 948537000
+EV 1 bulk16k sefer 3 int_misc.recovery_cycles:u 441313
+EV 1 bulk16k sefer 3 ld_blocks.store_forward:u 904
+EV 1 bulk16k sefer 3 resource_stalls.sb:u 13143646
+RUN 1 bulk64 sefer 1 bulk sefer 64 64 80000 4.080 0
+EV 1 bulk64 sefer 1 cycles:u 189372341
+EV 1 bulk64 sefer 1 instructions:u 746240604
+EV 1 bulk64 sefer 1 cycle_activity.stalls_total:u 13249981
+EV 1 bulk64 sefer 1 cycle_activity.stalls_mem_any:u 9176643
+EV 1 bulk64 sefer 1 exe_activity.bound_on_stores:u 15444
+EV 1 bulk64 sefer 1 branch-misses:u 239095
+RUN 1 bulk64 sefer 2 bulk sefer 64 64 80000 3.439 0
+EV 1 bulk64 sefer 2 cycles:u 160185288
+EV 1 bulk64 sefer 2 idq.dsb_uops:u 666081499
+EV 1 bulk64 sefer 2 idq.mite_uops:u 6457805
+EV 1 bulk64 sefer 2 dsb2mite_switches.penalty_cycles:u 1027053
+EV 1 bulk64 sefer 2 icache_data.stalls:u 271945
+EV 1 bulk64 sefer 2 decode.lcp:u 105
+RUN 1 bulk64 sefer 3 bulk sefer 64 64 80000 3.479 0
+EV 1 bulk64 sefer 3 cycles:u 160724933
+EV 1 bulk64 sefer 3 uops_issued.any:u 702144123
+EV 1 bulk64 sefer 3 uops_retired.slots:u 684048871
+EV 1 bulk64 sefer 3 int_misc.recovery_cycles:u 1428262
+EV 1 bulk64 sefer 3 ld_blocks.store_forward:u 11048
+EV 1 bulk64 sefer 3 resource_stalls.sb:u 5699
+RUN 1 mixed256_1024 sefer 1 mixed sefer 256 256/1024 48 10000032 14.062 416300
+EV 1 mixed256_1024 sefer 1 cycles:u 617565555
+EV 1 mixed256_1024 sefer 1 instructions:u 2327468880
+EV 1 mixed256_1024 sefer 1 cycle_activity.stalls_total:u 56518992
+EV 1 mixed256_1024 sefer 1 cycle_activity.stalls_mem_any:u 34194586
+EV 1 mixed256_1024 sefer 1 exe_activity.bound_on_stores:u 3406489
+EV 1 mixed256_1024 sefer 1 branch-misses:u 1986276
+RUN 1 mixed256_1024 sefer 2 mixed sefer 256 256/1024 48 10000032 14.050 416300
+EV 1 mixed256_1024 sefer 2 cycles:u 626629343
+EV 1 mixed256_1024 sefer 2 idq.dsb_uops:u 2442301045
+EV 1 mixed256_1024 sefer 2 idq.mite_uops:u 24492526
+EV 1 mixed256_1024 sefer 2 dsb2mite_switches.penalty_cycles:u 8646640
+EV 1 mixed256_1024 sefer 2 icache_data.stalls:u 313547
+EV 1 mixed256_1024 sefer 2 decode.lcp:u 65
+RUN 1 mixed256_1024 sefer 3 mixed sefer 256 256/1024 48 10000032 13.662 416300
+EV 1 mixed256_1024 sefer 3 cycles:u 606181172
+EV 1 mixed256_1024 sefer 3 uops_issued.any:u 2506545348
+EV 1 mixed256_1024 sefer 3 uops_retired.slots:u 2190544515
+EV 1 mixed256_1024 sefer 3 int_misc.recovery_cycles:u 11945948
+EV 1 mixed256_1024 sefer 3 ld_blocks.store_forward:u 635
+EV 1 mixed256_1024 sefer 3 resource_stalls.sb:u 3929210
+RUN 2 bulk16k sefer 1 bulk sefer 16384 64 300 6.508 0
+EV 2 bulk16k sefer 1 cycles:u 284947619
+EV 2 bulk16k sefer 1 instructions:u 1059201472
+EV 2 bulk16k sefer 1 cycle_activity.stalls_total:u 37984953
+EV 2 bulk16k sefer 1 cycle_activity.stalls_mem_any:u 31376457
+EV 2 bulk16k sefer 1 exe_activity.bound_on_stores:u 15221572
+EV 2 bulk16k sefer 1 branch-misses:u 51574
+RUN 2 bulk16k sefer 2 bulk sefer 16384 64 300 5.938 0
+EV 2 bulk16k sefer 2 cycles:u 263864720
+EV 2 bulk16k sefer 2 idq.dsb_uops:u 926902063
+EV 2 bulk16k sefer 2 idq.mite_uops:u 5838686
+EV 2 bulk16k sefer 2 dsb2mite_switches.penalty_cycles:u 1532349
+EV 2 bulk16k sefer 2 icache_data.stalls:u 270011
+EV 2 bulk16k sefer 2 decode.lcp:u 93
+RUN 2 bulk16k sefer 3 bulk sefer 16384 64 300 5.918 0
+EV 2 bulk16k sefer 3 cycles:u 264249886
+EV 2 bulk16k sefer 3 uops_issued.any:u 958117217
+EV 2 bulk16k sefer 3 uops_retired.slots:u 948421213
+EV 2 bulk16k sefer 3 int_misc.recovery_cycles:u 626106
+EV 2 bulk16k sefer 3 ld_blocks.store_forward:u 854
+EV 2 bulk16k sefer 3 resource_stalls.sb:u 11667588
+RUN 2 bulk64 sefer 1 bulk sefer 64 64 80000 3.449 0
+EV 2 bulk64 sefer 1 cycles:u 161543813
+EV 2 bulk64 sefer 1 instructions:u 746240355
+EV 2 bulk64 sefer 1 cycle_activity.stalls_total:u 5130080
+EV 2 bulk64 sefer 1 cycle_activity.stalls_mem_any:u 2062583
+EV 2 bulk64 sefer 1 exe_activity.bound_on_stores:u 3420
+EV 2 bulk64 sefer 1 branch-misses:u 239156
+RUN 2 bulk64 sefer 2 bulk sefer 64 64 80000 3.451 0
+EV 2 bulk64 sefer 2 cycles:u 161401618
+EV 2 bulk64 sefer 2 idq.dsb_uops:u 662716571
+EV 2 bulk64 sefer 2 idq.mite_uops:u 7623920
+EV 2 bulk64 sefer 2 dsb2mite_switches.penalty_cycles:u 1818431
+EV 2 bulk64 sefer 2 icache_data.stalls:u 179139
+EV 2 bulk64 sefer 2 decode.lcp:u 62
+RUN 2 bulk64 sefer 3 bulk sefer 64 64 80000 3.578 0
+EV 2 bulk64 sefer 3 cycles:u 162690200
+EV 2 bulk64 sefer 3 uops_issued.any:u 702269545
+EV 2 bulk64 sefer 3 uops_retired.slots:u 684114115
+EV 2 bulk64 sefer 3 int_misc.recovery_cycles:u 1529722
+EV 2 bulk64 sefer 3 ld_blocks.store_forward:u 8649
+EV 2 bulk64 sefer 3 resource_stalls.sb:u 4944
+RUN 2 mixed256_1024 sefer 1 mixed sefer 256 256/1024 48 10000032 13.092 416300
+EV 2 mixed256_1024 sefer 1 cycles:u 599332874
+EV 2 mixed256_1024 sefer 1 instructions:u 2327468649
+EV 2 mixed256_1024 sefer 1 cycle_activity.stalls_total:u 49653243
+EV 2 mixed256_1024 sefer 1 cycle_activity.stalls_mem_any:u 32246702
+EV 2 mixed256_1024 sefer 1 exe_activity.bound_on_stores:u 3152412
+EV 2 mixed256_1024 sefer 1 branch-misses:u 1794642
+RUN 2 mixed256_1024 sefer 2 mixed sefer 256 256/1024 48 10000032 13.446 416300
+EV 2 mixed256_1024 sefer 2 cycles:u 614287361
+EV 2 mixed256_1024 sefer 2 idq.dsb_uops:u 2344416153
+EV 2 mixed256_1024 sefer 2 idq.mite_uops:u 72124851
+EV 2 mixed256_1024 sefer 2 dsb2mite_switches.penalty_cycles:u 9657262
+EV 2 mixed256_1024 sefer 2 icache_data.stalls:u 295938
+EV 2 mixed256_1024 sefer 2 decode.lcp:u 74
+RUN 2 mixed256_1024 sefer 3 mixed sefer 256 256/1024 48 10000032 13.514 416300
+EV 2 mixed256_1024 sefer 3 cycles:u 624933804
+EV 2 mixed256_1024 sefer 3 uops_issued.any:u 2554988292
+EV 2 mixed256_1024 sefer 3 uops_retired.slots:u 2190787118
+EV 2 mixed256_1024 sefer 3 int_misc.recovery_cycles:u 12745699
+EV 2 mixed256_1024 sefer 3 ld_blocks.store_forward:u 653
+EV 2 mixed256_1024 sefer 3 resource_stalls.sb:u 4185798
+RUN 3 bulk16k sefer 1 bulk sefer 16384 64 300 6.194 0
+EV 3 bulk16k sefer 1 cycles:u 267208501
+EV 3 bulk16k sefer 1 instructions:u 1059203300
+EV 3 bulk16k sefer 1 cycle_activity.stalls_total:u 33871832
+EV 3 bulk16k sefer 1 cycle_activity.stalls_mem_any:u 23743938
+EV 3 bulk16k sefer 1 exe_activity.bound_on_stores:u 11753428
+EV 3 bulk16k sefer 1 branch-misses:u 79226
+RUN 3 bulk16k sefer 2 bulk sefer 16384 64 300 6.335 0
+EV 3 bulk16k sefer 2 cycles:u 268493350
+EV 3 bulk16k sefer 2 idq.dsb_uops:u 918038233
+EV 3 bulk16k sefer 2 idq.mite_uops:u 6808134
+EV 3 bulk16k sefer 2 dsb2mite_switches.penalty_cycles:u 1231068
+EV 3 bulk16k sefer 2 icache_data.stalls:u 396418
+EV 3 bulk16k sefer 2 decode.lcp:u 0
+RUN 3 bulk16k sefer 3 bulk sefer 16384 64 300 6.195 0
+EV 3 bulk16k sefer 3 cycles:u 266471006
+EV 3 bulk16k sefer 3 uops_issued.any:u 960091458
+EV 3 bulk16k sefer 3 uops_retired.slots:u 948514170
+EV 3 bulk16k sefer 3 int_misc.recovery_cycles:u 645659
+EV 3 bulk16k sefer 3 ld_blocks.store_forward:u 973
+EV 3 bulk16k sefer 3 resource_stalls.sb:u 11098824
+RUN 3 bulk64 sefer 1 bulk sefer 64 64 80000 3.433 0
+EV 3 bulk64 sefer 1 cycles:u 162220535
+EV 3 bulk64 sefer 1 instructions:u 746241477
+EV 3 bulk64 sefer 1 cycle_activity.stalls_total:u 4570213
+EV 3 bulk64 sefer 1 cycle_activity.stalls_mem_any:u 1863678
+EV 3 bulk64 sefer 1 exe_activity.bound_on_stores:u 4500
+EV 3 bulk64 sefer 1 branch-misses:u 237066
+RUN 3 bulk64 sefer 2 bulk sefer 64 64 80000 3.451 0
+EV 3 bulk64 sefer 2 cycles:u 163619369
+EV 3 bulk64 sefer 2 idq.dsb_uops:u 660708838
+EV 3 bulk64 sefer 2 idq.mite_uops:u 6636440
+EV 3 bulk64 sefer 2 dsb2mite_switches.penalty_cycles:u 1985863
+EV 3 bulk64 sefer 2 icache_data.stalls:u 163759
+EV 3 bulk64 sefer 2 decode.lcp:u 65
+RUN 3 bulk64 sefer 3 bulk sefer 64 64 80000 3.381 0
+EV 3 bulk64 sefer 3 cycles:u 163809735
+EV 3 bulk64 sefer 3 uops_issued.any:u 701642487
+EV 3 bulk64 sefer 3 uops_retired.slots:u 684037183
+EV 3 bulk64 sefer 3 int_misc.recovery_cycles:u 1361854
+EV 3 bulk64 sefer 3 ld_blocks.store_forward:u 9697
+EV 3 bulk64 sefer 3 resource_stalls.sb:u 4530
+RUN 3 mixed256_1024 sefer 1 mixed sefer 256 256/1024 48 10000032 13.550 416300
+EV 3 mixed256_1024 sefer 1 cycles:u 611171650
+EV 3 mixed256_1024 sefer 1 instructions:u 2327468124
+EV 3 mixed256_1024 sefer 1 cycle_activity.stalls_total:u 53195445
+EV 3 mixed256_1024 sefer 1 cycle_activity.stalls_mem_any:u 33120659
+EV 3 mixed256_1024 sefer 1 exe_activity.bound_on_stores:u 2796295
+EV 3 mixed256_1024 sefer 1 branch-misses:u 1885161
+RUN 3 mixed256_1024 sefer 2 mixed sefer 256 256/1024 48 10000032 13.564 416300
+EV 3 mixed256_1024 sefer 2 cycles:u 620237499
+EV 3 mixed256_1024 sefer 2 idq.dsb_uops:u 2348086972
+EV 3 mixed256_1024 sefer 2 idq.mite_uops:u 78630128
+EV 3 mixed256_1024 sefer 2 dsb2mite_switches.penalty_cycles:u 10237323
+EV 3 mixed256_1024 sefer 2 icache_data.stalls:u 396230
+EV 3 mixed256_1024 sefer 2 decode.lcp:u 65
+RUN 3 mixed256_1024 sefer 3 mixed sefer 256 256/1024 48 10000032 13.704 416300
+EV 3 mixed256_1024 sefer 3 cycles:u 623046609
+EV 3 mixed256_1024 sefer 3 uops_issued.any:u 2538564904
+EV 3 mixed256_1024 sefer 3 uops_retired.slots:u 2191021697
+EV 3 mixed256_1024 sefer 3 int_misc.recovery_cycles:u 13275709
+EV 3 mixed256_1024 sefer 3 ld_blocks.store_forward:u 688
+EV 3 mixed256_1024 sefer 3 resource_stalls.sb:u 4766328
+RUN 4 bulk16k sefer 1 bulk sefer 16384 64 300 5.698 0
+EV 4 bulk16k sefer 1 cycles:u 263051987
+EV 4 bulk16k sefer 1 instructions:u 1059200908
+EV 4 bulk16k sefer 1 cycle_activity.stalls_total:u 30219535
+EV 4 bulk16k sefer 1 cycle_activity.stalls_mem_any:u 22023513
+EV 4 bulk16k sefer 1 exe_activity.bound_on_stores:u 10855686
+EV 4 bulk16k sefer 1 branch-misses:u 68196
+RUN 4 bulk16k sefer 2 bulk sefer 16384 64 300 5.543 0
+EV 4 bulk16k sefer 2 cycles:u 252029128
+EV 4 bulk16k sefer 2 idq.dsb_uops:u 930288772
+EV 4 bulk16k sefer 2 idq.mite_uops:u 3196601
+EV 4 bulk16k sefer 2 dsb2mite_switches.penalty_cycles:u 1348925
+EV 4 bulk16k sefer 2 icache_data.stalls:u 289003
+EV 4 bulk16k sefer 2 decode.lcp:u 78
+RUN 4 bulk16k sefer 3 bulk sefer 16384 64 300 5.863 0
+EV 4 bulk16k sefer 3 cycles:u 263513423
+EV 4 bulk16k sefer 3 uops_issued.any:u 958585906
+EV 4 bulk16k sefer 3 uops_retired.slots:u 948496179
+EV 4 bulk16k sefer 3 int_misc.recovery_cycles:u 684713
+EV 4 bulk16k sefer 3 ld_blocks.store_forward:u 929
+EV 4 bulk16k sefer 3 resource_stalls.sb:u 11514234
+RUN 4 bulk64 sefer 1 bulk sefer 64 64 80000 3.535 0
+EV 4 bulk64 sefer 1 cycles:u 162310618
+EV 4 bulk64 sefer 1 instructions:u 746241691
+EV 4 bulk64 sefer 1 cycle_activity.stalls_total:u 5065436
+EV 4 bulk64 sefer 1 cycle_activity.stalls_mem_any:u 2307022
+EV 4 bulk64 sefer 1 exe_activity.bound_on_stores:u 6411
+EV 4 bulk64 sefer 1 branch-misses:u 245034
+RUN 4 bulk64 sefer 2 bulk sefer 64 64 80000 3.461 0
+EV 4 bulk64 sefer 2 cycles:u 162368457
+EV 4 bulk64 sefer 2 idq.dsb_uops:u 661285791
+EV 4 bulk64 sefer 2 idq.mite_uops:u 10731759
+EV 4 bulk64 sefer 2 dsb2mite_switches.penalty_cycles:u 1940439
+EV 4 bulk64 sefer 2 icache_data.stalls:u 215917
+EV 4 bulk64 sefer 2 decode.lcp:u 93
+RUN 4 bulk64 sefer 3 bulk sefer 64 64 80000 3.415 0
+EV 4 bulk64 sefer 3 cycles:u 161901862
+EV 4 bulk64 sefer 3 uops_issued.any:u 701540070
+EV 4 bulk64 sefer 3 uops_retired.slots:u 684026533
+EV 4 bulk64 sefer 3 int_misc.recovery_cycles:u 1582841
+EV 4 bulk64 sefer 3 ld_blocks.store_forward:u 10078
+EV 4 bulk64 sefer 3 resource_stalls.sb:u 5925
+RUN 4 mixed256_1024 sefer 1 mixed sefer 256 256/1024 48 10000032 13.473 416300
+EV 4 mixed256_1024 sefer 1 cycles:u 611816222
+EV 4 mixed256_1024 sefer 1 instructions:u 2327468508
+EV 4 mixed256_1024 sefer 1 cycle_activity.stalls_total:u 53971922
+EV 4 mixed256_1024 sefer 1 cycle_activity.stalls_mem_any:u 33882160
+EV 4 mixed256_1024 sefer 1 exe_activity.bound_on_stores:u 3062357
+EV 4 mixed256_1024 sefer 1 branch-misses:u 1860091
+RUN 4 mixed256_1024 sefer 2 mixed sefer 256 256/1024 48 10000032 13.599 416300
+EV 4 mixed256_1024 sefer 2 cycles:u 614405309
+EV 4 mixed256_1024 sefer 2 idq.dsb_uops:u 2365061291
+EV 4 mixed256_1024 sefer 2 idq.mite_uops:u 39708017
+EV 4 mixed256_1024 sefer 2 dsb2mite_switches.penalty_cycles:u 7959526
+EV 4 mixed256_1024 sefer 2 icache_data.stalls:u 319125
+EV 4 mixed256_1024 sefer 2 decode.lcp:u 78
+RUN 4 mixed256_1024 sefer 3 mixed sefer 256 256/1024 48 10000032 13.480 416300
+EV 4 mixed256_1024 sefer 3 cycles:u 606712782
+EV 4 mixed256_1024 sefer 3 uops_issued.any:u 2521017354
+EV 4 mixed256_1024 sefer 3 uops_retired.slots:u 2190812919
+EV 4 mixed256_1024 sefer 3 int_misc.recovery_cycles:u 12409592
+EV 4 mixed256_1024 sefer 3 ld_blocks.store_forward:u 664
+EV 4 mixed256_1024 sefer 3 resource_stalls.sb:u 4307978
+RUN 5 bulk16k sefer 1 bulk sefer 16384 64 300 5.978 0
+EV 5 bulk16k sefer 1 cycles:u 269551729
+EV 5 bulk16k sefer 1 instructions:u 1059201166
+EV 5 bulk16k sefer 1 cycle_activity.stalls_total:u 35401295
+EV 5 bulk16k sefer 1 cycle_activity.stalls_mem_any:u 23178586
+EV 5 bulk16k sefer 1 exe_activity.bound_on_stores:u 14972767
+EV 5 bulk16k sefer 1 branch-misses:u 75188
+RUN 5 bulk16k sefer 2 bulk sefer 16384 64 300 6.228 0
+EV 5 bulk16k sefer 2 cycles:u 275465895
+EV 5 bulk16k sefer 2 idq.dsb_uops:u 921574115
+EV 5 bulk16k sefer 2 idq.mite_uops:u 6092220
+EV 5 bulk16k sefer 2 dsb2mite_switches.penalty_cycles:u 844694
+EV 5 bulk16k sefer 2 icache_data.stalls:u 447007
+EV 5 bulk16k sefer 2 decode.lcp:u 0
+RUN 5 bulk16k sefer 3 bulk sefer 16384 64 300 6.574 0
+EV 5 bulk16k sefer 3 cycles:u 288557089
+EV 5 bulk16k sefer 3 uops_issued.any:u 969661126
+EV 5 bulk16k sefer 3 uops_retired.slots:u 948550540
+EV 5 bulk16k sefer 3 int_misc.recovery_cycles:u 959587
+EV 5 bulk16k sefer 3 ld_blocks.store_forward:u 2652
+EV 5 bulk16k sefer 3 resource_stalls.sb:u 18365494
+RUN 5 bulk64 sefer 1 bulk sefer 64 64 80000 3.496 0
+EV 5 bulk64 sefer 1 cycles:u 160465174
+EV 5 bulk64 sefer 1 instructions:u 746240359
+EV 5 bulk64 sefer 1 cycle_activity.stalls_total:u 4708582
+EV 5 bulk64 sefer 1 cycle_activity.stalls_mem_any:u 1897907
+EV 5 bulk64 sefer 1 exe_activity.bound_on_stores:u 5097
+EV 5 bulk64 sefer 1 branch-misses:u 214187
+RUN 5 bulk64 sefer 2 bulk sefer 64 64 80000 3.500 0
+EV 5 bulk64 sefer 2 cycles:u 163028469
+EV 5 bulk64 sefer 2 idq.dsb_uops:u 664791173
+EV 5 bulk64 sefer 2 idq.mite_uops:u 8167122
+EV 5 bulk64 sefer 2 dsb2mite_switches.penalty_cycles:u 1774225
+EV 5 bulk64 sefer 2 icache_data.stalls:u 306574
+EV 5 bulk64 sefer 2 decode.lcp:u 91
+RUN 5 bulk64 sefer 3 bulk sefer 64 64 80000 3.364 0
+EV 5 bulk64 sefer 3 cycles:u 161433492
+EV 5 bulk64 sefer 3 uops_issued.any:u 701331725
+EV 5 bulk64 sefer 3 uops_retired.slots:u 684034514
+EV 5 bulk64 sefer 3 int_misc.recovery_cycles:u 1381783
+EV 5 bulk64 sefer 3 ld_blocks.store_forward:u 9026
+EV 5 bulk64 sefer 3 resource_stalls.sb:u 5054
+RUN 5 mixed256_1024 sefer 1 mixed sefer 256 256/1024 48 10000032 13.718 416300
+EV 5 mixed256_1024 sefer 1 cycles:u 616250133
+EV 5 mixed256_1024 sefer 1 instructions:u 2327467961
+EV 5 mixed256_1024 sefer 1 cycle_activity.stalls_total:u 54466806
+EV 5 mixed256_1024 sefer 1 cycle_activity.stalls_mem_any:u 33544395
+EV 5 mixed256_1024 sefer 1 exe_activity.bound_on_stores:u 3203837
+EV 5 mixed256_1024 sefer 1 branch-misses:u 1825891
+RUN 5 mixed256_1024 sefer 2 mixed sefer 256 256/1024 48 10000032 13.583 416300
+EV 5 mixed256_1024 sefer 2 cycles:u 613396819
+EV 5 mixed256_1024 sefer 2 idq.dsb_uops:u 2383836513
+EV 5 mixed256_1024 sefer 2 idq.mite_uops:u 50847610
+EV 5 mixed256_1024 sefer 2 dsb2mite_switches.penalty_cycles:u 10724758
+EV 5 mixed256_1024 sefer 2 icache_data.stalls:u 340683
+EV 5 mixed256_1024 sefer 2 decode.lcp:u 83
+RUN 5 mixed256_1024 sefer 3 mixed sefer 256 256/1024 48 10000032 13.831 416300
+EV 5 mixed256_1024 sefer 3 cycles:u 607481862
+EV 5 mixed256_1024 sefer 3 uops_issued.any:u 2512011540
+EV 5 mixed256_1024 sefer 3 uops_retired.slots:u 2190628422
+EV 5 mixed256_1024 sefer 3 int_misc.recovery_cycles:u 11362645
+EV 5 mixed256_1024 sefer 3 ld_blocks.store_forward:u 658
+EV 5 mixed256_1024 sefer 3 resource_stalls.sb:u 4532950
