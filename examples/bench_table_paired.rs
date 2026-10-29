@@ -3,25 +3,30 @@
 //! measures each allocator in its own long window, so host noise that moves
 //! between windows lands on one arm only. Here every round measures every arm
 //! once per (group, size) in a short sample — a triplet of samples taken
-//! back to back (setup and warm-up of all three arms first, then the three
-//! timed samples with nothing in between, so the triplet sees one noise
-//! state), in a rotated arm order; the statistic is the minimum over rounds
-//! per arm (the least disturbed sample), with the median printed next to it.
+//! back to back (untimed setup of all three arms first, then the three timed
+//! samples with nothing in between, so the triplet sees one noise state). The
+//! arm order of a cell walks all six permutations, shifted by one per round.
 //!
 //! Groups and bodies are those of `benches/global_alloc.rs`:
-//! - `direct`: alloc `OPS` blocks, then free them (warm bulk burst);
-//! - `churn`: a prefilled working set of `CHURN_WORKING_SET`, `OPS` random
-//!   free + alloc steps per call;
+//! - `direct`: alloc `OPS` blocks, then free them (warm bulk burst; one
+//!   untimed warm-up body per arm before the triplet);
+//! - `churn`: a working set of `CHURN_WORKING_SET`, `OPS` random free + alloc
+//!   steps per body;
 //! - `churn_write`: as `churn`, writing 16 B into each new block.
+//!
+//! Churn regime:
+//! - `steady`: one working set per (group, size, arm) is prefilled once and
+//!   stays alive for the whole run; a sample is `calls` bodies on it;
+//! - `fresh:K`: a sample prefills `K` new sets (untimed) and runs ONE body
+//!   on each, then frees them — the shape of criterion's `iter_batched`
+//!   (one body per setup result).
 //!
 //! Arms: `SeferAlloc::new()`, `mimalloc::MiMalloc`, `std::alloc::System`,
 //! called through `GlobalAlloc` directly (none is the process allocator).
 //!
-//! Usage: `bench_table_paired [rounds] [calls] [batch]` (default 200 rounds,
-//! 2 calls per sample = 2048 pairs, tens of microseconds per sample; `batch`
-//! fresh churn working sets per sample, default 1 = one long-lived set in
-//! steady state; criterion's `iter_batched` prefills several before timing). Output: one JSON line per sample; tables are
-//! derived by `scripts/bench-table-paired.mjs`.
+//! Usage: `bench_table_paired [rounds] [calls] [regime]` (default 200 rounds,
+//! 2 calls, `steady`). Output: one JSON line per sample; tables are derived
+//! by `scripts/bench-table-paired.mjs`.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
@@ -101,58 +106,38 @@ fn churn_step<A: GlobalAlloc>(a: &A, layout: Layout, live: &mut [*mut u8], write
     black_box(&live);
 }
 
-/// Untimed setup of one arm for `group`: `batch` freshly prefilled churn
-/// working sets (none for `direct`, which gets one warm-up call instead).
-/// Churn sets are not warmed: like criterion's `iter_batched` setup, every
-/// timed churn call starts from a fresh prefill.
-fn prepare<A: GlobalAlloc>(a: &A, group: &str, layout: Layout, batch: usize) -> Vec<Vec<*mut u8>> {
-    if group == "direct" {
-        direct(a, layout);
-        return Vec::new();
-    }
-    let write = group == "churn_write";
-    (0..batch)
+/// Churn regime, see the module doc.
+#[derive(Clone, Copy)]
+enum Regime {
+    Steady,
+    Fresh(usize),
+}
+
+/// All six orders of the three arms.
+const PERMS: [[usize; 3]; 6] = [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 0, 2],
+    [1, 2, 0],
+    [2, 0, 1],
+    [2, 1, 0],
+];
+
+/// One prefilled churn working set (untimed).
+fn fill<A: GlobalAlloc>(a: &A, layout: Layout, write: bool) -> Vec<*mut u8> {
+    (0..CHURN_WORKING_SET)
         .map(|_| {
-            (0..CHURN_WORKING_SET)
-                .map(|_| {
-                    // SAFETY: non-zero layout.
-                    let p = unsafe { a.alloc(layout) };
-                    if write {
-                        write16(p);
-                    }
-                    p
-                })
-                .collect()
+            // SAFETY: non-zero layout.
+            let p = unsafe { a.alloc(layout) };
+            if write {
+                write16(p);
+            }
+            p
         })
         .collect()
 }
 
-/// One timed sample, in ns per alloc+free pair: `calls` bodies of `direct`,
-/// or `calls` churn bodies on each prepared working set.
-fn measure<A: GlobalAlloc>(
-    a: &A,
-    group: &str,
-    layout: Layout,
-    sets: &mut [Vec<*mut u8>],
-    calls: usize,
-) -> f64 {
-    let write = group == "churn_write";
-    let t = Instant::now();
-    if group == "direct" {
-        for _ in 0..calls {
-            direct(a, layout);
-        }
-    } else {
-        for live in sets.iter_mut() {
-            for _ in 0..calls {
-                churn_step(a, layout, live, write);
-            }
-        }
-    }
-    t.elapsed().as_nanos() as f64 / (calls * sets.len().max(1) * OPS) as f64
-}
-
-fn finish<A: GlobalAlloc>(a: &A, layout: Layout, sets: &[Vec<*mut u8>]) {
+fn free_all<A: GlobalAlloc>(a: &A, layout: Layout, sets: &[Vec<*mut u8>]) {
     for &p in sets.iter().flatten() {
         if !p.is_null() {
             // SAFETY: every slot holds a live block of `a` with `layout`.
@@ -161,44 +146,128 @@ fn finish<A: GlobalAlloc>(a: &A, layout: Layout, sets: &[Vec<*mut u8>]) {
     }
 }
 
+/// Untimed setup of one arm's sample: the warm-up body for `direct`; for
+/// churn, the persistent set (`steady`, created on first use) or `K` fresh
+/// sets.
+fn setup<A: GlobalAlloc>(
+    a: &A,
+    group: &str,
+    layout: Layout,
+    regime: Regime,
+    sets: &mut Vec<Vec<*mut u8>>,
+) {
+    let write = group == "churn_write";
+    match (group, regime) {
+        ("direct", _) => direct(a, layout),
+        (_, Regime::Steady) => {
+            if sets.is_empty() {
+                sets.push(fill(a, layout, write));
+            }
+        }
+        (_, Regime::Fresh(k)) => {
+            sets.extend((0..k).map(|_| fill(a, layout, write)));
+        }
+    }
+}
+
+/// One timed sample; returns (ns per alloc+free pair, pairs).
+fn sample<A: GlobalAlloc>(
+    a: &A,
+    group: &str,
+    layout: Layout,
+    regime: Regime,
+    sets: &mut [Vec<*mut u8>],
+    calls: usize,
+) -> (f64, usize) {
+    let write = group == "churn_write";
+    let t = Instant::now();
+    let bodies = match (group, regime) {
+        ("direct", _) => {
+            for _ in 0..calls {
+                direct(a, layout);
+            }
+            calls
+        }
+        (_, Regime::Steady) => {
+            for _ in 0..calls {
+                churn_step(a, layout, &mut sets[0], write);
+            }
+            calls
+        }
+        (_, Regime::Fresh(_)) => {
+            for live in sets.iter_mut() {
+                churn_step(a, layout, live, write);
+            }
+            sets.len()
+        }
+    };
+    let pairs = bodies * OPS;
+    (t.elapsed().as_nanos() as f64 / pairs as f64, pairs)
+}
+
+/// Per-sample teardown: fresh sets are freed, the steady set is kept.
+fn teardown<A: GlobalAlloc>(a: &A, layout: Layout, regime: Regime, sets: &mut Vec<Vec<*mut u8>>) {
+    if let Regime::Fresh(_) = regime {
+        free_all(a, layout, sets);
+        sets.clear();
+    }
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let rounds: usize = args.next().map_or(200, |s| s.parse().unwrap());
     let calls: usize = args.next().map_or(2, |s| s.parse().unwrap());
-    let batch: usize = args.next().map_or(1, |s| s.parse().unwrap());
-    assert!(rounds > 0 && calls > 0 && batch > 0);
-    let mut k = 0usize;
+    let regime_arg = args.next().unwrap_or_else(|| "steady".to_string());
+    let regime = match regime_arg.strip_prefix("fresh:") {
+        Some(k) => Regime::Fresh(k.parse().unwrap()),
+        None if regime_arg == "steady" => Regime::Steady,
+        None => panic!("regime must be `steady` or `fresh:K`"),
+    };
+    assert!(rounds > 0 && calls > 0 && !matches!(regime, Regime::Fresh(0)));
+    let cells = GROUPS.len() * SIZES.len();
+    // sets[cell][arm]: churn working sets of that arm (persistent for `steady`).
+    let mut sets: Vec<[Vec<Vec<*mut u8>>; 3]> = (0..cells).map(|_| Default::default()).collect();
     for round in 0..rounds {
-        for group in GROUPS {
-            for size in SIZES {
+        for (gi, group) in GROUPS.into_iter().enumerate() {
+            for (si, size) in SIZES.into_iter().enumerate() {
+                let cell = gi * SIZES.len() + si;
                 let layout = Layout::from_size_align(size, 8).unwrap();
-                let mut ls = prepare(&SEFER, group, layout, batch);
-                let mut lm = prepare(&MI, group, layout, batch);
-                let mut ly = prepare(&SYS, group, layout, batch);
-                let mut ns = [0f64; 3];
-                // The triplet: three timed samples back to back, rotated order.
-                for j in 0..ARMS.len() {
-                    let i = (k + j) % ARMS.len();
+                let [ss, sm, sy] = &mut sets[cell];
+                setup(&SEFER, group, layout, regime, ss);
+                setup(&MI, group, layout, regime, sm);
+                setup(&SYS, group, layout, regime, sy);
+                let perm = PERMS[(round + cell) % PERMS.len()];
+                let mut ns = [(0f64, 0usize); 3];
+                // The triplet: three timed samples back to back.
+                for &i in &perm {
                     ns[i] = match i {
-                        0 => measure(&SEFER, group, layout, &mut ls, calls),
-                        1 => measure(&MI, group, layout, &mut lm, calls),
-                        _ => measure(&SYS, group, layout, &mut ly, calls),
+                        0 => sample(&SEFER, group, layout, regime, ss, calls),
+                        1 => sample(&MI, group, layout, regime, sm, calls),
+                        _ => sample(&SYS, group, layout, regime, sy, calls),
                     };
                 }
-                finish(&SEFER, layout, &ls);
-                finish(&MI, layout, &lm);
-                finish(&SYS, layout, &ly);
-                let b = if group == "direct" { 1 } else { batch };
+                teardown(&SEFER, layout, regime, ss);
+                teardown(&MI, layout, regime, sm);
+                teardown(&SYS, layout, regime, sy);
+                let regime_name = if group == "direct" {
+                    "direct"
+                } else {
+                    regime_arg.as_str()
+                };
                 for (i, arm) in ARMS.iter().enumerate() {
+                    let order = perm.iter().position(|&x| x == i).unwrap();
                     println!(
-                        "{{\"round\":{round},\"group\":\"{group}\",\"size\":{size},\"arm\":\"{arm}\",\"order\":{},\"calls\":{calls},\"batch\":{b},\"pairs\":{},\"ns_per_pair\":{:.3}}}",
-                        (i + ARMS.len() - k % ARMS.len()) % ARMS.len(),
-                        calls * b * OPS,
-                        ns[i]
+                        "{{\"round\":{round},\"group\":\"{group}\",\"size\":{size},\"arm\":\"{arm}\",\"order\":{order},\"calls\":{calls},\"regime\":\"{regime_name}\",\"pairs\":{},\"ns_per_pair\":{:.3}}}",
+                        ns[i].1, ns[i].0
                     );
                 }
-                k += 1;
             }
         }
+    }
+    for (cell, [ss, sm, sy]) in sets.iter().enumerate() {
+        let layout = Layout::from_size_align(SIZES[cell % SIZES.len()], 8).unwrap();
+        free_all(&SEFER, layout, ss);
+        free_all(&MI, layout, sm);
+        free_all(&SYS, layout, sy);
     }
 }
