@@ -795,14 +795,14 @@ fn scalar_and_batch_frees_of_one_pattern_agree_on_every_observer() {
     let mut lease = claim_normalised();
     let heap = lease.core();
 
-    // The task's pattern: 64 blocks of 256 B. `256` B is a small class whose
-    // `FREE_PARK_CAP` is the full magazine depth, so both the scalar and the
-    // batched free park the same number of blocks and flush the rest.
-    let layout = Layout::from_size_align(256, 8).unwrap();
+    // The task's pattern: 64 blocks of 2048 B — a small class with the full
+    // magazine as `FREE_PARK_CAP` and no depot (`dealloc_batch` never parks),
+    // so scalar and batched free park the same blocks and flush the rest.
+    let layout = Layout::from_size_align(2048, 8).unwrap();
     let n = 64usize;
     let class = heap
         .dbg_class_for(layout)
-        .expect("256 B @ align 8 must classify Small");
+        .expect("2048 B @ align 8 must classify Small");
 
     /// Every aggregate observer a kind-aware routing decision can move.
     #[derive(Debug, Clone, PartialEq, Eq)]

@@ -3254,6 +3254,13 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** a variant that keeps the Layout class as the (parallel) index and uses the byte only for the reject branch while still cutting `class_for` instructions (e.g. saturating SIZE2CLASS sentinel instead of the bounds-check branch, no redundant `.max(MIN_BLOCK)`), judged by J1′ v2.
    > - **Evidence:** docs/perf/G1_IDEAS.md §6, docs/perf/g1_pmu/k2/ (raw perf stat and callgrind logs, compare table and CSV), scripts/g1_fe_compare.mjs.
 
+127. **[A] G1-K5 — magazine depot for classes 240..1024 B (K = 2): GO, shipping `perf(runtime)`.** (Filed 2026-10-28, `docs/perf/G1_K5_DEPOT_GATE.md`.)
+   > **Current state**
+   > - **Status:** GO by pre-registration (`docs/perf/g1_k5/G1_K5_PREREG.md`); code in the same PR as this card, stacked on K1 (item 125). Close after CI is green on the landing SHA.
+   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k5-meas`@`319517f7`):** churn1024 faster 1.110×, churn256 1.090× (CI −9.76…−6.49 %), larson 1.080×, churn16 1.030×; pair16, pair64, pair_rt, bulk16k, churn64, vec512 equal; bulk64 slower 1.016× (CI +1.15…+1.86 %, within the +2 % tolerance; instructions unchanged, the null copy's A/B is −1.71 % — same pattern as K1). Against mimalloc (`g1-k5`): larson mimalloc faster 1.019× (was 1.103×), churn1024 1.130× (was 1.288×). Parked-block bound per thread 64 256 → 241 408 B; RSS not measured.
+   > - **Next trigger:** close on a green landing CI. Shared open sub-item with item 125: bulk64's +1.6…+1.8 % with unchanged instructions in two consecutive ablations points at the null copy's layout on that kernel — check the harness (a second null build, or a swapped-slot null) before the next bulk64-sensitive gate.
+   > - **Evidence:** docs/perf/G1_K5_DEPOT_GATE.md, docs/perf/G1_K5_DEPOT_GATE_summary.csv, docs/perf/G1_K5_DEPOT_GATE_summary_callgrind.csv, docs/perf/g1_k5/, scripts/g1_k5_gate_report.mjs, tests/heap_core_depot.rs.
+
 128. **[L] G1-K6 — flush without the per-call `recycled_bases` zeroing and the `prev_ptr` stack spill: NO-GO by ceiling (below the layout-noise floor).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §7.)
    > **Current state**
    > - **Status:** NO-GO before the judge; patch `docs/perf/g1_pmu/k6/k6_flush_stores.patch` (over `g1-k5`@`2bc830cc`), production unchanged.

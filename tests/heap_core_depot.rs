@@ -353,3 +353,88 @@ fn depot_reload_is_conservatively_non_virgin() {
     assert_eq!(virgin_mask, 0);
     assert_eq!(bytes, [0; 16]);
 }
+
+/// G1-K5: classes 240..1024 B have a depot of two magazines; the parked-block
+/// bound per thread stays within the const-asserted budget.
+#[test]
+fn depot_mid_classes_budget_and_caps() {
+    let _s = Serial::lock();
+    let _ = bootstrap::ensure();
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
+    let sizes = [240, 256, 304, 384, 480, 512, 608, 768, 960, 1024];
+    let mut budget = 64_256;
+    for (i, size) in sizes.into_iter().enumerate() {
+        let c = 8 + i;
+        assert_eq!(
+            heap.dbg_class_for(Layout::from_size_align(size, 8).unwrap()),
+            Some(c)
+        );
+        assert_eq!(heap.dbg_free_park_cap(c), Some(CAP));
+        budget += size * CAP * 2;
+    }
+    assert_eq!(budget, 241_408);
+    assert!(budget <= 240 * 1024);
+    drop(lease);
+}
+
+/// G1-K5: a mid class parks exactly two full magazines, the next overflow
+/// takes the flush arm, and reloads hand back only blocks this test freed.
+/// A class above 1024 B never parks.
+#[test]
+fn depot_mid_class_parks_two_and_reloads() {
+    let _s = Serial::lock();
+    let _ = bootstrap::ensure();
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
+    for size in [256usize, 1024] {
+        heap.dbg_flush_all();
+        let layout = Layout::from_size_align(size, 8).unwrap();
+        let c = heap.dbg_class_for(layout).unwrap();
+        let blocks: Vec<*mut u8> = (0..3 * CAP + 1).map(|_| heap.alloc(layout)).collect();
+        assert!(blocks.iter().all(|p| !p.is_null()));
+        // The last refill left blocks in the magazine; start the frees empty.
+        heap.dbg_flush_all();
+        assert_eq!(heap.dbg_tcache_count(c), 0);
+        assert_eq!(heap.dbg_depot_len(c), 0);
+        for &p in &blocks {
+            // SAFETY: distinct live allocations, freed exactly once.
+            unsafe { heap.dealloc(p, layout) };
+        }
+        assert_eq!(
+            heap.dbg_depot_len(c),
+            2,
+            "size {size}: two parked magazines"
+        );
+        let resident = heap.dbg_tcache_count(c) as usize;
+        let take = resident + 2 * CAP;
+        let reissued: Vec<*mut u8> = (0..take).map(|_| heap.alloc(layout)).collect();
+        assert_eq!(
+            heap.dbg_depot_len(c),
+            0,
+            "size {size}: both magazines reloaded"
+        );
+        let mut uniq: Vec<usize> = reissued.iter().map(|p| *p as usize).collect();
+        uniq.sort_unstable();
+        uniq.dedup();
+        assert_eq!(uniq.len(), take, "size {size}: no duplicate reissue");
+        assert!(
+            reissued.iter().all(|p| blocks.contains(p)),
+            "size {size}: magazine and depot hand back only freed blocks"
+        );
+        for &p in &reissued {
+            // SAFETY: each reissued block is live and freed once.
+            unsafe { heap.dealloc(p, layout) };
+        }
+    }
+    let big = Layout::from_size_align(1200, 8).unwrap();
+    let c_big = heap.dbg_class_for(big).unwrap();
+    let blocks: Vec<*mut u8> = (0..3 * CAP + 1).map(|_| heap.alloc(big)).collect();
+    for &p in &blocks {
+        // SAFETY: distinct live allocations, freed exactly once.
+        unsafe { heap.dealloc(p, big) };
+    }
+    assert_eq!(heap.dbg_depot_len(c_big), 0, "1200 B has no depot");
+    heap.dbg_flush_all();
+    drop(lease);
+}
