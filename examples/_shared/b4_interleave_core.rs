@@ -394,14 +394,6 @@ pub const BULK64_PASSES: u64 = 8;
 /// bulk16k: live N / passes per portion (ONE full pass per portion).
 pub const BULK16K_N: usize = 16384;
 pub const BULK16K_PASSES: u64 = 1;
-/// G1-K7: bulk64k — a 64 B cohort of 4 MiB, larger than the default depot
-/// overflow budget (1 MiB); ONE pass per portion.
-pub const BULK64K_N: usize = 65536;
-pub const BULK64K_PASSES: u64 = 1;
-/// G1-K7: bulk16k_32 — 16 384 blocks of 32 B (512 KiB), a second class
-/// inside the budget; ONE pass per portion.
-pub const BULK16K32_N: usize = 16384;
-pub const BULK16K32_PASSES: u64 = 1;
 /// churn-write: live blocks and alloc+free+write steps per portion.
 pub const CHURN_LIVE: usize = 256;
 pub const CHURN_OPS: u64 = 128;
@@ -438,13 +430,9 @@ pub enum Kernel {
     Churn1024,
     VecGrow,
     Larson,
-    // G1-K7 regimes, appended so every earlier kernel keeps its index (the
-    // per-portion seed is derived from it).
-    Bulk64k,
-    Bulk16k32,
 }
 
-pub const ALL_KERNELS: [Kernel; 13] = [
+pub const ALL_KERNELS: [Kernel; 11] = [
     Kernel::Pair16,
     Kernel::Pair64,
     Kernel::PairRt,
@@ -456,8 +444,6 @@ pub const ALL_KERNELS: [Kernel; 13] = [
     Kernel::Churn1024,
     Kernel::VecGrow,
     Kernel::Larson,
-    Kernel::Bulk64k,
-    Kernel::Bulk16k32,
 ];
 
 impl Kernel {
@@ -468,8 +454,6 @@ impl Kernel {
             Kernel::PairRt => "pair_rt",
             Kernel::Bulk64 => "bulk64",
             Kernel::Bulk16k => "bulk16k",
-            Kernel::Bulk64k => "bulk64k",
-            Kernel::Bulk16k32 => "bulk16k_32",
             Kernel::Churn16 => "churn16",
             Kernel::Churn64 => "churn64",
             Kernel::Churn256 => "churn256",
@@ -490,8 +474,6 @@ impl Kernel {
             Kernel::Pair16 | Kernel::Pair64 | Kernel::PairRt => PAIR_OPS,
             Kernel::Bulk64 => BULK64_PASSES,
             Kernel::Bulk16k => BULK16K_PASSES,
-            Kernel::Bulk64k => BULK64K_PASSES,
-            Kernel::Bulk16k32 => BULK16K32_PASSES,
             Kernel::Churn16 | Kernel::Churn64 | Kernel::Churn256 => CHURN_OPS,
             Kernel::Churn1024 => CHURN1024_OPS,
             Kernel::VecGrow => VEC_CYCLES,
@@ -508,8 +490,6 @@ impl Kernel {
             Kernel::Pair16 | Kernel::Pair64 | Kernel::PairRt => 2 * PAIR_OPS,
             Kernel::Bulk64 => 2 * BULK64_N as u64 * BULK64_PASSES,
             Kernel::Bulk16k => 2 * BULK16K_N as u64 * BULK16K_PASSES,
-            Kernel::Bulk64k => 2 * BULK64K_N as u64 * BULK64K_PASSES,
-            Kernel::Bulk16k32 => 2 * BULK16K32_N as u64 * BULK16K32_PASSES,
             Kernel::Churn16 | Kernel::Churn64 | Kernel::Churn256 => 2 * CHURN_OPS,
             Kernel::Churn1024 => 2 * CHURN1024_OPS,
             Kernel::VecGrow => vec_per_cycle * VEC_CYCLES,
