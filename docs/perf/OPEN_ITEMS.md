@@ -294,6 +294,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
+131. **[D] D1″ — sidecar с одной картой классов и ленивым обнулением по водяному знаку (C2 из D1′), запаркован с условиями входа.** (Filed 2026-10-29; `docs/perf/D1_PRIME_VERDICT.md`.)
+
+   > **Current state**
+   > - **Status:** DEFERRED. PR #94 (D1′ one-class map) и PR #96 (D1′ chunked sidecar) закрыты без слияния, оба NO-GO; данные — теги `archive/b4-oneclass` и `archive/b4-chunks`.
+   > - **Current number/verdict:** C2 улучшал регистрацию по Ir (fixed 834 589 против 930 819 у A), но в PR #94 был NO-GO: гонка через безопасный API при `internals`, выпали `checked_granule` и fail-fast `high_water > SEGMENT`, нет Miri/Kani/CI iai, Linux churn/RSS хуже (p = 0.02 / 1e-4).
+   > - **Next trigger:** только при выполнении всех условий входа до любого замера — E1 owner-only на уровне типов; E2 `checked_granule`; E3 fail-fast до клэмпа; E4 одна реализация без feature; E5 манифест и SHA до замеров. Затем фаза V (CI iai A/B по абсолютному Ir ≤ main + 2000 во всех ячейках, проба регистрации 30/60/120, время — эквивалентность ΔCI95 ≤ +1 %, RSS по smaps; пороги утверждаются до замеров) и фаза S (Loom с отрицательными контролями, Miri SB/TB, 5–6 Kani-харнессов, EV-1). Kill: любой FAIL фазы V или UB/RED фазы S закрывает D1″; не больше одного раунда вне протокола; потолок — 3 раунда.
+   > - **Evidence:** `docs/perf/D1_PRIME_VERDICT.md`; `archive/b4-oneclass` (`docs/perf/B4_ONECLASS.md`, ADR `docs/design/2026-10-20-adr-oneclass-starts-map.md`); `archive/b4-chunks` (`docs/perf/D1_PRIME_CHUNKED_SIDECAR_GATE.md`).
+
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**
 
    > **Current state**
@@ -3263,6 +3271,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **D1′ (B4-23) — one-class map (PR #94) and chunked sidecar (PR #96): NO-GO, closed 2026-10-29** (owner approved the @oh council plan). F1 failed its pre-registered gate (slope +19k, fixed +43k, Windows wall +5.4 %); the chunked candidate lost installed-global larson (×1.281 at T=4, ×1.191 at T=8) and dense16 (×2.479). C2 is parked as D1″ (item 131). Report `docs/perf/D1_PRIME_VERDICT.md`; evidence tags `archive/b4-oneclass`, `archive/b4-chunks`.
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
