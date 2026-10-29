@@ -38,6 +38,10 @@ const GROUPS = { direct: "Warm repeated bulk burst (alloc 1024 then free 1024)",
 const SIZES = [16, 64, 256, 1024];
 const ARMS = ["sefer", "mimalloc", "system"];
 const KEYS = ["round", "group", "size", "arm", "order", "calls", "regime", "pairs", "ns_per_pair"];
+const OPS = 1024;
+// Arm orders of examples/bench_table_paired.rs: cell (group, size) in round r uses PERMS[(r + cell) % 6].
+const PERMS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+const sha256 = (t) => crypto.createHash("sha256").update(t).digest("hex");
 
 let manifest;
 let texts;
@@ -78,21 +82,36 @@ if (from) {
     fs.writeFileSync(`${prefix}.p${p}.jsonl`, text);
     texts.push(text);
   }
+  // Bind the captured raw files to this manifest (identity above was written before measuring).
+  manifest.raw_sha256 = texts.map(sha256);
+  fs.writeFileSync(`${prefix}.manifest.json`, JSON.stringify(manifest, null, 2) + "\n");
 }
 
-// Validate: exact keys and types, one row per (round, group, size, arm),
-// every cell present in every round, parameters matching the manifest.
+// Validate: manifest parameters, raw files bound to the manifest, exact keys
+// and types, one row per (round, group, size, arm), every cell in every
+// round, order and pairs as the harness produces them.
+const posInt = (x) => Number.isSafeInteger(x) && x > 0;
+if (![manifest.rounds, manifest.calls, manifest.processes].every(posInt)) throw new Error("manifest: rounds/calls/processes must be positive integers");
+const fresh = /^fresh:([1-9][0-9]*)$/.exec(manifest.regime);
+if (manifest.regime !== "steady" && !fresh) throw new Error(`manifest: regime ${manifest.regime}`);
+if (texts.length !== manifest.processes) throw new Error("process count differs from manifest");
+if (!Array.isArray(manifest.raw_sha256) || manifest.raw_sha256.join() !== texts.map(sha256).join()) throw new Error("raw files do not match manifest raw_sha256");
 const n = manifest.rounds;
 if (new Set(texts).size !== texts.length) throw new Error("duplicate process input");
+const groupNames = Object.keys(GROUPS);
+const pairsFor = (g) => OPS * (g === "direct" || !fresh ? manifest.calls : Number(fresh[1]));
 const runs = texts.map((text, pi) => {
   const rows = text.split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l));
   const seen = new Set();
   for (const r of rows) {
     if (Object.keys(r).join() !== KEYS.join()) throw new Error(`p${pi + 1}: unexpected keys ${Object.keys(r)}`);
-    if (!(r.group in GROUPS) || !SIZES.includes(r.size) || !ARMS.includes(r.arm)) throw new Error(`p${pi + 1}: unknown cell`);
+    if (!groupNames.includes(r.group) || !SIZES.includes(r.size) || !ARMS.includes(r.arm)) throw new Error(`p${pi + 1}: unknown cell`);
     if (!Number.isInteger(r.round) || r.round < 0 || r.round >= n) throw new Error(`p${pi + 1}: round ${r.round}`);
     if (!Number.isFinite(r.ns_per_pair) || r.ns_per_pair <= 0) throw new Error(`p${pi + 1}: ns_per_pair ${r.ns_per_pair}`);
     if (r.calls !== manifest.calls || r.regime !== (r.group === "direct" ? "direct" : manifest.regime)) throw new Error(`p${pi + 1}: parameters differ from manifest`);
+    if (r.pairs !== pairsFor(r.group)) throw new Error(`p${pi + 1}: pairs ${r.pairs}, want ${pairsFor(r.group)}`);
+    const cell = groupNames.indexOf(r.group) * SIZES.length + SIZES.indexOf(r.size);
+    if (r.order !== PERMS[(r.round + cell) % PERMS.length].indexOf(ARMS.indexOf(r.arm))) throw new Error(`p${pi + 1}: order of ${r.round}/${r.group}/${r.size}/${r.arm}`);
     const key = `${r.round}/${r.group}/${r.size}/${r.arm}`;
     if (seen.has(key)) throw new Error(`p${pi + 1}: duplicate ${key}`);
     seen.add(key);
@@ -106,7 +125,7 @@ const median = (xs) => {
   return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 };
 const out = [];
-const id = `commit ${manifest.commit.slice(0, 8)}${manifest.dirty ? "+dirty" : ""}, features \`${manifest.features}\`, churn regime \`${manifest.regime}\`, ${manifest.calls} calls/sample; ${manifest.cpu}; ${manifest.os}`;
+const id = `commit ${manifest.commit.slice(0, 8)}${manifest.dirty ? "+dirty" : ""}, features \`${manifest.features}\`, churn regime \`${manifest.regime}\`, ${manifest.calls} bodies/sample for direct${fresh ? "" : " and steady churn"}; ${manifest.cpu}; ${manifest.os}`;
 out.push(`# bench:table (paired): ${runs.length} process(es) × ${n} rounds; ${id}`);
 out.push("# cell = median over processes of the per-process min ns/pair (range of per-process minimums in parentheses)");
 const csv = ["group,size,arm,regime,pairs,processes,rounds,process_min_ns,median_of_process_min_ns,sefer_over_mimalloc,commit,features"];
@@ -126,7 +145,7 @@ for (const [g, title] of Object.entries(GROUPS)) {
       spreads.push({ g, size, a, ...cell[a] });
     }
     const r = cell.sefer.med / cell.mimalloc.med;
-    const ratio = r <= 1 ? `**${(1 / r).toFixed(2)}× faster**` : `${r.toFixed(2)}× slower`;
+    const ratio = r.toFixed(2) === "1.00" && (1 / r).toFixed(2) === "1.00" ? "1.00× (tie)" : r < 1 ? `**${(1 / r).toFixed(2)}× faster**` : `${r.toFixed(2)}× slower`;
     const f = (c) => `${c.med.toFixed(1)} (${Math.min(...c.mins).toFixed(1)}–${Math.max(...c.mins).toFixed(1)})`;
     out.push(`| ${size}B | ${f(cell.sefer)} | ${f(cell.mimalloc)} | ${f(cell.system)} | ${ratio} |`);
     for (const a of ARMS) {

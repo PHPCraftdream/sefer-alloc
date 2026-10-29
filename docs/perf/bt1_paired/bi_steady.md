@@ -1,4 +1,4 @@
-# bench:table (paired): 3 process(es) × 200 rounds; commit 73241d28, features `production internals bench-internals`, churn regime `steady`, 2 calls/sample; 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz x16; Windows 10 Pro 10.0.19045 x64
+# bench:table (paired): 3 process(es) × 200 rounds; commit 73241d28, features `production internals bench-internals`, churn regime `steady`, 2 bodies/sample for direct and steady churn; 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz x16; Windows 10 Pro 10.0.19045 x64
 # cell = median over processes of the per-process min ns/pair (range of per-process minimums in parentheses)
 
 ### Warm repeated bulk burst (alloc 1024 then free 1024)

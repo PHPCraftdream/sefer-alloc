@@ -17,5 +17,10 @@
     "LLVM version: 22.1.6"
   ],
   "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz x16",
-  "os": "Windows 10 Pro 10.0.19045 x64"
+  "os": "Windows 10 Pro 10.0.19045 x64",
+  "raw_sha256": [
+    "d22a4225bafba8bb36fcf32c4bfc9cd9720952c5084ffe4a30761f11960f3fb3",
+    "3486126577638a231ac64413f5e7ab573aac2f7d1adcd88ad6b42af62a780a9b",
+    "53a88c5652e5f83dbcadce3469cfd174cda770fccd8a9ac9417ab43f950ac1b8"
+  ]
 }

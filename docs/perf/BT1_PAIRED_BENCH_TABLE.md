@@ -40,7 +40,9 @@ Every table is the script's own output (`*.md`), derived from the gzipped
 per-sample raw files; `*.csv` is the summary (commit and features on every
 row); `*.manifest.json` holds commit `73241d28`, clean tree, binary sha256,
 `rustc -vV`, CPU (i7-11800H, 16 logical) and OS (Windows 10 Pro
-10.0.19045). Re-derive any of them byte for byte with
+10.0.19045), written before measuring, plus `raw_sha256` of the three raw
+files, which the script checks on `--from` (for these three runs the
+hashes were added after capture, when the check was introduced). Re-derive any of them byte for byte with
 `node scripts/bench-table-paired.mjs --from docs/perf/bt1_paired/<cfg>`.
 
 | Configuration | Features | Churn regime | Table |
@@ -54,7 +56,7 @@ row); `*.manifest.json` holds commit `73241d28`, clean tree, binary sha256,
 1. **Under `production`, warm bulk 16 B is the one clear loss.** SeferAlloc
    against mimalloc, `prod_steady` (`prod_fresh16` in brackets): warm bulk
    16 B 7.3 against 4.7, 1.54× slower (1.47×); 64 B 7.0 against 6.3, 1.12×
-   slower (1.02×); 256 B 1.00× (1.27× faster); 1024 B 1.62× faster
+   slower (1.02×); 256 B a tie (1.27× faster); 1024 B 1.62× faster
    (1.02×). Churn and churn+write at 16/64 B lie between 1.08× slower and
    1.29× faster; at 256 B SeferAlloc is 1.34–1.56× faster, at 1024 B
    2.75–9.87× faster.
@@ -62,7 +64,7 @@ row); `*.manifest.json` holds commit `73241d28`, clean tree, binary sha256,
    Same commit and host, `steady`: with `internals bench-internals` every
    SeferAlloc cell is 1.3 to 3.4 ns/pair higher (warm bulk 16 B 10.1
    against 7.3; churn 16 B 7.5 against 5.7). mimalloc's cells differ by at
-   most 0.6 ns; System's by up to 3.3 ns in either direction (System's own
+   most 0.6 ns; System's by up to 3.4 ns in either direction (System's own
    process spread reaches 31 %). The likely cause is the diagnostic
    counters those features compile into SeferAlloc's hot path — a
    hypothesis consistent with this comparison, not an isolated
@@ -90,8 +92,9 @@ faster at churn 16 B. Those numbers are not used anywhere.
 
 ## Not concluded
 
-- The criterion table's absolute numbers are higher for every arm (e.g.
+- The criterion table's absolute numbers are generally higher (e.g.
   SeferAlloc churn 16 B 17.1 there against 7.5 here with the same
-  features); not explained — the criterion run is one long sweep on a
-  noisy host.
+  features), with exceptions — System warm bulk 1024 B is 109.2 there
+  against 259.6 here. Not explained; the criterion run is one long sweep
+  on a noisy host.
 - No GO/NO-GO: this changes how the table is measured, not the allocator.
