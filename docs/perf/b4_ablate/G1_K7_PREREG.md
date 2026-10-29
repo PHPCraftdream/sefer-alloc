@@ -64,3 +64,18 @@ over the budget: one class's ring fills and the rest flushes as in K5).
 Published caveat: E = 1 MiB covers bulk16k with ≈ 9 KiB to spare (needs
 ≈ 1,039,360 B) — tuned to the judge; the RSS sweep shows the behaviour
 past the threshold.
+
+## Addendum 1 (2026-10-29, before any run of v2)
+
+Run 1 of the variant above (raws `.rush/g1/k7abl/`, table
+`vsnull_k7.csv`) failed rule 2: bulk64 +14.19 [13.10, 15.14],
+bulk16k_32 +7.47 [6.05, 9.20], pair64 +0.20 [0.01, 0.32], pair_rt +0.26
+[0.12, 0.49] (wins: bulk16k −50.58, bulk64k −8.79, churn64 −6.26,
+churn256 −4.70, vec512 −1.82). Causes named with @oh and the rush
+reviewer: a per-event scan of all depot classes, and cold refusals when
+the shared budget is full. Variant v1 is NO-GO as measured.
+
+Variant v2 — `k7_depot_overflow_v2` = `git diff 2bc830cc 980c9b9a -- src`
+(inline per-class park limit with a refusal latch, O(1) decay tick,
+division-free ring index), patch sha256 `6d2c47163f19430d299da5d11ceb959c75a9174e25e876085d829c3d87aa7dc2`. Same runs, same decision
+rule, same 13 kernels.
