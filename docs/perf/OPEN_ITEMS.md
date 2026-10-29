@@ -292,6 +292,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    >   - **X-c1 (таблица `SIZE2C1`, c+1) — ОТКЛОНЁН (NO-GO).** Сумма ao alloc+free не изменилась (136 при пороге ≤135) — LLVM и так сворачивал `+1` в encode; mstress +1. Итерация b не помогла. Полностью откачен; пункт сохранён с пометкой, чтобы гипотеза не переоткрывалась без новых данных.
    >   - Evidence: `docs/perf/B4_MICRO_PACK.md`; `docs/perf/B4_MICRO_PACK_summary.csv`; `scripts/b4_micro_pack_table.mjs`; сырьё `docs/perf/_raw_b4_micro_*.log(.gz)`.
 
+135. **[A] WB-2 — разрыв тёплой пачки 16 Б с mimalloc: ≈ 1.35 ns быстрый путь + ≈ 1.2 ns переливы склада.** (Filed 2026-10-29, `docs/perf/WB2_BULK_GAP_ATTRIBUTION.md`.)
+
+   > **Current state**
+   > - **Status:** open (атрибуция готова, правок нет).
+   > - **Current:** n-sweep на одном бинарнике: при n = 16 (без переливов) разрыв 1.35 ns/пару, при n = 1024 — 2.62; переливы стоят ≈ 1.2 ns/пару — больше, чем их ≈ 19 Ir. Потеря A-1 на churn+write 1024 Б объяснена 4K-алиасингом: `SIZE2CLASS_CEIL[64]` лежит на 13 mod 1024, в окне пользовательских записей (статическая проверка exe).
+   > - **Next trigger:** правка, снижающая число или стоимость переливов (C1 из консультации WB-1) или быстрый free; любая правка горячих таблиц — только с закреплённой раскладкой (кандидат C2).
+   > - **Evidence:** `docs/perf/WB2_BULK_GAP_ATTRIBUTION.md`, `docs/perf/wb2/`, `scripts/wb2_m1_bulk_sweep.mjs`, `scripts/wb2_m2_table_alias.mjs`.
+
 132. **[A] BT-1 — парная таблица `bench:table:paired` расходится с criterion-таблицей README.** (Filed 2026-10-29, `docs/perf/BT1_PAIRED_BENCH_TABLE.md`.)
 
    > **Current state**
