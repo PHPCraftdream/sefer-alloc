@@ -416,6 +416,45 @@ fn route_to_large_free(core: &mut HeapCore, block: *mut u8, layout: Layout, root
     };
 }
 
+// FG-1/A is off where `small_free_guard` checks more than the state byte
+// (hardened layout checks, promoted-Large routing by layout).
+medium_promotion_reachable! {
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    const FG1_STATE_CLASS: bool = false;
+}
+medium_promotion_unreachable! {
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    const FG1_STATE_CLASS: bool = !cfg!(feature = "hardened");
+}
+
+/// FG-1/A: the own-free accept test with the class read from the block's
+/// state byte instead of the caller's layout. `Some((class, off))` exactly
+/// when `small_free_guard` would `Accept` a block of that class: Small or
+/// Primordial segment, `off` past the metadata, 16-aligned, byte
+/// `encode(class, LIVE)` (one compare: LIVE keeps the state bits zero, so
+/// `byte - 1 < SMALL_CLASS_COUNT` also rejects 0, MAG and FREE), below bump.
+/// Every other case returns `None` and the layout path decides as before.
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#[inline(always)]
+fn own_free_state_class(base: *mut u8, ptr: *mut u8) -> Option<(usize, u32)> {
+    use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
+    let payload_start = match SegmentHeader::kind_at(base) {
+        SegmentKind::Small => SegmentLayout::small_meta_end(),
+        SegmentKind::Primordial => SegmentLayout::primordial_meta_end(),
+        _ => return None,
+    };
+    let off = (ptr as usize).wrapping_sub(base as usize);
+    if off < payload_start || off & (crate::alloc_core::size_classes::MIN_BLOCK - 1) != 0 {
+        return None;
+    }
+    let meta = SegmentMeta::new(base);
+    let c = meta.state_byte().read(off as u32).wrapping_sub(1) as usize;
+    if c >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT || off >= meta.bump_of() {
+        return None;
+    }
+    Some((c, off as u32))
+}
+
 impl HeapCore {
     /// Own-thread free consumes a table-derived root/block witness without
     /// repeating the mutable canonical lookup. The allocation stays live
@@ -443,7 +482,18 @@ impl HeapCore {
             // `small_free_guard` does, from the segment header's `kind` byte
             // via `BlockKind` (see its F7 branch and the pre-route above it).
             {
-                if let Some(c) = SizeClasses::class_for(size, align) {
+                // FG-1/A: the state byte names the class; the layout is
+                // consulted only when the fast accept test declines.
+                let pre = if FG1_STATE_CLASS {
+                    own_free_state_class(root, block)
+                } else {
+                    None
+                };
+                let class = match pre {
+                    Some((c, _)) => Some(c),
+                    None => SizeClasses::class_for(size, align),
+                };
+                if let Some(c) = class {
                     let cnt = self.tcache.classes[c].count as usize;
 
                     // Task #2002: F7 (task #25; R17-4/task #321; R18-3/task
@@ -458,33 +508,37 @@ impl HeapCore {
                     // the M2 oracles, the Э6 double-free-oracle redesign
                     // history, and the RESIDUAL M2 LIMIT this pair does NOT
                     // cover — task #164/X7).
-                    let (off, meta) = match small_free_guard(root, block, c, layout) {
-                        SmallFreeGuard::Accept { off } => {
-                            // B4 variant (в): the state byte encodes the class
-                            // at every issue site, and `small_free_guard`
-                            // requires an exact LIVE match on (class, state) —
-                            // the former `small_class_matches`/`divides`
-                            // class-identity re-check is subsumed.
-                            (off, SegmentMeta::new(root))
-                        }
-                        SmallFreeGuard::RejectNoOp => {
-                            // R6-T55: local no-op reject — internal counter,
-                            // not the public foreign/unroutable stat. The
-                            // guard's Large-interior cases surface HERE, so
-                            // this is one increment per rejected free.
-                            #[cfg(any(feature = "internals", feature = "bench-internals"))]
-                            crate::alloc_core::LOCAL_REJECT_FREES
-                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                            return;
-                        }
-                        // F4: the base's wrong-class Accept-branch reject did
-                        // not bump the counter — same no-op, no increment.
-                        SmallFreeGuard::RejectNoOpSilent => {
-                            return;
-                        }
-                        SmallFreeGuard::RouteToLargeFree => {
-                            route_to_large_free(self, block, layout, root);
-                            return;
+                    let (off, meta) = if let Some((_, off)) = pre {
+                        (off, SegmentMeta::new(root))
+                    } else {
+                        match small_free_guard(root, block, c, layout) {
+                            SmallFreeGuard::Accept { off } => {
+                                // B4 variant (в): the state byte encodes the class
+                                // at every issue site, and `small_free_guard`
+                                // requires an exact LIVE match on (class, state) —
+                                // the former `small_class_matches`/`divides`
+                                // class-identity re-check is subsumed.
+                                (off, SegmentMeta::new(root))
+                            }
+                            SmallFreeGuard::RejectNoOp => {
+                                // R6-T55: local no-op reject — internal counter,
+                                // not the public foreign/unroutable stat. The
+                                // guard's Large-interior cases surface HERE, so
+                                // this is one increment per rejected free.
+                                #[cfg(any(feature = "internals", feature = "bench-internals"))]
+                                crate::alloc_core::LOCAL_REJECT_FREES
+                                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                return;
+                            }
+                            // F4: the base's wrong-class Accept-branch reject did
+                            // not bump the counter — same no-op, no increment.
+                            SmallFreeGuard::RejectNoOpSilent => {
+                                return;
+                            }
+                            SmallFreeGuard::RouteToLargeFree => {
+                                route_to_large_free(self, block, layout, root);
+                                return;
+                            }
                         }
                     };
 
