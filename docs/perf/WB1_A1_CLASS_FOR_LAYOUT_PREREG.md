@@ -49,3 +49,27 @@ Both built `--release --features production`.
 
 If any check fails the change is rejected and reverted; the result is
 recorded either way.
+
+## Addendum 1 (written after check 3, before any further measurement)
+
+Check 3 as registered **failed** (raw runs `base_r1`, `a1_r1`, `base_r2`,
+`a1_r2`; commits `0ee09c13` and `aa60d43f`): warm bulk 16 B's ratio was
+lower in `a1` in run pair 1 (−5.6 %) but higher in run pair 2 (+1.1 %), and
+churn+write 1024 B's ratio was higher in `a1` by 16.9 % and 19.1 %
+(SeferAlloc 6.15 → 7.52 and 6.30 → 7.62 ns/pair). Under this registration
+A-1 is rejected; that verdict stands whatever follows.
+
+The paired harness builds without the function/branch alignment flags this
+repo uses for A/B judges (`-C llvm-args=-align-all-functions=6 -C
+llvm-args=-align-all-nofallthru-blocks=5`, as in the K7 runs), and a cell
+that does not exercise the changed code differently (churn+write 1024 B
+classifies the same size through the same one-line change as churn 1024 B,
+which did not move) moving by 1.3 ns is the shape a code-layout shift
+produces. A second, separately registered experiment tests that:
+
+- Check 3b: the same protocol as check 3 (`base, a1, base, a1`, 3 processes
+  × 200 rounds, `steady`, same acceptance rules), with
+  `RUSTFLAGS="-C llvm-args=-align-all-functions=6 -C
+  llvm-args=-align-all-nofallthru-blocks=5"` for both arms.
+- A-1 ships only if check 3b passes AND check 2 (iai) passes; the report
+  states the failed check 3 next to it.
