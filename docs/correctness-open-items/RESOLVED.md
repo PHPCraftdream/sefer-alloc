@@ -15,6 +15,16 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 261 — CLOSED (2026-10-29)
+
+261. **[T] Squash-merging PR #128 turned `main` red: the squash body repeated every commit's `Invariant-Check:` trailers, and the evidence rows re-verified on the branch kept `source_sha` values that the squash left off `main`.** (Filed and closed 2026-10-29, main CI run `40921322531` on landing `9fd4c9fb`: `ghost-guard` — "duplicate Invariant-Check for depot/owner-only-access" and 25 more; `evidence-registry` strict — `source-scope-git` / `identity-unpublished` for R-Ph3a-native (`6796c78f`) and R-Ph3b, R4a-01/02/05, R4b-13/14, R4c-02/03/09 (`29bbc749`).)
+
+    > **Current state**
+    > - **Status:** CLOSED (2026-10-29, by landing PR #133 as a merge commit).
+    > - **Mechanism:** `gh pr merge --squash` with the default body concatenates all commit messages, so each rule's trailer appears once per commit that carried it; `scripts/verify-invariant-trailers.mjs` rejects duplicates in one commit. The squash also replaces the branch commits with one new commit, so a registry row whose `source_sha` names a branch commit is no longer an ancestor of `HEAD`. Earlier perf PRs (#105, #125, #126) landed as merge commits, which keep both properties.
+    > - **Fix:** PR #133 (the K7 Kani follow-up, whose branch contains every original K7 commit) lands as a merge commit: `6796c78f` and `29bbc749` become ancestors of `main`, and the trailer linter (`--no-merges`) checks the original commits, each valid on its own. `9fd4c9fb`'s red run stays in history; `main` history is not rewritten.
+    > - **Rule going forward:** a PR whose commits carry `Invariant-Check:` trailers or whose evidence rows cite its own commits lands with `gh pr merge --merge`, never `--squash`.
+
 ### 259 — CLOSED (2026-10-29)
 
 259. **[T] `ghost-zero-cost` used the stale `pull_request.base.sha`: once the base branch moved, the declared-runtime exception was refused and the proof compared the wrong trees.** (Filed and closed 2026-10-29, PR #128 run `40850432408`, job `ghost-zero-cost`: `checkout 6cdd4c3b… is neither the classified head ecb5dce4… nor its merge onto 10635968…`.)

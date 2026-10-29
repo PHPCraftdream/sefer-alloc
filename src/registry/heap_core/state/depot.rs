@@ -111,6 +111,8 @@ impl Depot {
     pub(crate) const fn empty() -> Self {
         Self {
             mags: [[[core::ptr::null_mut(); TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
+            #[cfg(feature = "alloc-decommit")]
+            ovf: crate::registry::heap_core::state::depot_overflow::DepotOverflow::empty(),
         }
     }
 

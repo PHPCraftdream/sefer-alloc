@@ -2722,6 +2722,10 @@ codegen-units = 16
 name = "b4_pmu_probe"
 required-features = ["production"]
 
+[[example]]
+name = "g1_k7_overflow_oracle"
+required-features = ["production", "internals", "bench-internals"]
+
 # B4-25 ceiling probe: malloc-bench-rs workload at T threads for callgrind.
 # See docs/perf/B4_25_REMOTE_CEILING.md and docs/perf/b4_25_ceiling/.
 [[example]]

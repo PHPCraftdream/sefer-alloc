@@ -559,7 +559,7 @@ written after the data and before any RSS number was read.
 ## Addendum 10 (2026-10-29, after the rule-4 data)
 
 Rule 4 (`a6/run4/rule4.log`, gate-run CI run 40901604462, K5 `2bc830cc` vs
-PR #128's merge ref `4e4bc5b8`): 8 of 106 benches exceed the +10 Ir bound
+PR #128's head commit `4e4bc5b8` at the time; corrected wording, the r20 runner measures HEAD): 8 of 106 benches exceed the +10 Ir bound
 after the bootstrap proxy — dealloc_flush_all_tcache_16b +430,
 seg_cycle_decommit_256k +421, multiseg_cold_256k +157,
 cold_alloc_only_256x16b n / 2n / 4n +31 / +87 / +151, realloc_grow +48,
