@@ -11,75 +11,87 @@ criterion table (`npm run bench:table`).
 
 - Entry point: each allocator's `GlobalAlloc` impl called directly
   (`SeferAlloc` static, `mimalloc::MiMalloc`, `std::alloc::System`), the same
-  layer `benches/global_alloc.rs` measures. None is the process allocator.
+  layer `benches/global_alloc.rs` measures and the README table reports.
+  None is the process allocator; this is not the `#[global_allocator]`
+  judge (J1).
 - Bodies: those of `benches/global_alloc.rs` — `direct` (alloc 1024, free
   1024), `churn` and `churn_write` (working set 256, 1024 random free+alloc
   steps, seed `0xCAFE`; `churn_write` stores two volatile words after each
   alloc).
 - Pairing: per round and per (group, size), all three arms are set up
-  untimed, then their three timed samples run back to back in a rotated
-  order, so one triplet sees one noise state. A sample is 2 calls (2048
-  pairs, tens of µs).
+  untimed, then their three timed samples run back to back, so one triplet
+  sees one noise state. The order of a cell walks all six permutations of
+  the arms, shifted by one per round.
+- Sample size: `direct` and `steady` churn — 2 bodies (2048 pairs);
+  `fresh:16` churn — one body on each of 16 sets (16 384 pairs). Each
+  table states its own pairs per sample.
 - Statistic: per process, the minimum ns/pair over 200 rounds; a table cell
   is the median of three processes' minimums, with their range in
-  parentheses. The range is reported because process-level state (address
-  layout) is not removed by a minimum over rounds: in an earlier
-  three-process run one process measured churn 64 B at 9.3 against 6.0 in
-  the other two.
-- Churn regime (`--batch`): `1` = one working set prefilled before the
-  sample (the steady state of a long-lived set); `16` = sixteen freshly
-  prefilled sets per sample, the shape criterion's `iter_batched`
-  (`BatchSize::SmallInput`) produces.
+  parentheses. The range is shown because process-level state (address
+  layout) is not removed by a minimum over rounds.
+- Churn regimes: `steady` — one working set per (group, size, arm),
+  prefilled once and kept alive for the whole run; `fresh:16` — every
+  sample prefills 16 new sets and runs one body on each, the shape of
+  criterion's `iter_batched` (one body per setup result).
 
 ## Data
 
-Every table below is the script's own output (`*.md`, derived from the
-gzipped per-sample raw files; `*.csv` is the summary; `*.manifest.json`
-holds commit `91223e36`, clean tree, binary sha256 and `rustc -vV`).
-Re-derive with
-`node scripts/bench-table-paired.mjs --from docs/perf/bt1_paired/<cfg>.p1.jsonl.gz,<…p2>,<…p3>`.
+Every table is the script's own output (`*.md`), derived from the gzipped
+per-sample raw files; `*.csv` is the summary (commit and features on every
+row); `*.manifest.json` holds commit `73241d28`, clean tree, binary sha256,
+`rustc -vV`, CPU (i7-11800H, 16 logical) and OS (Windows 10 Pro
+10.0.19045). Re-derive any of them byte for byte with
+`node scripts/bench-table-paired.mjs --from docs/perf/bt1_paired/<cfg>`.
 
-| Configuration | Features | `--batch` | Table |
-|---|---|---:|---|
-| `prod_b1` | `production` | 1 | [prod_b1.md](bt1_paired/prod_b1.md) |
-| `prod_b16` | `production` | 16 | [prod_b16.md](bt1_paired/prod_b16.md) |
-| `bi_b1` | `production internals bench-internals` (the `bench:table` set) | 1 | [bi_b1.md](bt1_paired/bi_b1.md) |
-
-Windows 10 dev host, the same host as the 2026-10-29 criterion table.
+| Configuration | Features | Churn regime | Table |
+|---|---|---|---|
+| `prod_steady` | `production` | `steady` | [prod_steady.md](bt1_paired/prod_steady.md) |
+| `prod_fresh16` | `production` | `fresh:16` | [prod_fresh16.md](bt1_paired/prod_fresh16.md) |
+| `bi_steady` | `production internals bench-internals` (the `bench:table` set) | `steady` | [bi_steady.md](bt1_paired/bi_steady.md) |
 
 ## Findings
 
-1. **The criterion table measures a slower SeferAlloc than ships.**
-   `bench:table` needs `internals bench-internals` (for
-   `dbg_trim_current_thread`), and those features compile diagnostic counters
-   into the hot path. Paired, same commit and host: SeferAlloc warm bulk 16 B
-   is 9.6 ns/pair with them and 6.8 without; churn 16 B 7.5 against 5.9.
-   mimalloc and System do not change (they have no such counters). The
-   README's "2.46× slower" warm bulk 16 B is therefore, for `production`,
-   1.49× slower in the paired measurement (64 B: 1.44× → 1.04×).
-2. **mimalloc's churn cost depends on the regime; SeferAlloc's does not.**
-   Churn 16 B, SeferAlloc 5.9 in both regimes; mimalloc 14.8 in steady state
-   and 5.5 over freshly prefilled sets. Likely mechanism (inferred from
-   mimalloc's design, not measured here): frees go to the page's
-   `local_free` list, so once a page's `free` list is used up every alloc
-   takes the generic path, while a fresh prefill leaves a long `free` list. So
-   churn 16 B is 2.51× faster in steady state and 1.07× slower over fresh
-   sets; both are reported.
-3. **The paired table is tight.** For SeferAlloc and mimalloc, 53 of 72
-   cells (three configurations × 24) have their three process minimums
-   within 0.3 ns of each other; the widest is churn_write 64 B SeferAlloc in
-   `prod_b16`, 6.100–6.516 around 6.140 (6.8 % of the cell). The criterion
-   runs carry a ±15–20 % band on this host.
-4. **Cross-group state is visible.** `direct` is the same body in both
-   regimes, yet SeferAlloc's 1024 B warm bulk is 8.7 in `prod_b1` and 14.7 in
-   `prod_b16`, and System's 174.0 against 51.4: the preceding churn groups
-   (one set vs sixteen sets per sample) leave different heap state behind.
-   Not investigated further here.
+1. **Under `production`, warm bulk 16 B is the one clear loss.** SeferAlloc
+   against mimalloc, `prod_steady` (`prod_fresh16` in brackets): warm bulk
+   16 B 7.3 against 4.7, 1.54× slower (1.47×); 64 B 7.0 against 6.3, 1.12×
+   slower (1.02×); 256 B 1.00× (1.27× faster); 1024 B 1.62× faster
+   (1.02×). Churn and churn+write at 16/64 B lie between 1.08× slower and
+   1.29× faster; at 256 B SeferAlloc is 1.34–1.56× faster, at 1024 B
+   2.75–9.87× faster.
+2. **The `bench:table` feature set measures a slower SeferAlloc than ships.**
+   Same commit and host, `steady`: with `internals bench-internals` every
+   SeferAlloc cell is 1.3 to 3.4 ns/pair higher (warm bulk 16 B 10.1
+   against 7.3; churn 16 B 7.5 against 5.7). mimalloc's cells differ by at
+   most 0.6 ns; System's by up to 3.3 ns in either direction (System's own
+   process spread reaches 31 %). The likely cause is the diagnostic
+   counters those features compile into SeferAlloc's hot path — a
+   hypothesis consistent with this comparison, not an isolated
+   measurement. With those features the paired table shows warm bulk 16 B
+   at 2.12× slower; the README criterion table shows 2.46×.
+3. **mimalloc's 1024 B churn depends on the regime.** mimalloc churn
+   1024 B: 17.0 (`steady`) against 69.3 (`fresh:16`); SeferAlloc 6.2
+   against 7.0. At 16 B mimalloc is 5.8 against 5.5.
+4. **Spread.** The script prints, per arm, how many cells have their three
+   process minimums within 0.3 ns and the widest relative spread. For
+   `prod_steady`: SeferAlloc 8/12 cells, widest direct 64 B (21.5 %, one
+   process at 8.4 against 6.9); mimalloc 7/12, widest churn 1024 B
+   (19.5 %). These are spreads of process minimums, not the same quantity
+   as the criterion runs' ±15–20 % noise band.
+
+## Superseded first harness
+
+The first version of the harness (commits `5bd2aa29`, `91223e36`) was
+reviewed before landing and replaced: the arm order of a cell never changed
+across rounds (the rotation index advanced by 12 per round, 12 mod 3 = 0),
+and its "steady" regime prefilled a fresh set every round and ran two
+bodies on it. In that regime mimalloc churn 16 B measured about 15 ns
+against 5.8 in the real steady state, which made SeferAlloc look 2.5×
+faster at churn 16 B. Those numbers are not used anywhere.
 
 ## Not concluded
 
-- The remaining gap between the criterion absolute numbers and the paired
-  ones (e.g. SeferAlloc churn 16 B 17.1 criterion against 7.5 paired with
-  the same features) is not explained by features or batching alone; the
-  criterion run is a single long sweep on a noisy host.
+- The criterion table's absolute numbers are higher for every arm (e.g.
+  SeferAlloc churn 16 B 17.1 there against 7.5 here with the same
+  features); not explained — the criterion run is one long sweep on a
+  noisy host.
 - No GO/NO-GO: this changes how the table is measured, not the allocator.

@@ -1188,64 +1188,65 @@ shape as before.)
 
 The criterion table above measures each allocator in its own long window, so host
 noise that moves between windows lands on one arm only, and it is built with
-`internals bench-internals`, whose diagnostic counters sit in SeferAlloc's hot
+`internals bench-internals`, which add diagnostic counters to SeferAlloc's hot
 path. The paired table ([`scripts/bench-table-paired.mjs`](scripts/bench-table-paired.mjs),
 `examples/bench_table_paired.rs`) times the same bodies under plain `--features
-production`: per round all three arms run one short sample (2048 pairs) back to
-back in rotated order; a cell is the median over 3 processes of each process's
-minimum over 200 rounds, with the range of those minimums in parentheses (ns/pair).
-Report, raw samples and manifest: [`docs/perf/BT1_PAIRED_BENCH_TABLE.md`](docs/perf/BT1_PAIRED_BENCH_TABLE.md).
+production`: per round all three arms run one short sample back to back, the arm
+order walking all six permutations; a cell is the median over 3 processes of each
+process's minimum over 200 rounds, with the range of those minimums in parentheses
+(ns/pair). Report, raw samples and manifests:
+[`docs/perf/BT1_PAIRED_BENCH_TABLE.md`](docs/perf/BT1_PAIRED_BENCH_TABLE.md).
 
-Steady state — one long-lived working set of 256:
+Steady state — each churn working set of 256 lives for the whole run; 2048 pairs per sample:
 
 **Warm bulk burst** (alloc 1024 then free 1024):
 
 | Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-| 16B | 6.8 (6.7–7.0) | 4.5 (4.5–4.6) | 48.9 (48.7–49.1) | 1.49× slower |
-| 64B | 6.7 (6.7–6.7) | 6.5 (6.4–6.5) | 49.0 (48.5–50.5) | 1.04× slower |
-| 256B | 7.4 (7.4–7.6) | 8.4 (8.3–8.4) | 46.6 (43.6–47.8) | **1.13× faster** |
-| 1024B | 8.7 (8.5–8.7) | 16.0 (15.8–16.2) | 174.0 (171.1–178.7) | **1.84× faster** |
+| 16B | 7.3 (7.3–7.3) | 4.7 (4.7–4.7) | 45.8 (44.5–46.1) | 1.54× slower |
+| 64B | 7.0 (6.9–8.4) | 6.3 (6.3–6.3) | 45.5 (45.4–45.8) | 1.12× slower |
+| 256B | 7.9 (7.7–7.9) | 7.9 (7.7–7.9) | 40.7 (40.6–40.8) | **1.00× faster** |
+| 1024B | 10.2 (10.2–10.2) | 16.6 (16.2–16.7) | 262.6 (258.3–270.5) | **1.62× faster** |
 
 **Churn, non-writing**:
 
 | Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-| 16B | 5.9 (5.9–5.9) | 14.8 (14.6–15.0) | 39.6 (38.9–39.6) | **2.51× faster** |
-| 64B | 5.9 (5.9–6.0) | 14.6 (14.6–14.9) | 61.2 (41.6–62.3) | **2.47× faster** |
-| 256B | 5.9 (5.9–6.0) | 8.5 (8.3–8.6) | 35.5 (35.4–36.2) | **1.44× faster** |
-| 1024B | 5.9 (5.9–6.1) | 67.1 (66.8–67.4) | 39.0 (38.5–41.8) | **11.36× faster** |
+| 16B | 5.7 (5.7–5.8) | 5.8 (5.7–5.9) | 41.1 (40.6–42.4) | **1.03× faster** |
+| 64B | 5.6 (5.6–5.6) | 6.3 (6.3–6.4) | 43.2 (42.7–43.4) | **1.13× faster** |
+| 256B | 5.9 (5.7–7.0) | 9.2 (8.1–9.4) | 38.2 (37.5–42.2) | **1.56× faster** |
+| 1024B | 6.2 (5.9–6.2) | 17.0 (16.7–20.0) | 44.1 (41.7–44.4) | **2.75× faster** |
 
 **Churn + write**:
 
 | Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-| 16B | 6.1 (6.0–6.1) | 15.1 (14.9–15.1) | 39.1 (39.1–39.2) | **2.50× faster** |
-| 64B | 6.1 (6.0–6.1) | 14.9 (14.8–15.1) | 61.1 (41.0–61.9) | **2.46× faster** |
-| 256B | 6.1 (6.0–6.1) | 8.6 (8.5–8.6) | 36.3 (35.9–36.5) | **1.42× faster** |
-| 1024B | 6.3 (6.2–6.3) | 65.6 (65.3–66.1) | 39.7 (39.1–41.6) | **10.33× faster** |
+| 16B | 5.8 (5.8–5.9) | 5.7 (5.7–5.9) | 40.9 (40.6–42.9) | 1.02× slower |
+| 64B | 6.4 (5.8–6.4) | 5.9 (5.9–6.0) | 42.4 (42.2–43.6) | 1.08× slower |
+| 256B | 6.2 (6.1–6.4) | 8.3 (8.2–9.4) | 41.3 (41.0–42.1) | **1.34× faster** |
+| 1024B | 6.6 (6.5–6.8) | 19.6 (19.5–19.9) | 66.4 (50.3–68.1) | **2.96× faster** |
 
-Fresh working sets — 16 freshly prefilled sets per sample, the shape criterion's `iter_batched` produces (mimalloc is much cheaper here; SeferAlloc is not affected):
+Fresh working sets — each sample prefills 16 new sets and runs one body on each (16 384 pairs), the shape criterion's `iter_batched` produces:
 
 **Churn, non-writing**:
 
 | Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-| 16B | 5.9 (5.8–5.9) | 5.5 (5.5–5.6) | 38.4 (38.0–42.0) | 1.07× slower |
-| 64B | 6.1 (6.0–6.4) | 8.8 (8.8–8.9) | 38.7 (38.5–39.4) | **1.46× faster** |
-| 256B | 6.3 (6.2–6.4) | 8.1 (8.0–8.2) | 40.4 (39.8–40.7) | **1.28× faster** |
-| 1024B | 7.4 (7.3–7.6) | 70.6 (69.8–71.3) | 48.5 (47.3–49.7) | **9.56× faster** |
+| 16B | 5.6 (5.5–5.6) | 5.5 (5.5–5.5) | 39.3 (38.5–40.4) | 1.01× slower |
+| 64B | 5.7 (5.5–5.8) | 7.3 (7.2–7.4) | 38.5 (36.2–40.0) | **1.29× faster** |
+| 256B | 6.2 (6.1–6.2) | 9.1 (8.8–9.1) | 39.1 (38.8–39.7) | **1.47× faster** |
+| 1024B | 7.0 (6.9–7.3) | 69.3 (68.6–69.3) | 45.5 (45.1–46.3) | **9.87× faster** |
 
 **Churn + write**:
 
 | Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-| 16B | 6.1 (6.1–6.2) | 5.8 (5.7–5.8) | 38.8 (38.8–43.4) | 1.05× slower |
-| 64B | 6.1 (6.1–6.5) | 9.0 (8.9–9.2) | 38.6 (38.5–39.5) | **1.47× faster** |
-| 256B | 6.9 (6.8–6.9) | 8.5 (8.4–8.5) | 39.7 (39.2–40.1) | **1.23× faster** |
-| 1024B | 7.8 (7.7–8.2) | 70.0 (68.4–70.4) | 45.7 (45.2–46.6) | **8.96× faster** |
+| 16B | 5.8 (5.8–6.0) | 5.7 (5.7–5.7) | 38.8 (38.5–39.4) | 1.02× slower |
+| 64B | 6.0 (5.9–6.1) | 7.6 (7.4–7.6) | 38.5 (37.7–40.4) | **1.26× faster** |
+| 256B | 6.7 (6.6–6.8) | 9.2 (9.1–9.3) | 38.8 (38.8–39.3) | **1.38× faster** |
+| 1024B | 7.4 (7.4–7.5) | 69.2 (68.8–69.3) | 48.2 (44.5–49.4) | **9.31× faster** |
 
-(Measured 2026-10-29, commit `91223e36`, same Windows dev host as the criterion table. Built with the `bench:table` feature set instead, SeferAlloc is 1.6–3.5 ns/pair slower and the other arms unchanged — warm bulk 16 B 9.6 vs 6.8 — see the report.)
+(Measured 2026-10-29, commit `73241d28`, same Windows dev host as the criterion table. Built with the `bench:table` feature set instead, every SeferAlloc cell is 1.3–3.4 ns/pair higher while mimalloc moves by at most 0.6 ns — warm bulk 16 B 10.1 against 7.3 — see the report.)
 
 **The 256 B churn loss is GONE (Э6, P6) — and M2 got stronger, not weaker.**
 Through P5 sefer-alloc trailed mimalloc at 256 B churn (~1.16–1.25× slower), and

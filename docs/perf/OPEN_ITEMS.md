@@ -296,8 +296,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
    > **Current state**
    > - **Status:** open (измерение готово, причины расхождения названы частично).
-   > - **Current:** `bench:table` собирается с `internals bench-internals` — счётчики в горячем пути делают SeferAlloc на 1.6–3.5 ns/пару медленнее, mimalloc/System не меняются (тёплая пачка 16 Б: 9.6 против 6.8 под `production`). Churn у mimalloc зависит от режима (16 Б: 14.8 в установившемся, 5.5 на свежих наборах), у SeferAlloc нет. Остаток: churn 16 Б SeferAlloc 17.1 (criterion) против 7.5 (парно, те же фичи) не объяснён; состояние предыдущих групп меняет `direct` 1024 Б (8.7 против 14.7).
-   > - **Next trigger:** WB-1 (тёплая пачка 16/64 Б) берёт парные числа под `production` как базу; решить, переводить ли счётчики `bench-internals` с горячего пути или собирать criterion-бенч без них.
+   > - **Current:** под `production` единственный явный проигрыш — тёплая пачка 16 Б (7.3 против 4.7 ns/пару, 1.54×); 64 Б 1.02–1.12×; churn 16/64 Б в пределах 1.08× медленнее … 1.29× быстрее. Сборка `bench:table` (`internals bench-internals`) поднимает каждую ячейку SeferAlloc на 1.3–3.4 ns/пару, mimalloc — не больше 0.6 ns; вероятная причина — диагностические счётчики в горячем пути (гипотеза, не изолирована). Абсолютные числа criterion выше у всех плеч — не объяснено.
+   > - **Next trigger:** WB-1 (тёплая пачка 16/64 Б) берёт парные числа под `production` как базу; решить, убирать ли счётчики `bench-internals` с горячего пути или собирать criterion-бенч без них.
    > - **Evidence:** `docs/perf/BT1_PAIRED_BENCH_TABLE.md`; `docs/perf/bt1_paired/` (сырьё `.jsonl.gz`, `*.csv`, манифесты); `scripts/bench-table-paired.mjs`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
