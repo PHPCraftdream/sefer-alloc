@@ -93,3 +93,39 @@ parks/reloads per portion).
 Variant v3 — `k7_depot_overflow_v3` = `git diff 2bc830cc 3cef5a58 -- src` (floor
 first; floor traffic does not tick the decay), patch sha256 `f1659242205025907fa4d2d8ffea845992e76ae564223fed2cc8586bf29fa85f`. Same
 runs, decision rule and kernels.
+
+## Addendum 3 (2026-10-29, before any split-group run)
+
+Run of v3 (raws `.rush/g1/k7abl3/`): bulk16k −59.91, bulk64k −7.62,
+churn256 −5.92, churn64 −3.98, vec512 −1.09; losses bulk64 +11.55 [10.92,
+12.32], pair16 +1.27 [0.71, 1.62], pair64 +1.20 [0.75, 1.59] (churn16
++4.95, bulk16k_32 +5.56 imprecise) — NO-GO by rule 2 as measured.
+
+Run 2 (main judge, 13 kernels; raws `.rush/g1/k7v3mi/`, `.rush/g1/k5mi13/`)
+is void as a judge: 12/13 and 13/13 kernels not admitted, the sefer A/A
+median sits at about −10 % on pair16/pair64/bulk64 for BOTH trees, while
+the same judge with the original 11 kernels had it at ≈ +0.1 %
+(`.rush/g1/k1mi/`, `.rush/g1/k5mi/`). Mimalloc is affected too: churn256
+11.4 → 44.4 ticks/call, churn256 A/B −29.8 % → +29.0 % (K5 tree). Cause
+named: the two large cohorts (4 MiB / 512 KiB live, one pass per portion)
+evict caches and leave allocator state that the next kernel's portions pay
+for, unequally between the two copies of one allocator. The same
+contamination applies to run 1 (null bias bulk64 −11.16 %), so the v1–v3
+losses are not yet attributable to K7's code path; the isolated mix of
+Addendum 2 (without bulk64k) showed bulk64 +1.35, pair +0.5.
+
+From here, every run uses three kernel groups, each in its own processes
+(`--kernels`, judge commit `9a279d56` on `g1-k7`, cherry-picked as
+`417774d4` on `g1-k5-j`; block orders and portion seeds stay keyed by the
+registry index, so G11 replays the old 11-kernel portions exactly):
+
+- G11: pair16, pair64, pair_rt, bulk64, bulk16k, churn16, churn64,
+  churn256, churn1024, vec512, larson;
+- GL1: bulk64k;
+- GL2: bulk16k_32.
+
+Order: run 1 (ablation, variant v3, unchanged patch) for G11, GL1, GL2;
+then run 2 for G11, GL1, GL2 on `g1-k7`@`3cef5a58`+`9a279d56`, each
+followed by the same group on `g1-k5-j`. The decision rule is unchanged and
+applies to the union of the three groups (13 kernels). A group whose A/A is
+not admitted is reported as not admitted, not re-run selectively.
