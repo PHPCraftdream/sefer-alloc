@@ -1251,6 +1251,13 @@ name = "paired_ab_mimalloc"
 [[example]]
 name = "paired_ab_system"
 
+# BT-1: paired short-sample companion of `npm run bench:table` (measurement
+# only): every round times sefer/mimalloc/System back to back per (group,
+# size); `scripts/bench-table-paired.mjs` derives min/median tables.
+[[example]]
+name = "bench_table_paired"
+required-features = ["alloc-global"]
+
 # R10-2 (task #228): process-level A/B/B/A judge for the medium-classes
 # production-gate wall-clock question R9-3 deferred. Two wrappers around ONE
 # shared phased workload (`examples/_shared/paired_ab_medium_workload.rs`,
