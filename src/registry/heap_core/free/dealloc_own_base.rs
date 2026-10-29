@@ -429,7 +429,7 @@ impl HeapCore {
         debug_assert_eq!(self.core.canonical_root_for(block), Some(root));
         {
             use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
-            use crate::registry::heap_core::state::tcache::{FLUSH_N, FREE_PARK_CAP, TCACHE_CAP};
+            use crate::registry::heap_core::state::tcache::{FREE_PARK_CAP, TCACHE_CAP};
             let size = layout.size().max(MIN_BLOCK);
             let align = layout.align();
             // C1 (0.3.0): gate removed — see the matching comment in `alloc`'s
@@ -594,70 +594,7 @@ impl HeapCore {
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         return;
                     }
-                    // ── Magazine overflow (cnt == TCACHE_CAP) ──────────
-                    // P3 (task #147): the P7 dealloc-side bulk-mode bypass is
-                    // RETIRED together with the alloc-side bypass and the
-                    // `alloc_streak` counter. That branch fired only when the
-                    // alloc side had advanced the streak past BULK_THRESHOLD;
-                    // with the counter gone it could never fire, so keeping it
-                    // would be dead code guarded by a stuck-at-0 condition.
-                    // The always-taken half-flush + compact + push below is the
-                    // sole overflow policy now. D1/M2 unchanged: `flush_class`
-                    // returns blocks to the substrate via `dealloc_small`
-                    // (mark_free + dec_live) exactly as before.
-                    //
-                    // B4 variant (в): the former FLUSH_N magazine-bitmap
-                    // clear pre-pass is gone — `flush_class` itself commits
-                    // the LIVE/MAG → FREE transition via the state byte.
-                    // Normal overflow: half-flush, then push.
-                    // SAFETY (R6-MS-3): every slot in `slots[0..FLUSH_N]` is a
-                    // valid live small-class-`c` allocation owned by this core's
-                    // magazine (just freed into it under the alloc-xthread/fastbin
-                    // path); each is returned to the substrate exactly once here.
-                    #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
-                    unsafe {
-                        self.core
-                            .flush_class_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
-                    };
-                    // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
-                    let remaining = TCACHE_CAP - FLUSH_N;
-                    for i in 0..remaining {
-                        self.tcache.classes[c].slots[i] = self.tcache.classes[c].slots[i + FLUSH_N];
-                    }
-                    // R13-3 (task #273): the virgin mask must undergo the
-                    // IDENTICAL shift as `slots` — bit `i` of the compacted
-                    // mask is bit `i + FLUSH_N` of the pre-compaction mask
-                    // (byte-identical to the `slots[i] = slots[i + FLUSH_N]`
-                    // loop just above, just on the bitmask instead of the
-                    // pointer array). The flushed low half (`slots[0..FLUSH_N]`,
-                    // now returned to the substrate via `flush_class`) is
-                    // dropped entirely, not merely cleared-and-kept.
-                    #[cfg(feature = "virgin-zero-skip")]
-                    {
-                        self.tcache.classes[c].virgin_mask >>= FLUSH_N;
-                    }
-                    // Push (Э6: NO key stamp, NO block-body write). The oracles
-                    // above already ran before this overflow branch, so a
-                    // double-free is caught even when the magazine is full.
-                    // RAD-5: mark the newly-pushed block magazine-resident.
-                    // B4 (в): MAG in the state byte.
-                    meta.state_byte()
-                        .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
-                    self.tcache.classes[c].slots[remaining] = block;
-                    self.tcache.classes[c].count = (remaining + 1) as u8;
-                    // R13-3: the newly-pushed block is a freed (previously
-                    // issued) block — never virgin (dispatch conjunct), same
-                    // reasoning as the non-overflow push arm above. Clear bit
-                    // `remaining` explicitly: after the `>>= FLUSH_N` shift
-                    // above, that bit holds whatever was at pre-shift index
-                    // `remaining + FLUSH_N` (`== TCACHE_CAP`, i.e. always 0 by
-                    // the mask invariant since no valid slot index reaches
-                    // `TCACHE_CAP`) — so this is defensive, not load-bearing,
-                    // matching the non-overflow arm's identical comment.
-                    #[cfg(feature = "virgin-zero-skip")]
-                    {
-                        self.tcache.classes[c].virgin_mask &= !(1u16 << remaining);
-                    }
+                    self.dealloc_full_magazine(owned, c, off);
                     return;
                 }
             }
@@ -674,5 +611,78 @@ impl HeapCore {
         unsafe {
             self.core.dealloc_at_base(block, layout, root)
         };
+    }
+
+    /// После guard и достижения полного cap: flush → compact → park, как прежде.
+    #[cold]
+    #[inline(never)]
+    fn dealloc_full_magazine(&mut self, owned: OwnedBlock, c: usize, off: u32) {
+        use crate::registry::heap_core::state::tcache::{FLUSH_N, TCACHE_CAP};
+        let block = owned.block();
+        let meta = SegmentMeta::new(owned.root());
+        // ── Magazine overflow (cnt == TCACHE_CAP) ──────────
+        // P3 (task #147): the P7 dealloc-side bulk-mode bypass is
+        // RETIRED together with the alloc-side bypass and the
+        // `alloc_streak` counter. That branch fired only when the
+        // alloc side had advanced the streak past BULK_THRESHOLD;
+        // with the counter gone it could never fire, so keeping it
+        // would be dead code guarded by a stuck-at-0 condition.
+        // The always-taken half-flush + compact + push below is the
+        // sole overflow policy now. D1/M2 unchanged: `flush_class`
+        // returns blocks to the substrate via `dealloc_small`
+        // (mark_free + dec_live) exactly as before.
+        //
+        // B4 variant (в): the former FLUSH_N magazine-bitmap
+        // clear pre-pass is gone — `flush_class` itself commits
+        // the LIVE/MAG → FREE transition via the state byte.
+        // Normal overflow: half-flush, then push.
+        // SAFETY (R6-MS-3): every slot in `slots[0..FLUSH_N]` is a
+        // valid live small-class-`c` allocation owned by this core's
+        // magazine (just freed into it under the alloc-xthread/fastbin
+        // path); each is returned to the substrate exactly once here.
+        #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+        unsafe {
+            self.core
+                .flush_class_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
+        };
+        // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
+        let remaining = TCACHE_CAP - FLUSH_N;
+        for i in 0..remaining {
+            self.tcache.classes[c].slots[i] = self.tcache.classes[c].slots[i + FLUSH_N];
+        }
+        // R13-3 (task #273): the virgin mask must undergo the
+        // IDENTICAL shift as `slots` — bit `i` of the compacted
+        // mask is bit `i + FLUSH_N` of the pre-compaction mask
+        // (byte-identical to the `slots[i] = slots[i + FLUSH_N]`
+        // loop just above, just on the bitmask instead of the
+        // pointer array). The flushed low half (`slots[0..FLUSH_N]`,
+        // now returned to the substrate via `flush_class`) is
+        // dropped entirely, not merely cleared-and-kept.
+        #[cfg(feature = "virgin-zero-skip")]
+        {
+            self.tcache.classes[c].virgin_mask >>= FLUSH_N;
+        }
+        // Push (Э6: NO key stamp, NO block-body write). The oracles
+        // above already ran before this overflow branch, so a
+        // double-free is caught even when the magazine is full.
+        // RAD-5: mark the newly-pushed block magazine-resident.
+        // B4 (в): MAG in the state byte.
+        meta.state_byte()
+            .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
+        self.tcache.classes[c].slots[remaining] = block;
+        self.tcache.classes[c].count = (remaining + 1) as u8;
+        // R13-3: the newly-pushed block is a freed (previously
+        // issued) block — never virgin (dispatch conjunct), same
+        // reasoning as the non-overflow push arm above. Clear bit
+        // `remaining` explicitly: after the `>>= FLUSH_N` shift
+        // above, that bit holds whatever was at pre-shift index
+        // `remaining + FLUSH_N` (`== TCACHE_CAP`, i.e. always 0 by
+        // the mask invariant since no valid slot index reaches
+        // `TCACHE_CAP`) — so this is defensive, not load-bearing,
+        // matching the non-overflow arm's identical comment.
+        #[cfg(feature = "virgin-zero-skip")]
+        {
+            self.tcache.classes[c].virgin_mask &= !(1u16 << remaining);
+        }
     }
 }

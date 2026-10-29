@@ -1,0 +1,400 @@
+
+<workspace>/.rush/own-free-split/control-before/target/release/examples/own_free_wall:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000031300 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>>:
+   31300:	push   %rbp
+   31301:	push   %r15
+   31303:	push   %r14
+   31305:	push   %r13
+   31307:	push   %r12
+   31309:	push   %rbx
+   3130a:	sub    $0x28,%rsp
+   3130e:	mov    $0xffffffffffffffc8,%rax
+   31315:	mov    %fs:(%rax),%rbx
+   31319:	lea    -0x1(%rbx),%rax
+   3131d:	cmp    $0xfffffffffffffffd,%rax
+   31321:	ja     316f4 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x3f4>
+   31327:	mov    %rdi,%rax
+   3132a:	and    $0xffffffffffc00000,%rax
+   31330:	cmp    %rax,0x130(%rbx)
+   31337:	jne    31355 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x55>
+   31339:	mov    0x138(%rbx),%r14
+   31340:	movzbl 0x1c(%r14),%ecx
+   31345:	cmp    $0x2,%ecx
+   31348:	je     31392 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x92>
+   3134a:	and    $0x3fffff,%edi
+   31350:	mov    %rdi,%r13
+   31353:	jmp    313a2 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0xa2>
+   31355:	mov    %rax,%r8
+   31358:	shr    $0x16,%r8
+   3135c:	mov    %r8d,%ecx
+   3135f:	and    $0xf,%ecx
+   31362:	shl    $0x4,%ecx
+   31365:	cmp    %rax,0x30(%rbx,%rcx,1)
+   3136a:	jne    314c9 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x1c9>
+   31370:	mov    0x38(%rbx,%rcx,1),%r14
+   31375:	cmp    %rax,%r14
+   31378:	jne    31388 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x88>
+   3137a:	mov    %rax,0x130(%rbx)
+   31381:	mov    %r14,0x138(%rbx)
+   31388:	movzbl 0x1c(%r14),%ecx
+   3138d:	cmp    $0x2,%ecx
+   31390:	jne    3134a <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x4a>
+   31392:	mov    %rdi,%r13
+   31395:	sub    %r14,%r13
+   31398:	cmp    0x38(%r14),%r13
+   3139c:	jae    316f4 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x3f4>
+   313a2:	lea    (%r14,%r13,1),%r15
+   313a6:	cmp    $0x11,%rdx
+   313aa:	mov    $0x10,%eax
+   313af:	cmovae %rdx,%rax
+   313b3:	cmp    $0x11,%rsi
+   313b7:	jae    31426 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x126>
+   313b9:	lea    -0x1(%rax),%rdi
+   313bd:	cmp    $0x3f2bf,%rdi
+   313c4:	ja     31490 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x190>
+   313ca:	shr    $0x4,%rdi
+   313ce:	mov    0x61d73(%rip),%rax        # 93148 <_DYNAMIC+0x5a8>
+   313d5:	movzbl (%rax,%rdi,1),%r12d
+   313da:	cmp    $0x31,%r12
+   313de:	jae    31982 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x682>
+   313e4:	mov    %r12d,%eax
+   313e7:	shl    $0x7,%eax
+   313ea:	lea    (%rax,%r12,8),%rax
+   313ee:	movzbl 0x4a8(%rbx,%rax,1),%ebp
+   313f6:	test   %ecx,%ecx
+   313f8:	je     3173c <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x43c>
+   313fe:	cmp    $0x2,%ecx
+   31401:	je     31705 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x405>
+   31407:	cmp    $0x1,%ecx
+   3140a:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31410:	mov    $0x42000,%esi
+   31415:	mov    %r13d,%ecx
+   31418:	cmp    %rsi,%rcx
+   3141b:	jae    3174d <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x44d>
+   31421:	jmp    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31426:	cmp    %rsi,%rax
+   31429:	mov    %rsi,%r8
+   3142c:	cmova  %rax,%r8
+   31430:	dec    %r8
+   31433:	cmp    $0x3f2bf,%r8
+   3143a:	ja     31490 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x190>
+   3143c:	shr    $0x4,%r8
+   31440:	mov    0x61d11(%rip),%rdi        # 93158 <_DYNAMIC+0x5b8>
+   31447:	movzbl 0x194(%rdi,%r8,1),%r9d
+   31450:	cmp    $0x30,%r9b
+   31454:	ja     31490 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x190>
+   31456:	lea    -0x1(%rsi),%r8
+   3145a:	nopw   0x0(%rax,%rax,1)
+   31460:	movzbl %r9b,%r12d
+   31464:	mov    (%rdi,%r12,8),%r9
+   31468:	test   %r8,%r9
+   3146b:	je     313e4 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0xe4>
+   31471:	or     %r8,%r9
+   31474:	cmp    $0x3f2bf,%r9
+   3147b:	ja     31490 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x190>
+   3147d:	shr    $0x4,%r9
+   31481:	movzbl 0x194(%rdi,%r9,1),%r9d
+   3148a:	cmp    $0x31,%r9b
+   3148e:	jb     31460 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x160>
+   31490:	cmp    $0x2,%ecx
+   31493:	jae    3157c <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x27c>
+   31499:	cmp    $0x11,%rsi
+   3149d:	jae    31599 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x299>
+   314a3:	dec    %rax
+   314a6:	cmp    $0x3f2bf,%rax
+   314ac:	ja     31602 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x302>
+   314b2:	shr    $0x4,%rax
+   314b6:	mov    0x61c8b(%rip),%rsi        # 93148 <_DYNAMIC+0x5a8>
+   314bd:	movzbl (%rsi,%rax,1),%eax
+   314c1:	mov    $0x1,%dil
+   314c4:	jmp    31604 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x304>
+   314c9:	add    %rbx,%rcx
+   314cc:	add    $0x30,%rcx
+   314d0:	mov    %rax,%r9
+   314d3:	shr    $0x23,%r9
+   314d7:	mov    %rax,%r10
+   314da:	shr    $0x30,%r10
+   314de:	xor    %r10d,%r9d
+   314e1:	xor    %r9d,%r8d
+   314e4:	and    $0x1fff,%r8d
+   314eb:	mov    0x140(%rbx),%r9
+   314f2:	mov    %r8,%r10
+   314f5:	data16 cs nopw 0x0(%rax,%rax,1)
+   31500:	mov    (%r9,%r10,8),%r14
+   31504:	test   %r14,%r14
+   31507:	je     316f4 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x3f4>
+   3150d:	mov    %r14,%r11
+   31510:	and    $0xffffffffffc00000,%r11
+   31517:	cmp    %rax,%r11
+   3151a:	je     31530 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x230>
+   3151c:	inc    %r10d
+   3151f:	and    $0x1fff,%r10d
+   31526:	cmp    %r8,%r10
+   31529:	jne    31500 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x200>
+   3152b:	jmp    316f4 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x3f4>
+   31530:	mov    %r14,%r8
+   31533:	and    $0x3fffff,%r8
+   3153a:	je     31562 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x262>
+   3153c:	lea    -0x1(%r8),%r9
+   31540:	mov    0x158(%rbx),%r10d
+   31547:	cmp    %r10,%r9
+   3154a:	jae    316f4 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x3f4>
+   31550:	mov    0x20(%rbx),%r9
+   31554:	mov    -0x8(%r9,%r8,8),%r14
+   31559:	test   %r14,%r14
+   3155c:	je     316f4 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x3f4>
+   31562:	mov    %rax,(%rcx)
+   31565:	mov    %r14,0x8(%rcx)
+   31569:	movzbl 0x1c(%r14),%ecx
+   3156e:	cmp    $0x2,%ecx
+   31571:	je     31392 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x92>
+   31577:	jmp    3134a <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x4a>
+   3157c:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31582:	mov    %rbx,%rdi
+   31585:	mov    %r15,%rsi
+   31588:	mov    %rdx,%rbx
+   3158b:	mov    %r14,%rdx
+   3158e:	call   *0x61bfc(%rip)        # 93190 <_DYNAMIC+0x5f0>
+   31594:	jmp    316fd <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x3fd>
+   31599:	cmp    %rsi,%rax
+   3159c:	cmovbe %rsi,%rax
+   315a0:	dec    %rax
+   315a3:	cmp    $0x3f2bf,%rax
+   315a9:	ja     31602 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x302>
+   315ab:	shr    $0x4,%rax
+   315af:	mov    0x61ba2(%rip),%r8        # 93158 <_DYNAMIC+0x5b8>
+   315b6:	movzbl 0x194(%r8,%rax,1),%r9d
+   315bf:	cmp    $0x30,%r9b
+   315c3:	ja     31602 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x302>
+   315c5:	dec    %rsi
+   315c8:	nopl   0x0(%rax,%rax,1)
+   315d0:	movzbl %r9b,%eax
+   315d4:	mov    (%r8,%rax,8),%r9
+   315d8:	test   %rsi,%r9
+   315db:	sete   %dil
+   315df:	je     31604 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x304>
+   315e1:	or     %rsi,%r9
+   315e4:	cmp    $0x3f2bf,%r9
+   315eb:	ja     31604 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x304>
+   315ed:	shr    $0x4,%r9
+   315f1:	movzbl 0x194(%r8,%r9,1),%r9d
+   315fa:	cmp    $0x31,%r9b
+   315fe:	jb     315d0 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x2d0>
+   31600:	jmp    31604 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x304>
+   31602:	xor    %edi,%edi
+   31604:	cmp    $0x1,%ecx
+   31607:	je     31674 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x374>
+   31609:	test   %ecx,%ecx
+   3160b:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31611:	test   %dil,%dil
+   31614:	je     31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3161a:	mov    %r13d,%ecx
+   3161d:	cmp    $0x5f000,%rcx
+   31624:	jb     31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3162a:	cmp    (%r14),%rcx
+   3162d:	jae    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31633:	test   $0xf,%r13b
+   31637:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3163d:	mov    %r13d,%esi
+   31640:	shr    $0x4,%esi
+   31643:	lea    0x1(%rax),%edi
+   31646:	cmp    %dil,0x1588(%r14,%rsi,1)
+   3164e:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31654:	cmp    $0x30,%rax
+   31658:	jbe    3188c <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x58c>
+   3165e:	movq   $0x0,(%r14,%rcx,1)
+   31666:	or     $0x80,%dil
+   3166a:	mov    %dil,0x1588(%r14,%rsi,1)
+   31672:	jmp    316da <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x3da>
+   31674:	test   %dil,%dil
+   31677:	je     31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3167d:	mov    %r13d,%ecx
+   31680:	cmp    $0x42000,%rcx
+   31687:	jb     31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3168d:	cmp    (%r14),%rcx
+   31690:	jae    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31696:	test   $0xf,%r13b
+   3169a:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   316a0:	mov    %r13d,%esi
+   316a3:	shr    $0x4,%esi
+   316a6:	movzbl 0x1588(%r14,%rsi,1),%edi
+   316af:	lea    0x1(%rax),%r8d
+   316b3:	cmp    %r8b,%dil
+   316b6:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   316bc:	cmp    $0x30,%rax
+   316c0:	jbe    318c5 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x5c5>
+   316c6:	movq   $0x0,(%r14,%rcx,1)
+   316ce:	or     $0x80,%dil
+   316d2:	mov    %dil,0x1588(%r14,%rsi,1)
+   316da:	mov    0x14(%r14),%ecx
+   316de:	test   %ecx,%ecx
+   316e0:	je     31970 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x670>
+   316e6:	mov    %rdx,%r15
+   316e9:	dec    %ecx
+   316eb:	mov    %ecx,0x14(%r14)
+   316ef:	jmp    3190f <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x60f>
+   316f4:	mov    %rdx,%rbx
+   316f7:	call   *0x61a8b(%rip)        # 93188 <_DYNAMIC+0x5e8>
+   316fd:	mov    %rbx,%rdx
+   31700:	jmp    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31705:	mov    0x30(%r14),%rax
+   31709:	mov    0x8(%r14),%rcx
+   3170d:	add    %r14,%rax
+   31710:	jb     31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31716:	cmp    %r15,%rax
+   31719:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3171f:	mov    %rbx,%rdi
+   31722:	mov    %rsi,%rax
+   31725:	mov    %r15,%rsi
+   31728:	mov    %rdx,%rbx
+   3172b:	mov    %rax,%rdx
+   3172e:	mov    %rbx,%rcx
+   31731:	mov    %r14,%r8
+   31734:	call   *0x61a46(%rip)        # 93180 <_DYNAMIC+0x5e0>
+   3173a:	jmp    316fd <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x3fd>
+   3173c:	mov    $0x5f000,%esi
+   31741:	mov    %r13d,%ecx
+   31744:	cmp    %rsi,%rcx
+   31747:	jb     31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3174d:	test   $0xf,%r13b
+   31751:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31757:	shr    $0x4,%r13d
+   3175b:	movzbl 0x1588(%r14,%r13,1),%r8d
+   31764:	lea    0x1(%r12),%esi
+   31769:	cmp    %sil,%r8b
+   3176c:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31772:	cmp    (%r14),%rcx
+   31775:	jae    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3177b:	lea    (%rbx,%rax,1),%rcx
+   3177f:	add    $0x4a8,%rcx
+   31786:	mov    0x61a0b(%rip),%rax        # 93198 <_DYNAMIC+0x5f8>
+   3178d:	cmp    (%rax,%r12,1),%bpl
+   31791:	jae    317b3 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x4b3>
+   31793:	or     $0x40,%r8b
+   31797:	mov    %r8b,0x1588(%r14,%r13,1)
+   3179f:	mov    %ebp,%eax
+   317a1:	and    $0xf,%eax
+   317a4:	mov    %r15,0x8(%rcx,%rax,8)
+   317a9:	lea    0x1(%rbp),%eax
+   317ac:	mov    %al,(%rcx)
+   317ae:	jmp    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   317b3:	lea    -0x1a(%r12),%eax
+   317b8:	cmp    $0x17,%eax
+   317bb:	mov    %rdx,0x18(%rsp)
+   317c0:	mov    %r8b,0xf(%rsp)
+   317c5:	jae    3181a <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x51a>
+   317c7:	lea    -0x1(%rbp),%rdi
+   317cb:	cmp    $0x10,%rdi
+   317cf:	jae    31997 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x697>
+   317d5:	mov    (%rcx,%rbp,8),%rax
+   317d9:	mov    %rax,0x10(%rsp)
+   317de:	lea    0x10(%rsp),%rdx
+   317e3:	mov    %rcx,0x20(%rsp)
+   317e8:	mov    $0x1,%ecx
+   317ed:	mov    %rbx,%rdi
+   317f0:	mov    %r12,%rsi
+   317f3:	call   338f0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal>
+   317f8:	mov    0x20(%rsp),%rax
+   317fd:	mov    %r15,(%rax,%rbp,8)
+   31801:	movzbl 0xf(%rsp),%eax
+   31806:	or     $0x40,%al
+   31808:	mov    %al,0x1588(%r14,%r13,1)
+   31810:	mov    0x18(%rsp),%rdx
+   31815:	jmp    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3181a:	lea    0x8(%rcx),%rdx
+   3181e:	mov    %rcx,%rbp
+   31821:	mov    $0x8,%ecx
+   31826:	mov    %rbx,%rdi
+   31829:	mov    %r12,%rsi
+   3182c:	call   338f0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal>
+   31831:	mov    0x18(%rsp),%rdx
+   31836:	mov    %r12d,%eax
+   31839:	shl    $0x7,%eax
+   3183c:	lea    (%rax,%r12,8),%rax
+   31840:	movups 0x4f0(%rbx,%rax,1),%xmm0
+   31848:	movups 0x500(%rbx,%rax,1),%xmm1
+   31850:	movups 0x510(%rbx,%rax,1),%xmm2
+   31858:	movups 0x520(%rbx,%rax,1),%xmm3
+   31860:	movups %xmm3,0x38(%rbp)
+   31864:	movups %xmm2,0x28(%rbp)
+   31868:	movups %xmm1,0x18(%rbp)
+   3186c:	movups %xmm0,0x8(%rbp)
+   31870:	movzbl 0xf(%rsp),%eax
+   31875:	or     $0x40,%al
+   31877:	mov    %al,0x1588(%r14,%r13,1)
+   3187f:	mov    %r15,0x48(%rbp)
+   31883:	movb   $0x9,0x0(%rbp)
+   31887:	jmp    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3188c:	mov    %rdx,%r15
+   3188f:	mov    0x1400(%r14,%rax,4),%edx
+   31897:	lea    (%r14,%rdx,1),%r8
+   3189b:	xor    %r9d,%r9d
+   3189e:	mov    $0xffffffff,%r10d
+   318a4:	cmp    %r10,%rdx
+   318a7:	cmovne %r8,%r9
+   318ab:	mov    %r9,(%r14,%rcx,1)
+   318af:	mov    %r13d,0x1400(%r14,%rax,4)
+   318b7:	or     $0x80,%dil
+   318bb:	mov    %dil,0x1588(%r14,%rsi,1)
+   318c3:	jmp    318fc <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x5fc>
+   318c5:	mov    %rdx,%r15
+   318c8:	mov    0x1400(%r14,%rax,4),%edx
+   318d0:	lea    (%r14,%rdx,1),%r8
+   318d4:	xor    %r9d,%r9d
+   318d7:	mov    $0xffffffff,%r10d
+   318dd:	cmp    %r10,%rdx
+   318e0:	cmovne %r8,%r9
+   318e4:	mov    %r9,(%r14,%rcx,1)
+   318e8:	mov    %r13d,0x1400(%r14,%rax,4)
+   318f0:	or     $0x80,%dil
+   318f4:	mov    %dil,0x1588(%r14,%rsi,1)
+   318fc:	mov    0x14(%r14),%ecx
+   31900:	test   %ecx,%ecx
+   31902:	je     31970 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x670>
+   31904:	dec    %ecx
+   31906:	mov    %ecx,0x14(%r14)
+   3190a:	cmp    $0xffffffff,%edx
+   3190d:	jne    31926 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x626>
+   3190f:	mov    0x70(%r14),%edx
+   31913:	mov    0x3e8(%rbx),%rdi
+   3191a:	mov    %rax,%rsi
+   3191d:	call   33db0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::publish_nonempty>
+   31922:	mov    0x14(%r14),%ecx
+   31926:	test   %ecx,%ecx
+   31928:	mov    %r15,%rdx
+   3192b:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3192d:	cmp    0x3a8(%rbx),%r14
+   31934:	je     31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31936:	cmpl   $0x0,0x18(%r14)
+   3193b:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   3193d:	cmpb   $0x1,0x1c(%r14)
+   31942:	jne    31957 <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x657>
+   31944:	mov    %rbx,%rdi
+   31947:	mov    %r14,%rsi
+   3194a:	mov    %rdx,%rbx
+   3194d:	call   33e10 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::release_or_pool_empty_segment>
+   31952:	jmp    316fd <own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>+0x3fd>
+   31957:	mov    %rdx,0x10(%rsp)
+   3195c:	lea    0x10(%rsp),%rax
+   31961:	add    $0x28,%rsp
+   31965:	pop    %rbx
+   31966:	pop    %r12
+   31968:	pop    %r13
+   3196a:	pop    %r14
+   3196c:	pop    %r15
+   3196e:	pop    %rbp
+   3196f:	ret
+   31970:	lea    -0x24f2c(%rip),%rdi        # ca4b <anon.07bf7b68542f29918c2fe01e2698508b.1589.llvm.13623703653819427234+0x3a6>
+   31977:	mov    $0x3a,%esi
+   3197c:	call   *0x6181e(%rip)        # 931a0 <_DYNAMIC+0x600>
+   31982:	lea    0x5badf(%rip),%rdx        # 8d468 <anon.07bf7b68542f29918c2fe01e2698508b.1766.llvm.13623703653819427234+0x560>
+   31989:	mov    $0x31,%esi
+   3198e:	mov    %r12,%rdi
+   31991:	call   *0x61459(%rip)        # 92df0 <_DYNAMIC+0x250>
+   31997:	lea    0x5bae2(%rip),%rdx        # 8d480 <anon.07bf7b68542f29918c2fe01e2698508b.1766.llvm.13623703653819427234+0x578>
+   3199e:	mov    $0x10,%esi
+   319a3:	call   *0x61447(%rip)        # 92df0 <_DYNAMIC+0x250>

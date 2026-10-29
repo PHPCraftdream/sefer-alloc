@@ -1,0 +1,19 @@
+{
+  "before": {
+    "active_callee_address": "338f0",
+    "active_callee_bytes": 1205,
+    "caller_sites": [
+      "317f3:\tcall   338f0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal>",
+      "3182c:\tcall   338f0 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal>"
+    ],
+    "note": "slice+length argument, generic batch loop and recycled array"
+  },
+  "after": {
+    "active_callee_address": "33770",
+    "active_callee_bytes": 537,
+    "caller_sites": [
+      "316d5:\tcall   33770 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal>"
+    ],
+    "note": "direct block argument, one-element specialized body"
+  }
+}

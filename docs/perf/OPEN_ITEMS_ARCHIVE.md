@@ -1,5 +1,14 @@
 # Open items — archived closure narratives
 
+## L115 — half-flush-only split (2026-10-24, задачи #19–#21)
+
+> **Status:** CLOSED / NO-GO; кандидат не принят в main.
+> **Current verdict:** const free instruction gate выиграл, runtime free и bulk64 instruction controls проиграли. Native per-row CI в этом прогоне пересекают ноль. Выигрыш bulk16k по Ir подтверждён отдельным full-program sanity, но не компенсирует провал других gates.
+> **Next trigger:** не повторять то же cold-разделение без нового codegen-механизма. Отдельная гипотеза single-element flush isolation зарегистрирована как item116; она ещё не реализована и не измерена самостоятельно.
+> **Evidence:** `docs/perf/OWN_FREE_HALF_FLUSH_SPLIT_GATE.md`, companion CSV, raw/patches/identities/sanity/codegen в `docs/perf/own_free_split/`; prereg `docs/design/2026-10-24-own-free-half-flush-split.md`.
+
+Cap-eviction оставлен source-byte-identical inline; moved half body, guards и normal-push prefix сверены с f80c681b. Это не сохранило прежний runtime machine code. Разбор фактически вызываемого flush callee выявил compiler specialization для одного блока; unfiltered whole-program delta совпал с collected-free delta, поэтому понижение bulk16k Ir не является потерей toggle-счёта. Тем не менее ранний free micro-gate и bulk64 fail; полную promotion-матрицу не запускали. Прототип и measurement patches остаются в экспериментальном дереве, не в main. Test execution/Miri/Loom/CI не получены; check/Clippy не выданы за execution. Commit/push/merge/подагенты отсутствуют. Прочие существующие карточки сохраняют статус/триггер.
+
 **Purpose.** This file holds the full dated historical narrative bodies for
 every item tracked in `docs/perf/OPEN_ITEMS.md` — the round-by-round
 "here's what happened, here's the correction" prose that used to sit

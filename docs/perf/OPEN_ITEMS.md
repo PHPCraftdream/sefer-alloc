@@ -119,6 +119,15 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+116. **[A] Single-element flush specialization — наблюдённый compiler win, самостоятельная изоляция ещё не проверена.** (2026-10-24, из эксперимента #19–#21.)
+
+   > **Current state**
+   > - **Status:** OPEN / UNIMPLEMENTED; это гипотеза следующего отдельного кандидата, не разрешение продолжать реализацию и не production GO.
+   > - **Current verdict:** после half-flush split изменился фактически вызываемый cap-flush callee: slice/length batch code превратился в single-block specialization. Full-program sanity без toggle подтвердил тот же Ir delta, что и free-only collection. Сам half-flush split — NO-GO из-за других строк, не baseline следующего эксперимента.
+   > - **Next trigger:** отдельная предрегистрация и минимальный source-level one-element flush path от принятой main, сохраняющий canonical-root/span/state/class/credit guards и прежний порядок. Доказать, что он не раздувает normal runtime frame; rt/const/bulk64/bulk16k controls, actual activation и native before/after/mimalloc обязательны. Не ослаблять budget и не переносить helper из отвергнутого дерева целиком.
+   > - **Evidence:** `docs/perf/OWN_FREE_HALF_FLUSH_SPLIT_GATE.md` § «Неожиданный single-block flush codegen»; `docs/perf/own_free_split/{sanity_summary,codegen_summary}.json`, raw/sanity, reproduction scripts и immutable identities.
+
+
 104. **[A] B4 events — refill/flush событие в mstress стоит в 5–6 раз дороже, чем в larson.** (Filed 2026-10-20, `docs/perf/B4_EVENTS_COST.md`.)
 
    > **Current state**
@@ -3176,6 +3185,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 <!-- B4-30-CARD-END -->
 
 ## Recently resolved (closure trail — do not re-list as open)
+
+- **Item115 — half-flush-only split: CLOSED / NO-GO (2026-10-24).** Runtime free и bulk64 Ir gates проиграли; отдельная single-element specialization выделена в item116. Полная история — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § L115; evidence — `docs/perf/OWN_FREE_HALF_FLUSH_SPLIT_GATE.md`.
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
 is a one-line pointer; the complete closure text (root cause, verification,
