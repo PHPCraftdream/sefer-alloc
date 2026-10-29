@@ -428,10 +428,8 @@ impl HeapCore {
         let (root, block) = (owned.root(), owned.block());
         debug_assert_eq!(self.core.canonical_root_for(block), Some(root));
         {
-            use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
+            use crate::alloc_core::size_classes::SizeClasses;
             use crate::registry::heap_core::state::tcache::{FREE_PARK_CAP, TCACHE_CAP};
-            let size = layout.size().max(MIN_BLOCK);
-            let align = layout.align();
             // C1 (0.3.0): gate removed — see the matching comment in `alloc`'s
             // magazine fast path above for the full soundness argument
             // (`class_for` guarantees `block_size % align == 0` for any
@@ -443,7 +441,7 @@ impl HeapCore {
             // `small_free_guard` does, from the segment header's `kind` byte
             // via `BlockKind` (see its F7 branch and the pre-route above it).
             {
-                if let Some(c) = SizeClasses::class_for(size, align) {
+                if let Some(c) = SizeClasses::class_for_layout(layout) {
                     let cnt = self.tcache.classes[c].count as usize;
 
                     // Task #2002: F7 (task #25; R17-4/task #321; R18-3/task
