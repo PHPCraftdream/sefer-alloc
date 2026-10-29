@@ -821,6 +821,22 @@ below, followed by the closure record.*
 
    > **Closure (2026-10-27):** CLOSED — v2 GO, shipped as `perf(runtime)`. PR #108 (`u31` → `main`) merged; landing SHA `6e64d47c45f2bbebf44af4924091a829022aac32`, CI run 40487577871 success; PR head `8a95cb93` green (31 checks, incl. Miri, loom, kani, TSan). U31 made R-Ph3a-native, R-Ph3b and R4c-08 src-stale; reverified through the EV-1 runner (run 40471983792, E0 PASS) with receipts in the same PR. Remaining growth16 gap vs mimalloc (2.23× Ir) is outside the scan: carve and flush (task U32).
 
+### A130
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (one-line pointer;
+item 130 removed from the main index). Former inline card byte-preserved
+below, followed by the closure record.*
+
+130. **[A] G1-K7 — budgeted depot overflow above the K5 floor (default 1 MiB per heap; the shippable form of item 129): ships under the owner's exception to rule 2a (Addendum 7); rules 3–5 gate the merge.** (Filed 2026-10-29, `docs/design/2026-10-28-depot-budget-design.md`; pre-registration and verdict `docs/perf/b4_ablate/G1_K7_PREREG.md` (Addenda 6–9), `docs/perf/b4_ablate/G1_K7_A6_VERDICT.md` on `g1-k7-meas`.)
+   > **Current state**
+   > - **Status:** OPEN `[A]` — rule 1 holds, rule 2a fails on pair16/pair64 and is waived for v5 only by the owner (Addendum 7: «правило не снято. Тут просто разумное исключение. Трейдоф в нашу пользу»), rule 3 (RSS) PASS; rule 4 (iai against K5 `2bc830cc`, gate-run on PR #128) pending; PR #128 not yet merged.
+   > - **Current verdict (ИЗМЕРЕНО, v5):** run 2 (16 runs, t_mi/t_sefer) bulk16k K7/K5 1.675 (0.496 → 0.831), churn64 1.081, churn1024 1.047, no run-2 loss; run 1 GL1 bulk64k −9.88 %, GL2 bulk16k_32 −26.82 %; run-1 losses pair16 E_v +0.62 % [0.47, 0.73], pair64 +0.73 % [0.61, 0.79] (D > 0). Run 3 RSS: no loss at E = 0 / 512 KiB / 1 MiB / 2 MiB on W1–W5 and W4; v5 over K5 at most +284 KiB (allowance 2312 KiB), ≤ 60 KiB after thread exit.
+   > - **Next trigger:** rule 4 iai result; GO → `bench:table` refresh, README measurements, merge #128 as `perf(runtime)`, card to resolved, then the Kani follow-up PR (`g1-k7-kani`, И-O1/И-O2).
+   > - **Open sub-item (C.2):** an overflow reload skips the segment refill, and with it the Small remote-free discovery that runs there (`src/registry/heap_core/alloc/hot.rs`, refill paths); every 8th overflow reload runs only the bounded Large-sidecar check (`depot_paths.rs`, `reload_overflow`). Long overflow reload series can delay Small remote-free reclamation (latency/RSS, not a leak). Fix only on a measured effect.
+   > - **Evidence:** `docs/perf/b4_ablate/` (prereg, verdict, `a6/` logs, CSVs, raw manifest, `a6/run3/`), tags `archive/g1-k7-meas`, `archive/g1-k7`; tests `tests/g1_k7_depot_overflow*.rs`.
+
+   > **Closure (2026-10-29):** CLOSED — shipped as `perf(runtime)` via PR #128 (squash landing `9fd4c9fb5c15093de79678075138a402beca8670`, main CI run 40921322531). Rule 1 held; rule 2a (pair16 E_v +0.62 % [0.47, 0.73], pair64 +0.73 % [0.61, 0.79]) and rule 4 (dealloc_flush_all_tcache_16b +430, seg_cycle_decommit_256k +421, multiseg_cold_256k +157, cold_alloc_only_256x16b n/2n/4n +31/+87/+151, realloc_grow +48, medium_class_dealloc_churn_16b +25 Ir after the bootstrap proxy) failed and were each waived by the owner for v5 only, after the full trade-off table (Addenda 7 and 10); rule 3 (RSS) passed (at most +284 KiB, ≤ 60 KiB after thread exit); rule 5 evidence in run 3 and P3/P4. iai A/B: gate-run CI run 40901604462 (`docs/perf/b4_ablate/a6/run4/`). Follow-ups: the Kani harnesses И-O1/И-O2 (branch `g1-k7-kani`), the fixed costs (flush-all, segment release, per-heap bootstrap, segment-refill check) and sub-item C.2.
+
 ---
 
 ## [D] Deferred designs
@@ -2336,3 +2352,17 @@ The review estimated ~10–20 Ir per reclaimed record from hoisting `kind_at`, p
 - **Current number/verdict:** `find_segment_with_free_impl` attempts directory materialization before fallback scanning, rebuilding lazily after cold trim. Combined T31/T32 iai gate PASSed its pre-set thresholds; informational/hot Small cells showed small costs.
 - **Next trigger:** None for lazy directory rebuilding. T31's pool decay only runs on allocator activity; the gate does not measure RSS and a completely inactive thread retains up to its configured pool cap.
 - **Evidence:** `tests/r6_t32_directory_rebuild_after_trim.rs`; `docs/perf/R6_T31_T32_POOL_DECAY_DIRECTORY_REBUILD_GATE.md`; `5fffd5a5` gate record. Test not run in this audit.
+
+125. **[A] G1-K1 — drain without the redundant ClassLeaves class-code re-issue: GO, shipping `perf(runtime)`.** (Filed 2026-10-28, `docs/perf/G1_K1_DRAIN_GATE.md`.)
+   > **Current state**
+   > - **Status:** CLOSED 2026-10-29 — shipped `perf(runtime)` in PR #125, landing `4bb7948b`, main CI run 40797094066 green (GO by pre-registration, `docs/perf/g1_k1/G1_K1_PREREG.md`).
+   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k1-meas`@`afe594b4`):** faster on 7 of 11 — bulk16k 1.071× (CI −7.35…−6.41 %), churn256 1.064×, churn1024 1.060×, churn16 1.031×, churn64 1.014×, larson 1.009×, pair_rt 1.003×; pair16, pair64 equal; slower bulk64 1.018× (CI +1.54…+2.00 %, within the pre-registered +2 % tolerance) and vec512 1.005× (not admitted by the main judge). Callgrind: bulk16k −10.63 % Ir, mixed 256/1024 −8.97 %, bulk64 +0.02 %. Against mimalloc (`g1-k1`@`c0c4eacf`): bulk16k mimalloc faster 1.955× (was 2.104× in the B2 run, different runs).
+   > - **Next trigger:** none for the item. Open sub-item: bulk64's +1.8 % comes with unchanged instructions and no drain call on that kernel (route Ir 0 in both variants) — re-check with PMU (frontend/DSB counters) if a later candidate also moves bulk64 without changing its instructions.
+   > - **Evidence:** docs/perf/G1_K1_DRAIN_GATE.md, docs/perf/G1_K1_DRAIN_GATE_summary.csv, docs/perf/G1_K1_DRAIN_GATE_summary_callgrind.csv, docs/perf/g1_k1/, scripts/g1_k1_gate_report.mjs, tests/g1_k1_drain_class_code.rs.
+
+127. **[A] G1-K5 — magazine depot for classes 240..1024 B (K = 2): GO, shipping `perf(runtime)`.** (Filed 2026-10-28, `docs/perf/G1_K5_DEPOT_GATE.md`.)
+   > **Current state**
+   > - **Status:** CLOSED 2026-10-29 — shipped `perf(runtime)` in PR #126, landing `10635968`, main CI run 40831025762 green (GO by pre-registration, `docs/perf/g1_k5/G1_K5_PREREG.md`).
+   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k5-meas`@`319517f7`):** churn1024 faster 1.110×, churn256 1.090× (CI −9.76…−6.49 %), larson 1.080×, churn16 1.030×; pair16, pair64, pair_rt, bulk16k, churn64, vec512 equal; bulk64 slower 1.016× (CI +1.15…+1.86 %, within the +2 % tolerance; instructions unchanged, the null copy's A/B is −1.71 % — same pattern as K1). Against mimalloc (`g1-k5`): larson mimalloc faster 1.019× (was 1.103×), churn1024 1.130× (was 1.288×). Parked-block bound per thread 64 256 → 241 408 B; RSS not measured.
+   > - **Next trigger:** none for the item; shared open sub-item with item 125: bulk64's +1.6…+1.8 % with unchanged instructions in two consecutive ablations points at the null copy's layout on that kernel — check the harness (a second null build, or a swapped-slot null) before the next bulk64-sensitive gate.
+   > - **Evidence:** docs/perf/G1_K5_DEPOT_GATE.md, docs/perf/G1_K5_DEPOT_GATE_summary.csv, docs/perf/G1_K5_DEPOT_GATE_summary_callgrind.csv, docs/perf/g1_k5/, scripts/g1_k5_gate_report.mjs, tests/heap_core_depot.rs.

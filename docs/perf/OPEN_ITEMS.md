@@ -294,6 +294,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
+131. **[D] D1″ — sidecar с одной картой классов и ленивым обнулением по водяному знаку (C2 из D1′), запаркован с условиями входа.** (Filed 2026-10-29; `docs/perf/D1_PRIME_VERDICT.md`.)
+
+   > **Current state**
+   > - **Status:** DEFERRED. PR #94 (D1′ one-class map) и PR #96 (D1′ chunked sidecar) закрыты без слияния, оба NO-GO; данные — теги `archive/b4-oneclass` и `archive/b4-chunks`.
+   > - **Current number/verdict:** C2 улучшал регистрацию по Ir (fixed 834 589 против 930 819 у A), но в PR #94 был NO-GO: гонка через безопасный API при `internals`, выпали `checked_granule` и fail-fast `high_water > SEGMENT`, нет Miri/Kani/CI iai, Linux churn/RSS хуже (p = 0.02 / 1e-4).
+   > - **Next trigger:** только при выполнении всех условий входа до любого замера — E1 owner-only на уровне типов; E2 `checked_granule`; E3 fail-fast до клэмпа; E4 одна реализация без feature; E5 манифест и SHA до замеров. Затем фаза V (CI iai A/B по абсолютному Ir ≤ main + 2000 во всех ячейках, проба регистрации 30/60/120, время — эквивалентность ΔCI95 ≤ +1 %, RSS по smaps; пороги утверждаются до замеров) и фаза S (Loom с отрицательными контролями, Miri SB/TB, 5–6 Kani-харнессов, EV-1). Kill: любой FAIL фазы V или UB/RED фазы S закрывает D1″; не больше одного раунда вне протокола; потолок — 3 раунда.
+   > - **Evidence:** `docs/perf/D1_PRIME_VERDICT.md`; `archive/b4-oneclass` (`docs/perf/B4_ONECLASS.md`, ADR `docs/design/2026-10-20-adr-oneclass-starts-map.md`); `archive/b4-chunks` (`docs/perf/D1_PRIME_CHUNKED_SIDECAR_GATE.md`).
+
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**
 
    > **Current state**
@@ -3240,26 +3248,12 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** K1 (drain without the redundant class-code re-issue) judged by J1′ v2 against main and against mimalloc; K2 (free class from the state byte) needs an owner decision (wrong-Layout free becomes a free into the true class instead of a silent no-op).
    > - **Evidence:** docs/perf/G1_IDEAS.md, docs/perf/g1_pmu/ (raw perf stat and callgrind logs, run scripts, `G1_PMU_table.md`, `G1_PMU_summary.csv`), scripts/g1_pmu_summary.mjs, examples/b4_pmu_probe.rs.
 
-125. **[A] G1-K1 — drain without the redundant ClassLeaves class-code re-issue: GO, shipping `perf(runtime)`.** (Filed 2026-10-28, `docs/perf/G1_K1_DRAIN_GATE.md`.)
-   > **Current state**
-   > - **Status:** GO by pre-registration (`docs/perf/g1_k1/G1_K1_PREREG.md`); code in the same PR as this card. Close after CI is green on the landing SHA.
-   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k1-meas`@`afe594b4`):** faster on 7 of 11 — bulk16k 1.071× (CI −7.35…−6.41 %), churn256 1.064×, churn1024 1.060×, churn16 1.031×, churn64 1.014×, larson 1.009×, pair_rt 1.003×; pair16, pair64 equal; slower bulk64 1.018× (CI +1.54…+2.00 %, within the pre-registered +2 % tolerance) and vec512 1.005× (not admitted by the main judge). Callgrind: bulk16k −10.63 % Ir, mixed 256/1024 −8.97 %, bulk64 +0.02 %. Against mimalloc (`g1-k1`@`c0c4eacf`): bulk16k mimalloc faster 1.955× (was 2.104× in the B2 run, different runs).
-   > - **Next trigger:** close on a green landing CI. Open sub-item: bulk64's +1.8 % comes with unchanged instructions and no drain call on that kernel (route Ir 0 in both variants) — re-check with PMU (frontend/DSB counters) if a later candidate also moves bulk64 without changing its instructions.
-   > - **Evidence:** docs/perf/G1_K1_DRAIN_GATE.md, docs/perf/G1_K1_DRAIN_GATE_summary.csv, docs/perf/G1_K1_DRAIN_GATE_summary_callgrind.csv, docs/perf/g1_k1/, scripts/g1_k1_gate_report.mjs, tests/g1_k1_drain_class_code.rs.
-
 126. **[L] G1-K2 — free class from the state byte instead of `class_for(layout)`: honest reject (NO-GO by PMU, latency).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §6.)
    > **Current state**
    > - **Status:** NO-GO before the judge; prototype on branch `g1-k2`@`a707eb13`, production unchanged. Design chosen with @oh and the rush reviewer: option (b), non-`hardened` only; `hardened` and the batch free keep the exact Layout check.
    > - **Current verdict (ИЗМЕРЕНО, perf stat, b4_pmu_probe, K2 vs K1, sefer arm, 3 repeats):** instructions −6 … −10 % on every shape, cycles bulk64 0.904×, mixed 256/1024 0.954×, bulk16k 0.969×, but pair16 1.140× (ns/op 1.162×, 3/3 repeats slower) and churn16 1.052×. The state byte just written by alloc becomes the index of the magazine count load: store→load latency on the critical path. The pre-registered "pair16 ≤ +1 %" bar cannot pass.
    > - **Next trigger:** a variant that keeps the Layout class as the (parallel) index and uses the byte only for the reject branch while still cutting `class_for` instructions (e.g. saturating SIZE2CLASS sentinel instead of the bounds-check branch, no redundant `.max(MIN_BLOCK)`), judged by J1′ v2.
    > - **Evidence:** docs/perf/G1_IDEAS.md §6, docs/perf/g1_pmu/k2/ (raw perf stat and callgrind logs, compare table and CSV), scripts/g1_fe_compare.mjs.
-
-127. **[A] G1-K5 — magazine depot for classes 240..1024 B (K = 2): GO, shipping `perf(runtime)`.** (Filed 2026-10-28, `docs/perf/G1_K5_DEPOT_GATE.md`.)
-   > **Current state**
-   > - **Status:** GO by pre-registration (`docs/perf/g1_k5/G1_K5_PREREG.md`); code in the same PR as this card, stacked on K1 (item 125). Close after CI is green on the landing SHA.
-   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k5-meas`@`319517f7`):** churn1024 faster 1.110×, churn256 1.090× (CI −9.76…−6.49 %), larson 1.080×, churn16 1.030×; pair16, pair64, pair_rt, bulk16k, churn64, vec512 equal; bulk64 slower 1.016× (CI +1.15…+1.86 %, within the +2 % tolerance; instructions unchanged, the null copy's A/B is −1.71 % — same pattern as K1). Against mimalloc (`g1-k5`): larson mimalloc faster 1.019× (was 1.103×), churn1024 1.130× (was 1.288×). Parked-block bound per thread 64 256 → 241 408 B; RSS not measured.
-   > - **Next trigger:** close on a green landing CI. Shared open sub-item with item 125: bulk64's +1.6…+1.8 % with unchanged instructions in two consecutive ablations points at the null copy's layout on that kernel — check the harness (a second null build, or a swapped-slot null) before the next bulk64-sensitive gate.
-   > - **Evidence:** docs/perf/G1_K5_DEPOT_GATE.md, docs/perf/G1_K5_DEPOT_GATE_summary.csv, docs/perf/G1_K5_DEPOT_GATE_summary_callgrind.csv, docs/perf/g1_k5/, scripts/g1_k5_gate_report.mjs, tests/heap_core_depot.rs.
 
 128. **[L] G1-K6 — flush without the per-call `recycled_bases` zeroing and the `prev_ptr` stack spill: NO-GO by ceiling (below the layout-noise floor).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §7.)
    > **Current state**
@@ -3272,24 +3266,20 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > **Current state**
    > - **Status:** OPEN `[A]` — ceiling measured; shippable form not chosen; production unchanged.
    > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 × 2000, pre-registered `g1_pmu/p0/G1_P0_PREREG.md`):** class-64 depot K = 1024 → bulk16k effect −56.13 [−56.62, −54.74] in the script's 100·ln units (time ratio 0.5705, 1.75× faster), churn64 −5.90, bulk64 −2.76, no kernel slower beyond pair64 +0.07. Main judge vs mimalloc on that tree: bulk16k t_mi/t_sefer 0.8729, larson 1.0293.
-   > - **Next trigger:** a shippable form (budgeted depot with trim/decay and lazily allocated storage, or a body-write-free free set) chosen with @oh and the rush reviewer; per-thread retention budget is the owner's decision; then a perf(runtime) gate with RSS measured.
+   > - **Next trigger:** a shippable form (a new budgeted-depot design or a body-write-free free set) chosen with @oh and the rush reviewer; per-thread retention budget is the owner's decision; then a perf(runtime) gate with RSS measured. The first form, G1-K7 (budgeted depot overflow), ships under an owner exception to its rule 2a (item 130).
    > - **Evidence:** docs/perf/G1_IDEAS.md §9, docs/perf/g1_pmu/p0/ (prereg, patch, manifests, vs-null table and CSV, vs-mimalloc generator output, PMU and callgrind raws).
-
-130. **[A] G1-K7 — budgeted depot overflow above the K5 floor (default 1 MiB per heap; the shippable form of item 129): v5 under pre-registered Addendum 6, not shipped.** (Filed 2026-10-29, `docs/design/2026-10-28-depot-budget-design.md`, pre-registration `docs/perf/b4_ablate/G1_K7_PREREG.md` on `g1-k7-meas`.)
-   > **Current state**
-   > - **Status:** OPEN — v4 NO-GO by the literal decision rule (rule 2); v5 (segment-refill tick gated by `PerClass::marks` bit `MARK_TICK`) awaits the Addendum 6 campaign the owner approved on 2026-10-29. Branch `g1-k7`, draft PR #128.
-   > - **Current verdict (ИЗМЕРЕНО, v4, raws `.rush/g1/v4/` on the measurement host):** run 1 (J1′ v2 ablation, effect in 100·ln units) bulk16k −52.11 [−52.89, −51.11], bulk16k_32 −26.61, bulk64k −12.32, bulk64 −0.79; losses pair16 +0.87 [0.56, 1.03], pair64 +0.89 [0.74, 0.99] (the same sign in all four variants v2–v4 while Callgrind gives ≤ +0.03 % Ir). Run 2 (main judge vs mimalloc, t_mi/t_sefer, K7, K5, K7, K5): bulk16k 0.827 / 0.501 / 0.829 / 0.506; larson first pair 0.991 vs 1.192 (disjoint), second 1.028 vs 1.019; K5 against itself is disjoint on vec512 and larson across its two runs.
-   > - **Next trigger:** Addendum 6 committed with patch and script hashes, then its campaign (run 1 null/v5/U in two passes, run 2 sixteen sessions K7 K5 K5 K7 …, RSS, iai); GO ships `perf(runtime)` and moves this card to resolved, NO-GO closes design rev. 4 for the round.
-   > - **Open sub-item (C.2):** an overflow reload skips the segment refill, and with it the Small remote-free discovery that runs there (`src/registry/heap_core/alloc/hot.rs`, refill paths); every 8th overflow reload runs only the bounded Large-sidecar check (`depot_paths.rs`, `reload_overflow`). Long overflow reload series can delay Small remote-free reclamation (latency/RSS, not a leak; K5's floor reloads skip it the same way for up to 8 magazines). Observed by Addendum 6's run 3 W4 (cross-thread frees); fix only on a measured effect.
-   > - **Evidence:** `docs/design/2026-10-28-depot-budget-design.md` (rev. 5), consultation records `.rush/stdin/g1-k7-v4-verdict.*`, `.rush/stdin/g1-k7-v4-decision.*` (measurement host), tests `tests/g1_k7_depot_overflow*.rs`. The Kani harnesses И-O1/И-O2 land in a follow-up PR after this one (branch `g1-k7-kani`; the ghost-zero-cost policy keeps runtime and verification changes in separate PRs).
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **Item 130 — G1-K7 budgeted depot overflow above the K5 floor (default 1 MiB per heap): shipped `perf(runtime)` under two owner exceptions, closed 2026-10-29** (PR #128; rule 1 bulk16k K7/K5 1.675 against mimalloc, churn64 1.081, churn1024 1.047; rule 3 RSS no loss; owner exceptions to rule 2a — pair16 +0.62 %, pair64 +0.73 % — and rule 4 — 8 benches, at most +430 Ir; `docs/perf/b4_ablate/G1_K7_PREREG.md` Addenda 6–10). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A130.
+- **D1′ (B4-23) — one-class map (PR #94) and chunked sidecar (PR #96): NO-GO, closed 2026-10-29** (owner approved the @oh council plan). F1 failed its pre-registered gate (slope +19k, fixed +43k, Windows wall +5.4 %); the chunked candidate lost installed-global larson (×1.281 at T=4, ×1.191 at T=8) and dense16 (×2.479). C2 is parked as D1″ (item 131). Report `docs/perf/D1_PRIME_VERDICT.md`; evidence tags `archive/b4-oneclass`, `archive/b4-chunks`.
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
 
+- **Item 125 — G1-K1 drain without the redundant ClassLeaves class-code re-issue: GO, shipped `perf(runtime)`, closed 2026-10-29** (PR #125, landing `4bb7948b`, CI run 40797094066 green; net of null bulk16k faster 1.071×, churn256 1.064×, churn1024 1.060×; bulk64 1.018× slower within the pre-registered +2 % tolerance). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
+- **Item 127 — G1-K5 magazine depot for classes 240..1024 B (K = 2): GO, shipped `perf(runtime)`, closed 2026-10-29** (PR #126, landing `10635968`, CI run 40831025762 green; net of null churn1024 faster 1.110×, churn256 1.090×, larson 1.080×; bulk64 1.016× slower within the +2 % tolerance). The shared bulk64 null-layout sub-item is taken up by the G1-K7 layout control U (Addendum 6, PR #128). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 - **Item 117 — B1-D magazine depot (Bonwick): GO, shipped `perf(runtime)`, closed 2026-10-26** (PR #100, landing `02b1f144`, CI run 40369754081 green; net of null bulk64 faster 1.778×, churn64 1.481×, no kernel slower). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A117.
 - **Item 118 — B1 single-pass flush runs + cold full-magazine free tail: GO, shipped `perf(runtime)`, closed 2026-10-27** (PR #102, landing `18adf602`, CI run 40420170627 green; net of null bulk16k faster 1.091×, pair16 1.040×, 9 of 11 kernels faster, none slower). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A118.
 - **Item 120 — B2 one-pass freelist drain: GO, shipped `perf(runtime)`, closed 2026-10-27** (PR #105, landing `7fdf1768`, CI run 40448993969 green; net of null churn1024 faster 1.133×, churn256 1.062×, bulk16k 1.036×, 7 of 11 kernels faster, none slower). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A120.

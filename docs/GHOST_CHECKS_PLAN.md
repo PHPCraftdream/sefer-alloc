@@ -285,8 +285,12 @@ Invariant-Check: route-pin/last-ref-free
 
 Нарушение любого пункта — PR не сливается.
 
-Область гейта (`ghost-zero-cost`, `scripts/ghost_diff.mjs`): исключение
-fail-closed. Доказательство пропускается, только если в собственных коммитах
+База гейта на PR — первый родитель merge-ref (`resolveBase` в
+`scripts/ghost_diff.mjs`): `pull_request.base.sha` не обновляется, когда
+базовая ветка уходит вперёд, поэтому он должен лишь достигать этого родителя;
+любой другой checkout — красный. Область гейта (`ghost-zero-cost`,
+`scripts/ghost_diff.mjs`): исключение fail-closed. Доказательство
+пропускается, только если в собственных коммитах
 PR (без merge, до `pull_request.head.sha`) одновременно: есть объявление
 изменения рантайма префиксом R30-12 (`perf(runtime)`, `perf(opt-in)`,
 `fix(perf)`); у каждого коммита conventional-префикс и ни один не помечен

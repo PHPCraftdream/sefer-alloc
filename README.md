@@ -1136,10 +1136,10 @@ allocates) — the headline:
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | 24.2 ns |  22.7 ns | 144.4 ns | 1.07× slower |
-|   64 B | 28.2 ns |  28.2 ns | 147.9 ns | 1.00× slower |
-|  256 B | **24.1 ns** |  37.8 ns | 166.1 ns | **1.57× faster** |
-| 1024 B | **27.1 ns** | 232.4 ns | 184.9 ns | **8.59× faster** |
+|   16 B | 14.5 ns |  13.8 ns | 87.5 ns | 1.05× slower |
+|   64 B | 23.9 ns |  22.2 ns | 97.0 ns | 1.08× slower |
+|  256 B | **28.8 ns** |  31.3 ns | 128.4 ns | **1.09× faster** |
+| 1024 B | **47.3 ns** | 148.0 ns | 98.3 ns | **3.13× faster** |
 
 **Churn, non-writing** (`bench_churn_alloc`, working-set reuse — 1 free + 1
 alloc per pair; the artificial pattern where the old stale-key slow path bit
@@ -1147,10 +1147,10 @@ hardest, before Э6 removed it):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | **23.0 ns** |  25.0 ns | 143.6 ns | **1.09× faster** |
-|   64 B | **22.4 ns** |  26.9 ns | 143.3 ns | **1.20× faster** |
-|  256 B | **22.0 ns** |  37.5 ns | 174.2 ns | **1.71× faster** |
-| 1024 B | **22.6 ns** | 227.8 ns | 171.3 ns | **10.08× faster** |
+|   16 B | 17.1 ns |  14.5 ns | 68.2 ns | 1.18× slower |
+|   64 B | 16.8 ns |  14.9 ns | 81.1 ns | 1.13× slower |
+|  256 B | **17.1 ns** |  25.3 ns | 100.2 ns | **1.48× faster** |
+| 1024 B | **28.8 ns** | 160.9 ns | 105.1 ns | **5.58× faster** |
 
 **Warm bulk burst** (`bench_direct_alloc`, alloc 1024 then free 1024 — 1 alloc
 + 1 free per pair; no reuse WITHIN one iteration's allocation half, but
@@ -1160,13 +1160,13 @@ cheaper carve led at tiny sizes):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B |  70.9 ns |  30.0 ns | 173.1 ns | 2.37× slower |
-|   64 B |  48.2 ns |  48.4 ns | 150.1 ns | **1.00× faster** |
-|  256 B |  84.5 ns |  31.2 ns | 283.4 ns | 2.71× slower |
-| 1024 B | **66.0 ns** |  83.5 ns | 361.6 ns | **1.26× faster** |
+|   16 B | 18.3 ns |   7.4 ns | 68.9 ns | 2.46× slower |
+|   64 B | 18.0 ns |  12.5 ns | 92.9 ns | 1.44× slower |
+|  256 B | 17.8 ns |  17.1 ns | 97.9 ns | 1.04× slower |
+| 1024 B | **17.4 ns** |  30.4 ns | 109.2 ns | **1.74× faster** |
 
-(Measured 2026-07-23 via `npm run bench:table`, post-Round13 tree — Windows dev
-host, criterion `sample_size(10)`, same R5-R3 methodology as before
+(Measured 2026-10-29 via `npm run bench:table` on the G1-K7 tree (PR #128; raw
+log `docs/perf/_raw_g1_k7_bench_table.log`) — Windows dev host, criterion `sample_size(10)`, same R5-R3 methodology as before
 (TLS-heap reset between groups + rotated arm order per `(group, size)`, see
 `docs/agent_reviews_round5/performance_review.md` §4.1 items 2-3). This
 single-host run carries the usual ±15-20% noise band; treat the relative
@@ -1204,10 +1204,10 @@ depends on block-body contents; `tests/regression_magazine_oracles.rs` test (c)
 is RED pre-Э6, GREEN on Э6). Every P0–P6 speedup deleted a tautology, never a
 guard.
 
-**Where we still trail — cold tiny blocks (16 B, 256 B), 2.4–2.7× behind
-mimalloc (2026-07-23 post-Round13 re-measurement: 16 B 2.37×, 256 B 2.71×
-slower; 64 B at parity (1.00× faster) and 1024 B 1.26× faster — see the Cold
-direct table above).** This is the
+**Where we still trail — the warm bulk burst at 16–64 B and non-writing churn
+at 16–64 B (2026-10-29 re-measurement on the G1-K7 tree: bulk burst 16 B
+2.46×, 64 B 1.44× slower, 256 B 1.04× slower, 1024 B 1.74× faster; churn
+16 B 1.18×, 64 B 1.13× slower — see the tables above).** This is the
 cold carve path (`global_alloc`, no reuse), unchanged by Э6 (which targets
 only the churn free path). The residual is honest per-block work — page-map
 writes and page faults on genuinely fresh pages, not ceremony — documented in
@@ -1677,9 +1677,21 @@ static GLOBAL: SeferAlloc =
     SeferAlloc::with_config(LargeCacheConfig::new().depot_budget_bytes(0));
 ```
 
-**Measurements:** pending — the speed (J1′ v2 against mimalloc and
-against the floor-only depot) and RSS (budget sweep 0 / 512 KiB / 1 MiB /
-2 MiB) results land with this setting's gate report and replace this line.
+**Measurements** (pre-registered, `docs/perf/b4_ablate/G1_K7_PREREG.md`
+Addenda 6–10; report `docs/perf/b4_ablate/G1_K7_A6_VERDICT.md`; Windows,
+i7-11800H; default budget 1 MiB against the floor-only depot):
+
+| Axis | Result |
+|---|---|
+| Time, own A/B (40 processes × 2000 blocks, net of a null copy) | bulk16k −52 %, bulk16k_32 −27 %, bulk64k −9.9 %, churn64 −2.9 %, churn1024 −3.0 %; pair16 +0.62 %, pair64 +0.73 % (slower) |
+| Time vs mimalloc (t_mi / t_sefer, 16 sessions, floor-only → this setting) | bulk16k 0.496 → 0.831, churn64 0.775 → 0.838, churn1024 0.917 → 0.960; no kernel slower |
+| Instructions (iai, 106 benches) | growth16 −17 %, cold alloc/free 4n −13.6 %, recycle alloc/free −7.9 %; one-time +2.4–2.6 k Ir per thread heap, +430 Ir per flush-all, ≈ +70 Ir per segment release, ≈ +0.15 Ir per allocation carved from a fresh segment |
+| RSS (budget 0 / 512 KiB / 1 MiB / 2 MiB) | at most +284 KiB over the floor-only depot while the thread lives (2 MiB budget), ≤ +60 KiB after it exits — parked blocks stay in memory the floor-only arm keeps resident in its segments anyway |
+
+The pair16 / pair64 and per-bench instruction costs above exceed the
+pre-registered no-loss rules; the setting ships under the owner's two
+scoped exceptions to those rules (Addenda 7 and 10). Use `0` where only
+single alloc/free pairs matter.
 
 ---
 
