@@ -55,6 +55,12 @@ impl HeapCore {
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub(crate) fn bind_depot(&mut self, depot: &'static mut super::depot::Depot) {
         self.depot = Some(depot);
+        // G1-K7: open each depot class's overflow ring under the heap's budget.
+        #[cfg(feature = "alloc-decommit")]
+        for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
+            self.tcache.classes[c].limit =
+                super::depot_paths::open_limit(c, self.depot_budget as usize);
+        }
     }
 
     /// W3: plant the stable handle to THIS heap's slot-resident large-segment
@@ -134,48 +140,53 @@ impl HeapCore {
     fn depot_release_overflow_pages(&mut self) {
         if let Some(depot) = self.depot.as_deref_mut() {
             depot.ovf.release_pages();
+            let budget = self.depot_budget as usize;
+            let ready = depot.ovf.take_unstarved(budget);
+            super::depot_paths::reopen(&mut self.tcache, ready, budget);
         }
     }
 
-    /// G1-K7: count one cold event for the depot-overflow decay and pay up to
-    /// `DECAY_WORK` records of decay debt — the oldest overflow records of
-    /// classes that parked nothing during the last epoch go back to their
-    /// segments. Touches only long-parked records, never the live magazine.
+    /// G1-K7: count one cold event for the depot-overflow decay; when an
+    /// epoch ends or debt is outstanding, pay up to `DECAY_WORK` records —
+    /// the oldest overflow records of classes that parked nothing during the
+    /// last epoch go back to their segments. Touches only long-parked
+    /// records, never the live magazine. O(1) unless decay work is due.
     #[cfg(all(
         feature = "alloc-global",
         feature = "fastbin",
         feature = "alloc-decommit"
     ))]
+    #[inline]
     pub(crate) fn depot_tick(&mut self) {
-        use crate::registry::heap_core::state::depot::{DEPOT_CLASSES, DEPOT_K};
-        use crate::registry::heap_core::state::depot_overflow::DECAY_WORK;
-        use crate::registry::heap_core::state::tcache::TCACHE_CAP;
         let Some(depot) = self.depot.as_deref_mut() else {
             return;
         };
-        // Empty overflow: no record to decay; every low-water mark and debt
-        // is 0 (committed pages stay until trim).
-        if !depot.ovf.active() || depot.ovf.bytes() == 0 {
-            return;
+        if depot.ovf.tick() {
+            self.depot_decay();
         }
-        let mut lens = [0usize; DEPOT_CLASSES];
-        for (c, len) in lens.iter_mut().enumerate() {
-            *len = (self.tcache.classes[c].parked as usize).saturating_sub(DEPOT_K[c] as usize);
-        }
-        depot.ovf.note_event(&lens);
+    }
+
+    /// G1-K7: the decay work `depot_tick` found due.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit"
+    ))]
+    #[cold]
+    #[inline(never)]
+    fn depot_decay(&mut self) {
+        use crate::registry::heap_core::state::depot_overflow::DECAY_WORK;
+        use crate::registry::heap_core::state::tcache::TCACHE_CAP;
+        let budget = self.depot_budget as usize;
         let mut work = 0;
         while work < DECAY_WORK {
             let Some(depot) = self.depot.as_deref_mut() else {
                 return;
             };
-            let Some(c) = depot.ovf.debt_class() else {
-                return;
+            let Some(c) = depot.ovf.decay_step() else {
+                break;
             };
-            let n = (self.tcache.classes[c].parked as usize).saturating_sub(DEPOT_K[c] as usize);
-            if n == 0 {
-                depot.ovf.clear_debt(c);
-                continue;
-            }
+            let n = depot.ovf.len(c);
             let mut mag = [core::ptr::null_mut(); TCACHE_CAP];
             depot.ovf.pop_oldest(c, n, &mut mag);
             self.tcache.classes[c].parked -= 1;
@@ -188,6 +199,10 @@ impl HeapCore {
                 self.core.flush_class_internal(c, &mag);
             }
             work += 1;
+        }
+        if let Some(depot) = self.depot.as_deref_mut() {
+            let ready = depot.ovf.take_unstarved(budget);
+            super::depot_paths::reopen(&mut self.tcache, ready, budget);
         }
     }
 

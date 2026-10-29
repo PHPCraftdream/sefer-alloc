@@ -291,6 +291,12 @@ pub(crate) struct PerClass {
     /// pointer array.
     #[cfg(feature = "virgin-zero-skip")]
     pub(crate) virgin_mask: u16,
+    /// G1-K7: `parked` bound the free path checks inline before the cold
+    /// depot call — the floor `DEPOT_CAP[c]`, plus the class's overflow ring
+    /// once a budget is bound; latched to the current `parked` when the
+    /// overflow refuses (budget, ring or OS) until the overflow shrinks.
+    /// In the padding before `slots` (no size change).
+    pub(crate) limit: u16,
     /// This class's pointer stack. `slots[0..count as usize]` are valid.
     /// F4: declared LAST so `#[repr(C)]` places it after the small fields —
     /// `#[repr(C)]` still pads `slots` up to its own 8-byte alignment (no
@@ -329,6 +335,16 @@ const _: () = assert!(
     ::core::mem::offset_of!(PerClass, virgin_mask) == 4,
     "PerClass::virgin_mask must sit at offset 4 (repr(C), after u8 count, pad and u16 parked)"
 );
+#[cfg(feature = "virgin-zero-skip")]
+const _: () = assert!(
+    ::core::mem::offset_of!(PerClass, limit) == 6,
+    "PerClass::limit (u16) must sit in the padding before slots (offset 6)"
+);
+#[cfg(not(feature = "virgin-zero-skip"))]
+const _: () = assert!(
+    ::core::mem::offset_of!(PerClass, limit) == 4,
+    "PerClass::limit (u16) must sit in the padding before slots (offset 4)"
+);
 // R2-17: this is the concrete pin the crate-root gate in `src/lib.rs` exists
 // to host — `slots` reaches offset 8 only on a 64-bit `repr(C)` ABI, and the
 // R2-17 target gate already rejects every 32-bit allocator build, so this
@@ -348,6 +364,7 @@ impl PerClass {
             slots: [::core::ptr::null_mut(); TCACHE_CAP],
             #[cfg(feature = "virgin-zero-skip")]
             virgin_mask: 0,
+            limit: 0,
         }
     }
 }
@@ -370,8 +387,12 @@ impl Tcache {
     /// `const fn` so it can be used in `HeapCore::new` with zero allocation
     /// at construction (M5-clean).
     pub(crate) const fn new() -> Self {
-        Self {
-            classes: [PerClass::new(); SMALL_CLASS_COUNT],
+        let mut classes = [PerClass::new(); SMALL_CLASS_COUNT];
+        let mut c = 0;
+        while c < SMALL_CLASS_COUNT {
+            classes[c].limit = crate::registry::heap_core::state::depot::DEPOT_CAP[c] as u16;
+            c += 1;
         }
+        Self { classes }
     }
 }

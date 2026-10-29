@@ -93,7 +93,11 @@ fn refused_reserve_and_commit_keep_blocks_and_recover() {
     let blocks = alloc_n(heap, 64, n);
     free_all(heap, 64, &blocks);
     let s1 = heap.dbg_depot_overflow();
-    assert!(s1[OS_REFUSALS] > s0[OS_REFUSALS], "reserve refusal counted");
+    assert_eq!(
+        s1[OS_REFUSALS] - s0[OS_REFUSALS],
+        1,
+        "reserve refused once, then latched"
+    );
     assert_eq!(s1[PARKS], s0[PARKS], "nothing parked in the overflow");
     assert_eq!((s1[BYTES], s1[COMMITTED]), (0, 0));
     assert_eq!(heap.dbg_depot_len(C64), FLOOR, "the floor still parks");
@@ -110,18 +114,30 @@ fn refused_reserve_and_commit_keep_blocks_and_recover() {
     heap.dbg_flush_all();
 
     // 3. Commit refused for class 16's first record page (trim decommitted
-    //    every page): one park refused, then the next one commits.
+    //    every page): one park refused, then the class is latched — later
+    //    full magazines flush without another cold attempt — until trim.
     let s3 = heap.dbg_depot_overflow();
     assert_eq!(s3[COMMITTED], 0, "trim returned every record page");
-    let n16 = MAG * (1 + FLOOR + 2);
+    let n16 = MAG * (1 + FLOOR + 4);
     let b16 = alloc_n(heap, 16, n16);
     HeapCore::dbg_arm_depot_overflow_faults(0, 1);
     free_all(heap, 16, &b16);
     HeapCore::dbg_arm_depot_overflow_faults(0, 0);
     let s4 = heap.dbg_depot_overflow();
-    assert_eq!(s4[OS_REFUSALS] - s3[OS_REFUSALS], 1, "one commit refused");
-    assert!(s4[PARKS] > s3[PARKS], "a later park committed and parked");
-    let page = s4[COMMITTED] as usize;
+    assert_eq!(
+        s4[OS_REFUSALS] - s3[OS_REFUSALS],
+        1,
+        "one commit refused, then latched"
+    );
+    assert_eq!(s4[PARKS], s3[PARKS], "nothing parked while latched");
+    assert_eq!(s4[COMMITTED], 0);
+    account_and_reissue(heap, 16, C16, &b16);
+    heap.dbg_flush_all();
+    let b16 = alloc_n(heap, 16, n16);
+    free_all(heap, 16, &b16);
+    let s4b = heap.dbg_depot_overflow();
+    assert_eq!(s4b[PARKS] - s4[PARKS], 4, "trim reopened the class");
+    let page = s4b[COMMITTED] as usize;
     assert!(page >= 4096 && page.is_power_of_two(), "one page committed");
     account_and_reissue(heap, 16, C16, &b16);
     heap.dbg_flush_all();

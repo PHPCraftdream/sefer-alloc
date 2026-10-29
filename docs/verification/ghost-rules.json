@@ -2020,7 +2020,8 @@
         "HeapCore::depot_park",
         "HeapCore::depot_reload",
         "HeapCore::depot_tick",
-        "HeapCore::depot_release_overflow_pages"
+        "HeapCore::depot_release_overflow_pages",
+        "HeapCore::depot_decay"
       ],
       "terms": [
         "depot",
@@ -2029,7 +2030,7 @@
         "depot_park",
         "depot_reload"
       ],
-      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths (park, reload, the G1-K7 overflow decay tick and the teardown page release), so only the current lease holder touches it",
+      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths (park, reload, the G1-K7 overflow decay tick and its cold decay step and the teardown page release), so only the current lease holder touches it",
       "tests": [
         "tests/heap_core_depot.rs",
         "tests/loom_depot_recycle_handoff.rs"

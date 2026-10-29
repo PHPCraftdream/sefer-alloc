@@ -156,17 +156,26 @@ fn a_second_class_is_refused_by_the_shared_budget() {
     let b16 = alloc_n(heap, 16, n16);
     free_all(heap, 16, &b16);
     let after = heap.dbg_depot_overflow();
-    assert!(
-        after[BUDGET_REFUSALS] > before[BUDGET_REFUSALS],
-        "over budget -> flush"
+    assert_eq!(
+        after[BUDGET_REFUSALS] - before[BUDGET_REFUSALS],
+        1,
+        "refused once, then latched: no further cold attempt"
     );
     assert_eq!(after[PARKS], before[PARKS], "nothing parked over budget");
     assert_eq!(heap.dbg_depot_len(C16), 8, "class 16 keeps only its floor");
     let again = alloc_n(heap, 16, n16);
     let got: HashSet<usize> = again.iter().map(|p| *p as usize).collect();
     assert_eq!(got.len(), n16, "no duplicate address");
-    free_all(heap, 16, &again);
+    // Class 64 reloads its overflow: the freed budget reopens class 16.
     let again64 = alloc_n(heap, 64, n64);
+    assert_eq!(heap.dbg_depot_overflow()[BYTES], 0);
+    let p0 = heap.dbg_depot_overflow()[PARKS];
+    free_all(heap, 16, &again);
+    assert_eq!(
+        heap.dbg_depot_overflow()[PARKS] - p0,
+        2,
+        "class 16 parks again once the budget has room"
+    );
     free_all(heap, 64, &again64);
     heap.dbg_flush_all();
     drop(lease);

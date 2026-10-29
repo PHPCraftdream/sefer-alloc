@@ -6,7 +6,8 @@
 //! per class a page-aligned region of `cap[c]` records forming a ring — new
 //! records go to the tail, reload takes the tail (LIFO with the floor below),
 //! decay takes the head (oldest). A class's ring length is
-//! `PerClass::parked - DEPOT_K[c]`; the caller passes it in.
+//! `PerClass::parked - DEPOT_K[c]`, also kept here (`len`) so a cold event
+//! costs O(1).
 
 use crate::alloc_core::size_classes::SIZE_CLASS_TABLE;
 use crate::registry::heap_core::state::depot::DEPOT_CLASSES;
@@ -50,21 +51,29 @@ pub(crate) struct OverflowStats {
     pub(crate) decommits: u64,
 }
 
-/// Overflow control; all-zero = empty and unreserved.
+/// Overflow control; all-zero = empty and unreserved. The per-event fields
+/// lead (`repr(C)`), so the common tick touches one line.
+#[repr(C)]
 pub(crate) struct DepotOverflow {
     base: *mut u8,
-    reserve_failed: bool,
     bytes: usize,
-    cap: [u16; DEPOT_CLASSES],
-    off: [u32; DEPOT_CLASSES],
-    committed: [u32; DEPOT_CLASSES],
-    head: [u16; DEPOT_CLASSES],
-    low: [u16; DEPOT_CLASSES],
-    debt: [u16; DEPOT_CLASSES],
-    parked_in_epoch: u32,
     events: u32,
     epoch_len: u32,
+    /// Classes with decay debt (bit `c`).
+    debt_mask: u32,
+    /// Classes that parked during the current epoch (bit `c`).
+    parked_in_epoch: u32,
+    /// Classes whose `PerClass::limit` is latched after a refusal (bit `c`).
+    starved: u32,
     reloads_since_ingress: u32,
+    reserve_failed: bool,
+    len: [u16; DEPOT_CLASSES],
+    head: [u16; DEPOT_CLASSES],
+    cap: [u16; DEPOT_CLASSES],
+    low: [u16; DEPOT_CLASSES],
+    debt: [u16; DEPOT_CLASSES],
+    off: [u32; DEPOT_CLASSES],
+    committed: [u32; DEPOT_CLASSES],
     pub(crate) stats: OverflowStats,
 }
 
@@ -78,18 +87,21 @@ impl DepotOverflow {
     pub(crate) const fn empty() -> Self {
         Self {
             base: core::ptr::null_mut(),
-            reserve_failed: false,
             bytes: 0,
-            cap: [0; DEPOT_CLASSES],
-            off: [0; DEPOT_CLASSES],
-            committed: [0; DEPOT_CLASSES],
-            head: [0; DEPOT_CLASSES],
-            low: [0; DEPOT_CLASSES],
-            debt: [0; DEPOT_CLASSES],
-            parked_in_epoch: 0,
             events: 0,
             epoch_len: 0,
+            debt_mask: 0,
+            parked_in_epoch: 0,
+            starved: 0,
             reloads_since_ingress: 0,
+            reserve_failed: false,
+            len: [0; DEPOT_CLASSES],
+            head: [0; DEPOT_CLASSES],
+            cap: [0; DEPOT_CLASSES],
+            low: [0; DEPOT_CLASSES],
+            debt: [0; DEPOT_CLASSES],
+            off: [0; DEPOT_CLASSES],
+            committed: [0; DEPOT_CLASSES],
             stats: OverflowStats {
                 parks: 0,
                 reloads: 0,
@@ -115,6 +127,7 @@ impl DepotOverflow {
     }
 
     /// Bytes of blocks currently parked in the overflow.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub(crate) fn bytes(&self) -> usize {
         self.bytes
     }
@@ -207,10 +220,27 @@ impl DepotOverflow {
             .cast::<Mag>()
     }
 
+    /// Ring slot `head + i` of class `c` (no division: `i < cap`).
+    fn slot(&self, c: usize, i: usize) -> usize {
+        let idx = self.head[c] as usize + i;
+        let cap = self.cap[c] as usize;
+        if idx >= cap {
+            idx - cap
+        } else {
+            idx
+        }
+    }
+
+    /// Class `c`'s overflow length (records).
+    pub(crate) fn len(&self, c: usize) -> usize {
+        self.len[c] as usize
+    }
+
     /// Park `mag` as class `c`'s newest overflow record; `n` is the class's
-    /// current overflow length. `false` (no change) when over budget, full or
-    /// the storage cannot be reserved / committed.
+    /// current overflow length. `false` (no change to records) when over
+    /// budget, full or the storage cannot be reserved / committed.
     pub(crate) fn park(&mut self, c: usize, n: usize, mag: &Mag, budget: usize) -> bool {
+        debug_assert_eq!(n, self.len[c] as usize);
         if self.bytes + mag_bytes(c) > budget {
             self.stats.budget_refusals += 1;
             return false;
@@ -219,12 +249,11 @@ impl DepotOverflow {
             self.stats.os_refusals += 1;
             return false;
         }
-        let cap = self.cap[c] as usize;
-        if n >= cap {
+        if n >= self.cap[c] as usize {
             self.stats.budget_refusals += 1;
             return false;
         }
-        let idx = (self.head[c] as usize + n) % cap;
+        let idx = self.slot(c, n);
         if !self.ensure_committed(c, idx) {
             self.stats.os_refusals += 1;
             return false;
@@ -238,6 +267,7 @@ impl DepotOverflow {
             self.record(c, idx).write(*mag);
         }
         self.bytes += mag_bytes(c);
+        self.len[c] += 1;
         self.parked_in_epoch |= 1 << c;
         self.stats.parks += 1;
         true
@@ -246,9 +276,8 @@ impl DepotOverflow {
     /// Move class `c`'s newest overflow record into `out`; `n` is the class's
     /// current overflow length (`> 0`).
     pub(crate) fn reload(&mut self, c: usize, n: usize, out: &mut Mag) {
-        debug_assert!(n > 0 && self.active());
-        let cap = self.cap[c] as usize;
-        let idx = (self.head[c] as usize + n - 1) % cap;
+        debug_assert!(n > 0 && self.active() && n == self.len[c] as usize);
+        let idx = self.slot(c, n - 1);
         // SAFETY: `n > 0` records are live in class `c`'s ring, so `idx` was
         // written by `park` (committed, aligned, inside the reservation).
         #[allow(unsafe_code)]
@@ -256,28 +285,38 @@ impl DepotOverflow {
             *out = self.record(c, idx).read();
         }
         self.bytes -= mag_bytes(c);
-        self.low[c] = self.low[c].min((n - 1) as u16);
+        self.len[c] -= 1;
+        self.low[c] = self.low[c].min(self.len[c]);
         // Debt never exceeds the ring: a reload consumes what decay would.
-        self.debt[c] = self.debt[c].min((n - 1) as u16);
+        self.set_debt(c, self.debt[c].min(self.len[c]));
         self.stats.reloads += 1;
     }
 
     /// Move class `c`'s oldest overflow record into `out` (decay); `n` is the
     /// class's current overflow length (`> 0`).
     pub(crate) fn pop_oldest(&mut self, c: usize, n: usize, out: &mut Mag) {
-        debug_assert!(n > 0 && self.active());
-        let cap = self.cap[c] as usize;
+        debug_assert!(n > 0 && self.active() && n == self.len[c] as usize);
         let idx = self.head[c] as usize;
         // SAFETY: as in `reload` — the head record is live while `n > 0`.
         #[allow(unsafe_code)]
         unsafe {
             *out = self.record(c, idx).read();
         }
-        self.head[c] = ((idx + 1) % cap) as u16;
+        self.head[c] = self.slot(c, 1) as u16;
         self.bytes -= mag_bytes(c);
-        self.low[c] = self.low[c].min((n - 1) as u16);
-        self.debt[c] = self.debt[c].saturating_sub(1);
+        self.len[c] -= 1;
+        self.low[c] = self.low[c].min(self.len[c]);
+        self.set_debt(c, self.debt[c].saturating_sub(1));
         self.stats.decay_flushed += 1;
+    }
+
+    fn set_debt(&mut self, c: usize, d: u16) {
+        self.debt[c] = d;
+        if d == 0 {
+            self.debt_mask &= !(1 << c);
+        } else {
+            self.debt_mask |= 1 << c;
+        }
     }
 
     /// Count one reload from the overflow; `true` every 8th, when the caller
@@ -292,47 +331,69 @@ impl DepotOverflow {
         false
     }
 
-    /// Count a cold event; at an epoch end set each idle class's decay debt
-    /// to half its low-water mark (rounded up) and start the next epoch from
-    /// `lens` (current overflow lengths).
-    pub(crate) fn note_event(&mut self, lens: &[usize; DEPOT_CLASSES]) {
+    /// Count one cold event; `true` when decay work is due (an epoch ended
+    /// or debt is outstanding) and the caller must run [`Self::decay_step`].
+    #[inline(always)]
+    pub(crate) fn tick(&mut self) -> bool {
+        if self.bytes == 0 {
+            return false;
+        }
         self.events += 1;
-        if self.events < self.epoch_len.max(EPOCH_MIN) {
-            return;
-        }
-        let mut total = 0usize;
-        let mut c = 0;
-        while c < DEPOT_CLASSES {
-            if self.parked_in_epoch & (1 << c) == 0 {
-                let want = (self.low[c] as usize).div_ceil(2).min(lens[c]);
-                self.debt[c] = want as u16;
-            } else {
-                self.debt[c] = 0;
-            }
-            self.low[c] = lens[c] as u16;
-            total += lens[c];
-            c += 1;
-        }
-        self.parked_in_epoch = 0;
-        self.events = 0;
-        self.epoch_len = (2 * total as u32).max(EPOCH_MIN);
+        self.events >= self.epoch_len || self.debt_mask != 0
     }
 
-    /// The next class with decay debt, if any.
-    pub(crate) fn debt_class(&self) -> Option<usize> {
-        let mut c = 0;
-        while c < DEPOT_CLASSES {
-            if self.debt[c] != 0 {
-                return Some(c);
+    /// Epoch end, if due: each class that parked nothing in the epoch owes
+    /// half its low-water mark (rounded up); the next epoch starts from the
+    /// current lengths. Returns the class to decay next, if any.
+    pub(crate) fn decay_step(&mut self) -> Option<usize> {
+        if self.events >= self.epoch_len.max(EPOCH_MIN) {
+            let mut total = 0usize;
+            let mut c = 0;
+            while c < DEPOT_CLASSES {
+                let d = if self.parked_in_epoch & (1 << c) == 0 {
+                    self.low[c].div_ceil(2).min(self.len[c])
+                } else {
+                    0
+                };
+                self.set_debt(c, d);
+                self.low[c] = self.len[c];
+                total += self.len[c] as usize;
+                c += 1;
             }
-            c += 1;
+            self.parked_in_epoch = 0;
+            self.events = 0;
+            self.epoch_len = (2 * total as u32).max(EPOCH_MIN);
         }
-        None
+        if self.debt_mask == 0 {
+            None
+        } else {
+            Some(self.debt_mask.trailing_zeros() as usize)
+        }
     }
 
-    /// Clear class `c`'s debt (its ring emptied before the debt was paid).
-    pub(crate) fn clear_debt(&mut self, c: usize) {
-        self.debt[c] = 0;
+    /// Mark class `c` as latched (its `PerClass::limit` was lowered).
+    pub(crate) fn starve(&mut self, c: usize) {
+        self.starved |= 1 << c;
+    }
+
+    /// Latched classes that may park again under `budget` (room for one more
+    /// magazine of theirs, ring not full); their bits are cleared.
+    pub(crate) fn take_unstarved(&mut self, budget: usize) -> u32 {
+        if self.starved == 0 || self.reserve_failed {
+            return 0;
+        }
+        let mut ready = 0;
+        let mut m = self.starved;
+        while m != 0 {
+            let c = m.trailing_zeros() as usize;
+            m &= m - 1;
+            let ring_room = !self.active() || self.len[c] < self.cap[c];
+            if self.bytes + mag_bytes(c) <= budget && ring_room {
+                ready |= 1 << c;
+            }
+        }
+        self.starved &= !ready;
+        ready
     }
 
     /// After the depot is fully drained: return the committed record pages to
@@ -360,6 +421,8 @@ impl DepotOverflow {
     /// Empty every ring and drop every commit watermark to 0.
     fn reset_rings(&mut self) {
         self.committed = [0; DEPOT_CLASSES];
+        self.len = [0; DEPOT_CLASSES];
+        self.debt_mask = 0;
         self.head = [0; DEPOT_CLASSES];
         self.low = [0; DEPOT_CLASSES];
         self.debt = [0; DEPOT_CLASSES];
