@@ -1253,6 +1253,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** не переоткрывать как правку атрибутов; переливы (≈ 19 Ir/пару) стоят не в кадрах вложенных уровней.
    > - **Evidence:** `docs/perf/WB1_B1_DEPOT_INLINE_PREREG.md`, `docs/perf/wb1_b1/`.
 
+136. **[L] WB-3 C1 — frameless depot fast lanes (park_simple / reload_simple): NO-GO.** (Filed 2026-10-29, `docs/perf/WB3_C1_DEPOT_FAST_LANE_PREREG.md` § Verdict.)
+
+   > **Current state**
+   > - **Status:** rejected (код под тегом `archive/wb3-c1-measured`, в main не попал).
+   > - **Current:** `t(1024)` тёплой пачки ниже во всех 12 парах (−0.04…−0.60, обычно −0.2…−0.3 ns/пару, ≈ 3–4 %), но порог −0.3 ns/пару на 16 Б не пройден (медиана −0.26); 64 Б прошёл (−0.36); в парной таблице тёплая пачка 16 Б не быстрее. Регрессий в других ячейках нет.
+   > - **Next trigger:** только по решению владельца принять выигрыш ниже порога (≈ 3–4 % на bulk при +250 строк, двух новых правилах P12 и перепроверке строки evidence R-Ph3b); иначе не переоткрывать.
+   > - **Evidence:** `docs/perf/WB3_C1_DEPOT_FAST_LANE_PREREG.md`, `docs/perf/wb3_c1/`, `scripts/wb3_c1_sweep_verdict.mjs`.
+
 133. **[L] WB-1 A-1 — классификация Layout одной загрузкой по потолочному индексу: NO-GO.** (Filed 2026-10-29, `docs/perf/WB1_A1_CLASS_FOR_LAYOUT_VERDICT.md`.)
 
    > **Current state**
