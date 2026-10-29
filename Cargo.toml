@@ -1801,6 +1801,36 @@ harness = false
 test = false
 required-features = ["production", "internals"]
 
+# R20 PRF-04 P4-1 heap-reuse gate (docs/perf/R20_PRF04_HEAP_REUSE_PREREG.md):
+# L1 registry-layer cells (start / cold / recycled / wave re-using the frozen
+# claim-path bodies + the new wave-release family). Same feature set and
+# Linux-only shape as `r20_prf04_claim_iai` above.
+[[bench]]
+name = "r20_prf04_heap_reuse_iai"
+harness = false
+test = false
+required-features = ["production", "internals"]
+
+# R20 PRF-04 P4-1: L2 shipping-layer cells (`#[global_allocator] SeferAlloc`,
+# child-thread toggles on `child_first_alloc` and the `AbandonGuard::drop`
+# release symbol). `internals` required because the shared support module also
+# compiles the `dbg_claim_lease` L1 bodies.
+[[bench]]
+name = "r20_prf04_heap_reuse_l2_iai"
+harness = false
+test = false
+required-features = ["production", "internals"]
+
+# P4-1 path-activation oracle; optional hook compiled via custom cfg.
+[[example]]
+name = "r20_prf04_heap_reuse_oracle"
+required-features = ["production", "bench-internals", "internals"]
+
+# L2 shipping-layer oracle; same production allocator and bench-internals counter observer.
+[[example]]
+name = "r20_prf04_heap_reuse_l2_oracle"
+required-features = ["production", "bench-internals", "internals"]
+
 # Dedicated same-binary R18 scan measurement, separate from the ordinary gate.
 [[bench]]
 name = "r18_sidecar_scan_iai"
