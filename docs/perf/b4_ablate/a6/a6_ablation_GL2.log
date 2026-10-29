@@ -1,0 +1,10 @@
+# G1-K7 A6 run 1 — variant=k7_depot_overflow_v5 control=- passes=1 reps/pass=20 blocks/process=2000 bootstrap=10000 seed=0x5eed
+# identity: head=52e80bfdf2278c86028adedbed313ddf9c8b1a1f sha(diff)=e3b0c44298fc
+#   null: variant_sha=9173a722d980 exe=8db96381600f
+#   k7_depot_overflow_v5: variant_sha=902ad0d7767c exe=4fce9b0073b9
+# statistics: per process median over blocks of ln((b1+b2)/(a1+a2)); E_v = median(variant) − median(null), E_u = median(control) − median(null), D = median(variant) − median(control); pooled over passes, bootstrap stratified by pass
+
+| Kernel | E_v % [CI] | E_u % [CI] | D % [CI] | null median % [CI] | null precise | E_v loss (CI lo > 0) | layout exception (D lo <= 0, E_u lo > 0) |
+|---|---|---|---|---|---|---|---|
+| bulk16k_32 | -26.82 [-27.37, -26.20] | - | - | -9.09 [-9.38, -8.76] | yes | no | no |
+# wrote a6_ablation_GL2.csv

@@ -294,6 +294,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
+131. **[D] D1″ — sidecar с одной картой классов и ленивым обнулением по водяному знаку (C2 из D1′), запаркован с условиями входа.** (Filed 2026-10-29; `docs/perf/D1_PRIME_VERDICT.md`.)
+
+   > **Current state**
+   > - **Status:** DEFERRED. PR #94 (D1′ one-class map) и PR #96 (D1′ chunked sidecar) закрыты без слияния, оба NO-GO; данные — теги `archive/b4-oneclass` и `archive/b4-chunks`.
+   > - **Current number/verdict:** C2 улучшал регистрацию по Ir (fixed 834 589 против 930 819 у A), но в PR #94 был NO-GO: гонка через безопасный API при `internals`, выпали `checked_granule` и fail-fast `high_water > SEGMENT`, нет Miri/Kani/CI iai, Linux churn/RSS хуже (p = 0.02 / 1e-4).
+   > - **Next trigger:** только при выполнении всех условий входа до любого замера — E1 owner-only на уровне типов; E2 `checked_granule`; E3 fail-fast до клэмпа; E4 одна реализация без feature; E5 манифест и SHA до замеров. Затем фаза V (CI iai A/B по абсолютному Ir ≤ main + 2000 во всех ячейках, проба регистрации 30/60/120, время — эквивалентность ΔCI95 ≤ +1 %, RSS по smaps; пороги утверждаются до замеров) и фаза S (Loom с отрицательными контролями, Miri SB/TB, 5–6 Kani-харнессов, EV-1). Kill: любой FAIL фазы V или UB/RED фазы S закрывает D1″; не больше одного раунда вне протокола; потолок — 3 раунда.
+   > - **Evidence:** `docs/perf/D1_PRIME_VERDICT.md`; `archive/b4-oneclass` (`docs/perf/B4_ONECLASS.md`, ADR `docs/design/2026-10-20-adr-oneclass-starts-map.md`); `archive/b4-chunks` (`docs/perf/D1_PRIME_CHUNKED_SIDECAR_GATE.md`).
+
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**
 
    > **Current state**
@@ -3258,19 +3266,20 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > **Current state**
    > - **Status:** OPEN `[A]` — ceiling measured; shippable form not chosen; production unchanged.
    > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 × 2000, pre-registered `g1_pmu/p0/G1_P0_PREREG.md`):** class-64 depot K = 1024 → bulk16k effect −56.13 [−56.62, −54.74] in the script's 100·ln units (time ratio 0.5705, 1.75× faster), churn64 −5.90, bulk64 −2.76, no kernel slower beyond pair64 +0.07. Main judge vs mimalloc on that tree: bulk16k t_mi/t_sefer 0.8729, larson 1.0293.
-   > - **Next trigger:** a shippable form (budgeted depot with trim/decay and lazily allocated storage, or a body-write-free free set) chosen with @oh and the rush reviewer; per-thread retention budget is the owner's decision; then a perf(runtime) gate with RSS measured.
+   > - **Next trigger:** a shippable form (a new budgeted-depot design or a body-write-free free set) chosen with @oh and the rush reviewer; per-thread retention budget is the owner's decision; then a perf(runtime) gate with RSS measured. The first form, G1-K7 (budgeted depot overflow), ships under an owner exception to its rule 2a (item 130).
    > - **Evidence:** docs/perf/G1_IDEAS.md §9, docs/perf/g1_pmu/p0/ (prereg, patch, manifests, vs-null table and CSV, vs-mimalloc generator output, PMU and callgrind raws).
 
-130. **[A] G1-K7 — budgeted depot overflow above the K5 floor (default 1 MiB per heap; the shippable form of item 129): v5 under pre-registered Addendum 6, not shipped.** (Filed 2026-10-29, `docs/design/2026-10-28-depot-budget-design.md`, pre-registration `docs/perf/b4_ablate/G1_K7_PREREG.md` on `g1-k7-meas`.)
+130. **[A] G1-K7 — budgeted depot overflow above the K5 floor (default 1 MiB per heap; the shippable form of item 129): ships under the owner's exception to rule 2a (Addendum 7); rules 3–5 gate the merge.** (Filed 2026-10-29, `docs/design/2026-10-28-depot-budget-design.md`; pre-registration and verdict `docs/perf/b4_ablate/G1_K7_PREREG.md` (Addenda 6–9), `docs/perf/b4_ablate/G1_K7_A6_VERDICT.md` on `g1-k7-meas`.)
    > **Current state**
-   > - **Status:** OPEN — v4 NO-GO by the literal decision rule (rule 2); v5 (segment-refill tick gated by `PerClass::marks` bit `MARK_TICK`) awaits the Addendum 6 campaign the owner approved on 2026-10-29. Branch `g1-k7`, draft PR #128.
-   > - **Current verdict (ИЗМЕРЕНО, v4, raws `.rush/g1/v4/` on the measurement host):** run 1 (J1′ v2 ablation, effect in 100·ln units) bulk16k −52.11 [−52.89, −51.11], bulk16k_32 −26.61, bulk64k −12.32, bulk64 −0.79; losses pair16 +0.87 [0.56, 1.03], pair64 +0.89 [0.74, 0.99] (the same sign in all four variants v2–v4 while Callgrind gives ≤ +0.03 % Ir). Run 2 (main judge vs mimalloc, t_mi/t_sefer, K7, K5, K7, K5): bulk16k 0.827 / 0.501 / 0.829 / 0.506; larson first pair 0.991 vs 1.192 (disjoint), second 1.028 vs 1.019; K5 against itself is disjoint on vec512 and larson across its two runs.
-   > - **Next trigger:** Addendum 6 committed with patch and script hashes, then its campaign (run 1 null/v5/U in two passes, run 2 sixteen sessions K7 K5 K5 K7 …, RSS, iai); GO ships `perf(runtime)` and moves this card to resolved, NO-GO closes design rev. 4 for the round.
-   > - **Open sub-item (C.2):** an overflow reload skips the segment refill, and with it the Small remote-free discovery that runs there (`src/registry/heap_core/alloc/hot.rs`, refill paths); every 8th overflow reload runs only the bounded Large-sidecar check (`depot_paths.rs`, `reload_overflow`). Long overflow reload series can delay Small remote-free reclamation (latency/RSS, not a leak; K5's floor reloads skip it the same way for up to 8 magazines). Observed by Addendum 6's run 3 W4 (cross-thread frees); fix only on a measured effect.
-   > - **Evidence:** `docs/design/2026-10-28-depot-budget-design.md` (rev. 5), consultation records `.rush/stdin/g1-k7-v4-verdict.*`, `.rush/stdin/g1-k7-v4-decision.*` (measurement host), tests `tests/g1_k7_depot_overflow*.rs`. The Kani harnesses И-O1/И-O2 land in a follow-up PR after this one (branch `g1-k7-kani`; the ghost-zero-cost policy keeps runtime and verification changes in separate PRs).
+   > - **Status:** OPEN `[A]` — rule 1 holds, rule 2a fails on pair16/pair64 and is waived for v5 only by the owner (Addendum 7: «правило не снято. Тут просто разумное исключение. Трейдоф в нашу пользу»), rule 3 (RSS) PASS; rule 4 (iai against K5 `2bc830cc`, gate-run on PR #128) pending; PR #128 not yet merged.
+   > - **Current verdict (ИЗМЕРЕНО, v5):** run 2 (16 runs, t_mi/t_sefer) bulk16k K7/K5 1.675 (0.496 → 0.831), churn64 1.081, churn1024 1.047, no run-2 loss; run 1 GL1 bulk64k −9.88 %, GL2 bulk16k_32 −26.82 %; run-1 losses pair16 E_v +0.62 % [0.47, 0.73], pair64 +0.73 % [0.61, 0.79] (D > 0). Run 3 RSS: no loss at E = 0 / 512 KiB / 1 MiB / 2 MiB on W1–W5 and W4; v5 over K5 at most +284 KiB (allowance 2312 KiB), ≤ 60 KiB after thread exit.
+   > - **Next trigger:** rule 4 iai result; GO → `bench:table` refresh, README measurements, merge #128 as `perf(runtime)`, card to resolved, then the Kani follow-up PR (`g1-k7-kani`, И-O1/И-O2).
+   > - **Open sub-item (C.2):** an overflow reload skips the segment refill, and with it the Small remote-free discovery that runs there (`src/registry/heap_core/alloc/hot.rs`, refill paths); every 8th overflow reload runs only the bounded Large-sidecar check (`depot_paths.rs`, `reload_overflow`). Long overflow reload series can delay Small remote-free reclamation (latency/RSS, not a leak). Fix only on a measured effect.
+   > - **Evidence:** `docs/perf/b4_ablate/` (prereg, verdict, `a6/` logs, CSVs, raw manifest, `a6/run3/`), tags `archive/g1-k7-meas`, `archive/g1-k7`; tests `tests/g1_k7_depot_overflow*.rs`.
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **D1′ (B4-23) — one-class map (PR #94) and chunked sidecar (PR #96): NO-GO, closed 2026-10-29** (owner approved the @oh council plan). F1 failed its pre-registered gate (slope +19k, fixed +43k, Windows wall +5.4 %); the chunked candidate lost installed-global larson (×1.281 at T=4, ×1.191 at T=8) and dense16 (×2.479). C2 is parked as D1″ (item 131). Report `docs/perf/D1_PRIME_VERDICT.md`; evidence tags `archive/b4-oneclass`, `archive/b4-chunks`.
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §

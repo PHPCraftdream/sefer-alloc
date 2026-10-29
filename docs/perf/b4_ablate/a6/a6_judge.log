@@ -1,0 +1,44 @@
+# G1-K7 A6 run 2 — 16 runs (order K7 K5 K5 K7 K5 K7 K7 K5 K7 K5 K5 K7 K5 K7 K7 K5), reps/run=20, bootstrap=10000, seed=0x5eed, judgeable iff >= 4 admitted runs per tree
+# exe K7=019a079f3f52 K5=ca47361c75ae
+# statistic: per run s = median over processes of per-process median ln(t_mi/t_sefer); M_T = mean of s over admitted runs; CI two-level bootstrap (runs, then processes); ratio = exp(M) = t_mi/t_sefer, higher = sefer faster
+
+| Kernel | K7 admitted | K5 admitted | K7 ratio [CI] | K5 ratio [CI] | K7/K5 | judgeable | verdict |
+|---|---:|---:|---|---|---:|---|---|
+| pair16 | 8/8 | 8/8 | 0.824 [0.823, 0.826] | 0.822 [0.821, 0.824] | 1.0021 | yes | no detected difference |
+| pair64 | 8/8 | 8/8 | 0.991 [0.982, 1.002] | 0.974 [0.971, 0.976] | 1.0181 | yes | K7_FASTER |
+| pair_rt | 8/8 | 8/8 | 1.440 [1.436, 1.444] | 1.437 [1.432, 1.442] | 1.0021 | yes | no detected difference |
+| bulk64 | 0/8 | 8/8 | - [-, -] | 0.776 [0.774, 0.777] | - | no | not judgeable |
+| bulk16k | 8/8 | 8/8 | 0.831 [0.823, 0.836] | 0.496 [0.492, 0.499] | 1.6746 | yes | K7_FASTER |
+| churn16 | 3/8 | 2/8 | 0.655 [0.649, 0.660] | 0.632 [0.622, 0.640] | 1.0364 | no | not judgeable |
+| churn64 | 8/8 | 7/8 | 0.838 [0.831, 0.845] | 0.775 [0.763, 0.786] | 1.0812 | yes | K7_FASTER |
+| churn256 | 8/8 | 8/8 | 0.785 [0.774, 0.798] | 0.773 [0.767, 0.779] | 1.0159 | yes | no detected difference |
+| churn1024 | 7/8 | 8/8 | 0.960 [0.948, 0.974] | 0.917 [0.909, 0.923] | 1.0474 | yes | K7_FASTER |
+| vec512 | 7/8 | 7/8 | 1.660 [1.528, 1.830] | 1.744 [1.660, 1.840] | 0.9518 | yes | no detected difference |
+| larson | 8/8 | 7/8 | 1.084 [1.027, 1.155] | 1.114 [1.065, 1.181] | 0.9731 | yes | no detected difference |
+
+Per run s (ratio), in execution order:
+  K7 mi_01_K7: pair16=0.824 pair64=0.986 pair_rt=1.443 bulk64=0.780* bulk16k=0.828 churn16=0.657 churn64=0.840 churn256=0.777 churn1024=0.955 vec512=1.638 larson=1.059
+  K5 mi_02_K5: pair16=0.822 pair64=0.973 pair_rt=1.436 bulk64=0.776 bulk16k=0.497 churn16=0.638* churn64=0.749 churn256=0.774 churn1024=0.918 vec512=1.663 larson=1.081
+  K5 mi_03_K5: pair16=0.824 pair64=0.969 pair_rt=1.426 bulk64=0.774 bulk16k=0.494 churn16=0.632* churn64=0.767 churn256=0.769 churn1024=0.918 vec512=1.731 larson=1.072
+  K7 mi_04_K7: pair16=0.824 pair64=0.982 pair_rt=1.444 bulk64=0.780* bulk16k=0.833 churn16=0.659* churn64=0.848 churn256=0.772 churn1024=0.952 vec512=1.501 larson=1.014
+  K5 mi_05_K5: pair16=0.822 pair64=0.972 pair_rt=1.432 bulk64=0.777 bulk16k=0.504 churn16=0.624* churn64=0.787 churn256=0.759 churn1024=0.897 vec512=1.606 larson=1.035
+  K7 mi_06_K7: pair16=0.822 pair64=0.981 pair_rt=1.436 bulk64=0.780* bulk16k=0.829 churn16=0.663* churn64=0.848 churn256=0.770 churn1024=0.943 vec512=1.428 larson=0.987
+  K7 mi_07_K7: pair16=0.826 pair64=1.018 pair_rt=1.443 bulk64=0.772* bulk16k=0.837 churn16=0.650 churn64=0.837 churn256=0.809 churn1024=0.997 vec512=1.993* larson=1.201
+  K5 mi_08_K5: pair16=0.824 pair64=0.979 pair_rt=1.442 bulk64=0.775 bulk16k=0.498 churn16=0.633* churn64=0.775 churn256=0.775 churn1024=0.920 vec512=1.936 larson=1.174
+  K7 mi_09_K7: pair16=0.826 pair64=1.015 pair_rt=1.442 bulk64=0.772* bulk16k=0.839 churn16=0.651* churn64=0.834 churn256=0.814 churn1024=1.002* vec512=2.063 larson=1.243
+  K5 mi_10_K5: pair16=0.820 pair64=0.975 pair_rt=1.438 bulk64=0.778 bulk16k=0.498 churn16=0.633* churn64=0.782 churn256=0.773 churn1024=0.917 vec512=1.798 larson=1.136*
+  K5 mi_11_K5: pair16=0.823 pair64=0.975 pair_rt=1.437 bulk64=0.774 bulk16k=0.494 churn16=0.633* churn64=0.762* churn256=0.779 churn1024=0.928 vec512=1.884 larson=1.166
+  K7 mi_12_K7: pair16=0.823 pair64=0.981 pair_rt=1.440 bulk64=0.779* bulk16k=0.836 churn16=0.654* churn64=0.835 churn256=0.772 churn1024=0.951 vec512=1.599 larson=1.019
+  K5 mi_13_K5: pair16=0.822 pair64=0.977 pair_rt=1.445 bulk64=0.773 bulk16k=0.490 churn16=0.624 churn64=0.772 churn256=0.784 churn1024=0.927 vec512=1.997* larson=1.244
+  K7 mi_14_K7: pair16=0.824 pair64=0.988 pair_rt=1.433 bulk64=0.771* bulk16k=0.812 churn16=0.655* churn64=0.820 churn256=0.791 churn1024=0.979 vec512=1.909 larson=1.161
+  K7 mi_15_K7: pair16=0.825 pair64=0.982 pair_rt=1.436 bulk64=0.778* bulk16k=0.834 churn16=0.657 churn64=0.844 churn256=0.776 churn1024=0.946 vec512=1.571 larson=1.019
+  K5 mi_16_K5: pair16=0.823 pair64=0.972 pair_rt=1.438 bulk64=0.778 bulk16k=0.495 churn16=0.639 churn64=0.795 churn256=0.770 churn1024=0.909 vec512=1.618 larson=1.042
+  (* = not admitted)
+# wrote a6_judge.csv
+
+## Speed decision (Addendum 6 rules 1–2)
+rule 1 (win): bulk16k, churn64, churn1024
+rule 2a (run 1, G11 losses after the layout exception): pair16, pair64
+rule 2a (run 1, GL losses): none
+rule 2b (run 2 losses): none
+SPEED: FAIL — NO-GO
