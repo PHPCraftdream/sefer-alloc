@@ -313,6 +313,6 @@ Reading (not part of the decision): parked blocks are memory the K5 arm
 also keeps resident (in its segments), so v5's RSS excess is far below E —
 at most 284 KiB over K5 (W1 S2, E = 2 MiB) against an allowance of
 2312 KiB; after thread exit the excess is ≤ 60 KiB at every E. W5c shows the
-decay working once the 64 B class stops (decay_flushed 512 / 1015 KiB-sized
-records at P1). W4 (rss_probe, 10 s throughput-bound) has a noise floor of
+decay working once the 64 B class stops (decay_flushed 0 at P0 → 512 / 1015
+at P1 for E = 512 KiB / 1-2 MiB). W4 (rss_probe, 10 s throughput-bound) has a noise floor of
 ~133 MiB from K5's own spread, so it can only exclude gross retention.
