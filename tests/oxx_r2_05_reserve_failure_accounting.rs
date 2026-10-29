@@ -119,6 +119,12 @@ const ALLOWLIST: &[Allow] = &[
                \"a segment-reservation path\"; this path is tracked instead by \
                sidecar_stats::record_sidecar_reservation, a separate counter family",
     },
+    Allow {
+        file: "src/alloc_core/platform/os.rs",
+        func: "reserve_depot_overflow",
+        requires_failed_counter: false,
+        note: "G1-K7 depot-overflow record storage is NOT a segment reservation; a refusal leaves the overflow off and is counted by DepotOverflow::stats.os_refusals",
+    },
 ];
 
 fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {

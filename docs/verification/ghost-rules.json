@@ -2018,7 +2018,14 @@
       },
       "allowed": [
         "HeapCore::depot_park",
-        "HeapCore::depot_reload"
+        "HeapCore::depot_reload",
+        "HeapCore::depot_reload_tick",
+        "HeapCore::park_overflow",
+        "HeapCore::reload_overflow",
+        "HeapCore::depot_tick",
+        "HeapCore::depot_segment_tick",
+        "HeapCore::depot_release_overflow_pages",
+        "HeapCore::depot_decay"
       ],
       "terms": [
         "depot",
@@ -2027,12 +2034,218 @@
         "depot_park",
         "depot_reload"
       ],
-      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths, so only the current lease holder touches it",
+      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths (park, the teardown and refill reloads, the G1-K7 cold overflow park and reload, the overflow decay tick, the segment-refill tick and its cold decay step and the teardown page release), so only the current lease holder touches it",
       "tests": [
         "tests/heap_core_depot.rs",
         "tests/loom_depot_recycle_handoff.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p12_owner_only_access"
+    },
+    {
+      "id": "depot/overflow-release-after-drain",
+      "kind": "R3",
+      "protocol": "P12",
+      "file": "src/registry/heap_core/state/tcache_flush.rs",
+      "fn": "HeapCore::flush_all_tcache",
+      "before": {
+        "name": "depot_reload"
+      },
+      "after": {
+        "name": "depot_release_overflow_pages"
+      },
+      "terms": [
+        "depot",
+        "overflow",
+        "drain",
+        "depot_release_overflow_pages",
+        "decommit"
+      ],
+      "reason": "G1-K7: the overflow's record pages are decommitted only after the teardown drain reloaded and flushed every parked magazine, so no live record is lost",
+      "tests": [
+        "tests/g1_k7_depot_overflow.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_overflow_release_after_drain",
+      "mutants": [
+        {
+          "id": "release-before-drain",
+          "file": "src/registry/heap_core/state/tcache_flush.rs",
+          "from": "        use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;\n",
+          "to": "        use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;\n        #[cfg(feature = \"alloc-decommit\")]\n        self.depot_release_overflow_pages();\n",
+          "checker": {
+            "name": "cargo test g1_k7_depot_overflow",
+            "cmd": [
+              "cargo",
+              "test",
+              "--features",
+              "production internals bench-internals",
+              "--test",
+              "g1_k7_depot_overflow"
+            ],
+            "expect": "test result: FAILED|process didn't exit successfully"
+          }
+        }
+      ],
+      "nested_before": true
+    },
+    {
+      "id": "depot/overflow-reset-after-release",
+      "kind": "R3",
+      "protocol": "P12",
+      "file": "src/registry/heap_core/state/depot_overflow.rs",
+      "fn": "DepotOverflow::release_pages",
+      "before": {
+        "name": "decommit_depot_overflow"
+      },
+      "after": {
+        "name": "reset_rings"
+      },
+      "terms": [
+        "overflow",
+        "reset",
+        "decommit",
+        "reset_rings",
+        "re-commit"
+      ],
+      "reason": "G1-K7: after the record pages are decommitted every ring and commit watermark is reset, so the next park re-commits before writing a record instead of writing a decommitted page",
+      "tests": [
+        "tests/g1_k7_depot_overflow.rs",
+        "tests/g1_k7_depot_overflow_faults.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_overflow_reset_after_release",
+      "mutants": [
+        {
+          "id": "skip-reset",
+          "file": "src/registry/heap_core/state/depot_overflow.rs",
+          "from": "            c += 1;\n        }\n        self.reset_rings();\n",
+          "to": "            c += 1;\n        }\n",
+          "checker": {
+            "name": "cargo test g1_k7_depot_overflow",
+            "cmd": [
+              "cargo",
+              "test",
+              "--features",
+              "production internals bench-internals",
+              "--test",
+              "g1_k7_depot_overflow"
+            ],
+            "expect": "test result: FAILED|process didn't exit successfully"
+          }
+        }
+      ],
+      "nested_before": true
+    },
+    {
+      "id": "depot/no-decay-in-teardown",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "depot_tick"
+      },
+      "allowed": [
+        "HeapCore::depot_segment_tick",
+        "HeapCore::park_overflow",
+        "HeapCore::reload_overflow_tick"
+      ],
+      "terms": [
+        "decay",
+        "depot_tick",
+        "teardown",
+        "depot_segment_tick",
+        "park_overflow"
+      ],
+      "reason": "G1-K7: the overflow decay runs only on the owner's cold events — an armed class's segment refill (depot_segment_tick), an overflow park and an overflow reload made for a refill — never inside the teardown drain (flush_all_tcache / depot_reload / reload_overflow), so the drain alone empties the depot",
+      "tests": [
+        "tests/g1_k7_depot_overflow.rs",
+        "tests/g1_k7_depot_overflow_order.rs",
+        "tests/g1_k7_depot_overflow_tick.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_no_decay_in_teardown"
+    },
+    {
+      "id": "depot/ticking-reload-on-refill-only",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "depot_reload_tick"
+      },
+      "allowed": [
+        "HeapCore::refill_magazine_slow",
+        "HeapCore::refill_magazine_slow_virgin"
+      ],
+      "terms": [
+        "decay",
+        "depot_reload_tick",
+        "teardown",
+        "refill",
+        "depot_reload"
+      ],
+      "reason": "G1-K7: only the two refill paths reload through the ticking variant; the teardown drain reloads through depot_reload, which counts no decay event, so the drain alone empties the depot",
+      "tests": [
+        "tests/g1_k7_depot_overflow.rs",
+        "tests/g1_k7_depot_overflow_order.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_ticking_reload_on_refill"
+    },
+    {
+      "id": "depot/segment-tick-on-refill-only",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "depot_segment_tick"
+      },
+      "allowed": [
+        "HeapCore::refill_magazine_slow",
+        "HeapCore::refill_magazine_slow_virgin"
+      ],
+      "terms": [
+        "decay",
+        "depot_segment_tick",
+        "MARK_TICK",
+        "refill",
+        "disarm"
+      ],
+      "reason": "G1-K7 v5: only the two segment-refill paths count an armed class's decay event; the tick also disarms the class once the overflow is empty, so a call from the teardown drain would both run decay inside the drain and drop tick flags the invariant bytes > 0 => every class armed still needs",
+      "tests": [
+        "tests/g1_k7_depot_overflow_tick.rs",
+        "tests/g1_k7_depot_overflow.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_segment_tick_on_refill"
+    },
+    {
+      "id": "depot/overflow-tick-reload-from-refill-reload",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "reload_overflow_tick"
+      },
+      "allowed": [
+        "HeapCore::depot_reload_tick"
+      ],
+      "terms": [
+        "decay",
+        "reload_overflow_tick",
+        "teardown",
+        "depot_reload_tick",
+        "reload_overflow"
+      ],
+      "reason": "G1-K7: the ticking overflow reload is reached only from the refill's depot_reload_tick; depot_reload (the teardown drain) reaches the non-ticking reload_overflow",
+      "tests": [
+        "tests/g1_k7_depot_overflow.rs",
+        "tests/g1_k7_depot_overflow_order.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_overflow_tick_reload"
     },
     {
       "id": "depot/bind-once",

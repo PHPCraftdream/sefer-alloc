@@ -76,6 +76,15 @@ fn l16() -> Layout {
 /// B4 depot (DP-3): fill class 0's depot from fresh LIVE blocks and leave the
 /// magazine empty, so later full-magazine frees take the legacy overflow arm.
 /// Returns the still-live helper blocks.
+/// G1-K7: every heap here has the depot overflow off (budget 0), so a full
+/// floor routes frees to the bins exactly as these checks expect. One config
+/// per binary.
+fn claim_floor_only() -> Option<sefer_alloc::registry::HeapLease> {
+    HeapRegistry::dbg_claim_lease_with_config(
+        sefer_alloc::alloc_core::LargeCacheConfig::new().depot_budget_bytes(0),
+    )
+}
+
 fn fill_depot_class0(heap: &mut HeapCore) -> Vec<*mut u8> {
     const DEPOT_K0: usize = 8;
     let mut warm = Vec::new();
@@ -143,7 +152,7 @@ fn park_half_bin_half(heap: &mut HeapCore) -> (Vec<*mut u8>, Vec<*mut u8>, usize
 fn s1_refill_issued_live_retained_parked() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     let (ps, live, _cap, depot_held) = park_half_bin_half(heap);

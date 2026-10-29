@@ -1,0 +1,76 @@
+# TRUNCATED — criterion per-bench progress lines (1..1440) cut; full output reproducible via `npm run bench:table` on the G1-K7 tree (PR #128 head)
+============================================================
+  global_alloc — comparative wall-clock tables (units per table; sized groups are ns/pair unless their header notes a composite/diagnostic unit)
+============================================================
+
+### Warm repeated bulk burst (`bench_direct_alloc` — alloc 1024 then free 1024 per iteration; NO reuse within one iteration's allocation half, but criterion reuses freed cache/freelist/pool blocks ACROSS iterations, so this is warm, not truly cold/first-touch; 1 alloc + 1 free per pair)
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 18.3 | 7.4 | 68.9 | 2.46× slower |
+| 64B | 18.0 | 12.5 | 92.9 | 1.44× slower |
+| 256B | 17.8 | 17.1 | 97.9 | 1.04× slower |
+| 1024B | 17.4 | 30.4 | 109.2 | **1.74× faster** |
+
+### Churn, non-writing (`bench_churn_alloc`, working-set reuse — 1 free + 1 alloc per pair)
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 17.1 | 14.5 | 68.2 | 1.18× slower |
+| 64B | 16.8 | 14.9 | 81.1 | 1.13× slower |
+| 256B | 17.1 | 25.3 | 100.2 | **1.48× faster** |
+| 1024B | 28.8 | 160.9 | 105.1 | **5.58× faster** |
+
+### Churn + write (`bench_churn_alloc_write` — same as above, writes 16B after each alloc)
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 14.5 | 13.8 | 87.5 | 1.05× slower |
+| 64B | 23.9 | 22.2 | 97.0 | 1.08× slower |
+| 256B | 28.8 | 31.3 | 128.4 | **1.09× faster** |
+| 1024B | 47.3 | 148.0 | 98.3 | **3.13× faster** |
+
+### Churn + teardown (`bench_global_alloc_churn_with_teardown`, DELIBERATE diagnostic — teardown stays inside timed region; the gap vs `global_alloc_churn` at the same size IS the segment decommit/release/re-reserve cost, see `benches/global_alloc.rs:658-667`)
+
+| Size | SeferAlloc (ns/pair (composite, DIAGNOSTIC)) | mimalloc (ns/pair (composite, DIAGNOSTIC)) | System (ns/pair (composite, DIAGNOSTIC)) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 20.0 | 14.8 | 103.0 | 1.35× slower |
+| 64B | 23.4 | 19.3 | 101.6 | 1.21× slower |
+| 256B | 32.6 | 25.1 | 125.4 | 1.30× slower |
+| 1024B | 42.4 | 44.8 | 150.3 | **1.06× faster** |
+
+### manual_realloc_sim (manual `alloc`+`copy`+`dealloc` grow chain — NOT `GlobalAlloc::realloc`, NOT real `Vec`; 8 grow steps per closure, NOT scaled)
+
+| SeferAlloc (ns/closure) | mimalloc (ns/closure) | System (ns/closure) | Sefer vs mimalloc |
+|---:|---:|---:|---:|
+| 637.7 | 716.6 | 1276.6 | **1.12× faster** |
+
+[bench-table] PASS — 159 bench id(s) parsed, all 51 expected ids present
+
+---
+## Additional groups (not part of the canonical 4-table headline)
+
+
+### `segment_decommit_cycle` (253 KiB small-segment decommit→release→re-reserve; UNSCALED — ns per batch of 34 alloc + 34 free, `bench_segment_decommit_cycle`)
+
+| SeferAlloc (ns/batch) | mimalloc (ns/batch) | System (ns/batch) | Sefer vs mimalloc |
+|---:|---:|---:|---:|
+| 2978.0 | 4614.6 | 37710.0 | **1.55× faster** |
+
+### `working_set_cycle` (Mechanism-2 decommit/reuse judge — SeferAlloc-ONLY, no mimalloc/System arm; UNSCALED — ns per batch of 64 working sets × one free+alloc oscillation per block, `bench_working_set_cycle`)
+
+| Size | SeferAlloc (ns/batch) |
+|---|---:|
+| 16B | 242390.0 |
+| 64B | 264950.0 |
+| 256B | 338090.0 |
+| 1024B | 1086700.0 |
+
+### `pool_cap_sweep` — diagnostic-only, intentionally excluded from wall-clock comparison
+
+Its own doc comment (`benches/global_alloc.rs:932-942`) states the sweep's signal is the `eprintln!` counter deltas (decommit_calls per swept cap), not the criterion timing table — the spread/drain construction cost swamps the drain itself, so the criterion timing column is not meaningful here. Those deltas are emitted to stderr during the bench run and are not parsed by this script; read them in the raw `cargo bench` output if needed.
+
+---
+## Run-over-run change (vs `target/criterion`'s saved baseline, when one exists)
+
+_No `change:` lines were emitted by criterion this run — this happens on the first run against a clean `target/` (no saved baseline to compare against). Re-run `npm run bench:table` and this appendix will populate with the run-over-run deltas._

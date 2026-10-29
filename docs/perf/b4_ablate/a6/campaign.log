@@ -1,0 +1,78 @@
+Thu Oct 29 14:02:54 CET 2026
+== ablation p1 (k7_depot_overflow_v5,k7_depot_overflow_v5_unreached, 0x0b4d5eed)
+exit=0
+Thu Oct 29 14:10:30 CET 2026
+== ablation p2 (k7_depot_overflow_v5_unreached,k7_depot_overflow_v5, 0x0b4d6eed)
+exit=0
+Thu Oct 29 14:18:48 CET 2026
+== ablation GL1 (k7_depot_overflow_v5, 0x0b4d5eed)
+exit=0
+Thu Oct 29 14:40:58 CET 2026
+== ablation GL2 (k7_depot_overflow_v5, 0x0b4d5eed)
+exit=0
+Thu Oct 29 14:44:31 CET 2026
+== main judge 1 K7
+exit=0
+# verdict summary: MIMALLOC_FASTER 7 / SEFER_FASTER 3 / 11 kernels; not admitted: 1 / 11
+Thu Oct 29 14:46:59 CET 2026
+== main judge 2 K5
+exit=0
+# verdict summary: MIMALLOC_FASTER 7 / SEFER_FASTER 3 / 11 kernels; not admitted: 1 / 11
+Thu Oct 29 14:50:17 CET 2026
+== main judge 3 K5
+exit=0
+# verdict summary: MIMALLOC_FASTER 7 / SEFER_FASTER 3 / 11 kernels; not admitted: 1 / 11
+Thu Oct 29 14:52:33 CET 2026
+== main judge 4 K7
+exit=0
+# verdict summary: MIMALLOC_FASTER 6 / SEFER_FASTER 3 / 11 kernels; not admitted: 2 / 11
+Thu Oct 29 14:54:21 CET 2026
+== main judge 5 K5
+exit=0
+# verdict summary: MIMALLOC_FASTER 7 / SEFER_FASTER 3 / 11 kernels; not admitted: 1 / 11
+Thu Oct 29 14:56:30 CET 2026
+== main judge 6 K7
+exit=0
+# verdict summary: MIMALLOC_FASTER 6 / SEFER_FASTER 2 / 11 kernels; not admitted: 2 / 11
+Thu Oct 29 14:58:12 CET 2026
+== main judge 7 K7
+exit=0
+# verdict summary: MIMALLOC_FASTER 5 / SEFER_FASTER 3 / 11 kernels; not admitted: 2 / 11
+Thu Oct 29 15:00:10 CET 2026
+== main judge 8 K5
+exit=0
+# verdict summary: MIMALLOC_FASTER 7 / SEFER_FASTER 3 / 11 kernels; not admitted: 1 / 11
+Thu Oct 29 15:02:51 CET 2026
+== main judge 9 K7
+exit=0
+# verdict summary: MIMALLOC_FASTER 4 / SEFER_FASTER 4 / 11 kernels; not admitted: 3 / 11
+Thu Oct 29 15:05:09 CET 2026
+== main judge 10 K5
+exit=0
+# verdict summary: MIMALLOC_FASTER 7 / SEFER_FASTER 2 / 11 kernels; not admitted: 2 / 11
+Thu Oct 29 15:07:45 CET 2026
+== main judge 11 K5
+exit=0
+# verdict summary: MIMALLOC_FASTER 6 / SEFER_FASTER 3 / 11 kernels; not admitted: 2 / 11
+Thu Oct 29 15:10:17 CET 2026
+== main judge 12 K7
+exit=0
+# verdict summary: MIMALLOC_FASTER 6 / SEFER_FASTER 3 / 11 kernels; not admitted: 2 / 11
+Thu Oct 29 15:12:12 CET 2026
+== main judge 13 K5
+exit=0
+# verdict summary: MIMALLOC_FASTER 8 / SEFER_FASTER 2 / 11 kernels; not admitted: 1 / 11
+Thu Oct 29 15:14:26 CET 2026
+== main judge 14 K7
+exit=0
+# verdict summary: MIMALLOC_FASTER 6 / SEFER_FASTER 3 / 11 kernels; not admitted: 2 / 11
+Thu Oct 29 15:16:22 CET 2026
+== main judge 15 K7
+exit=0
+# verdict summary: MIMALLOC_FASTER 7 / SEFER_FASTER 2 / 11 kernels; not admitted: 1 / 11
+Thu Oct 29 15:18:12 CET 2026
+== main judge 16 K5
+exit=0
+# verdict summary: MIMALLOC_FASTER 8 / SEFER_FASTER 3 / 11 kernels; not admitted: 0 / 11
+Thu Oct 29 15:20:24 CET 2026
+campaign-done

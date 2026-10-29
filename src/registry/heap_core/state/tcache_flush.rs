@@ -54,7 +54,17 @@ impl HeapCore {
     /// survives recycle (the `HeapCore` stays in the slot).
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub(crate) fn bind_depot(&mut self, depot: &'static mut super::depot::Depot) {
+        // G1-K7: the overflow is empty here; no class ticks until it parks.
+        #[cfg(feature = "alloc-decommit")]
+        depot.ovf.disarm_all();
         self.depot = Some(depot);
+        // G1-K7: open each depot class's overflow ring under the heap's budget.
+        #[cfg(feature = "alloc-decommit")]
+        for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
+            self.tcache.classes[c].limit =
+                super::depot_paths::open_limit(c, self.depot_budget as usize);
+            self.tcache.classes[c].marks = 0;
+        }
     }
 
     /// W3: plant the stable handle to THIS heap's slot-resident large-segment
@@ -112,10 +122,118 @@ impl HeapCore {
                         self.tcache.classes[c].virgin_mask = 0;
                     }
                 }
+                // Teardown reload: `depot_reload` counts no decay tick.
                 if !self.depot_reload(c) {
                     break;
                 }
             }
+            // G1-K7: floor and ring are empty (the reload follows the ring
+            // length, not the hint); drop the floor's epoch mark too.
+            #[cfg(feature = "alloc-decommit")]
+            {
+                debug_assert_eq!(self.tcache.classes[c].ovf, 0);
+                self.tcache.classes[c].marks &= !super::tcache::MARK_FLOOR;
+            }
+        }
+        // G1-K7: the depot (floor and overflow) is now empty; return the
+        // overflow's committed record pages and reset its rings.
+        #[cfg(feature = "alloc-decommit")]
+        self.depot_release_overflow_pages();
+    }
+
+    /// G1-K7: decommit the depot overflow's record pages and reset its rings
+    /// once the teardown drain has emptied the depot.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit"
+    ))]
+    fn depot_release_overflow_pages(&mut self) {
+        if let Some(depot) = self.depot.as_deref_mut() {
+            depot.ovf.release_pages();
+            // Nothing is parked: no class ticks until the next park.
+            depot.ovf.disarm_all();
+            for class in self.tcache.classes.iter_mut() {
+                class.marks &= !super::tcache::MARK_TICK;
+            }
+            let budget = self.depot_budget as usize;
+            let ready = depot.ovf.take_unstarved(budget);
+            super::depot_paths::reopen(&mut self.tcache, ready, budget);
+        }
+    }
+
+    /// G1-K7: count one cold event for the depot-overflow decay; when an
+    /// epoch ends or debt is outstanding, pay up to `DECAY_WORK` records —
+    /// the oldest overflow records of classes that parked nothing during the
+    /// last epoch go back to their segments. Touches only long-parked
+    /// records, never the live magazine. O(1) unless decay work is due.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit"
+    ))]
+    #[inline]
+    pub(crate) fn depot_tick(&mut self) {
+        let Some(depot) = self.depot.as_deref_mut() else {
+            return;
+        };
+        if depot.ovf.tick() {
+            self.depot_decay();
+        }
+    }
+
+    /// G1-K7: the decay work `depot_tick` found due.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit"
+    ))]
+    #[cold]
+    #[inline(never)]
+    fn depot_decay(&mut self) {
+        use crate::registry::heap_core::state::depot::DEPOT_CLASSES;
+        use crate::registry::heap_core::state::depot_overflow::DECAY_WORK;
+        use crate::registry::heap_core::state::tcache::TCACHE_CAP;
+        let budget = self.depot_budget as usize;
+        let Some(depot) = self.depot.as_deref_mut() else {
+            return;
+        };
+        if depot.ovf.epoch_due() {
+            // Floor parks count as activity: collect and clear their marks.
+            let mut floor_parked = 0u32;
+            for c in 0..DEPOT_CLASSES {
+                let class = &mut self.tcache.classes[c];
+                floor_parked |= ((class.marks & super::tcache::MARK_FLOOR) as u32) << c;
+                class.marks &= !super::tcache::MARK_FLOOR;
+            }
+            depot.ovf.end_epoch(floor_parked);
+        }
+        let mut work = 0;
+        while work < DECAY_WORK {
+            let Some(depot) = self.depot.as_deref_mut() else {
+                return;
+            };
+            let Some(c) = depot.ovf.debt_class() else {
+                break;
+            };
+            let n = depot.ovf.len(c);
+            let mut mag = [core::ptr::null_mut(); TCACHE_CAP];
+            depot.ovf.pop_oldest(c, n, &mut mag);
+            // The floor is untouched; only the ring's hint can change.
+            self.tcache.classes[c].ovf = (n > 1) as u8;
+            // SAFETY (R6-MS-3): `mag` is a full parked magazine of class `c`
+            // (16 blocks issued by this heap, state MAG, each held exactly
+            // once — the record just left the ring), returned to the
+            // substrate exactly once here.
+            #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+            unsafe {
+                self.core.flush_class_internal(c, &mag);
+            }
+            work += 1;
+        }
+        if let Some(depot) = self.depot.as_deref_mut() {
+            let ready = depot.ovf.take_unstarved(budget);
+            super::depot_paths::reopen(&mut self.tcache, ready, budget);
         }
     }
 

@@ -141,6 +141,14 @@ pub struct HeapCore {
     /// Bound slot-lifetime cold depot; `None` for standalone heaps.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub(crate) depot: Option<&'static mut crate::registry::heap_core::state::depot::Depot>,
+    /// G1-K7: resolved depot-overflow budget in bytes (parked blocks above the
+    /// depot floor), fixed at heap creation; `0` = no overflow.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit"
+    ))]
+    pub(crate) depot_budget: u32,
 
     /// TEST/DIAGNOSTIC-ONLY (task C1 → #133 → W3): stable handle to THIS
     /// heap's magazine HIT counter, which now lives in the owning slot's
@@ -281,6 +289,13 @@ impl HeapCore {
             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             depot: None,
+            #[cfg(all(
+                feature = "alloc-global",
+                feature = "fastbin",
+                feature = "alloc-decommit"
+            ))]
+            depot_budget: crate::alloc_core::LargeCacheConfig::DEFAULT.resolved_depot_budget_bytes()
+                as u32,
             // W3: the counter now lives in the owning HeapSlot; this handle
             // is planted by `HeapRegistry::claim_lease` (via `bind_tcache_hits`)
             // right after the slot binds. `None` until then (never observed on
@@ -318,6 +333,8 @@ impl HeapCore {
             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             depot: None,
+            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            depot_budget: config.resolved_depot_budget_bytes() as u32,
             // W3: the counter now lives in the owning HeapSlot; this handle
             // is planted by `HeapRegistry::claim_lease` (via `bind_tcache_hits`)
             // right after the slot binds. `None` until then (never observed on
@@ -364,6 +381,10 @@ impl HeapCore {
         &self,
         requested: &crate::alloc_core::LargeCacheConfig,
     ) -> bool {
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+        if self.depot_budget as usize != requested.resolved_depot_budget_bytes() {
+            return false;
+        }
         self.core.live_config_matches(requested)
     }
 

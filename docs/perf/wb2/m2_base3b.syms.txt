@@ -1,0 +1,2 @@
+SIZE2CLASS rva=0x55ff0 idx63: (rva+idx) mod 4096=47 mod 1024=47
+FREE_PARK_CAP rva=0x59f1d idx17: (rva+idx) mod 4096=3886 mod 1024=814

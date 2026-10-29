@@ -200,14 +200,110 @@ impl HeapCore {
     }
 
     /// TEST-ONLY (B4 DP-3): number of full magazines parked in the depot for
-    /// class `c`; 0 for an unbound heap or a class outside the depot.
+    /// class `c` — the floor plus, under G1-K7, the overflow ring; 0 for an
+    /// unbound heap or a class outside the depot.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
     pub fn dbg_depot_len(&self, c: usize) -> usize {
         if c >= crate::registry::heap_core::state::depot::DEPOT_CLASSES {
             return 0;
         }
-        self.tcache.classes[c].parked as usize
+        let floor = self.tcache.classes[c].parked as usize;
+        #[cfg(feature = "alloc-decommit")]
+        if let Some(depot) = self.depot.as_deref() {
+            return floor + depot.ovf.len(c);
+        }
+        floor
+    }
+
+    /// TEST-ONLY (G1-K7): class `c`'s `(floor magazines, overflow ring
+    /// records, PerClass::ovf hint)`; zeros for an unbound heap or a class
+    /// outside the depot.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit",
+        feature = "internals"
+    ))]
+    pub fn dbg_depot_ring(&self, c: usize) -> (usize, usize, u8) {
+        if c >= crate::registry::heap_core::state::depot::DEPOT_CLASSES {
+            return (0, 0, 0);
+        }
+        let class = &self.tcache.classes[c];
+        let ring = self.depot.as_deref().map_or(0, |d| d.ovf.len(c));
+        (class.parked as usize, ring, class.ovf)
+    }
+
+    /// TEST-ONLY (G1-K7): `(classes whose PerClass::marks carries the
+    /// segment-refill tick flag, the overflow's armed mirror)`, bit `c` each;
+    /// `(0, 0)` for an unbound heap.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit",
+        feature = "internals"
+    ))]
+    pub fn dbg_depot_ticking(&self) -> (u64, u64) {
+        use crate::registry::heap_core::state::tcache::MARK_TICK;
+        let Some(depot) = self.depot.as_deref() else {
+            return (0, 0);
+        };
+        let mut flags = 0u64;
+        for (c, class) in self.tcache.classes.iter().enumerate() {
+            if class.marks & MARK_TICK != 0 {
+                flags |= 1 << c;
+            }
+        }
+        (flags, depot.ovf.armed())
+    }
+
+    /// TEST-ONLY (G1-K7): `(resolved, effective)` depot-overflow budget in
+    /// bytes. Effective is 0 for a heap without a bound depot (standalone /
+    /// fallback heaps), where the budget is inert.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit",
+        feature = "internals"
+    ))]
+    pub fn dbg_depot_budget(&self) -> (usize, usize) {
+        let resolved = self.depot_budget as usize;
+        (resolved, if self.depot.is_some() { resolved } else { 0 })
+    }
+
+    /// TEST-ONLY (G1-K7): depot-overflow counters `[bytes parked, parks,
+    /// reloads, budget refusals, OS refusals, decay-flushed records,
+    /// ingress checks, decommit calls, committed record bytes, arms,
+    /// disarms]`; all 0 for an unbound heap.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit",
+        feature = "internals"
+    ))]
+    pub fn dbg_depot_overflow(&self) -> [u64; 11] {
+        let Some(depot) = self.depot.as_deref() else {
+            return [0; 11];
+        };
+        let o = &depot.ovf;
+        let s = o.stats;
+        [
+            o.bytes() as u64,
+            s.parks,
+            s.reloads,
+            s.budget_refusals,
+            s.os_refusals,
+            s.decay_flushed,
+            s.ingress_checks,
+            s.decommits,
+            o.committed_bytes() as u64,
+            s.arms,
+            s.disarms,
+        ]
     }
 
     /// TEST-ONLY (P7): read the magazine count for class `c`. Widened to

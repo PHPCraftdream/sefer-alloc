@@ -292,7 +292,31 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    >   - **X-c1 (таблица `SIZE2C1`, c+1) — ОТКЛОНЁН (NO-GO).** Сумма ao alloc+free не изменилась (136 при пороге ≤135) — LLVM и так сворачивал `+1` в encode; mstress +1. Итерация b не помогла. Полностью откачен; пункт сохранён с пометкой, чтобы гипотеза не переоткрывалась без новых данных.
    >   - Evidence: `docs/perf/B4_MICRO_PACK.md`; `docs/perf/B4_MICRO_PACK_summary.csv`; `scripts/b4_micro_pack_table.mjs`; сырьё `docs/perf/_raw_b4_micro_*.log(.gz)`.
 
+135. **[A] WB-2 — разрыв тёплой пачки 16 Б с mimalloc: ≈ 1.35 ns быстрый путь + ≈ 1.2 ns переливы склада.** (Filed 2026-10-29, `docs/perf/WB2_BULK_GAP_ATTRIBUTION.md`.)
+
+   > **Current state**
+   > - **Status:** open (атрибуция готова, правок нет).
+   > - **Current:** n-sweep на одном бинарнике: при n = 16 (без переливов) разрыв 1.35 ns/пару, при n = 1024 — 2.62; переливы стоят ≈ 1.2 ns/пару — больше, чем их ≈ 19 Ir. Потеря A-1 на churn+write 1024 Б объяснена 4K-алиасингом: `SIZE2CLASS_CEIL[64]` лежит на 13 mod 1024, в окне пользовательских записей (статическая проверка exe).
+   > - **Next trigger:** правка, снижающая число или стоимость переливов (C1 из консультации WB-1) или быстрый free; любая правка горячих таблиц — только с закреплённой раскладкой (кандидат C2).
+   > - **Evidence:** `docs/perf/WB2_BULK_GAP_ATTRIBUTION.md`, `docs/perf/wb2/`, `scripts/wb2_m1_bulk_sweep.mjs`, `scripts/wb2_m2_table_alias.mjs`.
+
+132. **[A] BT-1 — парная таблица `bench:table:paired` расходится с criterion-таблицей README.** (Filed 2026-10-29, `docs/perf/BT1_PAIRED_BENCH_TABLE.md`.)
+
+   > **Current state**
+   > - **Status:** open (измерение готово, причины расхождения названы частично).
+   > - **Current:** под `production` единственный явный проигрыш — тёплая пачка 16 Б (7.3 против 4.7 ns/пару, 1.54×); 64 Б 1.02–1.12×; churn 16/64 Б в пределах 1.08× медленнее … 1.29× быстрее. Сборка `bench:table` (`internals bench-internals`) поднимает каждую ячейку SeferAlloc на 1.3–3.4 ns/пару, mimalloc — не больше 0.6 ns; вероятная причина — диагностические счётчики в горячем пути (гипотеза, не изолирована). Абсолютные числа criterion в основном выше (исключение — System, тёплая пачка 1024 Б) — не объяснено.
+   > - **Next trigger:** WB-1 (тёплая пачка 16/64 Б) берёт парные числа под `production` как базу; решить, убирать ли счётчики `bench-internals` с горячего пути или собирать criterion-бенч без них.
+   > - **Evidence:** `docs/perf/BT1_PAIRED_BENCH_TABLE.md`; `docs/perf/bt1_paired/` (сырьё `.jsonl.gz`, `*.csv`, манифесты); `scripts/bench-table-paired.mjs`.
+
 ### [D] Deferred designs — implement only if trigger/victim materializes
+
+131. **[D] D1″ — sidecar с одной картой классов и ленивым обнулением по водяному знаку (C2 из D1′), запаркован с условиями входа.** (Filed 2026-10-29; `docs/perf/D1_PRIME_VERDICT.md`.)
+
+   > **Current state**
+   > - **Status:** DEFERRED. PR #94 (D1′ one-class map) и PR #96 (D1′ chunked sidecar) закрыты без слияния, оба NO-GO; данные — теги `archive/b4-oneclass` и `archive/b4-chunks`.
+   > - **Current number/verdict:** C2 улучшал регистрацию по Ir (fixed 834 589 против 930 819 у A), но в PR #94 был NO-GO: гонка через безопасный API при `internals`, выпали `checked_granule` и fail-fast `high_water > SEGMENT`, нет Miri/Kani/CI iai, Linux churn/RSS хуже (p = 0.02 / 1e-4).
+   > - **Next trigger:** только при выполнении всех условий входа до любого замера — E1 owner-only на уровне типов; E2 `checked_granule`; E3 fail-fast до клэмпа; E4 одна реализация без feature; E5 манифест и SHA до замеров. Затем фаза V (CI iai A/B по абсолютному Ir ≤ main + 2000 во всех ячейках, проба регистрации 30/60/120, время — эквивалентность ΔCI95 ≤ +1 %, RSS по smaps; пороги утверждаются до замеров) и фаза S (Loom с отрицательными контролями, Miri SB/TB, 5–6 Kani-харнессов, EV-1). Kill: любой FAIL фазы V или UB/RED фазы S закрывает D1″; не больше одного раунда вне протокола; потолок — 3 раунда.
+   > - **Evidence:** `docs/perf/D1_PRIME_VERDICT.md`; `archive/b4-oneclass` (`docs/perf/B4_ONECLASS.md`, ADR `docs/design/2026-10-20-adr-oneclass-starts-map.md`); `archive/b4-chunks` (`docs/perf/D1_PRIME_CHUNKED_SIDECAR_GATE.md`).
 
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**
 
@@ -1220,6 +1244,30 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
     > - **Evidence:** `unix_reserve` doc comment in `crates/aligned-vmem/src/os/unix.rs` (32-bit fast path gating), `try_reserve_aligned_exact` in `crates/aligned-vmem/src/os/unix.rs` (32-bit exact-size fast path implementation), `unix_reserve` in `crates/aligned-vmem/src/os/unix.rs` (64-bit over-reserve path). Filed from `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md`, Part I finding 4 (P2-4); pool-cost addition from `docs/reviews/2026-08-17-aligned-vmem-fxx-audit.md` F9 (task #1069), which re-raises II-4's residual `align > 2 MiB` half.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
+
+134. **[L] WB-1 B-1a — inline-цепочка переливов склада (depot_park/park_overflow/reload): NO-GO.** (Filed 2026-10-29, `docs/perf/WB1_B1_DEPOT_INLINE_PREREG.md` § Verdict.)
+
+   > **Current state**
+   > - **Status:** rejected (только атрибуты; откачено).
+   > - **Current:** callgrind bulk 1024 × 16/64 Б 142.71/142.74 → 142.55/142.55 Ir/пару (−0.16…−0.19 при пороге −2); pair/churn без изменений. Время и iai не мерились.
+   > - **Next trigger:** не переоткрывать как правку атрибутов; переливы (≈ 19 Ir/пару) стоят не в кадрах вложенных уровней.
+   > - **Evidence:** `docs/perf/WB1_B1_DEPOT_INLINE_PREREG.md`, `docs/perf/wb1_b1/`.
+
+136. **[L] WB-3 C1 — frameless depot fast lanes (park_simple / reload_simple): NO-GO.** (Filed 2026-10-29, `docs/perf/WB3_C1_DEPOT_FAST_LANE_PREREG.md` § Verdict.)
+
+   > **Current state**
+   > - **Status:** rejected (код под тегом `archive/wb3-c1-measured`, в main не попал).
+   > - **Current:** `t(1024)` тёплой пачки ниже во всех 12 парах (−0.04…−0.60, обычно −0.2…−0.3 ns/пару, ≈ 3–4 %), но порог −0.3 ns/пару на 16 Б не пройден (медиана −0.26); 64 Б прошёл (−0.36); в парной таблице тёплая пачка 16 Б не быстрее. Регрессий в других ячейках нет.
+   > - **Next trigger:** только по решению владельца принять выигрыш ниже порога (≈ 3–4 % на bulk при +250 строк, двух новых правилах P12 и перепроверке строки evidence R-Ph3b); иначе не переоткрывать.
+   > - **Evidence:** `docs/perf/WB3_C1_DEPOT_FAST_LANE_PREREG.md`, `docs/perf/wb3_c1/`, `scripts/wb3_c1_sweep_verdict.mjs`.
+
+133. **[L] WB-1 A-1 — классификация Layout одной загрузкой по потолочному индексу: NO-GO.** (Filed 2026-10-29, `docs/perf/WB1_A1_CLASS_FOR_LAYOUT_VERDICT.md`.)
+
+   > **Current state**
+   > - **Status:** rejected (код откачен в той же ветке).
+   > - **Current:** −6 Ir/пару на тёплой пачке и −6.6 Ir/оп на pair/churn (callgrind), но парный замер против mimalloc провален дважды (без и с выравниванием кода): тёплая пачка 16 Б не ускорилась, churn+write 1024 Б медленнее на 17–27 % во всех четырёх парах прогонов (≈ +1.3 ns/пару). Механизм потери не исследован.
+   > - **Next trigger:** только если найдётся механизм потери на churn+write 1024 Б и способ его снять; иначе не переоткрывать.
+   > - **Evidence:** `docs/perf/WB1_A1_CLASS_FOR_LAYOUT_PREREG.md` (+ Addendum 1), `docs/perf/wb1_a1/`, `scripts/wb1_a1_verdict.mjs`.
 
 7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
    narrow working-set-after-burst shape.**~~
@@ -3258,11 +3306,13 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > **Current state**
    > - **Status:** OPEN `[A]` — ceiling measured; shippable form not chosen; production unchanged.
    > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 × 2000, pre-registered `g1_pmu/p0/G1_P0_PREREG.md`):** class-64 depot K = 1024 → bulk16k effect −56.13 [−56.62, −54.74] in the script's 100·ln units (time ratio 0.5705, 1.75× faster), churn64 −5.90, bulk64 −2.76, no kernel slower beyond pair64 +0.07. Main judge vs mimalloc on that tree: bulk16k t_mi/t_sefer 0.8729, larson 1.0293.
-   > - **Next trigger:** a shippable form (budgeted depot with trim/decay and lazily allocated storage, or a body-write-free free set) chosen with @oh and the rush reviewer; per-thread retention budget is the owner's decision; then a perf(runtime) gate with RSS measured.
+   > - **Next trigger:** a shippable form (a new budgeted-depot design or a body-write-free free set) chosen with @oh and the rush reviewer; per-thread retention budget is the owner's decision; then a perf(runtime) gate with RSS measured. The first form, G1-K7 (budgeted depot overflow), ships under an owner exception to its rule 2a (item 130).
    > - **Evidence:** docs/perf/G1_IDEAS.md §9, docs/perf/g1_pmu/p0/ (prereg, patch, manifests, vs-null table and CSV, vs-mimalloc generator output, PMU and callgrind raws).
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **Item 130 — G1-K7 budgeted depot overflow above the K5 floor (default 1 MiB per heap): shipped `perf(runtime)` under two owner exceptions, closed 2026-10-29** (PR #128; rule 1 bulk16k K7/K5 1.675 against mimalloc, churn64 1.081, churn1024 1.047; rule 3 RSS no loss; owner exceptions to rule 2a — pair16 +0.62 %, pair64 +0.73 % — and rule 4 — 8 benches, at most +430 Ir; `docs/perf/b4_ablate/G1_K7_PREREG.md` Addenda 6–10). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A130.
+- **D1′ (B4-23) — one-class map (PR #94) and chunked sidecar (PR #96): NO-GO, closed 2026-10-29** (owner approved the @oh council plan). F1 failed its pre-registered gate (slope +19k, fixed +43k, Windows wall +5.4 %); the chunked candidate lost installed-global larson (×1.281 at T=4, ×1.191 at T=8) and dense16 (×2.479). C2 is parked as D1″ (item 131). Report `docs/perf/D1_PRIME_VERDICT.md`; evidence tags `archive/b4-oneclass`, `archive/b4-chunks`.
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §

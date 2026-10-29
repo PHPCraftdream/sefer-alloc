@@ -3554,7 +3554,8 @@ jobs:
   kani:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
-    # Sequential proofs: Node local-buffer primitives, vacant experimental
+    # Sequential proofs: Node local-buffer primitives, depot floor and
+    # overflow ring (alloc-decommit), vacant experimental
     # AtomicSlot facts, real Large codec/transitions and SaturationHint versions.
     # Loom tests are shadow protocol models, not real AtomicSlot proofs.
     # internals exposes the local SaturationHint constructor only; its proved
@@ -3572,7 +3573,7 @@ jobs:
       - name: cargo kani setup
         run: cargo kani setup
       - name: cargo kani (all harnesses)
-        run: cargo kani --features "alloc-core experimental alloc-global internals fastbin"
+        run: cargo kani --features "alloc-core experimental alloc-global internals fastbin alloc-decommit"
 
   loom-alloc-global:
     needs: changes

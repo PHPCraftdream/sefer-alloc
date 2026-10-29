@@ -31,6 +31,15 @@ impl Drop for Serial {
         SERIAL.store(false, Ordering::Release);
     }
 }
+/// Every heap in this binary is created with the depot overflow off
+/// (G1-K7 budget 0), so these tests pin the K5 floor exactly; the overflow
+/// has its own binaries (`tests/g1_k7_depot_overflow*.rs`). One config per
+/// binary: a recycled slot keeps the config it was created with.
+fn claim_floor_only() -> Option<sefer_alloc::registry::HeapLease> {
+    HeapRegistry::dbg_claim_lease_with_config(
+        sefer_alloc::alloc_core::LargeCacheConfig::new().depot_budget_bytes(0),
+    )
+}
 fn l16() -> Layout {
     Layout::from_size_align(16, 8).unwrap()
 }
@@ -39,7 +48,7 @@ fn l16() -> Layout {
 fn depot_budget_and_real_class_caps() {
     let _s = Serial::lock();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
     let sizes = [16, 32, 48, 64, 80, 112, 144, 192];
     let k = [8usize, 8, 8, 8, 8, 8, 7, 1];
@@ -61,7 +70,7 @@ fn depot_budget_and_real_class_caps() {
 fn depot_roundtrip_preserves_all_parked_addresses() {
     let _s = Serial::lock();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
     heap.dbg_flush_all();
     let layout = l16();
@@ -116,7 +125,7 @@ fn depot_roundtrip_preserves_all_parked_addresses() {
 fn depot_overflow_flush_returns_exactly_one_magazine() {
     let _s = Serial::lock();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
     heap.dbg_flush_all();
     let layout = l16();
@@ -171,7 +180,7 @@ fn depot_overflow_flush_returns_exactly_one_magazine() {
 fn depot_full_flush_returns_parked_blocks_and_empties_store() {
     let _s = Serial::lock();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
     heap.dbg_flush_all();
     let layout = l16();
@@ -204,7 +213,7 @@ fn depot_full_flush_returns_parked_blocks_and_empties_store() {
 fn parked_double_free_is_rejected_by_magazine_oracle() {
     let _s = Serial::lock();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
     heap.dbg_flush_all();
     let layout = l16();
@@ -268,7 +277,7 @@ fn lease_recycle_clears_depot_and_reuses_same_slot() {
     let _s = Serial::lock();
     let _ = bootstrap::ensure();
     let child = thread::spawn(|| {
-        let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+        let mut lease = claim_floor_only().expect("claim");
         let slot = lease.slot_index();
         let heap = lease.core();
         heap.dbg_flush_all();
@@ -289,7 +298,7 @@ fn lease_recycle_clears_depot_and_reuses_same_slot() {
         );
         let live_before = heap.dbg_live_count_for(blocks[0]).unwrap();
         drop(lease);
-        let mut reclaimed = HeapRegistry::dbg_claim_lease().expect("reclaim");
+        let mut reclaimed = claim_floor_only().expect("reclaim");
         assert_eq!(reclaimed.slot_index(), slot, "same slot must be reused");
         assert_eq!(reclaimed.core().dbg_depot_len(0), 0);
         assert_eq!(reclaimed.slot_index(), slot, "same slot must be reused");
@@ -312,7 +321,7 @@ fn lease_recycle_clears_depot_and_reuses_same_slot() {
 fn depot_reload_is_conservatively_non_virgin() {
     let _s = Serial::lock();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
     heap.dbg_flush_all();
     let layout = l16();
@@ -360,7 +369,7 @@ fn depot_reload_is_conservatively_non_virgin() {
 fn depot_mid_classes_budget_and_caps() {
     let _s = Serial::lock();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
     let sizes = [240, 256, 304, 384, 480, 512, 608, 768, 960, 1024];
     let mut budget = 64_256;
@@ -385,7 +394,7 @@ fn depot_mid_classes_budget_and_caps() {
 fn depot_mid_class_parks_two_and_reloads() {
     let _s = Serial::lock();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
     for size in [256usize, 1024] {
         heap.dbg_flush_all();

@@ -9,11 +9,28 @@
 use sefer_alloc::registry::{bootstrap, HeapRegistry};
 use std::alloc::Layout;
 
+/// G1-K7: heaps in this binary run with the depot overflow off (budget 0),
+/// so a full magazine past the depot floor flushes to the substrate as these
+/// checks expect; the overflow has its own binaries
+/// (`tests/g1_k7_depot_overflow*.rs`). One config per binary.
+fn claim_floor_only() -> Option<sefer_alloc::registry::HeapLease> {
+    #[cfg(feature = "alloc-decommit")]
+    {
+        HeapRegistry::dbg_claim_lease_with_config(
+            sefer_alloc::alloc_core::LargeCacheConfig::new().depot_budget_bytes(0),
+        )
+    }
+    #[cfg(not(feature = "alloc-decommit"))]
+    {
+        HeapRegistry::dbg_claim_lease()
+    }
+}
+
 #[test]
 fn overflow_boundaries_and_flush_all_activation() {
     let _ = bootstrap::ensure();
     for (frees, expected_events, expected_final) in [(16, 0, 16), (17, 1, 9), (32, 2, 16)] {
-        let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+        let mut lease = claim_floor_only().expect("claim");
         let heap = lease.core();
         let layout = Layout::from_size_align(16, 8).unwrap();
         let class = heap.dbg_class_for(layout).expect("16 B class");

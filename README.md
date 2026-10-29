@@ -352,6 +352,7 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 | `.headroom_bytes(N)` | `256 MiB` | Anti-thrash floor — the decay step does NOT release bytes below this level. Higher headroom = more memory retained between ticks (less aggressive trimming). |
 | `.decay_interval_ms(N)` | `1000` ms | Monotonic elapsed-time period for counting due decay steps, not minimum spacing between invocations. Each eligible clock check processes up to eight due intervals; the timer advances by `due × interval`, retaining the remainder and excess whole-interval debt for later invocations. A step computes the current excess and FIFO-evicts whole spans toward `excess × rate`. |
 | `.decay_rate_percent(N)` | `10` % | Fraction of the excess released per tick, integer percent in `[1, 100]` (clamped). `10` ⇒ release 10 % per tick (self-damping exponential decay); `100` ⇒ flush all excess in one tick. |
+| `.depot_budget_bytes(N)` | `1 MiB` | Per-heap (per-thread) byte budget for full small-class magazines parked **above** the fixed depot floor, so a free burst larger than one magazine refills from parked magazines instead of round-tripping through segment free lists. `0` turns the overflow off. Rounded down to 256 B, capped at 16,774,912 B. Needs `fastbin` + `alloc-decommit` (ignored otherwise). See [Depot overflow budget](#depot-overflow-budget-fastbin--alloc-decommit). |
 | `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: above headroom, the first eligible call primes a nonzero-interval timer; subsequent clock checks occur every 64th eligible large alloc/free and process bounded catch-up inline. A zero interval bypasses the stride and runs one step per eligible call, including the first. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
 
 The model is **"allocate fast, release slowly"**: each tick removes a
@@ -788,18 +789,19 @@ item-scoped regions.
 | [`src/registry/heap_core/free/dealloc.rs`](src/registry/heap_core/free/dealloc.rs) | 2 | `dealloc` — `unsafe fn` boundary (caller-pointer contract) + internal call-site block into `AllocCore::dealloc` |
 | [`src/registry/heap_core/free/dealloc_own_base.rs`](src/registry/heap_core/free/dealloc_own_base.rs) | 4 | `dealloc_own_thread[_with_base]` — internal call-site blocks into `AllocCore::flush_class` / `AllocCore::dealloc` + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` (R32-3/task #494: `realloc`'s move leg and `try_promote_to_large` now call the safe `dealloc_own_thread[_with_base]` bodies directly with their already-proven `base` instead of routing back through `HeapCore::dealloc` — this file hosts that routing block today) + R1-01's free-side byte-budget-cap call into `AllocCore::flush_class` (a single-block batch, once a class's magazine reaches its D3 refill-byte-budget cap) |
 | [`src/registry/heap_core/free/realloc.rs`](src/registry/heap_core/free/realloc.rs) | 1 | `realloc` — `unsafe fn` boundary (caller-pointer contract); its move leg was never separately counted here: it was an inner `unsafe {}` block already covered by `realloc`'s own `unsafe fn` boundary |
-| [`src/registry/heap_core/state/tcache_flush.rs`](src/registry/heap_core/state/tcache_flush.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
+| [`src/registry/heap_core/state/tcache_flush.rs`](src/registry/heap_core/state/tcache_flush.rs) | 2 | Internal call-site blocks for `AllocCore::flush_class`: the teardown drain and the G1-K7 depot-overflow decay |
+| [`src/registry/heap_core/state/depot_overflow.rs`](src/registry/heap_core/state/depot_overflow.rs) | 3 | G1-K7 depot-overflow record write / newest read / oldest read inside the heap's own lazily committed record reservation (owner-only; index checked against the class ring) |
 | [`src/registry/heap_core_xthread/routing.rs`](src/registry/heap_core_xthread/routing.rs) | 3 | Unique-transfer foreign publication boundaries: `dealloc_routing`'s call-site block, `publish_foreign` (cached-pin fast path + uncached fallback), and `publish_foreign_uncached`. |
 | [`src/registry/heap_core_xthread/route_pin_cache.rs`](src/registry/heap_core_xthread/route_pin_cache.rs) | 1 | `publish_cached` — the per-thread cached-pin publication boundary: publishes through a still-linked cached pin without a directory lookup (the Release `linked = false` store on unlink under the shard lock is what makes the cached path sound). |
 | [`src/registry/heap_core_xthread/sidecar_drain.rs`](src/registry/heap_core_xthread/sidecar_drain.rs) | 2 | Test-only sidecar publication and synthetic detached-record reclaim boundaries. |
-| [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 9 | Exclusive current-heap trim and diagnostic delegation sites. |
+| [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 10 | Exclusive current-heap trim and diagnostic delegation sites. |
 | [`crates/tagged-index-stack/src/imp.rs`](crates/tagged-index-stack/src/imp.rs) | 10 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` trait and bridge make all three hooks `unsafe fn`; the bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. The shared `push_index_impl` and `pop_index_impl` are the caller-side proof regions, while `StackOps::push_index` and `ArrayIndexStack::push` carry the public unsafe boundaries; the direct `ArrayIndexStack` sealed-hook implementation is the ninth region. The tenth is `store_next_for_test`, a `--cfg loom`-only raw link-cell write forwarder used solely by the loom tiny-tag counterfactual (an `unsafe fn`, not a safe one, since misuse can double-issue an index). The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **101** tier-2 item-scoped allows across **32**
+`src/`, 6 in `crates/`) plus **106** tier-2 item-scoped allows across **33**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1134,10 +1136,10 @@ allocates) — the headline:
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | 24.2 ns |  22.7 ns | 144.4 ns | 1.07× slower |
-|   64 B | 28.2 ns |  28.2 ns | 147.9 ns | 1.00× slower |
-|  256 B | **24.1 ns** |  37.8 ns | 166.1 ns | **1.57× faster** |
-| 1024 B | **27.1 ns** | 232.4 ns | 184.9 ns | **8.59× faster** |
+|   16 B | 14.5 ns |  13.8 ns | 87.5 ns | 1.05× slower |
+|   64 B | 23.9 ns |  22.2 ns | 97.0 ns | 1.08× slower |
+|  256 B | **28.8 ns** |  31.3 ns | 128.4 ns | **1.09× faster** |
+| 1024 B | **47.3 ns** | 148.0 ns | 98.3 ns | **3.13× faster** |
 
 **Churn, non-writing** (`bench_churn_alloc`, working-set reuse — 1 free + 1
 alloc per pair; the artificial pattern where the old stale-key slow path bit
@@ -1145,10 +1147,10 @@ hardest, before Э6 removed it):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | **23.0 ns** |  25.0 ns | 143.6 ns | **1.09× faster** |
-|   64 B | **22.4 ns** |  26.9 ns | 143.3 ns | **1.20× faster** |
-|  256 B | **22.0 ns** |  37.5 ns | 174.2 ns | **1.71× faster** |
-| 1024 B | **22.6 ns** | 227.8 ns | 171.3 ns | **10.08× faster** |
+|   16 B | 17.1 ns |  14.5 ns | 68.2 ns | 1.18× slower |
+|   64 B | 16.8 ns |  14.9 ns | 81.1 ns | 1.13× slower |
+|  256 B | **17.1 ns** |  25.3 ns | 100.2 ns | **1.48× faster** |
+| 1024 B | **28.8 ns** | 160.9 ns | 105.1 ns | **5.58× faster** |
 
 **Warm bulk burst** (`bench_direct_alloc`, alloc 1024 then free 1024 — 1 alloc
 + 1 free per pair; no reuse WITHIN one iteration's allocation half, but
@@ -1158,13 +1160,13 @@ cheaper carve led at tiny sizes):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B |  70.9 ns |  30.0 ns | 173.1 ns | 2.37× slower |
-|   64 B |  48.2 ns |  48.4 ns | 150.1 ns | **1.00× faster** |
-|  256 B |  84.5 ns |  31.2 ns | 283.4 ns | 2.71× slower |
-| 1024 B | **66.0 ns** |  83.5 ns | 361.6 ns | **1.26× faster** |
+|   16 B | 18.3 ns |   7.4 ns | 68.9 ns | 2.46× slower |
+|   64 B | 18.0 ns |  12.5 ns | 92.9 ns | 1.44× slower |
+|  256 B | 17.8 ns |  17.1 ns | 97.9 ns | 1.04× slower |
+| 1024 B | **17.4 ns** |  30.4 ns | 109.2 ns | **1.74× faster** |
 
-(Measured 2026-07-23 via `npm run bench:table`, post-Round13 tree — Windows dev
-host, criterion `sample_size(10)`, same R5-R3 methodology as before
+(Measured 2026-10-29 via `npm run bench:table` on the G1-K7 tree (PR #128; raw
+log `docs/perf/_raw_g1_k7_bench_table.log`) — Windows dev host, criterion `sample_size(10)`, same R5-R3 methodology as before
 (TLS-heap reset between groups + rotated arm order per `(group, size)`, see
 `docs/agent_reviews_round5/performance_review.md` §4.1 items 2-3). This
 single-host run carries the usual ±15-20% noise band; treat the relative
@@ -1181,6 +1183,70 @@ noise-free measure available — the wall-clock ratios above should be read
 as "SeferAlloc vs mimalloc/System, this run", not as "SeferAlloc got slower
 since the last table." vs `System`: ~4–7× faster across the board, same
 shape as before.)
+
+### Paired short-sample table (`npm run bench:table:paired`)
+
+The criterion table above measures each allocator in its own long window, so host
+noise that moves between windows lands on one arm only, and it is built with
+`internals bench-internals`, which add diagnostic counters to SeferAlloc's hot
+path. The paired table ([`scripts/bench-table-paired.mjs`](scripts/bench-table-paired.mjs),
+`examples/bench_table_paired.rs`) times the same bodies under plain `--features
+production`: per round all three arms run one short sample back to back, the arm
+order walking all six permutations; a cell is the median over 3 processes of each
+process's minimum over 200 rounds, with the range of those minimums in parentheses
+(ns/pair). Report, raw samples and manifests:
+[`docs/perf/BT1_PAIRED_BENCH_TABLE.md`](docs/perf/BT1_PAIRED_BENCH_TABLE.md).
+
+Steady state — each churn working set of 256 lives for the whole run; 2048 pairs per sample:
+
+**Warm bulk burst** (alloc 1024 then free 1024):
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 7.3 (7.3–7.3) | 4.7 (4.7–4.7) | 45.8 (44.5–46.1) | 1.54× slower |
+| 64B | 7.0 (6.9–8.4) | 6.3 (6.3–6.3) | 45.5 (45.4–45.8) | 1.12× slower |
+| 256B | 7.9 (7.7–7.9) | 7.9 (7.7–7.9) | 40.7 (40.6–40.8) | 1.00× (tie) |
+| 1024B | 10.2 (10.2–10.2) | 16.6 (16.2–16.7) | 262.6 (258.3–270.5) | **1.62× faster** |
+
+**Churn, non-writing**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 5.7 (5.7–5.8) | 5.8 (5.7–5.9) | 41.1 (40.6–42.4) | **1.03× faster** |
+| 64B | 5.6 (5.6–5.6) | 6.3 (6.3–6.4) | 43.2 (42.7–43.4) | **1.13× faster** |
+| 256B | 5.9 (5.7–7.0) | 9.2 (8.1–9.4) | 38.2 (37.5–42.2) | **1.56× faster** |
+| 1024B | 6.2 (5.9–6.2) | 17.0 (16.7–20.0) | 44.1 (41.7–44.4) | **2.75× faster** |
+
+**Churn + write**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 5.8 (5.8–5.9) | 5.7 (5.7–5.9) | 40.9 (40.6–42.9) | 1.02× slower |
+| 64B | 6.4 (5.8–6.4) | 5.9 (5.9–6.0) | 42.4 (42.2–43.6) | 1.08× slower |
+| 256B | 6.2 (6.1–6.4) | 8.3 (8.2–9.4) | 41.3 (41.0–42.1) | **1.34× faster** |
+| 1024B | 6.6 (6.5–6.8) | 19.6 (19.5–19.9) | 66.4 (50.3–68.1) | **2.96× faster** |
+
+Fresh working sets — each sample prefills 16 new sets and runs one body on each (16 384 pairs), the shape criterion's `iter_batched` produces:
+
+**Churn, non-writing**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 5.6 (5.5–5.6) | 5.5 (5.5–5.5) | 39.3 (38.5–40.4) | 1.01× slower |
+| 64B | 5.7 (5.5–5.8) | 7.3 (7.2–7.4) | 38.5 (36.2–40.0) | **1.29× faster** |
+| 256B | 6.2 (6.1–6.2) | 9.1 (8.8–9.1) | 39.1 (38.8–39.7) | **1.47× faster** |
+| 1024B | 7.0 (6.9–7.3) | 69.3 (68.6–69.3) | 45.5 (45.1–46.3) | **9.87× faster** |
+
+**Churn + write**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 5.8 (5.8–6.0) | 5.7 (5.7–5.7) | 38.8 (38.5–39.4) | 1.02× slower |
+| 64B | 6.0 (5.9–6.1) | 7.6 (7.4–7.6) | 38.5 (37.7–40.4) | **1.26× faster** |
+| 256B | 6.7 (6.6–6.8) | 9.2 (9.1–9.3) | 38.8 (38.8–39.3) | **1.38× faster** |
+| 1024B | 7.4 (7.4–7.5) | 69.2 (68.8–69.3) | 48.2 (44.5–49.4) | **9.31× faster** |
+
+(Measured 2026-10-29, commit `73241d28`, same Windows dev host as the criterion table. Built with the `bench:table` feature set instead, every SeferAlloc cell is 1.3–3.4 ns/pair higher while mimalloc moves by at most 0.6 ns — warm bulk 16 B 10.1 against 7.3 — see the report.)
 
 **The 256 B churn loss is GONE (Э6, P6) — and M2 got stronger, not weaker.**
 Through P5 sefer-alloc trailed mimalloc at 256 B churn (~1.16–1.25× slower), and
@@ -1202,10 +1268,10 @@ depends on block-body contents; `tests/regression_magazine_oracles.rs` test (c)
 is RED pre-Э6, GREEN on Э6). Every P0–P6 speedup deleted a tautology, never a
 guard.
 
-**Where we still trail — cold tiny blocks (16 B, 256 B), 2.4–2.7× behind
-mimalloc (2026-07-23 post-Round13 re-measurement: 16 B 2.37×, 256 B 2.71×
-slower; 64 B at parity (1.00× faster) and 1024 B 1.26× faster — see the Cold
-direct table above).** This is the
+**Where we still trail — the warm bulk burst at 16–64 B and non-writing churn
+at 16–64 B (2026-10-29 re-measurement on the G1-K7 tree: bulk burst 16 B
+2.46×, 64 B 1.44× slower, 256 B 1.04× slower, 1024 B 1.74× faster; churn
+16 B 1.18×, 64 B 1.13× slower — see the tables above).** This is the
 cold carve path (`global_alloc`, no reuse), unchanged by Э6 (which targets
 only the churn free path). The residual is honest per-block work — page-map
 writes and page faults on genuinely fresh pages, not ceremony — documented in
@@ -1420,8 +1486,8 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **458 integration test files**,
-**101 example binaries**, **34 benches**, and **23 root Loom models**
+needs its acceptance run. The present tree contains **465 integration test files**,
+**103 example binaries**, **34 benches**, and **23 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1430,8 +1496,8 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (458 files) |
-| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (101 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (465 files) |
+| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (103 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (23 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
@@ -1603,6 +1669,93 @@ already equals 4, so a lone `.pool_segments(8)` (without also raising
 that changes nothing observable. Both knobs must be raised together, as
 in the recipe above. This exact trap is encoded as a CI guard:
 `tests/small_segment_pool.rs::paired_knob_promotion_is_not_a_noop`.
+
+### Depot overflow budget (`fastbin` + `alloc-decommit`)
+
+Every thread heap keeps a magazine of up to 16 free blocks per small size
+class. When a free finds the magazine full, the full magazine is parked in
+the heap's **depot** and the freed block starts a new one; when an
+allocation finds the magazine empty, a parked magazine is reloaded whole.
+Neither direction touches the segment free lists or the freed blocks'
+bodies (only the per-block state byte changes), which is why a parked
+round-trip is much cheaper than flushing blocks back to their segments and
+draining them again.
+
+The depot has two parts:
+
+- **The floor** — a fixed number of magazines per class (8 for the six
+  smallest classes, then 7, 1, and 2 for 240..1024 B), 241,408 B of parked
+  blocks per heap at most. Always on with `fastbin`.
+- **The overflow** — magazines parked above the floor, bounded by
+  `LargeCacheConfig::depot_budget_bytes` (bytes of parked blocks, shared by
+  all classes of the heap). Default **1 MiB**.
+
+What the setting changes:
+
+| Setting | Effect |
+|---|---|
+| `0` | No overflow: a free burst beyond the floor flushes whole magazines to their segments, as before this setting existed. |
+| `1 MiB` (default) | A burst of up to ~1 MiB of small blocks per thread (on top of the floor) is parked and reissued without segment traffic. |
+| larger | Larger bursts stay parked; the per-thread retention grows by the same amount (see below). |
+
+How it behaves:
+
+- **Per heap, not per process.** Each thread's heap has its own budget;
+  with T threads the overflow can hold up to T × budget.
+- **First claim wins.** The budget is fixed when a thread's heap is first
+  created; a recycled heap keeps the budget it was created with and a
+  conflicting request is counted by `config_conflicts_total` (same rule as
+  the other `LargeCacheConfig` knobs).
+- **No fairness between classes.** Whichever classes park first use the
+  budget; a class whose ring is full, or that finds the budget used up,
+  flushes as with `0`.
+- **Floor first.** Parks fill the floor before the overflow and reloads
+  empty the floor first, so a small cohort keeps running on the floor (the
+  path without the overflow) even while the overflow holds another burst.
+- **Decay.** Overflow records of a class that parked nothing during a decay
+  epoch (at least 256 cold events — overflow parks and reloads and refills
+  from segments — or twice the records held) lose half of their low-water
+  mark over the next events, oldest first, at most 4 magazines per event.
+  The floor never decays, and floor-only traffic advances no epoch: a
+  thread that only hits its magazines or its floor keeps its overflow until
+  a cold event or trim — retention is bounded by the budget, not by time.
+- **Refusals are cheap.** When the overflow refuses a class (budget used by
+  other classes, its ring full, or the OS refused memory), the class stops
+  trying until the overflow shrinks; its later frees cost what they cost
+  with budget `0`.
+- **Trim, thread exit and heap recycle** empty the overflow and the floor
+  and return the overflow's committed record pages to the OS (lazily on
+  Darwin and the BSDs); the address range (≈ 1.5 × budget, reserved on the
+  first overflow park) stays with the heap slot.
+- **What the budget does not bound.** It counts the bytes of parked blocks.
+  The overflow's own record pages (128 B per parked magazine, committed on
+  demand) come on top, and a parked block keeps its whole segment
+  resident, so a sparse pattern (every k-th block freed) can hold more
+  segment memory than the budget suggests.
+
+```rust
+use sefer_alloc::{LargeCacheConfig, SeferAlloc};
+
+// Off: only the fixed floor.
+static GLOBAL: SeferAlloc =
+    SeferAlloc::with_config(LargeCacheConfig::new().depot_budget_bytes(0));
+```
+
+**Measurements** (pre-registered, `docs/perf/b4_ablate/G1_K7_PREREG.md`
+Addenda 6–10; report `docs/perf/b4_ablate/G1_K7_A6_VERDICT.md`; Windows,
+i7-11800H; default budget 1 MiB against the floor-only depot):
+
+| Axis | Result |
+|---|---|
+| Time, own A/B (40 processes × 2000 blocks, net of a null copy) | bulk16k −52 %, bulk16k_32 −27 %, bulk64k −9.9 %, churn64 −2.9 %, churn1024 −3.0 %; pair16 +0.62 %, pair64 +0.73 % (slower) |
+| Time vs mimalloc (t_mi / t_sefer, 16 sessions, floor-only → this setting) | bulk16k 0.496 → 0.831, churn64 0.775 → 0.838, churn1024 0.917 → 0.960; no kernel slower |
+| Instructions (iai, 106 benches) | growth16 −17 %, cold alloc/free 4n −13.6 %, recycle alloc/free −7.9 %; one-time +2.4–2.6 k Ir per thread heap, +430 Ir per flush-all, ≈ +70 Ir per segment release, ≈ +0.15 Ir per allocation carved from a fresh segment |
+| RSS (budget 0 / 512 KiB / 1 MiB / 2 MiB) | at most +284 KiB over the floor-only depot while the thread lives (2 MiB budget), ≤ +60 KiB after it exits — parked blocks stay in memory the floor-only arm keeps resident in its segments anyway |
+
+The pair16 / pair64 and per-bench instruction costs above exceed the
+pre-registered no-loss rules; the setting ships under the owner's two
+scoped exceptions to those rules (Addenda 7 and 10). Use `0` where only
+single alloc/free pairs matter.
 
 ---
 
