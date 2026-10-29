@@ -99,53 +99,6 @@ const fn mag_bytes(c: usize) -> usize {
 }
 
 impl DepotOverflow {
-    /// Kani-only: the all-zero empty overflow an OS-zeroed slot holds.
-    #[cfg(kani)]
-    pub(crate) const fn empty() -> Self {
-        Self {
-            base: core::ptr::null_mut(),
-            bytes: 0,
-            armed: 0,
-            events: 0,
-            epoch_len: 0,
-            debt_mask: 0,
-            parked_in_epoch: 0,
-            starved: 0,
-            reloads_since_ingress: 0,
-            reserve_failed: false,
-            len: [0; DEPOT_CLASSES],
-            head: [0; DEPOT_CLASSES],
-            cap: [0; DEPOT_CLASSES],
-            low: [0; DEPOT_CLASSES],
-            debt: [0; DEPOT_CLASSES],
-            off: [0; DEPOT_CLASSES],
-            committed: [0; DEPOT_CLASSES],
-            stats: OverflowStats {
-                parks: 0,
-                reloads: 0,
-                budget_refusals: 0,
-                os_refusals: 0,
-                decay_flushed: 0,
-                ingress_checks: 0,
-                decommits: 0,
-                arms: 0,
-                disarms: 0,
-            },
-        }
-    }
-
-    /// Kani-only: an overflow whose class `c` ring of `cap` records lives,
-    /// fully committed, at `base` (a local buffer of `cap` records).
-    #[cfg(kani)]
-    pub(crate) fn kani_on_buffer(base: *mut u8, c: usize, cap: u16) -> Self {
-        let mut o = Self::empty();
-        o.base = base;
-        o.cap[c] = cap;
-        o.committed[c] = cap as u32 * REC as u32;
-        o.epoch_len = EPOCH_MIN;
-        o
-    }
-
     /// After a successful park: the small classes not yet armed (bit `c`) —
     /// the caller sets their `MARK_TICK` — and every class is armed from here.
     #[inline(always)]

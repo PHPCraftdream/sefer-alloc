@@ -324,3 +324,10 @@ Callgrind ред. 4 (зонд `b4_pmu_probe`, K5 `2bc830cc` против раб�
 пропускает обнаружение удалённых малых освобождений, которое идёт на
 пополнении из сегмента; открытый пункт 130 в `docs/perf/OPEN_ITEMS.md`,
 наблюдается нагрузкой W4 в RSS-прогоне Addendum 6.
+
+Kani-гармонии И-O1/И-O2 (и `#[cfg(kani)]`-конструкторы `DepotOverflow::empty`
+/ `kani_on_buffer`, kani-реэкспорт в `heap_core/mod.rs`) вынесены в отдельный
+PR после K7 (ветка `g1-k7-kani`): гейт `ghost-zero-cost` не применяет
+исключение объявленного runtime-изменения к диапазону, где меняются строки с
+`kani` в `src/`, а план (`docs/GHOST_CHECKS_PLAN.md`) разводит runtime- и
+verification-изменения по разным PR. На `.text` production это не влияет.
