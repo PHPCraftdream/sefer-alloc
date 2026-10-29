@@ -1,0 +1,12 @@
+db63643fda38e23bc7e5e5a0db5e17876567b7f5
+dirty_files: 0
+7ab48e8709885bfd455449bbd0fea5c0614a73ef9c58f8c98767e4650e4a4d2e  target/g1sc4/release/examples/g1_rhythm_probe.exe
+rustc 1.97.0 (2d8144b78 2026-07-07)
+binary: rustc
+commit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3
+commit-date: 2026-07-07
+host: x86_64-pc-windows-msvc
+release: 1.97.0
+LLVM version: 22.1.6
+features: production
+RUSTFLAGS: -C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5

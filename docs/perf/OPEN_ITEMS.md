@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+137. **[A] G1-SC — routed discovery scan quadratic in heap size: loses to mimalloc from ~512 MiB.** (Filed 2026-10-29, `docs/perf/G1_SC4_GROWTH_TIME.md`, `docs/perf/g1_scan/`.)
+
+   > **Current state**
+   > - **Status:** open (измерено; исправление — SC-6, дизайн A-exact от @ox в консультации SC-5).
+   > - **Current:** SC-2: `full_scan_slots` ×3.77–3.94 на удвоение S (квадрат). SC-4 (рост, все блоки живы): до 64 сегментов SeferAlloc быстрее mimalloc в 1.3–2.8×; 64 Б — проигрыш с 128 сегментов (512 МиБ, ×1.40) и ×4.62 на 256 (1 ГиБ); 1 КиБ — ×1.55 на 256. Доля скана в Ir: 15 % (S=8) → 38 % (S=64).
+   > - **Next trigger:** SC-6 — prereg + прототип исправления; приём по точкам SC-4 (S ≥ 128) без проигрыша на churn/pair/MT/RSS.
+   > - **Evidence:** `docs/perf/g1_scan/SC_PREREG.md`, `SC4_PREREG.md`, `docs/perf/G1_SCAN_COUNT_summary.csv`, `docs/perf/G1_SC4_GROWTH_TIME_summary.csv`, `scripts/g1_scan_report.mjs`, `scripts/g1_sc4_report.mjs`, `scripts/g1_sc4_cg_share.mjs`.
+
 104. **[A] B4 events — refill/flush событие в mstress стоит в 5–6 раз дороже, чем в larson.** (Filed 2026-10-20, `docs/perf/B4_EVENTS_COST.md`.)
 
    > **Current state**

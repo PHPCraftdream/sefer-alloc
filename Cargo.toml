@@ -2731,3 +2731,9 @@ required-features = ["production", "internals", "bench-internals"]
 [[example]]
 name = "b425_mt_probe"
 required-features = ["production"]
+
+# G1 rhythm probe (measurement only): discovery scans of a growing or large
+# live heap, pin-cache churn, reclaim pauses. See docs/perf/g1_scan/*_PREREG.md.
+[[example]]
+name = "g1_rhythm_probe"
+required-features = ["production"]

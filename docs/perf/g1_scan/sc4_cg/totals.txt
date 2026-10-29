@@ -1,0 +1,5 @@
+3ea353cefae788afceca6fb5e7eb90a209085802d165501408213cba7cdc1f91  /home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe
+sefer S=8 n=524288 total_Ir=147255433 linear_scan_incl_Ir=0
+mi S=8 n=524288 total_Ir=103986793 linear_scan_incl_Ir=0
+sefer S=64 n=4194304 total_Ir=1829843980 linear_scan_incl_Ir=0
+mi S=64 n=4194304 total_Ir=828094235 linear_scan_incl_Ir=0

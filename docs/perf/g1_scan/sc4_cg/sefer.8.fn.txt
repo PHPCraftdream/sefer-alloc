@@ -1,0 +1,1108 @@
+--------------------------------------------------------------------------------
+Profile data file '/home/user/ab/sc4/cg.sefer.8.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 21410035
+Trigger: Program termination
+Profiled target:  /home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe growth 64 524288 (PID 103172, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  off
+
+--------------------------------------------------------------------------------
+Ir                   
+--------------------------------------------------------------------------------
+147,255,433 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                   file:function
+--------------------------------------------------------------------------------
+47,185,920 (32.04%)  /rust/deps/hashbrown-0.17.1/src/map.rs:g1_rhythm_probe::segments
+ 6,782,976 ( 4.61%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc
+ 6,218,192 ( 4.22%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+ 5,439,688 ( 3.69%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+ 4,956,160 ( 3.37%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+ 4,718,601 ( 3.20%)  /rust/deps/hashbrown-0.17.1/src/control/tag.rs:g1_rhythm_probe::segments
+ 4,718,592 ( 3.20%)  /home/user/abw/worktrees/sc4/src/alloc_core/platform/size_classes.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc
+ 4,259,840 ( 2.89%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+ 4,063,234 ( 2.76%)  /home/user/abw/worktrees/sc4/src/global/sefer_alloc/global_alloc.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+ 3,670,116 ( 2.49%)  /home/user/abw/worktrees/sc4/examples/g1_rhythm_probe.rs:g1_rhythm_probe::main [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+ 3,598,685 ( 2.44%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+ 3,145,827 ( 2.14%)  /rust/deps/hashbrown-0.17.1/src/raw.rs:g1_rhythm_probe::segments
+ 2,097,171 ( 1.42%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/mod.rs:g1_rhythm_probe::main
+ 1,736,680 ( 1.18%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/active_kind_index.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+ 1,572,900 ( 1.07%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/../../stdarch/crates/core_arch/src/x86/sse2.rs:g1_rhythm_probe::segments
+ 1,572,864 ( 1.07%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc
+ 1,572,864 ( 1.07%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:g1_rhythm_probe::segments
+ 1,572,857 ( 1.07%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:g1_rhythm_probe::segments
+ 1,474,560 ( 1.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc
+ 1,409,104 ( 0.96%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+ 1,255,042 ( 0.85%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 1,187,840 ( 0.81%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+ 1,125,804 ( 0.76%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 1,048,613 ( 0.71%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:g1_rhythm_probe::segments
+ 1,048,594 ( 0.71%)  /rust/deps/hashbrown-0.17.1/src/control/bitmask.rs:g1_rhythm_probe::segments
+ 1,048,585 ( 0.71%)  /home/user/abw/worktrees/sc4/src/global/tls_heap.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc
+ 1,048,576 ( 0.71%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/bit.rs:g1_rhythm_probe::segments
+ 1,038,161 ( 0.71%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+ 1,036,166 ( 0.70%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+ 1,036,166 ( 0.70%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+   983,040 ( 0.67%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc
+   983,040 ( 0.67%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+   917,504 ( 0.62%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+   851,976 ( 0.58%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+   786,432 ( 0.53%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+   720,896 ( 0.49%)  /home/user/abw/worktrees/sc4/src/alloc_core/alloc_core/sidecar_drain.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+   688,128 ( 0.47%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+   655,360 ( 0.45%)  /home/user/abw/worktrees/sc4/crates/aligned-vmem/src/api/recommit.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+   633,363 ( 0.43%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+   622,592 ( 0.42%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/active_kind_index.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+   622,592 ( 0.42%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+   589,968 ( 0.40%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::maybe_materialize_directory [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+   557,056 ( 0.38%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+   524,334 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:g1_rhythm_probe::main
+   524,299 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:g1_rhythm_probe::segments
+   524,297 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:g1_rhythm_probe::segments
+   524,296 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:g1_rhythm_probe::main
+   524,292 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:g1_rhythm_probe::main
+   524,288 ( 0.36%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+   524,288 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/adapters/enumerate.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+   524,288 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/nonzero.rs:g1_rhythm_probe::segments
+   524,288 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc
+   524,288 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+   524,288 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc
+   524,288 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc
+   524,279 ( 0.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:g1_rhythm_probe::segments
+   492,829 ( 0.33%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/find_segment/scan_backoff.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+   491,520 ( 0.33%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+   491,520 ( 0.33%)  /home/user/abw/worktrees/sc4/src/registry/heap_core_xthread/sidecar_drain.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+   491,520 ( 0.33%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc
+   487,719 ( 0.33%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+   473,640 ( 0.32%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/active_kind_ops.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+   426,072 ( 0.29%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+   370,481 ( 0.25%)  ./malloc/./malloc/malloc.c:malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   348,528 ( 0.24%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+   327,680 ( 0.22%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+   316,159 ( 0.21%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+   315,760 ( 0.21%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_layout.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+   262,144 ( 0.18%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+   262,144 ( 0.18%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/depot_paths.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+   196,626 ( 0.13%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+   163,840 ( 0.11%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+   163,840 ( 0.11%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+   147,456 ( 0.10%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+   139,264 ( 0.09%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote
+   131,072 ( 0.09%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+    98,304 ( 0.07%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+    98,304 ( 0.07%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_header/segment_header_meta_fields.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+    98,304 ( 0.07%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+    65,552 ( 0.04%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_header/descriptors.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+    65,536 ( 0.04%)  /home/user/abw/worktrees/sc4/crates/size-classes/src/lib.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+    65,536 ( 0.04%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_layout.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+    65,536 ( 0.04%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded
+    65,536 ( 0.04%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+    65,536 ( 0.04%)  /home/user/abw/worktrees/sc4/src/registry/segment_route/directory/route_directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+    65,536 ( 0.04%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+    60,480 ( 0.04%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_strnicmp [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+    58,677 ( 0.04%)  ./elf/./elf/dl-lookup.c:do_lookup_x [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+    50,026 ( 0.03%)  ./stdio-common/./stdio-common/vfscanf-internal.c:__vfscanf_internal [/usr/lib/x86_64-linux-gnu/libc.so.6]
+    33,056 ( 0.02%)  ./malloc/./malloc/malloc.c:alloc_perturb [/usr/lib/x86_64-linux-gnu/libc.so.6]
+    32,813 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+    32,768 ( 0.02%)  /home/user/abw/worktrees/sc4/src/registry/segment_route/small_sidecar.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+    32,768 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+    32,768 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+    32,768 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+    32,768 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow
+    32,768 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+    32,768 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+    32,768 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+    24,184 ( 0.02%)  ./stdlib/../stdlib/strtol_l.c:____strtoul_l_internal [/usr/lib/x86_64-linux-gnu/libc.so.6]
+    22,734 ( 0.02%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c:_mi_prim_getenv [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+    21,215 ( 0.01%)  ./elf/./elf/dl-reloc.c:_dl_relocate_object [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+    20,736 ( 0.01%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_toupper [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+    19,817 ( 0.01%)  ./elf/./elf/dl-lookup.c:_dl_lookup_symbol_x [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+    17,728 ( 0.01%)  ./elf/./elf/dl-tunables.c:__GI___tunables_init [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+    17,586 ( 0.01%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_strlcpy [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+    17,543 ( 0.01%)  ./elf/../sysdeps/x86_64/dl-machine.h:_dl_relocate_object
+    17,530 ( 0.01%)  ./elf/../sysdeps/generic/dl-new-hash.h:_dl_lookup_symbol_x
+    17,132 ( 0.01%)  ./string/../sysdeps/x86_64/multiarch/../multiarch/strcmp-sse2.S:strcmp [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+    16,463 ( 0.01%)  ./malloc/./malloc/arena.c:malloc
+    16,384 ( 0.01%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote
+    16,384 ( 0.01%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote
+    15,535 ( 0.01%)  ./elf/./elf/do-rel.h:_dl_relocate_object
+    12,722 ( 0.01%)  ./elf/./elf/dl-lookup.c:check_match [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+     9,173 ( 0.01%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+     7,820 ( 0.01%)  ./elf/./elf/dl-version.c:_dl_check_map_versions [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+     7,652 ( 0.01%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_strnlen [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+     5,617 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     4,048 ( 0.00%)  ./libio/./libio/genops.c:_IO_sputbackc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     3,572 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c:mi_option_get [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+     3,522 ( 0.00%)  ./libio/./libio/iogetdelim.c:getdelim [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     3,456 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_strlcat [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+     3,192 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+     3,096 ( 0.00%)  ./elf/../sysdeps/x86/dl-cacheinfo.h:intel_check_word.constprop.0 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+     2,339 ( 0.00%)  ./elf/./elf/dl-load.c:_dl_map_object_from_fd [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+     2,268 ( 0.00%)  ./elf/../bits/stdlib-bsearch.h:intel_check_word.constprop.0
+     2,049 ( 0.00%)  ./malloc/./malloc/malloc.c:calloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,995 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+     1,850 ( 0.00%)  ./malloc/./malloc/malloc.c:_int_free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,840 ( 0.00%)  ./libio/./libio/strops.c:_IO_str_init_static_internal [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,788 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memchr-avx2.S:__memchr_avx2 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,748 ( 0.00%)  ./stdio-common/./stdio-common/isoc23_sscanf.c:__isoc23_sscanf [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,596 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+     1,596 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+     1,596 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+     1,564 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/atomic.h:mi_stats_add.part.0
+     1,508 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/mod.rs:core::fmt::write [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+     1,474 ( 0.00%)  ./elf/./elf/dl-tunables.h:__GI___tunables_init
+     1,426 ( 0.00%)  ./elf/./elf/dl-deps.c:_dl_map_object_deps [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+     1,416 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strlen-avx2.S:__strlen_avx2 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,397 ( 0.00%)  ./libio/./libio/genops.c:_IO_setb [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,381 ( 0.00%)  ./malloc/./malloc/malloc.c:realloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,365 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/mod.rs:alloc::fmt::format::format_inner
+     1,300 ( 0.00%)  ./elf/./elf/dl-cache.c:_dl_cache_libcmp [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+     1,271 ( 0.00%)  ./nptl/./nptl/pthread_getattr_np.c:pthread_getattr_np@@GLIBC_2.32 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,193 ( 0.00%)  ./elf/./elf/rtld.c:dl_main [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+     1,135 ( 0.00%)  ./libio/./libio/genops.c:_IO_no_init [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,110 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c:mi_stats_add.part.0 [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+     1,108 ( 0.00%)  /usr/include/x86_64-linux-gnu/bits/string_fortified.h:_mi_stats_merge_into
+     1,093 ( 0.00%)  ./elf/./elf/dl-misc.c:_dl_name_match_p [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+     1,083 ( 0.00%)  ./libio/./libio/genops.c:_IO_old_init [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     1,080 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/segment_route/directory/route_directory.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+     1,012 ( 0.00%)  ./stdio-common/../include/scratch_buffer.h:__vfscanf_internal
+     1,000 ( 0.00%)  ./elf/./elf/get-dynamic-info.h:_dl_map_object_from_fd
+       977 ( 0.00%)  ./elf/./elf/dl-load.c:_dl_map_object [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       975 ( 0.00%)  ./elf/../sysdeps/generic/ldsodefs.h:do_lookup_x
+       975 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/string.rs:<alloc::string::String as core::fmt::Write>::write_str [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       942 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+       935 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/mod.rs:<core::fmt::Formatter>::pad_integral [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       933 ( 0.00%)  ./malloc/./malloc/malloc.c:free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       924 ( 0.00%)  ./elf/./elf/dl-minimal-malloc.c:__minimal_malloc [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       886 ( 0.00%)  ./elf/./elf/dl-tunables.c:__tunable_get_val [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       798 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/segment_route/directory/route_directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+       798 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+       798 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+       798 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+       796 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+       780 ( 0.00%)  ./elf/../sysdeps/generic/dl-protected.h:do_lookup_x
+       771 ( 0.00%)  ./malloc/./malloc/malloc.c:ptmalloc_init.part.0
+       752 ( 0.00%)  ./elf/./elf/dl-object.c:_dl_new_object [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       736 ( 0.00%)  ./misc/../sysdeps/unix/sysv/linux/mmap64.c:mmap [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       725 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/mod.rs:<core::fmt::Formatter>::pad [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       708 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/memchr.rs:core::slice::memchr::memrchr [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       690 ( 0.00%)  ./stdio-common/../libio/strfile.h:__isoc23_sscanf
+       667 ( 0.00%)  ./elf/../sysdeps/generic/ldsodefs.h:_dl_relocate_object
+       650 ( 0.00%)  ./nptl/./nptl/libc-cleanup.c:__libc_cleanup_push_defer [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       599 ( 0.00%)  ./misc/./misc/sbrk.c:sbrk [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       592 ( 0.00%)  ./malloc/./malloc/malloc.c:_int_realloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       583 ( 0.00%)  ./elf/./elf/dl-cache.c:_dl_load_cache_lookup [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       552 ( 0.00%)  ./stdio-common/./stdio-common/printf-parse.h:__vfscanf_internal
+       552 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:<alloc::raw_vec::RawVecInner>::finish_grow [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       544 ( 0.00%)  ./elf/./elf/dl-hwcaps_split.c:_dl_hwcaps_split_masked [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       540 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_getenv [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       539 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/tcache_flush.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+       528 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/../multiarch/strchr-sse2.S:index [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       521 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/tcache.rs:<sefer_alloc::registry::heap_core::state::tcache::Tcache>::new [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       518 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/../multiarch/strlen-sse2.S:strlen [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       516 ( 0.00%)  ./elf/../sysdeps/x86/dl-cacheinfo.h:handle_intel.constprop.0 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       477 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/../multiarch/memset-vec-unaligned-erms.S:memset [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       465 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/num.rs:<u64>::_fmt_inner [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       460 ( 0.00%)  ./stdlib/../stdlib/strtol.c:__strtoul_internal [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       456 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:<alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global> [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       450 ( 0.00%)  ./nptl/./nptl/libc-cleanup.c:__libc_cleanup_pop_restore [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       448 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       424 ( 0.00%)  ./elf/./elf/dl-load.c:open_path [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       424 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+       415 ( 0.00%)  ./elf/./dl-map-segments.h:_dl_map_object_from_fd
+       399 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+       398 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small_reclaim.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+       396 ( 0.00%)  ./elf/./elf/dl-load.c:open_verify.constprop.0 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       395 ( 0.00%)  ./elf/./elf/dl-sort-maps.c:dfs_traversal.part.0 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       389 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:core::slice::memchr::memrchr
+       379 ( 0.00%)  ./elf/./get-dynamic-info.h:dl_main
+       377 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/mod.rs:<alloc::string::String as core::fmt::Write>::write_str
+       364 ( 0.00%)  ???:__cpu_indicator_init [/usr/lib/x86_64-linux-gnu/libgcc_s.so.1]
+       360 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/depot_paths.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::reload_overflow [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       357 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/mod.rs:<core::fmt::Formatter>::pad_integral::write_prefix [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       340 ( 0.00%)  ./elf/../elf/dl-tls.c:_dl_allocate_tls_storage [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       339 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:<alloc::string::String as core::fmt::Write>::write_str
+       335 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:mempcpy [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       318 ( 0.00%)  ./elf/./elf/dl-load.c:_dl_init_paths [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       315 ( 0.00%)  ./elf/./dl-find_object.h:_dl_find_object_from_map [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       314 ( 0.00%)  ./elf/./elf/dl-sort-maps.c:_dl_sort_maps [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       298 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:memcpy [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       292 ( 0.00%)  ./misc/./misc/getauxval.c:getauxval [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       286 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/depot_paths.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::depot_reload [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       286 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/fmt.rs:alloc::fmt::format::format_inner [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       280 ( 0.00%)  ./elf/./elf/dl-tunables.c:__GI___tunable_set_val [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       279 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+       274 ( 0.00%)  ./elf/./elf/dl-lookup-direct.c:_dl_lookup_direct [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       273 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/stdio.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       268 ( 0.00%)  ./elf/./get-dynamic-info.h:_dl_start
+       268 ( 0.00%)  /home/user/abw/worktrees/sc4/examples/g1_rhythm_probe.rs:g1_rhythm_probe::delta [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       262 ( 0.00%)  ./libio/./libio/fileops.c:_IO_file_underflow@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       260 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       256 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::reserve_small_segment_impl
+       254 ( 0.00%)  ./string/../string/strcspn.c:strcspn [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       252 ( 0.00%)  ./elf/./elf/dl-catch.c:_dl_catch_exception [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       252 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:core::fmt::write
+       251 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c:_mi_options_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       248 ( 0.00%)  ./elf/./elf/dl-minimal.c:strsep [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       247 ( 0.00%)  ./elf/./elf/rtld.c:_dl_start [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       247 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:alloc::fmt::format::format_inner
+       246 ( 0.00%)  ./elf/./elf/dl-init.c:call_init.part.0 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       243 ( 0.00%)  ./elf/./elf/dl-fini.c:_dl_fini [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       242 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_strnstr [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       240 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/mod.rs:<std::io::default_write_fmt::Adapter<std::io::stdio::StdoutLock> as core::fmt::Write>::write_str [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       236 ( 0.00%)  ./nptl/./nptl/pthread_mutex_lock.c:pthread_mutex_lock@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       231 ( 0.00%)  ./elf/../sysdeps/x86/dl-cacheinfo.h:init_cpu_features.constprop.0
+       224 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/depot_paths.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+       223 ( 0.00%)  ./elf/../sysdeps/x86/dl-cacheinfo.h:get_common_cache_info.constprop.0 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       222 ( 0.00%)  ./elf/./elf/dl-hwcaps.c:_dl_important_hwcaps [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       220 ( 0.00%)  ./elf/./elf/dl-environ.c:_dl_next_ld_env_entry [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       213 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/str/validations.rs:core::str::converts::from_utf8
+       210 ( 0.00%)  ./elf/./elf/dl-find_object.c:_dlfo_process_initial [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       209 ( 0.00%)  ./elf/../elf/dl-tls.c:_dl_allocate_tls_init [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       203 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/dl-parse_auxv.h:_dl_sysdep_parse_arguments
+       200 ( 0.00%)  ./libio/../string/bits/string_fortified.h:getdelim
+       200 ( 0.00%)  ./malloc/./malloc/morecore.c:__glibc_morecore [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       199 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/open64_nocancel.c:__open_nocancel [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       197 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:core::slice::memchr::memrchr
+       194 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:core::fmt::write
+       187 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/dl-sysdep.c:_dl_sysdep_parse_arguments [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       186 ( 0.00%)  ./signal/../sysdeps/unix/sysv/linux/libc_sigaction.c:__libc_sigaction [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       184 ( 0.00%)  ./libio/./libio/libioP.h:getdelim
+       184 ( 0.00%)  ./stdio-common/./stdio-common/getline.c:getline [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       183 ( 0.00%)  ./elf/./elf/dl-object.c:_dl_add_to_namespace_list [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       181 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/depot_overflow.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+       176 ( 0.00%)  ./elf/../sysdeps/x86/cpu-features.c:update_active.constprop.0 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       175 ( 0.00%)  ./elf/../sysdeps/x86/cpu-features.c:init_cpu_features.constprop.0 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       175 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+       174 ( 0.00%)  ./stdlib/./stdlib/cxa_finalize.c:__cxa_finalize [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       174 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:core::fmt::write
+       173 ( 0.00%)  ./elf/./elf/dl-call_fini.c:_dl_call_fini [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       166 ( 0.00%)  ./setjmp/../sysdeps/x86_64/setjmp.S:__sigsetjmp [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       165 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_strlen [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       162 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/segment_route/directory/route_directory.rs:<sefer_alloc::registry::segment_route::directory::route_directory::Shard>::locate [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       160 ( 0.00%)  ./nptl/./nptl/pthread_mutex_unlock.c:pthread_mutex_unlock@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       160 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/hash.rs:<sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload
+       159 ( 0.00%)  ./libio/./libio/genops.c:_IO_flush_all [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       159 ( 0.00%)  ./libio/./libio/genops.c:__underflow [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       153 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/random.c:mi_random_init_ex [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       152 ( 0.00%)  ./elf/./elf/dl-minimal.c:lookup_malloc_symbol [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       152 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/active_kind_index.rs:<sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload
+       151 ( 0.00%)  ./libio/./libio/genops.c:_IO_cleanup [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       150 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+       148 ( 0.00%)  ./elf/./elf/dl-load.c:_dl_process_pt_gnu_property [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       147 ( 0.00%)  ./elf/../elf/dl-tls.c:_dl_determine_tlsoffset [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       144 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_preloading [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       143 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/num.rs:<&u64 as core::fmt::Display>::fmt
+       140 ( 0.00%)  ./misc/../sysdeps/unix/sysv/linux/brk.c:brk [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       138 ( 0.00%)  ./elf/./elf/dl-load.c:fillin_rpath.isra.0 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       138 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/rt.rs:core::fmt::write
+       135 ( 0.00%)  ./elf/./elf/dl-setup_hash.c:_dl_setup_hash [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       135 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/alloc_core/sidecar_drain.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::finish_small_drain [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       135 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/segment_route/directory/blocks.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+       130 ( 0.00%)  ./libio/./libio/genops.c:_IO_switch_to_get_mode [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       128 ( 0.00%)  ./elf/./elf/dl-find_object.c:_dlfo_sort_mappings [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       128 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/reserve.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::reserve_small_segment_impl [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       126 ( 0.00%)  ./elf/./elf/dl-init.c:_dl_init [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       126 ( 0.00%)  ./malloc/./malloc/malloc.c:sysmalloc_mmap.isra.0 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+       126 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+       126 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+       121 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/buffered/linewritershim.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+       120 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
+       119 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c:_mi_prim_mem_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       119 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/mod.rs:g1_rhythm_probe::main
+       117 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/alloc_core/lifecycle.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       117 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/mod.rs:<&u64 as core::fmt::Display>::fmt [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       115 ( 0.00%)  ./elf/./elf/dl-load.c:_dl_dst_count [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       112 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::maybe_decay_small_pool [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+       112 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/mod.rs:g1_rhythm_probe::delta
+       110 ( 0.00%)  ./elf/./elf/dl-deps.c:openaux [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       104 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/tcache_flush.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+       104 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<alloc::string::String as core::fmt::Write>::write_str
+       104 ( 0.00%)  ???:0x000000000489d6b0 [???]
+       103 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:g1_rhythm_probe::delta
+       100 ( 0.00%)  ./elf/./elf/dl-minimal-malloc.c:__minimal_calloc [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+       100 ( 0.00%)  ???:0x000000000489d480 [???]
+        99 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/segment_route/directory/blocks.rs:<sefer_alloc::registry::segment_route::directory::blocks::BlockIndex>::insert [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        99 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        99 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+        98 ( 0.00%)  ./libio/./libio/fileops.c:_IO_file_fopen@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        96 ( 0.00%)  ./signal/../string/bits/string_fortified.h:__libc_sigaction
+        96 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c:_mi_prim_clock_now [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        96 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/aligned-vmem/src/os/unix.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::reserve_small_segment_impl
+        93 ( 0.00%)  ./malloc/./malloc/arena.c:free
+        92 ( 0.00%)  ???:0x000000000489d500 [???]
+        90 ( 0.00%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        88 ( 0.00%)  ./elf/../sysdeps/x86/dl-prop.h:dl_main
+        88 ( 0.00%)  ./libio/./libio/genops.c:_IO_link_in [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        88 ( 0.00%)  ./malloc/../string/bits/string_fortified.h:tcache_init.part.0
+        88 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c:mi_option_is_enabled [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        86 ( 0.00%)  ./misc/../sysdeps/unix/sysv/linux/setvmaname.c:__set_vma_name [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        85 ( 0.00%)  ./elf/./elf/dl-version.c:_dl_check_all_versions [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        84 ( 0.00%)  ./elf/../elf/dl-tls.c:_dl_add_to_slotinfo [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        84 ( 0.00%)  ./misc/../sysdeps/unix/sysv/linux/x86_64/syscall.S:syscall [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        84 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+        84 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/stack_overflow.rs:std::rt::lang_start_internal
+        82 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c:_mi_prim_alloc [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        82 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+        81 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/buffered/bufwriter.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+        79 ( 0.00%)  ./elf/./elf/rtld.c:init_tls [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        79 ( 0.00%)  ./stdlib/./stdlib/exit.c:__run_exit_handlers [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        78 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/mod.rs:<&&str as core::fmt::Display>::fmt [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        78 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:alloc::fmt::format::format_inner
+        77 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/num.rs:<u128 as core::fmt::Display>::fmt [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        75 ( 0.00%)  ./malloc/./malloc/scratch_buffer_set_array_size.c:__libc_scratch_buffer_set_array_size [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        75 ( 0.00%)  ./posix/../sysdeps/unix/sysv/linux/x86/sysconf.c:sysconf [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        75 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/os.c:mi_os_prim_alloc_at.constprop.0 [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        75 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:core::slice::memchr::memrchr
+        74 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-map.c:_mi_page_map_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        73 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_atomic_once_enter [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        73 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/os.c:_mi_os_alloc_aligned [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        73 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+        73 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/sync/once/futex.rs:<std::sys::sync::once::futex::Once>::call [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        72 ( 0.00%)  ./malloc/./malloc/arena.c:ptmalloc_init.part.0 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        72 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/alloc/layout.rs:<alloc::raw_vec::RawVecInner>::finish_grow
+        72 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::reload_overflow
+        72 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+        72 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:<alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
+        72 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:<alloc::raw_vec::RawVecInner>::finish_grow
+        71 ( 0.00%)  ./elf/./elf/rtld.c:handle_preload_list [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        71 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/mod.rs:core::slice::memchr::memrchr
+        70 ( 0.00%)  ./elf/../sysdeps/x86/dl-prop.h:_dl_process_pt_gnu_property
+        70 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/mod.rs:<&str as core::fmt::Display>::fmt [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        69 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-memset.h:memset
+        69 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/alloc_core/sidecar_drain.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        69 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/mod.rs:core::slice::memchr::memrchr
+        68 ( 0.00%)  ./string/./string/strdup.c:strdup [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        66 ( 0.00%)  ./time/../sysdeps/unix/sysv/linux/clock_gettime.c:clock_gettime@@GLIBC_2.17 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        66 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:mi_process_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        66 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/num.rs:<u64 as core::fmt::Display>::fmt [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        65 ( 0.00%)  ./elf/../sysdeps/generic/dl-hash.h:__rtld_malloc_init_real
+        65 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<alloc::string::String as core::fmt::Write>::write_str
+        64 ( 0.00%)  ./libio/./libio/genops.c:__GI__IO_un_link.part.0 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        64 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload
+        64 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload
+        63 ( 0.00%)  ./elf/../sysdeps/x86/cpu-features.c:get_common_indices.constprop.0 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        63 ( 0.00%)  ./malloc/./malloc/arena.c:realloc
+        63 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-memmove.h:memcpy@@GLIBC_2.14
+        60 ( 0.00%)  ./malloc/./malloc/malloc.c:munmap_chunk [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        59 ( 0.00%)  ./elf/../sysdeps/x86_64/dl-machine.h:_dl_start
+        58 ( 0.00%)  ./elf/./dl-load.h:_dl_map_object_from_fd
+        58 ( 0.00%)  ./malloc/./malloc/arena.c:calloc
+        57 ( 0.00%)  ./malloc/../string/bits/string_fortified.h:calloc
+        57 ( 0.00%)  ./posix/./posix/register-atfork.c:__unregister_atfork [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        57 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        57 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/buffered/bufwriter.rs:<std::io::buffered::bufwriter::BufWriter<std::io::stdio::StdoutRaw>>::flush_buf [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        56 ( 0.00%)  ./elf/./elf/do-rel.h:_dl_start
+        56 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload
+        56 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::reserve_small_segment_impl
+        56 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/str/converts.rs:core::str::converts::from_utf8 [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        54 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/depot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::depot_reload
+        54 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::depot_reload
+        53 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/fmt.rs:g1_rhythm_probe::delta
+        52 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c:_mi_verbose_message [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        52 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:alloc::fmt::format::format_inner
+        52 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<alloc::string::String as core::fmt::Write>::write_str
+        51 ( 0.00%)  ./libio/./libio/fileops.c:_IO_file_close_it@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        51 ( 0.00%)  ./posix/../sysdeps/posix/sysconf.c:sysconf
+        51 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/arena.c:_mi_arenas_collect [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        51 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        51 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/alloc/layout.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+        49 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/mod.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+        49 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+        49 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+        48 ( 0.00%)  ./elf/../sysdeps/posix/dl-fileid.h:_dl_map_object_from_fd
+        48 ( 0.00%)  ./elf/./elf/dl-load.c:expand_dynamic_string_token [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        48 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/read_nocancel.c:__read_nocancel [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        48 ( 0.00%)  ./stdlib/./stdlib/cxa_thread_atexit_impl.c:__cxa_thread_atexit_impl [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        48 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::reserve_small_segment_impl
+        48 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
+        48 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::reserve_small_segment_impl
+        47 ( 0.00%)  ./elf/../sysdeps/nptl/dl-mutex.c:__rtld_mutex_init [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        47 ( 0.00%)  ./libio/./libio/filedoalloc.c:_IO_file_doallocate [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        47 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        47 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/stack_overflow.rs:std::sys::pal::unix::stack_overflow::imp::make_handler [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        46 ( 0.00%)  ./debug/../sysdeps/x86_64/multiarch/ifunc-memset.h:__memset_chk
+        46 ( 0.00%)  ./elf/./elf/dl-minimal.c:__rtld_malloc_init_real [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        46 ( 0.00%)  ./stdio-common/../string/bits/string_fortified.h:__vfscanf_internal
+        45 ( 0.00%)  ./elf/./elf/dl-misc.c:_dl_sysdep_read_whole_file [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        45 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:mi_process_done [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        45 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/aligned-vmem/src/page_size.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+        45 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+        44 ( 0.00%)  ./elf/../sysdeps/x86/get-isa-level.h:update_active.constprop.0
+        44 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-avx2.h:strlen
+        44 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-avx2.h:strnlen
+        44 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/ifunc-avx2.h:wcschr
+        44 ( 0.00%)  /rust/deps/hashbrown-0.17.1/src/raw.rs:<hashbrown::raw::RawTable<(usize, ())>>::reserve_rehash::<hashbrown::map::make_hasher<usize, (), std::hash::random::RandomState>::{closure#0}> [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        43 ( 0.00%)  ./libio/./libio/iofopen.c:fopen@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        42 ( 0.00%)  ./debug/../sysdeps/x86_64/multiarch/ifunc-memmove.h:__memcpy_chk
+        42 ( 0.00%)  ./elf/../sysdeps/x86/get-isa-level.h:_dl_hwcaps_subdirs_active
+        42 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-memcmp.h:bcmp
+        42 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-memmove.h:memmove
+        42 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/ifunc-evex.h:wmemchr
+        42 ( 0.00%)  ???:0x000000000489d720 [???]
+        40 ( 0.00%)  ./elf/../elf/dl-tls.c:_dl_tls_static_surplus_init [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        40 ( 0.00%)  ./elf/./dl-hwcaps.h:_dl_important_hwcaps
+        40 ( 0.00%)  ./misc/../sysdeps/unix/sysv/linux/brk_call.h:brk
+        40 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_os_alloc_aligned
+        40 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_registry/claim.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        40 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload
+        40 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/random/linux.rs:std::sys::random::linux::getrandom [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        40 ( 0.00%)  ???:0x000000000489d740 [???]
+        39 ( 0.00%)  ./libio/./libio/fileops.c:_IO_file_open [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        39 ( 0.00%)  ./nptl/../sysdeps/unix/sysv/linux/x86/elision-conf.c:__lll_elision_init [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        39 ( 0.00%)  ./stdlib/./stdlib/cxa_atexit.c:__cxa_atexit [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        39 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_auto_process_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        39 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_is_heap_main [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        39 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_theap_default_set [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        39 ( 0.00%)  /rust/deps/hashbrown-0.17.1/src/raw.rs:<hashbrown::raw::RawTableInner>::fallible_with_capacity::<alloc::alloc::Global> [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        39 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/remove.rs:<alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut, usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo, alloc::collections::btree::node::marker::Leaf>, alloc::collections::btree::node::marker::KV>>::remove_leaf_kv::<<alloc::collections::btree::map::entry::OccupiedEntry<usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo>>::remove_kv::{closure#0}, alloc::alloc::Global> [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        39 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/string.rs:alloc::fmt::format::format_inner
+        39 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<&u64 as core::fmt::Display>::fmt
+        38 ( 0.00%)  ./elf/./elf/dl-find_object.c:_dl_find_object_init [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        38 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/theap.c:mi_theap_collect_ex [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        38 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:g1_rhythm_probe::delta
+        38 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        37 ( 0.00%)  ./nptl/./nptl/pthread_setspecific.c:pthread_setspecific@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        36 ( 0.00%)  ./elf/../sysdeps/nptl/dl-tls_init_tp.c:__tls_init_tp [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        36 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/dl-sysdep.c:_dl_sysdep_start [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        36 ( 0.00%)  ./libio/./libio/iofclose.c:fclose@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        36 ( 0.00%)  ./misc/../sysdeps/unix/syscall-template.S:mprotect [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        36 ( 0.00%)  ./nptl/./nptl/pthread_attr_setaffinity.c:pthread_attr_setaffinity_np@@GLIBC_2.32 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        36 ( 0.00%)  ./string/../string/strstr.c:__GI_strstr [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        36 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/atomic.h:__mi_stat_increase_mt
+        36 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        36 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        36 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::finish_small_drain
+        36 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/depot_overflow.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::reload_overflow
+        36 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+        35 ( 0.00%)  ./signal/./signal/sigaction.c:sigaction [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        35 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:mi_heap_main_init.part.0 [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        34 ( 0.00%)  ./elf/./elf/dl-debug.c:_dl_debug_initialize [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        34 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strrchr-avx2.S:__strrchr_avx2 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        34 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/traits/iterator.rs:g1_rhythm_probe::delta
+        34 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:<core::fmt::Formatter>::pad_integral
+        34 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/mod.rs:std::rt::lang_start_internal
+        33 ( 0.00%)  ./elf/../sysdeps/x86_64/dl-cet.c:_dl_cet_check [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        33 ( 0.00%)  ./elf/./elf/dl-audit.c:_dl_audit_activity_nsid [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        33 ( 0.00%)  ./stdlib/./stdlib/cxa_atexit.c:__new_exitfn [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        32 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/../multiarch/strcmp-sse2.S:strncmp [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        32 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/reserve.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+        32 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+        32 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:std::env::args_os
+        32 ( 0.00%)  ???:0x00000000000048f0 [/usr/lib/x86_64-linux-gnu/libgcc_s.so.1]
+        31 ( 0.00%)  ./elf/./elf/dl-open.c:_dl_find_dso_for_object [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        31 ( 0.00%)  ./signal/../sysdeps/posix/signal.c:signal [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        31 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:g1_rhythm_probe::main
+        31 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/stack_overflow.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        31 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/time.rs:<std::sys::pal::unix::time::Timespec>::sub_timespec [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        31 ( 0.00%)  /usr/include/x86_64-linux-gnu/bits/string_fortified.h:mi_heap_main_init.part.0
+        30 ( 0.00%)  ./elf/../sysdeps/nptl/dl-tls_init_tp.c:rtld_mutex_dummy [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        30 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/fstat64.c:fstat [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        30 ( 0.00%)  ./libio/./libio/libioP.h:_IO_file_underflow@@GLIBC_2.2.5
+        30 ( 0.00%)  ./posix/../sysdeps/unix/sysv/linux/x86/../sysconf.c:sysconf
+        30 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_subproc [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        30 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c:_mi_options_post_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        30 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+        30 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/mod.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+        29 ( 0.00%)  ./misc/../sysdeps/unix/sysv/linux/prctl.c:prctl [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        29 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+        28 ( 0.00%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        28 ( 0.00%)  ./elf/./elf/dl-debug.c:_dl_debug_update [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        28 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/fstatat64.c:fstatat [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        28 ( 0.00%)  ./libio/./libio/libioP.h:fclose@@GLIBC_2.2.5
+        28 ( 0.00%)  ./stdlib/./stdlib/cxa_thread_atexit_impl.c:__call_tls_dtors [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        28 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c:_mi_prim_random_buf [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        28 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c:__mi_stat_increase_mt [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        28 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/aligned-vmem/src/os/unix.rs:aligned_vmem::os::unix::reserve_aligned_raw [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        28 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:core::slice::memchr::memrchr
+        28 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/stdio.rs:std::io::stdio::_print [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        27 ( 0.00%)  ./nptl/./nptl/pthread_mutex_conf.c:__pthread_tunables_init [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        27 ( 0.00%)  ./string/../sysdeps/x86/cacheinfo.h:__x86_cacheinfo
+        27 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_theap_collect_retired [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        27 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/into_iter.rs:g1_rhythm_probe::main
+        27 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+        26 ( 0.00%)  ./elf/./elf/dl-catch.c:_dl_catch_error [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        26 ( 0.00%)  ./malloc/./malloc/malloc.c:tcache_init.part.0 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        26 ( 0.00%)  ./misc/./misc/init-misc.c:__init_misc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        26 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c:_mi_stats_merge_into [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        26 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+        26 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:alloc::fmt::format::format_inner
+        26 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:core::slice::memchr::memrchr
+        26 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:alloc::fmt::format::format_inner
+        26 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/time.rs:<std::sys::pal::unix::time::Timespec>::now [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        25 ( 0.00%)  ./elf/../sysdeps/nptl/pthread_early_init.h:__libc_early_init
+        25 ( 0.00%)  ./elf/./elf/dl-audit.c:_dl_audit_objclose [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        25 ( 0.00%)  ./elf/./elf/dl-call-libc-early-init.c:_dl_call_libc_early_init [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        25 ( 0.00%)  ./elf/./elf/dl-tunables.h:__GI___tunable_set_val
+        25 ( 0.00%)  ./libio/./libio/fileops.c:_IO_file_read [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        25 ( 0.00%)  ./libio/./libio/libioP.h:__underflow
+        25 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_theap_default_set
+        25 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_subproc_heap_main [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        25 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:mi_thread_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        25 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+        25 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:g1_rhythm_probe::delta
+        24 ( 0.00%)  ./elf/../elf/dl-tls.c:_dl_assign_tls_modid [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        24 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/close_nocancel.c:__GI___close_nocancel [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        24 ( 0.00%)  ./libio/./libio/genops.c:_IO_doallocbuf [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        24 ( 0.00%)  ./misc/../sysdeps/unix/syscall-template.S:munmap [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        24 ( 0.00%)  ./misc/../sysdeps/unix/sysv/linux/getpagesize.c:getpagesize [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        24 ( 0.00%)  ./nptl/./nptl/pthread_mutex_destroy.c:pthread_mutex_destroy@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        24 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/os.c:_mi_os_canuse_large_page [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        24 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/string.rs:g1_rhythm_probe::main
+        24 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
+        24 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/args/unix.rs:std::env::args_os
+        24 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/stack_overflow/thread_info.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        23 ( 0.00%)  /home/user/abw/worktrees/sc4/src/global/tls_heap.rs:sefer_alloc::global::tls_heap::finish_bind [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        23 ( 0.00%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        22 ( 0.00%)  ./csu/./csu/init-first.c:_init_first [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        22 ( 0.00%)  ./elf/./elf/dl-catch.c:_dl_receive_error [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        22 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-avx2.h:memrchr
+        22 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-avx2.h:rindex
+        22 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-avx2.h:strchrnul
+        22 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/ifunc-avx2.h:wcscmp
+        22 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:std::env::args_os
+        21 ( 0.00%)  ./debug/../sysdeps/x86_64/multiarch/ifunc-memmove.h:__memmove_chk
+        21 ( 0.00%)  ./debug/../sysdeps/x86_64/multiarch/ifunc-memmove.h:__mempcpy_chk
+        21 ( 0.00%)  ./elf/../include/rtld-malloc.h:_dl_new_object
+        21 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-evex.h:memchr
+        21 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-memmove.h:mempcpy
+        21 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strchr-avx2.S:__strchr_avx2 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        21 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strncmp.c:strncmp [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        21 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/ifunc-memcmp.h:wmemcmp
+        21 ( 0.00%)  /home/user/abw/worktrees/sc4/src/global/tls_heap.rs:sefer_alloc::global::tls_heap::bind_slow_tagged_with_config [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        21 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<std::sys::sync::once::futex::Once>::call
+        21 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/env.rs:std::env::args_os [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        21 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/stdio.rs:<&std::io::stdio::Stdout as std::io::Write>::write_fmt [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        21 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/destructors/linux_like.rs:std::sys::thread_local::destructors::linux_like::register [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        20 ( 0.00%)  ./elf/./dl-sym-post.h:lookup_malloc_symbol
+        20 ( 0.00%)  ./elf/./elf/libc_early_init.c:__libc_early_init [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        20 ( 0.00%)  ./libio/./libio/genops.c:_IO_default_finish [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        20 ( 0.00%)  ./nptl/./nptl/pthread_getaffinity.c:pthread_getaffinity_np@@GLIBC_2.32 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        20 ( 0.00%)  ./resource/../sysdeps/unix/sysv/linux/getrlimit64.c:getrlimit [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        20 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/maybe_uninit.rs:<u64>::_fmt_inner
+        20 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<hashbrown::raw::RawTableInner>::fallible_with_capacity::<alloc::alloc::Global>
+        19 ( 0.00%)  ./elf/./elf/rtld.c:map_doit [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        19 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/../multiarch/memcmp-sse2.S:bcmp [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        19 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strchr.c:index [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        19 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strcmp.c:strcmp [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        19 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c:_mi_clock_start [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        19 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/aligned-vmem/src/page_size.rs:aligned_vmem::page_size::init_page_size_cache [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        19 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/config/large_cache_config.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+        19 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:std::env::args_os
+        19 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+        19 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        19 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:g1_rhythm_probe::delta
+        19 ( 0.00%)  /usr/include/x86_64-linux-gnu/bits/string_fortified.h:_mi_prim_mem_init
+        18 ( 0.00%)  ./elf/../include/scratch_buffer.h:_dl_map_object_deps
+        18 ( 0.00%)  ./elf/../sysdeps/x86/dl-procinfo.h:_dl_load_cache_lookup
+        18 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/stat64.c:stat [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        18 ( 0.00%)  ./nptl/./nptl/pthread_attr_extension.c:__pthread_attr_extension [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        18 ( 0.00%)  ./nptl/./nptl/pthread_key_create.c:pthread_key_create@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        18 ( 0.00%)  ./signal/../sysdeps/unix/syscall-template.S:sigaltstack [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        18 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-strcasecmp.h:strcasecmp
+        18 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-strcasecmp.h:strcasecmp_l
+        18 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-strcasecmp.h:strncasecmp
+        18 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-strcasecmp.h:strncasecmp_l
+        18 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/os.c:_mi_os_good_alloc_size [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        18 ( 0.00%)  /home/user/abw/worktrees/sc4/examples/g1_rhythm_probe.rs:g1_rhythm_probe::segments [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        18 ( 0.00%)  /home/user/abw/worktrees/sc4/src/lib.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::reload_overflow
+        18 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/segment_route/directory/route_directory.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        18 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        18 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::segment_route::directory::blocks::BlockIndex>::insert
+        18 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:std::rt::lang_start_internal
+        18 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/stdio.rs:std::io::stdio::print_to_buffer_if_capture_used [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        17 ( 0.00%)  ./ctype/./ctype/ctype-info.c:__ctype_init [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        17 ( 0.00%)  ./elf/../sysdeps/nptl/dl-tls_init_tp.c:__tls_pre_init_tp [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        17 ( 0.00%)  ./elf/./elf/dl-audit.c:_dl_audit_activity_map [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        17 ( 0.00%)  ./nptl/./nptl/pthread_attr_destroy.c:pthread_attr_destroy [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        17 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-strncpy.h:stpncpy
+        17 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-strncpy.h:strncpy
+        17 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/ifunc-wcslen.h:wcslen
+        17 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/ifunc-wcslen.h:wcsnlen
+        17 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c:mi_option_get_clamp [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        17 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:std::rt::lang_start_internal
+        17 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+        17 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/once.rs:<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::initialize::<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::get_or_init<std::io::stdio::stdout::{closure#0}>::{closure#0}, !>
+        16 ( 0.00%)  ./elf/../misc/sbrk.c:sbrk [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        16 ( 0.00%)  ./nptl/./nptl/pthread_key_delete.c:pthread_key_delete@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        16 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/ifunc-wcs.h:wcpncpy
+        16 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/ifunc-wcs.h:wcscat
+        16 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/ifunc-wcs.h:wcsncpy
+        16 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/ifunc-wmemset.h:wmemset
+        16 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wcscpy.c:wcscpy [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        16 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/segment/segment_layout.rs:<sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload
+        16 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+        16 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/ownership.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        16 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/node.rs:<alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut, usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo, alloc::collections::btree::node::marker::Leaf>, alloc::collections::btree::node::marker::KV>>::remove_leaf_kv::<<alloc::collections::btree::map::entry::OccupiedEntry<usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo>>::remove_kv::{closure#0}, alloc::alloc::Global>
+        16 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:g1_rhythm_probe::main
+        16 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+        16 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut, usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo, alloc::collections::btree::node::marker::Leaf>, alloc::collections::btree::node::marker::KV>>::remove_leaf_kv::<<alloc::collections::btree::map::entry::OccupiedEntry<usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo>>::remove_kv::{closure#0}, alloc::alloc::Global>
+        16 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/time/unix.rs:g1_rhythm_probe::main
+        15 ( 0.00%)  ./elf/../sysdeps/generic/_itoa.h:_dl_check_map_versions
+        15 ( 0.00%)  ./elf/./elf/dl-audit.c:_dl_audit_objopen [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        15 ( 0.00%)  ./elf/./elf/rtld.c:version_check_doit [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        15 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-strcpy.h:stpcpy
+        15 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-strcpy.h:strcat
+        15 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-strcpy.h:strcpy
+        15 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_is_main_thread [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        15 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_thread_id [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        15 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c:_mi_prim_thread_associate_default_theap [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        15 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/aligned-vmem/src/api/internal.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+        15 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/search.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+        15 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:g1_rhythm_probe::main
+        15 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/reentrant_lock.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+        14 ( 0.00%)  ./elf/./elf/dl-sort-maps.c:_dl_sort_maps_init [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        14 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/pread64_nocancel.c:__pread64_nocancel [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        14 ( 0.00%)  ./libio/./libio/fileops.c:_IO_file_finish@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        14 ( 0.00%)  ./libio/./libio/genops.c:_IO_unsave_markers [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        14 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:mi_heap_main [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        14 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:mi_process_init'2 [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        14 ( 0.00%)  /home/user/abw/worktrees/sc4/src/global/tls_heap.rs:<sefer_alloc::global::tls_heap::LeaseReleaseGuard as core::ops::drop::Drop>::drop [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        14 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/core.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+        14 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/mod.rs:std::env::args_os
+        14 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+        14 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:sefer_alloc::global::tls_heap::finish_bind
+        14 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:g1_rhythm_probe::delta
+        14 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+        14 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:g1_rhythm_probe::main
+        14 ( 0.00%)  ???:0x000000000002b5e0 [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        14 ( 0.00%)  ???:0x000000000489d3e0 [???]
+        13 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/rseq-internal.h:__tls_init_tp
+        13 ( 0.00%)  ./elf/./elf/dl-cache.c:_dl_unload_cache [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        13 ( 0.00%)  ./elf/./elf/dl-hwcaps_split.c:_dl_hwcaps_split [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        13 ( 0.00%)  ./libio/./libio/fileops.c:_IO_new_file_init_internal [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        13 ( 0.00%)  ./nptl/./nptl/pthread_attr_init.c:pthread_attr_init@@GLIBC_2.2.5 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        13 ( 0.00%)  ./setjmp/./setjmp/sigjmp.c:__sigjmp_save [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        13 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/aligned-vmem/src/os/unix.rs:<once_ptr_cell::imp::OncePtrCell<sefer_alloc::registry::bootstrap::chunk::RegistryChunk>>::init_slow::<sefer_alloc::registry::bootstrap::ensure::ensure_chunk_slow::{closure#0}>
+        13 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_registry/stack.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+        13 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/alloc/layout.rs:alloc::fmt::format::format_inner
+        13 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:std::env::args_os
+        13 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+        13 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/specialize.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+        13 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:std::env::args_os
+        13 ( 0.00%)  ???:0x00000000000010d0 [/usr/libexec/valgrind/vgpreload_core-amd64-linux.so]
+        13 ( 0.00%)  ???:0x0000000000005ad0 [/usr/lib/x86_64-linux-gnu/libgcc_s.so.1]
+        12 ( 0.00%)  ./csu/./csu/errno-loc.c:__errno_location [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        12 ( 0.00%)  ./elf/../include/rtld-malloc.h:_dl_check_map_versions
+        12 ( 0.00%)  ./elf/../sysdeps/x86/dl-isa-level.h:_dl_load_cache_lookup
+        12 ( 0.00%)  ./elf/../sysdeps/x86/dl-prop.h:_dl_map_object_from_fd
+        12 ( 0.00%)  ./libio/./libio/vtables.c:check_stdfiles_vtables [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        12 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/atomic.h:_mi_atomic_once_enter
+        12 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/atomic.h:_mi_thread_locals_done
+        12 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/os.c:_mi_os_page_size [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        12 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/aligned-vmem/src/page_size.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+        12 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/once-ptr-cell/src/imp.rs:<once_ptr_cell::imp::OncePtrCell<sefer_alloc::registry::bootstrap::chunk::RegistryChunk>>::init_slow::<sefer_alloc::registry::bootstrap::ensure::ensure_chunk_slow::{closure#0}> [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        12 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/alloc_core/bootstrap.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+        12 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ffi/c_str.rs:std::env::args_os
+        12 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+        12 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+        12 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/env.rs:g1_rhythm_probe::main
+        12 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/once.rs:std::rt::lang_start_internal
+        12 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/random/linux.rs:std::sys::random::linux::hashmap_random_keys [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        12 ( 0.00%)  ???:(below main) [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        12 ( 0.00%)  ???:0x0000000000001110 [/usr/libexec/valgrind/vgpreload_core-amd64-linux.so]
+        12 ( 0.00%)  ???:0x0000000000005b10 [/usr/lib/x86_64-linux-gnu/libgcc_s.so.1]
+        12 ( 0.00%)  ???:0x000000000002b620 [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        12 ( 0.00%)  ???:main [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        11 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/x86/dl-minsigstacksize.h:get_common_indices.constprop.0
+        11 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/large/alloc_core_large_cache_eviction.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::evict_one_oldest [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        11 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/spec_from_iter_nested.rs:g1_rhythm_probe::main
+        11 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:g1_rhythm_probe::main
+        11 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/mod.rs:<&std::io::stdio::Stdout as std::io::Write>::write_fmt
+        10 ( 0.00%)  ./elf/../include/rtld-malloc.h:__minimal_calloc
+        10 ( 0.00%)  ./elf/./elf/dl-minimal.c:__rtld_malloc_init_stubs [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        10 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_thread_init
+        10 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:_mi_subproc
+        10 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/heap.c:mi_heap_stats_merge_to_subproc [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        10 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_atomic_once_release [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+        10 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/maybe_uninit.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+        10 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+        10 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::global::tls_heap::LeaseReleaseGuard as core::ops::drop::Drop>::drop
+        10 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+        10 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/time.rs:g1_rhythm_probe::main
+        10 ( 0.00%)  ???:0x0000000000004940 [/usr/lib/x86_64-linux-gnu/libgcc_s.so.1]
+         9 ( 0.00%)  ./elf/../sysdeps/generic/dl-call_tls_init_tp.h:init_tls
+         9 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/dl-vdso.h:dl_main
+         9 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/access.c:access [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         9 ( 0.00%)  ./nptl/./nptl/pthread_attr_getstack.c:pthread_attr_getstack@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         9 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/atomic.h:_mi_options_post_init
+         9 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_auto_process_done [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         9 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c:_mi_stats_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         9 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/threadlocal.c:_mi_thread_locals_done [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         9 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/once-ptr-cell/src/imp.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+         9 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/depot_overflow.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/str.rs:g1_rhythm_probe::delta
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/mod.rs:g1_rhythm_probe::delta
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::registry::segment_route::directory::blocks::BlockIndex>::insert
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:aligned_vmem::os::unix::reserve_aligned_raw
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:<sefer_alloc::registry::segment_route::directory::blocks::BlockIndex>::insert
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/macros/mod.rs:g1_rhythm_probe::segments
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/maybe_uninit.rs:<u128 as core::fmt::Display>::fmt
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<u64 as core::fmt::Display>::fmt
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/once.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0} [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/once.rs:<std::sync::once::Once>::call_once_force::<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::initialize<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::get_or_init<std::io::stdio::stdout::{closure#0}>::{closure#0}, !>::{closure#0}>::{closure#0} [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/poison.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         9 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/current.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         8 ( 0.00%)  ./elf/../include/rtld-malloc.h:_dl_map_object_deps
+         8 ( 0.00%)  ./elf/../nptl/nptl-stack.h:__libc_early_init
+         8 ( 0.00%)  ./elf/../sysdeps/generic/dl-cache.h:_dl_load_cache_lookup
+         8 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/poll.c:poll [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         8 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/write.c:write [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         8 ( 0.00%)  ./libio/./libio/genops.c:_IO_un_link [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         8 ( 0.00%)  ./stdlib/../sysdeps/unix/sysv/linux/getrandom.c:getrandom [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         8 ( 0.00%)  ./string/../include/rtld-malloc.h:strdup
+         8 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_free
+         8 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c:_mi_clock_now [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/char/methods.rs:g1_rhythm_probe::main
+         8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:core::str::converts::from_utf8
+         8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:g1_rhythm_probe::main
+         8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut, usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo, alloc::collections::btree::node::marker::Leaf>, alloc::collections::btree::node::marker::KV>>::remove_leaf_kv::<<alloc::collections::btree::map::entry::OccupiedEntry<usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo>>::remove_kv::{closure#0}, alloc::alloc::Global>
+         8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/specialize.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+         8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::reserve_small_segment_impl
+         8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/collections/hash/set.rs:g1_rhythm_probe::segments
+         8 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/eager.rs:std::sys::thread_local::native::eager::destroy::<sefer_alloc::global::tls_heap::LeaseReleaseGuard> [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         7 ( 0.00%)  ./elf/../sysdeps/x86_64/dl-hwcaps-subdirs.c:_dl_hwcaps_subdirs_active [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         7 ( 0.00%)  ./stdlib/./stdlib/exit.c:exit [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         7 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c:_mi_prim_thread_done_auto_done [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         7 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/alloc_core/lifecycle.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+         7 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/config/small_segment_pool_config.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+         7 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/bootstrap/registry.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/remove.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/mod.rs:<bool as core::fmt::Display>::fmt [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:g1_rhythm_probe::main
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/maybe_uninit.rs:<std::sync::once::Once>::call_once_force::<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::initialize<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::get_or_init<std::io::stdio::stdout::{closure#0}>::{closure#0}, !>::{closure#0}>::{closure#0}
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<once_ptr_cell::imp::OncePtrCell<sefer_alloc::registry::bootstrap::chunk::RegistryChunk>>::init_slow::<sefer_alloc::registry::bootstrap::ensure::ensure_chunk_slow::{closure#0}>
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:g1_rhythm_probe::main
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:std::rt::lang_start_internal
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<std::io::buffered::bufwriter::BufWriter<std::io::stdio::StdoutRaw>>::flush_buf
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<&std::io::stdio::Stdout as std::io::Write>::write_fmt
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/stdio.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/poison.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/reentrant_lock.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         7 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/eager.rs:sefer_alloc::global::tls_heap::finish_bind
+         7 ( 0.00%)  /usr/include/x86_64-linux-gnu/bits/string_fortified.h:_mi_os_alloc_aligned
+         7 ( 0.00%)  ???:0x00000000001c91d4 [???]
+         7 ( 0.00%)  ???:0x000000000483d000 [???]
+         7 ( 0.00%)  ???:0x000000000484b000 [???]
+         6 ( 0.00%)  ./elf/../elf/dl-tls.c:_dl_count_modids [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         6 ( 0.00%)  ./elf/../include/list.h:__tls_init_tp
+         6 ( 0.00%)  ./elf/../sysdeps/generic/ldsodefs.h:_dl_start
+         6 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/brk.c:brk [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         6 ( 0.00%)  ./elf/../sysdeps/x86/dl-get-cpu-features.c:__x86_cpu_features [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         6 ( 0.00%)  ./io/../sysdeps/unix/sysv/linux/close_nocancel.c:__close_nocancel [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         6 ( 0.00%)  ./malloc/../sysdeps/unix/sysv/linux/not-cancel.h:ptmalloc_init.part.0
+         6 ( 0.00%)  ./misc/../sysdeps/unix/syscall-template.S:sysinfo [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         6 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memcmp.c:bcmp [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         6 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strlen.c:strlen [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         6 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strnlen.c:strnlen [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/atomic.h:_mi_atomic_once_release
+         6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_map_init
+         6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c:_mi_option_get_fast [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/os.c:_mi_os_get_aligned_hint [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/os.c:_mi_os_has_overcommit [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_deferred_free [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/prim.c:_mi_allocator_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         6 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/aligned-vmem/src/os/unix.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+         6 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/large/alloc_core_large_cache_eviction.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+         6 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+         6 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/map/entry.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         6 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         6 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:g1_rhythm_probe::segments
+         6 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:aligned_vmem::os::unix::reserve_aligned_raw
+         6 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/cmp.rs:g1_rhythm_probe::main
+         6 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         6 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/reentrant_lock.rs:<&std::io::stdio::Stdout as std::io::Write>::write_fmt
+         6 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:<hashbrown::raw::RawTableInner>::fallible_with_capacity::<alloc::alloc::Global>
+         6 ( 0.00%)  ???:0x000000000489d3f0 [???]
+         6 ( 0.00%)  ???:0x000000000489d410 [???]
+         5 ( 0.00%)  ./elf/../include/rtld-malloc.h:_dl_init_paths
+         5 ( 0.00%)  ./elf/../include/rtld-malloc.h:fillin_rpath.isra.0
+         5 ( 0.00%)  ./elf/../sysdeps/generic/dl-debug.h:dl_main
+         5 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/dl-vdso-setup.h:dl_main
+         5 ( 0.00%)  ./elf/../sysdeps/x86/dl-get-cpu-features.c:_dl_x86_init_cpu_features [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         5 ( 0.00%)  ./elf/./dl-main.h:dl_main
+         5 ( 0.00%)  ./elf/./dl-tunable-types.h:__GI___tunable_set_val
+         5 ( 0.00%)  ./elf/./elf/dl-audit.c:_dl_audit_preinit [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         5 ( 0.00%)  ./elf/./elf/dl-minimal-malloc.c:__minimal_free [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         5 ( 0.00%)  ./libio/./libio/libioP.h:_IO_doallocbuf
+         5 ( 0.00%)  ./libio/./libio/libioP.h:_IO_file_close_it@@GLIBC_2.2.5
+         5 ( 0.00%)  ./libio/./libio/libioP.h:_IO_file_doallocate
+         5 ( 0.00%)  ./nptl/../string/bits/string_fortified.h:pthread_attr_init@@GLIBC_2.2.5
+         5 ( 0.00%)  ./signal/../sysdeps/unix/sysv/linux/internal-signals.h:sigaction
+         5 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-sse4_2.h:strcspn
+         5 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-sse4_2.h:strpbrk
+         5 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/ifunc-sse4_2.h:strspn
+         5 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         5 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c:_mi_prim_thread_init_auto_done [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         5 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/bootstrap/saturation.rs:<sefer_alloc::global::tls_heap::LeaseReleaseGuard as core::ops::drop::Drop>::drop
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<hashbrown::raw::RawTableInner>::fallible_with_capacity::<alloc::alloc::Global>
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<once_ptr_cell::imp::OncePtrCell<sefer_alloc::registry::bootstrap::chunk::RegistryChunk>>::init_slow::<sefer_alloc::registry::bootstrap::ensure::ensure_chunk_slow::{closure#0}>
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:std::rt::lang_start_internal
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<std::io::buffered::bufwriter::BufWriter<std::io::stdio::StdoutRaw>>::flush_buf
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:std::sys::pal::unix::stack_overflow::imp::make_handler
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:std::sys::random::linux::getrandom
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/time.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/panicking.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/weak/syscall.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         5 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/weak/syscall.rs:std::sys::random::linux::getrandom
+         5 ( 0.00%)  /usr/include/x86_64-linux-gnu/bits/string_fortified.h:mi_random_init_ex
+         5 ( 0.00%)  ???:0x0000000000001060 [/usr/libexec/valgrind/vgpreload_core-amd64-linux.so]
+         5 ( 0.00%)  ???:0x0000000000005a60 [/usr/lib/x86_64-linux-gnu/libgcc_s.so.1]
+         5 ( 0.00%)  ???:0x000000000002b570 [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         4 ( 0.00%)  ./elf/../include/rtld-malloc.h:_dl_important_hwcaps
+         4 ( 0.00%)  ./elf/../sysdeps/x86_64/dl-cet.c:_dl_cet_setup_features [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         4 ( 0.00%)  ./elf/./elf/dl-debug.c:_dl_debug_state [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         4 ( 0.00%)  ./misc/../sysdeps/unix/syscall-template.S:gettid [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         4 ( 0.00%)  ./nptl/../string/bits/string_fortified.h:pthread_attr_setaffinity_np@@GLIBC_2.32
+         4 ( 0.00%)  ./posix/../sysdeps/unix/sysv/linux/_exit.c:_Exit [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         4 ( 0.00%)  ./signal/../sysdeps/unix/sysv/linux/sigsetops.h:signal
+         4 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wcschr.c:wcschr
+         4 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wmemchr.c:wmemchr [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         4 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wmemset.c:wmemset [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         4 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_stats_merge_into
+         4 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_heap_main_init.part.0
+         4 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_theap_collect_ex
+         4 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:_mi_theap_default_set
+         4 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/random.c:_mi_random_reinit_if_weak [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/alloc.rs:<hashbrown::raw::RawTableInner>::fallible_with_capacity::<alloc::alloc::Global>
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/node.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/slice.rs:std::env::args_os
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:sefer_alloc::global::tls_heap::bind_slow_tagged_with_config
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<std::sys::pal::unix::time::Timespec>::sub_timespec
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut, usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo, alloc::collections::btree::node::marker::Leaf>, alloc::collections::btree::node::marker::KV>>::remove_leaf_kv::<<alloc::collections::btree::map::entry::OccupiedEntry<usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo>>::remove_kv::{closure#0}, alloc::alloc::Global>
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<hashbrown::raw::RawTable<(usize, ())>>::reserve_rehash::<hashbrown::map::make_hasher<usize, (), std::hash::random::RandomState>::{closure#0}>
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<hashbrown::raw::RawTableInner>::fallible_with_capacity::<alloc::alloc::Global>
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:std::sys::thread_local::native::eager::destroy::<sefer_alloc::global::tls_heap::LeaseReleaseGuard>
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:<hashbrown::raw::RawTable<(usize, ())>>::reserve_rehash::<hashbrown::map::make_hasher<usize, (), std::hash::random::RandomState>::{closure#0}>
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:aligned_vmem::os::unix::reserve_aligned_raw
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:std::rt::lang_start_internal
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<once_ptr_cell::imp::OncePtrCell<sefer_alloc::registry::bootstrap::chunk::RegistryChunk>>::init_slow::<sefer_alloc::registry::bootstrap::ensure::ensure_chunk_slow::{closure#0}>
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/buffered/bufwriter.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/io/buffered/linewriter.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/panicking.rs:<sefer_alloc::global::tls_heap::LeaseReleaseGuard as core::ops::drop::Drop>::drop
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/panicking.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/once_lock.rs:<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::initialize::<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::get_or_init<std::io::stdio::stdout::{closure#0}>::{closure#0}, !>
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/once_lock.rs:std::io::stdio::_print
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/fd/unix.rs:<std::io::buffered::bufwriter::BufWriter<std::io::stdio::StdoutRaw>>::flush_buf
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/mod.rs:<std::sys::pal::unix::time::Timespec>::now
+         4 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/stack_overflow/thread_info.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         4 ( 0.00%)  /usr/include/x86_64-linux-gnu/bits/string_fortified.h:_mi_page_map_init
+         4 ( 0.00%)  /usr/include/x86_64-linux-gnu/bits/string_fortified.h:_mi_thread_locals_init
+         4 ( 0.00%)  ???:0x00000000001c91f0 [???]
+         4 ( 0.00%)  ???:0x000000000483d294 [???]
+         4 ( 0.00%)  ???:0x000000000486e748 [???]
+         4 ( 0.00%)  ???:0x000000000489d450 [???]
+         3 ( 0.00%)  ./elf/../include/rtld-malloc.h:_dl_allocate_tls_storage
+         3 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/dl-osinfo.h:dl_main
+         3 ( 0.00%)  ./libio/./libio/fileops.c:_IO_file_close [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./libio/./libio/fileops.c:_IO_file_stat [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./nptl/./nptl/pthread_self.c:pthread_self [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./posix/../malloc/dynarray-skeleton.c:__unregister_atfork
+         3 ( 0.00%)  ./setjmp/../sysdeps/x86_64/bsd-_setjmp.S:_setjmp [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memcmpeq.c:memcpy@@GLIBC_2.14 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memrchr.c:memrchr [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memset.c:memset [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strcasecmp.c:strcasecmp [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strcasecmp_l.c:strcasecmp_l [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strchrnul.c:strchrnul [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strncase.c:strncasecmp [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strncase_l.c:strncasecmp_l [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strrchr.c:rindex [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wcscmp.c:wcscmp [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wmemcmp.c:wmemcmp [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/atomic.h:mi_process_done
+         3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_thread_init
+         3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/arena.c:mi_arenas_get_count [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/os.c:_mi_os_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/os.c:_mi_os_virtual_address_bits [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/prim.c:_mi_is_redirected [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/random.c:_mi_random_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/theap.c:mi_theap_collect [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         3 ( 0.00%)  /home/user/abw/worktrees/sc4/crates/aligned-vmem/src/os/align_up_addr.rs:aligned_vmem::os::unix::reserve_aligned_raw
+         3 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_registry/claim.rs:<sefer_alloc::global::tls_heap::LeaseReleaseGuard as core::ops::drop::Drop>::drop
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/boxed.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/fix.rs:<alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut, usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo, alloc::collections::btree::node::marker::Leaf>, alloc::collections::btree::node::marker::KV>>::remove_leaf_kv::<<alloc::collections::btree::map::entry::OccupiedEntry<usize, std::sys::pal::unix::stack_overflow::thread_info::ThreadInfo>>::remove_kv::{closure#0}, alloc::alloc::Global>
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/map.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/map/entry.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:sefer_alloc::global::tls_heap::finish_bind
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<hashbrown::raw::RawTable<(usize, ())>>::reserve_rehash::<hashbrown::map::make_hasher<usize, (), std::hash::random::RandomState>::{closure#0}>
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:std::sys::pal::unix::stack_overflow::imp::make_handler
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<sefer_alloc::global::tls_heap::LeaseReleaseGuard as core::ops::drop::Drop>::drop
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:sefer_alloc::global::tls_heap::bind_slow_tagged_with_config
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:<std::io::stdio::StdoutLock as std::io::Write>::write_all
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<u128 as core::fmt::Display>::fmt
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:std::env::args_os
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:g1_rhythm_probe::segments
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/exit.rs:std::rt::lang_start_internal
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/sync/mutex/futex.rs:<&std::io::stdio::Stdout as std::io::Write>::write_fmt
+         3 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:sefer_alloc::global::tls_heap::finish_bind
+         2 ( 0.00%)  ./debug/../sysdeps/x86_64/multiarch/memcpy_chk.c:__memcpy_chk [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./debug/../sysdeps/x86_64/multiarch/memset_chk.c:__memset_chk [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./elf/../include/rtld-malloc.h:_dl_find_object_init
+         2 ( 0.00%)  ./elf/../include/rtld-malloc.h:init_tls
+         2 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/brk_call.h:brk
+         2 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/dl-sysdep.c:_dl_sysdep_start_cleanup [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+         2 ( 0.00%)  ./elf/../sysdeps/unix/sysv/linux/x86/dl-hwcap2.h:update_active.constprop.0
+         2 ( 0.00%)  ./elf/./setup-vdso.h:dl_main
+         2 ( 0.00%)  ./libio/./libio/libioP.h:_IO_flush_all
+         2 ( 0.00%)  ./malloc/../string/bits/string_fortified.h:_int_realloc
+         2 ( 0.00%)  ./nptl/../string/bits/string_fortified.h:pthread_getaffinity_np@@GLIBC_2.32
+         2 ( 0.00%)  ./nptl/../string/bits/string_fortified.h:pthread_getattr_np@@GLIBC_2.32
+         2 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memchr.c:memchr [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memmove.c:memmove [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/stpcpy.c:stpcpy [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/stpncpy.c:stpncpy [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strcat.c:strcat [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strcpy.c:strcpy [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strcspn.c:strcspn [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strncpy.c:strncpy [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strpbrk.c:strpbrk [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/strspn.c:strspn [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wcscat.c:wcscat [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wcscat.c:wcschr [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wcslen.c:wcslen [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wcsncpy.c:wcsncpy [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wcsnlen.c:wcsnlen [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc-stats.h:mi_heap_main_init.part.0
+         2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_os_good_alloc_size
+         2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_prim_mem_init
+         2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_random_init_ex
+         2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/prim.c:_mi_allocator_done [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/prim.c:mi_process_attach [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/prim.c:mi_process_detach [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c:__mi_stat_counter_increase_mt [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/threadlocal.c:_mi_thread_locals_init [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         2 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/config/large_cache_config.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+         2 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_slot.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+         2 ( 0.00%)  /rust/deps/hashbrown-0.17.1/src/alloc.rs:<hashbrown::raw::RawTableInner>::fallible_with_capacity::<alloc::alloc::Global>
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/alloc.rs:g1_rhythm_probe::segments
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:<std::sync::once::Once>::call_once_force::<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::initialize<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::get_or_init<std::io::stdio::stdout::{closure#0}>::{closure#0}, !>::{closure#0}>::{closure#0}
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/string.rs:g1_rhythm_probe::delta
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/mod.rs:<std::io::buffered::bufwriter::BufWriter<std::io::stdio::StdoutRaw>>::flush_buf
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:<std::sys::sync::once::futex::Once>::call
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/convert/num.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/fmt/mod.rs:<alloc::string::String as core::fmt::Display>::fmt
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs:g1_rhythm_probe::main
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:g1_rhythm_probe::delta
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:std::env::args_os
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:<std::sync::once::Once>::call_once_force::<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::initialize<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::get_or_init<std::io::stdio::stdout::{closure#0}>::{closure#0}, !>::{closure#0}>::{closure#0}
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:std::env::args_os
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:std::rt::lang_start_internal
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<&std::io::stdio::Stdout as std::io::Write>::write_fmt
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<std::sync::once::Once>::call_once_force::<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::initialize<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::get_or_init<std::io::stdio::stdout::{closure#0}>::{closure#0}, !>::{closure#0}>::{closure#0}
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:std::rt::lang_start_internal
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:sefer_alloc::global::tls_heap::finish_bind
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:std::env::args_os
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:<std::sys::pal::unix::time::Timespec>::now
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:std::sys::random::linux::hashmap_random_keys
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:aligned_vmem::page_size::init_page_size_cache
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:std::sys::args::unix::imp::ARGV_INIT_ARRAY::init_wrapper
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:std::sys::pal::unix::stack_overflow::imp::make_handler
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:std::sys::random::linux::getrandom
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/time.rs:<std::sys::pal::unix::time::Timespec>::sub_timespec
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/once_lock.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:<std::sync::once::Once>::call_once_force::<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::initialize<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::get_or_init<std::io::stdio::stdout::{closure#0}>::{closure#0}, !>::{closure#0}>::{closure#0}
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/args/unix.rs:std::sys::args::unix::imp::ARGV_INIT_ARRAY::init_wrapper [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/conf.rs:std::rt::lang_start_internal
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/mod.rs:<std::io::buffered::bufwriter::BufWriter<std::io::stdio::StdoutRaw>>::flush_buf
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/sync/mutex/futex.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/sync/mutex/futex.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/lazy.rs:g1_rhythm_probe::segments
+         2 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:sefer_alloc::global::tls_heap::finish_bind
+         2 ( 0.00%)  ???:0x000000000483d030 [???]
+         2 ( 0.00%)  ???:0x000000000484b3c0 [???]
+         2 ( 0.00%)  ???:0x000000000489d4e0 [???]
+         2 ( 0.00%)  ???:0x000000000489d660 [???]
+         2 ( 0.00%)  ???:0x000000000489d680 [???]
+         2 ( 0.00%)  ???:0x000000000489d7b0 [???]
+         1 ( 0.00%)  ./debug/../sysdeps/x86_64/multiarch/memmove_chk.c:__memmove_chk [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         1 ( 0.00%)  ./debug/../sysdeps/x86_64/multiarch/mempcpy_chk.c:__mempcpy_chk [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         1 ( 0.00%)  ./elf/../sysdeps/x86_64/dl-machine.h:_dl_sysdep_start
+         1 ( 0.00%)  ./libio/./libio/libioP.h:_IO_cleanup
+         1 ( 0.00%)  ./signal/../sysdeps/unix/sysv/linux/internal-signals.h:signal
+         1 ( 0.00%)  ./string/../sysdeps/x86/cacheinfo.c:__x86_cacheinfo [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         1 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/mempcpy.c:mempcpy [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         1 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wcpcpy.c:wcpncpy [/usr/lib/x86_64-linux-gnu/libc.so.6]
+         1 ( 0.00%)  ./wcsmbs/../sysdeps/x86_64/multiarch/wcpncpy.c:wcpncpy
+         1 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/atomic.h:__mi_stat_counter_increase_mt
+         1 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_heap_main_init.part.0
+         1 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_process_done
+         1 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/large/alloc_core_large_cache.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::evict_one_oldest
+         1 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/large/alloc_core_large_cache_eviction.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+         1 ( 0.00%)  /home/user/abw/worktrees/sc4/src/alloc_core/small/alloc_core_small/directory.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+         1 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/bootstrap/free_slot_hint.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+         1 ( 0.00%)  /home/user/abw/worktrees/sc4/src/registry/heap_core/state/depot_paths.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/node.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:<alloc::string::String as core::fmt::Display>::fmt
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/string.rs:<alloc::string::String as core::fmt::Display>::fmt [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/mod.rs:<alloc::string::String as core::fmt::Display>::fmt
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/vec/spec_from_iter_nested.rs:g1_rhythm_probe::delta
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:<&std::io::stdio::Stdout as std::io::Write>::write_fmt
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:<sefer_alloc::global::tls_heap::LeaseReleaseGuard as core::ops::drop::Drop>::drop
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::claim_lease_with_config
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:std::rt::lang_start_internal
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cell.rs:std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:<hashbrown::raw::RawTable<(usize, ())>>::reserve_rehash::<hashbrown::map::make_hasher<usize, (), std::hash::random::RandomState>::{closure#0}>
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:std::rt::lang_start_internal
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/io/error.rs:<&std::io::stdio::Stdout as std::io::Write>::write_fmt
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/alignment.rs:g1_rhythm_probe::main
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/mem/mod.rs:std::sys::thread_local::native::eager::destroy::<sefer_alloc::global::tls_heap::LeaseReleaseGuard>
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<hashbrown::raw::RawTable<(usize, ())>>::reserve_rehash::<hashbrown::map::make_hasher<usize, (), std::hash::random::RandomState>::{closure#0}>
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:std::io::stdio::print_to_buffer_if_capture_used
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/metadata.rs:std::rt::lang_start_internal
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<&std::io::stdio::Stdout as std::io::Write>::write_fmt
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<hashbrown::raw::RawTableInner>::fallible_with_capacity::<alloc::alloc::Global>
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<std::io::buffered::bufwriter::BufWriter<std::io::stdio::StdoutRaw>>::flush_buf
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:std::sys::pal::unix::stack_overflow::imp::make_handler
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/result.rs:g1_rhythm_probe::main
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<std::io::buffered::bufwriter::BufWriter<std::io::stdio::StdoutRaw>>::flush_buf
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::initialize::<<std::sync::once_lock::OnceLock<std::sync::reentrant_lock::ReentrantLock<core::cell::RefCell<std::io::buffered::linewriter::LineWriter<std::io::stdio::StdoutRaw>>>>>::get_or_init<std::io::stdio::stdout::{closure#0}>::{closure#0}, !> [/home/user/ab/tgt-sc4/release/examples/g1_rhythm_probe]
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:sefer_alloc::global::tls_heap::bind_slow_tagged_with_config
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:std::io::stdio::_print
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:std::io::stdio::print_to_buffer_if_capture_used
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/hash/random.rs:g1_rhythm_probe::segments
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/alloc/unix.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/pal/unix/stack_overflow.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/sync/mutex/futex.rs:std::sys::pal::unix::stack_overflow::imp::drop_handler
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:<sefer_alloc::global::tls_heap::LeaseReleaseGuard as core::ops::drop::Drop>::drop
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:g1_rhythm_probe::segments
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/current.rs:<&std::io::stdio::Stdout as std::io::Write>::write_fmt
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/current.rs:<std::sync::once::Once>::call_once::<std::rt::cleanup::{closure#0}>::{closure#0}
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/current.rs:std::rt::lang_start_internal
+         1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/id.rs:std::rt::lang_start_internal
+
