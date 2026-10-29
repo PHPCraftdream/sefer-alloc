@@ -1,0 +1,311 @@
+# Source/build paths normalized; numeric data unchanged.
+# callgrind format
+version: 1
+creator: callgrind-3.22.0
+pid: 582611
+cmd:  <workspace>/.rush/own-free/control-before/target/release/examples/own_free_wall sefer bulk16k 100
+part: 1
+
+
+desc: I1 cache: 
+desc: D1 cache: 
+desc: LL cache: 
+
+desc: Timerange: Basic block 0 - 662728
+desc: Trigger: Program termination
+
+positions: line
+events: Ir
+summary: 1508050
+
+
+ob=(1) /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+fl=(1) ???
+fn=(0) 0x000000000001f540
+cob=(6) <workspace>/.rush/own-free/control-before/target/release/examples/own_free_wall
+cfi=(162) ???
+cfn=(534) (below main)
+calls=1 0 
+0 1508050
+
+ob=(6)
+fl=(198) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs
+fn=(1006) std::rt::lang_start::<()>::{closure#0}
+cfi=(270) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs
+cfn=(1008) std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+calls=1 162 
+206 1508050
+
+fn=(762) std::rt::lang_start_internal
+fi=(384) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs
+cfn=(1006)
+calls=1 206 
+287 1508050
+fe=(198)
+
+fl=(271) <workspace>/worktrees/own-free-before/examples/own_free_wall.rs
+fn=(1010) own_free_wall::main
+cfn=(1282) own_free_wall::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+calls=100 13 
+103 7939
+cfn=(1282)
+calls=6300 13 
+103 1500111
+
+fn=(1282)
+13 44800
+fi=(385) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs
++62 6400
+fi=(386) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs
+463 19200
+fi=(289) <workspace>/worktrees/own-free-before/src/global/tls_heap.rs
+-84 6400
+fi=(260) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
++96 12800
+fi=(319) <workspace>/worktrees/own-free-before/src/alloc_core/segment/segment_table/segment_table_impl.rs
+807 12800
++5 6398
+fi=(256) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+1731 12796
+fi=(329) <workspace>/worktrees/own-free-before/src/alloc_core/segment/segment_header/segment_header_views.rs
+38 6398
+fi=(340) <workspace>/worktrees/own-free-before/src/alloc_core/alloc_core/mem/mem_impl.rs
+-38 19200
+fi=(319)
+894 8
+-79 2
++1 4
+0 1
+821 2
++1 1
++1 1
+fi=(256)
+1731 2
+fi=(329)
+38 1
+fi=(260)
+970 6400
+fi=(259) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs
++68 19200
+fi=(316) <workspace>/worktrees/own-free-before/src/alloc_core/platform/size_classes.rs
+357 12800
++40 6400
++5 12800
+-5 6400
++8 19200
+fi=(341) <workspace>/worktrees/own-free-before/src/registry/heap_core/free/dealloc_own_base.rs
++42 32000
+fi=(329)
+38 12800
+fi=(316)
+-38 2
+fi=(339) <workspace>/worktrees/own-free-before/src/alloc_core/segment/segment_table/hash.rs
+30 9
+-30 1
+fi=(256)
+1731 1
+fi=(339)
+255 2
++4 4
++2 4
+fi=(319)
+976 3
++3 1
+fi=(256)
+1731 1
+fi=(304) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs
+38 1
+fi=(305) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+2872 1
+fi=(319)
+833 2
+fi=(256)
+1731 2
+fi=(329)
+38 2
+fi=(341)
+-38 6400
+320 19200
++33 12800
+0 19200
+353 12800
++15 12800
+0 12800
+495 6400
++1 12800
+fi=(342) <workspace>/worktrees/own-free-before/src/alloc_core/segment/bitmap/state_byte.rs
+96 400
+fi=(256)
+1939 400
+fi=(341)
+507 1200
++1 800
+fe=(271)
+0 400
+fi=(341)
+546 12000
+0 12000
+546 6000
++1 42000
++20 24000
+cfi=(323) <workspace>/worktrees/own-free-before/src/alloc_core/small/alloc_core_small_magazine.rs
+cfn=(1302) <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+calls=6000 -2 
+* 912400
+* 6000
++5 6000
+0 6000
+fi=(342)
+96 6000
+fi=(256)
+1939 6000
+0 12000
+fi=(288) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs
+491 12800
+fe=(271)
+17 51200
+
+fl=(270)
+fn=(1008)
+fi=(384)
+cfi=(271)
+cfn=(1010)
+calls=1 119 
+250 1508050
+fe=(270)
+
+fl=(323)
+fn=(1302)
+565 156000
++42 30000
+0 6000
+608 6000
++1 12000
+fi=(304)
+159 12000
+fi=(260)
+475 6000
+fe=(323)
+618 24000
+0 18000
+618 12000
+0 12000
+fi=(200) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+1052 6000
+fi=(337) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs
+331 12000
+0 6000
+fi=(205) /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs
+1650 6000
+fi=(337)
+180 6000
+0 6000
+fi=(319)
+878 18000
+0 6000
+879 6000
+fi=(271)
+0 6000
+fi=(319)
+0 6000
+fi=(200)
+1052 18000
+fi=(256)
+1731 6000
+fi=(329)
+38 18000
+fi=(200)
+2500 18000
+fi=(205)
+1650 6000
+fi=(337)
+180 6000
+0 48000
+fe=(323)
+703 48000
+0 18000
+712 6000
++1 6000
++5 6000
+fi=(200)
+2649 12000
+fe=(323)
+718 12000
+fi=(342)
+112 12000
+fi=(256)
+1731 6000
+fe=(323)
+726 48000
+0 6000
+fi=(256)
+1939 6000
+fi=(260)
+970 6000
+0 6000
+fi=(256)
+1939 6000
+0 6000
+fe=(323)
+750 6000
+fi=(205)
+1650 12000
+0 18000
+1650 6000
+fi=(337)
+180 12000
+fe=(323)
+0 6000
+fi=(256)
+1939 6000
+fe=(323)
+703 12000
+0 100
+763 100
+fi=(327) <workspace>/worktrees/own-free-before/src/alloc_core/small/alloc_core_small/directory.rs
+154 200
+fi=(256)
+1731 6000
+fi=(200)
+1052 18000
+fi=(256)
+1939 6000
+fi=(343) <workspace>/worktrees/own-free-before/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs
+108 12000
++5 18000
+fe=(323)
+0 6000
+607 12000
++39 48000
+
+fl=(162)
+fn=(534)
+cob=(2) /usr/lib/x86_64-linux-gnu/libc.so.6
+cfi=(163) ./csu/../csu/libc-start.c
+cfn=(536) __libc_start_main@@GLIBC_2.34
+calls=1 242 
+0 1508050
+
+fn=(760) main
+cfi=(198)
+cfn=(762)
+calls=1 152 
+0 1508050
+
+ob=(2)
+fl=(194) ./csu/../sysdeps/nptl/libc_start_call_main.h
+fn=(752) (below main)
+cob=(6)
+cfi=(162)
+cfn=(760)
+calls=1 0 
+58 1508050
+
+fl=(163)
+fn=(536)
+cfi=(194)
+cfn=(752)
+calls=1 29 
+360 1508050
+
+totals: 1508050

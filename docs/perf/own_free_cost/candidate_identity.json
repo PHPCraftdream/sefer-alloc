@@ -1,0 +1,10 @@
+{
+  "captured_before_build": "2026-10-24T19:43:23.577Z",
+  "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+  "features": "production",
+  "patch_sha256": "05db9b08272ee076c3f68cef6d522cc1d1453b6dc35ecab8576490860b1ee53e",
+  "example_sha256": "a99e08fa6de845b90baec6646b6e5aada674a2193ec43849e75b19f3f4fcd71e",
+  "profile_script_sha256": "20c9a01d2e1416fce34eaaf32ea4ef985a3a544bc47d12fc6436ebab71bcd097",
+  "layer": "SeferAlloc GlobalAlloc facade; same-thread runtime-layout and const-layout churn; not installed allocator",
+  "environment": "WSL Linux, not native Linux or Windows"
+}

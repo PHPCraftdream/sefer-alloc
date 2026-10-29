@@ -3177,6 +3177,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **Item 114 — own-free overflow outlining: CLOSED / NO-GO (2026-10-24).** Normal-free gate выиграл, bulk16k control проиграл; в main не принят. Полное заключение — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § L114; измерения — `docs/perf/OWN_FREE_OVERFLOW_OUTLINE_GATE.md`.
+
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §

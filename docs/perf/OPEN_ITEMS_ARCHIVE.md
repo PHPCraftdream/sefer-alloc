@@ -1,5 +1,14 @@
 # Open items — archived closure narratives
 
+## L114 — own-free overflow outlining (2026-10-24, задачи #15–#17)
+
+> **Status:** CLOSED / NO-GO для этого кандидата; в main не принят.
+> **Current verdict:** целевой normal-free instruction gate пройден, но обязательный bulk16k control регрессирует и по marginal Ir/free, и по nominal paired native workload CI. Улучшение normal/const free не компенсирует проигрыш другого режима.
+> **Next trigger:** переоткрывать только отдельным заранее заданным экспериментом, который устраняет измеренную цену частого cap-eviction, а не ослабляет control budget. Повтор того же широкого outlining не является новым механизмом.
+> **Evidence:** `docs/perf/OWN_FREE_OVERFLOW_OUTLINE_GATE.md`, companion CSV, raw/identities/patches/activation в `docs/perf/own_free_cost/`, prereg `docs/design/2026-10-24-own-free-frame-candidate.md`.
+
+Атрибуция выполнена на принятом f80c681b, без D1′/scalar issue. На ordinary free найден реальный frame tax; вынос только filled-magazine ветви сокращает исполненные инструкции. Однако actual callgraph подтвердил, что на bulk16k cap-eviction — частая, а не холодная ветвь. Native before/after/mimalloc сравнение сохранено полностью, включая проигрыш; широкая promotion-матрица после NO-GO не запускалась. Прототип остаётся только в экспериментальном дереве с точными measurement patches, не в main. Test execution/Miri/Loom/CI не получены и не заявляются; проектные/dependency версии не менялись, commit/push/merge не выполнялись. Прочие perf/correctness карточки сохраняют прежние статусы.
+
 **Purpose.** This file holds the full dated historical narrative bodies for
 every item tracked in `docs/perf/OPEN_ITEMS.md` — the round-by-round
 "here's what happened, here's the correction" prose that used to sit
