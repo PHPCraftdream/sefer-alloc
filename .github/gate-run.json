@@ -1,1 +1,0 @@
-{"runner":"scripts/r20_r6_ab_iai_run.mjs","stages":"prepare,build,oracle,measure","outDir":"target/r20r6ab-k7","benchTarget":"perf_gate_iai","features":"production bench-internals internals","baseSha":"2bc830ccfe9af873f76b05148bef74e0204664de","note":"G1-K7 Addendum 6 rule 4: K5 2bc830cc vs PR head"}

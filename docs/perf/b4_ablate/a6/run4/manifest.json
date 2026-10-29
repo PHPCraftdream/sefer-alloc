@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "createdAt": "2026-10-29T15:27:42.912Z",
+  "shaA": "2bc830ccfe9af873f76b05148bef74e0204664de",
+  "shaB": "4e4bc5b8128226cc65ad1dc5868ed237b5e533c2",
+  "benchTarget": "perf_gate_iai",
+  "features": "production bench-internals internals",
+  "cells": null,
+  "thresholds": null,
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "os": "Linux 7.0.0-1017-azure"
+}

@@ -821,6 +821,22 @@ below, followed by the closure record.*
 
    > **Closure (2026-10-27):** CLOSED — v2 GO, shipped as `perf(runtime)`. PR #108 (`u31` → `main`) merged; landing SHA `6e64d47c45f2bbebf44af4924091a829022aac32`, CI run 40487577871 success; PR head `8a95cb93` green (31 checks, incl. Miri, loom, kani, TSan). U31 made R-Ph3a-native, R-Ph3b and R4c-08 src-stale; reverified through the EV-1 runner (run 40471983792, E0 PASS) with receipts in the same PR. Remaining growth16 gap vs mimalloc (2.23× Ir) is outside the scan: carve and flush (task U32).
 
+### A130
+
+*Back-link: `docs/perf/OPEN_ITEMS.md` § "Recently resolved" (one-line pointer;
+item 130 removed from the main index). Former inline card byte-preserved
+below, followed by the closure record.*
+
+130. **[A] G1-K7 — budgeted depot overflow above the K5 floor (default 1 MiB per heap; the shippable form of item 129): ships under the owner's exception to rule 2a (Addendum 7); rules 3–5 gate the merge.** (Filed 2026-10-29, `docs/design/2026-10-28-depot-budget-design.md`; pre-registration and verdict `docs/perf/b4_ablate/G1_K7_PREREG.md` (Addenda 6–9), `docs/perf/b4_ablate/G1_K7_A6_VERDICT.md` on `g1-k7-meas`.)
+   > **Current state**
+   > - **Status:** OPEN `[A]` — rule 1 holds, rule 2a fails on pair16/pair64 and is waived for v5 only by the owner (Addendum 7: «правило не снято. Тут просто разумное исключение. Трейдоф в нашу пользу»), rule 3 (RSS) PASS; rule 4 (iai against K5 `2bc830cc`, gate-run on PR #128) pending; PR #128 not yet merged.
+   > - **Current verdict (ИЗМЕРЕНО, v5):** run 2 (16 runs, t_mi/t_sefer) bulk16k K7/K5 1.675 (0.496 → 0.831), churn64 1.081, churn1024 1.047, no run-2 loss; run 1 GL1 bulk64k −9.88 %, GL2 bulk16k_32 −26.82 %; run-1 losses pair16 E_v +0.62 % [0.47, 0.73], pair64 +0.73 % [0.61, 0.79] (D > 0). Run 3 RSS: no loss at E = 0 / 512 KiB / 1 MiB / 2 MiB on W1–W5 and W4; v5 over K5 at most +284 KiB (allowance 2312 KiB), ≤ 60 KiB after thread exit.
+   > - **Next trigger:** rule 4 iai result; GO → `bench:table` refresh, README measurements, merge #128 as `perf(runtime)`, card to resolved, then the Kani follow-up PR (`g1-k7-kani`, И-O1/И-O2).
+   > - **Open sub-item (C.2):** an overflow reload skips the segment refill, and with it the Small remote-free discovery that runs there (`src/registry/heap_core/alloc/hot.rs`, refill paths); every 8th overflow reload runs only the bounded Large-sidecar check (`depot_paths.rs`, `reload_overflow`). Long overflow reload series can delay Small remote-free reclamation (latency/RSS, not a leak). Fix only on a measured effect.
+   > - **Evidence:** `docs/perf/b4_ablate/` (prereg, verdict, `a6/` logs, CSVs, raw manifest, `a6/run3/`), tags `archive/g1-k7-meas`, `archive/g1-k7`; tests `tests/g1_k7_depot_overflow*.rs`.
+
+   > **Closure (2026-10-29):** CLOSED — shipped as `perf(runtime)` via PR #128. Rule 1 held; rule 2a (pair16 E_v +0.62 % [0.47, 0.73], pair64 +0.73 % [0.61, 0.79]) and rule 4 (dealloc_flush_all_tcache_16b +430, seg_cycle_decommit_256k +421, multiseg_cold_256k +157, cold_alloc_only_256x16b n/2n/4n +31/+87/+151, realloc_grow +48, medium_class_dealloc_churn_16b +25 Ir after the bootstrap proxy) failed and were each waived by the owner for v5 only, after the full trade-off table (Addenda 7 and 10); rule 3 (RSS) passed (at most +284 KiB, ≤ 60 KiB after thread exit); rule 5 evidence in run 3 and P3/P4. iai A/B: gate-run CI run 40901604462 (`docs/perf/b4_ablate/a6/run4/`). Follow-ups: the Kani harnesses И-O1/И-O2 (branch `g1-k7-kani`), the fixed costs (flush-all, segment release, per-heap bootstrap, segment-refill check) and sub-item C.2.
+
 ---
 
 ## [D] Deferred designs

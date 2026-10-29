@@ -1677,9 +1677,21 @@ static GLOBAL: SeferAlloc =
     SeferAlloc::with_config(LargeCacheConfig::new().depot_budget_bytes(0));
 ```
 
-**Measurements:** pending — the speed (J1′ v2 against mimalloc and
-against the floor-only depot) and RSS (budget sweep 0 / 512 KiB / 1 MiB /
-2 MiB) results land with this setting's gate report and replace this line.
+**Measurements** (pre-registered, `docs/perf/b4_ablate/G1_K7_PREREG.md`
+Addenda 6–10; report `docs/perf/b4_ablate/G1_K7_A6_VERDICT.md`; Windows,
+i7-11800H; default budget 1 MiB against the floor-only depot):
+
+| Axis | Result |
+|---|---|
+| Time, own A/B (40 processes × 2000 blocks, net of a null copy) | bulk16k −52 %, bulk16k_32 −27 %, bulk64k −9.9 %, churn64 −2.9 %, churn1024 −3.0 %; pair16 +0.62 %, pair64 +0.73 % (slower) |
+| Time vs mimalloc (t_mi / t_sefer, 16 sessions, floor-only → this setting) | bulk16k 0.496 → 0.831, churn64 0.775 → 0.838, churn1024 0.917 → 0.960; no kernel slower |
+| Instructions (iai, 106 benches) | growth16 −17 %, cold alloc/free 4n −13.6 %, recycle alloc/free −7.9 %; one-time +2.4–2.6 k Ir per thread heap, +430 Ir per flush-all, ≈ +70 Ir per segment release, ≈ +0.15 Ir per allocation carved from a fresh segment |
+| RSS (budget 0 / 512 KiB / 1 MiB / 2 MiB) | at most +284 KiB over the floor-only depot while the thread lives (2 MiB budget), ≤ +60 KiB after it exits — parked blocks stay in memory the floor-only arm keeps resident in its segments anyway |
+
+The pair16 / pair64 and per-bench instruction costs above exceed the
+pre-registered no-loss rules; the setting ships under the owner's two
+scoped exceptions to those rules (Addenda 7 and 10). Use `0` where only
+single alloc/free pairs matter.
 
 ---
 
