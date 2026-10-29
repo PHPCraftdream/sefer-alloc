@@ -58,3 +58,25 @@ Expected: −0.5…−0.6 ns per pair on warm bulk 16 B and 64 B at n = 1024
 
 If any check fails the change is rejected and reverted (the measured commit
 kept under an `archive/` tag); the result is recorded either way.
+
+## Addendum 1 (written after check 1, before any further measurement)
+
+Check 1 as registered **failed** (raw runs in `wb3/check1/`): `D(c1) − D(base)`
+was −0.59 / +0.04 ns/pair on 16 B and −0.15 / −0.59 on 64 B, and SeferAlloc's
+`t(16)` — the same code in both arms, no depot traffic — moved by +0.43 ns in
+the first 16 B pair, so the run was too noisy for a 0.3 ns bar per pair. The
+`t(1024)` of `c1` was lower in all four pairs (−0.16, −0.04, −0.28, −0.60 ns).
+Under the registration C1 is not accepted; that verdict stands whatever
+follows.
+
+A second, separately registered check (check 1b) measures the same quantity
+with more power, the statistic changed **after** seeing check 1's data —
+stated here so it is not mistaken for the original rule:
+
+- 41 processes per (arm, n) instead of 21, four run pairs
+  `base, c1, base, c1, base, c1, base, c1`, sizes 16 and 64 B, same binaries
+  (sha256 in `wb3/identity.txt`).
+- Accept only if, for both sizes, the **median over the four pairs** of
+  `D(c1) − D(base)` is ≤ −0.3 ns/pair and the median of SeferAlloc's
+  `t(16)` difference is within ±0.1 ns/pair.
+- Checks 2 and 3 apply unchanged; C1 ships only if 1b, 2 and 3 all pass.
