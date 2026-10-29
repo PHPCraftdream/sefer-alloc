@@ -571,6 +571,8 @@ impl HeapCore {
         // parked into a body-write path: only `slots` pointers move.
         // G1-K7: `depot_park` fills the floor, then the overflow within the
         // heap's budget; the inline gate skips the cold call once full.
+        #[cfg(feature = "alloc-decommit")]
+        let floor = self.tcache.classes[c].floor;
         if cnt == TCACHE_CAP && self.depot_may_park(c) && self.depot_park(c) {
             meta.state_byte()
                 .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
@@ -578,9 +580,12 @@ impl HeapCore {
             self.tcache.classes[c].count = 1;
             // `depot_park` cleared the mask; `block` is not virgin.
             // Decay runs only now, after `block` is MAG in the live magazine:
-            // it flushes long-parked overflow records, never `block`.
+            // it flushes long-parked overflow records, never `block`. Only an
+            // overflow park (the floor was full) counts as a cold event.
             #[cfg(feature = "alloc-decommit")]
-            self.depot_tick();
+            if self.tcache.classes[c].floor == floor {
+                self.depot_tick();
+            }
             return;
         }
         // ── R1-01: free-side byte-budget cap reached ───────

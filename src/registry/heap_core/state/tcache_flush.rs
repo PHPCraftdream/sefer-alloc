@@ -123,6 +123,8 @@ impl HeapCore {
                     break;
                 }
             }
+            // G1-K7: the floor is empty; drop its epoch mark too.
+            self.tcache.classes[c].floor = 0;
         }
         // G1-K7: the depot (floor and overflow) is now empty; return the
         // overflow's committed record pages and reset its rings.
@@ -175,15 +177,32 @@ impl HeapCore {
     #[cold]
     #[inline(never)]
     fn depot_decay(&mut self) {
+        use crate::registry::heap_core::state::depot::DEPOT_CLASSES;
         use crate::registry::heap_core::state::depot_overflow::DECAY_WORK;
+        use crate::registry::heap_core::state::tcache::FLOOR_PARKED_IN_EPOCH;
         use crate::registry::heap_core::state::tcache::TCACHE_CAP;
         let budget = self.depot_budget as usize;
+        let Some(depot) = self.depot.as_deref_mut() else {
+            return;
+        };
+        if depot.ovf.epoch_due() {
+            // Floor parks count as activity: collect and clear their marks.
+            let mut floor_parked = 0u32;
+            for c in 0..DEPOT_CLASSES {
+                let f = &mut self.tcache.classes[c].floor;
+                if *f & FLOOR_PARKED_IN_EPOCH != 0 {
+                    floor_parked |= 1 << c;
+                    *f &= !FLOOR_PARKED_IN_EPOCH;
+                }
+            }
+            depot.ovf.end_epoch(floor_parked);
+        }
         let mut work = 0;
         while work < DECAY_WORK {
             let Some(depot) = self.depot.as_deref_mut() else {
                 return;
             };
-            let Some(c) = depot.ovf.decay_step() else {
+            let Some(c) = depot.ovf.debt_class() else {
                 break;
             };
             let n = depot.ovf.len(c);

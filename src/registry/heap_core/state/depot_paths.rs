@@ -4,9 +4,9 @@
 use crate::registry::heap_core::state::depot::{DEPOT_CLASSES, DEPOT_K};
 #[cfg(feature = "alloc-decommit")]
 use crate::registry::heap_core::state::depot_overflow::DepotOverflow;
-use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 #[cfg(feature = "alloc-decommit")]
 use crate::registry::heap_core::state::tcache::{PerClass, Tcache};
+use crate::registry::heap_core::state::tcache::{FLOOR_COUNT, FLOOR_PARKED_IN_EPOCH, TCACHE_CAP};
 use crate::registry::heap_core::HeapCore;
 
 /// G1-K7: `PerClass::limit` with the overflow open for class `c` under
@@ -43,8 +43,8 @@ fn park_overflow(
     k: usize,
     budget: usize,
 ) -> bool {
-    let n = class.parked as usize;
-    if budget != 0 && ovf.park(c, n - k, &class.slots, budget) {
+    debug_assert_eq!(class.parked as usize, k + ovf.len(c));
+    if budget != 0 && ovf.park(c, ovf.len(c), &class.slots, budget) {
         return true;
     }
     class.limit = class.parked;
@@ -58,15 +58,10 @@ fn park_overflow(
 #[cfg(feature = "alloc-decommit")]
 #[cold]
 #[inline(never)]
-fn reload_overflow(
-    ovf: &mut DepotOverflow,
-    tcache: &mut Tcache,
-    c: usize,
-    k: usize,
-    budget: usize,
-) -> bool {
+fn reload_overflow(ovf: &mut DepotOverflow, tcache: &mut Tcache, c: usize, budget: usize) -> bool {
     let class = &mut tcache.classes[c];
-    ovf.reload(c, class.parked as usize - k, &mut class.slots);
+    debug_assert_eq!(class.parked as usize, ovf.len(c), "floor empty");
+    ovf.reload(c, ovf.len(c), &mut class.slots);
     let ingress = ovf.ingress_due();
     let ready = ovf.take_unstarved(budget);
     if ready != 0 {
@@ -87,7 +82,9 @@ impl HeapCore {
     }
 
     /// Park a full magazine: into the floor while it has room, then into the
-    /// overflow within the heap's budget. `false` (no change) otherwise.
+    /// overflow within the heap's budget. `false` (no change) otherwise. The
+    /// caller ticks the overflow decay only when the floor did not take it
+    /// (`PerClass::floor` unchanged).
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[cold]
     #[inline(never)]
@@ -104,10 +101,16 @@ impl HeapCore {
         if class.count as usize != TCACHE_CAP {
             return false;
         }
-        let n = class.parked as usize;
         let k = DEPOT_K[c] as usize;
-        let ok = if n < k {
-            depot.floor_park(c, n, &class.slots)
+        // The floor fills first (G1-K7): a cohort that fits it never touches
+        // the overflow.
+        let f = (class.floor & FLOOR_COUNT) as usize;
+        let ok = if f < k {
+            let ok = depot.floor_park(c, f, &class.slots);
+            if ok {
+                class.floor = (f as u8 + 1) | FLOOR_PARKED_IN_EPOCH;
+            }
+            ok
         } else {
             #[cfg(feature = "alloc-decommit")]
             {
@@ -129,9 +132,10 @@ impl HeapCore {
         true
     }
 
-    /// Reload a parked full magazine — the overflow's newest first, then the
-    /// floor's; its blocks remain MAG and live. No decay tick here: the refill
-    /// callers count the cold event, the teardown drain must not.
+    /// Reload a parked full magazine — the floor's first, then the overflow's
+    /// newest; its blocks remain MAG and live. No decay tick here: the refill
+    /// callers count an overflow event (`PerClass::floor` unchanged), the
+    /// teardown drain must not.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[cold]
     #[inline(never)]
@@ -148,18 +152,20 @@ impl HeapCore {
         if self.tcache.classes[c].count != 0 || n == 0 {
             return false;
         }
-        let k = DEPOT_K[c] as usize;
         #[cfg(feature = "alloc-decommit")]
         let mut ingress = false;
-        if n > k {
+        // The floor empties first, then the overflow (newest record first).
+        let f = (self.tcache.classes[c].floor & FLOOR_COUNT) as usize;
+        if f > 0 {
+            depot.floor_reload(c, f, &mut self.tcache.classes[c].slots);
+            self.tcache.classes[c].floor -= 1;
+        } else {
             #[cfg(feature = "alloc-decommit")]
             {
-                ingress = reload_overflow(&mut depot.ovf, &mut self.tcache, c, k, budget);
+                ingress = reload_overflow(&mut depot.ovf, &mut self.tcache, c, budget);
             }
             #[cfg(not(feature = "alloc-decommit"))]
-            unreachable!("parked never exceeds DEPOT_K without the overflow");
-        } else {
-            depot.floor_reload(c, n, &mut self.tcache.classes[c].slots);
+            unreachable!("parked never exceeds the floor without the overflow");
         }
         let class = &mut self.tcache.classes[c];
         class.parked -= 1;

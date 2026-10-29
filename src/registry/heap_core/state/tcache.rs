@@ -242,6 +242,12 @@ pub(crate) struct PerClass {
     /// FIRST in declaration order under `#[repr(C)]` so it lands at struct
     /// offset 0, preceding the pointer array at offset 8.
     pub(crate) count: u8,
+    /// G1-K7: depot floor occupancy in bits 0..=3 (`<= DEPOT_K[c]`) and, in
+    /// bit 7 ([`FLOOR_PARKED_IN_EPOCH`]), whether the class parked into its
+    /// floor during the current decay epoch. The floor fills and empties
+    /// before the overflow, so a cohort that fits the floor never touches
+    /// the overflow. In the padding byte after `count` (no size change).
+    pub(crate) floor: u8,
     /// B4 depot (DP-5 iteration 2): full magazines of this class parked in
     /// the slot's depot — the floor (`0..=DEPOT_K[c]`) plus, under G1-K7, the
     /// overflow above it (`parked - DEPOT_K[c]` records). `u16` in the padding
@@ -327,6 +333,14 @@ const _: () = assert!(
     "PerClass::count must sit at offset 0 (repr(C), declared first) for the documented magazine cache-line locality"
 );
 const _: () = assert!(
+    ::core::mem::offset_of!(PerClass, floor) == 1,
+    "PerClass::floor (u8) must use the padding byte after count (offset 1)"
+);
+const _: () = assert!(
+    crate::registry::heap_core::state::depot::DEPOT_K_MAX as usize <= FLOOR_COUNT as usize,
+    "the floor count must fit PerClass::floor's low bits"
+);
+const _: () = assert!(
     ::core::mem::offset_of!(PerClass, parked) == 2,
     "PerClass::parked (u16) must use the padding after count (offset 2)"
 );
@@ -355,11 +369,18 @@ const _: () = assert!(
     "PerClass::slots must start at offset 8 (repr(C), 8-byte-aligned pointer array placed after the small fields) for the documented magazine cache-line locality"
 );
 
+/// G1-K7: `PerClass::floor` low bits — the class's floor occupancy.
+pub(crate) const FLOOR_COUNT: u8 = 0x0F;
+/// G1-K7: `PerClass::floor` bit 7 — the class parked into its floor during
+/// the current decay epoch (cleared at the epoch's end).
+pub(crate) const FLOOR_PARKED_IN_EPOCH: u8 = 0x80;
+
 impl PerClass {
     /// Construct an empty per-class magazine (count zero, all slots null).
     const fn new() -> Self {
         Self {
             count: 0,
+            floor: 0,
             parked: 0,
             slots: [::core::ptr::null_mut(); TCACHE_CAP],
             #[cfg(feature = "virgin-zero-skip")]

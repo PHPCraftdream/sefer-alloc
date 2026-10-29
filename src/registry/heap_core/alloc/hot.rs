@@ -499,9 +499,14 @@ impl HeapCore {
     fn refill_magazine_slow_virgin(&mut self, c: usize) -> (*mut u8, bool) {
         // B4 depot (DP-3): a parked magazine holds freed blocks — never virgin
         // (`depot_reload` clears the mask).
+        #[cfg(feature = "alloc-decommit")]
+        let floor = self.tcache.classes[c].floor;
         if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
+            // G1-K7: an overflow reload (the floor was empty) is a cold event.
             #[cfg(feature = "alloc-decommit")]
-            self.depot_tick();
+            if self.tcache.classes[c].floor == floor {
+                self.depot_tick();
+            }
             return (self.finish_magazine_refill(c, TCACHE_CAP), false);
         }
         // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
@@ -683,10 +688,15 @@ impl HeapCore {
     #[inline(never)]
     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
         // B4 depot (DP-3): reload a parked full magazine (blocks stay MAG).
+        #[cfg(feature = "alloc-decommit")]
+        let floor = self.tcache.classes[c].floor;
         if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
-            // G1-K7: a depot reload is a cold event for the overflow decay.
+            // G1-K7: an overflow reload (the floor was empty) is a cold event
+            // for the overflow decay; floor reloads stay K5's path.
             #[cfg(feature = "alloc-decommit")]
-            self.depot_tick();
+            if self.tcache.classes[c].floor == floor {
+                self.depot_tick();
+            }
             return self.finish_magazine_refill(c, TCACHE_CAP);
         }
         // Bounded Large-only probe; Small discovery occurs in the refill.

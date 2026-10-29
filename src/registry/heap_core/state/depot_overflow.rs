@@ -342,28 +342,37 @@ impl DepotOverflow {
         self.events >= self.epoch_len || self.debt_mask != 0
     }
 
-    /// Epoch end, if due: each class that parked nothing in the epoch owes
+    /// Whether the current decay epoch has ended.
+    pub(crate) fn epoch_due(&self) -> bool {
+        self.events >= self.epoch_len.max(EPOCH_MIN)
+    }
+
+    /// End the epoch: each class that parked nothing in it — neither into
+    /// the overflow nor, per `floor_parked` (bit `c`), into its floor — owes
     /// half its low-water mark (rounded up); the next epoch starts from the
-    /// current lengths. Returns the class to decay next, if any.
-    pub(crate) fn decay_step(&mut self) -> Option<usize> {
-        if self.events >= self.epoch_len.max(EPOCH_MIN) {
-            let mut total = 0usize;
-            let mut c = 0;
-            while c < DEPOT_CLASSES {
-                let d = if self.parked_in_epoch & (1 << c) == 0 {
-                    self.low[c].div_ceil(2).min(self.len[c])
-                } else {
-                    0
-                };
-                self.set_debt(c, d);
-                self.low[c] = self.len[c];
-                total += self.len[c] as usize;
-                c += 1;
-            }
-            self.parked_in_epoch = 0;
-            self.events = 0;
-            self.epoch_len = (2 * total as u32).max(EPOCH_MIN);
+    /// current lengths.
+    pub(crate) fn end_epoch(&mut self, floor_parked: u32) {
+        let parked = self.parked_in_epoch | floor_parked;
+        let mut total = 0usize;
+        let mut c = 0;
+        while c < DEPOT_CLASSES {
+            let d = if parked & (1 << c) == 0 {
+                self.low[c].div_ceil(2).min(self.len[c])
+            } else {
+                0
+            };
+            self.set_debt(c, d);
+            self.low[c] = self.len[c];
+            total += self.len[c] as usize;
+            c += 1;
         }
+        self.parked_in_epoch = 0;
+        self.events = 0;
+        self.epoch_len = (2 * total as u32).max(EPOCH_MIN);
+    }
+
+    /// The next class to decay, if any debt is outstanding.
+    pub(crate) fn debt_class(&self) -> Option<usize> {
         if self.debt_mask == 0 {
             None
         } else {

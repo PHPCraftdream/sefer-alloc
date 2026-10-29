@@ -1,5 +1,5 @@
-//! G1-K7: exact order oracles for the depot overflow — LIFO across the
-//! overflow/floor boundary and across the ring's wrap, oldest-first decay of
+//! G1-K7: exact order oracles for the depot overflow — floor first, then
+//! the overflow newest first, also across the ring's wrap, oldest-first decay of
 //! ⌈h/2⌉ records per idle epoch with at most `DECAY_WORK` (4) per cold event,
 //! and decay driven by virgin (`alloc_zeroed`) refills too. One config per
 //! binary: every heap has a 16 KiB budget, so class 64 B (1 KiB per magazine)
@@ -91,16 +91,23 @@ fn chunks(v: &[*mut u8]) -> Vec<HashSet<usize>> {
         .collect()
 }
 
-/// Reissue `mags` magazines and check they come back newest first: the live
-/// magazine, the overflow tail to head, then the floor top to bottom.
+/// Reissue the magazines `parked` (chunk `k` = magazine `k + 1`; the first
+/// `FLOOR` went to the floor, the last stayed live, the rest to the
+/// overflow) and check the order: the live magazine, then the floor top to
+/// bottom (it empties first), then the overflow newest to oldest.
 fn reissue_lifo(heap: &mut HeapCore, parked: &[HashSet<usize>]) -> Vec<*mut u8> {
-    let again = alloc_n(heap, 64, MAG * parked.len());
+    let n = parked.len();
+    let order: Vec<usize> = std::iter::once(n - 1)
+        .chain((0..FLOOR).rev())
+        .chain((FLOOR..n - 1).rev())
+        .collect();
+    let again = alloc_n(heap, 64, MAG * n);
     for (g, got) in chunks(&again).iter().enumerate() {
         assert_eq!(
             got,
-            &parked[parked.len() - 1 - g],
+            &parked[order[g]],
             "reissue group {g} is magazine {}",
-            parked.len() - g
+            order[g] + 1
         );
     }
     again
@@ -143,7 +150,7 @@ fn drive_decay(heap: &mut HeapCore, d0: u64, stop: u64, zeroed: bool) -> (Vec<u6
 }
 
 #[test]
-fn reload_is_lifo_across_the_overflow_floor_boundary() {
+fn reload_empties_the_floor_first_then_the_overflow_newest_first() {
     let _s = Serial::lock();
     let mut lease = claim();
     let heap = lease.core();
@@ -258,6 +265,27 @@ fn virgin_refills_drive_decay_too() {
         "decayed under alloc_zeroed"
     );
     free_all(heap, 16, &keep);
+    heap.dbg_flush_all();
+    drop(lease);
+}
+
+/// Floor first: with the overflow full, a cohort that fits the floor cycles
+/// through the floor alone — no overflow park or reload (the K5 path).
+#[test]
+fn a_floor_sized_cycle_never_touches_a_full_overflow() {
+    let _s = Serial::lock();
+    let mut lease = claim();
+    let heap = lease.core();
+    heap.dbg_flush_all();
+    fill(heap, 1 + FLOOR + RING);
+    let s0 = heap.dbg_depot_overflow();
+    for _ in 0..50 {
+        let v = alloc_n(heap, 64, MAG * 5);
+        free_all(heap, 64, &v);
+    }
+    let s1 = heap.dbg_depot_overflow();
+    assert_eq!((s1[1], s1[2]), (s0[1], s0[2]), "no overflow park or reload");
+    assert_eq!(heap.dbg_depot_len(C64), FLOOR + RING);
     heap.dbg_flush_all();
     drop(lease);
 }
