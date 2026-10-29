@@ -1237,6 +1237,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
+134. **[L] WB-1 B-1a — inline-цепочка переливов склада (depot_park/park_overflow/reload): NO-GO.** (Filed 2026-10-29, `docs/perf/WB1_B1_DEPOT_INLINE_PREREG.md` § Verdict.)
+
+   > **Current state**
+   > - **Status:** rejected (только атрибуты; откачено).
+   > - **Current:** callgrind bulk 1024 × 16/64 Б 142.71/142.74 → 142.55/142.55 Ir/пару (−0.16…−0.19 при пороге −2); pair/churn без изменений. Время и iai не мерились.
+   > - **Next trigger:** не переоткрывать как правку атрибутов; переливы (≈ 19 Ir/пару) стоят не в кадрах вложенных уровней.
+   > - **Evidence:** `docs/perf/WB1_B1_DEPOT_INLINE_PREREG.md`, `docs/perf/wb1_b1/`.
+
 133. **[L] WB-1 A-1 — классификация Layout одной загрузкой по потолочному индексу: NO-GO.** (Filed 2026-10-29, `docs/perf/WB1_A1_CLASS_FOR_LAYOUT_VERDICT.md`.)
 
    > **Current state**
