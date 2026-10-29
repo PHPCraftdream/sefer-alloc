@@ -6,11 +6,12 @@
 
 //! Ph3a magazine-refill witnesses. Under `fastbin` a `HeapCore` small miss
 //! refills its magazine through `AllocCore::refill_class_bump` — the batch
-//! producer that runs every fallible prepare (`try_drain_freelist_batch` /
-//! `try_carve_batch`) BEFORE the first mutation. A prepare refusal therefore
-//! either truncates the refill (a PARTIAL batch: everything drained commits,
-//! the refused carve does not) or, when it hits the first prepare, returns 0
-//! and the rescue retry decides the outcome. Either way the accounting
+//! producer that runs every fallible prepare (`try_carve_batch`; the drain,
+//! `try_drain_freelist_batch`, needs none since G1-K1) BEFORE the first
+//! mutation. A prepare refusal therefore either truncates the refill (a
+//! PARTIAL batch: everything drained commits, the refused carve does not) or,
+//! when it hits the first prepare, returns 0 and the rescue retry decides the
+//! outcome. Either way the accounting
 //! identity `segment live == caller-held + magazine-resident` must hold after
 //! every step, and the retry after the one-shot disarm succeeds.
 //!
@@ -187,13 +188,14 @@ fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
     );
     assert_accounted(heap, &held, c);
 
-    // Arm the refusal so it lands on the CARVE prepare of the next refill: the
-    // drain's `k` prepares must still succeed, the carve's first one fails.
+    // Arm the refusal so it lands on the CARVE prepare of the next refill.
+    // G1-K1: the drain runs no prepare, so the carve's first prepare is the
+    // first one counted.
     let system = SmallSidecar::system_totals_for_test();
     let census = RouteDirectory::global().live_route_census_for_test();
     let table = heap.dbg_table_count();
     let (bump_before, live_before, _) = owner_state(anchor, c);
-    SmallSidecar::fail_prepare_after_for_test(k + 1);
+    SmallSidecar::fail_prepare_after_for_test(1);
     let issued = heap.alloc(layout());
     assert!(
         !issued.is_null(),

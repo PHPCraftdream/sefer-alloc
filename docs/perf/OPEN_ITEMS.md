@@ -3240,6 +3240,13 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** K1 (drain without the redundant class-code re-issue) judged by J1′ v2 against main and against mimalloc; K2 (free class from the state byte) needs an owner decision (wrong-Layout free becomes a free into the true class instead of a silent no-op).
    > - **Evidence:** docs/perf/G1_IDEAS.md, docs/perf/g1_pmu/ (raw perf stat and callgrind logs, run scripts, `G1_PMU_table.md`, `G1_PMU_summary.csv`), scripts/g1_pmu_summary.mjs, examples/b4_pmu_probe.rs.
 
+125. **[A] G1-K1 — drain without the redundant ClassLeaves class-code re-issue: GO, shipping `perf(runtime)`.** (Filed 2026-10-28, `docs/perf/G1_K1_DRAIN_GATE.md`.)
+   > **Current state**
+   > - **Status:** GO by pre-registration (`docs/perf/g1_k1/G1_K1_PREREG.md`); code in the same PR as this card. Close after CI is green on the landing SHA.
+   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k1-meas`@`afe594b4`):** faster on 7 of 11 — bulk16k 1.071× (CI −7.35…−6.41 %), churn256 1.064×, churn1024 1.060×, churn16 1.031×, churn64 1.014×, larson 1.009×, pair_rt 1.003×; pair16, pair64 equal; slower bulk64 1.018× (CI +1.54…+2.00 %, within the pre-registered +2 % tolerance) and vec512 1.005× (not admitted by the main judge). Callgrind: bulk16k −10.63 % Ir, mixed 256/1024 −8.97 %, bulk64 +0.02 %. Against mimalloc (`g1-k1`@`c0c4eacf`): bulk16k mimalloc faster 1.955× (was 2.104× in the B2 run, different runs).
+   > - **Next trigger:** close on a green landing CI. Open sub-item: bulk64's +1.8 % comes with unchanged instructions and no drain call on that kernel (route Ir 0 in both variants) — re-check with PMU (frontend/DSB counters) if a later candidate also moves bulk64 without changing its instructions.
+   > - **Evidence:** docs/perf/G1_K1_DRAIN_GATE.md, docs/perf/G1_K1_DRAIN_GATE_summary.csv, docs/perf/G1_K1_DRAIN_GATE_summary_callgrind.csv, docs/perf/g1_k1/, scripts/g1_k1_gate_report.mjs, tests/g1_k1_drain_class_code.rs.
+
 126. **[L] G1-K2 — free class from the state byte instead of `class_for(layout)`: honest reject (NO-GO by PMU, latency).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §6.)
    > **Current state**
    > - **Status:** NO-GO before the judge; prototype on branch `g1-k2`@`a707eb13`, production unchanged. Design chosen with @oh and the rush reviewer: option (b), non-`hardened` only; `hardened` and the batch free keep the exact Layout check.

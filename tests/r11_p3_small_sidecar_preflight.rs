@@ -65,59 +65,32 @@ fn batch_drain() {
         release(&mut core, ptr, 16);
     }
     let state = core.dbg_r11_issue_state_for_test(0).unwrap();
-    let directory = core.dbg_directory_get_bit(0, 0);
     let system = SmallSidecar::system_totals_for_test();
     let mut out = [anchor; 260];
-    // B2-R1: the refusal lands on the 257th block (first block of the second
-    // leaf). The one-pass drain commits the 256 blocks before it as a short
-    // drain; the refused block and the rest stay on the chain, untouched.
-    const PREFIX: usize = 256;
-    SmallSidecar::fail_prepare_after_for_test(PREFIX + 1);
+    // G1-K1: drain consults no prepare. A refusal armed on the 257th prepare
+    // (first block of the second leaf under the old per-block protocol) does
+    // not stop it: the whole two-leaf chain drains.
+    SmallSidecar::fail_prepare_after_for_test(257);
     // SAFETY: anchor remains a live allocation in this exclusively owned core.
     assert_eq!(
         unsafe { core.dbg_drain_freelist_batch(anchor, 0, &mut out) },
-        PREFIX
+        blocks.len()
     );
+    SmallSidecar::fail_prepare_after_for_test(0);
     let drain_order: Vec<*mut u8> = blocks.iter().rev().copied().collect();
-    assert_eq!(&out[..PREFIX], &drain_order[..PREFIX]);
-    assert!(
-        out[PREFIX..].iter().all(|&p| p == anchor),
-        "the tail keeps the pattern"
-    );
-    assert!(out[..PREFIX].iter().all(|&p| !core.dbg_is_free_for(p)));
-    assert!(drain_order[PREFIX..]
-        .iter()
-        .all(|&p| core.dbg_is_free_for(p)));
-    assert_eq!(
-        core.dbg_live_count_for(anchor),
-        Some(state.1 + PREFIX as u32)
-    );
-    assert_eq!(
-        core.dbg_directory_get_bit(0, 0),
-        directory,
-        "the chain is not exhausted"
-    );
-    assert_eq!(
-        SmallSidecar::system_totals_for_test(),
-        system,
-        "the refused leaf consumed no spill storage"
-    );
-    // SAFETY: anchor is still live; this consumes the rest of the chain once.
-    let mut rest = [anchor; 260];
-    let n = unsafe { core.dbg_drain_freelist_batch(anchor, 0, &mut rest) };
-    assert_eq!(
-        n,
-        blocks.len() - PREFIX,
-        "the retry drains exactly the rest"
-    );
-    assert_eq!(&rest[..n], &drain_order[PREFIX..]);
-    assert!(rest[..n].iter().all(|&p| !core.dbg_is_free_for(p)));
+    assert_eq!(&out[..], &drain_order[..]);
+    assert!(out.iter().all(|&p| !core.dbg_is_free_for(p)));
     assert_eq!(
         core.dbg_live_count_for(anchor),
         Some(state.1 + blocks.len() as u32)
     );
-    for ptr in out[..PREFIX].iter().chain(&rest[..n]) {
-        release(&mut core, *ptr, 16);
+    assert_eq!(
+        SmallSidecar::system_totals_for_test(),
+        system,
+        "a drain consumes no spill storage"
+    );
+    for ptr in out {
+        release(&mut core, ptr, 16);
     }
     release(&mut core, anchor, 16);
 }
