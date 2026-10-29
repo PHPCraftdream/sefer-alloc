@@ -99,7 +99,7 @@ impl HeapCore {
     /// budget. `false` (no change) otherwise.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[cold]
-    #[inline(never)]
+    #[inline(always)]
     pub(crate) fn depot_park(&mut self, c: usize) -> bool {
         if c >= DEPOT_CLASSES || DEPOT_K[c] == 0 {
             return false;
@@ -162,7 +162,7 @@ impl HeapCore {
     /// reload counts one cold event for the overflow decay.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[cold]
-    #[inline(never)]
+    #[inline(always)]
     pub(crate) fn depot_reload_tick(&mut self, c: usize) -> bool {
         if c >= DEPOT_CLASSES || DEPOT_K[c] == 0 {
             return false;
@@ -199,7 +199,7 @@ impl HeapCore {
         feature = "alloc-decommit"
     ))]
     #[cold]
-    #[inline(never)]
+    #[inline(always)]
     fn park_overflow(&mut self, c: usize) -> bool {
         let budget = self.depot_budget as usize;
         let Some(depot) = self.depot.as_deref_mut() else {
@@ -251,7 +251,7 @@ impl HeapCore {
         feature = "alloc-decommit"
     ))]
     #[cold]
-    #[inline(never)]
+    #[inline]
     fn reload_overflow(&mut self, c: usize) -> bool {
         let budget = self.depot_budget as usize;
         let Some(depot) = self.depot.as_deref_mut() else {
@@ -297,7 +297,7 @@ impl HeapCore {
         feature = "alloc-decommit"
     ))]
     #[cold]
-    #[inline(never)]
+    #[inline(always)]
     fn reload_overflow_tick(&mut self, c: usize) -> bool {
         if !self.reload_overflow(c) {
             return false;

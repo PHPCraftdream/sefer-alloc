@@ -172,7 +172,7 @@ impl HeapCore {
         feature = "fastbin",
         feature = "alloc-decommit"
     ))]
-    #[inline]
+    #[inline(always)]
     pub(crate) fn depot_tick(&mut self) {
         let Some(depot) = self.depot.as_deref_mut() else {
             return;
