@@ -11,9 +11,13 @@
 // sides so the harness is identical; only the allocator source differs.
 //
 //   node scripts/ghost_zero_cost.mjs --base origin/main [--allow-declared-runtime [--head SHA] [--classify-only]] [--require-ir] [--out FILE.json]
+// `--head` = the PR head, not the merge ref. When the checkout is the PR merge
+// ref, its first parent replaces BASE (`resolveBase`): the recorded
+// `pull_request.base.sha` goes stale once the base branch moves. Any other
+// checkout is red.
 // `--allow-declared-runtime`: pass without building when the commits BASE..HEAD
-// (merges excluded; `--head` = the PR head, not the merge ref) fall under the
-// fail-closed exception of scripts/ghost_diff.mjs (`zeroCostSkip`).
+// (merges excluded) fall under the fail-closed exception of
+// scripts/ghost_diff.mjs (`zeroCostSkip`).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -21,7 +25,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { REPO_ROOT } from './lib.mjs';
-import { changedLines, endpointsMismatch, zeroCostSkip } from './ghost_diff.mjs';
+import { changedLines, resolveBase, zeroCostSkip } from './ghost_diff.mjs';
 
 const EXAMPLE = 'ghost_zero_cost_probe';
 const RUSTFLAGS = '-C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5';
@@ -180,40 +184,59 @@ const SKIP_CASES = [
   ['build.rs changed', ok, L(['build.rs', ['x']]), false],
   ['.cargo config changed', ok, L(['.cargo/config.toml', ['rustflags']]), false],
   ['rust-toolchain changed', ok, L(['rust-toolchain.toml', ['x']]), false],
+  ['unstaged change in the checkout', ok, L(['src/a.rs', ['x']]), false, [' M src/a.rs']],
+  ['staged change in the checkout', ok, L(['src/a.rs', ['x']]), false, ['M  src/ghost/x.rs']],
+  ['untracked file in the checkout', ok, L(['src/a.rs', ['x']]), false, ['?? src/new.rs']],
 ];
-for (const [name, subj, changed, skip] of SKIP_CASES) assert.equal(zeroCostSkip(subj, changed) !== null, skip, `zeroCostSkip self-test "${name}"`);
+for (const [name, subj, changed, skip, dirty] of SKIP_CASES) assert.equal(zeroCostSkip(subj, changed, dirty) !== null, skip, `zeroCostSkip self-test "${name}"`);
 const HUNK = 'diff --git a/src/a b/src/a\n--- a/src/a\n+++ b/src/a\n@@ -1,2 +1,2 @@\n-old\n+new\n@@ -9 +9 @@\n+--x\n';
 assert.deepEqual(changedLines(HUNK), ['old', 'new', '--x'], 'changedLines self-test: headers skipped, hunk lines kept (including a line starting with --)');
-const B = 'b'.repeat(40), H = 'h'.repeat(40), M = 'm'.repeat(40);
+const B = 'b'.repeat(40), B2 = 'c'.repeat(40), H = 'h'.repeat(40), M = 'm'.repeat(40), X = 'x'.repeat(40), Y = 'y'.repeat(40);
 const END_CASES = [
-  ['checkout is the head', { base: B, head: H, checkout: H, parents: [B], dirty: [] }, true],
-  ['checkout is the PR merge ref', { base: B, head: H, checkout: M, parents: [B, H], dirty: [] }, true],
-  ['merge with swapped parents', { base: B, head: H, checkout: M, parents: [H, B], dirty: [] }, false],
-  ['checkout differs from the head', { base: B, head: H, checkout: M, parents: [B], dirty: [] }, false],
-  ['unstaged change', { base: B, head: H, checkout: H, parents: [B], dirty: [' M src/a.rs'] }, false],
-  ['staged change', { base: B, head: H, checkout: H, parents: [B], dirty: ['M  src/ghost/x.rs'] }, false],
-  ['untracked file', { base: B, head: H, checkout: H, parents: [B], dirty: ['?? src/new.rs'] }, false],
+  ['checkout is the head', { recorded: B, head: H, checkout: H, parents: [B], reaches: true }, B],
+  ['head is itself a merge, checkout is the head', { recorded: B, head: H, checkout: H, parents: [X, Y], reaches: false }, B],
+  ['PR merge ref onto the recorded base', { recorded: B, head: H, checkout: M, parents: [B, H], reaches: true }, B],
+  ['PR merge ref onto a moved base branch', { recorded: B, head: H, checkout: M, parents: [B2, H], reaches: true }, B2],
+  ['merge onto a commit the recorded base does not reach', { recorded: B, head: H, checkout: M, parents: [X, H], reaches: false }, null],
+  ['merge with swapped parents', { recorded: B, head: H, checkout: M, parents: [H, B2], reaches: true }, null],
+  ['second parent is not the head', { recorded: B, head: H, checkout: M, parents: [B2, X], reaches: true }, null],
+  ['octopus merge', { recorded: B, head: H, checkout: M, parents: [B2, H, X], reaches: true }, null],
+  ['one parent and the checkout is not the head', { recorded: B, head: H, checkout: M, parents: [B], reaches: true }, null],
 ];
-for (const [name, e, ok] of END_CASES) assert.equal(endpointsMismatch(e) === null, ok, `endpointsMismatch self-test "${name}"`);
+for (const [name, e, want] of END_CASES) {
+  const r = resolveBase(e);
+  assert.equal(r.base ?? null, want, `resolveBase self-test "${name}"`);
+  assert.equal(r.why === undefined, want !== null, `resolveBase self-test "${name}": a refusal carries a reason`);
+}
 console.log(`[ghost-zero-cost] scope self-test OK (${SKIP_CASES.length} + ${END_CASES.length} cases + changedLines)`);
 if (argv.includes('--self-test')) process.exit(0);
 
+const g = (args) => run('git', args, { cwd: REPO_ROOT });
+const resolve = (r) => g(['rev-parse', '--verify', `${r}^{commit}`]).trim();
+const recorded = resolve(base);
+const head = resolve(opt('--head', 'HEAD'));
+const checkout = resolve('HEAD');
+const parents = g(['rev-list', '--parents', '-n', '1', checkout]).trim().split(' ').slice(1);
+const reaches = parents.length > 0 && spawnSync('git', ['merge-base', '--is-ancestor', recorded, parents[0]], { cwd: REPO_ROOT }).status === 0;
+const ends = resolveBase({ recorded, head, checkout, parents, reaches });
+if (ends.why) {
+  console.error(`[ghost-zero-cost] RED: ${ends.why}`);
+  process.exit(1);
+}
+const baseSha = ends.base;
+const endpoints = { recorded_base: recorded, base: baseSha, checkout, head };
+if (baseSha !== recorded) console.log(`[ghost-zero-cost] base ${baseSha}: the merge ref's first parent (recorded base ${recorded})`);
+
 if (argv.includes('--allow-declared-runtime')) {
-  const head = opt('--head', 'HEAD');
-  const g = (args) => run('git', args, { cwd: REPO_ROOT });
-  const subjects = g(['log', '--no-merges', '--format=%s', `${base}..${head}`]).split('\n').filter(Boolean);
-  const paths = g(['diff', '--name-only', '-z', '--no-renames', base, head]).split('\0').filter(Boolean);
-  const changed = new Map(paths.map((p) => [p, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', base, head, '--', p]))]));
-  const resolve = (r) => g(['rev-parse', '--verify', `${r}^{commit}`]).trim();
-  const checkout = resolve('HEAD');
-  const parents = g(['rev-list', '--parents', '-n', '1', checkout]).trim().split(' ').slice(1);
+  const subjects = g(['log', '--no-merges', '--format=%s', `${baseSha}..${head}`]).split('\n').filter(Boolean);
+  const paths = g(['diff', '--name-only', '-z', '--no-renames', baseSha, checkout]).split('\0').filter(Boolean);
+  const changed = new Map(paths.map((p) => [p, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', baseSha, checkout, '--', p]))]));
   const dirty = g(['status', '--porcelain', '--untracked-files=all']).split('\n').filter(Boolean);
-  const mismatch = endpointsMismatch({ base: resolve(base), head: resolve(head), checkout, parents, dirty });
-  const reason = mismatch ? null : zeroCostSkip(subjects, changed);
-  if (mismatch) console.log(`[ghost-zero-cost] exception not applicable: ${mismatch}`);
+  const reason = zeroCostSkip(subjects, changed, dirty);
+  if (dirty.length) console.log(`[ghost-zero-cost] exception not applicable: uncommitted changes in the checkout: ${dirty.slice(0, 5).join(', ')}`);
   if (reason) {
     console.log(`[ghost-zero-cost] SKIP: ${reason}`);
-    if (out) writeFileSync(out, JSON.stringify({ base, head, checkout, skipped: true, reason, subjects, paths }, null, 2) + '\n');
+    if (out) writeFileSync(out, JSON.stringify({ ...endpoints, skipped: true, reason, subjects, paths }, null, 2) + '\n');
     process.exit(0);
   }
   console.log('[ghost-zero-cost] exception does not apply: the zero-cost proof is required');
@@ -223,7 +246,6 @@ if (argv.includes('--allow-declared-runtime')) {
 
 const work = mkdtempSync(join(tmpdir(), 'ghost-zero-cost-'));
 try {
-  const baseSha = run('git', ['rev-parse', base], { cwd: REPO_ROOT }).trim();
   const headTree = run('git', ['write-tree'], { cwd: REPO_ROOT }).trim();
   const baseDir = join(work, 'base');
   run('git', ['worktree', 'add', '--detach', baseDir, baseSha], { cwd: REPO_ROOT, stdio: 'ignore' });
@@ -247,7 +269,7 @@ try {
   const irBase = irTotal(binBase, work, 'base');
   const irHead = irBase === null ? null : irTotal(binHead, work, 'head');
   const summary = {
-    base: baseSha, head_tree: headTree, example: EXAMPLE, features: 'production', rustflags: RUSTFLAGS,
+    ...endpoints, head_tree: headTree, example: EXAMPLE, features: 'production', rustflags: RUSTFLAGS,
     functions_base: a.size, functions_head: b.size,
     identical: [...names].length - differing.length - onlyBase.length - onlyHead.length,
     differing: differing.length, only_base: onlyBase.length, only_head: onlyHead.length,
