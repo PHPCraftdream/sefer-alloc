@@ -15,6 +15,15 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 259 — CLOSED (2026-10-29)
+
+259. **[T] `ghost-zero-cost` used the stale `pull_request.base.sha`: once the base branch moved, the declared-runtime exception was refused and the proof compared the wrong trees.** (Filed and closed 2026-10-29, PR #128 run `40850432408`, job `ghost-zero-cost`: `checkout 6cdd4c3b… is neither the classified head ecb5dce4… nor its merge onto 10635968…`.)
+
+    > **Current state**
+    > - **Status:** CLOSED (2026-10-29, same commit as the fix).
+    > - **Mechanism:** GitHub does not refresh `pull_request.base.sha` (= `baseRefOid`) when the base branch moves, not even on a later push to the PR (#128 kept `10635968` after #129 landed `23ee50a4`), while `actions/checkout` checks out `refs/pull/N/merge`, whose first parent is the current base tip. `endpointsMismatch` required that first parent to equal the recorded base, so the exception failed closed, and the proof then built `10635968` against a merge tree that already held #129.
+    > - **Fix:** `resolveBase` (`scripts/ghost_diff.mjs`) takes the merge ref's first parent as the base when the second parent is the PR head and the recorded base reaches it (`git merge-base --is-ancestor`); a checkout that is the head keeps the recorded base; anything else is red before any classification or build. `scripts/ghost_zero_cost.mjs` resolves the endpoints first and uses one base for the subjects (`base..head`), the changed lines (`base..checkout`) and the proof; the dirty-checkout refusal moved into `zeroCostSkip`. Self-tests: 9 endpoint cases (moved base, unreachable base, swapped parents, wrong second parent, octopus, single parent, head that is itself a merge) and 3 dirty cases; six mutants of `resolveBase` / the dirty check turn them red. A local merge of PR #128's head onto `23ee50a4` classifies as SKIP with the new script and reproduces the CI refusal with the old one.
+
 ### 258 — CLOSED (2026-10-28)
 
 258. **[T] Flaky `macos_snapshot_reports_the_documented_counters` (`crates/proc-memstat/tests/platform_contract.rs`): macOS `peak_rss` could read below `rss`.** (Filed and closed 2026-10-28, PR #122 CI, job `proc-memstat gates (macos-latest)`: `peak_rss (1982464) must be >= live rss (1998848)`.)
