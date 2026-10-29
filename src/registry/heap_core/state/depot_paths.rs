@@ -4,7 +4,7 @@
 
 use crate::registry::heap_core::state::depot::{DEPOT_CLASSES, DEPOT_K};
 #[cfg(feature = "alloc-decommit")]
-use crate::registry::heap_core::state::depot_overflow::DepotOverflow;
+use crate::registry::heap_core::state::depot_overflow::{DepotOverflow, ALL_SMALL};
 use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 #[cfg(feature = "alloc-decommit")]
 use crate::registry::heap_core::state::tcache::{Tcache, MARK_FLOOR, MARK_TICK};
@@ -225,11 +225,16 @@ impl HeapCore {
         {
             class.virgin_mask = 0;
         }
-        let mut fresh = ovf.arm();
-        while fresh != 0 {
-            let k = fresh.trailing_zeros() as usize;
-            fresh &= fresh - 1;
-            self.tcache.classes[k].marks |= MARK_TICK;
+        // A non-empty ring meant bytes > 0 before this park, so every class
+        // is armed already; only a class's first record can arm.
+        debug_assert!(n == 0 || ovf.armed() == ALL_SMALL);
+        if n == 0 {
+            let mut fresh = ovf.arm();
+            while fresh != 0 {
+                let k = fresh.trailing_zeros() as usize;
+                fresh &= fresh - 1;
+                self.tcache.classes[k].marks |= MARK_TICK;
+            }
         }
         self.depot_tick();
         true

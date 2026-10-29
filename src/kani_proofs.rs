@@ -445,9 +445,9 @@ mod depot_overflow_proofs {
     /// oldest (the ring wraps once decay moved its head), and the parked
     /// byte count is always `len * magazine bytes`. The segment-refill tick
     /// flags, driven as `park_overflow` / `depot_segment_tick` drive them
-    /// (arm after every park; a refill of class `k` disarms `k` only on an
-    /// empty overflow), mirror `armed` exactly and cover every small class
-    /// while bytes are parked.
+    /// (a class's first record arms; a refill of class `k` disarms `k` only
+    /// on an empty overflow), mirror `armed` exactly and cover every small
+    /// class while bytes are parked.
     #[kani::proof]
     #[kani::unwind(18)]
     fn overflow_ring_matches_a_queue() {
@@ -482,7 +482,10 @@ mod depot_overflow_proofs {
                 if room {
                     model[back] = id;
                     back += 1;
-                    flags |= o.arm();
+                    // As `park_overflow`: only a class's first record arms.
+                    if n == 0 {
+                        flags |= o.arm();
+                    }
                 }
             } else if op % 4 == 1 && n > 0 {
                 o.reload(c, n, &mut out);

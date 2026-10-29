@@ -168,7 +168,7 @@ impl DepotOverflow {
     }
 
     /// The small classes currently armed (bit `c`).
-    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    #[cfg_attr(not(any(feature = "internals", debug_assertions)), allow(dead_code))]
     pub(crate) fn armed(&self) -> u64 {
         self.armed
     }
