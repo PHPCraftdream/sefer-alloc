@@ -1,0 +1,41 @@
+{
+  "captured_before_build": "2026-10-25T08:38:14.334Z",
+  "ids": {
+    "before": {
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "patch_sha256": "e1eff49a619518de1de6f79142a5233548aa20df3cf6a79f929b445d067bf09b",
+      "harness_sha256": "320b251f5c0a8e70af02b8fc35f93dfd9f27940f82629d859d01750550ac29dd"
+    },
+    "after": {
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "patch_sha256": "e9e61b7cdc0c9b997dcf8012900f246f1c68b526cedfd887698e0084a969abac",
+      "harness_sha256": "320b251f5c0a8e70af02b8fc35f93dfd9f27940f82629d859d01750550ac29dd"
+    }
+  },
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+  "cargo": "cargo 1.97.0 (c980f4866 2026-06-30)\n",
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+  "os": "10.0.19045",
+  "features": "production",
+  "blocks": 20,
+  "aa_blocks": 10,
+  "sequence": [
+    "a",
+    "ma",
+    "b",
+    "mb",
+    "mb",
+    "b",
+    "ma",
+    "a"
+  ],
+  "modes": {
+    "16": 1000000,
+    "64": 1000000,
+    "rt": 1000000,
+    "bulk64": 256,
+    "bulk16k": 256
+  },
+  "statistic": "arithmetic mean over full workload_ns/pair; paired Student-t CI over block means; process_ns separately",
+  "layer": "direct GlobalAlloc facade; NOT installed allocator"
+}

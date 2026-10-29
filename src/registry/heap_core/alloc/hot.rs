@@ -156,6 +156,89 @@ impl HeapCore {
         }
     }
 
+    /// Только завершённый hit; пустой magazine не меняется.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    pub(crate) fn try_alloc_magazine_class(&mut self, c: usize) -> Option<*mut u8> {
+        let cnt = self.tcache.classes[c].count as usize;
+        if cnt == 0 {
+            return None;
+        }
+        // Magazine hit: pop from the top of the stack.
+        // No owner bookkeeping: routing goes through terminal
+        // descriptors, not the header `owner_state`.
+        let new_cnt = cnt - 1;
+        self.tcache.classes[c].count = new_cnt as u8;
+        // Э5 (task #145): load+store instead of `fetch_add` — no
+        // `lock xadd` on the churn hot path. SOUND because this
+        // thread is the SOLE WRITER of ITS OWN counter: it is a
+        // per-heap/per-slot counter and this magazine-hit path
+        // runs only on the owning thread (the single-writer
+        // invariant `tls_heap.rs` establishes — `current_for_alloc`
+        // yields `Own(&mut HeapCore)` only to the thread that won
+        // the slot's claim CAS). No other thread ever increments
+        // it, so a non-atomic RMW split into a Relaxed load +
+        // Relaxed store cannot lose an update. The remote
+        // `stats()` reader (`tcache_hits_total`) still does a
+        // Relaxed atomic load and observes a monotonically
+        // non-decreasing value — identical visibility to the old
+        // `fetch_add(Relaxed)` (Relaxed gives no ordering either
+        // way; only atomicity of the single word, which `store`
+        // preserves). Only the lock prefix is dropped.
+        //
+        // W3: the counter STORAGE lives in the owning `HeapSlot`
+        // (closing the Stacked-Borrows aliasing gap — see the
+        // `TcacheHitCounter` module comment); `self.tcache_hits`
+        // is the stable `&'static AtomicU64` handle `claim`
+        // planted at bind time. `Some` on every alloc path (alloc
+        // only runs after `claim` bound it). Same 2 mem-ops as
+        // before, now to the slot's field rather than an inline
+        // one. Safe reference; no `unsafe` (deny-unsafe module).
+        //
+        // W3 Part B: the per-hit bump is gated behind
+        // `alloc-stats` (default OFF, NOT in `production`) —
+        // when off it compiles OUT of the churn hot path and
+        // `stats().tcache_hits` reads 0; when on it costs ~2
+        // mem-ops + one `Option` branch per hit. See the
+        // `alloc-stats` feature doc in Cargo.toml and the Part-B
+        // Ir measurement in the task W3 report.
+        #[cfg(feature = "alloc-stats")]
+        if let Some(hits) = self.tcache_hits {
+            hits.store(
+                hits.load(Ordering::Relaxed).wrapping_add(1),
+                Ordering::Relaxed,
+            );
+        }
+        // R6-T13: mask is an identity under the `count <= TCACHE_CAP` invariant; skips the bounds check without asm proof.
+        let issued = self.tcache.classes[c].slots[new_cnt & (TCACHE_CAP - 1)];
+        // R13-3 (task #273): clear this slot's virgin bit on
+        // EVERY pop through the plain `alloc` fast path, not
+        // just the `alloc_zeroed`-aware pop below. Maintains
+        // the `PerClass::virgin_mask` invariant ("bits >=
+        // count are always 0") unconditionally — a slot that
+        // WAS virgin and is popped here (a caller using plain
+        // `alloc`, not `alloc_zeroed`) must not leave a stale
+        // set bit that a LATER push into this same physical
+        // index could be misread through. Single `u16` AND,
+        // compiled out entirely (the field does not exist)
+        // when `virgin-zero-skip` is off.
+        #[cfg(feature = "virgin-zero-skip")]
+        {
+            self.tcache.classes[c].virgin_mask &= !(1u16 << new_cnt);
+        }
+        // RAD-5 (E4) GO/NO-GO EXPERIMENT: clear the
+        // magazine-residency bit — this block leaves the
+        // magazine for the caller. THE HOT PATH: this runs on
+        // EVERY magazine hit under `production`, so it forces
+        // a `segment_base_of_ptr` + bitmap read-modify-write
+        // that this path previously did not pay AT ALL. See
+        // `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
+        // measured cost of this specific store on
+        // `small_churn_16b` et al.
+        self.clear_magazine_on_issue(issued);
+        Some(issued)
+    }
+
     /// The body of [`alloc`](Self::alloc), taking the size-class
     /// classification as a parameter so callers that already computed it do
     /// not pay for it twice (#1982).
@@ -173,7 +256,7 @@ impl HeapCore {
     /// call boundary on the hottest path in the allocator.
     #[must_use]
     #[inline(always)]
-    fn alloc_with_class(
+    pub(crate) fn alloc_with_class(
         &mut self,
         layout: Layout,
         #[cfg(any(
@@ -238,80 +321,7 @@ impl HeapCore {
             // ownership BEFORE reaching `dealloc_own_thread`/the magazine).
             {
                 if let Some(c) = class {
-                    let cnt = self.tcache.classes[c].count as usize;
-                    if cnt > 0 {
-                        // Magazine hit: pop from the top of the stack.
-                        // No owner bookkeeping: routing goes through terminal
-                        // descriptors, not the header `owner_state`.
-                        let new_cnt = cnt - 1;
-                        self.tcache.classes[c].count = new_cnt as u8;
-                        // Э5 (task #145): load+store instead of `fetch_add` — no
-                        // `lock xadd` on the churn hot path. SOUND because this
-                        // thread is the SOLE WRITER of ITS OWN counter: it is a
-                        // per-heap/per-slot counter and this magazine-hit path
-                        // runs only on the owning thread (the single-writer
-                        // invariant `tls_heap.rs` establishes — `current_for_alloc`
-                        // yields `Own(&mut HeapCore)` only to the thread that won
-                        // the slot's claim CAS). No other thread ever increments
-                        // it, so a non-atomic RMW split into a Relaxed load +
-                        // Relaxed store cannot lose an update. The remote
-                        // `stats()` reader (`tcache_hits_total`) still does a
-                        // Relaxed atomic load and observes a monotonically
-                        // non-decreasing value — identical visibility to the old
-                        // `fetch_add(Relaxed)` (Relaxed gives no ordering either
-                        // way; only atomicity of the single word, which `store`
-                        // preserves). Only the lock prefix is dropped.
-                        //
-                        // W3: the counter STORAGE lives in the owning `HeapSlot`
-                        // (closing the Stacked-Borrows aliasing gap — see the
-                        // `TcacheHitCounter` module comment); `self.tcache_hits`
-                        // is the stable `&'static AtomicU64` handle `claim`
-                        // planted at bind time. `Some` on every alloc path (alloc
-                        // only runs after `claim` bound it). Same 2 mem-ops as
-                        // before, now to the slot's field rather than an inline
-                        // one. Safe reference; no `unsafe` (deny-unsafe module).
-                        //
-                        // W3 Part B: the per-hit bump is gated behind
-                        // `alloc-stats` (default OFF, NOT in `production`) —
-                        // when off it compiles OUT of the churn hot path and
-                        // `stats().tcache_hits` reads 0; when on it costs ~2
-                        // mem-ops + one `Option` branch per hit. See the
-                        // `alloc-stats` feature doc in Cargo.toml and the Part-B
-                        // Ir measurement in the task W3 report.
-                        #[cfg(feature = "alloc-stats")]
-                        if let Some(hits) = self.tcache_hits {
-                            hits.store(
-                                hits.load(Ordering::Relaxed).wrapping_add(1),
-                                Ordering::Relaxed,
-                            );
-                        }
-                        // R6-T13: mask is an identity under the `count <= TCACHE_CAP` invariant; skips the bounds check without asm proof.
-                        let issued = self.tcache.classes[c].slots[new_cnt & (TCACHE_CAP - 1)];
-                        // R13-3 (task #273): clear this slot's virgin bit on
-                        // EVERY pop through the plain `alloc` fast path, not
-                        // just the `alloc_zeroed`-aware pop below. Maintains
-                        // the `PerClass::virgin_mask` invariant ("bits >=
-                        // count are always 0") unconditionally — a slot that
-                        // WAS virgin and is popped here (a caller using plain
-                        // `alloc`, not `alloc_zeroed`) must not leave a stale
-                        // set bit that a LATER push into this same physical
-                        // index could be misread through. Single `u16` AND,
-                        // compiled out entirely (the field does not exist)
-                        // when `virgin-zero-skip` is off.
-                        #[cfg(feature = "virgin-zero-skip")]
-                        {
-                            self.tcache.classes[c].virgin_mask &= !(1u16 << new_cnt);
-                        }
-                        // RAD-5 (E4) GO/NO-GO EXPERIMENT: clear the
-                        // magazine-residency bit — this block leaves the
-                        // magazine for the caller. THE HOT PATH: this runs on
-                        // EVERY magazine hit under `production`, so it forces
-                        // a `segment_base_of_ptr` + bitmap read-modify-write
-                        // that this path previously did not pay AT ALL. See
-                        // `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
-                        // measured cost of this specific store on
-                        // `small_churn_16b` et al.
-                        self.clear_magazine_on_issue(issued);
+                    if let Some(issued) = self.try_alloc_magazine_class(c) {
                         return issued;
                     }
 

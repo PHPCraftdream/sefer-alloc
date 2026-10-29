@@ -79,6 +79,73 @@ fn exit_escape_realloc(ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mu
     }
 }
 
+#[cfg(feature = "fastbin")]
+#[cold]
+#[inline(never)]
+fn alloc_null_slow(layout: Layout) -> *mut u8 {
+    if crate::global::process_exit_in_progress() {
+        exit_escape_alloc(layout, false)
+    } else {
+        core::ptr::null_mut()
+    }
+}
+
+/// # Safety
+/// heap — живой HeapCore текущего owner; class получен из того же layout.
+#[cfg(feature = "fastbin")]
+#[cold]
+#[inline(never)]
+unsafe fn alloc_bound_small_slow(
+    heap: *mut crate::registry::HeapCore,
+    layout: Layout,
+    class: usize,
+) -> *mut u8 {
+    // SAFETY: owner/layout/class сохранены синхронным вызывающим путём.
+    let ptr = unsafe { (*heap).alloc_with_class(layout, Some(class)) };
+    if ptr.is_null() {
+        alloc_null_slow(layout)
+    } else {
+        ptr
+    }
+}
+
+/// # Safety
+/// heap — живой HeapCore текущего owner; layout классифицирован как Large.
+#[cfg(feature = "fastbin")]
+#[cold]
+#[inline(never)]
+unsafe fn alloc_bound_large_slow(heap: *mut crate::registry::HeapCore, layout: Layout) -> *mut u8 {
+    // SAFETY: owner/layout сохранены; None — прежний Large результат classifier.
+    let ptr = unsafe { (*heap).alloc_with_class(layout, None) };
+    if ptr.is_null() {
+        alloc_null_slow(layout)
+    } else {
+        ptr
+    }
+}
+
+#[cfg(feature = "fastbin")]
+#[cold]
+#[inline(never)]
+fn alloc_unbound_slow(sefer: &SeferAlloc, layout: Layout) -> *mut u8 {
+    let ptr = match sefer.current_heap() {
+        CurrentHeap::Fallback => return alloc_via_fallback(sefer, layout),
+        // SAFETY: `heap` is non-null and points to a live `HeapCore` in
+        // a registry slot. `current_heap` returned it for THIS thread;
+        // the single-writer invariant (the CAS-won slot owner) makes
+        // `&mut` access exclusive. `HeapCore::alloc` upholds the
+        // GlobalAlloc contract (returns valid memory or null).
+        CurrentHeap::Own(heap) => unsafe { (*heap).alloc(layout) },
+    };
+    if ptr.is_null() && crate::global::process_exit_in_progress() {
+        // Cold null path only: the route is unavailable because a lock
+        // holder was terminated by `ExitProcess`. Owner decision: escape
+        // to System, never abort (docs/reviews/2026-10-11, question 7).
+        return exit_escape_alloc(layout, false);
+    }
+    ptr
+}
+
 // SAFETY: M4 (`docs/INVARIANTS.md`): `CurrentHeap::Own` calls `HeapCore`; locked
 // `CurrentHeap::Fallback` calls the fallback heap. Alloc, zeroed alloc, and
 // realloc obey GlobalAlloc layout and failure contracts; null can result from
@@ -100,22 +167,47 @@ unsafe impl GlobalAlloc for SeferAlloc {
         if ExactNarrow::is_narrow(layout) {
             return ExactNarrow::alloc(layout, false);
         }
-        let ptr = match self.current_heap() {
-            CurrentHeap::Fallback => return alloc_via_fallback(self, layout),
-            // SAFETY: `heap` is non-null and points to a live `HeapCore` in
-            // a registry slot. `current_heap` returned it for THIS thread;
-            // the single-writer invariant (the CAS-won slot owner) makes
-            // `&mut` access exclusive. `HeapCore::alloc` upholds the
-            // GlobalAlloc contract (returns valid memory or null).
-            CurrentHeap::Own(heap) => unsafe { (*heap).alloc(layout) },
-        };
-        if ptr.is_null() && crate::global::process_exit_in_progress() {
-            // Cold null path only: the route is unavailable because a lock
-            // holder was terminated by `ExitProcess`. Owner decision: escape
-            // to System, never abort (docs/reviews/2026-10-11, question 7).
-            return exit_escape_alloc(layout, false);
+        #[cfg(feature = "fastbin")]
+        {
+            if let Some(heap) = crate::global::tls_heap::current_for_trim() {
+                use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
+                let class = SizeClasses::class_for(layout.size().max(MIN_BLOCK), layout.align());
+                if let Some(c) = class {
+                    // SAFETY: пассивный TLS lookup дал живой exclusive owner HeapCore.
+                    if let Some(ptr) = unsafe { (*heap).try_alloc_magazine_class(c) } {
+                        return if ptr.is_null() {
+                            alloc_null_slow(layout)
+                        } else {
+                            ptr
+                        };
+                    }
+                    // SAFETY: тот же owner/class/layout; miss не мутировал magazine.
+                    return unsafe { alloc_bound_small_slow(heap, layout, c) };
+                }
+                // SAFETY: тот же owner/layout; classifier вернул None.
+                return unsafe { alloc_bound_large_slow(heap, layout) };
+            }
+            return alloc_unbound_slow(self, layout);
         }
-        ptr
+        #[cfg(not(feature = "fastbin"))]
+        {
+            let ptr = match self.current_heap() {
+                CurrentHeap::Fallback => return alloc_via_fallback(self, layout),
+                // SAFETY: `heap` is non-null and points to a live `HeapCore` in
+                // a registry slot. `current_heap` returned it for THIS thread;
+                // the single-writer invariant (the CAS-won slot owner) makes
+                // `&mut` access exclusive. `HeapCore::alloc` upholds the
+                // GlobalAlloc contract (returns valid memory or null).
+                CurrentHeap::Own(heap) => unsafe { (*heap).alloc(layout) },
+            };
+            if ptr.is_null() && crate::global::process_exit_in_progress() {
+                // Cold null path only: the route is unavailable because a lock
+                // holder was terminated by `ExitProcess`. Owner decision: escape
+                // to System, never abort (docs/reviews/2026-10-11, question 7).
+                return exit_escape_alloc(layout, false);
+            }
+            ptr
+        }
     }
 
     #[inline(always)]

@@ -1,0 +1,345 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index e06bd940..1d76a20d 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1190,6 +1190,14 @@ required-features = ["alloc-global", "alloc-xthread"]
+ # exhibits the ~16 MiB first-touch) only reaches ~7.5 KiB/slot under
+ # `alloc-decommit` + `fastbin`; with just alloc-global+alloc-xthread each slot is
+ # ~192 B and the defect does not manifest. See the example's module docs.
++[[example]]
++name = "own_free_profile"
++required-features = ["production"]
++
++[[example]]
++name = "own_free_wall"
++required-features = ["production"]
++
+ [[example]]
+ name = "first_alloc_process"
+ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "internals"]
+diff --git a/src/global/sefer_alloc/global_alloc.rs b/src/global/sefer_alloc/global_alloc.rs
+index 5a92b0cc..f0a64e01 100644
+--- a/src/global/sefer_alloc/global_alloc.rs
++++ b/src/global/sefer_alloc/global_alloc.rs
+@@ -79,6 +79,73 @@ fn exit_escape_realloc(ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mu
+     }
+ }
+ 
++#[cfg(feature = "fastbin")]
++#[cold]
++#[inline(never)]
++fn alloc_null_slow(layout: Layout) -> *mut u8 {
++    if crate::global::process_exit_in_progress() {
++        exit_escape_alloc(layout, false)
++    } else {
++        core::ptr::null_mut()
++    }
++}
++
++/// # Safety
++/// heap — живой HeapCore текущего owner; class получен из того же layout.
++#[cfg(feature = "fastbin")]
++#[cold]
++#[inline(never)]
++unsafe fn alloc_bound_small_slow(
++    heap: *mut crate::registry::HeapCore,
++    layout: Layout,
++    class: usize,
++) -> *mut u8 {
++    // SAFETY: owner/layout/class сохранены синхронным вызывающим путём.
++    let ptr = unsafe { (*heap).alloc_with_class(layout, Some(class)) };
++    if ptr.is_null() {
++        alloc_null_slow(layout)
++    } else {
++        ptr
++    }
++}
++
++/// # Safety
++/// heap — живой HeapCore текущего owner; layout классифицирован как Large.
++#[cfg(feature = "fastbin")]
++#[cold]
++#[inline(never)]
++unsafe fn alloc_bound_large_slow(heap: *mut crate::registry::HeapCore, layout: Layout) -> *mut u8 {
++    // SAFETY: owner/layout сохранены; None — прежний Large результат classifier.
++    let ptr = unsafe { (*heap).alloc_with_class(layout, None) };
++    if ptr.is_null() {
++        alloc_null_slow(layout)
++    } else {
++        ptr
++    }
++}
++
++#[cfg(feature = "fastbin")]
++#[cold]
++#[inline(never)]
++fn alloc_unbound_slow(sefer: &SeferAlloc, layout: Layout) -> *mut u8 {
++    let ptr = match sefer.current_heap() {
++        CurrentHeap::Fallback => return alloc_via_fallback(sefer, layout),
++        // SAFETY: `heap` is non-null and points to a live `HeapCore` in
++        // a registry slot. `current_heap` returned it for THIS thread;
++        // the single-writer invariant (the CAS-won slot owner) makes
++        // `&mut` access exclusive. `HeapCore::alloc` upholds the
++        // GlobalAlloc contract (returns valid memory or null).
++        CurrentHeap::Own(heap) => unsafe { (*heap).alloc(layout) },
++    };
++    if ptr.is_null() && crate::global::process_exit_in_progress() {
++        // Cold null path only: the route is unavailable because a lock
++        // holder was terminated by `ExitProcess`. Owner decision: escape
++        // to System, never abort (docs/reviews/2026-10-11, question 7).
++        return exit_escape_alloc(layout, false);
++    }
++    ptr
++}
++
+ // SAFETY: M4 (`docs/INVARIANTS.md`): `CurrentHeap::Own` calls `HeapCore`; locked
+ // `CurrentHeap::Fallback` calls the fallback heap. Alloc, zeroed alloc, and
+ // realloc obey GlobalAlloc layout and failure contracts; null can result from
+@@ -100,22 +167,47 @@ unsafe impl GlobalAlloc for SeferAlloc {
+         if ExactNarrow::is_narrow(layout) {
+             return ExactNarrow::alloc(layout, false);
+         }
+-        let ptr = match self.current_heap() {
+-            CurrentHeap::Fallback => return alloc_via_fallback(self, layout),
+-            // SAFETY: `heap` is non-null and points to a live `HeapCore` in
+-            // a registry slot. `current_heap` returned it for THIS thread;
+-            // the single-writer invariant (the CAS-won slot owner) makes
+-            // `&mut` access exclusive. `HeapCore::alloc` upholds the
+-            // GlobalAlloc contract (returns valid memory or null).
+-            CurrentHeap::Own(heap) => unsafe { (*heap).alloc(layout) },
+-        };
+-        if ptr.is_null() && crate::global::process_exit_in_progress() {
+-            // Cold null path only: the route is unavailable because a lock
+-            // holder was terminated by `ExitProcess`. Owner decision: escape
+-            // to System, never abort (docs/reviews/2026-10-11, question 7).
+-            return exit_escape_alloc(layout, false);
++        #[cfg(feature = "fastbin")]
++        {
++            if let Some(heap) = crate::global::tls_heap::current_for_trim() {
++                use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
++                let class = SizeClasses::class_for(layout.size().max(MIN_BLOCK), layout.align());
++                if let Some(c) = class {
++                    // SAFETY: пассивный TLS lookup дал живой exclusive owner HeapCore.
++                    if let Some(ptr) = unsafe { (*heap).try_alloc_magazine_class(c) } {
++                        return if ptr.is_null() {
++                            alloc_null_slow(layout)
++                        } else {
++                            ptr
++                        };
++                    }
++                    // SAFETY: тот же owner/class/layout; miss не мутировал magazine.
++                    return unsafe { alloc_bound_small_slow(heap, layout, c) };
++                }
++                // SAFETY: тот же owner/layout; classifier вернул None.
++                return unsafe { alloc_bound_large_slow(heap, layout) };
++            }
++            return alloc_unbound_slow(self, layout);
++        }
++        #[cfg(not(feature = "fastbin"))]
++        {
++            let ptr = match self.current_heap() {
++                CurrentHeap::Fallback => return alloc_via_fallback(self, layout),
++                // SAFETY: `heap` is non-null and points to a live `HeapCore` in
++                // a registry slot. `current_heap` returned it for THIS thread;
++                // the single-writer invariant (the CAS-won slot owner) makes
++                // `&mut` access exclusive. `HeapCore::alloc` upholds the
++                // GlobalAlloc contract (returns valid memory or null).
++                CurrentHeap::Own(heap) => unsafe { (*heap).alloc(layout) },
++            };
++            if ptr.is_null() && crate::global::process_exit_in_progress() {
++                // Cold null path only: the route is unavailable because a lock
++                // holder was terminated by `ExitProcess`. Owner decision: escape
++                // to System, never abort (docs/reviews/2026-10-11, question 7).
++                return exit_escape_alloc(layout, false);
++            }
++            ptr
+         }
+-        ptr
+     }
+ 
+     #[inline(always)]
+diff --git a/src/registry/heap_core/alloc/hot.rs b/src/registry/heap_core/alloc/hot.rs
+index 7c268935..157d6e71 100644
+--- a/src/registry/heap_core/alloc/hot.rs
++++ b/src/registry/heap_core/alloc/hot.rs
+@@ -156,6 +156,89 @@ impl HeapCore {
+         }
+     }
+ 
++    /// Только завершённый hit; пустой magazine не меняется.
++    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++    #[inline(always)]
++    pub(crate) fn try_alloc_magazine_class(&mut self, c: usize) -> Option<*mut u8> {
++        let cnt = self.tcache.classes[c].count as usize;
++        if cnt == 0 {
++            return None;
++        }
++        // Magazine hit: pop from the top of the stack.
++        // No owner bookkeeping: routing goes through terminal
++        // descriptors, not the header `owner_state`.
++        let new_cnt = cnt - 1;
++        self.tcache.classes[c].count = new_cnt as u8;
++        // Э5 (task #145): load+store instead of `fetch_add` — no
++        // `lock xadd` on the churn hot path. SOUND because this
++        // thread is the SOLE WRITER of ITS OWN counter: it is a
++        // per-heap/per-slot counter and this magazine-hit path
++        // runs only on the owning thread (the single-writer
++        // invariant `tls_heap.rs` establishes — `current_for_alloc`
++        // yields `Own(&mut HeapCore)` only to the thread that won
++        // the slot's claim CAS). No other thread ever increments
++        // it, so a non-atomic RMW split into a Relaxed load +
++        // Relaxed store cannot lose an update. The remote
++        // `stats()` reader (`tcache_hits_total`) still does a
++        // Relaxed atomic load and observes a monotonically
++        // non-decreasing value — identical visibility to the old
++        // `fetch_add(Relaxed)` (Relaxed gives no ordering either
++        // way; only atomicity of the single word, which `store`
++        // preserves). Only the lock prefix is dropped.
++        //
++        // W3: the counter STORAGE lives in the owning `HeapSlot`
++        // (closing the Stacked-Borrows aliasing gap — see the
++        // `TcacheHitCounter` module comment); `self.tcache_hits`
++        // is the stable `&'static AtomicU64` handle `claim`
++        // planted at bind time. `Some` on every alloc path (alloc
++        // only runs after `claim` bound it). Same 2 mem-ops as
++        // before, now to the slot's field rather than an inline
++        // one. Safe reference; no `unsafe` (deny-unsafe module).
++        //
++        // W3 Part B: the per-hit bump is gated behind
++        // `alloc-stats` (default OFF, NOT in `production`) —
++        // when off it compiles OUT of the churn hot path and
++        // `stats().tcache_hits` reads 0; when on it costs ~2
++        // mem-ops + one `Option` branch per hit. See the
++        // `alloc-stats` feature doc in Cargo.toml and the Part-B
++        // Ir measurement in the task W3 report.
++        #[cfg(feature = "alloc-stats")]
++        if let Some(hits) = self.tcache_hits {
++            hits.store(
++                hits.load(Ordering::Relaxed).wrapping_add(1),
++                Ordering::Relaxed,
++            );
++        }
++        // R6-T13: mask is an identity under the `count <= TCACHE_CAP` invariant; skips the bounds check without asm proof.
++        let issued = self.tcache.classes[c].slots[new_cnt & (TCACHE_CAP - 1)];
++        // R13-3 (task #273): clear this slot's virgin bit on
++        // EVERY pop through the plain `alloc` fast path, not
++        // just the `alloc_zeroed`-aware pop below. Maintains
++        // the `PerClass::virgin_mask` invariant ("bits >=
++        // count are always 0") unconditionally — a slot that
++        // WAS virgin and is popped here (a caller using plain
++        // `alloc`, not `alloc_zeroed`) must not leave a stale
++        // set bit that a LATER push into this same physical
++        // index could be misread through. Single `u16` AND,
++        // compiled out entirely (the field does not exist)
++        // when `virgin-zero-skip` is off.
++        #[cfg(feature = "virgin-zero-skip")]
++        {
++            self.tcache.classes[c].virgin_mask &= !(1u16 << new_cnt);
++        }
++        // RAD-5 (E4) GO/NO-GO EXPERIMENT: clear the
++        // magazine-residency bit — this block leaves the
++        // magazine for the caller. THE HOT PATH: this runs on
++        // EVERY magazine hit under `production`, so it forces
++        // a `segment_base_of_ptr` + bitmap read-modify-write
++        // that this path previously did not pay AT ALL. See
++        // `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
++        // measured cost of this specific store on
++        // `small_churn_16b` et al.
++        self.clear_magazine_on_issue(issued);
++        Some(issued)
++    }
++
+     /// The body of [`alloc`](Self::alloc), taking the size-class
+     /// classification as a parameter so callers that already computed it do
+     /// not pay for it twice (#1982).
+@@ -173,7 +256,7 @@ impl HeapCore {
+     /// call boundary on the hottest path in the allocator.
+     #[must_use]
+     #[inline(always)]
+-    fn alloc_with_class(
++    pub(crate) fn alloc_with_class(
+         &mut self,
+         layout: Layout,
+         #[cfg(any(
+@@ -238,80 +321,7 @@ impl HeapCore {
+             // ownership BEFORE reaching `dealloc_own_thread`/the magazine).
+             {
+                 if let Some(c) = class {
+-                    let cnt = self.tcache.classes[c].count as usize;
+-                    if cnt > 0 {
+-                        // Magazine hit: pop from the top of the stack.
+-                        // No owner bookkeeping: routing goes through terminal
+-                        // descriptors, not the header `owner_state`.
+-                        let new_cnt = cnt - 1;
+-                        self.tcache.classes[c].count = new_cnt as u8;
+-                        // Э5 (task #145): load+store instead of `fetch_add` — no
+-                        // `lock xadd` on the churn hot path. SOUND because this
+-                        // thread is the SOLE WRITER of ITS OWN counter: it is a
+-                        // per-heap/per-slot counter and this magazine-hit path
+-                        // runs only on the owning thread (the single-writer
+-                        // invariant `tls_heap.rs` establishes — `current_for_alloc`
+-                        // yields `Own(&mut HeapCore)` only to the thread that won
+-                        // the slot's claim CAS). No other thread ever increments
+-                        // it, so a non-atomic RMW split into a Relaxed load +
+-                        // Relaxed store cannot lose an update. The remote
+-                        // `stats()` reader (`tcache_hits_total`) still does a
+-                        // Relaxed atomic load and observes a monotonically
+-                        // non-decreasing value — identical visibility to the old
+-                        // `fetch_add(Relaxed)` (Relaxed gives no ordering either
+-                        // way; only atomicity of the single word, which `store`
+-                        // preserves). Only the lock prefix is dropped.
+-                        //
+-                        // W3: the counter STORAGE lives in the owning `HeapSlot`
+-                        // (closing the Stacked-Borrows aliasing gap — see the
+-                        // `TcacheHitCounter` module comment); `self.tcache_hits`
+-                        // is the stable `&'static AtomicU64` handle `claim`
+-                        // planted at bind time. `Some` on every alloc path (alloc
+-                        // only runs after `claim` bound it). Same 2 mem-ops as
+-                        // before, now to the slot's field rather than an inline
+-                        // one. Safe reference; no `unsafe` (deny-unsafe module).
+-                        //
+-                        // W3 Part B: the per-hit bump is gated behind
+-                        // `alloc-stats` (default OFF, NOT in `production`) —
+-                        // when off it compiles OUT of the churn hot path and
+-                        // `stats().tcache_hits` reads 0; when on it costs ~2
+-                        // mem-ops + one `Option` branch per hit. See the
+-                        // `alloc-stats` feature doc in Cargo.toml and the Part-B
+-                        // Ir measurement in the task W3 report.
+-                        #[cfg(feature = "alloc-stats")]
+-                        if let Some(hits) = self.tcache_hits {
+-                            hits.store(
+-                                hits.load(Ordering::Relaxed).wrapping_add(1),
+-                                Ordering::Relaxed,
+-                            );
+-                        }
+-                        // R6-T13: mask is an identity under the `count <= TCACHE_CAP` invariant; skips the bounds check without asm proof.
+-                        let issued = self.tcache.classes[c].slots[new_cnt & (TCACHE_CAP - 1)];
+-                        // R13-3 (task #273): clear this slot's virgin bit on
+-                        // EVERY pop through the plain `alloc` fast path, not
+-                        // just the `alloc_zeroed`-aware pop below. Maintains
+-                        // the `PerClass::virgin_mask` invariant ("bits >=
+-                        // count are always 0") unconditionally — a slot that
+-                        // WAS virgin and is popped here (a caller using plain
+-                        // `alloc`, not `alloc_zeroed`) must not leave a stale
+-                        // set bit that a LATER push into this same physical
+-                        // index could be misread through. Single `u16` AND,
+-                        // compiled out entirely (the field does not exist)
+-                        // when `virgin-zero-skip` is off.
+-                        #[cfg(feature = "virgin-zero-skip")]
+-                        {
+-                            self.tcache.classes[c].virgin_mask &= !(1u16 << new_cnt);
+-                        }
+-                        // RAD-5 (E4) GO/NO-GO EXPERIMENT: clear the
+-                        // magazine-residency bit — this block leaves the
+-                        // magazine for the caller. THE HOT PATH: this runs on
+-                        // EVERY magazine hit under `production`, so it forces
+-                        // a `segment_base_of_ptr` + bitmap read-modify-write
+-                        // that this path previously did not pay AT ALL. See
+-                        // `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
+-                        // measured cost of this specific store on
+-                        // `small_churn_16b` et al.
+-                        self.clear_magazine_on_issue(issued);
++                    if let Some(issued) = self.try_alloc_magazine_class(c) {
+                         return issued;
+                     }
+ 
