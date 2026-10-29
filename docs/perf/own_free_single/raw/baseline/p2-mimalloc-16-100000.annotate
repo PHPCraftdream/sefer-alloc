@@ -1,0 +1,506 @@
+--------------------------------------------------------------------------------
+Profile data file '<workspace>/.rush/own-free-split/baseline/p2-mimalloc-16-100000.callgrind' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 2324201
+Trigger: Program termination
+Profiled target:  <workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile mimalloc 16 100000 (PID 586687, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                 
+--------------------------------------------------------------------------------
+2,800,507 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                  file:function
+--------------------------------------------------------------------------------
+1,100,176 (39.28%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_free
+1,000,162 (35.71%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+  300,048 (10.71%)  examples/own_free_profile.rs:own_free_profile::w_free16::<mimalloc::MiMalloc> [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+  200,032 ( 7.14%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs:own_free_profile::w_free16::<mimalloc::MiMalloc>
+  100,016 ( 3.57%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_free
+  100,016 ( 3.57%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:own_free_profile::w_free16::<mimalloc::MiMalloc>
+       30 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_retire [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+       10 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:_mi_page_retire
+        8 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_bin
+        6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_retire
+        3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_bin [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+        .           ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        .           ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+        .           ???:(below main) [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+        .           ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        .           ???:main [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+        .           examples/own_free_profile.rs:own_free_profile::main [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 34 ----------------------------------------
+      .             if (track_stats) { mi_stat_free(page, block); }
+      .             #if (MI_DEBUG>0) && !MI_TRACK_ENABLED  && !MI_TSAN
+      .             memset(block, MI_DEBUG_FREED, mi_page_block_size(page));
+      .             #endif
+      .             if (track_stats) { mi_track_free_size(block, mi_page_usable_size_of(page, block, was_guarded)); } // faster then mi_usable_size as we already know the page and that p is unaligned
+      .           
+      .             // actual free: push on the local free list
+      .             mi_block_set_next(page, block, page->local_free);
+100,016 ( 3.57%)    page->local_free = block;
+200,032 ( 7.14%)    if mi_unlikely(--page->used == 0) {
+      2 ( 0.00%)      if (page->retire_expire==0) { // no need to re-retire retired pages (happens when we alloc/free one block repeatedly in an empty page)
+      1 ( 0.00%)        _mi_page_retire(page); 
+     57 ( 0.00%)  => /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_retire (1x)
+      .               }
+      .             }
+      .             else if mi_unlikely(check_full && mi_page_is_in_full(page)) {
+      .               _mi_page_unfull(page);
+      .             }
+      .           }
+      .           
+      .           // Forward declaration for multi-threaded collect
+-- line 53 ----------------------------------------
+-- line 173 ----------------------------------------
+      .             return _mi_ptr_page(p);
+      .             #endif
+      .           }
+      .           
+      .           // Free a block
+      .           // Fast path written carefully to prevent register spilling on the stack
+      .           static mi_decl_forceinline void mi_free_ex(void* p, size_t* usable, mi_page_t* page)  
+      .           {
+200,032 ( 7.14%)    if mi_unlikely(page==NULL) return;  // page will be NULL if p==NULL
+      .             mi_assert_internal(p!=NULL && page!=NULL);
+      .             if (usable!=NULL) { *usable = mi_page_usable_block_size(page); }
+      .           
+      .             const mi_threadid_t xtid = (_mi_prim_thread_id() ^ mi_page_xthread_id(page));
+200,032 ( 7.14%)    if mi_likely(xtid == 0) {                        // `tid == mi_page_thread_id(page) && mi_page_flags(page) == 0`
+      .               // thread-local, aligned, and not a full page
+      .               mi_block_t* const block = mi_validate_block_from_ptr(page,p);
+      .               mi_free_block_local(page, block, false /* was guarded */, true /* track stats */, false /* no need to check if the page is full */);
+      .             }
+      .             else if (xtid <= MI_PAGE_FLAG_MASK) {            // `tid == mi_page_thread_id(page) && mi_page_flags(page) != 0`
+      .               // page is local, but is full or contains (inner) aligned blocks; use generic path
+      .               mi_free_generic_local(page, p);
+      .             }
+-- line 194 ----------------------------------------
+-- line 199 ----------------------------------------
+      .               mi_free_block_mt(page,block,false /* was_guarded */);
+      .             }
+      .             else {
+      .               // page is full or contains (inner) aligned blocks; use generic multi-thread path
+      .               mi_free_generic_mt(page, p);
+      .             }
+      .           }
+      .           
+200,032 ( 7.14%)  void mi_free(void* p) mi_attr_noexcept {
+      .             mi_page_t* const page = mi_validate_ptr_page(p,"mi_free");  
+      .             mi_free_ex(p, NULL, page);
+100,015 ( 3.57%)  }
+      .           
+      .           void mi_ufree(void* p, size_t* usable) mi_attr_noexcept {
+      .             mi_page_t* const page = mi_validate_ptr_page(p,"mi_ufree");  
+      .             mi_free_ex(p, usable, page);
+      .           }
+      .           
+      .           void mi_free_small(void* p) mi_attr_noexcept {
+      .             // We can only call `mi_free_small` for pointers allocated with `mi_(heap_)malloc_small`.
+-- line 218 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: examples/own_free_profile.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 17 ----------------------------------------
+      .           
+      .           #[inline(never)]
+      .           fn w_alloc16<A: GlobalAlloc>(a: &A) -> *mut u8 {
+      .               // SAFETY: корректный layout; результат проверяется до использования.
+      .               unsafe { a.alloc(Layout::from_size_align(16, 8).unwrap()) }
+      .           }
+      .           
+      .           #[inline(never)]
+100,016 ( 3.57%)  fn w_free16<A: GlobalAlloc>(a: &A, ptr: *mut u8) {
+      .               // SAFETY: run_const передаёт уникальный живой блок w_alloc16.
+      .               unsafe { a.dealloc(ptr, Layout::from_size_align(16, 8).unwrap()) };
+      .               black_box(16usize);
+200,032 ( 7.14%)  }
+      .           
+      .           #[inline(never)]
+      .           fn w_alloc64<A: GlobalAlloc>(a: &A) -> *mut u8 {
+      .               // SAFETY: корректный layout; результат проверяется до использования.
+      .               unsafe { a.alloc(Layout::from_size_align(64, 8).unwrap()) }
+      .           }
+      .           
+      .           #[inline(never)]
+-- line 37 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c
+--------------------------------------------------------------------------------
+Ir         
+
+-- line 424 ----------------------------------------
+.           
+.           // Retire a page with no more used blocks
+.           // Important to not retire too quickly though as new
+.           // allocations might coming.
+.           //
+.           // Note: called from `mi_free` and benchmarks often
+.           // trigger this due to freeing everything and then
+.           // allocating again so careful when changing this.
+4 ( 0.00%)  void _mi_page_retire(mi_page_t* page) mi_attr_noexcept {
+.             mi_assert_internal(page != NULL);
+.             mi_assert_expensive(_mi_page_is_valid(page));
+.             mi_assert_internal(mi_page_all_free(page));
+.           
+2 ( 0.00%)    if (page->retire_expire!=0) return;  // already retired, just keep it retired
+.             mi_page_set_has_interior_pointers(page, false);
+.           
+.             // don't retire too often..
+.             // (or we end up retiring and re-allocating most of the time)
+.             // NOTE: refine this more: we should not retire if this
+.             // is the only page left with free blocks. It is not clear
+.             // how to check this efficiently though...
+.             // for now, we don't retire if it is the only page left of this size class.
+.             mi_page_queue_t* pq = mi_page_queue_of(page);
+.             #if MI_RETIRE_CYCLES > 0
+.             const size_t bsize = mi_page_block_size(page);
+2 ( 0.00%)    if mi_likely( /* bsize < MI_MAX_RETIRE_SIZE && */ !mi_page_queue_is_special(pq)) {  // not full or huge queue?
+6 ( 0.00%)      if (pq->last==page && pq->first==page) { // the only page in the queue?
+.                 mi_theap_t* theap = mi_page_theap(page);
+.                 #if MI_STAT>0
+.                 mi_theap_stat_counter_increase(theap, pages_retire, 1);
+.                 #endif
+5 ( 0.00%)        page->retire_expire = (bsize <= MI_SMALL_MAX_OBJ_SIZE ? MI_RETIRE_CYCLES : MI_RETIRE_CYCLES/4);
+.                 mi_assert_internal(pq >= theap->pages);
+3 ( 0.00%)        const size_t index = pq - theap->pages;
+.                 mi_assert_internal(index < MI_BIN_FULL && index < MI_BIN_HUGE);
+3 ( 0.00%)        if (index < theap->page_retired_min) theap->page_retired_min = index;
+3 ( 0.00%)        if (index > theap->page_retired_max) theap->page_retired_max = index;
+.                 mi_assert_internal(mi_page_all_free(page));
+.                 return; // don't free after all
+.               }
+.             }
+.             #endif
+.             _mi_page_free(page, pq);
+2 ( 0.00%)  }
+.           
+.           // free retired pages: we don't need to look at the entire queues
+.           // since we only retire pages that are at the head position in a queue.
+.           void _mi_theap_collect_retired(mi_theap_t* theap, bool force) {
+.             size_t min = MI_BIN_FULL;
+.             size_t max = 0;
+.             for(size_t bin = theap->page_retired_min; bin <= theap->page_retired_max; bin++) {
+.               mi_page_queue_t* pq   = &theap->pages[bin];
+-- line 475 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 53 ----------------------------------------
+      .           
+      .               #[inline]
+      .               unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+      .                   mi_zalloc_aligned(layout.size(), layout.align()) as *mut u8
+      .               }
+      .           
+      .               #[inline]
+      .               unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+100,016 ( 3.57%)          mi_free(ptr as *mut c_void);
+2,200,411 (78.57%)  => /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free (100,016x)
+      .               }
+      .           
+      .               #[inline]
+      .               unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+      .                   mi_realloc_aligned(ptr as *mut c_void, new_size, layout.align()) as *mut u8
+      .               }
+      .           }
+      .           
+-- line 69 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 293 ----------------------------------------
+      .             // Windows: works on Intel and ARM in both 32- and 64-bit
+      .             return (uintptr_t)NtCurrentTeb();
+      .           }
+      .           
+      .           #elif MI_USE_BUILTIN_THREAD_POINTER
+      .           
+      .           static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
+      .             // Works on most Unix based platforms with recent compilers
+100,016 ( 3.57%)    return (uintptr_t)__builtin_thread_pointer();
+      .           }
+      .           
+      .           #elif MI_HAS_TLS_SLOT
+      .           
+      .           static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
+      .             #if defined(__BIONIC__)
+      .               // issue #384, #495: on the Bionic libc (Android), slot 1 is the thread id
+      .               // see: https://github.com/aosp-mirror/platform_bionic/blob/c44b1d0676ded732df4b3b21c5f798eacae93228/libc/platform/bionic/tls_defines.h#L86
+-- line 309 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c
+--------------------------------------------------------------------------------
+Ir         
+
+-- line 41 ----------------------------------------
+.             return (pq->block_size == (MI_LARGE_MAX_OBJ_SIZE+sizeof(uintptr_t)));
+.           }
+.           
+.           static inline bool mi_page_queue_is_full(const mi_page_queue_t* pq) {
+.             return (pq->block_size == (MI_LARGE_MAX_OBJ_SIZE+(2*sizeof(uintptr_t))));
+.           }
+.           
+.           static inline bool mi_page_queue_is_special(const mi_page_queue_t* pq) {
+2 ( 0.00%)    return (pq->block_size > MI_LARGE_MAX_OBJ_SIZE);
+.           }
+.           
+.           static inline size_t mi_page_queue_count(const mi_page_queue_t* pq) {
+.             return pq->count;
+.           }
+.           
+.           /* -----------------------------------------------------------
+.             Bins
+-- line 57 ----------------------------------------
+-- line 63 ----------------------------------------
+.           // i.e. byte size == `wsize*sizeof(void*)`.
+.           static mi_decl_noinline size_t mi_bin(size_t size) {
+.             size_t wsize = _mi_wsize_from_size(size);
+.           #if defined(MI_ALIGN4W)
+.             if mi_likely(wsize <= 4) {
+.               return (wsize <= 1 ? 1 : (wsize+1)&~1); // round to double word sizes
+.             }
+.           #elif defined(MI_ALIGN2W)
+2 ( 0.00%)    if mi_likely(wsize <= 8) {
+6 ( 0.00%)      return (wsize <= 1 ? 1 : (wsize+1)&~1); // round to double word sizes
+.             }
+.           #else
+.             if mi_likely(wsize <= 8) {
+.               return (wsize == 0 ? 1 : wsize);
+.             }
+.           #endif
+.             else if mi_unlikely(wsize > MI_LARGE_MAX_OBJ_WSIZE) {
+.               return MI_BIN_HUGE;
+-- line 80 ----------------------------------------
+-- line 167 ----------------------------------------
+.               count++;
+.               prev = page;
+.             }
+.             mi_assert_internal(pq->count == count);
+.             return true;
+.           }
+.           
+.           static size_t mi_page_bin(const mi_page_t* page) {
+7 ( 0.00%)    const size_t bin = (mi_page_is_in_full(page) ? MI_BIN_FULL : (mi_page_is_huge(page) ? MI_BIN_HUGE : mi_bin(mi_page_block_size(page))));
+11 ( 0.00%)  => /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_bin (1x)
+.             mi_assert_internal(bin <= MI_BIN_FULL);
+.             return bin;
+.           }
+.           
+.           // returns the page bin without using MI_BIN_FULL for statistics
+.           size_t _mi_page_stats_bin(const mi_page_t* page) {
+.             const size_t bin = (mi_page_is_huge(page) ? MI_BIN_HUGE : mi_bin(mi_page_block_size(page)));
+.             mi_assert_internal(bin <= MI_BIN_HUGE);
+.             return bin;
+.           }
+.           
+.           static mi_page_queue_t* mi_theap_page_queue_of(mi_theap_t* theap, const mi_page_t* page) {
+.             mi_assert_internal(theap!=NULL);
+.             const size_t bin = mi_page_bin(page);
+1 ( 0.00%)    mi_page_queue_t* pq = &theap->pages[bin];
+.             mi_assert_internal((mi_page_block_size(page) == pq->block_size) ||
+.                                  (mi_page_is_huge(page) && mi_page_queue_is_huge(pq)) ||
+.                                    (mi_page_is_in_full(page) && mi_page_queue_is_full(pq)));
+.             return pq;
+.           }
+.           
+.           static mi_page_queue_t* mi_page_queue_of(const mi_page_t* page) {
+.             mi_theap_t* theap = mi_page_theap(page);
+-- line 198 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 504 ----------------------------------------
+      .             }
+      .             return true;
+      .           }
+      .           
+      .           // Align a byte size to a size in _machine words_,
+      .           // i.e. byte size == `wsize*sizeof(void*)`.
+      .           static inline size_t _mi_wsize_from_size(size_t size) {
+      .             mi_assert_internal(size <= SIZE_MAX - sizeof(uintptr_t));
+      3 ( 0.00%)    return (size + sizeof(uintptr_t) - 1) / sizeof(uintptr_t);
+      .           }
+      .           
+      .           // Overflow detecting multiply
+      .           #if __has_builtin(__builtin_umul_overflow) || (defined(__GNUC__) && (__GNUC__ >= 5))
+      .           #include <limits.h>      // UINT_MAX, ULONG_MAX
+      .           #if defined(_CLOCK_T)    // for Illumos
+      .           #undef _CLOCK_T
+      .           #endif
+-- line 520 ----------------------------------------
+-- line 634 ----------------------------------------
+      .           #define MI_PAGE_MAP_SUB_COUNT     (MI_ZU(1) << MI_PAGE_MAP_SUB_SHIFT)
+      .           #define MI_PAGE_MAP_SHIFT         (MI_MAX_VABITS - MI_PAGE_MAP_SUB_SHIFT - MI_ARENA_SLICE_SHIFT)
+      .           #define MI_PAGE_MAP_COUNT         (MI_ZU(1) << MI_PAGE_MAP_SHIFT)
+      .           
+      .           typedef mi_page_t**   mi_submap_t;
+      .           extern mi_decl_hidden _Atomic(mi_submap_t)* _mi_page_map;
+      .           
+      .           static inline size_t _mi_page_map_index(const void* p, size_t* sub_idx) {
+200,032 ( 7.14%)    const size_t u = (size_t)((uintptr_t)p / MI_ARENA_SLICE_SIZE);
+100,016 ( 3.57%)    if (sub_idx != NULL) { *sub_idx = u % MI_PAGE_MAP_SUB_COUNT; }
+200,032 ( 7.14%)    return (u / MI_PAGE_MAP_SUB_COUNT);
+      .           }
+      .           
+      .           static inline mi_submap_t _mi_page_map_at(size_t idx) {
+200,032 ( 7.14%)    return mi_atomic_load_ptr_relaxed(mi_page_t*, &_mi_page_map[idx]);
+      .           }
+      .           
+      .           static inline mi_page_t* _mi_unchecked_ptr_page(const void* p) {
+      .             size_t sub_idx;
+      .             const size_t idx = _mi_page_map_index(p, &sub_idx);
+100,016 ( 3.57%)    return (_mi_page_map_at(idx))[sub_idx];  // NULL if p==NULL
+      .           }
+      .           
+      .           static inline mi_page_t* _mi_checked_ptr_page(const void* p) {
+      .             size_t sub_idx;
+      .             const size_t idx = _mi_page_map_index(p, &sub_idx);
+      .             mi_submap_t const sub = _mi_page_map_at(idx);
+      .             if mi_unlikely(sub == NULL) return NULL;
+      .             return sub[sub_idx];
+-- line 662 ----------------------------------------
+-- line 789 ----------------------------------------
+      .           static inline bool mi_page_is_used_at_frac(const mi_page_t* page, uint16_t n) {
+      .             if (page==NULL) return true;
+      .             uint16_t frac = page->reserved / n;
+      .             return (page->reserved - page->used <= frac);
+      .           }
+      .           
+      .           
+      .           static inline bool mi_page_is_huge(const mi_page_t* page) {
+      2 ( 0.00%)    return (mi_page_is_singleton(page) &&
+      1 ( 0.00%)            (page->block_size > MI_LARGE_MAX_OBJ_SIZE ||
+      .                      (mi_memkind_is_os(page->memid.memkind) && page->memid.mem.os.base < (void*)page)));
+      .           }
+      .           
+      .           static inline mi_page_queue_t* mi_page_queue(const mi_theap_t* theap, size_t size) {
+      .             mi_page_queue_t* const pq = &((mi_theap_t*)theap)->pages[_mi_bin(size)];
+      .             if (size <= MI_LARGE_MAX_OBJ_SIZE) { mi_assert_internal(pq->block_size <= MI_LARGE_MAX_OBJ_SIZE); }
+      .             return pq;
+      .           }
+-- line 806 ----------------------------------------
+-- line 807 ----------------------------------------
+      .           
+      .           
+      .           //-----------------------------------------------------------
+      .           // Page thread id and flags
+      .           //-----------------------------------------------------------
+      .           
+      .           // Thread id of thread that owns this page (with flags in the bottom 2 bits)
+      .           static inline mi_threadid_t mi_page_xthread_id(const mi_page_t* page) {
+100,017 ( 3.57%)    return mi_atomic_load_relaxed(&((mi_page_t*)page)->xthread_id);
+      .           }
+      .           
+      .           // Plain thread id of the thread that owns this page
+      .           static inline mi_threadid_t mi_page_thread_id(const mi_page_t* page) {
+      .             return (mi_page_xthread_id(page) & ~MI_PAGE_FLAG_MASK);
+      .           }
+      .           
+      .           static inline mi_page_flags_t mi_page_flags(const mi_page_t* page) {
+      .             return (mi_page_xthread_id(page) & MI_PAGE_FLAG_MASK);
+      .           }
+      .           
+      .           static inline bool mi_page_flags_set(mi_page_t* page, bool set, mi_page_flags_t newflag) {
+      .             mi_page_flags_t old;
+      .             if (set) { old = mi_atomic_or_relaxed(&page->xthread_id, newflag); }
+      1 ( 0.00%)        else { old = mi_atomic_and_relaxed(&page->xthread_id, ~newflag); }
+      .             return ((old & newflag) == newflag);
+      .           }
+      .           
+      .           static inline bool mi_page_is_in_full(const mi_page_t* page) {
+      .             return ((mi_page_flags(page) & MI_PAGE_IN_FULL_QUEUE) != 0);
+      .           }
+      .           
+      .           static inline void mi_page_set_in_full(mi_page_t* page, bool in_full) {
+-- line 838 ----------------------------------------
+-- line 889 ----------------------------------------
+      .             mi_assert_internal(mi_page_is_abandoned_mapped(page));
+      .             mi_atomic_and_relaxed(&page->xthread_id, (mi_threadid_t)MI_PAGE_FLAG_MASK);
+      .           }
+      .           
+      .           
+      .           static inline mi_theap_t* mi_page_theap(const mi_page_t* page) {
+      .             mi_assert_internal(!mi_page_is_abandoned(page));
+      .             mi_assert_internal(page->theap != NULL);
+      1 ( 0.00%)    return page->theap;
+      .           }
+      .           
+      .           static inline mi_tld_t* mi_page_tld(const mi_page_t* page) {
+      .             mi_assert_internal(!mi_page_is_abandoned(page));
+      .             mi_assert_internal(page->theap != NULL);
+      .             return page->theap->tld;
+      .           }
+      .           
+-- line 905 ----------------------------------------
+-- line 1061 ----------------------------------------
+      .           }
+      .           
+      .           static inline void mi_block_set_nextx(const void* null, mi_block_t* block, const mi_block_t* next, const uintptr_t* keys) {
+      .             mi_track_mem_undefined(block,sizeof(mi_block_t));
+      .             #if MI_ENCODE_FREELIST
+      .             block->next = mi_ptr_encode(null, next, keys);
+      .             #else
+      .             MI_UNUSED(keys); MI_UNUSED(null);
+200,032 ( 7.14%)    block->next = (mi_encoded_t)next;
+      .             #endif
+      .             mi_track_mem_noaccess(block,sizeof(mi_block_t));
+      .           }
+      .           
+      .           static inline mi_block_t* mi_block_next(const mi_page_t* page, const mi_block_t* block) {
+      .             #if MI_ENCODE_FREELIST
+      .             mi_block_t* next = mi_block_nextx(page,block,page->keys);
+      .             // check for free list corruption: is `next` at least in the same page?
+-- line 1077 ----------------------------------------
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./csu/../csu/libc-start.c
+  ./csu/../sysdeps/nptl/libc_start_call_main.h
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs
+  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs
+
+--------------------------------------------------------------------------------
+Ir                 
+--------------------------------------------------------------------------------
+2,600,475 (92.86%)  events annotated
+

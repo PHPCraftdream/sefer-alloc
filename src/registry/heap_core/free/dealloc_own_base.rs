@@ -563,8 +563,7 @@ impl HeapCore {
                         // below.
                         #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
                         unsafe {
-                            self.core
-                                .flush_class_internal(c, core::slice::from_ref(&evicted));
+                            self.core.flush_one_magazine_internal(c, evicted);
                         }
                         // The current block takes the evicted slot; `count`
                         // is unchanged — the magazine still holds exactly
