@@ -129,3 +129,31 @@ then run 2 for G11, GL1, GL2 on `g1-k7`@`3cef5a58`+`9a279d56`, each
 followed by the same group on `g1-k5-j`. The decision rule is unchanged and
 applies to the union of the three groups (13 kernels). A group whose A/A is
 not admitted is reported as not admitted, not re-run selectively.
+
+## Addendum 4 (2026-10-29, before any old-judge run 2)
+
+Split-group results (raws `.rush/g1/split/`): run 1 G11 — bulk16k −51.04,
+churn1024 −2.21; losses bulk64 +10.06 [9.53, 10.63], larson +2.99 [2.07,
+3.68], pair16 +0.77, pair64 +0.83. GL1 bulk64k −9.93, GL2 bulk16k_32
+−25.76. Diagnostics: {pair16, pair64, bulk64} bulk64 +11.90, pair +0.73;
+{bulk64, bulk16k} bulk64 +11.66 — the bulk64 loss does not need the large
+cohorts. Counter oracle on the G11 mix: zero overflow parks/reloads on
+pair16/pair64/pair_rt/bulk64/vec512. Callgrind (`b4_pmu_probe`, K5
+`2bc830cc` vs K7 `3cef5a58`): pair16 +2,776 Ir of 70.07 M, pair64 +2,843,
+churn16 +6,681 of 35.37 M (≈ 0), bulk64 +656,069 of 56.46 M (+1.16 %;
+≈ 26 Ir per magazine event in `depot_reload`, `refill_magazine_slow`,
+`depot_park`).
+
+Run 2 with the new judge binary is void for a second reason: the sefer A/A
+is about −10 % in every group (even a single kernel), while the unchanged
+11-kernel judge binary measured the same session at A/A ≈ +0.1 %
+(`.rush/g1/split/oldjudge_k5/`, 6 processes) — a layout artifact of the
+judge build, not of the trees.
+
+Run 2 is therefore taken on the 11-kernel judge exactly as it was at
+`2bc830cc`: branch `g1-k7-j11` = `g1-k7`@`9a279d56` with the two judge
+commits reverted (`64974d79`; harness files byte-identical to `2bc830cc`),
+against `2bc830cc` itself. 20 processes × 2000 blocks, order K7, K5, K7, K5
+(the repeat measures session drift). bulk64k / bulk16k_32 stay judged by
+run 1 only (GL1/GL2); their run-2 rows are reported as not admitted. Decision
+rule unchanged.
