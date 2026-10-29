@@ -3246,6 +3246,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** close on a green landing CI. Shared open sub-item with item 125: bulk64's +1.6…+1.8 % with unchanged instructions in two consecutive ablations points at the null copy's layout on that kernel — check the harness (a second null build, or a swapped-slot null) before the next bulk64-sensitive gate.
    > - **Evidence:** docs/perf/G1_K5_DEPOT_GATE.md, docs/perf/G1_K5_DEPOT_GATE_summary.csv, docs/perf/G1_K5_DEPOT_GATE_summary_callgrind.csv, docs/perf/g1_k5/, scripts/g1_k5_gate_report.mjs, tests/heap_core_depot.rs.
 
+128. **[A] G1-K7 — budgeted depot overflow above the K5 floor (default 1 MiB per heap): v5 under pre-registered Addendum 6, not shipped.** (Filed 2026-10-29, `docs/design/2026-10-28-depot-budget-design.md`, pre-registration `docs/perf/b4_ablate/G1_K7_PREREG.md` on `g1-k7-meas`.)
+   > **Current state**
+   > - **Status:** OPEN — v4 NO-GO by the literal decision rule (rule 2); v5 (segment-refill tick gated by `OVF_TICK`) awaits the Addendum 6 campaign the owner approved on 2026-10-29. Branch `g1-k7`, draft PR #128.
+   > - **Current verdict (ИЗМЕРЕНО, v4, raws `.rush/g1/v4/` on the measurement host):** run 1 (J1′ v2 ablation, effect in 100·ln units) bulk16k −52.11 [−52.89, −51.11], bulk16k_32 −26.61, bulk64k −12.32, bulk64 −0.79; losses pair16 +0.87 [0.56, 1.03], pair64 +0.89 [0.74, 0.99] (the same sign in all four variants v2–v4 while Callgrind gives ≤ +0.03 % Ir). Run 2 (main judge vs mimalloc, t_mi/t_sefer, K7, K5, K7, K5): bulk16k 0.827 / 0.501 / 0.829 / 0.506; larson first pair 0.991 vs 1.192 (disjoint), second 1.028 vs 1.019; K5 against itself is disjoint on vec512 and larson across its two runs.
+   > - **Next trigger:** Addendum 6 committed with patch and script hashes, then its campaign (run 1 null/v5/U in two passes, run 2 sixteen sessions K7 K5 K5 K7 …, RSS, iai); GO ships `perf(runtime)` and moves this card to resolved, NO-GO closes design rev. 4 for the round.
+   > - **Open sub-item (C.2):** an overflow reload skips the segment refill, and with it the Small remote-free discovery that runs there (`src/registry/heap_core/alloc/hot.rs`, refill paths); every 8th overflow reload runs only the bounded Large-sidecar check (`depot_paths.rs`, `reload_overflow`). Long overflow reload series can delay Small remote-free reclamation (latency/RSS, not a leak; K5's floor reloads skip it the same way for up to 8 magazines). Observed by Addendum 6's run 3 W4 (cross-thread frees); fix only on a measured effect.
+   > - **Evidence:** `docs/design/2026-10-28-depot-budget-design.md` (rev. 5), consultation records `.rush/stdin/g1-k7-v4-verdict.*`, `.rush/stdin/g1-k7-v4-decision.*` (measurement host), tests `tests/g1_k7_depot_overflow*.rs`.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

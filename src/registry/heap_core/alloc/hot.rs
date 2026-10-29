@@ -502,10 +502,13 @@ impl HeapCore {
         if self.depot_may_reload(c) && self.depot_reload_tick(c) {
             return (self.finish_magazine_refill(c, TCACHE_CAP), false);
         }
-        // G1-K7: a segment refill is a cold event for the overflow decay —
-        // counted first, while only `self` and `c` are live.
+        // G1-K7: a segment refill is a cold event for the overflow decay
+        // while the class is armed — counted first, while only `self` and
+        // `c` are live.
         #[cfg(feature = "alloc-decommit")]
-        self.depot_tick();
+        if self.depot_may_tick(c) {
+            self.depot_segment_tick(c);
+        }
         // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
         // rationale — identical placement, identical cheap-when-empty shape).
         self.drain_large_sidecar_ingress_hot_bounded();
@@ -687,10 +690,13 @@ impl HeapCore {
         if self.depot_may_reload(c) && self.depot_reload_tick(c) {
             return self.finish_magazine_refill(c, TCACHE_CAP);
         }
-        // G1-K7: a segment refill is a cold event for the overflow decay —
-        // counted first, while only `self` and `c` are live.
+        // G1-K7: a segment refill is a cold event for the overflow decay
+        // while the class is armed — counted first, while only `self` and
+        // `c` are live.
         #[cfg(feature = "alloc-decommit")]
-        self.depot_tick();
+        if self.depot_may_tick(c) {
+            self.depot_segment_tick(c);
+        }
         // Bounded Large-only probe; Small discovery occurs in the refill.
         self.drain_large_sidecar_ingress_hot_bounded();
 

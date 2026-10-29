@@ -2023,6 +2023,7 @@
         "HeapCore::park_overflow",
         "HeapCore::reload_overflow",
         "HeapCore::depot_tick",
+        "HeapCore::depot_segment_tick",
         "HeapCore::depot_release_overflow_pages",
         "HeapCore::depot_decay"
       ],
@@ -2033,7 +2034,7 @@
         "depot_park",
         "depot_reload"
       ],
-      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths (park, the teardown and refill reloads, the G1-K7 cold overflow park and reload, the overflow decay tick and its cold decay step and the teardown page release), so only the current lease holder touches it",
+      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths (park, the teardown and refill reloads, the G1-K7 cold overflow park and reload, the overflow decay tick, the segment-refill tick and its cold decay step and the teardown page release), so only the current lease holder touches it",
       "tests": [
         "tests/heap_core_depot.rs",
         "tests/loom_depot_recycle_handoff.rs"
@@ -2144,8 +2145,7 @@
         "name": "depot_tick"
       },
       "allowed": [
-        "HeapCore::refill_magazine_slow",
-        "HeapCore::refill_magazine_slow_virgin",
+        "HeapCore::depot_segment_tick",
         "HeapCore::park_overflow",
         "HeapCore::reload_overflow_tick"
       ],
@@ -2153,13 +2153,14 @@
         "decay",
         "depot_tick",
         "teardown",
-        "refill",
+        "depot_segment_tick",
         "park_overflow"
       ],
-      "reason": "G1-K7: the overflow decay runs only on the owner's cold events — a segment refill, an overflow park and an overflow reload made for a refill — never inside the teardown drain (flush_all_tcache / depot_reload / reload_overflow), so the drain alone empties the depot",
+      "reason": "G1-K7: the overflow decay runs only on the owner's cold events — an armed class's segment refill (depot_segment_tick), an overflow park and an overflow reload made for a refill — never inside the teardown drain (flush_all_tcache / depot_reload / reload_overflow), so the drain alone empties the depot",
       "tests": [
         "tests/g1_k7_depot_overflow.rs",
-        "tests/g1_k7_depot_overflow_order.rs"
+        "tests/g1_k7_depot_overflow_order.rs",
+        "tests/g1_k7_depot_overflow_tick.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p12_no_decay_in_teardown"
     },
@@ -2190,6 +2191,34 @@
         "tests/g1_k7_depot_overflow_order.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p12_ticking_reload_on_refill"
+    },
+    {
+      "id": "depot/segment-tick-on-refill-only",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "depot_segment_tick"
+      },
+      "allowed": [
+        "HeapCore::refill_magazine_slow",
+        "HeapCore::refill_magazine_slow_virgin"
+      ],
+      "terms": [
+        "decay",
+        "depot_segment_tick",
+        "OVF_TICK",
+        "refill",
+        "disarm"
+      ],
+      "reason": "G1-K7 v5: only the two segment-refill paths count an armed class's decay event; the tick also disarms the class once the overflow is empty, so a call from the teardown drain would both run decay inside the drain and drop tick flags the invariant bytes > 0 => every class armed still needs",
+      "tests": [
+        "tests/g1_k7_depot_overflow_tick.rs",
+        "tests/g1_k7_depot_overflow.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_segment_tick_on_refill"
     },
     {
       "id": "depot/overflow-tick-reload-from-refill-reload",

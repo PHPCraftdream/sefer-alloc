@@ -232,7 +232,32 @@ impl HeapCore {
         }
         let class = &self.tcache.classes[c];
         let ring = self.depot.as_deref().map_or(0, |d| d.ovf.len(c));
-        (class.parked as usize, ring, class.ovf)
+        let hint = class.ovf & crate::registry::heap_core::state::tcache::OVF_HINT;
+        (class.parked as usize, ring, hint)
+    }
+
+    /// TEST-ONLY (G1-K7): `(classes whose PerClass::ovf carries the
+    /// segment-refill tick flag, the overflow's armed mirror)`, bit `c` each;
+    /// `(0, 0)` for an unbound heap.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit",
+        feature = "internals"
+    ))]
+    pub fn dbg_depot_ticking(&self) -> (u64, u64) {
+        use crate::registry::heap_core::state::tcache::OVF_TICK;
+        let Some(depot) = self.depot.as_deref() else {
+            return (0, 0);
+        };
+        let mut flags = 0u64;
+        for (c, class) in self.tcache.classes.iter().enumerate() {
+            if class.ovf & OVF_TICK != 0 {
+                flags |= 1 << c;
+            }
+        }
+        (flags, depot.ovf.armed())
     }
 
     /// TEST-ONLY (G1-K7): `(resolved, effective)` depot-overflow budget in
@@ -252,8 +277,8 @@ impl HeapCore {
 
     /// TEST-ONLY (G1-K7): depot-overflow counters `[bytes parked, parks,
     /// reloads, budget refusals, OS refusals, decay-flushed records,
-    /// ingress checks, decommit calls, committed record bytes]`; all 0 for an
-    /// unbound heap.
+    /// ingress checks, decommit calls, committed record bytes, arms,
+    /// disarms]`; all 0 for an unbound heap.
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-global",
@@ -261,9 +286,9 @@ impl HeapCore {
         feature = "alloc-decommit",
         feature = "internals"
     ))]
-    pub fn dbg_depot_overflow(&self) -> [u64; 9] {
+    pub fn dbg_depot_overflow(&self) -> [u64; 11] {
         let Some(depot) = self.depot.as_deref() else {
-            return [0; 9];
+            return [0; 11];
         };
         let o = &depot.ovf;
         let s = o.stats;
@@ -277,6 +302,8 @@ impl HeapCore {
             s.ingress_checks,
             s.decommits,
             o.committed_bytes() as u64,
+            s.arms,
+            s.disarms,
         ]
     }
 

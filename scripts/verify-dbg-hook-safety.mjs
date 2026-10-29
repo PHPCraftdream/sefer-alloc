@@ -170,6 +170,7 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/queries.rs::dbg_depot_budget",
   "src/registry/heap_core/diag/queries.rs::dbg_depot_overflow",
   "src/registry/heap_core/diag/queries.rs::dbg_depot_ring",
+  "src/registry/heap_core/diag/queries.rs::dbg_depot_ticking",
   // G1-K7: pure const resolution of a by-value config.
   "src/alloc_core/config/large_cache_config.rs::dbg_resolved_depot_budget",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",

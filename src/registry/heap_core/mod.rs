@@ -22,7 +22,7 @@ pub(crate) use self::state::depot::{DEPOT_CLASSES, DEPOT_K};
     feature = "fastbin",
     feature = "alloc-decommit"
 ))]
-pub(crate) use self::state::depot_overflow::DepotOverflow;
+pub(crate) use self::state::depot_overflow::{DepotOverflow, ALL_SMALL};
 #[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
 pub(crate) use self::state::tcache::TCACHE_CAP;
 

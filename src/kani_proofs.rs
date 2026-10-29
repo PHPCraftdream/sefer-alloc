@@ -433,7 +433,9 @@ mod depot_proofs {
 mod depot_overflow_proofs {
     use crate::alloc_core::size_classes::SIZE_CLASS_TABLE;
     use crate::alloc_core::LargeCacheConfig;
-    use crate::registry::heap_core::{DepotOverflow, DEPOT_CLASSES, DEPOT_K, TCACHE_CAP};
+    use crate::registry::heap_core::{
+        DepotOverflow, ALL_SMALL, DEPOT_CLASSES, DEPOT_K, TCACHE_CAP,
+    };
 
     const CAP: usize = 3;
     const STEPS: usize = 5;
@@ -441,7 +443,11 @@ mod depot_overflow_proofs {
     /// И-O1: the ring against a queue model — park appends iff the ring and
     /// the budget have room, reload returns the newest record, decay the
     /// oldest (the ring wraps once decay moved its head), and the parked
-    /// byte count is always `len * magazine bytes`.
+    /// byte count is always `len * magazine bytes`. The segment-refill tick
+    /// flags, driven as `park_overflow` / `depot_segment_tick` drive them
+    /// (arm after every park; a refill of class `k` disarms `k` only on an
+    /// empty overflow), mirror `armed` exactly and cover every small class
+    /// while bytes are parked.
     #[kani::proof]
     #[kani::unwind(18)]
     fn overflow_ring_matches_a_queue() {
@@ -455,11 +461,20 @@ mod depot_overflow_proofs {
         let mut model = [0usize; STEPS];
         let (mut front, mut back) = (0usize, 0usize);
         let mut out = [core::ptr::null_mut::<u8>(); TCACHE_CAP];
+        let mut flags = 0u64;
         let mut step = 0;
         while step < STEPS {
             let n = back - front;
             let op: u8 = kani::any();
-            if op % 3 == 0 {
+            if op % 4 == 3 {
+                // A segment refill of class `k` while armed.
+                let k: u32 = kani::any();
+                kani::assume(k < ALL_SMALL.count_ones());
+                if flags & 1 << k != 0 && o.bytes() == 0 {
+                    o.disarm(k as usize);
+                    flags &= !(1 << k);
+                }
+            } else if op % 4 == 0 {
                 let id = step + 1;
                 let mag = [id as *mut u8; TCACHE_CAP];
                 let room = n < CAP && o.bytes() + mb <= budget;
@@ -467,8 +482,9 @@ mod depot_overflow_proofs {
                 if room {
                     model[back] = id;
                     back += 1;
+                    flags |= o.arm();
                 }
-            } else if op % 3 == 1 && n > 0 {
+            } else if op % 4 == 1 && n > 0 {
                 o.reload(c, n, &mut out);
                 back -= 1;
                 assert!(out == [model[back] as *mut u8; TCACHE_CAP]);
@@ -478,6 +494,8 @@ mod depot_overflow_proofs {
                 front += 1;
             }
             assert_eq!(o.bytes(), (back - front) * mb);
+            assert_eq!(flags, o.armed());
+            assert!(o.bytes() == 0 || o.armed() == ALL_SMALL);
             step += 1;
         }
         kani::cover!(front > 0 && back - front == CAP, "the ring wrapped full");

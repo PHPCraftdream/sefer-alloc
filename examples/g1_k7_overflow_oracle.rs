@@ -13,7 +13,7 @@ use std::alloc::{alloc, dealloc, Layout};
 #[global_allocator]
 static GLOBAL: SeferAlloc = SeferAlloc::new();
 
-const NAMES: [&str; 9] = [
+const NAMES: [&str; 11] = [
     "bytes",
     "parks",
     "reloads",
@@ -23,6 +23,8 @@ const NAMES: [&str; 9] = [
     "ingress_checks",
     "decommit_calls",
     "committed_bytes",
+    "arms",
+    "disarms",
 ];
 
 struct Rng(u64);
@@ -119,7 +121,7 @@ fn vec_grow(cycles: u64) {
     }
 }
 
-fn snap() -> [u64; 9] {
+fn snap() -> [u64; 11] {
     GLOBAL.dbg_current_depot_overflow().expect("own heap").1
 }
 
@@ -151,7 +153,7 @@ fn main() {
         "bulk64k",
         "bulk16k_32",
     ];
-    let mut sum = vec![[0u64; 9]; kernels.len()];
+    let mut sum = vec![[0u64; 11]; kernels.len()];
     for _ in 0..cycles {
         for (k, name) in kernels.iter().enumerate() {
             if only.as_ref().is_some_and(|o| !o.iter().any(|w| w == name)) {
@@ -185,7 +187,8 @@ fn main() {
                 _ => unreachable!(),
             }
             let b = snap();
-            for i in 1..9 {
+            // Levels: bytes (0) and committed bytes (8); the rest are deltas.
+            for i in (1..11).filter(|&i| i != 8) {
                 sum[k][i] += b[i].wrapping_sub(a[i]);
             }
             sum[k][0] = b[0];

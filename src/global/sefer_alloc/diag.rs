@@ -664,7 +664,7 @@ impl SeferAlloc {
         feature = "internals"
     ))]
     #[must_use]
-    pub fn dbg_current_depot_overflow(&self) -> Option<((usize, usize), [u64; 9])> {
+    pub fn dbg_current_depot_overflow(&self) -> Option<((usize, usize), [u64; 11])> {
         if let CurrentHeap::Own(heap) = self.current_heap() {
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
             // registry slot owned by THIS thread — same justification as

@@ -9,7 +9,7 @@
 //! `PerClass::parked - DEPOT_K[c]`, also kept here (`len`) so a cold event
 //! costs O(1).
 
-use crate::alloc_core::size_classes::SIZE_CLASS_TABLE;
+use crate::alloc_core::size_classes::{SIZE_CLASS_TABLE, SMALL_CLASS_COUNT};
 use crate::registry::heap_core::state::depot::DEPOT_CLASSES;
 use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 
@@ -37,6 +37,14 @@ fn reserve_fault_fires() -> bool {
 
 const _: () = assert!(REC == 128);
 const _: () = assert!(DEPOT_CLASSES <= 32);
+const _: () = assert!(SMALL_CLASS_COUNT <= 64);
+
+/// Every small class (bit `c`): the classes a segment refill can tick for.
+pub(crate) const ALL_SMALL: u64 = if SMALL_CLASS_COUNT == 64 {
+    u64::MAX
+} else {
+    (1u64 << SMALL_CLASS_COUNT) - 1
+};
 
 /// Owner-only counters (diagnostics; read through `bench-internals` hooks).
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -49,6 +57,11 @@ pub(crate) struct OverflowStats {
     pub(crate) ingress_checks: u64,
     /// Decommit calls issued (not proof the OS dropped the pages).
     pub(crate) decommits: u64,
+    /// Parks that set segment-refill tick flags ([`DepotOverflow::arm`]).
+    pub(crate) arms: u64,
+    /// Segment refills that found the overflow empty and dropped their
+    /// class's tick flag ([`DepotOverflow::disarm`]).
+    pub(crate) disarms: u64,
 }
 
 /// Overflow control; all-zero = empty and unreserved. The per-event fields
@@ -57,6 +70,9 @@ pub(crate) struct OverflowStats {
 pub(crate) struct DepotOverflow {
     base: *mut u8,
     bytes: usize,
+    /// Small classes whose `PerClass::ovf` carries `OVF_TICK` (bit `c`).
+    /// Invariant: `bytes > 0` implies every small class is armed.
+    armed: u64,
     events: u32,
     epoch_len: u32,
     /// Classes with decay debt (bit `c`).
@@ -88,6 +104,7 @@ impl DepotOverflow {
         Self {
             base: core::ptr::null_mut(),
             bytes: 0,
+            armed: 0,
             events: 0,
             epoch_len: 0,
             debt_mask: 0,
@@ -110,6 +127,8 @@ impl DepotOverflow {
                 decay_flushed: 0,
                 ingress_checks: 0,
                 decommits: 0,
+                arms: 0,
+                disarms: 0,
             },
         }
     }
@@ -124,6 +143,39 @@ impl DepotOverflow {
         o.committed[c] = cap as u32 * REC as u32;
         o.epoch_len = EPOCH_MIN;
         o
+    }
+
+    /// After a successful park: the small classes not yet armed (bit `c`) —
+    /// the caller sets their `OVF_TICK` — and every class is armed from here.
+    #[inline(always)]
+    pub(crate) fn arm(&mut self) -> u64 {
+        debug_assert!(self.bytes != 0, "arm follows a park");
+        let fresh = !self.armed & ALL_SMALL;
+        if fresh != 0 {
+            self.armed = ALL_SMALL;
+            self.stats.arms += 1;
+        }
+        fresh
+    }
+
+    /// A segment refill of class `c` found the overflow empty: `c` stops
+    /// ticking until the next park re-arms it.
+    pub(crate) fn disarm(&mut self, c: usize) {
+        debug_assert_eq!(self.bytes, 0, "only an empty overflow disarms");
+        self.armed &= !(1u64 << c);
+        self.stats.disarms += 1;
+    }
+
+    /// The small classes currently armed (bit `c`).
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    pub(crate) fn armed(&self) -> u64 {
+        self.armed
+    }
+
+    /// Teardown / bind: nothing is parked, no class ticks.
+    pub(crate) fn disarm_all(&mut self) {
+        debug_assert_eq!(self.bytes, 0, "only an empty overflow disarms");
+        self.armed = 0;
     }
 
     /// Bytes of blocks currently parked in the overflow.
