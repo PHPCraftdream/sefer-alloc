@@ -70,7 +70,7 @@ pub(crate) struct OverflowStats {
 pub(crate) struct DepotOverflow {
     base: *mut u8,
     bytes: usize,
-    /// Small classes whose `PerClass::ovf` carries `OVF_TICK` (bit `c`).
+    /// Small classes whose `PerClass::marks` carries `MARK_TICK` (bit `c`).
     /// Invariant: `bytes > 0` implies every small class is armed.
     armed: u64,
     events: u32,
@@ -146,15 +146,16 @@ impl DepotOverflow {
     }
 
     /// After a successful park: the small classes not yet armed (bit `c`) —
-    /// the caller sets their `OVF_TICK` — and every class is armed from here.
+    /// the caller sets their `MARK_TICK` — and every class is armed from here.
     #[inline(always)]
     pub(crate) fn arm(&mut self) -> u64 {
         debug_assert!(self.bytes != 0, "arm follows a park");
-        let fresh = !self.armed & ALL_SMALL;
-        if fresh != 0 {
-            self.armed = ALL_SMALL;
-            self.stats.arms += 1;
+        if self.armed == ALL_SMALL {
+            return 0;
         }
+        let fresh = !self.armed & ALL_SMALL;
+        self.armed = ALL_SMALL;
+        self.stats.arms += 1;
         fresh
     }
 

@@ -1,5 +1,5 @@
 //! G1-K7 v5: a segment refill ticks the overflow decay only while its class
-//! carries `OVF_TICK`. An overflow park arms every small class, a class's
+//! carries `MARK_TICK`. An overflow park arms every small class, a class's
 //! own segment refill disarms it once the overflow is empty, the teardown
 //! drain disarms all — and the decay still reaches records parked by a class
 //! that no longer refills (pure segment refills of another class drive it).
@@ -77,7 +77,7 @@ fn cycle(heap: &mut HeapCore, size: usize, n: usize) {
 /// The mirror: the per-class flags equal the overflow's armed set.
 fn mirrored(heap: &HeapCore) -> u64 {
     let (flags, armed) = heap.dbg_depot_ticking();
-    assert_eq!(flags, armed, "OVF_TICK flags mirror the armed set");
+    assert_eq!(flags, armed, "MARK_TICK flags mirror the armed set");
     armed
 }
 

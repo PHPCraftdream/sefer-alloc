@@ -2209,7 +2209,7 @@
       "terms": [
         "decay",
         "depot_segment_tick",
-        "OVF_TICK",
+        "MARK_TICK",
         "refill",
         "disarm"
       ],

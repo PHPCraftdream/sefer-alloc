@@ -63,7 +63,7 @@ impl HeapCore {
         for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
             self.tcache.classes[c].limit =
                 super::depot_paths::open_limit(c, self.depot_budget as usize);
-            self.tcache.classes[c].ovf = 0;
+            self.tcache.classes[c].marks = 0;
         }
     }
 
@@ -131,8 +131,8 @@ impl HeapCore {
             // length, not the hint); drop the floor's epoch mark too.
             #[cfg(feature = "alloc-decommit")]
             {
-                debug_assert_eq!(self.tcache.classes[c].ovf & super::tcache::OVF_HINT, 0);
-                self.tcache.classes[c].floor_mark = 0;
+                debug_assert_eq!(self.tcache.classes[c].ovf, 0);
+                self.tcache.classes[c].marks &= !super::tcache::MARK_FLOOR;
             }
         }
         // G1-K7: the depot (floor and overflow) is now empty; return the
@@ -154,7 +154,7 @@ impl HeapCore {
             // Nothing is parked: no class ticks until the next park.
             depot.ovf.disarm_all();
             for class in self.tcache.classes.iter_mut() {
-                class.ovf = 0;
+                class.marks &= !super::tcache::MARK_TICK;
             }
             let budget = self.depot_budget as usize;
             let ready = depot.ovf.take_unstarved(budget);
@@ -203,8 +203,8 @@ impl HeapCore {
             let mut floor_parked = 0u32;
             for c in 0..DEPOT_CLASSES {
                 let class = &mut self.tcache.classes[c];
-                floor_parked |= (class.floor_mark as u32) << c;
-                class.floor_mark = 0;
+                floor_parked |= ((class.marks & super::tcache::MARK_FLOOR) as u32) << c;
+                class.marks &= !super::tcache::MARK_FLOOR;
             }
             depot.ovf.end_epoch(floor_parked);
         }
@@ -219,13 +219,8 @@ impl HeapCore {
             let n = depot.ovf.len(c);
             let mut mag = [core::ptr::null_mut(); TCACHE_CAP];
             depot.ovf.pop_oldest(c, n, &mut mag);
-            // The floor is untouched; only the ring's hint can change (the
-            // tick flag stays: the overflow may still hold bytes).
-            {
-                use super::tcache::OVF_HINT;
-                let class = &mut self.tcache.classes[c];
-                class.ovf = class.ovf & !OVF_HINT | if n > 1 { OVF_HINT } else { 0 };
-            }
+            // The floor is untouched; only the ring's hint can change.
+            self.tcache.classes[c].ovf = (n > 1) as u8;
             // SAFETY (R6-MS-3): `mag` is a full parked magazine of class `c`
             // (16 blocks issued by this heap, state MAG, each held exactly
             // once — the record just left the ring), returned to the

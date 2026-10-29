@@ -7,7 +7,7 @@ use crate::registry::heap_core::state::depot::{DEPOT_CLASSES, DEPOT_K};
 use crate::registry::heap_core::state::depot_overflow::DepotOverflow;
 use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 #[cfg(feature = "alloc-decommit")]
-use crate::registry::heap_core::state::tcache::{Tcache, OVF_HINT, OVF_TICK};
+use crate::registry::heap_core::state::tcache::{Tcache, MARK_FLOOR, MARK_TICK};
 use crate::registry::heap_core::HeapCore;
 
 /// G1-K7: `PerClass::limit` with the overflow open for class `c` under
@@ -47,11 +47,10 @@ impl HeapCore {
     #[inline(always)]
     pub(crate) fn depot_may_reload(&self, c: usize) -> bool {
         let class = &self.tcache.classes[c];
-        // `parked` and `ovf` are adjacent bytes: one 16-bit load; the tick
-        // flag is masked out.
+        // `parked` and `ovf` are adjacent bytes: one 16-bit load.
         #[cfg(feature = "alloc-decommit")]
         {
-            u16::from_le_bytes([class.parked, class.ovf]) & (0x00FF | (OVF_HINT as u16) << 8) != 0
+            u16::from_le_bytes([class.parked, class.ovf]) != 0
         }
         #[cfg(not(feature = "alloc-decommit"))]
         {
@@ -60,8 +59,8 @@ impl HeapCore {
     }
 
     /// G1-K7: whether a segment refill of class `c` counts a decay event
-    /// (the refill path's inline gate; the byte sits next to `parked`, which
-    /// the refill has just read).
+    /// (the refill path's inline gate; `marks` shares the 8-byte head of
+    /// `PerClass` with `parked`, which the refill has just read).
     #[cfg(all(
         feature = "alloc-global",
         feature = "fastbin",
@@ -69,7 +68,7 @@ impl HeapCore {
     ))]
     #[inline(always)]
     pub(crate) fn depot_may_tick(&self, c: usize) -> bool {
-        self.tcache.classes[c].ovf & OVF_TICK != 0
+        self.tcache.classes[c].marks & MARK_TICK != 0
     }
 
     /// G1-K7: a segment refill of armed class `c` — one decay event while
@@ -84,12 +83,12 @@ impl HeapCore {
     #[inline(never)]
     pub(crate) fn depot_segment_tick(&mut self, c: usize) {
         let Some(depot) = self.depot.as_deref_mut() else {
-            self.tcache.classes[c].ovf &= !OVF_TICK;
+            self.tcache.classes[c].marks &= !MARK_TICK;
             return;
         };
         if depot.ovf.bytes() == 0 {
             depot.ovf.disarm(c);
-            self.tcache.classes[c].ovf &= !OVF_TICK;
+            self.tcache.classes[c].marks &= !MARK_TICK;
             return;
         }
         self.depot_tick();
@@ -120,7 +119,7 @@ impl HeapCore {
         }
         #[cfg(feature = "alloc-decommit")]
         {
-            class.floor_mark = 1;
+            class.marks |= MARK_FLOOR;
         }
         #[cfg(feature = "virgin-zero-skip")]
         {
@@ -216,7 +215,7 @@ impl HeapCore {
             ovf.starve(c);
             return false;
         }
-        class.ovf |= OVF_HINT;
+        class.ovf = 1;
         if n + 1 >= ovf.cap(c) {
             class.limit = class.parked as u16;
             ovf.starve(c);
@@ -230,7 +229,7 @@ impl HeapCore {
         while fresh != 0 {
             let k = fresh.trailing_zeros() as usize;
             fresh &= fresh - 1;
-            self.tcache.classes[k].ovf |= OVF_TICK;
+            self.tcache.classes[k].marks |= MARK_TICK;
         }
         self.depot_tick();
         true
@@ -257,7 +256,7 @@ impl HeapCore {
         let class = &mut self.tcache.classes[c];
         let n = ovf.len(c);
         if n == 0 {
-            class.ovf &= !OVF_HINT;
+            class.ovf = 0;
             return false;
         }
         debug_assert!(
@@ -265,7 +264,7 @@ impl HeapCore {
             "the floor empties first"
         );
         ovf.reload(c, n, &mut class.slots);
-        class.ovf = class.ovf & !OVF_HINT | if n > 1 { OVF_HINT } else { 0 };
+        class.ovf = (n > 1) as u8;
         #[cfg(feature = "virgin-zero-skip")]
         {
             class.virgin_mask = 0;
