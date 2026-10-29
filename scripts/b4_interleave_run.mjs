@@ -53,6 +53,7 @@ const FLAGS = new Set(["--skip-build"]);
 const OPTS = new Set([
   "--blocks", "--profile", "--features", "--seed", "--order-seed",
   "--out-prefix", "--cargo", "--build-timeout", "--run-timeout", "--reps",
+  "--kernels",
 ]);
 const argv = process.argv.slice(2);
 const opt = {};
@@ -82,6 +83,12 @@ const seed = opt["--seed"] ?? "0xb4110001";
 const orderSeed = opt["--order-seed"] ?? "0x0b4d5eed";
 const outPrefix = opt["--out-prefix"] ?? "docs/perf/_raw_b4_interleave";
 const cargo = opt["--cargo"] ?? "cargo";
+// Kernel subset for this process (the judge keeps registry-indexed seeds).
+// Large-cohort kernels pollute the cache and heap state of the portions that
+// follow them, so they are judged in their own processes.
+const ALL_KERNELS = "pair16,pair64,pair_rt,bulk64,bulk16k,churn16,churn64,churn256,churn1024,vec512,larson,bulk64k,bulk16k_32";
+const kernels = opt["--kernels"] ?? ALL_KERNELS;
+if (!/^[a-z0-9_]+(,[a-z0-9_]+)*$/.test(kernels)) throw new Error(`bad --kernels ${kernels}`);
 // Timeouts in SECONDS (positive integers), converted to ms for spawnSync.
 function secondsOpt(name, def) {
   const raw = opt[name] ?? String(def);
@@ -187,11 +194,10 @@ if (reps !== null) {
         ["--mode", mode, "--blocks", blocks, "--seed", seed, "--order-seed", os,
          "--out", out, "--head-sha", headSha,
          "--source-diff-sha", diffSha, "--features", features, "--profile", profile, "--rustc", rustc,
-         "--os-version", osVersionStr],
+         "--os-version", osVersionStr, "--kernels", kernels],
         { timeout: runTimeout, label: `judge-${mode}-r${i}` });
     }
   }
-  const kernels = "pair16,pair64,pair_rt,bulk64,bulk16k,churn16,churn64,churn256,churn1024,vec512,larson,bulk64k,bulk16k_32";
   console.log(`[run] generator (process-replicated, reps=${reps}, order seeds base..base+${reps - 1})`);
   runAndEcho(process.execPath,
     ["scripts/b4_interleave_rep_table.mjs", "--dir", outDir, "--reps", String(reps),
