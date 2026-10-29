@@ -1237,6 +1237,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
+133. **[L] WB-1 A-1 — классификация Layout одной загрузкой по потолочному индексу: NO-GO.** (Filed 2026-10-29, `docs/perf/WB1_A1_CLASS_FOR_LAYOUT_VERDICT.md`.)
+
+   > **Current state**
+   > - **Status:** rejected (код откачен в той же ветке).
+   > - **Current:** −6 Ir/пару на тёплой пачке и −6.6 Ir/оп на pair/churn (callgrind), но парный замер против mimalloc провален дважды (без и с выравниванием кода): тёплая пачка 16 Б не ускорилась, churn+write 1024 Б медленнее на 17–27 % во всех четырёх парах прогонов (≈ +1.3 ns/пару). Механизм потери не исследован.
+   > - **Next trigger:** только если найдётся механизм потери на churn+write 1024 Б и способ его снять; иначе не переоткрывать.
+   > - **Evidence:** `docs/perf/WB1_A1_CLASS_FOR_LAYOUT_PREREG.md` (+ Addendum 1), `docs/perf/wb1_a1/`, `scripts/wb1_a1_verdict.mjs`.
+
 7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
    narrow working-set-after-burst shape.**~~
 
