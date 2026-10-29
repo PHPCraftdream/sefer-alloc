@@ -4,7 +4,8 @@
 //! portion (outside any timed window). Prints one JSON line per kernel with
 //! the summed counter deltas over all cycles, plus the resolved budget.
 //!
-//! Usage: g1_k7_overflow_oracle [cycles]  (default 200)
+//! Usage: g1_k7_overflow_oracle [cycles] [kernels]  (default 200, all 13;
+//! `kernels` is a csv subset, run round-robin in registry order)
 
 use sefer_alloc::SeferAlloc;
 use std::alloc::{alloc, dealloc, Layout};
@@ -124,6 +125,9 @@ fn snap() -> [u64; 9] {
 
 fn main() {
     let cycles: u64 = std::env::args().nth(1).map_or(200, |s| s.parse().unwrap());
+    let only: Option<Vec<String>> = std::env::args()
+        .nth(2)
+        .map(|s| s.split(',').map(str::to_string).collect());
     let mut slots = Slots {
         p: vec![core::ptr::null_mut(); 65536],
         s: vec![0; 65536],
@@ -150,6 +154,9 @@ fn main() {
     let mut sum = vec![[0u64; 9]; kernels.len()];
     for _ in 0..cycles {
         for (k, name) in kernels.iter().enumerate() {
+            if only.as_ref().is_some_and(|o| !o.iter().any(|w| w == name)) {
+                continue;
+            }
             let a = snap();
             match *name {
                 "pair16" => pair(16, 512, &mut rng),
@@ -190,6 +197,9 @@ fn main() {
         sefer_alloc::registry::config_conflicts_total()
     );
     for (k, name) in kernels.iter().enumerate() {
+        if only.as_ref().is_some_and(|o| !o.iter().any(|w| w == name)) {
+            continue;
+        }
         let fields: Vec<String> = NAMES
             .iter()
             .zip(sum[k])
