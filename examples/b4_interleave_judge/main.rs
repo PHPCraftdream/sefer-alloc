@@ -247,6 +247,18 @@ pub mod judge {
         profile: String,
         rustc: String,
         os_version: String,
+        /// Kernels this process runs, in registry order. Seeds and block
+        /// orders stay keyed by the registry index, so a subset replays the
+        /// same portions as the full set.
+        kernels: Vec<Kernel>,
+    }
+
+    /// Registry index of `k` (the per-portion seed and block-order key).
+    fn kernel_index(k: Kernel) -> usize {
+        ALL_KERNELS
+            .iter()
+            .position(|x| x.name() == k.name())
+            .expect("registered kernel")
     }
 
     fn need(it: &mut impl Iterator<Item = String>, flag: &str) -> String {
@@ -266,6 +278,7 @@ pub mod judge {
         let mut profile = String::new();
         let mut rustc = String::new();
         let mut os_version = String::new();
+        let mut kernels: Vec<Kernel> = ALL_KERNELS.to_vec();
         let mut it = std::env::args().skip(1);
         while let Some(a) = it.next() {
             match a.as_str() {
@@ -286,6 +299,20 @@ pub mod judge {
                 "--rustc" => rustc = need(&mut it, "--rustc"),
                 "--os-version" => os_version = need(&mut it, "--os-version"),
                 "--dry-run" => dry_run = true,
+                "--kernels" => {
+                    let want: Vec<String> = need(&mut it, "--kernels")
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                    for w in &want {
+                        assert!(Kernel::parse(w).is_some(), "unknown kernel `{w}`");
+                    }
+                    kernels = ALL_KERNELS
+                        .into_iter()
+                        .filter(|k| want.iter().any(|w| w == k.name()))
+                        .collect();
+                    assert!(!kernels.is_empty(), "--kernels selects nothing");
+                }
                 other => panic!("unknown arg {other}"),
             }
         }
@@ -341,6 +368,7 @@ pub mod judge {
             profile,
             rustc,
             os_version,
+            kernels,
         }
     }
 
@@ -426,7 +454,7 @@ pub mod judge {
         CHURN_ALIGN,
         PAIR_ALIGN,
         WARMUP_PORTIONS,
-        ALL_KERNELS.len(),
+        args.kernels.len(),
     )
     .expect("write header");
 
@@ -448,7 +476,7 @@ pub mod judge {
             churn: [false; CHURN_LIVE],
             larson: [false; LARSON_LIVE],
         };
-        for k in ALL_KERNELS {
+        for &k in &args.kernels {
             for w in 0..WARMUP_PORTIONS {
                 let ws = args.seed.wrapping_add(w.wrapping_mul(PORTION_SEED_G));
                 run_portion(a, k, ws);
@@ -466,7 +494,8 @@ pub mod judge {
         let mut ns_samples: Vec<Vec<f64>> = vec![Vec::new(); ALL_KERNELS.len()];
 
         while block_no < args.blocks {
-            for (ki, k) in ALL_KERNELS.into_iter().enumerate() {
+            for &k in &args.kernels {
+                let ki = kernel_index(k);
                 let abba = orders[ki][block_no as usize];
                 let portion_seed = args
                     .seed
@@ -561,7 +590,7 @@ pub mod judge {
             "activation oracle FAILED: {oracle_fail} portions with a wrong shim-call count"
         );
 
-        let total = args.blocks * ALL_KERNELS.len() as u64;
+        let total = args.blocks * args.kernels.len() as u64;
         let (sa, sb) = match args.mode {
             Mode::Ab => (0, 2),
             Mode::AaSefer => (0, 1),
@@ -572,8 +601,8 @@ pub mod judge {
         println!(
         "RESULT blocks={} orders_abba={} orders_baab={} harness_window_allocs=0 foreign_window_calls=0 oracle_mismatches=0 shim_calls_a={} shim_calls_b={}",
         total,
-        args.blocks / 2 * ALL_KERNELS.len() as u64,
-        args.blocks / 2 * ALL_KERNELS.len() as u64,
+        args.blocks / 2 * args.kernels.len() as u64,
+        args.blocks / 2 * args.kernels.len() as u64,
         ca,
         cb
     );
@@ -581,8 +610,8 @@ pub mod judge {
         if args.dry_run {
             // Portion-sizing helper: median portion ns per kernel (dry-run only;
             // the chosen portion constants stay the pre-registered ones).
-            for (ki, k) in ALL_KERNELS.into_iter().enumerate() {
-                let mut s = ns_samples[ki].clone();
+            for &k in &args.kernels {
+                let mut s = ns_samples[kernel_index(k)].clone();
                 s.retain(|v| *v > 0.0);
                 s.sort_by(|x, y| x.partial_cmp(y).unwrap());
                 let med = if s.is_empty() { 0.0 } else { s[s.len() / 2] };
