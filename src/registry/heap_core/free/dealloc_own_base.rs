@@ -569,11 +569,11 @@ impl HeapCore {
         // B4 depot (DP-3): park the full magazine whole (cold),
         // then `block` starts the next one. `block` itself is not
         // parked into a body-write path: only `slots` pointers move.
-        // G1-K7: `depot_park` fills the floor, then the overflow within the
-        // heap's budget; the inline gate skips the cold call once full. An
-        // overflow park counts its decay event inside the cold helper, after
-        // the ring owns the magazine; it touches only older records.
-        if cnt == TCACHE_CAP && self.depot_may_park(c) && self.depot_park(c) {
+        if cnt == TCACHE_CAP
+            && self.tcache.classes[c].parked
+                < crate::registry::heap_core::state::depot::DEPOT_CAP[c]
+            && self.depot_park(c)
+        {
             meta.state_byte()
                 .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
             self.tcache.classes[c].slots[0] = block;

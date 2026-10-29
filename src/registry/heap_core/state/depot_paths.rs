@@ -7,7 +7,7 @@ use crate::registry::heap_core::state::depot::{DEPOT_CLASSES, DEPOT_K};
 use crate::registry::heap_core::state::depot_overflow::{DepotOverflow, ALL_SMALL};
 use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 #[cfg(feature = "alloc-decommit")]
-use crate::registry::heap_core::state::tcache::{Tcache, MARK_FLOOR, MARK_TICK};
+use crate::registry::heap_core::state::tcache::{Tcache, MARK_TICK};
 use crate::registry::heap_core::HeapCore;
 
 /// G1-K7: `PerClass::limit` with the overflow open for class `c` under
@@ -30,6 +30,33 @@ pub(crate) fn reopen(tcache: &mut Tcache, mut ready: u32, budget: usize) {
         tcache.classes[c].limit = open_limit(c, budget);
     }
 }
+
+/// G1-K7 layout control U: the K7 entry points K5's call sites no longer
+/// reach, kept in the binary (referenced from `bind_depot`).
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+#[allow(clippy::type_complexity)]
+pub(crate) static KEEP_K7_PATHS: (
+    [fn(&mut HeapCore, usize) -> bool; 4],
+    fn(&mut HeapCore, usize),
+    [fn(&HeapCore, usize) -> bool; 3],
+) = (
+    [
+        HeapCore::park_overflow,
+        HeapCore::reload_overflow,
+        HeapCore::reload_overflow_tick,
+        HeapCore::depot_reload_tick,
+    ],
+    HeapCore::depot_segment_tick,
+    [
+        HeapCore::depot_may_park,
+        HeapCore::depot_may_reload,
+        HeapCore::depot_may_tick,
+    ],
+);
 
 impl HeapCore {
     /// Whether a full magazine of class `c` can park (the free path's inline
@@ -112,14 +139,7 @@ impl HeapCore {
             return false;
         }
         if !depot.depot_park(c, &mut class.parked, &class.slots) {
-            #[cfg(feature = "alloc-decommit")]
-            return self.park_overflow(c);
-            #[cfg(not(feature = "alloc-decommit"))]
             return false;
-        }
-        #[cfg(feature = "alloc-decommit")]
-        {
-            class.marks |= MARK_FLOOR;
         }
         #[cfg(feature = "virgin-zero-skip")]
         {
@@ -144,10 +164,6 @@ impl HeapCore {
         };
         let class = &mut self.tcache.classes[c];
         if class.count != 0 || !depot.depot_reload(c, &mut class.parked, &mut class.slots) {
-            #[cfg(feature = "alloc-decommit")]
-            if class.count == 0 {
-                return self.reload_overflow(c);
-            }
             return false;
         }
         #[cfg(feature = "virgin-zero-skip")]

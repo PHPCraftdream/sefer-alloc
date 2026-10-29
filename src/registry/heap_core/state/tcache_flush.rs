@@ -13,6 +13,19 @@ use crate::registry::heap_core::HeapCore;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::registry::heap_core::TcacheHitCounter;
 
+/// G1-K7 layout control U: the teardown / decay paths K5's call sites no
+/// longer reach, kept in the binary (referenced from `bind_depot`).
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+static KEEP_K7_TEARDOWN: [fn(&mut HeapCore); 3] = [
+    HeapCore::depot_release_overflow_pages,
+    HeapCore::depot_tick,
+    HeapCore::depot_decay,
+];
+
 impl HeapCore {
     /// TEST/DIAGNOSTIC-ONLY (task #133): this heap's own magazine-hit count.
     /// Relaxed load of [`tcache_hits`](Self::tcache_hits) — sound for a
@@ -54,16 +67,12 @@ impl HeapCore {
     /// survives recycle (the `HeapCore` stays in the slot).
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub(crate) fn bind_depot(&mut self, depot: &'static mut super::depot::Depot) {
-        // G1-K7: the overflow is empty here; no class ticks until it parks.
-        #[cfg(feature = "alloc-decommit")]
-        depot.ovf.disarm_all();
         self.depot = Some(depot);
-        // G1-K7: open each depot class's overflow ring under the heap's budget.
+        // G1-K7 layout control U: keep the unreached K7 paths linked.
         #[cfg(feature = "alloc-decommit")]
-        for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
-            self.tcache.classes[c].limit =
-                super::depot_paths::open_limit(c, self.depot_budget as usize);
-            self.tcache.classes[c].marks = 0;
+        {
+            core::hint::black_box(&super::depot_paths::KEEP_K7_PATHS);
+            core::hint::black_box(&KEEP_K7_TEARDOWN);
         }
     }
 
@@ -122,23 +131,11 @@ impl HeapCore {
                         self.tcache.classes[c].virgin_mask = 0;
                     }
                 }
-                // Teardown reload: `depot_reload` counts no decay tick.
                 if !self.depot_reload(c) {
                     break;
                 }
             }
-            // G1-K7: floor and ring are empty (the reload follows the ring
-            // length, not the hint); drop the floor's epoch mark too.
-            #[cfg(feature = "alloc-decommit")]
-            {
-                debug_assert_eq!(self.tcache.classes[c].ovf, 0);
-                self.tcache.classes[c].marks &= !super::tcache::MARK_FLOOR;
-            }
         }
-        // G1-K7: the depot (floor and overflow) is now empty; return the
-        // overflow's committed record pages and reset its rings.
-        #[cfg(feature = "alloc-decommit")]
-        self.depot_release_overflow_pages();
     }
 
     /// G1-K7: decommit the depot overflow's record pages and reset its rings
