@@ -58,6 +58,7 @@ const RELOADS: usize = 2;
 const BUDGET_REFUSALS: usize = 3;
 const DECAY: usize = 5;
 const DECOMMITS: usize = 7;
+const COMMITTED: usize = 8;
 
 /// Allocate `n` blocks of `size`, all distinct and non-null.
 fn alloc_n(heap: &mut sefer_alloc::registry::HeapCore, size: usize, n: usize) -> Vec<*mut u8> {
@@ -234,10 +235,15 @@ fn trim_drains_the_overflow_and_returns_its_pages() {
         after[DECOMMITS] > before[DECOMMITS],
         "committed record pages returned"
     );
+    // The rings and commit watermarks are reset with the pages, so the next
+    // park re-commits before it writes a record.
+    assert!(before[COMMITTED] > 0);
+    assert_eq!(after[COMMITTED], 0, "commit watermarks reset after release");
     // Reuse after trim: the overflow parks again.
     let again = alloc_n(heap, 64, n);
     free_all(heap, 64, &again);
     assert!(heap.dbg_depot_overflow()[PARKS] > after[PARKS]);
+    assert!(heap.dbg_depot_overflow()[COMMITTED] > 0, "re-committed");
     heap.dbg_flush_all();
     drop(lease);
 }

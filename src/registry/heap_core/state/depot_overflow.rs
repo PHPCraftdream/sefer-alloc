@@ -28,6 +28,7 @@ pub(crate) static RESERVE_FAIL_NEXT: core::sync::atomic::AtomicU32 =
     core::sync::atomic::AtomicU32::new(0);
 
 #[cfg(feature = "lazy-commit-fault-injection")]
+#[allow(deprecated)] // `fetch_update` is deprecated for `try_update`, which needs a newer MSRV.
 fn reserve_fault_fires() -> bool {
     use core::sync::atomic::Ordering::Relaxed;
     RESERVE_FAIL_NEXT
