@@ -37,7 +37,9 @@ const BENCH = 'global_alloc';
 // base commit `d1de3bc`). Both features are measurement-only surface gates
 // (zero runtime-behavior change, `internals = []` in `Cargo.toml`) -- adding
 // them does not change what is being measured, only what diagnostic API the
-// bench file is allowed to call.
+// bench file is allowed to call. (Until DZ-2 a `bench-internals` Tier-1
+// counter added a `lock inc` per free; see
+// docs/perf/DZ2_BENCH_INTERNALS_HOT_COUNTER.md for the residual cost.)
 const FEATURES = 'production internals bench-internals';
 
 // Mirrors `benches/global_alloc.rs`'s own constants. OPS is the number of

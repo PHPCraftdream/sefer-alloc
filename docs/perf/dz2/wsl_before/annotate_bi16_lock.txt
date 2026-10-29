@@ -1,0 +1,30 @@
+         : 32    // Single compare: `last_key == LAST_EMPTY_KEY` encodes EMPTY, which
+         : 33    // neither a real SEGMENT-aligned base nor a null key can match.
+         : 34    if self.last_key == key.addr() {
+    0.00 :   2a0e9:  cmp    %rcx,0x130(%rdi)
+    0.00 :   2a0f0:  jne    2a120 <b4_pmu_probe::sefer_dealloc+0x60>
+    0.40 :   2a0f2:  mov    0x892df(%rip),%rcx        # b33d8 <_DYNAMIC+0x338>
+    0.00 :   2a0f9:  lock incq (%rcx)
+         : 39    // The memo is part of Tier-1: count its hits with the own_cache hits.
+         : 40    #[cfg(feature = "bench-internals")]
+--
+    0.00 :   2a12d:  shl    $0x4,%edx
+         : 68    let (cached_key, cached_root) = self.own_cache[index];
+    0.00 :   2a130:  cmp    %rcx,0x30(%rdi,%rdx,1)
+    0.00 :   2a135:  jne    2a1c0 <b4_pmu_probe::sefer_dealloc+0x100>
+    0.00 :   2a13b:  mov    0x38(%rdi,%rdx,1),%r8
+    0.00 :   2a140:  mov    0x89291(%rip),%rdx        # b33d8 <_DYNAMIC+0x338>
+    0.00 :   2a147:  lock incq (%rdx)
+         : 74    );
+    0.00 :   2a14b:  cmp    %rcx,%r8
+--
+    0.00 :   2a1aa:  jmp    *0x89230(%rip)        # b33e0 <_DYNAMIC+0x340>
+    0.00 :   2a1b0:  data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+    0.00 :   2a1bf:  nop
+    0.00 :   2a1c0:  add    %rdi,%rdx
+    0.00 :   2a1c3:  add    $0x30,%rdx
+    0.00 :   2a1c7:  mov    0x8921a(%rip),%r8        # b33e8 <_DYNAMIC+0x348>
+    0.00 :   2a1ce:  lock incq (%r8)
+         : 130   /// per segment in the virtual address space). We mask to `HASH_CAPACITY - 1`
+         : 131   /// for a fast modulo (power-of-two capacity).
+--

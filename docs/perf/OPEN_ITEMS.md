@@ -312,9 +312,9 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
    > **Current state**
    > - **Status:** open (измерение готово, причины расхождения названы частично).
-   > - **Current:** под `production` единственный явный проигрыш — тёплая пачка 16 Б (7.3 против 4.7 ns/пару, 1.54×); 64 Б 1.02–1.12×; churn 16/64 Б в пределах 1.08× медленнее … 1.29× быстрее. Сборка `bench:table` (`internals bench-internals`) поднимает каждую ячейку SeferAlloc на 1.3–3.4 ns/пару, mimalloc — не больше 0.6 ns; вероятная причина — диагностические счётчики в горячем пути (гипотеза, не изолирована). Абсолютные числа criterion в основном выше (исключение — System, тёплая пачка 1024 Б) — не объяснено.
-   > - **Next trigger:** WB-1 (тёплая пачка 16/64 Б) берёт парные числа под `production` как базу; решить, убирать ли счётчики `bench-internals` с горячего пути или собирать criterion-бенч без них.
-   > - **Evidence:** `docs/perf/BT1_PAIRED_BENCH_TABLE.md`; `docs/perf/bt1_paired/` (сырьё `.jsonl.gz`, `*.csv`, манифесты); `scripts/bench-table-paired.mjs`.
+   > - **Current:** под `production` единственный явный проигрыш — тёплая пачка 16 Б (7.3 против 4.7 ns/пару, 1.54×); 64 Б 1.02–1.12×; churn 16/64 Б в пределах 1.08× медленнее … 1.29× быстрее. Сборка `bench:table` (`internals bench-internals`) поднимает каждую ячейку SeferAlloc на 1.3–3.4 ns/пару, mimalloc — не больше 0.6 ns; причина изолирована DZ-2 (`docs/perf/DZ2_BENCH_INTERNALS_HOT_COUNTER.md`): `lock inc` счётчиков Tier-1 в `canonical_base_of_mut` на каждом free; после правки (`tier1_bump`, Relaxed load+store) надбавка `bench-internals` 0.05–0.54 ns/пару вместо 1.7–3.7 (снято 25.49 из 28.12 ns/пару по 12 ячейкам, 91 %). Абсолютные числа criterion в основном выше (исключение — System, тёплая пачка 1024 Б) — не объяснено.
+   > - **Next trigger:** WB-1 (тёплая пачка 16/64 Б) берёт парные числа под `production` как базу; остаток надбавки `bench-internals` (≤ 0.54 ns/пару) — искать флеймграфом (FG-1), если он мешает судье; criterion vs paired — не объяснено.
+   > - **Evidence:** `docs/perf/BT1_PAIRED_BENCH_TABLE.md`; `docs/perf/bt1_paired/` (сырьё `.jsonl.gz`, `*.csv`, манифесты); `scripts/bench-table-paired.mjs`; DZ-2: `docs/perf/dz2/`, `scripts/dz2_verdict.mjs`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
