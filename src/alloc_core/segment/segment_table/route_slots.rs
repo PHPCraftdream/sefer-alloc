@@ -151,8 +151,7 @@ impl RouteSlots {
         if route.root() != base
             || !route
                 .small_sidecar()
-                .is_some_and(|sidecar| sidecar.prepared(offset, class))
-            || !route.issue_small(offset, class)
+                .is_some_and(|sidecar| sidecar.issue_prepared(offset, class))
         {
             fatal(b"route_slots: small issue commit rejected\n");
         }

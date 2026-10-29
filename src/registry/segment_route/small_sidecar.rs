@@ -109,6 +109,11 @@ impl SmallSidecar {
             && self.bitmap().issue(offset, class)
     }
 
+    /// Commit владельца: проверяет leaf и публикует start без prepare.
+    pub(crate) fn issue_prepared(&self, offset: u32, class: u8) -> bool {
+        self.bitmap().issue(offset, class)
+    }
+
     pub(crate) fn prepared(&self, offset: u32, class: u8) -> bool {
         let offset = offset as usize;
         let granule = crate::alloc_core::size_classes::MIN_BLOCK;

@@ -1,0 +1,45 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index e06bd940..7d59e442 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1190,6 +1190,10 @@ required-features = ["alloc-global", "alloc-xthread"]
+ # exhibits the ~16 MiB first-touch) only reaches ~7.5 KiB/slot under
+ # `alloc-decommit` + `fastbin`; with just alloc-global+alloc-xthread each slot is
+ # ~192 B and the defect does not manifest. See the example's module docs.
++[[example]]
++name = "scalar_issue_gate"
++required-features = ["production", "internals", "bench-internals"]
++
+ [[example]]
+ name = "first_alloc_process"
+ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "internals"]
+diff --git a/src/alloc_core/segment/segment_table/route_slots.rs b/src/alloc_core/segment/segment_table/route_slots.rs
+index 53d36fc5..cac47f3c 100644
+--- a/src/alloc_core/segment/segment_table/route_slots.rs
++++ b/src/alloc_core/segment/segment_table/route_slots.rs
+@@ -151,8 +151,7 @@ impl RouteSlots {
+         if route.root() != base
+             || !route
+                 .small_sidecar()
+-                .is_some_and(|sidecar| sidecar.prepared(offset, class))
+-            || !route.issue_small(offset, class)
++                .is_some_and(|sidecar| sidecar.issue_prepared(offset, class))
+         {
+             fatal(b"route_slots: small issue commit rejected\n");
+         }
+diff --git a/src/registry/segment_route/small_sidecar.rs b/src/registry/segment_route/small_sidecar.rs
+index b09c11d1..70366940 100644
+--- a/src/registry/segment_route/small_sidecar.rs
++++ b/src/registry/segment_route/small_sidecar.rs
+@@ -109,6 +109,11 @@ impl SmallSidecar {
+             && self.bitmap().issue(offset, class)
+     }
+ 
++    /// Commit владельца: проверяет leaf и публикует start без prepare.
++    pub(crate) fn issue_prepared(&self, offset: u32, class: u8) -> bool {
++        self.bitmap().issue(offset, class)
++    }
++
+     pub(crate) fn prepared(&self, offset: u32, class: u8) -> bool {
+         let offset = offset as usize;
+         let granule = crate::alloc_core::size_classes::MIN_BLOCK;

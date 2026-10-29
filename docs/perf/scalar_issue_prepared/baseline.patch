@@ -1,0 +1,15 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index e06bd940..7d59e442 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1190,6 +1190,10 @@ required-features = ["alloc-global", "alloc-xthread"]
+ # exhibits the ~16 MiB first-touch) only reaches ~7.5 KiB/slot under
+ # `alloc-decommit` + `fastbin`; with just alloc-global+alloc-xthread each slot is
+ # ~192 B and the defect does not manifest. See the example's module docs.
++[[example]]
++name = "scalar_issue_gate"
++required-features = ["production", "internals", "bench-internals"]
++
+ [[example]]
+ name = "first_alloc_process"
+ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "internals"]

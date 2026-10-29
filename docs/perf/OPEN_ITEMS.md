@@ -1229,6 +1229,16 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
+113. **[L] Scalar prepared issue — повторные leaf lookups удалены в эксперименте, выигрыш не доказан.** (2026-10-24, задачи #11–#13.)
+
+   > **Current state**
+   > - **Status:** INCONCLUSIVE / DO NOT PROMOTE; кандидат не принят и не слит.
+   > - **Current verdict:** scalar N/2N paired CI пересекают ноль; четыре canonical A/B/B/A sweep дают описательное сравнение с mimalloc, но неизменённый конкурент заметно дрейфует. Source-level удаление работы не объявляется общим speedup.
+   > - **Next trigger:** отдельное разрешение на CI-проверку кандидата и новый заранее заданный короткий gate в контролируемой среде. Не запускать полную promotion-матрицу до убедительного раннего результата.
+   > - **Evidence:** `docs/perf/SCALAR_ISSUE_PREPARED_GATE.md`, raw/identities/reproduction в `docs/perf/scalar_issue_prepared/`, prereg `docs/design/2026-10-24-scalar-issue-measurement-plan.md`.
+
+   Остальные карточки сохраняют прежние status/trigger. D1′ из PR #96 не входит в baseline или candidate этого эксперимента. Correctness execution/Miri/Loom и exact-head CI ещё не получены; cargo check/Clippy не заменяют их. Это не новая установленная correctness-ошибка и не закрытие прежних correctness items.
+
 7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
    narrow working-set-after-burst shape.**~~
 
