@@ -292,6 +292,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    >   - **X-c1 (таблица `SIZE2C1`, c+1) — ОТКЛОНЁН (NO-GO).** Сумма ao alloc+free не изменилась (136 при пороге ≤135) — LLVM и так сворачивал `+1` в encode; mstress +1. Итерация b не помогла. Полностью откачен; пункт сохранён с пометкой, чтобы гипотеза не переоткрывалась без новых данных.
    >   - Evidence: `docs/perf/B4_MICRO_PACK.md`; `docs/perf/B4_MICRO_PACK_summary.csv`; `scripts/b4_micro_pack_table.mjs`; сырьё `docs/perf/_raw_b4_micro_*.log(.gz)`.
 
+132. **[A] BT-1 — парная таблица `bench:table:paired` расходится с criterion-таблицей README.** (Filed 2026-10-29, `docs/perf/BT1_PAIRED_BENCH_TABLE.md`.)
+
+   > **Current state**
+   > - **Status:** open (измерение готово, причины расхождения названы частично).
+   > - **Current:** под `production` единственный явный проигрыш — тёплая пачка 16 Б (7.3 против 4.7 ns/пару, 1.54×); 64 Б 1.02–1.12×; churn 16/64 Б в пределах 1.08× медленнее … 1.29× быстрее. Сборка `bench:table` (`internals bench-internals`) поднимает каждую ячейку SeferAlloc на 1.3–3.4 ns/пару, mimalloc — не больше 0.6 ns; вероятная причина — диагностические счётчики в горячем пути (гипотеза, не изолирована). Абсолютные числа criterion в основном выше (исключение — System, тёплая пачка 1024 Б) — не объяснено.
+   > - **Next trigger:** WB-1 (тёплая пачка 16/64 Б) берёт парные числа под `production` как базу; решить, убирать ли счётчики `bench-internals` с горячего пути или собирать criterion-бенч без них.
+   > - **Evidence:** `docs/perf/BT1_PAIRED_BENCH_TABLE.md`; `docs/perf/bt1_paired/` (сырьё `.jsonl.gz`, `*.csv`, манифесты); `scripts/bench-table-paired.mjs`.
+
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
 131. **[D] D1″ — sidecar с одной картой классов и ленивым обнулением по водяному знаку (C2 из D1′), запаркован с условиями входа.** (Filed 2026-10-29; `docs/perf/D1_PRIME_VERDICT.md`.)

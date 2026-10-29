@@ -16,6 +16,7 @@
     "paired-ab": "node scripts/paired-ab-runner.mjs",
     "r34-7": "node scripts/r34_7_causal_harness.mjs",
     "bench:table": "node scripts/bench-table.mjs",
+    "bench:table:paired": "node scripts/bench-table-paired.mjs",
     "check": "node scripts/check-all.mjs",
     "check:matrix": "node scripts/run-check-matrix.mjs",
     "check:stubs": "node scripts/verify-perf-gate-stubs.mjs",

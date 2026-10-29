@@ -1184,6 +1184,70 @@ as "SeferAlloc vs mimalloc/System, this run", not as "SeferAlloc got slower
 since the last table." vs `System`: ~4–7× faster across the board, same
 shape as before.)
 
+### Paired short-sample table (`npm run bench:table:paired`)
+
+The criterion table above measures each allocator in its own long window, so host
+noise that moves between windows lands on one arm only, and it is built with
+`internals bench-internals`, which add diagnostic counters to SeferAlloc's hot
+path. The paired table ([`scripts/bench-table-paired.mjs`](scripts/bench-table-paired.mjs),
+`examples/bench_table_paired.rs`) times the same bodies under plain `--features
+production`: per round all three arms run one short sample back to back, the arm
+order walking all six permutations; a cell is the median over 3 processes of each
+process's minimum over 200 rounds, with the range of those minimums in parentheses
+(ns/pair). Report, raw samples and manifests:
+[`docs/perf/BT1_PAIRED_BENCH_TABLE.md`](docs/perf/BT1_PAIRED_BENCH_TABLE.md).
+
+Steady state — each churn working set of 256 lives for the whole run; 2048 pairs per sample:
+
+**Warm bulk burst** (alloc 1024 then free 1024):
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 7.3 (7.3–7.3) | 4.7 (4.7–4.7) | 45.8 (44.5–46.1) | 1.54× slower |
+| 64B | 7.0 (6.9–8.4) | 6.3 (6.3–6.3) | 45.5 (45.4–45.8) | 1.12× slower |
+| 256B | 7.9 (7.7–7.9) | 7.9 (7.7–7.9) | 40.7 (40.6–40.8) | 1.00× (tie) |
+| 1024B | 10.2 (10.2–10.2) | 16.6 (16.2–16.7) | 262.6 (258.3–270.5) | **1.62× faster** |
+
+**Churn, non-writing**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 5.7 (5.7–5.8) | 5.8 (5.7–5.9) | 41.1 (40.6–42.4) | **1.03× faster** |
+| 64B | 5.6 (5.6–5.6) | 6.3 (6.3–6.4) | 43.2 (42.7–43.4) | **1.13× faster** |
+| 256B | 5.9 (5.7–7.0) | 9.2 (8.1–9.4) | 38.2 (37.5–42.2) | **1.56× faster** |
+| 1024B | 6.2 (5.9–6.2) | 17.0 (16.7–20.0) | 44.1 (41.7–44.4) | **2.75× faster** |
+
+**Churn + write**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 5.8 (5.8–5.9) | 5.7 (5.7–5.9) | 40.9 (40.6–42.9) | 1.02× slower |
+| 64B | 6.4 (5.8–6.4) | 5.9 (5.9–6.0) | 42.4 (42.2–43.6) | 1.08× slower |
+| 256B | 6.2 (6.1–6.4) | 8.3 (8.2–9.4) | 41.3 (41.0–42.1) | **1.34× faster** |
+| 1024B | 6.6 (6.5–6.8) | 19.6 (19.5–19.9) | 66.4 (50.3–68.1) | **2.96× faster** |
+
+Fresh working sets — each sample prefills 16 new sets and runs one body on each (16 384 pairs), the shape criterion's `iter_batched` produces:
+
+**Churn, non-writing**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 5.6 (5.5–5.6) | 5.5 (5.5–5.5) | 39.3 (38.5–40.4) | 1.01× slower |
+| 64B | 5.7 (5.5–5.8) | 7.3 (7.2–7.4) | 38.5 (36.2–40.0) | **1.29× faster** |
+| 256B | 6.2 (6.1–6.2) | 9.1 (8.8–9.1) | 39.1 (38.8–39.7) | **1.47× faster** |
+| 1024B | 7.0 (6.9–7.3) | 69.3 (68.6–69.3) | 45.5 (45.1–46.3) | **9.87× faster** |
+
+**Churn + write**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 5.8 (5.8–6.0) | 5.7 (5.7–5.7) | 38.8 (38.5–39.4) | 1.02× slower |
+| 64B | 6.0 (5.9–6.1) | 7.6 (7.4–7.6) | 38.5 (37.7–40.4) | **1.26× faster** |
+| 256B | 6.7 (6.6–6.8) | 9.2 (9.1–9.3) | 38.8 (38.8–39.3) | **1.38× faster** |
+| 1024B | 7.4 (7.4–7.5) | 69.2 (68.8–69.3) | 48.2 (44.5–49.4) | **9.31× faster** |
+
+(Measured 2026-10-29, commit `73241d28`, same Windows dev host as the criterion table. Built with the `bench:table` feature set instead, every SeferAlloc cell is 1.3–3.4 ns/pair higher while mimalloc moves by at most 0.6 ns — warm bulk 16 B 10.1 against 7.3 — see the report.)
+
 **The 256 B churn loss is GONE (Э6, P6) — and M2 got stronger, not weaker.**
 Through P5 sefer-alloc trailed mimalloc at 256 B churn (~1.16–1.25× slower), and
 the docs pinned that on "the M2 bitmap price". That framing was incomplete: the
@@ -1423,7 +1487,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 
 This is a verification-first project, but the terminal-sidecar snapshot still
 needs its acceptance run. The present tree contains **465 integration test files**,
-**101 example binaries**, **34 benches**, and **23 root Loom models**
+**102 example binaries**, **34 benches**, and **23 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1433,7 +1497,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 | Tool | What it proves | Where in repo |
 |---|---|---|
 | Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (465 files) |
-| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (101 files) |
+| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (102 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (23 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
