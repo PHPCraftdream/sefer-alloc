@@ -20,7 +20,8 @@
 // config_conflicts_delta = 0; K7 arms: requested = E, resolved = E rounded
 // down to 256 B, effective = resolved; E = 0: no overflow parks; E > 0:
 // parks > 0 on every workload, reloads >= 0.9 · parks on bulk16k_32 (W3, S2)
-// and on bulk16k (W5 fill, P0), budget refusals > 0 on bulk64k (W2, S2),
+// and on bulk16k (W5 fill, P0), budget refusals > 0 or overflow bytes = the resolved budget (ring-full
+// gating by the class latch) on bulk64k (W2, S2),
 // decay_flushed = 0 on the bulk kernels (W2 / W3 at S2, W5 fill at P0), the
 // W5 fill at a cohort steady state (its last 4 per-pass overflow byte
 // counts equal — a plateau, not necessarily a full budget); K5 and
@@ -123,7 +124,10 @@ for (const e of E_ARMS)
       if (!(s2.parks > 0)) fail(`${tag}: no overflow parks`);
       const near = (c) => c.reloads >= 0.9 * c.parks;
       if (w === "W3" && !near(s2)) fail(`${tag}: reloads ${s2.reloads} vs parks ${s2.parks}`);
-      if (w === "W2" && !(s2.budget_refusals > 0)) fail(`${tag}: no budget refusal on bulk64k`);
+      // Rule 5: budget refusals OR ring-full gating (the overflow holds its whole
+      // budget and the class latch stops further park attempts).
+      if (w === "W2" && !(s2.budget_refusals > 0 || s2.ovf_bytes === r.budget_resolved))
+        fail(`${tag}: bulk64k neither refused nor reached the budget`);
       if ((w === "W2" || w === "W3") && s2.decay_flushed !== 0) fail(`${tag}: decay_flushed ${s2.decay_flushed} on a bulk kernel`);
       if (w === "W5i" || w === "W5c") {
         if (!near(r.P0)) fail(`${tag}: fill reloads ${r.P0.reloads} vs parks ${r.P0.parks}`);

@@ -538,3 +538,20 @@ reloads ≥ 0.9 · parks on W3 (S2) and on the W5 fill (P0), budget refusals > 0
 on W2, decay_flushed = 0 on W2 / W3 (S2) and on the W5 fill (P0); K5 and
 mimalloc report zero overflow counters. A failed check makes run 3
 unusable, not a pass.
+
+## Addendum 9 (2026-10-29, after run-3 data, analysis defect only)
+
+The run-3 campaign completed (no retries; 150 judge processes, 10 W4
+probes). The analysis script stopped on its own evidence check
+"k7_524288 W2 rep 1: no budget refusal on bulk64k". The check was narrower
+than the registered rule: Addendum 6 rule 5 asks for "budget refusals **or
+ring-full gating** on bulk64k", and Addendum 8 dropped the second branch.
+The data show the second branch in every K7 W2 process: overflow bytes =
+the resolved budget exactly (524 288 / 1 048 576 / 2 097 152), parks =
+25 600 / 51 200 / 102 400, budget_refusals = 0 — after the overflow fills,
+`DepotOverflow::starve` latches the class (`PerClass::limit` lowered) and no
+further park is attempted, so nothing is refused. The script now checks
+`budget_refusals > 0 || overflow bytes == resolved budget`
+(sha256 `3b393518b85343ec22c9235ef7b9018dccbc8b2e08628308ca8c84c33d4bf5d1`); no other check, threshold, statistic or the loss rule
+changes. This is a correction of the analysis toward the registered text,
+written after the data and before any RSS number was read.
