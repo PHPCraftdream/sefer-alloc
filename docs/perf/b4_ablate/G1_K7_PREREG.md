@@ -273,6 +273,24 @@ P1. v5 green on CI (PR #128 at `f2b0c115`, run cited in the report). v5 adds
     sequences with the first-record arming rule. U is measurement-only:
     `cargo clippy --features production` clean; K7's own tests do not apply
     to it (it never parks into the overflow).
+    P1 as recorded (before any timing data). CI on `f2b0c115` was red; the
+    fixes that made PR #128 green changed tests, CI wiring and evidence rows,
+    and in `src/` only (`git diff f2b0c115 035b129b --stat -- src`):
+    `src/kani_proofs.rs` −96, `src/registry/heap_core/mod.rs` −7,
+    `src/registry/heap_core/state/depot_overflow.rs` −47 / +1,
+    `src/registry/heap_core/state/depot.rs` −2. Every removed line lies in a
+    `#[cfg(kani)]` item (the И-O1 / И-O2 harnesses, their re-export, the
+    `DepotOverflow::empty` / `kani_on_buffer` constructors and the overflow
+    field init inside `Depot::empty`), moved to the follow-up Kani PR; the
+    one added line is `#[allow(deprecated)]` on the `fetch_update` call.
+    Neither changes production code, so the measured trees stay v5 =
+    `f2b0c115`, U = `9e60cd93`, run-2 K7 = `3b6b754e`, and P2–P4 stand.
+    Hashes: `git diff f2b0c115 035b129b -- src` sha256
+    `6fe8fa18a812a8d5bf8a0a2d9377a2eeab4acd901e0af3068572a6c9889051a5`;
+    `git diff 2bc830cc 035b129b -- src` sha256
+    `12d9bad894470cbb90c6fd52da7dd32a14e6362b531fb0cef6a58ebbb536fd9c`.
+    CI green on PR #128 head `035b129b`: run 40865975376 (CI, success);
+    the zero-cost gate passed under the fixed base (PR #130, `59bca504`).
 P2. Callgrind (`b4_pmu_probe`, single kernels: bulk64, bulk16k, bulk64k,
     bulk16k_32, pair16, pair64, churn16, churn64, churn256, churn1024) for K5
     `2bc830cc`, v4 `9a73ba5f` and v5; raws `.rush/g1/a6/p2/` (`cg_a6.log`:
