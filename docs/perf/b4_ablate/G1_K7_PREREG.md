@@ -157,3 +157,29 @@ against `2bc830cc` itself. 20 processes × 2000 blocks, order K7, K5, K7, K5
 (the repeat measures session drift). bulk64k / bulk16k_32 stay judged by
 run 1 only (GL1/GL2); their run-2 rows are reported as not admitted. Decision
 rule unchanged.
+
+## Addendum 5 (2026-10-29, before any run of v4)
+
+Run 2 of v3 on the unchanged 11-kernel judge (raws `.rush/g1/j11/`, order
+K7, K5, K7, K5, all A/A admitted except where marked): bulk16k ratio
+t_mi/t_sefer K7 0.817 / 0.817 vs K5 0.512 / 0.504 (K7 x1.60); bulk64 K7
+0.765 / 0.770 vs K5 0.783 / 0.784 (K7 about 2 % slower, CIs disjoint in both
+pairs) — a loss by rule 2. Callgrind traced it to floor bookkeeping on every
+magazine event (+656k Ir on bulk64, +1.16 %).
+
+Variant v4 — `k7_depot_overflow_v4` = `git diff 2bc830cc 9a73ba5f -- src`
+(design rev. 4: K5's floor code verbatim, the overflow as cold tail calls,
+one-load refill gate, floor mark byte), patch sha256
+`1dfe60f10a686290bc41d0bbc0a459ca2aab22743e58c91707d383949605d4b7`.
+Pre-run Callgrind (b4_pmu_probe, single kernel): bulk64 sefer Ir +19.8k of
+56.46M (+0.035 %), pair16/pair64/churn16 within +0.03 %.
+
+Runs, in this order:
+1. Run 1 (ablation, J1′ v2, 20 × 2000) for G11, GL1, GL2, variant v4.
+2. Run 2 (main judge) on the unchanged 11-kernel judge: `g1-k7-j11` =
+   `9a73ba5f` with the two judge commits reverted (`2b517e86`; harness
+   byte-identical to `2bc830cc`) against `2bc830cc`, order K7, K5, K7, K5.
+   bulk64k / bulk16k_32 are judged by run 1 only.
+3. Run 3 (RSS) only if runs 1–2 pass rule 2.
+
+Decision rule unchanged (Addendum 3: union of groups).
