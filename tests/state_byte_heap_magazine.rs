@@ -29,6 +29,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry};
 
+/// G1-K7: heaps in this binary run with the depot overflow off (budget 0),
+/// so a full magazine past the depot floor flushes to the substrate as these
+/// checks expect; the overflow has its own binaries
+/// (`tests/g1_k7_depot_overflow*.rs`). One config per binary.
+fn claim_floor_only() -> Option<sefer_alloc::registry::HeapLease> {
+    #[cfg(feature = "alloc-decommit")]
+    {
+        HeapRegistry::dbg_claim_lease_with_config(
+            sefer_alloc::alloc_core::LargeCacheConfig::new().depot_budget_bytes(0),
+        )
+    }
+    #[cfg(not(feature = "alloc-decommit"))]
+    {
+        HeapRegistry::dbg_claim_lease()
+    }
+}
+
 static SERIAL: AtomicBool = AtomicBool::new(false);
 
 struct SerialGuard;
@@ -113,7 +130,7 @@ fn release(heap: &mut HeapCore, blocks: &[*mut u8]) {
 fn ts1_own_free_push_mag_then_hit_live() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     let p = heap.alloc(l16());
@@ -171,7 +188,7 @@ fn ts1_own_free_push_mag_then_hit_live() {
 fn ts1_zeroed_hit_writes_live() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     let p = heap.alloc(l16());
@@ -196,7 +213,7 @@ fn ts1_zeroed_hit_writes_live() {
 fn ts1_overflow_flush_writes_free() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     let n = TCACHE_CAP + 8;
@@ -261,7 +278,7 @@ fn ts1_overflow_flush_writes_free() {
 fn ts1_refill_retained_writes_mag() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     // Drain the class-0 magazine completely (free N blocks, then re-issue
@@ -336,7 +353,7 @@ fn ts1_refill_retained_writes_mag() {
 fn ts1_batch_push_mag_then_deferred_clear_live() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     let n = 8;
@@ -393,7 +410,7 @@ fn ts1_batch_push_mag_then_deferred_clear_live() {
 fn ts1_reject_in_magazine_double_free() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     let p = heap.alloc(l16());
@@ -447,7 +464,7 @@ fn ts1_reject_in_magazine_double_free() {
 fn ts1_reject_double_free_after_flush() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     let n = TCACHE_CAP + 8;
@@ -521,7 +538,7 @@ fn ts1_reject_double_free_after_flush() {
 fn ts1_reject_wrong_class_stays_live() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     let l64 = Layout::from_size_align(64, 8).unwrap();
@@ -556,7 +573,7 @@ fn ts1_reject_wrong_class_stays_live() {
 fn ts1_reject_unaligned_interior() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     let p = heap.alloc(l16());
@@ -638,7 +655,7 @@ fn ts1_reject_foreign_single_accounting() {
 fn ts1_reject_overflow_push_double_free() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     // Drain whatever earlier tests in this binary left in the magazine
@@ -729,7 +746,7 @@ fn ts1_reject_overflow_push_double_free() {
 fn ts1_batch_push_duplicate_exactly_once() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     // (a) single-block batch free, then probe reclaim while p is MAG.
@@ -818,7 +835,7 @@ fn ts1_batch_push_duplicate_exactly_once() {
 fn ts1_refill_retained_stale_double_free() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut lease = claim_floor_only().expect("claim");
     let heap = lease.core();
 
     // Build the miss state: free 64 blocks (magazine caps at 16, the rest

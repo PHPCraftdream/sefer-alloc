@@ -499,8 +499,15 @@ impl HeapCore {
     fn refill_magazine_slow_virgin(&mut self, c: usize) -> (*mut u8, bool) {
         // B4 depot (DP-3): a parked magazine holds freed blocks — never virgin
         // (`depot_reload` clears the mask).
-        if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
+        if self.depot_may_reload(c) && self.depot_reload_tick(c) {
             return (self.finish_magazine_refill(c, TCACHE_CAP), false);
+        }
+        // G1-K7: a segment refill is a cold event for the overflow decay
+        // while the class is armed — counted first, while only `self` and
+        // `c` are live.
+        #[cfg(feature = "alloc-decommit")]
+        if self.depot_may_tick(c) {
+            self.depot_segment_tick(c);
         }
         // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
         // rationale — identical placement, identical cheap-when-empty shape).
@@ -678,8 +685,17 @@ impl HeapCore {
     #[inline(never)]
     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
         // B4 depot (DP-3): reload a parked full magazine (blocks stay MAG).
-        if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
+        // G1-K7: an overflow reload counts a decay event inside the cold
+        // helper; floor reloads stay K5's path.
+        if self.depot_may_reload(c) && self.depot_reload_tick(c) {
             return self.finish_magazine_refill(c, TCACHE_CAP);
+        }
+        // G1-K7: a segment refill is a cold event for the overflow decay
+        // while the class is armed — counted first, while only `self` and
+        // `c` are live.
+        #[cfg(feature = "alloc-decommit")]
+        if self.depot_may_tick(c) {
+            self.depot_segment_tick(c);
         }
         // Bounded Large-only probe; Small discovery occurs in the refill.
         self.drain_large_sidecar_ingress_hot_bounded();

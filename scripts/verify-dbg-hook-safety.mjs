@@ -166,6 +166,13 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/queries.rs::dbg_tcache_virgin_mask",
   "src/registry/heap_core/diag/queries.rs::dbg_tcache_count",
   "src/registry/heap_core/diag/queries.rs::dbg_depot_len",
+  // G1-K7: read-only copies of the resolved budget and owner-only counters.
+  "src/registry/heap_core/diag/queries.rs::dbg_depot_budget",
+  "src/registry/heap_core/diag/queries.rs::dbg_depot_overflow",
+  "src/registry/heap_core/diag/queries.rs::dbg_depot_ring",
+  "src/registry/heap_core/diag/queries.rs::dbg_depot_ticking",
+  // G1-K7: pure const resolution of a by-value config.
+  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_depot_budget",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",
@@ -182,6 +189,10 @@ const PURE_OBSERVERS = [
 
 // Safe mutators: each retained reviewed invariant justification is authoritative.
 const SAFE_MUTATORS = [
+  [
+    "src/registry/heap_core/diag/diag_probes.rs::dbg_arm_depot_overflow_faults",
+    "G1-K7 test fault: stores Relaxed fail-next counts consulted only before a depot-overflow reservation and (aligned-vmem's existing hook, as dbg_arm_commit_fail) before a real page commit; both take existing OS-refusal paths; no pointer, no metadata write; compiled only with the test-only lazy-commit-fault-injection feature"
+  ],
   [
     "src/global/sefer_alloc/diag.rs::dbg_background_maintenance_current_thread",
     "delegates only to the production bounded background_maintenance_step for current_for_trim's current-thread exclusive live HeapCore; no FREE-slot lease or lifecycle mutation; bench-internals + internals gated"

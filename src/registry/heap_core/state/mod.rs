@@ -4,6 +4,12 @@
 
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub(crate) mod depot;
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+pub(crate) mod depot_overflow;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 mod depot_paths;
 mod ownership;

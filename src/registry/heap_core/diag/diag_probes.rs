@@ -744,4 +744,21 @@ impl HeapCore {
             )
         };
     }
+
+    /// TEST-ONLY (G1-K7): the next `reserve` depot-overflow reservations and
+    /// the next `commit` real page commits (any caller) fail as if the OS
+    /// refused them; `0` disarms. Process-global.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit",
+        feature = "internals",
+        feature = "lazy-commit-fault-injection"
+    ))]
+    pub fn dbg_arm_depot_overflow_faults(reserve: u32, commit: u32) {
+        crate::registry::heap_core::state::depot_overflow::RESERVE_FAIL_NEXT
+            .store(reserve, core::sync::atomic::Ordering::Relaxed);
+        aligned_vmem::fault_injection::arm_fail_next(commit);
+    }
 }

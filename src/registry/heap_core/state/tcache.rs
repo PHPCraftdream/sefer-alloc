@@ -228,9 +228,10 @@ pub(crate) static FREE_PARK_CAP: [u8; SMALL_CLASS_COUNT] = {
 /// 128+ bytes from `slots[0]`, outside its 64-byte line. That historical
 /// shallow-slot observation does not describe full-capacity churn.
 /// `#[repr(C)]` fixes the field order to declaration order:
-/// `count` at offset 0, `virgin_mask` (when present) at offset 2 (1 pad
-/// byte after the u8 `count` — `virgin_mask`'s `u16` needs 2-byte alignment,
-/// so the compiler inserts one padding byte at offset 1), `slots`
+/// `count` at offset 0, `parked` at offset 1, the G1-K7 `ovf` hint at
+/// offset 2 (next to `parked`, so the refill gate reads both in one load) and
+/// `marks` at 3, `virgin_mask` (when present) at offset 4, `limit` in the
+/// remaining padding, `slots`
 /// padded up to its own 8-byte alignment and starting at offset 8 in both
 /// configurations — see the `offset_of!` const-asserts on [`PerClass`]
 /// immediately below, which pin this rather than leaving it aspirational.
@@ -243,10 +244,23 @@ pub(crate) struct PerClass {
     /// offset 0, preceding the pointer array at offset 8.
     pub(crate) count: u8,
     /// B4 depot (DP-5 iteration 2): full magazines of this class parked in
-    /// the slot's depot (`0..=DEPOT_CAP[c]`). Sits in the padding byte after
-    /// `count` (no size change), so the overflow / miss branches gate the
-    /// cold depot calls without leaving this line.
+    /// the slot's depot floor (`0..=DEPOT_CAP[c]`). Sits in the padding byte
+    /// after `count` (no size change), so the overflow / miss branches gate
+    /// the cold depot calls without leaving this line. G1-K7 records above
+    /// the floor are counted by the overflow ring, not here.
     pub(crate) parked: u8,
+    /// G1-K7: 1 while the class's overflow ring holds a record, else 0 —
+    /// the refill path's inline hint to try the cold overflow reload once
+    /// the floor is empty. Written only by the cold overflow paths; they
+    /// re-check the ring length, so the hint is never trusted for a reload.
+    pub(crate) ovf: u8,
+    /// G1-K7: two flags. [`MARK_FLOOR`]: the class parked into its floor
+    /// during the current decay epoch (the decay treats it as active;
+    /// cleared at the epoch's end). [`MARK_TICK`]: a segment refill of this
+    /// class counts a decay event — set on every class while the overflow
+    /// holds bytes, dropped lazily by the class's own refill once it finds
+    /// the overflow empty.
+    pub(crate) marks: u8,
     /// R13-3 (task #273): magazine-resident virginity bitmask, ONE bit per
     /// `slots` index (bit `i` set ⟺ `slots[i]` is a genuinely virgin —
     /// never-before-served, `Node::zero`-skippable — block, per the
@@ -290,6 +304,12 @@ pub(crate) struct PerClass {
     /// pointer array.
     #[cfg(feature = "virgin-zero-skip")]
     pub(crate) virgin_mask: u16,
+    /// G1-K7: `parked` bound the free path checks inline before the cold
+    /// depot call — the floor `DEPOT_CAP[c]`, or above it while the class's
+    /// overflow ring accepts; latched back to the floor when the overflow
+    /// refuses (budget, OS) or its ring fills, until the overflow shrinks.
+    /// In the padding before `slots` (no size change).
+    pub(crate) limit: u16,
     /// This class's pointer stack. `slots[0..count as usize]` are valid.
     /// F4: declared LAST so `#[repr(C)]` places it after the small fields —
     /// `#[repr(C)]` still pads `slots` up to its own 8-byte alignment (no
@@ -323,10 +343,20 @@ const _: () = assert!(
     ::core::mem::offset_of!(PerClass, parked) == 1,
     "PerClass::parked must use the pad byte after count (offset 1)"
 );
+const _: () = assert!(
+    ::core::mem::offset_of!(PerClass, ovf) == 2 && ::core::mem::offset_of!(PerClass, marks) == 3,
+    "PerClass::ovf must follow parked (offset 2) for the refill gate's one load; marks at 3"
+);
 #[cfg(feature = "virgin-zero-skip")]
 const _: () = assert!(
-    ::core::mem::offset_of!(PerClass, virgin_mask) == 2,
-    "PerClass::virgin_mask must sit at offset 2 (repr(C), declared second, after u8 count + 1 pad byte)"
+    ::core::mem::offset_of!(PerClass, virgin_mask) == 4
+        && ::core::mem::offset_of!(PerClass, limit) == 6,
+    "PerClass::virgin_mask at offset 4 and limit at 6 (repr(C), after the four u8 fields)"
+);
+#[cfg(not(feature = "virgin-zero-skip"))]
+const _: () = assert!(
+    ::core::mem::offset_of!(PerClass, limit) == 4,
+    "PerClass::limit (u16) must sit in the padding before slots (offset 4)"
 );
 // R2-17: this is the concrete pin the crate-root gate in `src/lib.rs` exists
 // to host — `slots` reaches offset 8 only on a 64-bit `repr(C)` ABI, and the
@@ -338,15 +368,25 @@ const _: () = assert!(
     "PerClass::slots must start at offset 8 (repr(C), 8-byte-aligned pointer array placed after the small fields) for the documented magazine cache-line locality"
 );
 
+/// G1-K7: `PerClass::marks` bit — the class parked into its floor this epoch.
+#[cfg(feature = "alloc-decommit")]
+pub(crate) const MARK_FLOOR: u8 = 1;
+/// G1-K7: `PerClass::marks` bit — the class's segment refill ticks the decay.
+#[cfg(feature = "alloc-decommit")]
+pub(crate) const MARK_TICK: u8 = 2;
+
 impl PerClass {
     /// Construct an empty per-class magazine (count zero, all slots null).
     const fn new() -> Self {
         Self {
             count: 0,
             parked: 0,
+            ovf: 0,
+            marks: 0,
             slots: [::core::ptr::null_mut(); TCACHE_CAP],
             #[cfg(feature = "virgin-zero-skip")]
             virgin_mask: 0,
+            limit: 0,
         }
     }
 }
@@ -369,8 +409,12 @@ impl Tcache {
     /// `const fn` so it can be used in `HeapCore::new` with zero allocation
     /// at construction (M5-clean).
     pub(crate) const fn new() -> Self {
-        Self {
-            classes: [PerClass::new(); SMALL_CLASS_COUNT],
+        let mut classes = [PerClass::new(); SMALL_CLASS_COUNT];
+        let mut c = 0;
+        while c < SMALL_CLASS_COUNT {
+            classes[c].limit = crate::registry::heap_core::state::depot::DEPOT_CAP[c] as u16;
+            c += 1;
         }
+        Self { classes }
     }
 }

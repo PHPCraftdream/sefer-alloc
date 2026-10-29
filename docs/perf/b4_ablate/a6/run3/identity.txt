@@ -1,0 +1,20 @@
+k5_tree 5d81dc7d6b542d2196afe9e0fcac3a1cdf389c85
+k7_tree 1decb4e8bbe29d00744e00c050def4449bae2d4e
+harness_sha256 f0ea733269fc714ed7ab51c04c980b9589404a27721abdf63aa4eaaa371754df
+c52d26eb9d9f1529a89f7e21de5f62cc66d091f30c558188cf124b7e03522ff5  k5.exe
+fa5f98a336394095542274893c55c68e60fc1690bbf03fce95428f7ff9af7abd  k7_0.exe
+4df2948336ef5852c54d225205d6ea5d71c65cad47e24288fc53fe5471e5f296  k7_1048576.exe
+ef74a7a5c7e89131fa22fe09de24b5fe96bdb20271c03fcdde76b639c29dc2bc  k7_2097152.exe
+a93ea077ac2ef40484f5f1eef920804ac7c289ad40f0fe58c1f4a7c7079d2904  k7_524288.exe
+0f504ad288df906f5b171fe094643ef0b077888e2759b7ef36305b57bfc04814  mi.exe
+ca002eb1cff969000a62a78211e49bb8431027a2b63407ba8ed1b3c3fcbea44d  rss_probe_k5.exe
+c13cf71b61b762085aed53b2f6755a95eae2cb2c3484accc7bcfe8fd3ac9e39e  rss_probe_k7.exe
+rustc 1.97.0 (2d8144b78 2026-07-07)
+binary: rustc
+commit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3
+commit-date: 2026-07-07
+host: x86_64-pc-windows-msvc
+release: 1.97.0
+LLVM version: 22.1.6
+features: production bench-internals internals
+RUSTFLAGS: -C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5
