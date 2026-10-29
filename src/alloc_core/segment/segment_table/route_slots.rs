@@ -44,6 +44,11 @@ impl RouteSlots {
         core::mem::size_of::<Option<RouteRegistration<'static>>>()
     }
 
+    #[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+    pub(super) fn owner(&self) -> usize {
+        self.owner
+    }
+
     pub(super) fn new(owner: u32, primordial: *mut u8, segment_len: usize) -> Option<Self> {
         let mut slots = Self {
             slots: ptr::null_mut(),

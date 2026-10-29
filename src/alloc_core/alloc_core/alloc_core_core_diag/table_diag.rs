@@ -180,6 +180,19 @@ impl AllocCore {
         self.table.memo_holds(os::segment_base_of_ptr(ptr))
     }
 
+    /// SC-6 counting oracle: (small remote publications, publications that
+    /// would notify). Exists only under `--cfg g1_ingress_oracle`.
+    #[doc(hidden)]
+    #[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_g1_ingress_oracle() -> (u64, u64) {
+        use core::sync::atomic::Ordering::Relaxed;
+        (
+            crate::alloc_core::G1_PUBLISHES.load(Relaxed),
+            crate::alloc_core::G1_NOTIFIES.load(Relaxed),
+        )
+    }
+
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): process-wide count of
     /// mutable `SegmentTable::canonical_base_of_mut` lookups that HIT the
     /// Tier-1 direct-mapped `own_cache` (including `contains_base`) — see

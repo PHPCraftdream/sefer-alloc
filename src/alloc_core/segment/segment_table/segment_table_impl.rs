@@ -320,6 +320,12 @@ impl SegmentTable {
         Some(())
     }
 
+    /// SC-6 oracle: the route owner id, when routed.
+    #[cfg(all(g1_ingress_oracle, feature = "bench-internals", feature = "alloc-global"))]
+    pub(crate) fn route_owner(&self) -> Option<usize> {
+        self.routes.as_ref().map(RouteSlots::owner)
+    }
+
     /// Whether this instance attached terminal descriptors before first issue.
     /// Standalone owner-local cores never attach them. Once attached, missing
     /// per-segment descriptors remain a broken invariant, not a local-mode hint.

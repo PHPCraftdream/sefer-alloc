@@ -944,6 +944,19 @@
       "item": "^macro_rules! count$"
     },
     {
+      "id": "counter/g1-ingress-oracle",
+      "class": "counter",
+      "files": [
+        "src/registry/segment_route/small_sidecar.rs"
+      ],
+      "fn": "^oracle_after_publish$",
+      "receiver": "^self\.oracle_seen$",
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "SC-6 counting oracle (cfg g1_ingress_oracle): last counted owner epoch per route, no protocol reads it"
+    },
+    {
       "id": "hook/terminal-gate",
       "class": "test-hook",
       "files": [

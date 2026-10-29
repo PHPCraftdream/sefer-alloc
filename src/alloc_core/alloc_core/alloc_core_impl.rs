@@ -55,6 +55,8 @@ medium_promotion_reachable! {
 pub(in crate::alloc_core) use counters::{LargeCacheHitCounter, DECOMMIT_CALLS};
 #[cfg(feature = "bench-internals")]
 pub(in crate::alloc_core) use counters::{CONTAINS_BASE_TIER1_HITS, CONTAINS_BASE_TIER1_MISSES};
+#[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+pub(crate) use counters::{G1_NOTIFIES, G1_OWNER_EPOCH, G1_PUBLISHES};
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 pub(in crate::alloc_core) use counters::{FORCE_DECAY_CLOCK_READ, MAYBE_DECAY_GUARD_PASSED};
 // B4-M (P1-2): bench-internals observer counters, re-exported crate-wide

@@ -213,6 +213,9 @@ pub(crate) use alloc_core::SMALL_ZERO_PASS_CALLS;
 /// `alloc_core`, reached via `alloc_core::alloc_core::`).
 #[cfg(feature = "bench-internals")]
 pub(crate) use alloc_core::XNULL_NULL_TAIL_GUARD;
+/// SC-6 counting oracle statics (`--cfg g1_ingress_oracle`).
+#[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+pub(crate) use alloc_core::{G1_NOTIFIES, G1_OWNER_EPOCH, G1_PUBLISHES};
 /// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): slow-path observer
 /// counters, re-exported crate-wide for their increment sites and
 /// `SeferAlloc::dbg_b4_collapse_counters`.

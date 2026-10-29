@@ -105,6 +105,11 @@ impl AllocCore {
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::B4_FIND_SEGMENT_CALLS
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        #[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+        if let Some(owner) = self.table.route_owner() {
+            crate::alloc_core::G1_OWNER_EPOCH[owner & 1023]
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
         self.find_segment_with_free_impl(class_idx, FindSegmentScanContext::default())
     }
 
