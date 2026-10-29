@@ -457,3 +457,26 @@ Addendum 6 is the last re-measurement of design revisions 4–5. If v5 fails
 any rule, G1-K7 is NO-GO for this round; v4 and v5 data stay published; a
 later attempt needs a new design and a new pre-registration. Data of v1–v4
 never enter a v5 decision.
+
+## Addendum 7 (2026-10-29, after the Addendum 6 speed decision, before run 3)
+
+Written after the run 1 / run 2 data (`G1_K7_A6_VERDICT.md`), so it is an
+owner decision on a known result, not a pre-registered rule.
+
+Rule 2a stands. The owner grants one exception to it for v5, on the
+measured trade-off: the rule-2a loss is pair16 E_v +0.62 % [0.47, 0.73] and
+pair64 +0.73 % [0.61, 0.79] in run 1, not seen by run 2 (pair16 K7/K5 1.0021,
+no detected difference; pair64 1.0181, K7 faster), against rule-1 wins of
+bulk16k 1.675, churn64 1.081 and churn1024 1.047 in run 2 and bulk64k
+−9.88 %, bulk16k_32 −26.82 % in run 1. Owner's words: «правило не снято.
+Тут просто разумное исключение. Трейдоф в нашу пользу».
+
+Scope of the exception: exactly these two kernels at these magnitudes, for
+v5 (`f2b0c115`, run-2 tree `3b6b754e`). It is not a precedent and does not
+change rule 2a for any later candidate.
+
+Everything else in Addendum 6 holds unchanged. Rules 3 (RSS, run 3), 4 (Ir,
+`iai` against `2bc830cc`) and 5 (evidence) remain conditions for merging,
+in the registered order: run 3's harness `examples/g1_k7_rss_judge.rs` is
+committed identically to both trees with its sha256 before any run-3 data.
+If rule 3 or 4 fails, G1-K7 is NO-GO as Addendum 6 § Finite says.
