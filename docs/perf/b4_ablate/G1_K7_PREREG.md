@@ -555,3 +555,22 @@ further park is attempted, so nothing is refused. The script now checks
 (sha256 `3b393518b85343ec22c9235ef7b9018dccbc8b2e08628308ca8c84c33d4bf5d1`); no other check, threshold, statistic or the loss rule
 changes. This is a correction of the analysis toward the registered text,
 written after the data and before any RSS number was read.
+
+## Addendum 10 (2026-10-29, after the rule-4 data)
+
+Rule 4 (`a6/run4/rule4.log`, gate-run CI run 40901604462, K5 `2bc830cc` vs
+PR #128's merge ref `4e4bc5b8`): 8 of 106 benches exceed the +10 Ir bound
+after the bootstrap proxy — dealloc_flush_all_tcache_16b +430,
+seg_cycle_decommit_256k +421, multiseg_cold_256k +157,
+cold_alloc_only_256x16b n / 2n / 4n +31 / +87 / +151, realloc_grow +48,
+medium_class_dealloc_churn_16b +25 — none of whose bodies can park into the
+overflow; the per-heap bootstrap grows by ≈ 2.4–2.6 k Ir. Wins:
+growth16 −17 %, dealloc_free_only_1088_16b_n1024 −13.8 %,
+cold_alloc_free_256x16b_4n −13.6 %, recycle_alloc_free −7.9 % (raw Ir).
+
+Rule 4 stands. The owner, shown the full trade-off table (time, Ir, RSS),
+grants a second exception for v5, scoped to exactly these 8 benches at
+these magnitudes («отлично! Вливаем»). Not a precedent. Rules 1, 3 and 5
+hold as measured; G1-K7 v5 ships as `perf(runtime)`. The fixed costs
+(flush-all, segment release, bootstrap, segment-refill check) are a
+follow-up with their own measurement.
