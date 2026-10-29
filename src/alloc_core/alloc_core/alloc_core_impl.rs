@@ -51,10 +51,12 @@ medium_promotion_reachable! {
         PROMOTION_BYTES_SUM, PROMOTION_COUNT,
     };
 }
+#[cfg(feature = "bench-internals")]
+pub(in crate::alloc_core) use counters::{
+    tier1_bump, CONTAINS_BASE_TIER1_HITS, CONTAINS_BASE_TIER1_MISSES,
+};
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) use counters::{LargeCacheHitCounter, DECOMMIT_CALLS};
-#[cfg(feature = "bench-internals")]
-pub(in crate::alloc_core) use counters::{CONTAINS_BASE_TIER1_HITS, CONTAINS_BASE_TIER1_MISSES};
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 pub(in crate::alloc_core) use counters::{FORCE_DECAY_CLOCK_READ, MAYBE_DECAY_GUARD_PASSED};
 // B4-M (P1-2): bench-internals observer counters, re-exported crate-wide
