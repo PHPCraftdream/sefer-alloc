@@ -169,6 +169,7 @@ const PURE_OBSERVERS = [
   // G1-K7: read-only copies of the resolved budget and owner-only counters.
   "src/registry/heap_core/diag/queries.rs::dbg_depot_budget",
   "src/registry/heap_core/diag/queries.rs::dbg_depot_overflow",
+  "src/registry/heap_core/diag/queries.rs::dbg_depot_ring",
   // G1-K7: pure const resolution of a by-value config.
   "src/alloc_core/config/large_cache_config.rs::dbg_resolved_depot_budget",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",

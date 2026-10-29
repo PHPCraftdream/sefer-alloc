@@ -228,9 +228,10 @@ pub(crate) static FREE_PARK_CAP: [u8; SMALL_CLASS_COUNT] = {
 /// 128+ bytes from `slots[0]`, outside its 64-byte line. That historical
 /// shallow-slot observation does not describe full-capacity churn.
 /// `#[repr(C)]` fixes the field order to declaration order:
-/// `count` at offset 0, one padding byte at offset 1 (`parked`'s `u16`
-/// needs 2-byte alignment), `parked` at offset 2, `virgin_mask` (when
-/// present) at offset 4, `slots`
+/// `count` at offset 0, `parked` at offset 1, the G1-K7 `ovf` hint at
+/// offset 2 (next to `parked`, so the refill gate reads both in one load) and
+/// `floor_mark` at 3, `virgin_mask` (when present) at offset 4, `limit` in the
+/// remaining padding, `slots`
 /// padded up to its own 8-byte alignment and starting at offset 8 in both
 /// configurations — see the `offset_of!` const-asserts on [`PerClass`]
 /// immediately below, which pin this rather than leaving it aspirational.
@@ -242,18 +243,21 @@ pub(crate) struct PerClass {
     /// FIRST in declaration order under `#[repr(C)]` so it lands at struct
     /// offset 0, preceding the pointer array at offset 8.
     pub(crate) count: u8,
-    /// G1-K7: depot floor occupancy in bits 0..=3 (`<= DEPOT_K[c]`) and, in
-    /// bit 7 ([`FLOOR_PARKED_IN_EPOCH`]), whether the class parked into its
-    /// floor during the current decay epoch. The floor fills and empties
-    /// before the overflow, so a cohort that fits the floor never touches
-    /// the overflow. In the padding byte after `count` (no size change).
-    pub(crate) floor: u8,
     /// B4 depot (DP-5 iteration 2): full magazines of this class parked in
-    /// the slot's depot — the floor (`0..=DEPOT_K[c]`) plus, under G1-K7, the
-    /// overflow above it (`parked - DEPOT_K[c]` records). `u16` in the padding
+    /// the slot's depot floor (`0..=DEPOT_CAP[c]`). Sits in the padding byte
     /// after `count` (no size change), so the overflow / miss branches gate
-    /// the cold depot calls without leaving this line.
-    pub(crate) parked: u16,
+    /// the cold depot calls without leaving this line. G1-K7 records above
+    /// the floor are counted by the overflow ring, not here.
+    pub(crate) parked: u8,
+    /// G1-K7: 1 while the class's overflow ring holds a record, else 0 —
+    /// the refill path's inline hint to try the cold overflow reload once
+    /// the floor is empty. Written only by the cold overflow paths; they
+    /// re-check the ring length, so the hint is never trusted for a reload.
+    pub(crate) ovf: u8,
+    /// G1-K7: 1 when the class parked into its floor during the current
+    /// decay epoch (the decay treats it as active); cleared at the epoch's
+    /// end.
+    pub(crate) floor_mark: u8,
     /// R13-3 (task #273): magazine-resident virginity bitmask, ONE bit per
     /// `slots` index (bit `i` set ⟺ `slots[i]` is a genuinely virgin —
     /// never-before-served, `Node::zero`-skippable — block, per the
@@ -298,9 +302,9 @@ pub(crate) struct PerClass {
     #[cfg(feature = "virgin-zero-skip")]
     pub(crate) virgin_mask: u16,
     /// G1-K7: `parked` bound the free path checks inline before the cold
-    /// depot call — the floor `DEPOT_CAP[c]`, plus the class's overflow ring
-    /// once a budget is bound; latched to the current `parked` when the
-    /// overflow refuses (budget, ring or OS) until the overflow shrinks.
+    /// depot call — the floor `DEPOT_CAP[c]`, or above it while the class's
+    /// overflow ring accepts; latched back to the floor when the overflow
+    /// refuses (budget, OS) or its ring fills, until the overflow shrinks.
     /// In the padding before `slots` (no size change).
     pub(crate) limit: u16,
     /// This class's pointer stack. `slots[0..count as usize]` are valid.
@@ -333,26 +337,19 @@ const _: () = assert!(
     "PerClass::count must sit at offset 0 (repr(C), declared first) for the documented magazine cache-line locality"
 );
 const _: () = assert!(
-    ::core::mem::offset_of!(PerClass, floor) == 1,
-    "PerClass::floor (u8) must use the padding byte after count (offset 1)"
+    ::core::mem::offset_of!(PerClass, parked) == 1,
+    "PerClass::parked must use the pad byte after count (offset 1)"
 );
 const _: () = assert!(
-    crate::registry::heap_core::state::depot::DEPOT_K_MAX as usize <= FLOOR_COUNT as usize,
-    "the floor count must fit PerClass::floor's low bits"
-);
-const _: () = assert!(
-    ::core::mem::offset_of!(PerClass, parked) == 2,
-    "PerClass::parked (u16) must use the padding after count (offset 2)"
+    ::core::mem::offset_of!(PerClass, ovf) == 2
+        && ::core::mem::offset_of!(PerClass, floor_mark) == 3,
+    "PerClass::ovf must follow parked (offset 2) for the refill gate's one load; floor_mark at 3"
 );
 #[cfg(feature = "virgin-zero-skip")]
 const _: () = assert!(
-    ::core::mem::offset_of!(PerClass, virgin_mask) == 4,
-    "PerClass::virgin_mask must sit at offset 4 (repr(C), after u8 count, pad and u16 parked)"
-);
-#[cfg(feature = "virgin-zero-skip")]
-const _: () = assert!(
-    ::core::mem::offset_of!(PerClass, limit) == 6,
-    "PerClass::limit (u16) must sit in the padding before slots (offset 6)"
+    ::core::mem::offset_of!(PerClass, virgin_mask) == 4
+        && ::core::mem::offset_of!(PerClass, limit) == 6,
+    "PerClass::virgin_mask at offset 4 and limit at 6 (repr(C), after the four u8 fields)"
 );
 #[cfg(not(feature = "virgin-zero-skip"))]
 const _: () = assert!(
@@ -369,19 +366,14 @@ const _: () = assert!(
     "PerClass::slots must start at offset 8 (repr(C), 8-byte-aligned pointer array placed after the small fields) for the documented magazine cache-line locality"
 );
 
-/// G1-K7: `PerClass::floor` low bits — the class's floor occupancy.
-pub(crate) const FLOOR_COUNT: u8 = 0x0F;
-/// G1-K7: `PerClass::floor` bit 7 — the class parked into its floor during
-/// the current decay epoch (cleared at the epoch's end).
-pub(crate) const FLOOR_PARKED_IN_EPOCH: u8 = 0x80;
-
 impl PerClass {
     /// Construct an empty per-class magazine (count zero, all slots null).
     const fn new() -> Self {
         Self {
             count: 0,
-            floor: 0,
             parked: 0,
+            ovf: 0,
+            floor_mark: 0,
             slots: [::core::ptr::null_mut(); TCACHE_CAP],
             #[cfg(feature = "virgin-zero-skip")]
             virgin_mask: 0,

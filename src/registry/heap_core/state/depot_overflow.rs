@@ -236,6 +236,11 @@ impl DepotOverflow {
         self.len[c] as usize
     }
 
+    /// Class `c`'s ring capacity (records); 0 before the reservation.
+    pub(crate) fn cap(&self, c: usize) -> usize {
+        self.cap[c] as usize
+    }
+
     /// Park `mag` as class `c`'s newest overflow record; `n` is the class's
     /// current overflow length. `false` (no change to records) when over
     /// budget, full or the storage cannot be reserved / committed.

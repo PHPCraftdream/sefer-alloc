@@ -123,8 +123,13 @@ impl HeapCore {
                     break;
                 }
             }
-            // G1-K7: the floor is empty; drop its epoch mark too.
-            self.tcache.classes[c].floor = 0;
+            // G1-K7: floor and ring are empty (the reload follows the ring
+            // length, not the hint); drop the floor's epoch mark too.
+            #[cfg(feature = "alloc-decommit")]
+            {
+                debug_assert_eq!(self.tcache.classes[c].ovf, 0);
+                self.tcache.classes[c].floor_mark = 0;
+            }
         }
         // G1-K7: the depot (floor and overflow) is now empty; return the
         // overflow's committed record pages and reset its rings.
@@ -179,7 +184,6 @@ impl HeapCore {
     fn depot_decay(&mut self) {
         use crate::registry::heap_core::state::depot::DEPOT_CLASSES;
         use crate::registry::heap_core::state::depot_overflow::DECAY_WORK;
-        use crate::registry::heap_core::state::tcache::FLOOR_PARKED_IN_EPOCH;
         use crate::registry::heap_core::state::tcache::TCACHE_CAP;
         let budget = self.depot_budget as usize;
         let Some(depot) = self.depot.as_deref_mut() else {
@@ -189,11 +193,9 @@ impl HeapCore {
             // Floor parks count as activity: collect and clear their marks.
             let mut floor_parked = 0u32;
             for c in 0..DEPOT_CLASSES {
-                let f = &mut self.tcache.classes[c].floor;
-                if *f & FLOOR_PARKED_IN_EPOCH != 0 {
-                    floor_parked |= 1 << c;
-                    *f &= !FLOOR_PARKED_IN_EPOCH;
-                }
+                let class = &mut self.tcache.classes[c];
+                floor_parked |= (class.floor_mark as u32) << c;
+                class.floor_mark = 0;
             }
             depot.ovf.end_epoch(floor_parked);
         }
@@ -208,7 +210,8 @@ impl HeapCore {
             let n = depot.ovf.len(c);
             let mut mag = [core::ptr::null_mut(); TCACHE_CAP];
             depot.ovf.pop_oldest(c, n, &mut mag);
-            self.tcache.classes[c].parked -= 1;
+            // The floor is untouched; only the ring's hint can change.
+            self.tcache.classes[c].ovf = (n > 1) as u8;
             // SAFETY (R6-MS-3): `mag` is a full parked magazine of class `c`
             // (16 blocks issued by this heap, state MAG, each held exactly
             // once — the record just left the ring), returned to the

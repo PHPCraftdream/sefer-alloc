@@ -78,18 +78,21 @@ const _: () = {
 /// ([`DepotOverflow`](crate::registry::heap_core::state::depot_overflow::DepotOverflow))
 /// parks further full magazines above it within the heap's budget.
 ///
-/// Only the pointer arrays live here; each class's parked count (floor plus
-/// overflow) is `PerClass::parked` in the owner's magazine line (DP-5
-/// iteration 2), so the hot-path gates read it without touching this store.
+/// Only the pointer arrays live here; each class's floor count is
+/// `PerClass::parked` in the owner's magazine line (DP-5 iteration 2), so the
+/// hot-path gates read it without touching this store. `#[repr(C)]` keeps
+/// `mags` first, at K5's offset, ahead of the G1-K7 overflow control.
 /// All-zero is the valid empty state (the registry slot is OS-zeroed).
+#[repr(C)]
 pub(crate) struct Depot {
     mags: [[[*mut u8; TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
     #[cfg(feature = "alloc-decommit")]
     pub(crate) ovf: crate::registry::heap_core::state::depot_overflow::DepotOverflow,
 }
 
-// The overflow budget ceiling keeps `parked: u16` in range: floor plus a full
-// overflow ring of 16 B magazines.
+const _: () = assert!(::core::mem::offset_of!(Depot, mags) == 0);
+// The overflow budget ceiling keeps `PerClass::limit: u16` in range: the
+// floor plus a full overflow ring of 16 B magazines.
 #[cfg(feature = "alloc-decommit")]
 const _: () = assert!(
     DEPOT_K_MAX as usize
@@ -113,33 +116,38 @@ impl Depot {
         }
     }
 
-    /// Park `magazine` as class `c`'s floor entry `n` (the class's current
-    /// floor count). Fails (no change) when the floor already holds
-    /// `DEPOT_K[c]`.
+    /// Park `magazine` as class `c`'s next entry; `n` is that class's parked
+    /// count. Fails (no change) when the class already holds `DEPOT_K[c]`.
     #[inline]
-    pub(crate) fn floor_park(
+    pub(crate) fn depot_park(
         &mut self,
         c: usize,
-        n: usize,
+        n: &mut u8,
         magazine: &[*mut u8; TCACHE_CAP],
     ) -> bool {
-        if n >= DEPOT_K[c] as usize {
+        let i = *n as usize;
+        if i >= DEPOT_K[c] as usize {
             return false;
         }
-        self.mags[c][n] = *magazine;
+        self.mags[c][i] = *magazine;
+        *n += 1;
         true
     }
 
-    /// Move class `c`'s newest floor entry into `magazine`; `n` is the
-    /// class's current floor count (`1..=DEPOT_K[c]`).
+    /// Move class `c`'s most recently parked magazine into `magazine`.
+    /// Fails (no change) when `n == 0`.
     #[inline]
-    pub(crate) fn floor_reload(
+    pub(crate) fn depot_reload(
         &mut self,
         c: usize,
-        n: usize,
+        n: &mut u8,
         magazine: &mut [*mut u8; TCACHE_CAP],
-    ) {
-        debug_assert!(n > 0 && n <= DEPOT_K[c] as usize);
-        *magazine = self.mags[c][n - 1];
+    ) -> bool {
+        if *n == 0 {
+            return false;
+        }
+        *n -= 1;
+        *magazine = self.mags[c][*n as usize];
+        true
     }
 }

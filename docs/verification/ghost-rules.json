@@ -2019,6 +2019,9 @@
       "allowed": [
         "HeapCore::depot_park",
         "HeapCore::depot_reload",
+        "HeapCore::depot_reload_tick",
+        "HeapCore::park_overflow",
+        "HeapCore::reload_overflow",
         "HeapCore::depot_tick",
         "HeapCore::depot_release_overflow_pages",
         "HeapCore::depot_decay"
@@ -2030,7 +2033,7 @@
         "depot_park",
         "depot_reload"
       ],
-      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths (park, reload, the G1-K7 overflow decay tick and its cold decay step and the teardown page release), so only the current lease holder touches it",
+      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths (park, the teardown and refill reloads, the G1-K7 cold overflow park and reload, the overflow decay tick and its cold decay step and the teardown page release), so only the current lease holder touches it",
       "tests": [
         "tests/heap_core_depot.rs",
         "tests/loom_depot_recycle_handoff.rs"
@@ -2143,21 +2146,77 @@
       "allowed": [
         "HeapCore::refill_magazine_slow",
         "HeapCore::refill_magazine_slow_virgin",
-        "HeapCore::free_magazine_full"
+        "HeapCore::park_overflow",
+        "HeapCore::reload_overflow_tick"
       ],
       "terms": [
         "decay",
         "depot_tick",
         "teardown",
         "refill",
-        "free"
+        "park_overflow"
       ],
-      "reason": "G1-K7: the overflow decay runs only on the owner's cold refill and free events, never inside the teardown drain (flush_all_tcache / depot_reload), so the drain alone empties the depot",
+      "reason": "G1-K7: the overflow decay runs only on the owner's cold events — a segment refill, an overflow park and an overflow reload made for a refill — never inside the teardown drain (flush_all_tcache / depot_reload / reload_overflow), so the drain alone empties the depot",
       "tests": [
         "tests/g1_k7_depot_overflow.rs",
         "tests/g1_k7_depot_overflow_order.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p12_no_decay_in_teardown"
+    },
+    {
+      "id": "depot/ticking-reload-on-refill-only",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "depot_reload_tick"
+      },
+      "allowed": [
+        "HeapCore::refill_magazine_slow",
+        "HeapCore::refill_magazine_slow_virgin"
+      ],
+      "terms": [
+        "decay",
+        "depot_reload_tick",
+        "teardown",
+        "refill",
+        "depot_reload"
+      ],
+      "reason": "G1-K7: only the two refill paths reload through the ticking variant; the teardown drain reloads through depot_reload, which counts no decay event, so the drain alone empties the depot",
+      "tests": [
+        "tests/g1_k7_depot_overflow.rs",
+        "tests/g1_k7_depot_overflow_order.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_ticking_reload_on_refill"
+    },
+    {
+      "id": "depot/overflow-tick-reload-from-refill-reload",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "reload_overflow_tick"
+      },
+      "allowed": [
+        "HeapCore::depot_reload_tick"
+      ],
+      "terms": [
+        "decay",
+        "reload_overflow_tick",
+        "teardown",
+        "depot_reload_tick",
+        "reload_overflow"
+      ],
+      "reason": "G1-K7: the ticking overflow reload is reached only from the refill's depot_reload_tick; depot_reload (the teardown drain) reaches the non-ticking reload_overflow",
+      "tests": [
+        "tests/g1_k7_depot_overflow.rs",
+        "tests/g1_k7_depot_overflow_order.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_overflow_tick_reload"
     },
     {
       "id": "depot/bind-once",

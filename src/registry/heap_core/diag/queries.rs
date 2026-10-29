@@ -200,14 +200,39 @@ impl HeapCore {
     }
 
     /// TEST-ONLY (B4 DP-3): number of full magazines parked in the depot for
-    /// class `c`; 0 for an unbound heap or a class outside the depot.
+    /// class `c` — the floor plus, under G1-K7, the overflow ring; 0 for an
+    /// unbound heap or a class outside the depot.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
     pub fn dbg_depot_len(&self, c: usize) -> usize {
         if c >= crate::registry::heap_core::state::depot::DEPOT_CLASSES {
             return 0;
         }
-        self.tcache.classes[c].parked as usize
+        let floor = self.tcache.classes[c].parked as usize;
+        #[cfg(feature = "alloc-decommit")]
+        if let Some(depot) = self.depot.as_deref() {
+            return floor + depot.ovf.len(c);
+        }
+        floor
+    }
+
+    /// TEST-ONLY (G1-K7): class `c`'s `(floor magazines, overflow ring
+    /// records, PerClass::ovf hint)`; zeros for an unbound heap or a class
+    /// outside the depot.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit",
+        feature = "internals"
+    ))]
+    pub fn dbg_depot_ring(&self, c: usize) -> (usize, usize, u8) {
+        if c >= crate::registry::heap_core::state::depot::DEPOT_CLASSES {
+            return (0, 0, 0);
+        }
+        let class = &self.tcache.classes[c];
+        let ring = self.depot.as_deref().map_or(0, |d| d.ovf.len(c));
+        (class.parked as usize, ring, class.ovf)
     }
 
     /// TEST-ONLY (G1-K7): `(resolved, effective)` depot-overflow budget in
