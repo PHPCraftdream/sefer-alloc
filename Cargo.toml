@@ -1191,6 +1191,14 @@ required-features = ["alloc-global", "alloc-xthread"]
 # `alloc-decommit` + `fastbin`; with just alloc-global+alloc-xthread each slot is
 # ~192 B and the defect does not manifest. See the example's module docs.
 [[example]]
+name = "own_free_profile"
+required-features = ["production"]
+
+[[example]]
+name = "own_free_wall"
+required-features = ["production"]
+
+[[example]]
 name = "first_alloc_process"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "internals"]
 

@@ -550,6 +550,25 @@ impl AllocCore {
         unsafe { self.flush_class_internal(class_idx, blocks) };
     }
 
+    /// Одноэлементный эквивалент magazine flush без меж-run bookkeeping.
+    ///
+    /// # Safety
+    /// ptr — null или start mapped Small/Primordial блока этого core/class_idx
+    /// с LIVE/MAG credit. Class валиден, unique free; payload разрешён к записи
+    /// для free-list (не активный Box/dealloc frame).
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    #[allow(unsafe_code)]
+    pub(crate) unsafe fn flush_one_magazine_internal(&mut self, class_idx: usize, ptr: *mut u8) {
+        if ptr.is_null() {
+            return;
+        }
+        let key = os::segment_base_of_ptr(ptr);
+        if let Some(base) = self.table.canonical_base_of(key) {
+            let _ = self.flush_run(class_idx, base, core::slice::from_ref(&ptr));
+        }
+    }
+
     /// Production magazine flush.
     ///
     /// # Safety

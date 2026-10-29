@@ -112,6 +112,13 @@ impl StateByte {
         Node::read_u8(Node::offset(self.bytes, (off >> GRANULE_SHIFT) as usize))
     }
 
+    /// Адрес той же owner-гранулы, что read/write; off ранее проверен caller.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    pub(crate) fn slot_ptr(&self, off: u32) -> *mut u8 {
+        Node::offset(self.bytes, (off >> GRANULE_SHIFT) as usize)
+    }
+
     /// Write the state byte of the granule at payload offset `off`.
     #[inline(always)]
     pub(crate) fn write(&self, off: u32, class_idx: usize, state: u8) {
