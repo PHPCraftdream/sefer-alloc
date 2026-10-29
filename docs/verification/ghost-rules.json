@@ -2025,7 +2025,9 @@
         "HeapCore::depot_tick",
         "HeapCore::depot_segment_tick",
         "HeapCore::depot_release_overflow_pages",
-        "HeapCore::depot_decay"
+        "HeapCore::depot_decay",
+        "HeapCore::free_magazine_park",
+        "HeapCore::refill_magazine_miss"
       ],
       "terms": [
         "depot",
@@ -2034,7 +2036,7 @@
         "depot_park",
         "depot_reload"
       ],
-      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths (park, the teardown and refill reloads, the G1-K7 cold overflow park and reload, the overflow decay tick, the segment-refill tick and its cold decay step and the teardown page release), so only the current lease holder touches it",
+      "reason": "the depot is owner-only storage: it is reached only through the &mut HeapCore depot paths (park, the teardown and refill reloads, the G1-K7 cold overflow park and reload, the overflow decay tick, the segment-refill tick and its cold decay step and the teardown page release), the WB-3 full-magazine and miss dispatchers (free_magazine_park, refill_magazine_miss), so only the current lease holder touches it",
       "tests": [
         "tests/heap_core_depot.rs",
         "tests/loom_depot_recycle_handoff.rs"
@@ -2191,6 +2193,60 @@
         "tests/g1_k7_depot_overflow_order.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p12_ticking_reload_on_refill"
+    },
+    {
+      "id": "depot/fast-park-from-full-magazine-only",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "park_simple"
+      },
+      "allowed": [
+        "HeapCore::free_magazine_park"
+      ],
+      "terms": [
+        "decay",
+        "park_simple",
+        "free_magazine_park",
+        "teardown",
+        "tick"
+      ],
+      "reason": "WB-3: the overflow fast lane counts a decay event exactly as park_overflow's depot_tick does, so it may run only where the generic overflow park runs — the own-thread free that found a full magazine (free_magazine_park) — never from the teardown drain, which must count no decay event",
+      "tests": [
+        "tests/wb3_depot_fast_lane_model.rs",
+        "tests/g1_k7_depot_overflow.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_fast_park_from_full_magazine"
+    },
+    {
+      "id": "depot/fast-reload-from-miss-only",
+      "kind": "R5",
+      "protocol": "P12",
+      "files": [
+        "src/registry/heap_core/**"
+      ],
+      "target": {
+        "name": "reload_simple"
+      },
+      "allowed": [
+        "HeapCore::refill_magazine_miss"
+      ],
+      "terms": [
+        "decay",
+        "reload_simple",
+        "refill_magazine_miss",
+        "teardown",
+        "refill"
+      ],
+      "reason": "WB-3: the overflow fast reload counts a decay event exactly as reload_overflow_tick does, so it may run only on the refill's magazine miss (refill_magazine_miss) — never from the teardown drain (flush_all_tcache / depot_reload), so the drain alone empties the depot",
+      "tests": [
+        "tests/wb3_depot_fast_lane_model.rs",
+        "tests/g1_k7_depot_overflow.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p12_fast_reload_from_miss"
     },
     {
       "id": "depot/segment-tick-on-refill-only",

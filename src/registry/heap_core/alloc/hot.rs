@@ -360,7 +360,7 @@ impl HeapCore {
                     // Magazine miss: refill via the outlined slow path.
                     // `#[cold] #[inline(never)]` keeps the closure/split-borrow
                     // complexity out of `alloc`'s frame (task #164 Ir shaping).
-                    return self.refill_magazine_slow(c);
+                    return self.refill_magazine_miss(c);
                 }
                 // not a small class -> fall through to large path
             }
@@ -669,6 +669,56 @@ impl HeapCore {
             Node::zero(ptr, size);
         }
         ptr
+    }
+
+    /// WB-3: the magazine-miss dispatcher. Reloads a parked magazine from the
+    /// floor (no decay tick, as `depot_reload_tick`'s floor arm), or from the
+    /// overflow ring when
+    /// [`DepotOverflow::reload_simple`](crate::registry::heap_core::state::depot_overflow::DepotOverflow::reload_simple)
+    /// takes the steady case — the same writes the generic
+    /// `depot_reload_tick` / `reload_overflow_tick` chain makes there, with
+    /// no call in between. Every other case goes to the unchanged
+    /// [`Self::refill_magazine_slow`].
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cold]
+    #[inline(never)]
+    fn refill_magazine_miss(&mut self, c: usize) -> *mut u8 {
+        use crate::registry::heap_core::state::depot::{DEPOT_CLASSES, DEPOT_K};
+        if c < DEPOT_CLASSES && DEPOT_K[c] != 0 {
+            if let Some(depot) = self.depot.as_deref_mut() {
+                let class = &mut self.tcache.classes[c];
+                debug_assert_eq!(class.count, 0, "a miss finds the magazine empty");
+                let reloaded = if class.parked != 0 {
+                    depot.depot_reload(c, &mut class.parked, &mut class.slots)
+                } else {
+                    // `depot_may_reload`'s overflow hint, then the ring's
+                    // steady case.
+                    #[cfg(feature = "alloc-decommit")]
+                    {
+                        class.ovf != 0
+                            && match depot.ovf.reload_simple(c, &mut class.slots) {
+                                Some(more) => {
+                                    class.ovf = more as u8;
+                                    true
+                                }
+                                None => false,
+                            }
+                    }
+                    #[cfg(not(feature = "alloc-decommit"))]
+                    {
+                        false
+                    }
+                };
+                if reloaded {
+                    #[cfg(feature = "virgin-zero-skip")]
+                    {
+                        class.virgin_mask = 0;
+                    }
+                    return self.finish_magazine_refill(c, TCACHE_CAP);
+                }
+            }
+        }
+        self.refill_magazine_slow(c)
     }
 
     /// Task #164 (Ir shaping): outlined refill-miss path. All split-borrow

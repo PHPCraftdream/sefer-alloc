@@ -504,6 +504,99 @@ mod depot_overflow_proofs {
         kani::cover!(front > 0 && back - front == CAP, "the ring wrapped full");
     }
 
+    /// Builds a ring for class `c` holding `n` records (generic parks), then
+    /// havocs the decay / ingress / latch state around it.
+    fn ring_with(buf: *mut u8, c: usize, n: usize, budget: usize) -> DepotOverflow {
+        let mut o = DepotOverflow::kani_on_buffer(buf, c, CAP as u16);
+        let mut i = 0;
+        while i < n {
+            let mag = [(i + 1) as *mut u8; TCACHE_CAP];
+            assert!(o.park(c, i, &mag, budget));
+            i += 1;
+        }
+        let other: usize = kani::any();
+        kani::assume(other < DEPOT_CLASSES);
+        o.kani_havoc(c, other);
+        o
+    }
+
+    /// WB-3 И-F1: `park_simple` is `park` + `tick` exactly where it accepts —
+    /// the generic park succeeds, the tick finds no decay work, the class is
+    /// neither arming (first record) nor latching (ring full after it), and
+    /// the resulting control and record buffer are identical — and changes
+    /// nothing where it refuses.
+    #[kani::proof]
+    #[kani::unwind(18)]
+    fn park_simple_is_park_then_quiet_tick() {
+        let mut buf = [[core::ptr::null_mut::<u8>(); TCACHE_CAP]; CAP];
+        let c: usize = kani::any();
+        kani::assume(c < DEPOT_CLASSES);
+        let n: usize = kani::any();
+        kani::assume(n < CAP);
+        let mb = SIZE_CLASS_TABLE[c] * TCACHE_CAP;
+        let budget = (CAP + 1) * mb;
+        let pre = ring_with(buf.as_mut_ptr().cast(), c, n, budget);
+        let mag = [0x40 as *mut u8; TCACHE_CAP];
+        let buf_pre = buf;
+
+        let mut generic = pre.clone();
+        let parked = generic.park(c, n, &mag, budget);
+        let due = parked && generic.tick();
+        let buf_generic = buf;
+
+        buf = buf_pre;
+        let mut fast = pre.clone();
+        if fast.park_simple(c, &mag, budget) {
+            assert!(parked && !due);
+            assert!(n != 0 && n + 1 < CAP);
+            assert!(fast == generic);
+            assert!(buf == buf_generic);
+        } else {
+            assert!(fast == pre);
+            assert!(buf == buf_pre);
+        }
+        kani::cover!(n > 0 && n + 1 < CAP, "the steady case is reachable");
+    }
+
+    /// WB-3 И-F2: `reload_simple` is `reload` + `ingress_due` +
+    /// `take_unstarved` + `tick` exactly where it accepts — no ingress check
+    /// due, nothing to reopen, no decay work — with the same record out and
+    /// `Some(records left)`; and changes nothing where it refuses.
+    #[kani::proof]
+    #[kani::unwind(18)]
+    fn reload_simple_is_reload_then_quiet_bookkeeping() {
+        let mut buf = [[core::ptr::null_mut::<u8>(); TCACHE_CAP]; CAP];
+        let c: usize = kani::any();
+        kani::assume(c < DEPOT_CLASSES);
+        let n: usize = kani::any();
+        kani::assume(n <= CAP);
+        let mb = SIZE_CLASS_TABLE[c] * TCACHE_CAP;
+        let budget = (CAP + 1) * mb;
+        let pre = ring_with(buf.as_mut_ptr().cast(), c, n, budget);
+
+        let mut out_fast = [core::ptr::null_mut::<u8>(); TCACHE_CAP];
+        let mut fast = pre.clone();
+        match fast.reload_simple(c, &mut out_fast) {
+            Some(more) => {
+                assert!(n > 0);
+                let mut generic = pre.clone();
+                let mut out_generic = [core::ptr::null_mut::<u8>(); TCACHE_CAP];
+                generic.reload(c, n, &mut out_generic);
+                assert!(!generic.ingress_due());
+                assert_eq!(generic.take_unstarved(budget), 0);
+                assert!(!generic.tick());
+                assert!(fast == generic);
+                assert!(out_fast == out_generic);
+                assert_eq!(more, n > 1);
+            }
+            None => {
+                assert!(fast == pre);
+                assert!(out_fast == [core::ptr::null_mut::<u8>(); TCACHE_CAP]);
+            }
+        }
+        kani::cover!(n > 1, "a reload that leaves records is reachable");
+    }
+
     /// И-O2: for every request the resolved budget is a multiple of 256 B
     /// and floor + overflow ring of any depot class fits `PerClass::limit`.
     #[kani::proof]
