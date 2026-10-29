@@ -795,11 +795,9 @@ fn scalar_and_batch_frees_of_one_pattern_agree_on_every_observer() {
     let mut lease = claim_normalised();
     let heap = lease.core();
 
-    // The task's pattern: 64 blocks of 2048 B — a small class whose
-    // `FREE_PARK_CAP` is the full magazine depth and that has no depot
-    // (G1-K5 parks classes up to 1024 B; `dealloc_batch` never parks), so
-    // both the scalar and the batched free park the same number of blocks
-    // and flush the rest.
+    // The task's pattern: 64 blocks of 2048 B — a small class with the full
+    // magazine as `FREE_PARK_CAP` and no depot (`dealloc_batch` never parks),
+    // so scalar and batched free park the same blocks and flush the rest.
     let layout = Layout::from_size_align(2048, 8).unwrap();
     let n = 64usize;
     let class = heap
@@ -812,8 +810,6 @@ fn scalar_and_batch_frees_of_one_pattern_agree_on_every_observer() {
         census: (usize, usize, bool),
         table: u32,
         magazine: u16,
-        /// Full magazines parked in the slot depot (K5: classes up to 1024 B).
-        depot: usize,
         live: u32,
     }
 
@@ -822,7 +818,6 @@ fn scalar_and_batch_frees_of_one_pattern_agree_on_every_observer() {
             census: census(heap),
             table: table_count(heap),
             magazine: heap.dbg_tcache_count(class),
-            depot: heap.dbg_depot_len(class),
             live: heap
                 .dbg_live_count_for(blocks[0])
                 .expect("the pattern's segment must be small and registered"),
@@ -894,12 +889,12 @@ fn scalar_and_batch_frees_of_one_pattern_agree_on_every_observer() {
         // (one `dec_live` each). A misrouted batch entry would leave one of
         // them issued or double-count it, and this sum would break.
         let flushed = before.live - after.live;
-        let parked = after.magazine as usize + 16 * after.depot;
         assert_eq!(
-            parked + flushed as usize,
+            after.magazine as usize + flushed as usize,
             n,
-            "arm {name}: {parked} magazine- or depot-resident + {flushed} \
-             flushed must account for all {n} freed blocks"
+            "arm {name}: {parked} magazine-resident + {flushed} flushed must \
+             account for all {n} freed blocks",
+            parked = after.magazine
         );
         // Every freed block must be at a real resting place — never still
         // issued, never lost.
@@ -922,10 +917,6 @@ fn scalar_and_batch_frees_of_one_pattern_agree_on_every_observer() {
         assert_eq!(
             after.magazine, scalar_after.magazine,
             "arm {name}: the magazine depth must match the fully-scalar run"
-        );
-        assert_eq!(
-            after.depot, scalar_after.depot,
-            "arm {name}: the depot depth must match the fully-scalar run"
         );
         assert_eq!(
             after.live, scalar_after.live,
