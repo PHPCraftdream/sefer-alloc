@@ -8,7 +8,7 @@ cargo build --release -q --example g1_rhythm_probe --features "$F"
 BIN=target/g1scan/release/examples/g1_rhythm_probe
 R=docs/perf/g1_scan/raw
 mkdir -p $R
-{ git rev-parse HEAD; sha256sum $BIN* | head -1; rustc -vV; echo "features: $F"; echo "RUSTFLAGS: $RUSTFLAGS"; } > docs/perf/g1_scan/run_identity_pc.txt
+{ git rev-parse HEAD; sha256sum $BIN.exe 2>/dev/null || sha256sum $BIN; rustc -vV; echo "features: $F"; echo "RUSTFLAGS: $RUSTFLAGS"; } > docs/perf/g1_scan/run_identity_pc.txt
 for rep in 1 2; do
   for m in 4 5 8 16 64; do
     for o in cyclic seq random; do

@@ -12,7 +12,7 @@ BC=target/g1scan/release/examples/g1_rhythm_probe
 BT=target/g1time/release/examples/g1_rhythm_probe
 R=docs/perf/g1_scan/raw
 mkdir -p $R
-{ git rev-parse HEAD; sha256sum $BC* | head -1; sha256sum $BT* | head -1; rustc -vV; echo "counting features: $FC"; echo "timing features: production"; echo "RUSTFLAGS: $RUSTFLAGS"; } > docs/perf/g1_scan/run_identity_rp.txt
+{ git rev-parse HEAD; sha256sum $BC.exe 2>/dev/null || sha256sum $BC; sha256sum $BT.exe 2>/dev/null || sha256sum $BT; rustc -vV; echo "counting features: $FC"; echo "timing features: production"; echo "RUSTFLAGS: $RUSTFLAGS"; } > docs/perf/g1_scan/run_identity_rp.txt
 for s in 8 32 64; do
   fill=$((s * 65536))
   for frac in 16 4 1; do
