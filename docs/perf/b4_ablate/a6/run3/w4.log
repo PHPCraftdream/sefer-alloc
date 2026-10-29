@@ -1,0 +1,340 @@
+== rep 1 k5
+=== sefer-alloc RSS probe ===
+producers=4  run=10s  large_frac=0.0100  alloc-decommit=ON
+
+Asymmetric scenario: 4 producer thread(s) allocate ONLY; 1 consumer thread frees ONLY.
+All cross-thread frees route through the pinned-route sidecar to the owner heap.
+
+   t_s,     rss_mb,   allocs_total,   frees_total, in_flight_estimate
+     0,       3.58,              0,             0,                  0
+     1,     242.79,        7185778,       6677928,             507850
+     2,     330.50,       13450972,      12748589,             702383
+     3,     405.00,       19049332,      18188122,             861210
+     4,     463.00,       24674388,      23688703,             985685
+     5,     488.11,       30315221,      29274649,            1040572
+     6,     518.74,       35612739,      34497593,            1115146
+     7,     542.20,       40874559,      39708802,            1165757
+     8,     571.71,       45821830,      44591620,            1230210
+     9,     616.10,       50331338,      48998596,            1332742
+    10,     640.73,       54953339,      53569844,            1383495
+
+[cooldown 3s — giving alloc-decommit time to return empty segments]
+
+=== Summary ===
+  Total allocs : 54953765
+  Total frees  : 54953765
+  In-flight    : 0 (allocs-frees; should be ~0 after drain)
+  Peak RSS     : 640.73 MB
+  Final RSS    : 640.33 MB
+  Recovery ratio (final/peak): 0.9994
+  → ratio near 1.0 — decommit may need more time or segments still live.
+
+NOTE: in-flight estimates are allocations minus observed frees.
+
+NOTE: Run with --features alloc-decommit to compare recovery ratio.
+== rep 1 k7
+=== sefer-alloc RSS probe ===
+producers=4  run=10s  large_frac=0.0100  alloc-decommit=ON
+
+Asymmetric scenario: 4 producer thread(s) allocate ONLY; 1 consumer thread frees ONLY.
+All cross-thread frees route through the pinned-route sidecar to the owner heap.
+
+   t_s,     rss_mb,   allocs_total,   frees_total, in_flight_estimate
+     0,       3.60,              0,             0,                  0
+     1,     290.64,        6000914,       5389298,             611616
+     2,     368.48,       11158893,      10373700,             785193
+     3,     464.68,       15426044,      14430084,             995960
+     4,     536.69,       19730846,      18573230,            1157616
+     5,     597.98,       23276030,      21985233,            1290797
+     6,     643.56,       27144938,      25753256,            1391682
+     7,     699.57,       30565789,      29049034,            1516755
+     8,     724.95,       34285100,      32713933,            1571167
+     9,     776.36,       37346793,      35658142,            1688651
+    10,     806.36,       40325673,      38574093,            1751580
+
+[cooldown 3s — giving alloc-decommit time to return empty segments]
+
+=== Summary ===
+  Total allocs : 40326177
+  Total frees  : 40326177
+  In-flight    : 0 (allocs-frees; should be ~0 after drain)
+  Peak RSS     : 806.36 MB
+  Final RSS    : 805.86 MB
+  Recovery ratio (final/peak): 0.9994
+  → ratio near 1.0 — decommit may need more time or segments still live.
+
+NOTE: in-flight estimates are allocations minus observed frees.
+
+NOTE: Run with --features alloc-decommit to compare recovery ratio.
+== rep 2 k7
+=== sefer-alloc RSS probe ===
+producers=4  run=10s  large_frac=0.0100  alloc-decommit=ON
+
+Asymmetric scenario: 4 producer thread(s) allocate ONLY; 1 consumer thread frees ONLY.
+All cross-thread frees route through the pinned-route sidecar to the owner heap.
+
+   t_s,     rss_mb,   allocs_total,   frees_total, in_flight_estimate
+     0,       3.38,              0,             0,                  0
+     1,     253.54,        6671807,       6135258,             536549
+     2,     379.73,       12064445,      11254332,             810113
+     3,     451.66,       17376029,      16413321,             962708
+     4,     502.20,       22553077,      21479007,            1074070
+     5,     549.83,       27806078,      26618956,            1187122
+     6,     564.61,       33052975,      31843272,            1209703
+     7,     585.53,       38254963,      36997662,            1257301
+     8,     602.03,       43269141,      41971630,            1297511
+     9,     634.58,       47362731,      45989086,            1373645
+    10,     655.07,       51498116,      50080937,            1417179
+
+[cooldown 3s — giving alloc-decommit time to return empty segments]
+
+=== Summary ===
+  Total allocs : 51498120
+  Total frees  : 51498120
+  In-flight    : 0 (allocs-frees; should be ~0 after drain)
+  Peak RSS     : 655.07 MB
+  Final RSS    : 654.49 MB
+  Recovery ratio (final/peak): 0.9991
+  → ratio near 1.0 — decommit may need more time or segments still live.
+
+NOTE: in-flight estimates are allocations minus observed frees.
+
+NOTE: Run with --features alloc-decommit to compare recovery ratio.
+== rep 2 k5
+=== sefer-alloc RSS probe ===
+producers=4  run=10s  large_frac=0.0100  alloc-decommit=ON
+
+Asymmetric scenario: 4 producer thread(s) allocate ONLY; 1 consumer thread frees ONLY.
+All cross-thread frees route through the pinned-route sidecar to the owner heap.
+
+   t_s,     rss_mb,   allocs_total,   frees_total, in_flight_estimate
+     0,       3.25,              0,             0,                  0
+     1,     258.07,        6644254,       6104839,             539415
+     2,     340.10,       12769341,      12049777,             719564
+     3,     376.87,       18632922,      17835105,             797817
+     4,     428.97,       24209915,      23295166,             914749
+     5,     475.95,       29524525,      28506491,            1018034
+     6,     536.37,       34564983,      33409626,            1155357
+     7,     570.52,       39495834,      38269785,            1226049
+     8,     588.95,       44361640,      43092849,            1268791
+     9,     654.69,       46787142,      45358458,            1428684
+    10,     711.84,       50285475,      48738660,            1546815
+
+[cooldown 3s — giving alloc-decommit time to return empty segments]
+
+=== Summary ===
+  Total allocs : 50285690
+  Total frees  : 50285690
+  In-flight    : 0 (allocs-frees; should be ~0 after drain)
+  Peak RSS     : 711.84 MB
+  Final RSS    : 711.14 MB
+  Recovery ratio (final/peak): 0.9990
+  → ratio near 1.0 — decommit may need more time or segments still live.
+
+NOTE: in-flight estimates are allocations minus observed frees.
+
+NOTE: Run with --features alloc-decommit to compare recovery ratio.
+== rep 3 k5
+=== sefer-alloc RSS probe ===
+producers=4  run=10s  large_frac=0.0100  alloc-decommit=ON
+
+Asymmetric scenario: 4 producer thread(s) allocate ONLY; 1 consumer thread frees ONLY.
+All cross-thread frees route through the pinned-route sidecar to the owner heap.
+
+   t_s,     rss_mb,   allocs_total,   frees_total, in_flight_estimate
+     0,       3.32,              0,             0,                  0
+     1,     267.37,        6109394,       5546990,             562404
+     2,     368.11,       11366891,      10583144,             783747
+     3,     444.95,       16079296,      15126473,             952823
+     4,     513.17,       20052874,      18948023,            1104851
+     5,     553.32,       24800055,      23611997,            1188058
+     6,     595.80,       29241697,      27956171,            1285526
+     7,     633.75,       32916835,      31553048,            1363787
+     8,     662.02,       36953771,      35519184,            1434587
+     9,     703.18,       40820287,      39295601,            1524686
+    10,     715.44,       44893890,      43347962,            1545928
+
+[cooldown 3s — giving alloc-decommit time to return empty segments]
+
+=== Summary ===
+  Total allocs : 44894450
+  Total frees  : 44894450
+  In-flight    : 0 (allocs-frees; should be ~0 after drain)
+  Peak RSS     : 715.44 MB
+  Final RSS    : 715.10 MB
+  Recovery ratio (final/peak): 0.9995
+  → ratio near 1.0 — decommit may need more time or segments still live.
+
+NOTE: in-flight estimates are allocations minus observed frees.
+
+NOTE: Run with --features alloc-decommit to compare recovery ratio.
+== rep 3 k7
+=== sefer-alloc RSS probe ===
+producers=4  run=10s  large_frac=0.0100  alloc-decommit=ON
+
+Asymmetric scenario: 4 producer thread(s) allocate ONLY; 1 consumer thread frees ONLY.
+All cross-thread frees route through the pinned-route sidecar to the owner heap.
+
+   t_s,     rss_mb,   allocs_total,   frees_total, in_flight_estimate
+     0,       3.33,              0,             0,                  0
+     1,     273.19,        6149832,       5572862,             576970
+     2,     371.55,       11495152,      10703732,             791420
+     3,     468.69,       15666219,      14666257,             999962
+     4,     512.21,       20473193,      19373418,            1099775
+     5,     563.20,       24840577,      23632137,            1208440
+     6,     593.88,       29428660,      28148588,            1280072
+     7,     641.37,       33580403,      32196078,            1384325
+     8,     660.65,       37430136,      36000822,            1429314
+     9,     707.54,       40856707,      39321670,            1535037
+    10,     737.31,       44415551,      42816342,            1599209
+
+[cooldown 3s — giving alloc-decommit time to return empty segments]
+
+=== Summary ===
+  Total allocs : 44415879
+  Total frees  : 44415879
+  In-flight    : 0 (allocs-frees; should be ~0 after drain)
+  Peak RSS     : 737.31 MB
+  Final RSS    : 736.86 MB
+  Recovery ratio (final/peak): 0.9994
+  → ratio near 1.0 — decommit may need more time or segments still live.
+
+NOTE: in-flight estimates are allocations minus observed frees.
+
+NOTE: Run with --features alloc-decommit to compare recovery ratio.
+== rep 4 k7
+=== sefer-alloc RSS probe ===
+producers=4  run=10s  large_frac=0.0100  alloc-decommit=ON
+
+Asymmetric scenario: 4 producer thread(s) allocate ONLY; 1 consumer thread frees ONLY.
+All cross-thread frees route through the pinned-route sidecar to the owner heap.
+
+   t_s,     rss_mb,   allocs_total,   frees_total, in_flight_estimate
+     0,       3.38,              0,             0,                  0
+     1,     270.21,        6431155,       5857196,             573959
+     2,     375.66,       11719388,      10918988,             800400
+     3,     445.89,       16893754,      15932945,             960809
+     4,     507.50,       21638831,      20548183,            1090648
+     5,     559.04,       26517958,      25313424,            1204534
+     6,     588.46,       31051082,      29782268,            1268814
+     7,     609.92,       35840353,      34525454,            1314899
+     8,     638.89,       39760435,      38373511,            1386924
+     9,     680.61,       43841120,      42372915,            1468205
+    10,     712.39,       47693771,      46144235,            1549536
+
+[cooldown 3s — giving alloc-decommit time to return empty segments]
+
+=== Summary ===
+  Total allocs : 47694016
+  Total frees  : 47694016
+  In-flight    : 0 (allocs-frees; should be ~0 after drain)
+  Peak RSS     : 712.39 MB
+  Final RSS    : 711.86 MB
+  Recovery ratio (final/peak): 0.9993
+  → ratio near 1.0 — decommit may need more time or segments still live.
+
+NOTE: in-flight estimates are allocations minus observed frees.
+
+NOTE: Run with --features alloc-decommit to compare recovery ratio.
+== rep 4 k5
+=== sefer-alloc RSS probe ===
+producers=4  run=10s  large_frac=0.0100  alloc-decommit=ON
+
+Asymmetric scenario: 4 producer thread(s) allocate ONLY; 1 consumer thread frees ONLY.
+All cross-thread frees route through the pinned-route sidecar to the owner heap.
+
+   t_s,     rss_mb,   allocs_total,   frees_total, in_flight_estimate
+     0,       3.33,              0,             0,                  0
+     1,     244.54,        6271813,       5765287,             506526
+     2,     336.48,       11810208,      11098961,             711247
+     3,     372.67,       17104716,      16313036,             791680
+     4,     444.09,       22103349,      21147193,             956156
+     5,     501.01,       26271704,      25197652,            1074052
+     6,     558.84,       30381963,      29176884,            1205079
+     7,     590.82,       34579158,      33308220,            1270938
+     8,     632.92,       38984778,      37615918,            1368860
+     9,     687.67,       42465096,      40970124,            1494972
+    10,     755.69,       46121795,      44475938,            1645857
+
+[cooldown 3s — giving alloc-decommit time to return empty segments]
+
+=== Summary ===
+  Total allocs : 46122416
+  Total frees  : 46122416
+  In-flight    : 0 (allocs-frees; should be ~0 after drain)
+  Peak RSS     : 755.69 MB
+  Final RSS    : 755.20 MB
+  Recovery ratio (final/peak): 0.9993
+  → ratio near 1.0 — decommit may need more time or segments still live.
+
+NOTE: in-flight estimates are allocations minus observed frees.
+
+NOTE: Run with --features alloc-decommit to compare recovery ratio.
+== rep 5 k5
+=== sefer-alloc RSS probe ===
+producers=4  run=10s  large_frac=0.0100  alloc-decommit=ON
+
+Asymmetric scenario: 4 producer thread(s) allocate ONLY; 1 consumer thread frees ONLY.
+All cross-thread frees route through the pinned-route sidecar to the owner heap.
+
+   t_s,     rss_mb,   allocs_total,   frees_total, in_flight_estimate
+     0,       3.37,              0,             0,                  0
+     1,     280.41,        5978035,       5386140,             591895
+     2,     415.04,       10513168,       9623704,             889464
+     3,     507.82,       15025725,      13938259,            1087466
+     4,     580.64,       18827554,      17571020,            1256534
+     5,     654.75,       22746732,      21344625,            1402107
+     6,     710.43,       25947279,      24405276,            1542003
+     7,     745.51,       29252582,      27634598,            1617984
+     8,     783.13,       33452719,      31755012,            1697707
+     9,     825.80,       37060271,      35261985,            1798286
+    10,     848.54,       40571624,      38728102,            1843522
+
+[cooldown 3s — giving alloc-decommit time to return empty segments]
+
+=== Summary ===
+  Total allocs : 40571848
+  Total frees  : 40571848
+  In-flight    : 0 (allocs-frees; should be ~0 after drain)
+  Peak RSS     : 848.54 MB
+  Final RSS    : 848.16 MB
+  Recovery ratio (final/peak): 0.9996
+  → ratio near 1.0 — decommit may need more time or segments still live.
+
+NOTE: in-flight estimates are allocations minus observed frees.
+
+NOTE: Run with --features alloc-decommit to compare recovery ratio.
+== rep 5 k7
+=== sefer-alloc RSS probe ===
+producers=4  run=10s  large_frac=0.0100  alloc-decommit=ON
+
+Asymmetric scenario: 4 producer thread(s) allocate ONLY; 1 consumer thread frees ONLY.
+All cross-thread frees route through the pinned-route sidecar to the owner heap.
+
+   t_s,     rss_mb,   allocs_total,   frees_total, in_flight_estimate
+     0,       3.27,              0,             0,                  0
+     1,     281.97,        5843913,       5253975,             589938
+     2,     377.54,       10968557,      10160988,             807569
+     3,     451.93,       15423545,      14456979,             966566
+     4,     514.86,       20404982,      19296952,            1108030
+     5,     565.75,       24202601,      22998783,            1203818
+     6,     632.98,       27683313,      26317424,            1365889
+     7,     672.87,       31807404,      30365374,            1442030
+     8,     695.12,       34191866,      32695580,            1496286
+     9,     790.80,       37436820,      35717856,            1718964
+    10,     815.19,       40244122,      38467763,            1776359
+
+[cooldown 3s — giving alloc-decommit time to return empty segments]
+
+=== Summary ===
+  Total allocs : 40244140
+  Total frees  : 40244140
+  In-flight    : 0 (allocs-frees; should be ~0 after drain)
+  Peak RSS     : 815.19 MB
+  Final RSS    : 814.45 MB
+  Recovery ratio (final/peak): 0.9991
+  → ratio near 1.0 — decommit may need more time or segments still live.
+
+NOTE: in-flight estimates are allocations minus observed frees.
+
+NOTE: Run with --features alloc-decommit to compare recovery ratio.

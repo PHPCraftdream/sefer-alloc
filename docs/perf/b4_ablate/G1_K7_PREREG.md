@@ -457,3 +457,101 @@ Addendum 6 is the last re-measurement of design revisions 4–5. If v5 fails
 any rule, G1-K7 is NO-GO for this round; v4 and v5 data stay published; a
 later attempt needs a new design and a new pre-registration. Data of v1–v4
 never enter a v5 decision.
+
+## Addendum 7 (2026-10-29, after the Addendum 6 speed decision, before run 3)
+
+Written after the run 1 / run 2 data (`G1_K7_A6_VERDICT.md`), so it is an
+owner decision on a known result, not a pre-registered rule.
+
+Rule 2a stands. The owner grants one exception to it for v5, on the
+measured trade-off: the rule-2a loss is pair16 E_v +0.62 % [0.47, 0.73] and
+pair64 +0.73 % [0.61, 0.79] in run 1, not seen by run 2 (pair16 K7/K5 1.0021,
+no detected difference; pair64 1.0181, K7 faster), against rule-1 wins of
+bulk16k 1.675, churn64 1.081 and churn1024 1.047 in run 2 and bulk64k
+−9.88 %, bulk16k_32 −26.82 % in run 1. Owner's words: «правило не снято.
+Тут просто разумное исключение. Трейдоф в нашу пользу».
+
+Scope of the exception: exactly these two kernels at these magnitudes, for
+v5 (`f2b0c115`, run-2 tree `3b6b754e`). It is not a precedent and does not
+change rule 2a for any later candidate.
+
+Everything else in Addendum 6 holds unchanged. Rules 3 (RSS, run 3), 4 (Ir,
+`iai` against `2bc830cc`) and 5 (evidence) remain conditions for merging,
+in the registered order: run 3's harness `examples/g1_k7_rss_judge.rs` is
+committed identically to both trees with its sha256 before any run-3 data.
+If rule 3 or 4 fails, G1-K7 is NO-GO as Addendum 6 § Finite says.
+
+## Addendum 8 (2026-10-29, before any run-3 data)
+
+Run 3 as implemented, after two rush reviews (`.rush/stdin/g1-k7-rss-prereg{,2}.answer.md`
+on the measurement host). Rule 3's loss rule and N are unchanged; this
+fixes the operational details and the deviations from its text.
+
+Identity, committed before any run-3 data:
+- harness `examples/g1_k7_rss_judge.rs`, byte-identical in both trees,
+  sha256 `f0ea733269fc714ed7ab51c04c980b9589404a27721abdf63aa4eaaa371754df`;
+  K5 tree `5d81dc7d` (= `2bc830cc` + the harness, branch `g1-k5-rss`), K7
+  tree `1decb4e8` (= run-2 tree `3b6b754e` + the harness; `src/` unchanged);
+- driver `docs/perf/b4_ablate/a6/run3/run3.sh` sha256 `da4adf351b3efc977d02b4cd9a307b7acba7debe906ebd61a27f30ef41d5be4d` (refuses to start
+  unless both trees are at these commits, clean, and the harness hash
+  matches; one retry per invocation, every attempt kept, a second failure
+  ends run 3 as inconclusive);
+- analysis `scripts/g1_k7_a6_rss.mjs` sha256 `96295f0fea97f188d4e71774b6b3b134d5fb7f30f46a510731a4d2e4ade022b2`.
+
+Arms are fixed at build time (`--cfg g1_k7` + `G1_K7_E`, `--cfg g1_mi`,
+none), one subprocess per (arm, workload, repetition), arm order rotated by
+one position per round; W4 alternates its two arms.
+
+Workloads (every allocated block gets one byte written):
+- W1: the oracle's G11 shapes round-robin, 50 cycles; W2: bulk64k, 50
+  passes; W3: bulk16k_32, 50 passes.
+- W5 is split into two branches (deviation): W5i = fill, P0, 1 s idle, P2;
+  W5c = fill, P0, 50 rounds of 4096 × 256 B allocated then freed, P1. The
+  fill is 64 bulk16k passes; it must reach a cohort steady state (the last 4
+  per-pass overflow byte counts equal). One bulk16k cohort is 1 MiB, so at
+  E = 2 MiB the plateau lies below the budget (deviation: "until the
+  overflow is full" is operationalised as this plateau, not a full budget).
+  W5c is a bulk256 park/reload workload: its refills come from segments or
+  from the overflow (both tick the decay); the number of segment refills is
+  not fixed (deviation from "a fixed number of segment refills").
+- W4: `examples/rss_probe.rs` unchanged, K5 vs v5 at the default E; it has
+  no budget read-back or conflict delta (the probe uses `SeferAlloc::new()`,
+  the default budget by construction); its evidence is the binary identity.
+
+Snapshots and allowance A (E = 0: A = 0 everywhere):
+- S1 = process peak RSS (PeakWorkingSetSize), A = E + the maximum overflow
+  committed record bytes over per-pass checkpoints (not the metadata at the
+  instant of the peak);
+- S2, P0, P1, P2 (thread alive): A = E + committed record bytes at that
+  snapshot;
+- S3 (1 s after thread exit): A = 0 (teardown releases the record pages);
+- W4 peak and final: A = 0.
+All snapshots are decisive. Statistic = median of 5; N as registered.
+
+Evidence (rule 5) is split: P3 / P4 (recorded in Addendum 6) carry the
+per-kernel oracle of all 13 kernels in the mixed round-robin regime; run 3
+checks its own isolated arms: requested = E, resolved = E rounded down to
+256 B, effective = resolved, config_conflicts_delta = 0, every RSS read > 0
+and every counter a non-negative integer; E = 0: no overflow parks or bytes;
+E > 0: parks > 0 on every workload, "reloads ≈ parks" operationalised as
+reloads ≥ 0.9 · parks on W3 (S2) and on the W5 fill (P0), budget refusals > 0
+on W2, decay_flushed = 0 on W2 / W3 (S2) and on the W5 fill (P0); K5 and
+mimalloc report zero overflow counters. A failed check makes run 3
+unusable, not a pass.
+
+## Addendum 9 (2026-10-29, after run-3 data, analysis defect only)
+
+The run-3 campaign completed (no retries; 150 judge processes, 10 W4
+probes). The analysis script stopped on its own evidence check
+"k7_524288 W2 rep 1: no budget refusal on bulk64k". The check was narrower
+than the registered rule: Addendum 6 rule 5 asks for "budget refusals **or
+ring-full gating** on bulk64k", and Addendum 8 dropped the second branch.
+The data show the second branch in every K7 W2 process: overflow bytes =
+the resolved budget exactly (524 288 / 1 048 576 / 2 097 152), parks =
+25 600 / 51 200 / 102 400, budget_refusals = 0 — after the overflow fills,
+`DepotOverflow::starve` latches the class (`PerClass::limit` lowered) and no
+further park is attempted, so nothing is refused. The script now checks
+`budget_refusals > 0 || overflow bytes == resolved budget`
+(sha256 `3b393518b85343ec22c9235ef7b9018dccbc8b2e08628308ca8c84c33d4bf5d1`); no other check, threshold, statistic or the loss rule
+changes. This is a correction of the analysis toward the registered text,
+written after the data and before any RSS number was read.
