@@ -1487,7 +1487,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 
 This is a verification-first project, but the terminal-sidecar snapshot still
 needs its acceptance run. The present tree contains **465 integration test files**,
-**100 example binaries**, **34 benches**, and **23 root Loom models**
+**101 example binaries**, **34 benches**, and **23 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
