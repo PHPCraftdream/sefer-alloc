@@ -191,7 +191,7 @@ if (reps !== null) {
         { timeout: runTimeout, label: `judge-${mode}-r${i}` });
     }
   }
-  const kernels = "pair16,pair64,pair_rt,bulk64,bulk16k,churn16,churn64,churn256,churn1024,vec512,larson,bulk64k,bulk16k_32";
+  const kernels = "pair16,pair64,pair_rt,bulk64,bulk16k,churn16,churn64,churn256,churn1024,vec512,larson";
   console.log(`[run] generator (process-replicated, reps=${reps}, order seeds base..base+${reps - 1})`);
   runAndEcho(process.execPath,
     ["scripts/b4_interleave_rep_table.mjs", "--dir", outDir, "--reps", String(reps),

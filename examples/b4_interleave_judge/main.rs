@@ -382,7 +382,7 @@ pub mod judge {
         "{{\"header\":true,\"mode\":\"{}\",\"blocks\":{},\"seed\":\"{:#x}\",\"order_seed\":\"{:#x}\",\
          \"head_sha\":\"{}\",\"cpu\":\"{}\",\"os\":\"{}\",\
          \"source_diff_sha256\":\"{}\",\"exe_sha256\":\"{}\",\"features\":\"{}\",\"profile\":\"{}\",\"rustc\":\"{}\",\"os_version\":\"{}\",\
-         \"tsc_invariant\":{},\"qpc_freq\":{},\"pair_ops\":{},\"bulk64_n\":{},\"bulk64_passes\":{},\"bulk16k_n\":{},\"bulk16k_passes\":{},\"bulk64k_n\":{},\"bulk64k_passes\":{},\"bulk16k32_n\":{},\"bulk16k32_passes\":{},\"churn_live\":{},\"churn_ops\":{},\"churn1024_ops\":{},\"vec_elems\":{},\"vec_cycles\":{},\"larson_live\":{},\"larson_ops\":{},\"larson_min\":{},\"larson_max\":{},\"larson_step\":{},\"rt_min\":{},\"rt_max\":{},\"rt_granule\":{},\"portion_seed_g\":\"{:#x}\",\"larson_align\":{},\"vec_align\":{},\"churn_align\":{},\"pair_align\":{},\"warmup_portions\":{},\"kernels\":{}}}",
+         \"tsc_invariant\":{},\"qpc_freq\":{},\"pair_ops\":{},\"bulk64_n\":{},\"bulk64_passes\":{},\"bulk16k_n\":{},\"bulk16k_passes\":{},\"churn_live\":{},\"churn_ops\":{},\"churn1024_ops\":{},\"vec_elems\":{},\"vec_cycles\":{},\"larson_live\":{},\"larson_ops\":{},\"larson_min\":{},\"larson_max\":{},\"larson_step\":{},\"rt_min\":{},\"rt_max\":{},\"rt_granule\":{},\"portion_seed_g\":\"{:#x}\",\"larson_align\":{},\"vec_align\":{},\"churn_align\":{},\"pair_align\":{},\"warmup_portions\":{},\"kernels\":{}}}",
         args.mode.name(),
         args.blocks,
         args.seed,
@@ -403,10 +403,6 @@ pub mod judge {
         BULK64_PASSES,
         BULK16K_N,
         BULK16K_PASSES,
-        BULK64K_N,
-        BULK64K_PASSES,
-        BULK16K32_N,
-        BULK16K32_PASSES,
         CHURN_LIVE,
         CHURN_OPS,
         CHURN1024_OPS,
