@@ -621,6 +621,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 258 | `RESOLVED.md` |
 | 259 | `RESOLVED.md` |
 | 260 | `TRACKED_ci_gate_coverage.md` |
+| 261 | `RESOLVED.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
