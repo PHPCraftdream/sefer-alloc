@@ -3240,26 +3240,12 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** K1 (drain without the redundant class-code re-issue) judged by J1′ v2 against main and against mimalloc; K2 (free class from the state byte) needs an owner decision (wrong-Layout free becomes a free into the true class instead of a silent no-op).
    > - **Evidence:** docs/perf/G1_IDEAS.md, docs/perf/g1_pmu/ (raw perf stat and callgrind logs, run scripts, `G1_PMU_table.md`, `G1_PMU_summary.csv`), scripts/g1_pmu_summary.mjs, examples/b4_pmu_probe.rs.
 
-125. **[A] G1-K1 — drain without the redundant ClassLeaves class-code re-issue: GO, shipping `perf(runtime)`.** (Filed 2026-10-28, `docs/perf/G1_K1_DRAIN_GATE.md`.)
-   > **Current state**
-   > - **Status:** GO by pre-registration (`docs/perf/g1_k1/G1_K1_PREREG.md`); code in the same PR as this card. Close after CI is green on the landing SHA.
-   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k1-meas`@`afe594b4`):** faster on 7 of 11 — bulk16k 1.071× (CI −7.35…−6.41 %), churn256 1.064×, churn1024 1.060×, churn16 1.031×, churn64 1.014×, larson 1.009×, pair_rt 1.003×; pair16, pair64 equal; slower bulk64 1.018× (CI +1.54…+2.00 %, within the pre-registered +2 % tolerance) and vec512 1.005× (not admitted by the main judge). Callgrind: bulk16k −10.63 % Ir, mixed 256/1024 −8.97 %, bulk64 +0.02 %. Against mimalloc (`g1-k1`@`c0c4eacf`): bulk16k mimalloc faster 1.955× (was 2.104× in the B2 run, different runs).
-   > - **Next trigger:** close on a green landing CI. Open sub-item: bulk64's +1.8 % comes with unchanged instructions and no drain call on that kernel (route Ir 0 in both variants) — re-check with PMU (frontend/DSB counters) if a later candidate also moves bulk64 without changing its instructions.
-   > - **Evidence:** docs/perf/G1_K1_DRAIN_GATE.md, docs/perf/G1_K1_DRAIN_GATE_summary.csv, docs/perf/G1_K1_DRAIN_GATE_summary_callgrind.csv, docs/perf/g1_k1/, scripts/g1_k1_gate_report.mjs, tests/g1_k1_drain_class_code.rs.
-
 126. **[L] G1-K2 — free class from the state byte instead of `class_for(layout)`: honest reject (NO-GO by PMU, latency).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §6.)
    > **Current state**
    > - **Status:** NO-GO before the judge; prototype on branch `g1-k2`@`a707eb13`, production unchanged. Design chosen with @oh and the rush reviewer: option (b), non-`hardened` only; `hardened` and the batch free keep the exact Layout check.
    > - **Current verdict (ИЗМЕРЕНО, perf stat, b4_pmu_probe, K2 vs K1, sefer arm, 3 repeats):** instructions −6 … −10 % on every shape, cycles bulk64 0.904×, mixed 256/1024 0.954×, bulk16k 0.969×, but pair16 1.140× (ns/op 1.162×, 3/3 repeats slower) and churn16 1.052×. The state byte just written by alloc becomes the index of the magazine count load: store→load latency on the critical path. The pre-registered "pair16 ≤ +1 %" bar cannot pass.
    > - **Next trigger:** a variant that keeps the Layout class as the (parallel) index and uses the byte only for the reject branch while still cutting `class_for` instructions (e.g. saturating SIZE2CLASS sentinel instead of the bounds-check branch, no redundant `.max(MIN_BLOCK)`), judged by J1′ v2.
    > - **Evidence:** docs/perf/G1_IDEAS.md §6, docs/perf/g1_pmu/k2/ (raw perf stat and callgrind logs, compare table and CSV), scripts/g1_fe_compare.mjs.
-
-127. **[A] G1-K5 — magazine depot for classes 240..1024 B (K = 2): GO, shipping `perf(runtime)`.** (Filed 2026-10-28, `docs/perf/G1_K5_DEPOT_GATE.md`.)
-   > **Current state**
-   > - **Status:** GO by pre-registration (`docs/perf/g1_k5/G1_K5_PREREG.md`); code in the same PR as this card, stacked on K1 (item 125). Close after CI is green on the landing SHA.
-   > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k5-meas`@`319517f7`):** churn1024 faster 1.110×, churn256 1.090× (CI −9.76…−6.49 %), larson 1.080×, churn16 1.030×; pair16, pair64, pair_rt, bulk16k, churn64, vec512 equal; bulk64 slower 1.016× (CI +1.15…+1.86 %, within the +2 % tolerance; instructions unchanged, the null copy's A/B is −1.71 % — same pattern as K1). Against mimalloc (`g1-k5`): larson mimalloc faster 1.019× (was 1.103×), churn1024 1.130× (was 1.288×). Parked-block bound per thread 64 256 → 241 408 B; RSS not measured.
-   > - **Next trigger:** close on a green landing CI. Shared open sub-item with item 125: bulk64's +1.6…+1.8 % with unchanged instructions in two consecutive ablations points at the null copy's layout on that kernel — check the harness (a second null build, or a swapped-slot null) before the next bulk64-sensitive gate.
-   > - **Evidence:** docs/perf/G1_K5_DEPOT_GATE.md, docs/perf/G1_K5_DEPOT_GATE_summary.csv, docs/perf/G1_K5_DEPOT_GATE_summary_callgrind.csv, docs/perf/g1_k5/, scripts/g1_k5_gate_report.mjs, tests/heap_core_depot.rs.
 
 128. **[L] G1-K6 — flush without the per-call `recycled_bases` zeroing and the `prev_ptr` stack spill: NO-GO by ceiling (below the layout-noise floor).** (Filed 2026-10-28, `docs/perf/G1_IDEAS.md` §7.)
    > **Current state**
@@ -3290,6 +3276,8 @@ is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
 
+- **Item 125 — G1-K1 drain without the redundant ClassLeaves class-code re-issue: GO, shipped `perf(runtime)`, closed 2026-10-29** (PR #125, landing `4bb7948b`, CI run 40797094066 green; net of null bulk16k faster 1.071×, churn256 1.064×, churn1024 1.060×; bulk64 1.018× slower within the pre-registered +2 % tolerance). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
+- **Item 127 — G1-K5 magazine depot for classes 240..1024 B (K = 2): GO, shipped `perf(runtime)`, closed 2026-10-29** (PR #126, landing `10635968`, CI run 40831025762 green; net of null churn1024 faster 1.110×, churn256 1.090×, larson 1.080×; bulk64 1.016× slower within the +2 % tolerance). The shared bulk64 null-layout sub-item is taken up by the G1-K7 layout control U (Addendum 6, PR #128). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 - **Item 117 — B1-D magazine depot (Bonwick): GO, shipped `perf(runtime)`, closed 2026-10-26** (PR #100, landing `02b1f144`, CI run 40369754081 green; net of null bulk64 faster 1.778×, churn64 1.481×, no kernel slower). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A117.
 - **Item 118 — B1 single-pass flush runs + cold full-magazine free tail: GO, shipped `perf(runtime)`, closed 2026-10-27** (PR #102, landing `18adf602`, CI run 40420170627 green; net of null bulk16k faster 1.091×, pair16 1.040×, 9 of 11 kernels faster, none slower). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A118.
 - **Item 120 — B2 one-pass freelist drain: GO, shipped `perf(runtime)`, closed 2026-10-27** (PR #105, landing `7fdf1768`, CI run 40448993969 green; net of null churn1024 faster 1.133×, churn256 1.062×, bulk16k 1.036×, 7 of 11 kernels faster, none slower). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A120.

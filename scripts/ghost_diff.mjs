@@ -24,8 +24,10 @@ const BUILD_GRAPH = /^(?:(?:[^/]+\/)*Cargo\.(?:toml|lock)|(?:[^/]+\/)*build\.rs|
 const GHOST_TOKEN = /ghost|shadow|\b(?:loom|miri|kani)\b/i;
 export const isBuildInput = (path) => path.startsWith('src/') || path.startsWith('crates/');
 
-// `changed`: Map path -> array of changed line texts (without the +/- sign).
-export function zeroCostSkip(subjects, changed) {
+// `changed`: Map path -> array of changed line texts (without the +/- sign);
+// `dirty`: `git status --porcelain` lines — any uncommitted change keeps the proof.
+export function zeroCostSkip(subjects, changed, dirty = []) {
+  if (dirty.length) return null;
   if (!subjects.some((s) => RUNTIME.test(s))) return null;
   for (const s of subjects) {
     if (!CONVENTIONAL.test(s)) return null;
@@ -50,13 +52,14 @@ export function changedLines(diff) {
   return out;
 }
 
-// The exception is decided on BASE..HEAD commits, so the checkout must be that
-// state: the classified head itself, or the PR merge ref whose parents are
-// exactly [base, head]; and no uncommitted change to any tracked or untracked
-// path. -> null when consistent, else why the exception cannot apply.
-export function endpointsMismatch({ base, head, checkout, parents, dirty }) {
-  if (dirty.length) return `uncommitted changes in the checkout: ${dirty.slice(0, 5).join(', ')}`;
-  if (checkout === head) return null;
-  if (parents.length === 2 && parents[0] === base && parents[1] === head) return null;
-  return `checkout ${checkout} is neither the classified head ${head} nor its merge onto ${base}`;
+// The base both the classification and the proof use. The checkout must be
+// the head itself (base = the recorded one) or the PR merge ref [p0, head],
+// whose first parent is the base branch tip GitHub merged onto; the recorded
+// `pull_request.base.sha` is not refreshed when the base branch moves, so it
+// must only reach p0 (`reaches`: `git merge-base --is-ancestor recorded p0`,
+// false on any error). -> { base } or { why }.
+export function resolveBase({ recorded, head, checkout, parents, reaches }) {
+  if (checkout === head) return { base: recorded };
+  if (parents.length === 2 && parents[1] === head && reaches) return { base: parents[0] };
+  return { why: `checkout ${checkout} is neither the head ${head} nor its merge onto a descendant of ${recorded}` };
 }

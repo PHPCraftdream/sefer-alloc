@@ -169,7 +169,9 @@ jobs:
 
   # Ghost-checks zero-cost proof (plan §6): the production build of
   # examples/ghost_zero_cost_probe.rs has the same normalized .text and the same
-  # callgrind Ir at the merge base and at the head of the change.
+  # callgrind Ir at the base and at the head of the change; on a PR the base is
+  # the merge ref's first parent (scripts/ghost_diff.mjs resolveBase), since
+  # pull_request.base.sha is not refreshed when the base branch moves.
   ghost-zero-cost:
     name: ghost-zero-cost (.text diff + Ir vs base)
     needs: changes
