@@ -41,9 +41,9 @@
 //            null copy == original A/B moves between processes far beyond a
 //            single process's CI (address-placement state is per process).
 // --variants: csv filter over the variant list (names validated against the
-//            patch catalog; unknown name → error). Default: ALL variants
-//            (previous behavior). Does NOT affect the null variant — null
-//            always runs.
+//            patch catalog; unknown name → error), run in the given order.
+//            Default: ALL variants in catalog order. Does NOT affect the null
+//            variant — null always runs first.
 // --dry-run is equivalent to --blocks 24. --blocks must be EVEN.
 // --kernels: csv filter passed to EVERY judge run and to EVERY generator run
 //            (default: churn16,churn64,pair16,larson — the pre-registered
@@ -203,7 +203,9 @@ if (variantsFilter) {
   for (const v of variantsFilter)
     if (!known.has(v)) throw new Error(`--variants: unknown variant ${v} (patch catalog: ${[NULL_VARIANT, ...variants].join(", ")})`);
 }
-const selectedVariants = variantsFilter ? variants.filter((v) => variantsFilter.includes(v)) : variants;
+// G1-K7 Addendum 6: an explicit --variants list runs in the given order
+// (the catalog order otherwise), so two passes can reverse two variants.
+const selectedVariants = variantsFilter ?? variants;
 if (selectedVariants.length === 0) throw new Error("--variants: empty selection after filtering");
 console.log(`[run] variants (${selectedVariants.length}): ${selectedVariants.join(", ")}`);
 

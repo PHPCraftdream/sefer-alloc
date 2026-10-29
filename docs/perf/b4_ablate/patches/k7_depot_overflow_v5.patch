@@ -1,0 +1,1785 @@
+diff --git a/src/alloc_core/config/large_cache_config.rs b/src/alloc_core/config/large_cache_config.rs
+index 3dce4ad3..77eabaa6 100644
+--- a/src/alloc_core/config/large_cache_config.rs
++++ b/src/alloc_core/config/large_cache_config.rs
+@@ -211,8 +211,23 @@ pub struct LargeCacheConfig {
+     /// (pool ENABLED, 4 segments / 16 MiB) — so `production` gets pooling on by
+     /// default with no explicit opt-in.
+     pub(crate) pool: SmallSegmentPoolConfig,
++
++    /// G1-K7: per-heap byte budget of the magazine-depot overflow (blocks
++    /// parked above the fixed per-class depot floor). `None` uses
++    /// [`DEFAULT_DEPOT_BUDGET_BYTES`]; `Some(0)` disables the overflow.
++    pub(crate) depot_budget_bytes: Option<usize>,
+ }
+ 
++/// G1-K7: default depot-overflow budget per heap (1 MiB of parked blocks).
++pub(crate) const DEFAULT_DEPOT_BUDGET_BYTES: usize = 1024 * 1024;
++/// G1-K7: bytes of the smallest full magazine (16 blocks of 16 B); the
++/// budget resolves to a multiple of it.
++pub(crate) const DEPOT_BUDGET_GRAIN: usize = 256;
++/// G1-K7: budget ceiling — `(u16::MAX - DEPOT_K_MAX) * 256`, so a class's
++/// `PerClass::parked: u16` holds its floor plus the whole overflow even for
++/// 16 B blocks (pinned against the registry constants in `state/depot.rs`).
++pub(crate) const DEPOT_BUDGET_MAX: usize = (u16::MAX as usize - 8) * DEPOT_BUDGET_GRAIN;
++
+ #[cfg(feature = "alloc-decommit")]
+ impl Default for LargeCacheConfig {
+     /// Returns [`LargeCacheConfig::DEFAULT`] — all knobs at their documented
+@@ -251,6 +266,7 @@ impl LargeCacheConfig {
+             decay_rate_percent: None,
+             mode: None,
+             pool: SmallSegmentPoolConfig::DEFAULT,
++            depot_budget_bytes: None,
+         }
+     }
+ 
+@@ -420,8 +436,57 @@ impl LargeCacheConfig {
+         self
+     }
+ 
++    /// Set the per-thread byte budget of the magazine-depot overflow (G1-K7).
++    ///
++    /// Each thread's heap keeps freed small blocks (16..1024 B) in its
++    /// magazines and a fixed per-class depot (241,408 B at most). When that
++    /// fills, up to `bytes` more of freed blocks stay parked in the depot
++    /// overflow instead of going back to their segments, so a later burst of
++    /// allocations of the same class is served by copying pointers rather
++    /// than walking free lists. Larger values speed up alloc/free cycles over
++    /// large cohorts (e.g. 16 384 blocks of 64 B) and hold more memory per
++    /// thread between bursts; parked blocks also keep their segments from
++    /// being released. Overflow that stays unused decays back over the
++    /// heap's next cold events; `trim`, thread exit and slot recycle empty
++    /// it. Default 1 MiB; `0` disables the
++    /// overflow; values are rounded down to 256 B and capped at
++    /// 16,774,912 B. Applied when the thread's heap is first created (a
++    /// recycled heap keeps the budget it was created with — see
++    /// `config_conflicts_total`). Behaviour and measurements: README
++    /// "Depot overflow budget".
++    #[must_use]
++    pub const fn depot_budget_bytes(mut self, bytes: usize) -> Self {
++        self.depot_budget_bytes = Some(bytes);
++        self
++    }
++
++    /// TEST-ONLY (G1-K7): the resolved depot-overflow budget of this config.
++    #[doc(hidden)]
++    #[cfg(feature = "internals")]
++    #[must_use]
++    pub const fn dbg_resolved_depot_budget(&self) -> usize {
++        self.resolved_depot_budget_bytes()
++    }
++
+     // ── Resolution helpers (pub(crate)) ──────────────────────────────────────
+ 
++    /// Resolve the depot-overflow budget (G1-K7): default when unset, then
++    /// capped at [`DEPOT_BUDGET_MAX`] and rounded down to
++    /// [`DEPOT_BUDGET_GRAIN`].
++    #[must_use]
++    pub(crate) const fn resolved_depot_budget_bytes(&self) -> usize {
++        let b = match self.depot_budget_bytes {
++            Some(v) => v,
++            None => DEFAULT_DEPOT_BUDGET_BYTES,
++        };
++        let b = if b > DEPOT_BUDGET_MAX {
++            DEPOT_BUDGET_MAX
++        } else {
++            b
++        };
++        b / DEPOT_BUDGET_GRAIN * DEPOT_BUDGET_GRAIN
++    }
++
+     /// Resolve the byte budget. `None` = unbounded (no admission limit).
+     ///
+     /// R14-5 (task #290): when `large-cache-extended` is compiled in AND the
+diff --git a/src/alloc_core/platform/os.rs b/src/alloc_core/platform/os.rs
+index 579b0f8e..e239affb 100644
+--- a/src/alloc_core/platform/os.rs
++++ b/src/alloc_core/platform/os.rs
+@@ -910,3 +910,73 @@ pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
+     // and is a no-op that reports success under miri.
+     unsafe { vmem::recommit(base, start_offset, end_offset) }
+ }
++
++// ── G1-K7: depot-overflow record storage ───────────────────────────────────
++//
++// One lazily committed reservation per heap slot, holding only magazine
++// records (the control lives in the slot's zero-valid `Depot`). Like the
++// registry heaps it serves, the span lives for the process (bounded by
++// `MAX_HEAPS`); trim decommits its pages, the address range is kept.
++
++/// Reserve `len` bytes (a multiple of the runtime page size) for a heap's
++/// depot-overflow records, committing only the first page. Returns the base,
++/// or `None` on OOM (the overflow then stays off for this heap).
++#[cfg(all(
++    feature = "alloc-global",
++    feature = "fastbin",
++    feature = "alloc-decommit"
++))]
++pub(crate) fn reserve_depot_overflow(len: usize) -> Option<*mut u8> {
++    let r = vmem::reserve_aligned_lazy(len, vmem::page_size(), vmem::page_size())?;
++    let (base, _len, _align) = r.into_reservation().into_parts();
++    Some(base)
++}
++
++/// Commit `[base + start, base + end)` of a depot-overflow reservation
++/// (page-aligned offsets inside the span returned by
++/// [`reserve_depot_overflow`]); `false` on commit failure (nothing changes).
++#[must_use]
++#[cfg(all(
++    feature = "alloc-global",
++    feature = "fastbin",
++    feature = "alloc-decommit"
++))]
++pub(crate) fn commit_depot_overflow(base: *mut u8, start: usize, end: usize) -> bool {
++    // SAFETY: `base` is a live depot-overflow reservation (never released)
++    // and the caller passes page-aligned offsets inside it.
++    unsafe { vmem::commit_range(base, start, end) }
++}
++
++/// Decommit `[base + start, base + end)` of a depot-overflow reservation once
++/// every record in the range is empty (teardown after the depot is drained).
++#[cfg(all(
++    feature = "alloc-global",
++    feature = "fastbin",
++    feature = "alloc-decommit"
++))]
++pub(crate) fn decommit_depot_overflow(base: *mut u8, start: usize, end: usize) {
++    // SAFETY: as in `commit_depot_overflow`; the caller holds no live record
++    // in the range and will re-commit before writing it again. The contents
++    // are never read after this, so the lazy advice is enough where the eager
++    // one is advisory-only (Darwin and the BSDs, CORRECTNESS_OPEN_ITEMS 48).
++    #[cfg(any(
++        target_vendor = "apple",
++        target_os = "freebsd",
++        target_os = "dragonfly",
++        target_os = "netbsd",
++        target_os = "openbsd"
++    ))]
++    unsafe {
++        vmem::decommit_lazy(base, start, end)
++    };
++    #[cfg(not(any(
++        target_vendor = "apple",
++        target_os = "freebsd",
++        target_os = "dragonfly",
++        target_os = "netbsd",
++        target_os = "openbsd"
++    )))]
++    unsafe {
++        vmem::decommit(base, start, end)
++    };
++}
+diff --git a/src/alloc_core/segment/bitmap/state_byte.rs b/src/alloc_core/segment/bitmap/state_byte.rs
+index ee148609..2917eec9 100644
+--- a/src/alloc_core/segment/bitmap/state_byte.rs
++++ b/src/alloc_core/segment/bitmap/state_byte.rs
+@@ -43,8 +43,9 @@
+ ///   never LIVE; this invariant applies at completed-operation boundaries.
+ /// - **И3 (MAG exactness at operation boundaries):** for a nonzero state byte,
+ ///   `state == MAG` exactly on granules currently resident in a tcache
+-///   magazine, and nowhere else; this invariant applies at completed-operation
+-///   boundaries.
++///   magazine — the live one or a full one parked in the heap's depot (its
++///   floor or, under `alloc-decommit`, its overflow) — and nowhere else; this
++///   invariant applies at completed-operation boundaries.
+ /// - **И4 (FREE exactness at operation boundaries):** for a nonzero state byte,
+ ///   `state == FREE` exactly on granules currently on a bin / free list of the
+ ///   segment, and nowhere else; this invariant applies at completed-operation
+diff --git a/src/global/sefer_alloc/diag.rs b/src/global/sefer_alloc/diag.rs
+index f9304414..2daf3e63 100644
+--- a/src/global/sefer_alloc/diag.rs
++++ b/src/global/sefer_alloc/diag.rs
+@@ -651,4 +651,30 @@ impl SeferAlloc {
+             0
+         }
+     }
++
++    /// G1-K7 MEASUREMENT-ONLY: the calling thread's own heap's depot budget
++    /// `(resolved, effective)` and overflow counters (see
++    /// `HeapCore::dbg_depot_overflow`) — the R26-4 read-back through the real
++    /// `#[global_allocator]` path. `None` on the fallback heap.
++    #[doc(hidden)]
++    #[cfg(all(
++        feature = "alloc-decommit",
++        feature = "fastbin",
++        feature = "bench-internals",
++        feature = "internals"
++    ))]
++    #[must_use]
++    pub fn dbg_current_depot_overflow(&self) -> Option<((usize, usize), [u64; 11])> {
++        if let CurrentHeap::Own(heap) = self.current_heap() {
++            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
++            // registry slot owned by THIS thread — same justification as
++            // `dbg_current_large_cache_extension_materialised` above.
++            #[allow(unsafe_code)]
++            unsafe {
++                Some(((*heap).dbg_depot_budget(), (*heap).dbg_depot_overflow()))
++            }
++        } else {
++            None
++        }
++    }
+ }
+diff --git a/src/kani_proofs.rs b/src/kani_proofs.rs
+index a7fe309a..515272ec 100644
+--- a/src/kani_proofs.rs
++++ b/src/kani_proofs.rs
+@@ -423,3 +423,99 @@ mod depot_proofs {
+         assert!(out == o);
+     }
+ }
++
++#[cfg(all(
++    kani,
++    feature = "alloc-global",
++    feature = "fastbin",
++    feature = "alloc-decommit"
++))]
++mod depot_overflow_proofs {
++    use crate::alloc_core::size_classes::SIZE_CLASS_TABLE;
++    use crate::alloc_core::LargeCacheConfig;
++    use crate::registry::heap_core::{
++        DepotOverflow, ALL_SMALL, DEPOT_CLASSES, DEPOT_K, TCACHE_CAP,
++    };
++
++    const CAP: usize = 3;
++    const STEPS: usize = 5;
++
++    /// И-O1: the ring against a queue model — park appends iff the ring and
++    /// the budget have room, reload returns the newest record, decay the
++    /// oldest (the ring wraps once decay moved its head), and the parked
++    /// byte count is always `len * magazine bytes`. The segment-refill tick
++    /// flags, driven as `park_overflow` / `depot_segment_tick` drive them
++    /// (a class's first record arms; a refill of class `k` disarms `k` only
++    /// on an empty overflow), mirror `armed` exactly and cover every small
++    /// class while bytes are parked.
++    #[kani::proof]
++    #[kani::unwind(18)]
++    fn overflow_ring_matches_a_queue() {
++        let mut buf = [[core::ptr::null_mut::<u8>(); TCACHE_CAP]; CAP];
++        let c: usize = kani::any();
++        kani::assume(c < DEPOT_CLASSES);
++        let budget: usize = kani::any();
++        kani::assume(budget <= 1 << 30);
++        let mb = SIZE_CLASS_TABLE[c] * TCACHE_CAP;
++        let mut o = DepotOverflow::kani_on_buffer(buf.as_mut_ptr().cast(), c, CAP as u16);
++        let mut model = [0usize; STEPS];
++        let (mut front, mut back) = (0usize, 0usize);
++        let mut out = [core::ptr::null_mut::<u8>(); TCACHE_CAP];
++        let mut flags = 0u64;
++        let mut step = 0;
++        while step < STEPS {
++            let n = back - front;
++            let op: u8 = kani::any();
++            if op % 4 == 3 {
++                // A segment refill of class `k` while armed.
++                let k: u32 = kani::any();
++                kani::assume(k < ALL_SMALL.count_ones());
++                if flags & 1 << k != 0 && o.bytes() == 0 {
++                    o.disarm(k as usize);
++                    flags &= !(1 << k);
++                }
++            } else if op % 4 == 0 {
++                let id = step + 1;
++                let mag = [id as *mut u8; TCACHE_CAP];
++                let room = n < CAP && o.bytes() + mb <= budget;
++                assert_eq!(o.park(c, n, &mag, budget), room);
++                if room {
++                    model[back] = id;
++                    back += 1;
++                    // As `park_overflow`: only a class's first record arms.
++                    if n == 0 {
++                        flags |= o.arm();
++                    }
++                }
++            } else if op % 4 == 1 && n > 0 {
++                o.reload(c, n, &mut out);
++                back -= 1;
++                assert!(out == [model[back] as *mut u8; TCACHE_CAP]);
++            } else if n > 0 {
++                o.pop_oldest(c, n, &mut out);
++                assert!(out == [model[front] as *mut u8; TCACHE_CAP]);
++                front += 1;
++            }
++            assert_eq!(o.bytes(), (back - front) * mb);
++            assert_eq!(flags, o.armed());
++            assert!(o.bytes() == 0 || o.armed() == ALL_SMALL);
++            step += 1;
++        }
++        kani::cover!(front > 0 && back - front == CAP, "the ring wrapped full");
++    }
++
++    /// И-O2: for every request the resolved budget is a multiple of 256 B
++    /// and floor + overflow ring of any depot class fits `PerClass::limit`.
++    #[kani::proof]
++    fn resolved_budget_fits_the_park_limit() {
++        let req: usize = kani::any();
++        let c: usize = kani::any();
++        kani::assume(c < DEPOT_CLASSES);
++        let b = LargeCacheConfig::new()
++            .depot_budget_bytes(req)
++            .resolved_depot_budget_bytes();
++        assert_eq!(b % 256, 0);
++        assert!(b <= req);
++        assert!(DEPOT_K[c] as usize + DepotOverflow::cap_for(b, c) <= u16::MAX as usize);
++    }
++}
+diff --git a/src/registry/heap_core/alloc/hot.rs b/src/registry/heap_core/alloc/hot.rs
+index 800d72f0..cd385285 100644
+--- a/src/registry/heap_core/alloc/hot.rs
++++ b/src/registry/heap_core/alloc/hot.rs
+@@ -499,9 +499,16 @@ impl HeapCore {
+     fn refill_magazine_slow_virgin(&mut self, c: usize) -> (*mut u8, bool) {
+         // B4 depot (DP-3): a parked magazine holds freed blocks — never virgin
+         // (`depot_reload` clears the mask).
+-        if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
++        if self.depot_may_reload(c) && self.depot_reload_tick(c) {
+             return (self.finish_magazine_refill(c, TCACHE_CAP), false);
+         }
++        // G1-K7: a segment refill is a cold event for the overflow decay
++        // while the class is armed — counted first, while only `self` and
++        // `c` are live.
++        #[cfg(feature = "alloc-decommit")]
++        if self.depot_may_tick(c) {
++            self.depot_segment_tick(c);
++        }
+         // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
+         // rationale — identical placement, identical cheap-when-empty shape).
+         self.drain_large_sidecar_ingress_hot_bounded();
+@@ -678,9 +685,18 @@ impl HeapCore {
+     #[inline(never)]
+     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
+         // B4 depot (DP-3): reload a parked full magazine (blocks stay MAG).
+-        if self.tcache.classes[c].parked != 0 && self.depot_reload(c) {
++        // G1-K7: an overflow reload counts a decay event inside the cold
++        // helper; floor reloads stay K5's path.
++        if self.depot_may_reload(c) && self.depot_reload_tick(c) {
+             return self.finish_magazine_refill(c, TCACHE_CAP);
+         }
++        // G1-K7: a segment refill is a cold event for the overflow decay
++        // while the class is armed — counted first, while only `self` and
++        // `c` are live.
++        #[cfg(feature = "alloc-decommit")]
++        if self.depot_may_tick(c) {
++            self.depot_segment_tick(c);
++        }
+         // Bounded Large-only probe; Small discovery occurs in the refill.
+         self.drain_large_sidecar_ingress_hot_bounded();
+ 
+diff --git a/src/registry/heap_core/core.rs b/src/registry/heap_core/core.rs
+index 4fa88c50..ad8e447d 100644
+--- a/src/registry/heap_core/core.rs
++++ b/src/registry/heap_core/core.rs
+@@ -141,6 +141,14 @@ pub struct HeapCore {
+     /// Bound slot-lifetime cold depot; `None` for standalone heaps.
+     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+     pub(crate) depot: Option<&'static mut crate::registry::heap_core::state::depot::Depot>,
++    /// G1-K7: resolved depot-overflow budget in bytes (parked blocks above the
++    /// depot floor), fixed at heap creation; `0` = no overflow.
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit"
++    ))]
++    pub(crate) depot_budget: u32,
+ 
+     /// TEST/DIAGNOSTIC-ONLY (task C1 → #133 → W3): stable handle to THIS
+     /// heap's magazine HIT counter, which now lives in the owning slot's
+@@ -281,6 +289,13 @@ impl HeapCore {
+             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
+             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+             depot: None,
++            #[cfg(all(
++                feature = "alloc-global",
++                feature = "fastbin",
++                feature = "alloc-decommit"
++            ))]
++            depot_budget: crate::alloc_core::LargeCacheConfig::DEFAULT.resolved_depot_budget_bytes()
++                as u32,
+             // W3: the counter now lives in the owning HeapSlot; this handle
+             // is planted by `HeapRegistry::claim_lease` (via `bind_tcache_hits`)
+             // right after the slot binds. `None` until then (never observed on
+@@ -318,6 +333,8 @@ impl HeapCore {
+             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
+             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+             depot: None,
++            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++            depot_budget: config.resolved_depot_budget_bytes() as u32,
+             // W3: the counter now lives in the owning HeapSlot; this handle
+             // is planted by `HeapRegistry::claim_lease` (via `bind_tcache_hits`)
+             // right after the slot binds. `None` until then (never observed on
+@@ -364,6 +381,10 @@ impl HeapCore {
+         &self,
+         requested: &crate::alloc_core::LargeCacheConfig,
+     ) -> bool {
++        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++        if self.depot_budget as usize != requested.resolved_depot_budget_bytes() {
++            return false;
++        }
+         self.core.live_config_matches(requested)
+     }
+ 
+diff --git a/src/registry/heap_core/diag/diag_probes.rs b/src/registry/heap_core/diag/diag_probes.rs
+index 3ad850ee..b537c1d5 100644
+--- a/src/registry/heap_core/diag/diag_probes.rs
++++ b/src/registry/heap_core/diag/diag_probes.rs
+@@ -744,4 +744,21 @@ impl HeapCore {
+             )
+         };
+     }
++
++    /// TEST-ONLY (G1-K7): the next `reserve` depot-overflow reservations and
++    /// the next `commit` real page commits (any caller) fail as if the OS
++    /// refused them; `0` disarms. Process-global.
++    #[doc(hidden)]
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit",
++        feature = "internals",
++        feature = "lazy-commit-fault-injection"
++    ))]
++    pub fn dbg_arm_depot_overflow_faults(reserve: u32, commit: u32) {
++        crate::registry::heap_core::state::depot_overflow::RESERVE_FAIL_NEXT
++            .store(reserve, core::sync::atomic::Ordering::Relaxed);
++        aligned_vmem::fault_injection::arm_fail_next(commit);
++    }
+ }
+diff --git a/src/registry/heap_core/diag/queries.rs b/src/registry/heap_core/diag/queries.rs
+index 8b2f1e0d..59fc0f5a 100644
+--- a/src/registry/heap_core/diag/queries.rs
++++ b/src/registry/heap_core/diag/queries.rs
+@@ -200,14 +200,110 @@ impl HeapCore {
+     }
+ 
+     /// TEST-ONLY (B4 DP-3): number of full magazines parked in the depot for
+-    /// class `c`; 0 for an unbound heap or a class outside the depot.
++    /// class `c` — the floor plus, under G1-K7, the overflow ring; 0 for an
++    /// unbound heap or a class outside the depot.
+     #[doc(hidden)]
+     #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
+     pub fn dbg_depot_len(&self, c: usize) -> usize {
+         if c >= crate::registry::heap_core::state::depot::DEPOT_CLASSES {
+             return 0;
+         }
+-        self.tcache.classes[c].parked as usize
++        let floor = self.tcache.classes[c].parked as usize;
++        #[cfg(feature = "alloc-decommit")]
++        if let Some(depot) = self.depot.as_deref() {
++            return floor + depot.ovf.len(c);
++        }
++        floor
++    }
++
++    /// TEST-ONLY (G1-K7): class `c`'s `(floor magazines, overflow ring
++    /// records, PerClass::ovf hint)`; zeros for an unbound heap or a class
++    /// outside the depot.
++    #[doc(hidden)]
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit",
++        feature = "internals"
++    ))]
++    pub fn dbg_depot_ring(&self, c: usize) -> (usize, usize, u8) {
++        if c >= crate::registry::heap_core::state::depot::DEPOT_CLASSES {
++            return (0, 0, 0);
++        }
++        let class = &self.tcache.classes[c];
++        let ring = self.depot.as_deref().map_or(0, |d| d.ovf.len(c));
++        (class.parked as usize, ring, class.ovf)
++    }
++
++    /// TEST-ONLY (G1-K7): `(classes whose PerClass::marks carries the
++    /// segment-refill tick flag, the overflow's armed mirror)`, bit `c` each;
++    /// `(0, 0)` for an unbound heap.
++    #[doc(hidden)]
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit",
++        feature = "internals"
++    ))]
++    pub fn dbg_depot_ticking(&self) -> (u64, u64) {
++        use crate::registry::heap_core::state::tcache::MARK_TICK;
++        let Some(depot) = self.depot.as_deref() else {
++            return (0, 0);
++        };
++        let mut flags = 0u64;
++        for (c, class) in self.tcache.classes.iter().enumerate() {
++            if class.marks & MARK_TICK != 0 {
++                flags |= 1 << c;
++            }
++        }
++        (flags, depot.ovf.armed())
++    }
++
++    /// TEST-ONLY (G1-K7): `(resolved, effective)` depot-overflow budget in
++    /// bytes. Effective is 0 for a heap without a bound depot (standalone /
++    /// fallback heaps), where the budget is inert.
++    #[doc(hidden)]
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit",
++        feature = "internals"
++    ))]
++    pub fn dbg_depot_budget(&self) -> (usize, usize) {
++        let resolved = self.depot_budget as usize;
++        (resolved, if self.depot.is_some() { resolved } else { 0 })
++    }
++
++    /// TEST-ONLY (G1-K7): depot-overflow counters `[bytes parked, parks,
++    /// reloads, budget refusals, OS refusals, decay-flushed records,
++    /// ingress checks, decommit calls, committed record bytes, arms,
++    /// disarms]`; all 0 for an unbound heap.
++    #[doc(hidden)]
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit",
++        feature = "internals"
++    ))]
++    pub fn dbg_depot_overflow(&self) -> [u64; 11] {
++        let Some(depot) = self.depot.as_deref() else {
++            return [0; 11];
++        };
++        let o = &depot.ovf;
++        let s = o.stats;
++        [
++            o.bytes() as u64,
++            s.parks,
++            s.reloads,
++            s.budget_refusals,
++            s.os_refusals,
++            s.decay_flushed,
++            s.ingress_checks,
++            s.decommits,
++            o.committed_bytes() as u64,
++            s.arms,
++            s.disarms,
++        ]
+     }
+ 
+     /// TEST-ONLY (P7): read the magazine count for class `c`. Widened to
+diff --git a/src/registry/heap_core/free/dealloc_own_base.rs b/src/registry/heap_core/free/dealloc_own_base.rs
+index f8d60f8e..741764ac 100644
+--- a/src/registry/heap_core/free/dealloc_own_base.rs
++++ b/src/registry/heap_core/free/dealloc_own_base.rs
+@@ -569,11 +569,11 @@ impl HeapCore {
+         // B4 depot (DP-3): park the full magazine whole (cold),
+         // then `block` starts the next one. `block` itself is not
+         // parked into a body-write path: only `slots` pointers move.
+-        if cnt == TCACHE_CAP
+-            && self.tcache.classes[c].parked
+-                < crate::registry::heap_core::state::depot::DEPOT_CAP[c]
+-            && self.depot_park(c)
+-        {
++        // G1-K7: `depot_park` fills the floor, then the overflow within the
++        // heap's budget; the inline gate skips the cold call once full. An
++        // overflow park counts its decay event inside the cold helper, after
++        // the ring owns the magazine; it touches only older records.
++        if cnt == TCACHE_CAP && self.depot_may_park(c) && self.depot_park(c) {
+             meta.state_byte()
+                 .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
+             self.tcache.classes[c].slots[0] = block;
+diff --git a/src/registry/heap_core/mod.rs b/src/registry/heap_core/mod.rs
+index 1965caf3..3920eb03 100644
+--- a/src/registry/heap_core/mod.rs
++++ b/src/registry/heap_core/mod.rs
+@@ -16,6 +16,13 @@ mod state;
+ pub(crate) use self::state::depot::Depot;
+ #[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
+ pub(crate) use self::state::depot::{DEPOT_CLASSES, DEPOT_K};
++#[cfg(all(
++    kani,
++    feature = "alloc-global",
++    feature = "fastbin",
++    feature = "alloc-decommit"
++))]
++pub(crate) use self::state::depot_overflow::{DepotOverflow, ALL_SMALL};
+ #[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
+ pub(crate) use self::state::tcache::TCACHE_CAP;
+ 
+diff --git a/src/registry/heap_core/state/depot.rs b/src/registry/heap_core/state/depot.rs
+index 1637f313..a13c5f94 100644
+--- a/src/registry/heap_core/state/depot.rs
++++ b/src/registry/heap_core/state/depot.rs
+@@ -74,21 +74,45 @@ const _: () = {
+ /// Classes `0..8` map to sizes 16, 32, 48, 64, 80, 112, 144, and 192 B with
+ /// K `[8,8,8,8,8,8,7,1]` (64,256 B of parked blocks); classes `8..18`
+ /// (240..1024 B) add K = 2 (177,152 B). Total 241,408 B, within the
+-/// 245,760 B depot budget.
++/// 245,760 B depot budget — the depot FLOOR. Under G1-K7 the overflow
++/// ([`DepotOverflow`](crate::registry::heap_core::state::depot_overflow::DepotOverflow))
++/// parks further full magazines above it within the heap's budget.
+ ///
+-/// Only the pointer arrays live here; each class's parked count is
++/// Only the pointer arrays live here; each class's floor count is
+ /// `PerClass::parked` in the owner's magazine line (DP-5 iteration 2), so the
+-/// hot-path gates read it without touching this store.
++/// hot-path gates read it without touching this store. `#[repr(C)]` keeps
++/// `mags` first, at K5's offset, ahead of the G1-K7 overflow control.
++/// All-zero is the valid empty state (the registry slot is OS-zeroed).
++#[repr(C)]
+ pub(crate) struct Depot {
+     mags: [[[*mut u8; TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
++    #[cfg(feature = "alloc-decommit")]
++    pub(crate) ovf: crate::registry::heap_core::state::depot_overflow::DepotOverflow,
+ }
+ 
++const _: () = assert!(::core::mem::offset_of!(Depot, mags) == 0);
++// The overflow budget ceiling keeps `PerClass::limit: u16` in range: the
++// floor plus a full overflow ring of 16 B magazines.
++#[cfg(feature = "alloc-decommit")]
++const _: () = assert!(
++    DEPOT_K_MAX as usize
++        + crate::alloc_core::large_cache_config::DEPOT_BUDGET_MAX
++            / crate::alloc_core::large_cache_config::DEPOT_BUDGET_GRAIN
++        <= u16::MAX as usize
++);
++#[cfg(feature = "alloc-decommit")]
++const _: () = assert!(
++    crate::alloc_core::large_cache_config::DEPOT_BUDGET_GRAIN == SIZE_CLASS_TABLE[0] * TCACHE_CAP
++);
++
+ impl Depot {
+     /// Kani-only: the all-zero empty depot an OS-zeroed registry slot holds.
+     #[cfg(kani)]
+     pub(crate) const fn empty() -> Self {
+         Self {
+             mags: [[[core::ptr::null_mut(); TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
++            #[cfg(feature = "alloc-decommit")]
++            ovf: crate::registry::heap_core::state::depot_overflow::DepotOverflow::empty(),
+         }
+     }
+ 
+diff --git a/src/registry/heap_core/state/depot_overflow.rs b/src/registry/heap_core/state/depot_overflow.rs
+new file mode 100644
+index 00000000..0c0a5c32
+--- /dev/null
++++ b/src/registry/heap_core/state/depot_overflow.rs
+@@ -0,0 +1,501 @@
++//! G1-K7: depot overflow — full magazines parked above the per-class depot
++//! floor, within a per-heap byte budget, in a lazily committed reservation.
++//!
++//! The control ([`DepotOverflow`]) lives in the slot's `Depot` and is valid
++//! all-zero (empty, nothing reserved). The reservation holds only records:
++//! per class a page-aligned region of `cap[c]` records forming a ring — new
++//! records go to the tail, reload takes the tail (LIFO with the floor below),
++//! decay takes the head (oldest). A class's ring length is
++//! `PerClass::parked - DEPOT_K[c]`, also kept here (`len`) so a cold event
++//! costs O(1).
++
++use crate::alloc_core::size_classes::{SIZE_CLASS_TABLE, SMALL_CLASS_COUNT};
++use crate::registry::heap_core::state::depot::DEPOT_CLASSES;
++use crate::registry::heap_core::state::tcache::TCACHE_CAP;
++
++type Mag = [*mut u8; TCACHE_CAP];
++const REC: usize = core::mem::size_of::<Mag>();
++/// Cold events per decay epoch at least (the epoch also spans twice the
++/// occupied records, so a full park/reload cycle fits in one epoch).
++pub(crate) const EPOCH_MIN: u32 = 256;
++/// Decay flushes at most this many records per cold event.
++pub(crate) const DECAY_WORK: u32 = 4;
++
++/// TEST-ONLY fault hook: the next `n` overflow reservations fail as if the
++/// OS refused them (the commit side uses `aligned-vmem`'s own hook).
++#[cfg(feature = "lazy-commit-fault-injection")]
++pub(crate) static RESERVE_FAIL_NEXT: core::sync::atomic::AtomicU32 =
++    core::sync::atomic::AtomicU32::new(0);
++
++#[cfg(feature = "lazy-commit-fault-injection")]
++fn reserve_fault_fires() -> bool {
++    use core::sync::atomic::Ordering::Relaxed;
++    RESERVE_FAIL_NEXT
++        .fetch_update(Relaxed, Relaxed, |n| n.checked_sub(1))
++        .is_ok()
++}
++
++const _: () = assert!(REC == 128);
++const _: () = assert!(DEPOT_CLASSES <= 32);
++const _: () = assert!(SMALL_CLASS_COUNT <= 64);
++
++/// Every small class (bit `c`): the classes a segment refill can tick for.
++pub(crate) const ALL_SMALL: u64 = if SMALL_CLASS_COUNT == 64 {
++    u64::MAX
++} else {
++    (1u64 << SMALL_CLASS_COUNT) - 1
++};
++
++/// Owner-only counters (diagnostics; read through `bench-internals` hooks).
++#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
++pub(crate) struct OverflowStats {
++    pub(crate) parks: u64,
++    pub(crate) reloads: u64,
++    pub(crate) budget_refusals: u64,
++    pub(crate) os_refusals: u64,
++    pub(crate) decay_flushed: u64,
++    pub(crate) ingress_checks: u64,
++    /// Decommit calls issued (not proof the OS dropped the pages).
++    pub(crate) decommits: u64,
++    /// Parks that set segment-refill tick flags ([`DepotOverflow::arm`]).
++    pub(crate) arms: u64,
++    /// Segment refills that found the overflow empty and dropped their
++    /// class's tick flag ([`DepotOverflow::disarm`]).
++    pub(crate) disarms: u64,
++}
++
++/// Overflow control; all-zero = empty and unreserved. The per-event fields
++/// lead (`repr(C)`), so the common tick touches one line.
++#[repr(C)]
++pub(crate) struct DepotOverflow {
++    base: *mut u8,
++    bytes: usize,
++    /// Small classes whose `PerClass::marks` carries `MARK_TICK` (bit `c`).
++    /// Invariant: `bytes > 0` implies every small class is armed.
++    armed: u64,
++    events: u32,
++    epoch_len: u32,
++    /// Classes with decay debt (bit `c`).
++    debt_mask: u32,
++    /// Classes that parked during the current epoch (bit `c`).
++    parked_in_epoch: u32,
++    /// Classes whose `PerClass::limit` is latched after a refusal (bit `c`).
++    starved: u32,
++    reloads_since_ingress: u32,
++    reserve_failed: bool,
++    len: [u16; DEPOT_CLASSES],
++    head: [u16; DEPOT_CLASSES],
++    cap: [u16; DEPOT_CLASSES],
++    low: [u16; DEPOT_CLASSES],
++    debt: [u16; DEPOT_CLASSES],
++    off: [u32; DEPOT_CLASSES],
++    committed: [u32; DEPOT_CLASSES],
++    pub(crate) stats: OverflowStats,
++}
++
++const fn mag_bytes(c: usize) -> usize {
++    SIZE_CLASS_TABLE[c] * TCACHE_CAP
++}
++
++impl DepotOverflow {
++    /// Kani-only: the all-zero empty overflow an OS-zeroed slot holds.
++    #[cfg(kani)]
++    pub(crate) const fn empty() -> Self {
++        Self {
++            base: core::ptr::null_mut(),
++            bytes: 0,
++            armed: 0,
++            events: 0,
++            epoch_len: 0,
++            debt_mask: 0,
++            parked_in_epoch: 0,
++            starved: 0,
++            reloads_since_ingress: 0,
++            reserve_failed: false,
++            len: [0; DEPOT_CLASSES],
++            head: [0; DEPOT_CLASSES],
++            cap: [0; DEPOT_CLASSES],
++            low: [0; DEPOT_CLASSES],
++            debt: [0; DEPOT_CLASSES],
++            off: [0; DEPOT_CLASSES],
++            committed: [0; DEPOT_CLASSES],
++            stats: OverflowStats {
++                parks: 0,
++                reloads: 0,
++                budget_refusals: 0,
++                os_refusals: 0,
++                decay_flushed: 0,
++                ingress_checks: 0,
++                decommits: 0,
++                arms: 0,
++                disarms: 0,
++            },
++        }
++    }
++
++    /// Kani-only: an overflow whose class `c` ring of `cap` records lives,
++    /// fully committed, at `base` (a local buffer of `cap` records).
++    #[cfg(kani)]
++    pub(crate) fn kani_on_buffer(base: *mut u8, c: usize, cap: u16) -> Self {
++        let mut o = Self::empty();
++        o.base = base;
++        o.cap[c] = cap;
++        o.committed[c] = cap as u32 * REC as u32;
++        o.epoch_len = EPOCH_MIN;
++        o
++    }
++
++    /// After a successful park: the small classes not yet armed (bit `c`) —
++    /// the caller sets their `MARK_TICK` — and every class is armed from here.
++    #[inline(always)]
++    pub(crate) fn arm(&mut self) -> u64 {
++        debug_assert!(self.bytes != 0, "arm follows a park");
++        if self.armed == ALL_SMALL {
++            return 0;
++        }
++        let fresh = !self.armed & ALL_SMALL;
++        self.armed = ALL_SMALL;
++        self.stats.arms += 1;
++        fresh
++    }
++
++    /// A segment refill of class `c` found the overflow empty: `c` stops
++    /// ticking until the next park re-arms it.
++    pub(crate) fn disarm(&mut self, c: usize) {
++        debug_assert_eq!(self.bytes, 0, "only an empty overflow disarms");
++        self.armed &= !(1u64 << c);
++        self.stats.disarms += 1;
++    }
++
++    /// The small classes currently armed (bit `c`).
++    #[cfg_attr(not(any(feature = "internals", debug_assertions)), allow(dead_code))]
++    pub(crate) fn armed(&self) -> u64 {
++        self.armed
++    }
++
++    /// Teardown / bind: nothing is parked, no class ticks.
++    pub(crate) fn disarm_all(&mut self) {
++        debug_assert_eq!(self.bytes, 0, "only an empty overflow disarms");
++        self.armed = 0;
++    }
++
++    /// Bytes of blocks currently parked in the overflow.
++    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
++    pub(crate) fn bytes(&self) -> usize {
++        self.bytes
++    }
++
++    /// Record bytes currently committed (all classes; the reservation's
++    /// first page counts once it exists).
++    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
++    pub(crate) fn committed_bytes(&self) -> usize {
++        self.committed.iter().map(|&b| b as usize).sum()
++    }
++
++    /// Whether a reservation exists (decay and teardown work only then).
++    pub(crate) fn active(&self) -> bool {
++        !self.base.is_null()
++    }
++
++    /// Ring capacity of class `c` for budget `budget` (records).
++    pub(crate) const fn cap_for(budget: usize, c: usize) -> usize {
++        budget / mag_bytes(c)
++    }
++
++    /// Reserve the per-class regions for `budget` on first use. `false` when
++    /// reservation failed now or before (the overflow stays off until trim).
++    fn ensure_reserved(&mut self, budget: usize) -> bool {
++        if self.active() {
++            return true;
++        }
++        if self.reserve_failed {
++            return false;
++        }
++        let page = aligned_vmem::page_size();
++        let mut total = 0usize;
++        let mut c = 0;
++        while c < DEPOT_CLASSES {
++            let cap = Self::cap_for(budget, c);
++            self.cap[c] = cap as u16;
++            self.off[c] = total as u32;
++            total += (cap * REC).next_multiple_of(page);
++            c += 1;
++        }
++        if total == 0 {
++            return false;
++        }
++        #[cfg(feature = "lazy-commit-fault-injection")]
++        let reserved = if reserve_fault_fires() {
++            None
++        } else {
++            crate::alloc_core::os::reserve_depot_overflow(total.next_multiple_of(page))
++        };
++        #[cfg(not(feature = "lazy-commit-fault-injection"))]
++        let reserved = crate::alloc_core::os::reserve_depot_overflow(total.next_multiple_of(page));
++        match reserved {
++            Some(base) => {
++                self.base = base;
++                // The first page is committed by the reservation.
++                self.committed[0] = (page.min(total)) as u32;
++                self.epoch_len = EPOCH_MIN;
++                true
++            }
++            None => {
++                self.reserve_failed = true;
++                false
++            }
++        }
++    }
++
++    /// Commit class `c`'s region through record `idx`; `false` on failure
++    /// (nothing changes).
++    fn ensure_committed(&mut self, c: usize, idx: usize) -> bool {
++        let need = (idx + 1) * REC;
++        let have = self.committed[c] as usize;
++        if need <= have {
++            return true;
++        }
++        let page = aligned_vmem::page_size();
++        let end = need
++            .next_multiple_of(page)
++            .min((self.cap[c] as usize * REC).next_multiple_of(page));
++        let off = self.off[c] as usize;
++        if !crate::alloc_core::os::commit_depot_overflow(self.base, off + have, off + end) {
++            return false;
++        }
++        self.committed[c] = end as u32;
++        true
++    }
++
++    fn record(&self, c: usize, idx: usize) -> *mut Mag {
++        self.base
++            .wrapping_add(self.off[c] as usize + idx * REC)
++            .cast::<Mag>()
++    }
++
++    /// Ring slot `head + i` of class `c` (no division: `i < cap`).
++    fn slot(&self, c: usize, i: usize) -> usize {
++        let idx = self.head[c] as usize + i;
++        let cap = self.cap[c] as usize;
++        if idx >= cap {
++            idx - cap
++        } else {
++            idx
++        }
++    }
++
++    /// Class `c`'s overflow length (records).
++    pub(crate) fn len(&self, c: usize) -> usize {
++        self.len[c] as usize
++    }
++
++    /// Class `c`'s ring capacity (records); 0 before the reservation.
++    pub(crate) fn cap(&self, c: usize) -> usize {
++        self.cap[c] as usize
++    }
++
++    /// Park `mag` as class `c`'s newest overflow record; `n` is the class's
++    /// current overflow length. `false` (no change to records) when over
++    /// budget, full or the storage cannot be reserved / committed.
++    pub(crate) fn park(&mut self, c: usize, n: usize, mag: &Mag, budget: usize) -> bool {
++        debug_assert_eq!(n, self.len[c] as usize);
++        if self.bytes + mag_bytes(c) > budget {
++            self.stats.budget_refusals += 1;
++            return false;
++        }
++        if !self.ensure_reserved(budget) {
++            self.stats.os_refusals += 1;
++            return false;
++        }
++        if n >= self.cap[c] as usize {
++            self.stats.budget_refusals += 1;
++            return false;
++        }
++        let idx = self.slot(c, n);
++        if !self.ensure_committed(c, idx) {
++            self.stats.os_refusals += 1;
++            return false;
++        }
++        // SAFETY: `idx < cap[c]`, so the record lies inside class `c`'s region
++        // of the live reservation, committed through `idx` just above; the
++        // region is page-aligned and records are 128 B, so the pointer is
++        // aligned for `Mag`. Only the owner reaches this control.
++        #[allow(unsafe_code)]
++        unsafe {
++            self.record(c, idx).write(*mag);
++        }
++        self.bytes += mag_bytes(c);
++        self.len[c] += 1;
++        self.parked_in_epoch |= 1 << c;
++        self.stats.parks += 1;
++        true
++    }
++
++    /// Move class `c`'s newest overflow record into `out`; `n` is the class's
++    /// current overflow length (`> 0`).
++    pub(crate) fn reload(&mut self, c: usize, n: usize, out: &mut Mag) {
++        debug_assert!(n > 0 && self.active() && n == self.len[c] as usize);
++        let idx = self.slot(c, n - 1);
++        // SAFETY: `n > 0` records are live in class `c`'s ring, so `idx` was
++        // written by `park` (committed, aligned, inside the reservation).
++        #[allow(unsafe_code)]
++        unsafe {
++            *out = self.record(c, idx).read();
++        }
++        self.bytes -= mag_bytes(c);
++        self.len[c] -= 1;
++        self.low[c] = self.low[c].min(self.len[c]);
++        // Debt never exceeds the ring: a reload consumes what decay would.
++        self.set_debt(c, self.debt[c].min(self.len[c]));
++        self.stats.reloads += 1;
++    }
++
++    /// Move class `c`'s oldest overflow record into `out` (decay); `n` is the
++    /// class's current overflow length (`> 0`).
++    pub(crate) fn pop_oldest(&mut self, c: usize, n: usize, out: &mut Mag) {
++        debug_assert!(n > 0 && self.active() && n == self.len[c] as usize);
++        let idx = self.head[c] as usize;
++        // SAFETY: as in `reload` — the head record is live while `n > 0`.
++        #[allow(unsafe_code)]
++        unsafe {
++            *out = self.record(c, idx).read();
++        }
++        self.head[c] = self.slot(c, 1) as u16;
++        self.bytes -= mag_bytes(c);
++        self.len[c] -= 1;
++        self.low[c] = self.low[c].min(self.len[c]);
++        self.set_debt(c, self.debt[c].saturating_sub(1));
++        self.stats.decay_flushed += 1;
++    }
++
++    fn set_debt(&mut self, c: usize, d: u16) {
++        self.debt[c] = d;
++        if d == 0 {
++            self.debt_mask &= !(1 << c);
++        } else {
++            self.debt_mask |= 1 << c;
++        }
++    }
++
++    /// Count one reload from the overflow; `true` every 8th, when the caller
++    /// runs the bounded remote-ingress check it otherwise skips.
++    pub(crate) fn ingress_due(&mut self) -> bool {
++        self.reloads_since_ingress += 1;
++        if self.reloads_since_ingress >= 8 {
++            self.reloads_since_ingress = 0;
++            self.stats.ingress_checks += 1;
++            return true;
++        }
++        false
++    }
++
++    /// Count one cold event; `true` when decay work is due (an epoch ended
++    /// or debt is outstanding) and the caller must run [`Self::decay_step`].
++    #[inline(always)]
++    pub(crate) fn tick(&mut self) -> bool {
++        if self.bytes == 0 {
++            return false;
++        }
++        self.events += 1;
++        self.events >= self.epoch_len || self.debt_mask != 0
++    }
++
++    /// Whether the current decay epoch has ended.
++    pub(crate) fn epoch_due(&self) -> bool {
++        self.events >= self.epoch_len.max(EPOCH_MIN)
++    }
++
++    /// End the epoch: each class that parked nothing in it — neither into
++    /// the overflow nor, per `floor_parked` (bit `c`), into its floor — owes
++    /// half its low-water mark (rounded up); the next epoch starts from the
++    /// current lengths.
++    pub(crate) fn end_epoch(&mut self, floor_parked: u32) {
++        let parked = self.parked_in_epoch | floor_parked;
++        let mut total = 0usize;
++        let mut c = 0;
++        while c < DEPOT_CLASSES {
++            let d = if parked & (1 << c) == 0 {
++                self.low[c].div_ceil(2).min(self.len[c])
++            } else {
++                0
++            };
++            self.set_debt(c, d);
++            self.low[c] = self.len[c];
++            total += self.len[c] as usize;
++            c += 1;
++        }
++        self.parked_in_epoch = 0;
++        self.events = 0;
++        self.epoch_len = (2 * total as u32).max(EPOCH_MIN);
++    }
++
++    /// The next class to decay, if any debt is outstanding.
++    pub(crate) fn debt_class(&self) -> Option<usize> {
++        if self.debt_mask == 0 {
++            None
++        } else {
++            Some(self.debt_mask.trailing_zeros() as usize)
++        }
++    }
++
++    /// Mark class `c` as latched (its `PerClass::limit` was lowered).
++    pub(crate) fn starve(&mut self, c: usize) {
++        self.starved |= 1 << c;
++    }
++
++    /// Latched classes that may park again under `budget` (room for one more
++    /// magazine of theirs, ring not full); their bits are cleared.
++    pub(crate) fn take_unstarved(&mut self, budget: usize) -> u32 {
++        if self.starved == 0 || self.reserve_failed {
++            return 0;
++        }
++        let mut ready = 0;
++        let mut m = self.starved;
++        while m != 0 {
++            let c = m.trailing_zeros() as usize;
++            m &= m - 1;
++            let ring_room = !self.active() || self.len[c] < self.cap[c];
++            if self.bytes + mag_bytes(c) <= budget && ring_room {
++                ready |= 1 << c;
++            }
++        }
++        self.starved &= !ready;
++        ready
++    }
++
++    /// After the depot is fully drained: return the committed record pages to
++    /// the OS, then reset rings, watermarks and decay state (the next park
++    /// re-commits). The reservation and its layout stay for reuse.
++    pub(crate) fn release_pages(&mut self) {
++        debug_assert_eq!(self.bytes, 0, "overflow must be drained first");
++        if !self.active() {
++            self.reserve_failed = false;
++            return;
++        }
++        let mut c = 0;
++        while c < DEPOT_CLASSES {
++            let have = self.committed[c] as usize;
++            if have != 0 {
++                let off = self.off[c] as usize;
++                crate::alloc_core::os::decommit_depot_overflow(self.base, off, off + have);
++                self.stats.decommits += 1;
++            }
++            c += 1;
++        }
++        self.reset_rings();
++    }
++
++    /// Empty every ring and drop every commit watermark to 0.
++    fn reset_rings(&mut self) {
++        self.committed = [0; DEPOT_CLASSES];
++        self.len = [0; DEPOT_CLASSES];
++        self.debt_mask = 0;
++        self.head = [0; DEPOT_CLASSES];
++        self.low = [0; DEPOT_CLASSES];
++        self.debt = [0; DEPOT_CLASSES];
++        self.parked_in_epoch = 0;
++        self.events = 0;
++        self.epoch_len = EPOCH_MIN;
++        self.reloads_since_ingress = 0;
++    }
++}
+diff --git a/src/registry/heap_core/state/depot_paths.rs b/src/registry/heap_core/state/depot_paths.rs
+index 613abdf1..f68837c4 100644
+--- a/src/registry/heap_core/state/depot_paths.rs
++++ b/src/registry/heap_core/state/depot_paths.rs
+@@ -1,11 +1,102 @@
+-//! Cold owner-side parking and reload for full magazines.
++//! Cold owner-side parking and reload for full magazines: the depot floor
++//! (K5's path, unchanged) and, under `alloc-decommit`, the G1-K7 overflow
++//! above it, reached only once the floor is full (park) or empty (reload).
+ 
+ use crate::registry::heap_core::state::depot::{DEPOT_CLASSES, DEPOT_K};
++#[cfg(feature = "alloc-decommit")]
++use crate::registry::heap_core::state::depot_overflow::{DepotOverflow, ALL_SMALL};
+ use crate::registry::heap_core::state::tcache::TCACHE_CAP;
++#[cfg(feature = "alloc-decommit")]
++use crate::registry::heap_core::state::tcache::{Tcache, MARK_FLOOR, MARK_TICK};
+ use crate::registry::heap_core::HeapCore;
+ 
++/// G1-K7: `PerClass::limit` with the overflow open for class `c` under
++/// `budget` — the floor plus the class's ring.
++#[cfg(feature = "alloc-decommit")]
++pub(crate) fn open_limit(c: usize, budget: usize) -> u16 {
++    let k = crate::registry::heap_core::state::depot::DEPOT_CAP[c] as usize;
++    if k == 0 || budget == 0 {
++        return k as u16;
++    }
++    (k + DepotOverflow::cap_for(budget, c)) as u16
++}
++
++/// G1-K7: reopen the latched classes in `ready` (bit `c`).
++#[cfg(feature = "alloc-decommit")]
++pub(crate) fn reopen(tcache: &mut Tcache, mut ready: u32, budget: usize) {
++    while ready != 0 {
++        let c = ready.trailing_zeros() as usize;
++        ready &= ready - 1;
++        tcache.classes[c].limit = open_limit(c, budget);
++    }
++}
++
+ impl HeapCore {
+-    /// Park a full magazine for a class with configured depot capacity.
++    /// Whether a full magazine of class `c` can park (the free path's inline
++    /// gate): the floor has room, or the class's overflow is open.
++    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++    #[inline(always)]
++    pub(crate) fn depot_may_park(&self, c: usize) -> bool {
++        let class = &self.tcache.classes[c];
++        (class.parked as u16) < class.limit
++    }
++
++    /// Whether class `c` has a parked magazine to reload (the refill path's
++    /// inline gate): its floor, or (G1-K7) its overflow ring's hint.
++    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++    #[inline(always)]
++    pub(crate) fn depot_may_reload(&self, c: usize) -> bool {
++        let class = &self.tcache.classes[c];
++        // `parked` and `ovf` are adjacent bytes: one 16-bit load.
++        #[cfg(feature = "alloc-decommit")]
++        {
++            u16::from_le_bytes([class.parked, class.ovf]) != 0
++        }
++        #[cfg(not(feature = "alloc-decommit"))]
++        {
++            class.parked != 0
++        }
++    }
++
++    /// G1-K7: whether a segment refill of class `c` counts a decay event
++    /// (the refill path's inline gate; `marks` shares the 8-byte head of
++    /// `PerClass` with `parked`, which the refill has just read).
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit"
++    ))]
++    #[inline(always)]
++    pub(crate) fn depot_may_tick(&self, c: usize) -> bool {
++        self.tcache.classes[c].marks & MARK_TICK != 0
++    }
++
++    /// G1-K7: a segment refill of armed class `c` — one decay event while
++    /// the overflow holds bytes; once it is empty, `c` drops its tick flag
++    /// until the next overflow park re-arms it.
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit"
++    ))]
++    #[cold]
++    #[inline(never)]
++    pub(crate) fn depot_segment_tick(&mut self, c: usize) {
++        let Some(depot) = self.depot.as_deref_mut() else {
++            self.tcache.classes[c].marks &= !MARK_TICK;
++            return;
++        };
++        if depot.ovf.bytes() == 0 {
++            depot.ovf.disarm(c);
++            self.tcache.classes[c].marks &= !MARK_TICK;
++            return;
++        }
++        self.depot_tick();
++    }
++
++    /// Park a full magazine for a class with configured depot capacity: the
++    /// floor first; once it is full, the G1-K7 overflow within the heap's
++    /// budget. `false` (no change) otherwise.
+     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+     #[cold]
+     #[inline(never)]
+@@ -21,8 +112,15 @@ impl HeapCore {
+             return false;
+         }
+         if !depot.depot_park(c, &mut class.parked, &class.slots) {
++            #[cfg(feature = "alloc-decommit")]
++            return self.park_overflow(c);
++            #[cfg(not(feature = "alloc-decommit"))]
+             return false;
+         }
++        #[cfg(feature = "alloc-decommit")]
++        {
++            class.marks |= MARK_FLOOR;
++        }
+         #[cfg(feature = "virgin-zero-skip")]
+         {
+             class.virgin_mask = 0;
+@@ -30,7 +128,10 @@ impl HeapCore {
+         true
+     }
+ 
+-    /// Reload a parked full magazine; its blocks remain MAG and live.
++    /// Reload a parked full magazine — the floor's newest first, then the
++    /// overflow's newest; its blocks remain MAG and live. Counts no decay
++    /// tick: the teardown drain uses it ([`Self::depot_reload_tick`] is the
++    /// refill's).
+     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+     #[cold]
+     #[inline(never)]
+@@ -43,6 +144,38 @@ impl HeapCore {
+         };
+         let class = &mut self.tcache.classes[c];
+         if class.count != 0 || !depot.depot_reload(c, &mut class.parked, &mut class.slots) {
++            #[cfg(feature = "alloc-decommit")]
++            if class.count == 0 {
++                return self.reload_overflow(c);
++            }
++            return false;
++        }
++        #[cfg(feature = "virgin-zero-skip")]
++        {
++            class.virgin_mask = 0;
++        }
++        class.count = TCACHE_CAP as u8;
++        true
++    }
++
++    /// The refill's reload: [`Self::depot_reload`], except that an overflow
++    /// reload counts one cold event for the overflow decay.
++    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
++    #[cold]
++    #[inline(never)]
++    pub(crate) fn depot_reload_tick(&mut self, c: usize) -> bool {
++        if c >= DEPOT_CLASSES || DEPOT_K[c] == 0 {
++            return false;
++        }
++        let Some(depot) = self.depot.as_deref_mut() else {
++            return false;
++        };
++        let class = &mut self.tcache.classes[c];
++        if class.count != 0 || !depot.depot_reload(c, &mut class.parked, &mut class.slots) {
++            #[cfg(feature = "alloc-decommit")]
++            if class.count == 0 {
++                return self.reload_overflow_tick(c);
++            }
+             return false;
+         }
+         #[cfg(feature = "virgin-zero-skip")]
+@@ -52,4 +185,124 @@ impl HeapCore {
+         class.count = TCACHE_CAP as u8;
+         true
+     }
++
++    /// G1-K7: park class `c`'s full magazine above its full floor. The ring
++    /// takes the record, the magazine is then empty (`count = 0`; the free
++    /// path starts the next one), and only after that the decay counts the
++    /// event — it touches long-parked records, never this one. The park arms
++    /// the segment-refill tick of every class not yet armed. On refusal, or
++    /// once the ring is full, the class's limit latches at the floor so the
++    /// free path stops calling until the overflow shrinks.
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit"
++    ))]
++    #[cold]
++    #[inline(never)]
++    fn park_overflow(&mut self, c: usize) -> bool {
++        let budget = self.depot_budget as usize;
++        let Some(depot) = self.depot.as_deref_mut() else {
++            return false;
++        };
++        let ovf = &mut depot.ovf;
++        let class = &mut self.tcache.classes[c];
++        debug_assert_eq!(class.parked, DEPOT_K[c], "the floor fills first");
++        debug_assert_eq!(class.count as usize, TCACHE_CAP);
++        let n = ovf.len(c);
++        if budget == 0 || !ovf.park(c, n, &class.slots, budget) {
++            class.limit = class.parked as u16;
++            ovf.starve(c);
++            return false;
++        }
++        class.ovf = 1;
++        if n + 1 >= ovf.cap(c) {
++            class.limit = class.parked as u16;
++            ovf.starve(c);
++        }
++        class.count = 0;
++        #[cfg(feature = "virgin-zero-skip")]
++        {
++            class.virgin_mask = 0;
++        }
++        // A non-empty ring meant bytes > 0 before this park, so every class
++        // is armed already; only a class's first record can arm.
++        debug_assert!(n == 0 || ovf.armed() == ALL_SMALL);
++        if n == 0 {
++            let mut fresh = ovf.arm();
++            while fresh != 0 {
++                let k = fresh.trailing_zeros() as usize;
++                fresh &= fresh - 1;
++                self.tcache.classes[k].marks |= MARK_TICK;
++            }
++        }
++        self.depot_tick();
++        true
++    }
++
++    /// G1-K7: reload class `c`'s newest overflow record into its empty
++    /// magazine (the floor is empty). The ring length decides, not the
++    /// `PerClass::ovf` hint, which is re-synced here. Reopens latched classes
++    /// the freed bytes make room for; every 8th reload runs the bounded
++    /// remote-ingress check the refill otherwise skips. Counts no decay tick.
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit"
++    ))]
++    #[cold]
++    #[inline(never)]
++    fn reload_overflow(&mut self, c: usize) -> bool {
++        let budget = self.depot_budget as usize;
++        let Some(depot) = self.depot.as_deref_mut() else {
++            return false;
++        };
++        let ovf = &mut depot.ovf;
++        let class = &mut self.tcache.classes[c];
++        let n = ovf.len(c);
++        if n == 0 {
++            class.ovf = 0;
++            return false;
++        }
++        debug_assert!(
++            class.parked == 0 && class.count == 0,
++            "the floor empties first"
++        );
++        ovf.reload(c, n, &mut class.slots);
++        class.ovf = (n > 1) as u8;
++        #[cfg(feature = "virgin-zero-skip")]
++        {
++            class.virgin_mask = 0;
++        }
++        class.count = TCACHE_CAP as u8;
++        let ingress = ovf.ingress_due();
++        let ready = ovf.take_unstarved(budget);
++        if ready != 0 {
++            reopen(&mut self.tcache, ready, budget);
++        }
++        #[cfg(feature = "alloc-xthread")]
++        if ingress {
++            self.drain_large_sidecar_ingress_hot_bounded();
++        }
++        #[cfg(not(feature = "alloc-xthread"))]
++        let _ = ingress;
++        true
++    }
++
++    /// G1-K7: [`Self::reload_overflow`] for the refill — the reload, then one
++    /// cold event for the overflow decay (the magazine is already live).
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit"
++    ))]
++    #[cold]
++    #[inline(never)]
++    fn reload_overflow_tick(&mut self, c: usize) -> bool {
++        if !self.reload_overflow(c) {
++            return false;
++        }
++        self.depot_tick();
++        true
++    }
+ }
+diff --git a/src/registry/heap_core/state/mod.rs b/src/registry/heap_core/state/mod.rs
+index 86e4320c..d84e9419 100644
+--- a/src/registry/heap_core/state/mod.rs
++++ b/src/registry/heap_core/state/mod.rs
+@@ -4,6 +4,12 @@
+ 
+ #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+ pub(crate) mod depot;
++#[cfg(all(
++    feature = "alloc-global",
++    feature = "fastbin",
++    feature = "alloc-decommit"
++))]
++pub(crate) mod depot_overflow;
+ #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+ mod depot_paths;
+ mod ownership;
+diff --git a/src/registry/heap_core/state/tcache.rs b/src/registry/heap_core/state/tcache.rs
+index bb7905fa..41972d72 100644
+--- a/src/registry/heap_core/state/tcache.rs
++++ b/src/registry/heap_core/state/tcache.rs
+@@ -228,9 +228,10 @@ pub(crate) static FREE_PARK_CAP: [u8; SMALL_CLASS_COUNT] = {
+ /// 128+ bytes from `slots[0]`, outside its 64-byte line. That historical
+ /// shallow-slot observation does not describe full-capacity churn.
+ /// `#[repr(C)]` fixes the field order to declaration order:
+-/// `count` at offset 0, `virgin_mask` (when present) at offset 2 (1 pad
+-/// byte after the u8 `count` — `virgin_mask`'s `u16` needs 2-byte alignment,
+-/// so the compiler inserts one padding byte at offset 1), `slots`
++/// `count` at offset 0, `parked` at offset 1, the G1-K7 `ovf` hint at
++/// offset 2 (next to `parked`, so the refill gate reads both in one load) and
++/// `marks` at 3, `virgin_mask` (when present) at offset 4, `limit` in the
++/// remaining padding, `slots`
+ /// padded up to its own 8-byte alignment and starting at offset 8 in both
+ /// configurations — see the `offset_of!` const-asserts on [`PerClass`]
+ /// immediately below, which pin this rather than leaving it aspirational.
+@@ -243,10 +244,23 @@ pub(crate) struct PerClass {
+     /// offset 0, preceding the pointer array at offset 8.
+     pub(crate) count: u8,
+     /// B4 depot (DP-5 iteration 2): full magazines of this class parked in
+-    /// the slot's depot (`0..=DEPOT_CAP[c]`). Sits in the padding byte after
+-    /// `count` (no size change), so the overflow / miss branches gate the
+-    /// cold depot calls without leaving this line.
++    /// the slot's depot floor (`0..=DEPOT_CAP[c]`). Sits in the padding byte
++    /// after `count` (no size change), so the overflow / miss branches gate
++    /// the cold depot calls without leaving this line. G1-K7 records above
++    /// the floor are counted by the overflow ring, not here.
+     pub(crate) parked: u8,
++    /// G1-K7: 1 while the class's overflow ring holds a record, else 0 —
++    /// the refill path's inline hint to try the cold overflow reload once
++    /// the floor is empty. Written only by the cold overflow paths; they
++    /// re-check the ring length, so the hint is never trusted for a reload.
++    pub(crate) ovf: u8,
++    /// G1-K7: two flags. [`MARK_FLOOR`]: the class parked into its floor
++    /// during the current decay epoch (the decay treats it as active;
++    /// cleared at the epoch's end). [`MARK_TICK`]: a segment refill of this
++    /// class counts a decay event — set on every class while the overflow
++    /// holds bytes, dropped lazily by the class's own refill once it finds
++    /// the overflow empty.
++    pub(crate) marks: u8,
+     /// R13-3 (task #273): magazine-resident virginity bitmask, ONE bit per
+     /// `slots` index (bit `i` set ⟺ `slots[i]` is a genuinely virgin —
+     /// never-before-served, `Node::zero`-skippable — block, per the
+@@ -290,6 +304,12 @@ pub(crate) struct PerClass {
+     /// pointer array.
+     #[cfg(feature = "virgin-zero-skip")]
+     pub(crate) virgin_mask: u16,
++    /// G1-K7: `parked` bound the free path checks inline before the cold
++    /// depot call — the floor `DEPOT_CAP[c]`, or above it while the class's
++    /// overflow ring accepts; latched back to the floor when the overflow
++    /// refuses (budget, OS) or its ring fills, until the overflow shrinks.
++    /// In the padding before `slots` (no size change).
++    pub(crate) limit: u16,
+     /// This class's pointer stack. `slots[0..count as usize]` are valid.
+     /// F4: declared LAST so `#[repr(C)]` places it after the small fields —
+     /// `#[repr(C)]` still pads `slots` up to its own 8-byte alignment (no
+@@ -323,10 +343,20 @@ const _: () = assert!(
+     ::core::mem::offset_of!(PerClass, parked) == 1,
+     "PerClass::parked must use the pad byte after count (offset 1)"
+ );
++const _: () = assert!(
++    ::core::mem::offset_of!(PerClass, ovf) == 2 && ::core::mem::offset_of!(PerClass, marks) == 3,
++    "PerClass::ovf must follow parked (offset 2) for the refill gate's one load; marks at 3"
++);
+ #[cfg(feature = "virgin-zero-skip")]
+ const _: () = assert!(
+-    ::core::mem::offset_of!(PerClass, virgin_mask) == 2,
+-    "PerClass::virgin_mask must sit at offset 2 (repr(C), declared second, after u8 count + 1 pad byte)"
++    ::core::mem::offset_of!(PerClass, virgin_mask) == 4
++        && ::core::mem::offset_of!(PerClass, limit) == 6,
++    "PerClass::virgin_mask at offset 4 and limit at 6 (repr(C), after the four u8 fields)"
++);
++#[cfg(not(feature = "virgin-zero-skip"))]
++const _: () = assert!(
++    ::core::mem::offset_of!(PerClass, limit) == 4,
++    "PerClass::limit (u16) must sit in the padding before slots (offset 4)"
+ );
+ // R2-17: this is the concrete pin the crate-root gate in `src/lib.rs` exists
+ // to host — `slots` reaches offset 8 only on a 64-bit `repr(C)` ABI, and the
+@@ -338,15 +368,25 @@ const _: () = assert!(
+     "PerClass::slots must start at offset 8 (repr(C), 8-byte-aligned pointer array placed after the small fields) for the documented magazine cache-line locality"
+ );
+ 
++/// G1-K7: `PerClass::marks` bit — the class parked into its floor this epoch.
++#[cfg(feature = "alloc-decommit")]
++pub(crate) const MARK_FLOOR: u8 = 1;
++/// G1-K7: `PerClass::marks` bit — the class's segment refill ticks the decay.
++#[cfg(feature = "alloc-decommit")]
++pub(crate) const MARK_TICK: u8 = 2;
++
+ impl PerClass {
+     /// Construct an empty per-class magazine (count zero, all slots null).
+     const fn new() -> Self {
+         Self {
+             count: 0,
+             parked: 0,
++            ovf: 0,
++            marks: 0,
+             slots: [::core::ptr::null_mut(); TCACHE_CAP],
+             #[cfg(feature = "virgin-zero-skip")]
+             virgin_mask: 0,
++            limit: 0,
+         }
+     }
+ }
+@@ -369,8 +409,12 @@ impl Tcache {
+     /// `const fn` so it can be used in `HeapCore::new` with zero allocation
+     /// at construction (M5-clean).
+     pub(crate) const fn new() -> Self {
+-        Self {
+-            classes: [PerClass::new(); SMALL_CLASS_COUNT],
++        let mut classes = [PerClass::new(); SMALL_CLASS_COUNT];
++        let mut c = 0;
++        while c < SMALL_CLASS_COUNT {
++            classes[c].limit = crate::registry::heap_core::state::depot::DEPOT_CAP[c] as u16;
++            c += 1;
+         }
++        Self { classes }
+     }
+ }
+diff --git a/src/registry/heap_core/state/tcache_flush.rs b/src/registry/heap_core/state/tcache_flush.rs
+index 8e5f25ad..622c1236 100644
+--- a/src/registry/heap_core/state/tcache_flush.rs
++++ b/src/registry/heap_core/state/tcache_flush.rs
+@@ -54,7 +54,17 @@ impl HeapCore {
+     /// survives recycle (the `HeapCore` stays in the slot).
+     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+     pub(crate) fn bind_depot(&mut self, depot: &'static mut super::depot::Depot) {
++        // G1-K7: the overflow is empty here; no class ticks until it parks.
++        #[cfg(feature = "alloc-decommit")]
++        depot.ovf.disarm_all();
+         self.depot = Some(depot);
++        // G1-K7: open each depot class's overflow ring under the heap's budget.
++        #[cfg(feature = "alloc-decommit")]
++        for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
++            self.tcache.classes[c].limit =
++                super::depot_paths::open_limit(c, self.depot_budget as usize);
++            self.tcache.classes[c].marks = 0;
++        }
+     }
+ 
+     /// W3: plant the stable handle to THIS heap's slot-resident large-segment
+@@ -112,10 +122,118 @@ impl HeapCore {
+                         self.tcache.classes[c].virgin_mask = 0;
+                     }
+                 }
++                // Teardown reload: `depot_reload` counts no decay tick.
+                 if !self.depot_reload(c) {
+                     break;
+                 }
+             }
++            // G1-K7: floor and ring are empty (the reload follows the ring
++            // length, not the hint); drop the floor's epoch mark too.
++            #[cfg(feature = "alloc-decommit")]
++            {
++                debug_assert_eq!(self.tcache.classes[c].ovf, 0);
++                self.tcache.classes[c].marks &= !super::tcache::MARK_FLOOR;
++            }
++        }
++        // G1-K7: the depot (floor and overflow) is now empty; return the
++        // overflow's committed record pages and reset its rings.
++        #[cfg(feature = "alloc-decommit")]
++        self.depot_release_overflow_pages();
++    }
++
++    /// G1-K7: decommit the depot overflow's record pages and reset its rings
++    /// once the teardown drain has emptied the depot.
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit"
++    ))]
++    fn depot_release_overflow_pages(&mut self) {
++        if let Some(depot) = self.depot.as_deref_mut() {
++            depot.ovf.release_pages();
++            // Nothing is parked: no class ticks until the next park.
++            depot.ovf.disarm_all();
++            for class in self.tcache.classes.iter_mut() {
++                class.marks &= !super::tcache::MARK_TICK;
++            }
++            let budget = self.depot_budget as usize;
++            let ready = depot.ovf.take_unstarved(budget);
++            super::depot_paths::reopen(&mut self.tcache, ready, budget);
++        }
++    }
++
++    /// G1-K7: count one cold event for the depot-overflow decay; when an
++    /// epoch ends or debt is outstanding, pay up to `DECAY_WORK` records —
++    /// the oldest overflow records of classes that parked nothing during the
++    /// last epoch go back to their segments. Touches only long-parked
++    /// records, never the live magazine. O(1) unless decay work is due.
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit"
++    ))]
++    #[inline]
++    pub(crate) fn depot_tick(&mut self) {
++        let Some(depot) = self.depot.as_deref_mut() else {
++            return;
++        };
++        if depot.ovf.tick() {
++            self.depot_decay();
++        }
++    }
++
++    /// G1-K7: the decay work `depot_tick` found due.
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit"
++    ))]
++    #[cold]
++    #[inline(never)]
++    fn depot_decay(&mut self) {
++        use crate::registry::heap_core::state::depot::DEPOT_CLASSES;
++        use crate::registry::heap_core::state::depot_overflow::DECAY_WORK;
++        use crate::registry::heap_core::state::tcache::TCACHE_CAP;
++        let budget = self.depot_budget as usize;
++        let Some(depot) = self.depot.as_deref_mut() else {
++            return;
++        };
++        if depot.ovf.epoch_due() {
++            // Floor parks count as activity: collect and clear their marks.
++            let mut floor_parked = 0u32;
++            for c in 0..DEPOT_CLASSES {
++                let class = &mut self.tcache.classes[c];
++                floor_parked |= ((class.marks & super::tcache::MARK_FLOOR) as u32) << c;
++                class.marks &= !super::tcache::MARK_FLOOR;
++            }
++            depot.ovf.end_epoch(floor_parked);
++        }
++        let mut work = 0;
++        while work < DECAY_WORK {
++            let Some(depot) = self.depot.as_deref_mut() else {
++                return;
++            };
++            let Some(c) = depot.ovf.debt_class() else {
++                break;
++            };
++            let n = depot.ovf.len(c);
++            let mut mag = [core::ptr::null_mut(); TCACHE_CAP];
++            depot.ovf.pop_oldest(c, n, &mut mag);
++            // The floor is untouched; only the ring's hint can change.
++            self.tcache.classes[c].ovf = (n > 1) as u8;
++            // SAFETY (R6-MS-3): `mag` is a full parked magazine of class `c`
++            // (16 blocks issued by this heap, state MAG, each held exactly
++            // once — the record just left the ring), returned to the
++            // substrate exactly once here.
++            #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
++            unsafe {
++                self.core.flush_class_internal(c, &mag);
++            }
++            work += 1;
++        }
++        if let Some(depot) = self.depot.as_deref_mut() {
++            let ready = depot.ovf.take_unstarved(budget);
++            super::depot_paths::reopen(&mut self.tcache, ready, budget);
+         }
+     }
+ 
+diff --git a/src/registry/heap_slot.rs b/src/registry/heap_slot.rs
+index 454a8504..e6b48f0e 100644
+--- a/src/registry/heap_slot.rs
++++ b/src/registry/heap_slot.rs
+@@ -345,7 +345,8 @@ impl HeapSlot {
+ //   - `core: AllocCore` (segment roots, table slots, large-cache sidecar)
+ //   - `tcache: Tcache` (`PerClass::slots: [*mut u8; TCACHE_CAP]`)
+ //   - `depot: Option<&'static mut Depot>` (owner-only binding to this slot's
+-//     parked-magazine pointer arrays)
++//     parked-magazine pointer arrays and depot-overflow control)
++//   - `depot_budget: u32` (resolved depot-overflow budget, G1-K7)
+ // The `#[cfg]` arms mirror `HeapCore`'s field gates exactly (see
+ // `heap_core/core.rs`).
+ const _: fn(&HeapCore) = |hc| {
+@@ -365,6 +366,12 @@ const _: fn(&HeapCore) = |hc| {
+             tcache: _,
+         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+             depot: _,
++        #[cfg(all(
++            feature = "alloc-global",
++            feature = "fastbin",
++            feature = "alloc-decommit"
++        ))]
++        depot_budget,
+         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+         tcache_hits,
+     } = hc;
+@@ -379,6 +386,12 @@ const _: fn(&HeapCore) = |hc| {
+     assert_send(large_hot_cursor);
+     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+     assert_send(tcache_hits);
++    #[cfg(all(
++        feature = "alloc-global",
++        feature = "fastbin",
++        feature = "alloc-decommit"
++    ))]
++    assert_send(depot_budget);
+ };
+ unsafe impl Sync for HeapSlot {}
+ 
