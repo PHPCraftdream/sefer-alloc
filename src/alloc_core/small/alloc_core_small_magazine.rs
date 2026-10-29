@@ -249,8 +249,10 @@ impl AllocCore {
         // LIVE and are not counted).
         #[cfg(feature = "bench-internals")]
         if issue_state == StateByte::MAG {
-            crate::alloc_core::alloc_core::S1_REFILL_EVENTS
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::alloc_core::alloc_core::unlocked_bump(
+                &crate::alloc_core::alloc_core::S1_REFILL_EVENTS,
+                1,
+            );
         }
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);

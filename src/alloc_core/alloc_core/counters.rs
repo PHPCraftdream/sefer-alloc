@@ -198,17 +198,18 @@ pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_HITS: core::sync::atomic::A
 pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_MISSES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
-/// DZ-2: bump a Tier-1 counter without a locked RMW. These counters sit on
-/// every own-thread free; `fetch_add` (`lock inc` on x86, ~20 cycles) made
-/// `bench-internals` builds' free path 40 % slower than `production`
-/// (`docs/perf/DZ2_BENCH_INTERNALS_HOT_COUNTER.md`). Exact for a single
-/// thread; concurrent bumps from different threads may lose counts, which
-/// every reader tolerates (each test serializes and reads its own delta).
+/// DZ-2: add `n` to a `bench-internals` counter without a locked RMW. For
+/// counters on the alloc/free/refill paths: `fetch_add` (`lock` on x86,
+/// ~20 cycles) made `bench-internals` builds' free path 40 % slower than
+/// `production` (`docs/perf/DZ2_BENCH_INTERNALS_HOT_COUNTER.md`). Exact for a
+/// single thread; concurrent bumps from different threads may lose counts,
+/// so use it only for counters whose readers serialize and read their own
+/// delta (multi-thread probes keep `fetch_add`).
 #[cfg(feature = "bench-internals")]
 #[inline(always)]
-pub(in crate::alloc_core) fn tier1_bump(counter: &core::sync::atomic::AtomicU64) {
+pub(crate) fn unlocked_bump(counter: &core::sync::atomic::AtomicU64, n: u64) {
     use core::sync::atomic::Ordering::Relaxed;
-    counter.store(counter.load(Relaxed).wrapping_add(1), Relaxed);
+    counter.store(counter.load(Relaxed).wrapping_add(n), Relaxed);
 }
 
 /// TEST-ONLY (R9-1, task #221 follow-up): process-wide count of EXPLICIT

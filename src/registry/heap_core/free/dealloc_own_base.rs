@@ -643,8 +643,10 @@ impl HeapCore {
                 self.tcache.classes[c].virgin_mask &= !(1u16 << (cnt - 1));
             }
             #[cfg(feature = "bench-internals")]
-            crate::registry::heap_core::diag::R1_01_CAP_ROUTE_FREES
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::alloc_core::unlocked_bump(
+                &crate::registry::heap_core::diag::R1_01_CAP_ROUTE_FREES,
+                1,
+            );
             return;
         }
         // ── Magazine overflow (cnt == TCACHE_CAP) ──────────

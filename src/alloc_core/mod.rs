@@ -165,6 +165,9 @@ pub(crate) use large::large_cache_extended;
 pub use alloc_core::AllocCore;
 // R6-T16: consumed only by the fastbin-gated own-free/realloc paths
 // (`fastbin` implies `alloc-global`).
+/// DZ-2: unlocked bump for `bench-internals` counters on hot paths.
+#[cfg(feature = "bench-internals")]
+pub(crate) use alloc_core::unlocked_bump;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub(crate) use alloc_core::OwnedBlock;
 /// The dropped-free counter, re-exported crate-wide so

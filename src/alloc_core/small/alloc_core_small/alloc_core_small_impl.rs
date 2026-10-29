@@ -619,8 +619,10 @@ impl AllocCore {
             // B4-M (P1-2): MAG state-byte writes of this drain, one add per batch.
             #[cfg(feature = "bench-internals")]
             if issue_state == StateByte::MAG {
-                crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
-                    .fetch_add(k as u64, core::sync::atomic::Ordering::Relaxed);
+                crate::alloc_core::alloc_core::unlocked_bump(
+                    &crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES,
+                    k as u64,
+                );
             }
             // R7-A2: directory bitmap maintenance — the old head was non-null
             // (early return above), so the only transition is non-empty→empty
@@ -981,8 +983,10 @@ impl AllocCore {
         // B4-M (P1-2): MAG state-byte writes of this carve, one add per batch.
         #[cfg(feature = "bench-internals")]
         if issue_state == StateByte::MAG {
-            crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
-                .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
+            crate::alloc_core::alloc_core::unlocked_bump(
+                &crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES,
+                n as u64,
+            );
         }
         Ok(n)
     }
