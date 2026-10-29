@@ -1,0 +1,76 @@
+--------------------------------------------------------------------------------
+Profile data file '<workspace>/.rush/own-free-context/candidate/p1-sefer-rt-50000.callgrind' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 1627607
+Trigger: Program termination
+Profiled target:  <workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile sefer rt 50000 (PID 600520, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                 
+--------------------------------------------------------------------------------
+4,094,727 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                  file:function
+--------------------------------------------------------------------------------
+1,423,376 (34.76%)  src/registry/heap_core/free/dealloc_own_base.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  456,912 (11.16%)  examples/own_free_profile.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+  456,912 (11.16%)  src/alloc_core/platform/size_classes.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  203,070 ( 4.96%)  src/alloc_core/segment/segment_header/segment_header_views.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  152,329 ( 3.72%)  src/alloc_core/segment/segment_table/segment_table_impl.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  152,304 ( 3.72%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  152,304 ( 3.72%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  152,304 ( 3.72%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  151,370 ( 3.70%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  134,048 ( 3.27%)  src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_run [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+  117,936 ( 2.88%)  src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+  101,536 ( 2.48%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  101,536 ( 2.48%)  src/alloc_core/alloc_core/mem/mem_impl.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   50,768 ( 1.24%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   50,768 ( 1.24%)  src/global/tls_heap.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   49,832 ( 1.22%)  src/alloc_core/segment/bitmap/state_byte.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   34,632 ( 0.85%)  src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::dealloc_with_state_slot [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+   30,888 ( 0.75%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_run
+   27,144 ( 0.66%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_run
+   20,592 ( 0.50%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_run
+   14,976 ( 0.37%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_run
+   14,976 ( 0.37%)  src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_run
+    9,360 ( 0.23%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_run
+    7,488 ( 0.18%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    6,552 ( 0.16%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    4,680 ( 0.11%)  src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_run
+    4,680 ( 0.11%)  src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    3,744 ( 0.09%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+    3,744 ( 0.09%)  src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_run
+      936 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::dealloc_with_state_slot
+      936 ( 0.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+      936 ( 0.02%)  src/alloc_core/segment/bitmap/state_byte.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::dealloc_with_state_slot
+      936 ( 0.02%)  src/lib.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+      200 ( 0.00%)  src/alloc_core/small/alloc_core_small/directory.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_run
+       20 ( 0.00%)  src/alloc_core/segment/segment_table/hash.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        1 ( 0.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/const_ptr.rs:own_free_profile::w_free_rt::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+        .           ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        .           ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+        .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+        .           ???:(below main) [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+        .           ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+        .           ???:main [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+        .           examples/own_free_profile.rs:own_free_profile::main [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+
+--------------------------------------------------------------------------------
+# TRUNCATED — source listings omitted; full output: rebuild with reproduction/profile.sh then callgrind_annotate --auto=yes --threshold=100 <profile>.callgrind

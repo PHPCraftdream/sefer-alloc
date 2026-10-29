@@ -1,0 +1,17 @@
+{
+  "captured_before_measure": "2026-10-25T01:20:39.180Z",
+  "features": "production internals bench-internals",
+  "canonical_identity_sha256": "c21805fd35f53bc7938b7b8a9f28a8462c58204b2e9d221eed7e127b24f95833",
+  "blocks": 10,
+  "sequence": [
+    "before",
+    "after",
+    "after",
+    "before"
+  ],
+  "filter": "^global_alloc_churn/(SeferAlloc|mimalloc)/16B$",
+  "binaries": {
+    "before": "759a5dd4f908f4a078209aa9165feae55e36efdb3f39491c2cda3d904f97ad89",
+    "after": "2171f82a791fc0146a8bb00d0cd9978ab223a5de0e876a0a274972c485845e13"
+  }
+}

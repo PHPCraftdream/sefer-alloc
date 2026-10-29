@@ -3177,6 +3177,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **117 — Owner-free A/B/C research: CLOSED / NO-GO FOR PROMOTION (2026-10-25).** Free Ir снижен, native-выигрыш не установлен, canonical сигналы ухудшения не закрыты; `OWNER_FREE_RESEARCH_GATE.md`; полная история и reopen trigger — `OPEN_ITEMS_ARCHIVE.md` § L117.
+
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §

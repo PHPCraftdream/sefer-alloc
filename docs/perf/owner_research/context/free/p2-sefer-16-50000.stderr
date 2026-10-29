@@ -1,0 +1,11 @@
+==600562== Callgrind, a call-graph generating cache profiler
+==600562== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==600562== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==600562== Command: <workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile sefer 16 50000
+==600562== 
+==600562== For interactive control, run 'callgrind_control -h'.
+==600562== 
+==600562== Events    : Ir
+==600562== Collected : 2150734
+==600562== 
+==600562== I   refs:      2,150,734

@@ -1,0 +1,50 @@
+--------------------------------------------------------------------------------
+Profile data file '<workspace>/.rush/own-free-context/candidate/p2-mimalloc-16-50000.callgrind' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 1217202
+Trigger: Program termination
+Profiled target:  <workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile mimalloc 16 50000 (PID 600580, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                 
+--------------------------------------------------------------------------------
+1,400,507 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                file:function
+--------------------------------------------------------------------------------
+550,176 (39.28%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_free
+500,162 (35.71%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+150,048 (10.71%)  examples/own_free_profile.rs:own_free_profile::w_free16::<mimalloc::MiMalloc> [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+100,032 ( 7.14%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs:own_free_profile::w_free16::<mimalloc::MiMalloc>
+ 50,016 ( 3.57%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_free
+ 50,016 ( 3.57%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:own_free_profile::w_free16::<mimalloc::MiMalloc>
+     30 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_retire [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+     10 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:_mi_page_retire
+      8 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_bin
+      6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_retire
+      3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_bin [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+      .           ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+      .           ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+      .           ???:(below main) [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+      .           ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+      .           ???:main [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+      .           examples/own_free_profile.rs:own_free_profile::main [<workspace>/.rush/own-free-context/candidate/target/release/examples/own_free_profile]
+
+--------------------------------------------------------------------------------
+# TRUNCATED — source listings omitted; full output: rebuild with reproduction/profile.sh then callgrind_annotate --auto=yes --threshold=100 <profile>.callgrind

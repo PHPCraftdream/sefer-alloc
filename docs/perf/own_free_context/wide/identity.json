@@ -1,0 +1,17 @@
+{
+  "captured_before_build": "2026-10-24T23:31:38.603Z",
+  "features": "production bench-internals internals",
+  "bench": "perf_gate_iai",
+  "identities": {
+    "before": {
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "patch_sha256": "e1eff49a619518de1de6f79142a5233548aa20df3cf6a79f929b445d067bf09b",
+      "bench_sha256": "9f81800e5dbbf120f8537ed937d5af4989aefd6c74710bb8868ade4ba0309837"
+    },
+    "after": {
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "patch_sha256": "09f7b1a14032ed8faecbefa39a92c254656b2368b07d94cb7ad1acd086ab1ce4",
+      "bench_sha256": "9f81800e5dbbf120f8537ed937d5af4989aefd6c74710bb8868ade4ba0309837"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+global_alloc_churn/SeferAlloc/16B
+                        time:   [10.078 µs 10.906 µs 11.591 µs]
+global_alloc_churn/mimalloc/16B
+                        time:   [8.1960 µs 8.7994 µs 9.7704 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+
+
+Gnuplot not found, using plotters backend
+Benchmarking global_alloc_churn/SeferAlloc/16B
+Benchmarking global_alloc_churn/SeferAlloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/SeferAlloc/16B: Collecting 10 samples in estimated 600.35 ms (31k iterations)
+Benchmarking global_alloc_churn/SeferAlloc/16B: Analyzing
+Benchmarking global_alloc_churn/mimalloc/16B
+Benchmarking global_alloc_churn/mimalloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/mimalloc/16B: Collecting 10 samples in estimated 600.58 ms (51k iterations)
+Benchmarking global_alloc_churn/mimalloc/16B: Analyzing
+global_alloc_churn_with_teardown/16B: decommit_calls delta = 0, segments_released_total delta = 0
+global_alloc_churn_with_teardown/64B: decommit_calls delta = 0, segments_released_total delta = 0
+global_alloc_churn_with_teardown/256B: decommit_calls delta = 0, segments_released_total delta = 0
+global_alloc_churn_with_teardown/1024B: decommit_calls delta = 0, segments_released_total delta = 0
+working_set_cycle/SeferAlloc/16B: decommit_calls delta = 0, segments_released_total delta = 0
+working_set_cycle/SeferAlloc/64B: decommit_calls delta = 0, segments_released_total delta = 0
+working_set_cycle/SeferAlloc/256B: decommit_calls delta = 0, segments_released_total delta = 0
+working_set_cycle/SeferAlloc/1024B: decommit_calls delta = 0, segments_released_total delta = 0

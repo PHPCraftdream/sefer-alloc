@@ -1,0 +1,80 @@
+--------------------------------------------------------------------------------
+Profile data file '<workspace>/.rush/own-free-split/baseline/p1-mimalloc-rt-50000.callgrind' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 1330529
+Trigger: Program termination
+Profiled target:  <workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile mimalloc rt 50000 (PID 586642, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       100
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                 
+--------------------------------------------------------------------------------
+1,575,869 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                file:function
+--------------------------------------------------------------------------------
+558,448 (35.44%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_free
+507,768 (32.22%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+304,608 (19.33%)  examples/own_free_profile.rs:own_free_profile::w_free_rt::<mimalloc::MiMalloc> [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+101,536 ( 6.44%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/hint.rs:own_free_profile::w_free_rt::<mimalloc::MiMalloc>
+ 50,768 ( 3.22%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_free
+ 50,768 ( 3.22%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:own_free_profile::w_free_rt::<mimalloc::MiMalloc>
+    563 ( 0.04%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_retire [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+    210 ( 0.01%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_bin
+    200 ( 0.01%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:_mi_page_retire
+    140 ( 0.01%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c:mi_option_get [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+    120 ( 0.01%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_retire
+     78 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.c:mi_bitmap_setN [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     77 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.c:mi_bbitmap_setN [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     70 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.c:mi_bitmap_clearN [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     68 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/arena.c:_mi_arenas_free [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     63 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_bin [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     50 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/arena.c:_mi_arenas_collect [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     50 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/arena.c:_mi_arenas_page_free [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     49 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-map.c:mi_page_map_set_range_prim [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     48 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/prim/unix/prim.c:_mi_prim_clock_now [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     24 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_free [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     22 ( 0.00%)  ./time/../sysdeps/unix/sysv/linux/clock_gettime.c:clock_gettime@@GLIBC_2.17 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+     22 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c:__mi_stat_decrease [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+     18 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:_mi_page_free
+     16 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_map_unregister
+     13 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_arenas_page_free
+     13 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_free
+      9 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-map.c:_mi_page_map_unregister [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      7 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:mi_heap_main [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_preloading [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      6 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_subproc [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      5 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/init.c:_mi_subproc_heap_main [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      4 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.h:mi_bitmap_clearN
+      4 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.h:mi_bitmap_setN
+      4 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/stats.c:_mi_clock_now [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_stats_bin
+      3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.c:mi_bitmap_clear [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      3 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:_mi_page_stats_bin [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:_mi_subproc
+      2 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.h:mi_bbitmap_setN
+      1 ( 0.00%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/types.h:_mi_arenas_free
+      .           ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+      .           ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      .           /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      .           ???:(below main) [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      .           ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+      .           ???:main [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+      .           examples/own_free_profile.rs:own_free_profile::main [<workspace>/.rush/own-free-split/baseline/target/release/examples/own_free_profile]
+
+--------------------------------------------------------------------------------
+# TRUNCATED — source listings omitted; full output: rebuild with reproduction/profile.sh then callgrind_annotate --auto=yes --threshold=100 <profile>.callgrind

@@ -1,0 +1,15 @@
+{
+  "captured_before_measure": "2026-10-24T23:40:17.885Z",
+  "source_identity_sha256": "cdf98b0720fc292ca0e1bd65ff6fe7b8bf73ecadf08cca2941079014a60abbf3",
+  "reason": "direct built bench binary; prior cargo-run rebuilt executable and was rejected",
+  "binaries": {
+    "before": {
+      "sha256": "2b1b7590e4581e4cb7f3ba9f522fcadaec858c29ce784c59468ad74c14b736b5",
+      "target": "x86_64-unknown-linux-gnu"
+    },
+    "after": {
+      "sha256": "35057ded3e33427804efdaa642fcb4c0ed3ad3936e04148f0342abece762dd60",
+      "target": "x86_64-unknown-linux-gnu"
+    }
+  }
+}

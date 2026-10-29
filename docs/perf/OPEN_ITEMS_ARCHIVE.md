@@ -1122,6 +1122,20 @@ byte-preserved from the former inline card with the review-fix corrections
 
 ## [L] Low-priority — honest reject
 
+### L117
+
+**Owner-free research, 2026-10-25 — CLOSED: NO-GO FOR PROMOTION.**
+
+База f80c681b799ef4ef7fa08d79c06896fdf1104fe9. Проверены три композиции: A — scalar one-element flush; B — A + validated metadata-slot context в overflow; C — B + inline scalar entry. B выбран до broad/native измерений. Marginal free Ir улучшился, production-only alloc Ir совпал точно, но это не превратилось в доказанный совокупный native-выигрыш.
+
+Wide IAI: 46/106 cells ниже, 50/106 равны, 10/106 выше. Clear paired +48 Ir не является +3 Ir/clear: 16 развёрнутых clear-блоков assembly одинаковы, отличие находится вне них. Raw-positive realloc-компоненты не полностью атрибутированы; строгий broad zero-regression verdict не получен.
+
+Native 840 процессов: все пять paired 95% CI изменения Sefer включают ноль. Canonical A/B/B/A содержит ухудшения, включая churn16B. Отдельный follow-up на точных canonical binaries, 10 ABBA blocks / 40 процессов: наблюдаемый сдвиг Sefer неблагоприятный, paired 95% CI включает ноль (точные числа — в генерируемой таблице отчёта). Регрессия статистически не установлена, но сигнал не закрыт. Оба исходных и follow-up набора сохранены; измерения до удобного результата не продолжаются.
+
+Test execution/Miri/Loom/CI, MT и retention acceptance не получены; это ограничения отвергнутого продвижения, не обещание shipped correctness. Кандидаты сохранены только в исследовательских worktrees для воспроизводимости, не влиты в принятую базу; новых public measurement hooks нет. Reopen только при новой причинной гипотезе по representative trace/codegen и проверке неблагоприятных canonical ячеек; меньший Ir/free сам по себе не триггер.
+
+Evidence: `docs/perf/OWNER_FREE_RESEARCH_GATE.md`, companion summary CSV, `docs/perf/owner_research/`, `docs/perf/own_free_context/`. Таблицы и статистика выводятся `node docs/perf/owner_research/generate.mjs`; source/binary identities и raw samples сохранены.
+
 ### L7
 
 *Back-link: `docs/perf/OPEN_ITEMS.md`, item 7 (`[L] Low-priority — honest reject` tier) — "**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a"*
