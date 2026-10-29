@@ -128,17 +128,6 @@ impl SegmentLayout {
         crate::alloc_core::size_classes::SizeClasses::class_for(size, align)
     }
 
-    /// TEST-ONLY forwarder to the allocator's hot-path classifier
-    /// (`SizeClasses::class_for_layout`, used by `HeapCore::alloc` and the
-    /// own-thread free): equals `class_for(layout.size().max(MIN_BLOCK),
-    /// layout.align())` for every `Layout`; exposed so
-    /// `tests/class_for_layout_equivalence.rs` can check that exhaustively.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn class_for_layout(layout: core::alloc::Layout) -> Option<usize> {
-        crate::alloc_core::size_classes::SizeClasses::class_for_layout(layout)
-    }
-
     /// The checked twin of [`class_for`](Self::class_for): rejects a
     /// non-power-of-two `align` (including `0`) with
     /// `Err(size_classes::InvalidAlign(align))` before any arithmetic runs,

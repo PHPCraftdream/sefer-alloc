@@ -127,7 +127,19 @@ impl HeapCore {
             feature = "alloc-xthread",
             all(feature = "alloc-global", feature = "fastbin")
         ))]
-        let class = crate::alloc_core::size_classes::SizeClasses::class_for_layout(layout);
+        let size = layout
+            .size()
+            .max(crate::alloc_core::size_classes::MIN_BLOCK);
+        #[cfg(any(
+            feature = "alloc-xthread",
+            all(feature = "alloc-global", feature = "fastbin")
+        ))]
+        let align = layout.align();
+        #[cfg(any(
+            feature = "alloc-xthread",
+            all(feature = "alloc-global", feature = "fastbin")
+        ))]
+        let class = crate::alloc_core::size_classes::SizeClasses::class_for(size, align);
 
         // #1982: hand the single classification to the shared body instead of
         // letting a second caller re-derive it. `alloc_zeroed`'s small arm
@@ -576,7 +588,7 @@ impl HeapCore {
             .size()
             .max(crate::alloc_core::size_classes::MIN_BLOCK);
         let align = layout.align();
-        let class = crate::alloc_core::size_classes::SizeClasses::class_for_layout(layout);
+        let class = crate::alloc_core::size_classes::SizeClasses::class_for(size, align);
 
         // The virgin signal flows through the magazine path, preserving warm
         // reuse and the same owner-side pending-publication discovery as alloc.

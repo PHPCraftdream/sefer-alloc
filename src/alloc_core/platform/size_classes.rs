@@ -302,24 +302,6 @@ static SC: SizeClassesImpl<TABLE_LEN, S2C_LEN> = SizeClassesImpl::build(PARAMS);
 /// revisit if a future toolchain/linker measurement shows a real cost.)
 pub(crate) static SIZE2CLASS: [u8; S2C_LEN] = *SC.size2class();
 
-/// [`SIZE2CLASS`] shifted by one bucket for a ceiling index: entry
-/// `i >= 1` is `SIZE2CLASS[i - 1]`, entry `0` is `SIZE2CLASS[0]`. Indexed by
-/// `ceil(size / MIN_BLOCK)` it gives the class of `max(size, MIN_BLOCK)` in
-/// one load, without the clamp and the `size == 0` branch
-/// ([`SizeClasses::class_for_layout`]).
-static SIZE2CLASS_CEIL: [u8; S2C_LEN] = ceil_table(SC.size2class());
-
-const fn ceil_table(s: &[u8; S2C_LEN]) -> [u8; S2C_LEN] {
-    let mut t = [0u8; S2C_LEN];
-    t[0] = s[0];
-    let mut i = 1;
-    while i < S2C_LEN {
-        t[i] = s[i - 1];
-        i += 1;
-    }
-    t
-}
-
 /// A classifier over [`SIZE_CLASS_TABLE`]. A zero-sized forwarder to the crate
 /// scheme [`SC`] — kept so the in-tree `SizeClasses::class_for(..)` /
 /// `::block_size(..)` call sites compile unchanged.
@@ -377,31 +359,6 @@ impl SizeClasses {
         } else {
             SC.class_for(size, align)
         }
-    }
-
-    /// The class of `layout` exactly as `class_for(layout.size().max(MIN_BLOCK),
-    /// layout.align())` computes it, for every `Layout`.
-    ///
-    /// For `align <= MIN_BLOCK` the clamp and the `size == 0` branch fold into
-    /// one ceiling index: `idx = ceil(size / MIN_BLOCK)` (no overflow:
-    /// `Layout` keeps `size <= isize::MAX`). For `size >= 1`,
-    /// `idx = ((size - 1) >> MIN_BLOCK_SHIFT) + 1 = seed + 1` and
-    /// `SIZE2CLASS_CEIL[seed + 1] = SIZE2CLASS[seed]`; `idx >= S2C_LEN` iff
-    /// `seed >= S2C_LEN - 1`, the same `None` bound. For `size == 0`,
-    /// `idx = 0` and `SIZE2CLASS_CEIL[0] = SIZE2CLASS[0]`, the class of
-    /// `max(0, MIN_BLOCK)`. Larger alignments take the general path unchanged.
-    #[must_use]
-    #[inline(always)]
-    pub(crate) fn class_for_layout(layout: core::alloc::Layout) -> Option<usize> {
-        let size = layout.size();
-        if layout.align() <= MIN_BLOCK {
-            let idx = (size + (MIN_BLOCK - 1)) >> MIN_BLOCK_SHIFT;
-            if idx >= S2C_LEN {
-                return None;
-            }
-            return Some(SIZE2CLASS_CEIL[idx] as usize);
-        }
-        SC.class_for(size.max(MIN_BLOCK), layout.align())
     }
 
     /// Constant-folded fast path of [`class_for`](Self::class_for) for
