@@ -950,7 +950,7 @@
         "src/registry/segment_route/small_sidecar.rs"
       ],
       "fn": "^oracle_after_publish$",
-      "receiver": "^self\.oracle_seen$",
+      "receiver": "^self[.]oracle_seen$",
       "orderings": [
         "Relaxed"
       ],
