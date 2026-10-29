@@ -1,0 +1,24 @@
+55,387,491 (100.0%)  PROGRAM TOTALS
+11,354,160 (20.50%)  p0al/src/registry/heap_core/free/dealloc_own_base.rs:b4_pmu_probe::sefer_dealloc
+ 5,038,149 ( 9.10%)  p0al/src/registry/heap_core/alloc/hot.rs:b4_pmu_probe::sefer_alloc
+ 3,932,160 ( 7.10%)  p0al/src/alloc_core/platform/size_classes.rs:b4_pmu_probe::sefer_dealloc
+ 3,146,256 ( 5.68%)  p0al/examples/b4_pmu_probe.rs:b4_pmu_probe::bulk_pass [~/ab/tgt-p0al/release/examples/b4_pmu_probe]
+ 3,047,520 ( 5.50%)  p0al/examples/b4_pmu_probe.rs:b4_pmu_probe::sefer_dealloc [~/ab/tgt-p0al/release/examples/b4_pmu_probe]
+ 2,752,512 ( 4.97%)  p0al/src/alloc_core/platform/size_classes.rs:b4_pmu_probe::sefer_alloc
+ 2,285,637 ( 4.13%)  p0al/examples/b4_pmu_probe.rs:b4_pmu_probe::sefer_alloc [~/ab/tgt-p0al/release/examples/b4_pmu_probe]
+ 1,572,864 ( 2.84%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:b4_pmu_probe::bulk_pass
+ 1,572,862 ( 2.84%)  p0al/src/alloc_core/segment/segment_header/segment_header_views.rs:b4_pmu_probe::sefer_dealloc
+ 1,179,671 ( 2.13%)  p0al/src/alloc_core/segment/segment_table/segment_table_impl.rs:b4_pmu_probe::sefer_dealloc
+ 1,179,648 ( 2.13%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::sefer_alloc
+ 1,179,648 ( 2.13%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::sefer_dealloc
+ 1,179,648 ( 2.13%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:b4_pmu_probe::sefer_dealloc
+ 1,155,098 ( 2.09%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::sefer_dealloc
+ 1,105,989 ( 2.00%)  p0al/src/alloc_core/segment/bitmap/state_byte.rs:b4_pmu_probe::sefer_alloc
+ 1,031,184 ( 1.86%)  p0al/src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [~/ab/tgt-p0al/release/examples/b4_pmu_probe]
+   786,504 ( 1.42%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:b4_pmu_probe::bulk_pass
+   786,443 ( 1.42%)  p0al/src/global/tls_heap.rs:b4_pmu_probe::sefer_alloc
+   786,432 ( 1.42%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::bulk_pass
+   786,432 ( 1.42%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:b4_pmu_probe::sefer_dealloc
+   737,326 ( 1.33%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:b4_pmu_probe::sefer_alloc
+   736,560 ( 1.33%)  p0al/src/registry/heap_core/state/depot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::depot_park
+   687,510 ( 1.24%)  p0al/src/registry/heap_core/state/depot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::depot_reload

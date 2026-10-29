@@ -1,0 +1,508 @@
+identity commit-dfb89621
+bin_sha256 046a3ff06807c424e6c45ef528abc22bc850ec19a1d2d6f52c3132c03036cb58
+features production
+cpu 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+RUN 1 bulk16k sefer 1 bulk sefer 16384 64 300 6.605 0
+EV 1 bulk16k sefer 1 cycles:u 292352447
+EV 1 bulk16k sefer 1 instructions:u 1307309159
+EV 1 bulk16k sefer 1 cycle_activity.stalls_total:u 26640898
+EV 1 bulk16k sefer 1 cycle_activity.stalls_l1d_miss:u 12489970
+EV 1 bulk16k sefer 1 cycle_activity.stalls_mem_any:u 20195850
+EV 1 bulk16k sefer 1 exe_activity.bound_on_stores:u 3858898
+RUN 1 bulk16k sefer 2 bulk sefer 16384 64 300 6.914 0
+EV 1 bulk16k sefer 2 cycles:u 304573058
+EV 1 bulk16k sefer 2 mem_load_retired.l1_miss:u 1233429
+EV 1 bulk16k sefer 2 mem_load_retired.l2_miss:u 60474
+EV 1 bulk16k sefer 2 l2_rqsts.rfo_miss:u 611391
+EV 1 bulk16k sefer 2 branch-misses:u 646347
+EV 1 bulk16k sefer 2 resource_stalls.sb:u 3532844
+RUN 1 bulk16k mi 1 bulk mi 16384 64 300 3.343 4ef0000
+EV 1 bulk16k mi 1 cycles:u 144133317
+EV 1 bulk16k mi 1 instructions:u 533253565
+EV 1 bulk16k mi 1 cycle_activity.stalls_total:u 15245137
+EV 1 bulk16k mi 1 cycle_activity.stalls_l1d_miss:u 1415590
+EV 1 bulk16k mi 1 cycle_activity.stalls_mem_any:u 7772929
+EV 1 bulk16k mi 1 exe_activity.bound_on_stores:u 6694140
+RUN 1 bulk16k mi 2 bulk mi 16384 64 300 3.375 4ef0000
+EV 1 bulk16k mi 2 cycles:u 145058730
+EV 1 bulk16k mi 2 mem_load_retired.l1_miss:u 366220
+EV 1 bulk16k mi 2 mem_load_retired.l2_miss:u 6108
+EV 1 bulk16k mi 2 l2_rqsts.rfo_miss:u 139817
+EV 1 bulk16k mi 2 branch-misses:u 225374
+EV 1 bulk16k mi 2 resource_stalls.sb:u 7255478
+RUN 1 bulk64 sefer 1 bulk sefer 64 64 80000 3.368 0
+EV 1 bulk64 sefer 1 cycles:u 158792339
+EV 1 bulk64 sefer 1 instructions:u 746241971
+EV 1 bulk64 sefer 1 cycle_activity.stalls_total:u 5177771
+EV 1 bulk64 sefer 1 cycle_activity.stalls_l1d_miss:u 441190
+EV 1 bulk64 sefer 1 cycle_activity.stalls_mem_any:u 2442252
+EV 1 bulk64 sefer 1 exe_activity.bound_on_stores:u 6206
+RUN 1 bulk64 sefer 2 bulk sefer 64 64 80000 3.322 0
+EV 1 bulk64 sefer 2 cycles:u 158501897
+EV 1 bulk64 sefer 2 mem_load_retired.l1_miss:u 4018
+EV 1 bulk64 sefer 2 mem_load_retired.l2_miss:u 1198
+EV 1 bulk64 sefer 2 l2_rqsts.rfo_miss:u 237
+EV 1 bulk64 sefer 2 branch-misses:u 228417
+EV 1 bulk64 sefer 2 resource_stalls.sb:u 9239
+RUN 1 bulk64 mi 1 bulk mi 64 64 80000 2.472 0
+EV 1 bulk64 mi 1 cycles:u 117835841
+EV 1 bulk64 mi 1 instructions:u 497054096
+EV 1 bulk64 mi 1 cycle_activity.stalls_total:u 7431972
+EV 1 bulk64 mi 1 cycle_activity.stalls_l1d_miss:u 345220
+EV 1 bulk64 mi 1 cycle_activity.stalls_mem_any:u 5750438
+EV 1 bulk64 mi 1 exe_activity.bound_on_stores:u 2662
+RUN 1 bulk64 mi 2 bulk mi 64 64 80000 2.578 0
+EV 1 bulk64 mi 2 cycles:u 120154758
+EV 1 bulk64 mi 2 mem_load_retired.l1_miss:u 4464
+EV 1 bulk64 mi 2 mem_load_retired.l2_miss:u 962
+EV 1 bulk64 mi 2 l2_rqsts.rfo_miss:u 256
+EV 1 bulk64 mi 2 branch-misses:u 295365
+EV 1 bulk64 mi 2 resource_stalls.sb:u 4523
+RUN 1 pair16 sefer 1 sefer 1 16 20000000 8.314 c0201dfa361e0800
+EV 1 pair16 sefer 1 cycles:u 739113696
+EV 1 pair16 sefer 1 instructions:u 3520787540
+EV 1 pair16 sefer 1 cycle_activity.stalls_total:u 11721333
+EV 1 pair16 sefer 1 cycle_activity.stalls_l1d_miss:u 624816
+EV 1 pair16 sefer 1 cycle_activity.stalls_mem_any:u 5582116
+EV 1 pair16 sefer 1 exe_activity.bound_on_stores:u 5529
+RUN 1 pair16 sefer 2 sefer 1 16 20000000 8.623 d307a497561e0800
+EV 1 pair16 sefer 2 cycles:u 741742265
+EV 1 pair16 sefer 2 mem_load_retired.l1_miss:u 5149
+EV 1 pair16 sefer 2 mem_load_retired.l2_miss:u 962
+EV 1 pair16 sefer 2 l2_rqsts.rfo_miss:u 166
+EV 1 pair16 sefer 2 branch-misses:u 194679
+EV 1 pair16 sefer 2 resource_stalls.sb:u 14904
+RUN 1 pair16 mi 1 mi 1 16 20000000 7.267 5f53249056634bf0
+EV 1 pair16 mi 1 cycles:u 618037194
+EV 1 pair16 mi 1 instructions:u 2681900890
+EV 1 pair16 mi 1 cycle_activity.stalls_total:u 17189876
+EV 1 pair16 mi 1 cycle_activity.stalls_l1d_miss:u 713667
+EV 1 pair16 mi 1 cycle_activity.stalls_mem_any:u 9187900
+EV 1 pair16 mi 1 exe_activity.bound_on_stores:u 5309
+RUN 1 pair16 mi 2 mi 1 16 20000000 7.303 5f53249056634bf0
+EV 1 pair16 mi 2 cycles:u 617081396
+EV 1 pair16 mi 2 mem_load_retired.l1_miss:u 12443
+EV 1 pair16 mi 2 mem_load_retired.l2_miss:u 1216
+EV 1 pair16 mi 2 l2_rqsts.rfo_miss:u 436
+EV 1 pair16 mi 2 branch-misses:u 282387
+EV 1 pair16 mi 2 resource_stalls.sb:u 10308
+RUN 1 churn16 sefer 1 sefer 256 16 20000000 8.845 419d8cb41efbcbf0
+EV 1 churn16 sefer 1 cycles:u 762120186
+EV 1 churn16 sefer 1 instructions:u 3520849824
+EV 1 churn16 sefer 1 cycle_activity.stalls_total:u 17866081
+EV 1 churn16 sefer 1 cycle_activity.stalls_l1d_miss:u 976466
+EV 1 churn16 sefer 1 cycle_activity.stalls_mem_any:u 9521739
+EV 1 churn16 sefer 1 exe_activity.bound_on_stores:u 22392
+RUN 1 churn16 sefer 2 sefer 256 16 20000000 8.355 1240a0a7efbcbf0
+EV 1 churn16 sefer 2 cycles:u 736889163
+EV 1 churn16 sefer 2 mem_load_retired.l1_miss:u 10538
+EV 1 churn16 sefer 2 mem_load_retired.l2_miss:u 1185
+EV 1 churn16 sefer 2 l2_rqsts.rfo_miss:u 449
+EV 1 churn16 sefer 2 branch-misses:u 224138
+EV 1 churn16 sefer 2 resource_stalls.sb:u 21567
+RUN 1 churn16 mi 1 mi 256 16 20000000 15.286 5f5324906989abd0
+EV 1 churn16 mi 1 cycles:u 1338742336
+EV 1 churn16 mi 1 instructions:u 6300386648
+EV 1 churn16 mi 1 cycle_activity.stalls_total:u 24491279
+EV 1 churn16 mi 1 cycle_activity.stalls_l1d_miss:u 1483330
+EV 1 churn16 mi 1 cycle_activity.stalls_mem_any:u 13848474
+EV 1 churn16 mi 1 exe_activity.bound_on_stores:u 41581
+RUN 1 churn16 mi 2 mi 256 16 20000000 15.330 5f5324906989abd0
+EV 1 churn16 mi 2 cycles:u 1406595552
+EV 1 churn16 mi 2 mem_load_retired.l1_miss:u 39301
+EV 1 churn16 mi 2 mem_load_retired.l2_miss:u 2319
+EV 1 churn16 mi 2 l2_rqsts.rfo_miss:u 1667
+EV 1 churn16 mi 2 branch-misses:u 973415
+EV 1 churn16 mi 2 resource_stalls.sb:u 220264
+RUN 1 mixed16_64 sefer 1 mixed sefer 256 16/64 128 20000000 10.502 3b223be309b220
+EV 1 mixed16_64 sefer 1 cycles:u 942411787
+EV 1 mixed16_64 sefer 1 instructions:u 3741039675
+EV 1 mixed16_64 sefer 1 cycle_activity.stalls_total:u 61654898
+EV 1 mixed16_64 sefer 1 cycle_activity.stalls_l1d_miss:u 614796
+EV 1 mixed16_64 sefer 1 cycle_activity.stalls_mem_any:u 28747830
+EV 1 mixed16_64 sefer 1 exe_activity.bound_on_stores:u 43027
+RUN 1 mixed16_64 sefer 2 mixed sefer 256 16/64 128 20000000 10.487 3ef4bfc309b220
+EV 1 mixed16_64 sefer 2 cycles:u 938809893
+EV 1 mixed16_64 sefer 2 mem_load_retired.l1_miss:u 30051
+EV 1 mixed16_64 sefer 2 mem_load_retired.l2_miss:u 1453
+EV 1 mixed16_64 sefer 2 l2_rqsts.rfo_miss:u 1048
+EV 1 mixed16_64 sefer 2 branch-misses:u 1840168
+EV 1 mixed16_64 sefer 2 resource_stalls.sb:u 71804
+RUN 1 mixed16_64 mi 1 mixed mi 256 16/64 128 20000000 7.537 10000110987c0
+EV 1 mixed16_64 mi 1 cycles:u 668815514
+EV 1 mixed16_64 mi 1 instructions:u 2784736974
+EV 1 mixed16_64 mi 1 cycle_activity.stalls_total:u 37767711
+EV 1 mixed16_64 mi 1 cycle_activity.stalls_l1d_miss:u 689361
+EV 1 mixed16_64 mi 1 cycle_activity.stalls_mem_any:u 16108595
+EV 1 mixed16_64 mi 1 exe_activity.bound_on_stores:u 21314
+RUN 1 mixed16_64 mi 2 mixed mi 256 16/64 128 20000000 7.305 10000110987c0
+EV 1 mixed16_64 mi 2 cycles:u 661878517
+EV 1 mixed16_64 mi 2 mem_load_retired.l1_miss:u 38255
+EV 1 mixed16_64 mi 2 mem_load_retired.l2_miss:u 1567
+EV 1 mixed16_64 mi 2 l2_rqsts.rfo_miss:u 998
+EV 1 mixed16_64 mi 2 branch-misses:u 1220095
+EV 1 mixed16_64 mi 2 resource_stalls.sb:u 80445
+RUN 1 mixed256_1024 sefer 1 mixed sefer 256 256/1024 48 10000032 16.776 416300
+EV 1 mixed256_1024 sefer 1 cycles:u 731261281
+EV 1 mixed256_1024 sefer 1 instructions:u 2713223469
+EV 1 mixed256_1024 sefer 1 cycle_activity.stalls_total:u 69982295
+EV 1 mixed256_1024 sefer 1 cycle_activity.stalls_l1d_miss:u 13352466
+EV 1 mixed256_1024 sefer 1 cycle_activity.stalls_mem_any:u 41472991
+EV 1 mixed256_1024 sefer 1 exe_activity.bound_on_stores:u 829113
+RUN 1 mixed256_1024 sefer 2 mixed sefer 256 256/1024 48 10000032 15.752 416300
+EV 1 mixed256_1024 sefer 2 cycles:u 709628112
+EV 1 mixed256_1024 sefer 2 mem_load_retired.l1_miss:u 5085687
+EV 1 mixed256_1024 sefer 2 mem_load_retired.l2_miss:u 2012
+EV 1 mixed256_1024 sefer 2 l2_rqsts.rfo_miss:u 3055
+EV 1 mixed256_1024 sefer 2 branch-misses:u 2101763
+EV 1 mixed256_1024 sefer 2 resource_stalls.sb:u 1419581
+RUN 1 mixed256_1024 mi 1 mixed mi 256 256/1024 48 10000032 8.186 687900
+EV 1 mixed256_1024 mi 1 cycles:u 369720140
+EV 1 mixed256_1024 mi 1 instructions:u 1441501478
+EV 1 mixed256_1024 mi 1 cycle_activity.stalls_total:u 24939294
+EV 1 mixed256_1024 mi 1 cycle_activity.stalls_l1d_miss:u 2277630
+EV 1 mixed256_1024 mi 1 cycle_activity.stalls_mem_any:u 11735132
+EV 1 mixed256_1024 mi 1 exe_activity.bound_on_stores:u 76101
+RUN 1 mixed256_1024 mi 2 mixed mi 256 256/1024 48 10000032 7.920 687900
+EV 1 mixed256_1024 mi 2 cycles:u 358508712
+EV 1 mixed256_1024 mi 2 mem_load_retired.l1_miss:u 3893723
+EV 1 mixed256_1024 mi 2 mem_load_retired.l2_miss:u 1400
+EV 1 mixed256_1024 mi 2 l2_rqsts.rfo_miss:u 1751
+EV 1 mixed256_1024 mi 2 branch-misses:u 831802
+EV 1 mixed256_1024 mi 2 resource_stalls.sb:u 92367
+RUN 2 bulk16k sefer 1 bulk sefer 16384 64 300 6.626 0
+EV 2 bulk16k sefer 1 cycles:u 288821215
+EV 2 bulk16k sefer 1 instructions:u 1307307290
+EV 2 bulk16k sefer 1 cycle_activity.stalls_total:u 24580569
+EV 2 bulk16k sefer 1 cycle_activity.stalls_l1d_miss:u 12455981
+EV 2 bulk16k sefer 1 cycle_activity.stalls_mem_any:u 19615967
+EV 2 bulk16k sefer 1 exe_activity.bound_on_stores:u 2872855
+RUN 2 bulk16k sefer 2 bulk sefer 16384 64 300 6.484 0
+EV 2 bulk16k sefer 2 cycles:u 287612462
+EV 2 bulk16k sefer 2 mem_load_retired.l1_miss:u 1259910
+EV 2 bulk16k sefer 2 mem_load_retired.l2_miss:u 49113
+EV 2 bulk16k sefer 2 l2_rqsts.rfo_miss:u 463863
+EV 2 bulk16k sefer 2 branch-misses:u 82351
+EV 2 bulk16k sefer 2 resource_stalls.sb:u 2367857
+RUN 2 bulk16k mi 1 bulk mi 16384 64 300 3.266 4ef0000
+EV 2 bulk16k mi 1 cycles:u 145324631
+EV 2 bulk16k mi 1 instructions:u 533253968
+EV 2 bulk16k mi 1 cycle_activity.stalls_total:u 15528471
+EV 2 bulk16k mi 1 cycle_activity.stalls_l1d_miss:u 1178083
+EV 2 bulk16k mi 1 cycle_activity.stalls_mem_any:u 7965171
+EV 2 bulk16k mi 1 exe_activity.bound_on_stores:u 6784787
+RUN 2 bulk16k mi 2 bulk mi 16384 64 300 3.186 4ef0000
+EV 2 bulk16k mi 2 cycles:u 144040075
+EV 2 bulk16k mi 2 mem_load_retired.l1_miss:u 334516
+EV 2 bulk16k mi 2 mem_load_retired.l2_miss:u 2451
+EV 2 bulk16k mi 2 l2_rqsts.rfo_miss:u 154787
+EV 2 bulk16k mi 2 branch-misses:u 222875
+EV 2 bulk16k mi 2 resource_stalls.sb:u 7869829
+RUN 2 bulk64 sefer 1 bulk sefer 64 64 80000 3.531 0
+EV 2 bulk64 sefer 1 cycles:u 167272426
+EV 2 bulk64 sefer 1 instructions:u 746242043
+EV 2 bulk64 sefer 1 cycle_activity.stalls_total:u 8120748
+EV 2 bulk64 sefer 1 cycle_activity.stalls_l1d_miss:u 327746
+EV 2 bulk64 sefer 1 cycle_activity.stalls_mem_any:u 3229664
+EV 2 bulk64 sefer 1 exe_activity.bound_on_stores:u 5147
+RUN 2 bulk64 sefer 2 bulk sefer 64 64 80000 3.474 0
+EV 2 bulk64 sefer 2 cycles:u 158575957
+EV 2 bulk64 sefer 2 mem_load_retired.l1_miss:u 4256
+EV 2 bulk64 sefer 2 mem_load_retired.l2_miss:u 945
+EV 2 bulk64 sefer 2 l2_rqsts.rfo_miss:u 105
+EV 2 bulk64 sefer 2 branch-misses:u 253021
+EV 2 bulk64 sefer 2 resource_stalls.sb:u 5700
+RUN 2 bulk64 mi 1 bulk mi 64 64 80000 2.522 0
+EV 2 bulk64 mi 1 cycles:u 118408342
+EV 2 bulk64 mi 1 instructions:u 497054319
+EV 2 bulk64 mi 1 cycle_activity.stalls_total:u 8072137
+EV 2 bulk64 mi 1 cycle_activity.stalls_l1d_miss:u 323531
+EV 2 bulk64 mi 1 cycle_activity.stalls_mem_any:u 6233557
+EV 2 bulk64 mi 1 exe_activity.bound_on_stores:u 4954
+RUN 2 bulk64 mi 2 bulk mi 64 64 80000 2.535 0
+EV 2 bulk64 mi 2 cycles:u 119319268
+EV 2 bulk64 mi 2 mem_load_retired.l1_miss:u 4100
+EV 2 bulk64 mi 2 mem_load_retired.l2_miss:u 989
+EV 2 bulk64 mi 2 l2_rqsts.rfo_miss:u 248
+EV 2 bulk64 mi 2 branch-misses:u 255181
+EV 2 bulk64 mi 2 resource_stalls.sb:u 3934
+RUN 2 pair16 sefer 1 sefer 1 16 20000000 8.460 5c3688b9f61e0800
+EV 2 pair16 sefer 1 cycles:u 739833143
+EV 2 pair16 sefer 1 instructions:u 3520788468
+EV 2 pair16 sefer 1 cycle_activity.stalls_total:u 14037136
+EV 2 pair16 sefer 1 cycle_activity.stalls_l1d_miss:u 540611
+EV 2 pair16 sefer 1 cycle_activity.stalls_mem_any:u 6850072
+EV 2 pair16 sefer 1 exe_activity.bound_on_stores:u 5246
+RUN 2 pair16 sefer 2 sefer 1 16 20000000 8.230 eb5aaade561e0800
+EV 2 pair16 sefer 2 cycles:u 743985032
+EV 2 pair16 sefer 2 mem_load_retired.l1_miss:u 5534
+EV 2 pair16 sefer 2 mem_load_retired.l2_miss:u 1008
+EV 2 pair16 sefer 2 l2_rqsts.rfo_miss:u 178
+EV 2 pair16 sefer 2 branch-misses:u 205618
+EV 2 pair16 sefer 2 resource_stalls.sb:u 5828
+RUN 2 pair16 mi 1 mi 1 16 20000000 6.922 5f53249056634bf0
+EV 2 pair16 mi 1 cycles:u 610449893
+EV 2 pair16 mi 1 instructions:u 2681899940
+EV 2 pair16 mi 1 cycle_activity.stalls_total:u 14599987
+EV 2 pair16 mi 1 cycle_activity.stalls_l1d_miss:u 621254
+EV 2 pair16 mi 1 cycle_activity.stalls_mem_any:u 6755342
+EV 2 pair16 mi 1 exe_activity.bound_on_stores:u 11167
+RUN 2 pair16 mi 2 mi 1 16 20000000 6.860 5f53249056634bf0
+EV 2 pair16 mi 2 cycles:u 609965631
+EV 2 pair16 mi 2 mem_load_retired.l1_miss:u 8786
+EV 2 pair16 mi 2 mem_load_retired.l2_miss:u 1073
+EV 2 pair16 mi 2 l2_rqsts.rfo_miss:u 365
+EV 2 pair16 mi 2 branch-misses:u 340318
+EV 2 pair16 mi 2 resource_stalls.sb:u 11941
+RUN 2 churn16 sefer 1 sefer 256 16 20000000 8.157 7ee24725fefbcbf0
+EV 2 churn16 sefer 1 cycles:u 728991729
+EV 2 churn16 sefer 1 instructions:u 3520851015
+EV 2 churn16 sefer 1 cycle_activity.stalls_total:u 10842961
+EV 2 churn16 sefer 1 cycle_activity.stalls_l1d_miss:u 604150
+EV 2 churn16 sefer 1 cycle_activity.stalls_mem_any:u 4559381
+EV 2 churn16 sefer 1 exe_activity.bound_on_stores:u 27665
+RUN 2 churn16 sefer 2 sefer 256 16 20000000 8.457 1bcc18e07efbcbf0
+EV 2 churn16 sefer 2 cycles:u 729162163
+EV 2 churn16 sefer 2 mem_load_retired.l1_miss:u 12058
+EV 2 churn16 sefer 2 mem_load_retired.l2_miss:u 1042
+EV 2 churn16 sefer 2 l2_rqsts.rfo_miss:u 163
+EV 2 churn16 sefer 2 branch-misses:u 243083
+EV 2 churn16 sefer 2 resource_stalls.sb:u 5982
+RUN 2 churn16 mi 1 mi 256 16 20000000 15.082 5f5324906989abd0
+EV 2 churn16 mi 1 cycles:u 1346716710
+EV 2 churn16 mi 1 instructions:u 6300387003
+EV 2 churn16 mi 1 cycle_activity.stalls_total:u 42943612
+EV 2 churn16 mi 1 cycle_activity.stalls_l1d_miss:u 975534
+EV 2 churn16 mi 1 cycle_activity.stalls_mem_any:u 28785121
+EV 2 churn16 mi 1 exe_activity.bound_on_stores:u 43638
+RUN 2 churn16 mi 2 mi 256 16 20000000 14.869 5f5324906989abd0
+EV 2 churn16 mi 2 cycles:u 1336397738
+EV 2 churn16 mi 2 mem_load_retired.l1_miss:u 26134
+EV 2 churn16 mi 2 mem_load_retired.l2_miss:u 1645
+EV 2 churn16 mi 2 l2_rqsts.rfo_miss:u 1565
+EV 2 churn16 mi 2 branch-misses:u 248948
+EV 2 churn16 mi 2 resource_stalls.sb:u 103988
+RUN 2 mixed16_64 sefer 1 mixed sefer 256 16/64 128 20000000 11.137 3f61754309b220
+EV 2 mixed16_64 sefer 1 cycles:u 965855790
+EV 2 mixed16_64 sefer 1 instructions:u 3741040450
+EV 2 mixed16_64 sefer 1 cycle_activity.stalls_total:u 74784084
+EV 2 mixed16_64 sefer 1 cycle_activity.stalls_l1d_miss:u 471887
+EV 2 mixed16_64 sefer 1 cycle_activity.stalls_mem_any:u 33527412
+EV 2 mixed16_64 sefer 1 exe_activity.bound_on_stores:u 40968
+RUN 2 mixed16_64 sefer 2 mixed sefer 256 16/64 128 20000000 10.665 3c2e094309b220
+EV 2 mixed16_64 sefer 2 cycles:u 955855595
+EV 2 mixed16_64 sefer 2 mem_load_retired.l1_miss:u 23769
+EV 2 mixed16_64 sefer 2 mem_load_retired.l2_miss:u 1238
+EV 2 mixed16_64 sefer 2 l2_rqsts.rfo_miss:u 631
+EV 2 mixed16_64 sefer 2 branch-misses:u 2200806
+EV 2 mixed16_64 sefer 2 resource_stalls.sb:u 69719
+RUN 2 mixed16_64 mi 1 mixed mi 256 16/64 128 20000000 7.407 10000110987c0
+EV 2 mixed16_64 mi 1 cycles:u 658606314
+EV 2 mixed16_64 mi 1 instructions:u 2784735483
+EV 2 mixed16_64 mi 1 cycle_activity.stalls_total:u 35161218
+EV 2 mixed16_64 mi 1 cycle_activity.stalls_l1d_miss:u 719372
+EV 2 mixed16_64 mi 1 cycle_activity.stalls_mem_any:u 14155167
+EV 2 mixed16_64 mi 1 exe_activity.bound_on_stores:u 14246
+RUN 2 mixed16_64 mi 2 mixed mi 256 16/64 128 20000000 7.583 10000110987c0
+EV 2 mixed16_64 mi 2 cycles:u 667283656
+EV 2 mixed16_64 mi 2 mem_load_retired.l1_miss:u 55934
+EV 2 mixed16_64 mi 2 mem_load_retired.l2_miss:u 1646
+EV 2 mixed16_64 mi 2 l2_rqsts.rfo_miss:u 1020
+EV 2 mixed16_64 mi 2 branch-misses:u 1206739
+EV 2 mixed16_64 mi 2 resource_stalls.sb:u 145832
+RUN 2 mixed256_1024 sefer 1 mixed sefer 256 256/1024 48 10000032 15.406 416300
+EV 2 mixed256_1024 sefer 1 cycles:u 700998485
+EV 2 mixed256_1024 sefer 1 instructions:u 2713222030
+EV 2 mixed256_1024 sefer 1 cycle_activity.stalls_total:u 60427959
+EV 2 mixed256_1024 sefer 1 cycle_activity.stalls_l1d_miss:u 12710117
+EV 2 mixed256_1024 sefer 1 cycle_activity.stalls_mem_any:u 33264870
+EV 2 mixed256_1024 sefer 1 exe_activity.bound_on_stores:u 926241
+RUN 2 mixed256_1024 sefer 2 mixed sefer 256 256/1024 48 10000032 16.053 416300
+EV 2 mixed256_1024 sefer 2 cycles:u 700851129
+EV 2 mixed256_1024 sefer 2 mem_load_retired.l1_miss:u 4813693
+EV 2 mixed256_1024 sefer 2 mem_load_retired.l2_miss:u 1636
+EV 2 mixed256_1024 sefer 2 l2_rqsts.rfo_miss:u 2261
+EV 2 mixed256_1024 sefer 2 branch-misses:u 2198894
+EV 2 mixed256_1024 sefer 2 resource_stalls.sb:u 807974
+RUN 2 mixed256_1024 mi 1 mixed mi 256 256/1024 48 10000032 8.484 687900
+EV 2 mixed256_1024 mi 1 cycles:u 385814312
+EV 2 mixed256_1024 mi 1 instructions:u 1441501237
+EV 2 mixed256_1024 mi 1 cycle_activity.stalls_total:u 32510293
+EV 2 mixed256_1024 mi 1 cycle_activity.stalls_l1d_miss:u 2438204
+EV 2 mixed256_1024 mi 1 cycle_activity.stalls_mem_any:u 14416570
+EV 2 mixed256_1024 mi 1 exe_activity.bound_on_stores:u 53741
+RUN 2 mixed256_1024 mi 2 mixed mi 256 256/1024 48 10000032 8.236 687900
+EV 2 mixed256_1024 mi 2 cycles:u 371770336
+EV 2 mixed256_1024 mi 2 mem_load_retired.l1_miss:u 3906702
+EV 2 mixed256_1024 mi 2 mem_load_retired.l2_miss:u 1100
+EV 2 mixed256_1024 mi 2 l2_rqsts.rfo_miss:u 1095
+EV 2 mixed256_1024 mi 2 branch-misses:u 903030
+EV 2 mixed256_1024 mi 2 resource_stalls.sb:u 42142
+RUN 3 bulk16k sefer 1 bulk sefer 16384 64 300 6.393 0
+EV 3 bulk16k sefer 1 cycles:u 288422811
+EV 3 bulk16k sefer 1 instructions:u 1307307864
+EV 3 bulk16k sefer 1 cycle_activity.stalls_total:u 23811729
+EV 3 bulk16k sefer 1 cycle_activity.stalls_l1d_miss:u 11848121
+EV 3 bulk16k sefer 1 cycle_activity.stalls_mem_any:u 19061523
+EV 3 bulk16k sefer 1 exe_activity.bound_on_stores:u 2958263
+RUN 3 bulk16k sefer 2 bulk sefer 16384 64 300 6.592 0
+EV 3 bulk16k sefer 2 cycles:u 301421871
+EV 3 bulk16k sefer 2 mem_load_retired.l1_miss:u 1227528
+EV 3 bulk16k sefer 2 mem_load_retired.l2_miss:u 62894
+EV 3 bulk16k sefer 2 l2_rqsts.rfo_miss:u 593647
+EV 3 bulk16k sefer 2 branch-misses:u 200213
+EV 3 bulk16k sefer 2 resource_stalls.sb:u 5788778
+RUN 3 bulk16k mi 1 bulk mi 16384 64 300 3.218 4ef0000
+EV 3 bulk16k mi 1 cycles:u 145546710
+EV 3 bulk16k mi 1 instructions:u 533256051
+EV 3 bulk16k mi 1 cycle_activity.stalls_total:u 15312515
+EV 3 bulk16k mi 1 cycle_activity.stalls_l1d_miss:u 1193309
+EV 3 bulk16k mi 1 cycle_activity.stalls_mem_any:u 8107082
+EV 3 bulk16k mi 1 exe_activity.bound_on_stores:u 7598560
+RUN 3 bulk16k mi 2 bulk mi 16384 64 300 3.350 4ef0000
+EV 3 bulk16k mi 2 cycles:u 144660020
+EV 3 bulk16k mi 2 mem_load_retired.l1_miss:u 366643
+EV 3 bulk16k mi 2 mem_load_retired.l2_miss:u 3134
+EV 3 bulk16k mi 2 l2_rqsts.rfo_miss:u 146224
+EV 3 bulk16k mi 2 branch-misses:u 232501
+EV 3 bulk16k mi 2 resource_stalls.sb:u 7345519
+RUN 3 bulk64 sefer 1 bulk sefer 64 64 80000 3.383 0
+EV 3 bulk64 sefer 1 cycles:u 159659944
+EV 3 bulk64 sefer 1 instructions:u 746241404
+EV 3 bulk64 sefer 1 cycle_activity.stalls_total:u 5289351
+EV 3 bulk64 sefer 1 cycle_activity.stalls_l1d_miss:u 293111
+EV 3 bulk64 sefer 1 cycle_activity.stalls_mem_any:u 2349742
+EV 3 bulk64 sefer 1 exe_activity.bound_on_stores:u 4662
+RUN 3 bulk64 sefer 2 bulk sefer 64 64 80000 3.505 0
+EV 3 bulk64 sefer 2 cycles:u 164964759
+EV 3 bulk64 sefer 2 mem_load_retired.l1_miss:u 4233
+EV 3 bulk64 sefer 2 mem_load_retired.l2_miss:u 1008
+EV 3 bulk64 sefer 2 l2_rqsts.rfo_miss:u 184
+EV 3 bulk64 sefer 2 branch-misses:u 448890
+EV 3 bulk64 sefer 2 resource_stalls.sb:u 7576
+RUN 3 bulk64 mi 1 bulk mi 64 64 80000 2.578 0
+EV 3 bulk64 mi 1 cycles:u 119412593
+EV 3 bulk64 mi 1 instructions:u 497053556
+EV 3 bulk64 mi 1 cycle_activity.stalls_total:u 8245395
+EV 3 bulk64 mi 1 cycle_activity.stalls_l1d_miss:u 417607
+EV 3 bulk64 mi 1 cycle_activity.stalls_mem_any:u 6042843
+EV 3 bulk64 mi 1 exe_activity.bound_on_stores:u 3256
+RUN 3 bulk64 mi 2 bulk mi 64 64 80000 2.452 0
+EV 3 bulk64 mi 2 cycles:u 118168691
+EV 3 bulk64 mi 2 mem_load_retired.l1_miss:u 4127
+EV 3 bulk64 mi 2 mem_load_retired.l2_miss:u 1065
+EV 3 bulk64 mi 2 l2_rqsts.rfo_miss:u 246
+EV 3 bulk64 mi 2 branch-misses:u 211041
+EV 3 bulk64 mi 2 resource_stalls.sb:u 5103
+RUN 3 pair16 sefer 1 sefer 1 16 20000000 8.304 7f077ca9d61e0800
+EV 3 pair16 sefer 1 cycles:u 753809269
+EV 3 pair16 sefer 1 instructions:u 3520788252
+EV 3 pair16 sefer 1 cycle_activity.stalls_total:u 22422583
+EV 3 pair16 sefer 1 cycle_activity.stalls_l1d_miss:u 395471
+EV 3 pair16 sefer 1 cycle_activity.stalls_mem_any:u 7351860
+EV 3 pair16 sefer 1 exe_activity.bound_on_stores:u 5501
+RUN 3 pair16 sefer 2 sefer 1 16 20000000 8.276 5000bafb961e0800
+EV 3 pair16 sefer 2 cycles:u 739530434
+EV 3 pair16 sefer 2 mem_load_retired.l1_miss:u 5334
+EV 3 pair16 sefer 2 mem_load_retired.l2_miss:u 1156
+EV 3 pair16 sefer 2 l2_rqsts.rfo_miss:u 244
+EV 3 pair16 sefer 2 branch-misses:u 314185
+EV 3 pair16 sefer 2 resource_stalls.sb:u 8329
+RUN 3 pair16 mi 1 mi 1 16 20000000 7.208 5f53249056634bf0
+EV 3 pair16 mi 1 cycles:u 624960750
+EV 3 pair16 mi 1 instructions:u 2681900644
+EV 3 pair16 mi 1 cycle_activity.stalls_total:u 20096175
+EV 3 pair16 mi 1 cycle_activity.stalls_l1d_miss:u 1228725
+EV 3 pair16 mi 1 cycle_activity.stalls_mem_any:u 11328158
+EV 3 pair16 mi 1 exe_activity.bound_on_stores:u 11558
+RUN 3 pair16 mi 2 mi 1 16 20000000 7.614 5f53249056634bf0
+EV 3 pair16 mi 2 cycles:u 641082699
+EV 3 pair16 mi 2 mem_load_retired.l1_miss:u 20062
+EV 3 pair16 mi 2 mem_load_retired.l2_miss:u 1427
+EV 3 pair16 mi 2 l2_rqsts.rfo_miss:u 730
+EV 3 pair16 mi 2 branch-misses:u 523048
+EV 3 pair16 mi 2 resource_stalls.sb:u 12891
+RUN 3 churn16 sefer 1 sefer 256 16 20000000 9.462 fd11fbc1efbcbf0
+EV 3 churn16 sefer 1 cycles:u 810605490
+EV 3 churn16 sefer 1 instructions:u 3520852178
+EV 3 churn16 sefer 1 cycle_activity.stalls_total:u 29047229
+EV 3 churn16 sefer 1 cycle_activity.stalls_l1d_miss:u 2787689
+EV 3 churn16 sefer 1 cycle_activity.stalls_mem_any:u 19412066
+EV 3 churn16 sefer 1 exe_activity.bound_on_stores:u 154023
+RUN 3 churn16 sefer 2 sefer 256 16 20000000 8.451 8ad0803e9efbcbf0
+EV 3 churn16 sefer 2 cycles:u 737832473
+EV 3 churn16 sefer 2 mem_load_retired.l1_miss:u 9363
+EV 3 churn16 sefer 2 mem_load_retired.l2_miss:u 1286
+EV 3 churn16 sefer 2 l2_rqsts.rfo_miss:u 508
+EV 3 churn16 sefer 2 branch-misses:u 290325
+EV 3 churn16 sefer 2 resource_stalls.sb:u 8918
+RUN 3 churn16 mi 1 mi 256 16 20000000 15.368 5f5324906989abd0
+EV 3 churn16 mi 1 cycles:u 1349096975
+EV 3 churn16 mi 1 instructions:u 6300386956
+EV 3 churn16 mi 1 cycle_activity.stalls_total:u 28728584
+EV 3 churn16 mi 1 cycle_activity.stalls_l1d_miss:u 2031992
+EV 3 churn16 mi 1 cycle_activity.stalls_mem_any:u 15823189
+EV 3 churn16 mi 1 exe_activity.bound_on_stores:u 86240
+RUN 3 churn16 mi 2 mi 256 16 20000000 17.956 5f5324906989abd0
+EV 3 churn16 mi 2 cycles:u 1420220509
+EV 3 churn16 mi 2 mem_load_retired.l1_miss:u 189790
+EV 3 churn16 mi 2 mem_load_retired.l2_miss:u 3866
+EV 3 churn16 mi 2 l2_rqsts.rfo_miss:u 5110
+EV 3 churn16 mi 2 branch-misses:u 503436
+EV 3 churn16 mi 2 resource_stalls.sb:u 450182
+RUN 3 mixed16_64 sefer 1 mixed sefer 256 16/64 128 20000000 12.727 3ee1b90309b220
+EV 3 mixed16_64 sefer 1 cycles:u 989723257
+EV 3 mixed16_64 sefer 1 instructions:u 3741040052
+EV 3 mixed16_64 sefer 1 cycle_activity.stalls_total:u 85293213
+EV 3 mixed16_64 sefer 1 cycle_activity.stalls_l1d_miss:u 1772883
+EV 3 mixed16_64 sefer 1 cycle_activity.stalls_mem_any:u 40262395
+EV 3 mixed16_64 sefer 1 exe_activity.bound_on_stores:u 59555
+RUN 3 mixed16_64 sefer 2 mixed sefer 256 16/64 128 20000000 11.077 3e1f2cc309b220
+EV 3 mixed16_64 sefer 2 cycles:u 958249246
+EV 3 mixed16_64 sefer 2 mem_load_retired.l1_miss:u 70517
+EV 3 mixed16_64 sefer 2 mem_load_retired.l2_miss:u 1617
+EV 3 mixed16_64 sefer 2 l2_rqsts.rfo_miss:u 1122
+EV 3 mixed16_64 sefer 2 branch-misses:u 2202501
+EV 3 mixed16_64 sefer 2 resource_stalls.sb:u 116766
+RUN 3 mixed16_64 mi 1 mixed mi 256 16/64 128 20000000 7.816 10000110987c0
+EV 3 mixed16_64 mi 1 cycles:u 669350393
+EV 3 mixed16_64 mi 1 instructions:u 2784736196
+EV 3 mixed16_64 mi 1 cycle_activity.stalls_total:u 40206093
+EV 3 mixed16_64 mi 1 cycle_activity.stalls_l1d_miss:u 1476380
+EV 3 mixed16_64 mi 1 cycle_activity.stalls_mem_any:u 17031509
+EV 3 mixed16_64 mi 1 exe_activity.bound_on_stores:u 25717
+RUN 3 mixed16_64 mi 2 mixed mi 256 16/64 128 20000000 8.056 10000110987c0
+EV 3 mixed16_64 mi 2 cycles:u 699269887
+EV 3 mixed16_64 mi 2 mem_load_retired.l1_miss:u 80064
+EV 3 mixed16_64 mi 2 mem_load_retired.l2_miss:u 2016
+EV 3 mixed16_64 mi 2 l2_rqsts.rfo_miss:u 1360
+EV 3 mixed16_64 mi 2 branch-misses:u 1066765
+EV 3 mixed16_64 mi 2 resource_stalls.sb:u 75923
+RUN 3 mixed256_1024 sefer 1 mixed sefer 256 256/1024 48 10000032 16.019 416300
+EV 3 mixed256_1024 sefer 1 cycles:u 700688385
+EV 3 mixed256_1024 sefer 1 instructions:u 2713221457
+EV 3 mixed256_1024 sefer 1 cycle_activity.stalls_total:u 59675802
+EV 3 mixed256_1024 sefer 1 cycle_activity.stalls_l1d_miss:u 12823477
+EV 3 mixed256_1024 sefer 1 cycle_activity.stalls_mem_any:u 36157651
+EV 3 mixed256_1024 sefer 1 exe_activity.bound_on_stores:u 771611
+RUN 3 mixed256_1024 sefer 2 mixed sefer 256 256/1024 48 10000032 18.641 416300
+EV 3 mixed256_1024 sefer 2 cycles:u 774082118
+EV 3 mixed256_1024 sefer 2 mem_load_retired.l1_miss:u 5411582
+EV 3 mixed256_1024 sefer 2 mem_load_retired.l2_miss:u 6314
+EV 3 mixed256_1024 sefer 2 l2_rqsts.rfo_miss:u 16472
+EV 3 mixed256_1024 sefer 2 branch-misses:u 2146830
+EV 3 mixed256_1024 sefer 2 resource_stalls.sb:u 2946620
+RUN 3 mixed256_1024 mi 1 mixed mi 256 256/1024 48 10000032 10.041 687900
+EV 3 mixed256_1024 mi 1 cycles:u 383866211
+EV 3 mixed256_1024 mi 1 instructions:u 1441500508
+EV 3 mixed256_1024 mi 1 cycle_activity.stalls_total:u 30982238
+EV 3 mixed256_1024 mi 1 cycle_activity.stalls_l1d_miss:u 3711351
+EV 3 mixed256_1024 mi 1 cycle_activity.stalls_mem_any:u 17879048
+EV 3 mixed256_1024 mi 1 exe_activity.bound_on_stores:u 266982
+RUN 3 mixed256_1024 mi 2 mixed mi 256 256/1024 48 10000032 8.376 687900
+EV 3 mixed256_1024 mi 2 cycles:u 365487478
+EV 3 mixed256_1024 mi 2 mem_load_retired.l1_miss:u 3876408
+EV 3 mixed256_1024 mi 2 mem_load_retired.l2_miss:u 1467
+EV 3 mixed256_1024 mi 2 l2_rqsts.rfo_miss:u 1495
+EV 3 mixed256_1024 mi 2 branch-misses:u 832798
+EV 3 mixed256_1024 mi 2 resource_stalls.sb:u 67534

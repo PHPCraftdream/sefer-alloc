@@ -188,7 +188,9 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha }}"
           [ -z "$BASE" ] && BASE="${{ github.event.before }}"
           git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE=HEAD^
-          node scripts/ghost_zero_cost.mjs --base "$BASE" --require-ir --out "$RUNNER_TEMP/ghost_zero_cost.json"
+          PR_HEAD="${{ github.event.pull_request.head.sha }}"
+          [ -z "$PR_HEAD" ] && PR_HEAD=HEAD
+          node scripts/ghost_zero_cost.mjs --base "$BASE" --allow-declared-runtime --head "$PR_HEAD" --require-ir --out "$RUNNER_TEMP/ghost_zero_cost.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -4624,14 +4626,19 @@ jobs:
       - run: cargo deny check advisories
 
   licenses:
-    # License compatibility of the dependency graph with this workspace's
+    # License compatibility of third-party code with this workspace's
     # `MIT OR Apache-2.0` (cargo-deny `licenses`: the `deny.toml` allow-list,
     # copyleft and unlicensed denied), plus the graph-only `bans` and
-    # `sources` checks. Runs only when the dependency set changed since a run
-    # that passed: these checks are a pure function of the inputs that
-    # `scripts/license-check-fingerprint.mjs` hashes (Cargo.lock, deny.toml,
-    # the members' license metadata, the cargo-deny version, this job's text
-    # and the script itself). A pass stores a marker in the Actions cache
+    # `sources` checks, for EVERY Cargo workspace with a tracked Cargo.lock
+    # (root, fuzz/, the compile_fail fixtures). The coverage check
+    # (`scripts/license-check-workspaces.mjs --check`, every run) fails on a
+    # workspace without a tracked lock and on a third-party action that is not
+    # in its reviewed list or whose license deny.toml does not allow. The
+    # cargo-deny step runs only when the dependency set changed since a run
+    # that passed: it is a pure function of the inputs that
+    # `scripts/license-check-fingerprint.mjs` hashes (every tracked
+    # Cargo.lock, deny.toml, the members' license metadata, the cargo-deny
+    # version, this job's text and both scripts). A pass stores a marker in the Actions cache
     # under that fingerprint; a later run with the same fingerprint finds it
     # and skips the check. A miss (a new dependency set, or a marker that was
     # evicted or never written) runs it. Caches written by a pull request are
@@ -4647,8 +4654,14 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
-      - name: Self-test the fingerprint
-        run: node scripts/license-check-fingerprint.mjs --selftest
+      - name: Self-test the fingerprint and the coverage check
+        run: |
+          node scripts/license-check-fingerprint.mjs --selftest
+          node scripts/license-check-workspaces.mjs --selftest
+      - name: Every Cargo workspace and third-party action is covered
+        # Runs on every change: a new workspace without a tracked Cargo.lock, an action not in
+        # the reviewed list, or an action license deny.toml does not allow is red here.
+        run: node scripts/license-check-workspaces.mjs --check
       - name: Dependency-set fingerprint
         id: fp
         run: |
@@ -4662,9 +4675,17 @@ jobs:
           path: .license-check-pass
           key: license-check-${{ steps.fp.outputs.fingerprint }}
           lookup-only: true
-      - name: cargo deny check licenses bans sources
+      - name: cargo deny check licenses bans sources (every Cargo workspace)
         if: steps.seen.outputs.cache-hit != 'true'
-        run: cargo deny check licenses bans sources
+        run: |
+          set -euo pipefail
+          node scripts/license-check-workspaces.mjs --list > "$RUNNER_TEMP/workspaces.txt"
+          while read -r dir; do
+            echo "::group::$dir"
+            # No --config: its position differs across cargo-deny versions; the default is <cwd>/deny.toml (repo root).
+            cargo deny --manifest-path "$dir/Cargo.toml" --locked check licenses bans sources
+            echo "::endgroup::"
+          done < "$RUNNER_TEMP/workspaces.txt"
       - name: Record the passed fingerprint
         if: steps.seen.outputs.cache-hit != 'true'
         env:

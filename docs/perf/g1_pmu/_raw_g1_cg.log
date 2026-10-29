@@ -1,0 +1,187 @@
+bin_sha256 046a3ff06807c424e6c45ef528abc22bc850ec19a1d2d6f52c3132c03036cb58
+RUN bulk16k sefer bulk sefer 16384 64 20 463.764 0
+FN bulk16k sefer 95,891,733 (100.0%)  PROGRAM TOTALS
+FN bulk16k sefer 11,355,393 (11.84%)  g1pmu1/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k sefer 11,305,440 (11.79%)  g1pmu1/src/registry/heap_core/free/dealloc_own_base.rs:b4_pmu_probe::sefer_dealloc
+FN bulk16k sefer  5,038,149 ( 5.25%)  g1pmu1/src/registry/heap_core/alloc/hot.rs:b4_pmu_probe::sefer_alloc
+FN bulk16k sefer  4,765,682 ( 4.97%)  g1pmu1/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k sefer  3,932,160 ( 4.10%)  g1pmu1/src/alloc_core/platform/size_classes.rs:b4_pmu_probe::sefer_dealloc
+FN bulk16k sefer  3,664,958 ( 3.82%)  g1pmu1/src/alloc_core/config/continuation_bounds.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN bulk16k sefer  3,548,440 ( 3.70%)  g1pmu1/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN bulk16k sefer  3,146,256 ( 3.28%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::bulk_pass [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k sefer  2,950,080 ( 3.08%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::sefer_dealloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k sefer  2,752,512 ( 2.87%)  g1pmu1/src/alloc_core/platform/size_classes.rs:b4_pmu_probe::sefer_alloc
+FN bulk16k sefer  2,492,784 ( 2.60%)  g1pmu1/src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k sefer  2,287,810 ( 2.39%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN bulk16k sefer  2,287,672 ( 2.39%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN bulk16k sefer  2,285,637 ( 2.38%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::sefer_alloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k sefer  2,046,906 ( 2.13%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+FN bulk16k sefer  1,900,719 ( 1.98%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+FN bulk16k sefer  1,754,532 ( 1.83%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+FN bulk16k sefer  1,572,864 ( 1.64%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:b4_pmu_probe::bulk_pass
+FN bulk16k sefer  1,572,862 ( 1.64%)  g1pmu1/src/alloc_core/segment/segment_header/segment_header_views.rs:b4_pmu_probe::sefer_dealloc
+FN bulk16k sefer  1,382,475 ( 1.44%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN bulk16k sefer  1,179,673 ( 1.23%)  g1pmu1/src/alloc_core/segment/segment_table/segment_table_impl.rs:b4_pmu_probe::sefer_dealloc
+FN bulk16k sefer  1,179,648 ( 1.23%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::sefer_alloc
+FN bulk16k sefer  1,179,648 ( 1.23%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::sefer_dealloc
+FN bulk16k sefer  1,179,648 ( 1.23%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:b4_pmu_probe::sefer_dealloc
+FN bulk16k sefer  1,130,738 ( 1.18%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::sefer_dealloc
+FN bulk16k sefer  1,105,989 ( 1.15%)  g1pmu1/src/alloc_core/segment/bitmap/state_byte.rs:b4_pmu_probe::sefer_alloc
+FN bulk16k sefer    933,800 ( 0.97%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN bulk16k sefer    833,146 ( 0.87%)  g1pmu1/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k sefer    816,465 ( 0.85%)  g1pmu1/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+RUN bulk16k mi bulk mi 16384 64 20 328.642 0
+FN bulk16k mi 39,285,851 (100.0%)  PROGRAM TOTALS
+FN bulk16k mi 7,065,552 (17.98%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_theap_malloc_aligned [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi 4,718,592 (12.01%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c:_mi_page_malloc_zero [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi 4,326,392 (11.01%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_free
+FN bulk16k mi 3,935,669 (10.02%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi 3,146,256 ( 8.01%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::bulk_pass [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi 2,359,296 ( 6.01%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_malloc_aligned [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi 1,572,864 ( 4.00%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_theap_malloc_aligned
+FN bulk16k mi 1,572,864 ( 4.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:b4_pmu_probe::bulk_pass
+FN bulk16k mi 1,197,123 ( 3.05%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_page_free_list_extend
+FN bulk16k mi   865,677 ( 2.20%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:mi_page_free_list_extend [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi   786,504 ( 2.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:b4_pmu_probe::bulk_pass
+FN bulk16k mi   786,432 ( 2.00%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:b4_pmu_probe::mi_alloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi   786,432 ( 2.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::bulk_pass
+FN bulk16k mi   686,306 ( 1.75%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:mi_page_queue_find_free_ex [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi   393,216 ( 1.00%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_malloc_zero
+FN bulk16k mi   393,216 ( 1.00%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_free
+FN bulk16k mi   393,216 ( 1.00%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_malloc_aligned
+FN bulk16k mi   393,216 ( 1.00%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:b4_pmu_probe::mi_dealloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi   393,216 ( 1.00%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:b4_pmu_probe::bulk_pass
+FN bulk16k mi   382,472 ( 0.97%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_malloc_generic [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi   331,536 ( 0.84%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_free_collect [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi   271,392 ( 0.69%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_theap_malloc_zero_aligned_at_generic [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi   224,640 ( 0.57%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:mi_page_extend_free.isra.0 [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi   131,388 ( 0.33%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+FN bulk16k mi   123,144 ( 0.31%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_bin
+FN bulk16k mi   122,082 ( 0.31%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/options.c:mi_option_get [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi    90,573 ( 0.23%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.c:mi_bitmap_setN [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi    83,545 ( 0.21%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/bitmap.c:mi_bbitmap_try_find_and_clear [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN bulk16k mi    74,016 ( 0.19%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_good_size [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+RUN mixed16_64 sefer mixed sefer 256 16/64 128 400000 631.251 dca0
+FN mixed16_64 sefer 74,563,597 (100.0%)  PROGRAM TOTALS
+FN mixed16_64 sefer 14,178,312 (19.02%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::churn_sz [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 sefer 12,728,848 (17.07%)  g1pmu1/src/registry/heap_core/free/dealloc_own_base.rs:b4_pmu_probe::sefer_dealloc
+FN mixed16_64 sefer  5,663,527 ( 7.60%)  g1pmu1/src/registry/heap_core/alloc/hot.rs:b4_pmu_probe::sefer_alloc
+FN mixed16_64 sefer  4,882,025 ( 6.55%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+FN mixed16_64 sefer  4,403,200 ( 5.91%)  g1pmu1/src/alloc_core/platform/size_classes.rs:b4_pmu_probe::sefer_dealloc
+FN mixed16_64 sefer  3,441,696 ( 4.62%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::sefer_dealloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 sefer  3,082,240 ( 4.13%)  g1pmu1/src/alloc_core/platform/size_classes.rs:b4_pmu_probe::sefer_alloc
+FN mixed16_64 sefer  2,581,287 ( 3.46%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::sefer_alloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 sefer  2,200,320 ( 2.95%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:b4_pmu_probe::churn_sz
+FN mixed16_64 sefer  1,761,278 ( 2.36%)  g1pmu1/src/alloc_core/segment/segment_header/segment_header_views.rs:b4_pmu_probe::sefer_dealloc
+FN mixed16_64 sefer  1,320,985 ( 1.77%)  g1pmu1/src/alloc_core/segment/segment_table/segment_table_impl.rs:b4_pmu_probe::sefer_dealloc
+FN mixed16_64 sefer  1,320,960 ( 1.77%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::sefer_alloc
+FN mixed16_64 sefer  1,320,960 ( 1.77%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::sefer_dealloc
+FN mixed16_64 sefer  1,320,960 ( 1.77%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:b4_pmu_probe::sefer_dealloc
+FN mixed16_64 sefer  1,320,192 ( 1.77%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::churn_sz
+FN mixed16_64 sefer  1,300,746 ( 1.74%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::sefer_dealloc
+FN mixed16_64 sefer  1,260,327 ( 1.69%)  g1pmu1/src/alloc_core/segment/bitmap/state_byte.rs:b4_pmu_probe::sefer_alloc
+FN mixed16_64 sefer    880,651 ( 1.18%)  g1pmu1/src/global/tls_heap.rs:b4_pmu_probe::sefer_alloc
+FN mixed16_64 sefer    880,640 ( 1.18%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:b4_pmu_probe::sefer_dealloc
+FN mixed16_64 sefer    849,198 ( 1.14%)  g1pmu1/src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 sefer    840,218 ( 1.13%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:b4_pmu_probe::sefer_alloc
+FN mixed16_64 sefer    606,060 ( 0.81%)  g1pmu1/src/registry/heap_core/state/depot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::depot_park
+FN mixed16_64 sefer    545,478 ( 0.73%)  g1pmu1/src/registry/heap_core/state/depot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::depot_reload
+FN mixed16_64 sefer    505,491 ( 0.68%)  g1pmu1/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 sefer    457,254 ( 0.61%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:b4_pmu_probe::churn_sz
+FN mixed16_64 sefer    443,502 ( 0.59%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::churn_sz
+FN mixed16_64 sefer    440,320 ( 0.59%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:b4_pmu_probe::sefer_alloc
+FN mixed16_64 sefer    440,320 ( 0.59%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:b4_pmu_probe::sefer_alloc
+FN mixed16_64 sefer    440,320 ( 0.59%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:b4_pmu_probe::sefer_dealloc
+RUN mixed16_64 mi mixed mi 256 16/64 128 400000 761.647 67ab0
+FN mixed16_64 mi 55,376,849 (100.0%)  PROGRAM TOTALS
+FN mixed16_64 mi 14,178,312 (25.60%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::churn_sz [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi  7,904,782 (14.27%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_theap_malloc_aligned [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi  5,283,840 ( 9.54%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c:_mi_page_malloc_zero [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi  4,843,528 ( 8.75%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_free
+FN mixed16_64 mi  4,841,011 ( 8.74%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+FN mixed16_64 mi  4,406,655 ( 7.96%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi  2,641,920 ( 4.77%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_malloc_aligned [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi  2,200,320 ( 3.97%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:b4_pmu_probe::churn_sz
+FN mixed16_64 mi  1,761,280 ( 3.18%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_theap_malloc_aligned
+FN mixed16_64 mi  1,320,192 ( 2.38%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::churn_sz
+FN mixed16_64 mi    880,640 ( 1.59%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:b4_pmu_probe::mi_alloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi    639,960 ( 1.16%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_malloc_generic [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi    461,516 ( 0.83%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_theap_malloc_zero_aligned_at_generic [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi    457,254 ( 0.83%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:b4_pmu_probe::churn_sz
+FN mixed16_64 mi    443,502 ( 0.80%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::churn_sz
+FN mixed16_64 mi    440,320 ( 0.80%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_malloc_zero
+FN mixed16_64 mi    440,320 ( 0.80%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_free
+FN mixed16_64 mi    440,320 ( 0.80%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_malloc_aligned
+FN mixed16_64 mi    440,320 ( 0.80%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:b4_pmu_probe::mi_dealloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi    181,704 ( 0.33%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_bin
+FN mixed16_64 mi    125,868 ( 0.23%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_good_size [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi    115,379 ( 0.21%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_malloc_generic
+FN mixed16_64 mi     83,912 ( 0.15%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c:_mi_theap_malloc_zero [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi     68,139 ( 0.12%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_bin [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi     60,480 ( 0.11%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_strnicmp [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi     58,374 ( 0.11%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::main [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi     56,044 ( 0.10%)  ./elf/./elf/dl-lookup.c:do_lookup_x [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+FN mixed16_64 mi     52,445 ( 0.09%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:_mi_bin_size [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed16_64 mi     51,206 ( 0.09%)  ./stdio-common/./stdio-common/vfscanf-internal.c:__vfscanf_internal [/usr/lib/x86_64-linux-gnu/libc.so.6]
+RUN mixed256_1024 sefer mixed sefer 256 256/1024 48 200016 953.460 4a6300
+FN mixed256_1024 sefer 54,412,117 (100.0%)  PROGRAM TOTALS
+FN mixed256_1024 sefer 7,169,376 (13.18%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::churn_sz [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 sefer 6,351,636 (11.67%)  g1pmu1/src/registry/heap_core/free/dealloc_own_base.rs:b4_pmu_probe::sefer_dealloc
+FN mixed256_1024 sefer 4,280,627 ( 7.87%)  g1pmu1/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 sefer 2,836,201 ( 5.21%)  g1pmu1/src/registry/heap_core/alloc/hot.rs:b4_pmu_probe::sefer_alloc
+FN mixed256_1024 sefer 2,461,688 ( 4.52%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+FN mixed256_1024 sefer 2,202,880 ( 4.05%)  g1pmu1/src/alloc_core/platform/size_classes.rs:b4_pmu_probe::sefer_dealloc
+FN mixed256_1024 sefer 1,862,731 ( 3.42%)  g1pmu1/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 sefer 1,688,872 ( 3.10%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::sefer_dealloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 sefer 1,649,978 ( 3.03%)  g1pmu1/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN mixed256_1024 sefer 1,542,016 ( 2.83%)  g1pmu1/src/alloc_core/platform/size_classes.rs:b4_pmu_probe::sefer_alloc
+FN mixed256_1024 sefer 1,416,681 ( 2.60%)  g1pmu1/src/alloc_core/config/continuation_bounds.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN mixed256_1024 sefer 1,294,185 ( 2.38%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::sefer_alloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 sefer 1,100,160 ( 2.02%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:b4_pmu_probe::churn_sz
+FN mixed256_1024 sefer   936,258 ( 1.72%)  g1pmu1/src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 sefer   897,828 ( 1.65%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN mixed256_1024 sefer   883,374 ( 1.62%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN mixed256_1024 sefer   881,150 ( 1.62%)  g1pmu1/src/alloc_core/segment/segment_header/segment_header_views.rs:b4_pmu_probe::sefer_dealloc
+FN mixed256_1024 sefer   771,184 ( 1.42%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+FN mixed256_1024 sefer   752,603 ( 1.38%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+FN mixed256_1024 sefer   716,104 ( 1.32%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+FN mixed256_1024 sefer   661,024 ( 1.21%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+FN mixed256_1024 sefer   660,889 ( 1.21%)  g1pmu1/src/alloc_core/segment/segment_table/segment_table_impl.rs:b4_pmu_probe::sefer_dealloc
+FN mixed256_1024 sefer   660,864 ( 1.21%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::sefer_alloc
+FN mixed256_1024 sefer   660,864 ( 1.21%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::sefer_dealloc
+FN mixed256_1024 sefer   660,864 ( 1.21%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:b4_pmu_probe::sefer_dealloc
+FN mixed256_1024 sefer   660,096 ( 1.21%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::churn_sz
+FN mixed256_1024 sefer   642,508 ( 1.18%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::sefer_dealloc
+FN mixed256_1024 sefer   633,321 ( 1.16%)  g1pmu1/src/alloc_core/segment/bitmap/state_byte.rs:b4_pmu_probe::sefer_alloc
+FN mixed256_1024 sefer   540,634 ( 0.99%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch
+RUN mixed256_1024 mi mixed mi 256 256/1024 48 200016 797.981 e36000
+FN mixed256_1024 mi 28,889,165 (100.0%)  PROGRAM TOTALS
+FN mixed256_1024 mi 7,169,376 (24.82%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::churn_sz [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi 3,951,772 (13.68%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_theap_malloc_aligned [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi 2,643,456 ( 9.15%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c:_mi_page_malloc_zero [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi 2,423,176 ( 8.39%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_free
+FN mixed256_1024 mi 2,420,659 ( 8.38%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+FN mixed256_1024 mi 2,207,753 ( 7.64%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi 1,321,728 ( 4.58%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_malloc_aligned [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi 1,100,160 ( 3.81%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:b4_pmu_probe::churn_sz
+FN mixed256_1024 mi   881,152 ( 3.05%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_theap_malloc_aligned
+FN mixed256_1024 mi   660,096 ( 2.28%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::churn_sz
+FN mixed256_1024 mi   440,576 ( 1.53%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:b4_pmu_probe::mi_alloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi   409,422 ( 1.42%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_malloc_generic [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi   295,064 ( 1.02%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_theap_malloc_zero_aligned_at_generic [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi   242,952 ( 0.84%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/iter/range.rs:b4_pmu_probe::churn_sz
+FN mixed256_1024 mi   224,616 ( 0.78%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::churn_sz
+FN mixed256_1024 mi   220,288 ( 0.76%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_malloc_zero
+FN mixed256_1024 mi   220,288 ( 0.76%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_free
+FN mixed256_1024 mi   220,288 ( 0.76%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_malloc_aligned
+FN mixed256_1024 mi   220,288 ( 0.76%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:b4_pmu_probe::mi_dealloc [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi   184,778 ( 0.64%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_bin
+FN mixed256_1024 mi    80,472 ( 0.28%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page-queue.c:mi_good_size [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi    77,283 ( 0.27%)  g1pmu1/examples/b4_pmu_probe.rs:b4_pmu_probe::main [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi    73,766 ( 0.26%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_malloc_generic
+FN mixed256_1024 mi    66,450 ( 0.23%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_retire [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi    60,480 ( 0.21%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/libc.c:_mi_strnicmp [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi    56,044 ( 0.19%)  ./elf/./elf/dl-lookup.c:do_lookup_x [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+FN mixed256_1024 mi    53,648 ( 0.19%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c:_mi_theap_malloc_zero [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]
+FN mixed256_1024 mi    51,206 ( 0.18%)  ./stdio-common/./stdio-common/vfscanf-internal.c:__vfscanf_internal [/usr/lib/x86_64-linux-gnu/libc.so.6]
+FN mixed256_1024 mi    50,394 ( 0.17%)  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_bin [~/ab/tgt-g1pmu1/release/examples/b4_pmu_probe]

@@ -74,6 +74,25 @@ allow = [
 # duplicate-version noise across dev-dependencies (criterion/tokio/etc. pull
 # several). `unlicensed` and `copyleft` stay at their deny defaults (a real
 # license problem must still fail the gate).
+#
+# This file is also the policy for every other Cargo workspace in the
+# repository (fuzz/ and the compile_fail fixtures, each with its own
+# Cargo.lock): the `licenses` CI job runs cargo-deny once per tracked
+# Cargo.lock (scripts/license-check-workspaces.mjs lists them and fails on an
+# uncovered one).
+exceptions = [
+    # libfuzzer-sys bundles LLVM's libFuzzer under NCSA, a permissive
+    # BSD-style license (OSI approved). It is reached only by the fuzz/
+    # harness (publish = false, never distributed), so the NCSA notice
+    # obligation does not arise. Allowed for this crate only, not globally.
+    { crate = "libfuzzer-sys", allow = ["NCSA"] },
+]
+
+[licenses.private]
+# Our own unpublished crates (fuzz/, compile_fail fixtures: publish = false,
+# no license field) are not third-party code; their third-party dependencies
+# are still checked.
+ignore = true
 
 [bans]
 # Permissive for now (task #202 scope is advisories + licenses, not a full
