@@ -1184,6 +1184,69 @@ as "SeferAlloc vs mimalloc/System, this run", not as "SeferAlloc got slower
 since the last table." vs `System`: ~4–7× faster across the board, same
 shape as before.)
 
+### Paired short-sample table (`npm run bench:table:paired`)
+
+The criterion table above measures each allocator in its own long window, so host
+noise that moves between windows lands on one arm only, and it is built with
+`internals bench-internals`, whose diagnostic counters sit in SeferAlloc's hot
+path. The paired table ([`scripts/bench-table-paired.mjs`](scripts/bench-table-paired.mjs),
+`examples/bench_table_paired.rs`) times the same bodies under plain `--features
+production`: per round all three arms run one short sample (2048 pairs) back to
+back in rotated order; a cell is the median over 3 processes of each process's
+minimum over 200 rounds, with the range of those minimums in parentheses (ns/pair).
+Report, raw samples and manifest: [`docs/perf/BT1_PAIRED_BENCH_TABLE.md`](docs/perf/BT1_PAIRED_BENCH_TABLE.md).
+
+Steady state — one long-lived working set of 256:
+
+**Warm bulk burst** (alloc 1024 then free 1024):
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 6.8 (6.7–7.0) | 4.5 (4.5–4.6) | 48.9 (48.7–49.1) | 1.49× slower |
+| 64B | 6.7 (6.7–6.7) | 6.5 (6.4–6.5) | 49.0 (48.5–50.5) | 1.04× slower |
+| 256B | 7.4 (7.4–7.6) | 8.4 (8.3–8.4) | 46.6 (43.6–47.8) | **1.13× faster** |
+| 1024B | 8.7 (8.5–8.7) | 16.0 (15.8–16.2) | 174.0 (171.1–178.7) | **1.84× faster** |
+
+**Churn, non-writing**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 5.9 (5.9–5.9) | 14.8 (14.6–15.0) | 39.6 (38.9–39.6) | **2.51× faster** |
+| 64B | 5.9 (5.9–6.0) | 14.6 (14.6–14.9) | 61.2 (41.6–62.3) | **2.47× faster** |
+| 256B | 5.9 (5.9–6.0) | 8.5 (8.3–8.6) | 35.5 (35.4–36.2) | **1.44× faster** |
+| 1024B | 5.9 (5.9–6.1) | 67.1 (66.8–67.4) | 39.0 (38.5–41.8) | **11.36× faster** |
+
+**Churn + write**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 6.1 (6.0–6.1) | 15.1 (14.9–15.1) | 39.1 (39.1–39.2) | **2.50× faster** |
+| 64B | 6.1 (6.0–6.1) | 14.9 (14.8–15.1) | 61.1 (41.0–61.9) | **2.46× faster** |
+| 256B | 6.1 (6.0–6.1) | 8.6 (8.5–8.6) | 36.3 (35.9–36.5) | **1.42× faster** |
+| 1024B | 6.3 (6.2–6.3) | 65.6 (65.3–66.1) | 39.7 (39.1–41.6) | **10.33× faster** |
+
+Fresh working sets — 16 freshly prefilled sets per sample, the shape criterion's `iter_batched` produces (mimalloc is much cheaper here; SeferAlloc is not affected):
+
+**Churn, non-writing**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 5.9 (5.8–5.9) | 5.5 (5.5–5.6) | 38.4 (38.0–42.0) | 1.07× slower |
+| 64B | 6.1 (6.0–6.4) | 8.8 (8.8–8.9) | 38.7 (38.5–39.4) | **1.46× faster** |
+| 256B | 6.3 (6.2–6.4) | 8.1 (8.0–8.2) | 40.4 (39.8–40.7) | **1.28× faster** |
+| 1024B | 7.4 (7.3–7.6) | 70.6 (69.8–71.3) | 48.5 (47.3–49.7) | **9.56× faster** |
+
+**Churn + write**:
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 6.1 (6.1–6.2) | 5.8 (5.7–5.8) | 38.8 (38.8–43.4) | 1.05× slower |
+| 64B | 6.1 (6.1–6.5) | 9.0 (8.9–9.2) | 38.6 (38.5–39.5) | **1.47× faster** |
+| 256B | 6.9 (6.8–6.9) | 8.5 (8.4–8.5) | 39.7 (39.2–40.1) | **1.23× faster** |
+| 1024B | 7.8 (7.7–8.2) | 70.0 (68.4–70.4) | 45.7 (45.2–46.6) | **8.96× faster** |
+
+(Measured 2026-10-29, commit `91223e36`, same Windows dev host as the criterion table. Built with the `bench:table` feature set instead, SeferAlloc is 1.6–3.5 ns/pair slower and the other arms unchanged — warm bulk 16 B 9.6 vs 6.8 — see the report.)
+
 **The 256 B churn loss is GONE (Э6, P6) — and M2 got stronger, not weaker.**
 Through P5 sefer-alloc trailed mimalloc at 256 B churn (~1.16–1.25× slower), and
 the docs pinned that on "the M2 bitmap price". That framing was incomplete: the
