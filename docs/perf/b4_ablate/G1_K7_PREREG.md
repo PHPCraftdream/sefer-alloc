@@ -79,3 +79,17 @@ Variant v2 — `k7_depot_overflow_v2` = `git diff 2bc830cc 980c9b9a -- src`
 (inline per-class park limit with a refusal latch, O(1) decay tick,
 division-free ring index), patch sha256 `6d2c47163f19430d299da5d11ceb959c75a9174e25e876085d829c3d87aa7dc2`. Same runs, same decision
 rule, same 13 kernels.
+
+## Addendum 2 (2026-10-29, before any run of v3)
+
+Run of v2 (raws `.rush/g1/k7abl2/`): bulk16k −71.53, bulk64k −10.88,
+churn256 −3.99; losses bulk64 +9.24 [7.82, 10.22], bulk16k_32 +7.18 [5.49,
+9.37], pair16 +1.07 [0.57, 2.90], pair64 +1.18 [0.63, 2.17] — NO-GO by rule
+2. Isolated mix (pair16, pair64, bulk64, bulk16k_32; raws
+`.rush/g1/k7abl2iso/`): bulk16k_32 −28.09, bulk64 +1.35, pair16 +0.58,
+pair64 +0.52. Counter oracle: bulk64 runs on the overflow tail (24 overflow
+parks/reloads per portion).
+
+Variant v3 — `k7_depot_overflow_v3` = `git diff 2bc830cc 3cef5a58 -- src` (floor
+first; floor traffic does not tick the decay), patch sha256 `f1659242205025907fa4d2d8ffea845992e76ae564223fed2cc8586bf29fa85f`. Same
+runs, decision rule and kernels.
