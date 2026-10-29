@@ -1,0 +1,15 @@
+{
+  "arm": "mimalloc",
+  "repeats": 120,
+  "total_ir": 1460992354,
+  "raw_sha256": "6ea202f3f682b21b96714427c07eabee5e91d5f89aa4ff4dd8710e6293e6c81f",
+  "raw_bytes": 170288,
+  "warmup_rounds": 1,
+  "workload_ns": 7838271801,
+  "segments_reserved_total": 0,
+  "rss_kib": 35108,
+  "commit_kib": 1115080,
+  "completed": true,
+  "archived_normalized_sha256": "3adfbf0f2c3002ab4163ddf342cec5a6f53bd3998b9367bf703f2416480a405e",
+  "source_path_normalization": "workspace and Cargo registry prefixes only; numeric records unchanged"
+}

@@ -1,0 +1,108 @@
+{
+  "rows": [
+    {
+      "index": 0,
+      "repeats": 241,
+      "workload_ns": 121338700,
+      "parent_ns": 134185300,
+      "lifetime_ns": 132523300,
+      "user_ns": 125000000,
+      "kernel_ns": 15625000,
+      "accounted_cpu_ns": 140625000,
+      "cpu_cycles": 292789688,
+      "lifetime_minus_accounted_cpu_ns": -8101700,
+      "cpu_over_lifetime": 1.0611341552768456
+    },
+    {
+      "index": 1,
+      "repeats": 241,
+      "workload_ns": 125057800,
+      "parent_ns": 133475200,
+      "lifetime_ns": 131712000,
+      "user_ns": 125000000,
+      "kernel_ns": 0,
+      "accounted_cpu_ns": 125000000,
+      "cpu_cycles": 298509390,
+      "lifetime_minus_accounted_cpu_ns": 6712000,
+      "cpu_over_lifetime": 0.9490403304178814
+    },
+    {
+      "index": 2,
+      "repeats": 241,
+      "workload_ns": 107565800,
+      "parent_ns": 113022800,
+      "lifetime_ns": 111853500,
+      "user_ns": 93750000,
+      "kernel_ns": 31250000,
+      "accounted_cpu_ns": 125000000,
+      "cpu_cycles": 254645638,
+      "lifetime_minus_accounted_cpu_ns": -13146500,
+      "cpu_over_lifetime": 1.1175332019114288
+    },
+    {
+      "index": 3,
+      "repeats": 241,
+      "workload_ns": 167024000,
+      "parent_ns": 174161400,
+      "lifetime_ns": 172507800,
+      "user_ns": 156250000,
+      "kernel_ns": 0,
+      "accounted_cpu_ns": 156250000,
+      "cpu_cycles": 342676508,
+      "lifetime_minus_accounted_cpu_ns": 16257800,
+      "cpu_over_lifetime": 0.9057561455192171
+    },
+    {
+      "index": 4,
+      "repeats": 241,
+      "workload_ns": 132898000,
+      "parent_ns": 139849000,
+      "lifetime_ns": 138469400,
+      "user_ns": 140625000,
+      "kernel_ns": 0,
+      "accounted_cpu_ns": 140625000,
+      "cpu_cycles": 277111260,
+      "lifetime_minus_accounted_cpu_ns": -2155600,
+      "cpu_over_lifetime": 1.0155673383433452
+    },
+    {
+      "index": 5,
+      "repeats": 241,
+      "workload_ns": 117279400,
+      "parent_ns": 123802400,
+      "lifetime_ns": 122521800,
+      "user_ns": 109375000,
+      "kernel_ns": 0,
+      "accounted_cpu_ns": 109375000,
+      "cpu_cycles": 259707560,
+      "lifetime_minus_accounted_cpu_ns": 13146800,
+      "cpu_over_lifetime": 0.8926982790001453
+    }
+  ],
+  "stats": {
+    "workload_ns": {
+      "mean": 128527283.33333333,
+      "min": 107565800,
+      "max": 167024000,
+      "sample_sd": 20643217.12451009
+    },
+    "lifetime_ns": {
+      "mean": 134931300,
+      "min": 111853500,
+      "max": 172507800,
+      "sample_sd": 20626460.692227352
+    },
+    "accounted_cpu_ns": {
+      "mean": 132812500,
+      "min": 109375000,
+      "max": 156250000,
+      "sample_sd": 16387638.252658619
+    },
+    "cpu_cycles": {
+      "mean": 287573340.6666667,
+      "min": 254645638,
+      "max": 342676508,
+      "sample_sd": 32104071.304529052
+    }
+  }
+}

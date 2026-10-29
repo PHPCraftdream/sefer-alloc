@@ -1,0 +1,24 @@
+{
+  "captured_before_build": "2026-10-25T10:21:34.049Z",
+  "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+  "patch_sha256": "41a9b269d1af6d174722fd68736e3a070ade88e40e3915e89f69e908077d6fa0",
+  "files": {
+    "examples/native_mixed_sefer.rs": "a85e2c96ea556500d1234f224b13f9db793b48516da7c4b45978b5b923d8561e",
+    "examples/native_mixed_mimalloc.rs": "a6dff9409ba7462e40a8e7ba227e3ccff913410567a44dfc5524898dfb7f2ffe",
+    "examples/_shared/native_mixed_driver.rs": "77eb8dbe5c63c0d813046c76394fe6756c87532f8721d93504308853fd9b97d8",
+    "examples/_shared/paired_ab_workload.rs": "2fa5402c9c4ff01c484b53991072a6178ce1f989342da333c465f320da5f92b0",
+    "docs/design/2026-10-25-native-mixed-calibration-prereg.md": "1577eac1fe36e15655f1ce282b2bc88acc69b38c4f5635f4491492053a62156e"
+  },
+  "features": "production",
+  "layer": "installed global allocator; same churn/Vec workload as calibration",
+  "repeats": [
+    120,
+    241
+  ],
+  "warmup_rounds": 1,
+  "native_judge": "FAILED CALIBRATION; these profiles cannot establish native speedup",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "valgrind": "valgrind-3.22.0\n",
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+  "host_os": "10.0.19045"
+}

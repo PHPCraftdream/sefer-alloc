@@ -1,0 +1,1 @@
+{"arm":"mimalloc","repeats":120,"warmup_rounds":1,"workload_ns":7838271801,"segments_reserved_total":0,"rss_kib":35108,"commit_kib":1115080,"completed":true}

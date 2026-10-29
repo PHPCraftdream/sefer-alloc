@@ -1,0 +1,3 @@
+metric,samples,base,features,cpu,os,repeats,baseline_ns_round,delta_ns_round,low,high,halfwidth_fraction,sensitivity_pass,position_bias_not_detected
+"workload_ns",40,"f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",241,434128.2157676349,-25744.10788381742,-49261.30864205127,-2226.9071255835734,0.054171094861112,false,false
+"process_ns",40,"f80c681b799ef4ef7fa08d79c06896fdf1104fe9","production","11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz","10.0.19045",241,470188.8900414937,-28447.863070539413,-52248.85675942646,-4646.86938165237,0.05062006821723633,false,false

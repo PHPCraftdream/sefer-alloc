@@ -1,0 +1,54 @@
+[
+  {
+    "arm": "sefer",
+    "repeats": 120,
+    "total_ir": 794345187,
+    "raw_sha256": "ce1423e540b21659eb736fe3d08e2e1651bddd3af9b4e000bae0207f6592fbc4",
+    "raw_bytes": 146956,
+    "warmup_rounds": 1,
+    "workload_ns": 2571805503,
+    "segments_reserved_total": 1,
+    "rss_kib": 29892,
+    "commit_kib": 71768,
+    "completed": true
+  },
+  {
+    "arm": "sefer",
+    "repeats": 241,
+    "total_ir": 1588199760,
+    "raw_sha256": "723a908696df5b05aee7de618abf75f2ec76933ae8708f227d2c1ff8f3803256",
+    "raw_bytes": 147197,
+    "warmup_rounds": 1,
+    "workload_ns": 5133634346,
+    "segments_reserved_total": 1,
+    "rss_kib": 29892,
+    "commit_kib": 71768,
+    "completed": true
+  },
+  {
+    "arm": "mimalloc",
+    "repeats": 120,
+    "total_ir": 1460992354,
+    "raw_sha256": "6ea202f3f682b21b96714427c07eabee5e91d5f89aa4ff4dd8710e6293e6c81f",
+    "raw_bytes": 170288,
+    "warmup_rounds": 1,
+    "workload_ns": 7838271801,
+    "segments_reserved_total": 0,
+    "rss_kib": 35108,
+    "commit_kib": 1115080,
+    "completed": true
+  },
+  {
+    "arm": "mimalloc",
+    "repeats": 241,
+    "total_ir": 2914255949,
+    "raw_sha256": "d54471756afc4d7996fdd5fb4dc3fecbd52c51151d7f5ab49df6f83d97e91195",
+    "raw_bytes": 171236,
+    "warmup_rounds": 1,
+    "workload_ns": 15717574905,
+    "segments_reserved_total": 0,
+    "rss_kib": 35108,
+    "commit_kib": 1115080,
+    "completed": true
+  }
+]

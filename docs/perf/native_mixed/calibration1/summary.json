@@ -1,0 +1,37 @@
+{
+  "judge_pass": false,
+  "summary": [
+    {
+      "metric": "workload_ns",
+      "samples": 40,
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "features": "production",
+      "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+      "os": "10.0.19045",
+      "repeats": 241,
+      "baseline_ns_round": 434128.2157676349,
+      "delta_ns_round": -25744.10788381742,
+      "low": -49261.30864205127,
+      "high": -2226.9071255835734,
+      "halfwidth_fraction": 0.054171094861112,
+      "sensitivity_pass": false,
+      "position_bias_not_detected": false
+    },
+    {
+      "metric": "process_ns",
+      "samples": 40,
+      "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+      "features": "production",
+      "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+      "os": "10.0.19045",
+      "repeats": 241,
+      "baseline_ns_round": 470188.8900414937,
+      "delta_ns_round": -28447.863070539413,
+      "low": -52248.85675942646,
+      "high": -4646.86938165237,
+      "halfwidth_fraction": 0.05062006821723633,
+      "sensitivity_pass": false,
+      "position_bias_not_detected": false
+    }
+  ]
+}

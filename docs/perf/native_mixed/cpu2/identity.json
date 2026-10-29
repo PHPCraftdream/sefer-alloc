@@ -1,0 +1,13 @@
+{
+  "captured_before_execution_ns": 1792924540860043300,
+  "base": "f80c681b799ef4ef7fa08d79c06896fdf1104fe9",
+  "binary_sha256": "0aec2966bd99d4b5649b354ffd7f12918819c3d9117c543bac6091a0d1f983c1",
+  "source_identity_sha256": "227df11cd2a37444a8c00663b65686842e09f5ddea79a38154c3a8ead0d7156d",
+  "features": "production",
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "processes": 6,
+  "repeats": 241,
+  "new_build": false,
+  "candidate_AB": false
+}

@@ -1,0 +1,41 @@
+{
+  "mi_over_sefer_ir": 1.8306420904121945,
+  "shares": [
+    {
+      "category": "self:rust_dealloc",
+      "numerator": 3216544,
+      "denominator": 6560781.5950413225,
+      "fraction": 0.490268415950789
+    },
+    {
+      "category": "self:workload_container",
+      "numerator": 2296418,
+      "denominator": 6560781.5950413225,
+      "fraction": 0.35002201593414517
+    },
+    {
+      "category": "refill",
+      "numerator": 571160.5950413223,
+      "denominator": 6560781.5950413225,
+      "fraction": 0.0870567914458559
+    },
+    {
+      "category": "flush",
+      "numerator": 455920,
+      "denominator": 6560781.5950413225,
+      "fraction": 0.06949172036828463
+    },
+    {
+      "category": "drain",
+      "numerator": 486248.5950413223,
+      "denominator": 6560781.5950413225,
+      "fraction": 0.07411443103194165
+    },
+    {
+      "category": "discovery",
+      "numerator": 0,
+      "denominator": 6560781.5950413225,
+      "fraction": 0
+    }
+  ]
+}

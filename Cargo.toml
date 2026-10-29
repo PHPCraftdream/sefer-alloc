@@ -1223,6 +1223,14 @@ required-features = ["alloc-global"]
 # own binary target (it has no `main`) — each `paired_ab_*` binary pulls it in
 # via `include!`, not `mod`/`use`.
 [[example]]
+name = "native_mixed_sefer"
+required-features = ["alloc-global"]
+
+[[example]]
+name = "native_mixed_mimalloc"
+required-features = ["alloc-global"]
+
+[[example]]
 name = "paired_ab_sefer"
 required-features = ["alloc-global"]
 
