@@ -286,9 +286,21 @@ fn main() {
     eprintln!("== ph6b_mt_ab: installed #[global_allocator] MT A/B harness (measurement-only) ==");
     for &t in THREAD_SWEEP {
         for workload in ["larson", "mstress"] {
+            #[cfg(g1_ingress_oracle)]
+            let before = sefer_alloc::AllocCore::dbg_g1_ingress_oracle();
             let (ns, ops) = measure(workload, t);
             println!("RESULT mt_ns workload={workload} T={t} ns={ns}");
             println!("RESULT mt_ops workload={workload} T={t} ops={ops}");
+            // SC-6 counting oracle (docs/perf/g1_scan/SC6_ORACLE.md).
+            #[cfg(g1_ingress_oracle)]
+            {
+                let after = sefer_alloc::AllocCore::dbg_g1_ingress_oracle();
+                println!(
+                    "RESULT g1_oracle workload={workload} T={t} publishes={} notifies={}",
+                    after.0 - before.0,
+                    after.1 - before.1
+                );
+            }
         }
     }
     let stats = GLOBAL.stats();
