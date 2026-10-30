@@ -312,14 +312,11 @@ pub(super) fn small_free_guard(
     // flushed-bitmap).
     let off = (ptr as usize - base as usize) as u32;
     let meta = SegmentMeta::new(base);
-    let payload_start = if matches!(&kind, BlockKind::Primordial) {
-        SegmentLayout::primordial_meta_end()
-    } else {
-        SegmentLayout::small_meta_end()
-    };
-    if (off as usize) < payload_start {
-        return SmallFreeGuard::RejectNoOp;
-    }
+    // F-1: the metadata-offset reject moved to the cold classifier below. The
+    // state bytes of offsets below the payload start lie inside the state map
+    // itself and are never written (every issue site writes at a carved
+    // payload offset), so an `encode(c, LIVE)` match already implies
+    // `off >= payload_start`; the whole map is committed with the metadata.
     // B4 variant (в): the M2 double-free oracles collapse into ONE check on
     // the authoritative STATE BYTE. The alignment check above (H1, hardened)
     // plus the byte's class field (encoded at every issue site) subsume the
@@ -350,26 +347,40 @@ pub(super) fn small_free_guard(
         c,
         crate::alloc_core::state_byte::StateByte::LIVE,
     );
-    if (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) != 0 {
-        return SmallFreeGuard::RejectNoOpSilent;
-    }
-    if byte != expected {
-        if byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::LIVE {
-            return SmallFreeGuard::RejectNoOpSilent;
-        }
-        if byte == 0 {
-            if (off as usize) < meta.bump_of() {
-                return SmallFreeGuard::RejectNoOpSilent;
-            }
-            return SmallFreeGuard::RejectNoOp;
-        }
-        return SmallFreeGuard::RejectNoOp;
+    let misaligned = off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1);
+    if (misaligned | u32::from(byte ^ expected)) != 0 {
+        return small_free_reject(kind, off, byte, meta);
     }
     if (off as usize) >= meta.bump_of() {
         return SmallFreeGuard::RejectNoOp;
     }
 
     SmallFreeGuard::Accept { off }
+}
+
+/// F-1: the reject reasons of [`small_free_guard`] in their former order —
+/// metadata offset, misalignment, then the state byte — off the hot path.
+#[cold]
+#[inline(never)]
+fn small_free_reject(kind: BlockKind, off: u32, byte: u8, meta: SegmentMeta) -> SmallFreeGuard {
+    let payload_start = if matches!(&kind, BlockKind::Primordial) {
+        SegmentLayout::primordial_meta_end()
+    } else {
+        SegmentLayout::small_meta_end()
+    };
+    if (off as usize) < payload_start {
+        return SmallFreeGuard::RejectNoOp;
+    }
+    if (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) != 0 {
+        return SmallFreeGuard::RejectNoOpSilent;
+    }
+    if byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::LIVE {
+        return SmallFreeGuard::RejectNoOpSilent;
+    }
+    if byte == 0 && (off as usize) < meta.bump_of() {
+        return SmallFreeGuard::RejectNoOpSilent;
+    }
+    SmallFreeGuard::RejectNoOp
 }
 
 // `HARDENED_LARGE_NOOP_COUNT` stayed in the sibling `dealloc` module with
