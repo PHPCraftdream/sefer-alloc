@@ -9,7 +9,7 @@
 use crate::global::fallback;
 use core::alloc::{GlobalAlloc, Layout};
 
-use crate::global::tls_heap::{current_for_dealloc, CurrentHeapForDealloc};
+use crate::global::tls_heap::{current_for_dealloc, current_for_trim, CurrentHeapForDealloc};
 
 use crate::global::tls_heap::CurrentHeap;
 
@@ -49,6 +49,33 @@ fn alloc_via_fallback(sefer: &SeferAlloc, layout: Layout) -> *mut u8 {
         // to System, never abort (docs/reviews/2026-10-11, question 7).
         // SAFETY: `layout` is the caller's valid GlobalAlloc layout.
         return exit_escape_alloc(layout, false);
+    }
+    ptr
+}
+
+/// L-1: `alloc`/`alloc_zeroed` for a thread without a bound heap (the first
+/// call binds one; a torn or destroyed TLS slot uses the fallback heap).
+/// Same dispatch the inline paths had before L-1.
+#[cold]
+#[inline(never)]
+fn alloc_unbound(sefer: &SeferAlloc, layout: Layout, zeroed: bool) -> *mut u8 {
+    let ptr = match sefer.current_heap() {
+        CurrentHeap::Fallback if !zeroed => return alloc_via_fallback(sefer, layout),
+        CurrentHeap::Fallback => sefer
+            .with_fallback_heap(|h| h.alloc_zeroed(layout))
+            .unwrap_or(core::ptr::null_mut()),
+        // SAFETY: as in `GlobalAlloc::alloc`; `current_heap` returned a heap
+        // bound to this thread.
+        CurrentHeap::Own(heap) => unsafe {
+            if zeroed {
+                (*heap).alloc_zeroed(layout)
+            } else {
+                (*heap).alloc(layout)
+            }
+        },
+    };
+    if ptr.is_null() && crate::global::process_exit_in_progress() {
+        return exit_escape_alloc(layout, zeroed);
     }
     ptr
 }
@@ -100,15 +127,18 @@ unsafe impl GlobalAlloc for SeferAlloc {
         if ExactNarrow::is_narrow(layout) {
             return ExactNarrow::alloc(layout, false);
         }
-        let ptr = match self.current_heap() {
-            CurrentHeap::Fallback => return alloc_via_fallback(self, layout),
-            // SAFETY: `heap` is non-null and points to a live `HeapCore` in
-            // a registry slot. `current_heap` returned it for THIS thread;
-            // the single-writer invariant (the CAS-won slot owner) makes
-            // `&mut` access exclusive. `HeapCore::alloc` upholds the
-            // GlobalAlloc contract (returns valid memory or null).
-            CurrentHeap::Own(heap) => unsafe { (*heap).alloc(layout) },
+        // L-1: only a bound thread's own heap is served inline; binding,
+        // the fallback heap and the config copy sit behind a tail call, so
+        // this path keeps no stack frame.
+        let Some(heap) = current_for_trim() else {
+            return alloc_unbound(self, layout, false);
         };
+        // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+        // registry slot bound to THIS thread; the single-writer invariant
+        // (the CAS-won slot owner) makes `&mut` access exclusive.
+        // `HeapCore::alloc` upholds the GlobalAlloc contract (returns valid
+        // memory or null).
+        let ptr = unsafe { (*heap).alloc(layout) };
         if ptr.is_null() && crate::global::process_exit_in_progress() {
             // Cold null path only: the route is unavailable because a lock
             // holder was terminated by `ExitProcess`. Owner decision: escape
@@ -161,14 +191,12 @@ unsafe impl GlobalAlloc for SeferAlloc {
         if ExactNarrow::is_narrow(layout) {
             return ExactNarrow::alloc(layout, true);
         }
-        let ptr = match self.current_heap() {
-            CurrentHeap::Fallback => match self.with_fallback_heap(|h| h.alloc_zeroed(layout)) {
-                Some(ptr) => ptr,
-                None => core::ptr::null_mut(),
-            },
-            // SAFETY: as in `alloc`.
-            CurrentHeap::Own(heap) => unsafe { (*heap).alloc_zeroed(layout) },
+        // L-1: as in `alloc`.
+        let Some(heap) = current_for_trim() else {
+            return alloc_unbound(self, layout, true);
         };
+        // SAFETY: as in `alloc`.
+        let ptr = unsafe { (*heap).alloc_zeroed(layout) };
         if ptr.is_null() && crate::global::process_exit_in_progress() {
             return exit_escape_alloc(layout, true);
         }
