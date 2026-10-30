@@ -6,6 +6,18 @@ use crate::alloc_core::node::Node;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 
 impl SegmentHeader {
+    /// AS-1: the raw kind byte (a `SegmentKind` discriminant when well formed).
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        not(feature = "hardened")
+    ))]
+    #[inline(always)]
+    pub(crate) fn kind_byte_at(base: *mut u8) -> u8 {
+        let off = core::mem::offset_of!(SegmentHeader, kind);
+        Node::read_u8(Node::offset(base, off) as *const u8)
+    }
+
     /// Owner-only, field-specific kind read from the canonical table root.
     #[inline(always)]
     pub(crate) fn kind_at(base: *mut u8) -> SegmentKind {

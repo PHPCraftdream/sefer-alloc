@@ -553,6 +553,21 @@ impl HeapCore {
     /// The full-magazine tail of [`dealloc_own_thread_with_base`](Self::dealloc_own_thread_with_base)
     /// (B1-c): `small_free_guard` already accepted `block` (class `c`, offset
     /// `off` in the segment at `root`) and the push found `cnt == FREE_PARK_CAP[c]`.
+    /// AS-1: the fast lane's full-magazine exit.
+    #[cfg(not(feature = "hardened"))]
+    #[cold]
+    #[inline(never)]
+    pub(super) fn free_magazine_full_fast(
+        &mut self,
+        c: usize,
+        cnt: usize,
+        off: u32,
+        root: *mut u8,
+        block: *mut u8,
+    ) {
+        self.free_magazine_full(c, cnt, off, root, block);
+    }
+
     #[cold]
     #[inline(never)]
     fn free_magazine_full(

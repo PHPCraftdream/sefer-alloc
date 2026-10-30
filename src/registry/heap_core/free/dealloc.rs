@@ -144,6 +144,17 @@ impl HeapCore {
         // segment base or the memo's `LAST_EMPTY_KEY`, so it always misses
         // into `dealloc_routing` -> `publish_foreign`, whose first line
         // null-checks before any counter or action.
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "fastbin",
+            not(feature = "hardened")
+        ))]
+        self.dealloc_fast(ptr, layout);
+        #[cfg(not(all(
+            feature = "alloc-global",
+            feature = "fastbin",
+            not(feature = "hardened")
+        )))]
         self.dealloc_routing(ptr, layout);
     }
 
