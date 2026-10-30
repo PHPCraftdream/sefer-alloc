@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+138. **[A] J1-CH — J1 churn kernels share one ring: the J1 churn losses are a cross-class regime, and sefer's per-op cost is flat.** (Filed 2026-10-30, `docs/perf/J1_CROSS_CLASS_ATTRIBUTION.md`.)
+
+   > **Current state**
+   > - **Status:** open (атрибуция готова; правок runtime нет).
+   > - **Current:** churn16/64/256 в J1 делят одно кольцо — churn16 освобождает блоки 64/256 Б и выделяет 16 Б. Проба `inter`: sefer ≈21–24 тика и ≈108–112 Ir на alloc+free во всех режимах; mimalloc 17 тиков / 70 Ir (pair16), 17 / 96 (16↔64), 36 / 234 (churn 16 Б одного класса, где sefer быстрее в 1.7×). Промахи кэша, ветвления и TLB не причина; рычаг — Ir free (68–70 против 23–25). Проверены и отклонены FG-1/A, A-2, F-1, T-1 (карточки 139–143).
+   > - **Next trigger:** дизайн free, снимающий ≥ 20 Ir без ослабления проверок, согласованный с @ox и rush reviewer до прототипа; приём — парный bench:table + проба `inter` (смешанные классы).
+   > - **Evidence:** `docs/perf/J1_CROSS_CLASS_ATTRIBUTION.md`, `docs/perf/J1_CROSS_CLASS_ATTRIBUTION_summary.csv`, `docs/perf/j1ch/`, `scripts/j1ch_tables.mjs`, `scripts/g1_probe_pair_table.mjs`.
+
 137. **[A] G1-SC — routed discovery scan quadratic in heap size: loses to mimalloc from ~512 MiB.** (Filed 2026-10-29, `docs/perf/G1_SC4_GROWTH_TIME.md`, `docs/perf/g1_scan/`.)
 
    > **Current state**
@@ -1252,6 +1260,46 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
     > - **Evidence:** `unix_reserve` doc comment in `crates/aligned-vmem/src/os/unix.rs` (32-bit fast path gating), `try_reserve_aligned_exact` in `crates/aligned-vmem/src/os/unix.rs` (32-bit exact-size fast path implementation), `unix_reserve` in `crates/aligned-vmem/src/os/unix.rs` (64-bit over-reserve path). Filed from `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md`, Part I finding 4 (P2-4); pool-cost addition from `docs/reviews/2026-08-17-aligned-vmem-fxx-audit.md` F9 (task #1069), which re-raises II-4's residual `align > 2 MiB` half.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
+
+143. **[L] T-1 — linear class index up to 80 B (no SIZE2CLASS load): NO-GO.** (Filed 2026-10-30, `docs/perf/T1_TINY_CLASS_INDEX_PREREG.md` § Verdict.)
+
+   > **Current state**
+   > - **Status:** rejected (код под тегом `archive/t1-tiny-class-index-measured`).
+   > - **Current:** парный bench:table: 4 WIN (churn и churn_write 16/64 Б, −3…−6.5 % в обеих парах) и 3 LOSS (тёплая пачка 16/64 Б +5…+9 %, churn_write 256 Б); проба: ветка `size <= 80` на free непредсказуема при смеси размеров по обе стороны 80 Б (+35 % на 16↔256).
+   > - **Next trigger:** форма без ветки по размеру, которая всё равно убирает загрузку таблицы из цепочки до счётчика магазина.
+   > - **Evidence:** `docs/perf/T1_TINY_CLASS_INDEX_PREREG.md`, `docs/perf/T1_TINY_CLASS_INDEX_summary.csv`, `docs/perf/t1/`, `scripts/t1_verdict.mjs`.
+
+142. **[L] F-1 — lean small-free guard (metadata-offset reject on the mismatch branch): NO-GO.** (Filed 2026-10-30, `docs/perf/F1_LEAN_FREE_GUARD_PREREG.md` § Verdict.)
+
+   > **Current state**
+   > - **Status:** rejected (код под тегом `archive/f1-lean-free-guard-measured`).
+   > - **Current:** вход `sefer_dealloc` сохраняет 1 регистр вместо 3; парный bench:table: 2 WIN (пачка 64 Б, churn 64 Б), 4 LOSS (пачка 16 Б +2.4 % в обеих парах, пачка 1024 Б, churn 256/1024 Б — там время sefer ровное, движется знаменатель mimalloc). Первый вариант с холодным вызовом добавлял 6 push и проигрывал везде.
+   > - **Next trigger:** только в составе более крупной перестройки free (карточка 138).
+   > - **Evidence:** `docs/perf/F1_LEAN_FREE_GUARD_PREREG.md`, `docs/perf/F1_LEAN_FREE_GUARD_summary.csv`, `docs/perf/f1/`, `scripts/f1_verdict.mjs`.
+
+141. **[L] A-2 — plain `encode(c, LIVE)` store instead of the state-byte RMW at magazine issue: NULL.** (Filed 2026-10-30, `docs/perf/J1_CROSS_CLASS_ATTRIBUTION.md` §4.)
+
+   > **Current state**
+   > - **Status:** rejected as null (код под тегом `archive/a2-issue-store-measured`).
+   > - **Current:** проба `inter`, 6 повторов ABBA: отношение sefer/mi в процессе не сдвинулось сверх шума (16↔64 1.348 → 1.331, остальные ячейки ±1 %); 41 % сэмплов `sefer_alloc` за RMW — это точка удержания retirement, а не цена.
+   > - **Next trigger:** нет.
+   > - **Evidence:** `docs/perf/j1ch/a2_probe_inter.csv`, `scripts/g1_probe_pair_table.mjs`.
+
+140. **[L] FG-1/B1 — the cold TLS bind takes the config by reference (drops the 0x70 alloc frame): NO-GO by pre-registration.** (Filed 2026-10-30, `docs/perf/FG1_B1_COLD_BIND_BYREF_PREREG.md`.)
+
+   > **Current state**
+   > - **Status:** rejected (код под тегом `archive/fg1-b1-cold-bind-byref-measured`).
+   > - **Current:** тёплая пачка 16 Б −2.5 %, но churn_write 256 Б хуже на 3 % в обеих парах — правило предрегистрации FAIL; правило после данных не перечитывалось.
+   > - **Next trigger:** только в составе перестройки кадра alloc вместе с A-4a (задача WB-1/A-4a).
+   > - **Evidence:** `docs/perf/FG1_B1_COLD_BIND_BYREF_PREREG.md`, `docs/perf/FG1_B1_COLD_BIND_BYREF_summary.csv`, `docs/perf/fg1/b1/`, `scripts/fg1_b1_verdict.mjs`.
+
+139. **[L] FG-1/A — free class from the state byte (a K2 variant): NO-GO.** (Filed 2026-10-30, `docs/perf/J1_CROSS_CLASS_ATTRIBUTION.md` §4.)
+
+   > **Current state**
+   > - **Status:** rejected (код под тегом `archive/fg1-a-state-class-measured`).
+   > - **Current:** −4.7 Ir на пару, но каждая churn-ячейка bench:table медленнее на 17–26 % (одна сборка на плечо): байт, только что записанный alloc, становится индексом загрузки счётчика магазина — та же зависимость store→load, что у K2 (карточка 126).
+   > - **Next trigger:** нет — тот же механизм, что у K2.
+   > - **Evidence:** `docs/perf/j1ch/fg1a_*`, `scripts/j1ch_tables.mjs`.
 
 134. **[L] WB-1 B-1a — inline-цепочка переливов склада (depot_park/park_overflow/reload): NO-GO.** (Filed 2026-10-29, `docs/perf/WB1_B1_DEPOT_INLINE_PREREG.md` § Verdict.)
 
