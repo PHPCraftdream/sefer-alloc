@@ -84,6 +84,13 @@ impl AllocCore {
         self.table.memo()
     }
 
+    /// AS-1: count a fast-lane memo hit as the chain's tier-1 hit would.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "bench-internals"))]
+    #[inline(always)]
+    pub(crate) fn note_tier1_hit() {
+        crate::alloc_core::alloc_core::tier1_bump(&crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS);
+    }
+
     #[cfg(feature = "alloc-global")]
     #[inline(always)]
     pub(crate) fn owned_block_of(&mut self, ptr: *mut u8) -> Option<OwnedBlock> {
