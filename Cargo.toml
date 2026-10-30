@@ -1668,6 +1668,11 @@ required-features = ["alloc-core", "alloc-decommit", "internals"]
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
 # registration `cargo build` / `cargo test` (without `--tests`) tries to compile
 # it under the default feature set and fails with E0601 (no `main`).
+# G1-MT1 probe (measurement only): one malloc-bench-rs workload per run.
+[[example]]
+name = "g1_mt_one"
+required-features = ["alloc-global", "alloc-xthread"]
+
 [[example]]
 name = "malloc_macro"
 required-features = ["alloc-global", "alloc-xthread"]
