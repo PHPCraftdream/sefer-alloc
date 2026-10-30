@@ -1289,9 +1289,9 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
    > **Current state**
    > - **Status:** rejected (код под тегом `archive/fg1-b1-cold-bind-byref-measured`).
-   > - **Current:** тёплая пачка 16 Б −2.5 %, но churn_write 256 Б хуже на 3 % в обеих парах — правило предрегистрации FAIL; правило после данных не перечитывалось.
+   > - **Current:** тёплая пачка 16 Б −2.5 %, но churn_write 256 Б хуже на 3 % в обеих парах — правило предрегистрации FAIL. По правилу величины (`docs/perf/MAGNITUDE_RULE_REGISTRY.md`) скрининг проходил: время sefer −2.4 %, согласованных потерь нет. Предрегистрированный перезамер на main (B1-R, две серии ABBA) показал эффект реальный, но малый: −0.5 % и −0.2 %. NO-GO по правилу величины.
    > - **Next trigger:** только в составе перестройки кадра alloc вместе с A-4a (задача WB-1/A-4a).
-   > - **Evidence:** `docs/perf/FG1_B1_COLD_BIND_BYREF_PREREG.md`, `docs/perf/FG1_B1_COLD_BIND_BYREF_summary.csv`, `docs/perf/fg1/b1/`, `scripts/fg1_b1_verdict.mjs`.
+   > - **Evidence:** `docs/perf/FG1_B1_COLD_BIND_BYREF_PREREG.md`, `docs/perf/FG1_B1_COLD_BIND_BYREF_summary.csv`, `docs/perf/fg1/b1/`, `scripts/fg1_b1_verdict.mjs`; перезамер `docs/perf/FG1_B1R_RECONFIRM_PREREG.md`, `docs/perf/fg1/b1r/`, `scripts/g1_magnitude_verdict.mjs`.
 
 139. **[L] FG-1/A — free class from the state byte (a K2 variant): NO-GO.** (Filed 2026-10-30, `docs/perf/J1_CROSS_CLASS_ATTRIBUTION.md` §4.)
 
