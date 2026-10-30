@@ -6,7 +6,7 @@ use core::cell::Cell;
 use core::marker::PhantomData;
 use core::mem;
 use core::ptr;
-use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
+use core::sync::atomic::{fence, AtomicPtr, AtomicU64, AtomicU8, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
 
 use crate::alloc_core::fatal::fatal;
@@ -34,6 +34,65 @@ pub(in super::super) struct Entry {
     pub(in super::super) refs: AtomicUsize,
     pub(in super::super) sidecar: AtomicPtr<u8>,
     pub(in super::super) linked: AtomicBool,
+    /// SC-6 A-exact: `INGRESS_ARMED` until a producer notifies the owner,
+    /// then `INGRESS_NOTIFIED` until the owner re-arms. Routes without a
+    /// heap ingress cell are born NOTIFIED and never notify.
+    pub(in super::super) ingress_state: AtomicU8,
+    /// Owner segment-table slot of this route (`u32::MAX`: none).
+    pub(in super::super) ingress_slot: u32,
+}
+
+const INGRESS_ARMED: u8 = 0;
+const INGRESS_NOTIFIED: u8 = 1;
+const INGRESS_WORDS: usize = crate::alloc_core::segment_table::MAX_SEGMENTS / 64;
+
+/// SC-6 A-exact per-heap notification cell: `mask` bit `s` = owner slot `s`
+/// was notified; `summary` bit `w` = `mask[w]` may be non-zero.
+#[repr(C, align(64))]
+pub(crate) struct HeapIngress {
+    summary: AtomicU64,
+    mask: [AtomicU64; INGRESS_WORDS],
+}
+
+impl HeapIngress {
+    const fn new() -> Self {
+        Self {
+            summary: AtomicU64::new(0),
+            mask: [const { AtomicU64::new(0) }; INGRESS_WORDS],
+        }
+    }
+
+    /// The cell of registry slot `owner`; fallback and unbound owners have none.
+    pub(crate) fn of(owner: usize) -> Option<&'static Self> {
+        static CELLS: [HeapIngress; crate::alloc_core::segment_header::MAX_HEAPS] =
+            [const { HeapIngress::new() }; crate::alloc_core::segment_header::MAX_HEAPS];
+        CELLS.get(owner)
+    }
+
+    fn notify(&self, slot: u32) {
+        let s = slot as usize;
+        self.mask[s / 64].fetch_or(1 << (s % 64), Ordering::Relaxed);
+        self.summary.fetch_or(1 << (s / 64), Ordering::Release);
+    }
+
+    /// Owner only: take the notified slots, word by word.
+    #[cfg_attr(feature = "numa-aware", allow(dead_code))]
+    pub(crate) fn take(&self, mut each: impl FnMut(usize)) {
+        if self.summary.load(Ordering::Relaxed) == 0 {
+            return;
+        }
+        let mut words = self.summary.swap(0, Ordering::Acquire);
+        while words != 0 {
+            let w = words.trailing_zeros() as usize;
+            words &= words - 1;
+            let mut bits = self.mask[w].swap(0, Ordering::Acquire);
+            while bits != 0 {
+                let j = bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                each(w * 64 + j);
+            }
+        }
+    }
 }
 
 /// One counted reference to a stable System allocation; there is no borrowed
@@ -43,6 +102,7 @@ pub(in super::super) struct EntryHandle {
 }
 
 impl EntryHandle {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         root: *mut u8,
         key: usize,
@@ -51,6 +111,7 @@ impl EntryHandle {
         owner: usize,
         kind: RouteKind,
         incarnation: u64,
+        slot: u32,
     ) -> Result<Self, RouteError> {
         let sidecar = match kind {
             RouteKind::Small | RouteKind::Primordial => {
@@ -103,6 +164,17 @@ impl EntryHandle {
                 refs: AtomicUsize::new(1),
                 sidecar: AtomicPtr::new(sidecar),
                 linked: AtomicBool::new(true),
+                ingress_state: AtomicU8::new(
+                    if matches!(kind, RouteKind::Small | RouteKind::Primordial)
+                        && slot != u32::MAX
+                        && HeapIngress::of(owner).is_some()
+                    {
+                        INGRESS_ARMED
+                    } else {
+                        INGRESS_NOTIFIED
+                    },
+                ),
+                ingress_slot: slot,
             });
         }
         Ok(Self {
@@ -204,6 +276,52 @@ impl EntryHandle {
         // SAFETY: this counted handle retains the System allocation; only
         // atomic fields are accessed through the shared reference.
         Some(unsafe { &*ptr })
+    }
+
+    /// SC-6 producer half: after a successful small publication (SeqCst RMW),
+    /// notify the owner once per arming.
+    #[inline(always)]
+    pub(in super::super) fn after_publish(&self) {
+        let entry = self.entry();
+        if entry.ingress_state.load(Ordering::SeqCst) == INGRESS_ARMED {
+            Self::notify(entry);
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn notify(entry: &Entry) {
+        if entry
+            .ingress_state
+            .compare_exchange(
+                INGRESS_ARMED,
+                INGRESS_NOTIFIED,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            return;
+        }
+        HeapIngress::of(entry.owner)
+            .unwrap_or_else(|| {
+                fatal(
+                    b"ingress: armed route without heap
+",
+                )
+            })
+            .notify(entry.ingress_slot);
+    }
+
+    /// SC-6 owner half: re-arm before a full drain of this route's sidecar.
+    #[cfg_attr(feature = "numa-aware", allow(dead_code))]
+    pub(in super::super) fn arm_ingress(&self) {
+        let entry = self.entry();
+        if entry.ingress_slot == u32::MAX || HeapIngress::of(entry.owner).is_none() {
+            return;
+        }
+        entry.ingress_state.store(INGRESS_ARMED, Ordering::Release);
+        fence(Ordering::SeqCst);
     }
 
     pub(in super::super) fn large_state(&self) -> Option<&LargeState> {
@@ -573,7 +691,7 @@ impl RouteDirectory {
         owner: usize,
         kind: RouteKind,
     ) -> Result<RouteRegistration<'_>, RouteError> {
-        self.register_route(root, len, route_ptr, owner, kind)
+        self.register_route(root, len, route_ptr, owner, kind, u32::MAX)
     }
 
     /// Registration and all System allocations precede user-visible issue.
@@ -587,6 +705,7 @@ impl RouteDirectory {
         route_ptr: *mut u8,
         owner: usize,
         kind: RouteKind,
+        slot: u32,
     ) -> Result<RouteRegistration<'_>, RouteError> {
         #[cfg(feature = "internals")]
         if FAIL_NEXT_REGISTRATION
@@ -621,7 +740,7 @@ impl RouteDirectory {
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
             .map_err(|_| RouteError::IncarnationExhausted)?
             + 1;
-        let entry = EntryHandle::new(root, key, end, route_addr, owner, kind, incarnation)?;
+        let entry = EntryHandle::new(root, key, end, route_addr, owner, kind, incarnation, slot)?;
         let shard = &self.shards[Self::shard_index(key)];
         loop {
             let mut guard = shard

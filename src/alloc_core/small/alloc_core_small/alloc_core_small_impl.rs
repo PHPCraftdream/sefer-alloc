@@ -227,7 +227,7 @@ impl AllocCore {
                 // materialised sidecar (otherwise there was no directory-trust
                 // hazard to begin with — the normal path already scanned).
                 #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
-                if !self.directory_sidecar.is_null() {
+                if !self.directory_sidecar.is_null() || self.ingress_armed() {
                     if let Some(seg) = self.find_segment_with_free_forced(class_idx) {
                         #[cfg(feature = "alloc-stats")]
                         crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
@@ -318,7 +318,7 @@ impl AllocCore {
                 // any block served here comes from a free-list pop — never
                 // virgin.
                 #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
-                if !self.directory_sidecar.is_null() {
+                if !self.directory_sidecar.is_null() || self.ingress_armed() {
                     if let Some(seg) = self.find_segment_with_free_forced(class_idx) {
                         #[cfg(feature = "alloc-stats")]
                         crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED

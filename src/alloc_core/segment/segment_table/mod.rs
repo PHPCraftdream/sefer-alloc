@@ -66,7 +66,7 @@ mod issue_transaction;
 #[cfg(feature = "alloc-global")]
 mod route_slots;
 
-#[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
+#[cfg(feature = "alloc-global")]
 mod route_slots_observers;
 
 mod segment_table_impl;

@@ -94,6 +94,9 @@ impl RoutePin {
     pub unsafe fn publish_small_borrowed(&self, offset: u32) -> bool {
         let sidecar = self.entry.small_sidecar();
         let ok = sidecar.is_some_and(|sidecar| sidecar.publish(offset));
+        if ok {
+            self.entry.after_publish();
+        }
         #[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
         if ok {
             if let Some(sidecar) = sidecar {

@@ -44,7 +44,7 @@ impl RouteSlots {
         core::mem::size_of::<Option<RouteRegistration<'static>>>()
     }
 
-    #[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+    #[cfg_attr(feature = "numa-aware", allow(dead_code))]
     pub(super) fn owner(&self) -> usize {
         self.owner
     }
@@ -61,6 +61,7 @@ impl RouteSlots {
             segment_len,
             SegmentKind::Primordial,
             primordial,
+            0,
         )?;
         slots.put(0, route);
         Some(slots)
@@ -119,6 +120,7 @@ impl RouteSlots {
         len: usize,
         kind: SegmentKind,
         payload: *mut u8,
+        slot: u32,
     ) -> Option<RouteRegistration<'static>> {
         self.ensure_capacity(needed)?;
         let kind = match kind {
@@ -128,7 +130,7 @@ impl RouteSlots {
             SegmentKind::Unknown => return None,
         };
         RouteDirectory::global()
-            .register_route(base, len, payload, self.owner, kind)
+            .register_route(base, len, payload, self.owner, kind, slot)
             .ok()
     }
 
@@ -142,6 +144,33 @@ impl RouteSlots {
             fatal(b"route_slots: put into occupied route slot\n");
         }
         *slot = Some(route);
+    }
+
+    /// SC-6 owner half: re-arm the live small route in slot `index`.
+    #[cfg_attr(feature = "numa-aware", allow(dead_code))]
+    pub(super) fn arm_small(&self, index: usize, base: *mut u8) {
+        if index >= self.cap {
+            fatal(
+                b"route_slots: arm index out of range
+",
+            );
+        }
+        // SAFETY: owner-only access to an initialized slot in the live array.
+        let route = unsafe { &*self.slots.add(index) }
+            .as_ref()
+            .unwrap_or_else(|| {
+                fatal(
+                    b"route_slots: arm on empty route slot
+",
+                )
+            });
+        if route.root() != base {
+            fatal(
+                b"route_slots: arm base does not match route root
+",
+            );
+        }
+        route.arm_ingress();
     }
 
     pub(super) fn issue_small(&self, index: usize, base: *mut u8, offset: u32, class: u8) {

@@ -366,6 +366,12 @@ impl SegmentTable {
         crate::alloc_core::node::Node::write_u32(self.free_top, top + 1);
     }
 
+    /// SC-6: the index `free_list_pop` will return next (the list is non-empty).
+    pub(super) fn free_list_peek(&self) -> u32 {
+        let top = crate::alloc_core::node::Node::read_u32(self.free_top as *const u32);
+        crate::alloc_core::node::Node::read_u32(self.free_list_slot_ptr(top as usize - 1))
+    }
+
     /// Pop the most-recently-recycled index off the free-list, or `None` if
     /// it is empty. O(1).
     #[inline]

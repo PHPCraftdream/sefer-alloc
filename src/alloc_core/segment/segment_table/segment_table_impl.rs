@@ -199,7 +199,7 @@ pub(crate) const SEGMENT_SHIFT: usize = 22;
 /// filters them out; [`register`](Self::register) reuses them before appending.
 pub(crate) struct SegmentTable {
     #[cfg(feature = "alloc-global")]
-    routes: Option<RouteSlots>,
+    pub(super) routes: Option<RouteSlots>,
     /// Pointer to the first slot of the registry array (lives in the
     /// primordial segment's payload). `MAX_SEGMENTS` entries.
     slots: *mut *mut u8,
@@ -318,12 +318,6 @@ impl SegmentTable {
             crate::alloc_core::os::SEGMENT,
         )?);
         Some(())
-    }
-
-    /// SC-6 oracle: the route owner id, when routed.
-    #[cfg(all(g1_ingress_oracle, feature = "bench-internals", feature = "alloc-global"))]
-    pub(crate) fn route_owner(&self) -> Option<usize> {
-        self.routes.as_ref().map(RouteSlots::owner)
     }
 
     /// Whether this instance attached terminal descriptors before first issue.
@@ -466,9 +460,15 @@ impl SegmentTable {
         #[cfg(not(feature = "alloc-global"))]
         let _ = len;
         #[cfg(feature = "alloc-global")]
+        let target = if has_free {
+            self.free_list_peek()
+        } else {
+            self.count
+        };
+        #[cfg(feature = "alloc-global")]
         let route = if let Some(routes) = &mut self.routes {
             let needed = self.count as usize + usize::from(!has_free);
-            Some(routes.prepare(needed, base, len, kind, payload)?)
+            Some(routes.prepare(needed, base, len, kind, payload, target)?)
         } else {
             None
         };

@@ -33,6 +33,8 @@ mod small_sidecar;
 #[cfg(all(miri, feature = "internals", feature = "bench-internals"))]
 mod terminal_publication_gate;
 
+#[cfg_attr(feature = "numa-aware", allow(unused_imports))]
+pub(crate) use directory::HeapIngress;
 pub use directory::RouteDirectory;
 pub use error::RouteError;
 pub use kind::RouteKind;
