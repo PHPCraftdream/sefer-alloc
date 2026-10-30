@@ -5,8 +5,11 @@
 //!
 //! Non-vacuous: with a broken notification (never notifying, or an owner that
 //! never takes/drains) the owner cannot see the remote frees, trusts "no free
-//! block", and carves new segments: the net live segment count doubles and
-//! the reuse fraction drops to zero, failing both assertions below.
+//! block", and carves new segments: the net live segment count doubles.
+//! Block addresses are not the oracle: a segment a full drain empties may be
+//! pooled or released and later re-reserved, so its blocks come back as fresh
+//! carves (CI run 41004063060 saw 28 936 / 32 768 address reuse with no
+//! growth).
 #![cfg(feature = "alloc-global")]
 
 use std::alloc::{GlobalAlloc, Layout};
@@ -51,12 +54,6 @@ fn round_trip(segments: usize) {
         .map(|_| unsafe { GLOBAL.alloc(layout) } as usize)
         .collect();
     let after = live_segments();
-    let mut old = first;
-    old.sort_unstable();
-    let reused = second
-        .iter()
-        .filter(|p| old.binary_search(p).is_ok())
-        .count();
     for &p in &second {
         // SAFETY: allocated above, freed once.
         unsafe { GLOBAL.dealloc(p as *mut u8, layout) };
@@ -64,10 +61,6 @@ fn round_trip(segments: usize) {
     assert!(
         after <= peak + 2,
         "owner grew instead of reusing remote frees: live segments {peak} -> {after} ({segments} segments)"
-    );
-    assert!(
-        reused * 10 >= n * 9,
-        "only {reused}/{n} remote-freed blocks were reissued ({segments} segments)"
     );
 }
 

@@ -27,7 +27,7 @@
   ],
   "mutant": {
     "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
-    "find": "self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);",
+    "find": "self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::SeqCst);",
     "replace": "self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::Relaxed);",
     "steps": [
       {
