@@ -349,7 +349,11 @@ pub(super) fn small_free_guard(
     );
     let misaligned = off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1);
     if (misaligned | u32::from(byte ^ expected)) != 0 {
-        return small_free_reject(kind, off, byte, meta);
+        return if small_free_reject_silent(kind, off, byte, meta) {
+            SmallFreeGuard::RejectNoOpSilent
+        } else {
+            SmallFreeGuard::RejectNoOp
+        };
     }
     if (off as usize) >= meta.bump_of() {
         return SmallFreeGuard::RejectNoOp;
@@ -360,27 +364,25 @@ pub(super) fn small_free_guard(
 
 /// F-1: the reject reasons of [`small_free_guard`] in their former order —
 /// metadata offset, misalignment, then the state byte — off the hot path.
+/// `true` = `RejectNoOpSilent`, `false` = `RejectNoOp`.
 #[cold]
 #[inline(never)]
-fn small_free_reject(kind: BlockKind, off: u32, byte: u8, meta: SegmentMeta) -> SmallFreeGuard {
+fn small_free_reject_silent(kind: BlockKind, off: u32, byte: u8, meta: SegmentMeta) -> bool {
     let payload_start = if matches!(&kind, BlockKind::Primordial) {
         SegmentLayout::primordial_meta_end()
     } else {
         SegmentLayout::small_meta_end()
     };
     if (off as usize) < payload_start {
-        return SmallFreeGuard::RejectNoOp;
+        return false;
     }
     if (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) != 0 {
-        return SmallFreeGuard::RejectNoOpSilent;
+        return true;
     }
     if byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::LIVE {
-        return SmallFreeGuard::RejectNoOpSilent;
+        return true;
     }
-    if byte == 0 && (off as usize) < meta.bump_of() {
-        return SmallFreeGuard::RejectNoOpSilent;
-    }
-    SmallFreeGuard::RejectNoOp
+    byte == 0 && (off as usize) < meta.bump_of()
 }
 
 // `HARDENED_LARGE_NOOP_COUNT` stayed in the sibling `dealloc` module with
