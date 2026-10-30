@@ -163,9 +163,14 @@ use large::alloc_core_large_cache;
 pub(crate) use large::large_cache_extended;
 
 pub use alloc_core::AllocCore;
-// R6-T16: consumed only by the fastbin-gated own-free/realloc paths
-// (`fastbin` implies `alloc-global`).
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+// R6-T16: consumed by the fastbin-gated own-free/realloc paths (`fastbin`
+// implies `alloc-global`) and by the medium promotion path in `realloc.rs`,
+// which `medium-classes` compiles without `fastbin`.
+#[cfg(all(
+    feature = "alloc-global",
+    any(feature = "fastbin", feature = "medium-classes")
+))]
+#[cfg_attr(not(feature = "fastbin"), allow(unused_imports))]
 pub(crate) use alloc_core::OwnedBlock;
 /// The dropped-free counter, re-exported crate-wide so
 /// `HeapCore::publish_foreign` can bump it (like

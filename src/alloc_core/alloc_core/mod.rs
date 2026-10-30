@@ -89,9 +89,13 @@ mod sidecar_test_hooks;
 /// Group module: the GlobalAlloc-face entry points (`alloc`, `alloc_zeroed`,
 /// `dealloc`, `realloc`) and the in-place realloc fast-path family.
 mod mem;
-// R6-T16: consumed only by the fastbin-gated own-free/realloc paths via the
-// `alloc_core::OwnedBlock` re-export (`fastbin` implies `alloc-global`).
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+// R6-T16: consumed by the fastbin-gated own-free/realloc paths and the
+// `medium-classes` promotion path via the `alloc_core::OwnedBlock` re-export.
+#[cfg(all(
+    feature = "alloc-global",
+    any(feature = "fastbin", feature = "medium-classes")
+))]
+#[cfg_attr(not(feature = "fastbin"), allow(unused_imports))]
 pub(crate) use mem::OwnedBlock;
 
 /// Group module: NUMA-node caching, the registry-walk/membership accessors
