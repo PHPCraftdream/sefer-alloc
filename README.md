@@ -1297,6 +1297,11 @@ benches (`cold_alloc_free_256x16b` / `_256x64b`, `churn_256b`) plus the new
 
 ### MT cross-thread (`examples/malloc_macro.rs`, larson + mstress)
 
+> **2026-10-30 correction:** these tables predate the harness fix in
+> [`docs/perf/G1_MT1_HARNESS_SHIM.md`](docs/perf/G1_MT1_HARNESS_SHIM.md),
+> which moves every `alloc`/`dealloc` behind an `#[inline(never)]` shim
+> (the `__rust_alloc` boundary). That report holds the current-build A/B.
+
 **Historical 0.2.0 numbers** — the MT macro-benchmarks were NOT re-run for
 0.3.0 this pass (the single-thread criterion tables above were); the crossover
 shape (mimalloc leads at T=1, SeferAlloc leads at T≥2) is expected to hold but
@@ -1454,10 +1459,14 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     bump-direct carve removed the tautological round-trip but did not fully
     close the gap — what remains is honest per-block work (page-map writes,
     page faults on genuinely fresh pages), not ceremony.
-  - **Single-thread larson/mstress T = 1:** 1.28–1.36× behind `mimalloc`
-    (historical 0.2.0 MT numbers, not re-run this pass). Structural cost of our
-    safety machinery; the per-thread architecture means it does not compound —
-    at T ≥ 2 sefer-alloc leads. See
+  - **Single-thread larson/mstress T = 1:** the historical 0.2.0 figures
+    (1.28–1.36× behind `mimalloc`) were partly a harness artifact: the
+    harness inlined sefer-alloc's `alloc` into the workload loop and paid a
+    store-forward stall on every allocation that no `#[global_allocator]`
+    program pays. With the `__rust_alloc`-style boundary (2026-10-30,
+    [`docs/perf/G1_MT1_HARNESS_SHIM.md`](docs/perf/G1_MT1_HARNESS_SHIM.md))
+    the gap is 1.07–1.22× on larson and 1.14–1.27× on mstress (Linux /
+    Windows); at T ≥ 2 sefer-alloc leads. See
     [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md) §0.
   - **Synthetic bulk (16–256 B alloc-1024-then-free-1024):** 1.5–2.3× slower
     (2026-07-20, last measured — not part of `npm run bench:table`'s tracked

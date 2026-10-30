@@ -17,6 +17,9 @@ const SETS = [
   ["WB-1 A-1 (check3)", "docs/perf/wb1_a1/check3", "base", "a1"],
   ["WB-1 A-1 (check3b)", "docs/perf/wb1_a1/check3b", "base", "a1"],
   ["WB-3 C1 (check2)", "docs/perf/wb3_c1/check2", "base", "a1"],
+  ["L-1a set 1", "docs/perf/l1", "s1base", "s1l1"],
+  ["L-1a set 2", "docs/perf/l1", "s2base", "s2l1"],
+  ["L-1a set 3", "docs/perf/l1", "s3base", "s3l1"],
 ];
 const out = [
   "| # | Candidate (run set) | sefer-time geomean | agreed wins / losses | largest agreed loss | ratio-to-mimalloc geomean | magnitude rule |",

@@ -1,0 +1,240 @@
+== g1-base 1
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           34.97 M           32.26 M            7.51 M
+  2           35.56 M           27.67 M           10.63 M
+  4           55.57 M           52.03 M           20.25 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           41.00 M           64.90 M            5.29 M
+  2           64.07 M           89.57 M            9.55 M
+  4          137.75 M          150.02 M           13.53 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-mt1s 1
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           43.20 M           48.22 M           11.36 M
+  2           39.63 M           36.95 M           13.47 M
+  4           75.10 M           52.66 M           25.36 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           54.04 M           68.51 M            5.35 M
+  2           76.12 M           74.31 M            9.55 M
+  4          144.62 M          126.70 M           16.07 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-mt1s 1
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           37.88 M           55.77 M           13.19 M
+  2           54.84 M           35.10 M           14.20 M
+  4           99.55 M           70.82 M           23.77 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           52.86 M           32.61 M            3.88 M
+  2           87.46 M           58.60 M            8.21 M
+  4          108.75 M           91.10 M           12.77 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-base 1
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           27.27 M           26.50 M            8.14 M
+  2           28.73 M           22.88 M           12.68 M
+  4           53.13 M           56.37 M           22.64 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           47.40 M           45.34 M            4.23 M
+  2           60.66 M           60.16 M            7.90 M
+  4          104.26 M          107.30 M           12.63 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-base 2
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           22.98 M           38.33 M           10.05 M
+  2           34.63 M           30.95 M           12.06 M
+  4           57.44 M           46.50 M           19.37 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           49.24 M           65.83 M            5.25 M
+  2           71.86 M           90.23 M            9.05 M
+  4          110.89 M          158.10 M           13.13 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-mt1s 2
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           30.62 M           44.32 M           10.85 M
+  2           35.08 M           31.49 M           11.80 M
+  4           59.68 M           54.15 M           21.01 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           38.99 M           55.50 M            5.23 M
+  2           68.98 M           64.22 M            8.25 M
+  4          123.46 M          117.08 M           15.73 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-mt1s 2
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           45.66 M           44.21 M           11.17 M
+  2           50.67 M           35.05 M            9.30 M
+  4           77.45 M           55.75 M           18.52 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           39.24 M           52.49 M            5.46 M
+  2           57.53 M           78.66 M           10.37 M
+  4          102.90 M          112.34 M           15.66 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-base 2
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           29.15 M           48.12 M           11.75 M
+  2           45.68 M           34.19 M           13.49 M
+  4           72.30 M           68.46 M           23.94 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           49.10 M           64.37 M            5.65 M
+  2           79.44 M           87.52 M            9.65 M
+  4          151.23 M          144.10 M           15.33 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-base 3
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           36.83 M           53.18 M           11.62 M
+  2           45.29 M           37.99 M           13.29 M
+  4           85.16 M           73.23 M           25.09 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           48.75 M           64.13 M            5.38 M
+  2           77.11 M           77.55 M            7.81 M
+  4          105.63 M          139.87 M           12.75 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-mt1s 3
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           30.44 M           39.11 M            7.95 M
+  2           43.12 M           29.53 M           11.56 M
+  4           67.52 M           59.90 M           21.53 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           45.80 M           61.12 M            5.80 M
+  2           68.82 M           74.81 M            9.68 M
+  4          133.22 M          117.70 M           14.69 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-mt1s 3
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           43.55 M           51.17 M            9.59 M
+  2           48.56 M           35.25 M           12.63 M
+  4           82.15 M           61.54 M           21.63 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           39.94 M           49.30 M            3.29 M
+  2           62.75 M           57.65 M            6.58 M
+  4          102.31 M           95.37 M            8.59 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
+== g1-base 3
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           23.59 M           30.42 M            8.37 M
+  2           33.30 M           30.27 M            9.84 M
+  4           48.14 M           42.89 M           16.66 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           32.10 M           43.90 M            3.93 M
+  2           48.69 M           61.91 M            6.99 M
+  4           84.04 M          102.77 M           12.82 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)
