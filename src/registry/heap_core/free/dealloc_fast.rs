@@ -38,7 +38,7 @@ impl HeapCore {
             return self.dealloc_chain(ptr, layout);
         }
         // Primordial = 0, Small = 1; Large and Unknown go to the chain.
-        let kind = SegmentHeader::kind_at(root) as usize;
+        let kind = SegmentHeader::kind_byte_at(root) as usize;
         if kind > SegmentKind::Small as usize {
             return self.dealloc_chain(ptr, layout);
         }
