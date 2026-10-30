@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-658 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+660 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
 `HeapSlot::cas_state` whose arguments name an ordering) in 91 files of `src/**` and
 `crates/*/src/**`; each is claimed by exactly one of 46 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/658 |
-| counter | 232 | 232/658 |
-| ghost | 10 | 10/658 |
-| id | 9 | 9/658 |
-| kani | 1 | 1/658 |
-| lock-local | 40 | 40/658 |
-| non-atomic | 2 | 2/658 |
-| protocol | 177 | 177/658 |
-| test-hook | 174 | 174/658 |
-| twin | 7 | 7/658 |
-| **claimed** | **658** | 658/658 |
-| unclaimed | 0 | 0/658 |
-| claimed twice | 0 | 0/658 |
+| cache | 6 | 6/660 |
+| counter | 232 | 232/660 |
+| ghost | 10 | 10/660 |
+| id | 9 | 9/660 |
+| kani | 1 | 1/660 |
+| lock-local | 40 | 40/660 |
+| non-atomic | 2 | 2/660 |
+| protocol | 179 | 179/660 |
+| test-hook | 174 | 174/660 |
+| twin | 7 | 7/660 |
+| **claimed** | **660** | 660/660 |
+| unclaimed | 0 | 0/660 |
+| claimed twice | 0 | 0/660 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -59,10 +59,10 @@ harness; `non-atomic` — named scanner false positives.
 | P20 | maintenance service start/worker state | none | 6 | 0 | 0 | — | no: process-wide static STATE plus std Mutex/Condvar wait_timeout_while and a detached std::thread worker in an infinite periodic loop | rules + integration tests | G6 |
 | P21 | exact-object shard lock + live hint | A | 7 | 1 | 0 | — | yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super) | ghost | G6 |
 | P22 | route ShardLock (spin lock over the directory shard) | S | 5 | 1 | 0 | — | yes: one AtomicBool | translate (with P5) | G2 |
-| P23 | remote-free ingress: producer notify \|\| owner take/arm/full drain (SC-6 A-exact) | A | 9 | 0 | 0 | — | no (the actual-source loom model lands in the SC-6 verification follow-up PR) | ghost | SC-6 |
+| P23 | remote-free ingress: producer notify \|\| owner take/arm/full drain (SC-6 A-exact) | A | 11 | 1 | 0 | — | yes: tests/loom_g1_ingress_exact.rs includes ingress.rs and sidecar_bitmap.rs | ghost | SC-6 |
 
 Shadow-model protocols (class contains S): 13 of 23, each with a decision.
-Protocols with neither a loom nor a shadow model: P20, P23 (2 of 23).
+Protocols with neither a loom nor a shadow model: P20 (1 of 23).
 
 ## 3. Invariants and prod places
 
@@ -298,6 +298,7 @@ Prod: `src/registry/segment_route/directory/ingress.rs`, `src/registry/segment_r
 - I3 ARMED is written only by the owner, after taking the slot bit, followed by the fence and a full drain
 - I4 NOTIFIED is written only by the producer CAS from ARMED, or at birth of a route without a heap cell
 - I5 after its terminal RMW the producer touches only its pinned entry state and the process-lifetime heap cell
+- loom: `tests/loom_g1_ingress_exact.rs`
 
 Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spec): a negative discovery answer of an armed heap is trusted; R1 pins every ingress ordering, R3 the publish->check, mask->summary, store->fence and arm->drain orders; ghost events ingress/notified and ingress/taken
 
@@ -315,7 +316,7 @@ Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spe
 | `P4/registry-walk` | protocol | P4 | 2 | stats walk relies on count/initialised Acquire publication |
 | `P5/directory-pin` | protocol | P5 | 3 | pin refcount and linked flag |
 | `P5/directory-locked` | lock-local | P5 | 35 | Block/BlockIndex/spare/ptr/root/sidecar atomics are Relaxed and touched under the shard lock or via an owned pin (I4) |
-| `P23/ingress` | protocol | P23 | 9 | per-route ingress state and per-heap notification cell (SC-6 A-exact) |
+| `P23/ingress` | protocol | P23 | 11 | per-route ingress state and per-heap notification cell (SC-6 A-exact) |
 | `P5/pin-linked` | protocol | P5 | 1 | RoutePin::linked Acquire |
 | `P22/shard-lock` | protocol | P22 | 5 | spin lock |
 | `P7/sidecar-bitmap` | protocol | P7 | 8 | publish fetch_or / class store / cut swap |

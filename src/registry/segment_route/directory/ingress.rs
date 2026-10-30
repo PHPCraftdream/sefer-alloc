@@ -1,13 +1,14 @@
 //! SC-6 A-exact remote-free ingress (`docs/perf/g1_scan/SC6_ORACLE.md`):
 //! the per-route ARMED/NOTIFIED state a producer checks after its terminal
-//! publication, and the per-heap cell it notifies.
+//! publication, and the per-heap cell it notifies. Atomics come from `super`
+//! so the loom test runs this exact source.
 //!
 //! Handshake (store-buffering): producer `pending.fetch_or(SeqCst)` then
 //! `state.load(SeqCst)`; owner `state.store(ARMED, Release)`, `fence(SeqCst)`,
 //! then a full drain of `pending`. Either the drain sees the producer's bit,
 //! or the producer sees ARMED and notifies the heap cell.
 
-use core::sync::atomic::{fence, AtomicU64, AtomicU8, Ordering};
+use super::{fence, AtomicU64, AtomicU8, Ordering};
 
 const ARMED: u8 = 0;
 const NOTIFIED: u8 = 1;
@@ -37,6 +38,10 @@ impl SegmentIngress {
     /// heap once per arming. `heap` is resolved only on the cold path.
     #[inline(always)]
     pub(crate) fn after_publish<'h>(&self, heap: impl FnOnce() -> Option<&'h HeapIngress>) {
+        // loom models SeqCst accesses as AcqRel; the twin fence restores the
+        // store-buffering order the C++ model gives the two SeqCst accesses.
+        #[cfg(loom)]
+        fence(Ordering::SeqCst);
         if self.state.load(Ordering::SeqCst) == ARMED {
             self.notify(heap());
         }
@@ -52,6 +57,7 @@ impl SegmentIngress {
         {
             return;
         }
+        crate::ghost::ghost_event!("ingress/notified", self.slot as usize, 1);
         heap.unwrap_or_else(|| {
             crate::alloc_core::fatal::fatal(b"ingress: armed route without heap\n")
         })
@@ -62,6 +68,12 @@ impl SegmentIngress {
     pub(crate) fn arm(&self) {
         self.state.store(ARMED, Ordering::Release);
         fence(Ordering::SeqCst);
+    }
+
+    /// Test oracle: whether a notification is outstanding for this route.
+    #[cfg_attr(not(loom), allow(dead_code))]
+    pub(crate) fn is_notified(&self) -> bool {
+        self.state.load(Ordering::Relaxed) == NOTIFIED
     }
 }
 
@@ -74,6 +86,7 @@ pub(crate) struct HeapIngress {
 }
 
 impl HeapIngress {
+    #[cfg(not(loom))]
     pub(crate) const fn new() -> Self {
         Self {
             summary: AtomicU64::new(0),
@@ -81,11 +94,26 @@ impl HeapIngress {
         }
     }
 
+    #[cfg(loom)]
+    pub(crate) fn new() -> Self {
+        Self {
+            summary: AtomicU64::new(0),
+            mask: core::array::from_fn(|_| AtomicU64::new(0)),
+        }
+    }
+
     /// The cell of registry slot `owner`; the fallback heap and unbound
     /// owners (ids >= `INGRESS_CELLS`) have none.
+    #[cfg(not(loom))]
     pub(crate) fn of(owner: usize) -> Option<&'static Self> {
         static CELLS: [HeapIngress; INGRESS_CELLS] = [const { HeapIngress::new() }; INGRESS_CELLS];
         CELLS.get(owner)
+    }
+
+    /// Loom harnesses register heapless routes (born NOTIFIED).
+    #[cfg(loom)]
+    pub(crate) fn of(_owner: usize) -> Option<&'static Self> {
+        None
     }
 
     fn notify(&self, slot: u32) {
@@ -108,6 +136,7 @@ impl HeapIngress {
             while bits != 0 {
                 let j = bits.trailing_zeros() as usize;
                 bits &= bits - 1;
+                crate::ghost::ghost_event!("ingress/taken", w * 64 + j, 1);
                 each(w * 64 + j);
             }
         }
