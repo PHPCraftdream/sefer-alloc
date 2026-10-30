@@ -47,6 +47,25 @@ impl HeapCore {
             .set_state(off as u32, crate::alloc_core::state_byte::StateByte::LIVE);
     }
 
+    /// A-2: [`Self::clear_magazine_on_issue`] for a hit of class `c`'s
+    /// magazine: a plain store of `encode(c, LIVE)` instead of the byte RMW.
+    /// A class-`c` magazine block's byte is `encode(c, MAG)` (every push and
+    /// refill writes it), so the result is the same byte without the load.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    pub(in crate::registry::heap_core) fn issue_from_magazine(&self, issued: *mut u8, c: usize) {
+        use crate::alloc_core::state_byte::StateByte;
+        let base = os::segment_base_of_ptr(issued);
+        let off = (issued.addr() - base.addr()) as u32;
+        let bytes = SegmentMeta::new(base).state_byte();
+        debug_assert_eq!(
+            bytes.read(off),
+            StateByte::encode(c, StateByte::MAG),
+            "a class-c magazine block carries encode(c, MAG)"
+        );
+        bytes.write(off, c, StateByte::LIVE);
+    }
+
     /// Task #2002: the shared tail of [`refill_magazine_slow`](Self::refill_magazine_slow)
     /// and [`refill_magazine_slow_virgin`](Self::refill_magazine_slow_virgin) —
     /// they call two DIFFERENT `AllocCore` substrate refills (plain vs
@@ -311,7 +330,7 @@ impl HeapCore {
                         // `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
                         // measured cost of this specific store on
                         // `small_churn_16b` et al.
-                        self.clear_magazine_on_issue(issued);
+                        self.issue_from_magazine(issued, c);
                         return issued;
                     }
 
@@ -448,7 +467,7 @@ impl HeapCore {
             let bit = 1u16 << new_cnt;
             let is_virgin = (self.tcache.classes[c].virgin_mask & bit) != 0;
             self.tcache.classes[c].virgin_mask &= !bit;
-            self.clear_magazine_on_issue(issued);
+            self.issue_from_magazine(issued, c);
             // F7 (task #495): NO stamp here — magazine-resident blocks were
             // placed there by the magazine refill paths
             // (`refill_magazine_slow`, `refill_magazine_slow_virgin`) or the
