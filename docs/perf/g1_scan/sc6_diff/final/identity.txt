@@ -1,0 +1,5 @@
+proto 017ea576b5b98cefd608420f6daedb80a09b33da (src identical to 32475014)
+base 20395f5e05fac70b3afe9781b56aee76c1194f5b
+a014b522ad5d921c5a3d0b60375fcdbdf957eb085c323b4c8d72bbb182306a2d  ../g1-dz2/target/sc6base/release/examples/g1_rhythm_probe.exe
+2577fa065a716a49ca086a09c99db430b11e6b4d08246b01ee79ecb47aef7df8  target/sc6proto/release/examples/g1_rhythm_probe.exe
+rustc 1.97.0 (2d8144b78 2026-07-07)
