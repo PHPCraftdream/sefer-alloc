@@ -7,7 +7,11 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 
 impl SegmentHeader {
     /// AS-1: the raw kind byte (a `SegmentKind` discriminant when well formed).
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        not(feature = "hardened")
+    ))]
     #[inline(always)]
     pub(crate) fn kind_byte_at(base: *mut u8) -> u8 {
         let off = core::mem::offset_of!(SegmentHeader, kind);

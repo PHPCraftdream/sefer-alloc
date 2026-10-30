@@ -78,17 +78,28 @@ impl AllocCore {
     }
 
     /// AS-1: the segment table's tier-1 memo `(key, root)`.
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        not(feature = "hardened")
+    ))]
     #[inline(always)]
     pub(crate) fn tier1_memo(&self) -> (usize, *mut u8) {
         self.table.memo()
     }
 
     /// AS-1: count a fast-lane memo hit as the chain's tier-1 hit would.
-    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "bench-internals",
+        not(feature = "hardened")
+    ))]
     #[inline(always)]
     pub(crate) fn note_tier1_hit() {
-        crate::alloc_core::alloc_core::tier1_bump(&crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS);
+        crate::alloc_core::alloc_core::tier1_bump(
+            &crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS,
+        );
     }
 
     #[cfg(feature = "alloc-global")]

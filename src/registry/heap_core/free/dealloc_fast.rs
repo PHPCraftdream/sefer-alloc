@@ -3,7 +3,9 @@
 //! push, or writes nothing and tail-calls the unchanged chain
 //! (`dealloc_routing`), which re-derives everything and classifies the reject.
 
-use crate::alloc_core::segment_header::{Layout as SegmentLayout, SegmentHeader, SegmentKind, SegmentMeta};
+use crate::alloc_core::segment_header::{
+    Layout as SegmentLayout, SegmentHeader, SegmentKind, SegmentMeta,
+};
 use crate::alloc_core::size_classes::{MIN_BLOCK, MIN_BLOCK_SHIFT, SIZE2CLASS, SMALL_CLASS_COUNT};
 use crate::alloc_core::state_byte::StateByte;
 use crate::registry::heap_core::state::tcache::{FREE_PARK_CAP, TCACHE_CAP};
@@ -54,6 +56,14 @@ impl HeapCore {
         if bytes.read(off) != StateByte::encode(c, StateByte::LIVE) {
             return self.dealloc_chain(ptr, layout);
         }
+        // Refinement: the lane accepts only what the chain's guard accepts.
+        debug_assert!(
+            matches!(
+                super::dealloc_own_base::small_free_guard(root, block, c, layout),
+                super::dealloc_own_base::SmallFreeGuard::Accept { off: o } if o == off
+            ),
+            "AS-1 lane accepted a free the guard rejects"
+        );
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::AllocCore::note_tier1_hit();
         let cnt = self.tcache.classes[c].count as usize;

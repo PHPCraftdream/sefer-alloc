@@ -554,6 +554,7 @@ impl HeapCore {
     /// (B1-c): `small_free_guard` already accepted `block` (class `c`, offset
     /// `off` in the segment at `root`) and the push found `cnt == FREE_PARK_CAP[c]`.
     /// AS-1: the fast lane's full-magazine exit.
+    #[cfg(not(feature = "hardened"))]
     #[cold]
     #[inline(never)]
     pub(super) fn free_magazine_full_fast(
