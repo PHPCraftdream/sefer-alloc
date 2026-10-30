@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+145. **[A] G1-MT1 — larson/mstress at T=1 behind mimalloc; most of the larson gap was the harness.** (Filed 2026-10-30, `docs/perf/G1_MT1_HARNESS_SHIM.md`.)
+
+   > **Current state**
+   > - **Status:** open (харнесс исправлен: `alloc`/`dealloc` за `#[inline(never)]`-прокладкой, как `__rust_alloc`; runtime не менялся).
+   > - **Current:** до исправления тело `alloc` sefer встраивалось в цикл бенча, `alloc_block` переставал инлайниться, и возврат `Block` через sret давал провал store-forward на каждом alloc (2.07 M на 2 M операций; у mimalloc 10.5 k). С прокладкой mi/sefer: larson T=1 1.343 → 1.069 (Linux), 1.444 → 1.221 (Windows); mstress T=1 1.077 → 1.140 (Linux), 1.337 → 1.268 (Windows). При T ≥ 2 sefer впереди на обеих ОС.
+   > - **Next trigger:** профиль mstress T=1 под прокладкой (cycles/Ir/промахи против mimalloc) → механизм → лечение без ослабления проверок; приём — тот же A/B (`scripts/g1_mt1_shim_report.mjs`) + парный bench:table.
+   > - **Evidence:** `docs/perf/G1_MT1_HARNESS_SHIM.md`, `docs/perf/G1_MT1_HARNESS_SHIM_summary.csv`, `docs/perf/_raw_g1_mt1_*.log`, `scripts/g1_mt1_shim_report.mjs`.
+
 138. **[A] J1-CH — J1 churn kernels share one ring: the J1 churn losses are a cross-class regime, and sefer's per-op cost is flat.** (Filed 2026-10-30, `docs/perf/J1_CROSS_CLASS_ATTRIBUTION.md`.)
 
    > **Current state**
@@ -1260,6 +1268,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
     > - **Evidence:** `unix_reserve` doc comment in `crates/aligned-vmem/src/os/unix.rs` (32-bit fast path gating), `try_reserve_aligned_exact` in `crates/aligned-vmem/src/os/unix.rs` (32-bit exact-size fast path implementation), `unix_reserve` in `crates/aligned-vmem/src/os/unix.rs` (64-bit over-reserve path). Filed from `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md`, Part I finding 4 (P2-4); pool-cost addition from `docs/reviews/2026-08-17-aligned-vmem-fxx-audit.md` F9 (task #1069), which re-raises II-4's residual `align > 2 MiB` half.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
+
+144. **[L] L-1a — cold `alloc_unbound` (the first-call bind leaves the hot `alloc` frame): NO-GO.** (Filed 2026-10-30, `docs/perf/MAGNITUDE_RULE_REGISTRY.md` rows 9–11.)
+
+   > **Current state**
+   > - **Status:** rejected (код под тегом `archive/l1a-alloc-unbound-measured`, ветка `g1-l1-frames`).
+   > - **Current:** Ir: bulk −2.96 %, pair −1.45 %, churn −0.91 %. Парный bench:table на Windows, 3 набора: GO (gm −2.1 %), NO-GO (+1.6 %), NO-GO (+2.0 %); churn систематически +1…+5 %.
+   > - **Next trigger:** только вместе с перестройкой кадра alloc, которая не задевает churn (карточка 140).
+   > - **Evidence:** `docs/perf/l1/` (CSV и манифесты трёх наборов, `s*.mag.csv`), `scripts/g1_magnitude_verdict.mjs`, `scripts/g1_magnitude_registry.mjs`.
 
 143. **[L] T-1 — linear class index up to 80 B (no SIZE2CLASS load): NO-GO.** (Filed 2026-10-30, `docs/perf/T1_TINY_CLASS_INDEX_PREREG.md` § Verdict.)
 

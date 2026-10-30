@@ -55,6 +55,14 @@
 //! it never sets `#[global_allocator]`. Your allocator does not need to be
 //! registered globally; you can benchmark several allocators in one binary.
 //!
+//! Every `alloc`/`dealloc` goes through an `#[inline(never)]` shim, the
+//! same boundary `__rust_alloc`/`__rust_dealloc` put between user code and a
+//! `#[global_allocator]`. Without it the workload loop inlined an allocator
+//! whose `GlobalAlloc` body is Rust (and so inlinable) while calling one whose
+//! body is a C symbol; the inlined arm then paid codegen costs no real program
+//! pays (G1-MT1: `alloc_block` stopped inlining, and its `Block` return made a
+//! store-forward stall on every alloc).
+//!
 //! # Example
 //!
 //! ```text
@@ -154,6 +162,29 @@ fn layout_for(size: usize) -> Layout {
     Layout::from_size_align(size.max(1), 8).unwrap()
 }
 
+/// The `__rust_alloc` boundary: the allocator's `alloc` inlines here, not
+/// into the workload loop.
+///
+/// # Safety
+///
+/// As [`GlobalAlloc::alloc`].
+#[inline(never)]
+unsafe fn alloc_shim<A: GlobalAlloc>(a: &A, layout: Layout) -> *mut u8 {
+    // SAFETY: forwarded caller contract.
+    unsafe { a.alloc(layout) }
+}
+
+/// The `__rust_dealloc` boundary, as [`alloc_shim`].
+///
+/// # Safety
+///
+/// As [`GlobalAlloc::dealloc`].
+#[inline(never)]
+unsafe fn dealloc_shim<A: GlobalAlloc>(a: &A, ptr: *mut u8, layout: Layout) {
+    // SAFETY: forwarded caller contract.
+    unsafe { a.dealloc(ptr, layout) }
+}
+
 /// Allocate one block of a random small-skewed size, touching the first byte
 /// so the allocation is not optimized away and the page is actually faulted in.
 ///
@@ -165,7 +196,7 @@ fn layout_for(size: usize) -> Layout {
 unsafe fn alloc_block<A: GlobalAlloc>(a: &A, rng: &mut XorShift64) -> Block {
     let layout = layout_for(pick_size(rng));
     // SAFETY: layout has non-zero size and valid alignment.
-    let ptr = unsafe { a.alloc(layout) };
+    let ptr = unsafe { alloc_shim(a, layout) };
     if !ptr.is_null() {
         // Touch first byte to fault the page and defeat dead-store elimination.
         // SAFETY: ptr is valid for `layout.size() >= 1` bytes.
@@ -183,7 +214,7 @@ unsafe fn alloc_block<A: GlobalAlloc>(a: &A, rng: &mut XorShift64) -> Block {
 unsafe fn free_block<A: GlobalAlloc>(a: &A, block: Block) {
     if !block.ptr.is_null() {
         // SAFETY: block.ptr came from `a.alloc(block.layout)` and is freed once.
-        unsafe { a.dealloc(block.ptr, block.layout) };
+        unsafe { dealloc_shim(a, block.ptr, block.layout) };
     }
 }
 

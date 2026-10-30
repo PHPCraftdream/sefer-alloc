@@ -36,24 +36,29 @@ Derived by `node scripts/g1_magnitude_registry.mjs`:
 | 6 | WB-1 A-1 (check3) | +1.9 % | 0.7 / 25.3 pp | +20.9 % | +1.7 % | NO-GO |
 | 7 | WB-1 A-1 (check3b) | +2.0 % | 1.6 / 25.0 pp | +20.1 % | +4.1 % | NO-GO |
 | 8 | WB-3 C1 (check2) | -0.4 % | 2.5 / 1.5 pp | +0.8 % | -3.6 % | NO-GO |
+| 9 | L-1a set 1 | -2.1 % | 4.7 / 1.7 pp | +0.9 % | +1.5 % | GO |
+| 10 | L-1a set 2 | +1.6 % | 2.3 / 17.5 pp | +5.0 % | +0.8 % | NO-GO |
+| 11 | L-1a set 3 | +2.0 % | 1.5 / 15.2 pp | +4.4 % | +1.8 % | NO-GO |
 
-FG-1/B1 was the only rejected run set that passes the magnitude rule as a
-screen. Its pre-registered re-measurement on `main` (two ABBA sets,
+FG-1/B1 and L-1a set 1 are the rejected run sets that pass the magnitude rule as a
+screen. FG-1/B1's pre-registered re-measurement on `main` (two ABBA sets,
 `docs/perf/FG1_B1R_RECONFIRM_PREREG.md`) found the effect real but small
 (−0.5 % and −0.2 %); the screen's −2.4 % came from one slow base run. NO-GO.
+L-1a (cold `alloc_unbound`, card 144) passed in one of three sets; the other
+two lose on churn by up to +5.0 %. NO-GO.
 
 ## Registry: candidates judged by other means (quoted from their cards)
 
 | # | Candidate | Wins (size) | Losses (size) | Card |
 |---:|---|---|---|---|
-| 9 | G1-K2: free class from the state byte | bulk64 −9.6 %, mixed −4.6 %, bulk16k −3.1 % (cycles) | pair16 +14 %, churn16 +5.2 % | 126 |
-| 10 | FG-1/A: K2 variant | −4.7 Ir | churn +17…+26 % (one run per arm) | 139 |
-| 11 | GR-1: flush without re-checks | pair16, churn1024, larson −1.4 % (J1′) | bulk64 +2.3 %, bulk16k +3.5 % | 121 |
-| 12 | U32 v2: bump per leaf | — | +0.6 % (CI through 0) | 122 |
-| 13 | G1-K6: flush stores | bulk16k −0.7 % cycles | below the layout noise floor | 128 |
-| 14 | A-2: plain LIVE store at issue | 16↔64 sefer/mi −1.3 % | ±1 % elsewhere | 141 |
-| 15 | WB-1 B-1a: inline depot chain | −0.16 Ir per pair | — (time not measured) | 134 |
-| 16 | PERF-2: `TCACHE_CAP` 32/64/128 (July, before the depot) | — | every bench slower | PERF2 report |
+| 12 | G1-K2: free class from the state byte | bulk64 −9.6 %, mixed −4.6 %, bulk16k −3.1 % (cycles) | pair16 +14 %, churn16 +5.2 % | 126 |
+| 13 | FG-1/A: K2 variant | −4.7 Ir | churn +17…+26 % (one run per arm) | 139 |
+| 14 | GR-1: flush without re-checks | pair16, churn1024, larson −1.4 % (J1′) | bulk64 +2.3 %, bulk16k +3.5 % | 121 |
+| 15 | U32 v2: bump per leaf | — | +0.6 % (CI through 0) | 122 |
+| 16 | G1-K6: flush stores | bulk16k −0.7 % cycles | below the layout noise floor | 128 |
+| 17 | A-2: plain LIVE store at issue | 16↔64 sefer/mi −1.3 % | ±1 % elsewhere | 141 |
+| 18 | WB-1 B-1a: inline depot chain | −0.16 Ir per pair | — (time not measured) | 134 |
+| 19 | PERF-2: `TCACHE_CAP` 32/64/128 (July, before the depot) | — | every bench slower | PERF2 report |
 
 None of these passes the rule: K2 and GR-1 lose in the cells they were meant to
 help, or by more than they win, and the others are null.
