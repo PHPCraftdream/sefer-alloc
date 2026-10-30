@@ -1,0 +1,27 @@
+== ph6b_mt_ab: installed #[global_allocator] MT A/B harness (measurement-only) ==
+RESULT mt_ns workload=larson T=1 ns=7515700
+RESULT mt_ops workload=larson T=1 ops=801536
+RESULT g1_oracle workload=larson T=1 publishes=4 notifies=1
+RESULT mt_ns workload=mstress T=1 ns=3648700
+RESULT mt_ops workload=mstress T=1 ops=399360
+RESULT g1_oracle workload=mstress T=1 publishes=4 notifies=1
+RESULT mt_ns workload=larson T=2 ns=21244000
+RESULT mt_ops workload=larson T=2 ops=1596063
+RESULT g1_oracle workload=larson T=2 publishes=44387 notifies=401
+RESULT mt_ns workload=mstress T=2 ns=8114600
+RESULT mt_ops workload=mstress T=2 ops=797472
+RESULT g1_oracle workload=mstress T=2 publishes=24486 notifies=74
+RESULT mt_ns workload=larson T=4 ns=48254200
+RESULT mt_ops workload=larson T=4 ops=3201829
+RESULT g1_oracle workload=larson T=4 publishes=98790 notifies=898
+RESULT mt_ns workload=mstress T=4 ns=18496600
+RESULT mt_ops workload=mstress T=4 ops=1591543
+RESULT g1_oracle workload=mstress T=4 publishes=45461 notifies=135
+RESULT mt_ns workload=larson T=8 ns=84826300
+RESULT mt_ops workload=larson T=8 ops=6400524
+RESULT g1_oracle workload=larson T=8 publishes=194345 notifies=1752
+RESULT mt_ns workload=mstress T=8 ns=33770200
+RESULT mt_ops workload=mstress T=8 ops=3189003
+RESULT g1_oracle workload=mstress T=8 publishes=97030 notifies=313
+RESULT segments_reserved_total=10
+RESULT config_conflicts=0

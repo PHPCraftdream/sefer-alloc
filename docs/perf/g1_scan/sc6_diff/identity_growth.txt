@@ -1,0 +1,6 @@
+proto a11dc0c78d4dd12b052bd9c5dd72f71ce0cfeb25
+base 20395f5e05fac70b3afe9781b56aee76c1194f5b
+a014b522ad5d921c5a3d0b60375fcdbdf957eb085c323b4c8d72bbb182306a2d  ../g1-dz2/target/sc6base/release/examples/g1_rhythm_probe.exe
+edac3f4516c2d36d778165cea19d2e00a75c7d044fe6696840d3a66408db9b4b  target/sc6proto/release/examples/g1_rhythm_probe.exe
+rustc 1.97.0 (2d8144b78 2026-07-07)
+RUSTFLAGS: -C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5
