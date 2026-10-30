@@ -554,10 +554,12 @@
         "I5 after its terminal RMW the producer touches only its pinned entry state and the process-lifetime heap cell"
       ],
       "class": "A",
-      "loom": [],
+      "loom": [
+        "tests/loom_g1_ingress_exact.rs"
+      ],
       "pins": [],
       "registry": [],
-      "real_under_loom": "no (the actual-source loom model lands in the SC-6 verification follow-up PR)",
+      "real_under_loom": "yes: tests/loom_g1_ingress_exact.rs includes ingress.rs and sidecar_bitmap.rs",
       "decision": "ghost",
       "phase": "SC-6",
       "reason": "SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spec): a negative discovery answer of an armed heap is trusted; R1 pins every ingress ordering, R3 the publish->check, mask->summary, store->fence and arm->drain orders; ghost events ingress/notified and ingress/taken"
@@ -5819,6 +5821,7 @@
       ],
       "reason": "I2: the producer state load is the second SeqCst access of the store-buffering pair",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_check_seqcst"
@@ -5846,6 +5849,7 @@
       ],
       "reason": "I4: one notifier per arming wins ARMED -> NOTIFIED and synchronises with the owner arm (Acquire)",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_notify_cas"
@@ -5872,6 +5876,7 @@
       ],
       "reason": "I3: the owner arm publishes its earlier take to the notifier CAS (Release)",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_arm_release"
@@ -5897,6 +5902,7 @@
       ],
       "reason": "I2: the owner side of the store-buffering pair is the SeqCst fence between the arm store and the drain loads",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_arm_fence"
@@ -5923,6 +5929,7 @@
       ],
       "reason": "I1: the summary bit is published after the mask bit (Release) so a take that sees it sees the mask bit",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_summary_release"
@@ -5949,6 +5956,7 @@
       ],
       "reason": "I1: the owner summary swap synchronises with the notifier Release before it reads the mask",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_take_summary_acquire"
@@ -5975,6 +5983,7 @@
       ],
       "reason": "I1: the owner takes each notified slot word once (swap) and acquires the notifier mask write",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_take_mask_acquire"
@@ -6000,6 +6009,7 @@
       ],
       "reason": "I2: the SeqCst fence follows the ARMED store; a fence before it does not order the store against the drain",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_arm_then_fence"
@@ -6026,6 +6036,7 @@
       ],
       "reason": "I1: a summary bit never precedes its mask bit",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_mask_before_summary"
@@ -6050,6 +6061,7 @@
       ],
       "reason": "I2: the ingress check follows the terminal RMW; checking first loses the store-buffering order",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_rmw_before_check"
@@ -6074,6 +6086,7 @@
       ],
       "reason": "I3: the owner re-arms before the full drain; draining first can miss a publication that saw NOTIFIED",
       "tests": [
+        "tests/loom_g1_ingress_exact.rs",
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_arm_before_drain"

@@ -3641,7 +3641,10 @@ jobs:
             --test loom_terminal_large \
             --test loom_exact_shard_actual \
             --test loom_fallback_actual \
-            --test loom_b4_scan_skip_empty_publish 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
+            --test loom_b4_scan_skip_empty_publish             --test loom_g1_ingress_exact 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test l1_publish_races_take_arm_drain ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test l2_fresh_route_notifies ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test l3_two_producers_one_owner_round ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test producer_owner_cut_and_duplicate_admission ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test owner_cache_or_release_is_exclusive ... ok" "$RUNNER_TEMP/loom-xthread.log"
