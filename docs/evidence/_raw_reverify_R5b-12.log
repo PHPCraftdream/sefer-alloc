@@ -1,24 +1,9 @@
-E0_METADATA {"id":"R5b-12","head":"a338b5751d60030d392801d4c495772b2162ce4b","tree":"1b3b16df6a22be14ce7aeae5155fc5be1f96e523","setup":""}
-E0_METADATA {"id":"R5b-12","head":"a338b5751d60030d392801d4c495772b2162ce4b","tree":"1b3b16df6a22be14ce7aeae5155fc5be1f96e523","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R5b-12.json","recipe_sha256":"0b27668a5cc52e05e29e800d8d5c53f1627fa5d2b18a80854a640e7f058cf88a","registry_activation_hash":"7f87c4cea0c4e8ce3b1f9b0d9bd2c1ee3ca89780c4c57d54a0b7788b2c23523f"}
+E0_METADATA {"id":"R5b-12","head":"b480e1e2e3bb7a74b16537e13a1edcf5dc4c934c","tree":"2663d6d1acf30023f99de4134892e0efb9858a01","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (92b5b8c87 2026-10-29)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-30 for version 1.101.0-nightly (92b5b8c87 2026-10-29)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R5b-12","head":"b480e1e2e3bb7a74b16537e13a1edcf5dc4c934c","tree":"2663d6d1acf30023f99de4134892e0efb9858a01","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R5b-12.json","recipe_sha256":"0b27668a5cc52e05e29e800d8d5c53f1627fa5d2b18a80854a640e7f058cf88a","registry_activation_hash":"7f87c4cea0c4e8ce3b1f9b0d9bd2c1ee3ca89780c4c57d54a0b7788b2c23523f"}
 
 E0_STEP {"id":"R5b-12","kind":"baseline","name":"ghost-lint catalog baseline","argv":["cargo","test","--locked","-p","ghost-lint","--test","catalog_holds","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["check: \\d+ rule\\(s\\), 0 violation\\(s\\)","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m    Updating[0m crates.io index
-[1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m itoa v1.0.18
-[1m[92m  Downloaded[0m proc-macro2 v1.0.106
-[1m[92m  Downloaded[0m quote v1.0.46
-[1m[92m  Downloaded[0m unicode-ident v1.0.24
-[1m[92m  Downloaded[0m zmij v1.0.21
-[1m[92m  Downloaded[0m serde_core v1.0.228
-[1m[92m  Downloaded[0m memchr v2.8.2
-[1m[92m  Downloaded[0m aho-corasick v1.1.4
-[1m[92m  Downloaded[0m regex v1.12.4
-[1m[92m  Downloaded[0m serde_json v1.0.150
-[1m[92m  Downloaded[0m syn v2.0.118
-[1m[92m  Downloaded[0m regex-syntax v0.8.11
-[1m[92m  Downloaded[0m regex-automata v0.4.14
 [1m[92m   Compiling[0m memchr v2.8.2
 [1m[92m   Compiling[0m proc-macro2 v1.0.106
 [1m[92m   Compiling[0m unicode-ident v1.0.24
@@ -33,16 +18,16 @@ E0_STEP {"id":"R5b-12","kind":"baseline","name":"ghost-lint catalog baseline","a
 [1m[92m   Compiling[0m regex-automata v0.4.14
 [1m[92m   Compiling[0m regex v1.12.4
 [1m[92m   Compiling[0m ghost-lint v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/ghost-lint)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 5.07s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 6.93s
 [1m[92m     Running[0m tests/catalog_holds.rs (target/debug/deps/catalog_holds-0cd6a38a3347a0df)
 
 running 1 test
-[ghost-lint] check: 66 rule(s), 0 violation(s)
+[ghost-lint] check: 165 rule(s), 0 violation(s)
 
 test catalog_rules_hold_on_the_repository ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.61s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
-E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIFVwZGF0aW5nG1swbSBjcmF0ZXMuaW8gaW5kZXgKG1sxbRtbOTJtIERvd25sb2FkaW5nG1swbSBjcmF0ZXMgLi4uChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gaXRvYSB2MS4wLjE4ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcHJvYy1tYWNybzIgdjEuMC4xMDYKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBxdW90ZSB2MS4wLjQ2ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gdW5pY29kZS1pZGVudCB2MS4wLjI0ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gem1paiB2MS4wLjIxChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gc2VyZGVfY29yZSB2MS4wLjIyOAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIG1lbWNociB2Mi44LjIKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBhaG8tY29yYXNpY2sgdjEuMS40ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcmVnZXggdjEuMTIuNAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHNlcmRlX2pzb24gdjEuMC4xNTAKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBzeW4gdjIuMC4xMTgKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSByZWdleC1zeW50YXggdjAuOC4xMQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHJlZ2V4LWF1dG9tYXRhIHYwLjQuMTQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBtZW1jaHIgdjIuOC4yChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcHJvYy1tYWNybzIgdjEuMC4xMDYKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB1bmljb2RlLWlkZW50IHYxLjAuMjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBxdW90ZSB2MS4wLjQ2ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gem1paiB2MS4wLjIxChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VyZGVfY29yZSB2MS4wLjIyOAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJlZ2V4LXN5bnRheCB2MC44LjExChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gYWhvLWNvcmFzaWNrIHYxLjEuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlcmRlX2pzb24gdjEuMC4xNTAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBpdG9hIHYxLjAuMTgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzeW4gdjIuMC4xMTgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSByZWdleC1hdXRvbWF0YSB2MC40LjE0ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmVnZXggdjEuMTIuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGdob3N0LWxpbnQgdjAuMS4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvZ2hvc3QtbGludCkKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiA1LjA3cwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CltnaG9zdC1saW50XSBjaGVjazogNjYgcnVsZShzKSwgMCB2aW9sYXRpb24ocykKCnRlc3QgY2F0YWxvZ19ydWxlc19ob2xkX29uX3RoZV9yZXBvc2l0b3J5IC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuODBzCgo=
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBtZW1jaHIgdjIuOC4yChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcHJvYy1tYWNybzIgdjEuMC4xMDYKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB1bmljb2RlLWlkZW50IHYxLjAuMjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBxdW90ZSB2MS4wLjQ2ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gem1paiB2MS4wLjIxChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VyZGVfY29yZSB2MS4wLjIyOAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJlZ2V4LXN5bnRheCB2MC44LjExChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gYWhvLWNvcmFzaWNrIHYxLjEuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlcmRlX2pzb24gdjEuMC4xNTAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBpdG9hIHYxLjAuMTgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzeW4gdjIuMC4xMTgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSByZWdleC1hdXRvbWF0YSB2MC40LjE0ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmVnZXggdjEuMTIuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGdob3N0LWxpbnQgdjAuMS4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvZ2hvc3QtbGludCkKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiA2LjkzcwobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2NhdGFsb2dfaG9sZHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2NhdGFsb2dfaG9sZHMtMGNkNmEzOGEzMzQ3YTBkZikKCnJ1bm5pbmcgMSB0ZXN0CltnaG9zdC1saW50XSBjaGVjazogMTY1IHJ1bGUocyksIDAgdmlvbGF0aW9uKHMpCgp0ZXN0IGNhdGFsb2dfcnVsZXNfaG9sZF9vbl90aGVfcmVwb3NpdG9yeSAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gMSBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAxLjYxcwoK
