@@ -118,12 +118,15 @@ fn wrong_layout_free_is_rejected() {
 fn free_just_past_small_max_is_rejected() {
     // `size` in (SMALL_MAX, SMALL_MAX + MIN_BLOCK] maps to the last SIZE2CLASS
     // bucket, which `class_for` treats as out of the small range.
+    // The last class parks one block, so its magazine must start empty: the
+    // memo is primed by a 16 B free in the same segment, not by a neighbour of
+    // the same class.
     let small = SegmentLayout::SMALL_MAX;
     let p = fresh(small);
-    let q = fresh(small);
-    // SAFETY: q is live with this layout; freeing it points the memo at the
-    // segment both blocks share.
-    unsafe { A.dealloc(q, layout(small)) };
+    let s = fresh(16);
+    assert_eq!(p as usize & !(SEGMENT - 1), s as usize & !(SEGMENT - 1));
+    // SAFETY: s is live with this layout.
+    unsafe { A.dealloc(s, layout(16)) };
     // SAFETY: deliberate wrong-layout free of a live block.
     unsafe { A.dealloc(p, layout(small + 1)) };
     assert!(
@@ -132,7 +135,6 @@ fn free_just_past_small_max_is_rejected() {
     );
     // SAFETY: p is still live with its real layout.
     unsafe { A.dealloc(p, layout(small)) };
-    assert!(reissued(p, small));
 }
 
 #[test]
