@@ -14,7 +14,7 @@
 
 use std::alloc::{GlobalAlloc, Layout};
 
-use sefer_alloc::SeferAlloc;
+use sefer_alloc::{SeferAlloc, SegmentLayout};
 
 static A: SeferAlloc = SeferAlloc::new();
 
@@ -112,6 +112,27 @@ fn wrong_layout_free_is_rejected() {
     // SAFETY: p is still live with its real layout.
     unsafe { A.dealloc(p, layout(16)) };
     assert!(reissued(p, 16));
+}
+
+#[test]
+fn free_just_past_small_max_is_rejected() {
+    // `size` in (SMALL_MAX, SMALL_MAX + MIN_BLOCK] maps to the last SIZE2CLASS
+    // bucket, which `class_for` treats as out of the small range.
+    let small = SegmentLayout::SMALL_MAX;
+    let p = fresh(small);
+    let q = fresh(small);
+    // SAFETY: q is live with this layout; freeing it points the memo at the
+    // segment both blocks share.
+    unsafe { A.dealloc(q, layout(small)) };
+    // SAFETY: deliberate wrong-layout free of a live block.
+    unsafe { A.dealloc(p, layout(small + 1)) };
+    assert!(
+        !reissued(p, small),
+        "a free larger than SMALL_MAX must not reach the small magazine"
+    );
+    // SAFETY: p is still live with its real layout.
+    unsafe { A.dealloc(p, layout(small)) };
+    assert!(reissued(p, small));
 }
 
 #[test]
