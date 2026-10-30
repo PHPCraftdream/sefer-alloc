@@ -1,7 +1,7 @@
 fn credit_lifetime() {
     let producer = thread::spawn(move || {
         // ghost-bind: sidecar/publish-acqrel
-        producer_pending.fetch_or(1, Ordering::AcqRel);
+        producer_pending.fetch_or(1, Ordering::SeqCst);
     });
     // ghost-bind: sidecar/cut-acqrel
     let detached = pending.swap(0, Ordering::AcqRel);

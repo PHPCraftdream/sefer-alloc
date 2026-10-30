@@ -34,6 +34,8 @@ mod small_sidecar;
 mod terminal_publication_gate;
 
 pub use directory::RouteDirectory;
+#[cfg_attr(feature = "numa-aware", allow(unused_imports))]
+pub(crate) use directory::{HeapIngress, INGRESS_CELLS, INGRESS_WORDS};
 pub use error::RouteError;
 pub use kind::RouteKind;
 pub use large_state::LargeState;

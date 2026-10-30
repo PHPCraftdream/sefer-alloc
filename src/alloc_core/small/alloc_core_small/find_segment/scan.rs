@@ -32,13 +32,13 @@ struct LinearScanContext {
 }
 
 #[derive(Default)]
-struct DirectoryCandidateContext {
+pub(super) struct DirectoryCandidateContext {
     #[cfg(feature = "alloc-stats")]
-    routed_scan_was_nonempty: Option<bool>,
+    pub(super) routed_scan_was_nonempty: Option<bool>,
     #[cfg(feature = "alloc-segment-directory")]
-    periodic_revalidation_active: bool,
+    pub(super) periodic_revalidation_active: bool,
     #[cfg(feature = "alloc-segment-directory")]
-    rescue: bool,
+    pub(super) rescue: bool,
 }
 
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
@@ -233,17 +233,52 @@ impl AllocCore {
         #[cfg(feature = "numa-aware")]
         let my_node = self.current_node_cached();
         // U31: decided before any drain; the OOM rescue scan never defers.
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            feature = "alloc-segment-directory"
+        ))]
+        let rescue = _context.rescue;
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            not(feature = "alloc-segment-directory")
+        ))]
+        let rescue = false;
+        // SC-6: an armed heap learns of remote publications through its
+        // ingress cell, so discovery never drains (the rescue still does).
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            not(feature = "numa-aware")
+        ))]
+        let ingress = if rescue { None } else { self.ingress() };
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            not(feature = "numa-aware")
+        ))]
+        #[cfg(feature = "alloc-segment-directory")]
+        let drain_candidates = ingress.is_none();
+        #[cfg(not(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            not(feature = "numa-aware")
+        )))]
+        #[cfg(feature = "alloc-segment-directory")]
+        let drain_candidates = true;
         #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
         let defer_drains = {
-            #[cfg(feature = "alloc-segment-directory")]
-            let rescue = _context.rescue;
-            #[cfg(not(feature = "alloc-segment-directory"))]
-            let rescue = false;
-            !rescue
-                && self.table.is_routed()
-                && self.sidecar_drains_deferred(
-                    crate::alloc_core::size_classes::SizeClasses::block_size(class_idx),
-                )
+            #[cfg(not(feature = "numa-aware"))]
+            let armed = ingress.is_some();
+            #[cfg(feature = "numa-aware")]
+            let armed = false;
+            armed
+                || (!rescue
+                    && self.table.is_routed()
+                    && self.sidecar_drains_deferred(
+                        crate::alloc_core::size_classes::SizeClasses::block_size(class_idx),
+                    ))
         };
         #[cfg(feature = "alloc-segment-directory")]
         if !self.directory_sidecar.is_null() {
@@ -251,17 +286,39 @@ impl AllocCore {
                 class_idx,
                 #[cfg(feature = "numa-aware")]
                 my_node,
+                drain_candidates,
             ) {
                 // B4 §11: remember the directory-served segment as cursor.
                 self.record_class_cursor(class_idx, base);
                 return Some(base);
+            }
+            #[cfg(all(
+                feature = "alloc-global",
+                feature = "alloc-xthread",
+                not(feature = "numa-aware")
+            ))]
+            if let Some(ingress) = ingress {
+                if let Some(base) = self.process_ingress(class_idx, ingress) {
+                    self.record_class_cursor(class_idx, base);
+                    return Some(base);
+                }
             }
             // R12-03 characterization: keep the trusted-negative path disabled
             // for routed cores because pending sidecar ingress can make the
             // owner directory negative while a free block exists. Enable only
             // after proving undrained terminal publication cannot hide a free
             // block (O-4 / perf OPEN_ITEMS item 78(c)).
-            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+            #[cfg(all(
+                feature = "alloc-global",
+                feature = "alloc-xthread",
+                not(feature = "numa-aware")
+            ))]
+            let trust_negative = !self.table.is_routed() || ingress.is_some();
+            #[cfg(all(
+                feature = "alloc-global",
+                feature = "alloc-xthread",
+                feature = "numa-aware"
+            ))]
             let trust_negative = !self.table.is_routed();
             #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]
             let trust_negative = true;
@@ -310,6 +367,20 @@ impl AllocCore {
         if let Some(base) = found {
             // B4 §11: remember the serving segment as this class's cursor.
             self.record_class_cursor(class_idx, base);
+            return found;
+        }
+        // SC-6: the bins-only scan missed; notified segments are the only
+        // other place a free block can be.
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            not(feature = "numa-aware")
+        ))]
+        if let Some(ingress) = ingress {
+            if let Some(base) = self.process_ingress(class_idx, ingress) {
+                self.record_class_cursor(class_idx, base);
+                return Some(base);
+            }
         }
         found
     }
@@ -330,6 +401,7 @@ impl AllocCore {
         &mut self,
         class_idx: usize,
         #[cfg(feature = "numa-aware")] my_node: u32,
+        drain: bool,
     ) -> Option<*mut u8> {
         //
         // Query the materialised sidecar's per-class bitmap for set bits:
@@ -471,7 +543,9 @@ impl AllocCore {
                         // BinTable head) — the SINGLE choke point shared with
                         // the non-NUMA path so the criteria are byte-for-byte
                         // identical.
-                        if let Some(base) = self.validate_directory_candidate(class_idx, slot_idx) {
+                        if let Some(base) =
+                            self.validate_directory_candidate(class_idx, slot_idx, drain)
+                        {
                             return Some(base);
                         }
                     }
@@ -742,7 +816,7 @@ impl AllocCore {
     /// directory MISS if this scan reached `base` via the periodic
     /// re-validation or rescue path (R8-2, task #215 / R9-8, task #230).
     #[inline]
-    fn finalize_hit(
+    pub(super) fn finalize_hit(
         &mut self,
         base: *mut u8,
         class_idx: usize,
@@ -807,7 +881,10 @@ impl AllocCore {
         &mut self,
         class_idx: usize,
         slot_idx: usize,
+        drain: bool,
     ) -> Option<*mut u8> {
+        #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]
+        let _ = drain;
         // Validation step 1: base must be non-null.
         let base = self.table.base_at(slot_idx);
         if base.is_null() {
@@ -836,7 +913,11 @@ impl AllocCore {
         // The route scan and all detached cuts end before this reservation
         // can be pooled/released or its free-list head can be served.
         #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-        match self.drain_segment_sidecar(base) {
+        match if drain {
+            self.drain_segment_sidecar(base)
+        } else {
+            SidecarDrainOutcome::Skipped
+        } {
             // P1-b: decommit/pool hysteresis — a RELEASED segment must be
             // skipped (try the next candidate); a POOLED segment (R1-03, src
             // review round 1) is still live/registered/committed, so fall
