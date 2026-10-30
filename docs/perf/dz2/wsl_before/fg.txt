@@ -1,0 +1,13 @@
+prod 16 r1 cycles:u=1974787772 instructions:u=8038271522 
+prod 16 r2 cycles:u=1768075973 instructions:u=8038272827 
+prod 16 r3 cycles:u=1772230590 instructions:u=8038273461 
+prod 64 r1 cycles:u=1762611003 instructions:u=8038278816 
+prod 64 r2 cycles:u=1886222466 instructions:u=8038279234 
+prod 64 r3 cycles:u=1755082166 instructions:u=8038279069 
+bi 16 r1 cycles:u=2760949814 instructions:u=8150912602 
+bi 16 r2 cycles:u=2824112589 instructions:u=8150914400 
+bi 16 r3 cycles:u=2828742172 instructions:u=8150912818 
+bi 64 r1 cycles:u=2992363516 instructions:u=8150921311 
+bi 64 r2 cycles:u=3132536482 instructions:u=8150920654 
+bi 64 r3 cycles:u=3154791553 instructions:u=8150919612 
+done

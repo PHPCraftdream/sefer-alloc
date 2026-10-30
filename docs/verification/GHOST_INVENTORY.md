@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-650 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 89 files of `src/**` and
-`crates/*/src/**`; each is claimed by exactly one of 44 scopes.
+649 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 90 files of `src/**` and
+`crates/*/src/**`; each is claimed by exactly one of 45 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/650 |
-| counter | 233 | 233/650 |
-| ghost | 10 | 10/650 |
-| id | 9 | 9/650 |
-| kani | 1 | 1/650 |
-| lock-local | 40 | 40/650 |
-| non-atomic | 2 | 2/650 |
-| protocol | 168 | 168/650 |
-| test-hook | 174 | 174/650 |
-| twin | 7 | 7/650 |
-| **claimed** | **650** | 650/650 |
-| unclaimed | 0 | 0/650 |
-| claimed twice | 0 | 0/650 |
+| cache | 6 | 6/649 |
+| counter | 232 | 232/649 |
+| ghost | 10 | 10/649 |
+| id | 9 | 9/649 |
+| kani | 1 | 1/649 |
+| lock-local | 40 | 40/649 |
+| non-atomic | 2 | 2/649 |
+| protocol | 168 | 168/649 |
+| test-hook | 174 | 174/649 |
+| twin | 7 | 7/649 |
+| **claimed** | **649** | 649/649 |
+| unclaimed | 0 | 0/649 |
+| claimed twice | 0 | 0/649 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -327,9 +327,10 @@ Decision: **translate (with P5)** — loom_route_pin_unlink models it as loom::s
 | `cache/page-size` | cache | — | 4 | idempotent cache of a process constant; Relaxed: every writer stores the same value |
 | `cache/process-exit` | cache | — | 2 | resolved function pointer cache (windows); Relaxed: idempotent |
 | `id/generators` | id | — | 7 | unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed |
-| `counter/statics` | counter | — | 218 | statistics / diagnostic counters: Relaxed, no protocol reads them |
+| `counter/statics` | counter | — | 215 | statistics / diagnostic counters: Relaxed, no protocol reads them |
 | `counter/per-heap` | counter | — | 13 | per-heap hit counters published Relaxed (owner-written, read by stats) |
 | `counter/pin-cache-macro` | counter | — | 1 | macro_rules! count bumps a static counter |
+| `counter/tier1-bump` | counter | — | 2 | unlocked Relaxed load+store bump of a bench-internals Tier-1 counter (DZ-2): no protocol reads it |
 | `hook/terminal-gate` | test-hook | — | 4 | test gate that pauses a producer after publication |
 | `node/atomic-read` | lock-local | — | 1 | Node::read_struct_with_atomic_word: Relaxed read of a word whose ordering the caller establishes |
 | `nonatomic/mock-record` | non-atomic | — | 2 | false positive: mock::record(Op::Release ...) — Release is an enum variant, not an ordering |

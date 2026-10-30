@@ -807,16 +807,18 @@ impl SegmentTable {
         if self.last_key == key.addr() {
             // The memo is part of Tier-1: count its hits with the own_cache hits.
             #[cfg(feature = "bench-internals")]
-            crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::alloc_core::alloc_core::tier1_bump(
+                &crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS,
+            );
             return Some(self.last_root);
         }
         let index = Self::cache_index(key);
         let (cached_key, cached_root) = self.own_cache[index];
         if cached_key == key.addr() {
             #[cfg(feature = "bench-internals")]
-            crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::alloc_core::alloc_core::tier1_bump(
+                &crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS,
+            );
             // N9-v3: arm the memo on an exact-base own_cache hit only.
             if cached_root.addr() == key.addr() {
                 self.last_key = key.addr();
@@ -825,8 +827,9 @@ impl SegmentTable {
             return Some(cached_root);
         }
         #[cfg(feature = "bench-internals")]
-        crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
-            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        crate::alloc_core::alloc_core::tier1_bump(
+            &crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES,
+        );
         let root = self.hash_find(key)?;
         // N9-v3: a won probe fills `own_cache` only; the memo is armed by the
         // next exact-base own_cache hit.

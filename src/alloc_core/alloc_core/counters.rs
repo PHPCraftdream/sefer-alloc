@@ -198,6 +198,19 @@ pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_HITS: core::sync::atomic::A
 pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_MISSES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// DZ-2: bump a Tier-1 counter without a locked RMW. These counters sit on
+/// every own-thread free; `fetch_add` (`lock inc` on x86, ~20 cycles) made
+/// `bench-internals` builds' free path 40 % slower than `production`
+/// (`docs/perf/DZ2_BENCH_INTERNALS_HOT_COUNTER.md`). Exact for a single
+/// thread; concurrent bumps from different threads may lose counts, which
+/// every reader tolerates (each test serializes and reads its own delta).
+#[cfg(feature = "bench-internals")]
+#[inline(always)]
+pub(in crate::alloc_core) fn tier1_bump(counter: &core::sync::atomic::AtomicU64) {
+    use core::sync::atomic::Ordering::Relaxed;
+    counter.store(counter.load(Relaxed).wrapping_add(1), Relaxed);
+}
+
 /// TEST-ONLY (R9-1, task #221 follow-up): process-wide count of EXPLICIT
 /// `Node::zero` passes on the Large-classified `alloc_zeroed` path — bumped
 /// at both consumers of `alloc_large`'s freshness signal

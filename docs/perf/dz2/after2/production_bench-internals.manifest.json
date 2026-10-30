@@ -1,0 +1,26 @@
+{
+  "commit": "5988bdcd3942aaa3616212365cf24ee658a285ed",
+  "dirty": true,
+  "features": "production bench-internals",
+  "rounds": 200,
+  "calls": 2,
+  "regime": "steady",
+  "processes": 3,
+  "exe_sha256": "1197b99a4809b133ece177aab0782110fef391202715e1287f687be20340429e",
+  "rustc": [
+    "rustc 1.97.0 (2d8144b78 2026-07-07)",
+    "binary: rustc",
+    "commit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3",
+    "commit-date: 2026-07-07",
+    "host: x86_64-pc-windows-msvc",
+    "release: 1.97.0",
+    "LLVM version: 22.1.6"
+  ],
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz x16",
+  "os": "Windows 10 Pro 10.0.19045 x64",
+  "raw_sha256": [
+    "c1d86909598deefea67e8b7527d73c351b2c190f019d1f4ea18200255006cda5",
+    "bb989704b8f5557d1d45575deeaf3b52274b4cdebceff1d1432996bc03c6ee6a",
+    "c730ac221cc8d81a707c847908d3f17d22ef21785d5f9186dfc12b1b1dff4f08"
+  ]
+}

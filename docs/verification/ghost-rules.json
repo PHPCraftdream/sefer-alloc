@@ -944,6 +944,19 @@
       "item": "^macro_rules! count$"
     },
     {
+      "id": "counter/tier1-bump",
+      "class": "counter",
+      "files": [
+        "src/alloc_core/alloc_core/counters.rs"
+      ],
+      "fn": "^tier1_bump$",
+      "receiver": "^counter$",
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "unlocked Relaxed load+store bump of a bench-internals Tier-1 counter (DZ-2): no protocol reads it"
+    },
+    {
       "id": "hook/terminal-gate",
       "class": "test-hook",
       "files": [
