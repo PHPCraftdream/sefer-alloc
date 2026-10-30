@@ -78,3 +78,20 @@ Ratio to mimalloc: geometric mean over 12 cells: -5.6 %; agreed wins 49.4 pp, ag
 Magnitude rule: gm -4.0 % (<= -0.5 %), wins/losses 41.2/0.0 pp (>= 2x), largest loss +0.0 % (<= 3 %), new LOSS cells 0 (0) => **GO**
 
 Reading: **GO** in both sets, with no agreed loss in any cell. The warm batch improves the most (16 B −8.3…−8.8 %, 64 B −12…−13 %, now a win against mimalloc). Churn gains are −1…−4 %.
+
+## MT controls (larson / mstress, `examples/malloc_macro.rs`, 30 ABBA runs per arm)
+
+Derived by `node scripts/as1_mt_table.mjs docs/perf/as1/mt_malloc_macro_raw.txt docs/perf/AS1_FAST_FREE_LANE_mt_summary.csv`:
+
+| Workload | T | runs | sefer before (M ops/s) | sefer after | Δ | sefer/mi before | sefer/mi after |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| larson | 1 | 30/30 | 44.10 | 44.60 | +1.1 % | 0.789 | 0.789 |
+| larson | 2 | 30/30 | 53.44 | 54.45 | +1.9 % | 1.156 | 1.177 |
+| larson | 4 | 30/30 | 96.65 | 93.44 | -3.3 % | 1.184 | 1.141 |
+| mstress | 1 | 30/30 | 55.68 | 53.53 | -3.9 % | 0.776 | 0.750 |
+| mstress | 2 | 30/30 | 91.87 | 90.79 | -1.2 % | 0.917 | 0.917 |
+| mstress | 4 | 30/30 | 140.92 | 163.84 | +16.3 % | 1.006 | 0.973 |
+
+Throughput: higher is better; Δ = after/before − 1 of the run medians; sefer/mi > 1 means faster than mimalloc in the same run.
+
+Run-to-run spread is about ±4 % (mimalloc in the same runs swings by up to ±14 % at T = 4). Callgrind of `g1_mt_one` at T = 1, 300 000 steps (`docs/perf/as1/mt_callgrind_totals.txt`): larson 79 358 209 → 76 686 530 Ir (−3.4 %), mstress 72 901 949 → 68 066 414 Ir (−6.6 %). Fewer instructions on both, so the mstress T = 1 −3.9 % throughput is run noise, not a cost.

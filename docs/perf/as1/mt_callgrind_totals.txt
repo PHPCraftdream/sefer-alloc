@@ -1,0 +1,4 @@
+base larson 79,358,209
+base mstress 72,901,949
+as1 larson 76,686,530
+as1 mstress 68,066,414
