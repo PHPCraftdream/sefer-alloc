@@ -82,9 +82,6 @@ console.log(
 );
 if (process.env.MAG_CSV) {
   const head = "set,cell,ratio_d1,ratio_d2,ratio_agreed,time_d1,time_d2,time_agreed,ratio_before,ratio_after";
-  const prev = fs.existsSync(process.env.MAG_CSV) ? fs.readFileSync(process.env.MAG_CSV, "utf8").trim().split(/?
-/).slice(1) : [];
-  fs.writeFileSync(process.env.MAG_CSV, [head, ...prev, ...csvRows].join("
-") + "
-");
+  const prev = fs.existsSync(process.env.MAG_CSV) ? fs.readFileSync(process.env.MAG_CSV, "utf8").trim().split(/\r?\n/).slice(1) : [];
+  fs.writeFileSync(process.env.MAG_CSV, [head, ...prev, ...csvRows].join("\n") + "\n");
 }
