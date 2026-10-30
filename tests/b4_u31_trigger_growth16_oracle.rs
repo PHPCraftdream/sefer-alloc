@@ -7,12 +7,14 @@
 
 //! B4-29 (U31 trigger, chunk 1) growth16 discovery oracle: the PRF01
 //! `growth16` workload shape (n blocks of 16 B @ align(8), all allocated
-//! before ANY free, then all freed) must exercise the discovery scan —
-//! observable as strictly positive deltas of the B4_* slow-path observer
-//! counters (`B4_FIND_SEGMENT_CALLS`, `B4_SCAN_CALLS`, `B4_SCAN_WORDS`,
-//! read via `SeferAlloc::dbg_b4_collapse_counters`, order pinned there).
-//! Prints one JSON line per n; no assertions on absolute values beyond
-//! positivity of the discovery trio.
+//! before ANY free, then all freed) exercises discovery
+//! (`B4_FIND_SEGMENT_CALLS` > 0). Since SC-6 A-exact the installed heap is
+//! armed: with local frees only no route is ever notified, so discovery
+//! trusts its negative answer and `B4_SCAN_CALLS` / `B4_SCAN_WORDS` and the
+//! U31 observers stay exactly 0 (before SC-6 they were strictly positive:
+//! every miss drained the whole heap). Counters read via
+//! `SeferAlloc::dbg_b4_collapse_counters`, order pinned there. Prints one
+//! JSON line per n.
 
 use sefer_alloc::{AllocCore, SeferAlloc};
 use std::alloc::{GlobalAlloc, Layout};
@@ -84,14 +86,15 @@ fn growth16_discovery_counters_positive() {
             delta(6),
         );
         assert!(delta(0) > 0, "n={n}: no discovery calls");
-        assert!(delta(1) > 0, "n={n}: no scan calls");
-        assert!(delta(2) > 0, "n={n}: no scan words");
+        // SC-6 A-exact (P23): growth16 frees locally only, so no route is
+        // ever notified and the armed heap trusts every negative discovery
+        // answer -- no sidecar drain runs at all (before SC-6 every miss
+        // drained the whole heap: scan calls and words were > 0 here).
+        assert_eq!(delta(1), 0, "n={n}: an armed heap drained on discovery");
+        assert_eq!(delta(2), 0, "n={n}: an armed heap scanned pending words");
 
-        // U31 scan-observer proportions (chunk 3): routed scans counted by
-        // the U31 observers must not exceed the raw scan calls, the
-        // holders==base numerator must not exceed its denominator, and on
-        // this single-threaded shape (owner frees only, no foreign pins) the
-        // majority of scanned segments must show base holders.
+        // The U31 observers count routed discovery scans; with no drain they
+        // must stay at zero, and their ordering invariants hold trivially.
         let u31_after = u31_counters();
         let seg = u31_after[0] - u31_before[0];
         let base = u31_after[1] - u31_before[1];
@@ -100,36 +103,10 @@ fn growth16_discovery_counters_positive() {
         println!(
             "{{\"growth16_n\":{n},\"u31_scan_segments\":{seg},\"u31_holders_base\":{base},\"u31_scan_no_pending\":{nopending},\"u31_discovery_scans\":{discovery}}}"
         );
-        assert!(seg <= delta(1), "n={n}: u31 segments exceed scan calls");
-        assert!(
-            discovery <= delta(1),
-            "n={n}: discovery scans exceed scan calls"
-        );
-        assert!(
-            discovery <= seg,
-            "n={n}: discovery scans exceed routed scans"
-        );
-        assert!(
-            nopending <= discovery,
-            "n={n}: no-pending exceeds discovery scans"
-        );
-        assert!(
-            base <= seg,
-            "n={n}: holders-base numerator exceeds denominator"
-        );
-        assert!(
-            base * 2 > seg,
-            "n={n}: holders==base minority ({base}/{seg}) on single-threaded growth16"
-        );
-        // growth16 frees locally (owner dealloc → bin, no terminal pending
-        // publication), so every drained discovery scan must see zero nonzero
-        // pending words. A mutant that fires B4_U31_SCAN_NO_PENDING on scans
-        // that DID see pending bits (or that drops the observer entirely)
-        // breaks this. Single-threaded growth16: all scans are discovery
-        // scans, so seg == discovery here too.
-        assert!(
-            nopending == discovery,
-            "n={n}: no-pending ({nopending}) must equal discovery scans ({discovery}) on local-free-only growth16"
+        assert_eq!(
+            (seg, base, nopending, discovery),
+            (0, 0, 0, 0),
+            "n={n}: U31 observers saw a routed discovery scan on an armed heap"
         );
     }
 }

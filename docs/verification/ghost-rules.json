@@ -183,7 +183,7 @@
       ],
       "invariants": [
         "I1 every published offset is cut exactly once",
-        "I2 publish is fetch_or AcqRel after the class store Release; cut is swap AcqRel"
+        "I2 publish is fetch_or SeqCst (P23 I2) after the class store Release; cut is swap AcqRel"
       ],
       "class": "A",
       "loom": [
@@ -536,6 +536,31 @@
       "decision": "translate (with P5)",
       "phase": "G2",
       "reason": "loom_route_pin_unlink models it as loom::sync::Mutex; the pilot runs the real ShardLock"
+    },
+    {
+      "id": "P23",
+      "name": "remote-free ingress: producer notify || owner take/arm/full drain (SC-6 A-exact)",
+      "prod": [
+        "src/registry/segment_route/directory/ingress.rs",
+        "src/registry/segment_route/pin.rs::publish_small_borrowed",
+        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs::publish",
+        "src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs::drain_notified_slot"
+      ],
+      "invariants": [
+        "I1 NOTIFIED => the slot bit is set in the heap mask, or its notifier is between the CAS and the summary RMW, or the owner took the bit and has not finished arm -> fence -> full drain",
+        "I2 store-buffering: producer pending fetch_or(SeqCst) then state load(SeqCst); owner state store(ARMED, Release), fence(SeqCst), then a full drain: the drain sees the bit or the producer sees ARMED and notifies",
+        "I3 ARMED is written only by the owner, after taking the slot bit, followed by the fence and a full drain",
+        "I4 NOTIFIED is written only by the producer CAS from ARMED, or at birth of a route without a heap cell",
+        "I5 after its terminal RMW the producer touches only its pinned entry state and the process-lifetime heap cell"
+      ],
+      "class": "A",
+      "loom": [],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "no (the actual-source loom model lands in the SC-6 verification follow-up PR)",
+      "decision": "ghost",
+      "phase": "SC-6",
+      "reason": "SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spec): a negative discovery answer of an armed heap is trusted; R1 pins every ingress ordering, R3 the publish->check, mask->summary, store->fence and arm->drain orders; ghost events ingress/notified and ingress/taken"
     }
   ],
   "scopes": [
@@ -623,7 +648,8 @@
       "class": "protocol",
       "protocol": "P5",
       "files": [
-        "src/registry/segment_route/directory/*.rs"
+        "src/registry/segment_route/directory/route_directory.rs",
+        "src/registry/segment_route/directory/blocks.rs"
       ],
       "receiver": "refs$|linked$",
       "reason": "pin refcount and linked flag"
@@ -633,13 +659,23 @@
       "class": "lock-local",
       "protocol": "P5",
       "files": [
-        "src/registry/segment_route/directory/*.rs"
+        "src/registry/segment_route/directory/route_directory.rs",
+        "src/registry/segment_route/directory/blocks.rs"
       ],
       "receiver_not": "refs$|linked$|B4_DIRECTORY_LOOKUPS$|next_incarnation$",
       "orderings": [
         "Relaxed"
       ],
       "reason": "Block/BlockIndex/spare/ptr/root/sidecar atomics are Relaxed and touched under the shard lock or via an owned pin (I4)"
+    },
+    {
+      "id": "P23/ingress",
+      "class": "protocol",
+      "protocol": "P23",
+      "files": [
+        "src/registry/segment_route/directory/ingress.rs"
+      ],
+      "reason": "per-route ingress state and per-heap notification cell (SC-6 A-exact)"
     },
     {
       "id": "P5/pin-linked",
@@ -2889,16 +2925,16 @@
         "receiver": "pending"
       },
       "orderings": [
-        "AcqRel"
+        "SeqCst"
       ],
       "count": 1,
       "terms": [
         "publish",
-        "AcqRel",
+        "SeqCst",
         "pending",
         "linearization"
       ],
-      "reason": "the producer terminal RMW is the linearization point and its last access to the reservation; AcqRel orders it against the owner cut (linter-only: no runtime model observes a weakened producer RMW — the removed text pin was text-only too; miri class_leaves_publication_miri stays green under the Relaxed mutant)",
+      "reason": "the producer terminal RMW is the linearization point and its last access to the reservation; SeqCst orders it against the owner cut and is the first access of the P23 store-buffering pair (same machine code as AcqRel on x86 lock or and aarch64 LSE ldsetal); the id keeps its pre-SC-6 name for evidence continuity (R5b-12/R5b-13), the ordering it pins is SeqCst since SC-6",
       "tests": [
         "tests/loom_sidecar_bitmap_actual.rs",
         "tests/loom_b4_scan_skip_empty_publish.rs"
@@ -5760,6 +5796,287 @@
         "tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p15_prune_acquire"
+    },
+    {
+      "id": "ingress/check-seqcst",
+      "kind": "R1",
+      "protocol": "P23",
+      "file": "src/registry/segment_route/directory/ingress.rs",
+      "fn": "SegmentIngress::after_publish",
+      "site": {
+        "name": "load",
+        "receiver": "state$"
+      },
+      "orderings": [
+        "SeqCst"
+      ],
+      "count": 1,
+      "terms": [
+        "SeqCst",
+        "store-buffering",
+        "ARMED",
+        "after_publish"
+      ],
+      "reason": "I2: the producer state load is the second SeqCst access of the store-buffering pair",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_check_seqcst"
+    },
+    {
+      "id": "ingress/notify-cas",
+      "kind": "R1",
+      "protocol": "P23",
+      "file": "src/registry/segment_route/directory/ingress.rs",
+      "fn": "SegmentIngress::notify",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "state$"
+      },
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "CAS",
+        "ARMED",
+        "NOTIFIED",
+        "Acquire"
+      ],
+      "reason": "I4: one notifier per arming wins ARMED -> NOTIFIED and synchronises with the owner arm (Acquire)",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_notify_cas"
+    },
+    {
+      "id": "ingress/arm-release",
+      "kind": "R1",
+      "protocol": "P23",
+      "file": "src/registry/segment_route/directory/ingress.rs",
+      "fn": "SegmentIngress::arm",
+      "site": {
+        "name": "store",
+        "receiver": "state$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "ARMED",
+        "Release",
+        "take",
+        "arm"
+      ],
+      "reason": "I3: the owner arm publishes its earlier take to the notifier CAS (Release)",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_arm_release"
+    },
+    {
+      "id": "ingress/arm-fence",
+      "kind": "R1",
+      "protocol": "P23",
+      "file": "src/registry/segment_route/directory/ingress.rs",
+      "fn": "SegmentIngress::arm",
+      "site": {
+        "name": "fence"
+      },
+      "orderings": [
+        "SeqCst"
+      ],
+      "count": 1,
+      "terms": [
+        "fence",
+        "SeqCst",
+        "store-buffering",
+        "drain"
+      ],
+      "reason": "I2: the owner side of the store-buffering pair is the SeqCst fence between the arm store and the drain loads",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_arm_fence"
+    },
+    {
+      "id": "ingress/summary-release",
+      "kind": "R1",
+      "protocol": "P23",
+      "file": "src/registry/segment_route/directory/ingress.rs",
+      "fn": "HeapIngress::notify",
+      "site": {
+        "name": "fetch_or",
+        "receiver": "summary$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "summary",
+        "Release",
+        "mask",
+        "notify"
+      ],
+      "reason": "I1: the summary bit is published after the mask bit (Release) so a take that sees it sees the mask bit",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_summary_release"
+    },
+    {
+      "id": "ingress/take-summary-acquire",
+      "kind": "R1",
+      "protocol": "P23",
+      "file": "src/registry/segment_route/directory/ingress.rs",
+      "fn": "HeapIngress::take",
+      "site": {
+        "name": "swap",
+        "receiver": "summary$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "summary",
+        "Acquire",
+        "take",
+        "mask"
+      ],
+      "reason": "I1: the owner summary swap synchronises with the notifier Release before it reads the mask",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_take_summary_acquire"
+    },
+    {
+      "id": "ingress/take-mask-acquire",
+      "kind": "R1",
+      "protocol": "P23",
+      "file": "src/registry/segment_route/directory/ingress.rs",
+      "fn": "HeapIngress::take",
+      "site": {
+        "name": "swap",
+        "receiver": "mask"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "mask",
+        "Acquire",
+        "take",
+        "slot"
+      ],
+      "reason": "I1: the owner takes each notified slot word once (swap) and acquires the notifier mask write",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_take_mask_acquire"
+    },
+    {
+      "id": "ingress/arm-then-fence",
+      "kind": "R3",
+      "protocol": "P23",
+      "file": "src/registry/segment_route/directory/ingress.rs",
+      "fn": "SegmentIngress::arm",
+      "before": {
+        "name": "store",
+        "receiver": "state$"
+      },
+      "after": {
+        "name": "fence"
+      },
+      "terms": [
+        "arm",
+        "fence",
+        "before",
+        "store-buffering"
+      ],
+      "reason": "I2: the SeqCst fence follows the ARMED store; a fence before it does not order the store against the drain",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_arm_then_fence"
+    },
+    {
+      "id": "ingress/mask-before-summary",
+      "kind": "R3",
+      "protocol": "P23",
+      "file": "src/registry/segment_route/directory/ingress.rs",
+      "fn": "HeapIngress::notify",
+      "before": {
+        "name": "fetch_or",
+        "receiver": "mask"
+      },
+      "after": {
+        "name": "fetch_or",
+        "receiver": "summary$"
+      },
+      "terms": [
+        "mask",
+        "summary",
+        "before",
+        "notify"
+      ],
+      "reason": "I1: a summary bit never precedes its mask bit",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_mask_before_summary"
+    },
+    {
+      "id": "ingress/rmw-before-check",
+      "kind": "R3",
+      "protocol": "P23",
+      "file": "src/registry/segment_route/pin.rs",
+      "fn": "RoutePin::publish_small_borrowed",
+      "before": {
+        "name": "publish"
+      },
+      "after": {
+        "name": "after_publish"
+      },
+      "terms": [
+        "publish",
+        "after_publish",
+        "before",
+        "store-buffering"
+      ],
+      "reason": "I2: the ingress check follows the terminal RMW; checking first loses the store-buffering order",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_rmw_before_check"
+    },
+    {
+      "id": "ingress/arm-before-drain",
+      "kind": "R3",
+      "protocol": "P23",
+      "file": "src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs",
+      "fn": "AllocCore::drain_notified_slot",
+      "before": {
+        "name": "arm_small_route"
+      },
+      "after": {
+        "name": "drain_segment_sidecar"
+      },
+      "terms": [
+        "arm",
+        "drain",
+        "before",
+        "full drain"
+      ],
+      "reason": "I3: the owner re-arms before the full drain; draining first can miss a publication that saw NOTIFIED",
+      "tests": [
+        "tests/g1_ingress_remote_free_reuse.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p23_arm_before_drain"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

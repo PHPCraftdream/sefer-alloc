@@ -26,7 +26,7 @@ fn credit_lifetime(producer_retires_credit: bool) {
                 "reservation released before terminal publication"
             );
             // ghost-bind: sidecar/publish-acqrel
-            producer_pending.fetch_or(1, Ordering::AcqRel);
+            producer_pending.fetch_or(1, Ordering::SeqCst);
             // After the terminal RMW the producer touches only the independent
             // sidecar/pin. In particular it never reads producer_live again.
         });

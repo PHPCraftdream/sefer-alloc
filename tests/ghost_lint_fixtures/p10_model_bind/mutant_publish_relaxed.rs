@@ -1,4 +1,4 @@
-// expect: prod rule requires ["AcqRel"]
+// expect: prod rule requires ["SeqCst"]
 fn credit_lifetime() {
     let producer = thread::spawn(move || {
         // ghost-bind: sidecar/publish-acqrel

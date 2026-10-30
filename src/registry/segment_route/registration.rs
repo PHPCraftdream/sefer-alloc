@@ -44,6 +44,11 @@ impl RouteRegistration<'_> {
     pub fn small_sidecar(&self) -> Option<&SmallSidecar> {
         self.entry.small_sidecar()
     }
+    /// SC-6 owner half: re-arm this route's ingress (Release + SeqCst fence).
+    #[cfg_attr(feature = "numa-aware", allow(dead_code))]
+    pub fn arm_ingress(&self) {
+        self.entry.arm_ingress();
+    }
     /// Owner-only, fallible preparation before an issue transaction mutates
     /// anything. False means preparation failed; no side effect is kept.
     pub fn prepare_small(&self, offset: u32, class: u8) -> bool {

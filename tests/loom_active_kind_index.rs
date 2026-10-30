@@ -24,7 +24,7 @@ fn model(clear_clean_bit: bool) -> bool {
             producer_saw_live.store(producer_live.load(Ordering::Acquire), Ordering::Release);
             thread::yield_now();
             // ghost-bind: sidecar/publish-acqrel
-            producer_pending.fetch_or(true, Ordering::AcqRel);
+            producer_pending.fetch_or(true, Ordering::SeqCst);
             // Terminal publication is the last reservation access.
         });
 

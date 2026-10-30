@@ -560,7 +560,7 @@ fn bounded_model() {
         // LIVE with class 0 (encode 1), so `SmallSidecar::publish` accepts
         // offset 0.
         let registration = dir
-            .register_route(ptr, SEGMENT, ptr, 1, RouteKind::Small)
+            .register_route(ptr, SEGMENT, ptr, 1, RouteKind::Small, u32::MAX)
             .expect("registration succeeds");
         assert!(registration.issue_small(0, 0), "issue at offset 0");
         assert!(registration.issue_small(16, 0), "issue at offset 16");
@@ -701,7 +701,7 @@ fn bounded_model() {
         // O4: independently keep a linked cached pin until producer exit,
         // so the loom TLS destructor must release that reference.
         let exit_registration = dir
-            .register_route(ptr, SEGMENT, ptr, 1, RouteKind::Small)
+            .register_route(ptr, SEGMENT, ptr, 1, RouteKind::Small, u32::MAX)
             .expect("exit registration succeeds");
         assert!(
             exit_registration.issue_small(0, 0),

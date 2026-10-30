@@ -423,7 +423,7 @@ impl AllocCore {
                     // freelist into `out` instead of stopping short. Physical
                     // metadata guards apply equally to ordinary and rescue scans.
                     #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
-                    if !self.directory_sidecar.is_null() {
+                    if !self.directory_sidecar.is_null() || self.ingress_armed() {
                         let seg = self.find_segment_with_free_forced(class_idx);
                         if let Some(seg) = seg {
                             #[cfg(feature = "alloc-stats")]
