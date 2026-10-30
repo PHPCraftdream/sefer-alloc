@@ -124,7 +124,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > **Current state**
    > - **Status:** open (атрибуция готова; правок runtime нет).
    > - **Current:** churn16/64/256 в J1 делят одно кольцо — churn16 освобождает блоки 64/256 Б и выделяет 16 Б. Проба `inter`: sefer ≈21–24 тика и ≈108–112 Ir на alloc+free во всех режимах; mimalloc 17 тиков / 70 Ir (pair16), 17 / 96 (16↔64), 36 / 234 (churn 16 Б одного класса, где sefer быстрее в 1.7×). Промахи кэша, ветвления и TLB не причина; рычаг — Ir free (68–70 против 23–25). Проверены и отклонены FG-1/A, A-2, F-1, T-1 (карточки 139–143).
-   > - **Next trigger:** дизайн free, снимающий ≥ 20 Ir без ослабления проверок, согласованный с @ox и rush reviewer до прототипа; приём — парный bench:table + проба `inter` (смешанные классы).
+   > - **Next trigger:** первый шаг сделан — AS-1 (быстрая полоса free, дизайн A-S @ox) влит как `perf(runtime)`, см. «Recently resolved». Дальше по меморандуму @ox: B (типизированный класс `ClassIdx`, −2…−4 Ir на alloc и free), затем A-P (сравнения payload/bump следуют из инвариантов И1-prefix и И6; снимает слой защиты от будущего бага — решение владельца); приём — правило величины на парном bench:table + проба `inter`.
    > - **Evidence:** `docs/perf/J1_CROSS_CLASS_ATTRIBUTION.md`, `docs/perf/J1_CROSS_CLASS_ATTRIBUTION_summary.csv`, `docs/perf/j1ch/`, `scripts/j1ch_tables.mjs`, `scripts/g1_probe_pair_table.mjs`.
 
 137. **[A] G1-SC — routed discovery scan quadratic in heap size: loses to mimalloc from ~512 MiB.** (Filed 2026-10-29, `docs/perf/G1_SC4_GROWTH_TIME.md`, `docs/perf/g1_scan/`.)
@@ -3367,6 +3367,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **Item 144 — AS-1 accept-only fast lane for own-thread small frees: GO, shipped `perf(runtime)`, closed 2026-10-30** (design A-S from the @ox consultation; paired bench:table, two pre-registered ABBA sets under the magnitude rule: sefer-time geometric mean −5.8 % and −4.0 %, no agreed loss; warm batch 64 B 1.081 → 0.94 against mimalloc; MT within noise, callgrind −3.4 % / −6.6 % Ir; `docs/perf/AS1_FAST_FREE_LANE_PREREG.md`).
 - **Item 130 — G1-K7 budgeted depot overflow above the K5 floor (default 1 MiB per heap): shipped `perf(runtime)` under two owner exceptions, closed 2026-10-29** (PR #128; rule 1 bulk16k K7/K5 1.675 against mimalloc, churn64 1.081, churn1024 1.047; rule 3 RSS no loss; owner exceptions to rule 2a — pair16 +0.62 %, pair64 +0.73 % — and rule 4 — 8 benches, at most +430 Ir; `docs/perf/b4_ablate/G1_K7_PREREG.md` Addenda 6–10). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A130.
 - **D1′ (B4-23) — one-class map (PR #94) and chunked sidecar (PR #96): NO-GO, closed 2026-10-29** (owner approved the @oh council plan). F1 failed its pre-registered gate (slope +19k, fixed +43k, Windows wall +5.4 %); the chunked candidate lost installed-global larson (×1.281 at T=4, ×1.191 at T=8) and dense16 (×2.479). C2 is parked as D1″ (item 131). Report `docs/perf/D1_PRIME_VERDICT.md`; evidence tags `archive/b4-oneclass`, `archive/b4-chunks`.
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
