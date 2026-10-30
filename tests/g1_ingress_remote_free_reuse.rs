@@ -10,7 +10,14 @@
 //! pooled or released and later re-reserved, so its blocks come back as fresh
 //! carves (CI run 41004063060 saw 28 936 / 32 768 address reuse with no
 //! growth).
-#![cfg(feature = "alloc-global")]
+//! The ingress exists only where its owner half is compiled
+//! (`find_segment/ingress_discovery.rs`): `numa-aware` builds keep the
+//! backed-off discovery scan, which bounds nothing about growth.
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    not(feature = "numa-aware")
+))]
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::sync::mpsc;
