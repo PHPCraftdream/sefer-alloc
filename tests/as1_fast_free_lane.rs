@@ -4,7 +4,13 @@
 //! not. Each case below is a free the lane has to hand back to the chain;
 //! skipping the matching check in the lane would push the block and make it
 //! re-issuable, which the oracle catches.
-#![cfg(all(feature = "alloc-global", feature = "fastbin"))]
+//! `exact-object-proto` aborts on the deliberately invalid frees below, so it
+//! is excluded.
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    not(feature = "exact-object-proto")
+))]
 
 use std::alloc::{GlobalAlloc, Layout};
 
