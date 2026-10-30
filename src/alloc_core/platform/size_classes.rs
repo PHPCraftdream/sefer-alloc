@@ -207,6 +207,17 @@ const _: () = {
 pub(crate) const SIZE_CLASS_TABLE: [usize; TABLE_LEN] =
     size_classes::build_table::<TABLE_LEN>(PARAMS);
 
+/// T-1: the largest size whose class index is linear, `(size - 1) >> 4`:
+/// class `i` is `(i + 1) * MIN_BLOCK` for every `i < LINEAR_MAX / MIN_BLOCK`.
+pub(crate) const LINEAR_MAX: usize = 80;
+const _: () = {
+    let mut i = 0;
+    while i < LINEAR_MAX / MIN_BLOCK {
+        assert!(SIZE_CLASS_TABLE[i] == (i + 1) * MIN_BLOCK);
+        i += 1;
+    }
+};
+
 const fn reciprocal(d: u64) -> u64 {
     let odd = d >> d.trailing_zeros();
     let mut x = 1u64;
@@ -392,6 +403,11 @@ impl SizeClasses {
     #[must_use]
     #[inline(always)]
     pub(crate) const fn class_for_small_align(size: usize) -> Option<usize> {
+        // T-1: the classes up to `LINEAR_MAX` step by `MIN_BLOCK`, so their
+        // index is `(size - 1) >> MIN_BLOCK_SHIFT` without the table load.
+        if size <= LINEAR_MAX {
+            return Some(if size == 0 { 0 } else { (size - 1) >> MIN_BLOCK_SHIFT });
+        }
         // `const fn`-safe `max(size, 1)` (`Ord::max` is not const-stable):
         // `0usize.wrapping_sub(1) >> MIN_BLOCK_SHIFT` would be huge.
         let seed_idx = if size == 0 {
