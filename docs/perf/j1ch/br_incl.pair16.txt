@@ -1,0 +1,14 @@
+Events recorded:  Ir Bc Bcm Bi Bim
+Events shown:     Ir Bc Bcm Bi Bim
+610,943,878 (100.0%) 79,876,913 (100.0%) 31,638 (100.0%) 17,185,305 (100.0%) 12,457 (100.0%)  PROGRAM TOTALS
+610,943,878 (100.0%) 79,876,913 (100.0%) 31,638 (100.0%) 17,185,305 (100.0%) 12,457 (100.0%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+610,705,131 (99.96%) 79,834,117 (99.95%) 27,257 (86.15%) 17,184,732 (100.0%) 12,175 (97.74%)  ???:(below main) [<tree>/release/examples/b4_pmu_probe]
+610,705,119 (99.96%) 79,834,117 (99.95%) 27,257 (86.15%) 17,184,731 (100.0%) 12,174 (97.73%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+610,575,024 (99.94%) 79,813,150 (99.92%) 26,815 (84.76%) 17,184,703 (100.0%) 12,158 (97.60%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+610,563,783 (99.94%) 79,810,113 (99.92%) 26,508 (83.79%) 17,184,675 (100.0%) 12,138 (97.44%)  ???:main [<tree>/release/examples/b4_pmu_probe]
+610,563,771 (99.94%) 79,810,113 (99.92%) 26,508 (83.79%) 17,184,674 (100.0%) 12,137 (97.43%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [<tree>/release/examples/b4_pmu_probe]
+610,455,148 (99.92%) 79,790,831 (99.89%) 25,582 (80.86%) 17,184,257 (99.99%) 12,085 (97.01%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+610,455,147 (99.92%) 79,790,831 (99.89%) 25,582 (80.86%) 17,184,256 (99.99%) 12,084 (97.01%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [<tree>/release/examples/b4_pmu_probe]
+610,455,141 (99.92%) 79,790,831 (99.89%) 25,582 (80.86%) 17,184,256 (99.99%) 12,084 (97.01%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [<tree>/release/examples/b4_pmu_probe]
+610,455,138 (99.92%) 79,790,831 (99.89%) 25,582 (80.86%) 17,184,256 (99.99%) 12,084 (97.01%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+610,455,137 (99.92%) 79,790,831 (99.89%) 25,582 (80.86%) 17,184,255 (99.99%) 12,083 (97.00%)  <tree>/examples/b4_pmu_probe.rs:b4_pmu_probe::main [<tree>/release/examples/b4_pmu_probe]
