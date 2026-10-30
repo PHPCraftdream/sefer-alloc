@@ -365,8 +365,7 @@ pub(super) fn small_free_guard(
 /// F-1: the reject reasons of [`small_free_guard`] in their former order —
 /// metadata offset, misalignment, then the state byte — off the hot path.
 /// `true` = `RejectNoOpSilent`, `false` = `RejectNoOp`.
-#[cold]
-#[inline(never)]
+#[inline(always)]
 fn small_free_reject_silent(kind: BlockKind, off: u32, byte: u8, meta: SegmentMeta) -> bool {
     let payload_start = if matches!(&kind, BlockKind::Primordial) {
         SegmentLayout::primordial_meta_end()
