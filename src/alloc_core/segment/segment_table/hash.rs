@@ -5,6 +5,18 @@ use super::HASH_REMOVE_MAX_SCAN_STEPS;
 const _: () = assert!(super::MAX_SEGMENTS < (1usize << SEGMENT_SHIFT));
 
 impl SegmentTable {
+    /// AS-1: the tier-1 memo `(key, root)` for the own-free fast lane. A
+    /// key equal to the ptr's segment base means `root` is that base.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        not(feature = "hardened")
+    ))]
+    #[inline(always)]
+    pub(crate) fn memo(&self) -> (usize, *mut u8) {
+        (self.last_key, self.last_root)
+    }
+
     // -------------------------------------------------------------------
     // OPT-B — open-addressing hash table helpers
     //

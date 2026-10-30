@@ -36,6 +36,7 @@ let tLog = 0;
 let tWin = 0;
 let tLoss = 0;
 let tMax = 0;
+const csvRows = [];
 const agree = (a, b) => (Math.sign(a) === Math.sign(b) ? Math.sign(a) * Math.min(Math.abs(a), Math.abs(b)) : 0);
 for (const k of cells) {
   const d1 = ratio(r.x1, k) / ratio(r.b1, k) - 1;
@@ -54,6 +55,7 @@ for (const k of cells) {
   maxLoss = Math.max(maxLoss, agreed);
   const rb = (ratio(r.b1, k) + ratio(r.b2, k)) / 2;
   const rx = (ratio(r.x1, k) + ratio(r.x2, k)) / 2;
+  csvRows.push([label, k.replace(" ", "_"), d1.toFixed(4), d2.toFixed(4), agreed.toFixed(4), t1.toFixed(4), t2.toFixed(4), ta.toFixed(4), rb.toFixed(4), rx.toFixed(4)].join(","));
   out.push(`| ${k} B | ${pct(d1)} / ${pct(d2)} | ${pct(agreed)} | ${pct(t1)} / ${pct(t2)} | ${pct(ta)} | ${rb.toFixed(3)} → ${rx.toFixed(3)} |`);
 }
 const gm = Math.exp(logSum / cells.length) - 1;
@@ -78,3 +80,8 @@ const go = tGm <= -0.005 && tWin >= 2 * tLoss && tMax <= 0.03 && newLoss === 0;
 console.log(
   `\nMagnitude rule: gm ${pct(tGm)} (<= -0.5 %), wins/losses ${(tWin * 100).toFixed(1)}/${(tLoss * 100).toFixed(1)} pp (>= 2x), largest loss ${pct(tMax)} (<= 3 %), new LOSS cells ${newLoss} (0) => **${go ? "GO" : "NO-GO"}**`,
 );
+if (process.env.MAG_CSV) {
+  const head = "set,cell,ratio_d1,ratio_d2,ratio_agreed,time_d1,time_d2,time_agreed,ratio_before,ratio_after";
+  const prev = fs.existsSync(process.env.MAG_CSV) ? fs.readFileSync(process.env.MAG_CSV, "utf8").trim().split(/\r?\n/).slice(1) : [];
+  fs.writeFileSync(process.env.MAG_CSV, [head, ...prev, ...csvRows].join("\n") + "\n");
+}

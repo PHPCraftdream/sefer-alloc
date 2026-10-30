@@ -238,8 +238,8 @@ pub(crate) struct SegmentTable {
     /// EMPTY is encoded as `last_key == LAST_EMPTY_KEY` (usize::MAX): real
     /// segment bases are SEGMENT-aligned and a null lookup key is 0, so an
     /// EMPTY entry can never be hit — with a SINGLE compare, no extra branch.
-    last_key: usize,
-    last_root: *mut u8,
+    pub(super) last_key: usize,
+    pub(super) last_root: *mut u8,
 
     /// High-water mark: the number of slots that have EVER been written
     /// (including currently-NULL recyclable slots). Segments 0 (the

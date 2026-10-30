@@ -13,6 +13,12 @@ mod dealloc_batch;
 // `heap_core` subtree paths through it). Everything else in the split is
 // reached via `HeapCore` method resolution, not module paths.
 pub(crate) mod dealloc;
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    not(feature = "hardened")
+))]
+mod dealloc_fast;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 mod dealloc_own_base;
 mod realloc;
