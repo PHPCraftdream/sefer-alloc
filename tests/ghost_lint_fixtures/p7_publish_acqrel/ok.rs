@@ -13,7 +13,7 @@ impl<'a> SidecarBitmap<'a> {
         if self.classes.encoded(granule) == 0 {
             return false;
         }
-        self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);
+        self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::SeqCst);
         crate::ghost::ghost_event!("sidecar/published", core::ptr::from_ref(&self.pending[granule / 64]).addr(), 1);
         true
     }

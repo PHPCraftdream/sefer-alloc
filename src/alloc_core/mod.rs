@@ -223,6 +223,9 @@ pub(crate) use alloc_core::{
     B4_U31_DEFERRED_SCANS, B4_U31_DISCOVERY_SCANS, B4_U31_SCAN_HOLDERS_BASE,
     B4_U31_SCAN_NO_PENDING, B4_U31_SCAN_SEGMENTS,
 };
+/// SC-6 counting oracle statics (`--cfg g1_ingress_oracle`).
+#[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+pub(crate) use alloc_core::{G1_NOTIFIES, G1_OWNER_EPOCH, G1_PUBLISHES};
 medium_promotion_reachable! {
     /// R29-5 (task #436) re-export seam: the medium→Large promotion-frequency /
     /// copied-byte-distribution diagnostic statics, re-exported crate-wide so

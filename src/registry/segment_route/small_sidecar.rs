@@ -34,6 +34,9 @@ const _: () = {
 pub struct SmallSidecar {
     pending: [AtomicU64; SidecarBitmap::WORDS],
     classes: ClassLeaves,
+    /// SC-6 oracle: owner epoch at this route's last counted notification.
+    #[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+    oracle_seen: AtomicU64,
 }
 
 impl SmallSidecar {
@@ -73,6 +76,11 @@ impl SmallSidecar {
         // SAFETY: disjoint classes field in the same private allocation;
         // pending is initialized and publication is still excluded.
         unsafe { ClassLeaves::initialize_at(ptr::addr_of_mut!((*raw).classes)) };
+        // SAFETY: disjoint oracle field in the same private allocation.
+        #[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+        unsafe {
+            ptr::addr_of_mut!((*raw).oracle_seen).write(AtomicU64::new(u64::MAX))
+        };
     }
 
     fn bitmap(&self) -> SidecarBitmap<'_> {
@@ -193,6 +201,18 @@ impl SmallSidecar {
     /// Producer terminal publication, called by consuming RoutePin.
     pub(super) fn publish(&self, offset: u32) -> bool {
         self.bitmap().publish(offset)
+    }
+
+    /// SC-6 oracle: count a successful publication, and a notification when
+    /// the owner's refill-miss epoch moved since this route last notified.
+    #[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+    pub(super) fn oracle_after_publish(&self, owner: usize) {
+        use core::sync::atomic::Ordering::Relaxed;
+        crate::alloc_core::G1_PUBLISHES.fetch_add(1, Relaxed);
+        let epoch = crate::alloc_core::G1_OWNER_EPOCH[owner & 1023].load(Relaxed);
+        if self.oracle_seen.swap(epoch, Relaxed) != epoch {
+            crate::alloc_core::G1_NOTIFIES.fetch_add(1, Relaxed);
+        }
     }
 
     /// Owner-only bounded per-word cut through the existing bitmap scanner.

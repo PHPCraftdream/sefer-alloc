@@ -122,7 +122,8 @@ impl<'a> SidecarBitmap<'a> {
         if self.classes.encoded(granule) == 0 {
             return false;
         }
-        self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);
+        // SC-6: SeqCst — the SB half of the A-exact ingress handshake.
+        self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::SeqCst);
         // Ghost: one publication per word; the owner's cuts must consume exactly these.
         crate::ghost::ghost_event!(
             "sidecar/published",

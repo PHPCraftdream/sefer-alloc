@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-649 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 90 files of `src/**` and
-`crates/*/src/**`; each is claimed by exactly one of 45 scopes.
+667 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 91 files of `src/**` and
+`crates/*/src/**`; each is claimed by exactly one of 47 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/649 |
-| counter | 232 | 232/649 |
-| ghost | 10 | 10/649 |
-| id | 9 | 9/649 |
-| kani | 1 | 1/649 |
-| lock-local | 40 | 40/649 |
-| non-atomic | 2 | 2/649 |
-| protocol | 168 | 168/649 |
-| test-hook | 174 | 174/649 |
-| twin | 7 | 7/649 |
-| **claimed** | **649** | 649/649 |
-| unclaimed | 0 | 0/649 |
-| claimed twice | 0 | 0/649 |
+| cache | 6 | 6/667 |
+| counter | 237 | 237/667 |
+| ghost | 10 | 10/667 |
+| id | 9 | 9/667 |
+| kani | 1 | 1/667 |
+| lock-local | 40 | 40/667 |
+| non-atomic | 2 | 2/667 |
+| protocol | 179 | 179/667 |
+| test-hook | 176 | 176/667 |
+| twin | 7 | 7/667 |
+| **claimed** | **667** | 667/667 |
+| unclaimed | 0 | 0/667 |
+| claimed twice | 0 | 0/667 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -59,9 +59,10 @@ harness; `non-atomic` — named scanner false positives.
 | P20 | maintenance service start/worker state | none | 6 | 0 | 0 | — | no: process-wide static STATE plus std Mutex/Condvar wait_timeout_while and a detached std::thread worker in an infinite periodic loop | rules + integration tests | G6 |
 | P21 | exact-object shard lock + live hint | A | 7 | 1 | 0 | — | yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super) | ghost | G6 |
 | P22 | route ShardLock (spin lock over the directory shard) | S | 5 | 1 | 0 | — | yes: one AtomicBool | translate (with P5) | G2 |
+| P23 | remote-free ingress: producer notify \|\| owner take/arm/full drain (SC-6 A-exact) | A | 11 | 1 | 0 | — | yes: tests/loom_g1_ingress_exact.rs includes ingress.rs and sidecar_bitmap.rs | ghost | SC-6 |
 
-Shadow-model protocols (class contains S): 13 of 22, each with a decision.
-Protocols with neither a loom nor a shadow model: P20 (1 of 22).
+Shadow-model protocols (class contains S): 13 of 23, each with a decision.
+Protocols with neither a loom nor a shadow model: P20 (1 of 23).
 
 ## 3. Invariants and prod places
 
@@ -138,7 +139,7 @@ Decision: **ghost** — G6b: the real cache records ghost event pin-cache/held (
 Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`, `src/alloc_core/segment/remote_bitmap/bitmap_scan.rs`, `src/alloc_core/segment/remote_bitmap/bitmap_cut.rs`.
 
 - I1 every published offset is cut exactly once
-- I2 publish is fetch_or AcqRel after the class store Release; cut is swap AcqRel
+- I2 publish is fetch_or SeqCst (P23 I2) after the class store Release; cut is swap AcqRel
 - loom: `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`
 
 Decision: **ghost** — G6a: ghost events sidecar/published (publish) and sidecar/cut-bits (next_cut), checked by a per-word ledger in the actual-source loom test (every publication cut exactly once); R1 on the publish fetch_or, the issue store and the three cut swaps; R6 keeps both events. The text pin r11_ph5b_c5 is removed (its R5b-13/R5b-14 mutants turn sidecar/publish-acqrel and sidecar/cut-acqrel red). Retiring the shadow loom_sidecar_bitmap.rs moves to G6c with the P8 translation (R0-21 still cites it). G6c: the shadow loom_sidecar_bitmap.rs is retired; its negative control (a class published after the terminal bit) is the real-code mutant of sidecar/publish-requires-issue, red under loom_sidecar_bitmap_actual.
@@ -288,6 +289,19 @@ Prod: `src/registry/segment_route/shard_lock.rs`.
 
 Decision: **translate (with P5)** — loom_route_pin_unlink models it as loom::sync::Mutex; the pilot runs the real ShardLock
 
+### P23 — remote-free ingress: producer notify || owner take/arm/full drain (SC-6 A-exact)
+
+Prod: `src/registry/segment_route/directory/ingress.rs`, `src/registry/segment_route/pin.rs::publish_small_borrowed`, `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs::publish`, `src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs::drain_notified_slot`.
+
+- I1 NOTIFIED => the slot bit is set in the heap mask, or its notifier is between the CAS and the summary RMW, or the owner took the bit and has not finished arm -> fence -> full drain
+- I2 store-buffering: producer pending fetch_or(SeqCst) then state load(SeqCst); owner state store(ARMED, Release), fence(SeqCst), then a full drain: the drain sees the bit or the producer sees ARMED and notifies
+- I3 ARMED is written only by the owner, after taking the slot bit, followed by the fence and a full drain
+- I4 NOTIFIED is written only by the producer CAS from ARMED, or at birth of a route without a heap cell
+- I5 after its terminal RMW the producer touches only its pinned entry state and the process-lifetime heap cell
+- loom: `tests/loom_g1_ingress_exact.rs`
+
+Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spec): a negative discovery answer of an armed heap is trusted; R1 pins every ingress ordering, R3 the publish->check, mask->summary, store->fence and arm->drain orders; ghost events ingress/notified and ingress/taken
+
 ## 4. Scopes
 
 | scope | class | protocol | sites | reason |
@@ -302,6 +316,7 @@ Decision: **translate (with P5)** — loom_route_pin_unlink models it as loom::s
 | `P4/registry-walk` | protocol | P4 | 2 | stats walk relies on count/initialised Acquire publication |
 | `P5/directory-pin` | protocol | P5 | 3 | pin refcount and linked flag |
 | `P5/directory-locked` | lock-local | P5 | 35 | Block/BlockIndex/spare/ptr/root/sidecar atomics are Relaxed and touched under the shard lock or via an owned pin (I4) |
+| `P23/ingress` | protocol | P23 | 11 | per-route ingress state and per-heap notification cell (SC-6 A-exact) |
 | `P5/pin-linked` | protocol | P5 | 1 | RoutePin::linked Acquire |
 | `P22/shard-lock` | protocol | P22 | 5 | spin lock |
 | `P7/sidecar-bitmap` | protocol | P7 | 8 | publish fetch_or / class store / cut swap |
@@ -322,15 +337,16 @@ Decision: **translate (with P5)** — loom_route_pin_unlink models it as loom::s
 | `P20/maintenance-service` | protocol | P20 | 6 | service state + pass counter used as a wait condition |
 | `P21/exact-shard` | protocol | P21 | 7 | shard lock + live hint |
 | `hook/maintenance-service` | test-hook | — | 7 | fault/pause injection and test observers (FAIL_START swap is armed only by fail_next_start_for_test) |
-| `hook/test-fns` | test-hook | — | 148 | dbg_*/for_test/internals-only hooks |
+| `hook/test-fns` | test-hook | — | 150 | dbg_*/for_test/internals-only hooks |
 | `hook/inject-flags` | test-hook | — | 15 | fault-injection / test-control flags |
 | `cache/page-size` | cache | — | 4 | idempotent cache of a process constant; Relaxed: every writer stores the same value |
 | `cache/process-exit` | cache | — | 2 | resolved function pointer cache (windows); Relaxed: idempotent |
 | `id/generators` | id | — | 7 | unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed |
-| `counter/statics` | counter | — | 215 | statistics / diagnostic counters: Relaxed, no protocol reads them |
+| `counter/statics` | counter | — | 219 | statistics / diagnostic counters: Relaxed, no protocol reads them |
 | `counter/per-heap` | counter | — | 13 | per-heap hit counters published Relaxed (owner-written, read by stats) |
 | `counter/pin-cache-macro` | counter | — | 1 | macro_rules! count bumps a static counter |
 | `counter/tier1-bump` | counter | — | 2 | unlocked Relaxed load+store bump of a bench-internals Tier-1 counter (DZ-2): no protocol reads it |
+| `counter/g1-ingress-oracle` | counter | — | 1 | SC-6 counting oracle (cfg g1_ingress_oracle): last counted owner epoch per route, no protocol reads it |
 | `hook/terminal-gate` | test-hook | — | 4 | test gate that pauses a producer after publication |
 | `node/atomic-read` | lock-local | — | 1 | Node::read_struct_with_atomic_word: Relaxed read of a word whose ordering the caller establishes |
 | `nonatomic/mock-record` | non-atomic | — | 2 | false positive: mock::record(Op::Release ...) — Release is an enum variant, not an ordering |

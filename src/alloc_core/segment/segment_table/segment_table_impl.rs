@@ -199,7 +199,7 @@ pub(crate) const SEGMENT_SHIFT: usize = 22;
 /// filters them out; [`register`](Self::register) reuses them before appending.
 pub(crate) struct SegmentTable {
     #[cfg(feature = "alloc-global")]
-    routes: Option<RouteSlots>,
+    pub(super) routes: Option<RouteSlots>,
     /// Pointer to the first slot of the registry array (lives in the
     /// primordial segment's payload). `MAX_SEGMENTS` entries.
     slots: *mut *mut u8,
@@ -460,9 +460,11 @@ impl SegmentTable {
         #[cfg(not(feature = "alloc-global"))]
         let _ = len;
         #[cfg(feature = "alloc-global")]
+        let target = self.next_register_slot(has_free);
+        #[cfg(feature = "alloc-global")]
         let route = if let Some(routes) = &mut self.routes {
             let needed = self.count as usize + usize::from(!has_free);
-            Some(routes.prepare(needed, base, len, kind, payload)?)
+            Some(routes.prepare(needed, base, len, kind, payload, target)?)
         } else {
             None
         };

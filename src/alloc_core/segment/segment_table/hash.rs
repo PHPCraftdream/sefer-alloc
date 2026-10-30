@@ -366,6 +366,17 @@ impl SegmentTable {
         crate::alloc_core::node::Node::write_u32(self.free_top, top + 1);
     }
 
+    /// SC-6: the slot `register` will fill: the next recycled index when the
+    /// free-list is non-empty (`free_list_pop` returns it), else `count`.
+    #[cfg(feature = "alloc-global")]
+    pub(super) fn next_register_slot(&self, has_free: bool) -> u32 {
+        if !has_free {
+            return self.count();
+        }
+        let top = crate::alloc_core::node::Node::read_u32(self.free_top as *const u32);
+        crate::alloc_core::node::Node::read_u32(self.free_list_slot_ptr(top as usize - 1))
+    }
+
     /// Pop the most-recently-recycled index off the free-list, or `None` if
     /// it is empty. O(1).
     #[inline]

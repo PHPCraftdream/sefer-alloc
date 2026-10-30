@@ -676,3 +676,20 @@ pub(crate) static S1_MAG_BYTE_WRITES: core::sync::atomic::AtomicU64 =
 #[cfg(feature = "bench-internals")]
 pub(crate) static XNULL_NULL_TAIL_GUARD: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
+
+/// SC-6 counting oracle (`--cfg g1_ingress_oracle`, `docs/perf/g1_scan/SC6_ORACLE.md`):
+/// per-owner refill-miss epochs (owner id masked to 1024 buckets), small
+/// remote publications, and the publications that would notify under
+/// A-exact if every refill miss re-armed every segment of its heap (an upper
+/// bound: A-exact re-arms only notified segments, only on a miss).
+#[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+pub(crate) static G1_OWNER_EPOCH: [core::sync::atomic::AtomicU64; 1024] =
+    [const { core::sync::atomic::AtomicU64::new(0) }; 1024];
+/// See [`G1_OWNER_EPOCH`].
+#[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+pub(crate) static G1_PUBLISHES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+/// See [`G1_OWNER_EPOCH`].
+#[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+pub(crate) static G1_NOTIFIES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);

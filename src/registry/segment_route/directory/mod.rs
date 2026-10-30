@@ -2,13 +2,18 @@
 //! entries, pins and shards; `blocks` the sorted pointer storage.
 
 mod blocks;
+mod ingress;
 mod route_directory;
 
+#[cfg_attr(loom, allow(unused_imports))]
+pub(crate) use ingress::HeapIngress;
+#[cfg_attr(loom, allow(unused_imports))]
+pub(crate) use route_directory::heap_ingress;
 pub(super) use route_directory::EntryHandle;
 pub use route_directory::RouteDirectory;
 // Names the children take from `segment_route` (the Loom harnesses supply
 // their own under the same names).
 pub(super) use super::{
-    shard_lock, AtomicBool, AtomicUsize, LargeState, RouteError, RouteKind, RoutePin,
-    RouteRegistration, SmallSidecar,
+    fence, shard_lock, AtomicBool, AtomicU64, AtomicU8, AtomicUsize, LargeState, Ordering,
+    RouteError, RouteKind, RoutePin, RouteRegistration, SmallSidecar,
 };

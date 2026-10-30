@@ -1,4 +1,4 @@
-// expect: rule requires ["AcqRel"]
+// expect: rule requires ["SeqCst"]
 impl<'a> SidecarBitmap<'a> {
     pub(crate) fn issue(&self, offset: u32, class: u8) -> bool {
         match self.classes {

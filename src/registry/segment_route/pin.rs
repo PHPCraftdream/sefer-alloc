@@ -92,9 +92,17 @@ impl RoutePin {
     /// per-thread pin cache relies on).
     #[allow(unsafe_code)]
     pub unsafe fn publish_small_borrowed(&self, offset: u32) -> bool {
-        self.entry
-            .small_sidecar()
-            .is_some_and(|sidecar| sidecar.publish(offset))
+        let Some(sidecar) = self.entry.small_sidecar() else {
+            return false;
+        };
+        if !sidecar.publish(offset) {
+            return false;
+        }
+        #[cfg(all(g1_ingress_oracle, feature = "bench-internals"))]
+        sidecar.oracle_after_publish(self.owner());
+        // SC-6: the ingress check follows the terminal RMW (P23 I2).
+        self.entry.after_publish();
+        true
     }
     /// Terminal LIVE(g) -> PENDING(g) CAS, consuming this pin.
     ///

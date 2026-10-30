@@ -17,7 +17,9 @@
 // their atomics through `super` instead of `core::sync::atomic`, so a
 // harness re-exporting these names from its root module runs the REAL
 // production code on loom atomics.
-pub(crate) use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+pub(crate) use core::sync::atomic::{
+    fence, AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering,
+};
 
 mod directory;
 mod error;
@@ -34,6 +36,8 @@ mod small_sidecar;
 mod terminal_publication_gate;
 
 pub use directory::RouteDirectory;
+#[cfg_attr(feature = "numa-aware", allow(unused_imports))]
+pub(crate) use directory::{heap_ingress, HeapIngress};
 pub use error::RouteError;
 pub use kind::RouteKind;
 pub use large_state::LargeState;
