@@ -77,6 +77,13 @@ impl AllocCore {
         Some((base, block))
     }
 
+    /// AS-1: the segment table's tier-1 memo `(key, root)`.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    pub(crate) fn tier1_memo(&self) -> (usize, *mut u8) {
+        self.table.memo()
+    }
+
     #[cfg(feature = "alloc-global")]
     #[inline(always)]
     pub(crate) fn owned_block_of(&mut self, ptr: *mut u8) -> Option<OwnedBlock> {
