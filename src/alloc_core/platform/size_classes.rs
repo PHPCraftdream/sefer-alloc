@@ -247,7 +247,7 @@ pub(crate) const SMALL_MAX: usize = SIZE_CLASS_TABLE[TABLE_LEN - 1];
 
 /// The `SIZE2CLASS` array length: one `u8` per `MIN_BLOCK` bucket up to and
 /// including `SMALL_MAX`.
-const S2C_LEN: usize = size2class_len(SMALL_MAX, MIN_BLOCK);
+pub(crate) const S2C_LEN: usize = size2class_len(SMALL_MAX, MIN_BLOCK);
 
 /// Sefer's concrete size-class scheme — one const instantiation of the crate's
 /// `const`-generic [`SizeClassesImpl`]. Drives every classification query.
@@ -402,7 +402,7 @@ impl SizeClasses {
         if seed_idx >= S2C_LEN - 1 {
             return None;
         }
-        Some(SIZE2CLASS[seed_idx] as usize)
+        Some(crate::alloc_core::live_tag::LiveTag::of_seed(seed_idx).class())
     }
 
     /// The checked twin of [`class_for`](Self::class_for): rejects a

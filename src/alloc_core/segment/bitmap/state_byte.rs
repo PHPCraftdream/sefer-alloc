@@ -122,6 +122,29 @@ impl StateByte {
         );
     }
 
+    /// [`read`](Self::read) by granule index (`off >> 4`); the caller has
+    /// bounded `g` by the segment's bump.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        not(feature = "hardened")
+    ))]
+    #[inline(always)]
+    pub(crate) fn read_granule(&self, g: usize) -> u8 {
+        Node::read_u8(Node::offset(self.bytes, g))
+    }
+
+    /// Write a full state byte (`encode`d by the caller) by granule index.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        not(feature = "hardened")
+    ))]
+    #[inline(always)]
+    pub(crate) fn write_granule(&self, g: usize, byte: u8) {
+        Node::write_u8(Node::offset(self.bytes, g), byte);
+    }
+
     /// Rewrite ONLY the state bits of the granule's byte, preserving the
     /// class field. Used where the caller has no class index in hand
     /// (alloc-issue: the block was stored under its own class, and a

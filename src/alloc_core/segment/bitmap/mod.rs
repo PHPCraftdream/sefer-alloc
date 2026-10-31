@@ -7,3 +7,6 @@
 
 /// B4 variant (в): the per-granule owner-private STATE BYTE.
 pub(crate) mod state_byte;
+
+/// R2: the LIVE state byte of a small class as a range-typed tag.
+pub(crate) mod live_tag;

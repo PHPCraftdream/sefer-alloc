@@ -1,0 +1,8 @@
+r123base mstress 78,113,757
+r123base larson 73,835,465
+r1 mstress 74,181,418
+r1 larson 70,925,683
+r123 mstress 71,674,640
+r123 larson 69,122,958
+r123b mstress 71,674,521
+r123b larson 69,122,938
