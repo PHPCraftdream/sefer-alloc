@@ -1,0 +1,196 @@
+0000000000036000 <_RINvCsb9KG9XFq5YL_15malloc_bench_rs12dealloc_shimNtNtNtNtCse6TJ7HVc6vC_11sefer_alloc6global11sefer_alloc4core10SeferAllocECsaniAKaGZcRb_9g1_mt_one>:
+   36000:	mov    rax,0xffffffffffffffb8
+   36007:	mov    rcx,QWORD PTR fs:[rax]
+   3600b:	cmp    rcx,0x2
+   3600f:	jb     360e2 <_RINvCsb9KG9XFq5YL_15malloc_bench_rs12dealloc_shimNtNtNtNtCse6TJ7HVc6vC_11sefer_alloc6global11sefer_alloc4core10SeferAllocECsaniAKaGZcRb_9g1_mt_one+0xe2>
+   36015:	cmp    rsi,0x10
+   36019:	ja     360dc <_RINvCsb9KG9XFq5YL_15malloc_bench_rs12dealloc_shimNtNtNtNtCse6TJ7HVc6vC_11sefer_alloc6global11sefer_alloc4core10SeferAllocECsaniAKaGZcRb_9g1_mt_one+0xdc>
+   3601f:	lea    r9,[rdx-0x1]
+   36023:	cmp    r9,0x3f2c0
+   3602a:	jae    360dc <_RINvCsb9KG9XFq5YL_15malloc_bench_rs12dealloc_shimNtNtNtNtCse6TJ7HVc6vC_11sefer_alloc6global11sefer_alloc4core10SeferAllocECsaniAKaGZcRb_9g1_mt_one+0xdc>
+   36030:	mov    rax,rdi
+   36033:	and    rax,0xffffffffffc00000
+   36039:	cmp    QWORD PTR [rcx+0x130],rax
+   36040:	jne    360dc <_RINvCsb9KG9XFq5YL_15malloc_bench_rs12dealloc_shimNtNtNtNtCse6TJ7HVc6vC_11sefer_alloc6global11sefer_alloc4core10SeferAllocECsaniAKaGZcRb_9g1_mt_one+0xdc>
+   36046:	mov    rax,QWORD PTR [rcx+0x138]
+   3604d:	mov    r8,rdi
+   36050:	sub    r8,rax
+   36053:	movzx  r10d,BYTE PTR [rax+0x1c]
+   36058:	mov    r11,QWORD PTR [rip+0x75439]        # ab498 <_DYNAMIC+0x538>
+   3605f:	cmp    r8,QWORD PTR [r11+r10*8]
+   36063:	jb     360dc <_RINvCsb9KG9XFq5YL_15malloc_bench_rs12dealloc_shimNtNtNtNtCse6TJ7HVc6vC_11sefer_alloc6global11sefer_alloc4core10SeferAllocECsaniAKaGZcRb_9g1_mt_one+0xdc>
+   36065:	rol    r8,0x3c
+   36069:	mov    r10,QWORD PTR [rax]
+   3606c:	shr    r10,0x4
+   36070:	cmp    r8,r10
+   36073:	jae    360dc <_RINvCsb9KG9XFq5YL_15malloc_bench_rs12dealloc_shimNtNtNtNtCse6TJ7HVc6vC_11sefer_alloc6global11sefer_alloc4core10SeferAllocECsaniAKaGZcRb_9g1_mt_one+0xdc>
+   36075:	shr    r9,0x4
+   36079:	mov    r10,QWORD PTR [rip+0x753f0]        # ab470 <_DYNAMIC+0x510>
+   36080:	movzx  r9d,BYTE PTR [r10+r9*1]
+   36085:	cmp    BYTE PTR [rax+r8*1+0x1588],r9b
+   3608d:	jne    360dc <_RINvCsb9KG9XFq5YL_15malloc_bench_rs12dealloc_shimNtNtNtNtCse6TJ7HVc6vC_11sefer_alloc6global11sefer_alloc4core10SeferAllocECsaniAKaGZcRb_9g1_mt_one+0xdc>
+   3608f:	mov    rsi,r9
+   36092:	dec    rsi
+   36095:	mov    rdx,rsi
+   36098:	shl    rdx,0x7
+   3609c:	lea    r10,[rdx+rsi*8]
+   360a0:	movzx  edx,BYTE PTR [rcx+r10*1+0x4a8]
+   360a9:	mov    r11,QWORD PTR [rip+0x753f0]        # ab4a0 <_DYNAMIC+0x540>
+   360b0:	cmp    dl,BYTE PTR [r11+rsi*1]
+   360b4:	jae    360e8 <_RINvCsb9KG9XFq5YL_15malloc_bench_rs12dealloc_shimNtNtNtNtCse6TJ7HVc6vC_11sefer_alloc6global11sefer_alloc4core10SeferAllocECsaniAKaGZcRb_9g1_mt_one+0xe8>
+   360b6:	add    rcx,r10
+   360b9:	add    rcx,0x4a8
+   360c0:	lea    esi,[r9+0x40]
+   360c4:	mov    BYTE PTR [rax+r8*1+0x1588],sil
+   360cc:	and    edx,0xf
+   360cf:	mov    eax,edx
+   360d1:	mov    QWORD PTR [rcx+rax*8+0x8],rdi
+   360d6:	lea    eax,[rdx+0x1]
+   360d9:	mov    BYTE PTR [rcx],al
+   360db:	ret
+   360dc:	jmp    QWORD PTR [rip+0x753c6]        # ab4a8 <_DYNAMIC+0x548>
+   360e2:	jmp    QWORD PTR [rip+0x753c8]        # ab4b0 <_DYNAMIC+0x550>
+   360e8:	mov    r8,rdi
+   360eb:	mov    rdi,rcx
+   360ee:	mov    rdx,rax
+   360f1:	mov    rcx,r8
+   360f4:	jmp    QWORD PTR [rip+0x753be]        # ab4b8 <_DYNAMIC+0x558>
+   360fa:	int3
+   360fb:	int3
+   360fc:	int3
+   360fd:	int3
+   360fe:	int3
+   360ff:	int3
+
+0000000000036100 <_RINvMs0_NtNtNtNtCs9k3SxhrAWiO_3std3sys12thread_local6native4lazyINtB6_7StorageINtNtCsgxBkk5gSRhY_4core4cell4CellINtNtB1j_6option6OptionNtNtNtNtBe_4sync4mpmc7context7ContextEEuE16get_or_init_slowNvNvNvMB2b_B29_4with7CONTEXT27___rust_std_internal_init_fnECsaniAKaGZcRb_9g1_mt_one>:
+   36100:	push   rbx
+   36101:	movzx  eax,BYTE PTR [rdi+0x8]
+   36105:	cmp    eax,0x1
+   36108:	je     36111 <_RINvMs0_NtNtNtNtCs9k3SxhrAWiO_3std3sys12thread_local6native4lazyINtB6_7StorageINtNtCsgxBkk5gSRhY_4core4cell4CellINtNtB1j_6option6OptionNtNtNtNtBe_4sync4mpmc7context7ContextEEuE16get_or_init_slowNvNvNvMB2b_B29_4with7CONTEXT27___rust_std_internal_init_fnECsaniAKaGZcRb_9g1_mt_one+0x11>
+   3610a:	cmp    eax,0x2
+   3610d:	jne    36116 <_RINvMs0_NtNtNtNtCs9k3SxhrAWiO_3std3sys12thread_local6native4lazyINtB6_7StorageINtNtCsgxBkk5gSRhY_4core4cell4CellINtNtB1j_6option6OptionNtNtNtNtBe_4sync4mpmc7context7ContextEEuE16get_or_init_slowNvNvNvMB2b_B29_4with7CONTEXT27___rust_std_internal_init_fnECsaniAKaGZcRb_9g1_mt_one+0x16>
+   3610f:	xor    edi,edi
+   36111:	mov    rax,rdi
+   36114:	pop    rbx
+   36115:	ret
+   36116:	mov    rbx,rdi
+   36119:	call   QWORD PTR [rip+0x753a1]        # ab4c0 <_DYNAMIC+0x560>
+   3611f:	movzx  edx,BYTE PTR [rbx+0x8]
+   36123:	mov    rcx,QWORD PTR [rbx]
+   36126:	mov    QWORD PTR [rbx],rax
+   36129:	mov    BYTE PTR [rbx+0x8],0x1
+   3612d:	cmp    edx,0x1
+   36130:	jne    36150 <_RINvMs0_NtNtNtNtCs9k3SxhrAWiO_3std3sys12thread_local6native4lazyINtB6_7StorageINtNtCsgxBkk5gSRhY_4core4cell4CellINtNtB1j_6option6OptionNtNtNtNtBe_4sync4mpmc7context7ContextEEuE16get_or_init_slowNvNvNvMB2b_B29_4with7CONTEXT27___rust_std_internal_init_fnECsaniAKaGZcRb_9g1_mt_one+0x50>
+   36132:	mov    rdi,rbx
+   36135:	test   rcx,rcx
+   36138:	je     36111 <_RINvMs0_NtNtNtNtCs9k3SxhrAWiO_3std3sys12thread_local6native4lazyINtB6_7StorageINtNtCsgxBkk5gSRhY_4core4cell4CellINtNtB1j_6option6OptionNtNtNtNtBe_4sync4mpmc7context7ContextEEuE16get_or_init_slowNvNvNvMB2b_B29_4with7CONTEXT27___rust_std_internal_init_fnECsaniAKaGZcRb_9g1_mt_one+0x11>
+   3613a:	lock dec QWORD PTR [rcx]
+   3613e:	jne    36111 <_RINvMs0_NtNtNtNtCs9k3SxhrAWiO_3std3sys12thread_local6native4lazyINtB6_7StorageINtNtCsgxBkk5gSRhY_4core4cell4CellINtNtB1j_6option6OptionNtNtNtNtBe_4sync4mpmc7context7ContextEEuE16get_or_init_slowNvNvNvMB2b_B29_4with7CONTEXT27___rust_std_internal_init_fnECsaniAKaGZcRb_9g1_mt_one+0x11>
+   36140:	mov    rdi,rcx
+   36143:	call   433e0 <_RNvMsn_NtCs6i54tJFfzR_5alloc4syncINtB5_3ArcNtNtNtNtCs9k3SxhrAWiO_3std4sync4mpmc7context5InnerE9drop_slowCsaniAKaGZcRb_9g1_mt_one>
+   36148:	mov    rdi,rbx
+   3614b:	mov    rax,rdi
+   3614e:	pop    rbx
+   3614f:	ret
+   36150:	cmp    edx,0x2
+   36153:	jne    3616e <_RINvMs0_NtNtNtNtCs9k3SxhrAWiO_3std3sys12thread_local6native4lazyINtB6_7StorageINtNtCsgxBkk5gSRhY_4core4cell4CellINtNtB1j_6option6OptionNtNtNtNtBe_4sync4mpmc7context7ContextEEuE16get_or_init_slowNvNvNvMB2b_B29_4with7CONTEXT27___rust_std_internal_init_fnECsaniAKaGZcRb_9g1_mt_one+0x6e>
+   36155:	lea    rdi,[rip+0xfffffffffffd82ac]        # e408 <_RNvNtNtNtCsgxBkk5gSRhY_4core7unicode12unicode_data11white_space14WHITESPACE_MAP+0x4cc>
+   3615c:	lea    rdx,[rip+0x6ecb5]        # a4e18 <anon.a243a2cefe40099c5384ecefc2bb7996.217.llvm.6308452637081725772+0x7d8>
+   36163:	mov    esi,0x28
+   36168:	call   QWORD PTR [rip+0x75132]        # ab2a0 <_DYNAMIC+0x340>
+   3616e:	lea    rsi,[rip+0x44db]        # 3a650 <_RINvNtNtNtNtCs9k3SxhrAWiO_3std3sys12thread_local6native4lazy7destroyINtNtCsgxBkk5gSRhY_4core4cell4CellINtNtB19_6option6OptionNtNtNtNtBa_4sync4mpmc7context7ContextEEECsaniAKaGZcRb_9g1_mt_one>
+   36175:	mov    rdi,rbx
+   36178:	call   QWORD PTR [rip+0x7534a]        # ab4c8 <_DYNAMIC+0x568>
+   3617e:	mov    rdi,rbx
+   36181:	mov    rax,rdi
+   36184:	pop    rbx
+   36185:	ret
+   36186:	int3
+   36187:	int3
+   36188:	int3
+   36189:	int3
+   3618a:	int3
+   3618b:	int3
+   3618c:	int3
+   3618d:	int3
+   3618e:	int3
+   3618f:	int3
+
+0000000000036190 <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_4cell10UnsafeCellINtNtB4_6option6OptionINtNtB4_6result6ResultTyINtNtNtCs9k3SxhrAWiO_3std4sync4mpsc8ReceiverNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockENtNtB1R_4time7InstantB36_EINtNtCs6i54tJFfzR_5alloc5boxed3BoxDNtNtB4_3any3AnyNtNtB4_6marker4SendEL_EEEEECsaniAKaGZcRb_9g1_mt_one>:
+   36190:	push   r15
+   36192:	push   r14
+   36194:	push   rbx
+   36195:	mov    rax,QWORD PTR [rdi]
+   36198:	cmp    rax,0xfffffffffffffffe
+   3619c:	jne    361a4 <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_4cell10UnsafeCellINtNtB4_6option6OptionINtNtB4_6result6ResultTyINtNtNtCs9k3SxhrAWiO_3std4sync4mpsc8ReceiverNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockENtNtB1R_4time7InstantB36_EINtNtCs6i54tJFfzR_5alloc5boxed3BoxDNtNtB4_3any3AnyNtNtB4_6marker4SendEL_EEEEECsaniAKaGZcRb_9g1_mt_one+0x14>
+   3619e:	pop    rbx
+   3619f:	pop    r14
+   361a1:	pop    r15
+   361a3:	ret
+   361a4:	cmp    eax,0xffffffff
+   361a7:	je     361ba <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_4cell10UnsafeCellINtNtB4_6option6OptionINtNtB4_6result6ResultTyINtNtNtCs9k3SxhrAWiO_3std4sync4mpsc8ReceiverNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockENtNtB1R_4time7InstantB36_EINtNtCs6i54tJFfzR_5alloc5boxed3BoxDNtNtB4_3any3AnyNtNtB4_6marker4SendEL_EEEEECsaniAKaGZcRb_9g1_mt_one+0x2a>
+   361a9:	mov    rsi,QWORD PTR [rdi+0x8]
+   361ad:	mov    rdi,rax
+   361b0:	pop    rbx
+   361b1:	pop    r14
+   361b3:	pop    r15
+   361b5:	jmp    36cf0 <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtNtCs9k3SxhrAWiO_3std4sync4mpsc8ReceiverNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockEECsaniAKaGZcRb_9g1_mt_one>
+   361ba:	mov    r15,QWORD PTR [rdi+0x10]
+   361be:	mov    rax,QWORD PTR [r15]
+   361c1:	test   rax,rax
+   361c4:	je     361d5 <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_4cell10UnsafeCellINtNtB4_6option6OptionINtNtB4_6result6ResultTyINtNtNtCs9k3SxhrAWiO_3std4sync4mpsc8ReceiverNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockENtNtB1R_4time7InstantB36_EINtNtCs6i54tJFfzR_5alloc5boxed3BoxDNtNtB4_3any3AnyNtNtB4_6marker4SendEL_EEEEECsaniAKaGZcRb_9g1_mt_one+0x45>
+   361c6:	mov    rbx,QWORD PTR [rdi+0x8]
+   361ca:	mov    r14,rdi
+   361cd:	mov    rdi,rbx
+   361d0:	call   rax
+   361d2:	mov    rdi,r14
+   361d5:	cmp    QWORD PTR [r15+0x8],0x0
+   361da:	je     3619e <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_4cell10UnsafeCellINtNtB4_6option6OptionINtNtB4_6result6ResultTyINtNtNtCs9k3SxhrAWiO_3std4sync4mpsc8ReceiverNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockENtNtB1R_4time7InstantB36_EINtNtCs6i54tJFfzR_5alloc5boxed3BoxDNtNtB4_3any3AnyNtNtB4_6marker4SendEL_EEEEECsaniAKaGZcRb_9g1_mt_one+0xe>
+   361dc:	mov    rdi,QWORD PTR [rdi+0x8]
+   361e0:	pop    rbx
+   361e1:	pop    r14
+   361e3:	pop    r15
+   361e5:	jmp    QWORD PTR [rip+0x74f6d]        # ab158 <free@GLIBC_2.2.5>
+   361eb:	mov    r14,rax
+   361ee:	cmp    QWORD PTR [r15+0x8],0x0
+   361f3:	je     361fe <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_4cell10UnsafeCellINtNtB4_6option6OptionINtNtB4_6result6ResultTyINtNtNtCs9k3SxhrAWiO_3std4sync4mpsc8ReceiverNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockENtNtB1R_4time7InstantB36_EINtNtCs6i54tJFfzR_5alloc5boxed3BoxDNtNtB4_3any3AnyNtNtB4_6marker4SendEL_EEEEECsaniAKaGZcRb_9g1_mt_one+0x6e>
+   361f5:	mov    rdi,rbx
+   361f8:	call   QWORD PTR [rip+0x74f5a]        # ab158 <free@GLIBC_2.2.5>
+   361fe:	mov    rdi,r14
+   36201:	call   a31d0 <_Unwind_Resume@plt>
+   36206:	int3
+   36207:	int3
+   36208:	int3
+   36209:	int3
+   3620a:	int3
+   3620b:	int3
+   3620c:	int3
+   3620d:	int3
+   3620e:	int3
+   3620f:	int3
+
+0000000000036210 <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_6option6OptionNCNvMs1_NtNtNtCs9k3SxhrAWiO_3std4sync4mpmc4zeroINtB15_7ChannelNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockE4send0EECsaniAKaGZcRb_9g1_mt_one>:
+   36210:	push   rbx
+   36211:	cmp    QWORD PTR [rdi],0x0
+   36215:	je     3623c <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_6option6OptionNCNvMs1_NtNtNtCs9k3SxhrAWiO_3std4sync4mpmc4zeroINtB15_7ChannelNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockE4send0EECsaniAKaGZcRb_9g1_mt_one+0x2c>
+   36217:	mov    rbx,QWORD PTR [rdi+0x18]
+   3621b:	cmp    BYTE PTR [rdi+0x20],0x0
+   3621f:	jne    36233 <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_6option6OptionNCNvMs1_NtNtNtCs9k3SxhrAWiO_3std4sync4mpmc4zeroINtB15_7ChannelNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockE4send0EECsaniAKaGZcRb_9g1_mt_one+0x23>
+   36221:	mov    rax,QWORD PTR [rip+0x752a8]        # ab4d0 <_DYNAMIC+0x570>
+   36228:	mov    rax,QWORD PTR [rax]
+   3622b:	shl    rax,1
+   3622e:	test   rax,rax
+   36231:	jne    36259 <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_6option6OptionNCNvMs1_NtNtNtCs9k3SxhrAWiO_3std4sync4mpmc4zeroINtB15_7ChannelNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockE4send0EECsaniAKaGZcRb_9g1_mt_one+0x49>
+   36233:	xor    eax,eax
+   36235:	xchg   DWORD PTR [rbx],eax
+   36237:	cmp    eax,0x2
+   3623a:	je     3623e <_RINvNtCsgxBkk5gSRhY_4core3ptr9drop_glueINtNtB4_6option6OptionNCNvMs1_NtNtNtCs9k3SxhrAWiO_3std4sync4mpmc4zeroINtB15_7ChannelNtCsb9KG9XFq5YL_15malloc_bench_rs5BlockE4send0EECsaniAKaGZcRb_9g1_mt_one+0x2e>
+   3623c:	pop    rbx
+   3623d:	ret
+   3623e:	mov    edi,0xca
+   36243:	mov    rsi,rbx
+   36246:	mov    edx,0x81
+   3624b:	mov    ecx,0x1
+   36250:	xor    eax,eax
+   36252:	pop    rbx
+   36253:	jmp    QWORD PTR [rip+0x7527f]        # ab4d8 <syscall@GLIBC_2.2.5>

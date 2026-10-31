@@ -122,10 +122,10 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 145. **[A] G1-MT1 — larson/mstress at T=1 behind mimalloc; most of the larson gap was the harness.** (Filed 2026-10-30, `docs/perf/G1_MT1_HARNESS_SHIM.md`.)
 
    > **Current state**
-   > - **Status:** open (харнесс исправлен: `alloc`/`dealloc` за `#[inline(never)]`-прокладкой, как `__rust_alloc`; runtime не менялся).
-   > - **Current:** до исправления тело `alloc` sefer встраивалось в цикл бенча, `alloc_block` переставал инлайниться, и возврат `Block` через sret давал провал store-forward на каждом alloc (2.07 M на 2 M операций; у mimalloc 10.5 k). С прокладкой mi/sefer: larson T=1 1.343 → 1.069 (Linux), 1.444 → 1.221 (Windows); mstress T=1 1.077 → 1.140 (Linux), 1.337 → 1.268 (Windows). При T ≥ 2 sefer впереди на обеих ОС.
-   > - **Next trigger:** профиль mstress T=1 под прокладкой (cycles/Ir/промахи против mimalloc) → механизм → лечение без ослабления проверок; приём — тот же A/B (`scripts/g1_mt1_shim_report.mjs`) + парный bench:table.
-   > - **Evidence:** `docs/perf/G1_MT1_HARNESS_SHIM.md`, `docs/perf/G1_MT1_HARNESS_SHIM_summary.csv`, `docs/perf/_raw_g1_mt1_*.log`, `scripts/g1_mt1_shim_report.mjs`.
+   > - **Status:** open (харнесс исправлен в G1-MT1; R123 — первое лечение runtime, влито как `perf(runtime)`).
+   > - **Current:** до исправления харнесса тело `alloc` sefer встраивалось в цикл бенча, `alloc_block` переставал инлайниться, и возврат `Block` через sret давал провал store-forward на каждом alloc (2.07 M на 2 M операций; у mimalloc 10.5 k). С прокладкой mi/sefer: larson T=1 1.343 → 1.069 (Linux), 1.444 → 1.221 (Windows); mstress T=1 1.077 → 1.140 (Linux), 1.337 → 1.268 (Windows). Профиль mstress T=1: весь разрыв во free (≈60 Ir против ≈21). R123 (`docs/perf/G1_R123_FREE_LANE.md`): кадр полосы free без сохранений и перестановок, тег LIVE с диапазоном вместо проверки класса, одна проверка kind+payload и граница по гранулам. Ir: mstress −8.2 %, larson −6.4 %. Путь приёма free: 62 → 49 инструкций (Linux), 72 → 55 (Win64). Парный bench:table GO в обоих наборах (gm −9.6 %, 0 проигрышей). malloc_macro sefer/mi при T=1: larson 0.936 → 0.995, mstress 0.833 → 0.880 (Windows).
+   > - **Next trigger:** Win64 ещё сохраняет `rsi`/`rdi` на пути приёма free (9 живых значений при 7 volatile-регистрах); затем профиль alloc mstress T=1. Приём — правило величины на парном bench:table + MT-контроль.
+   > - **Evidence:** `docs/perf/G1_MT1_HARNESS_SHIM.md`, `docs/perf/G1_MT1_HARNESS_SHIM_summary.csv`, `docs/perf/_raw_g1_mt1_*.log`, `scripts/g1_mt1_shim_report.mjs`, `docs/perf/G1_R123_FREE_LANE.md`, `docs/perf/G1_R123_FREE_LANE_summary.csv`, `docs/perf/G1_R123_FREE_LANE_mt_summary.csv`, `docs/perf/r123/`.
 
 138. **[A] J1-CH — J1 churn kernels share one ring: the J1 churn losses are a cross-class regime, and sefer's per-op cost is flat.** (Filed 2026-10-30, `docs/perf/J1_CROSS_CLASS_ATTRIBUTION.md`.)
 
