@@ -64,6 +64,7 @@ pub(crate) use segment::remote_bitmap;
 // group module and are re-exported here (at their original
 // visibility/cfg/doc-hidden parity) so every one stays reachable at its
 // existing `alloc_core::<name>` module path.
+pub(crate) use segment::bitmap::live_tag;
 pub(crate) use segment::bitmap::state_byte;
 #[cfg_attr(
     not(any(feature = "alloc-stats", feature = "internals")),

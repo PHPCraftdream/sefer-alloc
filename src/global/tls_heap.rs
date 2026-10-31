@@ -76,15 +76,18 @@ use crate::registry::{HeapCore, HeapRegistry};
 /// this thread's [`LeaseReleaseGuard`] starts tearing down (before the slot is
 /// released). It is a "poison" marker, not a heap pointer: it is NEVER
 /// dereferenced, only compared against in the four resolver paths below.
-/// It uses `usize::MAX` so it is:
+/// It uses address `1` so it is:
 /// - distinct from `null` (the "never bound yet" state), and
-/// - distinct from any real `*mut HeapCore` (a live allocation can never sit
-///   at the top of the address space — the registry's slot array and every
-///   OS-backed segment are far below `usize::MAX`).
+/// - distinct from any real `*mut HeapCore` (a `HeapCore` is aligned to more
+///   than one byte and never sits in the null page).
+///
+/// Both sentinels sit below `2`, so one unsigned compare (`p.addr() > 1`)
+/// selects the hot "real pointer" arm.
 ///
 /// On thread teardown, the guard stamps `LOCAL` with `TORN` before releasing
 /// the heap lease. No TLS destructor-order assumption is needed.
-const TORN: *mut HeapCore = usize::MAX as *mut HeapCore;
+const TORN: *mut HeapCore = core::ptr::without_provenance_mut(1);
+const _: () = assert!(core::mem::align_of::<HeapCore>() > 1);
 
 /// R6-T07: how many bind attempts a cached "registry saturated" verdict may
 /// block before the claim is retried unconditionally (the version check
@@ -313,17 +316,16 @@ pub enum CurrentHeap {
 pub fn current_for_alloc() -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
         // Э2 (task #145) — TWO SENTINELS, ONE BRANCH on the process's hottest
-        // path. `null = 0` and `TORN = usize::MAX` are the range ends; every
-        // real `*mut HeapCore` lies strictly between, so one unsigned compare
+        // path. `null = 0` and `TORN = 1` are the two lowest addresses; every
+        // real `*mut HeapCore` lies above them, so one unsigned compare
         // catches the hot "real pointer" case:
-        //   real p (1..=MAX-1): p.addr()-1 ∈ 0..=MAX-2 → `< MAX-1` → Own (fast)
-        //   null (0):           wraps to MAX → NOT `< MAX-1` → cold
-        //   TORN (MAX):         MAX-1        → NOT `< MAX-1` → cold
+        //   real p (> 1): Own (fast)
+        //   null (0), TORN (1): cold
         // Semantics are byte-identical to the previous TORN-then-null match
         // (same #129 mapping): the cold arm below splits null → bind, TORN →
         // Fallback. The `dbg_teardown_then_resolve_is_fallback` #129 hook
         // relies on TORN → Fallback and is preserved.
-        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeap::Own(p),
+        Ok(p) if p.addr() > TORN.addr() => CurrentHeap::Own(p),
         // First call on this thread: bind a slot. bind_slow_tagged returns
         // either an Own pointer or, on registry exhaustion, the fallback marker.
         Ok(p) if p.is_null() => bind_slow_tagged(),
@@ -378,11 +380,11 @@ pub(crate) enum CurrentHeapForDealloc {
 pub(crate) fn current_for_dealloc() -> CurrentHeapForDealloc {
     match LOCAL.try_with(|c| c.get()) {
         // Same Э2 (task #145) one-branch collapse as `current_for_alloc`:
-        // real p → `< MAX-1` → Own (fast); null (0) and TORN (MAX) both fall
+        // real p → `> 1` → Own (fast); null (0) and TORN (1) both fall
         // to the cold arm below, where THIS resolver (unlike
         // `current_for_alloc`) maps BOTH to `ForeignNoBind` — neither binds
         // a slot nor resolves the fallback pointer.
-        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeapForDealloc::Own(p),
+        Ok(p) if p.addr() > TORN.addr() => CurrentHeapForDealloc::Own(p),
         // null (first call ever, on this thread) OR TORN (slot already
         // recycled): both are "no live heap of our own to consult" — route
         // as foreign, no bind, no fallback lock.
@@ -411,10 +413,10 @@ pub(crate) fn current_for_alloc_with_config(
 ) -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
         // See `current_for_alloc` — same Э2 (task #145) one-branch collapse:
-        // real p → `< MAX-1` → Own (fast); null (0) → cold bind; TORN (MAX) →
+        // real p → `> 1` → Own (fast); null (0) → cold bind; TORN (1) →
         // cold Fallback (must NOT re-arm the recycled guard). Byte-identical
         // #129 mapping.
-        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeap::Own(p),
+        Ok(p) if p.addr() > TORN.addr() => CurrentHeap::Own(p),
         Ok(p) if p.is_null() => bind_slow_tagged_with_config(*config),
         Ok(_) => CurrentHeap::Fallback, // p == TORN
         Err(_) => CurrentHeap::Fallback,
@@ -445,12 +447,12 @@ pub(crate) fn current_for_alloc_with_config(
 pub fn current_for_trim() -> Option<*mut HeapCore> {
     match LOCAL.try_with(|c| c.get()) {
         // Same Э2 (task #145) one-branch collapse as `current_for_alloc`/
-        // `current_for_dealloc`: real p → `< MAX-1` → Some (fast); null (0)
-        // and TORN (MAX) both fall to the cold arm below, where THIS
+        // `current_for_dealloc`: real p → `> 1` → Some (fast); null (0)
+        // and TORN (1) both fall to the cold arm below, where THIS
         // resolver (like `current_for_dealloc`, unlike `current_for_alloc`)
         // never binds and never touches the fallback — it maps every
         // no-live-heap case to `None`.
-        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => Some(p),
+        Ok(p) if p.addr() > TORN.addr() => Some(p),
         // null (never bound) or TORN (slot already recycled): nothing to
         // trim, and nothing should be claimed just to check.
         Ok(_) => None,
