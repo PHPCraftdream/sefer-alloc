@@ -27,7 +27,8 @@ impl HeapCore {
         let (size, align) = (layout.size(), layout.align());
         // `size - 1` wraps for size 0, which the chain classifies as before.
         let seed = size.wrapping_sub(1) >> MIN_BLOCK_SHIFT;
-        if align > MIN_BLOCK || seed >= SIZE2CLASS.len() {
+        // The last bucket is past SMALL_MAX: `class_for` rejects it.
+        if align > MIN_BLOCK || seed >= SIZE2CLASS.len() - 1 {
             return self.dealloc_chain(ptr, layout);
         }
         let c = SIZE2CLASS[seed] as usize;
@@ -57,6 +58,11 @@ impl HeapCore {
             return self.dealloc_chain(ptr, layout);
         }
         // Refinement: the lane accepts only what the chain's guard accepts.
+        debug_assert_eq!(
+            crate::alloc_core::size_classes::SizeClasses::class_for(size.max(MIN_BLOCK), align),
+            Some(c),
+            "AS-1 lane class differs from the chain's"
+        );
         debug_assert!(
             matches!(
                 super::dealloc_own_base::small_free_guard(root, block, c, layout),
