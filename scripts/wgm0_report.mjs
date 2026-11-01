@@ -43,10 +43,12 @@ for (const [label, desc] of LABELS) {
     const end = ARMS.map((a) => mib(med(by[a].map((r) => r.end_rss)))).join(' / ');
     md.push(`| ${s} | ${m.sefer.toFixed(0)} | ${m.sefer_pool.toFixed(0)} | ${m.mi.toFixed(0)} | ${ratio(m.sefer, m.mi)} | ${ratio(m.sefer_pool, m.mi)} | ${share} | ${rel('sefer').join('..')} | ${rel('sefer_pool').join('..')} | ${end} |`);
     const key = (r) => `${r.blk}|${r.pos}`, mi = new Map(by.mi.map((r) => [key(r), tot(r)]));
-    pairs.push([s, ['sefer', 'sefer_pool'].map((a) => ratio(med(by[a].map((r) => tot(r) / mi.get(key(r)))), 1))]);
+    const pm = ['sefer', 'sefer_pool'].map((a) => med(by[a].map((r) => tot(r) / mi.get(key(r)))));
+    const pshare = pm[0] > 1 ? ratio(pm[0] - pm[1], pm[0] - 1) : 'n/a';
+    pairs.push([s, [ratio(pm[0], 1), ratio(pm[1], 1), pshare]]);
   }
-  md.push('', `Paired median of arm/mi (same block and order, n = 12 pairs per cell), ${label}:`, '', '| scenario | sefer/mi | sefer_pool/mi |', '|---|---|---|');
-  for (const [s, v] of pairs) md.push(`| ${s} | ${v[0]} | ${v[1]} |`);
+  md.push('', `Paired median of arm/mi (same block and order, n = 12 pairs per cell), ${label}:`, '', '| scenario | sefer/mi | sefer_pool/mi | (sefer/mi − sefer_pool/mi) / (sefer/mi − 1) |', '|---|---|---|---|');
+  for (const [s, v] of pairs) md.push(`| ${s} | ${v[0]} | ${v[1]} | ${v[2]} |`);
   md.push('');
 }
 assert.deepEqual(oracleFails, [], 'path-activation oracle failed');
