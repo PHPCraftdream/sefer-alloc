@@ -630,7 +630,7 @@ impl HeapCore {
     pub(super) fn free_magazine_full_fast(&mut self, c: usize, root: *mut u8, block: *mut u8) {
         let cnt = self.tcache.classes[c].count as usize;
         let off = block.addr().wrapping_sub(root.addr()) as u32;
-        self.free_magazine_full(c, cnt, off, root, block);
+        self.free_magazine_park(c, cnt, off, root, block);
     }
 
     #[cold]
