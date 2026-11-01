@@ -32,6 +32,8 @@
 //!   replacements, free all.
 //! - `wild`: 50 000 slots, 1 000 000 ops: replace / alloc / free / realloc /
 //!   LIFO bursts, heavy-tailed sizes (8 B..4 MiB).
+//! - `burst` (WILD-1): only the LIFO bursts of `wild` (1..1000 blocks of 8..128 B,
+//!   freed in reverse), 6 000 of them at scale 1, on a clean heap.
 //! - `phase`: `wild` whose size distribution switches every 100 000 ops
 //!   between tiny, medium and big.
 //!
@@ -342,28 +344,32 @@ fn wild(run: &mut Run, r: &mut Rng, scale: f64, phased: bool) {
                     v[k] = (run.realloc(v[k].0, v[k].1, s), s);
                 }
             }
-            _ => {
-                let n = 1 + r.below(1000);
-                let mut b = Vec::with_capacity(n);
-                let t0 = run.prof.is_some().then(Instant::now);
-                for _ in 0..n {
-                    let s = r.log_size(8, 128);
-                    b.push((run.alloc(s), s));
-                }
-                let t1 = run.prof.is_some().then(Instant::now);
-                while let Some((p, s)) = b.pop() {
-                    run.free(p, s);
-                }
-                if let (Some(f), Some(t0), Some(t1)) = (run.prof.as_mut(), t0, t1) {
-                    f.burst_alloc.0 += (t1 - t0).as_nanos() as u64;
-                    f.burst_alloc.1 += n as u64;
-                    f.burst_free.0 += t1.elapsed().as_nanos() as u64;
-                    f.burst_free.1 += n as u64;
-                }
-            }
+            _ => burst(run, r),
         }
     }
     free_all(run, v.into_iter().filter(|b| !b.0.is_null()).collect());
+}
+
+/// One LIFO burst of `wild`: 1..1000 blocks of 8..128 B (log-uniform), allocated, then
+/// freed in reverse. `WJ_PROF` times the two phases as units.
+fn burst(run: &mut Run, r: &mut Rng) {
+    let n = 1 + r.below(1000);
+    let mut b = Vec::with_capacity(n);
+    let t0 = run.prof.is_some().then(Instant::now);
+    for _ in 0..n {
+        let s = r.log_size(8, 128);
+        b.push((run.alloc(s), s));
+    }
+    let t1 = run.prof.is_some().then(Instant::now);
+    while let Some((p, s)) = b.pop() {
+        run.free(p, s);
+    }
+    if let (Some(f), Some(t0), Some(t1)) = (run.prof.as_mut(), t0, t1) {
+        f.burst_alloc.0 += (t1 - t0).as_nanos() as u64;
+        f.burst_alloc.1 += n as u64;
+        f.burst_free.0 += t1.elapsed().as_nanos() as u64;
+        f.burst_free.1 += n as u64;
+    }
 }
 
 fn main() {
@@ -433,6 +439,11 @@ fn main() {
                 v[k] = (run.alloc(s), s);
             }
             free_all(&mut run, v);
+        }
+        "burst" => {
+            for _ in 0..(6_000.0 * scale) as usize {
+                burst(&mut run, &mut r);
+            }
         }
         "wild" => wild(&mut run, &mut r, scale, false),
         "phase" => wild(&mut run, &mut r, scale, true),
