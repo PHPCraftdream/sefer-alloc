@@ -1,0 +1,6 @@
+base b27968823b4d66d6770bd32abd980db16df25a11
+x ade284e051d9e631d11c3c8adee114434125849d
+e82bf1d29bc34cdb30de5802e56ef242bd3562f6c5f78d3ac40b1309926d2517  judge_base.exe
+e82bf1d29bc34cdb30de5802e56ef242bd3562f6c5f78d3ac40b1309926d2517  judge_base2.exe
+9938ed91cacb010d9ef2db4b57bb615e8182c691bc9d091939f2606d780de17b  judge_x.exe
+final 5416a9e7a9d367286b06404664846a5c585cbb78 (confirmation binary; the first-version binary measured above is ade284e0, whose slab stride was in bytes)  0f0c6044fe20538e49484d89d0c24c17b0c614376b42a079fc1804c1fb9d0052  judge_final.exe
