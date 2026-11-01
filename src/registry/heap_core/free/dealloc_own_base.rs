@@ -528,7 +528,7 @@ impl HeapCore {
                     // B1-c: magazine full (depot park, R1-01 swap-top, overflow
                     // half-flush) runs out of line, so the push fast path above
                     // keeps no callee-saved registers. Same order, same guards.
-                    self.free_magazine_full(c, cnt, off, root, block);
+                    self.free_magazine_park(c, cnt, off, root, block);
                     return;
                 }
             }
@@ -550,6 +550,74 @@ impl HeapCore {
 
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 impl HeapCore {
+    /// WB-3: the full-magazine dispatcher. Parks the full magazine into the
+    /// floor while it has room, or into the overflow ring when
+    /// [`DepotOverflow::park_simple`](crate::registry::heap_core::state::depot_overflow::DepotOverflow::park_simple)
+    /// takes the steady case — the same writes the generic
+    /// `depot_park` / `park_overflow` / `depot_tick` chain makes there, with no
+    /// call in between — and then starts the next magazine with `block`.
+    /// Every other case goes to the unchanged [`Self::free_magazine_full`].
+    #[cold]
+    #[inline(never)]
+    fn free_magazine_park(
+        &mut self,
+        c: usize,
+        cnt: usize,
+        off: u32,
+        root: *mut u8,
+        block: *mut u8,
+    ) {
+        use crate::registry::heap_core::state::depot::{DEPOT_CLASSES, DEPOT_K};
+        use crate::registry::heap_core::state::tcache::TCACHE_CAP;
+        if cnt == TCACHE_CAP && c < DEPOT_CLASSES && DEPOT_K[c] != 0 {
+            #[cfg(feature = "alloc-decommit")]
+            let budget = self.depot_budget as usize;
+            if let Some(depot) = self.depot.as_deref_mut() {
+                let class = &mut self.tcache.classes[c];
+                // `depot_may_park`: the floor has room or the overflow is open.
+                let parked = (class.parked as u16) < class.limit
+                    && if class.parked < DEPOT_K[c] {
+                        // `depot_park`'s floor arm.
+                        let ok = depot.depot_park(c, &mut class.parked, &class.slots);
+                        #[cfg(feature = "alloc-decommit")]
+                        {
+                            class.marks |= crate::registry::heap_core::state::tcache::MARK_FLOOR;
+                        }
+                        ok
+                    } else {
+                        // `park_overflow`'s steady case (the floor is full).
+                        #[cfg(feature = "alloc-decommit")]
+                        {
+                            let ok = depot.ovf.park_simple(c, &class.slots, budget);
+                            if ok {
+                                class.ovf = 1;
+                            }
+                            ok
+                        }
+                        #[cfg(not(feature = "alloc-decommit"))]
+                        {
+                            false
+                        }
+                    };
+                if parked {
+                    #[cfg(feature = "virgin-zero-skip")]
+                    {
+                        class.virgin_mask = 0;
+                    }
+                    class.slots[0] = block;
+                    class.count = 1;
+                    SegmentMeta::new(root).state_byte().write(
+                        off,
+                        c,
+                        crate::alloc_core::state_byte::StateByte::MAG,
+                    );
+                    return;
+                }
+            }
+        }
+        self.free_magazine_full(c, cnt, off, root, block);
+    }
+
     /// The full-magazine tail of [`dealloc_own_thread_with_base`](Self::dealloc_own_thread_with_base)
     /// (B1-c): `small_free_guard` already accepted `block` (class `c`, offset
     /// `off` in the segment at `root`) and the push found `cnt == FREE_PARK_CAP[c]`.
@@ -562,7 +630,7 @@ impl HeapCore {
     pub(super) fn free_magazine_full_fast(&mut self, c: usize, root: *mut u8, block: *mut u8) {
         let cnt = self.tcache.classes[c].count as usize;
         let off = block.addr().wrapping_sub(root.addr()) as u32;
-        self.free_magazine_full(c, cnt, off, root, block);
+        self.free_magazine_park(c, cnt, off, root, block);
     }
 
     #[cold]

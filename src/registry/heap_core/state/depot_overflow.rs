@@ -20,6 +20,8 @@ const REC: usize = core::mem::size_of::<Mag>();
 pub(crate) const EPOCH_MIN: u32 = 256;
 /// Decay flushes at most this many records per cold event.
 pub(crate) const DECAY_WORK: u32 = 4;
+/// Overflow reloads per bounded remote-ingress check.
+pub(crate) const INGRESS_PERIOD: u32 = 8;
 
 /// TEST-ONLY fault hook: the next `n` overflow reservations fail as if the
 /// OS refused them (the commit side uses `aligned-vmem`'s own hook).
@@ -178,6 +180,22 @@ impl DepotOverflow {
     pub(crate) fn disarm_all(&mut self) {
         debug_assert_eq!(self.bytes, 0, "only an empty overflow disarms");
         self.armed = 0;
+    }
+
+    /// `(events, epoch_len, debt_mask, starved, reloads_since_ingress,
+    /// low[c], parked_in_epoch)` — the decay / ingress / latch state, for the
+    /// WB-3 model test.
+    #[cfg(feature = "internals")]
+    pub(crate) fn epoch_state(&self, c: usize) -> (u32, u32, u32, u32, u32, u16, u32) {
+        (
+            self.events,
+            self.epoch_len,
+            self.debt_mask,
+            self.starved,
+            self.reloads_since_ingress,
+            self.low[c],
+            self.parked_in_epoch,
+        )
     }
 
     /// Bytes of blocks currently parked in the overflow.
@@ -351,6 +369,90 @@ impl DepotOverflow {
         self.stats.reloads += 1;
     }
 
+    /// WB-3 fast lane: [`Self::park`] of class `c`'s newest record followed by
+    /// [`Self::tick`], for the steady case only — the class already has a
+    /// record (no arming), the ring keeps room after this one (no latch), the
+    /// budget holds, the record is reserved and committed, and the tick finds
+    /// no decay work due. Then it performs exactly their writes and returns
+    /// `true`; otherwise it changes nothing and returns `false`, and the
+    /// caller takes the generic path.
+    #[inline(always)]
+    pub(crate) fn park_simple(&mut self, c: usize, mag: &Mag, budget: usize) -> bool {
+        let n = self.len[c] as usize;
+        let mb = mag_bytes(c);
+        if n == 0
+            || n + 1 >= self.cap[c] as usize
+            || self.bytes + mb > budget
+            || self.base.is_null()
+            || self.debt_mask != 0
+            || self.events + 1 >= self.epoch_len
+        {
+            return false;
+        }
+        let idx = self.slot(c, n);
+        if (idx + 1) * REC > self.committed[c] as usize {
+            return false;
+        }
+        // SAFETY: as in `park` — `idx < cap[c]` (`n + 1 < cap`), the record is
+        // committed (checked just above) inside the live reservation, and
+        // records are 128 B in page-aligned regions. Only the owner reaches
+        // this control.
+        #[allow(unsafe_code)]
+        unsafe {
+            self.record(c, idx).write(*mag);
+        }
+        self.bytes += mb;
+        self.len[c] += 1;
+        self.parked_in_epoch |= 1 << c;
+        self.stats.parks += 1;
+        // `tick`: `bytes > 0` now and no decay work is due (checked above).
+        self.events += 1;
+        true
+    }
+
+    /// WB-3 fast lane: [`Self::reload`] of class `c`'s newest record followed
+    /// by [`Self::ingress_due`], [`Self::take_unstarved`] and [`Self::tick`],
+    /// for the steady case only — a record exists, no decay debt, no latched
+    /// class, the ingress check is not due, and the tick finds no decay work.
+    /// Then it performs exactly their writes and returns `Some(more)`
+    /// (`more`: records remain); otherwise it changes nothing and returns
+    /// `None`.
+    #[inline(always)]
+    pub(crate) fn reload_simple(&mut self, c: usize, out: &mut Mag) -> Option<bool> {
+        let n = self.len[c] as usize;
+        if n == 0
+            || self.debt_mask != 0
+            || self.starved != 0
+            || self.reloads_since_ingress + 1 >= INGRESS_PERIOD
+        {
+            return None;
+        }
+        let bytes = self.bytes - mag_bytes(c);
+        if bytes != 0 && self.events + 1 >= self.epoch_len {
+            return None;
+        }
+        debug_assert_eq!(self.debt[c], 0, "debt_mask bit c <=> debt[c] != 0");
+        let idx = self.slot(c, n - 1);
+        // SAFETY: as in `reload` — `n > 0` records are live in class `c`'s
+        // ring, so `idx` was written by `park` (committed, aligned, inside the
+        // reservation).
+        #[allow(unsafe_code)]
+        unsafe {
+            *out = self.record(c, idx).read();
+        }
+        self.bytes = bytes;
+        self.len[c] = (n - 1) as u16;
+        self.low[c] = self.low[c].min(self.len[c]);
+        self.stats.reloads += 1;
+        // `ingress_due`: counted, not due (checked above).
+        self.reloads_since_ingress += 1;
+        // `tick`: counts only while bytes remain parked; not due (checked).
+        if bytes != 0 {
+            self.events += 1;
+        }
+        Some(n > 1)
+    }
+
     /// Move class `c`'s oldest overflow record into `out` (decay); `n` is the
     /// class's current overflow length (`> 0`).
     pub(crate) fn pop_oldest(&mut self, c: usize, n: usize, out: &mut Mag) {
@@ -382,7 +484,7 @@ impl DepotOverflow {
     /// runs the bounded remote-ingress check it otherwise skips.
     pub(crate) fn ingress_due(&mut self) -> bool {
         self.reloads_since_ingress += 1;
-        if self.reloads_since_ingress >= 8 {
+        if self.reloads_since_ingress >= INGRESS_PERIOD {
             self.reloads_since_ingress = 0;
             self.stats.ingress_checks += 1;
             return true;
