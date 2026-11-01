@@ -35,12 +35,23 @@
 | growmix | 24 (x5) | 1.029 | 0.982–1.078 | 1.009 | 0.952–1.070 | C2 | ok | 223 | 240 |
 | large | 24 (x5) | 0.987 | 0.953–1.024 | 1.002 | 0.957–1.048 | C2 | ok | 14 | 14 |
 
+### Judge, Linux (WSL2), layout control (Amendment 3): aligned-code builds, same design as the confirmation campaign (a control, not a gate)
+
+| scenario | blocks | x / base (exp mean d) | 95 % CI | A/A base2 / base | A/A 95 % CI | rule | verdict | min base ms | min x ms |
+|---|---:|---:|---:|---:|---:|---|---|---:|---:|
+| wild | 24 (x5) | 0.964 | 0.936–0.993 | 0.990 | 0.975–1.006 | control(T2) | PASS | 200 | 188 |
+| phase | 24 (x5) | 0.981 | 0.958–1.004 | 0.982 | 0.953–1.011 | control(C2) | ok | 681 | 653 |
+| burst | 24 (x5) | 1.002 | 0.984–1.020 | 1.001 | 0.981–1.021 | control(C2) | ok | 73 | 73 |
+| regrow | 24 (x5) | 0.994 | 0.946–1.044 | 0.995 | 0.957–1.034 | control(C2) | HOLD | 151 | 129 |
+| growmix | 24 (x5) | 1.017 | 0.965–1.071 | 0.997 | 0.945–1.053 | control(C2) | ok | 229 | 247 |
+| large | 24 (x5) | 1.022 | 0.957–1.091 | 1.030 | 0.966–1.099 | control(C2) | ok | 14 | 13 |
+
 ### Judge, Windows, pilot at HIGH priority (Amendment 2: wild and phase only, 12 blocks, minimum of 3; a noise check, not a gate)
 
 | scenario | blocks | x / base (exp mean d) | 95 % CI | A/A base2 / base | A/A 95 % CI | rule | verdict | min base ms | min x ms |
 |---|---:|---:|---:|---:|---:|---|---|---:|---:|
-| wild | 12 (x3) | 0.894 | 0.789–1.013 | 0.916 | 0.790–1.062 | T2 | FAIL | 216 | 212 |
-| phase | 12 (x3) | 1.012 | 0.947–1.082 | 0.961 | 0.878–1.053 | C2 | ok | 805 | 768 |
+| wild | 12 (x3) | 0.894 | 0.789–1.013 | 0.916 | 0.790–1.062 | control(T2) | FAIL | 216 | 212 |
+| phase | 12 (x3) | 1.012 | 0.947–1.082 | 0.961 | 0.878–1.053 | control(C2) | ok | 805 | 768 |
 
 ### bench:table paired set s1 (order base, x, x, base; aligned code)
 
@@ -122,13 +133,21 @@ T3 compares the frees accepted by the second chance in `wild` with the memo exit
 | burst | 100684704 | 100686830 | 0.00 % (2126 / 100684704) | -0.3..0.3 % | ok |
 | regrow | 139223435 | 137260245 | -1.41 % (-1963190 / 139223435) | ..Infinity % | ok |
 
-### Linux (WSL2) hardware counters, perf stat, user mode, median of 5 runs (supporting)
+### Linux (WSL2) hardware counters, perf stat, user mode, median of 5 runs, default-layout builds (supporting)
 
 | scenario | cycles base (M) | cycles x (M) | x / base | instructions base (M) | instructions x (M) | x / base | L1D misses base (M) | L1D misses x (M) | x / base |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | wild | 741.7 | 719.3 | 0.970 | 1691.0 | 1679.4 | 0.993 | 19.5 | 17.9 | 0.918 |
 | phase | 2522.0 | 2587.5 | 1.026 | 6116.2 | 6106.6 | 0.998 | 63.0 | 63.1 | 1.001 |
 | burst | 299.1 | 318.5 | 1.065 | 985.4 | 985.4 | 1.000 | 2.9 | 2.9 | 0.999 |
+
+### Linux (WSL2) hardware counters, perf stat, user mode, median of 5 runs, aligned-code builds (Amendment 3 layout control)
+
+| scenario | cycles base (M) | cycles x (M) | x / base | instructions base (M) | instructions x (M) | x / base | L1D misses base (M) | L1D misses x (M) | x / base |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| wild | 814.8 | 842.1 | 1.033 | 1691.0 | 1679.3 | 0.993 | 18.2 | 18.3 | 1.005 |
+| phase | 2736.4 | 2646.1 | 0.967 | 6116.2 | 6105.4 | 0.998 | 63.6 | 63.5 | 0.998 |
+| burst | 314.1 | 315.7 | 1.005 | 985.4 | 985.4 | 1.000 | 3.1 | 3.1 | 0.997 |
 
 ### Where the instructions go (callgrind, Linux, wild at scale 0.3, sefer arm)
 

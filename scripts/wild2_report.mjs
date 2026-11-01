@@ -41,6 +41,7 @@ const judgeVerdict = (platform, sc, D, A) => {
     rule = platform === 'windows' ? 'C1' : 'C2';
     verdict = !readable ? 'UNREADABLE (A/A excludes 1)' : mean > 1.03 ? 'KILL' : (hi > 1.03 && mean <= 1.0 ? 'HOLD' : 'ok');
   }
+  if (platform.endsWith('-aligned') || platform.endsWith('-pilot')) rule = `control(${rule})`;
   return { readable, rule, verdict };
 };
 
@@ -71,6 +72,7 @@ const judge = (title, campaign, platform, file, scen = SCEN) => {
 judge('Judge, Windows, campaign 1 (preregistered design: 12 blocks, minimum of 3 repeats)', 'c1', 'windows', 'win_raw.jsonl.gz');
 if (fs.existsSync(dir + 'linux_raw.jsonl.gz')) judge('Judge, Linux (WSL2), campaign 1 (wild/phase/large/burst at scale 1, GiB scenarios at scale 0.5)', 'c1', 'linux', 'linux_raw.jsonl.gz');
 if (fs.existsSync(dir + 'linux2_raw.jsonl.gz')) judge('Judge, Linux (WSL2), confirmation campaign (Amendment 2: 24 blocks, minimum of 5 repeats; wild/phase/burst/large at scale 1, regrow/growmix at 0.5)', 'c2', 'linux', 'linux2_raw.jsonl.gz', ['wild', 'phase', 'burst', 'regrow', 'growmix', 'large']);
+if (fs.existsSync(dir + 'linux3_raw.jsonl.gz')) judge('Judge, Linux (WSL2), layout control (Amendment 3): aligned-code builds, same design as the confirmation campaign (a control, not a gate)', 'c3', 'linux-aligned', 'linux3_raw.jsonl.gz', ['wild', 'phase', 'burst', 'regrow', 'growmix', 'large']);
 if (fs.existsSync(dir + 'win_pilot_high_raw.jsonl.gz')) judge('Judge, Windows, pilot at HIGH priority (Amendment 2: wild and phase only, 12 blocks, minimum of 3; a noise check, not a gate)', 'pilot', 'windows-pilot', 'win_pilot_high_raw.jsonl.gz', ['wild', 'phase']);
 if (fs.existsSync(dir + 'win2_raw.jsonl.gz')) judge('Judge, Windows, confirmation campaign (Amendment 1: more blocks and repeats, machine otherwise idle)', 'c2', 'windows', 'win2_raw.jsonl.gz');
 
@@ -150,16 +152,16 @@ if (fs.existsSync(dir + 'callgrind_totals.txt')) {
 }
 
 
-// ---- Linux hardware counters (perf stat, user mode), medians of 5 runs; supporting, not a gate ----
-if (fs.existsSync(dir + 'linux_tools/perf_stat_raw.txt')) {
+const perfStat = (file, title) => {
+  if (!fs.existsSync(dir + file)) return;
   const cells = {};
-  for (const l of fs.readFileSync(dir + 'linux_tools/perf_stat_raw.txt', 'utf8').split(nl)) {
+  for (const l of fs.readFileSync(dir + file, 'utf8').split(nl)) {
     const m = l.match(/^run(\d+) (\w+) (\w+) (\d+),,cycles:u.*? (\d+),,instructions:u.*? (\d+),,L1-dcache-load-misses/);
     if (!m) continue;
     const c = (cells[m[2] + ' ' + m[3]] ??= { cyc: [], ins: [], l1: [] });
     c.cyc.push(+m[4]); c.ins.push(+m[5]); c.l1.push(+m[6]);
   }
-  md.push('### Linux (WSL2) hardware counters, perf stat, user mode, median of 5 runs (supporting)', '', '| scenario | cycles base (M) | cycles x (M) | x / base | instructions base (M) | instructions x (M) | x / base | L1D misses base (M) | L1D misses x (M) | x / base |', '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|');
+  md.push(title, '', '| scenario | cycles base (M) | cycles x (M) | x / base | instructions base (M) | instructions x (M) | x / base | L1D misses base (M) | L1D misses x (M) | x / base |', '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|');
   for (const sc of ['wild', 'phase', 'burst']) {
     const b = cells[sc + ' base'], x = cells[sc + ' x'];
     assert.ok(b && x && b.cyc.length === 5 && x.cyc.length === 5, sc + ': 5 runs per arm');
@@ -168,7 +170,9 @@ if (fs.existsSync(dir + 'linux_tools/perf_stat_raw.txt')) {
     md.push('| ' + sc + ' | ' + c0.toFixed(1) + ' | ' + c1.toFixed(1) + ' | ' + cr.toFixed(3) + ' | ' + i0.toFixed(1) + ' | ' + i1.toFixed(1) + ' | ' + ir.toFixed(3) + ' | ' + l0.toFixed(1) + ' | ' + l1.toFixed(1) + ' | ' + lr.toFixed(3) + ' |');
   }
   md.push('');
-}
+};
+perfStat('linux_tools/perf_stat_raw.txt', '### Linux (WSL2) hardware counters, perf stat, user mode, median of 5 runs, default-layout builds (supporting)');
+perfStat('linux_tools/perf_stat_aligned_raw.txt', '### Linux (WSL2) hardware counters, perf stat, user mode, median of 5 runs, aligned-code builds (Amendment 3 layout control)');
 
 // ---- callgrind per function: where the saved instructions come from (wild, scale 0.3, Linux) ----
 if (fs.existsSync(dir + 'linux_tools/cgfn_base.txt')) {

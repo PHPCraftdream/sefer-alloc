@@ -21,8 +21,14 @@ c2,linux,burst,24,1.012,0.994,1.030,0.995,0.981,1.010,true,C2,ok
 c2,linux,regrow,24,1.003,0.948,1.061,0.973,0.930,1.019,true,C2,ok
 c2,linux,growmix,24,1.029,0.982,1.078,1.009,0.952,1.070,true,C2,ok
 c2,linux,large,24,0.987,0.953,1.024,1.002,0.957,1.048,true,C2,ok
-pilot,windows-pilot,wild,12,0.894,0.789,1.013,0.916,0.790,1.062,true,T2,FAIL
-pilot,windows-pilot,phase,12,1.012,0.947,1.082,0.961,0.878,1.053,true,C2,ok
+c3,linux-aligned,wild,24,0.964,0.936,0.993,0.990,0.975,1.006,true,control(T2),PASS
+c3,linux-aligned,phase,24,0.981,0.958,1.004,0.982,0.953,1.011,true,control(C2),ok
+c3,linux-aligned,burst,24,1.002,0.984,1.020,1.001,0.981,1.021,true,control(C2),ok
+c3,linux-aligned,regrow,24,0.994,0.946,1.044,0.995,0.957,1.034,true,control(C2),HOLD
+c3,linux-aligned,growmix,24,1.017,0.965,1.071,0.997,0.945,1.053,true,control(C2),ok
+c3,linux-aligned,large,24,1.022,0.957,1.091,1.030,0.966,1.099,true,control(C2),ok
+pilot,windows-pilot,wild,12,0.894,0.789,1.013,0.916,0.790,1.062,true,control(T2),FAIL
+pilot,windows-pilot,phase,12,1.012,0.947,1.082,0.961,0.878,1.053,true,control(C2),ok
 bench-table-noise,windows,s1,12,4,,,,,,,C3-noise,UNREADABLE-CELLS
 bench-table-noise,windows,s2,12,1,,,,,,,C3-noise,UNREADABLE-CELLS
 mt,windows,larson T=1,6,0.892,,,,,,,C4,UNREADABLE
