@@ -767,11 +767,6 @@ impl HeapCore {
         if n == 0 {
             return ::core::ptr::null_mut();
         }
-        // AO-1: the whole filled prefix is reversed, so a fresh same-segment
-        // carve run (written ascending) is issued ascending by the top-first
-        // pops, the order a hardware prefetcher follows when the blocks are
-        // walked. Free-list blocks drained first change issue order only.
-        self.tcache.classes[c].slots[..n].reverse();
         // Task #2002: mark_magazine / count tail,
         // shared verbatim with `refill_magazine_slow_virgin`
         // — see `finish_magazine_refill`'s own doc for the full rationale.
