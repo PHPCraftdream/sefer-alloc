@@ -2722,6 +2722,12 @@ codegen-units = 16
 name = "b4_pmu_probe"
 required-features = ["production"]
 
+# G1 wild judge (measurement only): GiB-scale heaps and seeded random mixed
+# workloads, one allocator arm per process; driver scripts/g1_wild_judge.mjs.
+[[example]]
+name = "g1_wild_judge"
+required-features = ["production"]
+
 [[example]]
 name = "g1_k7_overflow_oracle"
 required-features = ["production", "internals", "bench-internals"]
