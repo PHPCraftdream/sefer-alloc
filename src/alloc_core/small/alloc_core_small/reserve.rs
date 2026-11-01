@@ -14,12 +14,25 @@ use crate::alloc_core::os::{self, SEGMENT};
 use crate::alloc_core::segment_header::{
     BinTable, Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
 };
+#[cfg(not(feature = "numa-aware"))]
+use core::sync::atomic::{AtomicU64, Ordering};
 // R12-11 (task #262): `PageMap::init_in_place` is diagnostic-only (see its
 // doc) and its sole call site in this file is gated behind `page-map-diag`.
 #[cfg(feature = "page-map-diag")]
 use crate::alloc_core::segment_header::PageMap;
 
 use crate::alloc_core::alloc_core::{base_add, AllocCore};
+
+/// TH-1: small-segment reservations of this process so far.
+#[cfg(not(feature = "numa-aware"))]
+pub(crate) static SMALL_SEGMENTS_RESERVED: AtomicU64 = AtomicU64::new(0);
+/// TH-1 (bench-internals): small segments the huge-page hint was issued for.
+#[cfg(all(feature = "bench-internals", not(feature = "numa-aware")))]
+pub(crate) static THP_HINTED_SMALL_SEGMENTS: AtomicU64 = AtomicU64::new(0);
+/// TH-1: the small-segment count from which a new segment gets the
+/// transparent-huge-page hint (16 segments = 64 MiB).
+#[cfg(not(feature = "numa-aware"))]
+const THP_AFTER_SMALL_SEGMENTS: u64 = 16;
 
 // ── end Phase 3 ──────────────────────────────────────────────────────────
 impl AllocCore {
@@ -239,6 +252,17 @@ impl AllocCore {
             // does that `into_reservation()` step itself (mirroring
             // `reserve_lazy`/`reserve`), one extraction serves both arms.
             let segment = seg?;
+            // TH-1: from the THP_AFTER_SMALL_SEGMENTS-th small segment on, a
+            // heap growing in small blocks asks for transparent huge pages
+            // (Linux; a no-op elsewhere): ~10x fewer page faults while it
+            // fills. Smaller heaps keep 4 KiB pages and their RSS.
+            if SMALL_SEGMENTS_RESERVED.fetch_add(1, Ordering::Relaxed) + 1
+                >= THP_AFTER_SMALL_SEGMENTS
+            {
+                segment.advise_huge_pages();
+                #[cfg(feature = "bench-internals")]
+                THP_HINTED_SMALL_SEGMENTS.fetch_add(1, Ordering::Relaxed);
+            }
             let b = segment.as_ptr();
             let r = segment.reservation();
             let rl = segment.reservation_len();

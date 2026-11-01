@@ -532,6 +532,12 @@ impl Segment {
     pub(crate) const fn reservation_len(&self) -> usize {
         self.0.reservation_len()
     }
+
+    /// TH-1: transparent-huge-page hint for the span (Linux; no-op elsewhere).
+    #[cfg(not(feature = "numa-aware"))]
+    pub(crate) fn advise_huge_pages(&self) -> bool {
+        self.0.advise_huge_pages()
+    }
 }
 
 // `Send` is already implemented on `aligned_vmem::Reservation`; `Segment` is a

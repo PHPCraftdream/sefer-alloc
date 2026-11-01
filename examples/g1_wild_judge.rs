@@ -3,7 +3,7 @@
 //!
 //! Usage: g1_wild_judge <scenario> <sefer|mi|sys> <seed> [scale]
 //! Prints one JSON line: scenario, arm, seed, scale, ops, ns_per_op,
-//! peak_rss, end_rss, checksum.
+//! peak_rss, end_rss, checksum, anon_huge_peak, anon_huge_end (Linux THP bytes).
 //!
 //! The allocator under test is a static reached through `#[inline(never)]`
 //! shims (the `__rust_alloc` boundary); the process global allocator stays
@@ -188,6 +188,7 @@ fn grow_fixed(run: &mut Run, size: usize, target: f64) {
     for _ in 0..n {
         v.push(run.alloc(size));
     }
+    ANON_HUGE_PEAK.fetch_max(anon_huge_bytes(), std::sync::atomic::Ordering::Relaxed);
     for p in v {
         run.free(p, size);
     }
@@ -206,7 +207,24 @@ fn grow_mix(run: &mut Run, r: &mut Rng, target: f64, v: &mut Blocks) {
     }
 }
 
+/// Linux: anonymous memory the kernel backs with transparent huge pages
+/// (`AnonHugePages` of `/proc/self/smaps_rollup`), in bytes; 0 elsewhere.
+fn anon_huge_bytes() -> u64 {
+    std::fs::read_to_string("/proc/self/smaps_rollup")
+        .ok()
+        .and_then(|t| {
+            t.lines()
+                .find(|l| l.starts_with("AnonHugePages:"))
+                .and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok())
+        })
+        .map_or(0, |kb| kb * 1024)
+}
+
+/// The largest `anon_huge_bytes` seen at a live peak (before a free-all).
+static ANON_HUGE_PEAK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn free_all(run: &mut Run, v: Blocks) {
+    ANON_HUGE_PEAK.fetch_max(anon_huge_bytes(), std::sync::atomic::Ordering::Relaxed);
     for (p, s) in v {
         run.free(p, s);
     }
@@ -363,6 +381,15 @@ fn main() {
     );
     #[cfg(not(feature = "internals"))]
     let os = String::new();
+    // Path activation of TH-1 (Linux): huge-page-backed bytes at the live
+    // peak and at the end of the run.
+    let os = format!(
+        "{os},\"anon_huge_peak\":{},\"anon_huge_end\":{}",
+        ANON_HUGE_PEAK
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .max(anon_huge_bytes()),
+        anon_huge_bytes()
+    );
     println!(
         "{{\"scenario\":\"{}\",\"arm\":\"{}\",\"seed\":{seed},\"scale\":{scale},\"ops\":{},\"ns_per_op\":{ns:.3},\"peak_rss\":{},\"end_rss\":{},\"checksum\":{}{os}}}",
         a[1],
