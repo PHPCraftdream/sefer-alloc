@@ -1,7 +1,12 @@
 //! An over-reserved span (base above the reservation start) survives a
 //! decommit/recommit round trip. Moved out of `smoke.rs` (structure limit).
 
-#![cfg(not(any(miri, all(windows, not(feature = "lazy-commit")))))]
+// Windows: the lazy path must be real (the mock backend serves a lazy reserve
+// through the eager one-region path).
+#![cfg(not(any(
+    miri,
+    all(windows, any(not(feature = "lazy-commit"), aligned_vmem_mock))
+)))]
 
 #[cfg(not(windows))]
 use aligned_vmem::reserve_aligned;
