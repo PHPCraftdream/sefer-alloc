@@ -188,6 +188,18 @@ fn grow_fixed(run: &mut Run, size: usize, target: f64) {
     for _ in 0..n {
         v.push(run.alloc(size));
     }
+    // AO-1 path-activation oracle (`WJ_ORDER=1`, off in timed runs): the
+    // share of consecutive allocations whose address step is `+size`.
+    if std::env::var_os("WJ_ORDER").is_some() {
+        let up = v
+            .windows(2)
+            .filter(|w| w[1] as usize == w[0] as usize + size)
+            .count();
+        eprintln!(
+            "order: {up} of {} steps are +{size} B",
+            v.len().saturating_sub(1)
+        );
+    }
     for p in v {
         run.free(p, size);
     }
