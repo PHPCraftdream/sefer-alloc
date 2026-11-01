@@ -2366,3 +2366,15 @@ The review estimated ~10–20 Ir per reclaimed record from hoisting `kind_at`, p
    > - **Current verdict (ИЗМЕРЕНО, J1′ v2 ablation net of null, 20 processes × 2000 blocks, `g1-k5-meas`@`319517f7`):** churn1024 faster 1.110×, churn256 1.090× (CI −9.76…−6.49 %), larson 1.080×, churn16 1.030×; pair16, pair64, pair_rt, bulk16k, churn64, vec512 equal; bulk64 slower 1.016× (CI +1.15…+1.86 %, within the +2 % tolerance; instructions unchanged, the null copy's A/B is −1.71 % — same pattern as K1). Against mimalloc (`g1-k5`): larson mimalloc faster 1.019× (was 1.103×), churn1024 1.130× (was 1.288×). Parked-block bound per thread 64 256 → 241 408 B; RSS not measured.
    > - **Next trigger:** none for the item; shared open sub-item with item 125: bulk64's +1.6…+1.8 % with unchanged instructions in two consecutive ablations points at the null copy's layout on that kernel — check the harness (a second null build, or a swapped-slot null) before the next bulk64-sensitive gate.
    > - **Evidence:** docs/perf/G1_K5_DEPOT_GATE.md, docs/perf/G1_K5_DEPOT_GATE_summary.csv, docs/perf/G1_K5_DEPOT_GATE_summary_callgrind.csv, docs/perf/g1_k5/, scripts/g1_k5_gate_report.mjs, tests/heap_core_depot.rs.
+
+## 136 — WB-3 C1 depot fast lanes (closure narrative, 2026-11-01)
+
+The 2026-10-29 NO-GO card, verbatim. Reopened by the owner on 2026-11-01 after R123 left the depot as most of the warm-bulk gap; measured again on top of R123 and shipped (`docs/perf/G1_C1R_DEPOT_FAST_LANE.md`, PR #149).
+
+136. **[L] WB-3 C1 — frameless depot fast lanes (park_simple / reload_simple): NO-GO.** (Filed 2026-10-29, `docs/perf/WB3_C1_DEPOT_FAST_LANE_PREREG.md` § Verdict.)
+
+   > **Current state**
+   > - **Status:** rejected (код под тегом `archive/wb3-c1-measured`, в main не попал).
+   > - **Current:** `t(1024)` тёплой пачки ниже во всех 12 парах (−0.04…−0.60, обычно −0.2…−0.3 ns/пару, ≈ 3–4 %), но порог −0.3 ns/пару на 16 Б не пройден (медиана −0.26); 64 Б прошёл (−0.36); в парной таблице тёплая пачка 16 Б не быстрее. Регрессий в других ячейках нет.
+   > - **Next trigger:** только по решению владельца принять выигрыш ниже порога (≈ 3–4 % на bulk при +250 строк, двух новых правилах P12 и перепроверке строки evidence R-Ph3b); иначе не переоткрывать.
+   > - **Evidence:** `docs/perf/WB3_C1_DEPOT_FAST_LANE_PREREG.md`, `docs/perf/wb3_c1/`, `scripts/wb3_c1_sweep_verdict.mjs`.

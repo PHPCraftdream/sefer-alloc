@@ -259,6 +259,24 @@ impl HeapCore {
         (flags, depot.ovf.armed())
     }
 
+    /// TEST-ONLY (WB-3): class `c`'s overflow decay / ingress / latch state
+    /// `(events, epoch_len, debt_mask, starved, reloads_since_ingress,
+    /// low[c], parked_in_epoch)`; `None` for an unbound heap or a class
+    /// outside the depot. Read-only.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit",
+        feature = "internals"
+    ))]
+    pub fn dbg_depot_epoch(&self, c: usize) -> Option<(u32, u32, u32, u32, u32, u16, u32)> {
+        if c >= crate::registry::heap_core::state::depot::DEPOT_CLASSES {
+            return None;
+        }
+        self.depot.as_deref().map(|d| d.ovf.epoch_state(c))
+    }
+
     /// TEST-ONLY (G1-K7): `(resolved, effective)` depot-overflow budget in
     /// bytes. Effective is 0 for a heap without a bound depot (standalone /
     /// fallback heaps), where the budget is inert.

@@ -1,0 +1,8 @@
+c1rbase mstress 71,682,195
+c1rbase larson 69,130,624
+c1r mstress 70,462,308
+c1r larson 68,773,384
+c1rbase bulk16 54,458,420
+c1rbase bulk64 54,461,794
+c1r bulk16 51,867,933
+c1r bulk64 51,869,234
