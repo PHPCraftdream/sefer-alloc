@@ -469,6 +469,8 @@ fn main() {
         }
         // SAFETY: a plain exported static of the library (WILD-1 probe).
         let c: Vec<u64> = unsafe { SEFER_LM.iter().map(|x| x.load(std::sync::atomic::Ordering::Relaxed)).collect() };
+        #[cfg(feature = "bench-internals")]
+        eprintln!("TIER1 hits={} misses={}", sefer_alloc::alloc_core::AllocCore::dbg_contains_base_tier1_hits(), sefer_alloc::alloc_core::AllocCore::dbg_contains_base_tier1_misses());
         eprintln!("LANE seed={} memo_key={} kind={} bump={} state={} accepted={} mag_full={}", c[0], c[1], c[2], c[3], c[4], c[5], c[6]);
     }
     let m = proc_memstat::snapshot();
