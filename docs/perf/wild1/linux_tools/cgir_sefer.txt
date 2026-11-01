@@ -1,0 +1,24 @@
+168,171,886 (100.0%) 640,666 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                  D1mr              file:function
+--------------------------------------------------------------------------------
+26,399,005 (15.70%)  35,495 ( 5.54%)  ???:g1_wild_judge::burst [~/w1b/tgt/release/examples/g1_wild_judge]
+25,495,319 (15.16%)  38,513 ( 6.01%)  ???:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss [~/w1b/tgt/release/examples/g1_wild_judge]
+23,620,352 (14.05%)     483 ( 0.08%)  ???:<g1_wild_judge::Run>::alloc [~/w1b/tgt/release/examples/g1_wild_judge]
+18,981,664 (11.29%) 113,160 (17.66%)  ???:<g1_wild_judge::Run>::free [~/w1b/tgt/release/examples/g1_wild_judge]
+17,415,035 (10.36%)   6,951 ( 1.08%)  ???:g1_wild_judge::a_alloc [~/w1b/tgt/release/examples/g1_wild_judge]
+13,920,654 ( 8.28%)  19,422 ( 3.03%)  ./math/../sysdeps/ieee754/dbl-64/e_exp.c:__ieee754_exp_fma [/usr/lib/x86_64-linux-gnu/libm.so.6]
+13,137,532 ( 7.81%)   9,849 ( 1.54%)  ???:g1_wild_judge::a_dealloc [~/w1b/tgt/release/examples/g1_wild_judge]
+10,676,020 ( 6.35%) 301,001 (46.98%)  ???:g1_wild_judge::main [~/w1b/tgt/release/examples/g1_wild_judge]
+ 8,436,760 ( 5.02%)     912 ( 0.14%)  ./math/./w_exp_template.c:exp@@GLIBC_2.29 [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 1,854,413 ( 1.10%)   2,612 ( 0.41%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park [~/w1b/tgt/release/examples/g1_wild_judge]
+ 1,479,986 ( 0.88%)  37,808 ( 5.90%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss [~/w1b/tgt/release/examples/g1_wild_judge]
+ 1,265,514 ( 0.75%)       .           ./math/../sysdeps/ieee754/dbl-64/math_config.h:__ieee754_exp_fma
+   843,676 ( 0.50%)     589 ( 0.09%)  ???:0x0000000004885400 [???]
+   639,448 ( 0.38%)   3,027 ( 0.47%)  ???:g1_wild_judge::wild_size [~/w1b/tgt/release/examples/g1_wild_judge]
+   412,031 ( 0.25%)  18,850 ( 2.94%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [~/w1b/tgt/release/examples/g1_wild_judge]
+   362,383 ( 0.22%)      16 ( 0.00%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   347,255 ( 0.21%)   2,534 ( 0.40%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [~/w1b/tgt/release/examples/g1_wild_judge]
+   283,248 ( 0.17%)   3,950 ( 0.62%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle [~/w1b/tgt/release/examples/g1_wild_judge]
+   197,439 ( 0.12%)   2,668 ( 0.42%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]

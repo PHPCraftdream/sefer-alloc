@@ -17,6 +17,12 @@
 //! counts. Every block gets its first and last byte written (the memory is
 //! touched, so RSS reflects what the arm commits).
 //!
+//! `WJ_SPLIT=1` times every alloc/free call (stderr). `WJ_PROF=1` (WILD-1) adds
+//! `wall_ns` and a `prof` object to the JSON line: the burst phases of `wild`/`phase`
+//! timed as units, blocks above 256 KiB timed per call (alloc includes the first/last
+//! byte write), realloc split by large/small with a moved count, and the `free_all`
+//! teardown; `rest` = `wall_ns` minus those buckets (computed by the report script).
+//!
 //! Scenarios:
 //! - `grow64`, `grow1k`: fixed-size blocks until 1 GiB live, free in order.
 //! - `growmix`: 16 B..4 KiB log-uniform until 1 GiB live, free shuffled.
@@ -26,6 +32,8 @@
 //!   replacements, free all.
 //! - `wild`: 50 000 slots, 1 000 000 ops: replace / alloc / free / realloc /
 //!   LIFO bursts, heavy-tailed sizes (8 B..4 MiB).
+//! - `burst` (WILD-1): only the LIFO bursts of `wild` (1..1000 blocks of 8..128 B,
+//!   freed in reverse), 6 000 of them at scale 1, on a clean heap.
 //! - `phase`: `wild` whose size distribution switches every 100 000 ops
 //!   between tiny, medium and big.
 //!
@@ -145,6 +153,20 @@ fn phase_size(r: &mut Rng, phase: usize) -> usize {
     }
 }
 
+/// `WJ_PROF=1` buckets (WILD-1): (ns, count[, moved]). Per-op timers only for blocks
+/// above 256 KiB and for realloc; bursts are timed as units (a per-op timer costs about
+/// as much as a small alloc); `rest` is the run's wall time minus all buckets.
+#[derive(Default, Clone, Copy)]
+struct Prof {
+    burst_alloc: (u64, u64),
+    burst_free: (u64, u64),
+    large_alloc: (u64, u64),
+    large_free: (u64, u64),
+    large_realloc: (u64, u64, u64),
+    small_realloc: (u64, u64, u64),
+    teardown: (u64, u64),
+}
+
 struct Run {
     arm: Arm,
     ops: u64,
@@ -152,6 +174,10 @@ struct Run {
     live: usize,
     /// `WJ_SPLIT=1`: ns and count per (alloc|free) x (block <= 256 KiB | larger).
     split: Option<[[(u64, u64); 2]; 2]>,
+    /// `WJ_PROF=1`: see [`Prof`].
+    prof: Option<Prof>,
+    /// Inside `free_all`: frees count towards `Prof::teardown` only.
+    teardown: bool,
 }
 
 impl Run {
@@ -164,6 +190,7 @@ impl Run {
     }
     fn alloc(&mut self, size: usize) -> *mut u8 {
         let t = self.split.map(|_| Instant::now());
+        let tp = (self.prof.is_some() && size > 256 << 10).then(Instant::now);
         let p = a_alloc(self.arm, size);
         self.note(0, size, t);
         assert!(!p.is_null(), "allocation of {size} bytes failed");
@@ -171,6 +198,10 @@ impl Run {
         unsafe {
             p.write(size as u8);
             p.add(size - 1).write(1);
+        }
+        if let (Some(f), Some(tp)) = (self.prof.as_mut(), tp) {
+            f.large_alloc.0 += tp.elapsed().as_nanos() as u64;
+            f.large_alloc.1 += 1;
         }
         self.ops += 1;
         self.live += size;
@@ -181,16 +212,32 @@ impl Run {
         // SAFETY: `p` is a live block of `size` bytes written by `alloc`.
         self.sum = self.sum.wrapping_add(unsafe { p.read() } as u64);
         let t = self.split.map(|_| Instant::now());
+        let tp = (self.prof.is_some() && !self.teardown && size > 256 << 10).then(Instant::now);
         a_dealloc(self.arm, p, size);
         self.note(1, size, t);
+        if let (Some(f), Some(tp)) = (self.prof.as_mut(), tp) {
+            f.large_free.0 += tp.elapsed().as_nanos() as u64;
+            f.large_free.1 += 1;
+        }
         self.ops += 1;
         self.live -= size;
     }
     fn realloc(&mut self, p: *mut u8, old: usize, new: usize) -> *mut u8 {
+        let tp = self.prof.is_some().then(Instant::now);
         let q = a_realloc(self.arm, p, old, new);
         assert!(!q.is_null(), "reallocation to {new} bytes failed");
         // SAFETY: `q` holds `new` >= 1 bytes.
         unsafe { q.add(new - 1).write(2) };
+        if let (Some(f), Some(tp)) = (self.prof.as_mut(), tp) {
+            let e = if old.max(new) > 256 << 10 {
+                &mut f.large_realloc
+            } else {
+                &mut f.small_realloc
+            };
+            e.0 += tp.elapsed().as_nanos() as u64;
+            e.1 += 1;
+            e.2 += u64::from(q != p);
+        }
         self.ops += 1;
         self.live = self.live - old + new;
         q
@@ -242,8 +289,16 @@ static ANON_HUGE_PEAK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU
 
 fn free_all(run: &mut Run, v: Blocks) {
     ANON_HUGE_PEAK.fetch_max(anon_huge_bytes(), std::sync::atomic::Ordering::Relaxed);
+    let t = run.prof.is_some().then(Instant::now);
+    run.teardown = true;
+    let n = v.len() as u64;
     for (p, s) in v {
         run.free(p, s);
+    }
+    run.teardown = false;
+    if let (Some(f), Some(t)) = (run.prof.as_mut(), t) {
+        f.teardown.0 += t.elapsed().as_nanos() as u64;
+        f.teardown.1 += n;
     }
 }
 
@@ -289,20 +344,32 @@ fn wild(run: &mut Run, r: &mut Rng, scale: f64, phased: bool) {
                     v[k] = (run.realloc(v[k].0, v[k].1, s), s);
                 }
             }
-            _ => {
-                let n = 1 + r.below(1000);
-                let mut b = Vec::with_capacity(n);
-                for _ in 0..n {
-                    let s = r.log_size(8, 128);
-                    b.push((run.alloc(s), s));
-                }
-                while let Some((p, s)) = b.pop() {
-                    run.free(p, s);
-                }
-            }
+            _ => burst(run, r),
         }
     }
     free_all(run, v.into_iter().filter(|b| !b.0.is_null()).collect());
+}
+
+/// One LIFO burst of `wild`: 1..1000 blocks of 8..128 B (log-uniform), allocated, then
+/// freed in reverse. `WJ_PROF` times the two phases as units.
+fn burst(run: &mut Run, r: &mut Rng) {
+    let n = 1 + r.below(1000);
+    let mut b = Vec::with_capacity(n);
+    let t0 = run.prof.is_some().then(Instant::now);
+    for _ in 0..n {
+        let s = r.log_size(8, 128);
+        b.push((run.alloc(s), s));
+    }
+    let t1 = run.prof.is_some().then(Instant::now);
+    while let Some((p, s)) = b.pop() {
+        run.free(p, s);
+    }
+    if let (Some(f), Some(t0), Some(t1)) = (run.prof.as_mut(), t0, t1) {
+        f.burst_alloc.0 += (t1 - t0).as_nanos() as u64;
+        f.burst_alloc.1 += n as u64;
+        f.burst_free.0 += t1.elapsed().as_nanos() as u64;
+        f.burst_free.1 += n as u64;
+    }
 }
 
 fn main() {
@@ -331,6 +398,8 @@ fn main() {
         sum: 0,
         live: 0,
         split: std::env::var_os("WJ_SPLIT").map(|_| [[(0, 0); 2]; 2]),
+        prof: std::env::var_os("WJ_PROF").map(|_| Prof::default()),
+        teardown: false,
     };
     let t = Instant::now();
     match a[1].as_str() {
@@ -371,11 +440,17 @@ fn main() {
             }
             free_all(&mut run, v);
         }
+        "burst" => {
+            for _ in 0..(6_000.0 * scale) as usize {
+                burst(&mut run, &mut r);
+            }
+        }
         "wild" => wild(&mut run, &mut r, scale, false),
         "phase" => wild(&mut run, &mut r, scale, true),
         x => panic!("unknown scenario {x}"),
     }
-    let ns = t.elapsed().as_nanos() as f64 / run.ops as f64;
+    let wall_ns = t.elapsed().as_nanos();
+    let ns = wall_ns as f64 / run.ops as f64;
     if let Some(s) = run.split {
         for (op, name) in ["alloc", "free"].iter().enumerate() {
             for (b, band) in ["<=256K", ">256K"].iter().enumerate() {
@@ -409,6 +484,30 @@ fn main() {
             .max(anon_huge_bytes()),
         anon_huge_bytes()
     );
+    // WILD-1 (`WJ_PROF=1`): bucket times in ns, counts, and the wall time of the run.
+    let os = match run.prof {
+        Some(f) => format!(
+            "{os},\"wall_ns\":{},\"prof\":{{\"burst_alloc\":[{},{}],\"burst_free\":[{},{}],\"large_alloc\":[{},{}],\"large_free\":[{},{}],\"large_realloc\":[{},{},{}],\"small_realloc\":[{},{},{}],\"teardown\":[{},{}]}}",
+            wall_ns,
+            f.burst_alloc.0,
+            f.burst_alloc.1,
+            f.burst_free.0,
+            f.burst_free.1,
+            f.large_alloc.0,
+            f.large_alloc.1,
+            f.large_free.0,
+            f.large_free.1,
+            f.large_realloc.0,
+            f.large_realloc.1,
+            f.large_realloc.2,
+            f.small_realloc.0,
+            f.small_realloc.1,
+            f.small_realloc.2,
+            f.teardown.0,
+            f.teardown.1
+        ),
+        None => os,
+    };
     println!(
         "{{\"scenario\":\"{}\",\"arm\":\"{}\",\"seed\":{seed},\"scale\":{scale},\"ops\":{},\"ns_per_op\":{ns:.3},\"peak_rss\":{},\"end_rss\":{},\"checksum\":{}{os}}}",
         a[1],

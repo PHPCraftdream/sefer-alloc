@@ -1,0 +1,55 @@
+platform,scenario,bucket,sefer_ms,mi_ms,diff_ms,diff_lo,diff_hi,share_of_wall_diff,calls_sefer,calls_mi,commit,tree,samples
+windows,wild,burst_alloc,97.324,85.574,11.750,6.675,16.825,0.171,4181475,4181475,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,wild,burst_free,73.843,31.313,42.530,40.180,44.880,0.617,4181475,4181475,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,wild,large_alloc,11.251,8.766,2.485,2.076,2.894,0.036,4785,4785,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,wild,large_free,5.057,0.923,4.134,3.834,4.433,0.060,4543,4543,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,wild,large_realloc,3.045,2.932,0.112,-0.198,0.423,0.002,145,145,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,wild,small_realloc,0.557,0.440,0.117,0.078,0.156,0.002,1554,1554,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,wild,teardown,3.784,0.174,3.611,2.678,4.543,0.052,5457,5457,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,wild,rest,28.559,24.398,4.162,2.405,5.919,0.060,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,wild,wall,223.420,154.520,68.900,59.712,78.089,1.000,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,phase,burst_alloc,418.584,382.001,36.583,20.370,52.797,0.464,17911350,17911350,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,phase,burst_free,167.042,138.140,28.902,20.846,36.958,0.366,17911350,17911350,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,phase,large_alloc,8.717,5.159,3.558,2.851,4.264,0.045,2545,2545,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,phase,large_free,7.406,0.664,6.741,5.781,7.702,0.085,2537,2537,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,phase,large_realloc,3.353,1.042,2.311,0.978,3.644,0.029,288,288,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,phase,small_realloc,20.431,17.427,3.004,1.956,4.052,0.038,38921,38921,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,phase,teardown,2.842,0.869,1.973,1.421,2.526,0.025,32372,32372,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,phase,rest,134.822,139.024,-4.202,-13.586,5.182,-0.053,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,phase,wall,763.198,684.326,78.871,45.577,112.166,1.000,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,large,burst_alloc,0.000,0.000,0.000,0.000,0.000,0.000,0,0,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,large,burst_free,0.000,0.000,0.000,0.000,0.000,0.000,0,0,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,large,large_alloc,9.000,11.051,-2.051,-3.060,-1.041,-0.519,4029,4029,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,large,large_free,4.925,0.769,4.155,3.752,4.558,1.052,3889,3889,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,large,large_realloc,0.000,0.000,0.000,0.000,0.000,0.000,0,0,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,large,small_realloc,0.000,0.000,0.000,0.000,0.000,0.000,0,0,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,large,teardown,1.506,0.041,1.466,1.210,1.721,0.371,187,187,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,large,rest,1.577,1.196,0.381,0.231,0.532,0.096,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+windows,large,wall,17.009,13.057,3.951,2.354,5.549,1.000,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),wild,burst_alloc,79.598,69.329,10.269,8.910,11.628,0.244,4181475,4181475,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),wild,burst_free,61.308,20.081,41.227,39.765,42.689,0.978,4181475,4181475,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),wild,large_alloc,10.274,32.957,-22.683,-24.350,-21.016,-0.538,4785,4785,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),wild,large_free,4.574,1.006,3.568,3.243,3.894,0.085,4543,4543,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),wild,large_realloc,3.149,0.531,2.618,2.464,2.772,0.062,145,145,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),wild,small_realloc,0.472,0.271,0.201,0.170,0.232,0.005,1554,1554,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),wild,teardown,2.012,0.215,1.798,1.625,1.970,0.043,5457,5457,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),wild,rest,30.040,24.904,5.136,2.994,7.278,0.122,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),wild,wall,191.428,149.294,42.134,37.289,46.980,1.000,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),phase,burst_alloc,340.356,297.728,42.628,33.893,51.363,0.447,17911350,17911350,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),phase,burst_free,120.746,90.579,30.167,27.047,33.287,0.317,17911350,17911350,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),phase,large_alloc,8.018,26.048,-18.030,-19.892,-16.169,-0.189,2545,2545,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),phase,large_free,7.844,0.833,7.011,6.536,7.487,0.074,2537,2537,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),phase,large_realloc,2.774,1.965,0.809,0.592,1.026,0.008,288,288,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),phase,small_realloc,16.762,12.033,4.730,3.720,5.739,0.050,38921,38921,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),phase,teardown,1.700,0.907,0.793,0.424,1.162,0.008,32372,32372,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),phase,rest,138.315,111.115,27.200,15.687,38.713,0.285,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),phase,wall,636.516,541.207,95.309,73.757,116.860,1.000,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),large,burst_alloc,0.000,0.000,0.000,0.000,0.000,0.000,0,0,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),large,burst_free,0.000,0.000,0.000,0.000,0.000,0.000,0,0,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),large,large_alloc,7.709,113.219,-105.510,-112.319,-98.702,1.018,4029,4029,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),large,large_free,3.684,1.750,1.934,1.774,2.093,-0.019,3889,3889,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),large,large_realloc,0.000,0.000,0.000,0.000,0.000,0.000,0,0,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),large,small_realloc,0.000,0.000,0.000,0.000,0.000,0.000,0,0,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),large,teardown,0.799,0.054,0.745,0.660,0.830,-0.007,187,187,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),large,rest,2.542,3.368,-0.826,-1.105,-0.547,0.008,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
+linux (WSL2),large,wall,14.734,118.391,-103.658,-110.572,-96.743,1.000,,,8df5abcd596dee0b7dba234358b017b8d9c1b9f3,b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad,12 blocks x 3 repeats
