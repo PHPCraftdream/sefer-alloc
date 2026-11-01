@@ -72,7 +72,13 @@ fn decommit_recommit_roundtrip_on_over_reserved_span() {
     // Silicon). `page_size()` also satisfies `reserve_aligned`'s own
     // PAGE-multiple contract for `size` (it is always a power-of-two
     // multiple of `PAGE`), so this is safe on every host.
+    #[cfg(not(windows))]
     let size = page_size();
+    // Windows: two pages, so the lazy reserve below can commit one page first
+    // (`initial_commit` must be non-zero and below `size` to stay off the
+    // one-region path).
+    #[cfg(windows)]
+    let size = 2 * page_size();
 
     // Windows: align > WIN_ALLOCATION_GRANULARITY (64 KiB) unconditionally
     // skips win_reserve_commit's fast-reserve sub-path, and a lazy reserve
@@ -105,7 +111,7 @@ fn decommit_recommit_roundtrip_on_over_reserved_span() {
         let candidate = reserve_aligned(size, align).expect("reserve with align > size");
         #[cfg(windows)]
         let candidate = {
-            let mut lazy = aligned_vmem::reserve_aligned_lazy(size, align, 0)
+            let mut lazy = aligned_vmem::reserve_aligned_lazy(size, align, page_size())
                 .expect("lazy reserve with align > size");
             lazy.ensure_committed(size).expect("commit the span");
             lazy.into_reservation()
