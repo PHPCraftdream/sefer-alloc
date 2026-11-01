@@ -790,7 +790,7 @@ item-scoped regions.
 | [`src/registry/heap_core/free/dealloc_own_base.rs`](src/registry/heap_core/free/dealloc_own_base.rs) | 4 | `dealloc_own_thread[_with_base]` — internal call-site blocks into `AllocCore::flush_class` / `AllocCore::dealloc` + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` (R32-3/task #494: `realloc`'s move leg and `try_promote_to_large` now call the safe `dealloc_own_thread[_with_base]` bodies directly with their already-proven `base` instead of routing back through `HeapCore::dealloc` — this file hosts that routing block today) + R1-01's free-side byte-budget-cap call into `AllocCore::flush_class` (a single-block batch, once a class's magazine reaches its D3 refill-byte-budget cap) |
 | [`src/registry/heap_core/free/realloc.rs`](src/registry/heap_core/free/realloc.rs) | 1 | `realloc` — `unsafe fn` boundary (caller-pointer contract); its move leg was never separately counted here: it was an inner `unsafe {}` block already covered by `realloc`'s own `unsafe fn` boundary |
 | [`src/registry/heap_core/state/tcache_flush.rs`](src/registry/heap_core/state/tcache_flush.rs) | 2 | Internal call-site blocks for `AllocCore::flush_class`: the teardown drain and the G1-K7 depot-overflow decay |
-| [`src/registry/heap_core/state/depot_overflow.rs`](src/registry/heap_core/state/depot_overflow.rs) | 3 | G1-K7 depot-overflow record write / newest read / oldest read inside the heap's own lazily committed record reservation (owner-only; index checked against the class ring) |
+| [`src/registry/heap_core/state/depot_overflow.rs`](src/registry/heap_core/state/depot_overflow.rs) | 5 | G1-K7 depot-overflow record write / newest read / oldest read, and the WB-3 fast park write / fast reload read, inside the heap's own lazily committed record reservation (owner-only; index checked against the class ring) |
 | [`src/registry/heap_core_xthread/routing.rs`](src/registry/heap_core_xthread/routing.rs) | 3 | Unique-transfer foreign publication boundaries: `dealloc_routing`'s call-site block, `publish_foreign` (cached-pin fast path + uncached fallback), and `publish_foreign_uncached`. |
 | [`src/registry/heap_core_xthread/route_pin_cache.rs`](src/registry/heap_core_xthread/route_pin_cache.rs) | 1 | `publish_cached` — the per-thread cached-pin publication boundary: publishes through a still-linked cached pin without a directory lookup (the Release `linked = false` store on unlink under the shard lock is what makes the cached path sound). |
 | [`src/registry/heap_core_xthread/sidecar_drain.rs`](src/registry/heap_core_xthread/sidecar_drain.rs) | 2 | Test-only sidecar publication and synthetic detached-record reclaim boundaries. |
@@ -801,7 +801,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **106** tier-2 item-scoped allows across **33**
+`src/`, 6 in `crates/`) plus **108** tier-2 item-scoped allows across **33**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.

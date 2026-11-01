@@ -69,6 +69,17 @@ fn fast_lanes_keep_decay_ingress_and_latch_bookkeeping_exact() {
     )
     .expect("claim");
     let heap = lease.core();
+    // A failing assert must not unwind through the lease (dropping it while
+    // panicking aborts and loses the message): catch, release, re-raise.
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(heap)));
+    lease.core().dbg_flush_all();
+    drop(lease);
+    if let Err(e) = r {
+        std::panic::resume_unwind(e);
+    }
+}
+
+fn check(heap: &mut HeapCore) {
     heap.dbg_flush_all();
     let start = heap.dbg_depot_overflow();
     let (events0, epoch_len0, debt0, starved0, rsi0, _, _) =
@@ -158,6 +169,4 @@ fn fast_lanes_keep_decay_ingress_and_latch_bookkeeping_exact() {
         );
         assert_eq!(low, 0, "burst {b}: low tracks the drained ring");
     }
-    heap.dbg_flush_all();
-    drop(lease);
 }

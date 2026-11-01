@@ -70,7 +70,6 @@ pub(crate) struct OverflowStats {
 /// Overflow control; all-zero = empty and unreserved. The per-event fields
 /// lead (`repr(C)`), so the common tick touches one line.
 #[repr(C)]
-#[cfg_attr(kani, derive(Clone, PartialEq))]
 pub(crate) struct DepotOverflow {
     base: *mut u8,
     bytes: usize,
@@ -147,32 +146,6 @@ impl DepotOverflow {
         o.committed[c] = cap as u32 * REC as u32;
         o.epoch_len = EPOCH_MIN;
         o
-    }
-
-    /// Kani-only: arbitrary decay / ingress / latch state around class `c`
-    /// (ring contents unchanged), within the invariants the owner keeps:
-    /// `debt[k] <= len[k]` with `debt_mask` bit `k` set iff `debt[k] != 0`,
-    /// `low[c] <= len[c]`, and `reloads_since_ingress < INGRESS_PERIOD`.
-    /// `other` (a class other than `c`) may carry one record of debt.
-    #[cfg(kani)]
-    pub(crate) fn kani_havoc(&mut self, c: usize, other: usize) {
-        self.events = kani::any();
-        self.epoch_len = kani::any();
-        kani::assume(self.epoch_len >= EPOCH_MIN);
-        self.parked_in_epoch = kani::any();
-        self.starved = kani::any();
-        self.reloads_since_ingress = kani::any();
-        kani::assume(self.reloads_since_ingress < INGRESS_PERIOD);
-        let low: u16 = kani::any();
-        kani::assume(low <= self.len[c]);
-        self.low[c] = low;
-        let d: u16 = kani::any();
-        kani::assume(d <= self.len[c]);
-        self.set_debt(c, d);
-        if other != c && kani::any() {
-            self.len[other] = 1;
-            self.set_debt(other, 1);
-        }
     }
 
     /// After a successful park: the small classes not yet armed (bit `c`) —
