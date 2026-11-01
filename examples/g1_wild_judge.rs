@@ -1,9 +1,13 @@
 //! G1 wild judge (measurement only): GiB-scale heaps and seeded random mixed
 //! workloads, one allocator arm per process.
 //!
-//! Usage: g1_wild_judge <scenario> <sefer|mi|sys> <seed> [scale]
+//! Usage: g1_wild_judge <scenario> <sefer|sefer_pool|mi|sys> <seed> [scale]
 //! Prints one JSON line: scenario, arm, seed, scale, ops, ns_per_op,
 //! peak_rss, end_rss, checksum, anon_huge_peak, anon_huge_end (Linux THP bytes).
+//!
+//! `sefer_pool` is a diagnostic ceiling, not a product setting: the same allocator
+//! with the empty-small-segment pool raised to 1024 segments / 4 GiB, so no
+//! segment is released to the OS inside `free` (WG-M0).
 //!
 //! The allocator under test is a static reached through `#[inline(never)]`
 //! shims (the `__rust_alloc` boundary); the process global allocator stays
@@ -33,6 +37,15 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::time::Instant;
 
 static SEFER: sefer_alloc::SeferAlloc = sefer_alloc::SeferAlloc::new();
+// WG-M0 diagnostic ceiling: empty small segments are retained (pool of 1024
+// segments / 4 GiB) instead of released, so no release happens inside `free`.
+static SEFER_POOL: sefer_alloc::SeferAlloc = sefer_alloc::SeferAlloc::with_config(
+    sefer_alloc::LargeCacheConfig::DEFAULT.pool(
+        sefer_alloc::SmallSegmentPoolConfig::new()
+            .pool_segments(1024)
+            .pool_byte_cap(4 << 30),
+    ),
+);
 static MI: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const ALIGN: usize = 8;
@@ -44,6 +57,7 @@ const RSS_LIMIT: u64 = 4 << 30;
 #[derive(Clone, Copy)]
 enum Arm {
     Sefer,
+    SeferPool,
     Mi,
     Sys,
 }
@@ -56,6 +70,7 @@ fn a_alloc(arm: Arm, size: usize) -> *mut u8 {
     unsafe {
         match arm {
             Arm::Sefer => SEFER.alloc(l),
+            Arm::SeferPool => SEFER_POOL.alloc(l),
             Arm::Mi => MI.alloc(l),
             Arm::Sys => System.alloc(l),
         }
@@ -69,6 +84,7 @@ fn a_dealloc(arm: Arm, p: *mut u8, size: usize) {
         let l = Layout::from_size_align_unchecked(size, ALIGN);
         match arm {
             Arm::Sefer => SEFER.dealloc(p, l),
+            Arm::SeferPool => SEFER_POOL.dealloc(p, l),
             Arm::Mi => MI.dealloc(p, l),
             Arm::Sys => System.dealloc(p, l),
         }
@@ -82,6 +98,7 @@ fn a_realloc(arm: Arm, p: *mut u8, old: usize, new: usize) -> *mut u8 {
         let l = Layout::from_size_align_unchecked(old, ALIGN);
         match arm {
             Arm::Sefer => SEFER.realloc(p, l, new),
+            Arm::SeferPool => SEFER_POOL.realloc(p, l, new),
             Arm::Mi => MI.realloc(p, l, new),
             Arm::Sys => System.realloc(p, l, new),
         }
@@ -292,10 +309,11 @@ fn main() {
     let a: Vec<String> = std::env::args().collect();
     assert!(
         a.len() >= 4,
-        "usage: g1_wild_judge <scenario> <sefer|mi|sys> <seed> [scale]"
+        "usage: g1_wild_judge <scenario> <sefer|sefer_pool|mi|sys> <seed> [scale]"
     );
     let arm = match a[2].as_str() {
         "sefer" => Arm::Sefer,
+        "sefer_pool" => Arm::SeferPool,
         "mi" => Arm::Mi,
         "sys" => Arm::Sys,
         x => panic!("unknown arm {x}"),
@@ -375,9 +393,10 @@ fn main() {
     // counts (the OS traffic of the run; 0 for the other arms).
     #[cfg(feature = "internals")]
     let os = format!(
-        ",\"seg_reserved\":{},\"seg_released\":{}",
+        ",\"seg_reserved\":{},\"seg_released\":{},\"config_conflicts\":{}",
         sefer_alloc::alloc_core::AllocCore::dbg_segments_reserved_total(),
-        sefer_alloc::alloc_core::AllocCore::dbg_segments_released_total()
+        sefer_alloc::alloc_core::AllocCore::dbg_segments_released_total(),
+        sefer_alloc::registry::config_conflicts_total()
     );
     #[cfg(not(feature = "internals"))]
     let os = String::new();
