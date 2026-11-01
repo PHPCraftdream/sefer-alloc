@@ -960,13 +960,10 @@ impl AllocCore {
         let mut pm = meta.page_map();
         #[cfg(feature = "page-map-diag")]
         let mut prev_page = usize::MAX;
-        // AO-1: a magazine refill (MAG) writes the run top-down, so the
-        // magazine's top-first pops issue it in ascending address order, the
-        // order a hardware prefetcher follows when the blocks are walked.
-        // Batch callers (LIVE) read `out` front to back and keep it ascending.
-        let out = &mut out[..n];
-        let top_down = issue_state == StateByte::MAG;
-        for i in 0..n {
+        // AO-1: a magazine refill (MAG) fills its slots top-down (block `i` to
+        // slot `n - 1 - i`; `commit` order stays ascending), so the top-first
+        // pops issue the run in ascending addresses; LIVE batches stay ascending.
+        let mut carve_one = |i: usize, slot: &mut *mut u8| {
             let off = aligned_start + i * block_size;
             #[cfg(feature = "page-map-diag")]
             {
@@ -978,11 +975,16 @@ impl AllocCore {
                     prev_page = page;
                 }
             }
-            let ptr = Node::deref(segment, off);
+            *slot = Node::deref(segment, off);
             run.commit(off as u32);
             // B4 (в)/S1: freshly carved blocks commit `issue_state` (see doc).
             meta.state_byte().write(off as u32, class_idx, issue_state);
-            out[if top_down { n - 1 - i } else { i }] = ptr;
+        };
+        let slots = out[..n].iter_mut();
+        if issue_state == StateByte::MAG {
+            slots.rev().enumerate().for_each(|(i, s)| carve_one(i, s));
+        } else {
+            slots.enumerate().for_each(|(i, s)| carve_one(i, s));
         }
         // B4-M (P1-2): MAG state-byte writes of this carve, one add per batch.
         #[cfg(feature = "bench-internals")]
