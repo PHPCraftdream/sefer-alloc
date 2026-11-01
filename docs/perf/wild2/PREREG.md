@@ -120,3 +120,20 @@ allocation order, never miss the memo and keep their campaign-1 reading), scale 
 to this campaign. `regrow` is reported as a secondary result (it is not a preregistered target; campaign 1 read it as
 a possible gain on both platforms). Also added (deterministic, supporting): callgrind Ir of `regrow` (Linux).
 Still no third campaign.
+
+## 8. Amendment 3 (written after the Linux confirmation campaign and its `perf stat`, before the layout control runs)
+
+Observation: in the supporting `perf stat` of the default-layout Linux builds, `burst` has identical instruction
+counts in base and x (985.4 M) but user-mode cycles of 297.8-303.0 M (base, five runs) against 305.3-340.1 M (x,
+five runs), median +6.5 %; `phase` +2.6 % at equal instructions (samples overlap). The memo-hit path is
+instruction-identical (C6) but sits at a different address in x, so a code-layout effect is the first suspect (the
+repository's earlier campaigns used aligned-code builds for `bench:table` for exactly this reason). The judge's
+`burst` reading of the same builds is 1.012 (0.994-1.030).
+
+Layout control (a measurement added to the report, not a replacement of any gate; T2 stays defined on the default
+builds): rebuild base and x (same commits) with `RUSTFLAGS="-C llvm-args=-align-all-functions=6 -C
+llvm-args=-align-all-nofallthru-blocks=5"` under Linux, rerun the Linux confirmation design (24 blocks x minimum of 5
+repeats; `wild`, `phase`, `burst`, `regrow`, `growmix`, `large`) and the `perf stat` set (5 runs per arm; `wild`,
+`phase`, `burst`). Reading rule: if the `burst` and `phase` cycle excess disappears in the aligned build while
+`wild` keeps its gain, the excess is layout; if it stays, it is a cost of the change and is reported as such. No
+other analysis is added after seeing these data.
