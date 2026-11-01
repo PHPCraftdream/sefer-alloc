@@ -1,5 +1,5 @@
 metric,value
-ordering_sites,674
+ordering_sites,675
 files,92
 scopes,46
 protocols,23
@@ -18,7 +18,7 @@ class_kani,1
 class_lock-local,40
 class_non-atomic,2
 class_protocol,184
-class_test-hook,176
+class_test-hook,177
 class_twin,7
 sites_P1,12
 sites_P2,4
