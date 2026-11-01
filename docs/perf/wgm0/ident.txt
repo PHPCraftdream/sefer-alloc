@@ -1,0 +1,5 @@
+commit 4cb465bcf94a503bbfae1b53476b25595ae2a5d6 tree f70cc1dbbfe713094e976d6e5e8095deac9e11db
+base build: features 'production internals', release, rustc rustc 1.97.0 (2d8144b78 2026-07-07)
+ao1 build: same + src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs from g1-ao1 6967bf8919ad0588239d23689652a970baf2faf0; patch sha256 2df8a17b1803472cca911d6711d7110305d480cf4437cff20305b4e92b7c1a5a
+1cfed927f5e6b0b41e9ca5d2a5261b093a38e8ed2d1800fbaf6f7dfde8269d84  final_base.exe
+9e7238eb370636244a5c7434bc5a1c2455076c7adb38ab527a27ed3a9552a25c  final_ao1.exe
