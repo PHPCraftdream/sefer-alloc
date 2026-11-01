@@ -133,11 +133,22 @@ struct Run {
     ops: u64,
     sum: u64,
     live: usize,
+    /// `WJ_SPLIT=1`: ns and count per (alloc|free) x (block <= 256 KiB | larger).
+    split: Option<[[(u64, u64); 2]; 2]>,
 }
 
 impl Run {
+    fn note(&mut self, op: usize, size: usize, t: Option<Instant>) {
+        if let (Some(s), Some(t)) = (self.split.as_mut(), t) {
+            let e = &mut s[op][usize::from(size > 256 << 10)];
+            e.0 += t.elapsed().as_nanos() as u64;
+            e.1 += 1;
+        }
+    }
     fn alloc(&mut self, size: usize) -> *mut u8 {
+        let t = self.split.map(|_| Instant::now());
         let p = a_alloc(self.arm, size);
+        self.note(0, size, t);
         assert!(!p.is_null(), "allocation of {size} bytes failed");
         // SAFETY: `p` is a fresh block of `size` >= 1 bytes.
         unsafe {
@@ -152,7 +163,9 @@ impl Run {
     fn free(&mut self, p: *mut u8, size: usize) {
         // SAFETY: `p` is a live block of `size` bytes written by `alloc`.
         self.sum = self.sum.wrapping_add(unsafe { p.read() } as u64);
+        let t = self.split.map(|_| Instant::now());
         a_dealloc(self.arm, p, size);
+        self.note(1, size, t);
         self.ops += 1;
         self.live -= size;
     }
@@ -281,6 +294,7 @@ fn main() {
         ops: 0,
         sum: 0,
         live: 0,
+        split: std::env::var_os("WJ_SPLIT").map(|_| [[(0, 0); 2]; 2]),
     };
     let t = Instant::now();
     match a[1].as_str() {
@@ -326,9 +340,31 @@ fn main() {
         x => panic!("unknown scenario {x}"),
     }
     let ns = t.elapsed().as_nanos() as f64 / run.ops as f64;
+    if let Some(s) = run.split {
+        for (op, name) in ["alloc", "free"].iter().enumerate() {
+            for (b, band) in ["<=256K", ">256K"].iter().enumerate() {
+                let (t, n) = s[op][b];
+                eprintln!(
+                    "{name} {band}: n={n} total_ms={} ns_each={}",
+                    t / 1_000_000,
+                    t.checked_div(n).unwrap_or(0)
+                );
+            }
+        }
+    }
     let m = proc_memstat::snapshot();
+    // Under `internals`: SeferAlloc's process-wide segment reserve / release
+    // counts (the OS traffic of the run; 0 for the other arms).
+    #[cfg(feature = "internals")]
+    let os = format!(
+        ",\"seg_reserved\":{},\"seg_released\":{}",
+        sefer_alloc::alloc_core::AllocCore::dbg_segments_reserved_total(),
+        sefer_alloc::alloc_core::AllocCore::dbg_segments_released_total()
+    );
+    #[cfg(not(feature = "internals"))]
+    let os = String::new();
     println!(
-        "{{\"scenario\":\"{}\",\"arm\":\"{}\",\"seed\":{seed},\"scale\":{scale},\"ops\":{},\"ns_per_op\":{ns:.3},\"peak_rss\":{},\"end_rss\":{},\"checksum\":{}}}",
+        "{{\"scenario\":\"{}\",\"arm\":\"{}\",\"seed\":{seed},\"scale\":{scale},\"ops\":{},\"ns_per_op\":{ns:.3},\"peak_rss\":{},\"end_rss\":{},\"checksum\":{}{os}}}",
         a[1],
         a[2],
         run.ops,
