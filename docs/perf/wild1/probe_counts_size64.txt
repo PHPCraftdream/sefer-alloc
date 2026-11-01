@@ -1,0 +1,11 @@
+# WILD-1 probe: own_cache size 16 (committed value) vs 64 (throwaway edit OWN_CACHE_SIZE = 64 on top of the probe commit; exe probe_bi64.exe, sha256 36b46464c53c18c8e727a5224d993ef130e2e500525d2410f801b345ea7c7250); Windows, sefer, wild, scale 1
+probe_bi.exe run1 TIER1 hits=2887051 misses=1400529 LANE seed=4824 memo_key=3811823 kind=0 bump=0 state=0 accepted=469234 mag_full=21149 
+probe_bi64.exe run1 TIER1 hits=4078413 misses=209167 LANE seed=4824 memo_key=3809547 kind=0 bump=0 state=0 accepted=471510 mag_full=22525 
+probe_bi.exe run2 TIER1 hits=2934225 misses=1353355 LANE seed=4824 memo_key=3796970 kind=0 bump=0 state=0 accepted=484087 mag_full=21964 
+probe_bi64.exe run2 TIER1 hits=4065855 misses=221725 LANE seed=4824 memo_key=3810064 kind=0 bump=0 state=0 accepted=470993 mag_full=22521 
+probe_bi.exe run3 TIER1 hits=2934244 misses=1353336 LANE seed=4824 memo_key=3796928 kind=0 bump=0 state=0 accepted=484129 mag_full=21966 
+probe_bi64.exe run3 TIER1 hits=4134087 misses=153493 LANE seed=4824 memo_key=3811751 kind=0 bump=0 state=0 accepted=469306 mag_full=22323 
+probe_bi.exe run4 TIER1 hits=3116426 misses=1171154 LANE seed=4824 memo_key=3815260 kind=0 bump=0 state=0 accepted=465797 mag_full=21662 
+probe_bi64.exe run4 TIER1 hits=4001033 misses=286547 LANE seed=4824 memo_key=3824860 kind=0 bump=0 state=0 accepted=456197 mag_full=21700 
+probe_bi.exe run5 TIER1 hits=3036717 misses=1250863 LANE seed=4824 memo_key=3810251 kind=0 bump=0 state=0 accepted=470806 mag_full=22071 
+probe_bi64.exe run5 TIER1 hits=4281255 misses=6325 LANE seed=4824 memo_key=3818736 kind=0 bump=0 state=0 accepted=462321 mag_full=22000 

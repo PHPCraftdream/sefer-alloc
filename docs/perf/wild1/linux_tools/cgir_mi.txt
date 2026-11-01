@@ -1,0 +1,24 @@
+144,425,383 (100.0%) 779,909 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                  D1mr              file:function
+--------------------------------------------------------------------------------
+26,399,005 (18.28%)  27,268 ( 3.50%)  ???:g1_wild_judge::burst [~/w1b/tgt/release/examples/g1_wild_judge]
+23,620,352 (16.35%)     468 ( 0.06%)  ???:<g1_wild_judge::Run>::alloc [~/w1b/tgt/release/examples/g1_wild_judge]
+18,981,664 (13.14%)  89,084 (11.42%)  ???:<g1_wild_judge::Run>::free [~/w1b/tgt/release/examples/g1_wild_judge]
+13,920,654 ( 9.64%)  17,081 ( 2.19%)  ./math/../sysdeps/ieee754/dbl-64/e_exp.c:__ieee754_exp_fma [/usr/lib/x86_64-linux-gnu/libm.so.6]
+10,676,016 ( 7.39%) 300,337 (38.51%)  ???:g1_wild_judge::main [~/w1b/tgt/release/examples/g1_wild_judge]
+ 9,285,189 ( 6.43%)  11,393 ( 1.46%)  ???:mi_free [~/w1b/tgt/release/examples/g1_wild_judge]
+ 9,244,946 ( 6.40%)   4,319 ( 0.55%)  ???:mi_theap_malloc_aligned [~/w1b/tgt/release/examples/g1_wild_judge]
+ 8,436,760 ( 5.84%)     856 ( 0.11%)  ./math/./w_exp_template.c:exp@@GLIBC_2.29 [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 5,483,296 ( 3.80%)     383 ( 0.05%)  ???:g1_wild_judge::a_alloc [~/w1b/tgt/release/examples/g1_wild_judge]
+ 5,469,880 ( 3.79%) 279,913 (35.89%)  ???:_mi_page_malloc_zero [~/w1b/tgt/release/examples/g1_wild_judge]
+ 3,374,336 ( 2.34%)     420 ( 0.05%)  ???:g1_wild_judge::a_dealloc [~/w1b/tgt/release/examples/g1_wild_judge]
+ 2,952,544 ( 2.04%)     209 ( 0.03%)  ???:mi_malloc_aligned [~/w1b/tgt/release/examples/g1_wild_judge]
+ 1,265,514 ( 0.88%)       .           ./math/../sysdeps/ieee754/dbl-64/math_config.h:__ieee754_exp_fma
+   843,676 ( 0.58%)     541 ( 0.07%)  ???:0x0000000004885400 [???]
+   639,448 ( 0.44%)   2,514 ( 0.32%)  ???:g1_wild_judge::wild_size [~/w1b/tgt/release/examples/g1_wild_judge]
+   418,946 ( 0.29%)   9,313 ( 1.19%)  ???:_mi_malloc_generic [~/w1b/tgt/release/examples/g1_wild_judge]
+   275,565 ( 0.19%)       0           ???:mi_theap_malloc_zero_aligned_at_generic [~/w1b/tgt/release/examples/g1_wild_judge]
+   170,303 ( 0.12%)       0           ???:mi_bin [~/w1b/tgt/release/examples/g1_wild_judge]
+   164,544 ( 0.11%)       0           ???:mi_theap_malloc_zero_aligned_at_overalloc [~/w1b/tgt/release/examples/g1_wild_judge]

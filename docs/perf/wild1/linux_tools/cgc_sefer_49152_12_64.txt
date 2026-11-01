@@ -1,0 +1,30 @@
+--------------------------------------------------------------------------------
+Profile data file '~/w1b/cgc_sefer_49152_12_64.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 32768 B, 64 B, 8-way associative
+D1 cache: 49152 B, 64 B, 12-way associative
+LL cache: 25165824 B, 64 B, 12-way associative
+Timerange: Basic block 0 - 3969646
+Trigger: Program termination
+Profiled target:  ~/w1b/tgt/release/examples/g1_wild_judge wild sefer 1 0.1 (PID 364, part 1)
+Events recorded:  Ir Dr Dw I1mr D1mr D1mw ILmr DLmr DLmw
+Events shown:     Ir D1mr DLmr
+Event sort order: D1mr
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                  D1mr             DLmr            
+--------------------------------------------------------------------------------
+25,938,187 (100.0%) 149,932 (100.0%) 15,318 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                 D1mr             DLmr             file:function
+--------------------------------------------------------------------------------
+3,604,416 (13.90%) 107,600 (71.77%) 12,515 (81.70%)  ???:g1_wild_judge::main [~/w1b/tgt/release/examples/g1_wild_judge]
+2,749,478 (10.60%)  11,083 ( 7.39%)     61 ( 0.40%)  ???:<g1_wild_judge::Run>::free [~/w1b/tgt/release/examples/g1_wild_judge]
+  209,584 ( 0.81%)   4,632 ( 3.09%)      .           ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss [~/w1b/tgt/release/examples/g1_wild_judge]
+3,825,451 (14.75%)   3,873 ( 2.58%)      0           ???:g1_wild_judge::burst [~/w1b/tgt/release/examples/g1_wild_judge]
+   75,597 ( 0.29%)   2,589 ( 1.73%)      .           ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [~/w1b/tgt/release/examples/g1_wild_judge]
