@@ -45,11 +45,11 @@ const judgeVerdict = (platform, sc, D, A) => {
 };
 
 const SCEN = ['grow64', 'grow1k', 'regrow', 'growmix', 'wild', 'phase', 'large', 'burst'];
-const judge = (title, campaign, platform, file) => {
+const judge = (title, campaign, platform, file, scen = SCEN) => {
   const recs = gz(file);
   const blocks = [...new Set(recs.map((x) => x.block))].sort((a, b) => a - b);
   md.push(`### ${title}`, '', `| scenario | blocks | x / base (exp mean d) | 95 % CI | A/A base2 / base | A/A 95 % CI | rule | verdict | min base ms | min x ms |`, '|---|---:|---:|---:|---:|---:|---|---|---:|---:|');
-  for (const sc of SCEN) {
+  for (const sc of scen) {
     const by = (b, arm) => recs.filter((x) => x.block === b && x.arm === arm && x.r.scenario === sc);
     const d = [], a = [];
     let reps = 0;
@@ -70,6 +70,8 @@ const judge = (title, campaign, platform, file) => {
 };
 judge('Judge, Windows, campaign 1 (preregistered design: 12 blocks, minimum of 3 repeats)', 'c1', 'windows', 'win_raw.jsonl.gz');
 if (fs.existsSync(dir + 'linux_raw.jsonl.gz')) judge('Judge, Linux (WSL2), campaign 1 (wild/phase/large/burst at scale 1, GiB scenarios at scale 0.5)', 'c1', 'linux', 'linux_raw.jsonl.gz');
+if (fs.existsSync(dir + 'linux2_raw.jsonl.gz')) judge('Judge, Linux (WSL2), confirmation campaign (Amendment 2: 24 blocks, minimum of 5 repeats; wild/phase/burst/large at scale 1, regrow/growmix at 0.5)', 'c2', 'linux', 'linux2_raw.jsonl.gz', ['wild', 'phase', 'burst', 'regrow', 'growmix', 'large']);
+if (fs.existsSync(dir + 'win_pilot_high_raw.jsonl.gz')) judge('Judge, Windows, pilot at HIGH priority (Amendment 2: wild and phase only, 12 blocks, minimum of 3; a noise check, not a gate)', 'pilot', 'windows-pilot', 'win_pilot_high_raw.jsonl.gz', ['wild', 'phase']);
 if (fs.existsSync(dir + 'win2_raw.jsonl.gz')) judge('Judge, Windows, confirmation campaign (Amendment 1: more blocks and repeats, machine otherwise idle)', 'c2', 'windows', 'win2_raw.jsonl.gz');
 
 // ---- bench:table paired sets ----
@@ -78,6 +80,15 @@ for (const s of ['s1', 's2']) {
   const r = spawnSync('node', ['scripts/g1_magnitude_verdict.mjs', dir + 'bt', `${s}base`, `${s}x`, 'x'], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   md.push(`### bench:table paired set ${s} (order base, x, x, base; aligned code)`, '', r.stdout.trim(), '');
+  {
+    const load = (name) => { const m = {}; for (const l of fs.readFileSync(dir + `bt/${name}.csv`, 'utf8').trim().split(nl).slice(1)) { const c = l.split(','); m[`${c[0]} ${c[1]} ${c[2]}`] = Number(c[8]); } return m; };
+    const b1 = load(`${s}base_r1`), b2 = load(`${s}base_r2`), x1 = load(`${s}x_r1`), x2 = load(`${s}x_r2`);
+    const cells = Object.keys(b1).filter((k) => k.endsWith(' sefer')).map((k) => k.slice(0, -6));
+    const rr = (m, k) => m[`${k} sefer`] / m[`${k} mimalloc`];
+    const bad = cells.filter((k) => Math.abs(rr(b1, k) / rr(b2, k) - 1) > 0.10 || Math.abs(rr(x1, k) / rr(x2, k) - 1) > 0.10);
+    md.push(`Noise floor of set ${s} (Amendment 1 point 4, post hoc): cells whose two runs of the SAME build differ in their sefer / mi ratio by more than 10 %: ${bad.length} of ${cells.length} (${bad.join('; ') || 'none'}). Such cells are UNREADABLE for rule C3 and are neither passed nor failed.`, '');
+    csv.push(['bench-table-noise', 'windows', s, cells.length, bad.length, '', '', '', '', '', '', 'C3-noise', bad.length > 0 ? 'UNREADABLE-CELLS' : 'ok'].join(','));
+  }
 }
 
 // ---- MT control ----
@@ -93,8 +104,9 @@ if (fs.existsSync(dir + 'mt_raw.txt')) {
   for (const [k, v] of Object.entries(cells)) {
     assert.equal(v.base.length, 6); assert.equal(v.x.length, 6);
     const ratio = med(v.x) / med(v.base);
-    md.push(`| ${k} | ${med(v.base).toFixed(1)} | ${med(v.x).toFixed(1)} | ${ratio.toFixed(3)} | ${ratio < 0.97 ? 'FAIL' : 'ok'} | ${v.base.join(' ')} | ${v.x.join(' ')} |`);
-    csv.push(['mt', 'windows', k, 6, ratio.toFixed(3), '', '', '', '', '', '', 'C4', ratio < 0.97 ? 'FAIL' : 'ok'].join(','));
+    const spread = Math.max(...v.base) / Math.min(...v.base), c4 = spread > 1.25 ? `UNREADABLE (base spread ${spread.toFixed(2)})` : ratio < 0.97 ? 'FAIL' : 'ok';
+    md.push(`| ${k} | ${med(v.base).toFixed(1)} | ${med(v.x).toFixed(1)} | ${ratio.toFixed(3)} | ${c4} | ${v.base.join(' ')} | ${v.x.join(' ')} |`);
+    csv.push(['mt', 'windows', k, 6, ratio.toFixed(3), '', '', '', '', '', '', 'C4', c4.split(' ')[0]].join(','));
   }
   md.push('');
 }
@@ -137,6 +149,50 @@ if (fs.existsSync(dir + 'callgrind_totals.txt')) {
   md.push('');
 }
 
+
+// ---- Linux hardware counters (perf stat, user mode), medians of 5 runs; supporting, not a gate ----
+if (fs.existsSync(dir + 'linux_tools/perf_stat_raw.txt')) {
+  const cells = {};
+  for (const l of fs.readFileSync(dir + 'linux_tools/perf_stat_raw.txt', 'utf8').split(nl)) {
+    const m = l.match(/^run(\d+) (\w+) (\w+) (\d+),,cycles:u.*? (\d+),,instructions:u.*? (\d+),,L1-dcache-load-misses/);
+    if (!m) continue;
+    const c = (cells[m[2] + ' ' + m[3]] ??= { cyc: [], ins: [], l1: [] });
+    c.cyc.push(+m[4]); c.ins.push(+m[5]); c.l1.push(+m[6]);
+  }
+  md.push('### Linux (WSL2) hardware counters, perf stat, user mode, median of 5 runs (supporting)', '', '| scenario | cycles base (M) | cycles x (M) | x / base | instructions base (M) | instructions x (M) | x / base | L1D misses base (M) | L1D misses x (M) | x / base |', '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|');
+  for (const sc of ['wild', 'phase', 'burst']) {
+    const b = cells[sc + ' base'], x = cells[sc + ' x'];
+    assert.ok(b && x && b.cyc.length === 5 && x.cyc.length === 5, sc + ': 5 runs per arm');
+    const r = (k) => [med(b[k]) / 1e6, med(x[k]) / 1e6, med(x[k]) / med(b[k])];
+    const [c0, c1, cr] = r('cyc'), [i0, i1, ir] = r('ins'), [l0, l1, lr] = r('l1');
+    md.push('| ' + sc + ' | ' + c0.toFixed(1) + ' | ' + c1.toFixed(1) + ' | ' + cr.toFixed(3) + ' | ' + i0.toFixed(1) + ' | ' + i1.toFixed(1) + ' | ' + ir.toFixed(3) + ' | ' + l0.toFixed(1) + ' | ' + l1.toFixed(1) + ' | ' + lr.toFixed(3) + ' |');
+  }
+  md.push('');
+}
+
+// ---- callgrind per function: where the saved instructions come from (wild, scale 0.3, Linux) ----
+if (fs.existsSync(dir + 'linux_tools/cgfn_base.txt')) {
+  const pick = (name, fn) => {
+    const txt = fs.readFileSync(dir + 'linux_tools/' + name, 'utf8');
+    const line = txt.split(nl).find((l) => l.includes('dealloc_fast::' + fn + ' '));
+    const ex = txt.split(nl).find((l) => l.includes(' ' + fn + ' entry='));
+    return { ir: line ? +line.trim().split(' ')[0].replace(/,/g, '') : 0, n: ex ? +ex.match(/executions=(\d+)/)[1] : 0 };
+  };
+  const bm = pick('cgfn_base.txt', 'lane_miss'), xm = pick('cgfn_x.txt', 'lane_miss'), xs = pick('cgfn_x.txt', 'lane_second_chance');
+  assert.ok(bm.n > 0 && xs.n > 0, 'entry counts parsed');
+  md.push('### Where the instructions go (callgrind, Linux, wild at scale 0.3, sefer arm)', '',
+    '| function | Ir (self) | entries | Ir per entry |', '|---|---:|---:|---:|',
+    '| base lane_miss | ' + bm.ir + ' | ' + bm.n + ' | ' + (bm.ir / bm.n).toFixed(1) + ' |',
+    '| x lane_second_chance | ' + xs.ir + ' | ' + xs.n + ' | ' + (xs.ir / xs.n).toFixed(1) + ' |',
+    '| x lane_miss (frees that fell through) | ' + xm.ir + ' | ' + xm.n + ' | ' + (xm.ir / xm.n).toFixed(1) + ' |',
+    '', 'Accepted by the second chance: ' + (xs.n - xm.n) + ' of ' + xs.n + ' entries (' + ((xs.n - xm.n) / xs.n * 100).toFixed(1) + ' %). Instructions of the memo-miss frees: base ' + bm.ir + ' against x ' + (xs.ir + xm.ir) + ' (' + (((xs.ir + xm.ir) / bm.ir - 1) * 100).toFixed(1) + ' %, ' + (xs.ir + xm.ir - bm.ir) + ' / ' + bm.ir + ').', '');
+}
+
+// ---- C6: the memo-hit path of the inlined dealloc (judge shim a_dealloc), disassembly of base against x ----
+if (fs.existsSync(dir + 'linux_tools/text_diff.txt')) {
+  const diff = fs.readFileSync(dir + 'linux_tools/text_diff.txt', 'utf8').trim();
+  md.push('### C6: disassembly diff of the judge shim a_dealloc (inlined dealloc hit path), base against x, addresses and call targets masked', '', '~~~text', diff, '~~~', '');
+}
 fs.writeFileSync(dir + 'tables.md', md.join('\n'));
 fs.writeFileSync('docs/perf/WILD2_LANE_SECOND_CHANCE_summary.csv', csv.join('\n') + '\n');
 if (fs.existsSync(dir + 'doc_head.md') && fs.existsSync(dir + 'doc_tail.md')) {

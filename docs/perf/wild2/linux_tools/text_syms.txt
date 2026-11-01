@@ -1,0 +1,5 @@
+b symbol _RNvCs74oEJTr9hii_13g1_wild_judge9a_dealloc
+74 <scratch>/text_b.txt
+x symbol _RNvCs74oEJTr9hii_13g1_wild_judge9a_dealloc
+77 <scratch>/text_x.txt
+diff exit 1
