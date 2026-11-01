@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+147. **[A] G1-AO1 — выдача свежей нарезки магазина по возрастанию адресов: цель выполнена, судья по предрегистрации HOLD.** (Filed 2026-11-01, `docs/perf/AO1_ASCENDING_ISSUE.md`.)
+
+   > **Current state**
+   > - **Status:** open (кандидат `perf(runtime)`, ветка `g1-ao1`; решение за владельцем: третьей кампании по предрегистрации нет).
+   > - **Current:** sefer выдавал пачки по 16 по убыванию (пила), что ломало предвыборку при обходе блоков в порядке выделения. Кампания 2 (v2, 12 блоков, минимум из 3 повторов): grow64 Windows 0.771 (ДИ 0.709–0.840), Linux 0.803 (0.764–0.845), grow1k Windows 0.736 (0.700–0.773); ни одна ячейка не нарушила порог +3 %, но у wild/growmix/regrow (обе ОС) и Linux grow1k верхняя граница ДИ выше +3 % (A/A как у них). Linux grow1k выигрыша не даёт (1.012). bench:table, два набора: gm по времени sefer −0.5 % / +0.4 %, наибольшая потеря +0.9 % / +2.6 %, новых проигрышей против mimalloc 0; по обычному правилу величины NO-GO, по исключению из предрегистрации проходит. callgrind: v2 +1.0 % Ir на grow64, v2b +0.03 %; g1_mt_one T=1 −0.001 %.
+   > - **Next trigger:** решение владельца по HOLD (влить v2b / принять вторую кампанию / отказ); при вливании — wall-clock v2b не перемерен (только Ir), `malloc_macro` MT для v2 шумный.
+   > - **Evidence:** `docs/perf/AO1_ASCENDING_ISSUE.md`, `docs/perf/AO1_ASCENDING_ISSUE_PREREG.md`, `docs/perf/AO1_ASCENDING_ISSUE_summary.csv`, `docs/perf/AO1_ASCENDING_ISSUE_campaign2_summary.csv`, `docs/perf/ao1/`, `scripts/ao1_report.mjs`, `scripts/ao1_controls_report.mjs`, `tests/ao1_ascending_issue_order.rs`.
+
 146. **[A] G1-WJ1 — GiB-scale and wild seeded workloads (g1_wild_judge): growth and Large-span turnover behind mimalloc on Windows.** (Filed 2026-11-01, `docs/perf/G1_WJ1_WINDOWS_SPAN_RESERVE.md`.)
 
    > **Current state**
