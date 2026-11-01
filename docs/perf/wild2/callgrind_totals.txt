@@ -1,0 +1,8 @@
+wild base 168176393
+wild x 163519983
+phase base 415192904
+phase x 415194942
+burst base 100684704
+burst x 100686830
+regrow base 139223435
+regrow x 137260245

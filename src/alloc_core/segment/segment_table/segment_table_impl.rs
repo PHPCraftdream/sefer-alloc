@@ -224,7 +224,7 @@ pub(crate) struct SegmentTable {
     /// `recycle`) clear the matching cache slot in the SAME function,
     /// immediately after `hash_remove`. You cannot drop a base from the table
     /// without passing through code that also evicts it from the cache.
-    own_cache: [(usize, *mut u8); OWN_CACHE_SIZE],
+    pub(super) own_cache: [(usize, *mut u8); OWN_CACHE_SIZE],
     /// N9 — a ONE-entry "last resolved segment" memo consulted BEFORE
     /// `own_cache`/hash lookup. Holds `(key.addr(), root)` for the most
     /// recent exact-base resolution (root.addr() == key.addr() only —
@@ -896,7 +896,7 @@ impl SegmentTable {
     /// first to get a dense per-segment key, then mask to `OWN_CACHE_SIZE`.
     #[inline(always)]
     fn cache_index(base: *mut u8) -> usize {
-        (base.addr() >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)
+        Self::index_of(base.addr())
     }
 
     /// Evict every cache entry holding this canonical root. A biased payload
