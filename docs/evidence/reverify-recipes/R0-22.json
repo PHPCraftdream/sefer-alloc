@@ -19,7 +19,7 @@
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "7 passed; 0 failed",
+          "8 passed; 0 failed",
           "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok",
           "test loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable ... ok"
         ]

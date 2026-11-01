@@ -432,7 +432,7 @@ export const REVIEWED_SURFACE = [
     ['src/registry/segment_route/directory/route_directory.rs', ['fail_next_registration_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
     ['src/registry/segment_route/directory/route_directory.rs', ['with_initial_incarnation_for_test'], 'mutator', 'constructs isolated directory with chosen initial incarnation'],
     ['src/registry/segment_route/directory/route_directory.rs', ['retained_pointer_capacity_for_test', 'moved_pointer_cells_for_test', 'shard_index_for_test', 'live_route_census_for_test'], 'observer', 'directory capacity/census under its locks'],
-    ['src/registry/segment_route/small_sidecar.rs', ['class_at_for_test', 'mixed_leaves_for_test', 'system_totals_for_test'], 'observer', 'sidecar class/counter observations'],
+    ['src/registry/segment_route/small_sidecar.rs', ['class_at_for_test', 'mixed_leaves_for_test', 'system_totals_for_test', 'chunk_totals_for_test'], 'observer', 'sidecar class/counter observations'],
     ['src/registry/segment_route/registration.rs', ['class_at_global_address_for_test'], 'observer', 'lookup pins independent sidecar before class read'],
     ['src/registry/segment_route/large_state.rs', ['word_for_test'], 'observer', 'atomic terminal state snapshot'],
     ['src/registry/segment_route/pin.rs', ['pending_for_test'], 'observer', 'pinned sidecar pending state'],
