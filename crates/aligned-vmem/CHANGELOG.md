@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+- **Windows: a fully committed span with `align > 64 KiB` is one exact
+  `MEM_RESERVE | MEM_COMMIT` region** (WJ-1). An over-reserve probe finds the
+  aligned address, is released, and the span is reserved and committed there
+  in one call (up to 4 attempts, then the previous over-reserve + commit
+  path). `reservation_ptr() == as_ptr()` and `reservation_len() == len()` for
+  such a span. Releasing it costs microseconds instead of tens to hundreds of
+  microseconds for a reserve-then-commit region (`examples/g1_vfree_probe.rs`
+  in the workspace). Lazily committed spans are unchanged. [perf]
+
 ## 0.2.0 - 2026-08-23
 
 ### Added
