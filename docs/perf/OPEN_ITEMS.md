@@ -124,8 +124,9 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > **Current state**
    > - **Status:** open (харнесс исправлен в G1-MT1; R123 — первое лечение runtime, влито как `perf(runtime)`).
    > - **Current:** до исправления харнесса тело `alloc` sefer встраивалось в цикл бенча, `alloc_block` переставал инлайниться, и возврат `Block` через sret давал провал store-forward на каждом alloc (2.07 M на 2 M операций; у mimalloc 10.5 k). С прокладкой mi/sefer: larson T=1 1.343 → 1.069 (Linux), 1.444 → 1.221 (Windows); mstress T=1 1.077 → 1.140 (Linux), 1.337 → 1.268 (Windows). Профиль mstress T=1: весь разрыв во free (≈60 Ir против ≈21). R123 (`docs/perf/G1_R123_FREE_LANE.md`): кадр полосы free без сохранений и перестановок, тег LIVE с диапазоном вместо проверки класса, одна проверка kind+payload и граница по гранулам. Ir: mstress −8.2 %, larson −6.4 %. Путь приёма free: 62 → 49 инструкций (Linux), 72 → 55 (Win64). Парный bench:table GO в обоих наборах (gm −9.6 %, 0 проигрышей). malloc_macro sefer/mi при T=1: larson 0.936 → 0.995, mstress 0.833 → 0.880 (Windows).
-   > - **Next trigger:** Win64 ещё сохраняет `rsi`/`rdi` на пути приёма free (9 живых значений при 7 volatile-регистрах); затем профиль alloc mstress T=1. Приём — правило величины на парном bench:table + MT-контроль.
-   > - **Evidence:** `docs/perf/G1_MT1_HARNESS_SHIM.md`, `docs/perf/G1_MT1_HARNESS_SHIM_summary.csv`, `docs/perf/_raw_g1_mt1_*.log`, `scripts/g1_mt1_shim_report.mjs`, `docs/perf/G1_R123_FREE_LANE.md`, `docs/perf/G1_R123_FREE_LANE_summary.csv`, `docs/perf/G1_R123_FREE_LANE_mt_summary.csv`, `docs/perf/r123/`.
+   > - **After R123 + C1R (2026-11-01):** callgrind mstress T=1 sefer 71.7 M Ir против mimalloc 63.7 M; alloc у sefer дешевле (16.6 M против 22.5 M), free дороже (22.8 M против 10.4 M: 54.6 против 24.8 Ir на free, 418 135 free). Путь приёма — ≈48 инструкций, в основном проверки безопасности. C1R (`docs/perf/G1_C1R_DEPOT_FAST_LANE.md`): mstress T=1 −1.7 % Ir; malloc_macro sefer/mi 0.890 → 0.948.
+   > - **Next trigger:** сохранения `rsi`/`rdi` на Win64 — три asm-эксперимента без результата (kind через match вместо `LANE_PS`, запись MAG до проверки ёмкости, `payload_offset` заголовка как граница: у Large не отсекает), не измерялись; снять их можно только новым полем заголовка или ослаблением передачи layout в `lane_miss` — решение владельца. Иначе — копирование 16 указателей в переливе склада. Приём — правило величины на парном bench:table + MT-контроль.
+   > - **Evidence:** `docs/perf/G1_MT1_HARNESS_SHIM.md`, `docs/perf/G1_MT1_HARNESS_SHIM_summary.csv`, `docs/perf/_raw_g1_mt1_*.log`, `scripts/g1_mt1_shim_report.mjs`, `docs/perf/G1_R123_FREE_LANE.md`, `docs/perf/G1_R123_FREE_LANE_summary.csv`, `docs/perf/G1_R123_FREE_LANE_mt_summary.csv`, `docs/perf/r123/`, `docs/perf/G1_C1R_DEPOT_FAST_LANE.md`, `docs/perf/c1r/`.
 
 138. **[A] J1-CH — J1 churn kernels share one ring: the J1 churn losses are a cross-class regime, and sefer's per-op cost is flat.** (Filed 2026-10-30, `docs/perf/J1_CROSS_CLASS_ATTRIBUTION.md`.)
 
@@ -1324,14 +1325,6 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Current:** callgrind bulk 1024 × 16/64 Б 142.71/142.74 → 142.55/142.55 Ir/пару (−0.16…−0.19 при пороге −2); pair/churn без изменений. Время и iai не мерились.
    > - **Next trigger:** не переоткрывать как правку атрибутов; переливы (≈ 19 Ir/пару) стоят не в кадрах вложенных уровней.
    > - **Evidence:** `docs/perf/WB1_B1_DEPOT_INLINE_PREREG.md`, `docs/perf/wb1_b1/`.
-
-136. **[L] WB-3 C1 — frameless depot fast lanes (park_simple / reload_simple): NO-GO.** (Filed 2026-10-29, `docs/perf/WB3_C1_DEPOT_FAST_LANE_PREREG.md` § Verdict.)
-
-   > **Current state**
-   > - **Status:** rejected (код под тегом `archive/wb3-c1-measured`, в main не попал).
-   > - **Current:** `t(1024)` тёплой пачки ниже во всех 12 парах (−0.04…−0.60, обычно −0.2…−0.3 ns/пару, ≈ 3–4 %), но порог −0.3 ns/пару на 16 Б не пройден (медиана −0.26); 64 Б прошёл (−0.36); в парной таблице тёплая пачка 16 Б не быстрее. Регрессий в других ячейках нет.
-   > - **Next trigger:** только по решению владельца принять выигрыш ниже порога (≈ 3–4 % на bulk при +250 строк, двух новых правилах P12 и перепроверке строки evidence R-Ph3b); иначе не переоткрывать.
-   > - **Evidence:** `docs/perf/WB3_C1_DEPOT_FAST_LANE_PREREG.md`, `docs/perf/wb3_c1/`, `scripts/wb3_c1_sweep_verdict.mjs`.
 
 133. **[L] WB-1 A-1 — классификация Layout одной загрузкой по потолочному индексу: NO-GO.** (Filed 2026-10-29, `docs/perf/WB1_A1_CLASS_FOR_LAYOUT_VERDICT.md`.)
 
@@ -3383,6 +3376,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **Item 136 — WB-3 C1 depot fast lanes (park_simple / reload_simple): reopened by the owner on 2026-11-01 and shipped `perf(runtime)` on top of R123, closed 2026-11-01** (PR #149; paired bench:table GO in both ABBA sets under the magnitude rule, sefer time gm −1.8 % / −2.1 %, 0 losing cells, direct 64 B −13.9 % / −7.8 %; callgrind bulk 16/64 B −4.8 %, mstress T=1 −1.7 %). Report `docs/perf/G1_C1R_DEPOT_FAST_LANE.md`; the 2026-10-29 NO-GO card is archived at `docs/perf/OPEN_ITEMS_ARCHIVE.md` § "136 — WB-3 C1".
 - **Item 144 — AS-1 accept-only fast lane for own-thread small frees: GO, shipped `perf(runtime)`, closed 2026-10-30** (design A-S from the @ox consultation; paired bench:table, two pre-registered ABBA sets under the magnitude rule: sefer-time geometric mean −5.8 % and −4.0 %, no agreed loss; warm batch 64 B 1.081 → 0.94 against mimalloc; MT within noise, callgrind −3.4 % / −6.6 % Ir; `docs/perf/AS1_FAST_FREE_LANE_PREREG.md`).
 - **Item 130 — G1-K7 budgeted depot overflow above the K5 floor (default 1 MiB per heap): shipped `perf(runtime)` under two owner exceptions, closed 2026-10-29** (PR #128; rule 1 bulk16k K7/K5 1.675 against mimalloc, churn64 1.081, churn1024 1.047; rule 3 RSS no loss; owner exceptions to rule 2a — pair16 +0.62 %, pair64 +0.73 % — and rule 4 — 8 benches, at most +430 Ir; `docs/perf/b4_ablate/G1_K7_PREREG.md` Addenda 6–10). Полное повествование закрытия — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § A130.
 - **D1′ (B4-23) — one-class map (PR #94) and chunked sidecar (PR #96): NO-GO, closed 2026-10-29** (owner approved the @oh council plan). F1 failed its pre-registered gate (slope +19k, fixed +43k, Windows wall +5.4 %); the chunked candidate lost installed-global larson (×1.281 at T=4, ×1.191 at T=8) and dense16 (×2.479). C2 is parked as D1″ (item 131). Report `docs/perf/D1_PRIME_VERDICT.md`; evidence tags `archive/b4-oneclass`, `archive/b4-chunks`.
