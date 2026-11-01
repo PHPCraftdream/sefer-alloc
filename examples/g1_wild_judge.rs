@@ -484,6 +484,14 @@ fn main() {
             .max(anon_huge_bytes()),
         anon_huge_bytes()
     );
+    // WILD-2 path-activation oracle (`bench-internals` builds only; counts, not timing).
+    #[cfg(feature = "bench-internals")]
+    let os = format!(
+        "{os},\"lane_second_chance\":{},\"tier1_hits\":{},\"tier1_misses\":{}",
+        sefer_alloc::alloc_core::AllocCore::dbg_lane_second_chance_hits(),
+        sefer_alloc::alloc_core::AllocCore::dbg_contains_base_tier1_hits(),
+        sefer_alloc::alloc_core::AllocCore::dbg_contains_base_tier1_misses()
+    );
     // WILD-1 (`WJ_PROF=1`): bucket times in ns, counts, and the wall time of the run.
     let os = match run.prof {
         Some(f) => format!(
