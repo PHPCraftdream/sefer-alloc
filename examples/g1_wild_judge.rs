@@ -463,6 +463,14 @@ fn main() {
             }
         }
     }
+    if a[2] == "sefer" {
+        extern "C" {
+            static SEFER_LM: [std::sync::atomic::AtomicU64; 8];
+        }
+        // SAFETY: a plain exported static of the library (WILD-1 probe).
+        let c: Vec<u64> = unsafe { SEFER_LM.iter().map(|x| x.load(std::sync::atomic::Ordering::Relaxed)).collect() };
+        eprintln!("LANE seed={} memo_key={} kind={} bump={} state={} accepted={} mag_full={}", c[0], c[1], c[2], c[3], c[4], c[5], c[6]);
+    }
     let m = proc_memstat::snapshot();
     // Under `internals`: SeferAlloc's process-wide segment reserve / release
     // counts (the OS traffic of the run; 0 for the other arms).

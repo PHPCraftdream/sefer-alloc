@@ -22,6 +22,15 @@ static LANE_PS: [usize; 256] = {
     t
 };
 
+// WILD-1 probe (uncommitted measurement patch): why does the lane miss?
+#[allow(unsafe_code)]
+#[no_mangle]
+pub static SEFER_LM: [core::sync::atomic::AtomicU64; 8] = [const { core::sync::atomic::AtomicU64::new(0) }; 8];
+#[inline(always)]
+fn lm(i: usize) {
+    SEFER_LM[i].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
+
 impl HeapCore {
     /// Accept an own-thread small free on the tier-1 memo hit, or hand the
     /// free to the unchanged chain. Every exit is a tail call.
@@ -32,6 +41,7 @@ impl HeapCore {
         let seed = size.wrapping_sub(1) >> MIN_BLOCK_SHIFT;
         // The last bucket is past SMALL_MAX: `class_for` rejects it.
         if align > MIN_BLOCK || seed >= SIZE2CLASS.len() - 1 {
+            lm(0);
             return lane_miss(ptr, layout, self);
         }
         // The tag's range bounds `c < SMALL_CLASS_COUNT`.
@@ -40,6 +50,7 @@ impl HeapCore {
         let key = ptr.addr() & !(crate::alloc_core::os::SEGMENT - 1);
         let (memo_key, root) = self.core.tier1_memo();
         if memo_key != key {
+            lm(1);
             return lane_miss(ptr, layout, self);
         }
         // `block == ptr` by address, with the table root's provenance; `ptr`
@@ -50,6 +61,7 @@ impl HeapCore {
         // fails the granule bound below.
         let kind = SegmentHeader::kind_byte_at(root) as usize;
         if off < LANE_PS[kind] {
+            lm(2);
             return lane_miss(block, layout, self);
         }
         // `g = off >> 4` when `off % 16 == 0`, else `g >= 2^60`. Both sides are
@@ -57,11 +69,13 @@ impl HeapCore {
         let g = off.rotate_right(MIN_BLOCK_SHIFT);
         let meta = SegmentMeta::new(root);
         if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
+            lm(3);
             return lane_miss(block, layout, self);
         }
         let off = off as u32;
         let bytes = meta.state_byte();
         if bytes.read_granule(g) != tag.byte() {
+            lm(4);
             return lane_miss(block, layout, self);
         }
         // Refinement: the lane accepts only what the chain's guard accepts.
@@ -79,8 +93,10 @@ impl HeapCore {
         );
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::AllocCore::note_tier1_hit();
+        lm(5);
         let cnt = self.tcache.classes[c].count as usize;
         if cnt >= FREE_PARK_CAP[c] as usize {
+            lm(6);
             return self.free_magazine_full_fast(c, root, block);
         }
         bytes.write_granule(g, tag.mag_byte());
