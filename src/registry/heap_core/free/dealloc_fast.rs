@@ -12,15 +12,8 @@ use crate::registry::heap_core::state::tcache::{FREE_PARK_CAP, TCACHE_CAP};
 use crate::registry::heap_core::HeapCore;
 use core::alloc::Layout;
 
-/// Payload start by kind byte; every kind but Primordial (0) and Small (1)
-/// maps to `usize::MAX`, so one compare rejects both the kind and an offset
-/// below the payload.
-static LANE_PS: [usize; 256] = {
-    let mut t = [usize::MAX; 256];
-    t[SegmentKind::Primordial as usize] = SegmentLayout::primordial_meta_end();
-    t[SegmentKind::Small as usize] = SegmentLayout::small_meta_end();
-    t
-};
+// The lane accepts the small kinds only: Primordial (0) and Small (1).
+const _: () = assert!(SegmentKind::Primordial as u8 == 0 && SegmentKind::Small as u8 == 1);
 
 impl HeapCore {
     /// Accept an own-thread small free on the tier-1 memo hit, or hand the
@@ -46,25 +39,32 @@ impl HeapCore {
         // is dead from here, so the exits below hold no extra register.
         let off = ptr.addr().wrapping_sub(root.addr());
         let block = root.wrapping_add(off);
-        // Large and Unknown kinds map to MAX: `off == MAX` passes here and
-        // fails the granule bound below.
-        let kind = SegmentHeader::kind_byte_at(root) as usize;
-        if off < LANE_PS[kind] {
+        // A Large payload is user data, not state bytes. Below a small kind's
+        // payload the state bytes read 0 (И1), which no LIVE tag matches.
+        if SegmentHeader::kind_byte_at(root) > SegmentKind::Small as u8 {
             return lane_miss(block, layout, self);
         }
-        // `g = off >> 4` when `off % 16 == 0`, else `g >= 2^60`. Both sides are
-        // floored to granules: `g < bump >> 4` implies `off < bump`.
-        let g = off.rotate_right(MIN_BLOCK_SHIFT);
+        // A granule start below the bump; the compare reads `bump` in place.
         let meta = SegmentMeta::new(root);
-        if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
+        if off & (MIN_BLOCK - 1) != 0 || off >= meta.bump_of() {
             return lane_miss(block, layout, self);
         }
+        let g = off >> MIN_BLOCK_SHIFT;
         let off = off as u32;
         let bytes = meta.state_byte();
         if bytes.read_granule(g) != tag.byte() {
             return lane_miss(block, layout, self);
         }
         // Refinement: the lane accepts only what the chain's guard accepts.
+        debug_assert!(
+            off as usize
+                >= if SegmentHeader::kind_byte_at(root) == SegmentKind::Small as u8 {
+                    SegmentLayout::small_meta_end()
+                } else {
+                    SegmentLayout::primordial_meta_end()
+                },
+            "AS-1 lane accepted a granule below the payload"
+        );
         debug_assert_eq!(
             crate::alloc_core::size_classes::SizeClasses::class_for(size.max(MIN_BLOCK), align),
             Some(c),
@@ -80,7 +80,12 @@ impl HeapCore {
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::AllocCore::note_tier1_hit();
         let cnt = self.tcache.classes[c].count as usize;
-        if cnt >= FREE_PARK_CAP[c] as usize {
+        #[cfg(not(feature = "virgin-zero-skip"))]
+        let cap = self.tcache.classes[c].park_cap;
+        #[cfg(feature = "virgin-zero-skip")]
+        let cap = FREE_PARK_CAP[c];
+        debug_assert_eq!(cap, FREE_PARK_CAP[c]);
+        if cnt >= cap as usize {
             return self.free_magazine_full_fast(c, root, block);
         }
         bytes.write_granule(g, tag.mag_byte());

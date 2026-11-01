@@ -310,6 +310,10 @@ pub(crate) struct PerClass {
     /// refuses (budget, OS) or its ring fills, until the overflow shrinks.
     /// In the padding before `slots` (no size change).
     pub(crate) limit: u16,
+    /// The free lane's push bound: `FREE_PARK_CAP[c]`, constant per class, kept
+    /// in the counter's line (offset 6) so the lane reads it without a table.
+    #[cfg(not(feature = "virgin-zero-skip"))]
+    pub(crate) park_cap: u8,
     /// This class's pointer stack. `slots[0..count as usize]` are valid.
     /// F4: declared LAST so `#[repr(C)]` places it after the small fields —
     /// `#[repr(C)]` still pads `slots` up to its own 8-byte alignment (no
@@ -358,6 +362,11 @@ const _: () = assert!(
     ::core::mem::offset_of!(PerClass, limit) == 4,
     "PerClass::limit (u16) must sit in the padding before slots (offset 4)"
 );
+#[cfg(not(feature = "virgin-zero-skip"))]
+const _: () = assert!(
+    ::core::mem::offset_of!(PerClass, park_cap) == 6,
+    "PerClass::park_cap must use the pad byte after limit (offset 6)"
+);
 // R2-17: this is the concrete pin the crate-root gate in `src/lib.rs` exists
 // to host — `slots` reaches offset 8 only on a 64-bit `repr(C)` ABI, and the
 // R2-17 target gate already rejects every 32-bit allocator build, so this
@@ -387,6 +396,8 @@ impl PerClass {
             #[cfg(feature = "virgin-zero-skip")]
             virgin_mask: 0,
             limit: 0,
+            #[cfg(not(feature = "virgin-zero-skip"))]
+            park_cap: 0,
         }
     }
 }
@@ -413,6 +424,10 @@ impl Tcache {
         let mut c = 0;
         while c < SMALL_CLASS_COUNT {
             classes[c].limit = crate::registry::heap_core::state::depot::DEPOT_CAP[c] as u16;
+            #[cfg(not(feature = "virgin-zero-skip"))]
+            {
+                classes[c].park_cap = FREE_PARK_CAP[c];
+            }
             c += 1;
         }
         Self { classes }
