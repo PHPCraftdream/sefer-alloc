@@ -417,7 +417,10 @@ fn decommit_recommit_roundtrip() {
 /// an explicit diagnostic instead of silently exercising the zero-offset
 /// path under a misleading test name.
 #[test]
-#[cfg(not(miri))]
+// WJ-1: on Windows an eagerly committed span is one exact region (no head
+// offset), so the over-reserved shape is reached through the lazy path
+// (`commit_len < size`), which needs `lazy-commit`.
+#[cfg(not(any(miri, all(windows, not(feature = "lazy-commit")))))]
 fn decommit_recommit_roundtrip_on_over_reserved_span() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // Excluded under miri: the fallback backend (src/os/miri.rs) is a plain
@@ -438,7 +441,8 @@ fn decommit_recommit_roundtrip_on_over_reserved_span() {
     let size = page_size();
 
     // Windows: align > WIN_ALLOCATION_GRANULARITY (64 KiB) unconditionally
-    // skips win_reserve_commit's fast-reserve sub-path, forcing the
+    // skips win_reserve_commit's fast-reserve sub-path, and a lazy reserve
+    // (commit_len < size) skips the one-region re-reserve too, forcing the
     // over-reserve two-call path (see the module doc above). Unix has no
     // such fast-path shortcut to skip, so any align > size that forces an
     // over-reserve exercises the same code path; both still need the retry
@@ -463,7 +467,15 @@ fn decommit_recommit_roundtrip_on_over_reserved_span() {
 
     let mut extras = Vec::new();
     let r = loop {
+        #[cfg(not(windows))]
         let candidate = reserve_aligned(size, align).expect("reserve with align > size");
+        #[cfg(windows)]
+        let candidate = {
+            let mut lazy = aligned_vmem::reserve_aligned_lazy(size, align, 0)
+                .expect("lazy reserve with align > size");
+            lazy.ensure_committed(size).expect("commit the span");
+            lazy.into_reservation()
+        };
         if candidate.as_ptr() != candidate.reservation_ptr() {
             break candidate;
         }
