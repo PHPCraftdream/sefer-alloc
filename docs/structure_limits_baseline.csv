@@ -7,7 +7,7 @@ file,benches/segment_directory_sweep.rs,1266,grandfathered when the structure li
 file,crates/aligned-vmem/src/os/unix.rs,1169,grandfathered when the structure limits landed (2026-10-12)
 file,crates/aligned-vmem/src/reservation.rs,1574,grandfathered when the structure limits landed (2026-10-12)
 file,crates/aligned-vmem/tests/decommit_capability.rs,1622,grandfathered when the structure limits landed (2026-10-12)
-file,crates/aligned-vmem/tests/smoke.rs,2073,grandfathered when the structure limits landed (2026-10-12)
+file,crates/aligned-vmem/tests/smoke.rs,1912,grandfathered when the structure limits landed (2026-10-12)
 file,crates/globalalloc-model/examples/perf_probe_p4_measurements.rs,1468,grandfathered when the structure limits landed (2026-10-12)
 file,crates/globalalloc-model/tests/oracle_negative.rs,1482,grandfathered when the structure limits landed (2026-10-12)
 file,crates/numa-shim/src/lib.rs,2373,grandfathered when the structure limits landed (2026-10-12)

@@ -204,6 +204,52 @@ fn win_reserve_commit(
         }
     }
 
+    // WJ-1: a fully committed ordinary span with `align > 64 KiB` is reserved
+    // and committed by ONE `VirtualAlloc(MEM_RESERVE | MEM_COMMIT)` at an aligned
+    // address found by an over-reserve probe. Windows releases such a region in
+    // ~4 µs, a reserve-then-commit region in ~30–270 µs for 4–36 MiB with few
+    // pages touched (examples/g1_vfree_probe.rs). Another thread may take the
+    // address between the probe's release and the re-reserve: retried, then the
+    // two-call path below. The region is exactly `size` bytes at `base`.
+    if commit_len == size && extra_commit_flags == 0 {
+        if let Some(over) = size.checked_add(align) {
+            for _ in 0..RERESERVE_TRIES {
+                // SAFETY: reserve-only probe of `over` bytes; NULL checked.
+                let probe = unsafe { winapi_virtual_reserve(over) };
+                let Some(probe) = NonNull::new(probe as *mut u8) else {
+                    break;
+                };
+                let Some(at) = align_up_addr(probe.as_ptr().addr(), align) else {
+                    // SAFETY: `probe` was just reserved and not handed out.
+                    unsafe { winapi_virtual_release(probe.as_ptr()) };
+                    break;
+                };
+                // SAFETY: `probe` was just reserved and not handed out.
+                unsafe { winapi_virtual_release(probe.as_ptr()) };
+                // SAFETY: reserve+commit of `size` bytes at the aligned address
+                // inside the range just released; NULL (address taken) retries.
+                // The pointer comes from the OS call, with its own provenance.
+                let p = unsafe {
+                    VirtualAlloc(
+                        core::ptr::without_provenance_mut::<core::ffi::c_void>(at),
+                        size,
+                        MEM_RESERVE | MEM_COMMIT,
+                        PAGE_READWRITE,
+                    )
+                };
+                if let Some(base) = NonNull::new(p as *mut u8) {
+                    if base.as_ptr().addr() == at {
+                        #[cfg(feature = "bench-internals")]
+                        WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.fetch_add(1, Ordering::Relaxed);
+                        return Ok((base, base, size, false));
+                    }
+                    // SAFETY: an unexpected placement; release and retry.
+                    unsafe { winapi_virtual_release(base.as_ptr()) };
+                }
+            }
+        }
+    }
+
     // Two-call path (align > WIN_ALLOCATION_GRANULARITY for ordinary requests,
     // align > GetLargePageMinimum() for large-page requests, or a partial initial commit,
     // or single-call alignment check failed).
@@ -508,6 +554,9 @@ pub(crate) struct SystemInfo {
 const MEM_COMMIT: u32 = 0x0000_1000;
 #[cfg(all(windows, not(miri)))]
 const MEM_RESERVE: u32 = 0x0000_2000;
+/// WJ-1: attempts of the aligned re-reserve before the two-call path.
+#[cfg(all(windows, not(miri)))]
+const RERESERVE_TRIES: usize = 4;
 #[cfg(all(windows, not(miri)))]
 pub(crate) const WIN_ALLOCATION_GRANULARITY: usize = 65536; // 64 KiB - VirtualAlloc alignment guarantee
 #[cfg(all(windows, not(miri)))]

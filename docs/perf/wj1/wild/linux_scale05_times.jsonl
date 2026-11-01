@@ -1,0 +1,16 @@
+{"scenario":"grow64","arm":"sefer","seed":1,"scale":0.5,"ops":16777216,"ns_per_op":44.303,"peak_rss":681017344,"end_rss":66166784,"checksum":1073741824}
+{"scenario":"grow64","arm":"mi","seed":1,"scale":0.5,"ops":16777216,"ns_per_op":34.746,"peak_rss":610799616,"end_rss":543940608,"checksum":1073741824}
+{"scenario":"grow64","arm":"mi","seed":1,"scale":0.5,"ops":16777216,"ns_per_op":35.726,"peak_rss":610967552,"end_rss":543993856,"checksum":1073741824}
+{"scenario":"grow64","arm":"sefer","seed":1,"scale":0.5,"ops":16777216,"ns_per_op":60.882,"peak_rss":680902656,"end_rss":66117632,"checksum":1073741824}
+{"scenario":"regrow","arm":"sefer","seed":1,"scale":0.5,"ops":1098292,"ns_per_op":272.670,"peak_rss":358617088,"end_rss":83574784,"checksum":459866162}
+{"scenario":"regrow","arm":"mi","seed":1,"scale":0.5,"ops":1098292,"ns_per_op":276.426,"peak_rss":311783424,"end_rss":305172480,"checksum":459866162}
+{"scenario":"regrow","arm":"mi","seed":1,"scale":0.5,"ops":1098292,"ns_per_op":164.161,"peak_rss":311668736,"end_rss":305123328,"checksum":459866162}
+{"scenario":"regrow","arm":"sefer","seed":1,"scale":0.5,"ops":1098292,"ns_per_op":202.722,"peak_rss":358424576,"end_rss":83644416,"checksum":459866162}
+{"scenario":"large","arm":"sefer","seed":1,"scale":0.5,"ops":5190,"ns_per_op":2137.373,"peak_rss":8445952,"end_rss":5214208,"checksum":13596052224}
+{"scenario":"large","arm":"mi","seed":1,"scale":0.5,"ops":5190,"ns_per_op":55831.881,"peak_rss":735014912,"end_rss":735014912,"checksum":13596052224}
+{"scenario":"large","arm":"mi","seed":1,"scale":0.5,"ops":5190,"ns_per_op":18704.991,"peak_rss":735092736,"end_rss":735092736,"checksum":13596052224}
+{"scenario":"large","arm":"sefer","seed":1,"scale":0.5,"ops":5190,"ns_per_op":7218.032,"peak_rss":8445952,"end_rss":5279744,"checksum":13596052224}
+{"scenario":"wild","arm":"sefer","seed":1,"scale":0.5,"ops":2195172,"ns_per_op":26.081,"peak_rss":20123648,"end_rss":15253504,"checksum":1477734958}
+{"scenario":"wild","arm":"mi","seed":1,"scale":0.5,"ops":2195172,"ns_per_op":80.407,"peak_rss":253308928,"end_rss":252588032,"checksum":1477734958}
+{"scenario":"wild","arm":"mi","seed":1,"scale":0.5,"ops":2195172,"ns_per_op":53.515,"peak_rss":253292544,"end_rss":252555264,"checksum":1477734958}
+{"scenario":"wild","arm":"sefer","seed":1,"scale":0.5,"ops":2195172,"ns_per_op":25.419,"peak_rss":20123648,"end_rss":15187968,"checksum":1477734958}
