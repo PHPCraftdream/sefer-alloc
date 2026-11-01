@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+146. **[A] G1-WJ1 — GiB-scale and wild seeded workloads (g1_wild_judge): growth and Large-span turnover behind mimalloc on Windows.** (Filed 2026-11-01, `docs/perf/G1_WJ1_WINDOWS_SPAN_RESERVE.md`.)
+
+   > **Current state**
+   > - **Status:** open (судья добавлен; первая правка — однократный reserve+commit выровненных спанов на Windows — влита как `perf(runtime)`).
+   > - **Current:** до правки sefer/mi по времени на Windows: grow64 1.82, grow1k 1.54, growmix 1.42, regrow 1.87, large 6.86, wild 1.84, phase 1.34; на Linux large и wild — выигрыш (0.11, 0.47). Причина large/wild: возврат ОС региона с отдельным `MEM_COMMIT` стоит ~270 мкс на 36 МиБ против ~4 мкс у региона из одного `RESERVE|COMMIT` (`examples/g1_vfree_probe.rs`). После правки: large 1.26, wild 1.21, phase 0.99, grow64 1.78, regrow 1.47, growmix 1.47.
+   > - **Next trigger:** рост — синхронный возврат опустевших целиком тронутых сегментов (~0.7 мс; RSS sefer 30 МиБ против ~1 ГиБ у mi) и оборот магазина при защёлкнутом складе; отложенный возврат — решение владельца по политике RSS. large/wild — оборот 8 слотов кэша и регистрация маршрута на каждый кэшированный спан. Приём — дикий судья + bench:table как контроль.
+   > - **Evidence:** `docs/perf/G1_WJ1_WINDOWS_SPAN_RESERVE.md`, `docs/perf/G1_WJ1_WINDOWS_SPAN_RESERVE_summary.csv`, `docs/perf/G1_WJ1_WINDOWS_SPAN_RESERVE_probe_summary.csv`, `docs/perf/G1_WJ1_WINDOWS_SPAN_RESERVE_bt_summary.csv`, `docs/perf/G1_WJ1_WINDOWS_SPAN_RESERVE_mt_summary.csv`, `docs/perf/wj1/`, `examples/g1_wild_judge.rs`, `scripts/g1_wild_judge.mjs`, `scripts/wj1_report.mjs`.
+
 145. **[A] G1-MT1 — larson/mstress at T=1 behind mimalloc; most of the larson gap was the harness.** (Filed 2026-10-30, `docs/perf/G1_MT1_HARNESS_SHIM.md`.)
 
    > **Current state**
