@@ -103,3 +103,20 @@ unchanged):
 
 No third campaign. If campaign 2 ends in HOLD or UNREADABLE for a gate, the decision goes to the owner with the
 data of both campaigns and the deterministic evidence.
+
+## 7. Amendment 2 (written after the pilot of Amendment 1 and before any further campaign)
+
+Pilot of Amendment 1 point 1 (Windows, `wild` and `phase`, 12 blocks x minimum of 3, every judge process launched
+through `wnice -p high --`; `docs/perf/wild2/win_pilot_high_raw.jsonl.gz`): the A/A interval of `wild` was
+0.916 (0.790-1.062) and of `phase` 0.961 (0.878-1.053), no narrower than at normal priority. A raised priority does
+not reduce the noise here, so the Windows confirmation campaign of Amendment 1 is **not run**: it would be
+unreadable by the same rule. The pilot is reported with the other data.
+
+The one confirmation campaign of section 3 moves to Linux/WSL2, the platform where campaign 1 was readable
+(A/A interval of `wild` 0.988 (0.953-1.024)): 24 blocks x minimum of 5 repeats, scenarios `wild`, `phase`, `burst`,
+`regrow`, `growmix`, `large` (the scenarios in which the second chance fires; `grow64` and `grow1k` free in
+allocation order, never miss the memo and keep their campaign-1 reading), scale 1 for `wild`, `phase`, `burst`,
+`large` and 0.5 for `regrow` and `growmix`; t quantile for df = 23 is 2.069. Rules T2 and C2 are unchanged and apply
+to this campaign. `regrow` is reported as a secondary result (it is not a preregistered target; campaign 1 read it as
+a possible gain on both platforms). Also added (deterministic, supporting): callgrind Ir of `regrow` (Linux).
+Still no third campaign.
