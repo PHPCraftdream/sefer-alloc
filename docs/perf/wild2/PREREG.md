@@ -75,3 +75,31 @@ them force memo miss + `own_cache` hit; `dbg_lane_second_chance_hits` proves the
 oracle of `as1_fast_free_lane.rs` is replayed through that exit for accept, double free, interior and
 misaligned pointers, wrong layout, metadata and uncarved offsets; over-aligned and Large frees must not be
 counted.
+
+## 6. Amendment 1 (written after campaign 1 and before campaign 2; post hoc by construction)
+
+What campaign 1 showed (data committed under `docs/perf/wild2/`): on Windows the A/A control (a byte-identical
+copy of `base`) has an interval that excludes 1 in `grow1k` and `wild`, so both are unreadable by the rule of
+section 3; two controls (`phase` 1.083, `burst` 1.030) read KILL by the letter of C1 although their intervals
+include 1 and their own A/A intervals are as wide; the two `bench:table` sets disagree about whole cells by tens of
+percent (the same build, repeat against repeat); the MT samples contain values of 2-7 Mops/s against about 50 for
+the same arm. At the time several other processes were using the shared machine (the process list is not recorded).
+The 3 % gates of section 3 therefore cannot be evaluated from campaign 1; this is **not** a pass and not evidence of
+a regression.
+
+Changes for the one confirmation campaign that section 3 allows (decided before it runs; the gates themselves are
+unchanged):
+
+1. every judge process of campaign 2 is launched through `wnice -p high --` (the process gets the HIGH priority
+   class; no CPU, thread or memory limit), so other work on the machine competes less with the measured process;
+2. 16 blocks x minimum of 5 repeats (campaign 1: 12 x 3); the t quantile for df = 15 is 2.131;
+3. deterministic evidence is reported next to the gates and **does not replace them**: callgrind Ir (rule C5, Linux)
+   and `perf stat` user-mode cycles, instructions and L1D load misses, median of 5 runs per arm (Linux, supporting);
+4. for C3 and C4, which are not repeated, the report states the noise floor of the data it already has: a
+   `bench:table` cell whose two runs of the **same** build differ in their sefer / mi ratio by more than 10 % is
+   marked UNREADABLE and left out of the loss test (the number of such cells is printed), and an MT cell whose base
+   arm spreads by more than 1.25 (max / min of its 6 samples) is marked UNREADABLE. These two noise rules are post
+   hoc and are disclosed as such in the report; a gate marked UNREADABLE is neither passed nor failed.
+
+No third campaign. If campaign 2 ends in HOLD or UNREADABLE for a gate, the decision goes to the owner with the
+data of both campaigns and the deterministic evidence.
