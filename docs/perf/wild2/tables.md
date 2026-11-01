@@ -11,6 +11,19 @@
 | large | 12 (x3) | 0.987 | 0.910–1.070 | 0.966 | 0.831–1.123 | C1 | HOLD | 16 | 16 |
 | burst | 12 (x3) | 1.030 | 0.961–1.104 | 0.975 | 0.926–1.025 | C1 | KILL | 90 | 93 |
 
+### Judge, Linux (WSL2), campaign 1 (wild/phase/large/burst at scale 1, GiB scenarios at scale 0.5)
+
+| scenario | blocks | x / base (exp mean d) | 95 % CI | A/A base2 / base | A/A 95 % CI | rule | verdict | min base ms | min x ms |
+|---|---:|---:|---:|---:|---:|---|---|---:|---:|
+| grow64 | 12 (x3) | 1.012 | 0.956–1.070 | 0.988 | 0.923–1.057 | C2 | ok | 509 | 533 |
+| grow1k | 12 (x3) | 0.929 | 0.829–1.042 | 0.958 | 0.882–1.042 | C2 | HOLD | 151 | 147 |
+| regrow | 12 (x3) | 0.937 | 0.880–0.997 | 0.947 | 0.860–1.043 | C2 | ok | 134 | 136 |
+| growmix | 12 (x3) | 1.122 | 1.053–1.196 | 1.075 | 1.007–1.148 | C2 | UNREADABLE (A/A excludes 1) | 224 | 225 |
+| wild | 12 (x3) | 0.972 | 0.941–1.004 | 0.988 | 0.953–1.024 | T2 | FAIL | 200 | 194 |
+| phase | 12 (x3) | 1.003 | 0.980–1.026 | 0.989 | 0.965–1.014 | C2 | ok | 655 | 663 |
+| large | 12 (x3) | 1.027 | 0.999–1.055 | 1.108 | 0.910–1.348 | C2 | ok | 13 | 14 |
+| burst | 12 (x3) | 1.022 | 0.987–1.057 | 0.995 | 0.967–1.023 | C2 | ok | 73 | 74 |
+
 ### bench:table paired set s1 (order base, x, x, base; aligned code)
 
 | Cell (x) | ratio d pair 1 / 2 | ratio agreed | sefer time pair 1 / 2 | sefer time agreed | sefer/mi before → after |
@@ -77,3 +90,11 @@ T3 compares the frees accepted by the second chance in `wild` with the memo exit
 | burst | 1 | 3021540 | 1 |  |
 | growmix | 73015 | 77749 | 1382444 |  |
 | regrow | 278920 | 1095297 | 468 |  |
+
+### callgrind Ir (Linux, sefer arm), rule C5
+
+| scenario (scale) | base Ir | x Ir | x / base - 1 | limit | C5 |
+|---|---:|---:|---:|---|---|
+| wild | 168176393 | 163519983 | -2.77 % (-4656410 / 168176393) | ..0 % | ok |
+| phase | 415192904 | 415194942 | 0.00 % (2038 / 415192904) | ..0.5 % | ok |
+| burst | 100684704 | 100686830 | 0.00 % (2126 / 100684704) | -0.3..0.3 % | ok |

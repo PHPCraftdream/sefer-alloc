@@ -1,0 +1,6 @@
+base: git archive of c0ee7dfb; x: git archive of the g1-wild2 head (sha256 of tars: d41b16d5cfd6367e6af9e516050af44374ee9246984f4cfdd5b95f4e7a945c4a 27daa4707d8b5682c274259301e46f253cd1457fd77d53fa571ae49dd52be2af)
+rustc 1.98.1 (48a229cea 2026-09-01)
+Linux 6.18.33.2-microsoft-standard-WSL2
+3dadcd6f5f841d676a8181f5b045e16a18b23ea66769bcd7cfa4ebd5d6e6e3ae  tgt-b/release/examples/g1_wild_judge
+3dadcd6f5f841d676a8181f5b045e16a18b23ea66769bcd7cfa4ebd5d6e6e3ae  base2
+b88e6aed2243301ce01d7d6b4e1c4933be6a64a9ad8b9bc1ea8c097ec7a2ac61  tgt-x/release/examples/g1_wild_judge
