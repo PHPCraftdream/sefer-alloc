@@ -715,7 +715,7 @@
       "files": [
         "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs"
       ],
-      "receiver_not": "^(ALLOC_BYTES|ZEROED_BYTES|FREE_BYTES|ALLOC_COUNT|FREE_COUNT)$",
+      "receiver_not": "^(ALLOC_BYTES|ZEROED_BYTES|FREE_BYTES|ALLOC_COUNT|FREE_COUNT|CHUNK_ALLOC_COUNT|CHUNK_FREE_COUNT)$",
       "fn_not": "^drop$",
       "reason": "leaf publication"
     },
@@ -3402,7 +3402,7 @@
         "bits",
         "leaf"
       ],
-      "reason": "Drop frees exactly the leaves named by presence bits instead of scanning every slot",
+      "reason": "Drop visits exactly the leaves named by presence bits (accounting and the presence-implies-pointer check) instead of scanning every slot; the slab chunks that hold them are freed by free_chunks",
       "tests": [
         "tests/class_leaves_publication_miri.rs"
       ],

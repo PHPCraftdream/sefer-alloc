@@ -141,6 +141,27 @@ where
     builder.check(f);
 }
 
+/// Two leaves promoted into one slab chunk must not overlap: loom atomics are
+/// not byte-sized, so the slot stride has to be counted in `AtomicU8`
+/// elements. Constructing the second leaf's atomics must leave the first
+/// leaf's issued class code intact (and the second's own code readable).
+#[test]
+fn loom_actual_two_leaves_of_one_chunk_do_not_overlap() {
+    leaf_model(|| {
+        let backing = LeafBacking::new();
+        let leaves = &backing.leaves;
+        assert!(leaves.prepare(0, 3));
+        assert!(leaves.issue(0, 3));
+        // Leaf 1 (granule 256) takes the next slot of the same chunk.
+        assert!(leaves.prepare(256, 4));
+        assert!(leaves.issue(256, 4));
+        assert_eq!(leaves.encoded(0), 4, "first leaf survives the second slot");
+        assert_eq!(leaves.encoded(256), 5);
+        assert_eq!(leaves.encoded(1), 0);
+        assert_eq!(leaves.encoded(257), 0);
+    });
+}
+
 /// Owner discovery: every word's cut through the real `BitmapScan::next_cut`
 /// (plain `swap(0, AcqRel)`), records tagged with the cut's word index.
 fn drain(map: &SidecarBitmap<'_>, high_water: usize, records: &mut Vec<(usize, BitmapRecord)>) {

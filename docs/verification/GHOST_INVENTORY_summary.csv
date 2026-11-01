@@ -1,5 +1,5 @@
 metric,value
-ordering_sites,665
+ordering_sites,674
 files,92
 scopes,46
 protocols,23
@@ -11,13 +11,13 @@ prod_paths_checked,61
 shadow_protocols,13
 protocols_without_model,1
 class_cache,6
-class_counter,235
+class_counter,239
 class_ghost,10
 class_id,9
 class_kani,1
 class_lock-local,40
 class_non-atomic,2
-class_protocol,179
+class_protocol,184
 class_test-hook,176
 class_twin,7
 sites_P1,12
@@ -27,7 +27,7 @@ sites_P4,41
 sites_P5,39
 sites_P6,0
 sites_P7,8
-sites_P8,14
+sites_P8,19
 sites_P9,15
 sites_P10,0
 sites_P11,0

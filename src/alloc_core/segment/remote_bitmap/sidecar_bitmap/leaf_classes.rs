@@ -11,7 +11,6 @@
 #![allow(unsafe_code)]
 use core::ptr;
 use core::ptr::NonNull;
-#[cfg(feature = "internals")]
 use core::sync::atomic::AtomicUsize;
 use std::alloc::{GlobalAlloc, Layout, System};
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
@@ -24,6 +23,12 @@ use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 const LEAF_GRANULES: usize = 256;
 const LEAVES: usize = 1024;
 const PRESENT_WORDS: usize = LEAVES / u64::BITS as usize;
+/// Leaves carved from one System request: a filled segment promotes every
+/// leaf, so a request per leaf costs ~1k allocations (and as many frees at
+/// unlink) per segment cycle.
+const CHUNK_LEAVES: usize = 16;
+const CHUNK_BYTES: usize = CHUNK_LEAVES * LEAF_GRANULES;
+const CHUNKS: usize = LEAVES / CHUNK_LEAVES;
 
 /// Run-level batch-issue cursor: the leaf a refill batch is currently issuing
 /// into, its backing pointer resolved once at the leaf CHANGE (via
@@ -64,6 +69,11 @@ static FREE_BYTES: AtomicUsize = AtomicUsize::new(0);
 static ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "internals")]
 static FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
+// Actual System chunk requests (the counters above count promoted leaves).
+#[cfg(feature = "internals")]
+static CHUNK_ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "internals")]
+static CHUNK_FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) struct ClassLeaves {
     mixed: [AtomicPtr<AtomicU8>; LEAVES],
@@ -71,6 +81,14 @@ pub(crate) struct ClassLeaves {
     /// (promotion); producers never read them. A set bit implies the leaf
     /// pointer in `mixed` was Release-published.
     present: [AtomicU64; PRESENT_WORDS],
+    /// Owner-private slab: System chunks of `CHUNK_LEAVES` leaves each, handed
+    /// out in promotion order (a leaf's slot is independent of its index), so
+    /// no slot is wasted beyond the last chunk's tail. Never read by
+    /// producers; freed only by Drop, like the leaves it holds.
+    chunks: [AtomicPtr<AtomicU8>; CHUNKS],
+    /// Leaves promoted so far (owner-only): chunk `n / CHUNK_LEAVES`, slot
+    /// `n % CHUNK_LEAVES` is the next one.
+    promoted: AtomicUsize,
 }
 
 impl ClassLeaves {
@@ -92,6 +110,14 @@ impl ClassLeaves {
             // written once before the enclosing route is published.
             unsafe { present.add(i).write(AtomicU64::new(0)) };
         }
+        // SAFETY: disjoint slab field in the same private storage.
+        let chunks = unsafe { ptr::addr_of_mut!((*raw).chunks).cast::<AtomicPtr<AtomicU8>>() };
+        for i in 0..CHUNKS {
+            // SAFETY: written once before the enclosing route is published.
+            unsafe { chunks.add(i).write(AtomicPtr::new(ptr::null_mut())) };
+        }
+        // SAFETY: disjoint counter field, written once before publication.
+        unsafe { ptr::addr_of_mut!((*raw).promoted).write(AtomicUsize::new(0)) };
     }
 
     pub(crate) fn prepared(&self, granule: usize, class: u8) -> bool {
@@ -131,21 +157,48 @@ impl ClassLeaves {
         self.promote(leaf)
     }
 
+    /// Next unused leaf slot of the slab (null if System refuses a chunk).
+    /// Owner-only: no other promotion runs concurrently, so the cursor needs
+    /// no ordering of its own (leaf pointers are published by `promote`).
+    fn next_leaf_slot(&self) -> *mut AtomicU8 {
+        let n = self.promoted.load(Ordering::Relaxed);
+        debug_assert!(n < LEAVES, "more promotions than leaves: {n}");
+        let (chunk, slot) = (n / CHUNK_LEAVES, n % CHUNK_LEAVES);
+        if slot == 0 {
+            let layout = Layout::array::<AtomicU8>(CHUNK_BYTES)
+                .unwrap_or_else(|_| fatal(b"leaf_classes: sidecar bitmap layout overflow\n"));
+            // SAFETY: the System span has this exact layout and is
+            // owner-private until its slots are initialized and published.
+            let fresh = unsafe { System.alloc(layout) }.cast::<AtomicU8>();
+            if fresh.is_null() {
+                return fresh;
+            }
+            #[cfg(feature = "internals")]
+            Self::record_chunk_alloc();
+            self.chunks[chunk].store(fresh, Ordering::Relaxed);
+        }
+        let base = self.chunks[chunk].load(Ordering::Relaxed);
+        self.promoted.store(n + 1, Ordering::Relaxed);
+        // SAFETY: the chunk holds CHUNK_LEAVES slots of LEAF_GRANULES atomics
+        // (the stride is in `AtomicU8` elements, not bytes) and
+        // `slot < CHUNK_LEAVES`; this slot was never handed out before.
+        unsafe { base.add(slot * LEAF_GRANULES) }
+    }
+
     /// Owner-only leaf promotion: rare (once per 256 granules), kept out of
     /// line so the hot `prepare` path stays small.
     #[cold]
     #[inline(never)]
     fn promote(&self, leaf: usize) -> bool {
-        let layout = Layout::array::<AtomicU8>(LEAF_GRANULES)
-            .unwrap_or_else(|_| fatal(b"leaf_classes: sidecar bitmap layout overflow\n"));
-        // SAFETY: the System span has this exact layout and is owner-private
-        // until every atomic byte is initialized and its pointer published.
-        let fresh = unsafe { System.alloc(layout) }.cast::<AtomicU8>();
+        // The slot is owner-private until every atomic byte is initialized
+        // and its pointer published.
+        let fresh = self.next_leaf_slot();
         if fresh.is_null() {
             return false;
         }
+        // Counted per leaf (requested bytes of a promoted leaf), not per chunk.
         #[cfg(feature = "internals")]
-        Self::record_alloc(layout.size(), false);
+        Self::record_alloc(LEAF_GRANULES, false);
         // SAFETY: the fresh aligned System span holds LEAF_GRANULES bytes; a
         // zero byte is a valid `core::sync::atomic::AtomicU8`, written once
         // before publication.
@@ -334,6 +387,45 @@ impl ClassLeaves {
         FREE_COUNT.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Returns every slab chunk to System. Drop-only: `&mut self` is
+    /// exclusive, so Relaxed loads of the chunk pointers are sufficient, and
+    /// the leaves inside a chunk are never freed individually.
+    fn free_chunks(&mut self) {
+        let layout = Layout::array::<AtomicU8>(CHUNK_BYTES)
+            .unwrap_or_else(|_| fatal(b"leaf_classes: sidecar bitmap layout overflow\n"));
+        for slot in &self.chunks {
+            let ptr = slot.load(Ordering::Relaxed);
+            if !ptr.is_null() {
+                // SAFETY: promotion stored a genuine System allocation with
+                // this layout in every non-null slab slot; Drop runs after
+                // unlink, so no scanner or pin still references its leaves.
+                unsafe { System.dealloc(ptr.cast(), layout) };
+                #[cfg(feature = "internals")]
+                Self::record_chunk_free();
+            }
+        }
+    }
+
+    #[cfg(feature = "internals")]
+    fn record_chunk_alloc() {
+        CHUNK_ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[cfg(feature = "internals")]
+    fn record_chunk_free() {
+        CHUNK_FREE_COUNT.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Actual System chunk requests: (chunk allocations, chunk frees). Unlike
+    /// `system_totals`, which counts one logical request per promoted leaf.
+    #[cfg(feature = "internals")]
+    pub(crate) fn chunk_totals() -> (usize, usize) {
+        (
+            CHUNK_ALLOC_COUNT.load(Ordering::Relaxed),
+            CHUNK_FREE_COUNT.load(Ordering::Relaxed),
+        )
+    }
+
     #[cfg(feature = "internals")]
     pub(crate) fn system_totals() -> (usize, usize, usize, usize, usize) {
         (
@@ -348,8 +440,6 @@ impl ClassLeaves {
 
 impl Drop for ClassLeaves {
     fn drop(&mut self) {
-        let layout = Layout::array::<AtomicU8>(LEAF_GRANULES)
-            .unwrap_or_else(|_| fatal(b"leaf_classes: sidecar bitmap layout overflow\n"));
         for (word, bits) in self.present.iter().enumerate() {
             let mut bits = bits.load(Ordering::Relaxed);
             while bits != 0 {
@@ -360,14 +450,12 @@ impl Drop for ClassLeaves {
                     !ptr.is_null(),
                     "present bit without a leaf pointer: leaf {leaf}"
                 );
+                // The leaf itself lives in a slab chunk, freed below.
                 #[cfg(feature = "internals")]
-                Self::record_free(layout.size());
-                // SAFETY: promotion published a genuine System allocation with
-                // this layout for every presence bit; Drop runs after unlink,
-                // so no scanner or pin still references the leaf.
-                unsafe { System.dealloc(ptr.cast(), layout) };
+                Self::record_free(LEAF_GRANULES);
             }
         }
+        self.free_chunks();
         #[cfg(debug_assertions)]
         for (leaf, slot) in self.mixed.iter().enumerate() {
             let present =
