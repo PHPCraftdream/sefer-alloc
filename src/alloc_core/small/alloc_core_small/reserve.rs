@@ -25,7 +25,10 @@ use crate::alloc_core::alloc_core::{base_add, AllocCore};
 
 /// TH-1: small-segment reservations of this process so far.
 #[cfg(not(feature = "numa-aware"))]
-static SMALL_SEGMENTS_RESERVED: AtomicU64 = AtomicU64::new(0);
+pub(crate) static SMALL_SEGMENTS_RESERVED: AtomicU64 = AtomicU64::new(0);
+/// TH-1 (bench-internals): small segments the huge-page hint was issued for.
+#[cfg(all(feature = "bench-internals", not(feature = "numa-aware")))]
+pub(crate) static THP_HINTED_SMALL_SEGMENTS: AtomicU64 = AtomicU64::new(0);
 /// TH-1: the small-segment count from which a new segment gets the
 /// transparent-huge-page hint (16 segments = 64 MiB).
 #[cfg(not(feature = "numa-aware"))]
@@ -257,6 +260,8 @@ impl AllocCore {
                 >= THP_AFTER_SMALL_SEGMENTS
             {
                 segment.advise_huge_pages();
+                #[cfg(feature = "bench-internals")]
+                THP_HINTED_SMALL_SEGMENTS.fetch_add(1, Ordering::Relaxed);
             }
             let b = segment.as_ptr();
             let r = segment.reservation();

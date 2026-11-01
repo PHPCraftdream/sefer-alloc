@@ -188,6 +188,7 @@ fn grow_fixed(run: &mut Run, size: usize, target: f64) {
     for _ in 0..n {
         v.push(run.alloc(size));
     }
+    ANON_HUGE_PEAK.fetch_max(anon_huge_bytes(), std::sync::atomic::Ordering::Relaxed);
     for p in v {
         run.free(p, size);
     }
@@ -219,7 +220,7 @@ fn anon_huge_bytes() -> u64 {
         .map_or(0, |kb| kb * 1024)
 }
 
-/// The largest `anon_huge_bytes` seen at a free-all point (the live peak).
+/// The largest `anon_huge_bytes` seen at a live peak (before a free-all).
 static ANON_HUGE_PEAK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn free_all(run: &mut Run, v: Blocks) {
