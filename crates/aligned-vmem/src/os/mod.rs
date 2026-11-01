@@ -30,6 +30,12 @@ pub(crate) use miri::{release_reservation, reserve_aligned_raw};
     feature = "huge-pages"
 ))]
 pub(crate) use unix::linux_huge_range_is_madvise_eligible;
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    not(miri),
+    not(aligned_vmem_mock)
+))]
+pub(crate) use unix::madvise;
 #[cfg(all(unix, not(miri), feature = "huge-pages"))]
 pub(crate) use unix::reserve_aligned_huge_raw;
 #[cfg(all(unix, not(miri), feature = "lazy-commit", not(aligned_vmem_mock)))]

@@ -95,3 +95,32 @@ pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, Vme
         }),
     )
 }
+
+impl Reservation {
+    /// TH-1: asks the OS to back the usable span with transparent huge pages
+    /// (Linux/Android `madvise(MADV_HUGEPAGE)`); a no-op elsewhere. Advisory:
+    /// the contents and the mapping do not change, and the kernel may still
+    /// use ordinary pages (THP `never`, no aligned 2 MiB range, no free huge
+    /// page). Returns `true` when the kernel accepted the hint.
+    pub fn advise_huge_pages(&self) -> bool {
+        #[cfg(all(
+            any(target_os = "linux", target_os = "android"),
+            not(miri),
+            not(aligned_vmem_mock)
+        ))]
+        {
+            const MADV_HUGEPAGE: i32 = 14;
+            // SAFETY: `[as_ptr, as_ptr + len)` is this reservation's own live
+            // mapping, page-aligned; MADV_HUGEPAGE changes no page contents.
+            unsafe { crate::os::madvise(self.as_ptr().cast(), self.len(), MADV_HUGEPAGE) == 0 }
+        }
+        #[cfg(not(all(
+            any(target_os = "linux", target_os = "android"),
+            not(miri),
+            not(aligned_vmem_mock)
+        )))]
+        {
+            false
+        }
+    }
+}
