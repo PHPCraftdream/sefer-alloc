@@ -89,9 +89,11 @@ fn check(heap: &mut HeapCore) {
         (0, 0, 0, 0),
         "a drained depot starts clean"
     );
-    assert_eq!(
-        epoch_len0, 256,
-        "a drained depot starts with the minimum epoch"
+    // The overflow is reserved lazily: before its first park the epoch
+    // length is 0; a reserved, drained overflow starts at the minimum epoch.
+    assert!(
+        epoch_len0 == 0 || epoch_len0 == 256,
+        "a drained depot is unreserved (0) or starts with the minimum epoch, got {epoch_len0}"
     );
 
     let mut ring_parks = 0u64;
