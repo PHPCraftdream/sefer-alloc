@@ -12,10 +12,10 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// Android** — it falls back to
 /// an ordinary reservation, identical to [`reserve_aligned`](crate::api::reserve_aligned).
 ///
-/// **Transparent-huge-page hinting (Linux/Android `MADV_HUGEPAGE`) is not used:** it
+/// **Transparent-huge-page hinting (Linux/Android `MADV_HUGEPAGE`) is not used here:** it
 /// cannot affect an already-explicitly-huge `MAP_HUGETLB` mapping (the pages
-/// are already huge), so issuing it would be a wasted syscall. This crate's
-/// strategy is the explicit hugetlbfs path only.
+/// are already huge), so issuing it would be a wasted syscall. For an ordinary
+/// reservation the hint is [`Reservation::advise_huge_pages`].
 ///
 /// Large pages reduce TLB pressure for big allocator segments. The request is
 /// **best-effort**: if the OS refuses large pages (none configured, no

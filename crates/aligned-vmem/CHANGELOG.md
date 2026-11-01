@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## Unreleased
 
+### Added
+
+- **`Reservation::advise_huge_pages`** (TH-1) — a transparent-huge-page hint
+  for the usable span (`madvise(MADV_HUGEPAGE)` on Linux/Android; `false` and
+  no syscall elsewhere, under miri and under the mock backend). Advisory: the
+  mapping and its contents do not change; returns whether the kernel accepted
+  it.
+
 ### Changed
 
 - **Windows: a fully committed span with `align > 64 KiB` is one exact

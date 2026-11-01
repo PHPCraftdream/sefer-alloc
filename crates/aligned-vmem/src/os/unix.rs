@@ -1021,7 +1021,7 @@ extern "C" {
         offset: OffT,
     ) -> *mut core::ffi::c_void;
     fn munmap(addr: *mut core::ffi::c_void, length: usize) -> i32;
-    fn madvise(addr: *mut core::ffi::c_void, length: usize, advice: i32) -> i32;
+    pub(crate) fn madvise(addr: *mut core::ffi::c_void, length: usize, advice: i32) -> i32;
     pub(crate) fn sysconf(name: i32) -> core::ffi::c_long;
 }
 
