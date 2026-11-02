@@ -1,0 +1,59 @@
+table,case,metric,a,b,ratio_a_over_b
+latency,4x64,wave_ms,1,2,0.500
+latency,4x64,sum_ms,4.4,2.7,1.630
+latency,4x64,mean_ns,18.6,11.4,1.632
+latency,4x64,p99_ns,53,66,0.803
+latency,4x64,p999_ns,247,346,0.714
+latency,4x64,max_ns,1582756,27292,57.993
+latency,4x64,over10us_ms,1.66,0.09,18.444
+latency,4x64,wave_plus_owner_ms,5.4,4.7,1.149
+latency,16x64,wave_ms,2.8,7.9,0.354
+latency,16x64,sum_ms,24.8,12.8,1.938
+latency,16x64,mean_ns,26.3,13.6,1.934
+latency,16x64,p99_ns,121,67,1.806
+latency,16x64,p999_ns,310,506,0.613
+latency,16x64,max_ns,9085822,836487,10.862
+latency,16x64,over10us_ms,11.24,2,5.620
+latency,16x64,wave_plus_owner_ms,27.6,20.700000000000003,1.333
+latency,64x64,wave_ms,10.4,32.3,0.322
+latency,64x64,sum_ms,95.6,54.7,1.748
+latency,64x64,mean_ns,25.3,14.5,1.745
+latency,64x64,p99_ns,102,69,1.478
+latency,64x64,p999_ns,306,505,0.606
+latency,64x64,max_ns,33012511,977243,33.781
+latency,64x64,over10us_ms,42.63,10.35,4.119
+latency,64x64,wave_plus_owner_ms,106,87,1.218
+latency,16x1024,wave_ms,0.8,1.8,0.444
+latency,16x1024,sum_ms,7.9,2,3.950
+latency,16x1024,mean_ns,134.7,34.2,3.939
+latency,16x1024,p99_ns,536,313,1.712
+latency,16x1024,p999_ns,1151,622,1.850
+latency,16x1024,max_ns,4652415,136345,34.122
+latency,16x1024,over10us_ms,6.33,0.32,19.781
+latency,16x1024,wave_plus_owner_ms,8.700000000000001,3.8,2.289
+refill_counters,4 seg x 64 B,from_carve_over_wanted,7,235936,0.000
+refill_counters,16 seg x 64 B,from_carve_over_wanted,613014,943712,0.650
+refill_counters,16 seg x 64 B, pool 8,from_carve_over_wanted,367806,943712,0.390
+refill_counters,16 seg x 1024 B,from_carve_over_wanted,38214,58976,0.648
+callgrind_owner_phase,16x64,ir_per_block,264.58625034173343,124.48311359961345,2.125
+callgrind_tree_owner_phase,16x64,refill_magazine_miss,135693353,58982,2300.589
+callgrind_tree_owner_phase,16x64,find_segment_with_free_impl,83507543,38325,2178.931
+callgrind_tree_owner_phase,16x64,process_ingress,63351162,38321,1653.171
+callgrind_tree_owner_phase,16x64,drain_segment_sidecar,62545780,16,3909111.250
+callgrind_tree_owner_phase,16x64,try_carve_batch,27130640,38330,707.817
+experiment,E0 pool 8 (Profile Throughput) 4x64,sum_ms,5,4.5,1.111
+experiment,E0 pool 8 (Profile Throughput) 4x64,max_ns,1805147,1608301,1.122
+experiment,E0 pool 8 (Profile Throughput) 8x64,sum_ms,11.1,10.7,1.037
+experiment,E0 pool 8 (Profile Throughput) 8x64,max_ns,3628756,3495620,1.038
+experiment,E0 pool 8 (Profile Throughput) 16x64,sum_ms,25.4,23.4,1.085
+experiment,E0 pool 8 (Profile Throughput) 16x64,max_ns,8916727,7815976,1.141
+experiment,E1 no release/pool after a drain empties a segment 4x64,sum_ms,4.5,4.7,0.957
+experiment,E1 no release/pool after a drain empties a segment 4x64,max_ns,1745856,1696520,1.029
+experiment,E1 no release/pool after a drain empties a segment 16x64,sum_ms,23.3,26.9,0.866
+experiment,E1 no release/pool after a drain empties a segment 16x64,max_ns,8194257,9583635,0.855
+experiment,E1 no release/pool after a drain empties a segment 16x1024,sum_ms,5.3,7.9,0.671
+experiment,E1 no release/pool after a drain empties a segment 16x1024,max_ns,2785711,4453819,0.625
+experiment,E2 skip discovery for 63 refills after a miss (upper bound, unsafe) 16x64,sum_ms,25.7,27.6,0.931
+experiment_ir,E2,rp1 owner phase (943718 allocs minus 0),229695949,250324421,0.918
+experiment_ir,E2,g1_wild_judge grow64 (scale 0.3),1672296815,1886004955,0.887
+experiment_ir,E2,g1_wild_judge grow1k (scale 0.3),117057438,130387234,0.898

@@ -1,0 +1,56 @@
+217,620,243 (39.86%)  *  <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss 
+215,025,013 (39.38%)  < <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss (117,965x) 
+215,025,013 (39.38%)  *  <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow 
+202,402,758 (37.07%)  < <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow (117,965x) 
+202,402,758 (37.07%)  *  <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> 
+200,043,458 (36.64%)  < <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> (117,965x) 
+200,043,458 (36.64%)  *  <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} 
+109,854,659 (20.12%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+109,465,427 (20.05%)  < <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} (97,308x)
+109,465,427 (20.05%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl 
+ 82,711,546 (15.15%)  *  <scratch>/base/src/registry/heap_core_xthread/routing.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign 
+ 76,017,348 (13.92%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+ 68,333,489 (12.52%)  < <scratch>/base/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} (97,338x)
+ 68,333,489 (12.52%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch 
+ 64,589,805 (11.83%)  < <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl (97,304x) 
+ 64,589,805 (11.83%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::process_ingress 
+ 62,545,780 (11.46%)  < <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::process_ingress (16x) 
+ 62,545,780 (11.46%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar 
+    719,225 ( 0.13%)  < <scratch>/base/src/registry/heap_core/state/tcache_flush.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle (1,033x)
+ 44,249,578 ( 8.10%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal 
+ 18,530,368 ( 3.39%)  *  <scratch>/base/src/registry/heap_core_xthread/route_pin_cache.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+ 14,736,235 ( 2.70%)  *  <scratch>/base/src/alloc_core/segment/segment_table/route_slots.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+ 14,155,786 ( 2.59%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small_reclaim.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+ 12,706,782 ( 2.33%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+ 12,268,366 ( 2.25%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+ 12,268,100 ( 2.25%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  8,282,842 ( 1.52%)  < <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} (19,044x)
+  2,799,992 ( 0.51%)  < <scratch>/base/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} (117,976x)
+ 11,082,834 ( 2.03%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch 
+ 10,159,230 ( 1.86%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+  9,754,303 ( 1.79%)  *  <scratch>/base/src/alloc_core/segment/segment_table/active_kind_index.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl
+  9,437,308 ( 1.73%)  *  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+  7,667,725 ( 1.40%)  < <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow (117,965x) 
+  7,549,744 ( 1.38%)  *  <scratch>/base/src/alloc_core/alloc_core/sidecar_drain.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+  7,549,600 ( 1.38%)  *  <scratch>/base/src/registry/segment_route/pin.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  6,605,900 ( 1.21%)  *  <scratch>/base/src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+  6,134,172 ( 1.12%)  *  <scratch>/base/src/alloc_core/segment/remote_bitmap/bitmap_cut.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+  5,484,004 ( 1.00%)  *  <scratch>/base/src/alloc_core/segment/segment_header/segment_header_views.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+        .               pub(crate) fn find_segment_with_free(&mut self, class_idx: usize) -> Option<*mut u8> {
+109,465,427 (20.05%)  => <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl (97,308x)
+        .               pub fn dbg_find_segment_with_free_for_test(&mut self, class_idx: usize) -> Option<*mut u8> {
+64,589,805 (11.83%)  => <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::process_ingress (97,304x)
+62,545,780 (11.46%)  => <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar (16x)
+      8 ( 0.00%)  <counts for unidentified lines in <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs>
+82,711,546 (15.15%)  => <scratch>/base/src/registry/heap_core_xthread/routing.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign (943,718x)
+43,530,353 ( 7.97%)  => <scratch>/base/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal (115,900x)
+    7,640 ( 0.00%)  => <scratch>/base/src/registry/heap_core_xthread/routing.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached (18x)
+8,282,842 ( 1.52%)  => <scratch>/base/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch (19,044x)
+2,798,369 ( 0.51%)  => <scratch>/base/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch (117,971x)
+    1,623 ( 0.00%)  => <scratch>/base/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch (5x)
+68,310,433 (12.51%)  => <scratch>/base/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch (97,313x)
+   23,056 ( 0.00%)  => <scratch>/base/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch (25x)
+217,620,243 (39.86%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss (117,965x)
+215,025,013 (39.38%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow (117,965x)
+202,402,758 (37.07%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> (117,965x)
+200,043,458 (36.64%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} (117,965x)

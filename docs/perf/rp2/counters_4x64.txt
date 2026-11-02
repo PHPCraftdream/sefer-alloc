@@ -1,0 +1,9 @@
+snap refills=0 carve=0 freelist_total=0 reserve=0 find_calls=0
+snap refills=2048 carve=0 freelist_total=32752 reserve=0 find_calls=1
+snap refills=4096 carve=0 freelist_total=65520 reserve=0 find_calls=1
+snap refills=6144 carve=0 freelist_total=98288 reserve=0 find_calls=1
+snap refills=8192 carve=0 freelist_total=131056 reserve=0 find_calls=2
+snap refills=10240 carve=0 freelist_total=163824 reserve=0 find_calls=2
+snap refills=12288 carve=0 freelist_total=196592 reserve=0 find_calls=3
+snap refills=14336 carve=0 freelist_total=229360 reserve=0 find_calls=3
+rpc refills=14746 want_sum=235936 from_cur_freelist=53849 from_cursor=182050 find_calls=4 find_some=3 from_found_seg=30 from_carve=7 reserve=0 drain_pooled=2 drain_released=0 drain_live_changed=2 ingress_calls=1 ingress_slots=4 ingress_max_slots=4

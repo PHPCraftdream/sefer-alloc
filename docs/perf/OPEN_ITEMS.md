@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+147. **[A] G1-RP2 — owner reclaim of a wave of foreign frees: the owner's second phase is 1.9–3.9× mimalloc and its longest call 11–58×.** (Filed 2026-11-02, `docs/perf/RP2_REMOTE_FREE_RECLAIM.md`.)
+
+   > **Current state**
+   > - **Status:** open (измерено и разложено на Linux; правок нет; Windows и RSS не измерялись).
+   > - **Current:** форма «владелец выделяет S сегментов, 3 потока освобождают всё, join, владелец выделяет снова» (Linux, медианы 7 процессов). Фаза владельца sefer / mi: 16 сегм. × 64 Б 24.8 / 12.8 мс = 1.94, 64 × 64 Б 95.6 / 54.7 = 1.75, 16 × 1024 Б 7.9 / 2.0 = 3.95; самый долгий alloc 9.09 / 0.84 мс (16 × 64), 33.0 / 0.98 мс (64 × 64), 1.58 мс / 27 мкс (4 × 64). Сама волна free у sefer быстрее (2.8 / 7.9 мс); волна + фаза владельца 1.33 (16 × 64) и 2.29 (16 × 1024). callgrind фазы владельца: 264.6 против 124.5 Ir на блок = 2.13. Механизм по счётчикам (scratch-патч): один вызов `process_ingress` берёт все 16 уведомлённых слотов и дренирует каждый сегмент целиком; опустевшие: 4 в пул, 10 в ОС (кап 4); дальше 613 014 / 943 712 = 0.650 блоков владельца идут bump-carve из 10 заново зарезервированных сегментов, перед каждым refill — безрезультатный discovery (38 325 вызовов, 5 попаданий). Цена по функциям: дренаж 66.3 Ir на блок, промах discovery 546.9 Ir на вызов без дренажей, bump-carve 44.3 Ir на блок. Эксперименты (scratch): пул 8 — не помогает (1.085 по времени); не освобождать опустошённый дренажем сегмент (E1) — фаза 0.866 (16 × 64) и 0.671 (16 × 1024), пауза остаётся; пропуск discovery на 63 refill после промаха (E2, верхняя граница, небезопасно) — Ir фазы 0.918, время 0.931, Ir роста grow64 / grow1k 0.887 / 0.898.
+   > - **Next trigger:** решение владельца по удержке опустошённых сегментов (RET-1 / `Retain`, бюджет RSS) и по структурному варианту (b) «полностью свободный сегмент сбрасывается пакетно, а не по записям» (инварианты state-байт, BinTable, live_count, virgin/committed, cursor, пул; Loom + ghost-правило + `Invariant-Check:`), затем прототип под feature-флагом с оракулом активации и приёмкой по правилу величины на этой форме и на росте, larson, mstress, межпоточных ячейках. Дешёвая безопасная часть — summary-слово непустых слов directory вместо копии 512 Б на промах discovery (граница выигрыша — E2).
+   > - **Evidence:** `docs/perf/RP2_REMOTE_FREE_RECLAIM.md`, `docs/perf/RP2_REMOTE_FREE_RECLAIM_summary.csv`, `docs/perf/rp2/`, `scripts/rp2_report.mjs`.
+
 146. **[A] G1-WJ1 — GiB-scale and wild seeded workloads (g1_wild_judge): growth and Large-span turnover behind mimalloc on Windows.** (Filed 2026-11-01, `docs/perf/G1_WJ1_WINDOWS_SPAN_RESERVE.md`.)
 
    > **Current state**
