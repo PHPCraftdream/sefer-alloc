@@ -1,0 +1,26 @@
+   246,142 ( 0.38%)  < <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_malloc_generic (18,934x) [<scratch>/tgt-base/release/examples/g1_mt_one]
+ 2,017,634 ( 3.14%)  *  <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_malloc_generic [<scratch>/tgt-base/release/examples/g1_mt_one]
+  1,494 ( 0.00%)        _mi_page_retire(page); 
+ 97,255 ( 0.15%)  => <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_retire (1,494x)
+      .               _mi_page_unfull(page);
+        .             // note: after the above allocation, the page may be abandoned now (as it became full, see `page.c:_mi_malloc_generic`)
+  1,687 ( 0.00%)  void _mi_page_free_collect(mi_page_t* page, bool force) {
+      .           // version of `_mi_page_free_collect` to be used from `free.c:_mi_free_collect_mt` that avoids atomic access to `xthread_free`.
+      .           void _mi_page_free_collect_partly(mi_page_t* page, mi_block_t* head) {
+    460 ( 0.00%)  static mi_page_t* mi_page_fresh_alloc(mi_theap_t* theap, mi_page_queue_t* pq, size_t block_size, size_t page_alignment) {
+    322 ( 0.00%)    mi_page_t* page = mi_page_fresh_alloc(theap, pq, pq->block_size, 0);
+ 79,295 ( 0.12%)  => <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:mi_page_fresh_alloc (46x)
+      .               _mi_page_free_collect(page, false);  // try to collect right away in case another thread freed just before MI_USE_DELAYED_FREE was set
+    460 ( 0.00%)  void _mi_page_free(mi_page_t* page, mi_page_queue_t* pq) {
+  5,976 ( 0.01%)  void _mi_page_retire(mi_page_t* page) mi_attr_noexcept {
+     26 ( 0.00%)    _mi_page_free(page, pq);
+ 10,782 ( 0.02%)  => <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_free (13x)
+    165 ( 0.00%)            _mi_page_free(page, pq);
+ 29,274 ( 0.05%)  => <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_free (33x)
+    624 ( 0.00%)        _mi_page_free_collect(page, false);
+  3,810 ( 0.01%)  => <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_page_free_collect (208x)
+      .                   _mi_page_free(page_candidate, pq);
+      .           void* _mi_malloc_generic(mi_theap_t* theap, size_t size, size_t zero_huge_alignment, size_t* usable) mi_attr_noexcept
+      .               return _mi_malloc_generic(theap, size, (zero ? 1 : 0), usable);
+ 37,868 ( 0.06%)    void* const p = _mi_malloc_generic(theap, size + MI_PADDING_SIZE, (zero ? 1 : 0) | huge_alignment, usable);  // note: size can overflow but it is detected in malloc_generic
+2,017,634 ( 3.14%)  => <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_malloc_generic (18,934x)
