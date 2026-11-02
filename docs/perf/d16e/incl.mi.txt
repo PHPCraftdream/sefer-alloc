@@ -1,0 +1,32 @@
+38,484,110 (100.0%)  PROGRAM TOTALS
+38,484,110 (100.0%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+38,244,365 (99.38%)  ???:(below main) [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+38,244,353 (99.38%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+38,111,072 (99.03%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+38,102,736 (99.01%)  ???:main [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+38,102,724 (99.01%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start_internal [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+37,994,134 (98.73%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::rt::lang_start_internal
+37,994,133 (98.73%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/rt.rs:std::rt::lang_start::<()>::{closure#0} [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+37,994,127 (98.73%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+37,994,124 (98.73%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+37,994,123 (98.73%)  /home/user/ab/m4/examples/b4_pmu_probe.rs:b4_pmu_probe::main [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+37,973,820 (98.67%)  /home/user/ab/m4/examples/b4_pmu_probe.rs:b4_pmu_probe::bulk_pass [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+19,913,578 (51.74%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:b4_pmu_probe::mi_alloc [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+19,012,458 (49.40%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_malloc_aligned [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+15,858,538 (41.21%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_theap_malloc_aligned [/home/user/ab/tgt-m4/release/examples/b4_pmu_prob
+10,387,962 (26.99%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mimalloc-0.1.52/src/lib.rs:b4_pmu_probe::mi_dealloc [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+ 9,937,415 (25.82%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+ 5,857,280 (15.22%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc.c:_mi_page_malloc_zero [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+ 4,956,168 (12.88%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_free
+ 1,802,240 ( 4.68%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:mi_theap_malloc_aligned
+ 1,802,240 ( 4.68%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:b4_pmu_probe::bulk_pass
+   902,440 ( 2.34%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:b4_pmu_probe::bulk_pass
+   901,120 ( 2.34%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::bulk_pass
+   450,560 ( 1.17%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/internal.h:_mi_page_malloc_zero
+   450,560 ( 1.17%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_free
+   450,560 ( 1.17%)  /home/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/include/mimalloc/prim.h:mi_malloc_aligned
+   450,560 ( 1.17%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:b4_pmu_probe::bulk_pass
+   238,843 ( 0.62%)  ./elf/./elf/rtld.c:_dl_start [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+   238,170 ( 0.62%)  ./elf/../sysdeps/unix/sysv/linux/dl-sysdep.c:_dl_sysdep_start [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+   212,433 ( 0.55%)  ./elf/./elf/rtld.c:dl_main [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+   172,765 ( 0.45%)  ./elf/./elf/dl-reloc.c:_dl_relocate_object [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
