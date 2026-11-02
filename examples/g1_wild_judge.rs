@@ -3,7 +3,7 @@
 //!
 //! Usage: g1_wild_judge <scenario> <sefer|sefer_pool|mi|sys> <seed> [scale]
 //! Prints one JSON line: scenario, arm, seed, scale, ops, ns_per_op,
-//! peak_rss, end_rss, checksum, anon_huge_peak, anon_huge_end (Linux THP bytes).
+//! peak_rss, end_rss, checksum, anon_huge_peak, anon_huge_end (Linux THP bytes), user_ms, kernel_ms, faults (process CPU split and page faults at the end).
 //!
 //! `sefer_pool` is a diagnostic ceiling, not a product setting: the same allocator
 //! with the empty-small-segment pool raised to 1024 segments / 4 GiB, so no
@@ -325,6 +325,83 @@ fn anon_huge_bytes() -> u64 {
         .map_or(0, |kb| kb * 1024)
 }
 
+/// Process CPU and page faults so far: `(user_ms, kernel_ms, page_faults)`.
+/// Windows: `GetProcessTimes` and `PageFaultCount`; Linux: `/proc/self/stat`
+/// (clock ticks of 10 ms, minor faults); zeros elsewhere.
+#[cfg(windows)]
+fn cpu_and_faults() -> (u64, u64, u64) {
+    #[repr(C)]
+    #[derive(Default)]
+    struct FileTime {
+        lo: u32,
+        hi: u32,
+    }
+    #[repr(C)]
+    #[derive(Default)]
+    struct MemCounters {
+        cb: u32,
+        page_fault_count: u32,
+        rest: [usize; 8],
+    }
+    extern "system" {
+        fn GetCurrentProcess() -> isize;
+        fn GetProcessTimes(
+            h: isize,
+            c: *mut FileTime,
+            e: *mut FileTime,
+            k: *mut FileTime,
+            u: *mut FileTime,
+        ) -> i32;
+        fn K32GetProcessMemoryInfo(h: isize, p: *mut MemCounters, cb: u32) -> i32;
+    }
+    let ms = |t: &FileTime| ((u64::from(t.hi) << 32) | u64::from(t.lo)) / 10_000;
+    let (mut c, mut e, mut k, mut u) = (
+        FileTime::default(),
+        FileTime::default(),
+        FileTime::default(),
+        FileTime::default(),
+    );
+    let mut m = MemCounters {
+        cb: std::mem::size_of::<MemCounters>() as u32,
+        ..MemCounters::default()
+    };
+    // SAFETY: plain Win32 queries on the current process with valid out-pointers.
+    unsafe {
+        let h = GetCurrentProcess();
+        if GetProcessTimes(h, &mut c, &mut e, &mut k, &mut u) == 0
+            || K32GetProcessMemoryInfo(h, &mut m, m.cb) == 0
+        {
+            return (0, 0, 0);
+        }
+    }
+    (ms(&u), ms(&k), u64::from(m.page_fault_count))
+}
+
+#[cfg(target_os = "linux")]
+fn cpu_and_faults() -> (u64, u64, u64) {
+    let Ok(t) = std::fs::read_to_string("/proc/self/stat") else {
+        return (0, 0, 0);
+    };
+    let Some(rest) = t.rsplit_once(')').map(|(_, r)| r) else {
+        return (0, 0, 0);
+    };
+    let f: Vec<u64> = rest
+        .split_whitespace()
+        .map(|x| x.parse::<u64>().unwrap_or(0))
+        .collect();
+    // stat fields 10 (minflt), 14 (utime), 15 (stime); `rest` starts at field 3.
+    (
+        f.get(11).copied().unwrap_or(0) * 10,
+        f.get(12).copied().unwrap_or(0) * 10,
+        f.get(7).copied().unwrap_or(0),
+    )
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn cpu_and_faults() -> (u64, u64, u64) {
+    (0, 0, 0)
+}
+
 /// The largest `anon_huge_bytes` seen at a live peak (before a free-all).
 static ANON_HUGE_PEAK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -550,6 +627,9 @@ fn main() {
             .max(anon_huge_bytes()),
         anon_huge_bytes()
     );
+    // Process CPU split and page faults at the end of the run (RET-1 / WG-1 fair axis).
+    let (user_ms, kernel_ms, faults) = cpu_and_faults();
+    let os = format!("{os},\"user_ms\":{user_ms},\"kernel_ms\":{kernel_ms},\"faults\":{faults}");
     // WILD-2 path-activation oracle (`bench-internals` builds only; counts, not timing).
     #[cfg(feature = "bench-internals")]
     let os = format!(

@@ -1,0 +1,2 @@
+base 4479f40ff6769f27590491b6b3bcd5d414849b38 + working-tree diff of examples/g1_wild_judge.rs (sha256 807b0ed36a0194b3e820460417ba0f20982e9c653a97fa3614e7f461e7296b65)
+b1fd7889ddae907fcd291d279e251667a93d24d60ddfc59fb3c622077b4dd429  target-fair/release/examples/g1_wild_judge.exe
