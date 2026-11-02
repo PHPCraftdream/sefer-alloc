@@ -191,6 +191,9 @@ fn allocate_across_bases(count: usize, bases: usize) -> Vec<(usize, Vec<usize>)>
     allocate_across_bases_with(small_layout(), count, bases, PIN_CACHE_SLOTS)
 }
 
+#[path = "support/pin_cache_bases.rs"]
+mod pin_cache_bases;
+
 /// [`allocate_across_bases`] for blocks of `layout` (bigger blocks cover
 /// more segments with fewer allocations).
 /// With `slot_mod != 0` only bases with pairwise distinct
@@ -201,56 +204,7 @@ fn allocate_across_bases_with(
     bases: usize,
     slot_mod: usize,
 ) -> Vec<(usize, Vec<usize>)> {
-    let slot_of = |base: usize| {
-        if slot_mod == 0 {
-            0
-        } else {
-            (base / SEGMENT) % slot_mod
-        }
-    };
-    let mut map: Vec<(usize, Vec<usize>)> = Vec::new();
-    let mut surplus = Vec::new();
-    for _ in 0..200_000 {
-        // SAFETY: valid nonzero Layout; null is checked immediately.
-        let p = unsafe { GLOBAL.alloc(layout) };
-        assert!(!p.is_null(), "small allocation failed");
-        // Exposed: every consumer rebuilds the pointer via
-        // `with_exposed_provenance_mut`.
-        let addr = p.expose_provenance();
-        match map.iter_mut().find(|(base, _)| *base == base_of(addr)) {
-            Some((_, v)) => {
-                if v.len() < count {
-                    v.push(addr);
-                } else {
-                    surplus.push(addr);
-                }
-            }
-            None => {
-                let b = base_of(addr);
-                let clash = slot_mod != 0 && map.iter().any(|(m, _)| slot_of(*m) == slot_of(b));
-                if map.len() < bases && !clash {
-                    map.push((b, vec![addr]));
-                } else {
-                    surplus.push(addr);
-                }
-            }
-        }
-        if map.len() == bases && map.iter().all(|(_, v)| v.len() == count) {
-            break;
-        }
-    }
-    assert!(
-        map.len() == bases && map.iter().all(|(_, v)| v.len() == count),
-        "could not cover {bases} bases with {count} blocks each"
-    );
-    // Free the surplus on the owner thread: own-thread frees, no pin-cache
-    // interaction.
-    for addr in surplus {
-        // SAFETY: live allocation issued above, exact original Layout, freed
-        // once on the owning thread.
-        unsafe { GLOBAL.dealloc(core::ptr::with_exposed_provenance_mut::<u8>(addr), layout) };
-    }
-    map
+    pin_cache_bases::allocate_across_bases_with(&GLOBAL, layout, count, bases, slot_mod)
 }
 
 fn base_of(addr: usize) -> usize {
