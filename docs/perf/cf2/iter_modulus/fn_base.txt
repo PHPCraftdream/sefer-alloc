@@ -1,0 +1,40 @@
+--------------------------------------------------------------------------------
+Profile data file '/home/user/w2m/cg/fn_base.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 16837174
+Trigger: Program termination
+Profiled target:  /mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base pincycle 32 cyclic (PID 364, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                  
+--------------------------------------------------------------------------------
+92,711,157 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                   file:function
+--------------------------------------------------------------------------------
+22,028,526 (23.76%)  ???:g1_rhythm_probe::main [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+13,261,346 (14.30%)  ???:<sefer_alloc::registry::heap_core_xthread::route_pin_cache::PinCache>::sweep_dead_slots [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 7,456,226 ( 8.04%)  ???:<sefer_alloc::registry::segment_route::directory::route_directory::Shard>::locate [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 6,863,900 ( 7.40%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 6,624,626 ( 7.15%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 6,124,524 ( 6.61%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign_uncached [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 5,927,764 ( 6.39%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 5,753,355 ( 6.21%)  ???:<sefer_alloc::global::sefer_alloc::core::SeferAlloc as core::alloc::global::GlobalAlloc>::alloc [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 4,047,304 ( 4.37%)  ???:<sefer_alloc::registry::segment_route::directory::route_directory::RouteDirectory>::lookup [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 3,690,155 ( 3.98%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 3,088,732 ( 3.33%)  ???:<sefer_alloc::registry::segment_route::directory::route_directory::Shard>::find [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 1,830,070 ( 1.97%)  ???:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+ 1,072,861 ( 1.16%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   662,872 ( 0.71%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]
+   655,418 ( 0.71%)  ???:std::sys::backtrace::__rust_begin_short_backtrace::<g1_rhythm_probe::free_on_other_thread::{closure#0}, u128> [/mnt/d/dev/rust/sefer-alloc/.rush/g1/cf2/out/bin/time_base]

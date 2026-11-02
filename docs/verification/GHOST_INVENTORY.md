@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-674 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+677 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
 `HeapSlot::cas_state` whose arguments name an ordering) in 92 files of `src/**` and
 `crates/*/src/**`; each is claimed by exactly one of 46 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/674 |
-| counter | 239 | 239/674 |
-| ghost | 10 | 10/674 |
-| id | 9 | 9/674 |
-| kani | 1 | 1/674 |
-| lock-local | 40 | 40/674 |
-| non-atomic | 2 | 2/674 |
-| protocol | 184 | 184/674 |
-| test-hook | 176 | 176/674 |
-| twin | 7 | 7/674 |
-| **claimed** | **674** | 674/674 |
-| unclaimed | 0 | 0/674 |
-| claimed twice | 0 | 0/674 |
+| cache | 6 | 6/677 |
+| counter | 242 | 242/677 |
+| ghost | 10 | 10/677 |
+| id | 9 | 9/677 |
+| kani | 1 | 1/677 |
+| lock-local | 40 | 40/677 |
+| non-atomic | 2 | 2/677 |
+| protocol | 184 | 184/677 |
+| test-hook | 176 | 176/677 |
+| twin | 7 | 7/677 |
+| **claimed** | **677** | 677/677 |
+| unclaimed | 0 | 0/677 |
+| claimed twice | 0 | 0/677 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -342,7 +342,7 @@ Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spe
 | `cache/page-size` | cache | — | 4 | idempotent cache of a process constant; Relaxed: every writer stores the same value |
 | `cache/process-exit` | cache | — | 2 | resolved function pointer cache (windows); Relaxed: idempotent |
 | `id/generators` | id | — | 7 | unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed |
-| `counter/statics` | counter | — | 222 | statistics / diagnostic counters: Relaxed, no protocol reads them |
+| `counter/statics` | counter | — | 225 | statistics / diagnostic counters: Relaxed, no protocol reads them |
 | `counter/per-heap` | counter | — | 13 | per-heap hit counters published Relaxed (owner-written, read by stats) |
 | `counter/pin-cache-macro` | counter | — | 1 | macro_rules! count bumps a static counter |
 | `counter/tier1-bump` | counter | — | 2 | unlocked Relaxed load+store bump of a bench-internals Tier-1 counter (DZ-2): no protocol reads it |
