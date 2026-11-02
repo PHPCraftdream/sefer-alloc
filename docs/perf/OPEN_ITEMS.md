@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+152. **[L] G1-GR1 — cheaper discovery miss (lower directory threshold): NULL, below the magnitude rule.** (Filed 2026-11-02, `docs/perf/gr1/`.)
+
+   > **Current state**
+   > - **Status:** CLOSED as NULL (measured, not shipped); the summary-word variant of RP-2 (c) is not worth its invariant cost.
+   > - **Current:** `grow64` на `main` @ `f4b45b1e` (Linux, callgrind, масштаб 0.1): промах дискавери `find_segment_with_free_impl` — 70 612 789 из 626 783 979 Ir (11.3 %) на 104 858 вызовов, то есть 673 Ir на промах: ниже `DIRECTORY_MATERIALIZE_THRESHOLD = 32` сегментов директории нет и каждый промах — линейный обход всех сегментов (≈28 итераций). Свип порога 32 / 16 / 8 / 4 (программный итог Ir, 6 сценариев): `grow64` 1.000 / 0.975 / 0.978 / 0.985, `grow1k` 1.000 / 0.978 / 0.980 / 0.987, `growmix` 1.000 / 0.982 / 0.983 / 0.986, `regrow`, `phase`, `wild` в пределах ±0.9 %. Парный ABBA по времени (15 повторов, масштаб 0.2, медиана отношений к порогу 32): порог 16 — `grow64` 0.931 (диапазон 0.70–1.28, меньше 1 в 10 из 15), `grow1k` 0.970 (0.62–1.64, 9 из 15), `growmix` 0.974 (0.82–1.17, 9 из 15); порог 8 — 0.957 / 0.989 / 0.990 (8, 9, 10 из 15). Диапазоны повторов шире эффекта, знаковая проверка не значима (9–10 из 15).
+   > - **Next trigger:** возвращаться только вместе с решением владельца по Retain/RP-2(b) (там же снимается основной остаток дискавери) либо если появится форма с 16–31 сегментами, где время подтверждает выигрыш выше шума. Верхняя граница E2 (RP-2, 0.887–0.918 Ir) недостижима безопасно: после директории остаётся цикл по 64 словам класса (≈171 Ir на промах), summary-слово дало бы ещё ≈ 2.9 % Ir.
+   > - **Evidence:** `docs/perf/gr1/ir.csv` (Ir по порогам и сценариям), `ab.jsonl` (сырые парные прогоны), `ident.txt` (sha256 бинарников), `grow64_incl.txt` (inclusive-профиль), `gr1_thr.sh`, `ab.sh`.
+
 151. **[A] G1-D16R — bulk 16 B / 64 B burst (alloc 1024, free 1024): last two cells behind mimalloc; residual is the cost of per-block liveness tags.** (Filed 2026-11-02, `docs/perf/d16e/`.)
 
    > **Current state**
