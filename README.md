@@ -354,6 +354,7 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 | `.decay_rate_percent(N)` | `10` % | Fraction of the excess released per tick, integer percent in `[1, 100]` (clamped). `10` ⇒ release 10 % per tick (self-damping exponential decay); `100` ⇒ flush all excess in one tick. |
 | `.depot_budget_bytes(N)` | `1 MiB` | Per-heap (per-thread) byte budget for full small-class magazines parked **above** the fixed depot floor, so a free burst larger than one magazine refills from parked magazines instead of round-tripping through segment free lists. `0` turns the overflow off. Rounded down to 256 B, capped at 16,774,912 B. Needs `fastbin` + `alloc-decommit` (ignored otherwise). See [Depot overflow budget](#depot-overflow-budget-fastbin--alloc-decommit). |
 | `.route_pin_cache_slots(N)` | `32` | Slots of the per-thread cache of route descriptors used when a block is freed on a thread other than the one that allocated it (`alloc-xthread`). Rounded down to a power of two, clamped to `4..=64`. More slots keep a producer that frees into more owner segments off the shared directory lookup, and raise the worst-case memory held by an idle producer thread (≈ 0.29 MiB per slot). Process-wide, first config wins. See [Foreign-free route pin cache](#foreign-free-route-pin-cache-alloc-xthread--alloc-decommit). |
+| `.huge_page_after_segments(N)` | `16` | Linux transparent-huge-page hint for growing heaps: from the N-th small segment (4 MiB each, counted over the process) on, a newly reserved small segment is advised `MADV_HUGEPAGE`. `0` never hints. Fewer page faults while a heap grows, more resident memory for lightly used segments. Process-wide, first config wins. See [Transparent huge pages](#transparent-huge-pages-linux). |
 | `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: above headroom, the first eligible call primes a nonzero-interval timer; subsequent clock checks occur every 64th eligible large alloc/free and process bounded catch-up inline. A zero interval bypasses the stride and runs one step per eligible call, including the first. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
 
 The table lists the `LargeCacheConfig` methods that set a number directly. The empty-segment pool is set through
@@ -372,6 +373,7 @@ large it can get, and what bounds it, so a deployment can add up the worst case 
 | `.pool(pool_segments, pool_byte_cap)` (empty small segments) | per heap | `min(pool_segments, pool_byte_cap / 4 MiB)` × 4 MiB, committed (default 16 MiB) | decay on allocator activity, not while the thread is idle; `trim`, thread exit |
 | `.depot_budget_bytes` (parked magazines) | per heap | the budget (default 1 MiB) plus the fixed 241,408 B floor | decay on cold events; `trim`, thread exit |
 | `.route_pin_cache_slots` (foreign-free route cache) | per freeing thread, count set process-wide | slots × ≈ 0.29 MiB of route descriptors (default 32 slots ≈ 9.3 MiB) | a miss sweeps dead entries; thread exit |
+| `.huge_page_after_segments` (Linux huge pages) | per process | up to 2 MiB per hinted segment that is only lightly touched; none below the threshold | the kernel splits or reclaims under pressure; segment release |
 
 Totals multiply by the number of live heaps or freeing threads: 32 threads at the defaults can hold up to 32 × (16 MiB
 pool + 1.2 MiB depot) of small-block memory plus the large-cache floors and route caches of the threads that free
@@ -1881,6 +1883,45 @@ producer thread, medians of 9 interleaved processes; Linux only, Windows not mea
 | 64 owner segments, cyclic order | 103.0 ns | 115.8 | 107.8 | 108.6 | 112.6 | 48.3 |
 
 No slot count up to 64 serves 64 owner segments in a cyclic order.
+
+### Transparent huge pages (Linux)
+
+A heap that grows in small blocks pays one page fault per 4 KiB page it first touches. On Linux the allocator can advise the
+kernel to back a small segment with 2 MiB pages (`MADV_HUGEPAGE`), which cuts those faults. The hint goes only to **newly
+reserved** small segments from the N-th one of the process on (`LargeCacheConfig::huge_page_after_segments(N)`, default **16**,
+i.e. from 64 MiB of small segments): small programs never get it and keep 4 KiB pages and their RSS.
+
+```text
+static GLOBAL: SeferAlloc = SeferAlloc::with_config(LargeCacheConfig::new().huge_page_after_segments(0)); // never hint
+```
+
+| `N` | Minor page faults, 1 GiB growth in 64 B blocks (mimalloc 33,432) | Peak RSS of the small shape `wild`, MiB | Peak RSS of the shape `phase`, MiB |
+|---:|---:|---:|---:|
+| 0 (never) | 331,728 | 41 | 185 |
+| 1 | 53,882 | 110 | 310 |
+| 4 | 56,937 | 100 | 307 |
+| **16 (default)** | **69,166** | **62** | **295** |
+| 64 | 118,078 | 41 | 231 |
+
+How to choose:
+
+- **Keep the default** unless you have measured. Hinting earlier than 16 removes a further 18–22 % of the faults (numerator: the
+  difference to the default at 4 and 1; denominator: the default's 69,166) but we could not separate it from the default in time,
+  and it adds 38–48 MiB of peak RSS to the small shape. Never hinting costs 4.8 times the default's faults (331,728 / 69,166) in the
+  growth shape.
+- **RSS-sensitive deployments** (containers with tight limits, many small processes): `0`. A huge page is committed whole, so a
+  lightly touched segment can hold more resident memory than 4 KiB pages would.
+- **Growth-heavy single-process servers:** the default already covers them; `1`–`4` only if the first 64 MiB matter.
+- **Process-wide, first config wins.** The segment count is a process counter, so the threshold is too; the first heap materialised
+  publishes it and a different value from a later config is ignored. Values above `u32::MAX` mean "never"; no value panics.
+- **A no-op** off Linux, with `numa-aware`, and where the system has transparent huge pages disabled (`never`); the hint is honoured in the
+  `madvise` mode (the measured one) and irrelevant in `always`.
+- **Read it back** with `AllocCore::dbg_huge_page_after_segments()` and the hinted-segment count with
+  `AllocCore::dbg_thp_hinted_small_segments()` (`bench-internals`); `LargeCacheConfig::dbg_resolved_huge_page_after_segments()` resolves a
+  config without allocating.
+
+Measurements (Linux, WSL2, i7-11800H, 9 interleaved processes per cell): `docs/perf/CF3_HUGE_PAGE_THRESHOLD.md`. Wall-clock medians on the
+shared machine did not separate the thresholds; the page-fault counts above are exact.
 
 ---
 
