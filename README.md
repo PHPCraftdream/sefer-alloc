@@ -353,6 +353,7 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 | `.decay_interval_ms(N)` | `1000` ms | Monotonic elapsed-time period for counting due decay steps, not minimum spacing between invocations. Each eligible clock check processes up to eight due intervals; the timer advances by `due × interval`, retaining the remainder and excess whole-interval debt for later invocations. A step computes the current excess and FIFO-evicts whole spans toward `excess × rate`. |
 | `.decay_rate_percent(N)` | `10` % | Fraction of the excess released per tick, integer percent in `[1, 100]` (clamped). `10` ⇒ release 10 % per tick (self-damping exponential decay); `100` ⇒ flush all excess in one tick. |
 | `.depot_budget_bytes(N)` | `1 MiB` | Per-heap (per-thread) byte budget for full small-class magazines parked **above** the fixed depot floor, so a free burst larger than one magazine refills from parked magazines instead of round-tripping through segment free lists. `0` turns the overflow off. Rounded down to 256 B, capped at 16,774,912 B. Needs `fastbin` + `alloc-decommit` (ignored otherwise). See [Depot overflow budget](#depot-overflow-budget-fastbin--alloc-decommit). |
+| `.route_pin_cache_slots(N)` | `32` | Slots of the per-thread cache of route descriptors used when a block is freed on a thread other than the one that allocated it (`alloc-xthread`). Rounded down to a power of two, clamped to `4..=64`. More slots keep a producer that frees into more owner segments off the shared directory lookup, and raise the worst-case memory held by an idle producer thread (≈ 0.29 MiB per slot). Process-wide, first config wins. See [Foreign-free route pin cache](#foreign-free-route-pin-cache-alloc-xthread--alloc-decommit). |
 | `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: above headroom, the first eligible call primes a nonzero-interval timer; subsequent clock checks occur every 64th eligible large alloc/free and process bounded catch-up inline. A zero interval bypasses the stride and runs one step per eligible call, including the first. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
 
 The model is **"allocate fast, release slowly"**: each tick removes a
@@ -1495,7 +1496,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **470 integration test files**,
+needs its acceptance run. The present tree contains **471 integration test files**,
 **105 example binaries**, **34 benches**, and **24 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1505,7 +1506,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (470 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (471 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (105 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1765,6 +1766,66 @@ The pair16 / pair64 and per-bench instruction costs above exceed the
 pre-registered no-loss rules; the setting ships under the owner's two
 scoped exceptions to those rules (Addenda 7 and 10). Use `0` where only
 single alloc/free pairs matter.
+
+### Foreign-free route pin cache (`alloc-xthread` + `alloc-decommit`)
+
+When a thread frees a block that another thread allocated, the allocator must find which segment the block belongs to and
+hand the block back to the owner. Each freeing thread keeps a small cache of the route descriptors of the owner
+segments it freed into recently, so a repeated free into the same segment skips the shared directory lookup (a
+shard-locked search plus a reference-count update). A miss costs about 440–460 extra instructions per free
+(`docs/perf/DZ3_PIN_CACHE_DIRECT_MAPPED.md`).
+
+The cache is **direct-mapped**: a segment's slot is `(address / 4 MiB) mod slots`. Segments of one owner on 64-bit
+Unix sit 8 MiB apart, so in practice the cache serves about **half as many owner segments as it has slots** in any free order (cyclic or random);
+a sequential order — all frees of one segment, then the next — needs a single slot and always hits.
+
+```rust
+use sefer_alloc::{LargeCacheConfig, SeferAlloc};
+
+// A producer thread that frees into up to ~32 owner segments (e.g. a thread
+// pool draining blocks that many worker threads allocated): 64 slots.
+static GLOBAL: SeferAlloc =
+    SeferAlloc::with_config(LargeCacheConfig::new().route_pin_cache_slots(64));
+```
+
+| Slots | Owner segments served on the fast path (cyclic or random order, Linux) | Worst-case memory held by an idle producer thread |
+|---:|---|---:|
+| 4 | about 2 (inferred; 4 measured: none at m = 4 cyclic) | ≈ 1.2 MiB |
+| 8 | 4 | ≈ 2.3 MiB |
+| 16 | 8 | ≈ 4.6 MiB |
+| **32 (default)** | **16** | **≈ 9.3 MiB** |
+| 64 | 32 | ≈ 18.6 MiB |
+
+How it behaves:
+
+- **What the memory is.** A cached entry keeps a route descriptor and its sidecar (System allocations, not allocator
+  segments) alive after the owner released the segment, until the slot is reused, a later miss sweeps it, or the thread
+  exits. The figure is the worst case — every size class in use in the segment; typical entries are much smaller.
+  An idle thread that never misses again keeps its entries until it exits.
+- **Too few slots cost more than the lookup they save.** Where a producer's owner segments outnumber the reach, every
+  free misses and costs 2.5–3.1 times the time of the default in the measured cells (`docs/perf/CF2_ROUTE_PIN_CACHE_SLOTS.md`
+  section B); lower the value only when the producer frees into few owner segments, and measure.
+- **No cost when it is not needed.** The hit path reads the slot count from the thread's cache; instructions and time
+  of a hit are unchanged within measurement noise at every setting.
+- **Process-wide, first config wins.** Producer threads usually only free and never bind a heap, so the setting cannot
+  travel with a heap. The first heap materialised with an explicit config publishes it; every thread adopts it at its
+  first insert into the cache. A different value from a later config is ignored (it is not counted by
+  `config_conflicts_total`). Build the `SeferAlloc` static with the value so every heap carries the same setting.
+- **Out of range is safe.** Values are rounded down to a power of two and clamped to `4..=64`; no value panics.
+- **Needs `alloc-xthread` and `alloc-decommit`** (the config type exists only with `alloc-decommit`); without
+  `alloc-xthread` there is no cross-thread free path and the value is ignored.
+
+**Measurements** (Linux, WSL2, i7-11800H; `docs/perf/CF2_ROUTE_PIN_CACHE_SLOTS.md`; time per foreign free of one
+producer thread, medians of 9 interleaved processes; Linux only, Windows not measured):
+
+| Shape | 4 slots | 8 | 16 | 32 (default) | 64 | mimalloc |
+|---|---:|---:|---:|---:|---:|---:|
+| 16 owner segments, cyclic order | 80.3 ns | 85.2 | 86.5 | **29.0** | 30.9 | 49.3 |
+| 32 owner segments, cyclic order | 97.5 ns | 99.6 | 97.3 | 103.6 | **36.9** | 68.2 |
+| 32 owner segments, random order | 161.4 ns | 165.1 | 153.7 | 124.2 | **44.9** | 53.4 |
+| 64 owner segments, cyclic order | 103.0 ns | 115.8 | 107.8 | 108.6 | 112.6 | 48.3 |
+
+No slot count up to 64 serves 64 owner segments in a cyclic order.
 
 ---
 

@@ -175,6 +175,8 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/queries.rs::dbg_depot_epoch",
   // G1-K7: pure const resolution of a by-value config.
   "src/alloc_core/config/large_cache_config.rs::dbg_resolved_depot_budget",
+  // CF-2: pure const resolution of a by-value config.
+  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_route_pin_cache_slots",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",
