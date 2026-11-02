@@ -184,11 +184,11 @@ fn force_drain(sample: &[usize], label: &str) {
 static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 /// Allocate `count` 256 B blocks via the real global allocator until at least
-/// `bases` distinct segment bases are covered, returning (kept blocks grouped
+/// `bases` segment bases with distinct pin cache slots are covered, returning (kept blocks grouped
 /// by base, all addrs ever issued). Surplus blocks are freed on the owner
 /// thread before returning.
 fn allocate_across_bases(count: usize, bases: usize) -> Vec<(usize, Vec<usize>)> {
-    allocate_across_bases_with(small_layout(), count, bases, 0)
+    allocate_across_bases_with(small_layout(), count, bases, PIN_CACHE_SLOTS)
 }
 
 /// [`allocate_across_bases`] for blocks of `layout` (bigger blocks cover
