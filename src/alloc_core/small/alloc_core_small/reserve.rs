@@ -42,7 +42,7 @@ static THP_AFTER: AtomicU64 = AtomicU64::new(THP_AFTER_UNSET);
 
 /// Publish the configured huge-page threshold; the first call wins and a
 /// later different value is ignored. Returns whether this call published.
-#[cfg(not(feature = "numa-aware"))]
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
 pub(crate) fn publish_huge_page_after(segments: usize) -> bool {
     THP_AFTER
         .compare_exchange(

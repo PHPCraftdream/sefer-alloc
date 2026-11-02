@@ -1,6 +1,6 @@
 //! `LargeCacheConfig::huge_page_after_segments`: resolution of the threshold
 //! (default, explicit values, `0` = never, out-of-range = never).
-#![cfg(feature = "internals")]
+#![cfg(all(feature = "internals", feature = "alloc-decommit"))]
 
 use sefer_alloc::LargeCacheConfig;
 
