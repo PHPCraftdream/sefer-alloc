@@ -1,0 +1,5 @@
+   13,890 ( 0.00%)  => alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch (15x)
+1,061,694 ( 0.36%)  => alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch (58,983x)
+1,238,643 ( 0.42%)  => alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::process_ingress (58,983x)
+25,957,884 ( 8.76%)  => alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl (58,983x)
+41,179,793 (13.90%)  => alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch (58,983x)

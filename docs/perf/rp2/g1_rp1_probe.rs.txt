@@ -1,0 +1,144 @@
+//! G1-RP1 probe (measurement only): latency of every owner allocation after a wave of foreign frees.
+//!
+//! The owner (main thread) allocates `segments` segments' worth of blocks, W worker threads free all of them
+//! (foreign frees), the workers are joined, then the owner allocates `allocs` blocks again and times every
+//! call with rdtsc. Reports the distribution (p50, p99, p99.9, max) and the time above a threshold.
+//! The allocator under test is a static reached through `#[inline(never)]` shims, like the judge; the process
+//! global allocator stays `System`, so harness memory never touches it.
+//!
+//! Usage: g1_rp1_probe <sefer|mi> <segments> <size> <workers> <allocs>
+#![cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+
+use sefer_alloc::SeferAlloc;
+use std::alloc::{GlobalAlloc, Layout};
+use std::time::Instant;
+
+static SEFER: SeferAlloc = SeferAlloc::new();
+static MI: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static SEFER8: SeferAlloc = SeferAlloc::with_profile(sefer_alloc::Profile::new().small_pool(sefer_alloc::SmallPoolPolicy::Throughput));
+
+#[inline(never)]
+fn a_s(l: Layout) -> *mut u8 {
+    // SAFETY: nonzero-size layout.
+    unsafe { SEFER.alloc(l) }
+}
+#[inline(never)]
+fn d_s(p: *mut u8, l: Layout) {
+    // SAFETY: `p` came from `a_s` with the same layout and is freed once.
+    unsafe { SEFER.dealloc(p, l) }
+}
+#[inline(never)]
+fn a_s8(l: Layout) -> *mut u8 {
+    // SAFETY: nonzero-size layout.
+    unsafe { SEFER8.alloc(l) }
+}
+#[inline(never)]
+fn d_s8(p: *mut u8, l: Layout) {
+    // SAFETY: `p` came from `a_s8` with the same layout and is freed once.
+    unsafe { SEFER8.dealloc(p, l) }
+}
+#[inline(never)]
+fn a_m(l: Layout) -> *mut u8 {
+    // SAFETY: nonzero-size layout.
+    unsafe { MI.alloc(l) }
+}
+#[inline(never)]
+fn d_m(p: *mut u8, l: Layout) {
+    // SAFETY: `p` came from `a_m` with the same layout and is freed once.
+    unsafe { MI.dealloc(p, l) }
+}
+
+#[inline(always)]
+fn tsc() -> u64 {
+    // SAFETY: rdtsc has no preconditions on x86_64.
+    unsafe { core::arch::x86_64::_rdtsc() }
+}
+
+fn main() {
+    let a: Vec<String> = std::env::args().collect();
+    assert!(a.len() == 6, "usage: g1_rp1_probe <sefer|mi> <segments> <size> <workers> <allocs>");
+    let segs: usize = a[2].parse().expect("segments");
+    let size: usize = a[3].parse().expect("size");
+    let workers: usize = a[4].parse().expect("workers");
+    let allocs: usize = a[5].parse().expect("allocs");
+    let (alloc, dealloc): (fn(Layout) -> *mut u8, fn(*mut u8, Layout)) = match a[1].as_str() {
+        "sefer" => (a_s, d_s),
+        "sefer8" => (a_s8, d_s8),
+        "mi" => (a_m, d_m),
+        x => panic!("allocator {x}"),
+    };
+    let layout = Layout::from_size_align(size, 8).expect("layout");
+    let total = segs * ((4usize << 20) / size) * 9 / 10;
+
+    let mut blocks: Vec<usize> = Vec::with_capacity(total);
+    for _ in 0..total {
+        let p = alloc(layout);
+        assert!(!p.is_null());
+        // SAFETY: freshly allocated block of at least `size` >= 8 bytes.
+        unsafe { p.write(1) };
+        blocks.push(p as usize);
+    }
+
+    let t_wave = Instant::now();
+    let chunk = total.div_ceil(workers);
+    std::thread::scope(|s| {
+        for part in blocks.chunks(chunk) {
+            s.spawn(move || {
+                for &p in part {
+                    dealloc(p as *mut u8, layout);
+                }
+            });
+        }
+    });
+    let wave_ms = t_wave.elapsed().as_secs_f64() * 1e3;
+    drop(blocks);
+
+    let mut lat: Vec<u64> = Vec::with_capacity(allocs);
+    let mut held: Vec<usize> = Vec::with_capacity(allocs);
+    let t_loop = Instant::now();
+    let c0 = tsc();
+    for _ in 0..allocs {
+        let t0 = tsc();
+        let p = alloc(layout);
+        let t1 = tsc();
+        lat.push(t1 - t0);
+        held.push(p as usize);
+    }
+    let c1 = tsc();
+    let loop_ns = t_loop.elapsed().as_nanos() as f64;
+    let ns_per_tick = loop_ns / (c1 - c0) as f64;
+    if std::env::var_os("RP1_NOSTATS").is_some() {
+        for p in held {
+            dealloc(p as *mut u8, layout);
+        }
+        return;
+    }
+    let sum: u64 = lat.iter().sum();
+    let mut s = lat.clone();
+    s.sort_unstable();
+    let q = |p: f64| s[(((s.len() - 1) as f64) * p) as usize] as f64 * ns_per_tick;
+    let thr_ticks = (10_000.0 / ns_per_tick) as u64; // 10 us
+    let over: u64 = s.iter().filter(|&&x| x > thr_ticks).sum();
+    let n_over = s.iter().filter(|&&x| x > thr_ticks).count();
+    println!(
+        "rp1 {} segs={} size={} workers={} allocs={} total={} wave_ms={:.1} p50_ns={:.0} p99_ns={:.0} p999_ns={:.0} max_ns={:.0} mean_ns={:.1} n_over10us={} over10us_ms={:.2} sum_ms={:.1}",
+        a[1],
+        segs,
+        size,
+        workers,
+        allocs,
+        total,
+        wave_ms,
+        q(0.5),
+        q(0.99),
+        q(0.999),
+        *s.last().unwrap() as f64 * ns_per_tick,
+        sum as f64 * ns_per_tick / allocs as f64,
+        n_over,
+        over as f64 * ns_per_tick / 1e6,
+        sum as f64 * ns_per_tick / 1e6
+    );
+    for p in held {
+        dealloc(p as *mut u8, layout);
+    }
+}
