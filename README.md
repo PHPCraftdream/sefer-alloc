@@ -1710,6 +1710,31 @@ that changes nothing observable. Both knobs must be raised together, as
 in the recipe above. This exact trap is encoded as a CI guard:
 `tests/small_segment_pool.rs::paired_knob_promotion_is_not_a_noop`.
 
+**Sizing the pool — what a segment of pool costs and when it pays (measured, CF-1).**
+Each retained segment is 4 MiB of committed memory **per heap** (per thread that owns a heap), and it stays committed after
+the burst that filled it. The pool does not change the peak: in seven fill-then-free shapes (1 GiB growth in 64 B and 1 KiB
+blocks, mixed growth, regrow, large spans, a seeded random mix, phases; real `#[global_allocator]`, one process per run)
+the peak RSS was the same at every pool size (six shapes; the seventh moved by 1–2 %), and the memory left in the process after the run grew by about 4 MiB per pool
+segment:
+
+| `pool_segments` (with `pool_byte_cap` = N × 4 MiB) | 0 | 4 (default) | 8 | 16 | 32 | 64 | 1024 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| RSS left after growing 1 GiB in 64 B blocks and freeing it (Windows, MiB; mimalloc leaves 1031) | 12 | 29 | 46 | 80 | 149 | 285 | 1172 |
+| segments released to the OS during that run (of 274 reserved) | 272 | 268 | 264 | 256 | 240 | 208 | 0 |
+
+What the extra memory buys depends on the workload shape. The pool serves a reuse only when the program **refills what it
+emptied** (allocate N, free N, allocate N again in the same size class). In the seven shapes above the pool served at most 13
+reservations of 1086–1099 (phase scenario) and none in the other six, so no size from 8 to 64 was distinguishable from the
+default in time on Linux or on Windows; the one clear time gain was pool 1024 on Windows (growth in 1 KiB blocks 0.757 of the
+default's time, range 0.70–0.84 over 7 repetitions; regrow 0.794), which retains the whole burst — it is the "keep every empty
+segment" policy, not a size to adopt blindly. A churn shape that does cross a segment boundary repeatedly (1 KiB batches with
+teardown) gained 22 % at 8 segments (see above). **Rule of thumb:** keep the default; raise `pool_segments` and
+`pool_byte_cap` together to the number of segments your steady state empties and refills in one cycle (the working set of the
+cycle divided by 4 MiB), accept N × 4 MiB × (number of heaps) of retained memory, and verify the change on your own workload.
+Read the resolved value back with `SeferAlloc::dbg_current_pool_cap()` (`bench-internals`) when you measure.
+Full tables, both systems, the mechanism counters and the reproduction commands:
+[`docs/perf/CF1_POOL_SEGMENTS.md`](docs/perf/CF1_POOL_SEGMENTS.md).
+
 ### Depot overflow budget (`fastbin` + `alloc-decommit`)
 
 Every thread heap keeps a magazine of up to 16 free blocks per small size
