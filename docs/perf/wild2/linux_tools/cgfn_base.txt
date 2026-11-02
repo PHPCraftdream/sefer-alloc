@@ -1,0 +1,16 @@
+168,176,342 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                   file:function
+--------------------------------------------------------------------------------
+26,399,005 (15.70%)  ???:g1_wild_judge::burst 
+25,495,319 (15.16%)  ???:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss 
+23,620,352 (14.04%)  ???:<g1_wild_judge::Run>::alloc 
+18,981,664 (11.29%)  ???:<g1_wild_judge::Run>::free 
+17,415,035 (10.36%)  ???:g1_wild_judge::a_alloc 
+13,920,654 ( 8.28%)  ./math/../sysdeps/ieee754/dbl-64/e_exp.c:__ieee754_exp_fma [/usr/lib/x86_64-linux-gnu/libm.so.6]
+13,137,532 ( 7.81%)  ???:g1_wild_judge::a_dealloc 
+10,676,020 ( 6.35%)  ???:g1_wild_judge::main 
+ 8,436,760 ( 5.02%)  ./math/./w_exp_template.c:exp@@GLIBC_2.29 [/usr/lib/x86_64-linux-gnu/libm.so.6]
+b lane_miss entry=0x5a770 executions=278028
+b lane_second_chance entry= executions=0

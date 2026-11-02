@@ -1,0 +1,4 @@
+aligned-code builds (RUSTFLAGS align-all-functions=6, align-all-nofallthru-blocks=5) of the same trees as linux_ident.txt
+4ae45b1f0d9b98f2d4a30530d94ecca836271a9fb9283bb604f63ac9d4147138  tgta-b/release/examples/g1_wild_judge
+4ae45b1f0d9b98f2d4a30530d94ecca836271a9fb9283bb604f63ac9d4147138  base2a
+427dbea99362a6a5da21dacdd7489ae092ee0065afa193883dddfe667d7ad4c3  tgta-x/release/examples/g1_wild_judge

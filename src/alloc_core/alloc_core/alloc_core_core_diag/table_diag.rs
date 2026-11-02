@@ -207,6 +207,17 @@ impl AllocCore {
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// MEASUREMENT-ONLY (WILD-2): process-wide count of own-thread small frees
+    /// accepted by the lane's second chance (memo miss, exact-base `own_cache`
+    /// hit). Reads 0 unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_lane_second_chance_hits() -> u64 {
+        crate::alloc_core::alloc_core::counters::LANE_SECOND_CHANCE_HITS
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): reset both
     /// [`CONTAINS_BASE_TIER1_HITS`](crate::alloc_core::alloc_core::counters::CONTAINS_BASE_TIER1_HITS)
     /// and

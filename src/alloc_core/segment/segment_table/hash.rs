@@ -17,6 +17,37 @@ impl SegmentTable {
         (self.last_key, self.last_root)
     }
 
+    /// WILD-2: the own-free lane's second chance after a memo miss. An EXACT-base
+    /// `own_cache` hit (`cached_root == key`) arms the memo, as
+    /// `canonical_base_of_mut` does, and returns the stored root; anything else
+    /// (empty slot, another key, a biased Large root) returns `None` and leaves
+    /// the table untouched, so the chain re-derives it. No Tier-1 counter is
+    /// bumped here: the lane counts an accepted free once, and a rejected one
+    /// is counted by the chain's memo hit.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        not(feature = "hardened")
+    ))]
+    #[inline(always)]
+    pub(crate) fn probe_arm(&mut self, key: usize) -> Option<*mut u8> {
+        let (cached_key, cached_root) = self.own_cache[Self::index_of(key)];
+        if cached_key == key && cached_root.addr() == key {
+            self.last_key = key;
+            self.last_root = cached_root;
+            Some(cached_root)
+        } else {
+            None
+        }
+    }
+
+    /// Direct-mapped `own_cache` index of a segment base address (`cache_index` on
+    /// a bare address: the own-free lane holds one, not a pointer).
+    #[inline(always)]
+    pub(super) const fn index_of(addr: usize) -> usize {
+        (addr >> SEGMENT_SHIFT) & (super::OWN_CACHE_SIZE - 1)
+    }
+
     // -------------------------------------------------------------------
     // OPT-B — open-addressing hash table helpers
     //
