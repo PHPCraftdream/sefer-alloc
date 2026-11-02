@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+149. **[A] G1-CF1 — small-segment pool ("pocket") size: a retention knob; default 4 / 16 MiB unchanged.** (Filed 2026-11-02, `docs/perf/CF1_POOL_SEGMENTS.md`.)
+
+   > **Current state**
+   > - **Status:** measured, default unchanged (`bench` + README `docs(config)`); sizing rule и стоимость описаны в README, раздел «Tuning the small-segment pool».
+   > - **Current:** судья `g1_wild_judge`, арм `sefer_pool` (сборочный параметр `WJ_POOL=N`, `pool_byte_cap` = N × 4 МиБ), N = 0/4/8/16/32/64/1024, 7 сценариев, Linux (9 повторов) и Windows (7 повторов), конфигурация подтверждена (`pool_res` = `pool_req`, `config_conflicts` = 0). Пул не обслуживает повторное использование внутри прогона: `seg_reserved` одинаков при любом размере в 6 сценариях из 7 (`phase`: −8 при 4, −13 при ≥ 8 из 1099), `seg_released` падает ровно на размер пула. Пик RSS не зависит от размера (6 из 7; `phase` +1–2 %); остаток RSS после прогона растёт ≈ 4 МиБ на сегмент (Windows grow64: 12 / 29 / 46 / 80 / 149 / 285 / 1172 МиБ; mimalloc 1031). Время Linux — шум раскладки бинарника (контрольная пара `sefer`/`p4` расходится до 2× по повторам), решают счётчики и число page faults. Время Windows: выигрыш только при пуле 1024 (к контролю `p4`: grow64 0.917 (0.84–1.00), grow1k 0.757 (0.70–0.84), regrow 0.794 (0.65–0.89)), размеры 8–64 внутри разброса контроля.
+   > - **Next trigger:** решение владельца по удержке опустошённых сегментов (RET-1 / `Retain`, бюджет RSS, OWN-1) — пул 1024 это потолок той политики; судья формы «заполнить заново то, что освободили» (где пул > 4 может окупиться) — только если появится такая форма в реальной нагрузке.
+   > - **Evidence:** `docs/perf/CF1_POOL_SEGMENTS.md`, `docs/perf/CF1_POOL_SEGMENTS_{linux,windows}_summary.csv`, `docs/perf/CF1_POOL_SEGMENTS_{linux,windows}_mech_summary.csv`, `docs/perf/cf1/`, `scripts/cf1_report.mjs`, `tests/pool_cap_read_back.rs`, `tests/small_segment_pool.rs`.
+
 148. **[A] G1-DZ3 — route pin cache: non-sequential foreign free over 5+ segments missed every time; now direct-mapped (32 slots).** (Filed 2026-11-02, `docs/perf/DZ3_PIN_CACHE_DIRECT_MAPPED.md`.)
 
    > **Current state**
