@@ -1,0 +1,6 @@
+16,642,450 (25.94%)  => <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_malloc_aligned (300,768x)
+6,717,859 (10.47%)  => <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/free.c:mi_free (300,768x)
+17,243,986 (26.88%)  => <cargo-registry>/mimalloc-0.1.52/src/lib.rs:malloc_bench_rs::alloc_shim::<mimalloc::MiMalloc> (300,768x)
+7,018,627 (10.94%)  => <cargo-registry>/mimalloc-0.1.52/src/lib.rs:malloc_bench_rs::dealloc_shim::<mimalloc::MiMalloc> (300,768x)
+14,537,074 (22.66%)  => <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/alloc-aligned.c:mi_theap_malloc_aligned (300,768x)
+2,017,634 ( 3.14%)  => <cargo-registry>/libmimalloc-sys-0.1.49/c_src/mimalloc/v3/src/page.c:_mi_malloc_generic (18,934x)

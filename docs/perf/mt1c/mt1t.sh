@@ -1,0 +1,15 @@
+#!/bin/bash
+# MT1: branch misses / icache misses, g1_mt_one T=1, sefer vs mi, 5 interleaved rounds
+S=$HOME/w2m; B=$S/tgt-base/release/examples/g1_mt_one
+O=<scratch dir>/mt1c/perf_tlb_raw.txt
+P=/usr/lib/linux-tools-6.8.0-147/perf
+: > $O
+for i in 1 2 3 4 5; do
+  for w in mstress larson; do
+    for a in sefer mi; do
+      out=$($P stat -x, -e dTLB-load-misses:u,dTLB-loads:u,LLC-load-misses:u,L1-dcache-loads:u -- $B $w $a 1 3000000 2>&1 >/dev/null | tr '\n' ' ')
+      echo "run$i $w $a $out" >> $O
+    done
+  done
+done
+echo mt1b-done

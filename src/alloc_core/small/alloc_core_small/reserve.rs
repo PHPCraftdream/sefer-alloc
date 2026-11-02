@@ -29,10 +29,40 @@ pub(crate) static SMALL_SEGMENTS_RESERVED: AtomicU64 = AtomicU64::new(0);
 /// TH-1 (bench-internals): small segments the huge-page hint was issued for.
 #[cfg(all(feature = "bench-internals", not(feature = "numa-aware")))]
 pub(crate) static THP_HINTED_SMALL_SEGMENTS: AtomicU64 = AtomicU64::new(0);
-/// TH-1: the small-segment count from which a new segment gets the
+/// TH-1: default small-segment count from which a new segment gets the
 /// transparent-huge-page hint (16 segments = 64 MiB).
 #[cfg(not(feature = "numa-aware"))]
 const THP_AFTER_SMALL_SEGMENTS: u64 = 16;
+/// "No config published yet": the default applies.
+#[cfg(not(feature = "numa-aware"))]
+const THP_AFTER_UNSET: u64 = u64::MAX;
+/// Process-wide threshold published by the first config (`0` = never hint).
+#[cfg(not(feature = "numa-aware"))]
+static THP_AFTER: AtomicU64 = AtomicU64::new(THP_AFTER_UNSET);
+
+/// Publish the configured huge-page threshold; the first call wins and a
+/// later different value is ignored. Returns whether this call published.
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+pub(crate) fn publish_huge_page_after(segments: usize) -> bool {
+    THP_AFTER
+        .compare_exchange(
+            THP_AFTER_UNSET,
+            segments as u64,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        )
+        .is_ok()
+}
+
+/// The threshold in force: the published one, else the default.
+#[cfg(not(feature = "numa-aware"))]
+#[inline]
+pub(crate) fn huge_page_after() -> u64 {
+    match THP_AFTER.load(Ordering::Relaxed) {
+        THP_AFTER_UNSET => THP_AFTER_SMALL_SEGMENTS,
+        v => v,
+    }
+}
 
 // ── end Phase 3 ──────────────────────────────────────────────────────────
 impl AllocCore {
@@ -252,13 +282,13 @@ impl AllocCore {
             // does that `into_reservation()` step itself (mirroring
             // `reserve_lazy`/`reserve`), one extraction serves both arms.
             let segment = seg?;
-            // TH-1: from the THP_AFTER_SMALL_SEGMENTS-th small segment on, a
-            // heap growing in small blocks asks for transparent huge pages
-            // (Linux; a no-op elsewhere): ~10x fewer page faults while it
-            // fills. Smaller heaps keep 4 KiB pages and their RSS.
-            if SMALL_SEGMENTS_RESERVED.fetch_add(1, Ordering::Relaxed) + 1
-                >= THP_AFTER_SMALL_SEGMENTS
-            {
+            // TH-1: from the huge_page_after()-th small segment on (default
+            // 16, `0` = never), a heap growing in small blocks asks for
+            // transparent huge pages (Linux; a no-op elsewhere): ~10x fewer
+            // page faults while it fills. Smaller heaps keep 4 KiB pages and
+            // their RSS.
+            let after = huge_page_after();
+            if SMALL_SEGMENTS_RESERVED.fetch_add(1, Ordering::Relaxed) + 1 >= after && after != 0 {
                 segment.advise_huge_pages();
                 #[cfg(feature = "bench-internals")]
                 THP_HINTED_SMALL_SEGMENTS.fetch_add(1, Ordering::Relaxed);

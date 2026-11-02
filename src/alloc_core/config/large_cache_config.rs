@@ -216,7 +216,35 @@ pub struct LargeCacheConfig {
     /// parked above the fixed per-class depot floor). `None` uses
     /// [`DEFAULT_DEPOT_BUDGET_BYTES`]; `Some(0)` disables the overflow.
     pub(crate) depot_budget_bytes: Option<usize>,
+
+    /// DZ-3 follow-up: slot count of the per-thread route pin cache of the
+    /// foreign-free path. `None` uses [`DEFAULT_PIN_CACHE_SLOTS`]. Resolved
+    /// by [`resolved_route_pin_cache_slots`](Self::resolved_route_pin_cache_slots).
+    pub(crate) route_pin_cache_slots: Option<usize>,
+
+    /// TH-1 follow-up: the small-segment count (process-wide) from which a
+    /// newly reserved small segment gets the transparent-huge-page hint.
+    /// `None` uses [`DEFAULT_HUGE_PAGE_AFTER_SEGMENTS`]; `Some(0)` never hints.
+    /// Resolved by
+    /// [`resolved_huge_page_after_segments`](Self::resolved_huge_page_after_segments).
+    pub(crate) huge_page_after_segments: Option<usize>,
 }
+
+/// Default of [`LargeCacheConfig::huge_page_after_segments`]: the 16th small
+/// segment (64 MiB) is the first to get the transparent-huge-page hint.
+#[cfg_attr(feature = "numa-aware", allow(dead_code))]
+pub(crate) const DEFAULT_HUGE_PAGE_AFTER_SEGMENTS: usize = 16;
+/// Largest threshold that is stored as is; a larger value means "never".
+#[cfg_attr(feature = "numa-aware", allow(dead_code))]
+pub(crate) const HUGE_PAGE_AFTER_SEGMENTS_MAX: usize = u32::MAX as usize;
+
+/// Default slot count of the per-thread route pin cache.
+pub(crate) const DEFAULT_PIN_CACHE_SLOTS: usize = 32;
+/// Smallest configurable slot count of the route pin cache.
+pub(crate) const PIN_CACHE_SLOTS_MIN: usize = 4;
+/// Largest configurable slot count of the route pin cache (the capacity of
+/// the per-thread slot array).
+pub(crate) const PIN_CACHE_SLOTS_MAX: usize = 64;
 
 /// G1-K7: default depot-overflow budget per heap (1 MiB of parked blocks).
 pub(crate) const DEFAULT_DEPOT_BUDGET_BYTES: usize = 1024 * 1024;
@@ -267,6 +295,8 @@ impl LargeCacheConfig {
             mode: None,
             pool: SmallSegmentPoolConfig::DEFAULT,
             depot_budget_bytes: None,
+            route_pin_cache_slots: None,
+            huge_page_after_segments: None,
         }
     }
 
@@ -458,6 +488,123 @@ impl LargeCacheConfig {
     pub const fn depot_budget_bytes(mut self, bytes: usize) -> Self {
         self.depot_budget_bytes = Some(bytes);
         self
+    }
+
+    /// Set the number of slots of the per-thread **route pin cache** used by
+    /// the foreign-free path (blocks freed on a thread other than the one
+    /// that allocated them; needs `alloc-xthread`).
+    ///
+    /// The cache remembers, per thread, the route descriptors of the owner
+    /// segments that thread recently freed into, so a free of such a block
+    /// skips the shared directory lookup. It is direct-mapped by segment index
+    /// (`(address / 4 MiB) mod slots`): consecutive segments of one owner never
+    /// collide, and a producer that frees blocks of up to about half `slots`
+    /// owner segments in any order stays on the fast path. More slots serve
+    /// more owner segments at once; each occupied slot keeps a route
+    /// descriptor and its sidecar alive after the segment is gone, up to about
+    /// 0.29 MiB per slot worst case (every size class in use; typically far
+    /// less) until the slot is reused, swept or the thread exits — **about
+    /// `slots × 0.29 MiB` per idle producer thread at most**.
+    ///
+    /// The value is rounded **down** to a power of two and clamped to
+    /// `4..=64`; it never panics. Default 32 (≈ 9.3 MiB worst-case
+    /// retention per thread).
+    ///
+    /// **Process-wide, first config wins.** Producer threads usually only
+    /// free and never bind a heap, so the value cannot travel with a heap: the
+    /// first heap materialised with an explicit config publishes it, every
+    /// thread adopts it at its first insert into the cache, and a different
+    /// value from a later config is ignored. A thread whose cache already
+    /// received its first insert keeps the count it adopted. Build the
+    /// `SeferAlloc` static with this value so every heap carries the same
+    /// setting. Behaviour and
+    /// measurements: README "Foreign-free route pin cache".
+    #[must_use]
+    pub const fn route_pin_cache_slots(mut self, slots: usize) -> Self {
+        self.route_pin_cache_slots = Some(slots);
+        self
+    }
+
+    /// TEST-ONLY: the resolved route-pin-cache slot count of this config.
+    #[doc(hidden)]
+    #[cfg(feature = "internals")]
+    #[must_use]
+    pub const fn dbg_resolved_route_pin_cache_slots(&self) -> usize {
+        self.resolved_route_pin_cache_slots()
+    }
+
+    /// Resolve the route-pin-cache slot count: default when unset, rounded
+    /// down to a power of two, clamped to `PIN_CACHE_SLOTS_MIN..=MAX`.
+    #[must_use]
+    pub(crate) const fn resolved_route_pin_cache_slots(&self) -> usize {
+        let n = match self.route_pin_cache_slots {
+            Some(v) => v,
+            None => DEFAULT_PIN_CACHE_SLOTS,
+        };
+        let n = if n < PIN_CACHE_SLOTS_MIN {
+            PIN_CACHE_SLOTS_MIN
+        } else if n > PIN_CACHE_SLOTS_MAX {
+            PIN_CACHE_SLOTS_MAX
+        } else {
+            n
+        };
+        // Largest power of two not above `n`.
+        1usize << (usize::BITS - 1 - n.leading_zeros())
+    }
+
+    /// Linux transparent-huge-page hint for growing heaps: the number of
+    /// small segments (4 MiB each, counted over the whole process) from which
+    /// a **newly reserved** small segment is advised `MADV_HUGEPAGE`.
+    ///
+    /// A heap that grows in small blocks pays one page fault per 4 KiB page;
+    /// with the hint the kernel can back the segment with 2 MiB pages, about
+    /// 10× fewer faults while it fills (TH-1). The price is memory: a huge
+    /// page is committed whole, so a lightly touched segment can hold more
+    /// RSS than 4 KiB pages would (a growth shape measured 136 → 200 MiB
+    /// peak RSS). Segments before the threshold keep 4 KiB pages.
+    ///
+    /// * Default **16** (the 16th segment, 64 MiB of small segments): small
+    ///   heaps are never hinted.
+    /// * `1` hints every small segment; larger values delay the hint;
+    ///   **`0` never hints** (the RSS-conservative setting). Values above
+    ///   `u32::MAX` act as `0`.
+    /// * A no-op off Linux, with `numa-aware`, and where transparent huge
+    ///   pages are disabled by the system.
+    ///
+    /// **Process-wide, first config wins.** The segment count is a process
+    /// counter, so the threshold is too: the first heap materialised with an
+    /// explicit config publishes it and a different value from a later config
+    /// is ignored. Build the `SeferAlloc` static with this value so every heap
+    /// carries the same setting. Measurements: README "Transparent huge pages".
+    #[must_use]
+    pub const fn huge_page_after_segments(mut self, segments: usize) -> Self {
+        self.huge_page_after_segments = Some(segments);
+        self
+    }
+
+    /// TEST-ONLY: the resolved huge-page threshold of this config
+    /// (`0` = never hint).
+    #[doc(hidden)]
+    #[cfg(feature = "internals")]
+    #[must_use]
+    pub const fn dbg_resolved_huge_page_after_segments(&self) -> usize {
+        self.resolved_huge_page_after_segments()
+    }
+
+    /// Resolve the huge-page threshold: default when unset, `0` for "never",
+    /// a value above [`HUGE_PAGE_AFTER_SEGMENTS_MAX`] also means "never".
+    #[must_use]
+    #[cfg_attr(feature = "numa-aware", allow(dead_code))]
+    pub(crate) const fn resolved_huge_page_after_segments(&self) -> usize {
+        let n = match self.huge_page_after_segments {
+            Some(v) => v,
+            None => DEFAULT_HUGE_PAGE_AFTER_SEGMENTS,
+        };
+        if n > HUGE_PAGE_AFTER_SEGMENTS_MAX {
+            0
+        } else {
+            n
+        }
     }
 
     /// TEST-ONLY (G1-K7): the resolved depot-overflow budget of this config.

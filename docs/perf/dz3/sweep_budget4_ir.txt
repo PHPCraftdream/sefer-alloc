@@ -1,0 +1,6 @@
+b4 16 cyclic total=31060041
+b4 16 seq total=30755261
+b4 16 random total=31607879
+b4 64 cyclic total=174932447
+b4 64 seq total=117695312
+b4 64 random total=158784832

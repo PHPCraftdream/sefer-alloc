@@ -317,6 +317,14 @@ impl HeapCore {
         id: u32,
         config: crate::alloc_core::LargeCacheConfig,
     ) -> Option<Self> {
+        // The route pin cache is per thread and its producer threads often
+        // never bind a heap (foreign frees do not), so its slot count is a
+        // process-wide setting: the first config materialised wins and a
+        // different later value is ignored.
+        #[cfg(feature = "alloc-xthread")]
+        let _ = crate::registry::heap_core_xthread::route_pin_cache::publish_configured_slots(
+            config.resolved_route_pin_cache_slots(),
+        );
         let core = AllocCore::new_with_config_for_owner(config, id)?;
         Some(Self {
             id,

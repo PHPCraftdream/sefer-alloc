@@ -45,14 +45,43 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::time::Instant;
 
 static SEFER: sefer_alloc::SeferAlloc = sefer_alloc::SeferAlloc::new();
-// WG-M0 diagnostic ceiling: empty small segments are retained (pool of 1024
-// segments / 4 GiB) instead of released, so no release happens inside `free`.
+/// Pool size of the `sefer_pool` arm in segments: `WJ_POOL=<n>` at build time
+/// (CF-1 sweep), default 1024 (the WG-M0 ceiling). The byte cap is `n` x 4 MiB so
+/// the cap resolves to `n` (both knobs move together).
+const POOL_N: usize = match option_env!("WJ_POOL") {
+    Some(v) => parse_usize(v),
+    None => 1024,
+};
+
+/// Huge-page threshold of the `sefer_pool` arm in small segments: `WJ_THP=<n>` at build time
+/// (CF-3 sweep), default 16 (the shipped default); 0 = never hint.
+const THP_N: usize = match option_env!("WJ_THP") {
+    Some(v) => parse_usize(v),
+    None => 16,
+};
+
+const fn parse_usize(v: &str) -> usize {
+    let b = v.as_bytes();
+    let mut i = 0;
+    let mut n = 0;
+    while i < b.len() {
+        n = n * 10 + (b[i] - b'0') as usize;
+        i += 1;
+    }
+    n
+}
+
+// WG-M0 diagnostic ceiling (default `WJ_POOL` = 1024): empty small segments are
+// retained instead of released, so no release happens inside `free`. CF-1 sweeps
+// the pool size through the same arm.
 static SEFER_POOL: sefer_alloc::SeferAlloc = sefer_alloc::SeferAlloc::with_config(
-    sefer_alloc::LargeCacheConfig::DEFAULT.pool(
-        sefer_alloc::SmallSegmentPoolConfig::new()
-            .pool_segments(1024)
-            .pool_byte_cap(4 << 30),
-    ),
+    sefer_alloc::LargeCacheConfig::DEFAULT
+        .pool(
+            sefer_alloc::SmallSegmentPoolConfig::new()
+                .pool_segments(POOL_N)
+                .pool_byte_cap(POOL_N << 22),
+        )
+        .huge_page_after_segments(THP_N),
 );
 static MI: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -475,6 +504,31 @@ fn main() {
     );
     #[cfg(not(feature = "internals"))]
     let os = String::new();
+    // CF-1 config evidence (R26-4): the requested pool size of the sefer_pool arm
+    // and, with bench-internals, the cap the main thread's heap resolved (0 for
+    // the other arms, whose heap is not the configured one).
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    let pool_res = if matches!(arm, Arm::SeferPool) {
+        SEFER_POOL.dbg_current_pool_cap()
+    } else {
+        0
+    };
+    #[cfg(not(all(feature = "internals", feature = "bench-internals")))]
+    let pool_res = 0usize;
+    #[cfg(all(feature = "bench-internals", not(feature = "numa-aware")))]
+    let (thp_res, thp_hinted) = if matches!(arm, Arm::SeferPool) {
+        (
+            sefer_alloc::alloc_core::AllocCore::dbg_huge_page_after_segments(),
+            sefer_alloc::alloc_core::AllocCore::dbg_thp_hinted_small_segments(),
+        )
+    } else {
+        (0, 0)
+    };
+    #[cfg(not(all(feature = "bench-internals", not(feature = "numa-aware"))))]
+    let (thp_res, thp_hinted) = (0u64, 0u64);
+    let os = format!(
+        "{os},\"pool_req\":{POOL_N},\"pool_res\":{pool_res},\"thp_req\":{THP_N},\"thp_res\":{thp_res},\"thp_hinted\":{thp_hinted}"
+    );
     // Path activation of TH-1 (Linux): huge-page-backed bytes at the live
     // peak and at the end of the run.
     let os = format!(

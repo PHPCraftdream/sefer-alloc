@@ -353,7 +353,40 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 | `.decay_interval_ms(N)` | `1000` ms | Monotonic elapsed-time period for counting due decay steps, not minimum spacing between invocations. Each eligible clock check processes up to eight due intervals; the timer advances by `due × interval`, retaining the remainder and excess whole-interval debt for later invocations. A step computes the current excess and FIFO-evicts whole spans toward `excess × rate`. |
 | `.decay_rate_percent(N)` | `10` % | Fraction of the excess released per tick, integer percent in `[1, 100]` (clamped). `10` ⇒ release 10 % per tick (self-damping exponential decay); `100` ⇒ flush all excess in one tick. |
 | `.depot_budget_bytes(N)` | `1 MiB` | Per-heap (per-thread) byte budget for full small-class magazines parked **above** the fixed depot floor, so a free burst larger than one magazine refills from parked magazines instead of round-tripping through segment free lists. `0` turns the overflow off. Rounded down to 256 B, capped at 16,774,912 B. Needs `fastbin` + `alloc-decommit` (ignored otherwise). See [Depot overflow budget](#depot-overflow-budget-fastbin--alloc-decommit). |
+| `.route_pin_cache_slots(N)` | `32` | Slots of the per-thread cache of route descriptors used when a block is freed on a thread other than the one that allocated it (`alloc-xthread`). Rounded down to a power of two, clamped to `4..=64`. More slots keep a producer that frees into more owner segments off the shared directory lookup, and raise the worst-case memory held by an idle producer thread (≈ 0.29 MiB per slot). Process-wide, first config wins. See [Foreign-free route pin cache](#foreign-free-route-pin-cache-alloc-xthread--alloc-decommit). |
+| `.huge_page_after_segments(N)` | `16` | Linux transparent-huge-page hint for growing heaps: from the N-th small segment (4 MiB each, counted over the process) on, a newly reserved small segment is advised `MADV_HUGEPAGE`. `0` never hints. Fewer page faults while a heap grows, more resident memory for lightly used segments. Process-wide, first config wins. See [Transparent huge pages](#transparent-huge-pages-linux). |
 | `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: above headroom, the first eligible call primes a nonzero-interval timer; subsequent clock checks occur every 64th eligible large alloc/free and process bounded catch-up inline. A zero interval bypasses the stride and runs one step per eligible call, including the first. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
+
+The table lists the `LargeCacheConfig` methods that set a number directly. The empty-segment pool is set through
+`.pool(SmallSegmentPoolConfig::new().pool_segments(N).pool_byte_cap(B))` (default **4 segments / 16 MiB**; see
+[Tuning the small-segment pool](#tuning-the-small-segment-pool-alloc-decommit)) and the named bundles of
+`SmallPoolPolicy` / `LargeCachePolicy` through [`Profile`](#named-profiles-profile-alloc-decommit).
+
+### Where each setting's memory sits
+
+Every setting trades memory held between bursts for speed on the next one. This table says whose memory it is, how
+large it can get, and what bounds it, so a deployment can add up the worst case before choosing a value.
+
+| Setting | Scope | Most memory it can hold | What shrinks it |
+|---|---|---|---|
+| `.headroom_bytes` / `.budget_bytes` / `.decay_*` (large-segment cache) | per heap (per thread) | the decay floor `headroom_bytes` (default 256 MiB); `budget_bytes` is the only hard ceiling | the decay tick, on large allocs and frees ([Decommit and large-cache](#decommit-phase-35-and-large-cache-opt-e)) |
+| `.pool(pool_segments, pool_byte_cap)` (empty small segments) | per heap | `min(pool_segments, pool_byte_cap / 4 MiB)` × 4 MiB, committed (default 16 MiB) | decay on allocator activity, not while the thread is idle; `trim`, thread exit |
+| `.depot_budget_bytes` (parked magazines) | per heap | the budget (default 1 MiB) plus the fixed 241,408 B floor | decay on cold events; `trim`, thread exit |
+| `.route_pin_cache_slots` (foreign-free route cache) | per freeing thread, count set process-wide | slots × ≈ 0.29 MiB of route descriptors (default 32 slots ≈ 9.3 MiB) | a miss sweeps dead entries; thread exit |
+| `.huge_page_after_segments` (Linux huge pages) | per process | up to 2 MiB per hinted segment that is only lightly touched; none below the threshold | the kernel splits or reclaims under pressure; segment release |
+
+Totals multiply by the number of live heaps or freeing threads: 32 threads at the defaults can hold up to 32 × (16 MiB
+pool + 1.2 MiB depot) of small-block memory plus the large-cache floors and route caches of the threads that free
+across threads. Per-heap settings are fixed when a thread's heap is first created ("first claim wins"; a recycled heap
+keeps its settings and a conflicting request is counted by `config_conflicts_total()`); the route cache slot count is
+process-wide and the first config materialised wins.
+
+**Reading the settings back.** What a request resolved to is not always what was asked for (the pool is the
+minimum of two numbers; values are clamped, rounded or ignored on a recycled heap). With `bench-internals` +
+`internals` the effective values are observable through the real `#[global_allocator]`:
+`SeferAlloc::dbg_current_pool_cap()` (pool), `dbg_current_depot_overflow()` (depot), `dbg_current_large_cache_budget()`
+(large cache) and `RoutePin::dbg_route_pin_cache_slots()` (route cache); `LargeCacheConfig::dbg_resolved_*` resolve a
+config without allocating. A benchmark that sweeps a setting must report these read-backs per arm.
 
 The model is **"allocate fast, release slowly"**: each tick removes a
 constant fraction of the current excess, so the cache approaches the
@@ -801,7 +834,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **108** tier-2 item-scoped allows across **33**
+`src/`, 6 in `crates/`) plus **109** tier-2 item-scoped allows across **33**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1495,7 +1528,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **471 integration test files**,
+needs its acceptance run. The present tree contains **476 integration test files**,
 **105 example binaries**, **34 benches**, and **24 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1505,7 +1538,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (471 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (476 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (105 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1679,6 +1712,31 @@ that changes nothing observable. Both knobs must be raised together, as
 in the recipe above. This exact trap is encoded as a CI guard:
 `tests/small_segment_pool.rs::paired_knob_promotion_is_not_a_noop`.
 
+**Sizing the pool — what a segment of pool costs and when it pays (measured, CF-1).**
+Each retained segment is 4 MiB of committed memory **per heap** (per thread that owns a heap), and it stays committed after
+the burst that filled it. The pool does not change the peak: in seven fill-then-free shapes (1 GiB growth in 64 B and 1 KiB
+blocks, mixed growth, regrow, large spans, a seeded random mix, phases; real `#[global_allocator]`, one process per run)
+the peak RSS was the same at every pool size (six shapes; the seventh moved by 1–2 %), and the memory left in the process after the run grew by about 4 MiB per pool
+segment:
+
+| `pool_segments` (with `pool_byte_cap` = N × 4 MiB) | 0 | 4 (default) | 8 | 16 | 32 | 64 | 1024 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| RSS left after growing 1 GiB in 64 B blocks and freeing it (Windows, MiB; mimalloc leaves 1031) | 12 | 29 | 46 | 80 | 149 | 285 | 1172 |
+| segments released to the OS during that run (of 274 reserved) | 272 | 268 | 264 | 256 | 240 | 208 | 0 |
+
+What the extra memory buys depends on the workload shape. The pool serves a reuse only when the program **refills what it
+emptied** (allocate N, free N, allocate N again in the same size class). In the seven shapes above the pool served at most 13
+reservations of 1086–1099 (phase scenario) and none in the other six, so no size from 8 to 64 was distinguishable from the
+default in time on Linux or on Windows; the one clear time gain was pool 1024 on Windows (growth in 1 KiB blocks 0.757 of the
+default's time, range 0.70–0.84 over 7 repetitions; regrow 0.794), which retains the whole burst — it is the "keep every empty
+segment" policy, not a size to adopt blindly. A churn shape that does cross a segment boundary repeatedly (1 KiB batches with
+teardown) gained 22 % at 8 segments (see above). **Rule of thumb:** keep the default; raise `pool_segments` and
+`pool_byte_cap` together to the number of segments your steady state empties and refills in one cycle (the working set of the
+cycle divided by 4 MiB), accept N × 4 MiB × (number of heaps) of retained memory, and verify the change on your own workload.
+Read the resolved value back with `SeferAlloc::dbg_current_pool_cap()` (`bench-internals`) when you measure.
+Full tables, both systems, the mechanism counters and the reproduction commands:
+[`docs/perf/CF1_POOL_SEGMENTS.md`](docs/perf/CF1_POOL_SEGMENTS.md).
+
 ### Depot overflow budget (`fastbin` + `alloc-decommit`)
 
 Every thread heap keeps a magazine of up to 16 free blocks per small size
@@ -1765,6 +1823,105 @@ The pair16 / pair64 and per-bench instruction costs above exceed the
 pre-registered no-loss rules; the setting ships under the owner's two
 scoped exceptions to those rules (Addenda 7 and 10). Use `0` where only
 single alloc/free pairs matter.
+
+### Foreign-free route pin cache (`alloc-xthread` + `alloc-decommit`)
+
+When a thread frees a block that another thread allocated, the allocator must find which segment the block belongs to and
+hand the block back to the owner. Each freeing thread keeps a small cache of the route descriptors of the owner
+segments it freed into recently, so a repeated free into the same segment skips the shared directory lookup (a
+shard-locked search plus a reference-count update). A miss costs about 440–460 extra instructions per free
+(`docs/perf/DZ3_PIN_CACHE_DIRECT_MAPPED.md`).
+
+The cache is **direct-mapped**: a segment's slot is `(address / 4 MiB) mod slots`. Segments of one owner on 64-bit
+Unix sit 8 MiB apart, so in practice the cache serves about **half as many owner segments as it has slots** in any free order (cyclic or random);
+a sequential order — all frees of one segment, then the next — needs a single slot and always hits.
+
+```rust
+use sefer_alloc::{LargeCacheConfig, SeferAlloc};
+
+// A producer thread that frees into up to ~32 owner segments (e.g. a thread
+// pool draining blocks that many worker threads allocated): 64 slots.
+static GLOBAL: SeferAlloc =
+    SeferAlloc::with_config(LargeCacheConfig::new().route_pin_cache_slots(64));
+```
+
+| Slots | Owner segments served on the fast path (cyclic or random order, Linux) | Worst-case memory held by an idle producer thread |
+|---:|---|---:|
+| 4 | about 2 (inferred; 4 measured: none at m = 4 cyclic) | ≈ 1.2 MiB |
+| 8 | 4 | ≈ 2.3 MiB |
+| 16 | 8 | ≈ 4.6 MiB |
+| **32 (default)** | **16** | **≈ 9.3 MiB** |
+| 64 | 32 | ≈ 18.6 MiB |
+
+How it behaves:
+
+- **What the memory is.** A cached entry keeps a route descriptor and its sidecar (System allocations, not allocator
+  segments) alive after the owner released the segment, until the slot is reused, a later miss sweeps it, or the thread
+  exits. The figure is the worst case — every size class in use in the segment; typical entries are much smaller.
+  An idle thread that never misses again keeps its entries until it exits.
+- **Too few slots cost more than the lookup they save.** Where a producer's owner segments outnumber the reach, every
+  free misses and costs 2.5–3.1 times the time of the default in the measured cells (`docs/perf/CF2_ROUTE_PIN_CACHE_SLOTS.md`
+  section B); lower the value only when the producer frees into few owner segments, and measure.
+- **No cost when it is not needed.** The hit path reads the slot count from the thread's cache; instructions and time
+  of a hit are unchanged within measurement noise at every setting.
+- **Process-wide, first config wins.** Producer threads usually only free and never bind a heap, so the setting cannot
+  travel with a heap. The first heap materialised with an explicit config publishes it; every thread adopts it at its
+  first insert into the cache. A different value from a later config is ignored (it is not counted by
+  `config_conflicts_total`). Build the `SeferAlloc` static with the value so every heap carries the same setting.
+- **Out of range is safe.** Values are rounded down to a power of two and clamped to `4..=64`; no value panics.
+- **Needs `alloc-xthread` and `alloc-decommit`** (the config type exists only with `alloc-decommit`); without
+  `alloc-xthread` there is no cross-thread free path and the value is ignored.
+
+**Measurements** (Linux, WSL2, i7-11800H; `docs/perf/CF2_ROUTE_PIN_CACHE_SLOTS.md`; time per foreign free of one
+producer thread, medians of 9 interleaved processes; Linux only, Windows not measured):
+
+| Shape | 4 slots | 8 | 16 | 32 (default) | 64 | mimalloc |
+|---|---:|---:|---:|---:|---:|---:|
+| 16 owner segments, cyclic order | 80.3 ns | 85.2 | 86.5 | **29.0** | 30.9 | 49.3 |
+| 32 owner segments, cyclic order | 97.5 ns | 99.6 | 97.3 | 103.6 | **36.9** | 68.2 |
+| 32 owner segments, random order | 161.4 ns | 165.1 | 153.7 | 124.2 | **44.9** | 53.4 |
+| 64 owner segments, cyclic order | 103.0 ns | 115.8 | 107.8 | 108.6 | 112.6 | 48.3 |
+
+No slot count up to 64 serves 64 owner segments in a cyclic order.
+
+### Transparent huge pages (Linux)
+
+A heap that grows in small blocks pays one page fault per 4 KiB page it first touches. On Linux the allocator can advise the
+kernel to back a small segment with 2 MiB pages (`MADV_HUGEPAGE`), which cuts those faults. The hint goes only to **newly
+reserved** small segments from the N-th one of the process on (`LargeCacheConfig::huge_page_after_segments(N)`, default **16**,
+i.e. from 64 MiB of small segments): small programs never get it and keep 4 KiB pages and their RSS.
+
+```text
+static GLOBAL: SeferAlloc = SeferAlloc::with_config(LargeCacheConfig::new().huge_page_after_segments(0)); // never hint
+```
+
+| `N` | Minor page faults, 1 GiB growth in 64 B blocks (mimalloc 33,432) | Peak RSS of the small shape `wild`, MiB | Peak RSS of the shape `phase`, MiB |
+|---:|---:|---:|---:|
+| 0 (never) | 331,728 | 41 | 185 |
+| 1 | 53,882 | 110 | 310 |
+| 4 | 56,937 | 100 | 307 |
+| **16 (default)** | **69,166** | **62** | **295** |
+| 64 | 118,078 | 41 | 231 |
+
+How to choose:
+
+- **Keep the default** unless you have measured. Hinting earlier than 16 removes a further 18–22 % of the faults (numerator: the
+  difference to the default at 4 and 1; denominator: the default's 69,166) but we could not separate it from the default in time,
+  and it adds 38–48 MiB of peak RSS to the small shape. Never hinting costs 4.8 times the default's faults (331,728 / 69,166) in the
+  growth shape.
+- **RSS-sensitive deployments** (containers with tight limits, many small processes): `0`. A huge page is committed whole, so a
+  lightly touched segment can hold more resident memory than 4 KiB pages would.
+- **Growth-heavy single-process servers:** the default already covers them; `1`–`4` only if the first 64 MiB matter.
+- **Process-wide, first config wins.** The segment count is a process counter, so the threshold is too; the first heap materialised
+  publishes it and a different value from a later config is ignored. Values above `u32::MAX` mean "never"; no value panics.
+- **A no-op** off Linux, with `numa-aware`, and where the system has transparent huge pages disabled (`never`); the hint is honoured in the
+  `madvise` mode (the measured one) and irrelevant in `always`.
+- **Read it back** with `AllocCore::dbg_huge_page_after_segments()` and the hinted-segment count with
+  `AllocCore::dbg_thp_hinted_small_segments()` (`bench-internals`); `LargeCacheConfig::dbg_resolved_huge_page_after_segments()` resolves a
+  config without allocating.
+
+Measurements (Linux, WSL2, i7-11800H, 9 interleaved processes per cell): `docs/perf/CF3_HUGE_PAGE_THRESHOLD.md`. Wall-clock medians on the
+shared machine did not separate the thresholds; the page-fault counts above are exact.
 
 ---
 

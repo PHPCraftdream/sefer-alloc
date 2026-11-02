@@ -1,0 +1,8 @@
+base rp1 allocs=0 296,422,395
+base rp1 allocs=943718 546,746,816
+base grow64 1,886,004,955
+base grow1k 130,387,234
+e2 rp1 allocs=0 270,876,679
+e2 rp1 allocs=943718 500,572,628
+e2 grow64 1,672,296,815
+e2 grow1k 117,057,438

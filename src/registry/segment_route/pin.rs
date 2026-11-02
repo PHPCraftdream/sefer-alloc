@@ -122,6 +122,13 @@ impl RoutePin {
     pub fn dbg_route_pin_cache_totals() -> (u64, u64, u64, u64, u64, u64, u64) {
         crate::registry::heap_core_xthread::route_pin_cache::dbg_totals()
     }
+    /// Slot count of the calling thread's route pin cache (the count it will
+    /// adopt if nothing was inserted yet). Read-only.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_route_pin_cache_slots() -> usize {
+        crate::registry::heap_core_xthread::route_pin_cache::dbg_slots()
+    }
     /// Test-only seam that inserts a caller-looked-up pin into the per-thread
     /// route pin cache through the production insert path, so tests can
     /// exercise the cached fast path and its unlink handling deterministically

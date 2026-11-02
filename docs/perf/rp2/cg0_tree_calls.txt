@@ -1,0 +1,16 @@
+ 81,926,890 (27.65%)  *  <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss 
+ 80,629,264 (27.21%)  < <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss (58,983x) 
+ 80,629,264 (27.21%)  *  <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow 
+ 74,318,083 (25.08%)  < <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow (58,983x) 
+ 74,318,083 (25.08%)  *  <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> 
+ 73,138,423 (24.69%)  < <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> (58,983x) 
+ 73,138,423 (24.69%)  *  <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} 
+ 44,791,796 (15.12%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+ 41,193,683 (13.90%)  < <scratch>/base/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} (58,998x)
+ 26,193,816 ( 8.84%)  *  <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}
+ 25,957,884 ( 8.76%)  < <scratch>/base/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} (58,983x)
+  3,833,895 ( 1.29%)  < <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow (58,983x) 
+81,926,890 (27.65%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss (58,983x)
+80,629,264 (27.21%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow (58,983x)
+74,318,083 (25.08%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> (58,983x)
+73,138,423 (24.69%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} (58,983x)

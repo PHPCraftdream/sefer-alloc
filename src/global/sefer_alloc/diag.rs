@@ -652,6 +652,40 @@ impl SeferAlloc {
         }
     }
 
+    /// CF-A MEASUREMENT-ONLY: the CALLING thread's own heap's RESOLVED small-segment
+    /// pool cap — `min(pool_segments, pool_byte_cap / SEGMENT)` after clamping
+    /// (thin delegation to
+    /// [`HeapCore::dbg_pool_cap`](crate::registry::HeapCore::dbg_pool_cap)) —
+    /// the R26-4 read-back of the pool setting through the real
+    /// `#[global_allocator]` path (a requested `pool_segments` is not the cap
+    /// that ran: the byte cap and a recycled heap's older config both change
+    /// it). Same current-thread resolution as
+    /// [`dbg_current_large_cache_budget`](Self::dbg_current_large_cache_budget);
+    /// returns `0` on the fallback heap (TLS torn down, or the registry is
+    /// exhausted), indistinguishable from a pool disabled by configuration.
+    /// `#[doc(hidden)]`, `bench-internals`-gated (no production caller →
+    /// CLAUDE.md's benchmark-hook rule 2).
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[must_use]
+    pub fn dbg_current_pool_cap(&self) -> usize {
+        if let CurrentHeap::Own(heap) = self.current_heap() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread — same justification as
+            // `dbg_current_large_cache_budget` above.
+            #[allow(unsafe_code)]
+            unsafe {
+                (*heap).dbg_pool_cap()
+            }
+        } else {
+            0
+        }
+    }
+
     /// G1-K7 MEASUREMENT-ONLY: the calling thread's own heap's depot budget
     /// `(resolved, effective)` and overflow counters (see
     /// `HeapCore::dbg_depot_overflow`) — the R26-4 read-back through the real

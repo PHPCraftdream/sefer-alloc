@@ -1,0 +1,77 @@
+table,case,metric,a,b,ratio_a_over_b
+final_time_ns_per_free_new_over_base,4 seq,ns,18.7001953125,17.666259765625,1.059
+final_time_ns_per_free_new_over_mi,4 seq,ns,18.7001953125,47.8287353515625,0.391
+final_time_ns_per_free_new_over_base,4 cyclic,ns,29.1915283203125,28.107177734375,1.039
+final_time_ns_per_free_new_over_mi,4 cyclic,ns,29.1915283203125,39.960205078125,0.731
+final_time_ns_per_free_new_over_base,4 random,ns,35.344970703125,38.308349609375,0.923
+final_time_ns_per_free_new_over_mi,4 random,ns,35.344970703125,37.8922119140625,0.933
+final_time_ns_per_free_new_over_base,5 seq,ns,18.76328125,18.36982421875,1.021
+final_time_ns_per_free_new_over_mi,5 seq,ns,18.76328125,51.57890625,0.364
+final_time_ns_per_free_new_over_base,5 cyclic,ns,29.42607421875,73.96357421875,0.398
+final_time_ns_per_free_new_over_mi,5 cyclic,ns,29.42607421875,40.62353515625,0.724
+final_time_ns_per_free_new_over_base,5 random,ns,35.66025390625,57.38935546875,0.621
+final_time_ns_per_free_new_over_mi,5 random,ns,35.66025390625,35.741015625,0.998
+final_time_ns_per_free_new_over_base,8 seq,ns,19.57025146484375,19.5513916015625,1.001
+final_time_ns_per_free_new_over_mi,8 seq,ns,19.57025146484375,58.67303466796875,0.334
+final_time_ns_per_free_new_over_base,8 cyclic,ns,28.46014404296875,74.97113037109375,0.380
+final_time_ns_per_free_new_over_mi,8 cyclic,ns,28.46014404296875,41.92108154296875,0.679
+final_time_ns_per_free_new_over_base,8 random,ns,38.9010009765625,78.1802978515625,0.498
+final_time_ns_per_free_new_over_mi,8 random,ns,38.9010009765625,36.801513671875,1.057
+final_time_ns_per_free_new_over_base,16 seq,ns,19.923370361328125,18.78533935546875,1.061
+final_time_ns_per_free_new_over_mi,16 seq,ns,19.923370361328125,61.938995361328125,0.322
+final_time_ns_per_free_new_over_base,16 cyclic,ns,30.788970947265625,83.51107788085938,0.369
+final_time_ns_per_free_new_over_mi,16 cyclic,ns,30.788970947265625,48.6357421875,0.633
+final_time_ns_per_free_new_over_base,16 random,ns,37.277496337890625,104.84988403320312,0.356
+final_time_ns_per_free_new_over_mi,16 random,ns,37.277496337890625,44.88433837890625,0.831
+final_time_ns_per_free_new_over_base,64 seq,ns,20.194473266601562,19.467056274414062,1.037
+final_time_ns_per_free_new_over_mi,64 seq,ns,20.194473266601562,64.2158203125,0.314
+final_time_ns_per_free_new_over_base,64 cyclic,ns,101.82038879394531,89.404541015625,1.139
+final_time_ns_per_free_new_over_mi,64 cyclic,ns,101.82038879394531,43.006263732910156,2.368
+final_time_ns_per_free_new_over_base,64 random,ns,163.65377044677734,169.91100311279297,0.963
+final_time_ns_per_free_new_over_mi,64 random,ns,163.65377044677734,57.76122283935547,2.833
+iteration_ratio,16 slots, linear search, round-robin,5 cyclic,0.374,1,0.374
+iteration_ratio,16 slots, linear search, round-robin,16 cyclic,0.429,1,0.429
+iteration_ratio,16 slots, linear search, round-robin,16 random,0.484,1,0.484
+iteration_ratio,16 slots, linear search, round-robin,16 seq,1.155,1,1.155
+iteration_ratio,16 slots, linear search, round-robin,64 cyclic,1.296,1,1.296
+iteration_ratio,16 slots, linear search, round-robin,64 random,1.098,1,1.098
+iteration_ratio,64 slots, linear search, round-robin,5 cyclic,0.378,1,0.378
+iteration_ratio,64 slots, linear search, round-robin,16 cyclic,0.460,1,0.460
+iteration_ratio,64 slots, linear search, round-robin,16 random,0.508,1,0.508
+iteration_ratio,64 slots, linear search, round-robin,16 seq,1.145,1,1.145
+iteration_ratio,64 slots, linear search, round-robin,64 cyclic,0.713,1,0.713
+iteration_ratio,64 slots, linear search, round-robin,64 random,0.728,1,0.728
+iteration_ratio,16 slots, linear search + last-hit memo, incremental sweep,5 cyclic,0.445,1,0.445
+iteration_ratio,16 slots, linear search + last-hit memo, incremental sweep,16 cyclic,0.481,1,0.481
+iteration_ratio,16 slots, linear search + last-hit memo, incremental sweep,16 random,0.538,1,0.538
+iteration_ratio,16 slots, linear search + last-hit memo, incremental sweep,16 seq,0.926,1,0.926
+iteration_ratio,16 slots, linear search + last-hit memo, incremental sweep,64 cyclic,1.124,1,1.124
+iteration_ratio,16 slots, linear search + last-hit memo, incremental sweep,64 random,0.968,1,0.968
+iteration_ratio,direct-mapped 16, incremental sweep,5 cyclic,0.387,1,0.387
+iteration_ratio,direct-mapped 16, incremental sweep,16 cyclic,1.027,1,1.027
+iteration_ratio,direct-mapped 16, incremental sweep,16 random,0.804,1,0.804
+iteration_ratio,direct-mapped 16, incremental sweep,16 seq,0.942,1,0.942
+iteration_ratio,direct-mapped 16, incremental sweep,64 cyclic,1.092,1,1.092
+iteration_ratio,direct-mapped 16, incremental sweep,64 random,0.891,1,0.891
+iteration_ratio,direct-mapped 64, incremental sweep,5 cyclic,0.368,1,0.368
+iteration_ratio,direct-mapped 64, incremental sweep,16 cyclic,0.399,1,0.399
+iteration_ratio,direct-mapped 64, incremental sweep,16 random,0.399,1,0.399
+iteration_ratio,direct-mapped 64, incremental sweep,16 seq,0.913,1,0.913
+iteration_ratio,direct-mapped 64, incremental sweep,64 cyclic,1.104,1,1.104
+iteration_ratio,direct-mapped 64, incremental sweep,64 random,0.609,1,0.609
+iteration_ratio,direct-mapped 32, incremental sweep (prototype of the change),5 cyclic,0.372,1,0.372
+iteration_ratio,direct-mapped 32, incremental sweep (prototype of the change),16 cyclic,0.386,1,0.386
+iteration_ratio,direct-mapped 32, incremental sweep (prototype of the change),16 random,0.380,1,0.380
+iteration_ratio,direct-mapped 32, incremental sweep (prototype of the change),16 seq,0.917,1,0.917
+iteration_ratio,direct-mapped 32, incremental sweep (prototype of the change),64 cyclic,1.029,1,1.029
+iteration_ratio,direct-mapped 32, incremental sweep (prototype of the change),64 random,0.857,1,0.857
+sweep_budget,16 seq,budget4_over_base,18.79107666015625,19.311431884765625,0.973
+sweep_budget,16 cyclic,budget4_over_base,29.228912353515625,83.99517822265625,0.348
+sweep_budget,16 random,budget4_over_base,36.865936279296875,100.44158935546875,0.367
+sweep_budget,64 seq,budget4_over_base,19.81268310546875,19.72850799560547,1.004
+sweep_budget,64 cyclic,budget4_over_base,93.01271057128906,96.30398559570312,0.966
+sweep_budget,64 random,budget4_over_base,164.1511993408203,168.85508728027344,0.972
+mt_control,larson T=2,mops_change_over_base,67.42,66.05,1.021
+mt_control,larson T=4,mops_change_over_base,120.18,103.17,1.165
+mt_control,mstress T=2,mops_change_over_base,109.28,109.87,0.995
+mt_control,mstress T=4,mops_change_over_base,200.34,201.78,0.993
