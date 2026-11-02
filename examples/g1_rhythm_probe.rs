@@ -5,7 +5,7 @@
 //!   g1_rhythm_probe trickle <size> <n> <k> [control]   one foreign free every k×16 allocations
 //!   g1_rhythm_probe bigheap <n_fill> <m>               fill with 64 B, measure m × 1 KiB
 //! PC (route pin cache under a foreign free order):
-//!   g1_rhythm_probe pincycle <m> <cyclic|seq|random>   2048 × 1 KiB blocks from each of m segments
+//!   g1_rhythm_probe pincycle <m> <cyclic|seq|random> [mi]   2048 × 1 KiB blocks from each of m segments
 //! RP (pause of the refill that reclaims a backlog of foreign frees):
 //!   g1_rhythm_probe reclaim <n_fill> <n_free> [mi]     64 B; every later alloc timed on its own
 //!
@@ -277,8 +277,8 @@ fn shuffle(v: &mut [usize]) {
 
 /// Exactly `m` segments, `PC_PER_SEGMENT` blocks freed from each; every
 /// other carved block stays live.
-fn pincycle(m: usize, order: &str) {
-    let a = heap(false);
+fn pincycle(m: usize, order: &str, mi: bool) {
+    let a = heap(mi);
     let layout = Layout::from_size_align(1024, 8).unwrap();
     let carved: Vec<usize> = (0..(m + 2) * 4096).map(|_| alloc(a, layout)).collect();
     let mut by_seg: Vec<(usize, Vec<usize>)> = Vec::new();
@@ -319,7 +319,8 @@ fn pincycle(m: usize, order: &str) {
     let after = snapshot();
     black_box(&carved);
     println!(
-        "{{\"mode\":\"pincycle\",\"alloc\":\"sefer\",\"counters\":{COUNTERS},\"m\":{m},\"order\":\"{order}\",\"n\":{n},\"segments\":{},{},\"free_ns\":{ns}}}",
+        "{{\"mode\":\"pincycle\",\"alloc\":\"{}\",\"counters\":{COUNTERS},\"m\":{m},\"order\":\"{order}\",\"n\":{n},\"segments\":{},{},\"free_ns\":{ns}}}",
+        if mi { "mi" } else { "sefer" },
         by_seg.len(),
         delta("", before, after)
     );
@@ -380,7 +381,7 @@ fn main() {
         Some("growth") => growth(num(2), num(3), flag(4, "mi")),
         Some("trickle") => trickle(num(2), num(3), num(4), flag(5, "control")),
         Some("bigheap") => bigheap(num(2), num(3)),
-        Some("pincycle") => pincycle(num(2), &args[3]),
+        Some("pincycle") => pincycle(num(2), &args[3], flag(4, "mi")),
         Some("reclaim") => reclaim(num(2), num(3), flag(4, "mi")),
         _ => panic!("usage: see the module doc"),
     }
