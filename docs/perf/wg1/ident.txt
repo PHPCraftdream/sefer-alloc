@@ -1,0 +1,2 @@
+main 338875ab93398a379857059e4f487b93317b43c8
+0d98a48572f84fa1c888ec4b58f5c4609ab5e8a0c938461b2e7be0ff31b9a9ba  target-wg1/release/examples/g1_wild_judge.exe
