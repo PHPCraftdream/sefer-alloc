@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+151. **[A] G1-D16R — bulk 16 B / 64 B burst (alloc 1024, free 1024): last two cells behind mimalloc; residual is the cost of per-block liveness tags.** (Filed 2026-11-02, `docs/perf/d16e/`.)
+
+   > **Current state**
+   > - **Status:** measured and decomposed on `main` @ `f4b45b1e`; no safe cheap lever left — closed as a structural residual unless the owner accepts a safety trade (see Next trigger).
+   > - **Current:** парный `bench:table` (Windows, 3 процесса × 200 раундов, медианы минимумов): пачка 16 Б sefer 5.6 против mi 4.5 нс/пара (1.24× медленнее), 64 Б 7.8 против 6.0 (1.30×, разброс процессов sefer 6.0–7.8), 256 Б и 1024 Б быстрее в 1.35× и 1.82×; churn без записи и с записью — быстрее во всех 8 ячейках (1.07–3.50×). Linux, `b4_pmu_probe bulk 1024 × 16 Б`, 400 проходов: callgrind sefer 51 864 663 Ir против mi 38 484 110 (1.35×; 63.3 против 47.0 Ir на операцию вместе с обвязкой пробы); `perf stat` (4000 проходов) инструкции 512 527 652 против 380 087 286 (1.35×), циклы 111 818 428 против 93 235 316 (1.20×), IPC 4.58 против 4.08, ns/операция 2.937 против 2.487 (1.18×). Путь free (`dealloc_fast.rs`) ≈ 11 проверок по 1–2 Ir на каждую (строки 34–90), путь alloc — `hot.rs` 3.97 М Ir на 409 600 alloc; на разрыв в 13.38 М Ir приходится: запись и проверка тега живости (`live_tag.rs` 2.25 М + `state_byte.rs` 1.27 М в alloc, чтение state-байта 0.90 М + `live_tag.rs` 0.42 М в free = 4.84 М, около 36 % разрыва; оценка по строчной атрибуции callgrind). Остальное размазано по TLS-доступам и промежуточным вызовам; `ld_blocks_partial.address_alias` 756 322 против 673 049 (гипотеза 4K-алиасинга DZ-1 не подтверждена).
+   > - **Next trigger:** тег живости — это проверка двойного free и чужого указателя; убрать или ослабить его — потеря безопасности, под мандат «без потери безопасности» не подходит; вернуться к вопросу, только если владелец решит делать опциональный режим без тега (измерить потолок ≈ −4.8 М Ir из 51.9 М, то есть ≈ 9 % Ir) либо появится новое сокращение пути alloc/free без потери проверок. DZ-1 (4K-алиасинг) закрыть как не подтверждённый, TR-1 свести к этой карточке.
+   > - **Evidence:** `docs/perf/d16e/` (`cg.*.txt`, `incl.*.txt`, `stat.*.txt`, `top.*.txt`, `*.stdout`, `identity.txt` — sha256 бинарника `cc5cee7f…`), прогон `.rush`-скриптом `d16b.sh` на дереве `f4b45b1e` (команды: `valgrind --tool=callgrind … b4_pmu_probe bulk <sefer|mi> 1024 16 400`, `perf stat … bulk <…> 1024 16 4000`); парный `npm run bench:table:paired` на `f4b45b1e`.
+
 150. **[A] G1-CF3 — transparent-huge-page threshold is a setting (`huge_page_after_segments`); default 16 unchanged.** (Filed 2026-11-02, `docs/perf/CF3_HUGE_PAGE_THRESHOLD.md`.)
 
    > **Current state**
