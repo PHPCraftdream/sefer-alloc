@@ -356,6 +356,36 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 | `.route_pin_cache_slots(N)` | `32` | Slots of the per-thread cache of route descriptors used when a block is freed on a thread other than the one that allocated it (`alloc-xthread`). Rounded down to a power of two, clamped to `4..=64`. More slots keep a producer that frees into more owner segments off the shared directory lookup, and raise the worst-case memory held by an idle producer thread (≈ 0.29 MiB per slot). Process-wide, first config wins. See [Foreign-free route pin cache](#foreign-free-route-pin-cache-alloc-xthread--alloc-decommit). |
 | `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: above headroom, the first eligible call primes a nonzero-interval timer; subsequent clock checks occur every 64th eligible large alloc/free and process bounded catch-up inline. A zero interval bypasses the stride and runs one step per eligible call, including the first. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
 
+The table lists the `LargeCacheConfig` methods that set a number directly. The empty-segment pool is set through
+`.pool(SmallSegmentPoolConfig::new().pool_segments(N).pool_byte_cap(B))` (default **4 segments / 16 MiB**; see
+[Tuning the small-segment pool](#tuning-the-small-segment-pool-alloc-decommit)) and the named bundles of
+`SmallPoolPolicy` / `LargeCachePolicy` through [`Profile`](#named-profiles-profile-alloc-decommit).
+
+### Where each setting's memory sits
+
+Every setting trades memory held between bursts for speed on the next one. This table says whose memory it is, how
+large it can get, and what bounds it, so a deployment can add up the worst case before choosing a value.
+
+| Setting | Scope | Most memory it can hold | What shrinks it |
+|---|---|---|---|
+| `.headroom_bytes` / `.budget_bytes` / `.decay_*` (large-segment cache) | per heap (per thread) | the decay floor `headroom_bytes` (default 256 MiB); `budget_bytes` is the only hard ceiling | the decay tick, on large allocs and frees ([Decommit and large-cache](#decommit-phase-35-and-large-cache-opt-e)) |
+| `.pool(pool_segments, pool_byte_cap)` (empty small segments) | per heap | `min(pool_segments, pool_byte_cap / 4 MiB)` × 4 MiB, committed (default 16 MiB) | decay on allocator activity, not while the thread is idle; `trim`, thread exit |
+| `.depot_budget_bytes` (parked magazines) | per heap | the budget (default 1 MiB) plus the fixed 241,408 B floor | decay on cold events; `trim`, thread exit |
+| `.route_pin_cache_slots` (foreign-free route cache) | per freeing thread, count set process-wide | slots × ≈ 0.29 MiB of route descriptors (default 32 slots ≈ 9.3 MiB) | a miss sweeps dead entries; thread exit |
+
+Totals multiply by the number of live heaps or freeing threads: 32 threads at the defaults can hold up to 32 × (16 MiB
+pool + 1.2 MiB depot) of small-block memory plus the large-cache floors and route caches of the threads that free
+across threads. Per-heap settings are fixed when a thread's heap is first created ("first claim wins"; a recycled heap
+keeps its settings and a conflicting request is counted by `config_conflicts_total()`); the route cache slot count is
+process-wide and the first config materialised wins.
+
+**Reading the settings back.** What a request resolved to is not always what was asked for (the pool is the
+minimum of two numbers; values are clamped, rounded or ignored on a recycled heap). With `bench-internals` +
+`internals` the effective values are observable through the real `#[global_allocator]`:
+`SeferAlloc::dbg_current_pool_cap()` (pool), `dbg_current_depot_overflow()` (depot), `dbg_current_large_cache_budget()`
+(large cache) and `RoutePin::dbg_route_pin_cache_slots()` (route cache); `LargeCacheConfig::dbg_resolved_*` resolve a
+config without allocating. A benchmark that sweeps a setting must report these read-backs per arm.
+
 The model is **"allocate fast, release slowly"**: each tick removes a
 constant fraction of the current excess, so the cache approaches the
 headroom aggressively when far above it and gently when near it —
@@ -802,7 +832,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **108** tier-2 item-scoped allows across **33**
+`src/`, 6 in `crates/`) plus **109** tier-2 item-scoped allows across **33**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1496,7 +1526,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **471 integration test files**,
+needs its acceptance run. The present tree contains **472 integration test files**,
 **105 example binaries**, **34 benches**, and **24 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1506,7 +1536,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (471 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (472 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (105 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
