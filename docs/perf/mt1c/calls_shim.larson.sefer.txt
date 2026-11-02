@@ -1,0 +1,2 @@
+11,047,917 (16.08%)  => <scratch>/base/crates/malloc-bench-rs/src/lib.rs:malloc_bench_rs::alloc_shim::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> (300,768x)
+15,350,442 (22.34%)  => /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:malloc_bench_rs::dealloc_shim::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> (300,768x)

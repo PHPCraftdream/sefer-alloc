@@ -1,0 +1,6 @@
+mstress base 70,417,758
+mstress x 70,417,628
+mstress mi 63,674,269
+larson base 68,719,216
+larson x 68,719,358
+larson mi 64,158,764
