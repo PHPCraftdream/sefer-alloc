@@ -221,7 +221,22 @@ pub struct LargeCacheConfig {
     /// foreign-free path. `None` uses [`DEFAULT_PIN_CACHE_SLOTS`]. Resolved
     /// by [`resolved_route_pin_cache_slots`](Self::resolved_route_pin_cache_slots).
     pub(crate) route_pin_cache_slots: Option<usize>,
+
+    /// TH-1 follow-up: the small-segment count (process-wide) from which a
+    /// newly reserved small segment gets the transparent-huge-page hint.
+    /// `None` uses [`DEFAULT_HUGE_PAGE_AFTER_SEGMENTS`]; `Some(0)` never hints.
+    /// Resolved by
+    /// [`resolved_huge_page_after_segments`](Self::resolved_huge_page_after_segments).
+    pub(crate) huge_page_after_segments: Option<usize>,
 }
+
+/// Default of [`LargeCacheConfig::huge_page_after_segments`]: the 16th small
+/// segment (64 MiB) is the first to get the transparent-huge-page hint.
+#[cfg_attr(feature = "numa-aware", allow(dead_code))]
+pub(crate) const DEFAULT_HUGE_PAGE_AFTER_SEGMENTS: usize = 16;
+/// Largest threshold that is stored as is; a larger value means "never".
+#[cfg_attr(feature = "numa-aware", allow(dead_code))]
+pub(crate) const HUGE_PAGE_AFTER_SEGMENTS_MAX: usize = u32::MAX as usize;
 
 /// Default slot count of the per-thread route pin cache.
 pub(crate) const DEFAULT_PIN_CACHE_SLOTS: usize = 32;
@@ -281,6 +296,7 @@ impl LargeCacheConfig {
             pool: SmallSegmentPoolConfig::DEFAULT,
             depot_budget_bytes: None,
             route_pin_cache_slots: None,
+            huge_page_after_segments: None,
         }
     }
 
@@ -534,6 +550,61 @@ impl LargeCacheConfig {
         };
         // Largest power of two not above `n`.
         1usize << (usize::BITS - 1 - n.leading_zeros())
+    }
+
+    /// Linux transparent-huge-page hint for growing heaps: the number of
+    /// small segments (4 MiB each, counted over the whole process) from which
+    /// a **newly reserved** small segment is advised `MADV_HUGEPAGE`.
+    ///
+    /// A heap that grows in small blocks pays one page fault per 4 KiB page;
+    /// with the hint the kernel can back the segment with 2 MiB pages, about
+    /// 10× fewer faults while it fills (TH-1). The price is memory: a huge
+    /// page is committed whole, so a lightly touched segment can hold more
+    /// RSS than 4 KiB pages would (a growth shape measured 136 → 200 MiB
+    /// peak RSS). Segments before the threshold keep 4 KiB pages.
+    ///
+    /// * Default **16** (the 16th segment, 64 MiB of small segments): small
+    ///   heaps are never hinted.
+    /// * `1` hints every small segment; larger values delay the hint;
+    ///   **`0` never hints** (the RSS-conservative setting). Values above
+    ///   `u32::MAX` act as `0`.
+    /// * A no-op off Linux, with `numa-aware`, and where transparent huge
+    ///   pages are disabled by the system.
+    ///
+    /// **Process-wide, first config wins.** The segment count is a process
+    /// counter, so the threshold is too: the first heap materialised with an
+    /// explicit config publishes it and a different value from a later config
+    /// is ignored. Build the `SeferAlloc` static with this value so every heap
+    /// carries the same setting. Measurements: README "Transparent huge pages".
+    #[must_use]
+    pub const fn huge_page_after_segments(mut self, segments: usize) -> Self {
+        self.huge_page_after_segments = Some(segments);
+        self
+    }
+
+    /// TEST-ONLY: the resolved huge-page threshold of this config
+    /// (`0` = never hint).
+    #[doc(hidden)]
+    #[cfg(feature = "internals")]
+    #[must_use]
+    pub const fn dbg_resolved_huge_page_after_segments(&self) -> usize {
+        self.resolved_huge_page_after_segments()
+    }
+
+    /// Resolve the huge-page threshold: default when unset, `0` for "never",
+    /// a value above [`HUGE_PAGE_AFTER_SEGMENTS_MAX`] also means "never".
+    #[must_use]
+    #[cfg_attr(feature = "numa-aware", allow(dead_code))]
+    pub(crate) const fn resolved_huge_page_after_segments(&self) -> usize {
+        let n = match self.huge_page_after_segments {
+            Some(v) => v,
+            None => DEFAULT_HUGE_PAGE_AFTER_SEGMENTS,
+        };
+        if n > HUGE_PAGE_AFTER_SEGMENTS_MAX {
+            0
+        } else {
+            n
+        }
     }
 
     /// TEST-ONLY (G1-K7): the resolved depot-overflow budget of this config.

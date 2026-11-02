@@ -53,6 +53,13 @@ const POOL_N: usize = match option_env!("WJ_POOL") {
     None => 1024,
 };
 
+/// Huge-page threshold of the `sefer_pool` arm in small segments: `WJ_THP=<n>` at build time
+/// (CF-3 sweep), default 16 (the shipped default); 0 = never hint.
+const THP_N: usize = match option_env!("WJ_THP") {
+    Some(v) => parse_usize(v),
+    None => 16,
+};
+
 const fn parse_usize(v: &str) -> usize {
     let b = v.as_bytes();
     let mut i = 0;
@@ -68,11 +75,13 @@ const fn parse_usize(v: &str) -> usize {
 // retained instead of released, so no release happens inside `free`. CF-1 sweeps
 // the pool size through the same arm.
 static SEFER_POOL: sefer_alloc::SeferAlloc = sefer_alloc::SeferAlloc::with_config(
-    sefer_alloc::LargeCacheConfig::DEFAULT.pool(
-        sefer_alloc::SmallSegmentPoolConfig::new()
-            .pool_segments(POOL_N)
-            .pool_byte_cap(POOL_N << 22),
-    ),
+    sefer_alloc::LargeCacheConfig::DEFAULT
+        .pool(
+            sefer_alloc::SmallSegmentPoolConfig::new()
+                .pool_segments(POOL_N)
+                .pool_byte_cap(POOL_N << 22),
+        )
+        .huge_page_after_segments(THP_N),
 );
 static MI: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -506,7 +515,20 @@ fn main() {
     };
     #[cfg(not(all(feature = "internals", feature = "bench-internals")))]
     let pool_res = 0usize;
-    let os = format!("{os},\"pool_req\":{POOL_N},\"pool_res\":{pool_res}");
+    #[cfg(all(feature = "bench-internals", not(feature = "numa-aware")))]
+    let (thp_res, thp_hinted) = if matches!(arm, Arm::SeferPool) {
+        (
+            sefer_alloc::alloc_core::AllocCore::dbg_huge_page_after_segments(),
+            sefer_alloc::alloc_core::AllocCore::dbg_thp_hinted_small_segments(),
+        )
+    } else {
+        (0, 0)
+    };
+    #[cfg(not(all(feature = "bench-internals", not(feature = "numa-aware"))))]
+    let (thp_res, thp_hinted) = (0u64, 0u64);
+    let os = format!(
+        "{os},\"pool_req\":{POOL_N},\"pool_res\":{pool_res},\"thp_req\":{THP_N},\"thp_res\":{thp_res},\"thp_hinted\":{thp_hinted}"
+    );
     // Path activation of TH-1 (Linux): huge-page-backed bytes at the live
     // peak and at the end of the run.
     let os = format!(
