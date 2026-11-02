@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+150. **[A] G1-CF3 — transparent-huge-page threshold is a setting (`huge_page_after_segments`); default 16 unchanged.** (Filed 2026-11-02, `docs/perf/CF3_HUGE_PAGE_THRESHOLD.md`.)
+
+   > **Current state**
+   > - **Status:** shipped as `perf(opt-in)` (default unchanged; один relaxed load на холодном пути резервирования малого сегмента) + `bench` (свип) + README «Transparent huge pages (Linux)».
+   > - **Current:** `LargeCacheConfig::huge_page_after_segments(n)`: с n-го малого сегмента процесса новый малый сегмент получает `MADV_HUGEPAGE`; `0` — никогда; процесс-глобальная, побеждает первая конфигурация. Свип n = 0/1/4/16/64/1024 (Linux WSL2, 9 повторов × 6 сценариев, дефолтный пул 4, конфигурация подтверждена `thp_res` = `thp_req`): minor page faults grow64 — 331 728 (никогда) / 53 882 / 56 937 / 69 166 (дефолт) / 118 078 / mimalloc 33 432; пик RSS малых форм растёт при раннем хинте (`wild` 41 / 110 / 100 / 62 / 41 МиБ; `phase` 185 / 310 / 307 / 295 / 231). Время по медианам идёт в ту же сторону (никогда: ×1.20–1.73 в трёх ростовых формах), но разброс повторов широкий — решают page faults.
+   > - **Next trigger:** Windows и другие ОС — подсказка no-op, замер не нужен; ранний хинт (1–4) — только если появится ростовая нагрузка с измеренным выигрышем по времени сверх шума.
+   > - **Evidence:** `docs/perf/CF3_HUGE_PAGE_THRESHOLD.md`, `docs/perf/CF3_HUGE_PAGE_THRESHOLD_summary.csv`, `docs/perf/CF3_HUGE_PAGE_THRESHOLD_mech_summary.csv`, `docs/perf/cf3/`, `scripts/cf3_report.mjs`, `tests/huge_page_after_config.rs`, `tests/huge_page_after_threshold.rs`, `tests/huge_page_after_never.rs`.
+
 149. **[A] G1-CF1 — small-segment pool ("pocket") size: a retention knob; default 4 / 16 MiB unchanged.** (Filed 2026-11-02, `docs/perf/CF1_POOL_SEGMENTS.md`.)
 
    > **Current state**

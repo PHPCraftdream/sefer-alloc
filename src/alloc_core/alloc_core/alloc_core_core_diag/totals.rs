@@ -105,6 +105,14 @@ impl AllocCore {
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// TH-1 follow-up: the huge-page threshold in force (published or default; `0` = never).
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", not(feature = "numa-aware")))]
+    #[must_use]
+    pub fn dbg_huge_page_after_segments() -> u64 {
+        crate::alloc_core::small::alloc_core_small::huge_page_after()
+    }
+
     /// Test alias of [`Self::segments_reserved_total`].
     #[doc(hidden)]
     #[must_use]
