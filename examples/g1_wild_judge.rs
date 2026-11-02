@@ -196,11 +196,116 @@ struct Prof {
     teardown: (u64, u64),
 }
 
+/// `WJ_SEGMODEL=1`: replays the small-block free stream through models of the own-thread free
+/// lane (segment memo, then `own_cache`, then a hash probe that fills the cache) for several
+/// cache shapes. Counts only; no timing. Blocks up to 1 KiB count as small; a segment is
+/// 4 MiB aligned, its key is `address >> 22`.
+struct SegVariant {
+    name: &'static str,
+    mask: usize,
+    fold: bool,
+    cache: Vec<usize>,
+    memo: usize,
+    memo_hits: u64,
+    cache_hits: u64,
+    hash_probes: u64,
+}
+
+impl SegVariant {
+    fn new(name: &'static str, size: usize, fold: bool) -> Self {
+        Self {
+            name,
+            mask: size - 1,
+            fold,
+            cache: vec![usize::MAX; size],
+            memo: usize::MAX,
+            memo_hits: 0,
+            cache_hits: 0,
+            hash_probes: 0,
+        }
+    }
+    fn on_free(&mut self, k: usize) {
+        if self.memo == k {
+            self.memo_hits += 1;
+            return;
+        }
+        let i = (if self.fold { k ^ (k >> 4) } else { k }) & self.mask;
+        if self.cache[i] == k {
+            self.cache_hits += 1;
+            self.memo = k;
+        } else {
+            self.hash_probes += 1;
+            self.cache[i] = k;
+        }
+    }
+}
+
+struct SegModel {
+    variants: Vec<SegVariant>,
+    keys: std::collections::BTreeSet<usize>,
+    small: u64,
+}
+
+impl SegModel {
+    fn new() -> Self {
+        Self {
+            variants: vec![
+                SegVariant::new("16", 16, false),
+                SegVariant::new("16fold", 16, true),
+                SegVariant::new("32", 32, false),
+                SegVariant::new("32fold", 32, true),
+                SegVariant::new("64", 64, false),
+                SegVariant::new("64fold", 64, true),
+            ],
+            keys: std::collections::BTreeSet::new(),
+            small: 0,
+        }
+    }
+    fn on_free(&mut self, p: *mut u8, size: usize) {
+        if size > 1024 {
+            return;
+        }
+        let k = (p as usize) >> 22;
+        self.small += 1;
+        self.keys.insert(k);
+        for v in &mut self.variants {
+            v.on_free(k);
+        }
+    }
+    fn json(&self) -> String {
+        let odd = self.keys.iter().filter(|k| *k & 1 == 1).count();
+        let mut slots = [false; 16];
+        for k in &self.keys {
+            slots[k & 15] = true;
+        }
+        let v: Vec<String> = self
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "[\"{}\",{},{},{}]",
+                    v.name, v.memo_hits, v.cache_hits, v.hash_probes
+                )
+            })
+            .collect();
+        format!(
+            ",\"segmodel\":{{\"small\":{},\"distinct\":{},\"odd\":{},\"slots16\":{},\"v\":[{}]}}",
+            self.small,
+            self.keys.len(),
+            odd,
+            slots.iter().filter(|s| **s).count(),
+            v.join(",")
+        )
+    }
+}
+
 struct Run {
     arm: Arm,
     ops: u64,
     sum: u64,
     live: usize,
+    /// `WJ_SEGMODEL=1`: see [`SegModel`].
+    seg: Option<SegModel>,
     /// `WJ_SPLIT=1`: ns and count per (alloc|free) x (block <= 256 KiB | larger).
     split: Option<[[(u64, u64); 2]; 2]>,
     /// `WJ_PROF=1`: see [`Prof`].
@@ -242,6 +347,9 @@ impl Run {
         self.sum = self.sum.wrapping_add(unsafe { p.read() } as u64);
         let t = self.split.map(|_| Instant::now());
         let tp = (self.prof.is_some() && !self.teardown && size > 256 << 10).then(Instant::now);
+        if let Some(m) = self.seg.as_mut() {
+            m.on_free(p, size);
+        }
         a_dealloc(self.arm, p, size);
         self.note(1, size, t);
         if let (Some(f), Some(tp)) = (self.prof.as_mut(), tp) {
@@ -515,6 +623,7 @@ fn main() {
         ops: 0,
         sum: 0,
         live: 0,
+        seg: std::env::var_os("WJ_SEGMODEL").map(|_| SegModel::new()),
         split: std::env::var_os("WJ_SPLIT").map(|_| [[(0, 0); 2]; 2]),
         prof: std::env::var_os("WJ_PROF").map(|_| Prof::default()),
         teardown: false,
@@ -627,6 +736,10 @@ fn main() {
             .max(anon_huge_bytes()),
         anon_huge_bytes()
     );
+    let os = match run.seg.as_ref() {
+        Some(m) => format!("{os}{}", m.json()),
+        None => os,
+    };
     // Process CPU split and page faults at the end of the run (RET-1 / WG-1 fair axis).
     let (user_ms, kernel_ms, faults) = cpu_and_faults();
     let os = format!("{os},\"user_ms\":{user_ms},\"kernel_ms\":{kernel_ms},\"faults\":{faults}");
