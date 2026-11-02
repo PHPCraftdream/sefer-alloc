@@ -5,8 +5,8 @@
 it only measures the setting (judge arm `sefer_pool` takes `WJ_THP=<n>` at build time). Tables and both summary CSVs are generated
 by `scripts/cf3_report.mjs` from `docs/perf/cf3/`; the prose cites them. Platform: Linux (WSL2) only — the hint is a no-op elsewhere.
 
-**Entry point under test:** a real `#[global_allocator]` — `SeferAlloc::with_config(LargeCacheConfig::DEFAULT.pool(...).huge_page_after_segments(n))`
-inside the process judge `examples/g1_wild_judge.rs` (arm `sefer_pool`), because the setting ships at that layer.
+**Entry point under test:** a static `SeferAlloc` instance reached through `GlobalAlloc` shims (the `__rust_alloc` boundary of a `#[global_allocator]` user), with the system allocator as the process's own global allocator: `SeferAlloc::with_config(LargeCacheConfig::DEFAULT.pool(...).huge_page_after_segments(n))`
+inside the process judge `examples/g1_wild_judge.rs` (arm `sefer_pool`). It is not the process's registered `#[global_allocator]`; it is the same `GlobalAlloc` methods on the same allocator type, which is the layer the setting ships at.
 
 ## 0. Summary
 
