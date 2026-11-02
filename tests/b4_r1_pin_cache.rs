@@ -318,10 +318,20 @@ fn foreign_free_real_path_hit_miss_two_bases() {
 // ---------------------------------------------------------------------------
 #[test]
 fn foreign_free_cyclic_over_many_bases_hits() {
+    // The owner heap of this test holds a dozen segments; its teardown frees
+    // their sidecar pairs. Running it on a joined thread finishes that
+    // teardown inside the serial window instead of inside the next test's
+    // System-leaf balance window.
+    let _guard = SerialGuard::acquire();
+    thread::spawn(cyclic_over_many_bases_body)
+        .join()
+        .expect("cyclic test body panicked");
+}
+
+fn cyclic_over_many_bases_body() {
     const BASES: usize = 12;
     const ROUNDS: usize = 16;
     let layout = Layout::from_size_align(1024, 8).unwrap();
-    let _guard = SerialGuard::acquire();
     let (h0, m0, _i0, _e0, _u0, _r0, _s0) = quiescent_totals();
     let foreign0 = AllocCore::dbg_foreign_or_unroutable_frees();
 
