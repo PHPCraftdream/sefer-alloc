@@ -87,7 +87,7 @@
 //! # Model shape (minimal state space)
 //! 2 loom threads; 1 Small route, two separately issued granules (offsets 0
 //! and 16, word 0); cache of
-//! `PIN_CACHE_SLOTS = 4` (production constant, 1 slot used).
+//! `PIN_CACHE_SLOTS = 32` (production constant, 1 slot used).
 //! - OWNER: `RouteDirectory::new` → `register` (production) →
 //!   `issue_small(0,0)` (granule LIVE) → own `lookup` pin (drain handle) →
 //!   signal producer → wait producer-ack (insert done) → `RouteRegistration::

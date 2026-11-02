@@ -119,6 +119,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 ### [A] Active / high-value
 
+148. **[A] G1-DZ3 — route pin cache: non-sequential foreign free over 5+ segments missed every time; now direct-mapped (32 slots).** (Filed 2026-11-02, `docs/perf/DZ3_PIN_CACHE_DIRECT_MAPPED.md`.)
+
+   > **Current state**
+   > - **Status:** shipped as `perf(runtime)` in PR (ветка `g1-dz3`), ждёт CI/слияния; хвост m = 64 открыт.
+   > - **Current:** кэш pin'ов маршрута чужого free был 4 слота с круговым вытеснением (PC-1: при m ≥ 5 сегментах циклический порядок — 0 попаданий, случайный 0.79 / 0.50 / 0.25). PC-2 (Linux): промах ≈ +440–460 Ir на free; время на free база / mimalloc 1.6–2.9× хуже при m = 5…64, последовательный порядок в 2.7–3.3× быстрее mimalloc. Изменение: 32 прямо-отображаемых слота (`(base / SEGMENT) & 31`), sweep мёртвых pin'ов с бюджетом 4 занятых слота за вызов; события ghost на тех же местах. Результат (дерево `f81db41b…`, 9 процессов): hit rate ≥ 0.99 при m ≤ 16 во всех порядках; ns на free база → изменение: m = 5 cyclic 74.0 → 29.4 (mi 40.6), m = 16 cyclic 83.5 → 30.8 (mi 48.6), m = 16 random 104.8 → 37.3 (mi 44.9); последовательный порядок 1.00–1.06 от базы, программные инструкции ±0.23 %. m = 64: не лечится (cyclic 89.4 → 101.8, random 169.9 → 163.7 нс; mi 43–58), шум ячейки 0.97–1.14. MT-контроль larson/mstress T=2,4: диапазоны перекрываются. Цена: потолок удержки мёртвых дескрипторов простаивающим потоком 1.16 → ≈9.3 МиБ (худший случай; одна константа `PIN_CACHE_SLOTS`, 16 слотов теряют m = 16 cyclic).
+   > - **Next trigger:** CI зелёный (ghost-guard / loom / miri / iai) → слияние; решение владельца по границе удержки (32 против 16 слотов); m ≥ 64 — другая структура (многоуровневый кэш / хэш по индексу сегмента из заголовка) только если такая форма встречается на практике.
+   > - **Evidence:** `docs/perf/DZ3_PIN_CACHE_DIRECT_MAPPED.md`, `docs/perf/DZ3_PIN_CACHE_DIRECT_MAPPED_summary.csv`, `docs/perf/dz3/`, `scripts/dz3_report.mjs`, `tests/b4_r1_pin_cache.rs` (`foreign_free_cyclic_over_many_bases_hits`).
+
 147. **[A] G1-RP2 — owner reclaim of a wave of foreign frees: the owner's second phase is 1.9–3.9× mimalloc and its longest call 11–58×.** (Filed 2026-11-02, `docs/perf/RP2_REMOTE_FREE_RECLAIM.md`.)
 
    > **Current state**

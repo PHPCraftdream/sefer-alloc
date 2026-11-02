@@ -1,0 +1,9 @@
+tree f81db41b431d18898b71e885e68852c76a1e5e40
+base commit 6b8dd8e3 (main; the pin cache is unchanged since c0ee7dfb)
+ed18b2b92aa2ef2b297c6698c913cf0863788a2ce294b86ceb9349ad3900ca8e  tgt-base/release/examples/g1_rhythm_probe
+788e8625e1f74fa0d900634021705dfaecd289da4d8b5544b6a951ecbf4da156  tgt-dz3/release/examples/g1_rhythm_probe
+151f85bfb82af389c2ddf4cc27556ced377944c4715bfa73b570d477c83e7b8f  tgt-basec/release/examples/g1_rhythm_probe
+84e448a8989938eaafe8b56bb8fff47dc788540d6407e507ffb9dd74a4c6767d  tgt-dz3c/release/examples/g1_rhythm_probe
+rustc 1.98.1 (48a229cea 2026-09-01)
+binary: rustc
+commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985
