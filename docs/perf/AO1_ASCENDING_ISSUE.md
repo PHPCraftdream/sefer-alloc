@@ -22,6 +22,17 @@ exception; the non-inferiority intervals of the noisy cells (wild, growmix,
 regrow, Linux grow1k) stay wider than the 3 % margin. By the preregistration the
 decision goes to the owner with both campaigns' data (no third campaign).
 
+**Campaign 3 (v2b wall-clock, owner's request: merge only a clear win).** The
+code that ships (v2b) was measured on `main` `eb95709d`: grow64 Windows 0.750
+(0.710–0.793) and Linux 0.695 (0.628–0.769), grow1k Windows 0.770 (0.740–0.802),
+A/A clean in every cell, no cell killed (§3, §4). The judge reading stays HOLD
+for the same width reason; the gain is a clear win on the growth shapes the
+change targets. The cost is one repeatable `bench:table` cell: direct 256 B
+(sefer time +2.6 % mean of six pairs, five of six pairs above zero; sefer/mimalloc
+stays about 0.77), and set 1's largest agreed loss (+3.4 %) is above the
+preregistered +3 % line by 0.4 points (§4). Merged on the owner's rule with that
+cost on record.
+
 ## 1. Versions measured
 
 | Name | Commit / tag | What |
@@ -84,7 +95,39 @@ Judge gate: HOLD
 
 Judge gate: HOLD
 
-## 4. Path-activation oracle and deterministic controls (`scripts/ao1_controls_report.mjs`)
+### Campaign 3 (v2b on `main` `eb95709d`; 12 blocks, minimum of 3 back-to-back repeats per arm)
+
+Raw data `docs/perf/ao1/{win,linux}3_raw.jsonl.gz`, summary
+`AO1_ASCENDING_ISSUE_campaign3_summary.csv`
+(`node scripts/ao1_report.mjs --campaign 3`). Windows and Linux builds of both
+arms were made from the merged tree and its base, same judge source (§5).
+
+| Platform | Scenario | blocks | x / base (exp mean d) | 95 % CI | A/A base2 / base | A/A 95 % CI | cell verdict |
+|---|---|---:|---:|---|---:|---|---|
+| win | growmix | 12 | 0.998 | 0.969–1.029 | 0.992 | 0.958–1.026 | non-inferior |
+| win | grow1k | 12 | 0.770 | 0.740–0.802 | 0.985 | 0.937–1.037 | target met |
+| win | regrow | 12 | 1.013 | 0.984–1.042 | 0.957 | 0.914–1.001 | HOLD (CI crosses +3 %) |
+| win | wild | 12 | 0.947 | 0.902–0.994 | 0.958 | 0.915–1.003 | non-inferior |
+| win | large | 12 | 0.989 | 0.916–1.069 | 1.023 | 0.955–1.096 | HOLD (CI crosses +3 %) |
+| win | grow64 | 12 | 0.750 | 0.710–0.793 | 0.980 | 0.951–1.010 | target met |
+| win | phase | 12 | 1.045 | 1.004–1.088 | 1.016 | 0.989–1.043 | HOLD (CI crosses +3 %) |
+| linux | growmix | 12 | 0.970 | 0.892–1.055 | 1.024 | 0.968–1.084 | HOLD (CI crosses +3 %) |
+| linux | grow1k | 12 | 0.948 | 0.897–1.001 | 0.931 | 0.842–1.029 | non-inferior |
+| linux | regrow | 12 | 0.995 | 0.944–1.048 | 1.032 | 0.982–1.085 | HOLD (CI crosses +3 %) |
+| linux | wild | 12 | 1.008 | 0.974–1.043 | 1.021 | 0.974–1.071 | HOLD (CI crosses +3 %) |
+| linux | large | 12 | 0.991 | 0.950–1.034 | 0.995 | 0.961–1.031 | HOLD (CI crosses +3 %) |
+| linux | grow64 | 12 | 0.695 | 0.628–0.769 | 1.026 | 0.922–1.142 | target met |
+| linux | phase | 12 | 0.984 | 0.941–1.030 | 0.974 | 0.939–1.011 | HOLD (CI crosses +3 %) |
+
+Judge gate: HOLD
+
+Windows `phase` (1.045, 1.004–1.088) is the only interval entirely above 1; it
+is below the kill line (lower bound < 1.03) and campaign 2 read 0.883 for the
+same cell on v2, so it is not attributed to the change. The campaign-3 script
+counts grow64 on both platforms and Windows grow1k as targets (Amendment 1), as
+campaign 2 did.
+
+## 4. Path-activation oracle and deterministic controls (`scripts/ao1_controls_report.mjs`, `scripts/ao1_campaign3_report.mjs`)
 
 | Platform | Scenario | Arm | steps of +block size | total steps | share (steps / total) |
 |---|---|---|---:|---:|---:|
@@ -121,6 +164,40 @@ cells with a repeatable cost are direct 16 B and 256 B (+0.9…+2.6 % of sefer
 time); v2b removes the per-block instruction cost behind it (v2 +1.00 % Ir on
 grow64, v2b +0.03 %), the wall-clock of v2b itself was not remeasured.
 
+Campaign 3 (v2b, `main` `eb95709d`; `scripts/ao1_campaign3_report.mjs`, from
+`docs/perf/ao1/{win,linux}3_order.txt` and `docs/perf/ao1/bt3/`). The scenario
+size is scale 1 on both platforms, so Linux step counts differ from campaign 2's
+scale 0.5.
+
+| Platform | Scenario | Arm | steps of +block size | total steps | share (steps / total) |
+|---|---|---|---:|---:|---:|
+| win | grow64 | base | 0 | 16777215 | 0.00 % |
+| win | grow64 | x | 16776942 | 16777215 | 100.00 % |
+| win | grow1k | base | 0 | 1048575 | 0.00 % |
+| win | grow1k | x | 1047756 | 1048575 | 99.92 % |
+| linux | grow64 | base | 0 | 16777215 | 0.00 % |
+| linux | grow64 | x | 16776942 | 16777215 | 100.00 % |
+| linux | grow1k | base | 0 | 1048575 | 0.00 % |
+| linux | grow1k | x | 1047756 | 1048575 | 99.92 % |
+
+| bench:table paired set | sefer-time gm (x / base − 1) | largest agreed loss | new LOSS cells vs mimalloc | magnitude rule |
+|---|---:|---:|---:|---|
+| s1 | -0.4 % | +3.4 % | 0 | NO-GO |
+| s2 | -0.3 % | +1.0 % | 0 | NO-GO |
+| s3 | -0.0 % | +2.6 % | 0 | NO-GO |
+
+direct 256 B, sefer time (x / base − 1) per pair over 3 sets: +3.4 %, +3.5 %, +0.0 %, +3.4 %, +2.6 %, +2.6 %; mean of 6 pairs +2.6 %, pairs > 0: 5 of 6
+
+The preregistered exception (gm ≤ +1.0 %, largest agreed loss ≤ +3 %, no new
+LOSS cell) holds for sets 2 and 3; set 1's largest agreed loss (direct 256 B,
++3.4 %) is 0.4 points above the line. The cell is the one repeatable cost of the
+change (about +2.6 % of sefer time, sefer/mimalloc 0.75 → 0.78); the mechanism
+is not isolated here (campaign 2 saw +0.9…+3.1 % on the same cell). Pair order
+per set: base, x, x, base (sets 1 and 3), x, base, base, x (set 2); each preceded
+by a discarded warm run; function and block alignment pinned with the same
+`RUSTFLAGS` as campaign 2 (`.rush` scripts are scratch; protocol in
+`docs/perf/ao1/bt3/ident.txt` and the manifests).
+
 ## 5. Identity
 
 - Base `82626f9c` (`main`); v2 `f6695702`; v2b `0e4867c5`; judge source for the
@@ -131,15 +208,22 @@ grow64, v2b +0.03 %), the wall-clock of v2b itself was not remeasured.
   (`linux_schedule.txt`, `linux2_schedule.txt`; Windows via
   `docs/perf/ao1/run.mjs --emit`), `docs/perf/ao1/bt/` (paired `bench:table` md,
   csv, manifests, gzip raw samples, verdicts).
+- Campaign 3: base `main` `eb95709d`, x = `g1-ao1` merged with it (`42a0439b`),
+  judge source `42a0439b:examples/g1_wild_judge.rs` (sha256 in `win3_ident.txt`);
+  binary hashes in `win3_ident.txt`, `linux3_ident.txt` (base copies identical);
+  raw `docs/perf/ao1/{win,linux}3_raw.jsonl.gz`, `linux3_schedule.txt`,
+  `{win,linux}3_order.txt`, `docs/perf/ao1/bt3/` (three paired `bench:table`
+  sets: md, csv, manifests, gzip raw samples, verdicts).
 - Platforms: Windows 10 (i7-11800H, shared machine), Linux = WSL on the same
   host.
 
 ## 6. Not measured
 
-- v2b wall-clock (Ir only).
 - `malloc_macro` multi-threaded wall-clock for v2 (campaign 1's run was noise);
   MT is covered by callgrind Ir of `g1_mt_one` T=1 only.
-- Linux grow1k shows no gain (1.012, 0.962–1.064): the effect is
-  platform-dependent and is not explained here.
+- Linux grow1k shows a weak gain (campaign 3: 0.948, 0.897–1.001; campaign 2
+  on v2: 1.012, 0.962–1.064): the effect is platform-dependent and is not
+  explained here.
+- The direct 256 B cost (§4) has no isolated mechanism.
 - `refill_magazine_slow_virgin` and the free-list drain keep descending /
   list order (documented, out of scope).

@@ -7,6 +7,7 @@
 // docs/perf/AO1_ASCENDING_ISSUE_PREREG.md. Usage: node scripts/ao1_report.mjs [--campaign 1|2] [--csv FILE]
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import assert from 'node:assert/strict';
 import { REPO_ROOT } from './lib.mjs';
 
@@ -23,8 +24,10 @@ const camp = ci_ >= 0 && process.argv[ci_ + 1] !== '1' ? process.argv[ci_ + 1] :
 const rows = [];
 for (const plat of ['win', 'linux']) {
   const f = join(dir, `${plat}${camp}_raw.jsonl`);
-  if (!existsSync(f)) continue;
-  const recs = readFileSync(f, 'utf8').trim().split(/\r?\n/).map((l) => JSON.parse(l));
+  const gz = `${f}.gz`;
+  if (!existsSync(f) && !existsSync(gz)) continue;
+  const text = existsSync(f) ? readFileSync(f, 'utf8') : gunzipSync(readFileSync(gz)).toString('utf8');
+  const recs = text.trim().split(/\r?\n/).map((l) => JSON.parse(l));
   for (const sc of [...new Set(recs.map((x) => x.r.scenario))]) {
     const by = (b, arm) => recs.filter((x) => x.block === b && x.arm === arm && x.r.scenario === sc);
     const blocks = [...new Set(recs.map((x) => x.block))].sort((a, b) => a - b);
@@ -49,7 +52,7 @@ for (const r of rows) {
   let v;
   // Campaign 1: target Windows grow64. Amendment 1 (campaign 2): grow64 on
   // both platforms and Windows grow1k.
-  const isTarget = (r.plat === 'win' && r.sc === 'grow64') || (camp === '2' && ((r.plat === 'linux' && r.sc === 'grow64') || (r.plat === 'win' && r.sc === 'grow1k')));
+  const isTarget = (r.plat === 'win' && r.sc === 'grow64') || (camp !== '' && ((r.plat === 'linux' && r.sc === 'grow64') || (r.plat === 'win' && r.sc === 'grow1k')));
   if (isTarget) {
     const met = Math.exp(r.d.m) <= 0.90 && Math.exp(r.d.hi) < 1.0;
     target = (target ?? true) && met; v = met ? 'target met' : 'target missed';
