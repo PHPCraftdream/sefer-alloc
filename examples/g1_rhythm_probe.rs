@@ -21,9 +21,28 @@ use std::hint::black_box;
 use std::sync::mpsc;
 use std::time::Instant;
 
-use sefer_alloc::SeferAlloc;
+use sefer_alloc::{LargeCacheConfig, SeferAlloc};
 
-static SEFER: SeferAlloc = SeferAlloc::new();
+/// Route pin cache slot count of the sefer arm: `PC_SLOTS=<n>` at build time
+/// (default 32, the shipped default); resolved/clamped by the config.
+const PC_SLOTS: usize = match option_env!("PC_SLOTS") {
+    Some(v) => parse_usize(v),
+    None => 32,
+};
+
+const fn parse_usize(v: &str) -> usize {
+    let b = v.as_bytes();
+    let mut i = 0;
+    let mut n = 0;
+    while i < b.len() {
+        n = n * 10 + (b[i] - b'0') as usize;
+        i += 1;
+    }
+    n
+}
+
+static SEFER: SeferAlloc =
+    SeferAlloc::with_config(LargeCacheConfig::new().route_pin_cache_slots(PC_SLOTS));
 static MI: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const SEGMENT: usize = 4 << 20;
@@ -153,12 +172,27 @@ fn free_on_other_thread(
     addrs: Vec<usize>,
     layout: Layout,
 ) -> u128 {
+    free_on_other_thread_slots(a, addrs, layout).0
+}
+
+/// [`free_on_other_thread`] plus the producer's pin cache slot count (counting
+/// builds only; 0 otherwise) — the per-arm resolved-config evidence.
+fn free_on_other_thread_slots(
+    a: &'static (dyn GlobalAlloc + Sync),
+    addrs: Vec<usize>,
+    layout: Layout,
+) -> (u128, usize) {
     std::thread::spawn(move || {
         let t = Instant::now();
         for x in addrs {
             free(a, x, layout);
         }
-        t.elapsed().as_nanos()
+        let ns = t.elapsed().as_nanos();
+        #[cfg(all(feature = "bench-internals", feature = "internals"))]
+        let slots = sefer_alloc::registry::segment_route::RoutePin::dbg_route_pin_cache_slots();
+        #[cfg(not(all(feature = "bench-internals", feature = "internals")))]
+        let slots = 0;
+        (ns, slots)
     })
     .join()
     .unwrap()
@@ -315,11 +349,11 @@ fn pincycle(m: usize, order: &str, mi: bool) {
     }
     let n = frees.len();
     let before = snapshot();
-    let ns = free_on_other_thread(a, frees, layout);
+    let (ns, slots_res) = free_on_other_thread_slots(a, frees, layout);
     let after = snapshot();
     black_box(&carved);
     println!(
-        "{{\"mode\":\"pincycle\",\"alloc\":\"{}\",\"counters\":{COUNTERS},\"m\":{m},\"order\":\"{order}\",\"n\":{n},\"segments\":{},{},\"free_ns\":{ns}}}",
+        "{{\"mode\":\"pincycle\",\"alloc\":\"{}\",\"counters\":{COUNTERS},\"slots_req\":{PC_SLOTS},\"slots_res\":{slots_res},\"m\":{m},\"order\":\"{order}\",\"n\":{n},\"segments\":{},{},\"free_ns\":{ns}}}",
         if mi { "mi" } else { "sefer" },
         by_seg.len(),
         delta("", before, after)

@@ -216,7 +216,20 @@ pub struct LargeCacheConfig {
     /// parked above the fixed per-class depot floor). `None` uses
     /// [`DEFAULT_DEPOT_BUDGET_BYTES`]; `Some(0)` disables the overflow.
     pub(crate) depot_budget_bytes: Option<usize>,
+
+    /// DZ-3 follow-up: slot count of the per-thread route pin cache of the
+    /// foreign-free path. `None` uses [`DEFAULT_PIN_CACHE_SLOTS`]. Resolved
+    /// by [`resolved_route_pin_cache_slots`](Self::resolved_route_pin_cache_slots).
+    pub(crate) route_pin_cache_slots: Option<usize>,
 }
+
+/// Default slot count of the per-thread route pin cache.
+pub(crate) const DEFAULT_PIN_CACHE_SLOTS: usize = 32;
+/// Smallest configurable slot count of the route pin cache.
+pub(crate) const PIN_CACHE_SLOTS_MIN: usize = 4;
+/// Largest configurable slot count of the route pin cache (the capacity of
+/// the per-thread slot array).
+pub(crate) const PIN_CACHE_SLOTS_MAX: usize = 64;
 
 /// G1-K7: default depot-overflow budget per heap (1 MiB of parked blocks).
 pub(crate) const DEFAULT_DEPOT_BUDGET_BYTES: usize = 1024 * 1024;
@@ -267,6 +280,7 @@ impl LargeCacheConfig {
             mode: None,
             pool: SmallSegmentPoolConfig::DEFAULT,
             depot_budget_bytes: None,
+            route_pin_cache_slots: None,
         }
     }
 
@@ -458,6 +472,68 @@ impl LargeCacheConfig {
     pub const fn depot_budget_bytes(mut self, bytes: usize) -> Self {
         self.depot_budget_bytes = Some(bytes);
         self
+    }
+
+    /// Set the number of slots of the per-thread **route pin cache** used by
+    /// the foreign-free path (blocks freed on a thread other than the one
+    /// that allocated them; needs `alloc-xthread`).
+    ///
+    /// The cache remembers, per thread, the route descriptors of the owner
+    /// segments that thread recently freed into, so a free of such a block
+    /// skips the shared directory lookup. It is direct-mapped by segment index
+    /// (`(address / 4 MiB) mod slots`): consecutive segments of one owner never
+    /// collide, and a producer that frees blocks of up to about half `slots`
+    /// owner segments in any order stays on the fast path. More slots serve
+    /// more owner segments at once; each occupied slot keeps a route
+    /// descriptor and its sidecar alive after the segment is gone, up to about
+    /// 0.29 MiB per slot worst case (every size class in use; typically far
+    /// less) until the slot is reused, swept or the thread exits — **about
+    /// `slots × 0.29 MiB` per idle producer thread at most**.
+    ///
+    /// The value is rounded **down** to a power of two and clamped to
+    /// `4..=64`; it never panics. Default 32 (≈ 9.3 MiB worst-case
+    /// retention per thread).
+    ///
+    /// **Process-wide, first config wins.** Producer threads usually only
+    /// free and never bind a heap, so the value cannot travel with a heap: the
+    /// first heap materialised with an explicit config publishes it, every
+    /// thread adopts it at its first insert into the cache, and a different
+    /// value from a later config is ignored. A thread whose cache already
+    /// received its first insert keeps the count it adopted. Build the
+    /// `SeferAlloc` static with this value so every heap carries the same
+    /// setting. Behaviour and
+    /// measurements: README "Foreign-free route pin cache".
+    #[must_use]
+    pub const fn route_pin_cache_slots(mut self, slots: usize) -> Self {
+        self.route_pin_cache_slots = Some(slots);
+        self
+    }
+
+    /// TEST-ONLY: the resolved route-pin-cache slot count of this config.
+    #[doc(hidden)]
+    #[cfg(feature = "internals")]
+    #[must_use]
+    pub const fn dbg_resolved_route_pin_cache_slots(&self) -> usize {
+        self.resolved_route_pin_cache_slots()
+    }
+
+    /// Resolve the route-pin-cache slot count: default when unset, rounded
+    /// down to a power of two, clamped to `PIN_CACHE_SLOTS_MIN..=MAX`.
+    #[must_use]
+    pub(crate) const fn resolved_route_pin_cache_slots(&self) -> usize {
+        let n = match self.route_pin_cache_slots {
+            Some(v) => v,
+            None => DEFAULT_PIN_CACHE_SLOTS,
+        };
+        let n = if n < PIN_CACHE_SLOTS_MIN {
+            PIN_CACHE_SLOTS_MIN
+        } else if n > PIN_CACHE_SLOTS_MAX {
+            PIN_CACHE_SLOTS_MAX
+        } else {
+            n
+        };
+        // Largest power of two not above `n`.
+        1usize << (usize::BITS - 1 - n.leading_zeros())
     }
 
     /// TEST-ONLY (G1-K7): the resolved depot-overflow budget of this config.
