@@ -1,0 +1,7 @@
+# rustc: rustc 1.97.0 (2d8144b78 2026-07-07); flags: -O -C target-cpu=native; host: Windows 10 (lab)
+# mlp.rs sha256: 59048fbe8418729e45af744dcc08229c639b16fa9dd51e290c05bb32327f384b
+# command: mlp.exe <MB> <work>; median of 7 rounds, single = min of the two bracketing single passes
+mb=87 work=4 single=24.2ns batch16=27.8ns (1.151x) batch64=27.5ns (1.136x)
+mb=87 work=10 single=22.9ns batch16=29.4ns (1.285x) batch64=26.1ns (1.138x)
+mb=87 work=30 single=23.8ns batch16=28.1ns (1.180x) batch64=27.3ns (1.146x)
+mb=4 work=10 single=2.3ns batch16=6.7ns (2.879x) batch64=5.1ns (2.200x)
