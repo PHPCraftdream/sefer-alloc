@@ -1,0 +1,2 @@
+6ff97700f50c85ccbc27bf7e37adfffcf4d96c1d41835d2a51005be6d7cb0b85  target-w2-mt-base/release/examples/malloc_macro.exe
+6762cc6e1eb947b6cfba1a814c8f6b771ccde534b01d2d839c4945bf204e6252  target-w2-mt-x/release/examples/malloc_macro.exe

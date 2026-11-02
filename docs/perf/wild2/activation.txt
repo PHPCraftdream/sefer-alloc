@@ -1,0 +1,26 @@
+# WILD-2 activation oracle: judge_x_act.exe (x + bench-internals), Windows, sefer arm, scale 1, seed 1
+wild run1 "lane_second_chance":2434307,"tier1_hits":2916924,"tier1_misses":1370656
+wild run2 "lane_second_chance":2424451,"tier1_hits":2903205,"tier1_misses":1384375
+wild run3 "lane_second_chance":2362282,"tier1_hits":2862007,"tier1_misses":1425573
+wild run4 "lane_second_chance":2367508,"tier1_hits":2839802,"tier1_misses":1447778
+wild run5 "lane_second_chance":2631293,"tier1_hits":3102998,"tier1_misses":1184582
+phase run1 "lane_second_chance":435750,"tier1_hits":18202830,"tier1_misses":130148
+phase run2 "lane_second_chance":434567,"tier1_hits":18202069,"tier1_misses":130909
+phase run3 "lane_second_chance":436043,"tier1_hits":18205285,"tier1_misses":127693
+phase run4 "lane_second_chance":431966,"tier1_hits":18200591,"tier1_misses":132387
+phase run5 "lane_second_chance":435136,"tier1_hits":18202303,"tier1_misses":130675
+burst run1 "lane_second_chance":1,"tier1_hits":3021540,"tier1_misses":1
+burst run2 "lane_second_chance":1,"tier1_hits":3021540,"tier1_misses":1
+burst run3 "lane_second_chance":1,"tier1_hits":3021540,"tier1_misses":1
+burst run4 "lane_second_chance":1,"tier1_hits":3021540,"tier1_misses":1
+burst run5 "lane_second_chance":1,"tier1_hits":3021540,"tier1_misses":1
+growmix run1 "lane_second_chance":72771,"tier1_hits":77379,"tier1_misses":1382814
+growmix run2 "lane_second_chance":73125,"tier1_hits":77803,"tier1_misses":1382390
+growmix run3 "lane_second_chance":73001,"tier1_hits":77749,"tier1_misses":1382444
+growmix run4 "lane_second_chance":73146,"tier1_hits":77869,"tier1_misses":1382324
+growmix run5 "lane_second_chance":73015,"tier1_hits":77727,"tier1_misses":1382466
+regrow run1 "lane_second_chance":278920,"tier1_hits":1095297,"tier1_misses":468
+regrow run2 "lane_second_chance":278677,"tier1_hits":1095108,"tier1_misses":657
+regrow run3 "lane_second_chance":278920,"tier1_hits":1095297,"tier1_misses":468
+regrow run4 "lane_second_chance":278847,"tier1_hits":1095223,"tier1_misses":542
+regrow run5 "lane_second_chance":278920,"tier1_hits":1095297,"tier1_misses":468

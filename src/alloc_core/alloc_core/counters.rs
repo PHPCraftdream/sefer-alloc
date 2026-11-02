@@ -198,6 +198,15 @@ pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_HITS: core::sync::atomic::A
 pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_MISSES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// WILD-2: own-thread small frees accepted by the lane's second chance (memo
+/// miss, exact-base `own_cache` hit, same acceptance steps as the memo lane).
+/// The path-activation oracle of the WILD-2 judge runs. Bumped only under
+/// `bench-internals`, with [`tier1_bump`]; read via
+/// [`AllocCore::dbg_lane_second_chance_hits`](crate::alloc_core::alloc_core::AllocCore::dbg_lane_second_chance_hits).
+#[cfg(feature = "bench-internals")]
+pub(in crate::alloc_core) static LANE_SECOND_CHANCE_HITS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// DZ-2: bump a Tier-1 counter without a locked RMW. These counters sit on
 /// every own-thread free; `fetch_add` (`lock inc` on x86, ~20 cycles) made
 /// `bench-internals` builds' free path 40 % slower than `production`

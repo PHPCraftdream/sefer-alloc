@@ -88,6 +88,35 @@ impl AllocCore {
         self.table.memo()
     }
 
+    /// WILD-2: `SegmentTable::probe_arm`, the lane's second chance after a memo miss.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        not(feature = "hardened")
+    ))]
+    #[inline(always)]
+    pub(crate) fn tier1_probe_arm(&mut self, key: usize) -> Option<*mut u8> {
+        self.table.probe_arm(key)
+    }
+
+    /// WILD-2: count a free accepted by the lane's second chance, and, as the
+    /// chain's own_cache hit would, one Tier-1 hit.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "bench-internals",
+        not(feature = "hardened")
+    ))]
+    #[inline(always)]
+    pub(crate) fn note_lane_second_chance() {
+        crate::alloc_core::alloc_core::tier1_bump(
+            &crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS,
+        );
+        crate::alloc_core::alloc_core::tier1_bump(
+            &crate::alloc_core::alloc_core::counters::LANE_SECOND_CHANCE_HITS,
+        );
+    }
+
     /// AS-1: count a fast-lane memo hit as the chain's tier-1 hit would.
     #[cfg(all(
         feature = "alloc-global",

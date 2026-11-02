@@ -40,7 +40,7 @@ impl HeapCore {
         let key = ptr.addr() & !(crate::alloc_core::os::SEGMENT - 1);
         let (memo_key, root) = self.core.tier1_memo();
         if memo_key != key {
-            return lane_miss(ptr, layout, self);
+            return lane_second_chance(ptr, layout, self);
         }
         // `block == ptr` by address, with the table root's provenance; `ptr`
         // is dead from here, so the exits below hold no extra register.
@@ -92,6 +92,70 @@ impl HeapCore {
         {
             self.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
         }
+    }
+}
+
+/// WILD-2: the lane's exit for a memo miss. The lane has already rejected
+/// `align > MIN_BLOCK` and a size past SMALL_MAX, so `seed` indexes a small
+/// class. An exact-base `own_cache` hit arms the memo and runs the lane's own
+/// acceptance steps on that root (the same checks, in the same order, and the
+/// same effects as an accepted memo hit); every other case, and every reject,
+/// is the unchanged chain. Out of line and cold: the memo-hit path is untouched.
+#[cold]
+#[inline(never)]
+fn lane_second_chance(ptr: *mut u8, layout: Layout, heap: &mut HeapCore) {
+    let seed = layout.size().wrapping_sub(1) >> MIN_BLOCK_SHIFT;
+    debug_assert!(layout.align() <= MIN_BLOCK && seed < SIZE2CLASS.len() - 1);
+    let tag = LiveTag::of_seed(seed);
+    let c = tag.class();
+    let key = ptr.addr() & !(crate::alloc_core::os::SEGMENT - 1);
+    let Some(root) = heap.core.tier1_probe_arm(key) else {
+        return lane_miss(ptr, layout, heap);
+    };
+    let off = ptr.addr().wrapping_sub(root.addr());
+    let block = root.wrapping_add(off);
+    let kind = SegmentHeader::kind_byte_at(root) as usize;
+    if off < LANE_PS[kind] {
+        return lane_miss(block, layout, heap);
+    }
+    let g = off.rotate_right(MIN_BLOCK_SHIFT);
+    let meta = SegmentMeta::new(root);
+    if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
+        return lane_miss(block, layout, heap);
+    }
+    let off = off as u32;
+    let bytes = meta.state_byte();
+    if bytes.read_granule(g) != tag.byte() {
+        return lane_miss(block, layout, heap);
+    }
+    debug_assert_eq!(
+        crate::alloc_core::size_classes::SizeClasses::class_for(
+            layout.size().max(MIN_BLOCK),
+            layout.align()
+        ),
+        Some(c),
+        "WILD-2 second chance class differs from the chain's"
+    );
+    debug_assert!(
+        matches!(
+            super::dealloc_own_base::small_free_guard(root, block, c, layout),
+            super::dealloc_own_base::SmallFreeGuard::Accept { off: o } if o == off
+        ),
+        "WILD-2 second chance accepted a free the guard rejects"
+    );
+    #[cfg(feature = "bench-internals")]
+    crate::alloc_core::AllocCore::note_lane_second_chance();
+    let cnt = heap.tcache.classes[c].count as usize;
+    if cnt >= FREE_PARK_CAP[c] as usize {
+        return heap.free_magazine_full_fast(c, root, block);
+    }
+    bytes.write_granule(g, tag.mag_byte());
+    let i = cnt & (TCACHE_CAP - 1);
+    heap.tcache.classes[c].slots[i] = block;
+    heap.tcache.classes[c].count = (i + 1) as u8;
+    #[cfg(feature = "virgin-zero-skip")]
+    {
+        heap.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
     }
 }
 
