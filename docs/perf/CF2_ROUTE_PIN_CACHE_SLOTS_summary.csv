@@ -1,0 +1,208 @@
+table,case,metric,a,b,ratio_a_over_b
+hit_rate,4 seq,4 slots,1.000,1.000,1.000
+hit_rate,4 seq,8 slots,1.000,1.000,1.000
+hit_rate,4 seq,16 slots,1.000,1.000,1.000
+hit_rate,4 seq,32 slots,1.000,1.000,1.000
+hit_rate,4 seq,64 slots,1.000,1.000,1.000
+hit_rate,4 cyclic,4 slots,0.000,1.000,0.000
+hit_rate,4 cyclic,8 slots,1.000,1.000,1.000
+hit_rate,4 cyclic,16 slots,1.000,1.000,1.000
+hit_rate,4 cyclic,32 slots,1.000,1.000,1.000
+hit_rate,4 cyclic,64 slots,1.000,1.000,1.000
+hit_rate,4 random,4 slots,0.498,1.000,0.498
+hit_rate,4 random,8 slots,1.000,1.000,1.000
+hit_rate,4 random,16 slots,1.000,1.000,1.000
+hit_rate,4 random,32 slots,1.000,1.000,1.000
+hit_rate,4 random,64 slots,1.000,1.000,1.000
+hit_rate,5 seq,4 slots,1.000,1.000,1.000
+hit_rate,5 seq,8 slots,1.000,1.000,1.000
+hit_rate,5 seq,16 slots,1.000,1.000,1.000
+hit_rate,5 seq,32 slots,1.000,1.000,1.000
+hit_rate,5 seq,64 slots,1.000,1.000,1.000
+hit_rate,5 cyclic,4 slots,0.000,1.000,0.000
+hit_rate,5 cyclic,8 slots,0.600,1.000,0.600
+hit_rate,5 cyclic,16 slots,1.000,1.000,1.000
+hit_rate,5 cyclic,32 slots,1.000,1.000,1.000
+hit_rate,5 cyclic,64 slots,1.000,1.000,1.000
+hit_rate,5 random,4 slots,0.396,1.000,0.396
+hit_rate,5 random,8 slots,0.800,1.000,0.801
+hit_rate,5 random,16 slots,1.000,1.000,1.000
+hit_rate,5 random,32 slots,1.000,1.000,1.000
+hit_rate,5 random,64 slots,1.000,1.000,1.000
+hit_rate,8 seq,4 slots,1.000,1.000,1.000
+hit_rate,8 seq,8 slots,1.000,1.000,1.000
+hit_rate,8 seq,16 slots,1.000,1.000,1.000
+hit_rate,8 seq,32 slots,1.000,1.000,1.000
+hit_rate,8 seq,64 slots,1.000,1.000,1.000
+hit_rate,8 cyclic,4 slots,0.000,1.000,0.000
+hit_rate,8 cyclic,8 slots,0.000,1.000,0.000
+hit_rate,8 cyclic,16 slots,1.000,1.000,1.000
+hit_rate,8 cyclic,32 slots,1.000,1.000,1.000
+hit_rate,8 cyclic,64 slots,1.000,1.000,1.000
+hit_rate,8 random,4 slots,0.249,1.000,0.249
+hit_rate,8 random,8 slots,0.500,1.000,0.500
+hit_rate,8 random,16 slots,1.000,1.000,1.000
+hit_rate,8 random,32 slots,1.000,1.000,1.000
+hit_rate,8 random,64 slots,1.000,1.000,1.000
+hit_rate,16 seq,4 slots,1.000,1.000,1.000
+hit_rate,16 seq,8 slots,1.000,1.000,1.000
+hit_rate,16 seq,16 slots,1.000,1.000,1.000
+hit_rate,16 seq,32 slots,1.000,1.000,1.000
+hit_rate,16 seq,64 slots,1.000,1.000,1.000
+hit_rate,16 cyclic,4 slots,0.000,1.000,0.000
+hit_rate,16 cyclic,8 slots,0.000,1.000,0.000
+hit_rate,16 cyclic,16 slots,0.000,1.000,0.000
+hit_rate,16 cyclic,32 slots,1.000,1.000,1.000
+hit_rate,16 cyclic,64 slots,1.000,1.000,1.000
+hit_rate,16 random,4 slots,0.126,1.000,0.126
+hit_rate,16 random,8 slots,0.254,1.000,0.254
+hit_rate,16 random,16 slots,0.502,1.000,0.502
+hit_rate,16 random,32 slots,1.000,1.000,1.000
+hit_rate,16 random,64 slots,1.000,1.000,1.000
+hit_rate,32 seq,4 slots,1.000,1.000,1.000
+hit_rate,32 seq,8 slots,1.000,1.000,1.000
+hit_rate,32 seq,16 slots,1.000,1.000,1.000
+hit_rate,32 seq,32 slots,1.000,1.000,1.000
+hit_rate,32 seq,64 slots,1.000,1.000,1.000
+hit_rate,32 cyclic,4 slots,0.000,0.000,NaN
+hit_rate,32 cyclic,8 slots,0.000,0.000,NaN
+hit_rate,32 cyclic,16 slots,0.000,0.000,NaN
+hit_rate,32 cyclic,32 slots,0.000,0.000,NaN
+hit_rate,32 cyclic,64 slots,1.000,0.000,Infinity
+hit_rate,32 random,4 slots,0.061,0.499,0.122
+hit_rate,32 random,8 slots,0.122,0.499,0.245
+hit_rate,32 random,16 slots,0.247,0.499,0.494
+hit_rate,32 random,32 slots,0.499,0.499,1.000
+hit_rate,32 random,64 slots,1.000,0.499,2.003
+hit_rate,64 seq,4 slots,1.000,1.000,1.000
+hit_rate,64 seq,8 slots,1.000,1.000,1.000
+hit_rate,64 seq,16 slots,1.000,1.000,1.000
+hit_rate,64 seq,32 slots,1.000,1.000,1.000
+hit_rate,64 seq,64 slots,1.000,1.000,1.000
+hit_rate,64 cyclic,4 slots,0.000,0.000,NaN
+hit_rate,64 cyclic,8 slots,0.000,0.000,NaN
+hit_rate,64 cyclic,16 slots,0.000,0.000,NaN
+hit_rate,64 cyclic,32 slots,0.000,0.000,NaN
+hit_rate,64 cyclic,64 slots,0.000,0.000,NaN
+hit_rate,64 random,4 slots,0.031,0.251,0.125
+hit_rate,64 random,8 slots,0.063,0.251,0.251
+hit_rate,64 random,16 slots,0.126,0.251,0.502
+hit_rate,64 random,32 slots,0.251,0.251,1.000
+hit_rate,64 random,64 slots,0.501,0.251,1.998
+time_ns_per_free_over_base,4 seq 4 slots,ns,18.654052734375,17.4608154296875,1.068
+time_ns_per_free_over_base,4 seq 8 slots,ns,16.572021484375,17.4608154296875,0.949
+time_ns_per_free_over_base,4 seq 16 slots,ns,16.4500732421875,17.4608154296875,0.942
+time_ns_per_free_over_base,4 seq 32 slots,ns,16.9798583984375,17.4608154296875,0.972
+time_ns_per_free_over_base,4 seq 64 slots,ns,16.52294921875,17.4608154296875,0.946
+time_ns_per_free_over_base,4 cyclic 4 slots,ns,76.57666015625,31.103515625,2.462
+time_ns_per_free_over_base,4 cyclic 8 slots,ns,28.28369140625,31.103515625,0.909
+time_ns_per_free_over_base,4 cyclic 16 slots,ns,28.7841796875,31.103515625,0.925
+time_ns_per_free_over_base,4 cyclic 32 slots,ns,28.86962890625,31.103515625,0.928
+time_ns_per_free_over_base,4 cyclic 64 slots,ns,29.7659912109375,31.103515625,0.957
+time_ns_per_free_over_base,4 random 4 slots,ns,86.8499755859375,35.9322509765625,2.417
+time_ns_per_free_over_base,4 random 8 slots,ns,35.0533447265625,35.9322509765625,0.976
+time_ns_per_free_over_base,4 random 16 slots,ns,36.2244873046875,35.9322509765625,1.008
+time_ns_per_free_over_base,4 random 32 slots,ns,37.366455078125,35.9322509765625,1.040
+time_ns_per_free_over_base,4 random 64 slots,ns,37.2802734375,35.9322509765625,1.038
+time_ns_per_free_over_base,8 seq 4 slots,ns,19.31158447265625,19.5889892578125,0.986
+time_ns_per_free_over_base,8 seq 8 slots,ns,19.3907470703125,19.5889892578125,0.990
+time_ns_per_free_over_base,8 seq 16 slots,ns,18.18756103515625,19.5889892578125,0.928
+time_ns_per_free_over_base,8 seq 32 slots,ns,18.7255859375,19.5889892578125,0.956
+time_ns_per_free_over_base,8 seq 64 slots,ns,18.414306640625,19.5889892578125,0.940
+time_ns_per_free_over_base,8 cyclic 4 slots,ns,78.265380859375,28.77197265625,2.720
+time_ns_per_free_over_base,8 cyclic 8 slots,ns,87.88446044921875,28.77197265625,3.055
+time_ns_per_free_over_base,8 cyclic 16 slots,ns,28.1258544921875,28.77197265625,0.978
+time_ns_per_free_over_base,8 cyclic 32 slots,ns,30.2978515625,28.77197265625,1.053
+time_ns_per_free_over_base,8 cyclic 64 slots,ns,27.398681640625,28.77197265625,0.952
+time_ns_per_free_over_base,8 random 4 slots,ns,109.58447265625,37.890625,2.892
+time_ns_per_free_over_base,8 random 8 slots,ns,93.82025146484375,37.890625,2.476
+time_ns_per_free_over_base,8 random 16 slots,ns,37.3848876953125,37.890625,0.987
+time_ns_per_free_over_base,8 random 32 slots,ns,40.26727294921875,37.890625,1.063
+time_ns_per_free_over_base,8 random 64 slots,ns,38.2568359375,37.890625,1.010
+time_ns_per_free_over_base,16 seq 4 slots,ns,18.322265625,20.3216552734375,0.902
+time_ns_per_free_over_base,16 seq 8 slots,ns,19.07415771484375,20.3216552734375,0.939
+time_ns_per_free_over_base,16 seq 16 slots,ns,17.622100830078125,20.3216552734375,0.867
+time_ns_per_free_over_base,16 seq 32 slots,ns,17.7958984375,20.3216552734375,0.876
+time_ns_per_free_over_base,16 seq 64 slots,ns,17.698028564453125,20.3216552734375,0.871
+time_ns_per_free_over_base,16 cyclic 4 slots,ns,80.25814819335938,29.971893310546875,2.678
+time_ns_per_free_over_base,16 cyclic 8 slots,ns,85.224853515625,29.971893310546875,2.843
+time_ns_per_free_over_base,16 cyclic 16 slots,ns,86.4532470703125,29.971893310546875,2.884
+time_ns_per_free_over_base,16 cyclic 32 slots,ns,28.964263916015625,29.971893310546875,0.966
+time_ns_per_free_over_base,16 cyclic 64 slots,ns,30.85467529296875,29.971893310546875,1.029
+time_ns_per_free_over_base,16 random 4 slots,ns,133.16036987304688,42.014251708984375,3.169
+time_ns_per_free_over_base,16 random 8 slots,ns,131.34457397460938,42.014251708984375,3.126
+time_ns_per_free_over_base,16 random 16 slots,ns,97.67758178710938,42.014251708984375,2.325
+time_ns_per_free_over_base,16 random 32 slots,ns,41.000579833984375,42.014251708984375,0.976
+time_ns_per_free_over_base,16 random 64 slots,ns,42.7459716796875,42.014251708984375,1.017
+time_ns_per_free_over_base,32 seq 4 slots,ns,18.3929443359375,23.352569580078125,0.788
+time_ns_per_free_over_base,32 seq 8 slots,ns,20.373825073242188,23.352569580078125,0.872
+time_ns_per_free_over_base,32 seq 16 slots,ns,18.8975830078125,23.352569580078125,0.809
+time_ns_per_free_over_base,32 seq 32 slots,ns,20.169052124023438,23.352569580078125,0.864
+time_ns_per_free_over_base,32 seq 64 slots,ns,19.30389404296875,23.352569580078125,0.827
+time_ns_per_free_over_base,32 cyclic 4 slots,ns,97.54864501953125,95.89230346679688,1.017
+time_ns_per_free_over_base,32 cyclic 8 slots,ns,99.60331726074219,95.89230346679688,1.039
+time_ns_per_free_over_base,32 cyclic 16 slots,ns,97.25196838378906,95.89230346679688,1.014
+time_ns_per_free_over_base,32 cyclic 32 slots,ns,103.59188842773438,95.89230346679688,1.080
+time_ns_per_free_over_base,32 cyclic 64 slots,ns,36.88810729980469,95.89230346679688,0.385
+time_ns_per_free_over_base,32 random 4 slots,ns,161.41783142089844,115.06649780273438,1.403
+time_ns_per_free_over_base,32 random 8 slots,ns,165.08782958984375,115.06649780273438,1.435
+time_ns_per_free_over_base,32 random 16 slots,ns,153.6707763671875,115.06649780273438,1.335
+time_ns_per_free_over_base,32 random 32 slots,ns,124.18058776855469,115.06649780273438,1.079
+time_ns_per_free_over_base,32 random 64 slots,ns,44.9249267578125,115.06649780273438,0.390
+time_ns_per_free_over_base,64 seq 4 slots,ns,19.37555694580078,20.140335083007812,0.962
+time_ns_per_free_over_base,64 seq 8 slots,ns,19.65399932861328,20.140335083007812,0.976
+time_ns_per_free_over_base,64 seq 16 slots,ns,19.008628845214844,20.140335083007812,0.944
+time_ns_per_free_over_base,64 seq 32 slots,ns,19.870750427246094,20.140335083007812,0.987
+time_ns_per_free_over_base,64 seq 64 slots,ns,19.182785034179688,20.140335083007812,0.952
+time_ns_per_free_over_base,64 cyclic 4 slots,ns,103.01586151123047,108.66390991210938,0.948
+time_ns_per_free_over_base,64 cyclic 8 slots,ns,115.80026245117188,108.66390991210938,1.066
+time_ns_per_free_over_base,64 cyclic 16 slots,ns,107.80101776123047,108.66390991210938,0.992
+time_ns_per_free_over_base,64 cyclic 32 slots,ns,108.58531951904297,108.66390991210938,0.999
+time_ns_per_free_over_base,64 cyclic 64 slots,ns,112.63653564453125,108.66390991210938,1.037
+time_ns_per_free_over_base,64 random 4 slots,ns,190.22820281982422,170.14596557617188,1.118
+time_ns_per_free_over_base,64 random 8 slots,ns,194.52584838867188,170.14596557617188,1.143
+time_ns_per_free_over_base,64 random 16 slots,ns,194.0238800048828,170.14596557617188,1.140
+time_ns_per_free_over_base,64 random 32 slots,ns,182.6244659423828,170.14596557617188,1.073
+time_ns_per_free_over_base,64 random 64 slots,ns,140.10944366455078,170.14596557617188,0.823
+extra_ir_per_free,4 seq,4 slots,-0.98,0,
+extra_ir_per_free,4 seq,8 slots,-0.93,0,
+extra_ir_per_free,4 seq,16 slots,4.79,0,
+extra_ir_per_free,4 seq,32 slots,-0.62,0,
+extra_ir_per_free,4 seq,64 slots,-0.21,0,
+extra_ir_per_free,4 cyclic,4 slots,555.75,0,
+extra_ir_per_free,4 cyclic,8 slots,-0.93,0,
+extra_ir_per_free,4 cyclic,16 slots,-0.82,0,
+extra_ir_per_free,4 cyclic,32 slots,-0.61,0,
+extra_ir_per_free,4 cyclic,64 slots,-0.20,0,
+extra_ir_per_free,16 seq,4 slots,-1.32,0,
+extra_ir_per_free,16 seq,8 slots,-1.25,0,
+extra_ir_per_free,16 seq,16 slots,-1.21,0,
+extra_ir_per_free,16 seq,32 slots,-1.10,0,
+extra_ir_per_free,16 seq,64 slots,-0.83,0,
+extra_ir_per_free,16 cyclic,4 slots,554.01,0,
+extra_ir_per_free,16 cyclic,8 slots,696.00,0,
+extra_ir_per_free,16 cyclic,16 slots,696.04,0,
+extra_ir_per_free,16 cyclic,32 slots,-2.50,0,
+extra_ir_per_free,16 cyclic,64 slots,-2.23,0,
+extra_ir_per_free,32 seq,4 slots,0.23,0,
+extra_ir_per_free,32 seq,8 slots,-0.41,0,
+extra_ir_per_free,32 seq,16 slots,-0.15,0,
+extra_ir_per_free,32 seq,32 slots,-1.03,0,
+extra_ir_per_free,32 seq,64 slots,-0.88,0,
+extra_ir_per_free,32 cyclic,4 slots,73.05,0,
+extra_ir_per_free,32 cyclic,8 slots,52.47,0,
+extra_ir_per_free,32 cyclic,16 slots,87.31,0,
+extra_ir_per_free,32 cyclic,32 slots,52.49,0,
+extra_ir_per_free,32 cyclic,64 slots,-487.28,0,
+extra_ir_per_free,64 seq,4 slots,-0.62,0,
+extra_ir_per_free,64 seq,8 slots,0.12,0,
+extra_ir_per_free,64 seq,16 slots,0.02,0,
+extra_ir_per_free,64 seq,32 slots,-1.70,0,
+extra_ir_per_free,64 seq,64 slots,-0.69,0,
+extra_ir_per_free,64 cyclic,4 slots,166.00,0,
+extra_ir_per_free,64 cyclic,8 slots,165.11,0,
+extra_ir_per_free,64 cyclic,16 slots,156.55,0,
+extra_ir_per_free,64 cyclic,32 slots,32.24,0,
+extra_ir_per_free,64 cyclic,64 slots,-93.06,0,
+iter1_extra_ir_per_free_32_vs_base,32 cyclic,ir,5647401,65536,86.173
+iter1_extra_ir_per_free_32_vs_base,64 cyclic,ir,6878299,131072,52.477

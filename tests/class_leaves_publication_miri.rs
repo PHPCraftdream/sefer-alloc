@@ -101,3 +101,35 @@ fn mixed_leaf_initialization_is_visible_to_reader() {
     assert!(leaves.prepared(LEAF1_GRANULE, 4));
     assert_eq!(leaves.encoded(LEAF1_GRANULE), 5);
 }
+
+/// Every one of the 1024 leaves is promoted, in a scrambled order, and gets a
+/// distinct class code at a leaf-specific granule: slab slots are handed out in
+/// promotion order, so a wrong chunk/slot step or an overlap would alias two
+/// leaves and the read-back below would show another leaf's code.
+#[test]
+fn scrambled_promotion_order_keeps_every_leaf_separate() {
+    const LEAF_GRANULES: usize = 256;
+    const LEAVES: usize = 1024;
+    let leaves = leaves();
+    let class = |leaf: usize| (leaf % 7) as u8;
+    let granule = |leaf: usize| leaf * LEAF_GRANULES + leaf % 251;
+    // 389 is odd, so `i * 389 % 1024` visits every leaf exactly once.
+    for i in 0..LEAVES {
+        let leaf = i * 389 % LEAVES;
+        assert!(leaves.prepare(granule(leaf), class(leaf)), "leaf {leaf}");
+        assert!(leaves.issue(granule(leaf), class(leaf)), "leaf {leaf}");
+    }
+    for leaf in 0..LEAVES {
+        assert!(leaves.prepared(granule(leaf), class(leaf)), "leaf {leaf}");
+        assert_eq!(
+            leaves.encoded(granule(leaf)),
+            class(leaf) + 1,
+            "leaf {leaf}"
+        );
+        // A neighbouring granule of the same leaf was never issued.
+        let other = leaf * LEAF_GRANULES + (leaf + 1) % 251;
+        if other != granule(leaf) {
+            assert_eq!(leaves.encoded(other), 0, "leaf {leaf}");
+        }
+    }
+}

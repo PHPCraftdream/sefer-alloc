@@ -87,6 +87,32 @@ impl AllocCore {
         crate::alloc_core::LOCAL_REJECT_FREES.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// TH-1: small-segment reservations of this process so far.
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", not(feature = "numa-aware")))]
+    #[must_use]
+    pub fn dbg_small_segments_reserved() -> u64 {
+        crate::alloc_core::small::alloc_core_small::SMALL_SEGMENTS_RESERVED
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// TH-1: small segments the transparent-huge-page hint was issued for.
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", not(feature = "numa-aware")))]
+    #[must_use]
+    pub fn dbg_thp_hinted_small_segments() -> u64 {
+        crate::alloc_core::small::alloc_core_small::THP_HINTED_SMALL_SEGMENTS
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// TH-1 follow-up: the huge-page threshold in force (published or default; `0` = never).
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", not(feature = "numa-aware")))]
+    #[must_use]
+    pub fn dbg_huge_page_after_segments() -> u64 {
+        crate::alloc_core::small::alloc_core_small::huge_page_after()
+    }
+
     /// Test alias of [`Self::segments_reserved_total`].
     #[doc(hidden)]
     #[must_use]

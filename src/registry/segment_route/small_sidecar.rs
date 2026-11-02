@@ -179,9 +179,17 @@ impl SmallSidecar {
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     /// Requested System bytes: (alloc, zeroed, free, alloc calls, free calls).
-    /// Excludes allocator overhead, RSS and the reservation itself.
+    /// A promoted leaf counts as one logical 256-byte request even though
+    /// leaves share System chunks; see `chunk_totals_for_test` for the actual
+    /// chunk requests. Excludes allocator overhead, RSS and the reservation.
     pub fn system_totals_for_test() -> (usize, usize, usize, usize, usize) {
         ClassLeaves::system_totals()
+    }
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    /// Actual System chunk requests of the leaf slab: (allocations, frees).
+    pub fn chunk_totals_for_test() -> (usize, usize) {
+        ClassLeaves::chunk_totals()
     }
     #[cfg(feature = "internals")]
     pub(super) fn pending_for_test(&self, offset: u32) -> bool {

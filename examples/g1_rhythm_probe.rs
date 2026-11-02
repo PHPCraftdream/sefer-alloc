@@ -5,7 +5,7 @@
 //!   g1_rhythm_probe trickle <size> <n> <k> [control]   one foreign free every k×16 allocations
 //!   g1_rhythm_probe bigheap <n_fill> <m>               fill with 64 B, measure m × 1 KiB
 //! PC (route pin cache under a foreign free order):
-//!   g1_rhythm_probe pincycle <m> <cyclic|seq|random>   2048 × 1 KiB blocks from each of m segments
+//!   g1_rhythm_probe pincycle <m> <cyclic|seq|random> [mi]   2048 × 1 KiB blocks from each of m segments
 //! RP (pause of the refill that reclaims a backlog of foreign frees):
 //!   g1_rhythm_probe reclaim <n_fill> <n_free> [mi]     64 B; every later alloc timed on its own
 //!
@@ -21,9 +21,28 @@ use std::hint::black_box;
 use std::sync::mpsc;
 use std::time::Instant;
 
-use sefer_alloc::SeferAlloc;
+use sefer_alloc::{LargeCacheConfig, SeferAlloc};
 
-static SEFER: SeferAlloc = SeferAlloc::new();
+/// Route pin cache slot count of the sefer arm: `PC_SLOTS=<n>` at build time
+/// (default 32, the shipped default); resolved/clamped by the config.
+const PC_SLOTS: usize = match option_env!("PC_SLOTS") {
+    Some(v) => parse_usize(v),
+    None => 32,
+};
+
+const fn parse_usize(v: &str) -> usize {
+    let b = v.as_bytes();
+    let mut i = 0;
+    let mut n = 0;
+    while i < b.len() {
+        n = n * 10 + (b[i] - b'0') as usize;
+        i += 1;
+    }
+    n
+}
+
+static SEFER: SeferAlloc =
+    SeferAlloc::with_config(LargeCacheConfig::new().route_pin_cache_slots(PC_SLOTS));
 static MI: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const SEGMENT: usize = 4 << 20;
@@ -153,12 +172,27 @@ fn free_on_other_thread(
     addrs: Vec<usize>,
     layout: Layout,
 ) -> u128 {
+    free_on_other_thread_slots(a, addrs, layout).0
+}
+
+/// [`free_on_other_thread`] plus the producer's pin cache slot count (counting
+/// builds only; 0 otherwise) — the per-arm resolved-config evidence.
+fn free_on_other_thread_slots(
+    a: &'static (dyn GlobalAlloc + Sync),
+    addrs: Vec<usize>,
+    layout: Layout,
+) -> (u128, usize) {
     std::thread::spawn(move || {
         let t = Instant::now();
         for x in addrs {
             free(a, x, layout);
         }
-        t.elapsed().as_nanos()
+        let ns = t.elapsed().as_nanos();
+        #[cfg(all(feature = "bench-internals", feature = "internals"))]
+        let slots = sefer_alloc::registry::segment_route::RoutePin::dbg_route_pin_cache_slots();
+        #[cfg(not(all(feature = "bench-internals", feature = "internals")))]
+        let slots = 0;
+        (ns, slots)
     })
     .join()
     .unwrap()
@@ -277,8 +311,8 @@ fn shuffle(v: &mut [usize]) {
 
 /// Exactly `m` segments, `PC_PER_SEGMENT` blocks freed from each; every
 /// other carved block stays live.
-fn pincycle(m: usize, order: &str) {
-    let a = heap(false);
+fn pincycle(m: usize, order: &str, mi: bool) {
+    let a = heap(mi);
     let layout = Layout::from_size_align(1024, 8).unwrap();
     let carved: Vec<usize> = (0..(m + 2) * 4096).map(|_| alloc(a, layout)).collect();
     let mut by_seg: Vec<(usize, Vec<usize>)> = Vec::new();
@@ -315,11 +349,12 @@ fn pincycle(m: usize, order: &str) {
     }
     let n = frees.len();
     let before = snapshot();
-    let ns = free_on_other_thread(a, frees, layout);
+    let (ns, slots_res) = free_on_other_thread_slots(a, frees, layout);
     let after = snapshot();
     black_box(&carved);
     println!(
-        "{{\"mode\":\"pincycle\",\"alloc\":\"sefer\",\"counters\":{COUNTERS},\"m\":{m},\"order\":\"{order}\",\"n\":{n},\"segments\":{},{},\"free_ns\":{ns}}}",
+        "{{\"mode\":\"pincycle\",\"alloc\":\"{}\",\"counters\":{COUNTERS},\"slots_req\":{PC_SLOTS},\"slots_res\":{slots_res},\"m\":{m},\"order\":\"{order}\",\"n\":{n},\"segments\":{},{},\"free_ns\":{ns}}}",
+        if mi { "mi" } else { "sefer" },
         by_seg.len(),
         delta("", before, after)
     );
@@ -380,7 +415,7 @@ fn main() {
         Some("growth") => growth(num(2), num(3), flag(4, "mi")),
         Some("trickle") => trickle(num(2), num(3), num(4), flag(5, "control")),
         Some("bigheap") => bigheap(num(2), num(3)),
-        Some("pincycle") => pincycle(num(2), &args[3]),
+        Some("pincycle") => pincycle(num(2), &args[3], flag(4, "mi")),
         Some("reclaim") => reclaim(num(2), num(3), flag(4, "mi")),
         _ => panic!("usage: see the module doc"),
     }

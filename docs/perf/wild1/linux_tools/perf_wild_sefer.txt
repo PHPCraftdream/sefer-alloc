@@ -1,0 +1,12 @@
+    24.17%  g1_wild_judge  g1_wild_judge         [.] _RNvCs74oEJTr9hii_13g1_wild_judge7a_alloc
+    18.15%  g1_wild_judge  g1_wild_judge         [.] _RNvNtNtNtNtCslhXj3wdgbkD_11sefer_alloc8registry9heap_core4free12dealloc_fast9lane_miss
+    11.85%  g1_wild_judge  g1_wild_judge         [.] _RNvMs_Cs74oEJTr9hii_13g1_wild_judgeNtB4_3Run4free
+     9.45%  g1_wild_judge  g1_wild_judge         [.] _RNvCs74oEJTr9hii_13g1_wild_judge5burst
+     6.39%  g1_wild_judge  g1_wild_judge         [.] _RNvMs_Cs74oEJTr9hii_13g1_wild_judgeNtB4_3Run5alloc
+     5.06%  g1_wild_judge  libm.so.6             [.] exp@@GLIBC_2.29
+     4.94%  g1_wild_judge  g1_wild_judge         [.] _RNvCs74oEJTr9hii_13g1_wild_judge4main
+     4.74%  g1_wild_judge  libm.so.6             [.] __ieee754_exp_fma
+     4.73%  g1_wild_judge  g1_wild_judge         [.] _RNvCs74oEJTr9hii_13g1_wild_judge9a_dealloc
+     2.19%  g1_wild_judge  [unknown]             [k] 0xffffffffa5001320
+     1.88%  g1_wild_judge  g1_wild_judge         [.] _RNvMNtNtNtNtCslhXj3wdgbkD_11sefer_alloc8registry9heap_core5alloc3hotNtNtB6_4core8HeapCore20refill_magazine_miss
+     1.75%  g1_wild_judge  g1_wild_judge         [.] _RNvMs_NtNtNtNtCslhXj3wdgbkD_11sefer_alloc8registry9heap_core4free16dealloc_own_baseNtNtB8_4core8HeapCore18free_magazine_park

@@ -1,6 +1,8 @@
 //! B4-R6: ClassLeaves::Drop frees exactly the leaves whose presence bits the
 //! owner's promotion set — verified through the quiescent System-totals
-//! oracle (requested alloc/zeroed/free bytes and call counts).
+//! oracle (requested alloc/zeroed/free bytes and call counts; a promoted leaf
+//! is one logical 256-byte request, leaves share System chunks) and the actual
+//! chunk-request counters.
 #![cfg(all(
     feature = "alloc-global",
     feature = "internals",
@@ -61,5 +63,42 @@ fn drop_frees_exactly_the_promoted_leaves() {
     assert_eq!(after.4 - before.4, 1 + promoted.len());
     assert_eq!(after.0 - before.0, after.2 - before.2);
     assert_eq!(after.1 - before.1, 0);
+    drop(reservation);
+}
+
+/// Leaves are carved from System chunks of 16: promoting 33 leaves (in an
+/// order unrelated to their indices) takes exactly three chunk requests, and
+/// the last pin's Drop returns all three.
+#[test]
+fn leaves_share_system_chunks_and_drop_frees_every_chunk() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    let (chunk_allocs0, chunk_frees0) = SmallSidecar::chunk_totals_for_test();
+    let directory = RouteDirectory::new();
+    let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
+    let root = reservation.as_ptr();
+    let route = directory
+        .register(root, SEGMENT, root, 21, RouteKind::Small)
+        .unwrap();
+    let sidecar = route.small_sidecar().unwrap();
+    // 7 is coprime with 1024, so `i * 7 % 1024` visits 33 distinct leaves.
+    for i in 0..33usize {
+        let leaf = i * 7 % 1024;
+        assert!(route.prepare_small((leaf * LEAF) as u32, 1), "leaf {leaf}");
+        let (allocs, frees) = SmallSidecar::chunk_totals_for_test();
+        assert_eq!(allocs - chunk_allocs0, i / 16 + 1, "after {} leaves", i + 1);
+        assert_eq!(frees - chunk_frees0, 0);
+    }
+    assert_eq!(sidecar.mixed_leaves_for_test(), 33);
+    // Unlink while a pin holds the sidecar: no chunk is freed yet.
+    let pin = directory.lookup(root).unwrap();
+    drop(route);
+    let (allocs, frees) = SmallSidecar::chunk_totals_for_test();
+    assert_eq!(allocs - chunk_allocs0, 3);
+    assert_eq!(frees - chunk_frees0, 0);
+    // Last pin dropped: Drop returns all three chunks.
+    drop(pin);
+    let (allocs, frees) = SmallSidecar::chunk_totals_for_test();
+    assert_eq!(allocs - chunk_allocs0, 3);
+    assert_eq!(frees - chunk_frees0, 3);
     drop(reservation);
 }

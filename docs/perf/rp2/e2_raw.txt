@@ -1,0 +1,14 @@
+rp1 base segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=2.9 p50_ns=9 p99_ns=134 p999_ns=406 max_ns=10365798 mean_ns=29.3 n_over10us=17 over10us_ms=12.29 sum_ms=27.6
+rp1 e2 segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=2.8 p50_ns=10 p99_ns=129 p999_ns=358 max_ns=9730480 mean_ns=28.1 n_over10us=35 over10us_ms=11.86 sum_ms=26.5
+rp1 base segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=3.0 p50_ns=9 p99_ns=126 p999_ns=376 max_ns=11717842 mean_ns=29.7 n_over10us=43 over10us_ms=13.78 sum_ms=28.0
+rp1 e2 segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=2.8 p50_ns=9 p99_ns=85 p999_ns=361 max_ns=10649400 mean_ns=28.1 n_over10us=51 over10us_ms=13.18 sum_ms=26.5
+rp1 base segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=3.6 p50_ns=9 p99_ns=131 p999_ns=429 max_ns=11736207 mean_ns=31.7 n_over10us=57 over10us_ms=15.08 sum_ms=29.9
+rp1 e2 segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=4.0 p50_ns=9 p99_ns=82 p999_ns=357 max_ns=9744677 mean_ns=27.2 n_over10us=64 over10us_ms=12.69 sum_ms=25.7
+rp1 base segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=2.7 p50_ns=9 p99_ns=126 p999_ns=313 max_ns=10175771 mean_ns=28.0 n_over10us=42 over10us_ms=12.28 sum_ms=26.4
+rp1 e2 segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=2.9 p50_ns=9 p99_ns=79 p999_ns=278 max_ns=8678063 mean_ns=24.1 n_over10us=22 over10us_ms=10.41 sum_ms=22.7
+rp1 base segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=3.1 p50_ns=9 p99_ns=137 p999_ns=387 max_ns=10556383 mean_ns=29.9 n_over10us=55 over10us_ms=13.12 sum_ms=28.2
+rp1 e2 segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=2.9 p50_ns=9 p99_ns=99 p999_ns=358 max_ns=9825161 mean_ns=27.8 n_over10us=52 over10us_ms=12.57 sum_ms=26.2
+rp1 base segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=2.9 p50_ns=9 p99_ns=131 p999_ns=386 max_ns=10324501 mean_ns=28.6 n_over10us=33 over10us_ms=12.31 sum_ms=27.0
+rp1 e2 segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=2.7 p50_ns=9 p99_ns=82 p999_ns=323 max_ns=10394421 mean_ns=26.9 n_over10us=39 over10us_ms=12.57 sum_ms=25.4
+rp1 base segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=3.0 p50_ns=9 p99_ns=124 p999_ns=295 max_ns=8561198 mean_ns=25.9 n_over10us=50 over10us_ms=10.73 sum_ms=24.4
+rp1 e2 segs=16 size=64 workers=3 allocs=943718 total=943718 wave_ms=2.7 p50_ns=9 p99_ns=86 p999_ns=364 max_ns=9056252 mean_ns=25.8 n_over10us=38 over10us_ms=11.30 sum_ms=24.3

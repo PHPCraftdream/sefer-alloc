@@ -1,0 +1,349 @@
+ Percent |	Source code & Disassembly of g1_wild_judge for cycles:u (166 samples, percent: local period)
+------------------------------------------------------------------------------------------------------------
+         :
+         :
+         :
+         : 3     Disassembly of section .text:
+         :
+         : 5     000000000005a770 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss>:
+    0.00 :   5a770:  push   %rbp
+    0.00 :   5a771:  push   %r15
+    0.00 :   5a773:  push   %r14
+    0.64 :   5a775:  push   %rbx
+    0.00 :   5a776:  push   %rax
+    0.00 :   5a777:  mov    %rdx,%r8
+    1.19 :   5a77a:  mov    %rsi,%r10
+    0.00 :   5a77d:  mov    %rdi,%rax
+    0.00 :   5a780:  and    $0xffffffffffc00000,%rax
+    0.00 :   5a786:  cmp    %rax,0x130(%rcx)
+    0.00 :   5a78d:  jne    5a7a6 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x36>
+    0.00 :   5a78f:  mov    0x138(%rcx),%rbx
+    0.00 :   5a796:  movzbl 0x1c(%rbx),%r11d
+    0.00 :   5a79b:  cmp    $0x2,%r11d
+    0.00 :   5a79f:  je     5a7e3 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x73>
+    0.00 :   5a7a1:  jmp    5a8a8 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x138>
+    0.00 :   5a7a6:  mov    %rax,%rsi
+    0.00 :   5a7a9:  shr    $0x16,%rsi
+    0.00 :   5a7ad:  mov    %esi,%edx
+    0.00 :   5a7af:  and    $0xf,%edx
+    2.35 :   5a7b2:  shl    $0x4,%edx
+    0.00 :   5a7b5:  cmp    %rax,0x30(%rcx,%rdx,1)
+    0.00 :   5a7ba:  jne    5a7f8 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x88>
+    1.27 :   5a7bc:  mov    0x38(%rcx,%rdx,1),%rbx
+    1.88 :   5a7c1:  cmp    %rax,%rbx
+    0.00 :   5a7c4:  jne    5a7d4 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x64>
+    0.00 :   5a7c6:  mov    %rax,0x130(%rcx)
+    0.00 :   5a7cd:  mov    %rbx,0x138(%rcx)
+    0.00 :   5a7d4:  movzbl 0x1c(%rbx),%r11d
+   10.21 :   5a7d9:  cmp    $0x2,%r11d
+    0.00 :   5a7dd:  jne    5a8a8 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x138>
+    0.00 :   5a7e3:  mov    %rdi,%rax
+    0.00 :   5a7e6:  sub    %rbx,%rax
+    0.00 :   5a7e9:  cmp    0x38(%rbx),%rax
+    0.00 :   5a7ed:  jb     5a8b1 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x141>
+    0.00 :   5a7f3:  jmp    5abbc <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x44c>
+    1.78 :   5a7f8:  add    %rcx,%rdx
+    3.05 :   5a7fb:  add    $0x30,%rdx
+    0.58 :   5a7ff:  mov    %rax,%r9
+    0.00 :   5a802:  shr    $0x23,%r9
+    0.00 :   5a806:  mov    %rax,%r11
+    0.00 :   5a809:  shr    $0x30,%r11
+    1.16 :   5a80d:  xor    %r11d,%r9d
+    0.00 :   5a810:  xor    %r9d,%esi
+    0.00 :   5a813:  and    $0x1fff,%esi
+    0.61 :   5a819:  mov    0x140(%rcx),%r9
+    1.63 :   5a820:  mov    %rsi,%r11
+    0.00 :   5a823:  data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+    0.60 :   5a830:  mov    (%r9,%r11,8),%rbx
+    1.82 :   5a834:  test   %rbx,%rbx
+    0.00 :   5a837:  je     5abbc <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x44c>
+    0.00 :   5a83d:  mov    %rbx,%r14
+    0.00 :   5a840:  and    $0xffffffffffc00000,%r14
+    1.22 :   5a847:  cmp    %rax,%r14
+    0.00 :   5a84a:  je     5a860 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0xf0>
+    0.00 :   5a84c:  inc    %r11d
+    0.00 :   5a84f:  and    $0x1fff,%r11d
+    0.00 :   5a856:  cmp    %rsi,%r11
+    0.00 :   5a859:  jne    5a830 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0xc0>
+    0.00 :   5a85b:  jmp    5abbc <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x44c>
+    0.00 :   5a860:  mov    %rbx,%rsi
+    0.00 :   5a863:  and    $0x3fffff,%rsi
+    0.00 :   5a86a:  je     5a892 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x122>
+    1.20 :   5a86c:  lea    -0x1(%rsi),%r9
+    0.56 :   5a870:  mov    0x158(%rcx),%r11d
+    0.60 :   5a877:  cmp    %r11,%r9
+    0.00 :   5a87a:  jae    5abbc <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x44c>
+    1.22 :   5a880:  mov    0x20(%rcx),%r9
+    0.00 :   5a884:  mov    -0x8(%r9,%rsi,8),%rbx
+    4.35 :   5a889:  test   %rbx,%rbx
+    0.00 :   5a88c:  je     5abbc <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x44c>
+    0.60 :   5a892:  mov    %rax,(%rdx)
+    0.00 :   5a895:  mov    %rbx,0x8(%rdx)
+    1.10 :   5a899:  movzbl 0x1c(%rbx),%r11d
+   11.72 :   5a89e:  cmp    $0x2,%r11d
+    0.00 :   5a8a2:  je     5a7e3 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x73>
+    3.06 :   5a8a8:  and    $0x3fffff,%edi
+    0.00 :   5a8ae:  mov    %rdi,%rax
+    0.00 :   5a8b1:  lea    (%rbx,%rax,1),%r9
+    0.00 :   5a8b5:  cmp    $0x11,%r8
+    0.00 :   5a8b9:  mov    $0x10,%edx
+    0.00 :   5a8be:  cmovae %r8,%rdx
+    0.00 :   5a8c2:  cmp    $0x11,%r10
+    0.00 :   5a8c6:  jae    5a932 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x1c2>
+    0.00 :   5a8c8:  lea    -0x1(%rdx),%rsi
+    3.04 :   5a8cc:  cmp    $0x3f2bf,%rsi
+    0.00 :   5a8d3:  ja     5a9a0 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x230>
+    0.00 :   5a8d9:  shr    $0x4,%rsi
+    0.00 :   5a8dd:  mov    0x4ddf4(%rip),%rdx        # a86d8 <_DYNAMIC+0x5b8>
+    0.00 :   5a8e4:  movzbl (%rdx,%rsi,1),%esi
+    0.00 :   5a8e8:  dec    %rsi
+    0.00 :   5a8eb:  mov    %rsi,%rdx
+    0.00 :   5a8ee:  shl    $0x7,%rdx
+    1.18 :   5a8f2:  lea    (%rdx,%rsi,8),%rdi
+    3.05 :   5a8f6:  movzbl 0x4a8(%rcx,%rdi,1),%edx
+    0.00 :   5a8fe:  test   %r11d,%r11d
+    0.00 :   5a901:  je     5ac02 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x492>
+    1.22 :   5a907:  cmp    $0x2,%r11d
+    0.00 :   5a90b:  je     5abd2 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x462>
+    1.79 :   5a911:  cmp    $0x1,%r11d
+    0.00 :   5a915:  jne    5ac10 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a0>
+    0.00 :   5a91b:  mov    $0x42000,%r10d
+    0.00 :   5a921:  mov    %eax,%r8d
+    0.00 :   5a924:  cmp    %r10,%r8
+    0.00 :   5a927:  jb     5ac10 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a0>
+    0.60 :   5a92d:  jmp    5ac23 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4b3>
+    0.00 :   5a932:  cmp    %r10,%rdx
+    0.00 :   5a935:  mov    %r10,%rsi
+    0.00 :   5a938:  cmova  %rdx,%rsi
+    0.00 :   5a93c:  dec    %rsi
+    0.00 :   5a93f:  cmp    $0x3f2bf,%rsi
+    0.00 :   5a946:  ja     5a9a0 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x230>
+    0.00 :   5a948:  shr    $0x4,%rsi
+    0.00 :   5a94c:  mov    0x4dfb5(%rip),%rdi        # a8908 <_DYNAMIC+0x7e8>
+    0.00 :   5a953:  movzbl 0x194(%rdi,%rsi,1),%esi
+    0.00 :   5a95b:  cmp    $0x30,%sil
+    0.00 :   5a95f:  ja     5a9a0 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x230>
+    0.00 :   5a961:  lea    -0x1(%r10),%r14
+    0.00 :   5a965:  data16 cs nopw 0x0(%rax,%rax,1)
+    0.00 :   5a970:  movzbl %sil,%esi
+    0.00 :   5a974:  mov    (%rdi,%rsi,8),%r15
+    0.00 :   5a978:  test   %r14,%r15
+    0.00 :   5a97b:  je     5a8eb <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x17b>
+    0.00 :   5a981:  or     %r14,%r15
+    0.00 :   5a984:  cmp    $0x3f2bf,%r15
+    0.00 :   5a98b:  ja     5a9a0 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x230>
+    0.00 :   5a98d:  shr    $0x4,%r15
+    0.00 :   5a991:  movzbl 0x194(%rdi,%r15,1),%esi
+    0.00 :   5a99a:  cmp    $0x31,%sil
+    0.00 :   5a99e:  jb     5a970 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x200>
+    0.00 :   5a9a0:  cmp    $0x2,%r11d
+    0.00 :   5a9a4:  jae    5a9d5 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x265>
+    0.00 :   5a9a6:  cmp    $0x11,%r10
+    0.00 :   5a9aa:  jae    5a9f4 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x284>
+    0.00 :   5a9ac:  dec    %rdx
+    0.00 :   5a9af:  cmp    $0x3f2bf,%rdx
+    0.00 :   5a9b6:  ja     5aa61 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x2f1>
+    0.00 :   5a9bc:  shr    $0x4,%rdx
+    0.00 :   5a9c0:  mov    0x4dd11(%rip),%rsi        # a86d8 <_DYNAMIC+0x5b8>
+    0.00 :   5a9c7:  movzbl (%rsi,%rdx,1),%esi
+    0.00 :   5a9cb:  dec    %rsi
+    0.00 :   5a9ce:  mov    $0x1,%dl
+    0.00 :   5a9d0:  jmp    5aa63 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x2f3>
+    0.00 :   5a9d5:  jne    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5a9db:  mov    %rcx,%rdi
+    0.00 :   5a9de:  mov    %r9,%rsi
+    0.00 :   5a9e1:  mov    %rbx,%rdx
+    0.00 :   5a9e4:  add    $0x8,%rsp
+    0.00 :   5a9e8:  pop    %rbx
+    0.00 :   5a9e9:  pop    %r14
+    0.00 :   5a9eb:  pop    %r15
+    0.00 :   5a9ed:  pop    %rbp
+    0.00 :   5a9ee:  jmp    *0x4dfac(%rip)        # a89a0 <_DYNAMIC+0x880>
+    0.00 :   5a9f4:  cmp    %r10,%rdx
+    0.00 :   5a9f7:  cmovbe %r10,%rdx
+    0.00 :   5a9fb:  dec    %rdx
+    0.00 :   5a9fe:  cmp    $0x3f2bf,%rdx
+    0.00 :   5aa05:  ja     5aa61 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x2f1>
+    0.00 :   5aa07:  shr    $0x4,%rdx
+    0.00 :   5aa0b:  mov    0x4def6(%rip),%rdi        # a8908 <_DYNAMIC+0x7e8>
+    0.00 :   5aa12:  movzbl 0x194(%rdi,%rdx,1),%r8d
+    0.00 :   5aa1b:  cmp    $0x30,%r8b
+    0.00 :   5aa1f:  ja     5aa61 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x2f1>
+    0.00 :   5aa21:  dec    %r10
+    0.00 :   5aa24:  data16 data16 cs nopw 0x0(%rax,%rax,1)
+    0.00 :   5aa30:  movzbl %r8b,%esi
+    0.00 :   5aa34:  mov    (%rdi,%rsi,8),%r8
+    0.00 :   5aa38:  test   %r10,%r8
+    0.00 :   5aa3b:  sete   %dl
+    0.00 :   5aa3e:  je     5aa63 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x2f3>
+    0.00 :   5aa40:  or     %r10,%r8
+    0.00 :   5aa43:  cmp    $0x3f2bf,%r8
+    0.00 :   5aa4a:  ja     5aa63 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x2f3>
+    0.00 :   5aa4c:  shr    $0x4,%r8
+    0.00 :   5aa50:  movzbl 0x194(%rdi,%r8,1),%r8d
+    0.00 :   5aa59:  cmp    $0x31,%r8b
+    0.00 :   5aa5d:  jb     5aa30 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x2c0>
+    0.00 :   5aa5f:  jmp    5aa63 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x2f3>
+    0.00 :   5aa61:  xor    %edx,%edx
+    0.00 :   5aa63:  cmp    $0x1,%r11d
+    0.00 :   5aa67:  je     5aae6 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x376>
+    0.00 :   5aa69:  test   %r11d,%r11d
+    0.00 :   5aa6c:  jne    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5aa72:  test   %dl,%dl
+    0.00 :   5aa74:  je     5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5aa7a:  mov    %eax,%edx
+    0.00 :   5aa7c:  cmp    $0x5f000,%rdx
+    0.00 :   5aa83:  jb     5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5aa89:  cmp    (%rbx),%rdx
+    0.00 :   5aa8c:  jae    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5aa92:  test   $0xf,%al
+    0.00 :   5aa94:  jne    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5aa9a:  mov    %eax,%edi
+    0.00 :   5aa9c:  shr    $0x4,%edi
+    0.00 :   5aa9f:  lea    0x1(%rsi),%r9d
+    0.00 :   5aaa3:  cmp    %r9b,0x1588(%rbx,%rdi,1)
+    0.00 :   5aaab:  jne    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5aab1:  mov    0x1400(%rbx,%rsi,4),%r8d
+    0.00 :   5aab9:  lea    (%rbx,%r8,1),%r10
+    0.00 :   5aabd:  xor    %r11d,%r11d
+    0.00 :   5aac0:  mov    $0xffffffff,%r14d
+    0.00 :   5aac6:  cmp    %r14,%r8
+    0.00 :   5aac9:  cmovne %r10,%r11
+    0.00 :   5aacd:  mov    %r11,(%rbx,%rdx,1)
+    0.00 :   5aad1:  mov    %eax,0x1400(%rbx,%rsi,4)
+    0.00 :   5aad8:  or     $0x80,%r9b
+    0.00 :   5aadc:  mov    %r9b,0x1588(%rbx,%rdi,1)
+    0.00 :   5aae4:  jmp    5ab5c <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x3ec>
+    0.00 :   5aae6:  test   %dl,%dl
+    0.00 :   5aae8:  je     5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5aaee:  mov    %eax,%edx
+    0.00 :   5aaf0:  cmp    $0x42000,%rdx
+    0.00 :   5aaf7:  jb     5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5aafd:  cmp    (%rbx),%rdx
+    0.00 :   5ab00:  jae    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5ab06:  test   $0xf,%al
+    0.00 :   5ab08:  jne    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5ab0e:  mov    %eax,%edi
+    0.00 :   5ab10:  shr    $0x4,%edi
+    0.00 :   5ab13:  movzbl 0x1588(%rbx,%rdi,1),%r9d
+    0.00 :   5ab1c:  lea    0x1(%rsi),%r8d
+    0.00 :   5ab20:  cmp    %r8b,%r9b
+    0.00 :   5ab23:  jne    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5ab29:  mov    0x1400(%rbx,%rsi,4),%r8d
+    0.00 :   5ab31:  lea    (%rbx,%r8,1),%r10
+    0.00 :   5ab35:  xor    %r11d,%r11d
+    0.00 :   5ab38:  mov    $0xffffffff,%r14d
+    0.00 :   5ab3e:  cmp    %r14,%r8
+    0.00 :   5ab41:  cmovne %r10,%r11
+    0.00 :   5ab45:  mov    %r11,(%rbx,%rdx,1)
+    0.00 :   5ab49:  mov    %eax,0x1400(%rbx,%rsi,4)
+    0.00 :   5ab50:  or     $0x80,%r9b
+    0.00 :   5ab54:  mov    %r9b,0x1588(%rbx,%rdi,1)
+    0.00 :   5ab5c:  mov    0x14(%rbx),%eax
+    0.00 :   5ab5f:  test   %eax,%eax
+    0.00 :   5ab61:  je     5ac8c <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x51c>
+    0.00 :   5ab67:  dec    %eax
+    0.00 :   5ab69:  mov    %eax,0x14(%rbx)
+    0.00 :   5ab6c:  cmp    $0xffffffff,%r8d
+    0.00 :   5ab70:  jne    5ab8a <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x41a>
+    0.00 :   5ab72:  mov    0x70(%rbx),%edx
+    0.00 :   5ab75:  mov    0x3e8(%rcx),%rdi
+    0.00 :   5ab7c:  mov    %rcx,%r14
+    0.00 :   5ab7f:  call   4e880 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::publish_nonempty>
+    0.00 :   5ab84:  mov    %r14,%rcx
+    0.00 :   5ab87:  mov    0x14(%rbx),%eax
+    0.00 :   5ab8a:  test   %eax,%eax
+    0.00 :   5ab8c:  jne    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5ab92:  cmp    0x3a8(%rcx),%rbx
+    0.00 :   5ab99:  je     5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5ab9b:  cmpl   $0x0,0x18(%rbx)
+    0.00 :   5ab9f:  jne    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5aba1:  cmpb   $0x1,0x1c(%rbx)
+    0.00 :   5aba5:  jne    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5aba7:  mov    %rcx,%rdi
+    0.00 :   5abaa:  mov    %rbx,%rsi
+    0.00 :   5abad:  add    $0x8,%rsp
+    0.00 :   5abb1:  pop    %rbx
+    0.00 :   5abb2:  pop    %r14
+    0.00 :   5abb4:  pop    %r15
+    0.00 :   5abb6:  pop    %rbp
+    0.00 :   5abb7:  jmp    4ef00 <<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::release_or_pool_empty_segment>
+    0.00 :   5abbc:  mov    %r10,%rsi
+    0.00 :   5abbf:  mov    %r8,%rdx
+    0.00 :   5abc2:  add    $0x8,%rsp
+    0.00 :   5abc6:  pop    %rbx
+    0.00 :   5abc7:  pop    %r14
+    0.00 :   5abc9:  pop    %r15
+    0.00 :   5abcb:  pop    %rbp
+    0.00 :   5abcc:  jmp    *0x4db4e(%rip)        # a8720 <_DYNAMIC+0x600>
+    0.00 :   5abd2:  mov    0x30(%rbx),%rax
+    0.00 :   5abd6:  mov    0x8(%rbx),%rdx
+    0.00 :   5abda:  add    %rbx,%rax
+    0.00 :   5abdd:  jb     5ac10 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a0>
+    0.00 :   5abdf:  cmp    %r9,%rax
+    0.00 :   5abe2:  jne    5ac10 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a0>
+    0.00 :   5abe4:  mov    %rcx,%rdi
+    0.00 :   5abe7:  mov    %r9,%rsi
+    0.00 :   5abea:  mov    %r10,%rdx
+    0.00 :   5abed:  mov    %r8,%rcx
+    0.00 :   5abf0:  mov    %rbx,%r8
+    0.00 :   5abf3:  add    $0x8,%rsp
+    0.00 :   5abf7:  pop    %rbx
+    0.00 :   5abf8:  pop    %r14
+    0.00 :   5abfa:  pop    %r15
+    0.00 :   5abfc:  pop    %rbp
+    0.00 :   5abfd:  jmp    5acc0 <sefer_alloc::registry::heap_core::free::dealloc_own_base::route_to_large_free>
+    1.19 :   5ac02:  mov    $0x5f000,%r10d
+    3.00 :   5ac08:  mov    %eax,%r8d
+    0.00 :   5ac0b:  cmp    %r10,%r8
+    0.00 :   5ac0e:  jae    5ac23 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4b3>
+    0.00 :   5ac10:  lock incq 0x544b0(%rip)        # af0c8 <sefer_alloc::alloc_core::alloc_core::counters::LOCAL_REJECT_FREES>
+    0.65 :   5ac18:  add    $0x8,%rsp
+    0.54 :   5ac1c:  pop    %rbx
+    2.85 :   5ac1d:  pop    %r14
+    0.00 :   5ac1f:  pop    %r15
+    0.00 :   5ac21:  pop    %rbp
+    0.00 :   5ac22:  ret
+    0.00 :   5ac23:  test   $0xf,%al
+    0.00 :   5ac25:  jne    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.64 :   5ac27:  mov    %eax,%r11d
+    0.00 :   5ac2a:  shr    $0x4,%r11d
+    0.62 :   5ac2e:  movzbl 0x1588(%rbx,%r11,1),%r10d
+   11.45 :   5ac37:  lea    0x1(%rsi),%ebp
+    0.00 :   5ac3a:  cmp    %bpl,%r10b
+    0.00 :   5ac3d:  jne    5ac78 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x508>
+    0.60 :   5ac3f:  cmp    (%rbx),%r8
+    0.00 :   5ac42:  jae    5ac10 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a0>
+    3.08 :   5ac44:  mov    0x4dabd(%rip),%r8        # a8708 <_DYNAMIC+0x5e8>
+    0.59 :   5ac4b:  cmp    (%r8,%rsi,1),%dl
+    0.00 :   5ac4f:  jae    5ac9e <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x52e>
+    2.43 :   5ac51:  lea    (%rcx,%rdi,1),%rax
+    0.00 :   5ac55:  add    $0x4a8,%rax
+    0.00 :   5ac5b:  or     $0x40,%r10b
+    0.63 :   5ac5f:  mov    %r10b,0x1588(%rbx,%r11,1)
+    0.60 :   5ac67:  mov    %edx,%ecx
+    0.57 :   5ac69:  and    $0xf,%ecx
+    0.00 :   5ac6c:  mov    %r9,0x8(%rax,%rcx,8)
+    1.70 :   5ac71:  lea    0x1(%rdx),%ecx
+    0.63 :   5ac74:  mov    %cl,(%rax)
+    0.58 :   5ac76:  jmp    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5ac78:  test   %r10b,%r10b
+    0.00 :   5ac7b:  je     5ac85 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x515>
+    0.00 :   5ac7d:  cmp    $0x40,%r10b
+    0.00 :   5ac81:  jae    5ac10 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a0>
+    0.00 :   5ac83:  jmp    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5ac85:  cmp    (%rbx),%r8
+    0.00 :   5ac88:  jae    5ac10 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a0>
+    0.00 :   5ac8a:  jmp    5ac18 <sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss+0x4a8>
+    0.00 :   5ac8c:  lea    -0x4507f(%rip),%rdi        # 15c14 <sefer_alloc::registry::heap_core::state::tcache::FREE_PARK_CAP+0x1d7>
+    0.00 :   5ac93:  mov    $0x3a,%esi
+    0.00 :   5ac98:  call   *0x4dc42(%rip)        # a88e0 <_DYNAMIC+0x7c0>
+    0.00 :   5ac9e:  mov    %rcx,%rdi
+    0.00 :   5aca1:  mov    %eax,%ecx
+    0.00 :   5aca3:  mov    %rbx,%r8
+    0.00 :   5aca6:  add    $0x8,%rsp
+    1.18 :   5acaa:  pop    %rbx
+    0.58 :   5acab:  pop    %r14
+    0.00 :   5acad:  pop    %r15
+    0.64 :   5acaf:  pop    %rbp
+    0.00 :   5acb0:  jmp    593f0 <<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park>

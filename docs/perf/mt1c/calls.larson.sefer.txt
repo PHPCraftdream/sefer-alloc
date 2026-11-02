@@ -1,0 +1,26 @@
+   653,445 ( 0.95%)  *  <scratch>/base/src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full_fast [<scratch>/tgt-base/release/examples/g1_mt_one]
+        .                           super::dealloc_own_base::small_free_guard(root, block, c, layout),
+        .                           super::dealloc_own_base::SmallFreeGuard::Accept { off: o } if o == off
+   32,600 ( 0.05%)              return self.free_magazine_full_fast(c, root, block);
+  653,445 ( 0.95%)  => <scratch>/base/src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full_fast (8,150x)
+ 32,416 ( 0.05%)                      return self.refill_magazine_miss(c);
+560,949 ( 0.82%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss (8,104x)
+      .               /// `depot_reload_tick` / `reload_overflow_tick` chain makes there, with
+      .               /// [`Self::refill_magazine_slow`].
+ 24,312 ( 0.04%)      fn refill_magazine_miss(&mut self, c: usize) -> *mut u8 {
+      .                               depot.depot_reload(c, &mut class.parked, &mut class.slots)
+    480 ( 0.00%)          self.refill_magazine_slow(c)
+129,466 ( 0.19%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow (120x)
+    480 ( 0.00%)      fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
+    335 ( 0.00%)          if self.depot_may_reload(c) && self.depot_reload_tick(c) {
+  3,610 ( 0.01%)  => <scratch>/base/src/registry/heap_core/state/depot_paths.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::depot_reload_tick (19x)
+114,089 ( 0.17%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::
+      .                   // shared verbatim with `refill_magazine_slow_virgin`
+112,069 ( 0.16%)  => <scratch>/base/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} (101x)
+-- Auto-annotated source: <scratch>/base/src/registry/heap_core/free/dealloc_own_base.rs
+73,350 ( 0.11%)      fn free_magazine_park(
+26,887 ( 0.04%)  => <scratch>/base/src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full (143x)
+     .               pub(super) fn free_magazine_full_fast(&mut self, c: usize, root: *mut u8, block: *mut u8) {
+ 8,150 ( 0.01%)          self.free_magazine_park(c, cnt, off, root, block);
+571,945 ( 0.83%)  => <scratch>/base/src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park (8,150x)
+40,671 ( 0.06%)  <counts for unidentified lines in <scratch>/base/src/registry/heap_core/free/dealloc_own_base.rs>

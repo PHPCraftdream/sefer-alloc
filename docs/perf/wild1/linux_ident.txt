@@ -1,0 +1,4 @@
+linux build of git archive HEAD (sha256 of tar: 7676d54d2e3cd9cb806e241986fc02f311bbfc0ecd08425ddec39f6a79b2de09)
+rustc 1.98.1 (48a229cea 2026-09-01)
+Linux 6.18.33.2-microsoft-standard-WSL2
+d23b83f95432fa1a2b2f6bafeb3d47accd83fbfbf88c09705487c5e74d6806f5  tgt/release/examples/g1_wild_judge

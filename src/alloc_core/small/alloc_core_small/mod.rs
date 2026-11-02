@@ -26,6 +26,10 @@ mod find_segment;
 mod sidecar_drain_outcome;
 
 mod reserve;
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+pub(crate) use reserve::publish_huge_page_after;
+#[cfg(all(feature = "bench-internals", not(feature = "numa-aware")))]
+pub(crate) use reserve::{huge_page_after, SMALL_SEGMENTS_RESERVED, THP_HINTED_SMALL_SEGMENTS};
 
 mod alloc_core_small_impl;
 #[allow(unused_imports)]

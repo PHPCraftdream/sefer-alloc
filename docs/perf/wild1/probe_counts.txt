@@ -1,0 +1,33 @@
+# WILD-1 probe counters (Windows, sefer arm, scale 1, seed 1): lane exits and own_cache lookups
+# probe build: throwaway measurement commit 6bfb67b88591db2f71bdd93ebfa4f2677b6ae26e on branch wild1-probe (the final probe patch over 12a01097 is docs/perf/wild1/probe.patch, sha256 4483b15391b98e2f76301eea3e925076198ee779854696aea508e40bfaca8911; LANE lines came from commit 6bfb67b8, TIER1 lines from 8cef3c9b), features 'production internals' (LANE) and 'production internals bench-internals' (TIER1)
+# columns: scenario, run, then the lines printed by the judge (stderr)
+wild run1 LANE seed=4824 memo_key=3804795 kind=0 bump=0 state=0 accepted=476262 mag_full=21555
+wild run2 LANE seed=4824 memo_key=3808248 kind=0 bump=0 state=0 accepted=472809 mag_full=21727
+wild run3 LANE seed=4824 memo_key=3807273 kind=0 bump=0 state=0 accepted=473784 mag_full=21538
+wild run4 LANE seed=4824 memo_key=3796937 kind=0 bump=0 state=0 accepted=484120 mag_full=21965
+wild run5 LANE seed=4824 memo_key=3799536 kind=0 bump=0 state=0 accepted=481521 mag_full=22752
+phase run1 LANE seed=2636 memo_key=553075 kind=0 bump=0 state=0 accepted=17738058 mag_full=1041705
+phase run2 LANE seed=2636 memo_key=554598 kind=0 bump=0 state=0 accepted=17736535 mag_full=1041592
+phase run3 LANE seed=2636 memo_key=554533 kind=0 bump=0 state=0 accepted=17736600 mag_full=1041590
+phase run4 LANE seed=2636 memo_key=554122 kind=0 bump=0 state=0 accepted=17737011 mag_full=1041699
+phase run5 LANE seed=2636 memo_key=553044 kind=0 bump=0 state=0 accepted=17738089 mag_full=1041726
+burst run1 LANE seed=0 memo_key=2 kind=0 bump=0 state=0 accepted=3021539 mag_full=167280
+burst run2 LANE seed=0 memo_key=2 kind=0 bump=0 state=0 accepted=3021539 mag_full=167280
+burst run3 LANE seed=0 memo_key=2 kind=0 bump=0 state=0 accepted=3021539 mag_full=167280
+burst run4 LANE seed=0 memo_key=2 kind=0 bump=0 state=0 accepted=3021539 mag_full=167280
+burst run5 LANE seed=0 memo_key=2 kind=0 bump=0 state=0 accepted=3021539 mag_full=167280
+wild run1 TIER1 hits=3210541 misses=1077039 LANE seed=4824 memo_key=3813818 kind=0 bump=0 state=0 accepted=467239 mag_full=21329 
+wild run2 TIER1 hits=3117440 misses=1170140 LANE seed=4824 memo_key=3813940 kind=0 bump=0 state=0 accepted=467117 mag_full=21654 
+wild run3 TIER1 hits=2934717 misses=1352863 LANE seed=4824 memo_key=3796940 kind=0 bump=0 state=0 accepted=484117 mag_full=21967 
+wild run4 TIER1 hits=2980629 misses=1306951 LANE seed=4824 memo_key=3812681 kind=0 bump=0 state=0 accepted=468376 mag_full=21431 
+wild run5 TIER1 hits=3030970 misses=1256610 LANE seed=4824 memo_key=3804795 kind=0 bump=0 state=0 accepted=476262 mag_full=21555 
+phase run1 TIER1 hits=18202463 misses=130515 LANE seed=2636 memo_key=554415 kind=0 bump=0 state=0 accepted=17736718 mag_full=1041611 
+phase run2 TIER1 hits=18202791 misses=130187 LANE seed=2636 memo_key=554621 kind=0 bump=0 state=0 accepted=17736512 mag_full=1041596 
+phase run3 TIER1 hits=18201281 misses=131697 LANE seed=2636 memo_key=553604 kind=0 bump=0 state=0 accepted=17737529 mag_full=1041712 
+phase run4 TIER1 hits=18200184 misses=132794 LANE seed=2636 memo_key=553574 kind=0 bump=0 state=0 accepted=17737559 mag_full=1041663 
+phase run5 TIER1 hits=18201638 misses=131340 LANE seed=2636 memo_key=554857 kind=0 bump=0 state=0 accepted=17736276 mag_full=1041548 
+burst run1 TIER1 hits=3021540 misses=1 LANE seed=0 memo_key=2 kind=0 bump=0 state=0 accepted=3021539 mag_full=167280 
+burst run2 TIER1 hits=3021540 misses=1 LANE seed=0 memo_key=2 kind=0 bump=0 state=0 accepted=3021539 mag_full=167280 
+burst run3 TIER1 hits=3021540 misses=1 LANE seed=0 memo_key=2 kind=0 bump=0 state=0 accepted=3021539 mag_full=167280 
+burst run4 TIER1 hits=3021540 misses=1 LANE seed=0 memo_key=2 kind=0 bump=0 state=0 accepted=3021539 mag_full=167280 
+burst run5 TIER1 hits=3021540 misses=1 LANE seed=0 memo_key=2 kind=0 bump=0 state=0 accepted=3021539 mag_full=167280 

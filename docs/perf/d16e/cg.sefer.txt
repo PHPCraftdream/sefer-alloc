@@ -1,0 +1,36 @@
+51,864,663 (100.0%)  PROGRAM TOTALS
+14,757,544 (28.45%)  /home/user/ab/m4/src/registry/heap_core/free/dealloc_fast.rs:b4_pmu_probe::sefer_dealloc
+ 3,971,877 ( 7.66%)  /home/user/ab/m4/src/registry/heap_core/alloc/hot.rs:b4_pmu_probe::sefer_alloc
+ 3,614,160 ( 6.97%)  /home/user/ab/m4/examples/b4_pmu_probe.rs:b4_pmu_probe::bulk_pass [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+ 2,620,197 ( 5.05%)  /home/user/ab/m4/examples/b4_pmu_probe.rs:b4_pmu_probe::sefer_alloc [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+ 2,252,800 ( 4.34%)  /home/user/ab/m4/src/alloc_core/segment/bitmap/live_tag.rs:b4_pmu_probe::sefer_alloc
+ 1,802,240 ( 3.47%)  /home/user/ab/m4/src/alloc_core/platform/size_classes.rs:b4_pmu_probe::sefer_alloc
+ 1,802,240 ( 3.47%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/non_null.rs:b4_pmu_probe::bulk_pass
+ 1,802,236 ( 3.47%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:b4_pmu_probe::sefer_dealloc
+ 1,351,680 ( 2.61%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:b4_pmu_probe::sefer_alloc
+ 1,323,954 ( 2.55%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::sefer_dealloc
+ 1,295,473 ( 2.50%)  /home/user/ab/m4/src/registry/heap_core/state/depot_overflow.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss
+ 1,268,517 ( 2.45%)  /home/user/ab/m4/src/alloc_core/segment/bitmap/state_byte.rs:b4_pmu_probe::sefer_alloc
+ 1,068,419 ( 2.06%)  /home/user/ab/m4/src/registry/heap_core/state/depot_overflow.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park
+   972,648 ( 1.88%)  /home/user/ab/m4/src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+   902,440 ( 1.74%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs:b4_pmu_probe::bulk_pass
+   901,134 ( 1.74%)  /home/user/ab/m4/src/global/tls_heap.rs:b4_pmu_probe::sefer_alloc
+   901,120 ( 1.74%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::bulk_pass
+   901,120 ( 1.74%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:b4_pmu_probe::sefer_dealloc
+   845,678 ( 1.63%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:b4_pmu_probe::sefer_alloc
+   589,810 ( 1.14%)  /home/user/ab/m4/src/registry/heap_core/alloc/hot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+   450,560 ( 0.87%)  /home/user/ab/m4/src/global/tls_heap.rs:b4_pmu_probe::sefer_dealloc
+   450,560 ( 0.87%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:b4_pmu_probe::bulk_pass
+   450,560 ( 0.87%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:b4_pmu_probe::sefer_alloc
+   450,560 ( 0.87%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:b4_pmu_probe::sefer_dealloc [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+   450,560 ( 0.87%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:b4_pmu_probe::sefer_alloc
+   450,558 ( 0.87%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/intrinsics/mod.rs:b4_pmu_probe::sefer_dealloc
+   422,844 ( 0.82%)  /home/user/ab/m4/examples/b4_pmu_probe.rs:b4_pmu_probe::sefer_dealloc
+   422,839 ( 0.82%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:b4_pmu_probe::sefer_alloc
+   422,838 ( 0.82%)  /home/user/ab/m4/src/alloc_core/segment/bitmap/live_tag.rs:b4_pmu_probe::sefer_dealloc
+   405,808 ( 0.78%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park
+   249,480 ( 0.48%)  /home/user/ab/m4/src/registry/heap_core/free/dealloc_own_base.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full_fast [/home/user/ab/tgt-m4/release/examples/b4_pmu_probe]
+   177,026 ( 0.34%)  /home/user/ab/m4/src/registry/heap_core/state/depot_overflow.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::reload_overflow
+    88,000 ( 0.17%)  /home/user/ab/m4/src/registry/heap_core/state/depot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park
+    87,800 ( 0.17%)  /home/user/ab/m4/src/registry/heap_core/state/depot.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss
+    83,163 ( 0.16%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss

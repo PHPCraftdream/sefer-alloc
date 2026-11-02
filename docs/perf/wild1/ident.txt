@@ -1,0 +1,3 @@
+commit 8df5abcd596dee0b7dba234358b017b8d9c1b9f3 tree b35925fb20dccaa2e2c229eeb625e8e4aac2b6ad
+rustc rustc 1.97.0 (2d8144b78 2026-07-07)
+wild1/judge.exe

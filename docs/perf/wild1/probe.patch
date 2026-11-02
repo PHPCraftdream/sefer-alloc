@@ -1,0 +1,90 @@
+diff --git a/examples/g1_wild_judge.rs b/examples/g1_wild_judge.rs
+index d6759794..5befef92 100644
+--- a/examples/g1_wild_judge.rs
++++ b/examples/g1_wild_judge.rs
+@@ -463,6 +463,16 @@ fn main() {
+             }
+         }
+     }
++    if a[2] == "sefer" {
++        extern "C" {
++            static SEFER_LM: [std::sync::atomic::AtomicU64; 8];
++        }
++        // SAFETY: a plain exported static of the library (WILD-1 probe).
++        let c: Vec<u64> = unsafe { SEFER_LM.iter().map(|x| x.load(std::sync::atomic::Ordering::Relaxed)).collect() };
++        #[cfg(feature = "bench-internals")]
++        eprintln!("TIER1 hits={} misses={}", sefer_alloc::alloc_core::AllocCore::dbg_contains_base_tier1_hits(), sefer_alloc::alloc_core::AllocCore::dbg_contains_base_tier1_misses());
++        eprintln!("LANE seed={} memo_key={} kind={} bump={} state={} accepted={} mag_full={}", c[0], c[1], c[2], c[3], c[4], c[5], c[6]);
++    }
+     let m = proc_memstat::snapshot();
+     // Under `internals`: SeferAlloc's process-wide segment reserve / release
+     // counts (the OS traffic of the run; 0 for the other arms).
+diff --git a/src/registry/heap_core/free/dealloc_fast.rs b/src/registry/heap_core/free/dealloc_fast.rs
+index 7e4a9507..060f9367 100644
+--- a/src/registry/heap_core/free/dealloc_fast.rs
++++ b/src/registry/heap_core/free/dealloc_fast.rs
+@@ -22,6 +22,15 @@ static LANE_PS: [usize; 256] = {
+     t
+ };
+ 
++// WILD-1 probe (uncommitted measurement patch): why does the lane miss?
++#[allow(unsafe_code)]
++#[no_mangle]
++pub static SEFER_LM: [core::sync::atomic::AtomicU64; 8] = [const { core::sync::atomic::AtomicU64::new(0) }; 8];
++#[inline(always)]
++fn lm(i: usize) {
++    SEFER_LM[i].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
++}
++
+ impl HeapCore {
+     /// Accept an own-thread small free on the tier-1 memo hit, or hand the
+     /// free to the unchanged chain. Every exit is a tail call.
+@@ -32,6 +41,7 @@ impl HeapCore {
+         let seed = size.wrapping_sub(1) >> MIN_BLOCK_SHIFT;
+         // The last bucket is past SMALL_MAX: `class_for` rejects it.
+         if align > MIN_BLOCK || seed >= SIZE2CLASS.len() - 1 {
++            lm(0);
+             return lane_miss(ptr, layout, self);
+         }
+         // The tag's range bounds `c < SMALL_CLASS_COUNT`.
+@@ -40,6 +50,7 @@ impl HeapCore {
+         let key = ptr.addr() & !(crate::alloc_core::os::SEGMENT - 1);
+         let (memo_key, root) = self.core.tier1_memo();
+         if memo_key != key {
++            lm(1);
+             return lane_miss(ptr, layout, self);
+         }
+         // `block == ptr` by address, with the table root's provenance; `ptr`
+@@ -50,6 +61,7 @@ impl HeapCore {
+         // fails the granule bound below.
+         let kind = SegmentHeader::kind_byte_at(root) as usize;
+         if off < LANE_PS[kind] {
++            lm(2);
+             return lane_miss(block, layout, self);
+         }
+         // `g = off >> 4` when `off % 16 == 0`, else `g >= 2^60`. Both sides are
+@@ -57,11 +69,13 @@ impl HeapCore {
+         let g = off.rotate_right(MIN_BLOCK_SHIFT);
+         let meta = SegmentMeta::new(root);
+         if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
++            lm(3);
+             return lane_miss(block, layout, self);
+         }
+         let off = off as u32;
+         let bytes = meta.state_byte();
+         if bytes.read_granule(g) != tag.byte() {
++            lm(4);
+             return lane_miss(block, layout, self);
+         }
+         // Refinement: the lane accepts only what the chain's guard accepts.
+@@ -79,8 +93,10 @@ impl HeapCore {
+         );
+         #[cfg(feature = "bench-internals")]
+         crate::alloc_core::AllocCore::note_tier1_hit();
++        lm(5);
+         let cnt = self.tcache.classes[c].count as usize;
+         if cnt >= FREE_PARK_CAP[c] as usize {
++            lm(6);
+             return self.free_magazine_full_fast(c, root, block);
+         }
+         bytes.write_granule(g, tag.mag_byte());

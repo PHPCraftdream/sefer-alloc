@@ -1,0 +1,30 @@
+--------------------------------------------------------------------------------
+Profile data file '~/w1b/cgd_mi_49152_12_64.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 32768 B, 64 B, 8-way associative
+D1 cache: 49152 B, 64 B, 12-way associative
+LL cache: 25165824 B, 64 B, 12-way associative
+Timerange: Basic block 0 - 23731441
+Trigger: Program termination
+Profiled target:  ~/w1b/tgt/release/examples/g1_wild_judge wild mi 1 0.3 (PID 373, part 1)
+Events recorded:  Ir Dr Dw I1mr D1mr D1mw ILmr DLmr DLmw
+Events shown:     Ir D1mr DLmr
+Event sort order: D1mr
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                   D1mr             DLmr            
+--------------------------------------------------------------------------------
+144,425,383 (100.0%) 779,909 (100.0%) 15,653 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                  D1mr             DLmr             file:function
+--------------------------------------------------------------------------------
+10,676,016 ( 7.39%) 300,337 (38.51%) 12,510 (79.92%)  ???:g1_wild_judge::main [~/w1b/tgt/release/examples/g1_wild_judge]
+ 5,469,880 ( 3.79%) 279,913 (35.89%)     35 ( 0.22%)  ???:_mi_page_malloc_zero [~/w1b/tgt/release/examples/g1_wild_judge]
+18,981,664 (13.14%)  89,084 (11.42%)    129 ( 0.82%)  ???:<g1_wild_judge::Run>::free [~/w1b/tgt/release/examples/g1_wild_judge]
+26,399,005 (18.28%)  27,268 ( 3.50%)      0           ???:g1_wild_judge::burst [~/w1b/tgt/release/examples/g1_wild_judge]
+13,920,654 ( 9.64%)  17,081 ( 2.19%)     34 ( 0.22%)  ./math/../sysdeps/ieee754/dbl-64/e_exp.c:__ieee754_exp_fma [/usr/lib/x86_64-linux-gnu/libm.so.6]

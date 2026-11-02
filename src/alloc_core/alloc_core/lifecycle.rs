@@ -173,6 +173,12 @@ impl AllocCore {
         owner: Option<u32>,
     ) -> Option<Self> {
         let mut core = Self::new_inner(owner)?;
+        // TH-1 follow-up: the small-segment counter is process-wide, so the
+        // huge-page threshold is too: the first config to be materialised wins.
+        #[cfg(not(feature = "numa-aware"))]
+        let _ = crate::alloc_core::small::alloc_core_small::publish_huge_page_after(
+            config.resolved_huge_page_after_segments(),
+        );
         core.large_cache_budget_bytes = config.resolved_budget_bytes();
         core.decay_config = LargeCacheDecayConfig::from_config(&config);
         // R3-B (round3, решение №2): `LargeCacheMode` now carries only the

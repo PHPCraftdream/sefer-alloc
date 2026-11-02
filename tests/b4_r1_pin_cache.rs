@@ -30,6 +30,9 @@ use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, RoutePin, 
 use sefer_alloc::SeferAlloc;
 
 const SEGMENT: usize = 4 * 1024 * 1024;
+/// Mirrors `PIN_CACHE_SLOTS` of `route_pin_cache.rs` (private there).
+const PIN_CACHE_SLOTS: usize = 32;
+
 fn small_layout() -> Layout {
     Layout::from_size_align(256, 8).unwrap()
 }
@@ -181,15 +184,35 @@ fn force_drain(sample: &[usize], label: &str) {
 static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 /// Allocate `count` 256 B blocks via the real global allocator until at least
-/// `bases` distinct segment bases are covered, returning (kept blocks grouped
+/// `bases` segment bases with distinct pin cache slots are covered, returning (kept blocks grouped
 /// by base, all addrs ever issued). Surplus blocks are freed on the owner
 /// thread before returning.
 fn allocate_across_bases(count: usize, bases: usize) -> Vec<(usize, Vec<usize>)> {
+    allocate_across_bases_with(small_layout(), count, bases, PIN_CACHE_SLOTS)
+}
+
+/// [`allocate_across_bases`] for blocks of `layout` (bigger blocks cover
+/// more segments with fewer allocations).
+/// With `slot_mod != 0` only bases with pairwise distinct
+/// `(base / SEGMENT) % slot_mod` are kept (congruent ones evict each other).
+fn allocate_across_bases_with(
+    layout: Layout,
+    count: usize,
+    bases: usize,
+    slot_mod: usize,
+) -> Vec<(usize, Vec<usize>)> {
+    let slot_of = |base: usize| {
+        if slot_mod == 0 {
+            0
+        } else {
+            (base / SEGMENT) % slot_mod
+        }
+    };
     let mut map: Vec<(usize, Vec<usize>)> = Vec::new();
     let mut surplus = Vec::new();
     for _ in 0..200_000 {
         // SAFETY: valid nonzero Layout; null is checked immediately.
-        let p = unsafe { GLOBAL.alloc(small_layout()) };
+        let p = unsafe { GLOBAL.alloc(layout) };
         assert!(!p.is_null(), "small allocation failed");
         // Exposed: every consumer rebuilds the pointer via
         // `with_exposed_provenance_mut`.
@@ -203,8 +226,10 @@ fn allocate_across_bases(count: usize, bases: usize) -> Vec<(usize, Vec<usize>)>
                 }
             }
             None => {
-                if map.len() < bases {
-                    map.push((base_of(addr), vec![addr]));
+                let b = base_of(addr);
+                let clash = slot_mod != 0 && map.iter().any(|(m, _)| slot_of(*m) == slot_of(b));
+                if map.len() < bases && !clash {
+                    map.push((b, vec![addr]));
                 } else {
                     surplus.push(addr);
                 }
@@ -223,12 +248,7 @@ fn allocate_across_bases(count: usize, bases: usize) -> Vec<(usize, Vec<usize>)>
     for addr in surplus {
         // SAFETY: live allocation issued above, exact original Layout, freed
         // once on the owning thread.
-        unsafe {
-            GLOBAL.dealloc(
-                core::ptr::with_exposed_provenance_mut::<u8>(addr),
-                small_layout(),
-            )
-        };
+        unsafe { GLOBAL.dealloc(core::ptr::with_exposed_provenance_mut::<u8>(addr), layout) };
     }
     map
 }
@@ -286,6 +306,60 @@ fn foreign_free_real_path_hit_miss_two_bases() {
         AllocCore::dbg_foreign_or_unroutable_frees() - foreign0,
         0,
         "both foreign frees were routed and accepted"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (a2) DZ-3: a CYCLIC foreign-free order over many bases stays on the hit path.
+// ---------------------------------------------------------------------------
+#[test]
+fn foreign_free_cyclic_over_many_bases_hits() {
+    // Joined thread: the owner heap (a dozen segments) is torn down inside the
+    // serial window, not inside the next test's System-leaf balance window.
+    let _guard = SerialGuard::acquire();
+    thread::spawn(cyclic_over_many_bases_body)
+        .join()
+        .expect("cyclic test body panicked");
+}
+
+fn cyclic_over_many_bases_body() {
+    const BASES: usize = 12;
+    const ROUNDS: usize = 16;
+    let layout = Layout::from_size_align(1024, 8).unwrap();
+    let (h0, m0, _i0, _e0, _u0, _r0, _s0) = quiescent_totals();
+    let foreign0 = AllocCore::dbg_foreign_or_unroutable_frees();
+
+    let groups = allocate_across_bases_with(layout, ROUNDS, BASES, PIN_CACHE_SLOTS);
+    // Round r frees block r of every base in turn (missed on every free with 4 slots).
+    let order: Vec<usize> = (0..ROUNDS)
+        .flat_map(|r| groups.iter().map(move |(_, v)| v[r]))
+        .collect();
+
+    thread::spawn(move || {
+        for addr in order {
+            // SAFETY: the unique live allocation and its exact original
+            // Layout were transferred to this worker; provenance was exposed
+            // at allocation and is re-exposed here; freed once.
+            unsafe { GLOBAL.dealloc(core::ptr::with_exposed_provenance_mut::<u8>(addr), layout) };
+        }
+    })
+    .join()
+    .expect("worker panicked");
+
+    let (h1, m1, _, _, _, _, _) = quiescent_totals();
+    let hits = h1 - h0;
+    let misses = m1 - m0;
+    // MUTANT 4 slots with round-robin eviction: hits == 0. Slot indices are
+    // pairwise distinct, so only first touches miss; slack for sweeps.
+    assert!(
+        hits >= (BASES * ROUNDS * 3 / 4) as u64,
+        "cyclic order over {BASES} bases must mostly hit, got {hits} hits / {misses} misses"
+    );
+    assert!(misses >= BASES as u64, "first touch per base must miss");
+    assert_eq!(
+        AllocCore::dbg_foreign_or_unroutable_frees() - foreign0,
+        0,
+        "every foreign free was routed and accepted"
     );
     let _ = groups;
 }
@@ -552,7 +626,7 @@ fn thread_exit_releases_cached_pins_and_balances() {
                 )
             };
         }
-        // Both bases are now cached (2 pins < 4 slots). Report each
+        // Both bases are now cached (2 pins, far below the slot count). Report each
         // Entry's refs BEFORE exit: baseline + the cached pin + this
         // temporary observation pin (dropped right after the read).
         let mut observed = Vec::new();

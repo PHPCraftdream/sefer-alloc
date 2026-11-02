@@ -41,7 +41,43 @@
 use crate::registry::segment_route::RoutePin;
 use core::cell::RefCell;
 
-const PIN_CACHE_SLOTS: usize = 4;
+/// Capacity of the slot array, the largest configurable slot count. The slots
+/// in use are `mask + 1` of them (a power of two between 4 and this value,
+/// chosen per thread by `LargeCacheConfig::route_pin_cache_slots`); the index
+/// is `(base / SEGMENT) & mask`.
+const PIN_CACHE_MAX_SLOTS: usize = 64;
+/// Slot count of a thread whose heap carried no setting. 32 slots keep a
+/// producer that frees blocks of up to ~16 owner segments in ANY order on the
+/// hit path (G1 DZ-3, `docs/perf/DZ3_PIN_CACHE_DIRECT_MAPPED.md`); the former
+/// 4 slots with round-robin eviction missed every free of a cyclic order over
+/// 5+ segments. Idle retention of dead descriptors grows with it (see
+/// `sweep_dead_slots`).
+const PIN_CACHE_DEFAULT_SLOTS: usize = 32;
+const _: () = assert!(PIN_CACHE_MAX_SLOTS.is_power_of_two());
+const _: () = assert!(PIN_CACHE_DEFAULT_SLOTS.is_power_of_two());
+// The builder-side bounds live in the config module (alloc-decommit only);
+// pin them to the array capacity and the default used here.
+#[cfg(feature = "alloc-decommit")]
+const _: () = {
+    use crate::alloc_core::large_cache_config as cfg;
+    assert!(cfg::PIN_CACHE_SLOTS_MAX == PIN_CACHE_MAX_SLOTS);
+    assert!(cfg::DEFAULT_PIN_CACHE_SLOTS == PIN_CACHE_DEFAULT_SLOTS);
+};
+
+/// Occupied slots one sweep call examines (round-robin from a persistent
+/// cursor). A cache holding at most this many pins is swept completely by every
+/// call; a fuller one is swept over several calls, which bounds the cost of a
+/// miss under thrash.
+const SWEEP_BUDGET: usize = 4;
+
+/// Direct-mapped slot of a segment base under `mask` (slot count - 1).
+/// Consecutive 4 MiB segments land in distinct slots, which is the common
+/// layout of one owner's segments. `mask` is at most `PIN_CACHE_MAX_SLOTS -
+/// 1`, so the index is always in range.
+#[inline(always)]
+fn slot_index(base: usize, mask: usize) -> usize {
+    (base / crate::alloc_core::os::SEGMENT) & mask & (PIN_CACHE_MAX_SLOTS - 1)
+}
 
 struct PinCacheSlot {
     base: usize,
@@ -49,21 +85,27 @@ struct PinCacheSlot {
     pin: Option<RoutePin>,
 }
 
+// `repr(C)` with `mask` first: the hit path reads it next to the borrow flag.
+#[repr(C)]
 struct PinCache {
-    slots: [PinCacheSlot; PIN_CACHE_SLOTS],
-    next_victim: usize,
+    /// Slot count - 1; `0` until the first insert of this thread fixes it
+    /// (all slots are empty until then, so a lookup under `0` simply misses).
+    mask: usize,
+    sweep_cursor: usize,
+    slots: [PinCacheSlot; PIN_CACHE_MAX_SLOTS],
 }
 
 impl PinCache {
     const EMPTY: Self = Self {
+        mask: 0,
+        sweep_cursor: 0,
         slots: [const {
             PinCacheSlot {
                 base: 0,
                 incarnation: 0,
                 pin: None,
             }
-        }; PIN_CACHE_SLOTS],
-        next_victim: 0,
+        }; PIN_CACHE_MAX_SLOTS],
     };
 }
 
@@ -81,12 +123,16 @@ macro_rules! count {
 }
 
 impl PinCache {
-    /// Drop every cached pin whose route has been unlinked (`linked ==
-    /// false`). This is the memory-reclamation sweep: an idle thread can
-    /// otherwise hold up to `PIN_CACHE_SLOTS` × (Entry + sidecar + up to
-    /// 1024 class-leaves of 256 `AtomicU8`) ≈ 1.16 MiB of dead descriptors
-    /// alive until eviction or thread exit. Only called on cold paths (see
-    /// the call sites): `linked()` is an Acquire load that can touch a
+    /// Drop cached pins whose route has been unlinked (`linked == false`),
+    /// examining at most `SWEEP_BUDGET` occupied slots per call from a
+    /// persistent round-robin cursor (a cache with at most `SWEEP_BUDGET` pins
+    /// is swept completely). This is the memory-reclamation sweep: an idle
+    /// thread can otherwise hold up to its slot count × (Entry + sidecar +
+    /// up to 1024 class-leaves of 256 `AtomicU8`) of dead descriptors alive
+    /// until eviction or thread exit (≈ 0.29 MiB per pin, worst case with
+    /// every class in use; ≈ 9.3 MiB at the default 32 slots; typically far
+    /// less). Only called
+    /// on cold paths (see the call sites): `linked()` is an Acquire load that can touch a
     /// foreign cache line, so a hit-path sweep would cost the very lookup
     /// this cache exists to avoid — a miss/insert is by definition already
     /// a directory-lookup-price path, where one extra Acquire-load per slot
@@ -95,8 +141,22 @@ impl PinCache {
     /// by a sweep (deliberately NOT `UNLINK_FALLBACKS`, which counts
     /// on-hit unlink fallbacks).
     fn sweep_dead_slots(&mut self) {
-        for slot in &mut self.slots {
-            if slot.pin.as_ref().is_some_and(|pin| !pin.linked()) {
+        let mut budget = SWEEP_BUDGET;
+        // The slot count is a power of two: wrap with the mask (no division)
+        // and mask the index with the array capacity (no bounds check).
+        let mask = self.mask;
+        for _ in 0..=mask {
+            if budget == 0 {
+                break;
+            }
+            let i = self.sweep_cursor & mask;
+            self.sweep_cursor = (i + 1) & mask;
+            let slot = &mut self.slots[i & (PIN_CACHE_MAX_SLOTS - 1)];
+            let Some(pin) = slot.pin.as_ref() else {
+                continue;
+            };
+            budget -= 1;
+            if !pin.linked() {
                 slot.pin = None;
                 crate::ghost::ghost_event!("pin-cache/held", slot.base, -1);
                 count!(PIN_CACHE_SWEEPS);
@@ -134,6 +194,48 @@ loom::thread_local! {
 #[cfg(not(all(loom, test)))]
 thread_local! {
     static CACHE: RefCell<PinCache> = const { RefCell::new(PinCache::EMPTY) };
+}
+
+// Slot count configured for the process by the first heap bound with an
+// explicit config (`0` = none: threads use the default). Relaxed: it only
+// sizes caches that are still empty, and any value read — the default or a
+// first-claim-wins config — yields a correct cache.
+static CONFIGURED_SLOTS: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+
+/// Publish the slot count of the process's `SeferAlloc` config (already
+/// resolved to a power of two in `4..=PIN_CACHE_MAX_SLOTS`). First call wins;
+/// returns `false` when a different value was published before. Effective for
+/// every thread whose cache has not received its first insert yet.
+#[cfg(feature = "alloc-decommit")]
+pub(crate) fn publish_configured_slots(slots: usize) -> bool {
+    use core::sync::atomic::Ordering::Relaxed;
+    let want = slots as u8;
+    match CONFIGURED_SLOTS.compare_exchange(0, want, Relaxed, Relaxed) {
+        Ok(_) => true,
+        Err(current) => current == want,
+    }
+}
+
+/// Slot count a cache that has not been used yet will adopt.
+fn initial_slots() -> usize {
+    let configured = CONFIGURED_SLOTS.load(core::sync::atomic::Ordering::Relaxed) as usize;
+    if configured.is_power_of_two() && (4..=PIN_CACHE_MAX_SLOTS).contains(&configured) {
+        configured
+    } else {
+        PIN_CACHE_DEFAULT_SLOTS
+    }
+}
+
+/// Test/diagnostic: slot count of the calling thread's cache (the count it
+/// will adopt if nothing was inserted yet). Read-only.
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+pub(crate) fn dbg_slots() -> usize {
+    CACHE
+        .try_with(|cell| match cell.try_borrow() {
+            Ok(cache) if cache.mask != 0 => cache.mask + 1,
+            _ => initial_slots(),
+        })
+        .unwrap_or_else(|_| initial_slots())
 }
 
 // Test/diagnostic-only counters. Statics are always compiled, but increments
@@ -210,18 +312,17 @@ pub(crate) unsafe fn publish_cached(ptr: *mut u8) -> CachedPublication {
             let Ok(mut cache) = cell.try_borrow_mut() else {
                 return CachedPublication::Miss;
             };
-            let Some(slot) = cache
-                .slots
-                .iter_mut()
-                .find(|slot| slot.pin.is_some() && slot.base == base)
-            else {
+            let idx = slot_index(base, cache.mask);
+            let hit = cache.slots[idx].pin.is_some() && cache.slots[idx].base == base;
+            if !hit {
                 // Cold path: no slot for this base. Sweep dead (unlinked)
-                // pins so a long-lived idle thread does not retain ~1.16 MiB
+                // pins so a long-lived idle thread does not retain ~9.3 MiB
                 // of stale descriptors; see `sweep_dead_slots`.
                 cache.sweep_dead_slots();
                 count!(PIN_CACHE_MISSES);
                 return CachedPublication::Miss;
-            };
+            }
+            let slot = &mut cache.slots[idx];
             if let Some(pin) = slot.pin.as_ref() {
                 if !pin.linked() {
                     // The route was unlinked; release the dead pin immediately
@@ -273,8 +374,13 @@ pub(crate) fn cache_insert(pin: RoutePin, base: usize, incarnation: u64) {
         // Cold path (the caller just ran a full directory lookup): sweep
         // dead (unlinked) pins before inserting; see `sweep_dead_slots` for
         // why the sweep lives only on cold paths.
+        if cache.mask == 0 {
+            cache.mask = initial_slots() - 1;
+        }
         cache.sweep_dead_slots();
-        if let Some(slot) = cache.slots.iter_mut().find(|slot| slot.base == base) {
+        let idx = slot_index(base, cache.mask);
+        if cache.slots[idx].base == base {
+            let slot = &mut cache.slots[idx];
             if slot.pin.take().is_some() {
                 crate::ghost::ghost_event!("pin-cache/held", slot.base, -1);
                 count!(PIN_CACHE_EVICTIONS);
@@ -283,9 +389,7 @@ pub(crate) fn cache_insert(pin: RoutePin, base: usize, incarnation: u64) {
             slot.pin = Some(pin);
             crate::ghost::ghost_event!("pin-cache/held", slot.base, 1);
         } else {
-            let victim = cache.next_victim;
-            cache.next_victim = (victim + 1) % PIN_CACHE_SLOTS;
-            let slot = &mut cache.slots[victim];
+            let slot = &mut cache.slots[idx];
             if slot.pin.take().is_some() {
                 crate::ghost::ghost_event!("pin-cache/held", slot.base, -1);
                 count!(PIN_CACHE_EVICTIONS);
@@ -310,11 +414,9 @@ pub(crate) fn cache_evict(base: usize) {
         let Ok(mut cache) = cell.try_borrow_mut() else {
             return;
         };
-        if let Some(slot) = cache
-            .slots
-            .iter_mut()
-            .find(|slot| slot.base == base && slot.pin.is_some())
-        {
+        let idx = slot_index(base, cache.mask);
+        let slot = &mut cache.slots[idx];
+        if slot.base == base && slot.pin.is_some() {
             slot.pin = None;
             crate::ghost::ghost_event!("pin-cache/held", slot.base, -1);
             count!(PIN_CACHE_EVICTIONS);

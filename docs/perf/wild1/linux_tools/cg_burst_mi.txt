@@ -1,0 +1,40 @@
+--------------------------------------------------------------------------------
+Profile data file '<scratch>/cg_burst_mi.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 16285266
+Trigger: Program termination
+Profiled target:  ~/w1b/tgt/release/examples/g1_wild_judge burst mi 1 0.1 (PID 2296, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                  
+--------------------------------------------------------------------------------
+96,004,049 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                   file:function
+--------------------------------------------------------------------------------
+19,688,490 (20.51%)  ???:g1_wild_judge::burst [~/w1b/tgt/release/examples/g1_wild_judge]
+17,168,256 (17.88%)  ???:<g1_wild_judge::Run>::alloc [~/w1b/tgt/release/examples/g1_wild_judge]
+13,795,920 (14.37%)  ???:<g1_wild_judge::Run>::free [~/w1b/tgt/release/examples/g1_wild_judge]
+10,117,008 (10.54%)  ./math/../sysdeps/ieee754/dbl-64/e_exp.c:__ieee754_exp_fma [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 6,755,333 ( 7.04%)  ???:mi_free [~/w1b/tgt/release/examples/g1_wild_judge]
+ 6,737,858 ( 7.02%)  ???:mi_theap_malloc_aligned [~/w1b/tgt/release/examples/g1_wild_judge]
+ 6,131,520 ( 6.39%)  ./math/./w_exp_template.c:exp@@GLIBC_2.29 [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 3,985,488 ( 4.15%)  ???:g1_wild_judge::a_alloc [~/w1b/tgt/release/examples/g1_wild_judge]
+ 3,975,608 ( 4.14%)  ???:_mi_page_malloc_zero [~/w1b/tgt/release/examples/g1_wild_judge]
+ 2,452,608 ( 2.55%)  ???:g1_wild_judge::a_dealloc [~/w1b/tgt/release/examples/g1_wild_judge]
+ 2,146,032 ( 2.24%)  ???:mi_malloc_aligned [~/w1b/tgt/release/examples/g1_wild_judge]
+   919,728 ( 0.96%)  ./math/../sysdeps/ieee754/dbl-64/math_config.h:__ieee754_exp_fma
+   613,152 ( 0.64%)  ???:0x0000000004885400 [???]
+   185,292 ( 0.19%)  ???:_mi_malloc_generic [~/w1b/tgt/release/examples/g1_wild_judge]
+   139,056 ( 0.14%)  ???:mi_theap_malloc_zero_aligned_at_generic [~/w1b/tgt/release/examples/g1_wild_judge]

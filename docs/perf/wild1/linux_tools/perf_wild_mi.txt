@@ -1,0 +1,12 @@
+    19.33%  g1_wild_judge  g1_wild_judge         [.] _mi_page_malloc_zero
+    14.09%  g1_wild_judge  g1_wild_judge         [.] _RNvCs74oEJTr9hii_13g1_wild_judge5burst
+    11.41%  g1_wild_judge  g1_wild_judge         [.] _RNvCs74oEJTr9hii_13g1_wild_judge4main
+    10.45%  g1_wild_judge  g1_wild_judge         [.] _RNvMs_Cs74oEJTr9hii_13g1_wild_judgeNtB4_3Run4free
+     7.62%  g1_wild_judge  g1_wild_judge         [.] _RNvMs_Cs74oEJTr9hii_13g1_wild_judgeNtB4_3Run5alloc
+     7.02%  g1_wild_judge  g1_wild_judge         [.] mi_free
+     6.31%  g1_wild_judge  libm.so.6             [.] __ieee754_exp_fma
+     5.91%  g1_wild_judge  libm.so.6             [.] exp@@GLIBC_2.29
+     4.61%  g1_wild_judge  g1_wild_judge         [.] mi_theap_malloc_aligned
+     2.32%  g1_wild_judge  g1_wild_judge         [.] _RNvCs74oEJTr9hii_13g1_wild_judge7a_alloc
+     1.67%  g1_wild_judge  g1_wild_judge         [.] _RNvCs74oEJTr9hii_13g1_wild_judge9a_dealloc
+     1.65%  g1_wild_judge  libm.so.6             [.] __exp_finite@GLIBC_2.15@plt

@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-661 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 91 files of `src/**` and
+678 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 92 files of `src/**` and
 `crates/*/src/**`; each is claimed by exactly one of 46 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/661 |
-| counter | 233 | 233/661 |
-| ghost | 10 | 10/661 |
-| id | 9 | 9/661 |
-| kani | 1 | 1/661 |
-| lock-local | 40 | 40/661 |
-| non-atomic | 2 | 2/661 |
-| protocol | 179 | 179/661 |
-| test-hook | 174 | 174/661 |
-| twin | 7 | 7/661 |
-| **claimed** | **661** | 661/661 |
-| unclaimed | 0 | 0/661 |
-| claimed twice | 0 | 0/661 |
+| cache | 6 | 6/678 |
+| counter | 243 | 243/678 |
+| ghost | 10 | 10/678 |
+| id | 9 | 9/678 |
+| kani | 1 | 1/678 |
+| lock-local | 40 | 40/678 |
+| non-atomic | 2 | 2/678 |
+| protocol | 184 | 184/678 |
+| test-hook | 176 | 176/678 |
+| twin | 7 | 7/678 |
+| **claimed** | **678** | 678/678 |
+| unclaimed | 0 | 0/678 |
+| claimed twice | 0 | 0/678 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -44,7 +44,7 @@ harness; `non-atomic` — named scanner false positives.
 | P5 | route pin: lookup \|\| unlink \|\| last-pin release | A+S | 39 | 2 | 0 | — | yes: tests/loom_b4_r1_pin_cache.rs includes directory/ and src/ghost/ | translate (done in G2: real directory under loom via loom_b4_r1_pin_cache with ghost checks compiled in; last-reference free under miri) | G2 |
 | P6 | route pin cache fast path | A | 0 | 1 | 0 | — | yes (already #[path]) | ghost | G6 |
 | P7 | sidecar bitmap: publish / guarded cut / scan | A | 8 | 2 | 0 | R0-21 | yes (loom_sidecar_bitmap_actual.rs) | ghost | G6 |
-| P8 | small sidecar: leaf pointer publication, pin lifetime | A | 14 | 2 | 0 | R0-22 | yes: loom_sidecar_bitmap_actual compiles leaf_classes.rs (its cfg(loom) leaf construction is P18) and loom_b4_r1_pin_cache the small sidecar behind real route pins | translate | G6 |
+| P8 | small sidecar: leaf pointer publication, pin lifetime | A | 19 | 2 | 0 | R0-22 | yes: loom_sidecar_bitmap_actual compiles leaf_classes.rs (its cfg(loom) leaf construction is P18) and loom_b4_r1_pin_cache the small sidecar behind real route pins | translate | G6 |
 | P9 | terminal Large: phase word | S | 15 | 1 | 0 | R0-21 | yes: tests/loom_terminal_large.rs compiles reservation_state.rs and terminal_words.rs onto loom atomics | translate | G6 |
 | P10 | terminal owner drain: owner credits \|\| cut | S | 0 | 1 | 0 | R0-21 R5b-10 | no: credits live in AllocCore | keep+R5 | G6 |
 | P11 | active-kind index membership \|\| terminal publication | S | 0 | 1 | 0 | — | no: index is part of SegmentTable | keep+R5+R3 | G6 |
@@ -320,7 +320,7 @@ Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spe
 | `P5/pin-linked` | protocol | P5 | 1 | RoutePin::linked Acquire |
 | `P22/shard-lock` | protocol | P22 | 5 | spin lock |
 | `P7/sidecar-bitmap` | protocol | P7 | 8 | publish fetch_or / class store / cut swap |
-| `P8/leaf-classes` | protocol | P8 | 10 | leaf publication |
+| `P8/leaf-classes` | protocol | P8 | 15 | leaf publication |
 | `P8/leaf-classes-drop` | lock-local | P8 | 4 | Drop has &mut self: exclusive, Relaxed reads are sufficient |
 | `P9/large-state` | protocol | P9 | 13 | phase word |
 | `P9/segment-magic` | protocol | P9 | 2 | segment magic is retired with a Release store before the segment is released/reclaimed |
@@ -337,12 +337,12 @@ Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spe
 | `P20/maintenance-service` | protocol | P20 | 6 | service state + pass counter used as a wait condition |
 | `P21/exact-shard` | protocol | P21 | 7 | shard lock + live hint |
 | `hook/maintenance-service` | test-hook | — | 7 | fault/pause injection and test observers (FAIL_START swap is armed only by fail_next_start_for_test) |
-| `hook/test-fns` | test-hook | — | 148 | dbg_*/for_test/internals-only hooks |
+| `hook/test-fns` | test-hook | — | 150 | dbg_*/for_test/internals-only hooks |
 | `hook/inject-flags` | test-hook | — | 15 | fault-injection / test-control flags |
 | `cache/page-size` | cache | — | 4 | idempotent cache of a process constant; Relaxed: every writer stores the same value |
 | `cache/process-exit` | cache | — | 2 | resolved function pointer cache (windows); Relaxed: idempotent |
 | `id/generators` | id | — | 7 | unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed |
-| `counter/statics` | counter | — | 216 | statistics / diagnostic counters: Relaxed, no protocol reads them |
+| `counter/statics` | counter | — | 226 | statistics / diagnostic counters: Relaxed, no protocol reads them |
 | `counter/per-heap` | counter | — | 13 | per-heap hit counters published Relaxed (owner-written, read by stats) |
 | `counter/pin-cache-macro` | counter | — | 1 | macro_rules! count bumps a static counter |
 | `counter/tier1-bump` | counter | — | 2 | unlocked Relaxed load+store bump of a bench-internals Tier-1 counter (DZ-2): no protocol reads it |

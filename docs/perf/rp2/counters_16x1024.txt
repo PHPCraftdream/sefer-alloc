@@ -1,0 +1,3 @@
+snap refills=0 carve=0 freelist_total=0 reserve=0 find_calls=0
+snap refills=2048 carve=12056 freelist_total=20662 reserve=3 find_calls=761
+rpc refills=3686 want_sum=58976 from_cur_freelist=1618 from_cursor=19004 find_calls=2400 find_some=5 from_found_seg=40 from_carve=38214 reserve=10 drain_pooled=4 drain_released=10 drain_live_changed=2 ingress_calls=1 ingress_slots=16 ingress_max_slots=16
