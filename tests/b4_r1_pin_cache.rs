@@ -193,11 +193,8 @@ fn allocate_across_bases(count: usize, bases: usize) -> Vec<(usize, Vec<usize>)>
 
 /// [`allocate_across_bases`] for blocks of `layout` (bigger blocks cover
 /// more segments with fewer allocations).
-///
-/// With `slot_mod != 0` only bases whose `(base / SEGMENT) % slot_mod` are
-/// pairwise distinct are kept (the rest is surplus): the OS does not hand out
-/// consecutive segments, and bases with congruent indices evict each other in
-/// a direct-mapped cache.
+/// With `slot_mod != 0` only bases with pairwise distinct
+/// `(base / SEGMENT) % slot_mod` are kept (congruent ones evict each other).
 fn allocate_across_bases_with(
     layout: Layout,
     count: usize,
@@ -310,7 +307,6 @@ fn foreign_free_real_path_hit_miss_two_bases() {
         0,
         "both foreign frees were routed and accepted"
     );
-    let _ = groups;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,10 +314,8 @@ fn foreign_free_real_path_hit_miss_two_bases() {
 // ---------------------------------------------------------------------------
 #[test]
 fn foreign_free_cyclic_over_many_bases_hits() {
-    // The owner heap of this test holds a dozen segments; its teardown frees
-    // their sidecar pairs. Running it on a joined thread finishes that
-    // teardown inside the serial window instead of inside the next test's
-    // System-leaf balance window.
+    // Joined thread: the owner heap (a dozen segments) is torn down inside the
+    // serial window, not inside the next test's System-leaf balance window.
     let _guard = SerialGuard::acquire();
     thread::spawn(cyclic_over_many_bases_body)
         .join()
@@ -336,8 +330,7 @@ fn cyclic_over_many_bases_body() {
     let foreign0 = AllocCore::dbg_foreign_or_unroutable_frees();
 
     let groups = allocate_across_bases_with(layout, ROUNDS, BASES, PIN_CACHE_SLOTS);
-    // Round r frees block r of every base in turn: the order that missed on
-    // every free while the cache held 4 slots with round-robin eviction.
+    // Round r frees block r of every base in turn (missed on every free with 4 slots).
     let order: Vec<usize> = (0..ROUNDS)
         .flat_map(|r| groups.iter().map(move |(_, v)| v[r]))
         .collect();
@@ -356,10 +349,8 @@ fn cyclic_over_many_bases_body() {
     let (h1, m1, _, _, _, _, _) = quiescent_totals();
     let hits = h1 - h0;
     let misses = m1 - m0;
-    // MUTANT 4 slots with round-robin eviction: a cyclic order over 12 bases
-    // never hits (hits == 0). The bases have pairwise distinct slot indices,
-    // so only the first touch of each base may miss; the bound leaves room
-    // for sweeps and unrelated frees.
+    // MUTANT 4 slots with round-robin eviction: hits == 0. Slot indices are
+    // pairwise distinct, so only first touches miss; slack for sweeps.
     assert!(
         hits >= (BASES * ROUNDS * 3 / 4) as u64,
         "cyclic order over {BASES} bases must mostly hit, got {hits} hits / {misses} misses"
