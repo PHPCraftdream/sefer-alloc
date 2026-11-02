@@ -207,10 +207,6 @@ fn allocate_across_bases_with(
     pin_cache_bases::allocate_across_bases_with(&GLOBAL, layout, count, bases, slot_mod)
 }
 
-fn base_of(addr: usize) -> usize {
-    addr & !(SEGMENT - 1)
-}
-
 // ---------------------------------------------------------------------------
 // (a) REAL hit/miss path: foreign dealloc through `SeferAlloc`.
 // ---------------------------------------------------------------------------
