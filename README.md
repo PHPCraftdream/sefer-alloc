@@ -1715,7 +1715,7 @@ in the recipe above. This exact trap is encoded as a CI guard:
 **Sizing the pool — what a segment of pool costs and when it pays (measured, CF-1).**
 Each retained segment is 4 MiB of committed memory **per heap** (per thread that owns a heap), and it stays committed after
 the burst that filled it. The pool does not change the peak: in seven fill-then-free shapes (1 GiB growth in 64 B and 1 KiB
-blocks, mixed growth, regrow, large spans, a seeded random mix, phases; real `#[global_allocator]`, one process per run)
+blocks, mixed growth, regrow, large spans, a seeded random mix, phases; a static `SeferAlloc` instance called through `GlobalAlloc` shims with the system allocator as the process's own, one process per run)
 the peak RSS was the same at every pool size (six shapes; the seventh moved by 1–2 %), and the memory left in the process after the run grew by about 4 MiB per pool
 segment:
 
@@ -1734,6 +1734,15 @@ teardown) gained 22 % at 8 segments (see above). **Rule of thumb:** keep the def
 `pool_byte_cap` together to the number of segments your steady state empties and refills in one cycle (the working set of the
 cycle divided by 4 MiB), accept N × 4 MiB × (number of heaps) of retained memory, and verify the change on your own workload.
 Read the resolved value back with `SeferAlloc::dbg_current_pool_cap()` (`bench-internals`) when you measure.
+
+**How much is retained, and for how long.** The cap of one heap is `min(pool_segments, pool_byte_cap / 4 MiB)` segments, so the
+most a heap keeps is that many times 4 MiB; the total is that figure times the number of heaps (threads) that ever filled
+their pool. Retention is temporary, not permanent: a pooled segment is released one at a time, oldest first, whenever the
+owning thread reaches a cold path (a small-segment reserve miss, or a large alloc, free or reclaim) at least one decay interval
+(`decay_interval_ms`, default 1000 ms) after the previous release. The release is driven by the thread's own operations: a
+thread that performs no allocator operation at all after its burst never drains its pool, and the memory it holds stays until
+its heap performs a cold-path operation again (the first such call only starts the timer). Emptying a pool of N segments takes
+at least N decay intervals and at least N cold-path operations.
 Full tables, both systems, the mechanism counters and the reproduction commands:
 [`docs/perf/CF1_POOL_SEGMENTS.md`](docs/perf/CF1_POOL_SEGMENTS.md).
 
