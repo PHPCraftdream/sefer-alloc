@@ -1,0 +1,6 @@
+base grow64 ==422== Collected : 151302613
+base grow1k ==425== Collected : 13714778
+x grow64 ==428== Collected : 152812719
+x grow1k ==431== Collected : 13791354
+y grow64 ==521== Collected : 151347824
+y grow1k ==527== Collected : 13693024
