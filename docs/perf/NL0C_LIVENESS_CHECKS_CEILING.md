@@ -87,22 +87,23 @@ stdout shapes, five samples per cell, and that C never exceeds B in Ir); summary
 4. **B at T = 4 is a real regression, not noise (spread is tight): larson4 69.5–79.7
    against base 111.6–123.8 Mops; mstress4 126.3–132.0 against 161.4–210.6.** B stops
    maintaining the state byte on the hot lanes but leaves its readers, so the byte goes
-   stale. **The mechanism is not confirmed.** The code-reading hypothesis was that a live
-   block keeps its MAG byte after issue and `reclaim_sidecar_record` then refuses the
-   cross-thread free of it (returns false), losing the block. It is **not observed**: the
-   NL-3 behaviour test (`tests/nl3_xthread_remote_free_reuse_small_classes.rs`: one thread
-   frees seven blocks in eight, the owner allocates again) passes on the unmodified tree
-   with 99.998 % of the remotely freed addresses handed out again, and on the B tree, in
-   the rows that compile the magazine, the debug build aborts in the lane's refinement
-   `debug_assert` before the reuse oracle runs, so B's reuse was never observed. The
-   T = 4 regression is real and unexplained: a burst of 1.8 million remote frees may take a
-   path (ring overflow into the
-   bitmap sidecar) that the larson / mstress steady state does not. Treat "writers and all
-   readers go as one set" as the design rule it is on its own merits (the byte has
-   readers), not as an explained leak. C removes the readers and returns to base-level
-   throughput.
-   Next step recorded in task NL-3: a ping-pong cross-thread test within the ring
-   capacity, run in a release row, to localise the loss.
+   stale, and the loss is now observed directly. The NL-3 behaviour test
+   (`tests/nl3_xthread_remote_free_reuse_small_classes.rs`: one thread frees seven blocks in
+   eight, the owner allocates again), run in a **release** row (CI run 41610578422), fails on
+   the B tree for every class: 0.0 % of the remotely freed addresses handed out again (0 of
+   1 835 008 for 16 B, 0 of 458 752 for 64 B, 0 of 114 688 for 256 B) and the owner grew by
+   8 segments each time; the same test passes on the unmodified tree with 99.998 % reuse.
+   The debug build of the B tree aborts earlier in the lane's refinement `debug_assert`
+   (`AS-1 lane accepted a free the guard rejects`), so the debug rows catch the stale byte
+   but not by the behaviour oracle. The remaining hypothesis for the cause is that
+   `reclaim_sidecar_record` refuses the MAG record of a block that kept its MAG byte
+   after issue (returns false) and the block is never linked into a bin; the test shows
+   the outcome, not that line. The steady-state ping-pong test
+   (`tests/nl3_xthread_pingpong_reuse.rs`) did not run on the B tree in release (the
+   step stops at the first failing test), so the T = 4 regression is explained in kind (lost
+   remote frees) but its exact path is not isolated. Treat "writers and all readers go as one
+   set" as the design rule. C removes the readers and returns to base-level throughput.
+   The release row for both NL-3 oracles now exists in the `test-xthread` job.
 5. **C is a ceiling, not a design.** The chain path (`small_free_guard`, reached on
    memo/`own_cache` misses and on Large/odd routes) still compares the state byte exactly
    and, with a byte the hot lanes no longer maintain, would refuse legitimate frees. The
