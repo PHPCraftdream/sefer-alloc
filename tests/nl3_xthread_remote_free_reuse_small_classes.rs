@@ -9,7 +9,10 @@
 //! thread frees seven blocks in eight (the eighth stays live, so no segment becomes
 //! empty and is recycled wholesale: only block-level reuse can satisfy the owner),
 //! and the owner allocates the freed amount again; a refused or lost remote free
-//! makes the owner carve new segments, so the live segment count would grow.
+//! makes the owner carve new segments, so the live segment count would grow while
+//! the freed addresses are not handed out again. The remote-free burst itself reserves
+//! sidecar segments (about one per 260 thousand 16 B frees in the decommit builds), so
+//! the growth is measured over the owner's second allocation phase only.
 //!
 //! Block addresses are not the oracle (a segment a full drain empties may be
 //! pooled or released and re-reserved); the live-segment count is. The counter
@@ -39,8 +42,8 @@ fn live_segments() -> i64 {
 }
 
 /// Grow over `segments` segments of `block`-byte blocks, free seven blocks in
-/// eight from another thread, allocate that many again; return `(peak, after)`.
-fn round_trip(block: usize, segments: usize) -> (i64, i64, String) {
+/// eight from another thread, allocate that many again; return `(owner growth, reused fraction, detail)`.
+fn round_trip(block: usize, segments: usize) -> (i64, f64, String) {
     let layout = Layout::from_size_align(block, 16).unwrap();
     let n = segments * (SEGMENT / block);
     // SAFETY: nonzero size; every block is freed exactly once below.
@@ -51,7 +54,6 @@ fn round_trip(block: usize, segments: usize) -> (i64, i64, String) {
         first.iter().all(|&p| p != 0),
         "{block} B: allocation failed"
     );
-    let peak = live_segments();
 
     let (kept, freed): (Vec<(usize, usize)>, Vec<(usize, usize)>) =
         first.into_iter().enumerate().partition(|(i, _)| i % 8 == 0);
@@ -60,6 +62,7 @@ fn round_trip(block: usize, segments: usize) -> (i64, i64, String) {
     let again = freed.len();
     let freed_set: HashSet<usize> = freed.iter().copied().collect();
     let before = GLOBAL.stats();
+    let live_before = live_segments();
     let (tx, rx) = mpsc::channel::<Vec<usize>>();
     let freer = thread::spawn(move || {
         for p in rx.recv().unwrap() {
@@ -78,29 +81,32 @@ fn round_trip(block: usize, segments: usize) -> (i64, i64, String) {
         second.iter().all(|&p| p != 0),
         "{block} B: reallocation failed"
     );
-    let after = live_segments();
+    let growth = live_segments() - live_before;
     let reused = second.iter().filter(|p| freed_set.contains(p)).count();
     let detail = format!(
         "reused addresses {reused}/{again}; stats before {before:?}; after {:?}",
         GLOBAL.stats()
     );
+    let reuse = reused as f64 / again as f64;
     for p in second.into_iter().chain(kept) {
         // SAFETY: allocated above, freed once.
         unsafe { GLOBAL.dealloc(p as *mut u8, layout) };
     }
-    (peak, after, detail)
+    (growth, reuse, detail)
 }
 
 #[test]
 fn remote_frees_of_hot_small_classes_are_reused() {
     let mut failures = Vec::new();
     for block in [16usize, 64, 256] {
-        // 8 segments' worth: a total loss of the remote frees grows the heap by 8
-        // segments, far above the slack of 2 (16 B is about 2 million blocks).
-        let (peak, after, detail) = round_trip(block, 8);
-        if after > peak + 2 {
+        // 8 segments' worth: a total loss of the remote frees grows the heap by 7
+        // segments in the owner's second phase, far above the slack of 2 (16 B is
+        // about 2 million blocks).
+        let (growth, reuse, detail) = round_trip(block, 8);
+        if growth > 2 || reuse < 0.9 {
             failures.push(format!(
-                "{block} B: owner grew instead of reusing remote frees: live segments {peak} -> {after}; {detail}"
+                "{block} B: owner grew by {growth} segments, reused {:.1} % of the remotely freed addresses; {detail}",
+                reuse * 100.0
             ));
         }
     }
