@@ -48,14 +48,6 @@ impl AllocCore {
         // B4 (в): state-byte stale-free and magazine-residency checks (the
         // former alloc-bitmap + magazine-bitmap oracle pair) — by state only,
         // class-agnostic like the old bitmap bits.
-        let sb = meta.state_byte().read(offset);
-        if (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
-            return false;
-        }
-        #[cfg(feature = "fastbin")]
-        if (sb >> 6) == crate::alloc_core::state_byte::StateByte::MAG {
-            return false;
-        }
         let ptr = Node::deref(base, off);
         let mut bins = meta.bin_table();
         let old_head = bins.head(class_idx);

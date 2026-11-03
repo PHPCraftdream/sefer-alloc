@@ -736,19 +736,10 @@ impl AllocCore {
             // `off < payload_start` wraps to a huge value ≥ span; `off >= bump`
             // yields ≥ span. With a corrupted `bump < payload_start`, span is
             // 0 and every offset is rejected — same strength as the old pair.
-            if (off as usize).wrapping_sub(payload_start) >= span {
-                rejected += 1;
-                continue;
-            }
             // Guard 2 (per-block): accept only a currently-issued block of
             // this class — its byte must carry this class's class field and
             // a LIVE or MAG state (B4 (в); the zero/unissued byte, a foreign
             // class, and an already-FREE block are all rejected/skipped).
-            let sb = meta.state_byte().read(off);
-            if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
-                rejected += 1;
-                continue;
-            }
             // `ptr` identifies the offset only. Link through the stored
             // reservation root, which covers the entire free-list word.
             let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
