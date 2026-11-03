@@ -48,7 +48,8 @@ export const MIRI_TARGETS = [
     'regression_realloc_cross_class_shrink', 'stress_boundary_sweep']
     .map((test) => green('miri-alloc-core', test, 'alloc-core')),
   green('miri-alloc-core', 'regression_r6_t22_foreign_window_key_miri', 'exact-span-large internals'),
-  ...['regression_magazine_oracles', 'regression_bump_direct_refill']
+  // NL-3: bounded cross-thread safe churn (cfg(miri) caps the sequence inside the test).
+  ...['regression_magazine_oracles', 'regression_bump_direct_refill', 'nl3_safe_xthread_churn_integrity']
     .map((test) => green('miri-fastbin', test, 'alloc-global alloc-xthread alloc-decommit fastbin internals')),
   ...['regression_xthread_large_free_no_leak', 'regression_xthread_thread_free_alias_miri',
     'regression_xthread_small_ring_miri']
