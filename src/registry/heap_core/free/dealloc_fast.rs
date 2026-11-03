@@ -80,7 +80,6 @@ impl HeapCore {
         if cnt >= FREE_PARK_CAP[c] as usize {
             return self.free_magazine_full_fast(c, root, block);
         }
-        bytes.write_granule(g, tag.mag_byte());
         // `cnt < FREE_PARK_CAP[c] <= TCACHE_CAP`, so `i == cnt`.
         let i = cnt & (TCACHE_CAP - 1);
         self.tcache.classes[c].slots[i] = block;
@@ -143,7 +142,6 @@ fn lane_second_chance(ptr: *mut u8, layout: Layout, heap: &mut HeapCore) {
     if cnt >= FREE_PARK_CAP[c] as usize {
         return heap.free_magazine_full_fast(c, root, block);
     }
-    bytes.write_granule(g, tag.mag_byte());
     let i = cnt & (TCACHE_CAP - 1);
     heap.tcache.classes[c].slots[i] = block;
     heap.tcache.classes[c].count = (i + 1) as u8;
