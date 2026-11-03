@@ -6,9 +6,10 @@
 //! at the owner through the cross-thread path with a stale state byte must still
 //! be returned to a bin, not refused. This test is the behaviour oracle for that
 //! set, in every build: the owner grows its heap over several segments, another
-//! thread frees every block, and the owner allocates the same amount again; a
-//! refused or lost remote free makes the owner carve new segments, so the live
-//! segment count would grow.
+//! thread frees seven blocks in eight (the eighth stays live, so no segment becomes
+//! empty and is recycled wholesale: only block-level reuse can satisfy the owner),
+//! and the owner allocates the freed amount again; a refused or lost remote free
+//! makes the owner carve new segments, so the live segment count would grow.
 //!
 //! Block addresses are not the oracle (a segment a full drain empties may be
 //! pooled or released and re-reserved); the live-segment count is. The counter
@@ -36,8 +37,8 @@ fn live_segments() -> i64 {
     s.segments_reserved_total as i64 - s.segments_released_total as i64
 }
 
-/// Grow over `segments` segments of `block`-byte blocks, free everything from
-/// another thread, allocate the same amount again; return `(peak, after)`.
+/// Grow over `segments` segments of `block`-byte blocks, free seven blocks in
+/// eight from another thread, allocate that many again; return `(peak, after)`.
 fn round_trip(block: usize, segments: usize) -> (i64, i64) {
     let layout = Layout::from_size_align(block, 16).unwrap();
     let n = segments * (SEGMENT / block);
@@ -51,6 +52,11 @@ fn round_trip(block: usize, segments: usize) -> (i64, i64) {
     );
     let peak = live_segments();
 
+    let (kept, freed): (Vec<(usize, usize)>, Vec<(usize, usize)>) =
+        first.into_iter().enumerate().partition(|(i, _)| i % 8 == 0);
+    let kept: Vec<usize> = kept.into_iter().map(|(_, p)| p).collect();
+    let freed: Vec<usize> = freed.into_iter().map(|(_, p)| p).collect();
+    let again = freed.len();
     let (tx, rx) = mpsc::channel::<Vec<usize>>();
     let freer = thread::spawn(move || {
         for p in rx.recv().unwrap() {
@@ -58,11 +64,11 @@ fn round_trip(block: usize, segments: usize) -> (i64, i64) {
             unsafe { GLOBAL.dealloc(p as *mut u8, layout) };
         }
     });
-    tx.send(first).unwrap();
+    tx.send(freed).unwrap();
     freer.join().unwrap();
 
     // SAFETY: as above.
-    let second: Vec<usize> = (0..n)
+    let second: Vec<usize> = (0..again)
         .map(|_| unsafe { GLOBAL.alloc(layout) } as usize)
         .collect();
     assert!(
@@ -70,7 +76,7 @@ fn round_trip(block: usize, segments: usize) -> (i64, i64) {
         "{block} B: reallocation failed"
     );
     let after = live_segments();
-    for p in second {
+    for p in second.into_iter().chain(kept) {
         // SAFETY: allocated above, freed once.
         unsafe { GLOBAL.dealloc(p as *mut u8, layout) };
     }
