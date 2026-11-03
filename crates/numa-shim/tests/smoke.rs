@@ -665,7 +665,13 @@ fn reserve_preferred_on_node_rejects_node_beyond_nodemask_range() {
 /// Self-skip discipline: positive NUMA policy tests run only when
 /// `current_node()` genuinely returns `Some(_)`; otherwise they skip loudly
 /// (task #1311, F8.2).
-#[cfg(all(windows, feature = "vmem-integration"))]
+///
+/// Real backend only: under `numa_shim_mock` the reservation comes from
+/// `aligned_vmem::try_reserve_aligned`, which on Windows serves an aligned
+/// span of more than 64 KiB as one exact committed region (no over-reservation,
+/// so no tail slack to probe); the VirtualAllocExNuma path this guards is not
+/// reached there.
+#[cfg(all(windows, feature = "vmem-integration", not(numa_shim_mock)))]
 #[test]
 fn reserve_preferred_on_node_commits_only_the_requested_span_not_the_whole_over_reservation() {
     use numa_shim::{reserve_preferred_on_node, NodeId};
