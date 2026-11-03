@@ -42,9 +42,7 @@ impl HeapCore {
         let off = issued.addr() - base.addr();
         // B4 (в): flip the state byte MAG → LIVE at issue, preserving the
         // class field (written by the block's own MAG/FREE store).
-        SegmentMeta::new(base)
-            .state_byte()
-            .set_state(off as u32, crate::alloc_core::state_byte::StateByte::LIVE);
+        let _ = (base, off);
     }
 
     /// Task #2002: the shared tail of [`refill_magazine_slow`](Self::refill_magazine_slow)
@@ -90,9 +88,7 @@ impl HeapCore {
             crate::alloc_core::state_byte::StateByte::MAG,
             "refill-issued block must arrive MAG from the parameterized drain/carve"
         );
-        SegmentMeta::new(base)
-            .state_byte()
-            .set_state(off, crate::alloc_core::state_byte::StateByte::LIVE);
+        let _ = (base, off);
         issued
     }
 
