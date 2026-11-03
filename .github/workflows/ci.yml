@@ -3798,6 +3798,21 @@ jobs:
           grep -F "test chunk_oom_minted_index_is_retryable_but_never_handed_out ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test negative_chunk_oom_minted_index_hands_out_without_materialisation - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
         shell: bash
+      # NL-3: reclaim and owner teardown without the per-block liveness byte (the
+      # byte only rejects misuse). The models mount the production sidecar and
+      # bitmap sources; they do not cover the raw-pointer reclaim itself.
+      - name: nl3 remote reclaim and owner teardown models
+        run: |
+          set -o pipefail
+          cargo test --release --features "alloc-global alloc-xthread internals tagged-index-stack/loom"             --test loom_nl3_remote_reclaim             --test loom_nl3_owner_teardown 2>&1 | tee "$RUNNER_TEMP/loom-nl3.log"
+          grep -F "test actual_cut_races_distinct_word_producers_and_reuses_taken_identity ... ok" "$RUNNER_TEMP/loom-nl3.log"
+          grep -F "test prepublished_same_word_pair_is_cut_as_two_records ... ok" "$RUNNER_TEMP/loom-nl3.log"
+          grep -F "test detached_record_keeps_credit_until_owner_insertion ... ok" "$RUNNER_TEMP/loom-nl3.log"
+          grep -F "test teardown_credit_survives_cut_then_cross_thread_owner_drains_and_reuses_taken_block ... ok" "$RUNNER_TEMP/loom-nl3.log"
+          grep -F "test prepublished_same_word_pair_preserves_both_outstanding_credits ... ok" "$RUNNER_TEMP/loom-nl3.log"
+          grep -F "test modeled_double_retirement_negative_control - should panic ... ok" "$RUNNER_TEMP/loom-nl3.log"
+          grep -F "test modeled_owner_double_retirement_negative_control - should panic ... ok" "$RUNNER_TEMP/loom-nl3.log"
+        shell: bash
 
   tsan:
     needs: changes

@@ -1657,6 +1657,21 @@
       "fixtures": "tests/ghost_lint_fixtures/p3_model_bind"
     },
     {
+      "id": "nl3-owner-teardown/model-bind",
+      "kind": "R8",
+      "protocol": "P3",
+      "model": "tests/loom_nl3_owner_teardown.rs",
+      "binds": [
+        { "rule": "heap-lease/drop-release" },
+        { "rule": "heap-lease/claim-free-live" },
+        { "rule": "teardown/trim-before-release" }
+      ],
+      "terms": ["model", "Release", "Acquire", "trim_for_recycle", "drop(lease)"],
+      "reason": "the owner lease constants and exercised teardown helper bind production lease orderings and trim-before-release; bitmap behavior runs from included source",
+      "tests": ["tests/loom_nl3_owner_teardown.rs"],
+      "fixtures": "tests/ghost_lint_fixtures/nl3_owner_model_bind"
+    },
+    {
       "id": "teardown/torn-before-trim",
       "kind": "R3",
       "protocol": "P3",
