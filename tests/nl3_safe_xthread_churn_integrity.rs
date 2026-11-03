@@ -29,18 +29,40 @@ use sefer_alloc::SeferAlloc;
 #[global_allocator]
 static GLOBAL: SeferAlloc = SeferAlloc::new();
 
+// Full run: four threads, thirty thousand steps, three seeds. Under miri the same
+// sequence is bounded (one seed, a few hundred steps, no medium sizes) so the
+// interpreter finishes; the oracles are unchanged.
+#[cfg(not(miri))]
 const THREADS: usize = 4;
+#[cfg(miri)]
+const THREADS: usize = 3;
+#[cfg(not(miri))]
 const ITERS: usize = 30_000;
+#[cfg(miri)]
+const ITERS: usize = 300;
 const WARMUP: usize = ITERS / 4;
+#[cfg(not(miri))]
 const POOL_CAP: usize = 48;
+#[cfg(miri)]
+const POOL_CAP: usize = 12;
+#[cfg(not(miri))]
+const MIN_CREATED: u64 = 1000;
+#[cfg(miri)]
+const MIN_CREATED: u64 = 50;
 const SEGMENT_SLACK: i64 = 8;
-const SEEDS: [u64; 3] = [
+#[cfg(not(miri))]
+const SEEDS: &[u64] = &[
     0x9E37_79B9_7F4A_7C15,
     0xD1B5_4A32_D192_ED03,
     0x2545_F491_4F6C_DD1D,
 ];
+#[cfg(miri)]
+const SEEDS: &[u64] = &[0x9E37_79B9_7F4A_7C15];
 /// Mostly small classes, a few medium sizes; no size reaches the large path.
-const SIZES: [usize; 12] = [8, 16, 24, 48, 64, 100, 256, 512, 1000, 2048, 4096, 20_000];
+#[cfg(not(miri))]
+const SIZES: &[usize] = &[8, 16, 24, 48, 64, 100, 256, 512, 1000, 2048, 4096, 20_000];
+#[cfg(miri)]
+const SIZES: &[usize] = &[8, 16, 24, 48, 64, 100, 256, 512];
 
 static CREATED: AtomicU64 = AtomicU64::new(0);
 static RETIRED: AtomicU64 = AtomicU64::new(0);
@@ -194,7 +216,7 @@ fn run(seed: u64) -> (i64, i64) {
 #[test]
 fn safe_cross_thread_churn_keeps_every_buffer_intact_and_recycled() {
     let mut growth = Vec::new();
-    for seed in SEEDS {
+    for &seed in SEEDS {
         let created0 = CREATED.load(Ordering::Relaxed);
         let retired0 = RETIRED.load(Ordering::Relaxed);
         let (at_warmup, at_end) = run(seed);
@@ -202,7 +224,7 @@ fn safe_cross_thread_churn_keeps_every_buffer_intact_and_recycled() {
         let retired = RETIRED.load(Ordering::Relaxed) - retired0;
         assert_eq!(created, retired, "seed {seed:#x}: a buffer was lost");
         assert!(
-            created > 1000,
+            created > MIN_CREATED,
             "seed {seed:#x}: only {created} buffers made"
         );
         growth.push((seed, at_end - at_warmup));

@@ -3510,7 +3510,8 @@ jobs:
     # decommit-heavy `d1_cold_storm_then_free_decommits` case stays
     # `cfg(not(miri))`, its N is size-load-bearing and cannot be capped).
     # Both single-threaded, both the production feature set (fastbin +
-    # decommit) — one invocation, two `--test` flags.
+    # decommit) — one invocation, one `--test` flag per target. NL-3 adds a
+    # bounded multi-threaded safe-churn run (cross-thread drops, grow in place).
     name: miri (fastbin)
     runs-on: ubuntu-latest
     env:
@@ -3526,6 +3527,7 @@ jobs:
           cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin internals"
           --test regression_magazine_oracles
           --test regression_bump_direct_refill
+          --test nl3_safe_xthread_churn_integrity
 
   miri-plain:
     needs: changes
