@@ -1,0 +1,4 @@
+# started on Tue Nov  3 23:56:01 2026
+
+113950123,,cycles:u,26699900,100.00,,
+512543271,,instructions:u,26699900,100.00,4.50,insn per cycle

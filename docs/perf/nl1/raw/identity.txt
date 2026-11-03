@@ -1,0 +1,18 @@
+69904939ffbef585124941120675b47e013e4b858fdb5169e3546b5c5cef5084  /mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1/.rush/g1/nl1.tar
+--- /home/user/ab/nl1src-on/Cargo.toml	2026-11-03 23:38:38.000000000 +0100
++++ /home/user/ab/nl1src-off/Cargo.toml	2026-11-03 23:55:21.286880671 +0100
+@@ -429,7 +429,7 @@
+ # state byte is neither written nor read in release builds (debug builds keep
+ # it). Included in `production` and `hardened` for now.
+ misuse-checks = []
+-production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit", "misuse-checks"]
++production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit"]
+ 
+ # R34-3 (task #522, release-stabilization audit finding B1): a REAL semver
+ # boundary for the `alloc_core` / `global` / `registry` modules, replacing
+on: --features production
+728d782d5dbaab886afa0333143b7e296bd0b956a66896d05b6d0ffcd7e88a2a  /home/user/ab/tgt-nl1on/release/examples/b4_pmu_probe
+4bba6769e2dd799a80dc9c9840d055d0c7f2fca52308a688a305498b1ac5d47d  /home/user/ab/tgt-nl1on/release/examples/g1_mt_one
+off: --features production
+483ec8a9f223d4657327140601aefb927fd8fc51c32a8e6fac3de2e544599b8a  /home/user/ab/tgt-nl1off/release/examples/b4_pmu_probe
+6765dba6b446be7346993293f5029eede7ab53de620ffc04a2fe93641224b706  /home/user/ab/tgt-nl1off/release/examples/g1_mt_one
