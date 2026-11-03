@@ -40,7 +40,6 @@ const THREADS: usize = 3;
 const ITERS: usize = 30_000;
 #[cfg(miri)]
 const ITERS: usize = 300;
-const WARMUP: usize = ITERS / 4;
 #[cfg(not(miri))]
 const POOL_CAP: usize = 48;
 #[cfg(miri)]
@@ -126,6 +125,22 @@ impl Rng {
     }
 }
 
+/// Steps per thread; `SEFER_NL3_ITERS` shortens the run for slow checkers (sanitizers).
+fn iters() -> usize {
+    std::env::var("SEFER_NL3_ITERS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(ITERS)
+}
+
+/// Seeds to run; `SEFER_NL3_SEEDS` caps the count.
+fn seed_count() -> usize {
+    std::env::var("SEFER_NL3_SEEDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(SEEDS.len())
+}
+
 fn live_segments() -> i64 {
     let s = GLOBAL.stats();
     s.segments_reserved_total as i64 - s.segments_released_total as i64
@@ -136,8 +151,10 @@ fn worker(tid: usize, seed: u64, peers: Vec<Sender<Item>>, inbox: Receiver<Item>
     let mut pool: Vec<Item> = Vec::new();
     let mut next_id = (tid as u64) << 40;
     let (mut at_warmup, mut at_end) = (0i64, 0i64);
-    for it in 0..ITERS {
-        if tid == 0 && it == WARMUP {
+    let iters = iters();
+    let warmup = iters / 4;
+    for it in 0..iters {
+        if tid == 0 && it == warmup {
             at_warmup = live_segments();
         }
         while let Ok(item) = inbox.try_recv() {
@@ -216,7 +233,7 @@ fn run(seed: u64) -> (i64, i64) {
 #[test]
 fn safe_cross_thread_churn_keeps_every_buffer_intact_and_recycled() {
     let mut growth = Vec::new();
-    for &seed in SEEDS {
+    for &seed in SEEDS.iter().take(seed_count()) {
         let created0 = CREATED.load(Ordering::Relaxed);
         let retired0 = RETIRED.load(Ordering::Relaxed);
         let (at_warmup, at_end) = run(seed);
