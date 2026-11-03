@@ -1,0 +1,4 @@
+# started on Tue Nov  3 23:56:02 2026
+
+133501420,,cycles:u,32857900,100.00,,
+512542248,,instructions:u,32857900,100.00,3.84,insn per cycle
