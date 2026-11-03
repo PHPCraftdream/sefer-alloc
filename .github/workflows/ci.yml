@@ -3853,6 +3853,8 @@ jobs:
         env:
           SEFER_STRESS_OPS: "600"
           SEFER_STRESS_MAX_THREADS: "4"
+          SEFER_NL3_ITERS: "3000"
+          SEFER_NL3_SEEDS: "1"
         run: >-
           cargo +nightly test
           -Zbuild-std
@@ -3863,6 +3865,7 @@ jobs:
           --test regression_percounter_perheap_aggregation
           --test regression_realloc_xthread_stamp
           --test stress_concurrent_boundaries
+          --test nl3_safe_xthread_churn_integrity
 
   asan:
     needs: changes
