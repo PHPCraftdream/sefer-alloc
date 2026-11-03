@@ -1976,6 +1976,14 @@ jobs:
       - name: test (--features production)
         if: ${{ !cancelled() }}
         run: cargo test --features "production internals" --no-fail-fast # #137: the recommended flagship config (fastbin + decommit)
+      # NL-3: the cross-thread reuse oracles also run optimised. A mode that drops
+      # the misuse checks is a release-profile change; its debug assertions do not
+      # exist there, so only a behaviour oracle in a release row can see a lost block.
+      - name: nl3 cross-thread reuse oracles (production internals, release)
+        if: ${{ !cancelled() }}
+        run: |
+          cargo test --features "production internals" --release --test nl3_xthread_remote_free_reuse_small_classes
+          cargo test --features "production internals" --release --test nl3_xthread_pingpong_reuse
       # B4-30 fix7: first-alloc stack budget, differential self-measurement,
       # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
       - name: b4-30 first-alloc stack budget (production internals, linux)
