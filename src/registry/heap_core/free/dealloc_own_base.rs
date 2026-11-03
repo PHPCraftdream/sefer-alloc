@@ -345,7 +345,10 @@ pub(super) fn small_free_guard(
     // byte whose state is LIVE but whose CLASS field differs — the base's
     // wrong-class Accept-branch reject. Both surface as
     // `RejectNoOpSilent` (callers treat it identically minus the counter).
+    // Without `misuse-checks` (release) the byte is neither written nor read.
+    #[cfg(any(feature = "misuse-checks", debug_assertions))]
     let byte = meta.state_byte().read(off);
+    #[cfg(any(feature = "misuse-checks", debug_assertions))]
     let expected = crate::alloc_core::state_byte::StateByte::encode(
         c,
         crate::alloc_core::state_byte::StateByte::LIVE,
@@ -353,6 +356,7 @@ pub(super) fn small_free_guard(
     if (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) != 0 {
         return SmallFreeGuard::RejectNoOpSilent;
     }
+    #[cfg(any(feature = "misuse-checks", debug_assertions))]
     if byte != expected {
         if byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::LIVE {
             return SmallFreeGuard::RejectNoOpSilent;

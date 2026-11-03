@@ -250,6 +250,11 @@ impl Node {
     /// Write a single byte `value` at `dst`. Used by the page map init.
     ///
     /// `dst` MUST be a valid writable byte inside a segment owned by us.
+    // Only the per-block state byte writes through it; without `misuse-checks` (release) it has no caller.
+    #[cfg_attr(
+        not(any(feature = "misuse-checks", debug_assertions)),
+        allow(dead_code)
+    )]
     #[inline(always)]
     pub(crate) fn write_u8(dst: *mut u8, value: u8) {
         // SAFETY: caller guarantees `dst` is a valid, exclusively-owned byte.

@@ -196,6 +196,12 @@
 //! drop a free (no-op), but this does not make arbitrary pointers safe.
 //! Invalid layouts, stale/interior/unmapped pointers, wrong layouts and
 //! double frees are unsupported caller misuse, not guaranteed no-op paths.
+//! The feature `misuse-checks` gates the per-block state byte that rejects such
+//! calls on the Small paths; it matters only to code that can pass a bad pointer
+//! (unsafe code), because safe code cannot produce one. It is in `production`
+//! and `hardened` for now; a release build without it neither writes nor reads
+//! the byte, and a misuse that the byte would have rejected is then undefined
+//! behaviour, as the `GlobalAlloc` contract allows.
 //! Debug assertions and indexing remain the documented residual panic-capable
 //! risk; this documentation and lexical guard are still not a total
 //! no-panic proof, especially for opt-in prototype capacity growth.

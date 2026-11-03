@@ -37,7 +37,7 @@ cargo add sefer-alloc --features production
 
 The `production` feature is the intended long-running bundle, pending
 terminal-sidecar acceptance. It is shorthand for
-`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit` — the drop-in
+`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + misuse-checks` — the drop-in
 `GlobalAlloc` face, terminal-sidecar cross-thread free, OS page decommit, and
 the per-thread fast-bin magazine. Without `alloc-decommit` the
 `SegmentTable`'s free-list still recycles freed large-segment slots
@@ -762,7 +762,7 @@ hard compile error in every configuration:
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
-+ primordial-lazy-commit`) the active internal tier-1 seams are **fifteen**:
++ primordial-lazy-commit + misuse-checks`) the active internal tier-1 seams are **fifteen**:
 `alloc_core::platform::{os, node, sidecar}` and
 `alloc_core::segment::segment_table::route_slots`;
 `global::{sefer_alloc::global_alloc, fallback, process_exit}`;
@@ -1528,7 +1528,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **480 integration test files**,
+needs its acceptance run. The present tree contains **481 integration test files**,
 **105 example binaries**, **34 benches**, and **24 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1538,7 +1538,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (480 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (481 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (105 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1579,9 +1579,10 @@ The full safety stack and the relationship between layers is documented in
 | `alloc-decommit` | `alloc-core` | Return empty-segment payload pages to OS + `SegmentTable` slot-recycle | off | long-running / DBMS workloads |
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
 | `fastbin` | `alloc-global + alloc-xthread` | Per-thread magazine (tcache) fast path — array-based per-class pop/push, M2 protected by hot-metadata oracles (no block-body touch) | off (on under `production`) | server-churn / mixed-size multi-threaded workloads |
-| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit` | Intended long-running bundle; terminal-sidecar acceptance and new performance gates are still pending. Explicit `start_maintenance()` is required for autonomous ownerless progress. | off | Evaluate with the current release-readiness gates before deployment. |
+| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + misuse-checks` | Intended long-running bundle; terminal-sidecar acceptance and new performance gates are still pending. Explicit `start_maintenance()` is required for autonomous ownerless progress. | off | Evaluate with the current release-readiness gates before deployment. |
 | `alloc-stats` | `alloc-core` | Per-hit **diagnostic** counters: bumps `stats().tcache_hits` (magazine) and `stats().large_cache_hits` (large cache) on each hit. Default OFF and **NOT** in `production` — the per-hit increment is compiled out of the churn/large-cache hot paths, and without it those two `stats()` fields read `0` (all other `stats()` fields are unaffected). The counter storage lives in the shared registry slot, so toggling this never changes layout/ABI. | off | you poll `stats().tcache_hits` / `.large_cache_hits` and want the real hit counts (add alongside `production`) |
 | `hardened` | `fastbin` | Opt-in own-thread interior-pointer guard, rejecting non-block starts; detected Small free-list corruption (bad head or continuation, cycle) aborts the process after a stderr line instead of returning null. It does not make duplicate or invalid foreign frees legal; the old X7 ring generation path was removed with the ring. | off | Extra misuse detection, subject to current acceptance gates. |
+| `misuse-checks` | — | Per-block state byte that rejects a contract violation on the Small paths (double free, foreign or interior pointer, a layout that differs from the allocation's). **Needed only when unsafe code can pass such a pointer; safe code cannot.** Without it a release build neither writes nor reads the byte (debug builds keep it) and such a call is undefined behaviour, as the `GlobalAlloc` contract allows. | on in `production` and `hardened` for now | unsafe code, FFI, untrusted pointers |
 | `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (legacy/deprecated; kept for backward compat and research baseline) | off | RCU / epoch experiments only |
 | `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` (`PinnedRunner` is NOT deprecated) | off | `shard == core` workloads |
 | `batch-api` | `experimental` + `alloc-core` | Tcache-aware batch alloc/dealloc (`SeferAlloc::alloc_batch`/`dealloc_batch`). **⚠ No semver guarantees** — signature/behavior may change or the feature may be removed in any release while it depends on `experimental` (R12-12) | off | you have measured a real batch-size win for your workload and accept an unstable API |

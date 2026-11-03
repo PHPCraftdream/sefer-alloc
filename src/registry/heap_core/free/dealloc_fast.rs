@@ -61,6 +61,7 @@ impl HeapCore {
         }
         let off = off as u32;
         let bytes = meta.state_byte();
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if bytes.read_granule(g) != tag.byte() {
             return lane_miss(block, layout, self);
         }
@@ -125,6 +126,7 @@ fn lane_second_chance(ptr: *mut u8, layout: Layout, heap: &mut HeapCore) {
     }
     let off = off as u32;
     let bytes = meta.state_byte();
+    #[cfg(any(feature = "misuse-checks", debug_assertions))]
     if bytes.read_granule(g) != tag.byte() {
         return lane_miss(block, layout, heap);
     }

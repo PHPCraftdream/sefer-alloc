@@ -21,7 +21,7 @@ sefer-alloc = { version = "0.3", features = ["production"] }
 ```
 
 `production` bundles six features: `alloc-global + alloc-xthread +
-alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit` —
+alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + misuse-checks` —
 the drop-in `GlobalAlloc` face, cross-thread terminal publication, empty-segment
 decommit, the per-thread magazine, the segment directory, and lazy initial
 commit of the primordial segment (disabled by `numa-aware`).
