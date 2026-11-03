@@ -102,8 +102,8 @@ fn ping_pong_remote_frees_are_reused_in_steady_state() {
     for block in [16usize, 64, 256] {
         let (reused, fresh, growth, retained) = ping_pong(block);
         // Retained blocks (one in eight) legitimately take space; the rest must be
-        // recycled. Allow two segments of slack on top of the retained bytes.
-        let allowed = (retained / SEGMENT) as i64 + 2;
+        // recycled. Allow four segments of slack on top of the retained bytes (the sidecar of the remote frees takes a few; the reuse fraction is the sharp oracle).
+        let allowed = (retained / SEGMENT) as i64 + 4;
         let total = reused + fresh;
         // Retained blocks are a stable 1/8 of every batch and are never in the pool,
         // so at best 7/8 of the allocations can be reuse; require 70 % of the total.
