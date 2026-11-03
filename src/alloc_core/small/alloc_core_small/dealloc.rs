@@ -117,8 +117,10 @@ impl AllocCore {
         // the `dbg_is_free_for` mold) still accepted zero-byte and
         // wrong-class-LIVE operands; the exact compare is strictly stronger,
         // and the accept path is unchanged for every legitimate free.
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         let byte = meta.state_byte().read(off);
         let aligned = (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) == 0;
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if !aligned
             || byte
                 != crate::alloc_core::state_byte::StateByte::encode(
@@ -126,6 +128,10 @@ impl AllocCore {
                     crate::alloc_core::state_byte::StateByte::LIVE,
                 )
         {
+            return; // Not the caller's issued block start: no-op.
+        }
+        #[cfg(not(any(feature = "misuse-checks", debug_assertions)))]
+        if !aligned {
             return; // Not the caller's issued block start: no-op.
         }
         // The user pointer supplied only the numeric offset. The table-owned

@@ -116,10 +116,13 @@ impl StateByte {
     /// Write the state byte of the granule at payload offset `off`.
     #[inline(always)]
     pub(crate) fn write(&self, off: u32, class_idx: usize, state: u8) {
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         Node::write_u8(
             Node::offset(self.bytes, (off >> GRANULE_SHIFT) as usize),
             Self::encode(class_idx, state),
         );
+        #[cfg(not(any(feature = "misuse-checks", debug_assertions)))]
+        let _ = (off, class_idx, state);
     }
 
     /// [`read`](Self::read) by granule index (`off >> 4`); the caller has
@@ -129,6 +132,11 @@ impl StateByte {
         feature = "fastbin",
         not(feature = "hardened")
     ))]
+    // Its only caller is the lane's misuse compare.
+    #[cfg_attr(
+        not(any(feature = "misuse-checks", debug_assertions)),
+        allow(dead_code)
+    )]
     #[inline(always)]
     pub(crate) fn read_granule(&self, g: usize) -> u8 {
         Node::read_u8(Node::offset(self.bytes, g))
@@ -142,7 +150,10 @@ impl StateByte {
     ))]
     #[inline(always)]
     pub(crate) fn write_granule(&self, g: usize, byte: u8) {
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         Node::write_u8(Node::offset(self.bytes, g), byte);
+        #[cfg(not(any(feature = "misuse-checks", debug_assertions)))]
+        let _ = (g, byte);
     }
 
     /// Rewrite ONLY the state bits of the granule's byte, preserving the
@@ -158,9 +169,14 @@ impl StateByte {
     )]
     #[inline(always)]
     pub(crate) fn set_state(&self, off: u32, state: u8) {
-        let p = Node::offset(self.bytes, (off >> GRANULE_SHIFT) as usize);
-        let byte = Node::read_u8(p);
-        Node::write_u8(p, (byte & 0x3F) | (state << 6));
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
+        {
+            let p = Node::offset(self.bytes, (off >> GRANULE_SHIFT) as usize);
+            let byte = Node::read_u8(p);
+            Node::write_u8(p, (byte & 0x3F) | (state << 6));
+        }
+        #[cfg(not(any(feature = "misuse-checks", debug_assertions)))]
+        let _ = (off, state);
     }
 
     /// Zero the whole array (the miri-only explicit init at the virgin

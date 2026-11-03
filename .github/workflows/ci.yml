@@ -1988,8 +1988,22 @@ jobs:
       - name: nl3 safe cross-thread churn oracle (production internals, release)
         if: ${{ !cancelled() }}
         run: cargo test --features "production internals" --release --test nl3_safe_xthread_churn_integrity
+      # NL-1: the same oracles with the state byte neither written nor read (the
+      # trusting mode); `production` minus `misuse-checks`, release only (debug builds keep the byte).
+      - name: nl3 remote-free burst reuse oracle (production without misuse-checks, release)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-global alloc-xthread alloc-decommit fastbin alloc-segment-directory primordial-lazy-commit internals" --release --test nl3_xthread_remote_free_reuse_small_classes
+      - name: nl3 ping-pong reuse oracle (production without misuse-checks, release)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-global alloc-xthread alloc-decommit fastbin alloc-segment-directory primordial-lazy-commit internals" --release --test nl3_xthread_pingpong_reuse
+      - name: nl3 safe cross-thread churn oracle (production without misuse-checks, release)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-global alloc-xthread alloc-decommit fastbin alloc-segment-directory primordial-lazy-commit internals" --release --test nl3_safe_xthread_churn_integrity
       # B4-30 fix7: first-alloc stack budget, differential self-measurement,
       # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
+      - name: nl1 state byte switch (alloc-core, no misuse-checks, release)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-core internals" --release --test nl1_misuse_checks_state_byte_switch
       - name: b4-30 first-alloc stack budget (production internals, linux)
         if: ${{ !cancelled() }}
         env:

@@ -422,7 +422,14 @@ fastbin = ["alloc-global", "alloc-xthread"]
 # `alloc-stats`, `internals`, and `bench-internals`. The allocator uses
 # authoritative sidecar terminal bits and owner maintenance, not the retired
 # per-class dirty-ring protocol.
-production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit"]
+# Checks that reject a contract violation (double free, a foreign or interior
+# pointer, a layout that differs from the allocation's): undefined behaviour under
+# the `GlobalAlloc` contract and impossible to reach from safe code. Needed only
+# when unsafe code can pass such a pointer. Without the feature the per-block
+# state byte is neither written nor read in release builds (debug builds keep
+# it). Included in `production` and `hardened` for now.
+misuse-checks = []
+production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit", "misuse-checks"]
 
 # R34-3 (task #522, release-stabilization audit finding B1): a REAL semver
 # boundary for the `alloc_core` / `global` / `registry` modules, replacing
@@ -689,7 +696,7 @@ alloc-segment-directory = ["alloc-core"]
 # here, not on the production hot path. Additive over `fastbin` (the build that
 # has the magazine free path this guards); enabling it without the magazine is a
 # no-op. See the `hardened` row in the README Features matrix.
-hardened = ["fastbin"]
+hardened = ["fastbin", "misuse-checks"]
 # NUMA-aware segment reservation: when a new segment is reserved, pages are
 # steered to the NUMA node of the calling thread
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).

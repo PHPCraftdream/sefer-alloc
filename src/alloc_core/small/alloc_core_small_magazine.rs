@@ -720,6 +720,7 @@ impl AllocCore {
         // Rejected blocks of the run (cold); accepted = run length − rejected,
         // retired once after `set_head` (B1-a: no per-accept counter update).
         let mut rejected: usize = 0;
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         let tag = class_idx as u8 + 1;
         let span: usize = bump.saturating_sub(payload_start);
 
@@ -744,10 +745,13 @@ impl AllocCore {
             // this class — its byte must carry this class's class field and
             // a LIVE or MAG state (B4 (в); the zero/unissued byte, a foreign
             // class, and an already-FREE block are all rejected/skipped).
-            let sb = meta.state_byte().read(off);
-            if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
-                rejected += 1;
-                continue;
+            #[cfg(any(feature = "misuse-checks", debug_assertions))]
+            {
+                let sb = meta.state_byte().read(off);
+                if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
+                    rejected += 1;
+                    continue;
+                }
             }
             // `ptr` identifies the offset only. Link through the stored
             // reservation root, which covers the entire free-list word.

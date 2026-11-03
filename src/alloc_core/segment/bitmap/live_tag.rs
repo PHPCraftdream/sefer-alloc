@@ -86,7 +86,8 @@ impl LiveTag {
         not(all(
             feature = "alloc-global",
             feature = "fastbin",
-            not(feature = "hardened")
+            not(feature = "hardened"),
+            any(feature = "misuse-checks", debug_assertions)
         )),
         allow(dead_code)
     )]
