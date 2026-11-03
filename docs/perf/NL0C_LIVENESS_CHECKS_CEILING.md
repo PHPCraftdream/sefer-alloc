@@ -86,16 +86,23 @@ stdout shapes, five samples per cell, and that C never exceeds B in Ir); summary
    within noise of base. No time claim is made from the T = 4 cells for C.
 4. **B at T = 4 is a real regression, not noise (spread is tight): larson4 69.5–79.7
    against base 111.6–123.8 Mops; mstress4 126.3–132.0 against 161.4–210.6.** B stops
-   maintaining the state byte on the hot lanes but leaves its readers. By code reading
-   (not confirmed with a counter): a block refilled into a magazine is stamped MAG, the
-   alloc hit no longer flips it to LIVE, so a live block keeps the MAG byte; when another
-   thread frees it, `reclaim_sidecar_record` refuses the MAG record (returns false) and
-   the block is neither linked into a bin nor returned to the owner. The allocator
-   carves fresh memory instead. This fits the pattern: T = 1 (no cross-thread frees) is
-   fine, T = 4 is not. C removes those readers and returns to base-level throughput. The takeaway is a design constraint, not a result
-   to cite as speed: **the state byte's writers and all of its readers must be removed
-   as one set under the flag; a partial removal silently leaks.** This is the first
-   mutant for task NL-3 (a stale-state variant that keeps one reader).
+   maintaining the state byte on the hot lanes but leaves its readers, so the byte goes
+   stale. **The mechanism is not confirmed.** The code-reading hypothesis was that a live
+   block keeps its MAG byte after issue and `reclaim_sidecar_record` then refuses the
+   cross-thread free of it (returns false), losing the block. It is **not observed**: the
+   NL-3 behaviour test (`tests/nl3_xthread_remote_free_reuse_small_classes.rs`: one thread
+   frees seven blocks in eight, the owner allocates again) passes on the unmodified tree
+   with 99.998 % of the remotely freed addresses handed out again, and on the B tree, in
+   the rows that compile the magazine, the debug build aborts in the lane's refinement
+   `debug_assert` before the reuse oracle runs, so B's reuse was never observed. The
+   T = 4 regression is real and unexplained: a burst of 1.8 million remote frees may take a
+   path (ring overflow into the
+   bitmap sidecar) that the larson / mstress steady state does not. Treat "writers and all
+   readers go as one set" as the design rule it is on its own merits (the byte has
+   readers), not as an explained leak. C removes the readers and returns to base-level
+   throughput.
+   Next step recorded in task NL-3: a ping-pong cross-thread test within the ring
+   capacity, run in a release row, to localise the loss.
 5. **C is a ceiling, not a design.** The chain path (`small_free_guard`, reached on
    memo/`own_cache` misses and on Large/odd routes) still compares the state byte exactly
    and, with a byte the hot lanes no longer maintain, would refuse legitimate frees. The
