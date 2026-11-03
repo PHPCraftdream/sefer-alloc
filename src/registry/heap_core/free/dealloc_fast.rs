@@ -61,9 +61,6 @@ impl HeapCore {
         }
         let off = off as u32;
         let bytes = meta.state_byte();
-        if bytes.read_granule(g) != tag.byte() {
-            return lane_miss(block, layout, self);
-        }
         // Refinement: the lane accepts only what the chain's guard accepts.
         debug_assert_eq!(
             crate::alloc_core::size_classes::SizeClasses::class_for(size.max(MIN_BLOCK), align),
@@ -125,9 +122,6 @@ fn lane_second_chance(ptr: *mut u8, layout: Layout, heap: &mut HeapCore) {
     }
     let off = off as u32;
     let bytes = meta.state_byte();
-    if bytes.read_granule(g) != tag.byte() {
-        return lane_miss(block, layout, heap);
-    }
     debug_assert_eq!(
         crate::alloc_core::size_classes::SizeClasses::class_for(
             layout.size().max(MIN_BLOCK),
