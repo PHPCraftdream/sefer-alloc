@@ -22,6 +22,7 @@
 ))]
 
 use std::alloc::{GlobalAlloc, Layout};
+use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread;
 
@@ -39,7 +40,7 @@ fn live_segments() -> i64 {
 
 /// Grow over `segments` segments of `block`-byte blocks, free seven blocks in
 /// eight from another thread, allocate that many again; return `(peak, after)`.
-fn round_trip(block: usize, segments: usize) -> (i64, i64) {
+fn round_trip(block: usize, segments: usize) -> (i64, i64, String) {
     let layout = Layout::from_size_align(block, 16).unwrap();
     let n = segments * (SEGMENT / block);
     // SAFETY: nonzero size; every block is freed exactly once below.
@@ -57,6 +58,8 @@ fn round_trip(block: usize, segments: usize) -> (i64, i64) {
     let kept: Vec<usize> = kept.into_iter().map(|(_, p)| p).collect();
     let freed: Vec<usize> = freed.into_iter().map(|(_, p)| p).collect();
     let again = freed.len();
+    let freed_set: HashSet<usize> = freed.iter().copied().collect();
+    let before = GLOBAL.stats();
     let (tx, rx) = mpsc::channel::<Vec<usize>>();
     let freer = thread::spawn(move || {
         for p in rx.recv().unwrap() {
@@ -76,22 +79,30 @@ fn round_trip(block: usize, segments: usize) -> (i64, i64) {
         "{block} B: reallocation failed"
     );
     let after = live_segments();
+    let reused = second.iter().filter(|p| freed_set.contains(p)).count();
+    let detail = format!(
+        "reused addresses {reused}/{again}; stats before {before:?}; after {:?}",
+        GLOBAL.stats()
+    );
     for p in second.into_iter().chain(kept) {
         // SAFETY: allocated above, freed once.
         unsafe { GLOBAL.dealloc(p as *mut u8, layout) };
     }
-    (peak, after)
+    (peak, after, detail)
 }
 
 #[test]
 fn remote_frees_of_hot_small_classes_are_reused() {
+    let mut failures = Vec::new();
     for block in [16usize, 64, 256] {
         // 8 segments' worth: a total loss of the remote frees grows the heap by 8
         // segments, far above the slack of 2 (16 B is about 2 million blocks).
-        let (peak, after) = round_trip(block, 8);
-        assert!(
-            after <= peak + 2,
-            "{block} B: owner grew instead of reusing remote frees: live segments {peak} -> {after}"
-        );
+        let (peak, after, detail) = round_trip(block, 8);
+        if after > peak + 2 {
+            failures.push(format!(
+                "{block} B: owner grew instead of reusing remote frees: live segments {peak} -> {after}; {detail}"
+            ));
+        }
     }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
