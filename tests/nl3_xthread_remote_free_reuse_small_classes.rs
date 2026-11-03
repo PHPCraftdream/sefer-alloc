@@ -55,10 +55,15 @@ fn round_trip(block: usize, segments: usize) -> (i64, f64, String) {
         "{block} B: allocation failed"
     );
 
-    let (kept, freed): (Vec<(usize, usize)>, Vec<(usize, usize)>) =
-        first.into_iter().enumerate().partition(|(i, _)| i % 8 == 0);
-    let kept: Vec<usize> = kept.into_iter().map(|(_, p)| p).collect();
-    let freed: Vec<usize> = freed.into_iter().map(|(_, p)| p).collect();
+    let mut kept = Vec::with_capacity(n / 8 + 1);
+    let mut freed = Vec::with_capacity(n - n / 8);
+    for (i, p) in first.into_iter().enumerate() {
+        if i % 8 == 0 {
+            kept.push(p)
+        } else {
+            freed.push(p)
+        }
+    }
     let again = freed.len();
     let freed_set: HashSet<usize> = freed.iter().copied().collect();
     let before = GLOBAL.stats();
