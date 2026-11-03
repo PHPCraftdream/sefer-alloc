@@ -4614,6 +4614,11 @@ jobs:
         env:
           LSAN_OPTIONS: suppressions=${{ github.workspace }}/fuzz/lsan.supp:print_suppressions=1
         run: cargo +nightly fuzz run heap_core_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
+      # NL-3: safe-only operation sequences with cross-thread handoff; the oracle is
+      # the whole-buffer pattern and exactly-once retirement.
+      - name: fuzz run safe_global_alloc_ops (10 min)
+        working-directory: fuzz
+        run: cargo +nightly fuzz run safe_global_alloc_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
 
   docs:
     needs: changes

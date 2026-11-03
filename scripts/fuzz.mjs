@@ -40,6 +40,7 @@ const KNOWN_TARGETS = new Set([
   'region_ops',
   'global_alloc_ops',
   'heap_core_ops',
+  'safe_global_alloc_ops',
 ]);
 
 const args = process.argv.slice(2);

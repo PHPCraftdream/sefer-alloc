@@ -56,6 +56,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "safe_global_alloc_ops"
+path = "fuzz_targets/safe_global_alloc_ops.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "heap_core_ops"
 path = "fuzz_targets/heap_core_ops.rs"
 test = false
