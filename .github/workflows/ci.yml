@@ -1984,6 +1984,7 @@ jobs:
         run: |
           cargo test --features "production internals" --release --test nl3_xthread_remote_free_reuse_small_classes
           cargo test --features "production internals" --release --test nl3_xthread_pingpong_reuse
+          cargo test --features "production internals" --release --test nl3_safe_xthread_churn_integrity
       # B4-30 fix7: first-alloc stack budget, differential self-measurement,
       # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
       - name: b4-30 first-alloc stack budget (production internals, linux)
