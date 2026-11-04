@@ -43,8 +43,13 @@ import { PER_PR_ROWS, rowToCargoArgs, rowLabel } from './check-matrix.mjs';
 
 const rawArgs = process.argv.slice(2);
 const kindFilter = new Set();
+// `--keep-going`: run every row and (for test rows) every test binary, then report all
+// failures at once instead of stopping at the first. One CI pass names every red row.
+let keepGoing = false;
 for (let i = 0; i < rawArgs.length; i++) {
-  if (rawArgs[i] === '--kind') {
+  if (rawArgs[i] === '--keep-going') {
+    keepGoing = true;
+  } else if (rawArgs[i] === '--kind') {
     const val = rawArgs[i + 1];
     if (!val) {
       console.error('[check-matrix] --kind requires a value (clippy|check|test)');
@@ -65,11 +70,15 @@ console.log(`[check-matrix] repo: ${REPO_ROOT}`);
 if (kindFilter.size) {
   console.log(`[check-matrix] kind filter: ${[...kindFilter].join(', ')}`);
 }
-console.log(`[check-matrix] running ${rows.length} row(s) — fails fast\n`);
+console.log(
+  `[check-matrix] running ${rows.length} row(s) — ${keepGoing ? 'keeps going, reports every failure' : 'fails fast'}\n`,
+);
 
 let allOk = true;
+const failedRows = [];
 for (const row of rows) {
   const args = rowToCargoArgs(row);
+  if (keepGoing && args[0] === 'test') args.splice(1, 0, '--no-fail-fast');
   console.log(`\n============================================================`);
   console.log(`  [${row.id}] ${rowLabel(row)}`);
   console.log(`  ${row.note}`);
@@ -86,14 +95,17 @@ for (const row of rows) {
   if (code !== 0) {
     console.log(`\n[check-matrix] FAIL at row: ${row.id} (exit ${code})`);
     allOk = false;
-    break;
+    failedRows.push(row.id);
+    if (!keepGoing) break;
   }
   console.log(`\n[check-matrix] OK: ${row.id}`);
 }
 
 console.log(`\n============================================================`);
 console.log(
-  allOk ? '[check-matrix] ALL GREEN' : '[check-matrix] FAILED',
+  allOk
+    ? '[check-matrix] ALL GREEN'
+    : `[check-matrix] FAILED: ${failedRows.join(', ')}`,
 );
 console.log(`============================================================`);
 process.exit(allOk ? 0 : 1);

@@ -107,7 +107,7 @@ fn seg_base(ptr: *mut u8) -> usize {
 // P appears TWICE in the freelist → re-refill issues it twice → RED.
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "alloc-xthread")]
+#[cfg(all(feature = "alloc-xthread", feature = "misuse-checks"))]
 #[test]
 fn a_ring_df_block_is_skipped_by_flush() {
     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
