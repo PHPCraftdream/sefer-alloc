@@ -53,8 +53,7 @@ fn verify(buf: &[u8], id: u64, what: &str) {
 
 /// Walks one buffer along the ladder (grow and shrink through every band).
 fn walk(id: u64) -> Vec<u8> {
-    let mut v: Vec<u8> = Vec::with_capacity(LADDER[0]);
-    v.resize(LADDER[0], 0);
+    let mut v: Vec<u8> = vec![0; LADDER[0]];
     fill(&mut v, id, 0);
     for &next in &LADDER[1..] {
         let old = v.len();
