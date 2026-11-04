@@ -18,7 +18,7 @@
         "exit": 0,
         "stdoutRegex": [
           "test result: ok. [0-9]+ passed; 0 failed",
-          "test free_list_reuses_freed_blocks \.\.\. ok"
+          "test free_list_reuses_freed_blocks \\.\\.\\. ok"
         ]
       }
     }
@@ -46,7 +46,7 @@
         "expect": {
           "exitNonZero": true,
           "stdoutRegex": [
-            "test free_list_reuses_freed_blocks \.\.\. FAILED|process didn't exit successfully"
+            "test free_list_reuses_freed_blocks \\.\\.\\. FAILED|process didn't exit successfully"
           ]
         }
       }
@@ -54,7 +54,7 @@
     "expect": {
       "exitNonZero": true,
       "stdoutRegex": [
-        "test free_list_reuses_freed_blocks \.\.\. FAILED|process didn't exit successfully"
+        "test free_list_reuses_freed_blocks \\.\\.\\. FAILED|process didn't exit successfully"
       ]
     }
   }
