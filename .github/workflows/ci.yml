@@ -2094,6 +2094,11 @@ jobs:
       # (the step above is fastbin-without-decommit). This step is the
       # flagship+paranoid combo so the misuse-guard runs alongside the
       # decommit (M6) recommit cycle.
+      # Each suite below builds the whole tests/ tree for another feature set; the
+      # artefacts of the four builds together exceed the runner's disk ("No space left on device").
+      - name: free build artefacts of the previous suite
+        if: ${{ !cancelled() }}
+        run: rm -rf target
       - name: test (--features "production hardened")
         if: ${{ !cancelled() }}
         run: cargo test --features "production hardened internals" --no-fail-fast
@@ -2111,6 +2116,9 @@ jobs:
       # other row here -- the same "written but never executed" class of gap
       # R13-5 (task #275) closed for other combinations.
       # `internals` added (R34-3/task #522) — same whole-suite rationale.
+      - name: free build artefacts of the previous suite
+        if: ${{ !cancelled() }}
+        run: rm -rf target
       - name: test (--features "hardened batch-api")
         if: ${{ !cancelled() }}
         run: cargo test --features "hardened batch-api internals" --no-fail-fast
@@ -2136,6 +2144,9 @@ jobs:
       # `internals` added (R34-3/task #522): `hardened` implies `fastbin`
       # implies `alloc-global`, and this repo's own white-box `tests/`
       # suite reaches `alloc_core`/`global`/`registry` directly.
+      - name: free build artefacts of the previous suite
+        if: ${{ !cancelled() }}
+        run: rm -rf target
       - name: test (--features "hardened medium-classes")
         if: ${{ !cancelled() }}
         run: cargo test --features "hardened medium-classes internals" --no-fail-fast
