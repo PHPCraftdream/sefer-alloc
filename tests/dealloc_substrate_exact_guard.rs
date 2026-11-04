@@ -21,7 +21,11 @@
 //!    probe pushes `p` onto the 32 B bin → the 32 B storm reissues it
 //!    (`f15_wrong_class_free_is_a_noop`).
 
-#![cfg(all(feature = "alloc-core", feature = "internals"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "internals",
+    feature = "misuse-checks"
+))]
 
 use core::alloc::Layout;
 
@@ -41,6 +45,7 @@ fn l64() -> Layout {
 /// Passes the old alignment-only intuition (it IS 16-aligned) but its byte
 /// is the interior granule's И1-zero — and without the START-alignment term
 /// even `p+1..p+15` would index the start's LIVE byte.
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn f15_interior_free_is_a_noop() {
     let mut ac = AllocCore::new().expect("primordial");
@@ -101,6 +106,7 @@ fn f15_interior_free_is_a_noop() {
 /// Never-issued address: far beyond the fresh segment's bump, its state byte
 /// is zero (invariant И1). The former state-only-FREE guard ACCEPTED it
 /// (zero is "not FREE") and pushed it onto the bin — free-list corruption.
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn f15_never_issued_free_is_a_noop() {
     let mut ac = AllocCore::new().expect("primordial");
@@ -140,6 +146,7 @@ fn f15_never_issued_free_is_a_noop() {
 /// Wrong-class free of a LIVE block at the substrate: `encode(c16, LIVE) !=
 /// encode(c32, LIVE)` → no-op; the block stays issued and the 32 B storm
 /// never reissues it; the correct free afterwards still works.
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn f15_wrong_class_free_is_a_noop() {
     let mut ac = AllocCore::new().expect("primordial");

@@ -749,6 +749,10 @@ impl AllocCore {
             {
                 let sb = meta.state_byte().read(off);
                 if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
+                    crate::alloc_core::state_byte::StateByte::shadow_reject(
+                        b"sefer-alloc: misuse check rejected a free in safe mode (magazine flush)
+",
+                    );
                     rejected += 1;
                     continue;
                 }

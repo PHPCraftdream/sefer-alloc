@@ -77,6 +77,7 @@ fn m1_alloc_zeroed_is_all_zero() {
 // M2 — no double-free / no UAF: never corrupts, never UB.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn m2_double_free_is_noop() {
     let mut a = AllocCore::new().unwrap();

@@ -1,0 +1,81 @@
+E0_METADATA {"id":"R6a-M1","head":"82b6137ddcc82ecd90a56fabb1a13c1271d6b8ad","tree":"7f0cb44661bb0d116b4ce22014587bdd4abfe9fa","setup":""}
+E0_METADATA {"id":"R6a-M1","head":"82b6137ddcc82ecd90a56fabb1a13c1271d6b8ad","tree":"7f0cb44661bb0d116b4ce22014587bdd4abfe9fa","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R6a-M1.json","recipe_sha256":"743cba0dcb5c74de13a178a70ba8d41d16486b175db96db20573e0652c39cd44","registry_activation_hash":"4a23f7349a65c8bc3d5472e9e03d2c89612df4a0f44fbf2d5a3c8e9cbf0560c3"}
+
+E0_STEP {"id":"R6a-M1","kind":"baseline","name":"alloc_core_invariants baseline","argv":["cargo","test","--locked","--features","alloc-core internals","--test","alloc_core_invariants"],"env":{},"expect":{"exit":0,"stdoutRegex":["test result: ok. [0-9]+ passed; 0 failed","test free_list_reuses_freed_blocks \\.\\.\\. ok"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m aligned-vmem v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/aligned-vmem)
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.14s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/alloc_core_invariants.rs (target/debug/deps/alloc_core_invariants-888e0b3bb27d19ed)
+
+running 12 tests
+test free_list_reuses_freed_blocks ... ok
+test m1_alloc_zeroed_is_all_zero ... ok
+test m2_foreign_pointer_dealloc_is_noop ... ok
+test m1_large_allocations_are_aligned_and_writable ... ok
+test m3_simultaneous_allocations_do_not_overlap ... ok
+test m1_small_allocations_are_aligned_and_writable ... ok
+test m4_large_alignment_uses_dedicated_segment ... ok
+test m4_size_class_satisfies_size_and_align ... ok
+test realloc_preserves_prefix_bytes ... ok
+test segment_of_finds_our_segment_base ... ok
+test many_large_allocs_then_free ... ok
+test m5_churn_keeps_allocator_consistent ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBhbGlnbmVkLXZtZW0gdjAuMi4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvYWxpZ25lZC12bWVtKQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlZmVyLWFsbG9jIHYwLjMuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MpChtbMW0bWzkybSAgICBGaW5pc2hlZBtbMG0gYHRlc3RgIHByb2ZpbGUgW3Vub3B0aW1pemVkICsgZGVidWdpbmZvXSB0YXJnZXQocykgaW4gMS4xNHMKG1sxbRtbMzNtd2FybmluZxtbMG06IHRoZSBmb2xsb3dpbmcgcGFja2FnZXMgY29udGFpbiBjb2RlIHRoYXQgd2lsbCBiZSByZWplY3RlZCBieSBhIGZ1dHVyZSB2ZXJzaW9uIG9mIFJ1c3Q6IHByb2MtbWFjcm8tZXJyb3IyIHYyLjAuMQobWzFtG1s5Mm1ub3RlG1swbTogdG8gc2VlIHdoYXQgdGhlIHByb2JsZW1zIHdlcmUsIHVzZSB0aGUgb3B0aW9uIGAtLWZ1dHVyZS1pbmNvbXBhdC1yZXBvcnRgLCBvciBydW4gYGNhcmdvIHJlcG9ydCBmdXR1cmUtaW5jb21wYXRpYmlsaXRpZXMgLS1pZCAxYAobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL2FsbG9jX2NvcmVfaW52YXJpYW50cy5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvYWxsb2NfY29yZV9pbnZhcmlhbnRzLTg4OGUwYjNiYjI3ZDE5ZWQpCgpydW5uaW5nIDEyIHRlc3RzCnRlc3QgZnJlZV9saXN0X3JldXNlc19mcmVlZF9ibG9ja3MgLi4uIG9rCnRlc3QgbTFfYWxsb2NfemVyb2VkX2lzX2FsbF96ZXJvIC4uLiBvawp0ZXN0IG0yX2ZvcmVpZ25fcG9pbnRlcl9kZWFsbG9jX2lzX25vb3AgLi4uIG9rCnRlc3QgbTFfbGFyZ2VfYWxsb2NhdGlvbnNfYXJlX2FsaWduZWRfYW5kX3dyaXRhYmxlIC4uLiBvawp0ZXN0IG0zX3NpbXVsdGFuZW91c19hbGxvY2F0aW9uc19kb19ub3Rfb3ZlcmxhcCAuLi4gb2sKdGVzdCBtMV9zbWFsbF9hbGxvY2F0aW9uc19hcmVfYWxpZ25lZF9hbmRfd3JpdGFibGUgLi4uIG9rCnRlc3QgbTRfbGFyZ2VfYWxpZ25tZW50X3VzZXNfZGVkaWNhdGVkX3NlZ21lbnQgLi4uIG9rCnRlc3QgbTRfc2l6ZV9jbGFzc19zYXRpc2ZpZXNfc2l6ZV9hbmRfYWxpZ24gLi4uIG9rCnRlc3QgcmVhbGxvY19wcmVzZXJ2ZXNfcHJlZml4X2J5dGVzIC4uLiBvawp0ZXN0IHNlZ21lbnRfb2ZfZmluZHNfb3VyX3NlZ21lbnRfYmFzZSAuLi4gb2sKdGVzdCBtYW55X2xhcmdlX2FsbG9jc190aGVuX2ZyZWUgLi4uIG9rCnRlc3QgbTVfY2h1cm5fa2VlcHNfYWxsb2NhdG9yX2NvbnNpc3RlbnQgLi4uIG9rCgp0ZXN0IHJlc3VsdDogb2suIDEyIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDFzCgo=
+
+E0_STEP {"id":"R6a-M1","kind":"mutant","name":"free-list link written off by one (M1)","argv":["cargo","test","--locked","--features","alloc-core internals","--test","alloc_core_invariants","free_list_reuses_freed_blocks","--","--exact"],"env":{},"expect":{"exitNonZero":true,"stdoutRegex":["test free_list_reuses_freed_blocks \\.\\.\\. FAILED|process didn't exit successfully"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.07s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/alloc_core_invariants.rs (target/debug/deps/alloc_core_invariants-888e0b3bb27d19ed)
+
+running 1 test
+node: free-list continuation out of range or misaligned
+[1m[91merror[0m: test failed, to rerun pass `--test alloc_core_invariants`
+
+Caused by:
+  process didn't exit successfully: `/home/runner/work/sefer-alloc/sefer-alloc/target/debug/deps/alloc_core_invariants-888e0b3bb27d19ed free_list_reuses_freed_blocks --exact` (signal: 6, SIGABRT: process abort signal)
+
+E0_STEP_END {"code":101,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDEuMDdzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9hbGxvY19jb3JlX2ludmFyaWFudHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2FsbG9jX2NvcmVfaW52YXJpYW50cy04ODhlMGIzYmIyN2QxOWVkKQoKcnVubmluZyAxIHRlc3QKbm9kZTogZnJlZS1saXN0IGNvbnRpbnVhdGlvbiBvdXQgb2YgcmFuZ2Ugb3IgbWlzYWxpZ25lZAobWzFtG1s5MW1lcnJvchtbMG06IHRlc3QgZmFpbGVkLCB0byByZXJ1biBwYXNzIGAtLXRlc3QgYWxsb2NfY29yZV9pbnZhcmlhbnRzYAoKQ2F1c2VkIGJ5OgogIHByb2Nlc3MgZGlkbid0IGV4aXQgc3VjY2Vzc2Z1bGx5OiBgL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvdGFyZ2V0L2RlYnVnL2RlcHMvYWxsb2NfY29yZV9pbnZhcmlhbnRzLTg4OGUwYjNiYjI3ZDE5ZWQgZnJlZV9saXN0X3JldXNlc19mcmVlZF9ibG9ja3MgLS1leGFjdGAgKHNpZ25hbDogNiwgU0lHQUJSVDogcHJvY2VzcyBhYm9ydCBzaWduYWwpCg==
+E0_METADATA {"id":"R6a-M1","kind":"restored","sha256":"915cfbf2e4032be8976b0782f924f09bfb3bda2095382b88e67ea62a78d6d414"}
+
+E0_STEP {"id":"R6a-M1","kind":"restored-baseline","name":"alloc_core_invariants baseline","argv":["cargo","test","--locked","--features","alloc-core internals","--test","alloc_core_invariants"],"env":{},"expect":{"exit":0,"stdoutRegex":["test result: ok. [0-9]+ passed; 0 failed","test free_list_reuses_freed_blocks \\.\\.\\. ok"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.09s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/alloc_core_invariants.rs (target/debug/deps/alloc_core_invariants-888e0b3bb27d19ed)
+
+running 12 tests
+test m1_alloc_zeroed_is_all_zero ... ok
+test free_list_reuses_freed_blocks ... ok
+test m1_large_allocations_are_aligned_and_writable ... ok
+test m1_small_allocations_are_aligned_and_writable ... ok
+test m2_foreign_pointer_dealloc_is_noop ... ok
+test m4_large_alignment_uses_dedicated_segment ... ok
+test m4_size_class_satisfies_size_and_align ... ok
+test m3_simultaneous_allocations_do_not_overlap ... ok
+test realloc_preserves_prefix_bytes ... ok
+test many_large_allocs_then_free ... ok
+test segment_of_finds_our_segment_base ... ok
+test m5_churn_keeps_allocator_consistent ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDEuMDlzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9hbGxvY19jb3JlX2ludmFyaWFudHMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL2FsbG9jX2NvcmVfaW52YXJpYW50cy04ODhlMGIzYmIyN2QxOWVkKQoKcnVubmluZyAxMiB0ZXN0cwp0ZXN0IG0xX2FsbG9jX3plcm9lZF9pc19hbGxfemVybyAuLi4gb2sKdGVzdCBmcmVlX2xpc3RfcmV1c2VzX2ZyZWVkX2Jsb2NrcyAuLi4gb2sKdGVzdCBtMV9sYXJnZV9hbGxvY2F0aW9uc19hcmVfYWxpZ25lZF9hbmRfd3JpdGFibGUgLi4uIG9rCnRlc3QgbTFfc21hbGxfYWxsb2NhdGlvbnNfYXJlX2FsaWduZWRfYW5kX3dyaXRhYmxlIC4uLiBvawp0ZXN0IG0yX2ZvcmVpZ25fcG9pbnRlcl9kZWFsbG9jX2lzX25vb3AgLi4uIG9rCnRlc3QgbTRfbGFyZ2VfYWxpZ25tZW50X3VzZXNfZGVkaWNhdGVkX3NlZ21lbnQgLi4uIG9rCnRlc3QgbTRfc2l6ZV9jbGFzc19zYXRpc2ZpZXNfc2l6ZV9hbmRfYWxpZ24gLi4uIG9rCnRlc3QgbTNfc2ltdWx0YW5lb3VzX2FsbG9jYXRpb25zX2RvX25vdF9vdmVybGFwIC4uLiBvawp0ZXN0IHJlYWxsb2NfcHJlc2VydmVzX3ByZWZpeF9ieXRlcyAuLi4gb2sKdGVzdCBtYW55X2xhcmdlX2FsbG9jc190aGVuX2ZyZWUgLi4uIG9rCnRlc3Qgc2VnbWVudF9vZl9maW5kc19vdXJfc2VnbWVudF9iYXNlIC4uLiBvawp0ZXN0IG01X2NodXJuX2tlZXBzX2FsbG9jYXRvcl9jb25zaXN0ZW50IC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxMiBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjAxcwoK

@@ -358,6 +358,10 @@ pub(super) fn small_free_guard(
     }
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
     if byte != expected {
+        crate::alloc_core::state_byte::StateByte::shadow_reject(
+            b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard)
+",
+        );
         if byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::LIVE {
             return SmallFreeGuard::RejectNoOpSilent;
         }

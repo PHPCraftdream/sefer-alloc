@@ -4,7 +4,9 @@
 //! neither writes nor reads it in release; debug builds keep it. This pins both
 //! halves: the byte of an issued block is nonzero and becomes FREE after the
 //! free exactly when it is tracked, and stays zero otherwise. It also pins that
-//! `production` and `hardened` carry the feature.
+//! `production` and `hardened` carry the feature. NL-3b: a debug build without the
+//! feature keeps the byte, and a rejected free there aborts (safe code never reaches
+//! the check); every other build treats it as the no-op it always was.
 #![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 #[cfg(all(feature = "production", not(feature = "misuse-checks")))]
@@ -54,4 +56,71 @@ fn state_byte_is_written_and_cleared_iff_tracked() {
     // The freed block is reissued either way.
     let q = ac.alloc(layout);
     assert_eq!(q, p, "the LIFO bin reissues the freed block");
+}
+
+const CHILD: &str = "NL1_SHADOW_CHILD";
+const SHADOW_ABORTS: bool = cfg!(all(debug_assertions, not(feature = "misuse-checks")));
+// A release build without the feature neither writes nor reads the byte: a double free
+// there corrupts the free list (undefined by contract), so it has no defined outcome to pin.
+const NO_DEFINED_OUTCOME: bool = cfg!(all(not(debug_assertions), not(feature = "misuse-checks")));
+
+#[test]
+fn rejected_free_aborts_only_in_debug_without_the_feature() {
+    if NO_DEFINED_OUTCOME {
+        return;
+    }
+    if std::env::var_os(CHILD).is_some() {
+        let layout = Layout::from_size_align(64, 16).unwrap();
+        let mut ac = AllocCore::new().expect("primordial");
+        let p = ac.alloc(layout);
+        assert!(!p.is_null());
+        // SAFETY: the first free is valid; the second one is the contract violation
+        // under test (a double free), which the build either rejects or aborts on.
+        unsafe {
+            ac.dealloc(p, layout);
+            ac.dealloc(p, layout);
+        }
+        println!("NL1_SHADOW_CHILD_SURVIVED");
+        return;
+    }
+    // Under a cross runner (qemu) the test binary cannot be exec'd directly: skip there.
+    let exe = std::env::current_exe().expect("exe");
+    let listed = std::process::Command::new(&exe).arg("--list").output();
+    if !listed.is_ok_and(|o| {
+        o.status.success()
+            && String::from_utf8_lossy(&o.stdout).contains("rejected_free_aborts_only_in_debug")
+    }) {
+        return;
+    }
+    let out = std::process::Command::new(exe)
+        .arg("rejected_free_aborts_only_in_debug_without_the_feature")
+        .arg("--exact")
+        .arg("--nocapture")
+        .env(CHILD, "1")
+        .output()
+        .expect("spawn child");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if SHADOW_ABORTS {
+        assert!(
+            !out.status.success(),
+            "double free must abort:
+{stdout}
+{stderr}"
+        );
+        assert!(
+            stderr.contains("misuse check rejected a free in safe mode"),
+            "abort names the shadow site:
+{stderr}"
+        );
+        assert!(!stdout.contains("NL1_SHADOW_CHILD_SURVIVED"));
+    } else {
+        assert!(
+            out.status.success(),
+            "double free is a no-op here:
+{stdout}
+{stderr}"
+        );
+        assert!(stdout.contains("NL1_SHADOW_CHILD_SURVIVED"), "{stdout}");
+    }
 }

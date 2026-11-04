@@ -398,6 +398,7 @@ fn t_refill_zero() {
 // is a no-op (M2 double-free guard in dealloc_small catches it).
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn t_flush_double_free_is_noop() {
     let mut core = AllocCore::new().unwrap();

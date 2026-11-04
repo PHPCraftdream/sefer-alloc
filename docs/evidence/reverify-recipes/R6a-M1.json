@@ -1,0 +1,61 @@
+{
+  "id": "R6a-M1",
+  "registryActivationHash": "4a23f7349a65c8bc3d5472e9e03d2c89612df4a0f44fbf2d5a3c8e9cbf0560c3",
+  "steps": [
+    {
+      "name": "alloc_core_invariants baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-core internals",
+        "--test",
+        "alloc_core_invariants"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test result: ok. [0-9]+ passed; 0 failed",
+          "test free_list_reuses_freed_blocks \\.\\.\\. ok"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/alloc_core/platform/node.rs",
+    "find": "        unsafe { ptr.write_unaligned(next) };\n",
+    "replace": "        unsafe { ptr.write_unaligned(next.wrapping_add(1)) };\n",
+    "steps": [
+      {
+        "name": "free-list link written off by one (M1)",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "alloc-core internals",
+          "--test",
+          "alloc_core_invariants",
+          "free_list_reuses_freed_blocks",
+          "--",
+          "--exact"
+        ],
+        "expect": {
+          "exitNonZero": true,
+          "stdoutRegex": [
+            "test free_list_reuses_freed_blocks \\.\\.\\. FAILED|process didn't exit successfully"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "test free_list_reuses_freed_blocks \\.\\.\\. FAILED|process didn't exit successfully"
+      ]
+    }
+  }
+}

@@ -261,6 +261,7 @@ fn t2_fresh_small_segment_state_bytes_read_zero_for_untouched_classes() {
 /// (both
 /// failure modes this test would catch, proving it is not vacuous the same
 /// way `double_free_guard.rs` is not vacuous against ITS guard).
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn t3_double_free_guard_still_correct_on_freshly_reserved_segment() {
     let mut ac = AllocCore::new().expect("primordial");

@@ -238,14 +238,14 @@ export const PER_PR_ROWS = [
   {
     id: 'test-r8-minimal-global',
     kind: 'test',
-    features: 'alloc-global internals bench-internals',
-    note: 'Terminal global allocation, owner sidecar misses and autonomous maintenance without fastbin/decommit/directory.',
+    features: 'alloc-global internals bench-internals misuse-checks',
+    note: 'Terminal global allocation, owner sidecar misses and autonomous maintenance without fastbin/decommit/directory. misuse-checks: the duplicate-record cases need the rejecting guards.',
   },
   {
     id: 'test-r8-fastbin-no-decommit',
     kind: 'test',
-    features: 'fastbin internals bench-internals',
-    note: 'Magazine terminal publication/consumption and ownerless Large retirement without decommit.',
+    features: 'fastbin internals bench-internals misuse-checks',
+    note: 'Magazine terminal publication/consumption and ownerless Large retirement without decommit. misuse-checks: the duplicate-record cases need the rejecting guards.',
   },
   {
     id: 'test-r8-production',

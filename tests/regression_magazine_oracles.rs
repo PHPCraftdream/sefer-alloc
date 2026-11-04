@@ -59,6 +59,7 @@ impl Drop for SerialGuard {
 /// (`for i in 0..cnt { if slots[c][i] == ptr { return; } }`) in
 /// `heap_core/free/dealloc.rs::dealloc_own_thread` → RED (the block is pushed twice, so the
 /// next two allocs return the SAME pointer).
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn in_magazine_double_free_is_noop() {
     let _g = SerialGuard::acquire();
@@ -98,6 +99,7 @@ fn in_magazine_double_free_is_noop() {
 /// (`if SegmentMeta::new(base).alloc_bitmap().is_free(off) { return; }`) in
 /// `heap_core/free/dealloc.rs::dealloc_own_thread` → RED (the flushed block ends up in BOTH
 /// the magazine and the BinTable free list → issued twice).
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn flushed_double_free_is_noop() {
     let _g = SerialGuard::acquire();
@@ -170,6 +172,7 @@ fn flushed_double_free_is_noop() {
 /// lives at word0 (offset 0). word1 (offset 8) is dead space in a free block,
 /// so overwriting it does not corrupt the free list — it only simulates user
 /// data the pre-Э6 filter would have tripped over.
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn flushed_double_free_with_garbage_word1_is_noop() {
     let _g = SerialGuard::acquire();

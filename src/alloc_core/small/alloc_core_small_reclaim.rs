@@ -52,10 +52,18 @@ impl AllocCore {
         {
             let sb = meta.state_byte().read(offset);
             if (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
+                crate::alloc_core::state_byte::StateByte::shadow_reject(
+                    b"sefer-alloc: misuse check rejected a remote free in safe mode (reclaim FREE)
+",
+                );
                 return false;
             }
             #[cfg(feature = "fastbin")]
             if (sb >> 6) == crate::alloc_core::state_byte::StateByte::MAG {
+                crate::alloc_core::state_byte::StateByte::shadow_reject(
+                    b"sefer-alloc: misuse check rejected a remote free in safe mode (reclaim MAG)
+",
+                );
                 return false;
             }
         }

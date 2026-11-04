@@ -73,6 +73,7 @@ fn m1_alloc_zeroed_is_all_zero() {
 // M2 -- double-free is safe.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn m2_double_free_does_not_crash() {
     let mut h = AllocCore::new().unwrap();

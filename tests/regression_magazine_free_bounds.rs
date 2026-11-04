@@ -1,9 +1,10 @@
-#![cfg(all(feature = "internals", feature = "fastbin"))]
+#![cfg(all(feature = "internals", feature = "fastbin", feature = "misuse-checks"))]
 
 use core::alloc::Layout;
 use sefer_alloc::alloc_core::SegmentLayout;
 use sefer_alloc::registry::{bootstrap, HeapRegistry};
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn magazine_free_rejects_metadata_and_uncarved_offsets() {
     let _ = bootstrap::ensure();
@@ -57,6 +58,7 @@ fn magazine_free_rejects_metadata_and_uncarved_offsets() {
     core::mem::forget(lease);
 }
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn small_magazine_free_rejects_metadata_and_uncarved_offsets() {
     let _ = bootstrap::ensure();

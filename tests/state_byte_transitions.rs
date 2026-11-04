@@ -387,6 +387,7 @@ fn ts1_decommit_reset_zeroes_state_bytes() {
 
 /// Substrate double free: second `dealloc_small` is a no-op and the dumped
 /// state bytes are unchanged.
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn ts1_reject_double_free_byte_unchanged() {
     let mut ac = AllocCore::new().expect("primordial");
@@ -458,6 +459,7 @@ fn ts1_reject_metadata_offset_byte_unchanged() {
 
 /// Out-of-bump offset (past the carve frontier — post-reset stale pointer
 /// shape): the M-1 guard rejects as a no-op, bytes unchanged.
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn ts1_reject_out_of_bump_byte_unchanged() {
     let mut ac = AllocCore::new().expect("primordial");

@@ -1660,7 +1660,7 @@ jobs:
       # CLAUDE.md structure limits: at most 7 entries per src directory and 1000
       # lines per code file; existing debt is ratcheted by docs/structure_limits_baseline.csv.
       - run: node scripts/verify-structure-limits.mjs
-      - run: node scripts/run-check-matrix.mjs --kind check --kind test
+      - run: node scripts/run-check-matrix.mjs --keep-going --kind check --kind test
       # R30-5: the generated "feature ABSENT" compile-check enumeration for
       # every conditionally-registered iai arm in benches/perf_gate_iai.rs —
       # the mechanical, automatic form of the stub rule R29-16 violated by
@@ -2004,6 +2004,12 @@ jobs:
       - name: nl1 state byte switch (alloc-core, no misuse-checks, release)
         if: ${{ !cancelled() }}
         run: cargo test --features "alloc-core internals" --release --test nl1_misuse_checks_state_byte_switch
+      - name: nl1 shadow reject (alloc-core, no misuse-checks, debug)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-core internals" --test nl1_misuse_checks_state_byte_switch
+      - name: nl1 shadow reject (alloc-core, misuse-checks, debug)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-core internals misuse-checks" --test nl1_misuse_checks_state_byte_switch
       - name: b4-30 first-alloc stack budget (production internals, linux)
         if: ${{ !cancelled() }}
         env:
@@ -2413,7 +2419,7 @@ jobs:
       - name: Non-fastbin batch reclamation
         shell: bash
         run: |
-          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache -- --skip fallback_direct_free_before_service_and_busy_terminal_publication 2>&1 | tee "$RUNNER_TEMP/global-non-fastbin.log"
+          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals misuse-checks" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache -- --skip fallback_direct_free_before_service_and_busy_terminal_publication 2>&1 | tee "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
@@ -2638,7 +2644,7 @@ jobs:
       # (no zero-fill guarantee); these tests assert correctness holds regardless.
       # `internals` added (R34-3/task #522): both test files reach
       # `sefer_alloc::alloc_core::AllocCore` directly.
-      - run: cargo test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test decommit_soak --test r6_terminal_owner_drain --no-fail-fast
+      - run: cargo test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals misuse-checks" --test decommit_soak --test r6_terminal_owner_drain --no-fail-fast # duplicate/stale sidecar records are rejected only with misuse-checks
       # Task #856/W14-2: aligned-vmem crate macOS test coverage for the REAL
       # Darwin backend (mmap/madvise/MADV_DONTNEED) on real macOS hardware.
       # NOTE: historically this explicit list had to EXCLUDE `mock` — a

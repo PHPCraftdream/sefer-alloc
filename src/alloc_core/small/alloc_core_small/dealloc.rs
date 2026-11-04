@@ -128,6 +128,10 @@ impl AllocCore {
                     crate::alloc_core::state_byte::StateByte::LIVE,
                 )
         {
+            crate::alloc_core::state_byte::StateByte::shadow_reject(
+                b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small)
+",
+            );
             return; // Not the caller's issued block start: no-op.
         }
         #[cfg(not(any(feature = "misuse-checks", debug_assertions)))]
