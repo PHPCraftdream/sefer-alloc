@@ -60,6 +60,8 @@ const FEATURES = {
   loom_r11_ph4a_heap_lease: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_depot_recycle_handoff: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_ph4b_publish_recycle_drain: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
+  loom_nl3_remote_reclaim: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
+  loom_nl3_owner_teardown: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_sharded: 'experimental,tagged-index-stack/loom',
   loom_epoch: 'experimental,tagged-index-stack/loom',
   loom_r11_epoch_false_full: 'experimental,tagged-index-stack/loom',
