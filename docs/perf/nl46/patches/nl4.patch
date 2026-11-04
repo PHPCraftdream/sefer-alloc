@@ -1,0 +1,60 @@
+diff --git a/src/alloc_core/small/alloc_core_small/dealloc.rs b/src/alloc_core/small/alloc_core_small/dealloc.rs
+index f81d501f..67a7a290 100644
+--- a/src/alloc_core/small/alloc_core_small/dealloc.rs
++++ b/src/alloc_core/small/alloc_core_small/dealloc.rs
+@@ -75,6 +75,7 @@ impl AllocCore {
+         } else {
+             SegLayout::small_meta_end()
+         };
++        #[cfg(any(feature = "misuse-checks", debug_assertions))]
+         if (off as usize) < payload_start {
+             return;
+         }
+@@ -93,6 +94,7 @@ impl AllocCore {
+         // so non-decommit builds had NO upper bound — a stale/garbled/foreign
+         // `off >= bump` value sailed straight through. Corruption containment
+         // must not depend on the decommit feature; unconditional now.
++        #[cfg(any(feature = "misuse-checks", debug_assertions))]
+         if (off as usize) >= meta.bump_of() {
+             return;
+         }
+diff --git a/src/registry/heap_core/free/dealloc_fast.rs b/src/registry/heap_core/free/dealloc_fast.rs
+index 781b00af..5995987b 100644
+--- a/src/registry/heap_core/free/dealloc_fast.rs
++++ b/src/registry/heap_core/free/dealloc_fast.rs
+@@ -56,6 +56,7 @@ impl HeapCore {
+         // floored to granules: `g < bump >> 4` implies `off < bump`.
+         let g = off.rotate_right(MIN_BLOCK_SHIFT);
+         let meta = SegmentMeta::new(root);
++        #[cfg(any(feature = "misuse-checks", debug_assertions))]
+         if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
+             return lane_miss(block, layout, self);
+         }
+@@ -121,6 +122,7 @@ fn lane_second_chance(ptr: *mut u8, layout: Layout, heap: &mut HeapCore) {
+     }
+     let g = off.rotate_right(MIN_BLOCK_SHIFT);
+     let meta = SegmentMeta::new(root);
++    #[cfg(any(feature = "misuse-checks", debug_assertions))]
+     if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
+         return lane_miss(block, layout, heap);
+     }
+diff --git a/src/registry/heap_core/free/dealloc_own_base.rs b/src/registry/heap_core/free/dealloc_own_base.rs
+index 344f74c1..4576e54a 100644
+--- a/src/registry/heap_core/free/dealloc_own_base.rs
++++ b/src/registry/heap_core/free/dealloc_own_base.rs
+@@ -317,6 +317,7 @@ pub(super) fn small_free_guard(
+     } else {
+         SegmentLayout::small_meta_end()
+     };
++    #[cfg(any(feature = "misuse-checks", debug_assertions))]
+     if (off as usize) < payload_start {
+         return SmallFreeGuard::RejectNoOp;
+     }
+@@ -373,6 +374,7 @@ pub(super) fn small_free_guard(
+         }
+         return SmallFreeGuard::RejectNoOp;
+     }
++    #[cfg(any(feature = "misuse-checks", debug_assertions))]
+     if (off as usize) >= meta.bump_of() {
+         return SmallFreeGuard::RejectNoOp;
+     }

@@ -1,0 +1,4 @@
+# started on Wed Nov  4 14:09:18 2026
+
+98974776,,cycles:u,23716800,100.00,,
+438115326,,instructions:u,23716800,100.00,4.43,insn per cycle

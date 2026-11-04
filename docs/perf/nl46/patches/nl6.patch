@@ -1,0 +1,12 @@
+diff --git a/src/alloc_core/small/alloc_core_small_reclaim.rs b/src/alloc_core/small/alloc_core_small_reclaim.rs
+index b5b282a9..770dfc6d 100644
+--- a/src/alloc_core/small/alloc_core_small_reclaim.rs
++++ b/src/alloc_core/small/alloc_core_small_reclaim.rs
+@@ -37,6 +37,7 @@ impl AllocCore {
+         };
+         let block_size = SizeClasses::block_size(class_idx);
+         let mut meta = SegmentMeta::new(base);
++        #[cfg(any(feature = "misuse-checks", debug_assertions))]
+         if off < payload_start
+             || !off.is_multiple_of(block_size)
+             || off
