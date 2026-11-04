@@ -61,7 +61,8 @@ export const MIRI_TARGETS = [
   // pending-bit delivery and TLS thread-exit release. plain stays because
   // the file is plain-compatible (no strict-provenance requirement) and its
   // preemption=0.5 coverage of the start gate schedule is retained.
-  ...['sb', 'tb'].map((borrows) => green('miri-core', 'b4_r1_pin_cache_miri', 'alloc-global internals bench-internals', {
+  // The TreeBorrows cell runs in its own job (miri-core-tb): it is the longest step of the workflow.
+  ...['sb', 'tb'].map((borrows) => green(borrows === 'tb' ? 'miri-core-tb' : 'miri-core', 'b4_r1_pin_cache_miri', 'alloc-global internals bench-internals', {
     borrows, args: ['--', 'narrow'],
     marker: '[b4_r1_pin_cache_miri] COMPLETE narrow',
   })),

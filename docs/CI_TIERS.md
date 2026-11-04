@@ -122,6 +122,7 @@ the smoke row covers those scenarios.
 | `loom-xthread` | loom (alloc-core alloc-xthread) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `miri-alloc-core` | miri (alloc-core) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `miri-core` | miri (core) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
+| `miri-core-tb` | miri (core, pin cache TreeBorrows) | `seam` (same as `miri-core`) |
 | `miri-fastbin` | miri (fastbin) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `miri-plain` | miri-plain | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `tsan` | thread-sanitizer | `seam`: source/crates/Cargo, loom/miri tests and manifests |
