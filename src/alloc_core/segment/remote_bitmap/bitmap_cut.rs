@@ -28,7 +28,7 @@ impl BitmapCut<'_> {
         if encoded == 0 || usize::from(encoded) > SMALL_CLASS_COUNT {
             fatal(b"bitmap_cut: invalid sidecar class encoding\n");
         }
-        self.bits &= self.bits - 1;
+        self.bits = 0;
         Some(BitmapRecord {
             offset: (granule * MIN_BLOCK) as u32,
             class: encoded - 1,
