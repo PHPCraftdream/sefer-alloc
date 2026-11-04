@@ -3285,13 +3285,6 @@ jobs:
           cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
           grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
         shell: bash
-      - name: b4-r1 pin cache narrow provenance under TreeBorrows
-        env:
-          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
-        run: |
-          set -o pipefail
-          cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
-          grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
       - name: installed Box R1-01 cap-frame flush witness (SB)
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
@@ -3487,6 +3480,29 @@ jobs:
         run: cargo miri test --locked --features "std" --test regression_w3_stats_aliasing_miri
       - name: class_leaves_publication_miri
         run: cargo miri test --locked --features "alloc-core" --test class_leaves_publication_miri
+
+  # The TreeBorrows run of the pin-cache cell alone takes about half an hour; as a step of
+  # `miri-core` it set the wall clock of the whole workflow. Its own job runs beside the rest.
+  miri-core-tb:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
+    name: miri (core, pin cache TreeBorrows)
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      RUSTC_WRAPPER: ""
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - name: b4-r1 pin cache narrow provenance under TreeBorrows
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+        run: |
+          set -o pipefail
+          cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
+          grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
 
   miri-alloc-core:
     needs: changes
