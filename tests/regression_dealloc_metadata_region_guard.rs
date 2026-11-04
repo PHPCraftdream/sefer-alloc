@@ -43,7 +43,11 @@
 //! exercises the exact H-1 site under audit without needing `pub(super)`
 //! access to `dealloc_small` itself.
 
-#![cfg(all(feature = "alloc-core", feature = "internals"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "internals",
+    feature = "misuse-checks"
+))]
 
 use core::alloc::Layout;
 

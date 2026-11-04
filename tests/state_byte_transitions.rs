@@ -438,6 +438,7 @@ fn ts1_reject_interior_byte_unchanged() {
 
 /// Metadata offset (lands inside the segment's own metadata region): the
 /// H-1 guard rejects as a no-op, bytes unchanged.
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn ts1_reject_metadata_offset_byte_unchanged() {
     let mut ac = AllocCore::new().expect("primordial");
