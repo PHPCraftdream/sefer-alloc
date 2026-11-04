@@ -1,0 +1,4 @@
+# started on Wed Nov  4 14:09:11 2026
+
+98380201,,cycles:u,23801100,100.00,,
+438108813,,instructions:u,23801100,100.00,4.45,insn per cycle

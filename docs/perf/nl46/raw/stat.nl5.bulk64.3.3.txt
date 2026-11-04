@@ -1,0 +1,4 @@
+# started on Wed Nov  4 14:09:14 2026
+
+106805283,,cycles:u,26344600,100.00,,
+460636876,,instructions:u,26344600,100.00,4.31,insn per cycle

@@ -56,6 +56,7 @@ impl HeapCore {
         // floored to granules: `g < bump >> 4` implies `off < bump`.
         let g = off.rotate_right(MIN_BLOCK_SHIFT);
         let meta = SegmentMeta::new(root);
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
             return lane_miss(block, layout, self);
         }
@@ -121,6 +122,7 @@ fn lane_second_chance(ptr: *mut u8, layout: Layout, heap: &mut HeapCore) {
     }
     let g = off.rotate_right(MIN_BLOCK_SHIFT);
     let meta = SegmentMeta::new(root);
+    #[cfg(any(feature = "misuse-checks", debug_assertions))]
     if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
         return lane_miss(block, layout, heap);
     }

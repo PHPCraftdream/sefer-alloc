@@ -1,0 +1,22 @@
+a8508b824ef8f44f5fc43ac822ae7a7dec969c31e64763155c70ecf4eabd3d13  /mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1/.rush/g1/nl46/main.tar
+base: --features production (misuse-checks off)
+a6bf249e63f3b488f3ba5f06596fda63a48a5567fc15067c254fe7a7d33e92a0  /home/user/ab/tgt-nl46base/release/examples/b4_pmu_probe
+c38df137664a56986f998c4bb8fdf412f04670fd22e8b9196665f2a3dc6123a7  /home/user/ab/tgt-nl46base/release/examples/g1_mt_one
+nl4: patch nl4 sha256 c55090d6f8092c4bb46b4ebf6c0cd51c9d81f353231cbe4eb7085c05d0b3b4c8
+nl4: --features production (misuse-checks off)
+87dff8cdedd57bcf5c92cc52f2134195301d45de67bda0672409b5f10b63a22f  /home/user/ab/tgt-nl46nl4/release/examples/b4_pmu_probe
+eb10fa828e130ba2b123a128d2516bf2644f2d09f2aa7de952b98ba99189d94f  /home/user/ab/tgt-nl46nl4/release/examples/g1_mt_one
+nl5: patch nl5 sha256 9ee8abe9a22b258de6705cd8b3c4235332e130e6763ed6def8d2ab4020ea6920
+nl5: --features production (misuse-checks off)
+e49593687973ef6f06c7c3408f64198d0198ca89c47810687dc3030dd511f27f  /home/user/ab/tgt-nl46nl5/release/examples/b4_pmu_probe
+b3d4ddd3756ef6431f56131c7fc2100427d2de667a52bfeced68661a94313758  /home/user/ab/tgt-nl46nl5/release/examples/g1_mt_one
+nl6: patch nl6 sha256 9847b356def8893139a3aba0f53002723cf4d8cc3cf4aed2b0c44c393ecef5bb
+nl6: --features production (misuse-checks off)
+ccd37c381fd0c5b7994d201163254e7c0a16da52cb45bdfc4d969441792758de  /home/user/ab/tgt-nl46nl6/release/examples/b4_pmu_probe
+92e47dce5902b2bfd3bdc2cae132bca7e3e776ab6f163ab0fd9af371cdb7bc19  /home/user/ab/tgt-nl46nl6/release/examples/g1_mt_one
+all: patch nl4 sha256 c55090d6f8092c4bb46b4ebf6c0cd51c9d81f353231cbe4eb7085c05d0b3b4c8
+all: patch nl5 sha256 9ee8abe9a22b258de6705cd8b3c4235332e130e6763ed6def8d2ab4020ea6920
+all: patch nl6 sha256 9847b356def8893139a3aba0f53002723cf4d8cc3cf4aed2b0c44c393ecef5bb
+all: --features production (misuse-checks off)
+a41b679ec0ba5760f19badae359449f9a6854aa3823de3b1f81b7bf10944e3dd  /home/user/ab/tgt-nl46all/release/examples/b4_pmu_probe
+24c6efc39d0e51299b4ed2d75027aade8ecd57aaec532bcfeca2fa5b46b85cbb  /home/user/ab/tgt-nl46all/release/examples/g1_mt_one

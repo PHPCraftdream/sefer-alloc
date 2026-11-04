@@ -1973,12 +1973,21 @@ jobs:
       - name: test (--features "alloc-global alloc-xthread fastbin")
         if: ${{ !cancelled() }}
         run: cargo test --features "alloc-global alloc-xthread fastbin internals" --no-fail-fast
+      # Each suite builds the whole tests/ tree for another feature set; the artefacts of the
+      # debug suites above plus the production suite exceed the runner's disk ("No space left on
+      # device", seen as a lost job without logs), so the build is dropped between them.
+      - name: free build artefacts of the previous suite
+        if: ${{ !cancelled() }}
+        run: rm -rf target
       - name: test (--features production)
         if: ${{ !cancelled() }}
         run: cargo test --features "production internals" --no-fail-fast # #137: the recommended flagship config (fastbin + decommit)
       # NL-3: the cross-thread reuse oracles also run optimised. A mode that drops
       # the misuse checks is a release-profile change; its debug assertions do not
       # exist there, so only a behaviour oracle in a release row can see a lost block.
+      - name: free build artefacts of the production suite
+        if: ${{ !cancelled() }}
+        run: rm -rf target
       - name: nl3 remote-free burst reuse oracle (production internals, release)
         if: ${{ !cancelled() }}
         run: cargo test --features "production internals" --release --test nl3_xthread_remote_free_reuse_small_classes
