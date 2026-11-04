@@ -7,6 +7,7 @@
 //! lane's reject boundaries through the second-chance exit.
 //! `exact-object-proto` aborts on the deliberately invalid frees below, so it
 //! is excluded; `hardened` compiles the lane out.
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 #![cfg(all(
     feature = "alloc-global",
     feature = "fastbin",
@@ -141,6 +142,7 @@ fn memo_miss_with_own_cache_hit_is_accepted_by_the_second_chance() {
     release(rest);
 }
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn rejects_through_the_second_chance_match_the_chain() {
     let _g = SERIAL.lock().unwrap();
