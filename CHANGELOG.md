@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reclaim guards, the realloc and Large-free address checks. Same tree, same run, instructions retired:
   bulk 16 B and 64 B -14.39 %, larson T=1/T=4 -7.12 % / -6.83 %, mstress T=1/T=4 -9.67 % / -8.85 %
   (`docs/perf/NL9_DEFAULT_FLIP.md`). One benchmark rises, a producer window of cross-thread frees by +3 Ir per free
-  (tracked as NL-12).
+  (a register-allocation artifact of the benchmark loop, see `docs/perf/IAI_BASELINE.md`).
 - [behavior] A program whose unsafe code passes such a pointer now has undefined behaviour in `production`, as the
   contract allows. Add `misuse-checks` (or use `hardened`) to keep the checks; a debug build keeps them and aborts on
   a hit. The README feature table and `docs/ARCHITECTURE.md` say it is needed only for unsafe code.
