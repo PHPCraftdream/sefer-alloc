@@ -70,10 +70,15 @@ ${keyRows.join('\n')}
 arm gave the same ${worst.b.ir} Ir. The bench is the producer window of ${FREES} cross-thread frees; the standalone probe
 \`docs/perf/nl9/xfree_probe.rs\` (callgrind, \`--toggle-collect='*producer*'\`, raw \`docs/perf/nl9/raw/xfree.{on,off}.txt\`)
 reproduces the delta exactly (${xon} → ${xoff}, ${xoff - xon} Ir = ${perOp} Ir per foreign free). No check was removed on that path (the
-producer-side class check in \`SidecarBitmap::publish\` stays, NL-11); the extra instructions sit in the inlined \`dealloc\` entry
-(\`dealloc_fast.rs\` and \`global_alloc.rs\`, +1 Ir per free each), i.e. a code-shape shift in the prologue of the foreign-free path,
-not the cost of a check. It is outweighed on every other cell (cross-thread larson/mstress T=4 fall by 6.8 % and 8.8 % Ir in
-\`NL9_DEFAULT_FLIP.md\`), and it is filed as a follow-up to recover (task NL-12) rather than hidden.
+producer-side class check in \`SidecarBitmap::publish\` stays, NL-11). **Cause (task NL-12, closed without a code change):** register
+allocation of the caller's loop, not library code. The listing of the probe's \`producer\`
+(\`docs/perf/nl9/raw/xfree_producer.{on,off}.s\`) shows that with the checks compiled out LLVM hoists three GOT-loaded table
+addresses out of the loop (arm \`on\`: one) and runs out of callee-saved registers, so the call to \`publish_foreign\` is wrapped by
+three spill stores and three reloads instead of one store, one reload and two register moves: ${perOp} more moves per free,
+exactly the measured delta. The shape belongs to a tight loop of consecutive frees in the harness (loop-invariant hoisting does
+not apply to a single \`dealloc\` call site in ordinary code) and moves with any change of the inlined body. The same cross-thread
+frees inside the real allocator workloads fall (larson/mstress T=4 -6.8 % and -8.8 % Ir in \`NL9_DEFAULT_FLIP.md\`), so no library change
+is warranted; the rise stays in the table as measured.
 `;
 writeFileSync(new URL("NL9_IAI_BASELINE_SECTION.md", perf), md); /* appended to IAI_BASELINE.md by hand, then removed */
 console.log(md);
