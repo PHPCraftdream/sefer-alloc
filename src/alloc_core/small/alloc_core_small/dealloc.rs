@@ -5,9 +5,17 @@
 use core::ptr::NonNull;
 
 use crate::alloc_core::node::Node;
-use crate::alloc_core::segment_header::{
-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
-};
+use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
+// `SegmentHeader`: the payload-start bound (not run by a release build without `misuse-checks`) and the
+// directory publication.
+#[cfg(any(
+    feature = "misuse-checks",
+    debug_assertions,
+    feature = "alloc-segment-directory"
+))]
+use crate::alloc_core::segment_header::SegmentHeader;
+#[cfg(any(feature = "misuse-checks", debug_assertions))]
+use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentKind};
 // H1 (task #167): `SizeClasses::block_size` is consulted only by the
 // `hardened`-gated interior-pointer guard below — gate the import
 // identically so non-hardened builds stay warning-clean.
@@ -69,14 +77,23 @@ impl AllocCore {
         // primordial segments carry the extra registry/hash/free-list
         // regions on top of the small footprint, so they use the larger
         // `primordial_meta_end()`.
-        let kind = SegmentHeader::kind_at(base);
-        let payload_start = if kind == SegmentKind::Primordial {
-            SegLayout::primordial_meta_end()
-        } else {
-            SegLayout::small_meta_end()
-        };
-        if (off as usize) < payload_start {
-            return;
+        // Without `misuse-checks` (release) neither this bound nor the `bump` one below runs: only a
+        // pointer the allocator never issued can fail them.
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
+        {
+            let kind = SegmentHeader::kind_at(base);
+            let payload_start = if kind == SegmentKind::Primordial {
+                SegLayout::primordial_meta_end()
+            } else {
+                SegLayout::small_meta_end()
+            };
+            if (off as usize) < payload_start {
+                crate::alloc_core::state_byte::StateByte::shadow_reject(
+                    b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small payload start)
+",
+                );
+                return;
+            }
         }
         // Phase 35 (M6 decommit) — the post-decommit stale-free guard. When a
         // segment empties it is decommitted AND reset: `bump` returns to
@@ -93,7 +110,12 @@ impl AllocCore {
         // so non-decommit builds had NO upper bound — a stale/garbled/foreign
         // `off >= bump` value sailed straight through. Corruption containment
         // must not depend on the decommit feature; unconditional now.
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if (off as usize) >= meta.bump_of() {
+            crate::alloc_core::state_byte::StateByte::shadow_reject(
+                b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small bump)
+",
+            );
             return;
         }
         // B4 (в) + F2/F15 (review): O(1) EXACT substrate free guard via the

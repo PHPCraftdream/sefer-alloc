@@ -16,7 +16,14 @@ use crate::alloc_core::segment_header::SegmentMeta;
 // the `medium-classes` promotion builds always had — so this import carries
 // the module's own gate, not a feature predicate.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-use crate::alloc_core::segment_header::{BlockKind, Layout as SegmentLayout};
+use crate::alloc_core::segment_header::BlockKind;
+// Used only by the payload-start bound, which a release build without `misuse-checks` does not run.
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    any(feature = "misuse-checks", debug_assertions)
+))]
+use crate::alloc_core::segment_header::Layout as SegmentLayout;
 // R18-3: `SegmentHeader` is now used ONLY in branch (A)'s `hardened`
 // layout-consistency check (`large_size_at`/`large_align_at`), which lives
 // inside `medium_promotion_reachable!`'s gated block — Ph3b replaced the two
@@ -311,14 +318,24 @@ pub(super) fn small_free_guard(
     // rationale (order is load-bearing: in-magazine, THEN stale-free, THEN
     // flushed-bitmap).
     let off = (ptr as usize - base as usize) as u32;
+    // Without `misuse-checks` (release) the payload-start and `bump` bounds below, like the state byte,
+    // only reject a pointer the allocator never issued.
+    #[cfg(any(feature = "misuse-checks", debug_assertions))]
     let meta = SegmentMeta::new(base);
-    let payload_start = if matches!(&kind, BlockKind::Primordial) {
-        SegmentLayout::primordial_meta_end()
-    } else {
-        SegmentLayout::small_meta_end()
-    };
-    if (off as usize) < payload_start {
-        return SmallFreeGuard::RejectNoOp;
+    #[cfg(any(feature = "misuse-checks", debug_assertions))]
+    {
+        let payload_start = if matches!(&kind, BlockKind::Primordial) {
+            SegmentLayout::primordial_meta_end()
+        } else {
+            SegmentLayout::small_meta_end()
+        };
+        if (off as usize) < payload_start {
+            crate::alloc_core::state_byte::StateByte::shadow_reject(
+                b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard payload start)
+",
+            );
+            return SmallFreeGuard::RejectNoOp;
+        }
     }
     // B4 variant (в): the M2 double-free oracles collapse into ONE check on
     // the authoritative STATE BYTE. The alignment check above (H1, hardened)
@@ -373,7 +390,12 @@ pub(super) fn small_free_guard(
         }
         return SmallFreeGuard::RejectNoOp;
     }
+    #[cfg(any(feature = "misuse-checks", debug_assertions))]
     if (off as usize) >= meta.bump_of() {
+        crate::alloc_core::state_byte::StateByte::shadow_reject(
+            b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard bump)
+",
+        );
         return SmallFreeGuard::RejectNoOp;
     }
 
