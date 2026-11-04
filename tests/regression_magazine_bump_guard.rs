@@ -35,7 +35,8 @@
     feature = "internals",
     feature = "alloc-global",
     feature = "fastbin",
-    feature = "alloc-decommit"
+    feature = "alloc-decommit",
+    feature = "misuse-checks"
 ))]
 
 use std::alloc::Layout;

@@ -22,6 +22,7 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use crate::alloc_core::AllocCore;
 
 use crate::registry::heap_core::HeapCore;
+#[cfg(any(feature = "misuse-checks", debug_assertions))]
 use crate::registry::segment_route::RouteKind;
 
 // `MEDIUM_REALLOC_PROMOTION_THRESHOLD` moved to the sibling `dealloc`
@@ -444,11 +445,19 @@ impl HeapCore {
         // leg's read is bounded by the segment's live commit frontier
         // below (R6-T50).
         {
-            let Some(route) = crate::registry::segment_route::RouteDirectory::global().lookup(ptr)
-            else {
+            #[cfg_attr(
+                not(any(feature = "misuse-checks", debug_assertions)),
+                allow(unused_variables)
+            )]
+            let Some(route) = crate::registry::segment_route::RouteDirectory::global().lookup(ptr) else {
                 return core::ptr::null_mut();
             };
+            #[cfg(any(feature = "misuse-checks", debug_assertions))]
             if !route.contains_payload(ptr, old_layout.size()) {
+                crate::alloc_core::state_byte::StateByte::shadow_reject(
+                    b"sefer-alloc: misuse check rejected a foreign realloc outside the payload in safe mode
+",
+                );
                 return core::ptr::null_mut();
             }
             // R6-T50 (R6-MS-3): bound the move leg's read by the segment's
@@ -484,28 +493,36 @@ impl HeapCore {
             // Primordial segments commit the whole span eagerly, so only
             // the payload START is checked: metadata bytes (header, page
             // map, bins, bitmaps) are not a routable block start.
-            let root = route.root();
-            let frontier_ok = match route.kind() {
-                RouteKind::Large => {
-                    let committed_end =
-                        root.addr().checked_add(SegmentHeader::span_usable_at(root));
-                    match ptr.addr().checked_add(old_layout.size()) {
-                        Some(read_end) => committed_end.is_some_and(|end| read_end <= end),
-                        None => false,
+            #[cfg(any(feature = "misuse-checks", debug_assertions))]
+            {
+                let root = route.root();
+                let frontier_ok = match route.kind() {
+                    RouteKind::Large => {
+                        let committed_end =
+                            root.addr().checked_add(SegmentHeader::span_usable_at(root));
+                        match ptr.addr().checked_add(old_layout.size()) {
+                            Some(read_end) => committed_end.is_some_and(|end| read_end <= end),
+                            None => false,
+                        }
                     }
+                    RouteKind::Small => {
+                        ptr.addr()
+                            >= root.addr()
+                                + crate::alloc_core::segment_header::Layout::small_meta_end()
+                    }
+                    RouteKind::Primordial => {
+                        ptr.addr()
+                            >= root.addr()
+                                + crate::alloc_core::segment_header::Layout::primordial_meta_end()
+                    }
+                };
+                if !frontier_ok {
+                    crate::alloc_core::state_byte::StateByte::shadow_reject(
+                        b"sefer-alloc: misuse check rejected a foreign realloc past the commit frontier in safe mode
+",
+                    );
+                    return core::ptr::null_mut();
                 }
-                RouteKind::Small => {
-                    ptr.addr()
-                        >= root.addr() + crate::alloc_core::segment_header::Layout::small_meta_end()
-                }
-                RouteKind::Primordial => {
-                    ptr.addr()
-                        >= root.addr()
-                            + crate::alloc_core::segment_header::Layout::primordial_meta_end()
-                }
-            };
-            if !frontier_ok {
-                return core::ptr::null_mut();
             }
             let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
                 Ok(l) => l,

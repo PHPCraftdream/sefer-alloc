@@ -88,11 +88,15 @@ Full safety invariants for both APIs: [INVARIANTS.md](INVARIANTS.md)
 invariants describe `SeferAlloc`'s own segment substrate only and do not
 apply to `Region<T>`, which has none).
 
-**Misuse checks.** The feature `misuse-checks` (in `production` and `hardened` for
-now) gates the per-block state byte that rejects a contract violation (double
-free, foreign or interior pointer, wrong layout) on the Small paths. It is needed
-only for unsafe code that can pass such a pointer; safe code cannot. Without it a
-release build neither writes nor reads the byte (debug builds keep it).
+**Misuse checks.** The feature `misuse-checks` (in `hardened`, not in `production`)
+gates the checks that reject a contract violation (double free, foreign or
+interior pointer, wrong layout, an old layout larger than the block): the
+per-block state byte, the payload-start and bump bounds, the flush and reclaim
+guards and the realloc and Large-free address checks. They are needed only for
+unsafe code that can pass such a pointer; safe code cannot. Without the feature a
+release build neither writes nor reads the byte and runs none of these checks, and
+such a call is undefined behaviour, as the `GlobalAlloc` contract allows (debug
+builds keep the checks and abort on a hit).
 
 **Additional opt-in features** (default OFF, NOT part of `production` — see the
 feature table in [README.md](../README.md#feature-flags)):

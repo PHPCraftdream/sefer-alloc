@@ -191,6 +191,10 @@ impl EntryHandle {
     pub(in super::super) fn root(&self) -> *mut u8 {
         self.entry().root.load(Ordering::Relaxed)
     }
+    #[cfg_attr(
+        not(any(feature = "misuse-checks", debug_assertions)),
+        allow(dead_code)
+    )]
     pub(in super::super) fn contains_payload(&self, addr: usize, size: usize) -> bool {
         let entry = self.entry();
         addr >= entry.payload

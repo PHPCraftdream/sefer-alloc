@@ -14,7 +14,11 @@
 //! no concurrent tests in this file, no global-allocator installation (the
 //! `tests/r19_large_interior_free.rs` convention).
 
-#![cfg(all(feature = "alloc-global", feature = "internals"))]
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "internals",
+    feature = "misuse-checks"
+))]
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::sync::mpsc;

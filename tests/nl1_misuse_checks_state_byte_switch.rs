@@ -4,13 +4,11 @@
 //! neither writes nor reads it in release; debug builds keep it. This pins both
 //! halves: the byte of an issued block is nonzero and becomes FREE after the
 //! free exactly when it is tracked, and stays zero otherwise. It also pins that
-//! `production` and `hardened` carry the feature. NL-3b: a debug build without the
+//! `hardened` carries the feature (`production` does not since NL-9). NL-3b: a debug build without the
 //! feature keeps the byte, and a rejected free there aborts (safe code never reaches
 //! the check); every other build treats it as the no-op it always was.
 #![cfg(all(feature = "alloc-core", feature = "internals"))]
 
-#[cfg(all(feature = "production", not(feature = "misuse-checks")))]
-compile_error!("`production` must include `misuse-checks` until the default is flipped");
 #[cfg(all(feature = "hardened", not(feature = "misuse-checks")))]
 compile_error!("`hardened` must imply `misuse-checks`");
 
