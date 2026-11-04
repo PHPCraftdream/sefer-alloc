@@ -23,7 +23,6 @@
     feature = "bench-internals",
     feature = "alloc-decommit"
 ))]
-
 #![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use core::alloc::Layout;
