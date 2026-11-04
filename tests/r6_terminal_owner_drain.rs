@@ -4,6 +4,7 @@
     feature = "internals",
     feature = "bench-internals"
 ))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 #![allow(unused_unsafe)] // The RoutePin API is becoming unsafe in the parent branch.
 
 use core::alloc::Layout;
@@ -217,6 +218,7 @@ fn last_small_node_finalizes_after_route_scan() {
     drop(lease);
 }
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn duplicate_detached_record_does_not_retire_another_credit() {
     let _guard = serialize();
@@ -240,6 +242,7 @@ fn duplicate_detached_record_does_not_retire_another_credit() {
     drop(lease);
 }
 
+#[cfg(feature = "misuse-checks")]
 #[cfg(feature = "fastbin")]
 #[test]
 fn detached_magazine_record_preserves_the_canonical_copy() {
