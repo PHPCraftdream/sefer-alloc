@@ -58,6 +58,11 @@ impl HeapCore {
             crate::alloc_core::B4_FOREIGN_PUBLISH_OK
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         }
+        if published {
+            // MUTANT (NL-3a): a write into the block after its terminal publication.
+            // SAFETY: none; this is the undefined behaviour the miri layer must catch.
+            unsafe { ptr.write_volatile(0xAA) };
+        }
         if !published {
             crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
