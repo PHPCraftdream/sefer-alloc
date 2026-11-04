@@ -1,4 +1,4 @@
-[iai] wsl: /mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1
+[iai] wsl: <repo>
 [iai] features: production bench-internals internals misuse-checks | target: /tmp/sefer-iai
 iai_callgrind_runner: Error: No version information found for iai-callgrind but iai-callgrind-runner (0.14.2) is >= '0.3.0'. Please update iai-callgrind to '0.14.2' in your Cargo.toml file
 __MISSING__
@@ -60,24 +60,24 @@ __MISSING__
    Compiling rand_core v0.9.5
    Compiling cast v0.3.0
    Compiling walkdir v2.5.0
-   Compiling sefer-region v0.2.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1/crates/sefer-region)
+   Compiling sefer-region v0.2.0 (<repo>/crates/sefer-region)
    Compiling rand v0.9.4
    Compiling libmimalloc-sys v0.1.49
    Compiling rand_xorshift v0.4.0
    Compiling rayon v1.12.0
    Compiling is-terminal v0.4.17
    Compiling oorandom v11.1.5
-   Compiling size-classes v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1/crates/size-classes)
-   Compiling aligned-vmem v0.2.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1/crates/aligned-vmem)
+   Compiling size-classes v0.1.0 (<repo>/crates/size-classes)
+   Compiling aligned-vmem v0.2.0 (<repo>/crates/aligned-vmem)
    Compiling anes v0.1.6
    Compiling pin-project-lite v0.2.17
    Compiling plotters v0.3.7
-   Compiling proc-memstat v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1/crates/proc-memstat)
-   Compiling once-ptr-cell v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1/crates/once-ptr-cell)
-   Compiling malloc-bench-rs v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1/crates/malloc-bench-rs)
-   Compiling proc-probe v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1/crates/proc-probe)
+   Compiling proc-memstat v0.1.0 (<repo>/crates/proc-memstat)
+   Compiling once-ptr-cell v0.1.0 (<repo>/crates/once-ptr-cell)
+   Compiling malloc-bench-rs v0.1.0 (<repo>/crates/malloc-bench-rs)
+   Compiling proc-probe v0.1.0 (<repo>/crates/proc-probe)
    Compiling tempfile v3.27.0
-   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1)
+   Compiling sefer-alloc v0.3.0 (<repo>
    Compiling regex-automata v0.4.14
    Compiling rusty-fork v0.3.1
    Compiling criterion-plot v0.5.0
@@ -101,7 +101,7 @@ __MISSING__
    Compiling ciborium v0.2.2
    Compiling proptest v1.11.0
    Compiling criterion v0.5.1
-   Compiling globalalloc-model v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1/crates/globalalloc-model)
+   Compiling globalalloc-model v0.1.0 (<repo>/crates/globalalloc-model)
     Finished `bench` profile [optimized] target(s) in 51.06s
 warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`

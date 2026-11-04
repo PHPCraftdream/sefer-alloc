@@ -1,4 +1,4 @@
-[iai] wsl: /mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1
+[iai] wsl: <repo>
 [iai] features: production bench-internals internals | target: /tmp/sefer-iai
 iai_callgrind_runner: Error: No version information found for iai-callgrind but iai-callgrind-runner (0.14.2) is >= '0.3.0'. Please update iai-callgrind to '0.14.2' in your Cargo.toml file
 __MISSING__
@@ -6,7 +6,7 @@ __MISSING__
 
 [iai] running benches...
 
-   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/g1-cf1)
+   Compiling sefer-alloc v0.3.0 (<repo>
     Finished `bench` profile [optimized] target(s) in 27.09s
 warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`

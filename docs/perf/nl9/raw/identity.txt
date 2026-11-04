@@ -1,0 +1,14 @@
+82b25452f5057b52cc88e182ebdc61152e0dc528312a49c5a4a8acc91cc5403f  <repo>/nl9src.tar
+rustc 1.98.1 (48a229cea 2026-09-01)
+binary: rustc
+commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985
+commit-date: 2026-09-01
+host: x86_64-unknown-linux-gnu
+release: 1.98.1
+LLVM version: 22.1.8
+on: --features production misuse-checks
+402a44378e80153a67eece05b19b3bb9d7090ba2a88324c4480e5e14c7c5fb12  ~/ab/tgt-nl9on/release/examples/b4_pmu_probe
+17bdf4af319496731ee93ab459e732809f7f40a94b15b4a029b913f377440ece  ~/ab/tgt-nl9on/release/examples/g1_mt_one
+off: --features production
+51cd776853a3dee478a7cb5c0364d4a5383df98f4668aa3e13c7a0e6f13a9603  ~/ab/tgt-nl9off/release/examples/b4_pmu_probe
+8ceb890345dfdb36dc613bdb98383a52b303913682d4750b7a9bbb46bf0b2c9a  ~/ab/tgt-nl9off/release/examples/g1_mt_one
