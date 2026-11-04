@@ -1,0 +1,35 @@
+{
+  "id": "R0-16",
+  "registryActivationHash": "104481cf2f42d11139287887d7e31018e29dfb431b6cc8e42542be0486299814",
+  "steps": [
+    {
+      "name": "terminal drain, owner sidecar miss and terminal global (production)",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production batch-api internals bench-internals",
+        "--test",
+        "r6_terminal_owner_drain",
+        "--test",
+        "r8_owner_sidecar_miss",
+        "--test",
+        "r8_terminal_global",
+        "--",
+        "--skip",
+        "fallback_direct_free_before_service_and_busy_terminal_publication"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test result: ok\\. [0-9]+ passed; 0 failed",
+          "test requested_sizes_one_through_seven_retire_once_and_reissue \\.\\.\\. ok",
+          "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim \\.\\.\\. ok"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

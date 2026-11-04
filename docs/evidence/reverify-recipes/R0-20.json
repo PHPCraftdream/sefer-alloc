@@ -1,0 +1,33 @@
+{
+  "id": "R0-20",
+  "registryActivationHash": "573e23746175e04ed16a043e92eb91781bce5b7e2a268364e3a2bb8c1b871b3c",
+  "steps": [
+    {
+      "name": "requested sizes one through seven under Miri TB",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-permissive-provenance -Zmiri-tree-borrows"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread internals bench-internals",
+        "--test",
+        "r6_terminal_owner_drain",
+        "--",
+        "requested_sizes_one_through_seven_retire_once_and_reissue"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test requested_sizes_one_through_seven_retire_once_and_reissue \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}
