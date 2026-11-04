@@ -30,6 +30,7 @@
 //! project pattern this mirrors).
 
 #![cfg(all(feature = "alloc-global", feature = "batch-api"))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::collections::HashSet;
@@ -45,6 +46,7 @@ static GLOBAL: SeferAlloc = SeferAlloc::new();
 /// to a DUPLICATE of position 0 (both already-live blocks from the SAME
 /// segment) before the batch free — an in-call double-free.
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn dealloc_batch_same_segment_duplicate_entry_no_corruption() {
     let layout = Layout::from_size_align(16, 8).unwrap();
     let n = 40usize;
@@ -124,6 +126,7 @@ fn dealloc_batch_same_segment_duplicate_entry_no_corruption() {
 /// magazine-fill portion and the OTHER lands in the overflow-staged portion
 /// — the exact straddling shape the module doc above calls out.
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn dealloc_batch_duplicate_straddling_magazine_and_overflow_no_corruption() {
     let layout = Layout::from_size_align(64, 8).unwrap();
     let n = 200usize;
