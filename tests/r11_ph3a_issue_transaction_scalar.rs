@@ -100,7 +100,6 @@ fn scalar_pop_prepare_refusal_is_a_full_rollback_and_retry_serves_the_same_block
         "pop never moves the bump cursor",
     );
     release(&mut core, ptr, CLASS0);
-    release(&mut core, anchor, CLASS0);
 }
 
 fn scalar_carve_spill_refusal_is_a_full_rollback_and_retry_carves_the_block() {
@@ -205,9 +204,7 @@ fn scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_exten
     );
 
     release(&mut core, wide_ptr, CLASS1);
-    release(&mut core, wide[0], CLASS1);
     release(&mut core, ptr, CLASS0);
-    release(&mut core, blocks[0], CLASS0);
 }
 
 // One test by design: `SmallSidecar::system_totals_for_test` is process-wide,

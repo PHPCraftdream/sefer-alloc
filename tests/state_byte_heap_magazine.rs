@@ -128,6 +128,7 @@ fn release(heap: &mut HeapCore, blocks: &[*mut u8]) {
 /// `ts1_batch_push_duplicate_exactly_once` (batch push, M10) and
 /// `ts1_refill_retained_stale_double_free` (refill-retained, M11).
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn ts1_own_free_push_mag_then_hit_live() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
