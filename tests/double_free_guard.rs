@@ -8,6 +8,7 @@
 //! walk also upheld — so they pass with both guards; only the cost changed).
 
 #![cfg(all(feature = "alloc-core", feature = "internals"))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use core::alloc::Layout;
 use std::collections::HashSet;
@@ -17,6 +18,7 @@ use sefer_alloc::alloc_core::AllocCore;
 /// A double-free must not let the same address be handed out twice, and must not
 /// corrupt the free list (which a self-loop would, by making the list "infinite"
 /// or by re-issuing the looped node).
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn double_free_does_not_double_issue() {
     let mut ac = AllocCore::new().expect("primordial");
@@ -99,6 +101,7 @@ fn realloc_same_address_is_refreeable() {
 /// Many blocks, each double-freed: the working set must stay consistent and no
 /// address is ever issued twice concurrently-live. This exercises the bitmap
 /// across many distinct bits.
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn many_double_frees_keep_free_list_consistent() {
     let mut ac = AllocCore::new().expect("primordial");
@@ -140,6 +143,7 @@ fn many_double_frees_keep_free_list_consistent() {
 /// a second `live_count` decrement. Mutant: restore the class-dependent
 /// compare in `alloc_core_small/dealloc.rs` → this test goes RED (the first
 /// 16 B alloc reissues the already-free `p`).
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn wrong_class_free_of_free_block_is_a_noop() {
     let mut ac = AllocCore::new().expect("primordial");
@@ -200,6 +204,7 @@ fn wrong_class_free_of_free_block_is_a_noop() {
 /// order (a) the free(16) of `p` reads `encode(c32, FREE) != encode(c16,
 /// FREE)` and re-pushes `p` onto the 16 B bin → the 16 B storm reissues `p`
 /// → RED (same for the mirror order (b)).
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn both_wrong_class_free_orders_are_noops() {
     // ── order (a): alloc(32) → free(32) → free(16) ────────────────────────

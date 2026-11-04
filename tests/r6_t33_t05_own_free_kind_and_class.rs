@@ -26,6 +26,7 @@
     feature = "fastbin",
     feature = "internals"
 ))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use core::alloc::Layout;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -146,6 +147,7 @@ fn corrupted_kind_byte_own_free_is_a_noop_not_a_magazine_push() {
     );
 }
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn misaligned_interior_free_is_rejected_in_all_configurations() {
     let _g = SerialGuard::acquire();

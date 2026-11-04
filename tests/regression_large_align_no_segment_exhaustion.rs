@@ -97,9 +97,11 @@ fn many_align128_allocations_do_not_exhaust_segment_table() {
     }
 
     // M2 (double-free guard): re-freeing every pointer must be a safe
-    // no-op — neither corruption nor panic.
+    // no-op — neither corruption nor panic. A double free is a contract violation, so
+    // only a build that keeps the guard is asked to survive it.
+    #[cfg(feature = "misuse-checks")]
     for &p in &ptrs {
-        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        // SAFETY: deliberate double free; the guard (misuse-checks) must swallow it.
         unsafe { core.dealloc(p, layout) };
     }
 }

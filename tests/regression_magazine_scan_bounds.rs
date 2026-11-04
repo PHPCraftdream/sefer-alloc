@@ -117,10 +117,10 @@ fn legit_free_with_stale_copy_at_index_ge_cnt_is_not_swallowed() {
          block leaked"
     );
 
-    // Cleanup: b (== re) and a are both live now.
+    // Cleanup: only b (== re) is live; a was freed above and sits in the magazine,
+    // so freeing it again would be a double free.
     unsafe {
         heap.dealloc(re, layout);
-        heap.dealloc(a, layout);
     }
     drop(lease);
 }

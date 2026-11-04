@@ -11,6 +11,7 @@
     feature = "fastbin",
     not(feature = "exact-object-proto")
 ))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use std::alloc::{GlobalAlloc, Layout};
 
@@ -54,6 +55,7 @@ fn accepted_free_is_reissued() {
     );
 }
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn double_free_is_rejected() {
     let p = fresh(48);
@@ -77,6 +79,7 @@ fn double_free_is_rejected() {
     }
 }
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn interior_and_misaligned_frees_are_rejected() {
     let p = fresh(64);
@@ -99,6 +102,7 @@ fn interior_and_misaligned_frees_are_rejected() {
     assert!(reissued(p, 64));
 }
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn wrong_layout_free_is_rejected() {
     let p = fresh(16);
@@ -114,6 +118,7 @@ fn wrong_layout_free_is_rejected() {
     assert!(reissued(p, 16));
 }
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn free_just_past_small_max_is_rejected() {
     // `size` in (SMALL_MAX, SMALL_MAX + MIN_BLOCK] maps to the last SIZE2CLASS

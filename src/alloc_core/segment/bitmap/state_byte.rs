@@ -179,6 +179,23 @@ impl StateByte {
         let _ = (off, state);
     }
 
+    /// A debug build without `misuse-checks` still keeps the byte, so a failed
+    /// misuse check there means safe code reached it (the claim behind turning the
+    /// checks off is that it cannot). Aborts naming the site; compiles to nothing in
+    /// every other build.
+    // Every caller sits behind the byte cfg; without it (release) none remains.
+    #[cfg_attr(
+        not(any(feature = "misuse-checks", debug_assertions)),
+        allow(dead_code)
+    )]
+    #[inline(always)]
+    pub(crate) fn shadow_reject(site: &'static [u8]) {
+        #[cfg(all(debug_assertions, not(feature = "misuse-checks")))]
+        crate::alloc_core::fatal::fatal(site);
+        #[cfg(not(all(debug_assertions, not(feature = "misuse-checks"))))]
+        let _ = site;
+    }
+
     /// Zero the whole array (the miri-only explicit init at the virgin
     /// bootstrap/reserve sites; the decommit-reset path zeroes a SCOPED
     /// range instead — see `decommit_empty_segment_impl`). Under

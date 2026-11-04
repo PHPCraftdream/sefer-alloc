@@ -2004,6 +2004,12 @@ jobs:
       - name: nl1 state byte switch (alloc-core, no misuse-checks, release)
         if: ${{ !cancelled() }}
         run: cargo test --features "alloc-core internals" --release --test nl1_misuse_checks_state_byte_switch
+      - name: nl1 shadow reject (alloc-core, no misuse-checks, debug)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-core internals" --test nl1_misuse_checks_state_byte_switch
+      - name: nl1 shadow reject (alloc-core, misuse-checks, debug)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-core internals misuse-checks" --test nl1_misuse_checks_state_byte_switch
       - name: b4-30 first-alloc stack budget (production internals, linux)
         if: ${{ !cancelled() }}
         env:

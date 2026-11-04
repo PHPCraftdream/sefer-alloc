@@ -20,6 +20,7 @@
 //! → (b) RED; a stray extra `inc_live` in the batch → (c) RED.
 
 #![cfg(all(feature = "alloc-core", feature = "internals"))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;
@@ -107,11 +108,13 @@ fn build_same_segment_freelist(
 // (a) M2 — drained blocks are bitmap-allocated; double-free is a no-op.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn drained_blocks_are_allocated_and_double_free_noop_16b() {
     drained_blocks_m2_inner(16, 8);
 }
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn drained_blocks_are_allocated_and_double_free_noop_256b() {
     drained_blocks_m2_inner(256, 8);

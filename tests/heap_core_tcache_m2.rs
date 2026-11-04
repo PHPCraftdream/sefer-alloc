@@ -26,6 +26,7 @@
     all(feature = "alloc-global", feature = "fastbin"),
     feature = "internals"
 ))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;
@@ -64,6 +65,7 @@ impl Drop for SerialGuard {
 /// temporarily remove the in-magazine `slots` scan (`for i in 0..cnt { ... }`)
 /// in `heap_core/free/dealloc.rs::dealloc_own_thread` and re-run this test. It MUST fail
 /// (`assert_ne!` on p1, p2 trips because the magazine pushes p twice).
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn t2_double_free_magazine_block_is_noop() {
     let _g = SerialGuard::acquire();
@@ -105,6 +107,7 @@ fn t2_double_free_magazine_block_is_noop() {
 
 /// Variant of T2: triple-free of the same block. The guard must catch each
 /// repeated free. The magazine must contain the pointer exactly once.
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn t2_triple_free_still_noop() {
     let _g = SerialGuard::acquire();
@@ -145,6 +148,7 @@ fn t2_triple_free_still_noop() {
 /// the earliest blocks are flushed back to BinTable. Then double-free one of
 /// those earliest blocks. The BinTable bitmap guard should catch it (existing
 /// M2 path). The allocator must keep working afterwards (no crash, no hang).
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn t3_double_free_flushed_block_still_caught_by_bitmap() {
     let _g = SerialGuard::acquire();
@@ -223,6 +227,7 @@ fn t3_double_free_flushed_block_still_caught_by_bitmap() {
 /// in `heap_core/free/dealloc.rs::dealloc_own_thread` and this assert MUST trip with
 /// `target_count == 2` (one from the magazine slot, one from the BinTable
 /// pop_free).
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn t3_flushed_double_free_does_not_double_issue() {
     let _g = SerialGuard::acquire();
@@ -365,6 +370,7 @@ fn t_key_does_not_break_round_trip() {
 
 /// Same as T2 but with 64-byte blocks (a different size class). Verifies the
 /// guard works across classes, not just the smallest.
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn t2_double_free_64b_class() {
     let _g = SerialGuard::acquire();
