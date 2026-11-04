@@ -145,6 +145,7 @@ fn free_just_past_small_max_is_rejected() {
     unsafe { A.dealloc(p, layout(small)) };
 }
 
+#[cfg(feature = "misuse-checks")]
 #[test]
 fn metadata_and_uncarved_frees_are_rejected() {
     let p = fresh(16);

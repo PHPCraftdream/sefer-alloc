@@ -2,7 +2,8 @@
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "internals",
-    feature = "bench-internals"
+    feature = "bench-internals",
+    feature = "misuse-checks"
 ))]
 //! B1-a: `flush_run` finds the run end in its own pass and retires
 //! `run length − rejected` credits once. A same-segment batch holding a

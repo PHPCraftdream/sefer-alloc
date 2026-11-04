@@ -83,7 +83,16 @@ fn rejected_free_aborts_only_in_debug_without_the_feature() {
         println!("NL1_SHADOW_CHILD_SURVIVED");
         return;
     }
-    let out = std::process::Command::new(std::env::current_exe().expect("exe"))
+    // Under a cross runner (qemu) the test binary cannot be exec'd directly: skip there.
+    let exe = std::env::current_exe().expect("exe");
+    let listed = std::process::Command::new(&exe).arg("--list").output();
+    if !listed.is_ok_and(|o| {
+        o.status.success()
+            && String::from_utf8_lossy(&o.stdout).contains("rejected_free_aborts_only_in_debug")
+    }) {
+        return;
+    }
+    let out = std::process::Command::new(exe)
         .arg("rejected_free_aborts_only_in_debug_without_the_feature")
         .arg("--exact")
         .arg("--nocapture")
