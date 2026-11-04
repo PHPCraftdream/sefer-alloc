@@ -40,3 +40,4 @@ R4b-13,src/registry/heap_registry/claim.rs;src/registry/heap_slot.rs,,,"Loom sha
 R4b-14,src/registry/heap_registry/claim.rs;src/registry/heap_slot.rs,,,"Loom shadow model of publish/recycle/drain, L2 claim ordering bound to claim.rs by ghost-lint R8"
 R0-22,src/alloc_core/segment/remote_bitmap;src/registry/heap_core_xthread/route_pin_cache.rs;src/registry/segment_route/directory,,,"Loom actual-source models of leaf pointer publication, pin-cache last-pin retention and early leaf release"
 R5b-10,src/alloc_core/segment/remote_bitmap;src/registry/segment_route/large_state.rs,,,"Loom model of owner-only credits against terminal bitmap cuts; its ghost-bind lines carry the production publish and cut orderings"
+R6a-M1,src/alloc_core/platform/node.rs,,,"Mutant of the free-list link write (write_next off by one); the intrusive node accessor it mutates"
