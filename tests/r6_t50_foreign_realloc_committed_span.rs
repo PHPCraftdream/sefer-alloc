@@ -26,6 +26,7 @@
     feature = "large-reserved-capacity",
     not(feature = "numa-aware")
 ))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use core::alloc::Layout;
 use core::sync::atomic::Ordering;
@@ -97,6 +98,7 @@ const FORGED_SRC: usize = 12 * 1024 * 1024;
 const FORGED_BIG: usize = 24 * 1024 * 1024;
 
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn foreign_realloc_forged_layout_beyond_committed_span_returns_null() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
@@ -203,6 +205,7 @@ fn foreign_realloc_true_layout_within_committed_span_succeeds() {
 }
 
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn foreign_realloc_small_segment_metadata_address_is_rejected() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();

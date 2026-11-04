@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Misuse checks are off by default in `production` (2026-11-04)
+
+- [performance] `production` no longer includes the feature `misuse-checks`. The checks it gates only reject a
+  contract violation of `GlobalAlloc` (double free, foreign or interior pointer, a wrong or oversized layout), which
+  safe code cannot produce: the per-block state byte, the payload-start and bump bounds, the magazine flush and sidecar
+  reclaim guards, the realloc and Large-free address checks. Same tree, same run, instructions retired:
+  bulk 16 B and 64 B -14.39 %, larson T=1/T=4 -7.12 % / -6.83 %, mstress T=1/T=4 -9.67 % / -8.85 %
+  (`docs/perf/NL9_DEFAULT_FLIP.md`). One benchmark rises, a producer window of cross-thread frees by +3 Ir per free
+  (tracked as NL-12).
+- [behavior] A program whose unsafe code passes such a pointer now has undefined behaviour in `production`, as the
+  contract allows. Add `misuse-checks` (or use `hardened`) to keep the checks; a debug build keeps them and aborts on
+  a hit. The README feature table and `docs/ARCHITECTURE.md` say it is needed only for unsafe code.
+
 ### Round 20: PRF-01 C'' and C‴ gates, PRF-04 ReuseFirst, gate runs as PR checks (2026-10-12 to 2026-10-15)
 
 Runtime changes this round: 2, inside the unchanged `production` composition

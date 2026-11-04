@@ -10,9 +10,15 @@
 //      verification / ghost / loom / miri / kani;
 //   3. no changed path is a toolchain or build-graph input (Cargo.toml,
 //      Cargo.lock, build.rs, .cargo/, rust-toolchain*) or lies under src/ghost/;
+//      the one exception is the root Cargo.toml when every changed line is the
+//      `production = [...]` composition line or a comment — a declared
+//      perf(runtime) change of the shipping feature set (NL-9) — and none of
+//      those lines carries a ghost token (rule 4);
 //   4. no changed line of a build-input file (src/, crates/) contains ghost,
 //      shadow, sefer_ghost, loom, miri or kani in any case — this also catches a
-//      cfg written across lines, since the token sits on its own line.
+//      cfg written across lines, since the token sits on its own line. The
+//      production helper `StateByte::shadow_reject` (a debug-build abort for a
+//      rejected free) is not a ghost token and is removed from the line first.
 // A ghost macro called through an alias changes nothing in production: the
 // macros compile to nothing outside cfg(any(loom, miri, kani, sefer_ghost)) and
 // their definitions are under src/ghost/ (rule 3).
@@ -22,6 +28,11 @@ const CONVENTIONAL = /^[a-z]+(?:\([^()]*\))?!?: \S/;
 const VERIFICATION_SCOPE = /^[a-z]+\((?:[^()]*[,/ ])?(?:verification|ghost[^()]*|loom|miri|kani)(?:[,/ ][^()]*)?\)/;
 const BUILD_GRAPH = /^(?:(?:[^/]+\/)*Cargo\.(?:toml|lock)|(?:[^/]+\/)*build\.rs|\.cargo\/.*|rust-toolchain(?:\.toml)?)$/;
 const GHOST_TOKEN = /ghost|shadow|\b(?:loom|miri|kani)\b/i;
+const SHADOW_REJECT = /\bshadow_reject\b/g;
+const hasGhostToken = (l) => GHOST_TOKEN.test(l.replace(SHADOW_REJECT, ''));
+const PRODUCTION_LINE = /^production = \[[^\]]*\]\s*$/;
+const COMMENT_LINE = /^\s*#/;
+const productionCompositionOnly = (lines) => lines.every((l) => (PRODUCTION_LINE.test(l) || COMMENT_LINE.test(l)) && !hasGhostToken(l));
 export const isBuildInput = (path) => path.startsWith('src/') || path.startsWith('crates/');
 
 // `changed`: Map path -> array of changed line texts (without the +/- sign);
@@ -34,8 +45,9 @@ export function zeroCostSkip(subjects, changed, dirty = []) {
     if (VERIFICATION_SCOPE.test(s)) return null;
   }
   for (const [path, lines] of changed) {
+    if (path === 'Cargo.toml' && productionCompositionOnly(lines)) continue;
     if (BUILD_GRAPH.test(path) || path.startsWith('src/ghost/')) return null;
-    if (isBuildInput(path) && lines.some((l) => GHOST_TOKEN.test(l))) return null;
+    if (isBuildInput(path) && lines.some(hasGhostToken)) return null;
   }
   return 'the range declares a runtime change (perf(runtime) / perf(opt-in) / fix(perf)), has no verification-scoped commit and changes no ghost code or build-graph input';
 }

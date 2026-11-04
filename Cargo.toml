@@ -427,9 +427,10 @@ fastbin = ["alloc-global", "alloc-xthread"]
 # the `GlobalAlloc` contract and impossible to reach from safe code. Needed only
 # when unsafe code can pass such a pointer. Without the feature the per-block
 # state byte is neither written nor read in release builds (debug builds keep
-# it). Included in `production` and `hardened` for now.
+# it), and such a call is undefined behaviour, as the contract allows. Off in
+# `production`; included in `hardened`.
 misuse-checks = []
-production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit", "misuse-checks"]
+production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit"]
 
 # R34-3 (task #522, release-stabilization audit finding B1): a REAL semver
 # boundary for the `alloc_core` / `global` / `registry` modules, replacing

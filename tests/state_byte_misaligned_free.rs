@@ -27,6 +27,7 @@
     feature = "fastbin",
     feature = "internals",
     feature = "batch-api",
+    feature = "misuse-checks",
     not(feature = "hardened")
 ))]
 

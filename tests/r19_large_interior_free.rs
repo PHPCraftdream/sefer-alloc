@@ -9,7 +9,11 @@
 //! documented "no matching live route" drop and counts in
 //! `foreign_or_unroutable_frees` (standalone core: under
 //! `alloc-global`/`alloc-stats`; global face: unconditionally).
-#![cfg(all(feature = "alloc-core", feature = "internals"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "internals",
+    feature = "misuse-checks"
+))]
 
 use core::alloc::Layout;
 use sefer_alloc::{AllocCore, SegmentLayout};

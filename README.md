@@ -37,7 +37,7 @@ cargo add sefer-alloc --features production
 
 The `production` feature is the intended long-running bundle, pending
 terminal-sidecar acceptance. It is shorthand for
-`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + misuse-checks` — the drop-in
+`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit` — the drop-in
 `GlobalAlloc` face, terminal-sidecar cross-thread free, OS page decommit, and
 the per-thread fast-bin magazine. Without `alloc-decommit` the
 `SegmentTable`'s free-list still recycles freed large-segment slots
@@ -762,7 +762,7 @@ hard compile error in every configuration:
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
-+ primordial-lazy-commit + misuse-checks`) the active internal tier-1 seams are **fifteen**:
++ primordial-lazy-commit`) the active internal tier-1 seams are **fifteen**:
 `alloc_core::platform::{os, node, sidecar}` and
 `alloc_core::segment::segment_table::route_slots`;
 `global::{sefer_alloc::global_alloc, fallback, process_exit}`;
@@ -1169,10 +1169,10 @@ allocates) — the headline:
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | 14.5 ns |  13.8 ns | 87.5 ns | 1.05× slower |
-|   64 B | 23.9 ns |  22.2 ns | 97.0 ns | 1.08× slower |
-|  256 B | **28.8 ns** |  31.3 ns | 128.4 ns | **1.09× faster** |
-| 1024 B | **47.3 ns** | 148.0 ns | 98.3 ns | **3.13× faster** |
+|   16 B | **6.8 ns** |  11.7 ns | 63.5 ns | **1.73× faster** |
+|   64 B | **7.1 ns** |  10.7 ns | 55.9 ns | **1.50× faster** |
+|  256 B | **7.9 ns** |  15.3 ns | 67.1 ns | **1.94× faster** |
+| 1024 B | **10.8 ns** | 105.4 ns | 71.8 ns | **9.77× faster** |
 
 **Churn, non-writing** (`bench_churn_alloc`, working-set reuse — 1 free + 1
 alloc per pair; the artificial pattern where the old stale-key slow path bit
@@ -1180,10 +1180,10 @@ hardest, before Э6 removed it):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | 17.1 ns |  14.5 ns | 68.2 ns | 1.18× slower |
-|   64 B | 16.8 ns |  14.9 ns | 81.1 ns | 1.13× slower |
-|  256 B | **17.1 ns** |  25.3 ns | 100.2 ns | **1.48× faster** |
-| 1024 B | **28.8 ns** | 160.9 ns | 105.1 ns | **5.58× faster** |
+|   16 B | **7.6 ns** |  12.7 ns | 56.1 ns | **1.67× faster** |
+|   64 B | **6.9 ns** |  13.4 ns | 61.6 ns | **1.93× faster** |
+|  256 B | **7.0 ns** |  30.8 ns | 78.1 ns | **4.40× faster** |
+| 1024 B | **8.7 ns** |  97.7 ns | 63.5 ns | **11.17× faster** |
 
 **Warm bulk burst** (`bench_direct_alloc`, alloc 1024 then free 1024 — 1 alloc
 + 1 free per pair; no reuse WITHIN one iteration's allocation half, but
@@ -1193,13 +1193,20 @@ cheaper carve led at tiny sizes):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | 18.3 ns |   7.4 ns | 68.9 ns | 2.46× slower |
-|   64 B | 18.0 ns |  12.5 ns | 92.9 ns | 1.44× slower |
-|  256 B | 17.8 ns |  17.1 ns | 97.9 ns | 1.04× slower |
-| 1024 B | **17.4 ns** |  30.4 ns | 109.2 ns | **1.74× faster** |
+|   16 B | **6.1 ns** |   6.9 ns | 64.0 ns | **1.14× faster** |
+|   64 B | **6.9 ns** |   9.6 ns | 74.3 ns | **1.39× faster** |
+|  256 B | **6.9 ns** |  11.0 ns | 61.1 ns | **1.59× faster** |
+| 1024 B | **6.7 ns** |  21.5 ns | 95.0 ns | **3.19× faster** |
 
-(Measured 2026-10-29 via `npm run bench:table` on the G1-K7 tree (PR #128; raw
-log `docs/perf/_raw_g1_k7_bench_table.log`) — Windows dev host, criterion `sample_size(10)`, same R5-R3 methodology as before
+(Measured 2026-11-04 via `npm run bench:table` on the NL-9 tree (PR #201, `production` without
+`misuse-checks`; raw log `docs/perf/_raw_nl9_bench_table.log`, tables rewritten from it by
+`scripts/nl9_readme_tables.mjs`) — Windows dev host, criterion `sample_size(10)`, same R5-R3 methodology as before
+(the previous table, 2026-10-29 on the G1-K7 tree, `docs/perf/_raw_g1_k7_bench_table.log`, spans several waves of
+changes and a quieter or busier host; the two are not a paired comparison). A second full run the same day
+(`docs/perf/_raw_nl9_bench_table_run2.log`) reproduces SeferAlloc's absolute figures (6.1–10.4 ns per pair in these
+three groups, within 1.5 ns of this run) while mimalloc's 16 B cells move (bulk burst 6.9 → 6.1 ns, churn + write
+11.7 → 7.2 ns), so the 16 B "faster" cells are ties within noise: run 2 reads 1.01× slower (bulk burst) and 1.00×
+slower (churn + write) there; from 64 B up the lead holds in both runs
 (TLS-heap reset between groups + rotated arm order per `(group, size)`, see
 `docs/agent_reviews_round5/performance_review.md` §4.1 items 2-3). This
 single-host run carries the usual ±15-20% noise band; treat the relative
@@ -1301,12 +1308,13 @@ depends on block-body contents; `tests/regression_magazine_oracles.rs` test (c)
 is RED pre-Э6, GREEN on Э6). Every P0–P6 speedup deleted a tautology, never a
 guard.
 
-**Where we still trail — the warm bulk burst at 16–64 B and non-writing churn
+**Where we trailed — the warm bulk burst at 16–64 B and non-writing churn
 at 16–64 B (2026-10-29 re-measurement on the G1-K7 tree: bulk burst 16 B
 2.46×, 64 B 1.44× slower, 256 B 1.04× slower, 1024 B 1.74× faster; churn
-16 B 1.18×, 64 B 1.13× slower — see the tables above).** This is the
+16 B 1.18×, 64 B 1.13× slower). The 2026-11-04 re-measurement on the NL-9 tree (tables above)
+no longer shows a deficit: 16 B is a tie within noise, 64 B and up lead in both runs.** This was the
 cold carve path (`global_alloc`, no reuse), unchanged by Э6 (which targets
-only the churn free path). The residual is honest per-block work — page-map
+only the churn free path). The residual was honest per-block work — page-map
 writes and page faults on genuinely fresh pages, not ceremony — documented in
 [`docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md`](docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md).
 The `alloc-runfreelist` experimental feature (PERF-3) attempted to close
@@ -1528,7 +1536,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **483 integration test files**,
+needs its acceptance run. The present tree contains **484 integration test files**,
 **105 example binaries**, **34 benches**, and **26 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1538,7 +1546,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (483 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (484 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (105 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1579,10 +1587,10 @@ The full safety stack and the relationship between layers is documented in
 | `alloc-decommit` | `alloc-core` | Return empty-segment payload pages to OS + `SegmentTable` slot-recycle | off | long-running / DBMS workloads |
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
 | `fastbin` | `alloc-global + alloc-xthread` | Per-thread magazine (tcache) fast path — array-based per-class pop/push, M2 protected by hot-metadata oracles (no block-body touch) | off (on under `production`) | server-churn / mixed-size multi-threaded workloads |
-| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + misuse-checks` | Intended long-running bundle; terminal-sidecar acceptance and new performance gates are still pending. Explicit `start_maintenance()` is required for autonomous ownerless progress. | off | Evaluate with the current release-readiness gates before deployment. |
+| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit` | Intended long-running bundle; terminal-sidecar acceptance and new performance gates are still pending. Explicit `start_maintenance()` is required for autonomous ownerless progress. | off | Evaluate with the current release-readiness gates before deployment. |
 | `alloc-stats` | `alloc-core` | Per-hit **diagnostic** counters: bumps `stats().tcache_hits` (magazine) and `stats().large_cache_hits` (large cache) on each hit. Default OFF and **NOT** in `production` — the per-hit increment is compiled out of the churn/large-cache hot paths, and without it those two `stats()` fields read `0` (all other `stats()` fields are unaffected). The counter storage lives in the shared registry slot, so toggling this never changes layout/ABI. | off | you poll `stats().tcache_hits` / `.large_cache_hits` and want the real hit counts (add alongside `production`) |
 | `hardened` | `fastbin` | Opt-in own-thread interior-pointer guard, rejecting non-block starts; detected Small free-list corruption (bad head or continuation, cycle) aborts the process after a stderr line instead of returning null. It does not make duplicate or invalid foreign frees legal; the old X7 ring generation path was removed with the ring. | off | Extra misuse detection, subject to current acceptance gates. |
-| `misuse-checks` | — | Per-block state byte that rejects a contract violation on the Small paths (double free, foreign or interior pointer, a layout that differs from the allocation's). **Needed only when unsafe code can pass such a pointer; safe code cannot.** Without it a release build neither writes nor reads the byte (debug builds keep it) and such a call is undefined behaviour, as the `GlobalAlloc` contract allows. | on in `production` and `hardened` for now | unsafe code, FFI, untrusted pointers |
+| `misuse-checks` | — | Checks that reject a contract violation (double free, foreign or interior pointer, a layout that differs from the allocation's, an old layout larger than the block): the per-block state byte, the payload-start and bump bounds, the flush and reclaim guards, the realloc and Large-free address checks. **Needed only when unsafe code can pass such a pointer; safe code cannot.** Without it a release build runs none of them and such a call is undefined behaviour, as the `GlobalAlloc` contract allows (debug builds keep them and abort on a hit). | off in `production`; on in `hardened` | unsafe code, FFI, untrusted pointers |
 | `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (legacy/deprecated; kept for backward compat and research baseline) | off | RCU / epoch experiments only |
 | `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` (`PinnedRunner` is NOT deprecated) | off | `shard == core` workloads |
 | `batch-api` | `experimental` + `alloc-core` | Tcache-aware batch alloc/dealloc (`SeferAlloc::alloc_batch`/`dealloc_batch`). **⚠ No semver guarantees** — signature/behavior may change or the feature may be removed in any release while it depends on `experimental` (R12-12) | off | you have measured a real batch-size win for your workload and accept an unstable API |

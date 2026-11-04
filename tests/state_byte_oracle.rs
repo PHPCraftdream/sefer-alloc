@@ -7,7 +7,8 @@
     feature = "fastbin",
     feature = "alloc-decommit",
     feature = "internals",
-    feature = "bench-internals"
+    feature = "bench-internals",
+    feature = "misuse-checks"
 ))]
 
 use core::alloc::Layout;

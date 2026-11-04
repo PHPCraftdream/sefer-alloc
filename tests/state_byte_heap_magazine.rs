@@ -23,6 +23,7 @@
     feature = "bench-internals",
     feature = "alloc-decommit"
 ))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use core::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -127,6 +128,7 @@ fn release(heap: &mut HeapCore, blocks: &[*mut u8]) {
 /// `ts1_batch_push_duplicate_exactly_once` (batch push, M10) and
 /// `ts1_refill_retained_stale_double_free` (refill-retained, M11).
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn ts1_own_free_push_mag_then_hit_live() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
@@ -407,6 +409,7 @@ fn ts1_batch_push_mag_then_deferred_clear_live() {
 /// in-magazine double free: second free is a no-op — the block stays parked
 /// exactly once (MAG set unchanged) and is issued at most once afterwards.
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn ts1_reject_in_magazine_double_free() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
@@ -461,6 +464,7 @@ fn ts1_reject_in_magazine_double_free() {
 /// double free AFTER flush: the flushed (FREE) block's second free is a
 /// no-op — it stays on the bin exactly once and is issued at most once.
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn ts1_reject_double_free_after_flush() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
@@ -535,6 +539,7 @@ fn ts1_reject_double_free_after_flush() {
 // CLASS-FIELD compare in `small_free_guard`, UNCONDITIONAL since F1/F4 (not
 // a `hardened`-only H1 semantics), so the same counterfactual runs in every
 // configuration.
+#[cfg(feature = "misuse-checks")]
 fn ts1_reject_wrong_class_stays_live() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
@@ -602,6 +607,7 @@ fn ts1_reject_unaligned_interior() {
 /// cases it must be accounted EXACTLY ONCE in the owner: the block is never
 /// issued twice afterwards, and heap B never reports it as its own free.
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn ts1_reject_foreign_single_accounting() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
@@ -652,6 +658,7 @@ fn ts1_reject_foreign_single_accounting() {
 /// guard → the magazine gains a second residency for `p` (count moves) and
 /// the storm below reissues `p` twice. RED under the mutant.
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn ts1_reject_overflow_push_double_free() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
@@ -743,6 +750,7 @@ fn ts1_reject_overflow_push_double_free() {
 
 #[test]
 #[cfg(feature = "batch-api")]
+#[cfg(feature = "misuse-checks")]
 fn ts1_batch_push_duplicate_exactly_once() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
@@ -832,6 +840,7 @@ fn ts1_batch_push_duplicate_exactly_once() {
 /// magazine-resident block is ACCEPTED by the LIVE-exact guard → count moves
 /// and the block is parked twice (storm reissues it twice).
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn ts1_refill_retained_stale_double_free() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();

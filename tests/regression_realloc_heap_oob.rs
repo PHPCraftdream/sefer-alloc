@@ -9,6 +9,7 @@
 //! to prove the supported cross-heap path copies and retires exactly once.
 
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use core::alloc::Layout;
 use core::sync::atomic::Ordering;
@@ -49,6 +50,7 @@ const BOGUS_OLD: usize = 8 * 1024 * 1024;
 /// rejected before the move-leg copy. This deliberately violates the caller
 /// contract and establishes no guarantee for arbitrary contract violations.
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn heap_realloc_own_seg_oversized_layout_returns_null() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
@@ -96,6 +98,7 @@ fn heap_realloc_own_seg_oversized_layout_returns_null() {
 /// the non-vacuous cross-heap witness.
 #[test]
 #[cfg(all(feature = "alloc-xthread", feature = "alloc-core"))]
+#[cfg(feature = "misuse-checks")]
 fn heap_realloc_foreign_sefer_ptr_oversized_layout_returns_null() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();

@@ -6,6 +6,7 @@
     feature = "bench-internals",
     feature = "alloc-decommit"
 ))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use sefer_alloc::registry::{bootstrap, HeapRegistry};
 use std::alloc::Layout;
@@ -210,6 +211,7 @@ fn depot_full_flush_returns_parked_blocks_and_empties_store() {
 }
 
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn parked_double_free_is_rejected_by_magazine_oracle() {
     let _s = Serial::lock();
     let _ = bootstrap::ensure();

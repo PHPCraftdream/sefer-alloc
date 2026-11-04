@@ -6,11 +6,19 @@ use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::fatal::fatal;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::node::Node;
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    any(feature = "misuse-checks", debug_assertions)
+))]
+use crate::alloc_core::segment_header::Layout as SegLayout;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use crate::alloc_core::segment_header::{
-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
-};
-#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    any(feature = "misuse-checks", debug_assertions)
+))]
 use crate::alloc_core::size_classes::SizeClasses;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use core::ptr::NonNull;
@@ -30,13 +38,17 @@ impl AllocCore {
         if !matches!(kind, SegmentKind::Small | SegmentKind::Primordial) {
             fatal(b"alloc_core_small_reclaim: sidecar record kind is not small\n");
         }
-        let payload_start = if kind == SegmentKind::Primordial {
-            SegLayout::primordial_meta_end()
-        } else {
-            SegLayout::small_meta_end()
-        };
-        let block_size = SizeClasses::block_size(class_idx);
         let mut meta = SegmentMeta::new(base);
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
+        let (payload_start, block_size) = (
+            if kind == SegmentKind::Primordial {
+                SegLayout::primordial_meta_end()
+            } else {
+                SegLayout::small_meta_end()
+            },
+            SizeClasses::block_size(class_idx),
+        );
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if off < payload_start
             || !off.is_multiple_of(block_size)
             || off
@@ -53,16 +65,14 @@ impl AllocCore {
             let sb = meta.state_byte().read(offset);
             if (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
                 crate::alloc_core::state_byte::StateByte::shadow_reject(
-                    b"sefer-alloc: misuse check rejected a remote free in safe mode (reclaim FREE)
-",
+                    b"sefer-alloc: misuse check rejected a remote free in safe mode (reclaim FREE)\n",
                 );
                 return false;
             }
             #[cfg(feature = "fastbin")]
             if (sb >> 6) == crate::alloc_core::state_byte::StateByte::MAG {
                 crate::alloc_core::state_byte::StateByte::shadow_reject(
-                    b"sefer-alloc: misuse check rejected a remote free in safe mode (reclaim MAG)
-",
+                    b"sefer-alloc: misuse check rejected a remote free in safe mode (reclaim MAG)\n",
                 );
                 return false;
             }

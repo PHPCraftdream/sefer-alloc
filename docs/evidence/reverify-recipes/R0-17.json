@@ -1,0 +1,35 @@
+{
+  "id": "R0-17",
+  "registryActivationHash": "fdea229522edc3791e1750169f60c1f32541bbd7cb96e267a059e5ec3e01c535",
+  "steps": [
+    {
+      "name": "terminal drain, owner sidecar miss and terminal global (non-fastbin)",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals",
+        "--test",
+        "r6_terminal_owner_drain",
+        "--test",
+        "r8_owner_sidecar_miss",
+        "--test",
+        "r8_terminal_global",
+        "--",
+        "--skip",
+        "fallback_direct_free_before_service_and_busy_terminal_publication"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test result: ok\\. [0-9]+ passed; 0 failed",
+          "test requested_sizes_one_through_seven_retire_once_and_reissue \\.\\.\\. ok",
+          "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim \\.\\.\\. ok"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

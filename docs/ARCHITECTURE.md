@@ -88,11 +88,15 @@ Full safety invariants for both APIs: [INVARIANTS.md](INVARIANTS.md)
 invariants describe `SeferAlloc`'s own segment substrate only and do not
 apply to `Region<T>`, which has none).
 
-**Misuse checks.** The feature `misuse-checks` (in `production` and `hardened` for
-now) gates the per-block state byte that rejects a contract violation (double
-free, foreign or interior pointer, wrong layout) on the Small paths. It is needed
-only for unsafe code that can pass such a pointer; safe code cannot. Without it a
-release build neither writes nor reads the byte (debug builds keep it).
+**Misuse checks.** The feature `misuse-checks` (in `hardened`, not in `production`)
+gates the checks that reject a contract violation (double free, foreign or
+interior pointer, wrong layout, an old layout larger than the block): the
+per-block state byte, the payload-start and bump bounds, the flush and reclaim
+guards and the realloc and Large-free address checks. They are needed only for
+unsafe code that can pass such a pointer; safe code cannot. Without the feature a
+release build neither writes nor reads the byte and runs none of these checks, and
+such a call is undefined behaviour, as the `GlobalAlloc` contract allows (debug
+builds keep the checks and abort on a hit).
 
 **Additional opt-in features** (default OFF, NOT part of `production` — see the
 feature table in [README.md](../README.md#feature-flags)):
@@ -499,7 +503,7 @@ do not certify the terminal-sidecar snapshot.
 
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (483 files) |
+| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (484 files) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
 | miri | Selected provenance/aliasing checks; snapshot execution pending | manifest `scripts/miri-matrix.mjs` (GREEN / EXPECTED-RED / WAIVED) run by `scripts/miri.mjs` and checked against CI by `scripts/verify-miri-target-wiring.mjs`, including `r8_global_box_provenance` and tagged-index-stack `narrow_domain_unchecked_storage`; not a whole-project proof |
 | loom | Bounded interleavings; snapshot execution pending | **Root (26 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |

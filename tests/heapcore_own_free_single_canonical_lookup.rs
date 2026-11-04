@@ -3,6 +3,7 @@
     feature = "bench-internals",
     feature = "fastbin"
 ))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use core::alloc::Layout;
 use sefer_alloc::alloc_core::AllocCore;
@@ -43,6 +44,7 @@ fn own_free_resolves_once_and_parks_every_block() {
 }
 
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn primordial_lower_bound_and_payload_boundary() {
     use sefer_alloc::alloc_core::SegmentLayout;
     let _guard = TEST_LOCK.lock().unwrap();

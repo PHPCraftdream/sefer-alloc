@@ -10,6 +10,7 @@
     feature = "bench-internals",
     feature = "alloc-decommit"
 ))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use sefer_alloc::alloc_core::LargeCacheConfig;
 use sefer_alloc::registry::{bootstrap, HeapLease, HeapRegistry};
@@ -183,6 +184,7 @@ fn a_second_class_is_refused_by_the_shared_budget() {
 }
 
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn double_free_of_an_overflow_parked_block_is_rejected() {
     let _s = Serial::lock();
     let mut lease = claim();

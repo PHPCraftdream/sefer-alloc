@@ -48,6 +48,7 @@
 //! invariant instead of silently skipping.
 
 #![cfg(all(feature = "primordial-lazy-commit", feature = "internals"))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use std::alloc::Layout;
 
@@ -115,6 +116,7 @@ fn run_child() -> std::process::Output {
 /// bogus `realloc` call, so this is the only leg that can reproduce R2-02.
 #[cfg(all(windows, not(feature = "numa-aware")))]
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn realloc_with_bogus_layout_past_lazy_commit_frontier_rejected_not_crashed() {
     let output = run_child();
     assert!(
@@ -171,6 +173,7 @@ fn primordial_frontier_is_eager_on_non_windows() {
 
 #[test]
 #[ignore = "run only in a fresh subprocess (see run_child)"]
+#[cfg(feature = "misuse-checks")]
 fn oxx_r2_02_realloc_lazy_commit_frontier_child() {
     if std::env::var(CASE_ENV).is_err() {
         return;

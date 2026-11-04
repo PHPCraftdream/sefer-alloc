@@ -1997,17 +1997,23 @@ jobs:
       - name: nl3 safe cross-thread churn oracle (production internals, release)
         if: ${{ !cancelled() }}
         run: cargo test --features "production internals" --release --test nl3_safe_xthread_churn_integrity
-      # NL-1: the same oracles with the state byte neither written nor read (the
-      # trusting mode); `production` minus `misuse-checks`, release only (debug builds keep the byte).
-      - name: nl3 remote-free burst reuse oracle (production without misuse-checks, release)
+      - name: nl7 safe large realloc and free oracle (production internals, release)
         if: ${{ !cancelled() }}
-        run: cargo test --features "alloc-global alloc-xthread alloc-decommit fastbin alloc-segment-directory primordial-lazy-commit internals" --release --test nl3_xthread_remote_free_reuse_small_classes
-      - name: nl3 ping-pong reuse oracle (production without misuse-checks, release)
+        run: cargo test --features "production internals" --release --test nl7_safe_large_realloc_integrity
+      # NL-1/NL-9: the same oracles with the checks that reject a contract violation
+      # compiled in (the checking mode; `production` above runs the trusting mode).
+      - name: nl3 remote-free burst reuse oracle (production with misuse-checks, release)
         if: ${{ !cancelled() }}
-        run: cargo test --features "alloc-global alloc-xthread alloc-decommit fastbin alloc-segment-directory primordial-lazy-commit internals" --release --test nl3_xthread_pingpong_reuse
-      - name: nl3 safe cross-thread churn oracle (production without misuse-checks, release)
+        run: cargo test --features "production internals misuse-checks" --release --test nl3_xthread_remote_free_reuse_small_classes
+      - name: nl3 ping-pong reuse oracle (production with misuse-checks, release)
         if: ${{ !cancelled() }}
-        run: cargo test --features "alloc-global alloc-xthread alloc-decommit fastbin alloc-segment-directory primordial-lazy-commit internals" --release --test nl3_safe_xthread_churn_integrity
+        run: cargo test --features "production internals misuse-checks" --release --test nl3_xthread_pingpong_reuse
+      - name: nl3 safe cross-thread churn oracle (production with misuse-checks, release)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "production internals misuse-checks" --release --test nl3_safe_xthread_churn_integrity
+      - name: nl7 safe large realloc and free oracle (production with misuse-checks, release)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "production internals misuse-checks" --release --test nl7_safe_large_realloc_integrity
       # B4-30 fix7: first-alloc stack budget, differential self-measurement,
       # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
       - name: nl1 state byte switch (alloc-core, no misuse-checks, release)
@@ -2411,7 +2417,7 @@ jobs:
       - name: Production batch and terminal owner consumption
         shell: bash
         run: |
-          cargo test --locked --features "production batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache -- --skip fallback_direct_free_before_service_and_busy_terminal_publication 2>&1 | tee "$RUNNER_TEMP/global-production.log"
+          cargo test --locked --features "production batch-api internals bench-internals misuse-checks" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache -- --skip fallback_direct_free_before_service_and_busy_terminal_publication 2>&1 | tee "$RUNNER_TEMP/global-production.log"
           grep -F "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok" "$RUNNER_TEMP/global-production.log"
@@ -2419,12 +2425,12 @@ jobs:
           # B4 state byte: the unaligned-interior and counter-parity guards are
           # production (non-hardened) properties and need batch-api, so no
           # generic test row reaches this file (--all-features carries hardened).
-          cargo test --locked --features "production batch-api internals bench-internals" --test state_byte_misaligned_free 2>&1 | tee "$RUNNER_TEMP/state-byte-misaligned.log"
+          cargo test --locked --features "production batch-api internals bench-internals misuse-checks" --test state_byte_misaligned_free 2>&1 | tee "$RUNNER_TEMP/state-byte-misaligned.log"
           grep -F "test f1_misaligned_interior_frees_are_noops ... ok" "$RUNNER_TEMP/state-byte-misaligned.log"
           grep -F "test f4_wrong_class_free_counter_semantics ... ok" "$RUNNER_TEMP/state-byte-misaligned.log"
           # Re-execs itself with inherited stdout; its child libtest lines split the
           # parent harness lines grepped above, so it runs alone (exit status only).
-          cargo test --locked --features "production batch-api internals bench-internals" --test r8_terminal_global -- fallback_direct_free_before_service_and_busy_terminal_publication
+          cargo test --locked --features "production batch-api internals bench-internals misuse-checks" --test r8_terminal_global -- fallback_direct_free_before_service_and_busy_terminal_publication
       - name: Non-fastbin batch reclamation
         shell: bash
         run: |
@@ -3584,6 +3590,7 @@ jobs:
           --test regression_magazine_oracles
           --test regression_bump_direct_refill
           --test nl3_safe_xthread_churn_integrity
+          --test nl7_safe_large_realloc_integrity
 
   miri-plain:
     needs: changes
@@ -3937,6 +3944,7 @@ jobs:
           --test regression_realloc_xthread_stamp
           --test stress_concurrent_boundaries
           --test nl3_safe_xthread_churn_integrity
+          --test nl7_safe_large_realloc_integrity
 
   asan:
     needs: changes

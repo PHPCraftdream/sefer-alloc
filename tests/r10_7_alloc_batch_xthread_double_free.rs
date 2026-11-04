@@ -75,6 +75,7 @@
     feature = "alloc-segment-directory",
     feature = "batch-api"
 ))]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 extern crate sefer_alloc;
 
@@ -122,6 +123,7 @@ impl Drop for SerialGuard {
 /// existing `is_in_magazine` guard drops the stale ring entry (return false:
 /// no link, no mark_free) → P is issued exactly once.
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn alloc_batch_no_duplicate_on_stale_xthread_double_free_entry() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();

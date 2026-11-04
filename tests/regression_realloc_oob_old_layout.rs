@@ -30,6 +30,7 @@
 //! the OOB scenario (see `scripts/miri.mjs` MATRIX).
 
 #![cfg(feature = "alloc-core")]
+#![cfg_attr(not(feature = "misuse-checks"), allow(unused_imports, dead_code))]
 
 use core::alloc::Layout;
 
@@ -46,6 +47,7 @@ const BOGUS_OLD: usize = 8 * 1024 * 1024;
 /// committed span (~4 MiB) and rejects the inconsistent layout → null, with
 /// no out-of-bounds read.
 #[test]
+#[cfg(feature = "misuse-checks")]
 fn realloc_with_oversized_old_layout_returns_null_not_oob() {
     let mut ac = AllocCore::new().expect("AllocCore::new");
     // A real 16-byte small block (class[0], block_size = MIN_BLOCK = 16).
