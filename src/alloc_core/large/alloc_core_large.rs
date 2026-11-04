@@ -138,6 +138,10 @@ impl AllocCore {
 
     /// `base` must be this owner's canonical live metadata root, including
     /// biased NUMA roots. The caller has already resolved table membership.
+    #[cfg_attr(
+        not(any(feature = "misuse-checks", debug_assertions)),
+        allow(dead_code)
+    )]
     #[inline]
     pub(crate) fn large_payload_mismatch(base: *mut u8, ptr: *mut u8) -> bool {
         SegmentHeader::kind_at(base) == SegmentKind::Large
@@ -152,6 +156,10 @@ impl AllocCore {
     /// Pure predicate since R6-T55: the callers count the rejection (into
     /// `LOCAL_REJECT_FREES`, not the public foreign/unroutable stat) at their
     /// own single rejection site.
+    #[cfg_attr(
+        not(any(feature = "misuse-checks", debug_assertions)),
+        allow(dead_code)
+    )]
     #[inline]
     pub(crate) fn reject_large_interior_free(base: *mut u8, ptr: *mut u8) -> bool {
         Self::large_payload_mismatch(base, ptr)

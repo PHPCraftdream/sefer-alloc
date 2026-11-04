@@ -245,7 +245,11 @@ pub(super) fn small_free_guard(
         #[cfg(not(feature = "hardened"))]
         if matches!(&kind, BlockKind::Large) {
             // SEC-03: only this already-selected Large arm reads payload geometry.
+            #[cfg(any(feature = "misuse-checks", debug_assertions))]
             if crate::alloc_core::AllocCore::reject_large_interior_free(base, ptr) {
+                crate::alloc_core::state_byte::StateByte::shadow_reject(
+                    b"sefer-alloc: misuse check rejected a Large free of an interior pointer in safe mode\n",
+                );
                 return SmallFreeGuard::RejectNoOp;
             }
             return SmallFreeGuard::RouteToLargeFree;
@@ -264,7 +268,11 @@ pub(super) fn small_free_guard(
             {
                 // Preserve hardened layout rejection below: only a layout
                 // accepted for Large routing reaches the address rejection.
+                #[cfg(any(feature = "misuse-checks", debug_assertions))]
                 if crate::alloc_core::AllocCore::reject_large_interior_free(base, ptr) {
+                    crate::alloc_core::state_byte::StateByte::shadow_reject(
+                        b"sefer-alloc: misuse check rejected a Large free of an interior pointer in safe mode\n",
+                    );
                     return SmallFreeGuard::RejectNoOp;
                 }
                 return SmallFreeGuard::RouteToLargeFree;
@@ -331,8 +339,7 @@ pub(super) fn small_free_guard(
         };
         if (off as usize) < payload_start {
             crate::alloc_core::state_byte::StateByte::shadow_reject(
-                b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard payload start)
-",
+                b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard payload start)\n",
             );
             return SmallFreeGuard::RejectNoOp;
         }
@@ -376,8 +383,7 @@ pub(super) fn small_free_guard(
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
     if byte != expected {
         crate::alloc_core::state_byte::StateByte::shadow_reject(
-            b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard)
-",
+            b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard)\n",
         );
         if byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::LIVE {
             return SmallFreeGuard::RejectNoOpSilent;
@@ -393,8 +399,7 @@ pub(super) fn small_free_guard(
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
     if (off as usize) >= meta.bump_of() {
         crate::alloc_core::state_byte::StateByte::shadow_reject(
-            b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard bump)
-",
+            b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard bump)\n",
         );
         return SmallFreeGuard::RejectNoOp;
     }

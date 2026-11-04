@@ -339,8 +339,16 @@ impl AllocCore {
 
     #[cold]
     #[inline(never)]
+    #[cfg_attr(
+        not(any(feature = "misuse-checks", debug_assertions)),
+        allow(unused_variables)
+    )]
     fn dealloc_large_at_base(&mut self, ptr: *mut u8, base: *mut u8) {
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if Self::reject_large_interior_free(base, ptr) {
+            crate::alloc_core::state_byte::StateByte::shadow_reject(
+                b"sefer-alloc: misuse check rejected a Large free of an interior pointer in safe mode\n",
+            );
             // R6-T55: a local interior reject is caller misuse, not a routing
             // failure — internal reject counter, never the public
             // `foreign_or_unroutable_frees`.
@@ -766,7 +774,11 @@ impl AllocCore {
             // registered.
             return core::ptr::null_mut();
         };
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if Self::large_payload_mismatch(base, block) {
+            crate::alloc_core::state_byte::StateByte::shadow_reject(
+                b"sefer-alloc: misuse check rejected a realloc of an interior pointer in safe mode\n",
+            );
             return core::ptr::null_mut();
         }
         if let Some(p) =
@@ -792,7 +804,11 @@ impl AllocCore {
         // (single-threaded, `!Send`) `AllocCore`'s own segments, so this is
         // always a same-thread read of the owner-only commit frontier
         // (R2-02) — see `safe_payload_read_span`'s doc.
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if old_layout.size() > AllocCore::safe_payload_read_span(base, block) {
+            crate::alloc_core::state_byte::StateByte::shadow_reject(
+                b"sefer-alloc: misuse check rejected a realloc with an oversized old layout in safe mode\n",
+            );
             return core::ptr::null_mut();
         }
         let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {

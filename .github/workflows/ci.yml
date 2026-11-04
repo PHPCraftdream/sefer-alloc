@@ -1997,6 +1997,9 @@ jobs:
       - name: nl3 safe cross-thread churn oracle (production internals, release)
         if: ${{ !cancelled() }}
         run: cargo test --features "production internals" --release --test nl3_safe_xthread_churn_integrity
+      - name: nl7 safe large realloc and free oracle (production internals, release)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "production internals" --release --test nl7_safe_large_realloc_integrity
       # NL-1: the same oracles with the state byte neither written nor read (the
       # trusting mode); `production` minus `misuse-checks`, release only (debug builds keep the byte).
       - name: nl3 remote-free burst reuse oracle (production without misuse-checks, release)
@@ -2008,6 +2011,9 @@ jobs:
       - name: nl3 safe cross-thread churn oracle (production without misuse-checks, release)
         if: ${{ !cancelled() }}
         run: cargo test --features "alloc-global alloc-xthread alloc-decommit fastbin alloc-segment-directory primordial-lazy-commit internals" --release --test nl3_safe_xthread_churn_integrity
+      - name: nl7 safe large realloc and free oracle (production without misuse-checks, release)
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-global alloc-xthread alloc-decommit fastbin alloc-segment-directory primordial-lazy-commit internals" --release --test nl7_safe_large_realloc_integrity
       # B4-30 fix7: first-alloc stack budget, differential self-measurement,
       # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
       - name: nl1 state byte switch (alloc-core, no misuse-checks, release)
@@ -3584,6 +3590,7 @@ jobs:
           --test regression_magazine_oracles
           --test regression_bump_direct_refill
           --test nl3_safe_xthread_churn_integrity
+          --test nl7_safe_large_realloc_integrity
 
   miri-plain:
     needs: changes
@@ -3937,6 +3944,7 @@ jobs:
           --test regression_realloc_xthread_stamp
           --test stress_concurrent_boundaries
           --test nl3_safe_xthread_churn_integrity
+          --test nl7_safe_large_realloc_integrity
 
   asan:
     needs: changes

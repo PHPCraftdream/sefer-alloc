@@ -9,9 +9,9 @@ use core::ptr::NonNull;
 
 use crate::alloc_core::node::{Node, NODE_SIZE};
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{
-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
-};
+#[cfg(any(feature = "misuse-checks", debug_assertions))]
+use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentKind};
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentMeta, FREE_LIST_NULL};
 use crate::alloc_core::size_classes::SizeClasses;
 use crate::alloc_core::state_byte::StateByte;
 
@@ -682,6 +682,7 @@ impl AllocCore {
         // commits via the per-granule state byte.
         // Hoist the `bump` LOAD once (the COMPARE stays per-block). A flush
         // never carves, so `bump` cannot advance during this run.
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         let bump = meta.bump_of();
         // H-1 (UBFIX-3): hoist the payload lower bound once — every block in
         // `run` shares this `base` (see this fn's doc), so `kind`/
@@ -689,8 +690,8 @@ impl AllocCore {
         // lands in the segment's OWN metadata region (header / page map /
         // bin table / …) instead of the payload; see `dealloc_small`'s
         // identical guard for the full rationale.
-        let kind = SegmentHeader::kind_at(base);
-        let payload_start = if kind == SegmentKind::Primordial {
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
+        let payload_start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
             SegLayout::primordial_meta_end()
         } else {
             SegLayout::small_meta_end()
@@ -722,6 +723,7 @@ impl AllocCore {
         let mut rejected: usize = 0;
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         let tag = class_idx as u8 + 1;
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         let span: usize = bump.saturating_sub(payload_start);
 
         let mut end = start;
@@ -737,6 +739,7 @@ impl AllocCore {
             // `off < payload_start` wraps to a huge value ≥ span; `off >= bump`
             // yields ≥ span. With a corrupted `bump < payload_start`, span is
             // 0 and every offset is rejected — same strength as the old pair.
+            #[cfg(any(feature = "misuse-checks", debug_assertions))]
             if (off as usize).wrapping_sub(payload_start) >= span {
                 rejected += 1;
                 continue;
@@ -750,8 +753,7 @@ impl AllocCore {
                 let sb = meta.state_byte().read(off);
                 if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
                     crate::alloc_core::state_byte::StateByte::shadow_reject(
-                        b"sefer-alloc: misuse check rejected a free in safe mode (magazine flush)
-",
+                        b"sefer-alloc: misuse check rejected a free in safe mode (magazine flush)\n",
                     );
                     rejected += 1;
                     continue;

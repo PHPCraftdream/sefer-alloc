@@ -89,8 +89,7 @@ impl AllocCore {
             };
             if (off as usize) < payload_start {
                 crate::alloc_core::state_byte::StateByte::shadow_reject(
-                    b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small payload start)
-",
+                    b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small payload start)\n",
                 );
                 return;
             }
@@ -113,8 +112,7 @@ impl AllocCore {
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if (off as usize) >= meta.bump_of() {
             crate::alloc_core::state_byte::StateByte::shadow_reject(
-                b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small bump)
-",
+                b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small bump)\n",
             );
             return;
         }
@@ -151,8 +149,7 @@ impl AllocCore {
                 )
         {
             crate::alloc_core::state_byte::StateByte::shadow_reject(
-                b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small)
-",
+                b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small)\n",
             );
             return; // Not the caller's issued block start: no-op.
         }

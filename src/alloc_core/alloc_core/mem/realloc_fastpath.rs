@@ -88,6 +88,10 @@ impl AllocCore {
     /// the calling thread. This method reads `kind`/`span_usable`/
     /// `committed_payload_end` header fields at `base`, which is only sound
     /// under that ownership/mapping proof.
+    #[cfg_attr(
+        not(any(feature = "misuse-checks", debug_assertions)),
+        allow(dead_code)
+    )]
     #[inline]
     pub(crate) fn safe_payload_read_span(base: *mut u8, payload: *mut u8) -> usize {
         let seg_span = if SegmentHeader::kind_at(base) == SegmentKind::Large {
@@ -103,6 +107,10 @@ impl AllocCore {
     /// purely so the cfg-gated tightening (R2-02) reads as one small,
     /// independently-named unit. See that method's doc for the full
     /// caller ownership requirement.
+    #[cfg_attr(
+        not(any(feature = "misuse-checks", debug_assertions)),
+        allow(dead_code)
+    )]
     #[inline]
     fn small_committed_bound(base: *mut u8) -> usize {
         #[cfg(any(
