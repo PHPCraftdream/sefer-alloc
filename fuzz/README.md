@@ -14,6 +14,7 @@ not run on Windows. The main `cargo build` / `cargo test` in the repository root
 are completely unaffected by this crate (it is its own workspace root). The
 targets are BUILD-checked per-push by the `fuzz-build` CI job; the CPU-hour
 running campaigns are scheduled/manual, not per-PR.
+One target on demand, for a chosen time and any ref (mutant evidence): `gh workflow run fuzz-target.yml --ref <branch> -f target=<name> -f seconds=<n>` (`.github/workflows/fuzz-target.yml`; the workflow file must exist on the default branch).
 
 ## The target: `region_ops`
 

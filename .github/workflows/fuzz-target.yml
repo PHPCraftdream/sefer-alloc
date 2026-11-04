@@ -1,0 +1,83 @@
+name: fuzz-target
+
+# On-demand run of ONE libFuzzer target for a chosen time. The weekly `fuzz-run` job of
+# ci.yml runs every target for 10 minutes; this one answers "does the oracle of target T
+# catch this branch" (mutant evidence) without dispatching the whole CI. Dispatch it with
+# `gh workflow run fuzz-target.yml --ref <branch> -f target=<name> -f seconds=<n>`; the
+# workflow file must exist on the default branch, the ref carries the code under test.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: fuzz target
+        required: true
+        type: choice
+        options:
+          - region_ops
+          - global_alloc_ops
+          - heap_core_ops
+          - safe_global_alloc_ops
+      seconds:
+        description: libFuzzer -max_total_time in seconds
+        required: true
+        default: "120"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: fuzz ${{ inputs.target }} (${{ inputs.seconds }} s)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          # Same musl/gnu-target note as the `fuzz-build` job of ci.yml: cargo-fuzz links
+          # against the prebuilt std of the build target; the runner's default
+          # resolves to x86_64-unknown-linux-musl whose std is NOT installed
+          # (E0463). Force the gnu target (its std ships with the toolchain).
+          targets: x86_64-unknown-linux-gnu
+          components: rust-src, llvm-tools-preview
+      - name: Configure fuzz symbolization
+        shell: bash
+        run: |
+          set -euo pipefail
+          host=$(rustc +nightly -vV | sed -n 's/^host: //p')
+          symbolizer="$(rustc +nightly --print sysroot)/lib/rustlib/$host/bin/llvm-symbolizer"
+          # Some llvm-tools-preview distributions do not ship llvm-symbolizer.
+          if [[ ! -x "$symbolizer" ]]; then
+            symbolizer=$(command -v llvm-symbolizer || true)
+          fi
+          if [[ ! -x "$symbolizer" ]]; then
+            for candidate in /usr/bin/llvm-symbolizer-[0-9]*; do
+              if [[ -x "$candidate" ]]; then symbolizer="$candidate"; break; fi
+            done
+          fi
+          # ASan supports binutils addr2line when explicitly enabled.
+          if [[ ! -x "$symbolizer" ]]; then
+            symbolizer=$(command -v addr2line)
+          fi
+          test -x "$symbolizer"
+          echo "ASAN_SYMBOLIZER_PATH=$symbolizer" >> "$GITHUB_ENV"
+          echo "ASAN_OPTIONS=symbolize=1:allow_addr2line=1" >> "$GITHUB_ENV"
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - name: Validate seconds
+        shell: bash
+        env:
+          FUZZ_SECONDS: ${{ inputs.seconds }}
+        run: |
+          [[ "$FUZZ_SECONDS" =~ ^[0-9]{1,4}$ ]] || { echo "seconds must be a number up to 9999"; exit 1; }
+      - name: fuzz run
+        working-directory: fuzz
+        env:
+          FUZZ_TARGET: ${{ inputs.target }}
+          FUZZ_SECONDS: ${{ inputs.seconds }}
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/fuzz/lsan.supp:print_suppressions=1
+        run: cargo +nightly fuzz run "$FUZZ_TARGET" --target x86_64-unknown-linux-gnu -- -max_total_time="$FUZZ_SECONDS"
