@@ -106,6 +106,10 @@ impl AllocCore {
                         self,
                     )
                 };
+                #[cfg(feature = "large-cache-adaptive")]
+                if !self.decay_config.adaptive {
+                    return LARGE_CACHE_SLOTS + large_cache_extended::EXTENDED_SLOTS_INITIAL;
+                }
                 LARGE_CACHE_SLOTS + ext.active
             }
         }
@@ -741,7 +745,7 @@ impl AllocCore {
         // release = excess * rate_bp / 10_000.  We use saturating_mul to
         // guard against an absurdly large excess (> usize::MAX / 10_000 on
         // 32-bit — pathological but safe).
-        let release = excess.saturating_mul(self.decay_config.decay_rate_bp as usize) / 10_000;
+        let release = excess.saturating_mul(self.large_cache_decay_rate_bp()) / 10_000;
         if release == 0 {
             return;
         }

@@ -10,7 +10,7 @@
 //! - `edge`: allocate, write only the first and last byte, free (what a lazily committed block costs).
 //! - `grow`: `realloc` doubling from 1 MiB to `size_mib` MiB, touching the pages each step adds, free.
 //! - `many`: `k` blocks of `size_mib` MiB, every page touched, freed in reverse order.
-//! - `idle` (J14): `reps` rounds of `many`, then 6 s of light activity (one 4 MiB block allocated and freed every 100 ms,
+//! - `idle` (J14): `reps` rounds of `many`, then 12 s of light activity (one 4 MiB block allocated and freed every 100 ms,
 //!   untimed), so a retention policy has decay intervals to give the heap back; `end_rss` is read after that.
 //!
 //! The allocator under test is a static reached through `#[inline(never)]` shims (the `__rust_alloc` boundary); the process global
@@ -285,7 +285,7 @@ fn main() {
         rep.push(once(arm, scen, size, k));
     }
     if a[1] == "idle" {
-        for _ in 0..60 {
+        for _ in 0..120 {
             std::thread::sleep(std::time::Duration::from_millis(100));
             let p = a_alloc(arm, 4 * MIB);
             assert!(!p.is_null(), "allocation of 4 MiB failed");

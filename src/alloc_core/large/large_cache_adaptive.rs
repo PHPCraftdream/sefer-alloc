@@ -9,24 +9,26 @@
 //! is the smallest bucket bound whose cumulative weight (the integral) covers
 //! `COVER_PCT` of all mistakes. Each decay interval forgets 1/16 of every
 //! weight, a quiet one (no mistake, and hits that used under 1/8 of the learned
-//! extra) half. The extra never exceeds the
-//! heap's recent peak of live Large bytes above the headroom, so the cache
-//! never holds more than the program itself recently had live. Extension
-//! slots past the initial 32 open only while the learned target has room.
+//! extra) half and moves every distance down one bucket (the extra halves),
+//! while the decay releases 3/4 of the excess per step. The extra never
+//! exceeds the heap's recent peak of live Large bytes above the headroom, so
+//! the cache never holds more than the program itself recently had live. The
+//! 8 base slots behave as in `production` (no byte budget unless the caller
+//! sets one); extension slots open only while the learned target has room.
 //!
 //! All state lives in the extension sidecar ([`AdaptiveState`] inside
 //! `LargeCacheExtension`), so `AllocCore`'s size does not change. Without the
 //! feature every hook is an empty inline function.
 
 #[cfg(feature = "large-cache-adaptive")]
-use super::large_cache_extended::{self, EXTENDED_SLOTS_INITIAL, LARGE_CACHE_EXTENDED_SLOTS};
+use super::large_cache_extended::{self, LARGE_CACHE_EXTENDED_SLOTS};
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(feature = "large-cache-adaptive")]
 use crate::alloc_core::alloc_core::{LARGE_CACHE_SIZE_FACTOR, LARGE_CACHE_SLOTS};
 
 /// Spans remembered after the cache gave them back to the OS under pressure.
 #[cfg(feature = "large-cache-adaptive")]
-pub(crate) const GHOST_N: usize = 64;
+pub(crate) const GHOST_N: usize = 256;
 
 /// Extension slots opened per growth step.
 #[cfg(feature = "large-cache-adaptive")]
@@ -39,6 +41,10 @@ const BUCKETS: usize = 48;
 /// Weight one mistake adds to its bucket (fixed point, so decay keeps resolution).
 #[cfg(feature = "large-cache-adaptive")]
 const UNIT: u32 = 1 << 8;
+
+/// Share of the excess over the target the decay releases in a quiet interval, in basis points.
+#[cfg(feature = "large-cache-adaptive")]
+pub(in crate::alloc_core) const QUIET_RELEASE_BP: usize = 7_500;
 
 /// Share of the mistake weight the learned extra must cover.
 #[cfg(feature = "large-cache-adaptive")]
@@ -62,6 +68,8 @@ pub(crate) struct AdaptiveState {
     /// Recent peak of `live`, decaying by 1/8 of its distance to `live` per interval.
     pub(in crate::alloc_core) peak: usize,
     mistakes: u32,
+    /// The last interval was quiet (the retention went unused).
+    pub(in crate::alloc_core) quiet: bool,
     /// Bytes served by cache hits in the current interval.
     hit_bytes: usize,
     /// Mistakes since the sidecar exists (diagnostics).
@@ -102,6 +110,7 @@ impl AdaptiveState {
         live: 0,
         peak: 0,
         mistakes: 0,
+        quiet: false,
         hit_bytes: 0,
         mistakes_total: 0,
     };
@@ -149,6 +158,18 @@ impl AllocCore {
     pub(in crate::alloc_core) fn large_cache_retain_target(&self) -> usize {
         let headroom = self.decay_config.headroom_bytes;
         headroom.saturating_add(self.adaptive_ref().map_or(0, |e| e.adapt.extra))
+    }
+
+    /// Release rate of the decay step in basis points: [`QUIET_RELEASE_BP`] while the last interval was quiet,
+    /// the configured rate otherwise.
+    #[inline]
+    pub(in crate::alloc_core) fn large_cache_decay_rate_bp(&self) -> usize {
+        let rate = self.decay_config.decay_rate_bp as usize;
+        if self.adaptive_ref().is_some_and(|e| e.adapt.quiet) {
+            rate.max(QUIET_RELEASE_BP)
+        } else {
+            rate
+        }
     }
 
     /// Whether quiet intervals still have learned retention to unlearn (the
@@ -237,15 +258,18 @@ impl AllocCore {
         true
     }
 
-    /// The byte budget a deposit is checked against: the configured budget,
-    /// raised to the learned target unless the caller set the budget itself.
+    /// The byte budget a deposit is checked against: the configured budget, or
+    /// none while the policy is on and the caller did not set one.
     #[inline]
     pub(in crate::alloc_core) fn large_cache_effective_budget(&self) -> Option<usize> {
         let budget = self.large_cache_budget_bytes?;
-        if !self.decay_config.adaptive_budget {
-            return Some(budget);
+        if self.decay_config.adaptive && self.decay_config.adaptive_budget {
+            // No budget the caller did not ask for: the base slots keep what the
+            // production cache keeps, the extension slots open only under the
+            // learned target.
+            return None;
         }
-        Some(budget.max(self.large_cache_retain_target()))
+        Some(budget)
     }
 
     /// One decay interval passed: forget 1/16 of every histogram weight (half
@@ -263,16 +287,21 @@ impl AllocCore {
             for w in &mut a.hist {
                 *w -= if quiet { w.div_ceil(2) } else { w.div_ceil(16) };
             }
+            if quiet {
+                // Unused retention: every distance moves down one bucket (the extra halves).
+                a.hist[0] = a.hist[0].saturating_add(a.hist[1]);
+                a.hist.copy_within(2.., 1);
+                a.hist[BUCKETS - 1] = 0;
+            }
+            a.quiet = quiet;
             a.mistakes = 0;
             a.hit_bytes = 0;
             a.peak -= (a.peak - a.live.min(a.peak)) / 8;
             a.extra = a.learned_extra(a.peak.saturating_sub(headroom));
             if !a.learning() {
-                // Back to the pre-J14 extension size once nothing above it is occupied.
-                let floor = occupied_hi.map_or(0, |i| i + 1 - LARGE_CACHE_SLOTS);
-                e.active = e
-                    .active
-                    .min(EXTENDED_SLOTS_INITIAL.max(floor.next_multiple_of(SLOT_STEP)));
+                // Back to the base slots once nothing above them is occupied.
+                let floor = occupied_hi.map_or(0, |i| (i + 1).saturating_sub(LARGE_CACHE_SLOTS));
+                e.active = e.active.min(floor.next_multiple_of(SLOT_STEP));
             }
         }
     }
@@ -332,4 +361,8 @@ impl AllocCore {
     }
     #[inline(always)]
     pub(in crate::alloc_core) fn large_cache_adaptive_interval(&mut self) {}
+    #[inline(always)]
+    pub(in crate::alloc_core) fn large_cache_decay_rate_bp(&self) -> usize {
+        self.decay_config.decay_rate_bp as usize
+    }
 }

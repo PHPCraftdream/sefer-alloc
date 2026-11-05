@@ -15,6 +15,9 @@ fn catchup_debt_survives_while_excess_remains() {
     const H: usize = 16 * MIB;
     let layout = Layout::from_size_align(4 * MIB - aligned_vmem::page_size(), 16).unwrap();
     let mut ac = AllocCore::new().expect("core creation must succeed");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(Some(256 * MIB));
     let live: Vec<_> = (0..40)
         .map(|_| {

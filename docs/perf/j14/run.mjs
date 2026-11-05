@@ -3,16 +3,17 @@
 // Per block the cells are shuffled (xorshift, fixed seed); within a cell the arms run in a rotation that moves by block. One process per run.
 // usage: node run.mjs <win|linux> BIN_DIR OUT BLOCKS REPEATS     (BIN_DIR holds base, x, base2 [, xt])
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 const [plat, dir, out, blocks, repeats] = [process.argv[2], process.argv[3], process.argv[4], Number(process.argv[5]), Number(process.argv[6])];
 // scenario, size in MiB, reps inside one process, k, repeats override (null = REPEATS)
-// many: k blocks of `size` MiB — 128 x 16 MiB and 16 x 128 MiB; idle: the 128 x 16 MiB habit, then 6 s of light activity
+// many: k blocks of `size` MiB — 128 x 16 MiB and 16 x 128 MiB; idle: the 128 x 16 MiB habit, then 12 s of light activity
 export const CELLS = [
   ['many', 16, 5, 128, null], ['many', 128, 5, 16, null], ['idle', 16, 3, 128, 1],
   ['cycle', 1, 20, 1, null], ['cycle', 128, 6, 1, null], ['grow', 128, 4, 1, null], ['edge', 128, 6, 1, null],
 ];
 const ARMS = [['base', 'base', 'sefer'], ['x', 'x', 'sefer'], ['base2', 'base2', 'sefer'], ['mi', 'base', 'mi']];
-if (plat === 'linux' && existsSync(`${dir}/xt`)) ARMS.splice(2, 0, ['xt', 'xt', 'sefer']);
+// the binaries live inside WSL: test there, not with Node's existsSync (false for a WSL path)
+if (plat === 'linux' && spawnSync('wsl.exe', ['-e', 'test', '-x', `${dir}/xt`], { env: { ...process.env, MSYS2_ARG_CONV_EXCL: '*' } }).status === 0) ARMS.splice(2, 0, ['xt', 'xt', 'sefer']);
 writeFileSync(out, '');
 let s = 0x9e3779b97f4a7c15n;
 const rnd = (n) => { s ^= s << 13n; s &= (1n << 64n) - 1n; s ^= s >> 7n; s ^= s << 17n; s &= (1n << 64n) - 1n; return Number(s % BigInt(n)); };
