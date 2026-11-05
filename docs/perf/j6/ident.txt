@@ -1,0 +1,10 @@
+tar 31b1c4516f7df8b5bc5bad503da39b6c3b1f68d67dc79a118b36ee89bbd64e96
+bin 9b08a2410173a7cdc507236e5f41f83809c3e51506e875ce3040d7df2c2e8769
+rustc 1.98.1 (48a229cea 2026-09-01)
+host: x86_64-unknown-linux-gnu
+LLVM version: 22.1.8
+model name	: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+logical cpus: 16
+RUSTFLAGS: -C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5
+features: production (release)
+main 875ddcd6f6b3fe48bc4283cd4c7db915416cb985
