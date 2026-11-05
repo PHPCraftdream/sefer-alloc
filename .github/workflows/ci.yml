@@ -84,8 +84,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
-          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-        run: node scripts/ci-plan.mjs --event "$EVENT" --base "$BASE" --head "$HEAD_SHA" --labels "$LABELS"
+        run: node scripts/ci-plan.mjs --event "$EVENT" --base "$BASE" --head "$HEAD_SHA"
 
   # Cheap, always-on consistency checks: the doc/inventory tests and the repository guard
   # scripts that read README/ARCHITECTURE/ci.yml. A docs-only PR still runs these, so a stale
@@ -117,6 +116,7 @@ jobs:
       # scripts/b4_30_fix7_evidence.mjs (constants-only rebases stay valid).
       - run: node scripts/verify-b4-30-pin.mjs
       - run: node scripts/ci-plan.mjs --check-doc
+      - run: node scripts/verify-sprint-close.mjs --selftest
       - run: node scripts/r20-gate-config.mjs --selftest
       - run: node scripts/r20_r6_ab_iai_run.mjs --selftest
       - run: cargo test --locked --test no_stale_doc_references --test r1_03_pool_docs_contract --test unsafe_allow_placement

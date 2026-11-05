@@ -587,9 +587,12 @@ Core instructions, mandatory for all code in this repository. They
   MSRV groups follow dependency/platform paths); a push to `main` runs the
   diff-selected groups without the heavy `seam`/`os` ones. "Green on the landing
   SHA" therefore means green **for the class of the landing diff**; the full set
-  runs nightly on `main`, on `workflow_dispatch`, on the `full-ci` PR label and
-  whenever `ci.yml` or the planner changes, and the most recent nightly must be
-  green before a sprint is closed.
+  runs nightly on `main`, on `workflow_dispatch`, and whenever a commit of the
+  pushed range carries the explicit trailer `CI: full` (on a line of its own in
+  the commit message; this replaced the `full-ci` PR label and the automatic full
+  run on `ci.yml`/planner edits). A sprint closes on a commit carrying `CI: full`
+  with a green full run on that exact SHA (`node scripts/verify-sprint-close.mjs
+  <sha>`). Ordinary pushes and pull requests keep running the diff-selected set.
 - **`npm run bench:table`** — the companion canonical wall-clock comparison
   table (SeferAlloc vs mimalloc vs System, fixed ns/op units, fixed bench
   set) for whenever comparative numbers are asked for. Exists because ad-hoc
