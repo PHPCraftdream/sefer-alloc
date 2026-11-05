@@ -28,11 +28,15 @@ summary: `docs/perf/J13_LARGE_BLOCK_THP_summary.csv`. Gates: `docs/perf/J13_LARG
 
 ## 3. Gates
 
-- FAIL T2: grow 128 MiB: RSS x end 266.5 / peak 266.5 against base 256.5 / 256.5 (limit +4 MiB)
-- FAIL T2: grow 1024 MiB: RSS x end 2058.5 / peak 2062.5 against base 2042.6 / 2046.4 (limit +4 MiB)
+- FAIL T2: grow 128 MiB: RSS x end 266.53 / peak 266.53 against base 256.54 / 256.54 (limit +4 MiB, over by 6126 KiB)
+- FAIL T2: grow 1024 MiB: RSS x end 2058.52 / peak 2062.52 against base 2042.55 / 2046.36 (limit +4 MiB, over by 12444 KiB)
 - FAIL KILL: edge 128 MiB x/base 8.323 (6.958–9.956) wholly above 1.10
 
-## 4. Decision
+## 4. Reading of the failures
+
+At least one non-RSS gate failed; see section 3.
+
+## 5. Decision
 
 **NO-GO.** No change to `src/` is merged; the patch stays on branch `g1-j13` only as the measured candidate.
 Not claimed: Windows (no-op by construction), THP modes `always`/`never`, workloads touching a small part of many big blocks beyond the `edge` cell.
