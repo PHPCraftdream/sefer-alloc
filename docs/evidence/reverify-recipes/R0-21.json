@@ -73,7 +73,7 @@
   ],
   "mutant": {
     "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
-    "find": "        if self.classes.encoded(granule) == 0 {\n            return false;\n        }\n        self.pending",
+    "find": "        #[cfg(any(feature = \"misuse-checks\", debug_assertions))]\n        if self.classes.encoded(granule) == 0 {\n            crate::alloc_core::state_byte::StateByte::shadow_reject(\n                b\"sefer-alloc: misuse check rejected a foreign free of an unissued granule in safe mode\\n\",\n            );\n            return false;\n        }\n        self.pending",
     "replace": "        self.pending",
     "steps": [
       {
@@ -86,7 +86,7 @@
           "test",
           "--release",
           "--features",
-          "alloc-core,alloc-xthread,tagged-index-stack/loom",
+          "alloc-core,alloc-xthread,tagged-index-stack/loom,misuse-checks",
           "--test",
           "loom_sidecar_bitmap_actual"
         ],
