@@ -1,0 +1,74 @@
+name: test-impact-map
+
+# CI-T1 stage 2 (docs/CI_TIERS.md): nightly map "integration test -> repository files its instrumented
+# binary executes", published as the artifact test-impact-map.json. Generation and validation only; no
+# job of ci.yml reads the map yet (stage 3). One row: `production internals`; tests whose
+# required-features are not enabled by the row are listed as unmapped.
+#
+# Each test is built and run alone (cargo test --test <name>) under -C instrument-coverage and its binary
+# is deleted right after its coverage is exported, so the runner disk holds one instrumented binary at a time.
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # nightly 04:00 UTC, after the 03:00 full tier of ci.yml
+  workflow_dispatch:
+
+concurrency:
+  group: test-impact-map
+  cancel-in-progress: false
+
+env:
+  FEATURES: 'production internals'
+
+jobs:
+  collect:
+    name: collect (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: node scripts/test-impact-map.mjs --selftest
+      - run: node scripts/test-impact-map.mjs collect --features "$FEATURES" --shard ${{ matrix.shard }}/4 --out part-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() }}
+        with:
+          name: test-impact-part-${{ matrix.shard }}
+          path: part-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  merge:
+    name: merge and check
+    needs: collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: test-impact-part-*
+          merge-multiple: true
+      - run: node scripts/test-impact-map.mjs merge --out test-impact-map.json part-*.json
+      - run: node scripts/test-impact-map.mjs check test-impact-map.json
+      - uses: actions/upload-artifact@v6
+        with:
+          name: test-impact-map
+          path: test-impact-map.json
+          if-no-files-found: error
+          retention-days: 30
