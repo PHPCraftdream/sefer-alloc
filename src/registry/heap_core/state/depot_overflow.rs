@@ -148,6 +148,114 @@ impl DepotOverflow {
         o
     }
 
+    /// Kani-only: an overflow over `base` (a buffer of `cap` records, class
+    /// `c`) in an arbitrary state of its representation invariants — the
+    /// ring (`len`, `head`), commit watermark, parked bytes, decay epoch and
+    /// debt, latch and ingress counters are all symbolic. Only class `c` has
+    /// a ring; `bytes` may exceed its share (other classes' records).
+    #[cfg(kani)]
+    pub(crate) fn kani_symbolic(base: *mut u8, c: usize, cap: u16) -> Self {
+        let mut o = Self::empty();
+        o.base = base;
+        o.cap[c] = cap;
+        let n: u16 = kani::any();
+        kani::assume(n <= cap);
+        o.len[c] = n;
+        let head: u16 = kani::any();
+        kani::assume(head < cap);
+        o.head[c] = head;
+        let committed: u32 = kani::any();
+        kani::assume(committed as usize <= cap as usize * REC);
+        o.committed[c] = committed;
+        let others: usize = kani::any();
+        kani::assume(others <= 1 << 20);
+        o.bytes = n as usize * mag_bytes(c) + others;
+        // `bytes > 0` implies every small class is armed.
+        o.armed = if o.bytes > 0 {
+            ALL_SMALL
+        } else {
+            kani::any::<u64>() & ALL_SMALL
+        };
+        let epoch_len: u32 = kani::any();
+        kani::assume(epoch_len >= EPOCH_MIN && epoch_len <= u32::MAX / 2);
+        o.epoch_len = epoch_len;
+        let events: u32 = kani::any();
+        kani::assume(events < epoch_len);
+        o.events = events;
+        o.debt_mask = kani::any();
+        // `debt_mask` bit `c` <=> `debt[c] != 0`, and debt never exceeds the ring.
+        let debt: u16 = kani::any();
+        kani::assume(debt <= n);
+        kani::assume((debt != 0) == (o.debt_mask >> c & 1 != 0));
+        o.debt[c] = debt;
+        let low: u16 = kani::any();
+        kani::assume(low <= n);
+        o.low[c] = low;
+        o.parked_in_epoch = kani::any();
+        o.starved = kani::any();
+        let since: u32 = kani::any();
+        kani::assume(since < INGRESS_PERIOD);
+        o.reloads_since_ingress = since;
+        o
+    }
+
+    /// Kani-only: a field-for-field copy of `self` over `base`.
+    #[cfg(kani)]
+    pub(crate) fn kani_copy(&self, base: *mut u8) -> Self {
+        Self {
+            base,
+            bytes: self.bytes,
+            armed: self.armed,
+            events: self.events,
+            epoch_len: self.epoch_len,
+            debt_mask: self.debt_mask,
+            parked_in_epoch: self.parked_in_epoch,
+            starved: self.starved,
+            reloads_since_ingress: self.reloads_since_ingress,
+            reserve_failed: self.reserve_failed,
+            len: self.len,
+            head: self.head,
+            cap: self.cap,
+            low: self.low,
+            debt: self.debt,
+            off: self.off,
+            committed: self.committed,
+            stats: self.stats,
+        }
+    }
+
+    /// Kani-only: every control field of `self` equals `other`'s (the base
+    /// pointers aside).
+    #[cfg(kani)]
+    pub(crate) fn kani_same_controls(&self, other: &Self) -> bool {
+        // Element-wise, not `==` on the arrays: array equality lowers to a
+        // `memcmp` loop that needs an unwind bound of its byte length.
+        let mut k = 0;
+        while k < DEPOT_CLASSES {
+            if self.len[k] != other.len[k]
+                || self.head[k] != other.head[k]
+                || self.cap[k] != other.cap[k]
+                || self.low[k] != other.low[k]
+                || self.debt[k] != other.debt[k]
+                || self.off[k] != other.off[k]
+                || self.committed[k] != other.committed[k]
+            {
+                return false;
+            }
+            k += 1;
+        }
+        self.bytes == other.bytes
+            && self.armed == other.armed
+            && self.events == other.events
+            && self.epoch_len == other.epoch_len
+            && self.debt_mask == other.debt_mask
+            && self.parked_in_epoch == other.parked_in_epoch
+            && self.starved == other.starved
+            && self.reloads_since_ingress == other.reloads_since_ingress
+            && self.reserve_failed == other.reserve_failed
+            && self.stats == other.stats
+    }
+
     /// After a successful park: the small classes not yet armed (bit `c`) —
     /// the caller sets their `MARK_TICK` — and every class is armed from here.
     #[inline(always)]
