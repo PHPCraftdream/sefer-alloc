@@ -1585,7 +1585,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **485 integration test files**,
+needs its acceptance run. The present tree contains **486 integration test files**,
 **106 example binaries**, **34 benches**, and **26 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1595,7 +1595,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (485 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (486 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (106 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1989,6 +1989,22 @@ How to choose:
 
 Measurements (Linux, WSL2, i7-11800H, 9 interleaved processes per cell): `docs/perf/CF3_HUGE_PAGE_THRESHOLD.md`. Wall-clock medians on the
 shared machine did not separate the thresholds; the page-fault counts above are exact.
+
+**Large blocks (Linux, J13).** A fresh Large reservation for a request of **8 MiB or more** is always advised `MADV_HUGEPAGE`, so the
+first touch of a big block pays one fault per 2 MiB instead of one per 4 KiB. Requests below 8 MiB, blocks served from the Large cache,
+Windows and `numa-aware` builds are unchanged. There is no setting for it; a system with transparent huge pages set to `never` makes it a no-op.
+
+| Linux/WSL2 (`madvise` mode), cold first round, 12 blocks x 2 repeats | without the hint | with the hint |
+|---|---:|---:|
+| time, 16 MiB to 4 GiB blocks, with / without (95 % interval of the ratio) | 1 | 0.43 to 0.57 (every interval below 0.75) |
+| page faults of a 1 GiB block | 262,505 | 874 |
+| time relative to mimalloc, same blocks | 1.7 to 2.6 times slower | 0.82 to 1.17 |
+| extra resident memory | 0 | at most 2 MiB per hinted block that is touched (one huge page per touched 2 MiB region) |
+
+The cost is real for sparse use: a block touched in two places holds two huge pages (4 MiB) instead of two 4 KiB pages, and that first touch takes about
+0.4 ms instead of 56 us. The extra memory over many live, barely touched big blocks is 2 MiB per block with no ceiling yet (a bound on the number of hinted
+blocks is the open follow-up J13b). Evidence: `docs/perf/J13_LARGE_BLOCK_THP_C2.md` (the preregistered gates failed by 2 to 142 KiB of resident memory,
+which the owner accepted: the limits were exact multiples of 2 MiB with no tolerance for a median that carries a few tens of KiB of other allocations).
 
 ---
 

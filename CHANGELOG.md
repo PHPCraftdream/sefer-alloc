@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Linux: fresh Large reservations of 8 MiB or more are advised MADV_HUGEPAGE (J13, 2026-11-05)
+
+- [perf(runtime)] A fresh Large reservation for a request of 8 MiB or more is advised `MADV_HUGEPAGE` on Linux (no-op elsewhere, with `numa-aware`, and with THP `never`); cache hits, requests below 8 MiB and Windows are unchanged. Cold first round of 16 MiB to 4 GiB blocks: 0.43 to 0.57 of the previous time (page faults of a 1 GiB block 262,505 to 874), sefer/mimalloc 1.7 to 2.6 to 0.82 to 1.17. Cost: at most 2 MiB resident per touched 2 MiB region of a hinted block; a sparse touch takes about 0.4 ms instead of 56 us; no ceiling over many live sparse blocks yet (follow-up J13b, `docs/perf/J13B_BOUNDED_THP_PREREG.md`). Evidence `docs/perf/J13_LARGE_BLOCK_THP_C2.md`: the preregistered gates failed only on five resident-memory limits by 2 to 142 KiB; accepted by the owner. Test: `tests/j13_large_thp_hint.rs`. README: Transparent huge pages, Large blocks.
+
 ### Opt-in: a Large cache that learns the program's reuse habit (2026-11-05)
 
 - [opt-in] Feature `large-cache-adaptive` (implies `large-cache-extended`, not part of `production`): a Large allocation that misses the cache
