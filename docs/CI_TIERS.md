@@ -41,7 +41,10 @@ on a schedule and on demand.
 | `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests |
 | `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**`, tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`) |
 | `crate_*` | `crates/<name>/**`: the gates of that one workspace crate (its dependents also get `fast`+`seam`) |
-| everything | `schedule`, `workflow_dispatch`, PR label `full-ci`, and any change to `.github/workflows/ci.yml` or `scripts/ci-plan.mjs` |
+| everything | `schedule`, `workflow_dispatch`, and a `CI: full` trailer in the message of any commit of the range (PR: base..merge commit; push: before..sha) |
+
+A change to `.github/workflows/ci.yml` or `scripts/ci-plan.mjs` selects `fast` (the planner self-test runs in
+every `changes` job); it no longer selects the full set, and the `full-ci` PR label is gone.
 
 Documents (`docs/**`, `*.md`, `*.csv`, `*.sha256`, `.rush/**`), other workflows and non-matrix scripts
 select `always` only. An unrecognised path selects `fast` (conservative), never nothing. A merge to `main`
@@ -52,10 +55,16 @@ request and the nightly run re-runs them on `main`.
 
 - **Nightly** (`0 3 * * *`) on `main`: everything except the three weekly-only jobs.
 - **Weekly** (`0 6 * * 1`): everything including `numa-real-kernel`, `fuzz-run` and `feature-powerset`.
-- **On demand**: `gh workflow run ci.yml --ref <branch>` (full), or label a PR `full-ci`.
-- **Sprint close**: the most recent nightly (or an on-demand full run on the closing SHA) must be green.
+- **Explicit trigger**: put `CI: full` on a line of its own in the message of a commit (a trailer, after the body).
+  Any commit of the pushed range counts, so the next push, the PR run and the merge to `main` run the full set.
+  This is the only in-repo way to ask for the full set; a prose mention is not a trigger.
+- **On demand**: `gh workflow run ci.yml --ref <branch>` (full), or "Run workflow" in the Actions tab. Ordinary
+  runs (push, pull request) stay available and follow the diff.
+- **Sprint close**: the closing commit carries `CI: full`, and `node scripts/verify-sprint-close.mjs <sha>` confirms a
+  green FULL run on exactly that SHA (every tiered job ran and succeeded; only the weekly-only and dispatch-only
+  jobs may be skipped). The nightly is a safety net, not the close proof.
 - Recommended, owner to confirm: a PR that changes an unsafe seam (`src/alloc_core/**`, `src/registry/**`,
-  `src/global/**`) carries `full-ci` before merge when it is about to be merged on its own.
+  `src/global/**`) carries a `CI: full` commit before merge when it is about to be merged on its own.
 
 The rule in `CLAUDE.md` "confirm CI went green on the landing SHA" now reads: green **for the class of the
 landing diff**, plus a green nightly for the heavy groups.
@@ -163,7 +172,7 @@ the smoke row covers those scenarios.
 - A new job must be added to the group map when it is wired (its `needs`/`if` are plain text in `ci.yml`).
 - Known limits: the mapping is coarse (per top-level source directory), cross-OS and Miri coverage of a
   `src/**`-only PR is deferred to the nightly run, and the planner does not understand which test a change
-  can affect. When in doubt, label the PR `full-ci`.
+  can affect. When in doubt, add a commit with a `CI: full` trailer.
 
 ## Gate runs are PR checks
 
