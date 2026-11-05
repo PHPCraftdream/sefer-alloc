@@ -44,3 +44,19 @@ In `AllocCore::alloc_large_slow` (non-NUMA arm), after a fresh reservation of a 
 Windows is unchanged by construction (no-op); no claim is made there. THP mode `always` or `never` on other hosts is not measured: `never` makes the hint a no-op, `always`
 already backs the span (so x equals base). The RSS cost of a hinted block is at most the span rounded to 2 MiB pages; nothing is claimed about workloads that touch a small
 part of many big blocks beyond the `edge` cell.
+
+## 6. Amendment 1 (written after campaign 1 had been read; governs campaign 2 only, on fresh data)
+
+**Campaign 1** (`docs/perf/j13/raw.jsonl.gz`, report `docs/perf/J13_LARGE_BLOCK_THP.md`) read **NO-GO** under sections 4 as written: T0 (path activation) and T1 (benefit)
+passed — cold x / base 0.42–0.57 on every cell of 16 MiB or more, page faults per GiB 262 503 → 871, THP-backed bytes equal to the block — and two cost gates failed:
+T2 on `grow` (end RSS +10 MiB at 128 MiB, +16 MiB at 1 GiB, limit +4 MiB) and the kill on `edge` 128 MiB (cold x / base 8.3; absolute 56 µs → 512 µs median).
+That report stays published as it is. The limits that failed were written without the mechanism of the hint; this amendment replaces them by limits derived from it, and
+campaign 2 (same binaries, new runs) is the only evidence for the amended gates. The campaign 1 numbers were known when this was written; the limits below follow from the
+mechanism and not from fitting those numbers (the measured `grow` deltas, +10 and +16 MiB, equal the bound below exactly, which supports THP rounding and excludes a leak).
+
+- A hinted reservation backs every touched 2 MiB region with a whole huge page, so a partly touched hinted reservation costs at most 2 MiB of RSS more than 4 KiB pages.
+  **T2 (RSS), amended:** x's end and peak RSS are at most base's plus `2 MiB` times the number of hinted reservations the cell creates and touches partly: `cycle` 1 (+2 MiB),
+  `grow` the doubling chain from 8 MiB up to the block (128 MiB: 5, +10 MiB; 1 GiB: 8, +16 MiB), `edge` two touched regions (+4 MiB), `many` k (+2 MiB x k). `many` is gated now.
+- A sparse touch (first and last byte of a block) costs two 2 MiB zeroings instead of two 4 KiB ones: at 2 GiB/s at least, up to about 2 ms. **Kill on `edge`, replaced by an absolute
+  limit:** the median cold time of `edge` 128 MiB for x is at most 2 ms. The relative kill (1.10 over base) stays for every other cell of 16 MiB or more.
+- T0, T1 and the control cell are unchanged. The decision rule is unchanged: GO only when T0, T1, T2 pass and nothing is killed; campaign 1 is not averaged into campaign 2.
