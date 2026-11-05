@@ -69,3 +69,32 @@ steady rounds ~65 ms against ~560 ms without the policy) — and where the remai
 and not the allocator (alloc 0.3 ms, free ~5 ms); mimalloc touches the same memory in 8 ms because its blocks sit on huge pages (J13). The gates of section 4 stay as written
 and apply to **x** (J14 alone). A fifth arm **xt** (x plus the J13 hint for fresh Large reservations of 8 MiB or more, tag `archive/g1-j14-xt`) is added to read the combination;
 no gate rests on xt, its numbers are reported next to x. On Windows (no THP hint) x and xt are the same code path for these cells.
+
+## 7. Amendment 2 (written after campaign 1 and before any new data; campaign 2 runs on fresh data)
+
+Campaign 1 (`docs/perf/J14_ADAPTIVE_LARGE_CACHE.md`) is a NO-GO by the letter of section 4 and stays published as it is. Reading it found three defects of the design and two of the gates; this
+amendment changes the policy and the gates for **campaign 2 only**. Nothing of campaign 1 is re-read under the new gates.
+
+Defects of the design, each seen in campaign 1 and traced in the code:
+
+1. **The policy lowered the cache for large spans.** `large-cache-adaptive` implies `large-cache-extended`, whose default byte budget is 256 MiB (R17-9) instead of the unbounded budget of the production cache. 16 x 128 MiB: the third span of 128 MiB is
+   refused, so x cached 2 spans where base caches 8 (x/base 1.88, end RSS 132 MiB against 1028 MiB). The extension sidecar, which holds the ghost list and the histogram, is created only once the base slots are full; it never was, so nothing was learned.
+2. **The ghost list is too short for the habit.** 64 ghosts of 16 MiB bound the distance of a mistake to 1 GiB, so a 2 GiB habit of 128 spans cannot be learned whole (campaign 1: x kept 1028 MiB of 2 GiB).
+3. **Forgetting does not shrink the learned extra.** A quiet interval halves every weight, which leaves the 90 % bound where it was until a weight reaches zero; the decay then releases 10 % of the excess per interval (campaign 1: end RSS 1188 MiB after six intervals).
+
+Changes of the policy (feature `large-cache-adaptive` only; every other build is unchanged):
+
+- **No budget below the production cache.** Unless the caller set `budget_bytes`, the byte budget of the adaptive cache is unbounded as in `production`; the 8 base slots behave exactly as in `production`. The extension slots start at **0** (not 32) and open
+  only under the learned target (`used + span <= headroom + extra`), as before. With the policy switched off (test hook) the fixed 40-slot extension and its 256 MiB budget are restored.
+- **Ghost list 256** (4 KiB in the sidecar), so a habit of up to 256 spans of any size is visible.
+- **Quiet interval** (no mistake, hits under 1/8 of the extra): every distance moves down one bucket (the extra halves) in addition to halving the weights, and the decay step releases **75 %** of the excess over the target instead of the configured rate (10 % by default).
+  A non-quiet interval is unchanged.
+
+Changes of the gates:
+
+- **T1 (benefit), replaces the x / mimalloc <= 2.0 clause:** warm x / base upper bound **< 0.5** on `many` 128 x 16 MiB and **< 0.9** on `many` 16 x 128 MiB, on both platforms. The owner's target (not more than 2x behind mimalloc) is **not** a gate of this feature:
+  the steady-round remainder at 128 x 16 MiB is the touch of 2 GiB on 4 KiB pages (campaign 1, section 5), which no retention policy changes. It is reported as x / mimalloc on both platforms and, on Linux, as xt / mimalloc (the combination with the J13 hint).
+- **T2(a) (idle), replaces the 6-interval clause:** the `idle` cell runs **12 s** of light activity (one 4 MiB block every 100 ms) after the habit; x's end RSS at most base's end RSS **plus the 256 MiB headroom floor plus 32 MiB**. The floor is the documented
+  per-heap retention of the default configuration; the policy may keep what the headroom keeps, not more.
+- T0 (path activation), T2(b), T2(c) and the kill rule are unchanged; T2(c) now also covers `many` 16 x 128 MiB cold (x / base interval not wholly above 1.05), the cell where campaign 1 found the regression.
+- **Arm xt** is rebuilt from the new J14 tree plus the J13 patch (tag `archive/g1-j13-thp`) and is read only; the runner now tests for the xt binary where it lives (inside WSL), the defect that dropped it from campaign 1.
