@@ -314,10 +314,7 @@ impl AllocCore {
             // invariant `large_cache_find_free_slot` already relies on)
             // instead of paying one `Option` discriminant load per slot
             // across `large_cache_scan_bound()`.
-            let mut occupied = self.large_cache_occupied_within_bound();
-            while occupied != 0 {
-                let i = occupied.trailing_zeros() as usize;
-                occupied &= occupied - 1; // clear the lowest set bit
+            for i in self.large_cache_occupied_slots() {
                 if let Some(slot) = self.large_cache_slot_get(i) {
                     if slot.usable_size >= usable
                         && slot.usable_size <= usable.saturating_mul(LARGE_CACHE_SIZE_FACTOR)
@@ -325,6 +322,11 @@ impl AllocCore {
                     {
                         best_usable = slot.usable_size;
                         hit_idx = Some(i);
+                        // J14: an exact fit cannot be beaten and the scan is
+                        // lowest-index first, so stopping keeps the result.
+                        if best_usable == usable {
+                            break;
+                        }
                     }
                 }
             }
@@ -350,6 +352,7 @@ impl AllocCore {
                 // Update the byte-budget counter: this slot is leaving the cache.
                 self.large_cache_used_bytes =
                     self.large_cache_used_bytes.saturating_sub(slot.usable_size);
+                self.large_cache_note_hit(slot.usable_size);
                 // The cache retains the committed reservation. Before
                 // registration, update the owner-side atomic legacy magic,
                 // size, alignment, and bump fields; the payload offset is
@@ -474,6 +477,8 @@ impl AllocCore {
                 }
                 return (Node::deref(slot.base, hdr_aligned), false);
             }
+            // J14: a cache miss — a mistake if a recent ghost would have served it.
+            self.large_cache_note_miss(usable);
         }
 
         self.alloc_large_slow(size, align, usable, hdr_aligned)
@@ -810,21 +815,26 @@ impl AllocCore {
             // `AllocCore::dealloc` — see that site's comment and
             // `large_cache_deposit_budget_infeasible`'s doc for the full
             // rationale.
+            self.large_cache_note_free(usable_size);
             let mut admitted: Option<usize> = None;
             if hdr.large_align < SEGMENT && !self.large_cache_deposit_budget_infeasible(usable_size)
             {
                 loop {
                     let free_slot = self.large_cache_find_free_slot();
                     let budget_ok = self
-                        .large_cache_budget_bytes
+                        .large_cache_effective_budget()
                         .is_none_or(|budget| self.large_cache_used_bytes + usable_size <= budget);
                     if let Some(idx) = free_slot {
                         if budget_ok {
                             admitted = Some(idx);
                             break;
                         }
+                    } else if budget_ok
+                        && self.large_cache_try_grow_slots(self.large_cache_used_bytes, usable_size)
+                    {
+                        continue; // J14: the learned target opened more slots
                     }
-                    if !self.evict_one_oldest() {
+                    if !self.evict_oldest_noting_ghost() {
                         break;
                     }
                 }
@@ -856,6 +866,9 @@ impl AllocCore {
                 );
                 self.large_cache_used_bytes += usable_size;
                 return;
+            }
+            if hdr.large_align < SEGMENT {
+                self.large_cache_note_ghost(usable_size); // J14: refused under pressure
             }
         }
 

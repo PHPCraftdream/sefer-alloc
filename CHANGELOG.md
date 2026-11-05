@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Opt-in: a Large cache that learns the program's reuse habit (2026-11-05)
+
+- [opt-in] Feature `large-cache-adaptive` (implies `large-cache-extended`, not part of `production`): a Large allocation that misses the cache
+  while a span the cache recently gave back to the OS would have served it is a mistake; the bytes given back since that span left go into a
+  decaying histogram, and the cache keeps the retention that would have prevented 90 % of the recent mistakes (the histogram's integral), never
+  more than the heap's recent peak of live Large bytes above the headroom. The extension opens up to 248 slots (256 in total) while mistakes are
+  remembered; quiet decay intervals forget the habit and the cache returns to the fixed 40 slots. Measurement and promotion gates:
+  `docs/perf/J14_ADAPTIVE_LARGE_CACHE_PREREG.md`. Tests: `tests/j14_large_cache_adaptive.rs`.
+
 ### The segment-directory walk skips all-zero words in blocks of eight (2026-11-05)
 
 - [performance] `AllocCore::scan_directory_candidates` tests the 64 directory words of a class eight at a time and skips an all-zero block at once; a

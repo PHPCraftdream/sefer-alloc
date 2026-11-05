@@ -461,6 +461,7 @@ impl AllocCore {
             // doc for the exact rationale and its scope (this is a
             // single-deposit-vs-budget check, not a full feasibility
             // predictor for the eviction loop below).
+            self.large_cache_note_free(usable_size);
             let mut admitted: Option<usize> = None;
             if stale.large_align < os::SEGMENT
                 && !self.large_cache_deposit_budget_infeasible(usable_size)
@@ -468,23 +469,30 @@ impl AllocCore {
                 loop {
                     let free_slot = self.large_cache_find_free_slot();
                     let budget_ok = self
-                        .large_cache_budget_bytes
+                        .large_cache_effective_budget()
                         .is_none_or(|budget| self.large_cache_used_bytes + usable_size <= budget);
                     if let Some(idx) = free_slot {
                         if budget_ok {
                             admitted = Some(idx);
                             break;
                         }
+                    } else if budget_ok
+                        && self.large_cache_try_grow_slots(self.large_cache_used_bytes, usable_size)
+                    {
+                        continue; // J14: the learned target opened more slots
                     }
                     // Either no free slot, or budget would overflow → evict
                     // the oldest entry and retry. If the cache is already
                     // empty there is nothing more we can do.
-                    if !self.evict_one_oldest() {
+                    if !self.evict_oldest_noting_ghost() {
                         break;
                     }
                 }
             }
 
+            if admitted.is_none() && stale.large_align < os::SEGMENT {
+                self.large_cache_note_ghost(usable_size); // J14: refused under pressure
+            }
             if let Some(slot_idx) = admitted {
                 // We keep the pages COMMITTED in the cache (no decommit
                 // on deposit). On Windows, `VirtualAlloc(MEM_DECOMMIT)`
