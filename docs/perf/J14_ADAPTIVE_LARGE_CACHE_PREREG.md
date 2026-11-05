@@ -61,3 +61,11 @@ Per heap (owner-only state inside the lazily materialised extension sidecar, col
 
 A process that frees a habit-sized heap and then makes no further allocator call keeps it (decay runs from allocator calls, not from a timer); several heaps
 each learn their own habit and each is bounded by its own peak, not by a process-wide one.
+
+## 6. Amendment 1 (written before any campaign; smoke-run reading, no gate changed)
+
+A smoke run of `many` 128 x 16 MiB on Linux (one process each, not a campaign) showed the mechanism working — round 2 onwards served from the cache (cold 1.45 s,
+steady rounds ~65 ms against ~560 ms without the policy) — and where the remainder sits: in the steady rounds the time is the touch phase (4 KiB pages, 60 ms for 2 GiB)
+and not the allocator (alloc 0.3 ms, free ~5 ms); mimalloc touches the same memory in 8 ms because its blocks sit on huge pages (J13). The gates of section 4 stay as written
+and apply to **x** (J14 alone). A fifth arm **xt** (x plus the J13 hint for fresh Large reservations of 8 MiB or more, tag `archive/g1-j14-xt`) is added to read the combination;
+no gate rests on xt, its numbers are reported next to x. On Windows (no THP hint) x and xt are the same code path for these cells.
