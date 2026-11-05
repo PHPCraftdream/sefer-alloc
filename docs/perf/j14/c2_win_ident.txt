@@ -1,0 +1,6 @@
+base e041f42db81bc43f45fad16290a7614240feb749 (origin/main 9b4c4cec + judge)
+x 65674b70f477095ca5ecaaf5cb6ec5203bb41ad2
+bin-base 5ab2f8d0947552f57d51153600e73b9b74d7f7012cdb29dc8610538d3d03b75a
+bin-x 189a1508bfafa7a1e0a930a2cd375d54e81bb374faff47b35665ef43be48febe
+bin-base2 5ab2f8d0947552f57d51153600e73b9b74d7f7012cdb29dc8610538d3d03b75a
+features-base: production; features-x: production large-cache-adaptive (release); Windows, no RUSTFLAGS
