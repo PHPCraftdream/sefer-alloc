@@ -2,7 +2,7 @@
 //! habit (`docs/perf/J14_ADAPTIVE_LARGE_CACHE_PREREG.md`).
 //!
 //! A *mistake* is a Large allocation that misses the cache while a span the
-//! cache recently gave back to the OS (a *ghost*) would have served it. Its
+//! cache recently gave back to the OS (a *gone* span) would have served it. Its
 //! *distance* is the bytes the cache gave back since that span left, the span
 //! included: the extra retention that would have turned the miss into a hit.
 //! Distances go into a decaying histogram of log2 buckets; the learned extra
@@ -28,7 +28,7 @@ use crate::alloc_core::alloc_core::{LARGE_CACHE_SIZE_FACTOR, LARGE_CACHE_SLOTS};
 
 /// Spans remembered after the cache gave them back to the OS under pressure.
 #[cfg(feature = "large-cache-adaptive")]
-pub(crate) const GHOST_N: usize = 256;
+pub(crate) const GONE_N: usize = 256;
 
 /// Extension slots opened per growth step.
 #[cfg(feature = "large-cache-adaptive")]
@@ -55,8 +55,8 @@ const COVER_PCT: u64 = 90;
 pub(crate) struct AdaptiveState {
     /// `(usable, gone)` of spans given back under slot or budget pressure:
     /// `gone` = `given_back` right after the span left; usable 0 = empty.
-    ghost: [(usize, u64); GHOST_N],
-    ghost_next: usize,
+    gone: [(usize, u64); GONE_N],
+    gone_next: usize,
     /// Bytes given back under pressure since the sidecar exists.
     given_back: u64,
     /// Decaying weights of mistake distances by log2 bucket.
@@ -102,8 +102,8 @@ impl AdaptiveState {
     }
 
     pub(crate) const NEW: Self = Self {
-        ghost: [(0, 0); GHOST_N],
-        ghost_next: 0,
+        gone: [(0, 0); GONE_N],
+        gone_next: 0,
         given_back: 0,
         hist: [0; BUCKETS],
         extra: 0,
@@ -190,7 +190,7 @@ impl AllocCore {
         }
     }
 
-    /// A Large allocation of `usable` bytes missed the cache: if a ghost would
+    /// A Large allocation of `usable` bytes missed the cache: if a gone span would
     /// have served it, that is a mistake; its distance enters the histogram.
     #[inline]
     pub(in crate::alloc_core) fn large_cache_note_miss(&mut self, usable: usize) {
@@ -201,7 +201,7 @@ impl AllocCore {
             a.peak = a.peak.max(a.live);
             let hi = usable.saturating_mul(LARGE_CACHE_SIZE_FACTOR);
             let now = a.given_back;
-            if let Some(g) = a.ghost.iter_mut().find(|g| g.0 >= usable && g.0 <= hi) {
+            if let Some(g) = a.gone.iter_mut().find(|g| g.0 >= usable && g.0 <= hi) {
                 // Bytes given back since this span left, the span included.
                 let distance = (now - g.1).saturating_add(g.0 as u64).max(1);
                 *g = (0, 0);
@@ -225,12 +225,12 @@ impl AllocCore {
     /// A span of `usable` bytes left the cache (or was refused) under slot or
     /// budget pressure: remember it.
     #[inline]
-    pub(in crate::alloc_core) fn large_cache_note_ghost(&mut self, usable: usize) {
+    pub(in crate::alloc_core) fn large_cache_note_gone(&mut self, usable: usize) {
         if let Some(e) = self.adaptive_ext() {
             let a = &mut e.adapt;
             a.given_back = a.given_back.saturating_add(usable as u64);
-            a.ghost[a.ghost_next] = (usable, a.given_back);
-            a.ghost_next = (a.ghost_next + 1) % GHOST_N;
+            a.gone[a.gone_next] = (usable, a.given_back);
+            a.gone_next = (a.gone_next + 1) % GONE_N;
         }
     }
 
@@ -346,7 +346,7 @@ impl AllocCore {
     #[inline(always)]
     pub(in crate::alloc_core) fn large_cache_note_free(&mut self, _usable: usize) {}
     #[inline(always)]
-    pub(in crate::alloc_core) fn large_cache_note_ghost(&mut self, _usable: usize) {}
+    pub(in crate::alloc_core) fn large_cache_note_gone(&mut self, _usable: usize) {}
     #[inline(always)]
     pub(in crate::alloc_core) fn large_cache_try_grow_slots(
         &mut self,

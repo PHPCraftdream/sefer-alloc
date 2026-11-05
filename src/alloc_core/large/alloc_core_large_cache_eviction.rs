@@ -36,15 +36,15 @@ impl AllocCore {
     /// `LARGE_CACHE_SLOTS > 2`). The OS reservation of each evicted span is
     /// released immediately.
     /// J14: evict the FIFO-oldest span under deposit pressure, remembering
-    /// its size as a ghost for the learned retention policy.
+    /// its size as gone for the learned retention policy.
     #[cfg(feature = "alloc-decommit")]
-    pub(in crate::alloc_core) fn evict_oldest_noting_ghost(&mut self) -> bool {
+    pub(in crate::alloc_core) fn evict_oldest_noting_gone(&mut self) -> bool {
         if let Some(u) = self
             .oldest_occupied_slot()
             .and_then(|i| self.large_cache_slot_get(i))
             .map(|c| c.usable_size)
         {
-            self.large_cache_note_ghost(u);
+            self.large_cache_note_gone(u);
         }
         self.evict_one_oldest()
     }
@@ -393,6 +393,11 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_set_large_cache_budget(&mut self, budget: Option<usize>) {
         self.large_cache_budget_bytes = budget;
+        // An explicit budget is the caller's, not the adaptive policy's.
+        #[cfg(feature = "large-cache-adaptive")]
+        {
+            self.decay_config.adaptive_budget = false;
+        }
     }
 
     /// TEST-ONLY (R14-5, task #290): read back the CURRENTLY RESOLVED

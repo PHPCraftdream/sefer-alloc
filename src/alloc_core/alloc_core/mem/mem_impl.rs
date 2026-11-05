@@ -484,14 +484,14 @@ impl AllocCore {
                     // Either no free slot, or budget would overflow → evict
                     // the oldest entry and retry. If the cache is already
                     // empty there is nothing more we can do.
-                    if !self.evict_oldest_noting_ghost() {
+                    if !self.evict_oldest_noting_gone() {
                         break;
                     }
                 }
             }
 
             if admitted.is_none() && stale.large_align < os::SEGMENT {
-                self.large_cache_note_ghost(usable_size); // J14: refused under pressure
+                self.large_cache_note_gone(usable_size); // J14: refused under pressure
             }
             if let Some(slot_idx) = admitted {
                 // We keep the pages COMMITTED in the cache (no decommit

@@ -477,7 +477,7 @@ impl AllocCore {
                 }
                 return (Node::deref(slot.base, hdr_aligned), false);
             }
-            // J14: a cache miss — a mistake if a recent ghost would have served it.
+            // J14: a cache miss — a mistake if a recently gone span would have served it.
             self.large_cache_note_miss(usable);
         }
 
@@ -834,7 +834,7 @@ impl AllocCore {
                     {
                         continue; // J14: the learned target opened more slots
                     }
-                    if !self.evict_oldest_noting_ghost() {
+                    if !self.evict_oldest_noting_gone() {
                         break;
                     }
                 }
@@ -868,7 +868,7 @@ impl AllocCore {
                 return;
             }
             if hdr.large_align < SEGMENT {
-                self.large_cache_note_ghost(usable_size); // J14: refused under pressure
+                self.large_cache_note_gone(usable_size); // J14: refused under pressure
             }
         }
 
