@@ -1,0 +1,18 @@
+tar-base 81f92c61aff4ba70bd7504fb8833bd9bde9b6e6d7027ba2b1fa904737ebe4581
+bin-base a0f3b385cf48c4eb5696a2a126c221ced86c64ef62c0353a6536679e066445e6
+tar-x 998206ddeff0d9dea99779b9a2158c30040697b5742c9dcd317d19142d24a8ff
+bin-x c672b3ff0abc5fd18a086f8d8be2b09a2c1acbc3b4d0479ee3370f2c92926c6a
+bin-base2 a0f3b385cf48c4eb5696a2a126c221ced86c64ef62c0353a6536679e066445e6
+tar-xt 864b75649d3dab54fd215bf67596f1ce04571481c5af3caf2c6a64cbecb8a4cf
+bin-xt bc1815c85a96f0a05d1c05ff6d705ddb4ef3255a763d035d2931cb0bc0fa1cd1
+features-base: production; features-x: production large-cache-adaptive (release)
+rustc 1.98.1 (48a229cea 2026-09-01)
+host: x86_64-unknown-linux-gnu
+LLVM version: 22.1.8
+model name	: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+logical cpus: 16
+RUSTFLAGS: -C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5
+thp: always [madvise] never
+base e0e5a12a33d1cf906bd00d6ae17ff36337ba4f6a
+x c3600471bbe368037788a35bc6e6684ae8ec658f
+xt b52a45edb7ff53a77362a7896b8753fa9e59d9a1
