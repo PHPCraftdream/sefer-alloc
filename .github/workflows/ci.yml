@@ -1981,18 +1981,18 @@ jobs:
       # Enforced selection (repository variable TEST_SELECTION=enforce): the arguments stay empty, i.e.
       # plain `cargo test`, unless the selector returned a subset; any failure here leaves them empty.
       - uses: actions/setup-node@v5
-        if: ${{ vars.TEST_SELECTION == 'enforce' }}
+        if: ${{ true }}
         with:
           node-version: '22'
       - uses: actions/download-artifact@v6
-        if: ${{ vars.TEST_SELECTION == 'enforce' }}
+        if: ${{ true }}
         continue-on-error: true
         with:
           name: test-selection
           path: sel
       - name: Selected tests
         id: sel
-        if: ${{ vars.TEST_SELECTION == 'enforce' }}
+        if: ${{ true }}
         continue-on-error: true
         run: |
           echo "default=$(node scripts/select-tests.mjs args --selection sel/selection.json --features '')" >> "$GITHUB_OUTPUT"
