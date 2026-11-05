@@ -1,0 +1,12 @@
+0a8b5778e11b55ee31db107e228d2414ad375fd0ff14d574472a2e786d8b7922  _src.tar (git archive of main c75c0e52bed4ee3de8e2449b2ad61e4d0104fed6)
+rustc 1.98.1 (48a229cea 2026-09-01)
+binary: rustc
+commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985
+commit-date: 2026-09-01
+host: x86_64-unknown-linux-gnu
+release: 1.98.1
+LLVM version: 22.1.8
+model name	: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+logical cpus: 16
+--features production
+4eb89e4f7bf5810dac66d82f050b202757d4c566a7940bc922343a764e959419  <scratch>/release/examples/g1_mt_one
