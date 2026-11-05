@@ -807,7 +807,8 @@ item-scoped regions.
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs) | 3 | `dbg_stamp_segment_id` (raw metadata write) + `dbg_unregister` / `dbg_recycle` — `unsafe fn` boundaries |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs) | 1 | `dbg_stamp_kind_byte` (raw metadata write) — `unsafe fn` boundary |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs) | 1 | `dbg_rebuild_directory` — internal call-site block into `sidecar::deref_mut` (R14-9, task #294) |
-| [`src/alloc_core/large/alloc_core_large_cache.rs`](src/alloc_core/large/alloc_core_large_cache.rs) | 5 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_find_free_slot` / `large_cache_slot_set` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286 — the sidecar deref functions became `unsafe fn` item boundaries) |
+| [`src/alloc_core/large/alloc_core_large_cache.rs`](src/alloc_core/large/alloc_core_large_cache.rs) | 6 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_scan_bound` / `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_slot_set` / `large_cache_occ_words` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286; J14 moved the free-slot search onto the occupancy words and added the active-bound and high-word reads) |
+| [`src/alloc_core/large/large_cache_adaptive.rs`](src/alloc_core/large/large_cache_adaptive.rs) | 2 | J14 (`large-cache-adaptive`): `adaptive_ext` / `adaptive_ref` — the two call-site blocks into `deref_large_cache_extension[_mut]` through which every learned-retention hook reaches the sidecar state |
 | [`src/alloc_core/small/alloc_core_small/find_segment/scan.rs`](src/alloc_core/small/alloc_core_small/find_segment/scan.rs) | 1 | `find_segment_with_free_impl` — calls the `unsafe fn`s `os::read_directory_node_bucket` / `os::read_directory_class_words` (R17-2, task #319) |
 | [`src/alloc_core/small/alloc_core_small/directory.rs`](src/alloc_core/small/alloc_core_small/directory.rs) | 3 | `maybe_materialize_directory` / `directory` / `directory_mut` — internal call-site blocks into `sidecar::deref[_mut]` (R14-9, task #294) |
 | [`src/alloc_core/small/alloc_core_small_diag.rs`](src/alloc_core/small/alloc_core_small_diag.rs) | 4 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_state_bytes_for` / `dbg_payload_start_for` — `unsafe fn` declarations (the two former bitmap-dump hooks were removed with the B4 dead bitmaps; `dbg_state_bytes_for` is the state-byte successor) |
@@ -834,7 +835,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **109** tier-2 item-scoped allows across **33**
+`src/`, 6 in `crates/`) plus **112** tier-2 item-scoped allows across **34**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
