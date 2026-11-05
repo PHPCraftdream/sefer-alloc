@@ -1,0 +1,15 @@
+platform,scenario,ratio_now,lo_now,hi_now,verdict_now,ratio_before,lo_before,hi_before,verdict_before,sefer_ns_change,sefer_lo,sefer_hi,sefer_moved,mi_ns_change,mi_lo,mi_hi,mi_moved,ratio_change,ratio_change_lo,ratio_change_hi,ratio_moved
+windows,grow64,1.137,1.086,1.192,mimalloc ahead,1.155,1.105,1.207,mimalloc ahead,1.075,0.989,1.169,no change,1.092,1.007,1.183,higher,0.985,0.927,1.046,no change
+windows,grow1k,1.049,0.938,1.172,tie,1.045,0.975,1.119,tie,1.126,0.923,1.375,no change,1.122,1.016,1.239,higher,1.004,0.887,1.136,no change
+windows,regrow,1.276,1.227,1.327,mimalloc ahead,1.226,1.154,1.303,mimalloc ahead,1.055,0.963,1.156,no change,1.014,0.877,1.172,no change,1.040,0.972,1.114,no change
+windows,growmix,1.220,1.167,1.276,mimalloc ahead,1.155,1.119,1.192,mimalloc ahead,1.141,1.073,1.212,higher,1.080,1.035,1.126,higher,1.056,1.003,1.112,higher
+windows,wild,1.280,1.184,1.383,mimalloc ahead,1.315,1.237,1.397,mimalloc ahead,1.156,1.012,1.320,higher,1.187,1.011,1.394,higher,0.973,0.887,1.068,no change
+windows,phase,1.038,0.927,1.161,tie,1.046,1.007,1.086,mimalloc ahead,1.101,1.043,1.161,higher,1.109,0.966,1.273,no change,0.992,0.888,1.109,no change
+windows,large,1.253,1.131,1.389,mimalloc ahead,1.292,1.219,1.370,mimalloc ahead,1.120,1.041,1.205,higher,1.155,1.031,1.294,higher,0.970,0.867,1.084,no change
+linux,grow64,1.244,1.121,1.380,mimalloc ahead,1.326,1.243,1.415,mimalloc ahead,1.070,1.000,1.146,no change,1.141,1.018,1.280,higher,0.938,0.836,1.053,no change
+linux,grow1k,1.329,1.150,1.535,mimalloc ahead,1.320,1.105,1.577,mimalloc ahead,1.109,0.916,1.343,no change,1.102,1.008,1.205,higher,1.007,0.811,1.249,no change
+linux,regrow,1.326,1.227,1.433,mimalloc ahead,1.316,1.246,1.390,mimalloc ahead,1.046,0.968,1.130,no change,1.038,0.952,1.131,no change,1.008,0.922,1.102,no change
+linux,growmix,1.410,1.260,1.578,mimalloc ahead,1.407,1.301,1.520,mimalloc ahead,1.204,1.061,1.366,higher,1.200,1.072,1.344,higher,1.003,0.881,1.141,no change
+linux,wild,1.089,1.039,1.142,mimalloc ahead,1.113,1.063,1.164,mimalloc ahead,1.074,1.001,1.152,higher,1.097,1.012,1.189,higher,0.979,0.920,1.042,no change
+linux,phase,1.107,1.045,1.172,mimalloc ahead,1.122,1.059,1.189,mimalloc ahead,1.123,1.046,1.204,higher,1.138,1.063,1.218,higher,0.987,0.914,1.066,no change
+linux,large,0.099,0.091,0.107,sefer ahead,0.105,0.095,0.117,sefer ahead,1.083,1.003,1.169,higher,1.150,0.982,1.346,no change,0.942,0.830,1.068,no change
