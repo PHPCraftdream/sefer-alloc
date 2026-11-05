@@ -84,9 +84,9 @@ ${SIZES.map(tr).join('\n')}
 
 The 1024 B cell trails in both runs (${t1['1024B'].ratio}x and ${t2['1024B'].ratio}x slower); every smaller size leads or ties. It is the only cell in any of the tables
 where mimalloc is ahead. The bench's own counters show why: at 1024 B each timed iteration frees a 256 KiB working set, the segment empties and
-is decommitted and released (`decommit_calls` / `segments_released_total` delta ${dc1} and ${dc2} over the two runs; 0 at 16 B and 64 B), so the timed
+is decommitted and released (\`decommit_calls\` / \`segments_released_total\` delta ${dc1} and ${dc2} over the two runs; 0 at 16 B and 64 B), so the timed
 region pays the return of memory to the OS that mimalloc, which keeps its pages, does not pay. That is the retention question, not a defect:
-`docs/perf/CF1_POOL_SEGMENTS.md` measured the small-segment pool (`pool_segments`, `pool_byte_cap`) as a retention knob, left the default at 4 / 16 MiB,
+\`docs/perf/CF1_POOL_SEGMENTS.md\` measured the small-segment pool (\`pool_segments\`, \`pool_byte_cap\`) as a retention knob, left the default at 4 / 16 MiB,
 and reserved the keep-everything policy ("Retain") for the owner decision OWN-1 / RET-1 (OPEN_ITEMS card 146).
 
 ## 5. Verdict

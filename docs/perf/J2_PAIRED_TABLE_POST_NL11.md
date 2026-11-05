@@ -49,8 +49,12 @@ The criterion group `Churn + teardown` keeps segment decommit, release and re-re
 | 1024B | 46.4 vs 23 (2.02× slower) | 46.4 vs 22.4 (2.07× slower) |
 
 The 1024 B cell trails in both runs (2.02x and 2.07x slower); every smaller size leads or ties. It is the only cell in any of the tables
-where mimalloc is ahead, and it is the next candidate (cost of releasing and re-reserving segments that hold 1024 B blocks).
+where mimalloc is ahead. The bench's own counters show why: at 1024 B each timed iteration frees a 256 KiB working set, the segment empties and
+is decommitted and released (`decommit_calls` / `segments_released_total` delta 713 and 655 over the two runs; 0 at 16 B and 64 B), so the timed
+region pays the return of memory to the OS that mimalloc, which keeps its pages, does not pay. That is the retention question, not a defect:
+`docs/perf/CF1_POOL_SEGMENTS.md` measured the small-segment pool (`pool_segments`, `pool_byte_cap`) as a retention knob, left the default at 4 / 16 MiB,
+and reserved the keep-everything policy ("Retain") for the owner decision OWN-1 / RET-1 (OPEN_ITEMS card 146).
 
 ## 5. Verdict
 
-No steady-state single-thread loss to mimalloc remains in these 12 cells. The open loss is the 1024 B teardown cell; it is filed as task J3.
+No steady-state single-thread loss to mimalloc remains in these 12 cells. The only loss left is the 1024 B teardown diagnostic, and it is the price of the release policy; closing it is the owner's Retain decision (card 146), not an allocator fix.
