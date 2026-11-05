@@ -1,0 +1,2 @@
+main 875ddcd6f6b3fe48bc4283cd4c7db915416cb985
+3240c401821b2cb79b8070c5fa09ff81a0d065940a2e7ace11aa862be07508a6  target-j5/release/examples/g1_wild_judge.exe

@@ -1,0 +1,8 @@
+scenario,sefer_over_mi,ci_lo,ci_hi,verdict,wg1_sefer_over_mi,wg1_lo,wg1_hi,blocks,repeats
+grow64,1.155,1.105,1.207,mimalloc ahead,1.212,1.186,1.239,12,3
+grow1k,1.045,0.975,1.119,tie (interval contains 1),1.090,1.039,1.144,12,3
+regrow,1.226,1.154,1.303,mimalloc ahead,1.352,1.282,1.425,12,3
+growmix,1.155,1.119,1.192,mimalloc ahead,1.328,1.253,1.408,12,3
+wild,1.315,1.237,1.397,mimalloc ahead,1.405,1.337,1.477,12,3
+phase,1.046,1.007,1.086,mimalloc ahead,1.141,1.101,1.183,12,3
+large,1.292,1.219,1.370,mimalloc ahead,1.223,1.082,1.383,12,3
