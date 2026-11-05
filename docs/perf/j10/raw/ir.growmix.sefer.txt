@@ -1,0 +1,40 @@
+233,691,421 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                   file:function
+--------------------------------------------------------------------------------
+21,930,522 ( 9.38%)  <scratch>/ab/j10src/examples/g1_wild_judge.rs:g1_wild_judge::main [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+15,716,715 ( 6.73%)  <scratch>/ab/j10src/examples/g1_wild_judge.rs:<g1_wild_judge::Run>::alloc [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+15,292,027 ( 6.54%)  <scratch>/ab/j10src/src/alloc_core/small/alloc_core_small_magazine.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+12,792,675 ( 5.47%)  <scratch>/ab/j10src/examples/g1_wild_judge.rs:<g1_wild_judge::Run>::free [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+12,061,665 ( 5.16%)  ./math/../sysdeps/ieee754/dbl-64/e_exp.c:__ieee754_exp_fma [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 7,310,100 ( 3.13%)  ./math/./w_exp_template.c:exp@@GLIBC_2.29 [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 6,938,688 ( 2.97%)  <scratch>/ab/j10src/src/alloc_core/segment/segment_table/hash.rs:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss
+ 6,857,475 ( 2.93%)  <scratch>/ab/j10src/src/alloc_core/segment/segment_table/hash.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 4,751,565 ( 2.03%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<g1_wild_judge::Run>::free
+ 4,440,801 ( 1.90%)  <scratch>/ab/j10src/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+ 3,951,996 ( 1.69%)  <scratch>/ab/j10src/examples/g1_wild_judge.rs:g1_wild_judge::a_alloc [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+ 3,821,145 ( 1.64%)  <scratch>/ab/j10src/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+ 3,476,470 ( 1.49%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 3,433,492 ( 1.47%)  <scratch>/ab/j10src/src/registry/heap_core/free/dealloc_own_base.rs:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss
+ 3,289,545 ( 1.41%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<g1_wild_judge::Run>::alloc
+ 3,275,428 ( 1.40%)  <scratch>/ab/j10src/src/registry/heap_core/free/dealloc_fast.rs:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_second_chance
+ 3,230,121 ( 1.38%)  <scratch>/ab/j10src/src/alloc_core/segment/segment_table/segment_table_impl.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 3,220,986 ( 1.38%)  <scratch>/ab/j10src/src/registry/heap_core/alloc/hot.rs:g1_wild_judge::a_alloc
+ 3,219,297 ( 1.38%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch
+ 3,180,232 ( 1.36%)  <scratch>/ab/j10src/src/alloc_core/segment/segment_table/segment_table_impl.rs:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss
+ 3,175,637 ( 1.36%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal
+ 2,932,005 ( 1.25%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/cmp.rs:g1_wild_judge::main
+ 2,924,157 ( 1.25%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:g1_wild_judge::main
+ 2,806,538 ( 1.20%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 2,650,215 ( 1.13%)  <scratch>/ab/j10src/src/registry/heap_core/free/dealloc_fast.rs:g1_wild_judge::a_dealloc
+ 2,458,600 ( 1.05%)  <scratch>/ab/j10src/src/registry/heap_core/free/dealloc_fast.rs:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+ 2,163,060 ( 0.93%)  <scratch>/ab/j10src/src/alloc_core/segment/segment_table/hash.rs:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_second_chance
+ 2,081,977 ( 0.89%)  <scratch>/ab/j10src/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle
+ 2,027,289 ( 0.87%)  <scratch>/ab/j10src/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+ 1,831,578 ( 0.78%)  <scratch>/ab/j10src/examples/g1_wild_judge.rs:g1_wild_judge::a_dealloc [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+ 1,827,554 ( 0.78%)  <scratch>/ab/j10src/examples/g1_wild_judge.rs:g1_wild_judge::free_all [<scratch>/ab/tgt-j10/release/examples/g1_wild_judge]
+ 1,827,525 ( 0.78%)  <scratch>/ab/j10src/src/alloc_core/segment/bitmap/live_tag.rs:g1_wild_judge::a_alloc
+ 1,827,525 ( 0.78%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:<g1_wild_judge::Run>::alloc
+ 1,827,523 ( 0.78%)  /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/mod.rs:g1_wild_judge::main
+ 1,809,007 ( 0.77%)  <scratch>/ab/j10src/src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch

@@ -1,0 +1,3 @@
+item,ir_per_op,share_of_ir_gap_pct,share_of_cpu_gap_pct_if_user_scales_with_ir
+"segment-table lookup cost, lane_miss + flush_class_internal (whole, cannot be removed)",27.6,36.4,11.7
+"hash-probe exit in the lane (model: lane_miss minus its table part, plus the second chance per call)",13.3,17.6,5.6
