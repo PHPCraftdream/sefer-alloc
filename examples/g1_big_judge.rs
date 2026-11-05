@@ -3,7 +3,7 @@
 //! Usage: g1_big_judge <cycle|edge|grow|many> <sefer|mi|sys> <size_mib> <reps> [k]
 //! Prints one JSON line: scenario, arm, size_mib, reps, k, per-rep phase times (`rep`: `[alloc_ns, touch_ns, free_ns]`), `cold_ns`
 //! (the first rep, all phases), `warm_ns` (the minimum over reps 2.., or the first rep when `reps` is 1), peak_rss, end_rss, user_ms,
-//! kernel_ms, faults and, with `internals`, the process-wide segment reserve / release counts.
+//! kernel_ms, faults, anon_huge_peak (Linux: THP-backed bytes right after a touch phase) and, with `internals`, the process-wide segment reserve / release counts.
 //!
 //! Scenarios (one rep = the whole sequence, freed again at its end):
 //! - `cycle`: allocate `size_mib` MiB, write one byte per 4 KiB page, free.
@@ -84,6 +84,25 @@ fn touch_pages(p: *mut u8, from: usize, to: usize) {
     unsafe { p.add(to - 1).write_volatile(1) };
 }
 
+/// The largest `anon_huge_bytes` sampled right after a touch phase (outside every timed window).
+static ANON_HUGE_PEAK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Linux: anonymous memory the kernel backs with transparent huge pages (`AnonHugePages` of `/proc/self/smaps_rollup`), in bytes; 0 elsewhere.
+fn anon_huge_bytes() -> u64 {
+    std::fs::read_to_string("/proc/self/smaps_rollup")
+        .ok()
+        .and_then(|t| {
+            t.lines()
+                .find(|l| l.starts_with("AnonHugePages:"))
+                .and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok())
+        })
+        .map_or(0, |kb| kb * 1024)
+}
+
+fn sample_huge() {
+    ANON_HUGE_PEAK.fetch_max(anon_huge_bytes(), std::sync::atomic::Ordering::Relaxed);
+}
+
 fn ns(t: Instant) -> u64 {
     t.elapsed().as_nanos() as u64
 }
@@ -108,6 +127,7 @@ fn once(arm: Arm, scen: &str, size: usize, k: usize) -> [u64; 3] {
                 }
             }
             t += ns(s);
+            sample_huge();
             let s = Instant::now();
             a_dealloc(arm, p, size);
             f += ns(s);
@@ -132,6 +152,7 @@ fn once(arm: Arm, scen: &str, size: usize, k: usize) -> [u64; 3] {
                 t += ns(s);
                 cur = new;
             }
+            sample_huge();
             let s = Instant::now();
             a_dealloc(arm, p, cur);
             f += ns(s);
@@ -148,6 +169,7 @@ fn once(arm: Arm, scen: &str, size: usize, k: usize) -> [u64; 3] {
                 t += ns(s);
                 v.push(p);
             }
+            sample_huge();
             while let Some(p) = v.pop() {
                 let s = Instant::now();
                 a_dealloc(arm, p, size);
@@ -273,12 +295,13 @@ fn main() {
         .map(|r| format!("[{},{},{}]", r[0], r[1], r[2]))
         .collect();
     println!(
-        "{{\"scenario\":\"{}\",\"arm\":\"{}\",\"size_mib\":{size_mib},\"reps\":{reps},\"k\":{k},\"cold_ns\":{cold},\"warm_ns\":{warm},\"rep\":[{}],\"peak_rss\":{},\"end_rss\":{},\"user_ms\":{user_ms},\"kernel_ms\":{kernel_ms},\"faults\":{faults}{os}}}",
+        "{{\"scenario\":\"{}\",\"arm\":\"{}\",\"size_mib\":{size_mib},\"reps\":{reps},\"k\":{k},\"cold_ns\":{cold},\"warm_ns\":{warm},\"rep\":[{}],\"peak_rss\":{},\"end_rss\":{},\"user_ms\":{user_ms},\"kernel_ms\":{kernel_ms},\"faults\":{faults},\"anon_huge_peak\":{}{os}}}",
         a[1],
         a[2],
         reps_json.join(","),
         m.peak_rss.unwrap_or(0),
-        m.rss
+        m.rss,
+        ANON_HUGE_PEAK.load(std::sync::atomic::Ordering::Relaxed)
     );
     if m.peak_rss.unwrap_or(0) > RSS_LIMIT {
         eprintln!("peak RSS above the 7 GiB limit");
