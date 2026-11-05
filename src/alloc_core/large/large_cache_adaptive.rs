@@ -332,14 +332,6 @@ impl AllocCore {
 #[cfg(all(feature = "alloc-decommit", not(feature = "large-cache-adaptive")))]
 impl AllocCore {
     #[inline(always)]
-    pub(in crate::alloc_core) fn large_cache_retain_target(&self) -> usize {
-        self.decay_config.headroom_bytes
-    }
-    #[inline(always)]
-    pub(in crate::alloc_core) fn large_cache_adaptive_pending(&self) -> bool {
-        false
-    }
-    #[inline(always)]
     pub(in crate::alloc_core) fn large_cache_note_hit(&mut self, _usable: usize) {}
     #[inline(always)]
     pub(in crate::alloc_core) fn large_cache_note_miss(&mut self, _usable: usize) {}
@@ -358,11 +350,5 @@ impl AllocCore {
     #[inline(always)]
     pub(in crate::alloc_core) fn large_cache_effective_budget(&self) -> Option<usize> {
         self.large_cache_budget_bytes
-    }
-    #[inline(always)]
-    pub(in crate::alloc_core) fn large_cache_adaptive_interval(&mut self) {}
-    #[inline(always)]
-    pub(in crate::alloc_core) fn large_cache_decay_rate_bp(&self) -> usize {
-        self.decay_config.decay_rate_bp as usize
     }
 }

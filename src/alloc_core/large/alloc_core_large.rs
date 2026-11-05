@@ -324,6 +324,7 @@ impl AllocCore {
                         hit_idx = Some(i);
                         // J14: an exact fit cannot be beaten and the scan is
                         // lowest-index first, so stopping keeps the result.
+                        #[cfg(feature = "large-cache-adaptive")]
                         if best_usable == usable {
                             break;
                         }

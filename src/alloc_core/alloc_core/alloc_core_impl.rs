@@ -111,9 +111,6 @@ pub(in crate::alloc_core) const LARGE_CACHE_SLOTS: usize = 8;
 pub(in crate::alloc_core) const LARGE_CACHE_OCC_WORDS: usize = (LARGE_CACHE_SLOTS
     + super::super::large_cache_extended::LARGE_CACHE_EXTENDED_SLOTS)
     .div_ceil(u64::BITS as usize);
-#[cfg(all(feature = "alloc-decommit", not(feature = "large-cache-extended")))]
-pub(in crate::alloc_core) const LARGE_CACHE_OCC_WORDS: usize =
-    LARGE_CACHE_SLOTS.div_ceil(u64::BITS as usize);
 // The base slots occupy the low bits of word 0 (`large_cache_find_free_slot`).
 #[cfg(feature = "alloc-decommit")]
 const _: () = assert!(LARGE_CACHE_SLOTS <= u64::BITS as usize);

@@ -39,6 +39,7 @@ impl AllocCore {
     /// its size as gone for the learned retention policy.
     #[cfg(feature = "alloc-decommit")]
     pub(in crate::alloc_core) fn evict_oldest_noting_gone(&mut self) -> bool {
+        #[cfg(feature = "large-cache-adaptive")]
         if let Some(u) = self
             .oldest_occupied_slot()
             .and_then(|i| self.large_cache_slot_get(i))
