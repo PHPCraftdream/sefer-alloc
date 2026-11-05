@@ -1,0 +1,1 @@
+{"scenario":"regrow","arm":"sefer","seed":1,"scale":0.25,"ops":549126,"ns_per_op":124.923,"peak_rss":178614272,"end_rss":72552448,"checksum":229970292,"pool_req":1024,"pool_res":0,"thp_req":16,"thp_res":0,"thp_hinted":0,"anon_huge_peak":98566144,"anon_huge_end":18874368,"user_ms":40,"kernel_ms":20,"faults":19829}

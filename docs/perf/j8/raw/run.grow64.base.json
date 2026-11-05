@@ -1,0 +1,1 @@
+{"scenario":"grow64","arm":"sefer","seed":1,"scale":0.25,"ops":8388608,"ns_per_op":30.921,"peak_rss":338964480,"end_rss":44224512,"checksum":536870912,"pool_req":1024,"pool_res":0,"thp_req":16,"thp_res":0,"thp_hinted":0,"anon_huge_peak":220200960,"anon_huge_end":2097152,"user_ms":120,"kernel_ms":140,"faults":28723}

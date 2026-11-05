@@ -1,0 +1,17 @@
+kind,cell,base,patch,delta_pct
+activation,find_segment_with_free_impl Ir per call (grow64 0.5),605.1,362.4,-40.11
+ir_per_op,grow64,167.2,161.8,-3.20
+ir_per_op,grow1k,187.0,181.7,-2.86
+ir_per_op,regrow,229.6,228.3,-0.57
+ir_per_op,growmix,325.8,319.9,-1.81
+ir_per_op,wild,185.8,185.7,-0.05
+ir_per_op,phase,160.4,160.4,-0.00
+bulk_ir,16,44412424,44410392,-0.00
+bulk_ir,64,44411706,44411817,0.00
+time,grow64,1,0.977,-2.33
+time,grow1k,1,0.997,-0.35
+time,regrow,1,1.025,2.55
+time,growmix,1,1.032,3.19
+time,wild,1,1.013,1.34
+time,phase,1,0.985,-1.54
+time,large,1,1.011,1.12

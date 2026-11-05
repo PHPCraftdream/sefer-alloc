@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### The segment-directory walk skips all-zero words in blocks of eight (2026-11-05)
+
+- [performance] `AllocCore::scan_directory_candidates` tests the 64 directory words of a class eight at a time and skips an all-zero block at once; a
+  non-zero block runs the former word-by-word body (same bits, same order, same counters). The walk ran once per magazine refill and was ~350 of
+  ~605 Ir of a discovery call while a heap only grows. Instructions retired, same tree: grow64 -3.20 %, grow1k -2.86 %, growmix -1.81 %, regrow -0.57 %,
+  bulk 1024 B unchanged; no wall-clock claim (the paired intervals contain 1) (`docs/perf/J8_DIRECTORY_ZERO_WORD_SKIP.md`).
+
 ### Misuse checks are off by default in `production` (2026-11-04)
 
 - [performance] `production` no longer includes the feature `misuse-checks`. The checks it gates only reject a

@@ -1,0 +1,87 @@
+diff --git a/src/alloc_core/small/alloc_core_small/find_segment/scan.rs b/src/alloc_core/small/alloc_core_small/find_segment/scan.rs
+index 6ad4f05d..9da48e8c 100644
+--- a/src/alloc_core/small/alloc_core_small/find_segment/scan.rs
++++ b/src/alloc_core/small/alloc_core_small/find_segment/scan.rs
+@@ -14,6 +14,14 @@ use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
+ use crate::alloc_core::alloc_core::AllocCore;
+ use crate::alloc_core::fatal::fatal;
+ 
++/// Directory words tested per step of the candidate walk (J8).
++#[cfg(feature = "alloc-segment-directory")]
++const DIRECTORY_SCAN_CHUNK: usize = 8;
++#[cfg(feature = "alloc-segment-directory")]
++const _: () = assert!(
++    crate::alloc_core::segment_directory::WORDS_PER_CLASS.is_multiple_of(DIRECTORY_SCAN_CHUNK)
++);
++
+ #[derive(Default)]
+ struct FindSegmentScanContext {
+     #[cfg(feature = "alloc-segment-directory")]
+@@ -523,30 +531,46 @@ impl AllocCore {
+                     os::read_directory_class_words(self.directory_sidecar, nb, class_idx)
+                 };
+ 
+-                for (w, &word_val) in words.iter().enumerate() {
+-                    let mut bits = word_val;
+-                    // R7-A0 / R13-01: count each word examined — including
+-                    // all-zero words — before the zero-word skip below.
+-                    #[cfg(feature = "alloc-stats")]
+-                    crate::alloc_core::directory_stats::DIRECTORY_WORDS_EXAMINED
+-                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+-                    if bits == 0 {
++                // J8: a heap that only grows has almost no set bit for a class, so the
++                // walk tests eight words at a time and skips an all-zero block at once.
++                // A non-zero block runs the former word-by-word body unchanged (same
++                // bits, same order, same early return).
++                for (c, chunk) in words.chunks_exact(DIRECTORY_SCAN_CHUNK).enumerate() {
++                    if chunk.iter().fold(0u64, |acc, &x| acc | x) == 0 {
++                        // R7-A0 / R13-01: eight words examined and skipped.
++                        #[cfg(feature = "alloc-stats")]
++                        crate::alloc_core::directory_stats::DIRECTORY_WORDS_EXAMINED.fetch_add(
++                            DIRECTORY_SCAN_CHUNK as u64,
++                            core::sync::atomic::Ordering::Relaxed,
++                        );
+                         continue;
+                     }
++                    for (k, &word_val) in chunk.iter().enumerate() {
++                        let w = c * DIRECTORY_SCAN_CHUNK + k;
++                        let mut bits = word_val;
++                        // R7-A0 / R13-01: count each word examined — including
++                        // all-zero words — before the zero-word skip below.
++                        #[cfg(feature = "alloc-stats")]
++                        crate::alloc_core::directory_stats::DIRECTORY_WORDS_EXAMINED
++                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
++                        if bits == 0 {
++                            continue;
++                        }
+ 
+-                    while bits != 0 {
+-                        let j = bits.trailing_zeros() as usize;
+-                        bits &= bits - 1; // clear lowest set bit
+-                        let slot_idx = w * 64 + j;
+-
+-                        // Validate this candidate (base, kind, sidecar drain,
+-                        // BinTable head) — the SINGLE choke point shared with
+-                        // the non-NUMA path so the criteria are byte-for-byte
+-                        // identical.
+-                        if let Some(base) =
+-                            self.validate_directory_candidate(class_idx, slot_idx, drain)
+-                        {
+-                            return Some(base);
++                        while bits != 0 {
++                            let j = bits.trailing_zeros() as usize;
++                            bits &= bits - 1; // clear lowest set bit
++                            let slot_idx = w * 64 + j;
++
++                            // Validate this candidate (base, kind, sidecar drain,
++                            // BinTable head) — the SINGLE choke point shared with
++                            // the non-NUMA path so the criteria are byte-for-byte
++                            // identical.
++                            if let Some(base) =
++                                self.validate_directory_candidate(class_idx, slot_idx, drain)
++                            {
++                                return Some(base);
++                            }
+                         }
+                     }
+                 }

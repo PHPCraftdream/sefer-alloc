@@ -1,0 +1,1 @@
+{"scenario":"wild","arm":"sefer","seed":1,"scale":0.25,"ops":699371,"ns_per_op":23.606,"peak_rss":10690560,"end_rss":8417280,"checksum":437512744,"pool_req":1024,"pool_res":0,"thp_req":16,"thp_res":0,"thp_hinted":0,"anon_huge_peak":0,"anon_huge_end":0,"user_ms":10,"kernel_ms":0,"faults":2389}

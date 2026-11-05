@@ -1,0 +1,44 @@
+98,054,585 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                   file:function
+--------------------------------------------------------------------------------
+14,942,208 (15.24%)  ???:<g1_wild_judge::Run>::alloc [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+12,845,056 (13.10%)  ???:<g1_wild_judge::Run>::free [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+11,674,656 (11.91%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+10,906,054 (11.12%)  ???:g1_wild_judge::a_dealloc [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+10,204,603 (10.41%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 9,355,282 ( 9.54%)  ???:g1_wild_judge::a_alloc [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 6,394,941 ( 6.52%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 5,248,555 ( 5.35%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 3,444,826 ( 3.51%)  ???:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 2,399,006 ( 2.45%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 1,370,736 ( 1.40%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 1,247,768 ( 1.27%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 1,065,480 ( 1.09%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   854,598 ( 0.87%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   696,159 ( 0.71%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   569,977 ( 0.58%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   557,056 ( 0.57%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   426,804 ( 0.44%)  ???:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves as core::ops::drop::Drop>::drop [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   360,448 ( 0.37%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   347,004 ( 0.35%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::process_ingress [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   311,296 ( 0.32%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   305,471 ( 0.31%)  ./malloc/./malloc/malloc.c:_int_free_merge_chunk [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   262,144 ( 0.27%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   228,424 ( 0.23%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full_fast [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   210,647 ( 0.21%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   185,587 ( 0.19%)  ./malloc/./malloc/malloc.c:_int_free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   176,894 ( 0.18%)  ./malloc/./malloc/malloc.c:malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   144,127 ( 0.15%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::maybe_materialize_directory [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   138,040 ( 0.14%)  ./malloc/./malloc/malloc.c:_int_free_maybe_consolidate [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   117,972 ( 0.12%)  ./malloc/./malloc/malloc.c:free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   103,156 ( 0.11%)  ./malloc/./malloc/malloc.c:systrim.constprop.0 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./malloc/./malloc/malloc.c
+  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S
+  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S
+
