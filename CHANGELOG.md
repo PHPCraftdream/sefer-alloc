@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bulk 16 B and 64 B -14.39 %, larson T=1/T=4 -7.12 % / -6.83 %, mstress T=1/T=4 -9.67 % / -8.85 %
   (`docs/perf/NL9_DEFAULT_FLIP.md`). One benchmark rises, a producer window of cross-thread frees by +3 Ir per free
   (a register-allocation artifact of the benchmark loop, see `docs/perf/IAI_BASELINE.md`).
+- [performance] The producer-side class check of a cross-thread free (`SidecarBitmap::publish` drops a granule that was never
+  issued) joins the set (NL-11): the producer window of 4096 cross-thread frees retires 8.49 % fewer instructions (9.0 per free);
+  whole workloads move by -0.1 to -1.1 % (`docs/perf/NL11_PUBLISH_CLASS_CHECK.md`).
 - [behavior] A program whose unsafe code passes such a pointer now has undefined behaviour in `production`, as the
   contract allows. Add `misuse-checks` (or use `hardened`) to keep the checks; a debug build keeps them and aborts on
   a hit. The README feature table and `docs/ARCHITECTURE.md` say it is needed only for unsafe code.

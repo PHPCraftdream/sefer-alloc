@@ -119,7 +119,11 @@ impl<'a> SidecarBitmap<'a> {
         let Some(granule) = Self::granule(offset) else {
             return false;
         };
+        #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if self.classes.encoded(granule) == 0 {
+            crate::alloc_core::state_byte::StateByte::shadow_reject(
+                b"sefer-alloc: misuse check rejected a foreign free of an unissued granule in safe mode\n",
+            );
             return false;
         }
         self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::SeqCst);

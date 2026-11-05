@@ -10,6 +10,15 @@
 // Compile the actual primitive in this integration crate. These aliases are
 // pinned to the production geometry, not independent test constants.
 mod alloc_core {
+    // Mirrors `alloc_core::state_byte::StateByte::shadow_reject` for the source-included
+    // `SidecarBitmap::publish` (a debug-build abort for a rejected misuse; loom models do not take it).
+    #[allow(dead_code)]
+    pub mod state_byte {
+        pub struct StateByte;
+        impl StateByte {
+            pub fn shadow_reject(_site: &'static [u8]) {}
+        }
+    }
     // Mirrors `alloc_core::fatal` (`src/alloc_core/platform/fatal.rs`).
     pub mod fatal {
         pub fn fatal(msg: &'static [u8]) -> ! {

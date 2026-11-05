@@ -256,7 +256,7 @@ export const PER_PR_ROWS = [
   {
     id: 'test-production-misuse-checks',
     kind: 'test',
-    features: 'production misuse-checks internals bench-internals',
+    features: 'production misuse-checks alloc-stats internals bench-internals',
     note: 'The production bundle with the checks that reject a contract violation (off in production since NL-9): runs every test whose subject is a rejection (double free, interior or foreign pointer, oversized old layout), which is gated on misuse-checks and does not run in the rows above.',
   },
   {

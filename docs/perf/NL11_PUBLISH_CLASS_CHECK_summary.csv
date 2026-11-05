@@ -1,0 +1,6 @@
+cell,ir_base,ir_proto,ir_delta_pct,median_mops_base,median_mops_proto,mops_delta_pct,time_claim
+larson2,47859702,47747203,-0.24,69.55,67.64,-2.75,no
+larson4,95010250,94901169,-0.11,121.24,124.84,2.97,no
+mstress2,47675563,47587564,-0.18,115.94,117.01,0.92,no
+mstress4,96261697,95214545,-1.09,207.13,214.33,3.48,no
+xfree,434206,397342,-8.49,,,,

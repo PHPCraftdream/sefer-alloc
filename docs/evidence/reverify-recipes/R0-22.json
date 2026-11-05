@@ -63,7 +63,7 @@
           "test",
           "--release",
           "--features",
-          "alloc-core,alloc-xthread,tagged-index-stack/loom",
+          "alloc-core,alloc-xthread,tagged-index-stack/loom,misuse-checks",
           "--test",
           "loom_sidecar_bitmap_actual"
         ],
