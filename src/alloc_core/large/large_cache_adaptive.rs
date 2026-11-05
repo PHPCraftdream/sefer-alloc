@@ -8,7 +8,8 @@
 //! Distances go into a decaying histogram of log2 buckets; the learned extra
 //! is the smallest bucket bound whose cumulative weight (the integral) covers
 //! `COVER_PCT` of all mistakes. Each decay interval forgets 1/16 of every
-//! weight, a quiet one (no mistake, no hit) half. The extra never exceeds the
+//! weight, a quiet one (no mistake, and hits that used under 1/8 of the learned
+//! extra) half. The extra never exceeds the
 //! heap's recent peak of live Large bytes above the headroom, so the cache
 //! never holds more than the program itself recently had live. Extension
 //! slots past the initial 32 open only while the learned target has room.
@@ -61,7 +62,8 @@ pub(crate) struct AdaptiveState {
     /// Recent peak of `live`, decaying by 1/8 of its distance to `live` per interval.
     pub(in crate::alloc_core) peak: usize,
     mistakes: u32,
-    hits: u32,
+    /// Bytes served by cache hits in the current interval.
+    hit_bytes: usize,
     /// Mistakes since the sidecar exists (diagnostics).
     pub(in crate::alloc_core) mistakes_total: u64,
 }
@@ -100,7 +102,7 @@ impl AdaptiveState {
         live: 0,
         peak: 0,
         mistakes: 0,
-        hits: 0,
+        hit_bytes: 0,
         mistakes_total: 0,
     };
 }
@@ -161,7 +163,7 @@ impl AllocCore {
     pub(in crate::alloc_core) fn large_cache_note_hit(&mut self, usable: usize) {
         if let Some(e) = self.adaptive_ext() {
             let a = &mut e.adapt;
-            a.hits = a.hits.saturating_add(1);
+            a.hit_bytes = a.hit_bytes.saturating_add(usable);
             a.live = a.live.saturating_add(usable);
             a.peak = a.peak.max(a.live);
         }
@@ -247,20 +249,22 @@ impl AllocCore {
     }
 
     /// One decay interval passed: forget 1/16 of every histogram weight (half
-    /// if the interval was quiet), let the peak follow `live` down by 1/8 of
-    /// the distance, recompute the extra, close slots the cache no longer needs.
+    /// if the interval was quiet: no mistake, hits under 1/8 of the extra),
+    /// let the peak follow `live` down by 1/8 of the distance, recompute the
+    /// extra, close slots the cache no longer needs.
     #[inline]
     pub(in crate::alloc_core) fn large_cache_adaptive_interval(&mut self) {
         let occupied_hi = self.large_cache_highest_occupied();
         let headroom = self.decay_config.headroom_bytes;
         if let Some(e) = self.adaptive_ext() {
             let a = &mut e.adapt;
-            let quiet = a.mistakes == 0 && a.hits == 0;
+            // Quiet: no mistake and the hits used under 1/8 of the learned extra.
+            let quiet = a.mistakes == 0 && a.hit_bytes.saturating_mul(8) <= a.extra;
             for w in &mut a.hist {
                 *w -= if quiet { w.div_ceil(2) } else { w.div_ceil(16) };
             }
             a.mistakes = 0;
-            a.hits = 0;
+            a.hit_bytes = 0;
             a.peak -= (a.peak - a.live.min(a.peak)) / 8;
             a.extra = a.learned_extra(a.peak.saturating_sub(headroom));
             if !a.learning() {

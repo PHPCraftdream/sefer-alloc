@@ -26,8 +26,8 @@ Per heap (owner-only state inside the lazily materialised extension sidecar, col
   left, the span included — exactly the extra retention that would have turned this miss into a hit.
 - **Histogram and integral (owner's formula, 2026-11-05).** Distances go into a decaying histogram of 48 log2 buckets (a mistake adds weight 256 to its bucket).
   The learned extra is the upper bound of the smallest bucket whose cumulative weight (the integral from 0) covers 90 % of the total weight: the retention
-  that would have prevented 90 % of the recent mistakes. Each decay interval forgets 1/16 of every weight; a quiet interval (no mistake and no cache hit)
-  forgets half. With no weight left the extra is 0 and the cache is the pre-J14 one again.
+  that would have prevented 90 % of the recent mistakes. Each decay interval forgets 1/16 of every weight; a quiet interval (no mistake, and cache hits that
+  served under 1/8 of the learned extra — the retention is mostly unused) forgets half. With no weight left the extra is 0 and the cache is the pre-J14 one again.
 - **Ceiling from the program itself.** `extra <= P - headroom`, `P` = the recent peak of live Large bytes of this heap (`P = max(P, live)` at each Large
   allocation, `P -= (P - live) / 8` at each decay interval). The cache never holds more than the program itself recently had live. Learned target
   `T = headroom + extra`.
