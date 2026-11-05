@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   halves the learned extra and the decay releases 3/4 of the excess per step. The first campaign (`docs/perf/J14_ADAPTIVE_LARGE_CACHE.md`) was a
   NO-GO and led to this form (preregistration section 7). Tests: `tests/j14_large_cache_adaptive.rs`.
 
+### README: every setting in one table — how it works, what it speeds up, what it costs (2026-11-05)
+
+- [docs] `README.md` §Configuration opens with "Settings at a glance": each setting of `Profile` / `LargeCacheConfig` /
+  `SmallSegmentPoolConfig` with its mechanism, the workload it speeds up, its memory cost and when to change it, plus
+  three facts the numbers do not show: the large cache keeps at most 8 blocks per heap whatever the headroom (the J11
+  repeat-after-free gap), retention is per heap, and nothing is released while the process is idle. No code changed.
+
 ### The segment-directory walk skips all-zero words in blocks of eight (2026-11-05)
 
 - [performance] `AllocCore::scan_directory_candidates` tests the 64 directory words of a class eight at a time and skips an all-zero block at once; a

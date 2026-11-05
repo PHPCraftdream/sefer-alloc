@@ -330,6 +330,39 @@ to cap how much memory the allocator holds onto, use
 so the config lives in a `static` initialiser and is resolved at
 compile time — zero runtime overhead, no env vars, no parse errors.
 
+### Settings at a glance — how each one works and what it changes
+
+Every setting answers one question: how much freed memory may the allocator keep for the next request instead of
+returning it to the OS. Keeping memory makes the next allocation of that kind cheap (no system call, no page faults on
+first touch); returning it lowers RSS. The defaults favour speed for bursts that repeat, with bounded retention.
+
+| Setting | How it works | Faster when | Costs | Change it when |
+|---|---|---|---|---|
+| [`Profile`](#named-profiles-profile-alloc-decommit) (`SeferAlloc::with_profile`) | Named presets for the two axes below (small pool, large cache); `Profile::new()` is the default | — | — | You want a measured preset instead of individual numbers |
+| `.headroom_bytes` (large cache, default 256 MiB per heap) | A freed Large block (above ~253 KiB, rounded up to whole 4 MiB segments) is kept in the heap's cache; the time decay gives cached bytes above this floor back to the OS | The same large sizes are allocated again soon after being freed | Up to this many bytes stay committed per heap after a burst | Many threads each touch Large blocks and the sum of floors is too much for the machine (lower it), or a burst is bigger than the floor and is re-faulted every round (raise it) |
+| `.budget_bytes` (large cache, default unbounded) | Hard ceiling on cached bytes per heap: a free that would exceed it evicts the oldest cached spans first; `0` turns the cache off | — | A burst bigger than the ceiling is partly re-reserved and re-faulted | You need a real RSS bound for the Large cache (containers) |
+| `.decay_interval_ms` / `.decay_rate_percent` (default 1000 ms / 10 %) | Each due interval releases this fraction of the bytes above the floor; checked on Large allocs/frees, never on a timer | — | Faster decay = less memory held, more re-faults on the next burst | Bursts repeat less often than every few intervals, so the cache has shrunk before they return (raise the interval), or memory must go back sooner (lower it, or raise the rate) |
+| `.pool(SmallSegmentPoolConfig…)` (default 4 segments / 16 MiB per heap) | Empty 4 MiB small-block segments are kept, with their free lists, up to `min(pool_segments, pool_byte_cap / 4 MiB)`; the rest go back to the OS. A kept segment is reused only by the size classes it already has free blocks for | Small-block bursts of the same sizes grow and shrink a heap repeatedly | That many committed segments per heap | A heap re-grows by more than 16 MiB every cycle in the same sizes (raise both numbers together); a workload that switches sizes gains nothing ([details](#tuning-the-small-segment-pool-alloc-decommit)) |
+| `.depot_budget_bytes` (default 1 MiB per heap) | Full magazines of freed small blocks are parked up to this budget instead of going back to segment free lists | A free burst is followed by an alloc burst of the same sizes | The budget per heap | Memory per thread matters more than this path (`0` turns it off) |
+| `.route_pin_cache_slots` (default 32, process-wide) | Per-thread cache used when a block is freed by a thread other than the one that allocated it | Producer/consumer threads free into many owners' segments | ≈ 0.29 MiB per slot per freeing thread | Many cross-thread owners per freeing thread (raise) or many idle producer threads (lower) |
+| `.huge_page_after_segments` (Linux, default 16, process-wide) | From the N-th small segment of the process on, new small segments are advised `MADV_HUGEPAGE`; `0` never advises | A heap grows large and touches its memory densely | Up to 2 MiB extra RSS per lightly used segment | Strict RSS limits (`0`), or a large heap from the start (lower it) |
+
+Three facts that the table cannot show:
+
+- **The large cache keeps at most 8 blocks per heap** (40 with the opt-in `large-cache-extended` feature, chosen at
+  compile time). A cached block serves a request that is no larger than it and at least half its size. When all slots
+  are full, a free gives the oldest cached block back to the OS, whatever the headroom. So a program that frees and
+  re-allocates a working set of more than 8 Large blocks re-faults most of it every round: 47.6× (Windows) and 63.1×
+  (Linux) slower than mimalloc for 128 × 16 MiB in
+  [`docs/perf/J11_BIG_BLOCK_JUDGE_MAP.md`](docs/perf/J11_BIG_BLOCK_JUDGE_MAP.md). Raising `headroom_bytes` does not
+  change that; the slot count does.
+- **Retention is per heap.** With one heap per active thread, every number above multiplies by the number of threads
+  that use that kind of memory (see [Where each setting's memory sits](#where-each-settings-memory-sits)).
+- **Nothing is released while the process is idle.** Decay runs from allocator calls. To give memory back at a known
+  point, call `SeferAlloc::trim_current_thread()` from that thread (its large cache, pool and parked magazines). The
+  worker started by `SeferAlloc::start_maintenance()` reclaims heaps no thread currently owns; it does not take over
+  a live thread's caches (see [Memory policy](#memory-policy--read-this-before-you-deploy-seferallocnew)).
+
 ```rust
 use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 
