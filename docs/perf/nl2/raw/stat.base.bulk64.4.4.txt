@@ -1,0 +1,4 @@
+# started on Thu Nov  5 04:25:14 2026
+
+114966574,,cycles:u,28647300,100.00,,
+512545452,,instructions:u,28647300,100.00,4.46,insn per cycle

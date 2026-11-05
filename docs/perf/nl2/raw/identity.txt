@@ -1,0 +1,15 @@
+f93cea523eeb395cf47161de421835401cf6511f129ce728e083d9b4eadf2c90  <repo>/nl2src.tar
+rustc 1.98.1 (48a229cea 2026-09-01)
+binary: rustc
+commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985
+commit-date: 2026-09-01
+host: x86_64-unknown-linux-gnu
+release: 1.98.1
+LLVM version: 22.1.8
+base: --features production misuse-checks
+7ef8479ed197cfcdb765865e73a008095a0dc36a8b76d8eff5732d4105d3f1c7  ~/ab/tgt-nl2base/release/examples/b4_pmu_probe
+45432d26f290b8d4a77a8c416513a4afd5ab3f63cf4dec095019290654f391f6  ~/ab/tgt-nl2base/release/examples/g1_mt_one
+proto: patch nl2 sha256 4ff570b81f14b88bdbef18fe5acbf29ed268e86fd22f7798add6ff92a6ad321b
+proto: --features production misuse-checks
+b4cb8156718d5dc61b7354c14e9b6db1ef2ca08362769d25e2d4aacb689948be  ~/ab/tgt-nl2proto/release/examples/b4_pmu_probe
+6b591ec4a84fca809e2bab2b790b5ad443a8f7e733c983519cdf867667f9c654  ~/ab/tgt-nl2proto/release/examples/g1_mt_one

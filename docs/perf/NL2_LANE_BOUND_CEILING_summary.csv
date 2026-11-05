@@ -1,0 +1,7 @@
+cell,ir_base,ir_proto,ir_delta_pct,median_base,median_proto,unit,time_delta_pct,ranges_overlap
+bulk16,51879866,50976659,-1.74,3.257,3.242,ns/op,-0.46,true
+bulk64,51881121,50977964,-1.74,3.323,3.302,ns/op,-0.63,true
+larson1,23499830,23298500,-0.86,54.8,54.73,Mops,0.13,true
+larson4,101369575,100992221,-0.37,97.39,106.58,Mops,-8.62,true
+mstress1,24056835,23777214,-1.16,64.93,64.78,Mops,0.23,true
+mstress4,104282438,103232478,-1.01,180.15,185.5,Mops,-2.88,true
