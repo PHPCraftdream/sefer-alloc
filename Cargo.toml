@@ -2736,6 +2736,12 @@ required-features = ["production"]
 name = "g1_wild_judge"
 required-features = ["production"]
 
+# G1 big-block judge (measurement only): single blocks from 1 MiB to several GiB, one allocator
+# arm per process (J11).
+[[example]]
+name = "g1_big_judge"
+required-features = ["production"]
+
 # WJ-1 (measurement only, Windows): cost of returning a span to the OS by
 # reservation shape (direct VirtualAlloc/VirtualFree, no allocator).
 [[example]]
