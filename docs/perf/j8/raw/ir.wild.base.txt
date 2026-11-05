@@ -1,0 +1,44 @@
+129,933,819 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                   file:function
+--------------------------------------------------------------------------------
+21,917,576 (16.87%)  ???:g1_wild_judge::burst [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+19,931,304 (15.34%)  ???:<g1_wild_judge::Run>::alloc [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+17,134,684 (13.19%)  ???:<g1_wild_judge::Run>::free [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+12,473,007 ( 9.60%)  ???:g1_wild_judge::a_alloc [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+11,540,067 ( 8.88%)  ./math/../sysdeps/ieee754/dbl-64/e_exp.c:__ieee754_exp_fma [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 9,554,209 ( 7.35%)  ???:g1_wild_judge::a_dealloc [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 8,909,835 ( 6.86%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 7,282,650 ( 5.60%)  ???:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_second_chance [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 6,993,980 ( 5.38%)  ./math/./w_exp_template.c:exp@@GLIBC_2.29 [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 6,061,562 ( 4.67%)  ???:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 1,373,412 ( 1.06%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 1,106,423 ( 0.85%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 1,049,097 ( 0.81%)  ./math/../sysdeps/ieee754/dbl-64/math_config.h:__ieee754_exp_fma
+   699,398 ( 0.54%)  ???:0x0000000004885400 [???]
+   498,172 ( 0.38%)  ???:g1_wild_judge::wild_size [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   368,255 ( 0.28%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   331,560 ( 0.26%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   313,325 ( 0.24%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   198,567 ( 0.15%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   151,310 ( 0.12%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   148,544 ( 0.11%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+   134,181 ( 0.10%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   109,067 ( 0.08%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full_fast [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+    78,537 ( 0.06%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::alloc_large [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+    78,367 ( 0.06%)  ./malloc/./malloc/malloc.c:_int_free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+    71,592 ( 0.06%)  ./elf/./elf/dl-lookup.c:do_lookup_x [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+    69,584 ( 0.05%)  ???:<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+    64,784 ( 0.05%)  ./malloc/./malloc/malloc.c:malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./elf/./elf/dl-lookup.c
+  ./malloc/./malloc/malloc.c
+  ./math/../sysdeps/ieee754/dbl-64/e_exp.c
+  ./math/../sysdeps/ieee754/dbl-64/math_config.h
+  ./math/./w_exp_template.c
+  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S
+
