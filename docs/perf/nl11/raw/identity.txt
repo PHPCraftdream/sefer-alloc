@@ -1,0 +1,15 @@
+c42cd68732fcc647fb1738b839c023119ffee149b7213c21863bf03af5092f24  <repo>/nl11src.tar
+rustc 1.98.1 (48a229cea 2026-09-01)
+binary: rustc
+commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985
+commit-date: 2026-09-01
+host: x86_64-unknown-linux-gnu
+release: 1.98.1
+LLVM version: 22.1.8
+base: --features production
+94b0db543aeafb6010618e877d7f043d0f354e23db7ff5bc5d2c0921aeaef464  ~/ab/tgt-nl11base/release/examples/nl11_xfree
+2dd9e00bb12a8247d11c69529f3a30cc6348ab6510566c972d9826a1333a1da1  ~/ab/tgt-nl11base/release/examples/g1_mt_one
+proto: patch nl11 sha256 4ac43f8114db756f9fa90e295c0b5c11a065280f5048a261e8a16049e6a05670
+proto: --features production
+17ff71e92850478c968bef540e2132a8c9bc07da2ffbbc3a5a1b38602ca706e2  ~/ab/tgt-nl11proto/release/examples/nl11_xfree
+84467e469721820a284720e62ff3d4cada709dc72ad6bd962c4c690333896c98  ~/ab/tgt-nl11proto/release/examples/g1_mt_one

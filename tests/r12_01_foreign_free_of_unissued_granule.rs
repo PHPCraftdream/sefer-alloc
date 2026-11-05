@@ -26,7 +26,8 @@
     feature = "alloc-xthread",
     feature = "alloc-stats",
     feature = "internals",
-    feature = "bench-internals"
+    feature = "bench-internals",
+    feature = "misuse-checks"
 ))]
 
 use sefer_alloc::{SeferAlloc, SegmentLayout};

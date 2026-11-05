@@ -3708,6 +3708,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      # NL-11: the producer-side class check of SidecarBitmap::publish is off in production; the model keeps
+      # its never-issued-granule asserts in this row (`misuse-checks`), the next step runs the trusting mode.
+      - name: loom sidecar bitmap model with misuse-checks
+        run: |
+          cargo test --release --features "alloc-core alloc-xthread tagged-index-stack/loom misuse-checks" \n            --test loom_sidecar_bitmap_actual 2>&1 | tee "$RUNNER_TEMP/loom-sidecar-misuse.log"
+          grep -F "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-sidecar-misuse.log"
       - run: |
           cargo test --release --features "alloc-core alloc-xthread tagged-index-stack/loom" \
             --test loom_sidecar_bitmap_actual \

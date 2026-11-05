@@ -4,6 +4,15 @@
 #![deny(unsafe_code)]
 
 mod alloc_core {
+    // Mirrors `alloc_core::state_byte::StateByte::shadow_reject` for the source-included
+    // `SidecarBitmap::publish` (a debug-build abort for a rejected misuse; loom models do not take it).
+    #[allow(dead_code)]
+    pub mod state_byte {
+        pub struct StateByte;
+        impl StateByte {
+            pub fn shadow_reject(_site: &'static [u8]) {}
+        }
+    }
     // Mirrors `alloc_core::fatal` (`src/alloc_core/platform/fatal.rs`) for the
     // source-included primitives.
     pub mod fatal {

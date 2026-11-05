@@ -9,9 +9,15 @@ use core::ptr::NonNull;
 
 use crate::alloc_core::node::{Node, NODE_SIZE};
 use crate::alloc_core::os;
+#[cfg(any(
+    feature = "misuse-checks",
+    debug_assertions,
+    feature = "alloc-segment-directory"
+))]
+use crate::alloc_core::segment_header::SegmentHeader;
 #[cfg(any(feature = "misuse-checks", debug_assertions))]
 use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentKind};
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
 use crate::alloc_core::size_classes::SizeClasses;
 use crate::alloc_core::state_byte::StateByte;
 

@@ -19,6 +19,15 @@
 #![cfg(loom)]
 
 mod alloc_core {
+    // Mirrors `alloc_core::state_byte::StateByte::shadow_reject` for the source-included
+    // `SidecarBitmap::publish` (a debug-build abort for a rejected misuse; loom models do not take it).
+    #[allow(dead_code)]
+    pub mod state_byte {
+        pub struct StateByte;
+        impl StateByte {
+            pub fn shadow_reject(_site: &'static [u8]) {}
+        }
+    }
     // Mirrors `alloc_core::fatal` (`src/alloc_core/platform/fatal.rs`) for the
     // source-included primitives.
     pub mod fatal {
@@ -245,6 +254,7 @@ fn loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup() {
         assert_eq!(SidecarBitmap::WORDS, 3);
         assert!(map.issue(0, 3));
         assert!(map.issue(16, 4));
+        #[cfg(feature = "misuse-checks")]
         assert!(!map.publish(32), "never-issued granule must not publish");
         let p1 = {
             let backing = Arc::clone(&backing);
@@ -463,6 +473,7 @@ fn loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable() {
         owner.join().unwrap();
         let _published_early = producer.join().unwrap();
         let map = backing.bitmap();
+        #[cfg(feature = "misuse-checks")]
         assert!(!map.publish(16), "never-issued granule must not publish");
         assert!(map.publish(0), "completed issue must remain discoverable");
         let mut records = Vec::new();
@@ -507,6 +518,7 @@ fn loom_actual_leaves_two_producers_same_leaf_no_loss_no_dup() {
         p1.join().unwrap();
         p2.join().unwrap();
         let map = backing.bitmap();
+        #[cfg(feature = "misuse-checks")]
         assert!(!map.publish(32), "never-issued granule must not publish");
         let mut records = Vec::new();
         drain(&map, HIGH_WATER, &mut records);
