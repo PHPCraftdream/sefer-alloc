@@ -158,7 +158,7 @@ ${overshootText}
 
 ## 5. Decision
 
-**${decision}.** ${decision === 'GO' ? 'The hint is merged as `perf(runtime)` with `tests/j13_large_thp_hint.rs`.' : 'No change to `src/` is merged; the patch stays on branch `g1-j13` only as the measured candidate.'}
+**${decision}.** ${decision === 'GO' ? 'The hint is merged as `perf(runtime)` with `tests/j13_large_thp_hint.rs`.' : 'No change to `src/` is merged; the patch is kept as the tag `archive/g1-j13-thp` (commit `5a861a6f`) as the measured candidate.'}
 Not claimed: Windows (no-op by construction), THP modes \`always\`/\`never\`, workloads touching a small part of many big blocks beyond the \`edge\` cell.
 `;
 writeFileSync(new URL(`J13_LARGE_BLOCK_THP${suffix}.md`, dir), md);

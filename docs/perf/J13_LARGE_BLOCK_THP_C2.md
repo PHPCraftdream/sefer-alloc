@@ -40,5 +40,5 @@ Every failed gate is a T2 RSS limit; the largest overshoot is 142 KiB of 5 limit
 
 ## 5. Decision
 
-**NO-GO.** No change to `src/` is merged; the patch stays on branch `g1-j13` only as the measured candidate.
+**NO-GO.** No change to `src/` is merged; the patch is kept as the tag `archive/g1-j13-thp` (commit `5a861a6f`) as the measured candidate.
 Not claimed: Windows (no-op by construction), THP modes `always`/`never`, workloads touching a small part of many big blocks beyond the `edge` cell.
