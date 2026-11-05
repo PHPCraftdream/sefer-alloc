@@ -31,6 +31,12 @@ use core::sync::atomic::{AtomicBool, Ordering};
 #[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
 use crate::alloc_core::alloc_core::CachedLarge;
 
+/// J13: a fresh Large reservation of a request of at least this many bytes is
+/// advised `MADV_HUGEPAGE` (Linux; a no-op elsewhere), so its first touch pays
+/// one fault per 2 MiB instead of one per 4 KiB (docs/perf/J13_LARGE_BLOCK_THP_PREREG.md).
+#[cfg(not(feature = "numa-aware"))]
+const LARGE_THP_MIN_BYTES: usize = 8 << 20;
+
 /// R12-4 (EXPERIMENTAL, feature `large-reserved-capacity`): the upper bound
 /// on how large a Large segment's `reserved_capacity` may grow relative to
 /// `SEGMENT` (4 MiB), regardless of the request size. Without a cap, a
@@ -667,6 +673,9 @@ impl AllocCore {
                     Some(s) => s,
                     None => return (core::ptr::null_mut(), true),
                 };
+                if size >= LARGE_THP_MIN_BYTES {
+                    segment.advise_huge_pages();
+                }
                 let b = segment.as_ptr();
                 let r = segment.reservation();
                 let rl = segment.reservation_len();
