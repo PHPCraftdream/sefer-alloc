@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Opt-in: a Large cache that learns the program's reuse habit (2026-11-05)
+
+- [opt-in] Feature `large-cache-adaptive` (implies `large-cache-extended`, not part of `production`): a Large allocation that misses the cache
+  while a span the cache recently gave back to the OS would have served it is a mistake; the bytes given back since that span left go into a
+  decaying histogram, and the cache keeps the retention that would have prevented 90 % of the recent mistakes (the histogram's integral), never
+  more than the heap's recent peak of live Large bytes above the headroom. It starts as the production cache (8 slots, no byte budget unless the
+  caller sets one) and opens up to 248 extension slots (256 in total) only under the learned target; a quiet interval (the retention went unused)
+  halves the learned extra and the decay releases 3/4 of the excess per step. The first campaign (`docs/perf/J14_ADAPTIVE_LARGE_CACHE.md`) was a
+  NO-GO and led to this form (preregistration section 7). Tests: `tests/j14_large_cache_adaptive.rs`.
+
 ### README: every setting in one table — how it works, what it speeds up, what it costs (2026-11-05)
 
 - [docs] `README.md` §Configuration opens with "Settings at a glance": each setting of `Profile` / `LargeCacheConfig` /

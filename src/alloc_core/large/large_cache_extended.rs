@@ -116,13 +116,37 @@ use crate::alloc_core::alloc_core::CachedLarge;
 /// Number of additional slots held in the lazily-materialised extension
 /// sidecar, on top of the `LARGE_CACHE_SLOTS` (8) base array. See the module
 /// doc's "Sizing" section for the rationale.
-pub(crate) const LARGE_CACHE_EXTENDED_SLOTS: usize = 32;
+///
+/// J14: 248 under `large-cache-adaptive` (256 slots in total), whose policy
+/// grows the cache to the program's own reuse working set.
+pub(crate) const LARGE_CACHE_EXTENDED_SLOTS: usize = if cfg!(feature = "large-cache-adaptive") {
+    248
+} else {
+    32
+};
 
 /// The lazily-materialised large-cache extension sidecar. See the module doc
 /// for the full design. Owner-only, non-atomic storage.
 pub(crate) struct LargeCacheExtension {
     pub(in crate::alloc_core) slots: [Option<CachedLarge>; LARGE_CACHE_EXTENDED_SLOTS],
+    /// J14: occupancy words 1.. of the combined bitmask (slots 64..); word 0
+    /// stays in `AllocCore::large_cache_occupied`.
+    pub(in crate::alloc_core) occ_hi: [u64; OCC_HI_WORDS],
+    /// J14: extension slots currently addressable (`0..active`); 32 without
+    /// `large-cache-adaptive`, 0 under it until the learned target opens
+    /// more, at most `LARGE_CACHE_EXTENDED_SLOTS`.
+    pub(in crate::alloc_core) active: usize,
+    /// J14: the learned reuse habit of this heap.
+    #[cfg(feature = "large-cache-adaptive")]
+    pub(in crate::alloc_core) adapt: super::large_cache_adaptive::AdaptiveState,
 }
+
+/// J14: the pre-J14 extension size: addressable right after materialisation
+/// without `large-cache-adaptive`, and always while the policy is switched off.
+pub(crate) const EXTENDED_SLOTS_INITIAL: usize = 32;
+
+/// J14: words of the combined occupancy bitmask held by the sidecar.
+pub(crate) const OCC_HI_WORDS: usize = crate::alloc_core::alloc_core::LARGE_CACHE_OCC_WORDS - 1;
 
 /// Reserve and construct a [`LargeCacheExtension`] sidecar via direct OS VM
 /// reservation without allocating through the installed global allocator.
@@ -166,6 +190,14 @@ pub(crate) fn reserve_large_cache_extension() -> Option<(
         crate::alloc_core::sidecar::SidecarKind::LargeCacheExtension,
         LargeCacheExtension {
             slots: [const { None }; LARGE_CACHE_EXTENDED_SLOTS],
+            occ_hi: [0; OCC_HI_WORDS],
+            active: if cfg!(feature = "large-cache-adaptive") {
+                0
+            } else {
+                EXTENDED_SLOTS_INITIAL
+            },
+            #[cfg(feature = "large-cache-adaptive")]
+            adapt: super::large_cache_adaptive::AdaptiveState::NEW,
         },
     )
 }

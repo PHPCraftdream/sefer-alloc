@@ -121,6 +121,9 @@ fn standalone_directory_sidecar_churn_releases_every_span() {
     const CORES: u64 = 4;
     for _ in 0..CORES {
         let mut core = AllocCore::new().expect("primordial reservation");
+        // J14: these tests pin the fixed 40-slot extension.
+        #[cfg(feature = "large-cache-adaptive")]
+        core.dbg_set_large_cache_adaptive(false);
         // Crossing the threshold materialises the directory sidecar
         // (proven per-iteration below) and bumps `*_RESERVATIONS`.
         let _ptrs = push_past_threshold(&mut core);
@@ -204,6 +207,9 @@ fn standalone_large_cache_extension_sidecar_churn_releases_every_span() {
 
     for _ in 0..CORES {
         let mut core = AllocCore::new().expect("primordial reservation");
+        // J14: these tests pin the fixed 40-slot extension.
+        #[cfg(feature = "large-cache-adaptive")]
+        core.dbg_set_large_cache_adaptive(false);
         let mut ptrs: Vec<*mut u8> = Vec::new();
         for _ in 0..BASE_SLOTS_PLUS_ONE {
             let p = core.alloc(layout);

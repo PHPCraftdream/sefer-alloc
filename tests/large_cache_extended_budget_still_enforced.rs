@@ -14,6 +14,9 @@ use sefer_alloc::AllocCore;
 
 fn check_budget(span_limit: usize) {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
     let mut live = bounded::allocate_live(&mut ac, &[bounded::large_request(); 10]);
     let newcomer = live.pop().expect("tenth live reservation");

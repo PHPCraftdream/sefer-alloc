@@ -16,6 +16,9 @@ use sefer_alloc::AllocCore;
 #[test]
 fn overflow_past_base_eight_materialises_extension() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
     assert!(!ac.dbg_large_cache_extension_materialised());
     assert_eq!(ac.dbg_large_cache_total_slots(), 8);

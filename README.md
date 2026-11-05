@@ -363,6 +363,21 @@ Three facts that the table cannot show:
   worker started by `SeferAlloc::start_maintenance()` reclaims heaps no thread currently owns; it does not take over
   a live thread's caches (see [Memory policy](#memory-policy--read-this-before-you-deploy-seferallocnew)).
 
+**Learned retention (opt-in Cargo feature `large-cache-adaptive`, not in `production`).** The fixed 8 slots above are the
+wrong size for a program that frees and re-allocates a big working set, and the right size depends on the program. With the
+feature the heap learns it: an allocation that misses the cache while a span the cache recently gave back would have served it
+is counted as a *mistake*, with the number of bytes given back since that span left as its *distance*. A decaying histogram of
+distances yields the retention that would have prevented 90 % of the recent mistakes; the cache keeps `headroom_bytes` plus that
+learned extra, never more than the heap's own recent peak of live Large bytes, and opens extension slots (up to 256 in total)
+only under that target. It starts as the production cache (no byte budget unless you set `budget_bytes`). When the habit
+stops (an interval with no mistakes and little use of the retained memory) the extra halves each interval and the decay releases
+3/4 of the excess per step, so the memory goes back to the `headroom_bytes` floor within about ten decay intervals.
+Measured (`docs/perf/J14_ADAPTIVE_LARGE_CACHE_C2.md`, real `#[global_allocator]`, Windows and Linux): warm rounds of freeing and
+re-allocating 2 GiB (128 x 16 MiB and 16 x 128 MiB) run at the speed of mimalloc (sefer / mimalloc 0.96–1.17) instead of
+27–67 times slower; the first round and workloads without reuse are unchanged. The price is the point: the heap keeps the whole
+habit-sized working set (end RSS equals the working set) until the habit stops. Tune the floor with `headroom_bytes`, cap the
+total with `budget_bytes` (an explicit budget stays a hard cap). Per heap, like every number above.
+
 ```rust
 use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 
@@ -840,7 +855,8 @@ item-scoped regions.
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs) | 3 | `dbg_stamp_segment_id` (raw metadata write) + `dbg_unregister` / `dbg_recycle` — `unsafe fn` boundaries |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs) | 1 | `dbg_stamp_kind_byte` (raw metadata write) — `unsafe fn` boundary |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs) | 1 | `dbg_rebuild_directory` — internal call-site block into `sidecar::deref_mut` (R14-9, task #294) |
-| [`src/alloc_core/large/alloc_core_large_cache.rs`](src/alloc_core/large/alloc_core_large_cache.rs) | 5 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_find_free_slot` / `large_cache_slot_set` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286 — the sidecar deref functions became `unsafe fn` item boundaries) |
+| [`src/alloc_core/large/alloc_core_large_cache.rs`](src/alloc_core/large/alloc_core_large_cache.rs) | 6 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_scan_bound` / `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_slot_set` / `large_cache_occ_words` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286; J14 moved the free-slot search onto the occupancy words and added the active-bound and high-word reads) |
+| [`src/alloc_core/large/large_cache_adaptive.rs`](src/alloc_core/large/large_cache_adaptive.rs) | 2 | J14 (`large-cache-adaptive`): `adaptive_ext` / `adaptive_ref` — the two call-site blocks into `deref_large_cache_extension[_mut]` through which every learned-retention hook reaches the sidecar state |
 | [`src/alloc_core/small/alloc_core_small/find_segment/scan.rs`](src/alloc_core/small/alloc_core_small/find_segment/scan.rs) | 1 | `find_segment_with_free_impl` — calls the `unsafe fn`s `os::read_directory_node_bucket` / `os::read_directory_class_words` (R17-2, task #319) |
 | [`src/alloc_core/small/alloc_core_small/directory.rs`](src/alloc_core/small/alloc_core_small/directory.rs) | 3 | `maybe_materialize_directory` / `directory` / `directory_mut` — internal call-site blocks into `sidecar::deref[_mut]` (R14-9, task #294) |
 | [`src/alloc_core/small/alloc_core_small_diag.rs`](src/alloc_core/small/alloc_core_small_diag.rs) | 4 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_state_bytes_for` / `dbg_payload_start_for` — `unsafe fn` declarations (the two former bitmap-dump hooks were removed with the B4 dead bitmaps; `dbg_state_bytes_for` is the state-byte successor) |
@@ -867,7 +883,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **109** tier-2 item-scoped allows across **33**
+`src/`, 6 in `crates/`) plus **112** tier-2 item-scoped allows across **34**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1569,7 +1585,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **484 integration test files**,
+needs its acceptance run. The present tree contains **485 integration test files**,
 **106 example binaries**, **34 benches**, and **26 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1579,7 +1595,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (484 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (485 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (106 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

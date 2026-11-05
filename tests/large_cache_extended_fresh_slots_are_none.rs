@@ -17,6 +17,9 @@ use sefer_alloc::AllocCore;
 #[test]
 fn all_extension_slots_are_none_immediately_after_materialisation() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
     assert!(!ac.dbg_large_cache_extension_materialised());
 

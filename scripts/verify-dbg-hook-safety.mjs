@@ -130,6 +130,7 @@ const PURE_OBSERVERS = [
   "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_hits",
   "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_slot_sizes",
   "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_occupied_bits",
+  "src/alloc_core/large/large_cache_adaptive.rs::dbg_large_cache_adaptive",
   "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_budget",
   "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_mode",
   "src/alloc_core/platform/sidecar_stats.rs::dbg_sidecar_reservation_stats",
@@ -272,6 +273,10 @@ const SAFE_MUTATORS = [
   [
     "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_backdate_decay_timer",
     "changes only inert timer/stride bookkeeping; checked subtraction cannot access pointers or allocator metadata, so arbitrary durations cannot cause UB"
+  ],
+  [
+    "src/alloc_core/large/large_cache_adaptive.rs::dbg_set_large_cache_adaptive",
+    "switches the learned retention policy flag only; the cache then behaves as the fixed-capacity extension, never touching pointers or metadata"
   ],
   [
     "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_set_decay_config",

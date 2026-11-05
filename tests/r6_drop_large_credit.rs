@@ -8,6 +8,9 @@ fn standalone_drop_releases_live_and_cached_large_once() {
     let before_reserved = AllocCore::dbg_segments_reserved_total();
     let before_released = AllocCore::dbg_segments_released_total();
     let mut core = AllocCore::new().expect("primordial reservation");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    core.dbg_set_large_cache_adaptive(false);
     let layout = Layout::from_size_align(2 * 1024 * 1024, 8).expect("large layout");
     let mut pointers = Vec::new();
     for _ in 0..10 {

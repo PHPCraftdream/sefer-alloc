@@ -15,6 +15,9 @@ use sefer_alloc::{AllocCore, SegmentLayout};
 
 fn physical_size(bytes: usize) -> usize {
     let mut scratch = AllocCore::new().expect("scratch core");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    scratch.dbg_set_large_cache_adaptive(false);
     scratch.dbg_set_large_cache_budget(None);
     let live = bounded::allocate_live(&mut scratch, &[bytes]);
     bounded::deposit_all(&mut scratch, live);
@@ -32,6 +35,9 @@ fn check_best_fit(tight_in_extension: bool) {
     assert!(physical_size(filler) > 2 * tight_physical);
 
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
     let mut sizes = vec![filler; 7];
     sizes.extend([tight, loose]);
@@ -69,6 +75,9 @@ fn best_fit_picks_tightest_slot_across_base_extension_boundary() {
 
 fn check_fifo(oldest_in_extension: bool) {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
     let bytes = bounded::large_request();
     let mut live = bounded::allocate_live(&mut ac, &[bytes; 41]);

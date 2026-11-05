@@ -102,6 +102,9 @@ fn fresh_cache_bitmask_is_zero() {
 #[test]
 fn single_deposit_and_hit_bitmask() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
     assert_occupancy_bitmask_invariant(&ac);
 
@@ -146,6 +149,9 @@ fn single_deposit_and_hit_bitmask() {
 #[test]
 fn base_slots_fill_sets_all_bits() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
 
     // 8 distinct sizes so best-fit/size-factor matching never collapses two
@@ -192,6 +198,9 @@ fn base_slots_fill_sets_all_bits() {
 #[test]
 fn eviction_clears_bitmask_bit() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     // Unbounded budget for the FILL loop — with `large-cache-extended` on,
     // the resolved DEFAULT budget is finite
     // (`DEFAULT_EXTENDED_BUDGET_BYTES`, `large_cache_config.rs`), which
@@ -278,6 +287,9 @@ fn best_fit_hit_returns_array_predicted_segment() {
     // on it: a host page size above 4 KiB breaks it, and the test must skip
     // rather than assert against a broken size model.
     let mut ac0 = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac0.dbg_set_large_cache_adaptive(false);
     ac0.dbg_set_large_cache_budget(None);
     ac0.dbg_set_decay_config(0, u64::MAX, usize::MAX); // deterministically disable background decay
 
@@ -302,6 +314,9 @@ fn best_fit_hit_returns_array_predicted_segment() {
     // Real test core: FRESH (the calibration deposit stays behind on `ac0`),
     // so the seq counter starts at 0 and the cache is genuinely empty.
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
     ac.dbg_set_decay_config(0, u64::MAX, usize::MAX); // deterministically disable background decay
 
@@ -417,6 +432,9 @@ fn best_fit_hit_returns_array_predicted_segment() {
 #[test]
 fn fifo_oldest_eviction_victim_is_seq_zero_first_deposit() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
     ac.dbg_set_decay_config(0, u64::MAX, usize::MAX); // deterministically disable background decay
 
@@ -605,6 +623,9 @@ fn randomised_bitmask_scan_equivalence_shadow() {
     // CALIBRATION — throwaway core, same premise as
     // `best_fit_hit_returns_array_predicted_segment` (skip-out if violated).
     let mut ac0 = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac0.dbg_set_large_cache_adaptive(false);
     ac0.dbg_set_large_cache_budget(None);
     ac0.dbg_set_decay_config(0, u64::MAX, usize::MAX); // deterministically disable background decay
 
@@ -628,6 +649,9 @@ fn randomised_bitmask_scan_equivalence_shadow() {
 
     // Real core under test.
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
     ac.dbg_set_decay_config(0, u64::MAX, usize::MAX); // deterministically disable background decay
     ac.dbg_set_large_cache_budget(Some(96 * MIB));
