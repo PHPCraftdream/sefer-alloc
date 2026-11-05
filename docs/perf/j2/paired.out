@@ -1,0 +1,41 @@
+# bench:table (paired): 3 process(es) × 200 rounds; commit e57266fe, features `production`, churn regime `steady`, 2 bodies/sample for direct and steady churn; 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz x16; Windows 10 Pro 10.0.19045 x64
+# cell = median over processes of the per-process min ns/pair (range of per-process minimums in parentheses)
+
+### Warm repeated bulk burst (alloc 1024 then free 1024)
+
+2048 pairs per sample
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 4.3 (4.3–4.3) | 4.5 (4.5–4.5) | 41.7 (41.7–42.0) | **1.03× faster** |
+| 64B | 3.9 (3.9–4.1) | 6.0 (6.0–6.1) | 43.3 (43.3–43.8) | **1.54× faster** |
+| 256B | 4.2 (4.2–4.3) | 7.5 (7.5–7.6) | 53.1 (43.3–54.6) | **1.77× faster** |
+| 1024B | 6.0 (5.9–6.1) | 15.4 (15.4–15.6) | 46.0 (44.2–97.4) | **2.57× faster** |
+
+### Churn, non-writing (working set 256)
+
+2048 pairs per sample, churn regime `steady`
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 3.9 (3.8–3.9) | 5.3 (5.3–5.3) | 37.8 (37.7–38.3) | **1.38× faster** |
+| 64B | 3.8 (3.8–3.9) | 5.7 (5.7–5.8) | 40.3 (39.6–40.7) | **1.50× faster** |
+| 256B | 3.8 (3.8–3.8) | 9.1 (8.4–10.9) | 35.1 (34.3–35.4) | **2.38× faster** |
+| 1024B | 3.8 (3.8–3.8) | 17.6 (15.0–18.2) | 40.9 (40.5–41.0) | **4.61× faster** |
+
+### Churn + write (16 B written after each alloc)
+
+2048 pairs per sample, churn regime `steady`
+
+| Size | SeferAlloc (ns/pair) | mimalloc (ns/pair) | System (ns/pair) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 4.1 (4.1–4.1) | 5.2 (5.2–5.3) | 37.8 (37.7–38.0) | **1.29× faster** |
+| 64B | 4.2 (4.0–4.2) | 5.5 (5.4–5.5) | 40.9 (40.5–42.9) | **1.32× faster** |
+| 256B | 4.2 (4.2–4.2) | 8.7 (8.6–8.7) | 38.2 (37.7–38.3) | **2.09× faster** |
+| 1024B | 4.2 (4.2–4.2) | 18.1 (17.8–18.4) | 66.7 (61.7–67.2) | **4.30× faster** |
+
+Spread of the per-process minimums (max − min over processes), per arm:
+
+- sefer: 12/12 cells within 0.3 ns; widest relative direct 64B 0.196 ns of 3.906 (5.0 %)
+- mimalloc: 9/12 cells within 0.3 ns; widest relative churn 256B 2.442 ns of 9.082 (26.9 %)
+- system: 2/12 cells within 0.3 ns; widest relative direct 1024B 53.174 ns of 45.996 (115.6 %)
