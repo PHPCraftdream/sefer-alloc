@@ -72,10 +72,12 @@ landing diff**, plus a green nightly for the heavy groups.
 ## Test-impact map (CI-T1 stage 2)
 
 `.github/workflows/test-impact-map.yml` (nightly 04:00 UTC, on dispatch, and on a pull request carrying the label `test-impact-map`) builds every integration-test target
-of the row `production internals` under `-C instrument-coverage`, one target at a time (the binary is deleted
+of two rows (`production internals`, `--all-features`) under `-C instrument-coverage`, one target at a time (the binary is deleted
 after its coverage is exported, so the runner disk holds one instrumented binary), runs it, and records the
-repository files with at least one covered line. Four shards run in parallel; a merge job unions them and runs
-`node scripts/test-impact-map.mjs check`. The result is the artifact `test-impact-map.json` (30 days):
+repository files with at least one covered line. Four shards per row run in parallel; a merge job per row unions them and runs
+`node scripts/test-impact-map.mjs check`. The result is one artifact `test-impact-map-<row>.json` per row (30 days).
+A test that a row compiles to nothing (crate-level `#![cfg(...)]`) has no covered file and is listed `no-coverage`
+for that row, so a test is unmapped everywhere only if no row exercises it. Format:
 
 ```text
 { "version": 1, "sha": "<commit>", "row": { "features": "...", "rustc": "..." },

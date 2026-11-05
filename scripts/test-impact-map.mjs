@@ -5,7 +5,7 @@
 // validates the map; nothing here selects tests.
 //
 // Usage (collect runs cargo, so it is a CI-only command):
-//   node scripts/test-impact-map.mjs collect --features "<f>" --shard <i>/<n> --out part.json
+//   node scripts/test-impact-map.mjs collect --features "<f>"|all --shard <i>/<n> --out part.json     (all = --all-features)
 //   node scripts/test-impact-map.mjs merge --out map.json part-0.json part-1.json ...
 //   node scripts/test-impact-map.mjs check map.json     completeness against cargo metadata + paths exist
 //   node scripts/test-impact-map.mjs --selftest
@@ -147,7 +147,7 @@ function collect({ features, shard, out }) {
   const map = { version: MAP_VERSION, sha, row: { features, rustc }, tests: {}, unmapped: {} };
   const buildFailed = [];
   for (const t of mine) {
-    const b = run('cargo', ['test', '--features', features, '--test', t.name, '--no-run', '--message-format=json'], { env });
+    const b = run('cargo', ['test', ...(features === 'all' ? ['--all-features'] : ['--features', features]), '--test', t.name, '--no-run', '--message-format=json'], { env });
     const exe = b.status === 0 ? executableOf(b.stdout, t.name) : null;
     if (!exe) {
       if (/requires the features/.test(b.stderr)) map.unmapped[t.path] = 'requires-features';

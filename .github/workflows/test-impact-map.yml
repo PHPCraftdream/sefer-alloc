@@ -1,9 +1,10 @@
 name: test-impact-map
 
 # CI-T1 stage 2 (docs/CI_TIERS.md): nightly map "integration test -> repository files its instrumented
-# binary executes", published as the artifact test-impact-map.json. Generation and validation only; no
-# job of ci.yml reads the map yet (stage 3). One row: `production internals`; tests whose
-# required-features are not enabled by the row are listed as unmapped.
+# binary executes", published as the artifacts test-impact-map-<row>.json. Generation and validation only; no
+# job of ci.yml reads the map yet (stage 3). Two rows: `production internals` and
+# `--all-features`. A test the row compiles to nothing (crate-level cfg) or that its required-features exclude
+# is listed as unmapped in that row; stage 3 unions the rows.
 #
 # Each test is built and run alone (cargo test --test <name>) under -C instrument-coverage and its binary
 # is deleted right after its coverage is exported, so the runner disk holds one instrumented binary at a time.
@@ -21,18 +22,16 @@ concurrency:
   group: test-impact-map-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
-env:
-  FEATURES: 'production internals'
-
 jobs:
   collect:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-impact-map')
-    name: collect (shard ${{ matrix.shard }}/4)
+    name: collect (${{ matrix.row }}, shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
+        row: [production-internals, all-features]
         shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v5
@@ -43,18 +42,22 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/test-impact-map.mjs --selftest
-      - run: node scripts/test-impact-map.mjs collect --features "$FEATURES" --shard ${{ matrix.shard }}/4 --out part-${{ matrix.shard }}.json
+      - run: node scripts/test-impact-map.mjs collect --features "${{ matrix.row == 'all-features' && 'all' || 'production internals' }}" --shard ${{ matrix.shard }}/4 --out part-${{ matrix.shard }}.json
       - uses: actions/upload-artifact@v6
         if: ${{ !cancelled() }}
         with:
-          name: test-impact-part-${{ matrix.shard }}
+          name: test-impact-part-${{ matrix.row }}-${{ matrix.shard }}
           path: part-${{ matrix.shard }}.json
           if-no-files-found: error
           retention-days: 7
 
   merge:
-    name: merge and check
+    name: merge and check (${{ matrix.row }})
     needs: collect
+    strategy:
+      fail-fast: false
+      matrix:
+        row: [production-internals, all-features]
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-impact-map')
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -66,13 +69,13 @@ jobs:
           node-version: '22'
       - uses: actions/download-artifact@v6
         with:
-          pattern: test-impact-part-*
+          pattern: test-impact-part-${{ matrix.row }}-*
           merge-multiple: true
-      - run: node scripts/test-impact-map.mjs merge --out test-impact-map.json part-*.json
-      - run: node scripts/test-impact-map.mjs check test-impact-map.json
+      - run: node scripts/test-impact-map.mjs merge --out test-impact-map-${{ matrix.row }}.json part-*.json
+      - run: node scripts/test-impact-map.mjs check test-impact-map-${{ matrix.row }}.json
       - uses: actions/upload-artifact@v6
         with:
-          name: test-impact-map
-          path: test-impact-map.json
+          name: test-impact-map-${{ matrix.row }}
+          path: test-impact-map-${{ matrix.row }}.json
           if-no-files-found: error
           retention-days: 30
