@@ -62,25 +62,6 @@ pub(in crate::alloc_core) struct OccupiedSlots {
     w: usize,
 }
 
-/// Without `large-cache-extended` the occupied base slots are one mask (the
-/// pre-J14 loop, as an iterator).
-#[cfg(not(feature = "large-cache-extended"))]
-pub(in crate::alloc_core) struct OccupiedSlots(u64);
-
-#[cfg(not(feature = "large-cache-extended"))]
-impl Iterator for OccupiedSlots {
-    type Item = CombinedSlot;
-    #[inline]
-    fn next(&mut self) -> Option<CombinedSlot> {
-        if self.0 == 0 {
-            return None;
-        }
-        let i = self.0.trailing_zeros() as usize;
-        self.0 &= self.0 - 1; // clear the lowest set bit
-        Some(i)
-    }
-}
-
 #[cfg(feature = "large-cache-extended")]
 impl Iterator for OccupiedSlots {
     type Item = CombinedSlot;
@@ -296,26 +277,20 @@ impl AllocCore {
     /// `large_cache_occupied`); a bound of 0 would yield an empty mask.
     #[cfg(feature = "alloc-decommit")]
     #[inline]
-    pub(in crate::alloc_core) fn large_cache_occupied_slots(&self) -> OccupiedSlots {
-        #[cfg(not(feature = "large-cache-extended"))]
-        {
-            let bound = self.large_cache_scan_bound();
-            OccupiedSlots(if bound < u64::BITS as usize {
-                self.large_cache_occupied & ((1u64 << bound) - 1)
-            } else {
-                self.large_cache_occupied
-            })
-        }
-        #[cfg(feature = "large-cache-extended")]
-        {
-            self.large_cache_occupied_slots_wide()
+    #[cfg(not(feature = "large-cache-extended"))]
+    pub(in crate::alloc_core) fn large_cache_occupied_within_bound(&self) -> u64 {
+        let bound = self.large_cache_scan_bound();
+        if bound < u64::BITS as usize {
+            self.large_cache_occupied & ((1u64 << bound) - 1)
+        } else {
+            self.large_cache_occupied
         }
     }
 
-    /// J14: the multi-word form of [`Self::large_cache_occupied_slots`].
+    /// J14: the multi-word form of the mask above, as an iterator.
     #[cfg(feature = "large-cache-extended")]
     #[inline]
-    fn large_cache_occupied_slots_wide(&self) -> OccupiedSlots {
+    pub(in crate::alloc_core) fn large_cache_occupied_slots(&self) -> OccupiedSlots {
         let bound = self.large_cache_scan_bound();
         let mut words = self.large_cache_occ_words();
         for (w, word) in words.iter_mut().enumerate() {

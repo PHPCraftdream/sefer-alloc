@@ -241,6 +241,26 @@ impl AllocCore {
     fn oldest_occupied_slot(&self) -> Option<CombinedSlot> {
         let mut best_idx: Option<CombinedSlot> = None;
         let mut best_seq = u64::MAX;
+        #[cfg(not(feature = "large-cache-extended"))]
+        {
+            // The pre-J14 loop, unchanged: the production build keeps its code.
+            let mut occupied = self.large_cache_occupied_within_bound();
+            while occupied != 0 {
+                let i = occupied.trailing_zeros() as usize;
+                occupied &= occupied - 1; // clear the lowest set bit
+                if let Some(c) = self.large_cache_slot_get(i) {
+                    if c.seq < best_seq {
+                        best_idx = Some(i);
+                        best_seq = c.seq;
+                        if c.seq == 0 {
+                            // Initial counter value — cannot be beaten.
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "large-cache-extended")]
         for i in self.large_cache_occupied_slots() {
             if let Some(c) = self.large_cache_slot_get(i) {
                 if c.seq < best_seq {

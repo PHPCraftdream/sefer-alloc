@@ -314,6 +314,25 @@ impl AllocCore {
             // invariant `large_cache_find_free_slot` already relies on)
             // instead of paying one `Option` discriminant load per slot
             // across `large_cache_scan_bound()`.
+            #[cfg(not(feature = "large-cache-extended"))]
+            {
+                // The pre-J14 loop, unchanged: the production build keeps its code.
+                let mut occupied = self.large_cache_occupied_within_bound();
+                while occupied != 0 {
+                    let i = occupied.trailing_zeros() as usize;
+                    occupied &= occupied - 1; // clear the lowest set bit
+                    if let Some(slot) = self.large_cache_slot_get(i) {
+                        if slot.usable_size >= usable
+                            && slot.usable_size <= usable.saturating_mul(LARGE_CACHE_SIZE_FACTOR)
+                            && slot.usable_size < best_usable
+                        {
+                            best_usable = slot.usable_size;
+                            hit_idx = Some(i);
+                        }
+                    }
+                }
+            }
+            #[cfg(feature = "large-cache-extended")]
             for i in self.large_cache_occupied_slots() {
                 if let Some(slot) = self.large_cache_slot_get(i) {
                     if slot.usable_size >= usable
