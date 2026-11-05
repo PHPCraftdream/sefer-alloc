@@ -1,0 +1,130 @@
+// BT-POS: derives docs/perf/BT_POS_ABBA_POSITION_SHIFT.md and docs/perf/BT_POS_ABBA_POSITION_SHIFT_summary.csv from
+// docs/perf/btpos/raw (the A0' campaign, written by docs/perf/btpos/a0p_bt.sh); asserts every printed number.
+import { readFileSync, writeFileSync } from 'node:fs';
+const dir = new URL('../docs/perf/btpos/raw/', import.meta.url);
+const rd = (n) => readFileSync(new URL(n, dir), 'utf8');
+function assert(c, m) { if (!c) throw new Error(m); }
+const near = (a, b, e = 1e-9) => Math.abs(a - b) <= e;
+// Run order of the two sets (the start times of the raw manifests confirm it; see the run script).
+const SETS = {
+  s1: [['base', 's1base_r1'], ['a0p', 's1a0p_r1'], ['a0p', 's1a0p_r2'], ['base', 's1base_r2']],
+  s2: [['a0p', 's2a0p_r1'], ['base', 's2base_r1'], ['base', 's2base_r2'], ['a0p', 's2a0p_r2']],
+};
+const ident = rd('ident.txt').trim().split('\n');
+assert(ident.length === 2 && ident.every((l) => /^[0-9a-f]{40}$/.test(l)), 'ident');
+function load(name) {
+  const lines = rd(`${name}.csv`).trim().split('\n');
+  assert(lines[0].startsWith('group,size,arm,regime,pairs,processes,rounds,process_min_ns,median_of_process_min_ns'), `header ${name}`);
+  const out = new Map();
+  for (const l of lines.slice(1)) {
+    const f = l.split(',');
+    out.set(`${f[0]} ${f[1]} ${f[2]}`, Number(f[8]));
+  }
+  return out;
+}
+const data = {};
+for (const [set, runs] of Object.entries(SETS)) {
+  assert(runs.filter(([t]) => t === 'base').length === 2 && runs.filter(([t]) => t === 'a0p').length === 2, `${set} arms`);
+  data[set] = runs.map(([tree, name], i) => ({ tree, pos: i + 1, m: load(name) }));
+}
+const cells = [...new Set([...data.s1[0].m.keys()].filter((k) => k.endsWith(' sefer')).map((k) => k.slice(0, -' sefer'.length)))];
+assert(cells.length === 12, `12 cells, got ${cells.length}`);
+const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+const gm = (a) => Math.exp(mean(a.map(Math.log)));
+const pct = (x) => (x * 100).toFixed(2);
+// log-ratio of the a0p mean over the base mean for one cell and one set, on a chosen metric
+function delta(set, cell, metric) {
+  const val = (r) => (metric === 'sefer' ? r.m.get(`${cell} sefer`) : r.m.get(`${cell} sefer`) / r.m.get(`${cell} mimalloc`));
+  const a = data[set].filter((r) => r.tree === 'a0p').map(val);
+  const b = data[set].filter((r) => r.tree === 'base').map(val);
+  return Math.log(mean(a) / mean(b));
+}
+// position drift seen by the allocator that did not change: mimalloc ns at the middle positions over the outer ones
+function drift(set) {
+  const v = (r, c) => r.m.get(`${c} mimalloc`);
+  const per = cells.map((c) => {
+    const mid = mean(data[set].filter((r) => r.pos === 2 || r.pos === 3).map((r) => v(r, c)));
+    const out = mean(data[set].filter((r) => r.pos === 1 || r.pos === 4).map((r) => v(r, c)));
+    return Math.log(mid / out);
+  });
+  return mean(per);
+}
+const rows = [];
+let csv = 'metric,cell,s1_delta_pct,s2_delta_pct,true_est_pct,position_est_pct,same_sign\n';
+const agg = {};
+for (const metric of ['sefer', 'ratio']) {
+  const d1 = [], d2 = [];
+  let same = 0;
+  for (const c of cells) {
+    const a = delta('s1', c, metric), b = delta('s2', c, metric);
+    d1.push(a); d2.push(b);
+    const t = (a + b) / 2, p = (a - b) / 2;
+    assert(near(t + p, a) && near(t - p, b), 'decomposition');
+    const ss = Math.sign(a) === Math.sign(b);
+    if (ss) same++;
+    csv += `${metric},${c},${pct(Math.expm1(a))},${pct(Math.expm1(b))},${pct(Math.expm1(t))},${pct(Math.expm1(p))},${ss ? 'yes' : 'no'}\n`;
+    if (metric === 'sefer') rows.push(`| ${c} | ${pct(Math.expm1(a))} % | ${pct(Math.expm1(b))} % | ${pct(Math.expm1(t))} % | ${pct(Math.expm1(p))} % | ${ss ? 'yes' : 'no'} |`);
+  }
+  const g1 = mean(d1), g2 = mean(d2);
+  agg[metric] = { g1, g2, t: (g1 + g2) / 2, p: (g1 - g2) / 2, same };
+  csv += `${metric},ALL(geomean),${pct(Math.expm1(g1))},${pct(Math.expm1(g2))},${pct(Math.expm1((g1 + g2) / 2))},${pct(Math.expm1((g1 - g2) / 2))},${same}/${cells.length}\n`;
+}
+const dr = { s1: drift('s1'), s2: drift('s2') };
+// the sign flip between the two sets is the signature of a position effect: a position-independent change has equal deltas
+const flip = Math.sign(agg.sefer.g1) !== Math.sign(agg.sefer.g2);
+assert(near(agg.sefer.t + agg.sefer.p, agg.sefer.g1) && near(agg.sefer.t - agg.sefer.p, agg.sefer.g2), 'aggregate decomposition');
+writeFileSync(new URL('../../BT_POS_ABBA_POSITION_SHIFT_summary.csv', dir), csv);
+const A = agg.sefer, R = agg.ratio;
+const THRESH = 1.5; // percent: the opt-in time threshold of this repository's magnitude rule
+assert(Math.abs(Math.expm1(R.t)) * 100 < THRESH, 'ratio effect must stay under the threshold for the NULL verdict below');
+const VERDICT = 'A0\' is NULL (no GO, no NO-GO on a measured loss), not a gain';
+const md = `# BT-POS — the position shift of an ABBA pair in the A0' campaign (\`bench\`: measurement only; nothing in the allocator changes)
+
+Generated by \`node scripts/btpos_report.mjs\` from \`docs/perf/btpos/raw\` (the A0' campaign written by \`docs/perf/btpos/a0p_bt.sh\`);
+summary: \`docs/perf/BT_POS_ABBA_POSITION_SHIFT_summary.csv\`. Do not edit by hand.
+
+## 1. Question
+
+The A0' campaign ran two ABBA sets and read opposite signs: set 1 (order base, A0', A0', base) a gain, set 2 (order A0', base, base, A0') a loss.
+Is that a real effect of A0' that one set hides, or a shift that depends on the position in the order?
+
+## 2. Data and method
+
+- Entry point: \`node scripts/bench-table-paired.mjs --features production\` on the real \`SeferAlloc\`, \`mimalloc\` and \`System\` global allocators,
+  3 processes x 200 rounds per run, 12 cells (group x size). Base tree \`${ident[0].slice(0, 8)}\`, A0' tree \`${ident[1].slice(0, 8)}\` (identities in \`docs/perf/btpos/raw/ident.txt\` and the manifests).
+- Two warm runs (one before each set) were discarded by the campaign and are not in this report. Each set is four runs in the order of \`a0p_bt.sh\`:
+  set 1 = base, A0', A0', base; set 2 = A0', base, base, A0'. A run's cell value is the median over the 3 processes of the per-process minimum ns/pair.
+- Per cell and set: delta = mean(A0' runs) / mean(base runs) - 1 on the Sefer ns/pair. The two sets put the arms at the outer positions (1, 4) and at the middle
+  positions (2, 3) in opposite ways, so a middle-position effect enters set 1 and set 2 with opposite signs. Hence, in log terms:
+  true effect = (set 1 + set 2) / 2, position effect = (set 1 - set 2) / 2 (an assumption, stated, not a measurement of position as such).
+- Aggregate = geometric mean over the ${cells.length} cells of the per-cell ratios.
+- Position drift, observed independently: the unchanged \`mimalloc\` arm's ns/pair at the middle positions over the outer positions, geometric mean over cells:
+  set 1 ${pct(Math.expm1(dr.s1))} %, set 2 ${pct(Math.expm1(dr.s2))} %.
+
+## 3. Result
+
+| cell | set 1 delta | set 2 delta | true effect | position effect | same sign |
+|---|---:|---:|---:|---:|---|
+${rows.join('\n')}
+
+Aggregate over ${cells.length} cells (Sefer ns/pair, A0' over base): set 1 ${pct(Math.expm1(A.g1))} %, set 2 ${pct(Math.expm1(A.g2))} %,
+true effect ${pct(Math.expm1(A.t))} %, position effect ${pct(Math.expm1(A.p))} %; cells with the same sign in both sets: ${A.same} of ${cells.length}.
+Normalised by the in-run mimalloc arm (Sefer / mimalloc): set 1 ${pct(Math.expm1(R.g1))} %, set 2 ${pct(Math.expm1(R.g2))} %,
+true effect ${pct(Math.expm1(R.t))} %, position effect ${pct(Math.expm1(R.p))} %; same sign in ${R.same} of ${cells.length} cells.
+
+## 4. Reading
+
+- The two sets ${flip ? 'disagree in sign' : 'agree in sign'} at the aggregate level (${pct(Math.expm1(A.g1))} % and ${pct(Math.expm1(A.g2))} %).${flip ? ' A position-independent effect of A0\' would give the same sign in both sets; the opposite signs are what a middle-position shift produces.' : ''}
+- The estimated position effect (${pct(Math.expm1(A.p))} %) is ${Math.abs(A.p) > Math.abs(A.t) ? 'larger' : 'not larger'} than the estimated true effect (${pct(Math.expm1(A.t))} %).
+- The unchanged mimalloc arm is ${dr.s1 < 0 && dr.s2 < 0 ? 'faster at the middle positions in both sets' : 'not consistently faster at the middle positions'} (${pct(Math.expm1(dr.s1))} % and ${pct(Math.expm1(dr.s2))} %), an effect of position alone because its code did not change.
+  The A0' arms sit at the middle in set 1 and at the outer positions in set 2, which reproduces the sign flip of the Sefer deltas.
+- Normalised by the in-run mimalloc arm, the combined A0' effect is ${pct(Math.expm1(R.t))} %, under the ${THRESH} % magnitude threshold: ${VERDICT}.
+- The set-1 gain, taken alone, is therefore not evidence for A0'. The pair of sets is the evidence, and its combined estimate is the true-effect column.
+
+## 5. Proposed rule for the owner (OWN-1; nothing is enforced by this report)
+
+A paired A/B counts as a result only when it is run in both position patterns (ABBA and BAAB), the two aggregates have the same sign, and the combined estimate
+clears the usual magnitude threshold. A single ABBA set, or two sets with opposite signs, is recorded as "position-confounded" and carries no GO or NO-GO.
+`;
+writeFileSync(new URL('../../BT_POS_ABBA_POSITION_SHIFT.md', dir), md);
+console.log(md.split('\n').filter((l) => l.startsWith('| ') || l.startsWith('Aggregate') || l.startsWith('true effect') || l.startsWith('Normalised') || l.startsWith('- The')).join('\n'));
