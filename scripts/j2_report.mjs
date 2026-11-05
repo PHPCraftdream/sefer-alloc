@@ -45,6 +45,9 @@ function teardown(file) {
 }
 const t1 = teardown('_raw_nl9_bench_table.log'), t2 = teardown('_raw_nl9_bench_table_run2.log');
 assert(t1['1024B'].dir === 'slower' && t2['1024B'].dir === 'slower', 'the 1024 B teardown cell trails in both runs');
+const dcOf = (f) => Number(rd(f).match(/churn_with_teardown\/1024B: decommit_calls delta = (\d+)/)[1]);
+const dc1 = dcOf('_raw_nl9_bench_table.log'), dc2 = dcOf('_raw_nl9_bench_table_run2.log');
+assert(dc1 > 0 && dc2 > 0, '1024 B teardown cells decommit');
 const tr = (k) => `| ${k} | ${t1[k].s} vs ${t1[k].m} (${t1[k].ratio}× ${t1[k].dir}) | ${t2[k].s} vs ${t2[k].m} (${t2[k].ratio}× ${t2[k].dir}) |`;
 const md = `# J2 — paired table against mimalloc after the misuse-checks wave (\`bench\`: measurement only; nothing changes)
 
@@ -80,11 +83,15 @@ The criterion group \`Churn + teardown\` keeps segment decommit, release and re-
 ${SIZES.map(tr).join('\n')}
 
 The 1024 B cell trails in both runs (${t1['1024B'].ratio}x and ${t2['1024B'].ratio}x slower); every smaller size leads or ties. It is the only cell in any of the tables
-where mimalloc is ahead, and it is the next candidate (cost of releasing and re-reserving segments that hold 1024 B blocks).
+where mimalloc is ahead. The bench's own counters show why: at 1024 B each timed iteration frees a 256 KiB working set, the segment empties and
+is decommitted and released (`decommit_calls` / `segments_released_total` delta ${dc1} and ${dc2} over the two runs; 0 at 16 B and 64 B), so the timed
+region pays the return of memory to the OS that mimalloc, which keeps its pages, does not pay. That is the retention question, not a defect:
+`docs/perf/CF1_POOL_SEGMENTS.md` measured the small-segment pool (`pool_segments`, `pool_byte_cap`) as a retention knob, left the default at 4 / 16 MiB,
+and reserved the keep-everything policy ("Retain") for the owner decision OWN-1 / RET-1 (OPEN_ITEMS card 146).
 
 ## 5. Verdict
 
-No steady-state single-thread loss to mimalloc remains in these 12 cells. The open loss is the 1024 B teardown cell; it is filed as task J3.
+No steady-state single-thread loss to mimalloc remains in these 12 cells. The only loss left is the 1024 B teardown diagnostic, and it is the price of the release policy; closing it is the owner's Retain decision (card 146), not an allocator fix.
 `;
 writeFileSync(new URL('J2_PAIRED_TABLE_POST_NL11.md', root), md);
 console.log(md.split('\n').filter((l) => l.startsWith('- Cells') || l.startsWith('- Narrowest') || l.startsWith('| 1024B')).join('\n'));
