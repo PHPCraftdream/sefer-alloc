@@ -71,7 +71,7 @@ landing diff**, plus a green nightly for the heavy groups.
 
 ## Test-impact map (CI-T1 stage 2)
 
-`.github/workflows/test-impact-map.yml` (nightly 04:00 UTC and on demand) builds every integration-test target
+`.github/workflows/test-impact-map.yml` (nightly 04:00 UTC, on dispatch, and on a pull request carrying the label `test-impact-map`) builds every integration-test target
 of the row `production internals` under `-C instrument-coverage`, one target at a time (the binary is deleted
 after its coverage is exported, so the runner disk holds one instrumented binary), runs it, and records the
 repository files with at least one covered line. Four shards run in parallel; a merge job unions them and runs

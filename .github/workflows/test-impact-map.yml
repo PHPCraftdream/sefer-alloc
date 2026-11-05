@@ -14,9 +14,11 @@ on:
   schedule:
     - cron: '0 4 * * *'   # nightly 04:00 UTC, after the 03:00 full tier of ci.yml
   workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize, reopened]   # only with the label `test-impact-map` (a dispatch needs the file on main first)
 
 concurrency:
-  group: test-impact-map
+  group: test-impact-map-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 env:
@@ -24,6 +26,7 @@ env:
 
 jobs:
   collect:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-impact-map')
     name: collect (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -52,6 +55,7 @@ jobs:
   merge:
     name: merge and check
     needs: collect
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-impact-map')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
