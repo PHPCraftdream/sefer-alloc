@@ -1,4 +1,4 @@
-1,402,375,666 (100.0%)  PROGRAM TOTALS
+1,402,375,550 (100.0%)  PROGRAM TOTALS
 
 --------------------------------------------------------------------------------
 Ir                    file:function
@@ -10,7 +10,7 @@ Ir                    file:function
 156,109,404 (11.13%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
 149,684,242 (10.67%)  ???:g1_wild_judge::a_alloc [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
 102,186,621 ( 7.29%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
- 83,891,769 ( 5.98%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
+ 83,891,763 ( 5.98%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
  21,934,584 ( 1.56%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
  19,924,168 ( 1.42%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
  17,047,680 ( 1.22%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]

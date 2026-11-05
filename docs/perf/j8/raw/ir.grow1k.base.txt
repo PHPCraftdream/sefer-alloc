@@ -1,4 +1,4 @@
-98,054,585 (100.0%)  PROGRAM TOTALS
+98,056,576 (100.0%)  PROGRAM TOTALS
 
 --------------------------------------------------------------------------------
 Ir                   file:function
@@ -12,12 +12,12 @@ Ir                   file:function
  6,394,941 ( 6.52%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
  5,248,555 ( 5.35%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
  3,444,826 ( 3.51%)  ???:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
- 2,399,006 ( 2.45%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 2,399,005 ( 2.45%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
  1,370,736 ( 1.40%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
  1,247,768 ( 1.27%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
  1,065,480 ( 1.09%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
    854,598 ( 0.87%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
-   696,159 ( 0.71%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   696,279 ( 0.71%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
    569,977 ( 0.58%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
    557,056 ( 0.57%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]
    426,804 ( 0.44%)  ???:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves as core::ops::drop::Drop>::drop [<scratch>/ab/tgt-j8base/release/examples/g1_wild_judge]

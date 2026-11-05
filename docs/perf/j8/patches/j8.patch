@@ -1,5 +1,5 @@
 diff --git a/src/alloc_core/small/alloc_core_small/find_segment/scan.rs b/src/alloc_core/small/alloc_core_small/find_segment/scan.rs
-index 6ad4f05d..9da48e8c 100644
+index 6ad4f05d..1a2ff1d7 100644
 --- a/src/alloc_core/small/alloc_core_small/find_segment/scan.rs
 +++ b/src/alloc_core/small/alloc_core_small/find_segment/scan.rs
 @@ -14,6 +14,14 @@ use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
@@ -17,7 +17,7 @@ index 6ad4f05d..9da48e8c 100644
  #[derive(Default)]
  struct FindSegmentScanContext {
      #[cfg(feature = "alloc-segment-directory")]
-@@ -523,30 +531,46 @@ impl AllocCore {
+@@ -523,30 +531,51 @@ impl AllocCore {
                      os::read_directory_class_words(self.directory_sidecar, nb, class_idx)
                  };
  
@@ -33,7 +33,12 @@ index 6ad4f05d..9da48e8c 100644
 +                // walk tests eight words at a time and skips an all-zero block at once.
 +                // A non-zero block runs the former word-by-word body unchanged (same
 +                // bits, same order, same early return).
-+                for (c, chunk) in words.chunks_exact(DIRECTORY_SCAN_CHUNK).enumerate() {
++                for (c, chunk) in words
++                    .as_chunks::<DIRECTORY_SCAN_CHUNK>()
++                    .0
++                    .iter()
++                    .enumerate()
++                {
 +                    if chunk.iter().fold(0u64, |acc, &x| acc | x) == 0 {
 +                        // R7-A0 / R13-01: eight words examined and skipped.
 +                        #[cfg(feature = "alloc-stats")]

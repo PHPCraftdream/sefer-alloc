@@ -1,19 +1,19 @@
-2,674,868,677 (100.0%)  PROGRAM TOTALS
+2,670,687,457 (100.0%)  PROGRAM TOTALS
 
 --------------------------------------------------------------------------------
 Ir                    file:function
 --------------------------------------------------------------------------------
-478,150,656 (17.88%)  ???:<g1_wild_judge::Run>::alloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
-411,041,792 (15.37%)  ???:<g1_wild_judge::Run>::free [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
-349,173,016 (13.05%)  ???:g1_wild_judge::a_dealloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
-312,218,808 (11.67%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
-299,368,466 (11.19%)  ???:g1_wild_judge::a_alloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
-204,427,065 ( 7.64%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
-190,012,768 ( 7.10%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
-167,777,861 ( 6.27%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
- 43,954,680 ( 1.64%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+478,150,656 (17.90%)  ???:<g1_wild_judge::Run>::alloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+411,041,792 (15.39%)  ???:<g1_wild_judge::Run>::free [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+349,173,016 (13.07%)  ???:g1_wild_judge::a_dealloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+312,218,808 (11.69%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+299,368,466 (11.21%)  ???:g1_wild_judge::a_alloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+204,427,065 ( 7.65%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+185,831,644 ( 6.96%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+167,777,855 ( 6.28%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+ 43,954,680 ( 1.65%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
  39,848,336 ( 1.49%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
- 34,087,040 ( 1.27%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+ 34,087,040 ( 1.28%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
  31,238,023 ( 1.17%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
  27,306,906 ( 1.02%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
  17,825,792 ( 0.67%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]

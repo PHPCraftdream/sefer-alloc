@@ -1,16 +1,16 @@
-125,378,577 (100.0%)  PROGRAM TOTALS
+125,346,365 (100.0%)  PROGRAM TOTALS
 
 --------------------------------------------------------------------------------
 Ir                   file:function
 --------------------------------------------------------------------------------
-19,039,866 (15.19%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
-15,650,091 (12.48%)  ???:<g1_wild_judge::Run>::alloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+19,039,854 (15.19%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+15,650,091 (12.49%)  ???:<g1_wild_judge::Run>::alloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
 13,453,587 (10.73%)  ???:<g1_wild_judge::Run>::free [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
 10,015,064 ( 7.99%)  ???:g1_wild_judge::a_dealloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
  9,798,456 ( 7.82%)  ???:g1_wild_judge::a_alloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
  9,060,579 ( 7.23%)  ./math/../sysdeps/ieee754/dbl-64/e_exp.c:__ieee754_exp_fma [/usr/lib/x86_64-linux-gnu/libm.so.6]
  8,006,263 ( 6.39%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
- 7,081,102 ( 5.65%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+ 7,048,961 ( 5.62%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
  6,885,113 ( 5.49%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
  5,491,260 ( 4.38%)  ./math/./w_exp_template.c:exp@@GLIBC_2.29 [/usr/lib/x86_64-linux-gnu/libm.so.6]
  2,593,370 ( 2.07%)  ???:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_second_chance [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
@@ -19,7 +19,7 @@ Ir                   file:function
  1,833,128 ( 1.46%)  ???:g1_wild_judge::free_all [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
  1,388,832 ( 1.11%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
  1,295,745 ( 1.03%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
- 1,224,188 ( 0.98%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 1,224,204 ( 0.98%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
  1,099,540 ( 0.88%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
    823,689 ( 0.66%)  ./math/../sysdeps/ieee754/dbl-64/math_config.h:__ieee754_exp_fma
    817,565 ( 0.65%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]

@@ -535,7 +535,12 @@ impl AllocCore {
                 // walk tests eight words at a time and skips an all-zero block at once.
                 // A non-zero block runs the former word-by-word body unchanged (same
                 // bits, same order, same early return).
-                for (c, chunk) in words.chunks_exact(DIRECTORY_SCAN_CHUNK).enumerate() {
+                for (c, chunk) in words
+                    .as_chunks::<DIRECTORY_SCAN_CHUNK>()
+                    .0
+                    .iter()
+                    .enumerate()
+                {
                     if chunk.iter().fold(0u64, |acc, &x| acc | x) == 0 {
                         // R7-A0 / R13-01: eight words examined and skipped.
                         #[cfg(feature = "alloc-stats")]
