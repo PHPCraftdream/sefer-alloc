@@ -10,6 +10,8 @@
 //! - `edge`: allocate, write only the first and last byte, free (what a lazily committed block costs).
 //! - `grow`: `realloc` doubling from 1 MiB to `size_mib` MiB, touching the pages each step adds, free.
 //! - `many`: `k` blocks of `size_mib` MiB, every page touched, freed in reverse order.
+//! - `idle` (J14): `reps` rounds of `many`, then 6 s of light activity (one 4 MiB block allocated and freed every 100 ms,
+//!   untimed), so a retention policy has decay intervals to give the heap back; `end_rss` is read after that.
 //!
 //! The allocator under test is a static reached through `#[inline(never)]` shims (the `__rust_alloc` boundary); the process global
 //! allocator stays `System`. The machine is shared: a run whose peak RSS exceeds [`RSS_LIMIT`] exits with status 2.
@@ -274,8 +276,23 @@ fn main() {
     assert!(reps >= 1 && size_mib >= 1 && k >= 1);
     let size = size_mib * MIB;
     let mut rep = Vec::with_capacity(reps);
+    let scen = if a[1] == "idle" {
+        "many"
+    } else {
+        a[1].as_str()
+    };
     for _ in 0..reps {
-        rep.push(once(arm, &a[1], size, k));
+        rep.push(once(arm, scen, size, k));
+    }
+    if a[1] == "idle" {
+        for _ in 0..60 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let p = a_alloc(arm, 4 * MIB);
+            assert!(!p.is_null(), "allocation of 4 MiB failed");
+            // SAFETY: first byte of a live 4 MiB block.
+            unsafe { p.write_volatile(1) };
+            a_dealloc(arm, p, 4 * MIB);
+        }
     }
     let total = |r: &[u64; 3]| r[0] + r[1] + r[2];
     let cold = total(&rep[0]);
