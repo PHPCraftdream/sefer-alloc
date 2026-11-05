@@ -69,6 +69,31 @@ request and the nightly run re-runs them on `main`.
 The rule in `CLAUDE.md` "confirm CI went green on the landing SHA" now reads: green **for the class of the
 landing diff**, plus a green nightly for the heavy groups.
 
+## Test-impact map (CI-T1 stage 2)
+
+`.github/workflows/test-impact-map.yml` (nightly 04:00 UTC, on dispatch, and on a pull request carrying the label `test-impact-map`) builds every integration-test target
+of two rows (`production internals`, `--all-features`) under `-C instrument-coverage`, one target at a time (the binary is deleted
+after its coverage is exported, so the runner disk holds one instrumented binary), runs it, and records the
+repository files with at least one covered line. Four shards per row run in parallel; a merge job per row unions them and runs
+`node scripts/test-impact-map.mjs check`. The result is one artifact `test-impact-map-<row>.json` per row (30 days).
+A test that a row compiles to nothing (crate-level `#![cfg(...)]`) has no covered file and is listed `no-coverage`
+for that row, so a test is unmapped everywhere only if no row exercises it (first run: 374 of 484 mapped under `--all-features`; the rest are
+cfg(miri)/loom/ghost-only targets and 8 tests that fail under coverage). Format:
+
+```text
+{ "version": 1, "sha": "<commit>", "row": { "features": "...", "rustc": "..." },
+  "tests": { "tests/<file>.rs": ["src/...", ...] },        sorted repo-relative paths
+  "unmapped": { "tests/<file>.rs": "<reason>" } }          reasons: requires-features | test-failed | timeout | no-coverage
+```
+
+`check` fails unless every test target of the commit is exactly once in `tests` or `unmapped`, mapped paths are
+sorted repo-relative and exist at that commit, and every unmapped reason is one of the four above. A target that
+fails to build in the row fails the shard (a broken row must not look like a gap). The script's `--selftest`
+(shard partition, cargo/llvm-cov parsing, merge, every `check` rejection) runs in `docs-consistency`.
+
+Nothing reads the map yet: stage 3 will select tests from a diff and the map, and must run every `unmapped`
+test and every test whose mapped set is unknown to it. The map is only valid for the `sha` and row it carries.
+
 ### Production behavior without `internals`
 
 The only current behavioral CI row building exactly `production` without `internals` is
