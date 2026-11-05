@@ -77,7 +77,8 @@ after its coverage is exported, so the runner disk holds one instrumented binary
 repository files with at least one covered line. Four shards per row run in parallel; a merge job per row unions them and runs
 `node scripts/test-impact-map.mjs check`. The result is one artifact `test-impact-map-<row>.json` per row (30 days).
 A test that a row compiles to nothing (crate-level `#![cfg(...)]`) has no covered file and is listed `no-coverage`
-for that row, so a test is unmapped everywhere only if no row exercises it. Format:
+for that row, so a test is unmapped everywhere only if no row exercises it (first run: 374 of 484 mapped under `--all-features`; the rest are
+cfg(miri)/loom/ghost-only targets and 8 tests that fail under coverage). Format:
 
 ```text
 { "version": 1, "sha": "<commit>", "row": { "features": "...", "rustc": "..." },
