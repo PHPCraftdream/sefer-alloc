@@ -91,8 +91,32 @@ sorted repo-relative and exist at that commit, and every unmapped reason is one 
 fails to build in the row fails the shard (a broken row must not look like a gap). The script's `--selftest`
 (shard partition, cargo/llvm-cov parsing, merge, every `check` rejection) runs in `docs-consistency`.
 
-Nothing reads the map yet: stage 3 will select tests from a diff and the map, and must run every `unmapped`
-test and every test whose mapped set is unknown to it. The map is only valid for the `sha` and row it carries.
+The map is only valid for the `sha` and rows it carries.
+
+### Test selection (CI-T1 stage 3)
+
+Job `select-tests` (group `fast`) downloads the maps of the latest successful `test-impact-map` run on `main`
+and runs `node scripts/select-tests.mjs select` over the diff (`--base`/`--head` as in `changes`). It never
+fails: a missing map, a failed download or selector error yields `all`. The selection is written to the step
+summary and to the artifact `test-selection`. Rules, all conservative (anything unattributable selects every test):
+
+- a full run (`CI: full`, schedule, dispatch) selects all;
+- `Cargo.toml`, `Cargo.lock`, `build.rs`, `.cargo/**`, toolchain and lint configs select all;
+- a changed test target selects itself; a changed `src/**`, `crates/*/src/**` or `tests/support/**` file selects every
+  test whose mapped set, in any row, contains it; `src/kani_proofs.rs` (compiled by no test) selects none;
+- a Rust or `tests/` file in no mapped set (a new file, a cfg'd-out file, a fixture) selects all;
+- `docs/**`, `scripts/**`, `.github/**` and root `*.md|csv|json|txt` select the tests that read files at run time
+  (the test or a `tests/` file it executes mentions `CARGO_MANIFEST_DIR`, `include_str!`, `read_to_string`,
+  `fs::read`, `File::open`, `read_dir` or `Command::new`); any other path selects all;
+- a test no row maps (`no-coverage` or `unmapped` in every row) is always selected.
+
+`test-core` consumes the selection only when the repository variable `TEST_SELECTION` is `enforce` (default: the
+selection is reported, nothing changes): its three `cargo test` steps then run `--lib` plus the selected
+`--test <name>` targets that the row can build (`required-features` against the row's feature closure), or plain
+`cargo test` when the selection is `all`. A subset run does not compile examples and benches and does not run doctests;
+the `clippy` rows (`--all-targets`) still cover their compilation. Core allocator files are executed by most tests
+(a change of the segment-directory scan selects 369 of 484 tests), so the saving comes from peripheral and test-only
+changes; the selection summary shows what each diff got.
 
 ### Production behavior without `internals`
 
@@ -141,6 +165,7 @@ the smoke row covers those scenarios.
 | `ghost-zero-cost` | ghost-zero-cost (.text diff + Ir vs base) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `global-regressions` | global allocator regressions (G1/G3) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `no_std` | no_std core build | `fast`: source, tests, benches, examples, fuzz, build scripts |
+| `select-tests` | select tests (diff + test-impact map) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-core` | test (core tiers) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-feature-isolation` | test (feature isolation) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-gated-bodies` | test (gated bodies + all-features) | `fast`: source, tests, benches, examples, fuzz, build scripts |

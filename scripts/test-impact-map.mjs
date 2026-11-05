@@ -35,7 +35,7 @@ export function testTargets(metadata, root) {
   for (const pkg of metadata.packages) {
     if (resolve(pkg.manifest_path) !== rootManifest) continue;
     for (const t of pkg.targets) {
-      if (!t.kind.includes('test')) continue;
+      if (!t.kind.includes('test') || t.test === false) continue; // test = false: not run by a bulk cargo test
       out.push({ name: t.name, path: toRel(t.src_path, root), requiredFeatures: t['required-features'] ?? [] });
     }
   }
@@ -194,6 +194,7 @@ function selftest() {
   const meta = { packages: [{ manifest_path: p('Cargo.toml'), targets: [
     { name: 'a', kind: ['test'], src_path: p('tests/a.rs'), 'required-features': ['x'] },
     { name: 'lib', kind: ['lib'], src_path: p('src/lib.rs') },
+    { name: 'manual', kind: ['test'], test: false, src_path: p('tests/manual.rs') },
     { name: 'b', kind: ['test'], src_path: p('tests/b/main.rs') },
   ] }, { manifest_path: p('crates/x/Cargo.toml'), targets: [{ name: 'member', kind: ['test'], src_path: p('crates/x/tests/m.rs') }] }] };
   assert.deepEqual(testTargets(meta, root), [
