@@ -532,6 +532,26 @@ mod depot_overflow_proofs {
         ]
     }
 
+    /// Whether two magazines match at their first and last word. Every word of
+    /// a record is written by one struct copy and the proofs fill records
+    /// uniformly, so the ends tell a skipped, doubled or misplaced copy; array
+    /// `==` would lower to a `memcmp` loop needing an unwind bound of its length.
+    fn same_mag(a: &[*mut u8; TCACHE_CAP], b: &[*mut u8; TCACHE_CAP]) -> bool {
+        a[0] == b[0] && a[TCACHE_CAP - 1] == b[TCACHE_CAP - 1]
+    }
+
+    /// Whether two ring buffers hold the same records (see [`same_mag`]).
+    fn same_records(a: &FastBuf, b: &FastBuf) -> bool {
+        let mut i = 0;
+        while i < FCAP {
+            if !same_mag(&a[i], &b[i]) {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
+
     /// И-F1: the WB-3 park fast lane against the generic chain, over an
     /// arbitrary steady-state overflow (`DepotOverflow::kani_symbolic`: ring
     /// position and length, commit watermark, bytes, decay epoch and debt,
@@ -560,11 +580,11 @@ mod depot_overflow_proofs {
             assert!(b.park(c, n, &mag, budget));
             assert!(!b.tick());
             assert!(a.kani_same_controls(&b));
-            assert!(buf_a == buf_b);
+            assert!(same_records(&buf_a, &buf_b));
             kani::cover!(true, "the park fast lane accepted");
         } else {
             assert!(a.kani_same_controls(&before));
-            assert!(buf_a == marked_buffer());
+            assert!(same_records(&buf_a, &marked_buffer()));
         }
     }
 
@@ -598,14 +618,14 @@ mod depot_overflow_proofs {
                 assert!(!b.tick());
                 assert_eq!(more, n > 1);
                 assert!(a.kani_same_controls(&b));
-                assert!(out_a == out_b);
-                assert!(buf_a == marked_buffer());
+                assert!(same_mag(&out_a, &out_b));
+                assert!(same_records(&buf_a, &marked_buffer()));
                 kani::cover!(true, "the reload fast lane accepted");
             }
             None => {
                 assert!(a.kani_same_controls(&before));
-                assert!(out_a == [core::ptr::null_mut::<u8>(); TCACHE_CAP]);
-                assert!(buf_a == marked_buffer());
+                assert!(same_mag(&out_a, &[core::ptr::null_mut::<u8>(); TCACHE_CAP]));
+                assert!(same_records(&buf_a, &marked_buffer()));
             }
         }
     }

@@ -228,6 +228,22 @@ impl DepotOverflow {
     /// pointers aside).
     #[cfg(kani)]
     pub(crate) fn kani_same_controls(&self, other: &Self) -> bool {
+        // Element-wise, not `==` on the arrays: array equality lowers to a
+        // `memcmp` loop that needs an unwind bound of its byte length.
+        let mut k = 0;
+        while k < DEPOT_CLASSES {
+            if self.len[k] != other.len[k]
+                || self.head[k] != other.head[k]
+                || self.cap[k] != other.cap[k]
+                || self.low[k] != other.low[k]
+                || self.debt[k] != other.debt[k]
+                || self.off[k] != other.off[k]
+                || self.committed[k] != other.committed[k]
+            {
+                return false;
+            }
+            k += 1;
+        }
         self.bytes == other.bytes
             && self.armed == other.armed
             && self.events == other.events
@@ -237,13 +253,6 @@ impl DepotOverflow {
             && self.starved == other.starved
             && self.reloads_since_ingress == other.reloads_since_ingress
             && self.reserve_failed == other.reserve_failed
-            && self.len == other.len
-            && self.head == other.head
-            && self.cap == other.cap
-            && self.low == other.low
-            && self.debt == other.debt
-            && self.off == other.off
-            && self.committed == other.committed
             && self.stats == other.stats
     }
 
