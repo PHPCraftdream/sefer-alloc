@@ -15,8 +15,108 @@
 //!   count (И-D1 capacity, И-D2 exact LIFO round trip, class isolation);
 //!   not the `HeapSlot` binding or the MAG/live accounting around it.
 //!
-//! These proofs do not establish concurrent memory ordering, reservation
+//! - `small_primitive_proofs` exercises production StateByte and BinTable
+//!   primitives over bounded aligned backing. The private StateByte module
+//!   is reached through `SegmentMeta::state_byte()` without naming its type.
+//!   It does NOT execute
+//!   `dealloc_small`, `reclaim_sidecar_record`, the magazine caller, or a
+//!   trusting-mode counterpart; allocator-level obligations remain open.
+//! - These proofs do not establish concurrent memory ordering, reservation
 //! lifetime, ownership authority, or reclamation safety.
+
+#[cfg(all(kani, feature = "alloc-core"))]
+mod small_primitive_proofs {
+    //! Bounded proofs over production StateByte/BinTable primitives.
+    use crate::alloc_core::segment_header::{BinTable, Layout, SegmentMeta, FREE_LIST_NULL};
+    use crate::alloc_core::size_classes::MIN_BLOCK;
+
+    fn expected_byte(class: usize, state: u8) -> u8 {
+        ((class + 1) as u8) | (state << 6)
+    }
+
+    const CLASS: usize = 0;
+    const LIVE: u8 = 0;
+    const MAG: u8 = 1;
+    const FREE: u8 = 2;
+    const OFF_A: u32 = 0;
+    const OFF_B: u32 = MIN_BLOCK as u32;
+    const BACKING_LEN: usize = Layout::state_byte_off() + 2;
+    #[repr(align(8))]
+    struct AlignedState([u8; BACKING_LEN]);
+    const BIN_BACKING_LEN: usize = Layout::bin_table_off() + BinTable::FOOTPRINT;
+    #[repr(align(8))]
+    struct AlignedBins([u8; BIN_BACKING_LEN]);
+
+    #[kani::unwind(2)]
+    #[kani::proof]
+    fn state_byte_storage_roundtrip() {
+        let mut backing = AlignedState([0u8; BACKING_LEN]);
+        let state = SegmentMeta::new(backing.0.as_mut_ptr()).state_byte();
+        assert_eq!(expected_byte(CLASS, LIVE), 1);
+        state.write(OFF_A, CLASS, LIVE);
+        assert_eq!(state.read(OFF_A), expected_byte(CLASS, LIVE));
+        state.write(OFF_A, CLASS, FREE);
+        assert_eq!(state.read(OFF_A), expected_byte(CLASS, FREE));
+        state.write(OFF_A, CLASS, LIVE);
+        assert_eq!(state.read(OFF_A), expected_byte(CLASS, LIVE));
+        assert_eq!(state.read(OFF_B), 0);
+    }
+
+    #[kani::unwind(2)]
+    #[kani::proof]
+    fn state_byte_symbolic_class_codec() {
+        let class: usize = kani::any();
+        kani::assume(class < crate::alloc_core::size_classes::SMALL_CLASS_COUNT);
+        let state_code: u8 = kani::any();
+        kani::assume(state_code <= FREE);
+        let mut backing = AlignedState([0u8; BACKING_LEN]);
+        let state = SegmentMeta::new(backing.0.as_mut_ptr()).state_byte();
+        state.write(OFF_A, class, state_code);
+        assert_eq!(state.read(OFF_A), expected_byte(class, state_code));
+        assert_ne!(state.read(OFF_A) & 0x3f, 0);
+    }
+
+    #[kani::unwind(2)]
+    #[kani::proof]
+    fn state_byte_granules_are_isolated() {
+        let class: usize = kani::any();
+        kani::assume(class < crate::alloc_core::size_classes::SMALL_CLASS_COUNT);
+        let other: usize = kani::any();
+        kani::assume(other < crate::alloc_core::size_classes::SMALL_CLASS_COUNT);
+        let mut backing = AlignedState([0u8; BACKING_LEN]);
+        let state = SegmentMeta::new(backing.0.as_mut_ptr()).state_byte();
+        state.write(OFF_A, class, LIVE);
+        state.write(OFF_B, other, MAG);
+        assert_eq!(state.read(OFF_A), expected_byte(class, LIVE));
+        assert_eq!(state.read(OFF_B), expected_byte(other, MAG));
+        state.write(OFF_A, class, FREE);
+        assert_eq!(state.read(OFF_A), expected_byte(class, FREE));
+        assert_eq!(state.read(OFF_B), expected_byte(other, MAG));
+    }
+
+    #[kani::unwind(65)]
+    #[kani::proof]
+    fn bin_table_head_storage_roundtrip() {
+        let mut backing = AlignedBins([0u8; BIN_BACKING_LEN]);
+        let heads = backing
+            .0
+            .as_mut_ptr()
+            .wrapping_add(Layout::bin_table_off())
+            .cast::<u32>();
+        BinTable::init_in_place(heads);
+        let mut bins = BinTable::new(heads);
+        assert_eq!(bins.head(CLASS), FREE_LIST_NULL);
+        let offset: u32 = kani::any();
+        kani::assume(offset > 0 && offset < u32::MAX);
+        bins.set_head(CLASS, offset);
+        assert_eq!(bins.head(CLASS), offset);
+        bins.set_head(CLASS, offset);
+        let popped = bins.head(CLASS);
+        bins.set_head(CLASS, FREE_LIST_NULL);
+        assert_eq!(popped, offset);
+        assert_eq!(bins.head(CLASS), FREE_LIST_NULL);
+    }
+}
 
 #[cfg(all(kani, feature = "alloc-core"))]
 mod node_proofs {
