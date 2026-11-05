@@ -518,4 +518,95 @@ mod depot_overflow_proofs {
         assert!(b <= req);
         assert!(DEPOT_K[c] as usize + DepotOverflow::cap_for(b, c) <= u16::MAX as usize);
     }
+
+    const FCAP: usize = 4;
+    type FastBuf = [[*mut u8; TCACHE_CAP]; FCAP];
+
+    /// A ring buffer whose record `i` holds the marker `i + 1` in every word.
+    fn marked_buffer() -> FastBuf {
+        [
+            [1 as *mut u8; TCACHE_CAP],
+            [2 as *mut u8; TCACHE_CAP],
+            [3 as *mut u8; TCACHE_CAP],
+            [4 as *mut u8; TCACHE_CAP],
+        ]
+    }
+
+    /// И-F1: the WB-3 park fast lane against the generic chain, over an
+    /// arbitrary steady-state overflow (`DepotOverflow::kani_symbolic`: ring
+    /// position and length, commit watermark, bytes, decay epoch and debt,
+    /// latch and ingress counters all symbolic). When `park_simple` accepts,
+    /// the class already had a record (no arming: every class is armed), the
+    /// ring keeps room after the new record (no latch), and the result is
+    /// exactly `park` followed by a `tick` that finds no decay work — same
+    /// controls, same record bytes. When it refuses, nothing changes.
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn park_simple_is_park_then_tick() {
+        let c: usize = kani::any();
+        kani::assume(c < DEPOT_CLASSES);
+        let budget: usize = kani::any();
+        kani::assume(budget <= 1 << 30);
+        let mut buf_a = marked_buffer();
+        let mut buf_b = marked_buffer();
+        let mut a = DepotOverflow::kani_symbolic(buf_a.as_mut_ptr().cast(), c, FCAP as u16);
+        let mut b = a.kani_copy(buf_b.as_mut_ptr().cast());
+        let before = a.kani_copy(buf_a.as_mut_ptr().cast());
+        let n = a.len(c);
+        let mag = [kani::any::<usize>() as *mut u8; TCACHE_CAP];
+        if a.park_simple(c, &mag, budget) {
+            assert!(n >= 1 && n + 1 < FCAP);
+            assert_eq!(a.armed(), ALL_SMALL);
+            assert!(b.park(c, n, &mag, budget));
+            assert!(!b.tick());
+            assert!(a.kani_same_controls(&b));
+            assert!(buf_a == buf_b);
+            kani::cover!(true, "the park fast lane accepted");
+        } else {
+            assert!(a.kani_same_controls(&before));
+            assert!(buf_a == marked_buffer());
+        }
+    }
+
+    /// И-F2: the WB-3 reload fast lane against the generic chain, over the
+    /// same arbitrary steady-state overflow. When `reload_simple` accepts it
+    /// is exactly `reload`, then an ingress count that is not due, an
+    /// unlatching that finds no latched class, and a `tick` that finds no
+    /// decay work; `more` is "records remain". When it refuses, neither the
+    /// controls nor the destination magazine change.
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn reload_simple_is_reload_then_tick() {
+        let c: usize = kani::any();
+        kani::assume(c < DEPOT_CLASSES);
+        let budget: usize = kani::any();
+        kani::assume(budget <= 1 << 30);
+        let mut buf_a = marked_buffer();
+        let mut buf_b = marked_buffer();
+        let mut a = DepotOverflow::kani_symbolic(buf_a.as_mut_ptr().cast(), c, FCAP as u16);
+        let mut b = a.kani_copy(buf_b.as_mut_ptr().cast());
+        let before = a.kani_copy(buf_a.as_mut_ptr().cast());
+        let n = a.len(c);
+        let mut out_a = [core::ptr::null_mut::<u8>(); TCACHE_CAP];
+        let mut out_b = [core::ptr::null_mut::<u8>(); TCACHE_CAP];
+        match a.reload_simple(c, &mut out_a) {
+            Some(more) => {
+                assert!(n >= 1);
+                b.reload(c, n, &mut out_b);
+                assert!(!b.ingress_due());
+                assert_eq!(b.take_unstarved(budget), 0);
+                assert!(!b.tick());
+                assert_eq!(more, n > 1);
+                assert!(a.kani_same_controls(&b));
+                assert!(out_a == out_b);
+                assert!(buf_a == marked_buffer());
+                kani::cover!(true, "the reload fast lane accepted");
+            }
+            None => {
+                assert!(a.kani_same_controls(&before));
+                assert!(out_a == [core::ptr::null_mut::<u8>(); TCACHE_CAP]);
+                assert!(buf_a == marked_buffer());
+            }
+        }
+    }
 }
