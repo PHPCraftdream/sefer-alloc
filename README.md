@@ -363,6 +363,21 @@ Three facts that the table cannot show:
   worker started by `SeferAlloc::start_maintenance()` reclaims heaps no thread currently owns; it does not take over
   a live thread's caches (see [Memory policy](#memory-policy--read-this-before-you-deploy-seferallocnew)).
 
+**Learned retention (opt-in Cargo feature `large-cache-adaptive`, not in `production`).** The fixed 8 slots above are the
+wrong size for a program that frees and re-allocates a big working set, and the right size depends on the program. With the
+feature the heap learns it: an allocation that misses the cache while a span the cache recently gave back would have served it
+is counted as a *mistake*, with the number of bytes given back since that span left as its *distance*. A decaying histogram of
+distances yields the retention that would have prevented 90 % of the recent mistakes; the cache keeps `headroom_bytes` plus that
+learned extra, never more than the heap's own recent peak of live Large bytes, and opens extension slots (up to 256 in total)
+only under that target. It starts as the production cache (no byte budget unless you set `budget_bytes`). When the habit
+stops (an interval with no mistakes and little use of the retained memory) the extra halves each interval and the decay releases
+3/4 of the excess per step, so the memory goes back to the `headroom_bytes` floor within about ten decay intervals.
+Measured (`docs/perf/J14_ADAPTIVE_LARGE_CACHE_C2.md`, real `#[global_allocator]`, Windows and Linux): warm rounds of freeing and
+re-allocating 2 GiB (128 x 16 MiB and 16 x 128 MiB) run at the speed of mimalloc (sefer / mimalloc 0.96–1.17) instead of
+27–67 times slower; the first round and workloads without reuse are unchanged. The price is the point: the heap keeps the whole
+habit-sized working set (end RSS equals the working set) until the habit stops. Tune the floor with `headroom_bytes`, cap the
+total with `budget_bytes` (an explicit budget stays a hard cap). Per heap, like every number above.
+
 ```rust
 use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 
