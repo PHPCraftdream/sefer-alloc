@@ -1,0 +1,9 @@
+workload,threads,sefer_median_mops,sefer_min,sefer_max,mi_median_mops,mi_min,mi_max,sefer_over_mi,verdict
+larson,1,62.95,54.03,64.32,63.1,59.26,66.56,1.00,tie (ranges overlap)
+larson,2,69.4,65.76,71.25,52.25,47.46,55.93,1.33,sefer ahead
+larson,4,123.75,113.52,129.69,90.96,82.66,99.58,1.36,sefer ahead
+larson,8,205.32,169.24,245.53,134.73,122.34,149.13,1.52,sefer ahead
+mstress,1,75.23,61.43,76.64,75.06,61.46,78.27,1.00,tie (ranges overlap)
+mstress,2,114.11,106.78,117.52,98.44,92.51,103.8,1.16,sefer ahead
+mstress,4,207.64,162.44,219.05,176.91,167.2,188.96,1.17,tie (ranges overlap)
+mstress,8,315.14,283.22,384.92,231.82,186.63,267.44,1.36,sefer ahead
