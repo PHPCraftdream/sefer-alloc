@@ -1,0 +1,40 @@
+238,149,481 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                   file:function
+--------------------------------------------------------------------------------
+36,685,743 (15.40%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+32,909,103 (13.82%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+25,262,596 (10.61%)  ???:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+20,833,785 ( 8.75%)  ???:<g1_wild_judge::Run>::alloc [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+17,909,745 ( 7.52%)  ???:<g1_wild_judge::Run>::free [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+15,903,899 ( 6.68%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+14,066,640 ( 5.91%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+13,043,933 ( 5.48%)  ???:g1_wild_judge::a_alloc [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+12,061,665 ( 5.06%)  ./math/../sysdeps/ieee754/dbl-64/e_exp.c:__ieee754_exp_fma [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 7,310,100 ( 3.07%)  ./math/./w_exp_template.c:exp@@GLIBC_2.29 [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 7,049,614 ( 2.96%)  ???:g1_wild_judge::a_dealloc [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 6,736,324 ( 2.83%)  ???:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_second_chance [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 3,901,475 ( 1.64%)  ???:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 3,655,098 ( 1.53%)  ???:g1_wild_judge::free_all [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 2,985,999 ( 1.25%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::trim_for_recycle [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 2,806,538 ( 1.18%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 1,892,742 ( 0.79%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 1,739,634 ( 0.73%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0} [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 1,487,265 ( 0.62%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::drain_large_sidecar_ingress_hot_bounded [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 1,183,092 ( 0.50%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 1,096,515 ( 0.46%)  ./math/../sysdeps/ieee754/dbl-64/math_config.h:__ieee754_exp_fma
+ 1,071,538 ( 0.45%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+   777,002 ( 0.33%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+   731,010 ( 0.31%)  ???:0x0000000004885400 [???]
+   646,783 ( 0.27%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   484,142 ( 0.20%)  ???:<sefer_alloc::alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves as core::ops::drop::Drop>::drop [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+   484,113 ( 0.20%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::process_ingress [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+   434,207 ( 0.18%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_drain_freelist_batch [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+   428,614 ( 0.18%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+   365,648 ( 0.15%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_with_large_rescue::<<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_slow::{closure#0}> [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./malloc/./malloc/malloc.c

@@ -1,0 +1,30 @@
+940,856,537 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                    file:function
+--------------------------------------------------------------------------------
+239,075,328 (25.41%)  ???:<g1_wild_judge::Run>::alloc [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+205,520,896 (21.84%)  ???:<g1_wild_judge::Run>::free [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 92,327,981 ( 9.81%)  ???:mi_free [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 92,143,486 ( 9.79%)  ???:mi_theap_malloc_aligned [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 83,891,782 ( 8.92%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 54,525,952 ( 5.80%)  ???:_mi_page_malloc_zero [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 54,525,952 ( 5.80%)  ???:g1_wild_judge::a_alloc [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 29,360,128 ( 3.12%)  ???:g1_wild_judge::a_dealloc [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 29,360,128 ( 3.12%)  ???:mi_malloc_aligned [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+ 22,021,436 ( 2.34%)  ???:mi_page_free_list_extend [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+  7,539,069 ( 0.80%)  ???:mi_page_queue_find_free_ex [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+  4,658,606 ( 0.50%)  ???:_mi_malloc_generic [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+  3,615,558 ( 0.38%)  ???:_mi_page_free_collect [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+  2,755,242 ( 0.29%)  ???:mi_theap_malloc_zero_aligned_at_generic [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+  2,460,000 ( 0.26%)  ???:mi_page_extend_free.isra.0 [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+  1,804,110 ( 0.19%)  ???:mi_bin [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+  1,265,780 ( 0.13%)  ???:mi_option_get [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+  1,069,287 ( 0.11%)  ???:mi_bitmap_setN [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+  1,052,839 ( 0.11%)  ???:mi_bbitmap_try_find_and_clear [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+    721,611 ( 0.08%)  ???:_mi_theap_malloc_zero [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+    713,574 ( 0.08%)  ???:mi_arenas_page_alloc_fresh [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+    524,808 ( 0.06%)  ???:mi_good_size [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+    460,018 ( 0.05%)  ???:_mi_arenas_collect [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+    426,505 ( 0.05%)  ???:mi_page_fresh_alloc [<scratch>/ab/tgt-j6/release/examples/g1_wild_judge]
+
