@@ -1,6 +1,11 @@
 //! J13: a fresh Large reservation for a request of at least 8 MiB is advised `MADV_HUGEPAGE` (the
-//! `hg` flag of its mapping in `/proc/self/smaps`); a Large request below 8 MiB is not.
-#![cfg(all(target_os = "linux", feature = "alloc-global", not(miri)))]
+//! `hg` flag of its mapping in `/proc/self/smaps`); a Large request below 8 MiB is not. Not built with `numa-aware` (eager NUMA reservation, no hint).
+#![cfg(all(
+    target_os = "linux",
+    feature = "alloc-global",
+    not(feature = "numa-aware"),
+    not(miri)
+))]
 
 use core::alloc::{GlobalAlloc, Layout};
 use sefer_alloc::SeferAlloc;
