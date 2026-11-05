@@ -1,0 +1,22 @@
+diff --git a/src/registry/heap_core/free/dealloc_fast.rs b/src/registry/heap_core/free/dealloc_fast.rs
+index 5995987b..36627658 100644
+--- a/src/registry/heap_core/free/dealloc_fast.rs
++++ b/src/registry/heap_core/free/dealloc_fast.rs
+@@ -57,7 +57,7 @@ impl HeapCore {
+         let g = off.rotate_right(MIN_BLOCK_SHIFT);
+         let meta = SegmentMeta::new(root);
+         #[cfg(any(feature = "misuse-checks", debug_assertions))]
+-        if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
++        if g >= crate::alloc_core::state_byte::StateByte::FOOTPRINT {
+             return lane_miss(block, layout, self);
+         }
+         let off = off as u32;
+@@ -123,7 +123,7 @@ fn lane_second_chance(ptr: *mut u8, layout: Layout, heap: &mut HeapCore) {
+     let g = off.rotate_right(MIN_BLOCK_SHIFT);
+     let meta = SegmentMeta::new(root);
+     #[cfg(any(feature = "misuse-checks", debug_assertions))]
+-    if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
++    if g >= crate::alloc_core::state_byte::StateByte::FOOTPRINT {
+         return lane_miss(block, layout, heap);
+     }
+     let off = off as u32;
