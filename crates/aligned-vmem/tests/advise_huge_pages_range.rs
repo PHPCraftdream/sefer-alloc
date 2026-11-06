@@ -271,12 +271,19 @@ fn advised_subrange_sets_hg_only_on_targeted_vma() {
     not(miri),
     not(aligned_vmem_mock)
 ))]
+type VmaFlags = (usize, usize, String);
+
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    not(miri),
+    not(aligned_vmem_mock)
+))]
 fn smaps_vma_flags(
     a_start: usize,
     a_end: usize,
     b_start: usize,
     b_end: usize,
-) -> (Vec<(usize, usize, String)>, Vec<(usize, usize, String)>) {
+) -> (Vec<VmaFlags>, Vec<VmaFlags>) {
     let text = std::fs::read_to_string("/proc/self/smaps")
         .expect("reading /proc/self/smaps: required for the task-#53 hint-flag oracle");
     let mut advised = Vec::new();

@@ -9,9 +9,9 @@
 //!
 //! ## Update-then-report order
 //!
-//! [`observe`](Self::observe) UPDATEs both state components from the
+//! [`observe`](LargeThpEstimator::observe) UPDATEs both state components from the
 //! observation FIRST, then computes and returns the share from the UPDATED
-//! state. [`bounded_share`](Self::bounded_share) reports from the current
+//! state. [`bounded_share`](LargeThpEstimator::bounded_share) reports from the current
 //! state without any update.
 //!
 //! ## Error bounds
