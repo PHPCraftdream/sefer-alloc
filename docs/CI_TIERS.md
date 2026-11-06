@@ -36,12 +36,17 @@ on a schedule and on demand.
 
 | Group | Selected by (changed path) |
 |---|---|
-| `always` | every change: fmt, commit-prefix-lint, evidence-registry, deny, licenses, docs-consistency |
+| `always` | every change: fmt, commit-prefix-lint, evidence-registry, deny, licenses, docs-consistency, j13b-judge-preparation (path-selected steps) |
 | `fast` | `src/**`, `crates/**`, `tests/**`, `benches/**`, `examples/**`, `fuzz/**`, `Cargo.*`, build scripts (`check-matrix`, `run-check-matrix`, `lib`, `check-all`), and any unrecognised path |
 | `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests |
 | `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**`, tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`) |
 | `crate_*` | `crates/<name>/**`: the gates of that one workspace crate (its dependents also get `fast`+`seam`) |
 | everything | `schedule`, `workflow_dispatch`, and a `CI: full` trailer in the message of any commit of the range (PR: base..merge commit; push: before..sha) |
+
+`j13b-judge-preparation` is in `always` but is not full CI: the job itself starts on every change, yet its
+Node and cargo steps are skipped unless a J13b path changed (`scripts/j13b_*.mjs`, `examples/_shared/**`,
+`examples/g1_j13b_*.rs`, `tests/j13b_*.{mjs,rs}`, `Cargo.toml`, `.github/workflows/ci.yml`) or the run is a
+schedule/manual dispatch.
 
 A change to `.github/workflows/ci.yml` or `scripts/ci-plan.mjs` selects `fast` (the planner self-test runs in
 every `changes` job); it no longer selects the full set, and the `full-ci` PR label is gone.
@@ -157,6 +162,7 @@ the smoke row covers those scenarios.
 | `evidence-registry` | evidence-registry | every change |
 | `fmt` | rustfmt | every change |
 | `ghost-guard` | ghost-guard (semantic lint + ghost self-test) | every change |
+| `j13b-judge-preparation` | J13b judge preparation (schema + workload contract) | every change |
 | `licenses` | license compatibility (only when dependencies changed) | every change |
 | `check-matrix` | check-matrix (manifest-driven, non-clippy rows) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `clippy` | clippy | `fast`: source, tests, benches, examples, fuzz, build scripts |
