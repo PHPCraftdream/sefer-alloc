@@ -16,6 +16,10 @@ pub(super) mod alloc_core_large;
 pub(super) mod alloc_core_large_cache;
 #[cfg(feature = "alloc-decommit")]
 mod alloc_core_large_cache_eviction;
+/// J14: the learned Large-cache retention policy (`large-cache-adaptive`);
+/// empty inline hooks without the feature.
+#[cfg(feature = "alloc-decommit")]
+pub(crate) mod large_cache_adaptive;
 /// R13-7 (task #277, EXPERIMENTAL `large-cache-extended`): the lazily-
 /// materialised sidecar that widens the large-segment free-cache beyond the
 /// fixed 8 base slots. See the module doc for the full design. A named

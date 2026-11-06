@@ -24,9 +24,11 @@ Entry point under test: the real `#[global_allocator]` path
 | Joint with R123 | the AS-1 lane's `free_magazine_full_fast` called `free_magazine_full` directly | it calls `free_magazine_park`, so the lane reaches the fast park like the guarded push path |
 
 Free-path rejects, the state-byte protocol and the depot's owner-only access
-are unchanged; C1's Kani equivalences (И-F1/И-F2), its model test
-`tests/wb3_depot_fast_lane_model.rs` and its two P12 ghost rules come with
-the cherry-pick.
+are unchanged; C1's model test `tests/wb3_depot_fast_lane_model.rs` and its
+two P12 ghost rules come with the cherry-pick. C1's Kani equivalences
+(И-F1/И-F2) did not: they landed later as `park_simple_is_park_then_tick`
+and `reload_simple_is_reload_then_tick` in `src/kani_proofs.rs`, over a
+symbolic overflow state (`DepotOverflow::kani_symbolic`).
 
 ## 2. Instruction counts (callgrind, WSL)
 

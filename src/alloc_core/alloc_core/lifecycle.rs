@@ -53,6 +53,10 @@ impl LargeCacheDecayConfig {
             decay_rate_bp: cfg.resolved_decay_rate_bp(),
             decay_interval: cfg.resolved_decay_interval(),
             headroom_bytes: cfg.resolved_headroom_bytes(),
+            #[cfg(feature = "large-cache-adaptive")]
+            adaptive: true,
+            #[cfg(feature = "large-cache-adaptive")]
+            adaptive_budget: cfg.budget_bytes.is_none(),
         }
     }
 }
@@ -328,6 +332,10 @@ impl AllocCore {
                     crate::alloc_core::large_cache_config::DEFAULT_DECAY_INTERVAL_MS,
                 ),
                 headroom_bytes: crate::alloc_core::large_cache_config::DEFAULT_HEADROOM_BYTES,
+                #[cfg(feature = "large-cache-adaptive")]
+                adaptive: true,
+                #[cfg(feature = "large-cache-adaptive")]
+                adaptive_budget: true,
             },
             #[cfg(feature = "alloc-decommit")]
             last_decay_tick: None,

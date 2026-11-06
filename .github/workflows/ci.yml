@@ -84,8 +84,47 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
-          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-        run: node scripts/ci-plan.mjs --event "$EVENT" --base "$BASE" --head "$HEAD_SHA" --labels "$LABELS"
+        run: node scripts/ci-plan.mjs --event "$EVENT" --base "$BASE" --head "$HEAD_SHA"
+
+  # CI-T1 stage 3 (docs/CI_TIERS.md "Test-impact map"): which integration tests the diff can affect, from
+  # the nightly test-impact map. Never fails: any problem yields "all". The selection is only REPORTED
+  # (step summary + artifact) unless the repository variable TEST_SELECTION is `enforce`, in which case
+  # `test-core` runs just the selected tests.
+  select-tests:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
+    name: select tests (diff + test-impact map)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: node scripts/select-tests.mjs --selftest
+      - name: Select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FULL: ${{ needs.changes.outputs.full }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          fallback() { printf '{"mode":"all","reason":"%s","total":0}\n' "$1" > selection.json; }
+          run_id=$(gh run list --workflow test-impact-map.yml --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId' || true)
+          if [ -z "$run_id" ]; then fallback "no successful test-impact-map run on main"; exit 0; fi
+          gh run download "$run_id" --pattern 'test-impact-map-*' --dir maps || { fallback "map download failed"; exit 0; }
+          full=""; [ "$FULL" = true ] && full="--full"
+          node scripts/select-tests.mjs select --maps maps/*/*.json --base "$BASE" --head "$HEAD_SHA" $full --summary --out selection.json >> "$GITHUB_STEP_SUMMARY" || fallback "selector failed"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: test-selection
+          path: selection.json
+          retention-days: 14
 
   # Cheap, always-on consistency checks: the doc/inventory tests and the repository guard
   # scripts that read README/ARCHITECTURE/ci.yml. A docs-only PR still runs these, so a stale
@@ -117,6 +156,9 @@ jobs:
       # scripts/b4_30_fix7_evidence.mjs (constants-only rebases stay valid).
       - run: node scripts/verify-b4-30-pin.mjs
       - run: node scripts/ci-plan.mjs --check-doc
+      - run: node scripts/verify-sprint-close.mjs --selftest
+      - run: node scripts/test-impact-map.mjs --selftest
+      - run: node scripts/select-tests.mjs --selftest
       - run: node scripts/r20-gate-config.mjs --selftest
       - run: node scripts/r20_r6_ab_iai_run.mjs --selftest
       - run: cargo test --locked --test no_stale_doc_references --test r1_03_pool_docs_contract --test unsafe_allow_placement
@@ -1660,7 +1702,9 @@ jobs:
       # CLAUDE.md structure limits: at most 7 entries per src directory and 1000
       # lines per code file; existing debt is ratcheted by docs/structure_limits_baseline.csv.
       - run: node scripts/verify-structure-limits.mjs
-      - run: node scripts/run-check-matrix.mjs --keep-going --kind check --kind test
+      # The test rows link the whole tests/ tree once per feature set; without freeing the
+      # executables between rows the job loses its worker with "No space left on device".
+      - run: node scripts/run-check-matrix.mjs --keep-going --free-between-rows --kind check --kind test
       # R30-5: the generated "feature ABSENT" compile-check enumeration for
       # every conditionally-registered iai arm in benches/perf_gate_iai.rs —
       # the mechanical, automatic form of the stub rule R29-16 violated by
@@ -1927,26 +1971,46 @@ jobs:
         run: cargo test --no-fail-fast --features "production internals bench-internals batch-api"
 
   test-core:
-    needs: changes
-    if: needs.changes.outputs.fast == 'true'
+    needs: [changes, select-tests]
+    if: ${{ !cancelled() && needs.changes.outputs.fast == 'true' }}
     name: test (core tiers)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      # Enforced selection (repository variable TEST_SELECTION=enforce): the arguments stay empty, i.e.
+      # plain `cargo test`, unless the selector returned a subset; any failure here leaves them empty.
+      - uses: actions/setup-node@v5
+        if: ${{ vars.TEST_SELECTION == 'enforce' }}
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v6
+        if: ${{ vars.TEST_SELECTION == 'enforce' }}
+        continue-on-error: true
+        with:
+          name: test-selection
+          path: sel
+      - name: Selected tests
+        id: sel
+        if: ${{ vars.TEST_SELECTION == 'enforce' }}
+        continue-on-error: true
+        run: |
+          echo "default=$(node scripts/select-tests.mjs args --selection sel/selection.json --features '')" >> "$GITHUB_OUTPUT"
+          echo "experimental=$(node scripts/select-tests.mjs args --selection sel/selection.json --features experimental)" >> "$GITHUB_OUTPUT"
+          echo "alloc_core=$(node scripts/select-tests.mjs args --selection sel/selection.json --features 'alloc-core internals')" >> "$GITHUB_OUTPUT"
       - name: test ()
         if: ${{ !cancelled() }}
-        run: cargo test --no-fail-fast # default: the safe core + SyncRegion
+        run: cargo test ${{ steps.sel.outputs.default }} --no-fail-fast # default: the safe core + SyncRegion
       - name: test (--features experimental)
         if: ${{ !cancelled() }}
-        run: cargo test --features experimental --no-fail-fast # adds LockFreeRegion + EpochRegion (deprecated, legacy)
+        run: cargo test --features experimental ${{ steps.sel.outputs.experimental }} --no-fail-fast # adds LockFreeRegion + EpochRegion (deprecated, legacy)
       # Phases 8–13 allocator descent. Without this, CI never exercised
       # alloc-core (the segment substrate, AllocCore).
       # `internals` added (R34-3/task #522): this row runs the whole
       # `tests/` tree, which reaches `alloc_core`/`global`/`registry` directly.
       - name: test (--features alloc-core)
         if: ${{ !cancelled() }}
-        run: cargo test --features "alloc-core internals" --no-fail-fast
+        run: cargo test --features "alloc-core internals" ${{ steps.sel.outputs.alloc_core }} --no-fail-fast
 
   test-xthread:
     needs: changes

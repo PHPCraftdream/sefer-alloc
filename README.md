@@ -330,6 +330,54 @@ to cap how much memory the allocator holds onto, use
 so the config lives in a `static` initialiser and is resolved at
 compile time — zero runtime overhead, no env vars, no parse errors.
 
+### Settings at a glance — how each one works and what it changes
+
+Every setting answers one question: how much freed memory may the allocator keep for the next request instead of
+returning it to the OS. Keeping memory makes the next allocation of that kind cheap (no system call, no page faults on
+first touch); returning it lowers RSS. The defaults favour speed for bursts that repeat, with bounded retention.
+
+| Setting | How it works | Faster when | Costs | Change it when |
+|---|---|---|---|---|
+| [`Profile`](#named-profiles-profile-alloc-decommit) (`SeferAlloc::with_profile`) | Named presets for the two axes below (small pool, large cache); `Profile::new()` is the default | — | — | You want a measured preset instead of individual numbers |
+| `.headroom_bytes` (large cache, default 256 MiB per heap) | A freed Large block (above ~253 KiB, rounded up to whole 4 MiB segments) is kept in the heap's cache; the time decay gives cached bytes above this floor back to the OS | The same large sizes are allocated again soon after being freed | Up to this many bytes stay committed per heap after a burst | Many threads each touch Large blocks and the sum of floors is too much for the machine (lower it), or a burst is bigger than the floor and is re-faulted every round (raise it) |
+| `.budget_bytes` (large cache, default unbounded) | Hard ceiling on cached bytes per heap: a free that would exceed it evicts the oldest cached spans first; `0` turns the cache off | — | A burst bigger than the ceiling is partly re-reserved and re-faulted | You need a real RSS bound for the Large cache (containers) |
+| `.decay_interval_ms` / `.decay_rate_percent` (default 1000 ms / 10 %) | Each due interval releases this fraction of the bytes above the floor; checked on Large allocs/frees, never on a timer | — | Faster decay = less memory held, more re-faults on the next burst | Bursts repeat less often than every few intervals, so the cache has shrunk before they return (raise the interval), or memory must go back sooner (lower it, or raise the rate) |
+| `.pool(SmallSegmentPoolConfig…)` (default 4 segments / 16 MiB per heap) | Empty 4 MiB small-block segments are kept, with their free lists, up to `min(pool_segments, pool_byte_cap / 4 MiB)`; the rest go back to the OS. A kept segment is reused only by the size classes it already has free blocks for | Small-block bursts of the same sizes grow and shrink a heap repeatedly | That many committed segments per heap | A heap re-grows by more than 16 MiB every cycle in the same sizes (raise both numbers together); a workload that switches sizes gains nothing ([details](#tuning-the-small-segment-pool-alloc-decommit)) |
+| `.depot_budget_bytes` (default 1 MiB per heap) | Full magazines of freed small blocks are parked up to this budget instead of going back to segment free lists | A free burst is followed by an alloc burst of the same sizes | The budget per heap | Memory per thread matters more than this path (`0` turns it off) |
+| `.route_pin_cache_slots` (default 32, process-wide) | Per-thread cache used when a block is freed by a thread other than the one that allocated it | Producer/consumer threads free into many owners' segments | ≈ 0.29 MiB per slot per freeing thread | Many cross-thread owners per freeing thread (raise) or many idle producer threads (lower) |
+| `.huge_page_after_segments` (Linux, default 16, process-wide) | From the N-th small segment of the process on, new small segments are advised `MADV_HUGEPAGE`; `0` never advises | A heap grows large and touches its memory densely | Up to 2 MiB extra RSS per lightly used segment | Strict RSS limits (`0`), or a large heap from the start (lower it) |
+
+Three facts that the table cannot show:
+
+- **The large cache keeps at most 8 blocks per heap** (40 with the opt-in `large-cache-extended` feature, chosen at
+  compile time). A cached block serves a request that is no larger than it and at least half its size. When all slots
+  are full, a free gives the oldest cached block back to the OS, whatever the headroom. So a program that frees and
+  re-allocates a working set of more than 8 Large blocks re-faults most of it every round: 47.6× (Windows) and 63.1×
+  (Linux) slower than mimalloc for 128 × 16 MiB in
+  [`docs/perf/J11_BIG_BLOCK_JUDGE_MAP.md`](docs/perf/J11_BIG_BLOCK_JUDGE_MAP.md). Raising `headroom_bytes` does not
+  change that; the slot count does.
+- **Retention is per heap.** With one heap per active thread, every number above multiplies by the number of threads
+  that use that kind of memory (see [Where each setting's memory sits](#where-each-settings-memory-sits)).
+- **Nothing is released while the process is idle.** Decay runs from allocator calls. To give memory back at a known
+  point, call `SeferAlloc::trim_current_thread()` from that thread (its large cache, pool and parked magazines). The
+  worker started by `SeferAlloc::start_maintenance()` reclaims heaps no thread currently owns; it does not take over
+  a live thread's caches (see [Memory policy](#memory-policy--read-this-before-you-deploy-seferallocnew)).
+
+**Learned retention (opt-in Cargo feature `large-cache-adaptive`, not in `production`).** The fixed 8 slots above are the
+wrong size for a program that frees and re-allocates a big working set, and the right size depends on the program. With the
+feature the heap learns it: an allocation that misses the cache while a span the cache recently gave back would have served it
+is counted as a *mistake*, with the number of bytes given back since that span left as its *distance*. A decaying histogram of
+distances yields the retention that would have prevented 90 % of the recent mistakes; the cache keeps `headroom_bytes` plus that
+learned extra, never more than the heap's own recent peak of live Large bytes, and opens extension slots (up to 256 in total)
+only under that target. It starts as the production cache (no byte budget unless you set `budget_bytes`). When the habit
+stops (an interval with no mistakes and little use of the retained memory) the extra halves each interval and the decay releases
+3/4 of the excess per step, so the memory goes back to the `headroom_bytes` floor within about ten decay intervals.
+Measured (`docs/perf/J14_ADAPTIVE_LARGE_CACHE_C2.md`, real `#[global_allocator]`, Windows and Linux): warm rounds of freeing and
+re-allocating 2 GiB (128 x 16 MiB and 16 x 128 MiB) run at the speed of mimalloc (sefer / mimalloc 0.96–1.17) instead of
+27–67 times slower; the first round and workloads without reuse are unchanged. The price is the point: the heap keeps the whole
+habit-sized working set (end RSS equals the working set) until the habit stops. Tune the floor with `headroom_bytes`, cap the
+total with `budget_bytes` (an explicit budget stays a hard cap). Per heap, like every number above.
+
 ```rust
 use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 
@@ -807,7 +855,8 @@ item-scoped regions.
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs) | 3 | `dbg_stamp_segment_id` (raw metadata write) + `dbg_unregister` / `dbg_recycle` — `unsafe fn` boundaries |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs) | 1 | `dbg_stamp_kind_byte` (raw metadata write) — `unsafe fn` boundary |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs) | 1 | `dbg_rebuild_directory` — internal call-site block into `sidecar::deref_mut` (R14-9, task #294) |
-| [`src/alloc_core/large/alloc_core_large_cache.rs`](src/alloc_core/large/alloc_core_large_cache.rs) | 5 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_find_free_slot` / `large_cache_slot_set` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286 — the sidecar deref functions became `unsafe fn` item boundaries) |
+| [`src/alloc_core/large/alloc_core_large_cache.rs`](src/alloc_core/large/alloc_core_large_cache.rs) | 6 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_scan_bound` / `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_slot_set` / `large_cache_occ_words` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286; J14 moved the free-slot search onto the occupancy words and added the active-bound and high-word reads) |
+| [`src/alloc_core/large/large_cache_adaptive.rs`](src/alloc_core/large/large_cache_adaptive.rs) | 2 | J14 (`large-cache-adaptive`): `adaptive_ext` / `adaptive_ref` — the two call-site blocks into `deref_large_cache_extension[_mut]` through which every learned-retention hook reaches the sidecar state |
 | [`src/alloc_core/small/alloc_core_small/find_segment/scan.rs`](src/alloc_core/small/alloc_core_small/find_segment/scan.rs) | 1 | `find_segment_with_free_impl` — calls the `unsafe fn`s `os::read_directory_node_bucket` / `os::read_directory_class_words` (R17-2, task #319) |
 | [`src/alloc_core/small/alloc_core_small/directory.rs`](src/alloc_core/small/alloc_core_small/directory.rs) | 3 | `maybe_materialize_directory` / `directory` / `directory_mut` — internal call-site blocks into `sidecar::deref[_mut]` (R14-9, task #294) |
 | [`src/alloc_core/small/alloc_core_small_diag.rs`](src/alloc_core/small/alloc_core_small_diag.rs) | 4 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_state_bytes_for` / `dbg_payload_start_for` — `unsafe fn` declarations (the two former bitmap-dump hooks were removed with the B4 dead bitmaps; `dbg_state_bytes_for` is the state-byte successor) |
@@ -834,7 +883,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **109** tier-2 item-scoped allows across **33**
+`src/`, 6 in `crates/`) plus **112** tier-2 item-scoped allows across **34**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1536,8 +1585,8 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **486 integration test files**,
-**105 example binaries**, **34 benches**, and **26 root Loom models**
+needs its acceptance run. The present tree contains **487 integration test files**,
+**106 example binaries**, **34 benches**, and **26 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1546,8 +1595,8 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (486 files) |
-| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (105 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (487 files) |
+| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (106 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (26 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |

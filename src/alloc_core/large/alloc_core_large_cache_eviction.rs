@@ -35,6 +35,21 @@ impl AllocCore {
     /// for why index order stopped being a valid proxy once
     /// `LARGE_CACHE_SLOTS > 2`). The OS reservation of each evicted span is
     /// released immediately.
+    /// J14: evict the FIFO-oldest span under deposit pressure, remembering
+    /// its size as gone for the learned retention policy.
+    #[cfg(feature = "alloc-decommit")]
+    pub(in crate::alloc_core) fn evict_oldest_noting_gone(&mut self) -> bool {
+        #[cfg(feature = "large-cache-adaptive")]
+        if let Some(u) = self
+            .oldest_occupied_slot()
+            .and_then(|i| self.large_cache_slot_get(i))
+            .map(|c| c.usable_size)
+        {
+            self.large_cache_note_gone(u);
+        }
+        self.evict_one_oldest()
+    }
+
     #[cfg(feature = "alloc-decommit")]
     pub(super) fn evict_at_least(&mut self, min_bytes: usize) {
         let mut released = 0usize;
@@ -158,6 +173,11 @@ impl AllocCore {
             decay_rate_bp: rate_bp,
             decay_interval: core::time::Duration::from_millis(interval_ms),
             headroom_bytes: headroom,
+            // J14: the learned policy and its budget switch are kept.
+            #[cfg(feature = "large-cache-adaptive")]
+            adaptive: self.decay_config.adaptive,
+            #[cfg(feature = "large-cache-adaptive")]
+            adaptive_budget: self.decay_config.adaptive_budget,
         };
         // Clear the tick timer: the first eligible nonzero-interval check
         // primes it without decay; a zero interval primes and decays.
@@ -207,7 +227,7 @@ impl AllocCore {
     /// Find the occupied COMBINED slot (see [`CombinedSlot`]) with the
     /// smallest `seq` — the true FIFO-oldest entry (task D1). Returns `None`
     /// if the cache is empty. P1-3 (#1985): iterates only the set bits of
-    /// [`large_cache_occupied_within_bound`](Self::large_cache_occupied_within_bound)
+    /// [`large_cache_occupied_slots`](Self::large_cache_occupied_slots)
     /// — O(popcount) slot reads, not one `Option` discriminant load per slot
     /// over `large_cache_scan_bound()` (8 with `large-cache-extended` off or
     /// not-yet-materialised, up to 40 once materialised). Still only called
@@ -219,12 +239,29 @@ impl AllocCore {
     /// returns, so the short-circuit is behavior-preserving even there.
     #[cfg(feature = "alloc-decommit")]
     fn oldest_occupied_slot(&self) -> Option<CombinedSlot> {
-        let mut occupied = self.large_cache_occupied_within_bound();
         let mut best_idx: Option<CombinedSlot> = None;
         let mut best_seq = u64::MAX;
-        while occupied != 0 {
-            let i = occupied.trailing_zeros() as usize;
-            occupied &= occupied - 1; // clear the lowest set bit
+        #[cfg(not(feature = "large-cache-extended"))]
+        {
+            // The pre-J14 loop, unchanged: the production build keeps its code.
+            let mut occupied = self.large_cache_occupied_within_bound();
+            while occupied != 0 {
+                let i = occupied.trailing_zeros() as usize;
+                occupied &= occupied - 1; // clear the lowest set bit
+                if let Some(c) = self.large_cache_slot_get(i) {
+                    if c.seq < best_seq {
+                        best_idx = Some(i);
+                        best_seq = c.seq;
+                        if c.seq == 0 {
+                            // Initial counter value — cannot be beaten.
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "large-cache-extended")]
+        for i in self.large_cache_occupied_slots() {
             if let Some(c) = self.large_cache_slot_get(i) {
                 if c.seq < best_seq {
                     best_idx = Some(i);
@@ -377,6 +414,11 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_set_large_cache_budget(&mut self, budget: Option<usize>) {
         self.large_cache_budget_bytes = budget;
+        // An explicit budget is the caller's, not the adaptive policy's.
+        #[cfg(feature = "large-cache-adaptive")]
+        {
+            self.decay_config.adaptive_budget = false;
+        }
     }
 
     /// TEST-ONLY (R14-5, task #290): read back the CURRENTLY RESOLVED

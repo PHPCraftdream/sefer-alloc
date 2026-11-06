@@ -1,0 +1,32 @@
+1,227,003,127 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                    file:function
+--------------------------------------------------------------------------------
+239,940,832 (19.56%)  ???:g1_wild_judge::burst [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+217,810,851 (17.75%)  ???:<g1_wild_judge::Run>::alloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+187,241,077 (15.26%)  ???:<g1_wild_judge::Run>::free [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+158,960,213 (12.96%)  ???:g1_wild_judge::a_dealloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+136,440,343 (11.12%)  ???:g1_wild_judge::a_alloc [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+126,325,650 (10.30%)  ./math/../sysdeps/ieee754/dbl-64/e_exp.c:__ieee754_exp_fma [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 76,561,000 ( 6.24%)  ./math/./w_exp_template.c:exp@@GLIBC_2.29 [/usr/lib/x86_64-linux-gnu/libm.so.6]
+ 17,256,959 ( 1.41%)  ???:g1_wild_judge::main [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+ 14,398,549 ( 1.17%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_park [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+ 11,515,296 ( 0.94%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::refill_magazine_miss [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+ 11,484,150 ( 0.94%)  ./math/../sysdeps/ieee754/dbl-64/math_config.h:__ieee754_exp_fma
+  7,656,100 ( 0.62%)  ???:0x0000000004885400 [???]
+  2,173,263 ( 0.18%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+  2,070,886 ( 0.17%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::try_carve_batch [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+  1,771,797 ( 0.14%)  ???:sefer_alloc::registry::heap_core::free::dealloc_fast::lane_miss [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+  1,581,496 ( 0.13%)  ???:<sefer_alloc::registry::heap_core::core::HeapCore>::free_magazine_full_fast [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+  1,330,501 ( 0.11%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  1,209,323 ( 0.10%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl [<scratch>/ab/tgt-j8patch/release/examples/g1_wild_judge]
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./malloc/./malloc/malloc.c
+  ./math/../sysdeps/ieee754/dbl-64/e_exp.c
+  ./math/../sysdeps/ieee754/dbl-64/math_config.h
+  ./math/./w_exp_template.c
+

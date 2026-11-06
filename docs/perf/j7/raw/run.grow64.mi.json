@@ -1,0 +1,1 @@
+{"scenario":"grow64","arm":"mi","seed":1,"scale":0.25,"ops":8388608,"ns_per_op":18.140,"peak_rss":308924416,"end_rss":275472384,"checksum":536870912,"pool_req":1024,"pool_res":0,"thp_req":16,"thp_res":0,"thp_hinted":0,"anon_huge_peak":272629760,"anon_huge_end":272629760,"user_ms":100,"kernel_ms":40,"faults":8485}

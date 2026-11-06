@@ -7,7 +7,9 @@
 //! module is `alloc-decommit`-gated because every method here is.
 
 #[cfg(feature = "large-cache-extended")]
-use super::large_cache_extended::{self, LARGE_CACHE_EXTENDED_SLOTS};
+use super::large_cache_extended;
+#[cfg(feature = "large-cache-extended")]
+use crate::alloc_core::alloc_core::LARGE_CACHE_OCC_WORDS;
 use crate::alloc_core::alloc_core::{AllocCore, CachedLarge, LARGE_CACHE_SLOTS};
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 use crate::alloc_core::alloc_core::{FORCE_DECAY_CLOCK_READ, MAYBE_DECAY_GUARD_PASSED};
@@ -52,6 +54,31 @@ const DECAY_CATCHUP_MAX_STEPS: u32 = 8;
 /// below degrades to exactly the pre-R13-7 base-8-slots-only behaviour.
 pub(super) type CombinedSlot = usize;
 
+/// J14: the occupied COMBINED slots of a masked copy of the occupancy words,
+/// lowest index first (`trailing_zeros` + clear-lowest per word).
+#[cfg(feature = "large-cache-extended")]
+pub(in crate::alloc_core) struct OccupiedSlots {
+    words: [u64; LARGE_CACHE_OCC_WORDS],
+    w: usize,
+}
+
+#[cfg(feature = "large-cache-extended")]
+impl Iterator for OccupiedSlots {
+    type Item = CombinedSlot;
+    #[inline]
+    fn next(&mut self) -> Option<CombinedSlot> {
+        while self.w < LARGE_CACHE_OCC_WORDS {
+            let x = self.words[self.w];
+            if x != 0 {
+                self.words[self.w] = x & (x - 1);
+                return Some(self.w * 64 + x.trailing_zeros() as usize);
+            }
+            self.w += 1;
+        }
+        None
+    }
+}
+
 impl AllocCore {
     /// Total addressable slots in the combined base+extension index space:
     /// `LARGE_CACHE_SLOTS` (8) when the extension is not materialised (or
@@ -62,13 +89,30 @@ impl AllocCore {
     /// stay off until genuinely needed" posture `directory_sidecar` uses).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
+    #[allow(unsafe_code)] // J14: calls the `unsafe fn deref_large_cache_extension` boundary right
+                          // after `self.large_cache_extension` is proven non-null. Sound: the pointer
+                          // was produced only by `reserve_large_cache_extension` (typed-initialised),
+                          // `AllocCore`'s owner-only discipline rules out a concurrent writer, and the
+                          // returned `&LargeCacheExtension` does not outlive this call.
     pub(in crate::alloc_core) fn large_cache_scan_bound(&self) -> CombinedSlot {
         #[cfg(feature = "large-cache-extended")]
         {
             if self.large_cache_extension.is_null() {
                 LARGE_CACHE_SLOTS
             } else {
-                LARGE_CACHE_SLOTS + LARGE_CACHE_EXTENDED_SLOTS
+                // SAFETY: see the `#[allow(unsafe_code)]` justification above this
+                // function.
+                let ext = unsafe {
+                    large_cache_extended::deref_large_cache_extension(
+                        self.large_cache_extension,
+                        self,
+                    )
+                };
+                #[cfg(feature = "large-cache-adaptive")]
+                if !self.decay_config.adaptive {
+                    return LARGE_CACHE_SLOTS + large_cache_extended::EXTENDED_SLOTS_INITIAL;
+                }
+                LARGE_CACHE_SLOTS + ext.active
             }
         }
         #[cfg(not(feature = "large-cache-extended"))]
@@ -164,7 +208,11 @@ impl AllocCore {
             let taken = ext.slots[idx - LARGE_CACHE_SLOTS]
                 .take()
                 .unwrap_or_else(|| fatal(b"large_cache_slot_take: empty extension slot\n"));
-            self.large_cache_occupied &= !(1u64 << idx);
+            if idx >= 64 {
+                ext.occ_hi[idx / 64 - 1] &= !(1u64 << (idx % 64));
+            } else {
+                self.large_cache_occupied &= !(1u64 << idx);
+            }
             taken
         }
         #[cfg(not(feature = "large-cache-extended"))]
@@ -214,7 +262,7 @@ impl AllocCore {
         &self,
         usable_size: usize,
     ) -> bool {
-        matches!(self.large_cache_budget_bytes, Some(budget) if usable_size > budget)
+        matches!(self.large_cache_effective_budget(), Some(budget) if usable_size > budget)
     }
 
     /// P1-3 (#1985, follow-through on R32-12/task #503): the occupancy
@@ -229,6 +277,7 @@ impl AllocCore {
     /// `large_cache_occupied`); a bound of 0 would yield an empty mask.
     #[cfg(feature = "alloc-decommit")]
     #[inline]
+    #[cfg(not(feature = "large-cache-extended"))]
     pub(in crate::alloc_core) fn large_cache_occupied_within_bound(&self) -> u64 {
         let bound = self.large_cache_scan_bound();
         if bound < u64::BITS as usize {
@@ -236,6 +285,80 @@ impl AllocCore {
         } else {
             self.large_cache_occupied
         }
+    }
+
+    /// J14: the multi-word form of the mask above, as an iterator.
+    #[cfg(feature = "large-cache-extended")]
+    #[inline]
+    pub(in crate::alloc_core) fn large_cache_occupied_slots(&self) -> OccupiedSlots {
+        let bound = self.large_cache_scan_bound();
+        let mut words = self.large_cache_occ_words();
+        for (w, word) in words.iter_mut().enumerate() {
+            let lo = w * 64;
+            if bound <= lo {
+                *word = 0;
+            } else if bound < lo + 64 {
+                *word &= (1u64 << (bound - lo)) - 1;
+            }
+        }
+        OccupiedSlots { words, w: 0 }
+    }
+
+    /// J14: every word of the combined occupancy bitmask: word 0 from
+    /// `large_cache_occupied`, the rest from the extension sidecar (all clear
+    /// while it is not materialised, when those slots do not exist).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    #[allow(unsafe_code)]
+    // J14: calls the `unsafe fn deref_large_cache_extension` boundary right
+    // after `self.large_cache_extension` is proven non-null. Sound: the pointer
+    // was produced only by `reserve_large_cache_extension` (typed-initialised),
+    // `AllocCore`'s owner-only discipline rules out a concurrent writer, and the
+    // returned `&LargeCacheExtension` does not outlive this call.
+    #[cfg(feature = "large-cache-extended")]
+    fn large_cache_occ_words(&self) -> [u64; LARGE_CACHE_OCC_WORDS] {
+        let mut words = [0u64; LARGE_CACHE_OCC_WORDS];
+        words[0] = self.large_cache_occupied;
+        #[cfg(feature = "large-cache-extended")]
+        if !self.large_cache_extension.is_null() {
+            // SAFETY: see the `#[allow(unsafe_code)]` justification above this
+            // function.
+            let ext = unsafe {
+                large_cache_extended::deref_large_cache_extension(self.large_cache_extension, self)
+            };
+            words[1..].copy_from_slice(&ext.occ_hi);
+        }
+        words
+    }
+
+    /// J14: the highest occupied COMBINED slot, `None` when the cache is empty.
+    #[cfg(feature = "large-cache-adaptive")]
+    #[inline]
+    pub(in crate::alloc_core) fn large_cache_highest_occupied(&self) -> Option<CombinedSlot> {
+        self.large_cache_occupied_slots().last()
+    }
+
+    /// J14: the lowest free COMBINED slot in `from..bound`, from the occupancy
+    /// words alone (bit clear ⟺ slot empty).
+    #[cfg(all(feature = "alloc-decommit", feature = "large-cache-extended"))]
+    #[inline]
+    fn large_cache_first_free(
+        &self,
+        from: CombinedSlot,
+        bound: CombinedSlot,
+    ) -> Option<CombinedSlot> {
+        let words = self.large_cache_occ_words();
+        let mut i = from;
+        while i < bound {
+            let w = i / 64;
+            let free = !words[w] & (u64::MAX << (i % 64));
+            if free != 0 {
+                let j = w * 64 + free.trailing_zeros() as usize;
+                return (j < bound).then_some(j);
+            }
+            i = (w + 1) * 64;
+        }
+        None
     }
 
     /// Find a free slot to admit a new deposit into, in the COMBINED index
@@ -275,19 +398,23 @@ impl AllocCore {
     /// below); a fully-occupied base (all 8 low bits set) yields
     /// `trailing_ones() == 8`, correctly falling through to the extension
     /// arm exactly as the old `.position()` returning `None` did.
+    ///
+    /// J14: both the base and the extension search read the occupancy words
+    /// (`large_cache_first_free`), so the extension no longer walks its slot
+    /// array and this function needs no sidecar dereference.
     #[cfg(feature = "alloc-decommit")]
     #[inline]
-    #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension`
-                          // boundary when `large-cache-extended` is on, right after the sidecar is
-                          // proven materialised (either already non-null, or just reserved and
-                          // typed-initialised by `reserve_large_cache_extension` on this same
-                          // line). `AllocCore`'s owner-only discipline (neither `Send` nor `Sync`)
-                          // rules out a concurrent writer; the returned `&LargeCacheExtension`
-                          // does not outlive this call.
     pub(in crate::alloc_core) fn large_cache_find_free_slot(&mut self) -> Option<CombinedSlot> {
-        let base_free = self.large_cache_occupied.trailing_ones() as usize;
-        if base_free < LARGE_CACHE_SLOTS {
+        #[cfg(feature = "large-cache-extended")]
+        if let Some(base_free) = self.large_cache_first_free(0, LARGE_CACHE_SLOTS) {
             return Some(base_free);
+        }
+        #[cfg(not(feature = "large-cache-extended"))]
+        {
+            let base_free = self.large_cache_occupied.trailing_ones() as usize;
+            if base_free < LARGE_CACHE_SLOTS {
+                return Some(base_free);
+            }
         }
         #[cfg(feature = "large-cache-extended")]
         {
@@ -300,18 +427,7 @@ impl AllocCore {
                 self.large_cache_extension = ptr;
                 self.large_cache_extension_vm = Some(vm);
             }
-            // SAFETY: see the `#[allow(unsafe_code)]` justification above this
-            // function.
-            let ext = unsafe {
-                large_cache_extended::deref_large_cache_extension(
-                    self.large_cache_extension,
-                    &*self,
-                )
-            };
-            ext.slots
-                .iter()
-                .position(|s| s.is_none())
-                .map(|i| LARGE_CACHE_SLOTS + i)
+            self.large_cache_first_free(LARGE_CACHE_SLOTS, self.large_cache_scan_bound())
         }
         #[cfg(not(feature = "large-cache-extended"))]
         {
@@ -359,7 +475,11 @@ impl AllocCore {
                 )
             };
             ext.slots[idx - LARGE_CACHE_SLOTS] = Some(entry);
-            self.large_cache_occupied |= 1u64 << idx;
+            if idx >= 64 {
+                ext.occ_hi[idx / 64 - 1] |= 1u64 << (idx % 64);
+            } else {
+                self.large_cache_occupied |= 1u64 << idx;
+            }
         }
         #[cfg(not(feature = "large-cache-extended"))]
         {
@@ -375,17 +495,21 @@ impl AllocCore {
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "large-cache-extended")]
-    #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension`
-                          // boundary, right after `self.large_cache_extension` is proven non-null.
-                          // Sound: the pointer was produced only by
-                          // `reserve_large_cache_extension` (typed-initialised), `AllocCore`'s
-                          // owner-only discipline (neither `Send` nor `Sync`) rules out a
-                          // concurrent writer, and the returned `&LargeCacheExtension` does not
-                          // outlive this call.
+    #[allow(unsafe_code)]
+    // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension`
+    // boundary, right after `self.large_cache_extension` is proven non-null.
+    // Sound: the pointer was produced only by
+    // `reserve_large_cache_extension` (typed-initialised), `AllocCore`'s
+    // owner-only discipline (neither `Send` nor `Sync`) rules out a
+    // concurrent writer, and the returned `&LargeCacheExtension` does not
+    // outlive this call.
+    ///
+    /// J14: the first `EXTENDED_SLOTS_INITIAL` (32) extension slots — the
+    /// extension's addressable range until `large-cache-adaptive` grows it.
     pub fn dbg_large_cache_extended_slot_sizes(
         &self,
-    ) -> [Option<usize>; LARGE_CACHE_EXTENDED_SLOTS] {
-        let mut out = [None; LARGE_CACHE_EXTENDED_SLOTS];
+    ) -> [Option<usize>; large_cache_extended::EXTENDED_SLOTS_INITIAL] {
+        let mut out = [None; large_cache_extended::EXTENDED_SLOTS_INITIAL];
         if self.large_cache_extension.is_null() {
             return out;
         }
@@ -394,8 +518,8 @@ impl AllocCore {
         let ext = unsafe {
             large_cache_extended::deref_large_cache_extension(self.large_cache_extension, self)
         };
-        for (i, slot) in ext.slots.iter().enumerate() {
-            out[i] = slot.as_ref().map(|c| c.usable_size);
+        for (o, slot) in out.iter_mut().zip(ext.slots.iter()) {
+            *o = slot.as_ref().map(|c| c.usable_size);
         }
         out
     }
@@ -524,7 +648,15 @@ impl AllocCore {
         let forced = FORCE_DECAY_CLOCK_READ.load(core::sync::atomic::Ordering::Relaxed);
         #[cfg(not(feature = "bench-internals"))]
         let forced = false;
+        #[cfg(not(feature = "large-cache-adaptive"))]
         if !forced && self.large_cache_used_bytes <= self.decay_config.headroom_bytes {
+            return;
+        }
+        #[cfg(feature = "large-cache-adaptive")]
+        if !forced
+            && self.large_cache_used_bytes <= self.large_cache_retain_target()
+            && !self.large_cache_adaptive_pending()
+        {
             return;
         }
 
@@ -611,17 +743,22 @@ impl AllocCore {
             u32::try_from(ratio).unwrap_or(DECAY_CATCHUP_MAX_STEPS)
         };
         for _ in 0..intervals_due {
+            #[cfg(feature = "large-cache-adaptive")]
+            self.large_cache_adaptive_interval();
             self.run_decay_step();
         }
         if !interval.is_zero() {
             // Debt is owed only while excess remains; later excess gets a
             // fresh interval once this batch has cleared the old excess.
-            self.last_decay_tick =
-                if self.large_cache_used_bytes <= self.decay_config.headroom_bytes {
-                    Some(now)
-                } else {
-                    self.last_decay_tick.map(|t| t + interval * intervals_due)
-                };
+            #[cfg(not(feature = "large-cache-adaptive"))]
+            let at_target = self.large_cache_used_bytes <= self.decay_config.headroom_bytes;
+            #[cfg(feature = "large-cache-adaptive")]
+            let at_target = self.large_cache_used_bytes <= self.large_cache_retain_target();
+            self.last_decay_tick = if at_target {
+                Some(now)
+            } else {
+                self.last_decay_tick.map(|t| t + interval * intervals_due)
+            };
         }
     }
 
@@ -634,7 +771,10 @@ impl AllocCore {
     /// the target when many large blocks are outstanding.
     #[cfg(feature = "alloc-decommit")]
     fn run_decay_step(&mut self) {
+        #[cfg(not(feature = "large-cache-adaptive"))]
         let target = self.decay_config.headroom_bytes; // live = 0 in Phase 2
+        #[cfg(feature = "large-cache-adaptive")]
+        let target = self.large_cache_retain_target(); // headroom + J14 learned extra
         let excess = self.large_cache_used_bytes.saturating_sub(target);
         if excess == 0 {
             return; // Cache is at or below target — nothing to release.
@@ -642,7 +782,10 @@ impl AllocCore {
         // release = excess * rate_bp / 10_000.  We use saturating_mul to
         // guard against an absurdly large excess (> usize::MAX / 10_000 on
         // 32-bit — pathological but safe).
+        #[cfg(not(feature = "large-cache-adaptive"))]
         let release = excess.saturating_mul(self.decay_config.decay_rate_bp as usize) / 10_000;
+        #[cfg(feature = "large-cache-adaptive")]
+        let release = excess.saturating_mul(self.large_cache_decay_rate_bp()) / 10_000;
         if release == 0 {
             return;
         }

@@ -29,6 +29,9 @@ fn materialise_then_empty(ac: &mut AllocCore) -> Vec<(*mut u8, Layout)> {
 
 fn narrow_working_set_after_materialisation_is_correct(n: usize) {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     let held = materialise_then_empty(&mut ac);
     let floor = bounded::large_request();
     let sizes: Vec<_> = (0..n).map(|i| floor + i * SegmentLayout::SEGMENT).collect();
@@ -80,6 +83,9 @@ fn narrow_working_set_n4_after_materialisation_is_correct() {
 #[test]
 fn scan_bound_stays_forty_during_narrow_working_set_phase() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     let held = materialise_then_empty(&mut ac);
     let bytes = bounded::large_request();
     let live = bounded::allocate_live(&mut ac, &[bytes]);

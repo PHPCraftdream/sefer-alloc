@@ -1,0 +1,11 @@
+tar 63c8358f6dad4916858120fd3da4fc5e85f1cf9b43bc72ac3f1360f032ffc34a
+rustc 1.98.1 (48a229cea 2026-09-01)
+host: x86_64-unknown-linux-gnu
+LLVM version: 22.1.8
+base: --features production
+base bin 8dd09d255f51176511df9e49a3e8e558749f4539f97df9229336b2d0b4d231d4  g1_wild_judge
+base bin 2756960d2b143edb6061088a16933f57c0cd055becbbded8dd373fd2f4b1ccbb  b4_pmu_probe
+patch j8.patch sha256 59d88e55b8c30124c626103a462961609d36d833e0efa658649e9107a058d9f1
+patch: --features production
+patch bin 01d5205726f7651977e0ec5eb3ee7b0efe36f8b60abb2b3504b33aeb4014f82a  g1_wild_judge
+patch bin 90b4a904a735704ff6d45838b33c3e1f5ede35983f9fdd83781063c7909cc7a0  b4_pmu_probe

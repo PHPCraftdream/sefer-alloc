@@ -104,21 +104,15 @@ pub(in crate::alloc_core) use lifecycle::base_add;
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) const LARGE_CACHE_SLOTS: usize = 8;
 
-// R32-12 (task #503, F8 sub-change (2)): compile-time pin that the combined
-// base+extension slot count never exceeds the 64 bits `large_cache_occupied`
-// (below) can address. Base is 8 unconditionally; the extension adds
-// `LARGE_CACHE_EXTENDED_SLOTS` (32, `large_cache_extended.rs`) only under
-// `large-cache-extended`, giving 40 total — comfortably under 64. If a future
-// round raises either constant past this bound, this assertion is the
-// intended trip-wire (widen `large_cache_occupied` to `u128` or a two-word
-// bitmask rather than silently truncating `trailing_ones()`'s addressable
-// range).
+/// J14: words of the occupancy bitmask `large_cache_occupied`, one bit per
+/// COMBINED slot (base + extension): one word for the base 8 slots and for
+/// the 40 of `large-cache-extended`, four for the 256 of `large-cache-adaptive`.
 #[cfg(feature = "large-cache-extended")]
-const _: () = assert!(
-    LARGE_CACHE_SLOTS + super::super::large_cache_extended::LARGE_CACHE_EXTENDED_SLOTS
-        <= u64::BITS as usize
-);
-#[cfg(all(feature = "alloc-decommit", not(feature = "large-cache-extended")))]
+pub(in crate::alloc_core) const LARGE_CACHE_OCC_WORDS: usize = (LARGE_CACHE_SLOTS
+    + super::super::large_cache_extended::LARGE_CACHE_EXTENDED_SLOTS)
+    .div_ceil(u64::BITS as usize);
+// The base slots occupy the low bits of word 0 (`large_cache_find_free_slot`).
+#[cfg(feature = "alloc-decommit")]
 const _: () = assert!(LARGE_CACHE_SLOTS <= u64::BITS as usize);
 
 /// Size-ratio bound: we only reuse a cached entry if its usable_size is at most
@@ -182,6 +176,13 @@ pub(in crate::alloc_core) struct LargeCacheDecayConfig {
     /// to decay. On Phase 2 we treat `live_bytes = 0`; the target is just
     /// `headroom_bytes`. A future phase can add explicit live-count tracking.
     pub(in crate::alloc_core) headroom_bytes: usize,
+    /// J14: the learned retention policy is on for this heap.
+    #[cfg(feature = "large-cache-adaptive")]
+    pub(in crate::alloc_core) adaptive: bool,
+    /// J14: the byte budget may grow to the learned target (the caller did
+    /// not set `budget_bytes` itself).
+    #[cfg(feature = "large-cache-adaptive")]
+    pub(in crate::alloc_core) adaptive_budget: bool,
 }
 
 /// One entry in the large-segment free-cache.
@@ -373,11 +374,10 @@ pub struct AllocCore {
     /// the bitmask in exactly these two places keeps it correct by
     /// construction, not by convention.
     ///
-    /// Sized `u64`: `LARGE_CACHE_SLOTS + LARGE_CACHE_EXTENDED_SLOTS` (8 + 32
-    /// = 40) is the current combined maximum, pinned `<= u64::BITS` by the
-    /// compile-time assertions above this struct — see those assertions'
-    /// own doc for what to do if a future round raises either constant past
-    /// 64.
+    /// Word 0 of the occupancy bitmask (combined slots 0..64). J14: the
+    /// slots past 64 exist only in the extension sidecar, which holds their
+    /// words (`LargeCacheExtension::occ_hi`), so `AllocCore`'s size does not
+    /// change with `large-cache-adaptive`.
     #[cfg(feature = "alloc-decommit")]
     pub(in crate::alloc_core) large_cache_occupied: u64,
 

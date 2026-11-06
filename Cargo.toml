@@ -407,6 +407,13 @@ large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit"]
 # field list, `Drop`, and every large-cache algorithm are byte-for-byte
 # identical to before this task.
 large-cache-extended = ["alloc-decommit"]
+# J14 (EXPERIMENTAL, docs/perf/J14_ADAPTIVE_LARGE_CACHE_PREREG.md): the Large
+# cache learns the program's reuse habit — its byte target grows by the size of
+# every span it gave back to the OS and the program asked for again, shrinks
+# by half of its excess over the base each quiet decay interval, and never
+# exceeds the heap's recent peak of live Large bytes; the extension grows to
+# 248 slots (256 in total). Opt-in, NOT part of `production` until its gates pass.
+large-cache-adaptive = ["large-cache-extended"]
 # Phase P2/P4/P7 per-thread magazine cache (tcache) layered over
 # `alloc-global`. 0.3.0 (task A2): now ALSO pulls in `alloc-xthread`. Without
 # `alloc-xthread`, a cross-thread free of a small block still has to land
@@ -2734,6 +2741,12 @@ required-features = ["production"]
 # workloads, one allocator arm per process; driver scripts/g1_wild_judge.mjs.
 [[example]]
 name = "g1_wild_judge"
+required-features = ["production"]
+
+# G1 big-block judge (measurement only): single blocks from 1 MiB to several GiB, one allocator
+# arm per process (J11).
+[[example]]
+name = "g1_big_judge"
 required-features = ["production"]
 
 # WJ-1 (measurement only, Windows): cost of returning a span to the OS by

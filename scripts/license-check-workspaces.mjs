@@ -21,6 +21,7 @@ export const ACTIONS = {
   'actions/checkout': 'MIT',
   'actions/setup-node': 'MIT',
   'actions/upload-artifact': 'MIT',
+  'actions/download-artifact': 'MIT',
   'dtolnay/rust-toolchain': 'MIT',
   'taiki-e/install-action': 'Apache-2.0 OR MIT',
 };

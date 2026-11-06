@@ -1,0 +1,6 @@
+base e0e5a12a33d1cf906bd00d6ae17ff36337ba4f6a
+x c3600471bbe368037788a35bc6e6684ae8ec658f
+bin-base 757cae0005763b367b8da1254a93fdd2a157a732c008724d7fcfeb35aa84f2a2
+bin-x f8e8c5586e7fbb51d47e660bd1f8a50052fa4ecd9b0b6d14c6f27811ac40a5ce
+bin-base2 757cae0005763b367b8da1254a93fdd2a157a732c008724d7fcfeb35aa84f2a2
+features-base: production; features-x: production large-cache-adaptive (release); Windows, no RUSTFLAGS

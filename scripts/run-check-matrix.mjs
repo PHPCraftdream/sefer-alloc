@@ -38,6 +38,8 @@
 // by `kind`, read straight from the manifest, so a future non-clippy
 // `PER_PR_ROWS` entry is picked up automatically with no ci.yml edit.
 
+import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { REPO_ROOT, run } from './lib.mjs';
 import { PER_PR_ROWS, rowToCargoArgs, rowLabel } from './check-matrix.mjs';
 
@@ -46,9 +48,16 @@ const kindFilter = new Set();
 // `--keep-going`: run every row and (for test rows) every test binary, then report all
 // failures at once instead of stopping at the first. One CI pass names every red row.
 let keepGoing = false;
+// `--free-between-rows`: after each row, delete the debug test/example executables and the incremental
+// cache. Every test row links the whole tests/ tree for another feature set; their executables together
+// outgrow a hosted runner's disk ("No space left on device", seen as a lost job). Dependency rlibs stay,
+// so later rows still reuse them; an executable that is missing is simply relinked.
+let freeBetweenRows = false;
 for (let i = 0; i < rawArgs.length; i++) {
   if (rawArgs[i] === '--keep-going') {
     keepGoing = true;
+  } else if (rawArgs[i] === '--free-between-rows') {
+    freeBetweenRows = true;
   } else if (rawArgs[i] === '--kind') {
     const val = rawArgs[i + 1];
     if (!val) {
@@ -65,6 +74,23 @@ for (let i = 0; i < rawArgs.length; i++) {
 const rows = kindFilter.size
   ? PER_PR_ROWS.filter((r) => kindFilter.has(r.kind))
   : PER_PR_ROWS;
+
+/** Delete the extension-less files (the executables) under target/debug/{deps,examples} and the incremental cache. */
+function freeBuildArtefacts() {
+  const debug = join(REPO_ROOT, 'target', 'debug');
+  rmSync(join(debug, 'incremental'), { recursive: true, force: true });
+  let files = 0;
+  for (const sub of ['deps', 'examples']) {
+    const dir = join(debug, sub);
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      if (name.includes('.')) continue; // .rlib / .rmeta / .d / .so keep the dependency cache
+      rmSync(join(dir, name), { force: true });
+      files++;
+    }
+  }
+  console.log(`[check-matrix] freed build artefacts: ${files} executable(s) and the incremental cache`);
+}
 
 console.log(`[check-matrix] repo: ${REPO_ROOT}`);
 if (kindFilter.size) {
@@ -99,6 +125,7 @@ for (const row of rows) {
     if (!keepGoing) break;
   }
   console.log(`\n[check-matrix] OK: ${row.id}`);
+  if (freeBetweenRows) freeBuildArtefacts();
 }
 
 console.log(`\n============================================================`);

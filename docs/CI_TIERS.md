@@ -41,7 +41,10 @@ on a schedule and on demand.
 | `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests |
 | `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**`, tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`) |
 | `crate_*` | `crates/<name>/**`: the gates of that one workspace crate (its dependents also get `fast`+`seam`) |
-| everything | `schedule`, `workflow_dispatch`, PR label `full-ci`, and any change to `.github/workflows/ci.yml` or `scripts/ci-plan.mjs` |
+| everything | `schedule`, `workflow_dispatch`, and a `CI: full` trailer in the message of any commit of the range (PR: base..merge commit; push: before..sha) |
+
+A change to `.github/workflows/ci.yml` or `scripts/ci-plan.mjs` selects `fast` (the planner self-test runs in
+every `changes` job); it no longer selects the full set, and the `full-ci` PR label is gone.
 
 Documents (`docs/**`, `*.md`, `*.csv`, `*.sha256`, `.rush/**`), other workflows and non-matrix scripts
 select `always` only. An unrecognised path selects `fast` (conservative), never nothing. A merge to `main`
@@ -52,13 +55,68 @@ request and the nightly run re-runs them on `main`.
 
 - **Nightly** (`0 3 * * *`) on `main`: everything except the three weekly-only jobs.
 - **Weekly** (`0 6 * * 1`): everything including `numa-real-kernel`, `fuzz-run` and `feature-powerset`.
-- **On demand**: `gh workflow run ci.yml --ref <branch>` (full), or label a PR `full-ci`.
-- **Sprint close**: the most recent nightly (or an on-demand full run on the closing SHA) must be green.
+- **Explicit trigger**: put `CI: full` on a line of its own in the message of a commit (a trailer, after the body).
+  Any commit of the pushed range counts, so the next push, the PR run and the merge to `main` run the full set.
+  This is the only in-repo way to ask for the full set; a prose mention is not a trigger.
+- **On demand**: `gh workflow run ci.yml --ref <branch>` (full), or "Run workflow" in the Actions tab. Ordinary
+  runs (push, pull request) stay available and follow the diff.
+- **Sprint close**: the closing commit carries `CI: full`, and `node scripts/verify-sprint-close.mjs <sha>` confirms a
+  green FULL run on exactly that SHA (every tiered job ran and succeeded; only the weekly-only and dispatch-only
+  jobs may be skipped). The nightly is a safety net, not the close proof.
 - Recommended, owner to confirm: a PR that changes an unsafe seam (`src/alloc_core/**`, `src/registry/**`,
-  `src/global/**`) carries `full-ci` before merge when it is about to be merged on its own.
+  `src/global/**`) carries a `CI: full` commit before merge when it is about to be merged on its own.
 
 The rule in `CLAUDE.md` "confirm CI went green on the landing SHA" now reads: green **for the class of the
 landing diff**, plus a green nightly for the heavy groups.
+
+## Test-impact map (CI-T1 stage 2)
+
+`.github/workflows/test-impact-map.yml` (nightly 04:00 UTC, on dispatch, and on a pull request carrying the label `test-impact-map`) builds every integration-test target
+of two rows (`production internals`, `--all-features`) under `-C instrument-coverage`, one target at a time (the binary is deleted
+after its coverage is exported, so the runner disk holds one instrumented binary), runs it, and records the
+repository files with at least one covered line. Four shards per row run in parallel; a merge job per row unions them and runs
+`node scripts/test-impact-map.mjs check`. The result is one artifact `test-impact-map-<row>.json` per row (30 days).
+A test that a row compiles to nothing (crate-level `#![cfg(...)]`) has no covered file and is listed `no-coverage`
+for that row, so a test is unmapped everywhere only if no row exercises it (first run: 374 of 484 mapped under `--all-features`; the rest are
+cfg(miri)/loom/ghost-only targets and 8 tests that fail under coverage). Format:
+
+```text
+{ "version": 1, "sha": "<commit>", "row": { "features": "...", "rustc": "..." },
+  "tests": { "tests/<file>.rs": ["src/...", ...] },        sorted repo-relative paths
+  "unmapped": { "tests/<file>.rs": "<reason>" } }          reasons: requires-features | test-failed | timeout | no-coverage
+```
+
+`check` fails unless every test target of the commit is exactly once in `tests` or `unmapped`, mapped paths are
+sorted repo-relative and exist at that commit, and every unmapped reason is one of the four above. A target that
+fails to build in the row fails the shard (a broken row must not look like a gap). The script's `--selftest`
+(shard partition, cargo/llvm-cov parsing, merge, every `check` rejection) runs in `docs-consistency`.
+
+The map is only valid for the `sha` and rows it carries.
+
+### Test selection (CI-T1 stage 3)
+
+Job `select-tests` (group `fast`) downloads the maps of the latest successful `test-impact-map` run on `main`
+and runs `node scripts/select-tests.mjs select` over the diff (`--base`/`--head` as in `changes`). It never
+fails: a missing map, a failed download or selector error yields `all`. The selection is written to the step
+summary and to the artifact `test-selection`. Rules, all conservative (anything unattributable selects every test):
+
+- a full run (`CI: full`, schedule, dispatch) selects all;
+- `Cargo.toml`, `Cargo.lock`, `build.rs`, `.cargo/**`, toolchain and lint configs select all;
+- a changed test target selects itself; a changed `src/**`, `crates/*/src/**` or `tests/support/**` file selects every
+  test whose mapped set, in any row, contains it; `src/kani_proofs.rs` (compiled by no test) selects none;
+- a Rust or `tests/` file in no mapped set (a new file, a cfg'd-out file, a fixture) selects all;
+- `docs/**`, `scripts/**`, `.github/**` and root `*.md|csv|json|txt` select the tests that read files at run time
+  (the test or a `tests/` file it executes mentions `CARGO_MANIFEST_DIR`, `include_str!`, `read_to_string`,
+  `fs::read`, `File::open`, `read_dir` or `Command::new`); any other path selects all;
+- a test no row maps (`no-coverage` or `unmapped` in every row) is always selected.
+
+`test-core` consumes the selection only when the repository variable `TEST_SELECTION` is `enforce` (default: the
+selection is reported, nothing changes): its three `cargo test` steps then run `--lib` plus the selected
+`--test <name>` targets that the row can build (`required-features` against the row's feature closure), or plain
+`cargo test` when the selection is `all`. A subset run does not compile examples and benches and does not run doctests;
+the `clippy` rows (`--all-targets`) still cover their compilation. Core allocator files are executed by most tests
+(a change of the segment-directory scan selects 369 of 484 tests), so the saving comes from peripheral and test-only
+changes; the selection summary shows what each diff got.
 
 ### Production behavior without `internals`
 
@@ -107,6 +165,7 @@ the smoke row covers those scenarios.
 | `ghost-zero-cost` | ghost-zero-cost (.text diff + Ir vs base) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `global-regressions` | global allocator regressions (G1/G3) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `no_std` | no_std core build | `fast`: source, tests, benches, examples, fuzz, build scripts |
+| `select-tests` | select tests (diff + test-impact map) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-core` | test (core tiers) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-feature-isolation` | test (feature isolation) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `test-gated-bodies` | test (gated bodies + all-features) | `fast`: source, tests, benches, examples, fuzz, build scripts |
@@ -163,7 +222,7 @@ the smoke row covers those scenarios.
 - A new job must be added to the group map when it is wired (its `needs`/`if` are plain text in `ci.yml`).
 - Known limits: the mapping is coarse (per top-level source directory), cross-OS and Miri coverage of a
   `src/**`-only PR is deferred to the nightly run, and the planner does not understand which test a change
-  can affect. When in doubt, label the PR `full-ci`.
+  can affect. When in doubt, add a commit with a `CI: full` trailer.
 
 ## Gate runs are PR checks
 

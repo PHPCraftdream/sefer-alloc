@@ -17,6 +17,9 @@ use sefer_alloc::{AllocCore, LargeCacheConfig, SegmentLayout};
 #[test]
 fn zero_budget_never_materialises_extension_even_past_base_eight() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(Some(0));
     let bytes = bounded::large_request();
     let live = bounded::allocate_live(&mut ac, &[bytes; 9]);
@@ -32,6 +35,9 @@ fn zero_budget_never_materialises_extension_even_past_base_eight() {
 #[test]
 fn budget_infeasible_deposit_after_base_eight_full_never_materialises_extension() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None);
     let bytes = bounded::large_request();
     let live = bounded::allocate_live(&mut ac, &[bytes; 8]);
@@ -55,6 +61,9 @@ fn budget_infeasible_deposit_after_base_eight_full_never_materialises_extension(
 #[test]
 fn budget_smaller_than_every_span_never_materialises_extension() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     let bytes = bounded::large_request();
     ac.dbg_set_large_cache_budget(Some(bytes - 1));
     let live = bounded::allocate_live(&mut ac, &[bytes; 9]);
@@ -69,6 +78,9 @@ fn budget_smaller_than_every_span_never_materialises_extension() {
 #[test]
 fn effectively_unbounded_budget_still_materialises_extension_on_overflow() {
     let mut ac = AllocCore::new().expect("primordial");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(Some(usize::MAX));
     let live = bounded::allocate_live(&mut ac, &[bounded::large_request(); 9]);
     bounded::deposit_all(&mut ac, live);

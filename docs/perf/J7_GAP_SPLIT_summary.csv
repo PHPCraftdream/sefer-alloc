@@ -1,0 +1,33 @@
+platform,scenario,arm,runs,ns_per_op,user_ms,kernel_ms,faults,peak_rss_mib,end_rss_mib
+Linux (WSL2),grow64,sefer,36,21.4155,485,230,68419.5,1296.6,99.5
+Linux (WSL2),grow64,mi,36,15.9775,370,155,33661,1160.7,1032.9
+Linux (WSL2),grow1k,sefer,36,134.966,100,195,37669,1176.5,99.4
+Linux (WSL2),grow1k,mi,36,106.572,90,145,2941,1040.8,1032.9
+Linux (WSL2),regrow,sefer,36,120.871,150,120,32745,679.6,106.6
+Linux (WSL2),regrow,mi,36,93.145,130,80,6389,587.6,573.1
+Linux (WSL2),growmix,sefer,36,151.937,215,225,44035,1347.1,1324.8
+Linux (WSL2),growmix,mi,36,111.2895,175,140,6686,1161.3,1139.2
+Linux (WSL2),wild,sefer,36,20.5795,160,20,13009,60.6,45.9
+Linux (WSL2),wild,mi,36,19.0925,120,50,972,419.7,419.0
+Linux (WSL2),phase,sefer,36,17.2715,560,60,21147,291.1,235.3
+Linux (WSL2),phase,mi,36,15.974499999999999,500,50,1038,545.7,545.0
+Linux (WSL2),large,sefer,36,1439.1985,10,10,6291,12.2,6.3
+Linux (WSL2),large,mi,36,16352.810000000001,10,160,1019,1227.2,1227.2
+Windows,grow64,sefer,36,27.3975,593,343,316830,1234.6,27.8
+Windows,grow64,mi,36,23.386000000000003,453,335.5,297431,1159.3,1031.3
+Windows,grow1k,sefer,36,189.0155,125,281,286018,1114.5,27.7
+Windows,grow1k,mi,36,183.32,140,250,266391,1038.3,1030.3
+Windows,regrow,sefer,36,185.679,187,218,171555.5,646.5,67.7
+Windows,regrow,mi,36,147.59449999999998,179,156,156462,588.0,572.4
+Windows,growmix,sefer,36,220.9855,343,312,335672,1276.7,1254.4
+Windows,growmix,mi,36,191.298,281,273,305458,1159.6,1137.3
+Windows,wild,sefer,36,26.7935,203,23,16102.5,41.9,26.2
+Windows,wild,mi,36,20.81,163.5,15,13807.5,52.9,52.9
+Windows,phase,sefer,36,22.589,765,62,51648,181.8,164.5
+Windows,phase,mi,36,22.072,750,54,52729.5,204.7,204.7
+Windows,large,sefer,36,1691.8355,0,15,8768,13.4,7.4
+Windows,large,mi,36,1414.2615,0,15,8148,28.0,28.0
+callgrind,scenario,sefer_ir_per_op,mi_ir_per_op,delta_ir_per_op
+callgrind,grow64,167.2,112.2,55.0
+callgrind,growmix,325.8,249.9,75.9
+callgrind,regrow,229.6,224.6,5.0

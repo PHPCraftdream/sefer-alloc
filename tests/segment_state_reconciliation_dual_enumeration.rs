@@ -215,6 +215,9 @@ fn large_layout() -> Layout {
 #[test]
 fn recycled_hole_leaves_high_water_and_a_counted_null_slot() {
     let mut ac = AllocCore::new().expect("AllocCore::new must survive bootstrap");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
 
     // Independent ledger anchor: one live block in the primordial segment,
     // so the frontier seam has a reachable pointer.
@@ -349,6 +352,9 @@ fn recycled_hole_leaves_high_water_and_a_counted_null_slot() {
 #[test]
 fn cached_large_is_enumerated_with_usable_and_reservation_bytes() {
     let mut ac = AllocCore::new().expect("AllocCore::new must survive bootstrap");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     // Isolate the slot/budget behaviour from the config defaults: under
     // `large-cache-extended` the DEFAULT budget is a finite 256 MiB, under
     // the plain path it is unbounded — `None` makes both identical.
@@ -455,6 +461,9 @@ fn large_test_sizes() -> Vec<usize> {
 #[test]
 fn extension_slots_are_enumerated_into_large_cached() {
     let mut ac = AllocCore::new().expect("AllocCore::new must survive bootstrap");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     ac.dbg_set_large_cache_budget(None); // isolate slot count from budget
 
     assert!(
@@ -574,6 +583,9 @@ fn extension_slots_are_enumerated_into_large_cached() {
 #[test]
 fn primordial_committed_bytes_are_the_lazy_frontier() {
     let mut ac = AllocCore::new().expect("AllocCore::new must survive bootstrap");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
 
     // Snapshot on a fresh heap — nothing has carved past the bootstrap stamp.
     let rec = ac.dbg_segment_state_reconciliation();
@@ -642,6 +654,9 @@ fn primordial_committed_bytes_are_the_lazy_frontier() {
 #[test]
 fn primordial_committed_bytes_are_segment_when_lazy_policy_is_forced_eager() {
     let mut ac = AllocCore::new().expect("AllocCore::new must survive bootstrap");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     let rec = ac.dbg_segment_state_reconciliation();
 
     assert_eq!(rec.unknown_count, 0, "no corrupt segment headers");
@@ -682,6 +697,9 @@ fn primordial_committed_bytes_are_segment_when_lazy_policy_is_forced_eager() {
 #[test]
 fn primordial_committed_bytes_are_the_whole_segment_when_eager() {
     let mut ac = AllocCore::new().expect("AllocCore::new must survive bootstrap");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     let rec = ac.dbg_segment_state_reconciliation();
 
     assert_eq!(rec.unknown_count, 0, "no corrupt segment headers");
@@ -781,6 +799,9 @@ fn carve_into_second_small_segment(ac: &mut AllocCore) -> *mut u8 {
 #[test]
 fn small_active_committed_bytes_are_the_advanced_frontier() {
     let mut ac = AllocCore::new().expect("AllocCore::new must survive bootstrap");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     let second = carve_into_second_small_segment(&mut ac);
 
     let frontier = ac
@@ -844,6 +865,9 @@ fn small_active_committed_bytes_are_the_advanced_frontier() {
 #[test]
 fn small_active_committed_bytes_are_segment_when_lazy_policy_is_forced_eager() {
     let mut ac = AllocCore::new().expect("AllocCore::new must survive bootstrap");
+    // J14: these tests pin the fixed 40-slot extension.
+    #[cfg(feature = "large-cache-adaptive")]
+    ac.dbg_set_large_cache_adaptive(false);
     let second = carve_into_second_small_segment(&mut ac);
 
     let frontier = ac
