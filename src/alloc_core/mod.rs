@@ -280,6 +280,10 @@ pub use large_cache_config::LargeCacheConfig;
 #[cfg(feature = "alloc-decommit")]
 pub use large_cache_mode::LargeCacheMode;
 #[cfg(feature = "alloc-decommit")]
+pub use policy::large_thp::{
+    LargeThpCurve, LargeThpEstimator, LargeThpGradient, LargeThpRequestGroup, LargeThpShare,
+};
+#[cfg(feature = "alloc-decommit")]
 pub use policy::{LargeCachePolicy, Profile, SmallPoolPolicy};
 /// R31-4 (task #467) MEASUREMENT-ONLY: re-exported so `examples/`/`tests/`
 /// can name the handle type returned by

@@ -393,7 +393,7 @@ pub(crate) unsafe fn dispatch_try_decommit(
     {
         // Real-path decommit fault injection (feature `fault-injection`, task
         // #1219 — the decommit-side sibling of `try_commit_range`'s commit-side
-        // seam in `api/commit_range.rs`). The hook is consulted INSTEAD of
+        // seam in `api/lazy_commit/commit_range.rs`). The hook is consulted INSTEAD of
         // issuing the syscall, and the injected `Err` is deliberately routed
         // through the same `Err(e) => DecommitOutcome::Refused(e)` mapping a
         // real backend refusal takes (not an early `return` constructing

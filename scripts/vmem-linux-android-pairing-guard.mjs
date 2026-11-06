@@ -533,7 +533,7 @@ const KNOWN_DRIFT = [
       'huge-pages feature comment block repeats the reserve_aligned_huge.rs summary; Cargo.toml was outside task #1105/agent-B file scope — reported to the orchestrator',
   },
   {
-    file: 'crates/aligned-vmem/src/api/decommit_lazy.rs',
+    file: 'crates/aligned-vmem/src/api/lazy_commit/decommit_lazy.rs',
     sentenceRegex: /Linux `MADV_FREE`, macOS\/iOS `MADV_FREE_REUSABLE`/,
     reason:
       'decommit_lazy.rs was outside task #1105/agent-B file scope — reported to the orchestrator (the README sibling row WAS fixed)',

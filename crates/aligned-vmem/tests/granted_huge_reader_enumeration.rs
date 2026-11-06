@@ -213,7 +213,7 @@ fn expected_for(rel: &str) -> (usize, usize, usize, usize) {
         "src/reservation_full_parts.rs" => (0, 1, 0, 4),
         "src/api/internal.rs" => (0, 1, 0, 5),
         "src/api/reserve.rs" => (0, 0, 0, 1),
-        "src/api/reserve_aligned_lazy.rs" => (0, 0, 0, 1),
+        "src/api/lazy_commit/reserve_aligned_lazy.rs" => (0, 0, 0, 1),
         "src/os/unix.rs" => (0, 0, 0, 7),
         "src/os/windows.rs" => (0, 0, 0, 2),
         _ => (0, 0, 0, 0),

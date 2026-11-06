@@ -3,6 +3,7 @@
 //! moved verbatim from the former single `profile.rs` per the one-file-one-export rule.
 
 pub mod large_cache_policy;
+pub mod large_thp;
 pub mod profile;
 pub mod small_pool_policy;
 

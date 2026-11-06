@@ -40,6 +40,22 @@
 //! hook, because no test has needed one — add it by mirroring
 //! [`arm_fail_at`]/`FAULT_STATE` if one ever does.
 //!
+//! task #53 adds two further fail-next hooks,
+//! [`arm_fail_next_advise_range`] and [`arm_fail_next_residency_sample`],
+//! consulted in front of the real `madvise(MADV_HUGEPAGE)` / `mincore(2)`
+//! call in the respective native arm of
+//! `Reservation::try_advise_huge_pages_range` (`api/advise_huge_pages.rs`)
+//! and `Reservation::try_sample_residency` (`api/residency/sample.rs`). An
+//! armed fire yields `VmemError::os_refusal_unknown_code()` — no syscall
+//! ran, so there is no real OS code to report (the task-#713 reasoning
+//! above). Inert wherever those arms are compiled out (`aligned_vmem_mock`,
+//! miri, non-Linux/Android hosts — hence the wider dead-code cfg on the two
+//! consult functions). Only the fail-next tier exists (the same #1219
+//! rationale). Hook state is `Mutex`-serialized like `FAULT_STATE`
+//! (task #1021): arming, one-shot consumption and re-arm are the races to
+//! close, and the counters carry no cross-thread payload, so no ordering
+//! semantics are involved.
+//!
 //! Two independent, additive hooks (mirrors the two-tier hook that
 //! `sefer-alloc` carried before this crate absorbed it):
 //! - [`arm_fail_next`]: the next `n` real commit calls fail.
@@ -247,4 +263,107 @@ pub(crate) fn should_fail_decommit() -> bool {
             (next > 0).then(|| next - 1)
         })
         .is_ok()
+}
+
+/// Remaining one-shot failures for the range huge-page-advice hook
+/// (task #53). Mutex-serialized per the `FAULT_STATE` (task #1021) pattern
+/// — no cross-thread payload, no ordering semantics.
+struct FailNextState {
+    /// Remaining one-shot failures (0 = disarmed).
+    remaining: u32,
+}
+
+static ADVISE_RANGE_FAULT_STATE: Mutex<FailNextState> = Mutex::new(FailNextState { remaining: 0 });
+static RESIDENCY_SAMPLE_FAULT_STATE: Mutex<FailNextState> =
+    Mutex::new(FailNextState { remaining: 0 });
+
+/// Arm the "fail the next N REAL range-advice backend calls" hook
+/// (task #53). The next `n` calls through
+/// `Reservation::try_advise_huge_pages_range`'s native arm — the real
+/// `madvise(MADV_HUGEPAGE)` path — return
+/// `Err(VmemError::os_refusal_unknown_code())` without touching the OS.
+/// `n == 0` disarms.
+///
+/// Consulted only in the native Linux/Android arm, so inert under the
+/// `aligned_vmem_mock` cfg, under miri, and on non-Linux/Android hosts
+/// (call sites compiled out — see the module doc). Only the fail-next tier
+/// exists (no k-th hook). The state is Mutex-serialized per the
+/// `FAULT_STATE` (task #1021) pattern — no cross-thread payload, no
+/// ordering semantics.
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
+pub fn arm_fail_next_advise_range(n: u32) {
+    let mut state = ADVISE_RANGE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    state.remaining = n;
+}
+
+/// Arm the "fail the next N REAL residency-sample backend calls" hook
+/// (task #53). The next `n` calls through
+/// `Reservation::try_sample_residency`'s native arm — the real `mincore(2)`
+/// path — return `Err(VmemError::os_refusal_unknown_code())` without
+/// touching the OS. `n == 0` disarms.
+///
+/// Same native-arm-only consultation and inertness matrix as
+/// [`arm_fail_next_advise_range`].
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
+pub fn arm_fail_next_residency_sample(n: u32) {
+    let mut state = RESIDENCY_SAMPLE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    state.remaining = n;
+}
+
+/// Internal: consult the range-advice hook for the current real backend
+/// call. Returns `true` if this call should be forced to fail. Called once
+/// per real range-advice attempt, immediately before the `madvise` syscall
+/// — the only call sites are the native arms of
+/// `Reservation::try_advise_huge_pages_range` (`api/advise_huge_pages.rs`), compiled
+/// only under `all(any(target_os = "linux", target_os = "android"),
+/// not(miri), not(aligned_vmem_mock))`. The check and the decrement happen
+/// in the SAME lock critical section — no TOCTOU between check and
+/// decrement.
+#[cfg_attr(
+    any(
+        aligned_vmem_mock,
+        miri,
+        not(any(target_os = "linux", target_os = "android"))
+    ),
+    allow(dead_code)
+)]
+pub(crate) fn should_fail_advise_huge_range() -> bool {
+    let mut state = ADVISE_RANGE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if state.remaining > 0 {
+        state.remaining -= 1;
+        true
+    } else {
+        false
+    }
+}
+
+/// Internal: consult the residency-sample hook for the current real backend
+/// call. Same shape, same single-critical-section check-and-decrement, and
+/// same only-call-sites-in-the-native-arm caveat as
+/// [`should_fail_advise_huge_range`] — the call sites are the native arms
+/// of `Reservation::try_sample_residency` (`api/residency/sample.rs`).
+#[cfg_attr(
+    any(
+        aligned_vmem_mock,
+        miri,
+        not(any(target_os = "linux", target_os = "android"))
+    ),
+    allow(dead_code)
+)]
+pub(crate) fn should_fail_residency_sample() -> bool {
+    let mut state = RESIDENCY_SAMPLE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if state.remaining > 0 {
+        state.remaining -= 1;
+        true
+    } else {
+        false
+    }
 }
