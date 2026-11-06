@@ -13,6 +13,37 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   no syscall elsewhere, under miri and under the mock backend). Advisory: the
   mapping and its contents do not change; returns whether the kernel accepted
   it.
+- **`Reservation::try_advise_huge_pages_range(offset, length)`** (task #53,
+  J13b VM-part) — range-limited `MADV_HUGEPAGE` advice on a sub-range of the
+  usable span (`&self`): validates both endpoints against the runtime
+  `page_size()` in ABSOLUTE address terms (the kernel never receives a
+  silently-widened range), `Ok(length)` on Linux/Android is exactly-`length`
+  bytes advised, a well-formed empty range is `Ok(0)` on every platform, and
+  platforms without the backend get the typed unsupported sentinel — never a
+  silent no-op. Advisory-only success: it never implies physical huge-page
+  backing.
+- **`Reservation::try_sample_residency(&[ResidencyRegion])`** with the new
+  `ResidencyRegion` / `ResidencySample` types (task #53) — bounded passive
+  residency sampling: at most 16 regions x 2 MiB per call, one `mincore(2)`
+  per region, no heap allocation, no `/proc` reads, no fault-in; returns
+  resident/sampled BASE-page counts for an estimator ratio. An unsupported
+  backend is a typed `Err`, never a forged zero sample.
+- **Two new `fault-injection` hooks** (task #53) —
+  `arm_fail_next_advise_range` / `arm_fail_next_residency_sample`, fail-next
+  only, Mutex-guarded (arm/consume/re-arm serialization per the `FAULT_STATE`
+  task-#1021 pattern), consulted in front of
+  the real syscall in the respective native arm; inert where those arms are
+  compiled out.
+- **Layout (pure moves, public paths unchanged)** — lazy-commit free
+  functions grouped under `api/lazy_commit/`; task-#53 surfaces moved to
+  `api/advise_huge_pages.rs` and `api/residency/{region,sample,mincore}.rs`;
+  `api/reserve.rs` restored to its pre-task content. Budget contract
+  corrected: an OS `madvise` refusal leaves the hint effect UNKNOWN (not
+  certified zero) — only pre-syscall failures certify "nothing touched".
+- **Docs**: `VmemError::os_refusal_unknown_code`'s source count is FOUR ->
+  FIVE (the uncompilable-backend source). Non-goals: the whole-map
+  `advise_huge_pages` behavior is unchanged; no new features or
+  dependencies.
 
 ### Changed
 

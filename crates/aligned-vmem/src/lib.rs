@@ -240,7 +240,7 @@ mod api;
 pub use api::{commit_range, reserve_aligned_lazy, try_commit_range, try_reserve_aligned_lazy};
 pub use api::{
     decommit, decommit_lazy, leak_zeroed_pages, recommit, release, release_parts, reserve_aligned,
-    try_decommit, try_recommit, try_reserve_aligned,
+    try_decommit, try_recommit, try_reserve_aligned, ResidencyRegion, ResidencySample,
 };
 #[cfg(feature = "huge-pages")]
 pub use api::{reserve_aligned_huge, try_reserve_aligned_huge};

@@ -66,7 +66,7 @@
 //! is treated as a no-op and is **not** recorded in the mock call log, unlike
 //! other well-formed calls to the same functions (the early-return happens
 //! before `mock::record` is called — see those functions' implementations
-//! in `src/api/recommit.rs` and `src/api/commit_range.rs`).
+//! in `src/api/recommit.rs` and `src/api/lazy_commit/commit_range.rs`).
 
 use core::cell::{Cell, RefCell};
 
