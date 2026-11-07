@@ -32,7 +32,13 @@
 //! not assert on that signal (it is dependent on segment-fill geometry and
 //! is less deterministic).
 //!
-//! ## Known flakiness under heavy system load (R16-6, task #316 — open question)
+//! ## Historical investigation (R16-6, task #316)
+//!
+//! 2026-11-08 correction: the old completion premise was wrong. A scope's
+//! implicit wait does not guarantee TLS-destructor completion. Explicit
+//! ScopedJoinHandle joins below establish that boundary before observation.
+//! The nonzero-release assertion is unchanged; exact-source CI is required.
+//! The following account preserves the earlier investigation as history.
 //!
 //! On 2026-07-22, a personal-verification run of the FULL suite
 //! (`cargo test --release --features production`) with two unrelated
@@ -60,10 +66,10 @@
 //!   `reservation` is non-null — there is no budget/policy branch that
 //!   decommits-instead-of-releases on this path, and no early return that
 //!   skips the counter. `MAX_HEAPS = 4096` rules out registry exhaustion from
-//!   only 8 threads. `thread::scope`'s `join` is a full OS-level join (not
-//!   just a return from the closure), so it cannot itself explain a trim that
-//!   ran "too late" to be observed — the observation happens strictly after
-//!   `scope` returns.
+//!   only 8 threads. However, the original test discarded every scoped handle
+//!   and used only the scope's implicit completion counter, not explicit joins.
+//!   That does not wait for TLS destruction; the earlier ruling-out argument
+//!   was invalid. Explicit joins now establish the required observation boundary.
 //! - One theoretical (unconfirmed, not reproduced) mechanism was identified
 //!   in `src/global/tls_heap.rs`'s `finish_bind`: if `GUARD`'s
 //!   `thread_local!` initialisation itself fails (`GUARD.try_with` returns
@@ -152,11 +158,13 @@ fn teardown_trim_releases_retained_large_cache_spans() {
     // trim_for_recycle → flush tcache + drain pool + evict large cache.
     const N: usize = 8;
     thread::scope(|s| {
-        for _ in 0..N {
-            s.spawn(|| {
-                drive_activity(&a);
-                // Thread exits here → LeaseReleaseGuard::drop → trim_for_recycle.
-            });
+        let handles: Vec<_> = (0..N).map(|_| s.spawn(|| drive_activity(&a))).collect();
+        // Explicit joins include TLS destructors; the scope's implicit wait
+        // alone covers only thread main functions. Spawn all workers first.
+        for handle in handles {
+            handle
+                .join()
+                .expect("activity worker must finish with TLS teardown");
         }
     });
 
