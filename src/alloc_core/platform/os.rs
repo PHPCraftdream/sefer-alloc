@@ -1,30 +1,14 @@
-//! [`Segment`] — the **OS segment aperture**: SEGMENT-aligned raw memory spans
-//! handed up to the safe Cartographer.
+//! [`Segment`] — the OS aperture for SEGMENT-aligned spans.
 //!
-//! This module is now a **thin wrapper** over the `aligned-vmem` crate
-//! (`crates/aligned-vmem`), which carries all the platform-specific OS syscalls
-//! (`mmap`/`munmap`/`madvise` on Unix, `VirtualAlloc`/`VirtualFree` on
-//! Windows). The `unsafe` live in `aligned_vmem`; this file exposes a safe
-//! interface that matches the original `os.rs` contract so the rest of
-//! `alloc_core` is unchanged.
-//!
-//! ## What changed vs. the old os.rs
-//!
-//! | Item | Old | New |
-//! |------|-----|-----|
-//! | `SEGMENT`, `PAGE`, `segment_base_of`, `segment_base_of_ptr` | defined here | defined here (unchanged) |
-//! | `Segment { base, len, reservation, reservation_len }` | full impl | thin wrapper over `aligned_vmem::Reservation` |
-//! | `release_segment(reservation, reservation_len)` | direct OS call | `aligned_vmem::release(ptr, len, SEGMENT)` |
-//! | `decommit_pages` / `recommit_pages` | direct OS calls | `aligned_vmem::decommit` / `aligned_vmem::recommit` |
-//!
-//! ## Miri aperture
-//!
-//! `aligned-vmem` already contains the miri fallback (`System.alloc` with the
-//! requested alignment); no miri-specific code is needed here.
+//! This thin wrapper delegates platform syscalls and the Miri `System.alloc`
+//! fallback to `aligned-vmem`. Geometry helpers remain local; owned spans use
+//! `aligned_vmem::Reservation`. Legacy release is infallible; checked release
+//! reports the native outcome so advice charges are returned only on success.
+//! Decommit/recommit delegate to the corresponding `aligned-vmem` operations.
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-core` on; this is one of
 // the documented `unsafe` seams. `allow` lifts the crate-level `deny` for
-// this file only so we can call `aligned_vmem::release` (an `unsafe fn`).
+// this file only for the unsafe release family in `aligned-vmem`.
 #![allow(unsafe_code)]
 
 use core::ptr::NonNull;
@@ -51,9 +35,9 @@ use aligned_vmem as vmem;
 /// ownership transfer.
 pub(crate) static SEGMENTS_RESERVED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
-/// Process-wide count of successful OS segment releases (every
-/// [`release_segment`] call with a non-null reservation, or owning [`Segment`]
-/// destruction). Monotonic, relaxed. See [`SEGMENTS_RESERVED_TOTAL`].
+/// Legacy release attempts, owning [`Segment`] destruction, and confirmed
+/// checked releases. Diagnostic only: legacy calls do not prove native success.
+/// Monotonic, relaxed. See [`SEGMENTS_RESERVED_TOTAL`].
 pub(crate) static SEGMENTS_RELEASED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 /// Process-wide count of failed segment-reservation constructors, including
@@ -538,19 +522,30 @@ impl Segment {
     pub(crate) fn advise_huge_pages(&self) -> bool {
         self.0.advise_huge_pages()
     }
+
+    /// Range-limited huge-page hint for `[offset, offset + length)` of the span; returns the bytes the kernel accepted.
+    // Used by the dependent fresh-path THP integration.
+    #[cfg_attr(
+        any(not(feature = "alloc-decommit"), feature = "numa-aware"),
+        allow(dead_code)
+    )]
+    #[cfg(not(feature = "numa-aware"))]
+    #[allow(
+        dead_code,
+        reason = "staged bridge; runtime consumer is a dependent change"
+    )]
+    pub(crate) fn try_advise_huge_pages_range(
+        &self,
+        offset: usize,
+        length: usize,
+    ) -> Result<usize, vmem::VmemError> {
+        self.0.try_advise_huge_pages_range(offset, length)
+    }
 }
 
-// `Send` is already implemented on `aligned_vmem::Reservation`; `Segment` is a
-// newtype over one `Reservation`, so it AUTO-derives `Send` — no `unsafe impl`
-// needed (task #21 / review L1). The former `unsafe impl Send for Segment`
-// only restated the auto-impl, but froze it: had a future edit added a
-// `!Send` field (e.g. a `Cell<..>` diagnostic), the manual impl would have
-// silently kept `Segment: Send` — a lie — where the auto-impl would honestly
-// drop it. This compile-time assert documents the intent (Segment must stay
-// `Send`, its sole use is exclusive-ownership transfer to another thread) AND
-// enforces it: adding a `!Send` field makes THIS line fail to compile with a
-// clear "`Segment: Send` is not satisfied" error, instead of a silent unsound
-// bless.
+// Reservation already implements Send, so Segment derives it automatically.
+// Keep that derivation: a manual unsafe impl would conceal a future !Send field.
+// This assertion pins exclusive-ownership transfer without freezing that proof.
 const _: () = {
     fn assert_send<T: Send>() {}
     let _ = assert_send::<Segment>;
@@ -565,10 +560,8 @@ const _: () = {
 ///
 /// # Contract (caller's invariant — not enforced by the type system)
 ///
-/// `reservation` must be a pointer previously returned by
-/// [`Segment::reserve`] (the span owned by that returned [`Segment`]) and not
-/// yet released. `reservation_len` must be the matching length. Must be called
-/// exactly once per reservation.
+/// Caller owns the live reservation returned by [`Segment::reserve`], with
+/// its original `reservation_len`, and transfers it exactly once.
 pub(crate) fn release_segment(reservation: *mut u8, reservation_len: usize) {
     if reservation.is_null() {
         return;
@@ -578,6 +571,25 @@ pub(crate) fn release_segment(reservation: *mut u8, reservation_len: usize) {
     // exactly once. The `align` argument matches the original reservation.
     unsafe { vmem::release(reservation, reservation_len, SEGMENT) };
     SEGMENTS_RELEASED_TOTAL.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Same ownership contract as [`release_segment`]; on error, never retry or access the mapping.
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+#[allow(
+    dead_code,
+    reason = "staged bridge; runtime consumer is a dependent change"
+)]
+pub(crate) fn try_release_segment(
+    reservation: *mut u8,
+    reservation_len: usize,
+) -> Result<(), vmem::VmemError> {
+    // SAFETY: caller transfers the live, uniquely owned reservation with its
+    // original geometry once; no owning handle remains to release it again.
+    unsafe { vmem::try_release(reservation, reservation_len, SEGMENT) }?;
+    if !reservation.is_null() {
+        SEGMENTS_RELEASED_TOTAL.fetch_add(1, Ordering::Relaxed);
+    }
+    Ok(())
 }
 
 /// Relaxed snapshot of [`SEGMENTS_RESERVED_TOTAL`]. Diagnostic only.

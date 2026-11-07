@@ -6,8 +6,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## Unreleased
 
+### Fixed
+
+- Checked release validation now matches the release/raw-adoption geometry contract without reserve's `len + align` bound. Release fault-hook state uses the existing mutex pattern, and a separate backend-result surrogate covers error classification without claiming a kernel refusal.
+
 ### Added
 
+- **Checked (fallible) release family** (task #56, J13b checked-release
+  prerequisite) — `try_release(ptr, len, align)`, the typed twin
+  `try_release_parts(ReservationParts)`, and the safe consuming method
+  `Reservation::try_release(self)`, all `-> Result<(), VmemError>`. `Ok`
+  reflects the native release call's own success (`munmap(2)`'s `0` on
+  Unix, `VirtualFree(MEM_RELEASE)`'s nonzero on Windows, terminal-within-
+  model under miri); `Err` reports a contract violation (instead of the
+  infallible `release`'s panic), an armed fault-injection hook (no-code
+  sentinel), or a real backend refusal with the immediately-captured OS
+  cause. Exact-once-even-on-`Err`: on `Err` the release is unproven — the
+  caller must never retry, never treat the pointer as live, and must
+  retain any outstanding accounting charge; the crate never retries
+  internally. Null stays the documented no-op.
+- **Backend-result surrogate:** `arm_fail_next_release_backend_result(n)` skips native release inside each checked backend and supplies an explicit no-code refusal to its backend-result classification. This tests error propagation only, not OS/kernel refusal. The ordinary `arm_fail_next_release(n)` remains a pre-syscall hook.
 - **`Reservation::advise_huge_pages`** (TH-1) — a transparent-huge-page hint
   for the usable span (`madvise(MADV_HUGEPAGE)` on Linux/Android; `false` and
   no syscall elsewhere, under miri and under the mock backend). Advisory: the

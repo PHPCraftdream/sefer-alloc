@@ -16,7 +16,11 @@ pub(crate) use decommit::dispatch_try_decommit;
 pub use decommit::{decommit, try_decommit};
 pub use leak_zeroed_pages::leak_zeroed_pages;
 pub use recommit::{recommit, try_recommit};
-pub use release::{release, release_parts};
+#[cfg(feature = "fault-injection")]
+#[doc(hidden)]
+pub use release::release_size_align_is_valid_for_test;
+pub use release::{release, release_parts, try_release, try_release_parts};
+
 pub use reserve::{reserve_aligned, try_reserve_aligned};
 pub use residency::{ResidencyRegion, ResidencySample};
 

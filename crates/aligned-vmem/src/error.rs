@@ -114,45 +114,11 @@ impl VmemError {
     /// the OS side (or in the crate's response to an unusable OS grant), not
     /// in the caller's arguments.
     ///
-    /// **This FIVE-source count is scoped to production causes; it
-    /// deliberately excludes two TEST-ONLY construction SOURCES, spread
-    /// across SIX TEST-ONLY construction SITES** (task #1173/L2,
-    /// re-measured for this doc's own correction — task #1194 — against the
-    /// actual call sites rather than re-asserted from an earlier audit's
-    /// count; re-measured again task #1249 after task #1219 added the
-    /// decommit-side fault-injection hook, which grew the `fault-injection`
-    /// source from one site to two; re-measured once more for task #53
-    /// (J13b VM-part), which added the fifth production source (the
-    /// uncompilable-backend source, FOUR sites in `api/advise_huge_pages.rs`
-    /// and `api/residency/sample.rs`) and the
-    /// two new fault-injection hook sites, also in those two files. Counted
-    /// with doc mentions EXCLUDED,
-    /// because a raw `grep -rn "VmemError::os_refusal_unknown_code()"
-    /// crates/aligned-vmem/src/` also matches prose like this very
-    /// sentence — its total therefore changes whenever this paragraph is
-    /// edited, which is exactly how task #1194's first attempt recorded a
-    /// figure its own edit falsified one line later. The stable count is
-    /// `grep -rn "VmemError::os_refusal_unknown_code()"
-    /// crates/aligned-vmem/src/ | grep -vE ":\s*(///|//!|//)"` → 17 real
-    /// construction sites; of those 17, 11 are production sites — matching
-    /// the five causes below — and 6 are
-    /// test-only sites): the `aligned_vmem_mock` backend's scripted
-    /// commit/reserve fault injection (`crate::mock`, gated on that cfg —
-    /// TWO sites, `take_reserve_fault`/`take_commit_fault`) and the
-    /// real-path `fault-injection` feature's simulated commit, decommit,
-    /// range-advice AND residency-sample failures (`crate::fault_injection`
-    /// plus the commit-side dispatch — FOUR sites: `api/lazy_commit/commit_range.rs`,
-    /// `api/decommit.rs`'s `dispatch_try_decommit` (since task #1219), and,
-    /// since task #53, TWO sites in `api/advise_huge_pages.rs`'s and
-    /// `api/residency/sample.rs`'s native arms)
-    /// both also construct this sentinel, to simulate a no-code OS failure
-    /// deterministically without touching the OS — see each module's own
-    /// doc for why NEITHER SOURCE is a PRODUCTION source of its own (the
-    /// fifth production source in the list above is task #53's
-    /// uncompilable-backend source — its four sites are counted among the 11
-    /// PRODUCTION sites, not here): all six test-only sites exist only under
-    /// test-only cfgs or an explicitly-armed
-    /// opt-in feature, and none is reachable in an ordinary disarmed build.
+    /// Test-only no-code sentinel construction sources include the mock
+    /// reserve/commit failures and fault-injection commit, decommit,
+    /// range-advice, residency, and release pre-dispatch failures, plus checked
+    /// backend-result surrogates. These are test seams, not production OS
+    /// failure causes.
     #[must_use]
     #[inline]
     pub const fn os_refusal_unknown_code() -> Self {

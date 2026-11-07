@@ -1092,33 +1092,32 @@ unsafe fn libc_mmap(len: usize, huge: bool) -> Result<*mut core::ffi::c_void, Vm
 }
 
 #[cfg(all(unix, not(miri)))]
-unsafe fn libc_munmap(addr: *mut u8, len: usize) {
-    // SAFETY: caller guarantees `[addr, addr+len)` was mmap'd and is unmapped once.
-    // task #719: the `-1`/`EINVAL` return is deliberately discarded, not
-    // merely overlooked — every caller of this function already establishes
-    // page/huge-page alignment before calling (task #714 closed the one case
-    // where that was NOT true, a silent whole-mapping leak); given that
-    // precondition, a genuine `munmap` failure here would indicate a bug in
-    // this crate's own alignment bookkeeping, not a recoverable runtime
-    // condition the caller could act on (`release`/`decommit`'s public
-    // signatures are infallible `()`/`bool`, so there is no channel to
-    // surface it through even if we wanted to). The failure mode on error is
-    // a leaked mapping, never memory unsafety — the memory stays validly
-    // mapped, just not returned to the OS.
+pub(crate) unsafe fn libc_munmap(addr: *mut u8, len: usize) -> i32 {
+    // SAFETY: caller guarantees `[addr, addr+len)` is a live mmap'd region being unmapped once.
+    // task #719: the `-1`/`EINVAL` return is deliberately discarded by the INFALLIBLE
+    // release caller (`release_reservation`), not merely overlooked — every caller of
+    // this function already establishes page/huge-page alignment before calling (task
+    // #714 closed the one case where that was NOT true, a silent whole-mapping leak);
+    // Valid alignment does not prove native release: resource/VMA-limit failures
+    // can still leave memory mapped. Legacy release discards the status; checked
+    // release reports it so its caller can retain accounting on any error.
+    // A checked-release caller must not infer a usable live mapping or retry an
+    // unproven release. The legacy failure behavior is preserved: it can leak a
+    // mapping rather than reporting the native refusal.
     //
-    // task P2-6 (2026-08-16 audit finding): increment the failure counter
-    // under `bench-internals` so at least diagnostic visibility exists. The
-    // counter is gated on the feature and the increment is a single relaxed
-    // fetch_add — zero overhead when the feature is off.
-    //
-    // task #1189 (coverage gap C2): also increment the attempts counter
-    // BEFORE the syscall, mirroring `libc_madvise`'s attempts/successes
-    // pairing below. Without this, `UNIX_MUNMAP_FAILURES` alone cannot
-    // distinguish "release ran and succeeded" from "the call site was
-    // removed and never ran" -- both read as zero failures. See
-    // `UNIX_MUNMAP_ATTEMPTS`'s own doc for the full reasoning.
+    // task P2-6 (2026-08-16 audit finding) + task #1189 (coverage gap C2): increment
+    // the failure counter under `bench-internals` for diagnostic visibility, and also
+    // the attempts counter BEFORE the syscall, mirroring `libc_madvise`'s pairing —
+    // without the pair, `UNIX_MUNMAP_FAILURES` alone cannot distinguish "release ran
+    // and succeeded" from "the call site was removed and never ran". Each increment is a
+    // single relaxed fetch_add — zero overhead when the feature is off.
+    // task #713 capture-timing contract: `release_reservation_checked` (in
+    // `os/release_reservation_checked.rs`) is the caller that maps the raw `-1` to a
+    // `VmemError`; no errno-mutating operation may intervene between `munmap`
+    // returning and the caller's `last_os_error()` read.
     #[cfg(feature = "bench-internals")]
     UNIX_MUNMAP_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+    // SAFETY: caller owns the live mmap range and transfers it exactly once.
     let ret = unsafe { munmap(addr as *mut core::ffi::c_void, len) };
     #[cfg(feature = "bench-internals")]
     if ret != 0 {
@@ -1126,6 +1125,7 @@ unsafe fn libc_munmap(addr: *mut u8, len: usize) {
     }
     #[cfg(not(feature = "bench-internals"))]
     let _ = ret;
+    ret
 }
 
 #[cfg(all(unix, not(miri)))]

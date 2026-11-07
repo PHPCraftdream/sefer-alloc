@@ -11,6 +11,8 @@ use crate::bench_internals::{
     WINDOWS_VIRTUALFREE_RELEASE_FAILURES,
 };
 use crate::error::VmemError;
+#[cfg(feature = "fault-injection")]
+use crate::fault_injection;
 use crate::os::{align_up_addr, DecommitKind};
 
 #[cfg(all(windows, not(miri)))]
@@ -386,6 +388,45 @@ pub(crate) unsafe fn release_reservation(
     unsafe { winapi_virtual_release(reservation.as_ptr()) };
 }
 
+/// Checked (fallible) Windows release backend: report
+/// `VirtualFree(MEM_RELEASE)`'s own outcome. Success is the API's own nonzero
+/// return; `Err` is its zero return with the captured `GetLastError`.
+#[cfg(all(windows, not(miri)))]
+pub(crate) unsafe fn release_reservation_checked(
+    reservation: NonNull<u8>,
+    _reservation_len: usize,
+    _align: usize,
+) -> Result<(), VmemError> {
+    #[cfg(feature = "fault-injection")]
+    let surrogate = fault_injection::should_fail_release_backend_result();
+    #[cfg(not(feature = "fault-injection"))]
+    let surrogate = false;
+    let (success, captured_error) = if surrogate {
+        // Simulated zero VirtualFree result, without a syscall or fabricated
+        // GetLastError. The reservation is conservatively left allocated.
+        (false, VmemError::os_refusal_unknown_code())
+    } else {
+        // SAFETY: reservation is a live MEM_RESERVE region and is released once.
+        let success = unsafe { winapi_virtual_release(reservation.as_ptr()) };
+        // Capture GetLastError immediately on actual failure; do not take the
+        // hook mutex or perform another native operation before this read.
+        let error = if success {
+            None
+        } else {
+            Some(VmemError::last_os_error())
+        };
+        (
+            success,
+            error.unwrap_or_else(VmemError::os_refusal_unknown_code),
+        )
+    };
+    if success {
+        Ok(())
+    } else {
+        Err(captured_error)
+    }
+}
+
 #[cfg(all(windows, not(miri)))]
 // mock (task #646/F8): bypassed by the recording backend, unused when `mock`
 // alone is enabled without a real decommit call site reachable.
@@ -623,13 +664,15 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) -> Result<(), VmemE
 }
 
 #[cfg(all(windows, not(miri)))]
-unsafe fn winapi_virtual_release(addr: *mut u8) {
+unsafe fn winapi_virtual_release(addr: *mut u8) -> bool {
     // SAFETY: caller guarantees `addr` is the base of a `MEM_RESERVE` region;
     // `MEM_RELEASE` + size 0 releases the entire reservation.
-    // task #921/V-8: the return value is deliberately discarded. A failure here would
+    // task #921/V-8: the return value used to be deliberately discarded. A failure here would
     // indicate a bug in this crate's own bookkeeping (not a recoverable external condition),
     // and the failure mode is a leak, never unsafety (the mapping stays valid, just not
-    // returned to the OS).
+    // returned to the OS). task #713 (checked release): the return value is now surfaced
+    // to the checked caller (`release_reservation_checked`); the infallible callers
+    // still discard it at their own statement-position call sites.
     //
     // task R4-7 (2026-08-16 audit finding): increment the failure counter
     // under `bench-internals` so at least diagnostic visibility exists. The
@@ -654,4 +697,5 @@ unsafe fn winapi_virtual_release(addr: *mut u8) {
     }
     #[cfg(not(feature = "bench-internals"))]
     let _ = ret;
+    ret != 0
 }
