@@ -11,8 +11,7 @@ use crate::page::PAGE;
 use crate::reservation::Reservation;
 use crate::reservation_parts::ReservationParts;
 
-/// Pure release-specific contract validation; unlike reserve validation, it
-/// deliberately imposes no `len + align` over-reservation bound.
+/// Validate the original release Layout without adding constructor arithmetic.
 fn validate_release_size_align(len: usize, align: usize) -> Result<(), VmemError> {
     if len != 0
         && len.is_multiple_of(PAGE)

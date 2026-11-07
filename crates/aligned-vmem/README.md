@@ -39,7 +39,7 @@ Runnable form: `tests/readme_example.rs`.
 
 ## What it does
 
-`try_release` uses release-specific geometry validation (nonzero page-multiple length, power-of-two alignment at least `PAGE`, and a valid `Layout`); it does not apply reserve's `len + align` over-reservation bound. `arm_fail_next_release(n)` fails before backend entry; `arm_fail_next_release_backend_result(n)` skips native release inside the checked backend and exercises result classification with a no-code error only—this surrogate is not OS/kernel refusal evidence.
+`try_release` validates the original release geometry: nonzero page-multiple length, power-of-two alignment at least `PAGE`, and a valid `Layout`. Release validation adds no reservation-constructor arithmetic. `arm_fail_next_release(n)` fails before backend entry; `arm_fail_next_release_backend_result(n)` skips native release inside the checked backend and exercises result classification with a no-code error only—this surrogate is not OS/kernel refusal evidence.
 
 | API | Purpose |
 |---|---|
