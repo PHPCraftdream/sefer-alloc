@@ -18,7 +18,7 @@ Separate tests cover release geometry, actual native success activation, pre-dis
 
 Parent review corrected release-vs-reserve validation, ownership forwarding safety, mock-test serialization, misleading documentation and obsolete hook atomics. Release hook state uses the established mutex pattern rather than a new explicit atomic protocol. The unsupported-target compile error is relocated verbatim from `os/unsupported.rs` into the crate root to preserve source-directory limits. Frozen oversized files do not grow.
 
-Only permitted compile/lint/format and cargo-free static verifiers were run locally. Tests, native error paths, Miri interpretation and mutants have not been executed locally. Exact-source CI evidence is pending; no passing-test claim is made.
+Only permitted compile/lint/format and cargo-free static verifiers were run locally. Tests, native error paths, Miri interpretation and mutants have not been executed locally. CI `42426350786` completed successfully on `0a6059c65e2b04df744f353abf61afe00d372bd5`. Personally inspected native VM logs contain 5 checked-release, 3 backend-result surrogate and 3 fault-injection passes; the actual Miri interpreter also executed those groups with hooks enabled. The repaired TLS teardown test executed successfully twice in the aarch64 job. Zero-test feature rows are not counted as execution. Correctness item 269 records that narrow closure; this does not accept the unpublished THP runtime.
 
 ## Impact and artifacts
 
@@ -26,4 +26,12 @@ Classification: `feat(vmem)`, not a measured performance improvement. Production
 
 The strict-budget root funnel still belongs to the dependent #47 change: it must return charge only after confirmed checked release and retain charge on error or unknown outcome. This VM layer alone does not implement or accept the full THP policy. No merge into main or default promotion is included.
 
-Current verdict: **INFRASTRUCTURE / CI PENDING**.
+Current VM-layer verdict: **INFRASTRUCTURE / CI VERIFIED** (run `42426350786`).
+
+## Cross/QEMU verification repair
+
+The next test-only delivery repairs a separately discovered false-positive abort oracle in `r6_sidecar_bitmap`. It is classified as `test`, not runtime performance work. Its changed paths are `Cross.toml`, the existing test and its focused child-process helper; no allocator source, production features, defaults, dependencies or workflow are changed by that delivery. Correctness item 270 remains OPEN until exact-source native and aarch64/QEMU execution confirms the repaired oracle and negative controls.
+
+The repaired oracle requires exclusive fresh activation, the platform abort signature and an exact production diagnostic line; configured runner argv differs correctly from native argv. Supervision uses file-backed stderr and an owned direct child rather than inherited-pipe EOF or detached reader threads. Its portable fixed gate intentionally consumes 60 seconds per abort mode and 10 seconds per subprocess counterfactual, even for early completion. This is verification overhead, not an allocator latency measurement. Absolute OS syscall deadlines and arbitrary descendant-tree containment are not claimed. Cleanup-error injection and the stderr-size boundary remain source-review-only coverage limitations.
+
+Local check/clippy/format and structure checks passed after transfer; runtime tests have not run locally. Cross-repair verdict: **INFRASTRUCTURE / CI PENDING**. New performance measurement raw logs remain **0 files, 0 bytes**. The command above derives the full delivered commit list, including VM `feat`/`fix`/`docs`, test-only repairs and the local checkpoint; no commit in this layer claims measured wall-clock, Ir or RSS improvement.
