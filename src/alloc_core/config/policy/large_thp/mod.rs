@@ -37,8 +37,8 @@
 //! documented bounds), saturating/clamping, and total: no function in this
 //! family panics for any input value.
 //!
-//! These components are standalone exported config/math types; runtime
-//! integration into the allocator is a separate future task.
+//! These exported config/math types remain pure; runtime state and admission
+//! live in the separate `large_thp_runtime` adapter.
 
 pub mod large_thp_curve;
 pub mod large_thp_estimator;

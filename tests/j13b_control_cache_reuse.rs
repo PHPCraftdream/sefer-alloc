@@ -50,6 +50,8 @@ fn cached_second_life_is_not_selected_or_observed() {
         &[1, 0, 1, 0, 0, 0]
     );
 
+    let learned_after_first_life = AllocCore::dbg_thp_learning_telemetry();
+    assert_eq!(&learned_after_first_life[GROUP_8_TO_32_MIB][3..], &[1, 0]);
     let mut second_life = [core::ptr::null_mut(); COHORT];
     for block in &mut second_life {
         *block = core.alloc(layout);
@@ -80,5 +82,15 @@ fn cached_second_life_is_not_selected_or_observed() {
         after_first_life,
         "cached second-life frees must not create residency observations"
     );
+    assert_eq!(
+        AllocCore::dbg_thp_learning_telemetry(),
+        learned_after_first_life,
+        "cache reuse must not train again"
+    );
     drop(core);
+    assert_eq!(
+        AllocCore::dbg_thp_learning_telemetry(),
+        learned_after_first_life,
+        "cache terminal release must not train again"
+    );
 }

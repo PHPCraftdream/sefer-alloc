@@ -152,6 +152,19 @@ impl AllocCore {
         crate::alloc_core::policy::large_thp_runtime::ThpRuntime::control_telemetry()
     }
 
+    /// J13b: per-group e/m/share plus independent applied/dropped counters.
+    /// Each pair is coherent; whole-array closure requires worker quiescence.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_learning_telemetry() -> [[u64; 5]; 6] {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::learning_telemetry()
+    }
+
     /// J13b: the current process-global control ordinal (one Relaxed load).
     /// Boundary/totality check only: ticket uniqueness and per-cohort
     /// placement come from the ticket log's actual records, never from the

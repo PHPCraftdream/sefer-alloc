@@ -355,6 +355,13 @@ export const PER_PR_ROWS = [
     target: { flag: '--test', name: 'j13b_learning_contention_bound' },
     note: 'Forces the actual cell CAS seam to reject all eight attempts; proves bounded termination, rejection and unchanged estimator state.',
   },
+  {
+    id: 'test-j13b-learning-runtime',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    target: { flag: '--test', name: 'j13b_learning_runtime' },
+    note: 'Actual fresh controls drive the resolved custom gradient through sparse shrink, zero-share suppression, dense recovery and group isolation; asserts real advice activation, not just reported shares.',
+  },
 ];
 
 /** Sentinel used in `features` to mean "--all-features" rather than a literal

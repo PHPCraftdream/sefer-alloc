@@ -124,7 +124,7 @@ fn eligibility() {
 }
 
 #[test]
-fn share_selection() {
+fn pure_mode_baseline_excludes_runtime_learning() {
     let mut t = ThpTuple::DEFAULT;
     t.mode = LargeThpMode::Always;
     assert_eq!(ThpAdvice::share_for(&t, 10 * MIB), LargeThpShare::ONE);

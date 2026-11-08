@@ -52,6 +52,7 @@ fn remote_free_records_unknown_and_never_a_valid_observation() {
         "the fresh cohort selects one control"
     );
 
+    let learning_before = AllocCore::dbg_thp_learning_telemetry();
     let (tx, rx) = mpsc::sync_channel::<SendPtr>(1);
     let (ack_tx, ack_rx) = mpsc::sync_channel::<()>(1);
     let reaper = std::thread::spawn(move || {
@@ -112,5 +113,10 @@ fn remote_free_records_unknown_and_never_a_valid_observation() {
         AllocCore::dbg_thp_control_telemetry()[GROUP_8_TO_32_MIB],
         [1, 0, 0, 1, 0, 0, 0, 0],
         "a second owner drain must not recount the consumed control"
+    );
+    assert_eq!(
+        AllocCore::dbg_thp_learning_telemetry(),
+        learning_before,
+        "remote UNKNOWN must never train the owner estimator"
     );
 }

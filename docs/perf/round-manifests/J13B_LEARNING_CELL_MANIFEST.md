@@ -1,10 +1,10 @@
 # J13b atomic learning cell — Task60 prerequisite for Task49
 
-Status: source authored; exact-source GitHub CI acceptance pending. This is a state/concurrency foundation, not runtime learning and not a performance result.
+Status: accepted on exact published source `91c875f36900ae5108f251e1ff0b81990736a02e`, CI `42500341404` SUCCESS after personal source and execution-log review. This is a state/concurrency foundation, not runtime learning and not a performance result. Later Task49 integration requires its own exact-source acceptance.
 
 ## Boundary
 
-The accepted Task48 controls remain unchanged. `ThpAdvice::auto_share` still returns zero, and no production observation feeds the new cell yet. Default Off, Always semantics, process configuration, mapping charge/release, header layout, production feature composition and dependencies are unchanged.
+At the accepted Task60 source, Task48 controls remain unchanged: `ThpAdvice::auto_share` returns zero and no production observation feeds the new cell. This is the prerequisite's boundary, not a claim about later Task49 commits. Default Off, Always semantics, process configuration, mapping charge/release, header layout, production feature composition and dependencies are unchanged.
 
 The new `ThpLearningCell` stores the accepted estimator's fast `e` and slow `m` Q31 components in one `AtomicU64`. Initial state is the same optimistic pair as `LargeThpEstimator::new()`. A snapshot performs one Relaxed load; one successful strong CAS commits both components together. No external payload is published through this scalar, so these Relaxed operations do not substitute for a Release/Acquire publication protocol.
 
@@ -26,4 +26,15 @@ No local runtime tests/models/workloads, new unsafe operations, performance meas
 
 ## Commit identity and artifacts
 
-This manifest is authored before the source commit exists; no SHA is invented. The source delta is reproducible with `git diff 133f3c1a` before commit and with the eventual commit range afterward. No performance raw logs were produced. CI links and final receipts must be appended only after inspecting actual nonzero executions on the published source SHA.
+The published source commit is `91c875f36900ae5108f251e1ff0b81990736a02e` (`feat: add bounded atomic THP estimator state prerequisite`), derived by `git log --format='%H %s' 6d08655f..91c875f3`. It cherry-picks the personally reviewed caller source commit `08c9adfe`; publication excludes the local checkpoint. No performance raw logs were produced.
+
+## Actual exact-source receipts
+
+- [CI 42500341404](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42500341404) completed SUCCESS on the full published SHA above. Final PR #225 checks were 42 SUCCESS and 23 intended SKIPPED, with no pending or failed checks.
+- [Check-matrix](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42500341404/job/128791573387): the two dedicated rows positively ran four native cell tests and one forced-CAS rejection test; ALL GREEN. These are not zero-test receipts.
+- [Loom](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42500341404/job/128791573308): the cfg(loom)-only actual-source competing-observation/racing-snapshot test ran and passed (one test).
+- [Ghost-guard](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42500341404/job/128791516078): 213 fixture cases / 314 mutants / zero failures; trailer-linter mutants 10/10 rejected; `bec1e53f..91c875f3` protected range checked twelve commits with zero red.
+- [aarch64](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42500341404/job/128791573214): both new binaries positively executed four plus one tests in cross-feature rows. This is stronger than compilation alone, not a native wall-clock result.
+- [Zero-cost](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42500341404/job/128791572137): declared-runtime scope SKIP with the unchanged classifier, not normalized-text equality or an Ir/cost measurement.
+
+Only GitHub CI executed tests/models. The local full protected-span attempt could not run without the absent ghost-lint binary; it was neither built nor executed locally. The actual full protected-range receipt is the CI result above.

@@ -22,10 +22,19 @@ const BLOCK: usize = 8 * MIB;
 const COHORT: usize = 8;
 const GROUP_8_TO_32_MIB: usize = 2;
 
-fn allocate_cohort(core: &mut AllocCore, layout: Layout) -> [*mut u8; COHORT] {
+fn allocate_cohort(core: &mut AllocCore, layout: Layout, fail_premise: bool) -> [*mut u8; COHORT] {
     let mut blocks = [core::ptr::null_mut(); COHORT];
     for block in &mut blocks {
+        // Single-threaded eligible path: do not let a non-control hint consume
+        // the shared advice fault intended for the selected no-THP premise.
+        let selected = AllocCore::dbg_thp_control_decision_at(AllocCore::dbg_thp_control_ordinal());
+        aligned_vmem::fault_injection::arm_fail_next_advise_range(if fail_premise && selected {
+            1
+        } else {
+            0
+        });
         *block = core.alloc(layout);
+        aligned_vmem::fault_injection::arm_fail_next_advise_range(0);
         assert!(!block.is_null(), "8 MiB allocation must succeed");
         // SAFETY: `block` is the live payload pointer returned for `layout`.
         unsafe { block.write_volatile(0x5a) };
@@ -47,9 +56,7 @@ fn failed_nohugepage_premise_skips_sampling_and_next_cohort_recovers() {
     core.dbg_set_large_cache_budget(Some(0));
     let layout = Layout::from_size_align(BLOCK, 8).expect("valid block layout");
 
-    aligned_vmem::fault_injection::arm_fail_next_advise_range(1);
-    let failed = allocate_cohort(&mut core, layout);
-    aligned_vmem::fault_injection::arm_fail_next_advise_range(0);
+    let failed = allocate_cohort(&mut core, layout, true);
     assert_eq!(
         AllocCore::dbg_thp_control_telemetry()[GROUP_8_TO_32_MIB],
         [1, 0, 0, 0, 0, 0, 0, 0]
@@ -73,6 +80,12 @@ fn failed_nohugepage_premise_skips_sampling_and_next_cohort_recovers() {
          realloc-invalidation) and NOT double-counted"
     );
 
+    assert_eq!(
+        &AllocCore::dbg_thp_learning_telemetry()[GROUP_8_TO_32_MIB][3..],
+        &[0, 0],
+        "failed-premise and old realloc tokens must not train the estimator"
+    );
+
     // Free the moved blocks with the 16 MiB layout; the copy faults the
     // destination pages so resident > 0. Premise stays 1 (no double
     // consumption of the already-consumed token).
@@ -92,7 +105,7 @@ fn failed_nohugepage_premise_skips_sampling_and_next_cohort_recovers() {
     );
     assert!(after_moves[7] > 0, "owner-free samples payload pages");
 
-    let recovered = allocate_cohort(&mut core, layout);
+    let recovered = allocate_cohort(&mut core, layout, false);
     let before_recovered_free = AllocCore::dbg_thp_control_telemetry()[GROUP_8_TO_32_MIB];
     assert_eq!(
         before_recovered_free[0], 3,
@@ -105,6 +118,11 @@ fn failed_nohugepage_premise_skips_sampling_and_next_cohort_recovers() {
     assert!(
         final_counts[7] > 0,
         "recovered valid observation samples payload pages"
+    );
+    assert_eq!(
+        &AllocCore::dbg_thp_learning_telemetry()[GROUP_8_TO_32_MIB][3..],
+        &[2, 0],
+        "only the two valid fresh destination/recovery controls may train"
     );
     drop(core);
 }

@@ -194,6 +194,24 @@ fn concurrent_eligible_allocations_select_exactly_one_control_per_cohort() {
     assert!(group2[6] > 0, "owner-freed controls report resident pages");
     assert!(group2[7] > 0, "owner-freed controls sample payload pages");
 
+    let learned = AllocCore::dbg_thp_learning_telemetry();
+    let learning = learned[GROUP_16_TO_64_MIB];
+    assert_eq!(
+        learning[3] + learning[4],
+        COHORTS as u64,
+        "after join every valid control was applied or explicitly dropped, never lost"
+    );
+    assert!(
+        learning[3] > 0,
+        "bounded strong CAS must admit at least one observation"
+    );
+    assert!(learning[0] < u64::from(sefer_alloc::LargeThpShare::SCALE));
+    for (group, state) in learned.iter().enumerate() {
+        if group != GROUP_16_TO_64_MIB {
+            assert_eq!(&state[3..], &[0, 0], "other groups must not be trained");
+        }
+    }
+
     let telemetry = AllocCore::dbg_thp_control_telemetry();
     for (group, counters) in telemetry.iter().enumerate() {
         assert!(

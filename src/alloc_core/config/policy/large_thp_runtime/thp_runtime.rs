@@ -2,8 +2,10 @@
 //! publication cell and the always-compiled conflict counter.
 
 use crate::alloc_core::config::policy::large_thp::large_thp_request_group::LargeThpRequestGroup;
+use crate::alloc_core::config::policy::large_thp::{LargeThpGradient, LargeThpShare};
 use crate::alloc_core::config::policy::large_thp_observation::large_thp_control_selector::LargeThpControlSelector;
 use crate::alloc_core::config::policy::large_thp_runtime::thp_budget_ledger::ThpBudgetLedger;
+use crate::alloc_core::config::policy::large_thp_runtime::thp_learning_cell::ThpLearningCell;
 use crate::alloc_core::config::policy::large_thp_runtime::thp_tuple_cell::{ThpTupleCell, UNSET};
 use crate::alloc_core::config::policy::large_thp_runtime::ThpTuple;
 use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
@@ -21,6 +23,18 @@ static TUPLE: ThpTupleCell = ThpTupleCell {
 static LEDGER: ThpBudgetLedger = ThpBudgetLedger {
     used: AtomicU64::new(0),
 };
+
+// Per-request-size-group state; each snapshot/update covers both components.
+static LEARNERS: [ThpLearningCell; CONTROL_GROUP_COUNT] = [const {
+    ThpLearningCell {
+        state: AtomicU64::new(ThpLearningCell::INITIAL),
+    }
+}; CONTROL_GROUP_COUNT];
+// Independent wrapping diagnostics, never estimator inputs or admission gates.
+static LEARNING_APPLIED: [AtomicU64; CONTROL_GROUP_COUNT] =
+    [const { AtomicU64::new(0) }; CONTROL_GROUP_COUNT];
+static LEARNING_DROPPED: [AtomicU64; CONTROL_GROUP_COUNT] =
+    [const { AtomicU64::new(0) }; CONTROL_GROUP_COUNT];
 
 /// Ordinal for process-wide deterministic control selection.
 static CONTROL_ORDINAL: AtomicU64 = AtomicU64::new(0);
@@ -121,17 +135,48 @@ impl ThpRuntime {
         resident_pages: u64,
         sampled_pages: u64,
     ) {
-        note_group_counter(&CONTROL_VALID_OBSERVATIONS, group_index(request_size), 1);
-        note_group_counter(
-            &CONTROL_RESIDENT_PAGES,
-            group_index(request_size),
-            resident_pages,
-        );
-        note_group_counter(
-            &CONTROL_SAMPLED_PAGES,
-            group_index(request_size),
-            sampled_pages,
-        );
+        let Some(observation) = ThpLearningCell::observation(resident_pages, sampled_pages) else {
+            Self::note_observation_error(request_size);
+            return;
+        };
+        let group = group_index(request_size);
+        note_group_counter(&CONTROL_VALID_OBSERVATIONS, group, 1);
+        note_group_counter(&CONTROL_RESIDENT_PAGES, group, resident_pages);
+        note_group_counter(&CONTROL_SAMPLED_PAGES, group, sampled_pages);
+        let applied = LEARNERS[group].try_observe(&Self::current().gradient, observation);
+        if applied {
+            note_group_counter(&LEARNING_APPLIED, group, 1);
+        } else {
+            note_group_counter(&LEARNING_DROPPED, group, 1);
+        }
+    }
+
+    /// Current share for one request group, from a coherent estimator pair.
+    /// The caller supplies the same resolved gradient as its advice tuple.
+    pub(crate) fn learned_share(request_size: usize, gradient: &LargeThpGradient) -> LargeThpShare {
+        LEARNERS[group_index(request_size)]
+            .snapshot()
+            .bounded_share(gradient)
+    }
+
+    /// Per-group e/m/share from one coherent pair, followed by independent
+    /// applied/dropped diagnostic loads. The whole array is not a snapshot;
+    /// closure checks require quiescence after joining workers.
+    #[cfg(feature = "bench-internals")]
+    pub(crate) fn learning_telemetry() -> [[u64; 5]; CONTROL_GROUP_COUNT] {
+        let gradient = Self::current().gradient;
+        let mut result = [[0; 5]; CONTROL_GROUP_COUNT];
+        for group in 0..CONTROL_GROUP_COUNT {
+            let estimator = LEARNERS[group].snapshot();
+            result[group] = [
+                u64::from(estimator.e_raw()),
+                u64::from(estimator.m_raw()),
+                u64::from(estimator.bounded_share(&gradient).raw()),
+                LEARNING_APPLIED[group].load(Ordering::Relaxed),
+                LEARNING_DROPPED[group].load(Ordering::Relaxed),
+            ];
+        }
+        result
     }
 
     /// Record an observation invalidated after its preconditions were met and
