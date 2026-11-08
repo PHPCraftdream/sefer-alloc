@@ -376,10 +376,4 @@ Item 107 is CLOSED (2026-10-13); it is not a current record here — its closure
     - **Next trigger:** the first runtime PR that needs a new `cfg(kani)` item under a feature the kani job already builds.
     - **Evidence:** PR #128 commit `b09885b6` (the kani job row and `Depot::empty` back to main's form); item 259 (the base fix that made the split pass); the two consultations are summarised above, not committed.
 
-268. **[T, filed 2026-11-07, J13b review] Loom job argument continuation and pipeline status need exact-source CI confirmation.**
-
-    > **Current state**
-    > - **Status:** OPEN — narrow invocation repairs are in the runtime candidate; execution evidence is pending.
-    > - **Current:** personal review found a literal backslash-n in the existing misuse-checks cargo command, which would become an unintended argument instead of a shell line continuation. The candidate uses a real continuation and explicitly enables pipefail for both affected tee pipelines. New THP model sentinels remain mandatory; no verification gate is weakened. This is a source-level finding, not a claim that a failing CI run was observed.
-    > - **Next trigger:** confirm the exact new runtime SHA executes the misuse-checks bitmap step and both THP Loom targets successfully, with Cargo failure preserved through tee.
-    > - **Evidence:** `.github/workflows/ci.yml`, job `loom (alloc-core alloc-xthread)`; `tests/loom_thp_tuple_cell.rs`, `tests/loom_thp_ledger.rs`. Models were not executed locally.
+Item 268 is CLOSED (2026-11-08); the exact-source Loom invocation and pipeline repair evidence is in `RESOLVED.md`.

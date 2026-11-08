@@ -15,6 +15,15 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 268 — CLOSED (2026-11-08)
+
+268. **Loom invocation continuation and tee pipeline status repaired and verified.**
+
+    > **Current state**
+    > - **Status:** CLOSED — exact CI `42444595011` completed SUCCESS on `f7925dc899707281af2d7acf59cc4705503144a4`.
+    > - **Mechanism and repair:** a literal backslash-n in the misuse-checks command was replaced by a real shell continuation; both affected tee pipelines explicitly enable pipefail. No test sentinel or gate was removed.
+    > - **Evidence:** parent personally inspected job `128621483903`: the actual misuse-checks `loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup` executed successfully, as did all three THP tuple and both ledger cases. The recorded commands preserve Cargo failure through tee. This closes invocation wiring, not unexecuted real-code model mutants or absent Kani arithmetic in item 265. No models executed locally.
+
 ### 270 — CLOSED (2026-11-08)
 
 270. **[T, filed 2026-11-08] Cross/QEMU invalid-class abort test accepted an ELF launch failure as success.**

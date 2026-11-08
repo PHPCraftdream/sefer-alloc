@@ -323,9 +323,9 @@ Item 188 is CLOSED (2026-10-13); it is not a current record here — its closure
 265. **[T, filed 2026-11-06, J13b #47] THP actual-source Loom models await CI execution; kani arithmetic coverage remains open.** (Prereg amendment item 10.)
 
     > **Current state**
-    > - **Status:** OPEN — actual-source Loom models are written and wired, but their execution and mutant rejection have not yet been verified on CI. Kani arithmetic coverage is absent.
+    > - **Status:** PARTIAL — actual-source Loom execution is verified: CI `42444595011` on `f7925dc8`, job `128621483903`, passed all three tuple and both ledger cases. Real-code model-mutant rejection remains unverified, and Kani arithmetic coverage is absent.
     > - **Current:** the two actual-source loom models `tests/loom_thp_tuple_cell.rs` and `tests/loom_thp_ledger.rs` now exist (the production `thp_tuple_cell.rs`/`thp_budget_ledger.rs` take their atomics from `super`; the models #[path]-compile them onto the concurrency atomics), are wired into `scripts/loom.mjs`, the ci.yml `loom (alloc-core alloc-xthread)` job and the README/ARCHITECTURE 28-file root-loom lists, and execute only on CI (never run locally); no kani harness covers the pure `ThpAdvice::extent`/reserve arithmetic yet. `tests/j13b_thp_publish_concurrent.rs` and `tests/j13b_thp_budget_ledger_stress.rs` still stress the code. Ghost catalog coverage is being added separately and is not counted here.
-    > - **Next trigger:** the CI execution of those models (and the kani harness for `ThpAdvice::extent`, still open).
+    > - **Next trigger:** verify discriminating real-code model mutants and add the Kani harness for `ThpAdvice::extent`; successful execution of the existing Loom cases alone does not close these remaining obligations.
     > - **Evidence:** `src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs`, `thp_budget_ledger.rs`; `docs/perf/J13B_BOUNDED_THP_PREREG.md` amendment item 10.
 
 267. **[T, filed 2026-11-06, J13b #47] The remote-free reclaim path of a charged Large mapping is covered only where the cache admits it.** (Declared test gap.)
