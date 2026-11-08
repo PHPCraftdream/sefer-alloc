@@ -1,12 +1,26 @@
 # J13b runtime learning — Task49 delivery manifest
 
-Status: runtime source and activating tests authored; exact-source integration CI acceptance is pending. Class: `perf(opt-in)` (Auto behavior changes). No performance measurements or performance GO exist.
+Status: Task49 runtime integration accepted on exact published source `6c2ba419e52bdc121c863a0d87ce3253d6d9f832` after personal source and execution-log review. Class: `perf(opt-in)` (Auto behavior changes). No performance measurements or performance GO exist.
 
 ## Accepted prerequisites, not current integration receipts
 
 - Task48 control sampling: `aacf1d097d9d9ab04f1b382c780602c713fbd8d0`, CI `42490064262` SUCCESS after source/log review and child cleanup.
 - Task60 standalone packed cell: `91c875f36900ae5108f251e1ff0b81990736a02e`, CI `42500341404` SUCCESS; four native cell tests plus one forced-CAS rejection test, one actual-source Loom test, positive aarch64 executions, 213 semantic cases / 314 mutants / zero failures, twelve-commit trailer range with zero red. See `J13B_LEARNING_CELL_MANIFEST.md`.
 - Those immutable receipts do not cover the new runtime composition. The local caller preserves its checkpoint separately; publication excludes that checkpoint rather than rewriting history.
+
+## Accepted exact-source runtime receipts
+
+[CI 42512485612](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42512485612) completed SUCCESS on `6c2ba419e52bdc121c863a0d87ce3253d6d9f832`. Final PR #225 checks were 42 SUCCESS / 23 intended SKIPPED, with no failed or unfinished checks. The authored local source commit is `93d9bbe74024978055d5750563385e79f4843be0`; publication excludes local checkpoints.
+
+Personally inspected nonzero executions, not just job conclusions:
+
+- Native custom-gradient sparse shrink, zero-advice suppression, dense recovery, real advice reactivation and group isolation: one activating test PASS. Auto two-cohort/full-budget control and learning oracle: one test PASS.
+- Installed/global, concurrent ordinal, cache second-life and remote UNKNOWN tests: each activated and passed. Failed no-THP premise recovery, failed residency sampling recovery, and OOM/shrink/failed-realloc exactly-once tests: each activated and passed in the matrix's fault-injection rows.
+- Actual-source cell: five native tests PASS, including residency conversion boundaries and competing-update conservation; forced-CAS rejection: one test PASS. aarch64 positively executed the same five-plus-one tests. This does not claim aarch64 runtime-learning activation.
+- Actual-source cell Loom: one competing-observation/racing-snapshot test PASS. This is not a whole-runtime composition model.
+- Semantic selftest: 214 cases / 316 mutants / zero failures; linter mutants 10/10; thirteen-commit protected invariant range zero red.
+
+Zero-cost remains a declared-runtime scope SKIP, not normalized-text equality, an Ir measurement, or a cost receipt. Runtime composition acceptance does not close correctness item271's CONDITIONAL status, item272's observation/admission limitations, the real judge, or the matched cost/benefit campaign.
 
 ## Shipping boundary in this candidate
 
@@ -46,6 +60,6 @@ Allowed local checks only: fmt/rustfmt, cargo check/clippy, cargo-free structure
 
 Cargo-free checks passed: ordering inventory 730 sites / 96 files / 27 protocols / 53 scopes, zero gaps/double claims/dead scopes/protocol errors; unchanged structure-debt ratchet; hook-safety scanner; 29-target Loom wiring. Invariant metadata has five blocks with zero errors/warnings; full protected-span/fixture execution remains CI-only. The strict evidence verifier returned exit0 INCOMPLETE for existing unfinished legacy rows, not full evidence PASS.
 
-Before publication: personally review all source, tests, fixture mutations and staged changes; validate invariant metadata; preserve historical evidence requirements. The root target census is derived from the filesystem (533 test targets; 29 Loom-named models). New exact-source CI must positively execute the activating native/model/fixture/trailer targets and all selected PR checks before Task49 closes. Failed attempts remain failures and are fixed in the same workstream.
+Before publication, all source, tests, fixture mutations and staged changes were personally reviewed; invariant metadata and historical evidence requirements were checked. The root target census was derived from the filesystem (533 test targets; 29 Loom-named models). The exact-source positive execution receipts above satisfy Task49's integration gate. Failed earlier attempts remain failures, not acceptance.
 
-No source SHA or CI result is invented before publication. After committing, derive the published commit list with `git log --format='%H %s' 91c875f3..<published-head>` on the publication branch; bind every execution receipt to that exact head. No performance raw logs were produced.
+The published Task49 commit list is reproducible with `git log --format='%H %s' 91c875f3..6c2ba419` on the publication branch. Execution receipts bind to that immutable head, not this later documentation update. No performance raw logs were produced.
