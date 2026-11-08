@@ -346,6 +346,7 @@ first touch); returning it lowers RSS. The defaults favour speed for bursts that
 | `.depot_budget_bytes` (default 1 MiB per heap) | Full magazines of freed small blocks are parked up to this budget instead of going back to segment free lists | A free burst is followed by an alloc burst of the same sizes | The budget per heap | Memory per thread matters more than this path (`0` turns it off) |
 | `.route_pin_cache_slots` (default 32, process-wide) | Per-thread cache used when a block is freed by a thread other than the one that allocated it | Producer/consumer threads free into many owners' segments | ≈ 0.29 MiB per slot per freeing thread | Many cross-thread owners per freeing thread (raise) or many idle producer threads (lower) |
 | `.huge_page_after_segments` (Linux, default 16, process-wide) | From the N-th small segment of the process on, new small segments are advised `MADV_HUGEPAGE`; `0` never advises | A heap grows large and touches its memory densely | Up to 2 MiB extra RSS per lightly used segment | Strict RSS limits (`0`), or a large heap from the start (lower it) |
+| `.huge_page_mode` / `.huge_page_block_min_bytes` / `.huge_page_budget_bytes` / `.huge_page_gradient` (Linux, default `Off`, process-wide, opt-in) | `Always` advises `MADV_HUGEPAGE` over the 2 MiB-floored prefix of each fresh Large block of at least `block_min_bytes` (default 8 MiB); `budget_bytes` bounds the advised bytes (`0` unlimited); `Auto` is reserved for a learned share and does not learn yet (it advises nothing) | Large blocks are touched densely right after they are first allocated | Up to 2 MiB extra RSS per touched 2 MiB region of an advised block; the budget bounds advised bytes, not RSS | Sparse touching of big blocks, strict RSS limits (keep `Off`) ([details](#large-block-thp-advice-linux-opt-in)) |
 
 Three facts that the table cannot show:
 
@@ -403,6 +404,10 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 | `.depot_budget_bytes(N)` | `1 MiB` | Per-heap (per-thread) byte budget for full small-class magazines parked **above** the fixed depot floor, so a free burst larger than one magazine refills from parked magazines instead of round-tripping through segment free lists. `0` turns the overflow off. Rounded down to 256 B, capped at 16,774,912 B. Needs `fastbin` + `alloc-decommit` (ignored otherwise). See [Depot overflow budget](#depot-overflow-budget-fastbin--alloc-decommit). |
 | `.route_pin_cache_slots(N)` | `32` | Slots of the per-thread cache of route descriptors used when a block is freed on a thread other than the one that allocated it (`alloc-xthread`). Rounded down to a power of two, clamped to `4..=64`. More slots keep a producer that frees into more owner segments off the shared directory lookup, and raise the worst-case memory held by an idle producer thread (≈ 0.29 MiB per slot). Process-wide, first config wins. See [Foreign-free route pin cache](#foreign-free-route-pin-cache-alloc-xthread--alloc-decommit). |
 | `.huge_page_after_segments(N)` | `16` | Linux transparent-huge-page hint for growing heaps: from the N-th small segment (4 MiB each, counted over the process) on, a newly reserved small segment is advised `MADV_HUGEPAGE`. `0` never hints. Fewer page faults while a heap grows, more resident memory for lightly used segments. Process-wide, first config wins. See [Transparent huge pages](#transparent-huge-pages-linux). |
+| `.huge_page_mode(M)` | `Off` | Large-block THP advice: `LargeThpMode::Off` never advises, `Always` advises every eligible fresh Large block, `Auto` is reserved for a learned share and **does not learn yet** (advises nothing). Linux/Android only, process-wide as one tuple with the three knobs below, first config wins. See [Large-block THP advice](#large-block-thp-advice-linux-opt-in). |
+| `.huge_page_block_min_bytes(N)` | `8 MiB` | A fresh Large block whose **requested** size is at least `N` is eligible. `0` makes every fresh Large block eligible; it is not "never" (use `Off`). |
+| `.huge_page_budget_bytes(N)` | `0` (unlimited) | Upper bound on the bytes **advised** for huge pages and still outstanding, process-wide. It bounds advice, not resident memory. Not the large-cache `budget_bytes`. |
+| `.huge_page_gradient(G)` | `LargeThpGradient::CAUTIOUS` | Learning-gradient parameters for `Auto`; inert while `Auto` does not learn. |
 | `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: above headroom, the first eligible call primes a nonzero-interval timer; subsequent clock checks occur every 64th eligible large alloc/free and process bounded catch-up inline. A zero interval bypasses the stride and runs one step per eligible call, including the first. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
 
 The table lists the `LargeCacheConfig` methods that set a number directly. The empty-segment pool is set through
@@ -422,6 +427,7 @@ large it can get, and what bounds it, so a deployment can add up the worst case 
 | `.depot_budget_bytes` (parked magazines) | per heap | the budget (default 1 MiB) plus the fixed 241,408 B floor | decay on cold events; `trim`, thread exit |
 | `.route_pin_cache_slots` (foreign-free route cache) | per freeing thread, count set process-wide | slots × ≈ 0.29 MiB of route descriptors (default 32 slots ≈ 9.3 MiB) | a miss sweeps dead entries; thread exit |
 | `.huge_page_after_segments` (Linux huge pages) | per process | up to 2 MiB per hinted segment that is only lightly touched; none below the threshold | the kernel splits or reclaims under pressure; segment release |
+| `.huge_page_mode` / `.huge_page_budget_bytes` (Large-block huge pages, opt-in) | per process | with `Always`: up to 2 MiB per touched 2 MiB region of every advised Large block, within the budget of advised bytes if one is set | the kernel splits or reclaims under pressure; the advice ends with the mapping (its charge is returned after the unmap) |
 
 Totals multiply by the number of live heaps or freeing threads: 32 threads at the defaults can hold up to 32 × (16 MiB
 pool + 1.2 MiB depot) of small-block memory plus the large-cache floors and route caches of the threads that free
@@ -1585,8 +1591,8 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **488 integration test files**,
-**107 example binaries**, **34 benches**, and **26 root Loom models**
+needs its acceptance run. The present tree contains **515 integration test files**,
+**107 example binaries**, **34 benches**, and **28 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1595,11 +1601,11 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (488 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (515 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (107 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (26 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
+| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (28 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri-matrix.mjs` is the single manifest of Miri targets (GREEN, EXPECTED-RED with its card, WAIVED); `scripts/miri.mjs` runs it and `scripts/verify-miri-target-wiring.mjs` checks that every Miri test file is classified and wired in CI; it includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
 | ThreadSanitizer | Real cross-thread races in selected binaries | `scripts/tsan.mjs` / CI; old ring-era results are not cutover acceptance |
@@ -1989,6 +1995,43 @@ How to choose:
 
 Measurements (Linux, WSL2, i7-11800H, 9 interleaved processes per cell): `docs/perf/CF3_HUGE_PAGE_THRESHOLD.md`. Wall-clock medians on the
 shared machine did not separate the thresholds; the page-fault counts above are exact.
+
+### Large-block THP advice (Linux, opt-in)
+
+Separate from the small-segment hint above, a **fresh Large block** can be advised `MADV_HUGEPAGE` too. It is **off by default and the
+default is unchanged**: with none of the four knobs set nothing is published and no Large block is ever advised.
+
+```text
+static GLOBAL: SeferAlloc = SeferAlloc::with_config(
+    LargeCacheConfig::new()
+        .huge_page_mode(LargeThpMode::Always)
+        .huge_page_block_min_bytes(8 << 20)
+        .huge_page_budget_bytes(256 << 20),
+);
+```
+
+- **`huge_page_mode`:** `Off` (default) never advises. `Always` advises each eligible fresh Large block over the 2 MiB-floored
+  prefix of its usable span, never beyond it and never widened. `Auto` is reserved for a share learned per request size; **that
+  learning is not implemented yet**, so `Auto` currently advises nothing.
+- **`huge_page_block_min_bytes`:** eligibility is the *requested* size, default 8 MiB; `0` makes every fresh Large block eligible.
+- **`huge_page_budget_bytes`:** `0` is unlimited. Otherwise each advice is charged to a process-wide ledger before the `madvise`,
+  clipped to what is left, and the charge is held until the mapping is unmapped (it stays through the Large cache) and returned right
+  after the unmap. **The budget bounds the bytes advised, not process RSS**: the kernel may decline, partially grant or back memory
+  regardless of the advice (system mode `always`), and a touched advised region becomes resident as a whole 2 MiB page.
+- **Cost:** only fresh reservations are advised; a Large-cache hit, an in-place growth and the aligned-above-segment path never are.
+  One extra atomic load per fresh Large reservation, and `SegmentHeader` is 8 bytes larger to carry the charge (its instruction-count
+  effect is not measured yet).
+- **Combination:** minimum and budget apply to `Always` (and to `Auto` once it learns); the gradient is inert until then.
+- **Process-wide, first config wins as a whole.** The first heap materialised with any of the four knobs set publishes the whole
+  tuple (unset knobs take their defaults); a later differing config is ignored and counted in `AllocStats::thp_tuple_conflicts`.
+  The count is taken only at heap materialisation, not when a recycled heap is re-claimed or on the fallback path. A config that sets
+  none of the four knobs publishes nothing.
+- **A no-op** off Linux/Android, with `numa-aware` and without `alloc-decommit`; the allocator never claims physical huge backing,
+  only accepted advice.
+- **Not measured.** No benchmark, no acceptance and no GO exist for this setting. The static whole-block hint of the earlier J13
+  proposal is not part of this tree; `Always` is a new implementation, not that hint (`docs/perf/J13B_BOUNDED_THP_PREREG.md`).
+- **Read it back** with `AllocCore::dbg_thp_tuple()`, `dbg_thp_tuple_conflicts()` and the advised/charged byte counters
+  (`bench-internals`); `LargeCacheConfig::dbg_resolved_thp_tuple()` (`internals`) resolves a config without allocating.
 
 ---
 

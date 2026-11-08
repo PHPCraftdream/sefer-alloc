@@ -8,7 +8,7 @@
 //! Teardown: the `Drop` implementation that releases every OS reservation (including the owner-only sidecar spans via their `*_vm` reservation tokens, R2-12),
 //! plus the `base_add` node-seam offset helper.
 
-use crate::alloc_core::alloc_core::AllocCore;
+use crate::alloc_core::alloc_core::{release_large_mapping, AllocCore};
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
@@ -72,7 +72,11 @@ fn release_cached_on_drop(cached: CachedLarge) {
             fatal(b"lifecycle: cached release failed\n");
         }
     }
-    os::release_segment(cached.reservation, cached.reservation_len);
+    release_large_mapping(
+        SegmentHeader::thp_charge_at(cached.base),
+        cached.reservation,
+        cached.reservation_len,
+    );
 }
 
 /// Task #1998: resolve the empty-small-segment pool cap (`min(by_segments,
@@ -183,6 +187,13 @@ impl AllocCore {
         let _ = crate::alloc_core::small::alloc_core_small::publish_huge_page_after(
             config.resolved_huge_page_after_segments(),
         );
+        // J13b: only a config that sets a THP knob publishes the process tuple (first wins).
+        #[cfg(not(feature = "numa-aware"))]
+        if config.has_explicit_thp_knob() {
+            crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime::publish(
+                &config.resolved_thp_tuple(),
+            );
+        }
         core.large_cache_budget_bytes = config.resolved_budget_bytes();
         core.decay_config = LargeCacheDecayConfig::from_config(&config);
         // R3-B (round3, решение №2): `LargeCacheMode` now carries only the
@@ -549,7 +560,12 @@ impl Drop for AllocCore {
                     }
                 }
             }
-            os::release_segment(hdr.reservation, hdr.reservation_len);
+            let charge = if hdr.kind == SegmentKind::Large {
+                hdr.thp_charge
+            } else {
+                0
+            };
+            release_large_mapping(charge, hdr.reservation, hdr.reservation_len);
         }
         // Free the primordial segment LAST — only after the walk (and every
         // read of the registry it hosts) has finished.

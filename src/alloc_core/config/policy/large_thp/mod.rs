@@ -43,11 +43,13 @@
 pub mod large_thp_curve;
 pub mod large_thp_estimator;
 pub mod large_thp_gradient;
+pub mod large_thp_mode;
 pub mod large_thp_request_group;
 pub mod large_thp_share;
 
 pub use large_thp_curve::LargeThpCurve;
 pub use large_thp_estimator::LargeThpEstimator;
 pub use large_thp_gradient::LargeThpGradient;
+pub use large_thp_mode::LargeThpMode;
 pub use large_thp_request_group::LargeThpRequestGroup;
 pub use large_thp_share::LargeThpShare;

@@ -508,7 +508,13 @@ impl AllocCore {
     /// R6-T38: moved off the public `AllocCore` surface — crate-only, with
     /// no `dbg_` prefix on a production accessor; tests use the
     /// `internals`-gated alias below.
+    /// Callers live only under `alloc-global` (AllocStats::decommit_calls)
+    /// or `internals` (dbg alias); the attribute covers the remaining rows.
     #[cfg(feature = "alloc-decommit")]
+    #[cfg_attr(
+        not(any(feature = "alloc-global", feature = "internals")),
+        allow(dead_code)
+    )]
     pub(crate) fn decommit_count() -> u64 {
         DECOMMIT_CALLS.load(core::sync::atomic::Ordering::Relaxed)
     }

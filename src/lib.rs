@@ -525,7 +525,8 @@ pub use alloc_core::SmallSegmentPoolConfig;
 pub use alloc_core::{AllocCore, SegmentLayout};
 #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
 pub use alloc_core::{
-    LargeThpCurve, LargeThpEstimator, LargeThpGradient, LargeThpRequestGroup, LargeThpShare,
+    LargeThpCurve, LargeThpEstimator, LargeThpGradient, LargeThpMode, LargeThpRequestGroup,
+    LargeThpShare,
 };
 // Re-exported so a caller of `SegmentLayout::try_class_for` (size-classes
 // round-4 prepublish review P2-1) can name/match the error type without

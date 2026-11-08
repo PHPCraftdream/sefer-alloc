@@ -177,7 +177,7 @@ pub(crate) use alloc_core::OwnedBlock;
 /// `HeapCore::publish_foreign` can bump it (like
 /// [`LARGE_ZERO_PASS_CALLS`]). Not public API; read via
 /// `AllocCore::foreign_or_unroutable_frees`.
-#[cfg(any(feature = "alloc-xthread", feature = "alloc-stats"))]
+#[cfg(any(feature = "alloc-global", feature = "alloc-stats"))]
 pub(crate) use alloc_core::FOREIGN_OR_UNROUTABLE_FREES;
 #[cfg(feature = "alloc-global")]
 pub(crate) use alloc_core::LARGE_REMOTE_RETIREMENTS;
@@ -281,7 +281,8 @@ pub use large_cache_config::LargeCacheConfig;
 pub use large_cache_mode::LargeCacheMode;
 #[cfg(feature = "alloc-decommit")]
 pub use policy::large_thp::{
-    LargeThpCurve, LargeThpEstimator, LargeThpGradient, LargeThpRequestGroup, LargeThpShare,
+    LargeThpCurve, LargeThpEstimator, LargeThpGradient, LargeThpMode, LargeThpRequestGroup,
+    LargeThpShare,
 };
 #[cfg(feature = "alloc-decommit")]
 pub use policy::{LargeCachePolicy, Profile, SmallPoolPolicy};

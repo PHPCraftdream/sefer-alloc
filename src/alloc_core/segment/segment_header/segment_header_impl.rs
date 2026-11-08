@@ -495,6 +495,27 @@ pub(crate) struct SegmentHeader {
     /// which stays correct regardless of `reserved_capacity`'s value.
     #[cfg_attr(not(feature = "large-reserved-capacity"), allow(dead_code))]
     pub reserved_capacity: usize,
+    /// Bytes of transparent-huge-page advice charged against the process
+    /// budget for THIS mapping (bytes, not 2 MiB units: the charge is the
+    /// exact amount to give back and the header has no spare 4-byte hole, so
+    /// a narrower type would not shrink the struct). Zero means no charge.
+    ///
+    /// Lifecycle: set once by the owner after a successful advice on a fresh
+    /// Large mapping; read by the terminal-release funnel just before the
+    /// mapping is unmapped. It survives a large-cache deposit (deposit
+    /// rewrites only the magic word) and a cache-hit reuse (reuse rewrites a
+    /// fixed field list that excludes this one), and is never charged again
+    /// for the same mapping. Meaningful only for Large mappings in a build
+    /// with the advice mechanism; Small/Primordial headers keep it 0.
+    ///
+    /// **Not atomic — owner-only**, accessed through
+    /// [`thp_charge_at`](Self::thp_charge_at) /
+    /// [`set_thp_charge_at`](Self::set_thp_charge_at).
+    #[cfg_attr(
+        not(all(feature = "alloc-decommit", not(feature = "numa-aware"))),
+        allow(dead_code)
+    )]
+    pub thp_charge: usize,
     /// The segment's index in the global registry. `u32::MAX` until registered
     /// (the primordial segment is index 0). Unregister/recycle-only read.
     pub segment_id: u32,
@@ -625,6 +646,8 @@ impl SegmentHeader {
             // R12-4: inert for Small/Primordial segments — Large-only field
             // (see the field's doc comment).
             reserved_capacity: 0,
+            // No advice charge on a fresh header.
+            thp_charge: 0,
             // Phase B: NUMA node is unknown at construction time; the caller
             // (reserve_small_segment under numa-aware) stamps the real value
             // immediately after writing the header via set_node_id.
@@ -713,6 +736,9 @@ impl SegmentHeader {
             // R12-4: the segment's total reserved VA span (see the field doc
             // and this constructor's doc above).
             reserved_capacity,
+            // A fresh mapping carries no advice charge; the owner stamps it
+            // after a successful advice.
+            thp_charge: 0,
             // Phase B: same sentinel as small(); the caller (alloc_large under
             // numa-aware) stamps the real value after writing the header.
             node_id: NO_NODE_RAW,

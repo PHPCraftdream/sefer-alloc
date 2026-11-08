@@ -1,6 +1,7 @@
 //! Cold FIFO eviction and diagnostic methods for the Large cache.
 //! Sibling of `alloc_core_large_cache`; both are `alloc-decommit`-gated.
 
+use crate::alloc_core::alloc_core::release_large_mapping;
 use crate::alloc_core::alloc_core::{AllocCore, LargeCacheHitCounter};
 #[cfg(feature = "internals")]
 use crate::alloc_core::alloc_core::{LargeCacheDecayConfig, LARGE_CACHE_SLOTS};
@@ -10,8 +11,7 @@ use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 #[cfg(feature = "internals")]
 use crate::alloc_core::large_cache_mode::LargeCacheMode;
-use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{large_generation, SegmentMeta};
+use crate::alloc_core::segment_header::{large_generation, SegmentHeader, SegmentMeta};
 
 use super::alloc_core_large_cache::CombinedSlot;
 // R6-T16: consumed only by the internals(+alloc-decommit)-gated decay-tick
@@ -70,7 +70,8 @@ impl AllocCore {
             if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
                 fatal(b"large_cache_eviction: cached release failed\n");
             }
-            os::release_segment(victim.reservation, victim.reservation_len);
+            let charge = SegmentHeader::thp_charge_at(victim.base);
+            release_large_mapping(charge, victim.reservation, victim.reservation_len);
             released += victim.usable_size;
         }
     }
@@ -301,7 +302,8 @@ impl AllocCore {
         if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
             fatal(b"large_cache_eviction: cached release failed\n");
         }
-        os::release_segment(victim.reservation, victim.reservation_len);
+        let charge = SegmentHeader::thp_charge_at(victim.base);
+        release_large_mapping(charge, victim.reservation, victim.reservation_len);
         true
     }
 

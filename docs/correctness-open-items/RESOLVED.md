@@ -15,6 +15,20 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 270 — CLOSED (2026-11-08)
+
+270. **[T, filed 2026-11-08] Cross/QEMU invalid-class abort test accepted an ELF launch failure as success.**
+
+    > **Current state**
+    > - **Status:** CLOSED (2026-11-08) — exact-source native and aarch64/QEMU CI verified.
+    > - **Mechanism:** aarch64 job `128553410933` in CI `42422343034` emitted shell ELF syntax errors while `r6_invalid_class_aborts_without_unwind` passed. Direct child re-exec bypassed the configured target runner; any unsuccessful status except 101 counted as abort.
+    > - **Repair:** preserve both invalid-class modes, use the configured runner without a shell, require fresh activation in a parent-exclusively reserved directory, the expected platform abort status, and the exact production fatal line. File-backed stderr avoids inherited-pipe EOF dependencies; an owned-child guard and finite observation budget supervise the direct exec transport. Negative controls cover argv, exclusive creation, invalid launch arguments, normal return, missing activation, unrelated diagnostics and an activated parked child with no output streams.
+    > - **Limits:** each abort mode currently consumes its full 60-second observation budget; counterfactual subprocess budgets are 10 seconds. No early-completion timing claim or arbitrary process-tree containment is made. OS kill/wait/filesystem calls have no absolute syscall deadline. Failure/unwind cleanup and stderr-size rejection are source-reviewed but lack injected-error regression coverage.
+    > - **Evidence:** `tests/r6_sidecar_bitmap.rs`, `tests/r6_sidecar_bitmap/child_process.rs`, `Cross.toml`; failed CI `42422343034` and repeated shell errors in `42426350786`. No local test or child execution was performed.
+
+    > - **Verified closure:** CI [42439762856](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42439762856) completed SUCCESS on `6c62ff0f53e05c4a0f589010cc4956bf478d524f`. Parent personally read aarch64 job `128607142479`: three feature executions passed the actual abort test and all negative controls; no shell/ELF syntax errors remained. Windows job `128607142537` and macOS job `128607142294` also executed and passed those tests. The first candidate `6adb7772` failed Unix compilation in run `42438004734`; moving the helper declaration to the integration crate root repaired the nonexistent intermediate path without changing the oracle.
+    > - **Delivery:** parent preserved and compared all child-worktree changes, retained exact differing snapshots in ignored local preservation artifacts, and removed the delivered cross-abort worktree and task branch. The documented runtime-cost and coverage limitations above remain; closure does not claim they disappeared.
+
 ### 269 — CLOSED (2026-11-08)
 
 269. **[T, filed 2026-11-08] Teardown-trim regression observed counters before TLS destruction was guaranteed complete.**

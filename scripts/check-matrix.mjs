@@ -285,6 +285,20 @@ export const PER_PR_ROWS = [
     target: { flag: '--test', name: 'r8_large_alignment' },
     note: 'Native real commit-failure rollback for biased Large reservations, deliberately without numa-aware: eager NUMA reservation bypasses lazy-commit fault injection.',
   },
+  {
+    id: 'test-j13b-thp-injected-pre-syscall',
+    kind: 'test',
+    features: 'production internals bench-internals lazy-commit-fault-injection',
+    target: { flag: '--test', name: 'j13b_thp_injected_pre_syscall' },
+    note: 'Large THP advice: an injected pre-syscall madvise failure returns the budget charge. Deliberately without numa-aware (the mechanism is compiled out there) and Linux-only.',
+  },
+  {
+    id: 'test-j13b-thp-release-failure-retention',
+    kind: 'test',
+    features: 'production internals bench-internals lazy-commit-fault-injection',
+    target: { flag: '--test', name: 'j13b_thp_release_failure_retains_charge' },
+    note: 'Linux native root accounting: a backend-result surrogate release failure retains charge and prevents budget readmission; not kernel-refusal evidence.',
+  },
 ];
 
 /** Sentinel used in `features` to mean "--all-features" rather than a literal

@@ -5,6 +5,7 @@
 //! did: `alloc_with_class` (size class) and `dealloc_with_base` (base key).
 //! They do not exist under `production`.
 
+use super::release_large_mapping;
 #[cfg(feature = "alloc-global")]
 use super::OwnedBlock;
 use core::alloc::Layout;
@@ -581,7 +582,7 @@ impl AllocCore {
             if !state.release_consumed(generation) {
                 fatal(b"mem_impl: consumed release failed\n");
             }
-            os::release_segment(stale.reservation, stale.reservation_len);
+            release_large_mapping(stale.thp_charge, stale.reservation, stale.reservation_len);
         }
         #[cfg(not(feature = "alloc-decommit"))]
         {
@@ -594,7 +595,7 @@ impl AllocCore {
             if !state.release_consumed(generation) {
                 fatal(b"mem_impl: consumed release failed\n");
             }
-            os::release_segment(stale.reservation, stale.reservation_len);
+            release_large_mapping(stale.thp_charge, stale.reservation, stale.reservation_len);
         }
     }
 

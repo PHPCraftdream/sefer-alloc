@@ -4,6 +4,7 @@
 
 pub mod large_cache_policy;
 pub mod large_thp;
+pub mod large_thp_runtime;
 pub mod profile;
 pub mod small_pool_policy;
 

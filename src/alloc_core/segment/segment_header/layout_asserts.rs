@@ -107,6 +107,12 @@ const _: () = assert!(NO_NODE_RAW == u32::MAX);
 /// - `node_id` (re-stamped under `numa-aware`; otherwise inert)
 /// - `payload_virgin` (Large has no virgin-zero-skip)
 /// - `sidecar_defer_window` (U31 small-only owner window; Large never scans)
+///
+/// **Carried forward, owner-set once (1 field)** — the advice charge of the
+/// mapping: set once after a successful advice, preserved by deposit (magic
+/// word only) and by the hit path's targeted writes, read by the terminal
+/// release:
+/// - `thp_charge`
 const _: () = {
     let SegmentHeader {
         bump,
@@ -125,6 +131,7 @@ const _: () = {
         pool_prev,
         committed_payload_end,
         reserved_capacity,
+        thp_charge,
         segment_id,
         node_id,
         payload_virgin,
@@ -147,6 +154,7 @@ const _: () = {
         pool_prev,
         committed_payload_end,
         reserved_capacity,
+        thp_charge,
         segment_id,
         node_id,
         payload_virgin,

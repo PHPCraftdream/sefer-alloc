@@ -305,6 +305,12 @@ impl SeferAlloc {
             config_conflicts: crate::registry::config_conflicts_total(),
             #[cfg(not(feature = "alloc-decommit"))]
             config_conflicts: 0,
+
+            #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+            thp_tuple_conflicts:
+                crate::alloc_core::policy::large_thp_runtime::ThpRuntime::conflicts(),
+            #[cfg(not(all(feature = "alloc-decommit", not(feature = "numa-aware"))))]
+            thp_tuple_conflicts: 0,
         }
     }
 

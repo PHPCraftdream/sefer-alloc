@@ -113,6 +113,78 @@ impl AllocCore {
         crate::alloc_core::small::alloc_core_small::huge_page_after()
     }
 
+    /// J13b: the process large-THP tuple in force (published or default).
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_tuple() -> crate::alloc_core::policy::large_thp_runtime::ThpTuple {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::current()
+    }
+
+    /// J13b: large-THP tuple publications that conflicted with the published tuple.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_tuple_conflicts() -> u64 {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::conflicts()
+    }
+
+    /// J13b: huge-page advice bytes currently charged to the budget ledger.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_ledger_used() -> usize {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::ledger().used()
+    }
+
+    /// J13b: budget bytes charged over the process lifetime.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_charged_total() -> u64 {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::charged_total()
+    }
+
+    /// J13b: budget bytes given back over the process lifetime.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_returned_total() -> u64 {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::returned_total()
+    }
+
+    /// J13b: bytes the kernel accepted large-THP advice for, in every mode.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_advised_bytes_total() -> u64 {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::advised_bytes_total()
+    }
+
     /// Test alias of [`Self::segments_reserved_total`].
     #[doc(hidden)]
     #[must_use]

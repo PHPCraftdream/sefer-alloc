@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-682 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 92 files of `src/**` and
-`crates/*/src/**`; each is claimed by exactly one of 46 scopes.
+709 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 95 files of `src/**` and
+`crates/*/src/**`; each is claimed by exactly one of 48 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/682 |
-| counter | 245 | 245/682 |
-| ghost | 10 | 10/682 |
-| id | 9 | 9/682 |
-| kani | 1 | 1/682 |
-| lock-local | 40 | 40/682 |
-| non-atomic | 3 | 3/682 |
-| protocol | 184 | 184/682 |
-| test-hook | 177 | 177/682 |
-| twin | 7 | 7/682 |
-| **claimed** | **682** | 682/682 |
-| unclaimed | 0 | 0/682 |
-| claimed twice | 0 | 0/682 |
+| cache | 6 | 6/709 |
+| counter | 253 | 253/709 |
+| ghost | 10 | 10/709 |
+| id | 9 | 9/709 |
+| kani | 1 | 1/709 |
+| lock-local | 40 | 40/709 |
+| non-atomic | 3 | 3/709 |
+| protocol | 201 | 201/709 |
+| test-hook | 179 | 179/709 |
+| twin | 7 | 7/709 |
+| **claimed** | **709** | 709/709 |
+| unclaimed | 0 | 0/709 |
+| claimed twice | 0 | 0/709 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -60,9 +60,11 @@ harness; `non-atomic` — named scanner false positives.
 | P21 | exact-object shard lock + live hint | A | 7 | 1 | 0 | — | yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super) | ghost | G6 |
 | P22 | route ShardLock (spin lock over the directory shard) | S | 5 | 1 | 0 | — | yes: one AtomicBool | translate (with P5) | G2 |
 | P23 | remote-free ingress: producer notify \|\| owner take/arm/full drain (SC-6 A-exact) | A | 11 | 1 | 0 | — | yes: tests/loom_g1_ingress_exact.rs includes ingress.rs and sidecar_bitmap.rs | ghost | SC-6 |
+| P24 | large-THP tuple cell (write-once publication) | none | 13 | 1 | 0 | — | yes: tests/loom_thp_tuple_cell.rs compiles the production thp_tuple_cell.rs (#[path]) onto the concurrency atomics; oracles: a reader never sees a torn tuple (result is exactly one candidate or the default), exactly one distinct-tuple publisher wins, a same-tuple race follows the over-count contract, and the model terminates under every interleaving (no spin) | rules + actual-source model + integration tests | J13b |
+| P25 | large-THP budget ledger (advised bytes, bounded CAS reserve) | none | 4 | 1 | 0 | — | yes: tests/loom_thp_ledger.rs compiles the production thp_budget_ledger.rs (#[path]) onto the concurrency atomics; oracles: racing 6 MiB reserves against an 8 MiB budget never hand out more than the budget (an unconditional fetch_add reserve fails this), grants are exact granule multiples, and the ledger is empty after every thread returns exactly its own grant | rules + actual-source model + integration tests | J13b |
 
-Shadow-model protocols (class contains S): 13 of 23, each with a decision.
-Protocols with neither a loom nor a shadow model: P20 (1 of 23).
+Shadow-model protocols (class contains S): 13 of 25, each with a decision.
+Protocols with neither a loom nor a shadow model: P20 (1 of 25).
 
 ## 3. Invariants and prod places
 
@@ -302,6 +304,32 @@ Prod: `src/registry/segment_route/directory/ingress.rs`, `src/registry/segment_r
 
 Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spec): a negative discovery answer of an armed heap is trusted; R1 pins every ingress ordering, R3 the publish->check, mask->summary, store->fence and arm->drain orders; ghost events ingress/notified and ingress/taken
 
+### P24 — large-THP tuple cell (write-once publication)
+
+Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs`.
+
+- I1 single winner: one strong compare_exchange(UNSET, PUBLISHING, AcqRel, Acquire) elects the only writer
+- I2 the five words are Relaxed-stored by the winner before the state store(PUBLISHED, Release)
+- I3 the words are never written after PUBLISHED (publish is the only writer, after the claiming CAS)
+- I4 the loser path, read and load_words have no loop, no spin and no weak-CAS retry: a loser that meets PUBLISHING reports a conflict
+- I5 readers decode the words only after an Acquire load observing PUBLISHED; unpublished or PUBLISHING gives the default tuple
+- loom: `tests/loom_thp_tuple_cell.rs`
+
+Decision: **rules + actual-source model + integration tests** — J13b #47: R1 pins every ordering (claiming CAS, PUBLISHED store, state load, word stores and loads), R3 keeps the claim before the words and the last word before PUBLISHED, R5 keeps the words and spin primitives out of every other fn, R2 closes the ordered-op inventory of publish (no spin), R4 gates both word reads on PUBLISHED; behaviour is covered by the j13b_thp_publish_* and unpublished-default integration tests and by tests/loom_thp_tuple_cell.rs, the actual-source loom model of the cell
+
+### P25 — large-THP budget ledger (advised bytes, bounded CAS reserve)
+
+Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs`, `src/alloc_core/alloc_core/mem/release_large_mapping.rs::release_large_mapping`.
+
+- I1 used never exceeds the budget of a successful reservation: a reservation is one compare_exchange_weak from the observed value
+- I2 try_reserve loops at most MAX_ATTEMPTS times and returns 0 (no advice) when it keeps losing
+- I3 give_back is a single fetch_sub of the reserved bytes
+- I4 Relaxed is sufficient: the only shared location is used and nothing else is published through it
+- I5 a Large mapping is released only by release_large_mapping, which gives the charge back after the unmap
+- loom: `tests/loom_thp_ledger.rs`
+
+Decision: **rules + actual-source model + integration tests** — J13b #47: R1 pins the Relaxed load, CAS and fetch_sub, R4 bounds the reserve loop, R3 ties the CAS to the observed value and the unmap to give_back, R5 keeps os::release_segment in the Large files inside the terminal funnel; behaviour is covered by the j13b_thp_budget_* integration tests and by tests/loom_thp_ledger.rs, the actual-source loom model of the ledger
+
 ## 4. Scopes
 
 | scope | class | protocol | sites | reason |
@@ -337,12 +365,12 @@ Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spe
 | `P20/maintenance-service` | protocol | P20 | 6 | service state + pass counter used as a wait condition |
 | `P21/exact-shard` | protocol | P21 | 7 | shard lock + live hint |
 | `hook/maintenance-service` | test-hook | — | 7 | fault/pause injection and test observers (FAIL_START swap is armed only by fail_next_start_for_test) |
-| `hook/test-fns` | test-hook | — | 151 | dbg_*/for_test/internals-only hooks |
-| `hook/inject-flags` | test-hook | — | 15 | fault-injection / test-control flags |
+| `hook/test-fns` | test-hook | — | 152 | dbg_*/for_test/internals-only hooks |
+| `hook/inject-flags` | test-hook | — | 16 | fault-injection / test-control flags |
 | `cache/page-size` | cache | — | 4 | idempotent cache of a process constant; Relaxed: every writer stores the same value |
 | `cache/process-exit` | cache | — | 2 | resolved function pointer cache (windows); Relaxed: idempotent |
 | `id/generators` | id | — | 7 | unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed |
-| `counter/statics` | counter | — | 228 | statistics / diagnostic counters: Relaxed, no protocol reads them |
+| `counter/statics` | counter | — | 236 | statistics / diagnostic counters: Relaxed, no protocol reads them |
 | `counter/per-heap` | counter | — | 13 | per-heap hit counters published Relaxed (owner-written, read by stats) |
 | `counter/pin-cache-macro` | counter | — | 1 | macro_rules! count bumps a static counter |
 | `counter/tier1-bump` | counter | — | 2 | unlocked Relaxed load+store bump of a bench-internals Tier-1 counter (DZ-2): no protocol reads it |
@@ -352,3 +380,5 @@ Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spe
 | `id/region-id` | id | — | 1 | region id minting: Relaxed fetch_update gives uniqueness |
 | `counter/registry-high-water` | counter | — | 1 | stats read of the registry count: Relaxed is enough for a high-water report |
 | `ghost/shadow` | ghost | — | 10 | ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1) |
+| `P24/thp-tuple-cell` | protocol | P24 | 13 | write-once tuple cell: claiming CAS, Relaxed words, Release PUBLISHED, Acquire reader |
+| `P25/thp-ledger` | protocol | P25 | 4 | budget ledger: Relaxed load, bounded CAS reserve, fetch_sub give-back on one counter |

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Opt-in: bounded Large-block THP advice, off by default (2026-11-06)
+
+- [opt-in] `LargeCacheConfig::huge_page_mode(LargeThpMode)` (`Off` default / `Always` / `Auto`), `huge_page_block_min_bytes(n)` (default 8 MiB;
+  `0` = every fresh Large block is eligible, not "never"), `huge_page_budget_bytes(n)` (default `0` = unlimited) and `huge_page_gradient(g)`:
+  a fresh Large mapping whose requested size reaches the minimum is advised `MADV_HUGEPAGE` over the 2 MiB-floored prefix of its usable span
+  (never beyond it), and with a budget the advised bytes are charged to a process-wide ledger that is returned after the mapping's unmap. The
+  budget bounds ADVISED bytes, not RSS. The four knobs form one process-wide tuple: the first config that sets any of them publishes the
+  whole tuple, later differing configs are ignored and counted in `AllocStats::thp_tuple_conflicts` (heap materialisation only). Linux/Android
+  only; compiled out under `numa-aware`. **Defaults are unchanged**: with no knob set nothing is published and no Large mapping is advised.
+  `Auto` stores its tuple but does NOT learn yet (it advises nothing until the learned share lands); `Always` is a new range-advice
+  implementation, not the static whole-mapping hint of the still-open PR #224, which is absent from this tree. `SegmentHeader` grows from 128
+  to 136 bytes (Ir effect unknown until CI). No measurement, no GO; CI pending (`docs/perf/J13B_BOUNDED_THP_PREREG.md`, 2026-11-06 #47
+  implementation amendment). Tests: `tests/j13b_thp_*.rs`.
+
 ### Opt-in: a Large cache that learns the program's reuse habit (2026-11-05)
 
 - [opt-in] Feature `large-cache-adaptive` (implies `large-cache-extended`, not part of `production`): a Large allocation that misses the cache

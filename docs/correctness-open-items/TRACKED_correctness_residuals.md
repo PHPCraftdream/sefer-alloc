@@ -252,3 +252,32 @@ split the same day.)
       issue guarantee is inferred beyond these checks.
     - **Evidence:** branch `b4-sbyte`, tests above; mutant runs recorded in
       the b4-sbyte chunk-3 report.
+
+---
+262. **[T, filed 2026-11-06, J13b #47] THP tuple conflicts are detected only at heap materialisation; a re-claimed or fallback heap with a differing THP config is silently ignored.** (Declared limitation of `docs/perf/J13B_BOUNDED_THP_PREREG.md`, "2026-11-06 #47 implementation amendment" item 6.)
+
+    - **Status:** OPEN, declared limitation — not a defect of the shipped default (no THP knob set means nothing is published and nothing is counted).
+    - **Current-number-or-verdict:** the process-wide tuple (`huge_page_mode`, `huge_page_block_min_bytes`, `huge_page_budget_bytes`, `huge_page_gradient`) is published first-wins-whole, and `AllocStats::thp_tuple_conflicts` is bumped, only from `new_with_config_and_owner`. A recycled heap slot re-claimed through `claim_lease_with_config` and the fallback heap (`with_heap_config`) do not compare the THP knobs, so a differing config there is ignored without a count. A judge that requires a zero conflict delta (R26-4) therefore cannot detect that case from this counter.
+    - **Next trigger:** the J13b judge adapter work, or any change to claim/fallback config comparison (note: `claim.rs` carries ghost catalog rules, so touching it needs Invariant-Check trailers).
+    - **Evidence:** `src/alloc_core/alloc_core/lifecycle.rs` (publication site), `tests/j13b_thp_publish_first_wins.rs`, `tests/j13b_thp_publish_same_tuple.rs`. No test was executed locally.
+
+263. **[T, filed 2026-11-06, J13b #47] While a THP tuple is being published (`PUBLISHING`), a concurrent Large allocation sees the default tuple and a concurrent loser over-counts one conflict.** (Declared limitation, prereg amendment item 6.)
+
+    - **Status:** OPEN, declared limitation, conservative direction.
+    - **Current-number-or-verdict:** the write-once cell never makes a reader or loser spin. A Large allocation on another thread during the few stores of the publication reads the default tuple (`Off`, so no advice for that one allocation); a loser that meets `PUBLISHING` counts one conflict, so a same-tuple race inflates `thp_tuple_conflicts` by one. A winner that dies inside `PUBLISHING` leaves every thread on the default forever (never a hang).
+    - **Next trigger:** the CI execution of the now-written actual-source loom models of the cell and the ledger (`tests/loom_thp_tuple_cell.rs`, `tests/loom_thp_ledger.rs`; wired into `scripts/loom.mjs` and the ci.yml loom row, never run locally), or a judge run showing a nonzero conflict delta from a same-tuple race.
+    - **Evidence:** `src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs`; `tests/j13b_thp_publish_concurrent.rs`, `tests/j13b_thp_publish_same_tuple.rs`. No test was executed locally.
+
+264. **[T, filed 2026-11-06, J13b #47] `SegmentHeader` grew from 128 to 136 bytes to carry `thp_charge`; the instruction-count (iai Ir) effect is unknown.** (Prereg amendment item 8.)
+
+    - **Status:** OPEN — UNKNOWN until CI iai output exists.
+    - **Current-number-or-verdict:** no 4-byte hole existed, so even a narrower field would have grown the struct. `read_at`/`write_struct` on cold paths copy one more word, and the fresh Large path adds one Acquire load. The terminal words moved to offsets 136/136/144; `tests/r6_terminal_header_atomic.rs` pins were updated. No exact-size equality assert was added (`tests/no_stale_doc_references.rs` forbids one); only `<= PAGE` and offset relations hold.
+    - **Next trigger:** CI iai comparison on Large-touching benches; if a nonzero delta matters, store the charge in an otherwise inert header field instead.
+    - **Evidence:** `src/alloc_core/segment/segment_header/segment_header_impl.rs`, `layout_asserts.rs`, `tests/r6_terminal_header_atomic.rs`.
+
+266. **[T, filed 2026-11-06, J13b #47] A registration failure on the Large cache-reuse path is not injectable, so the charge-carrying release there has no test.** (Declared limitation.)
+
+    - **Status:** OPEN, declared test gap.
+    - **Current-number-or-verdict:** `dbg_set_inject_large_register_fail` (`internals`) forces `register_payload` failure only on the FRESH reservation path, where the charge is a local; that path is covered by `tests/j13b_thp_registration_failure.rs`. The reuse path's failure release reads the charge from the header through the same `release_large_mapping` funnel, but no hook forces it (it needs a full segment table).
+    - **Next trigger:** a reuse-path injection flag, or a segment-table-full test.
+    - **Evidence:** `src/alloc_core/large/alloc_core_large.rs`, `tests/j13b_thp_registration_failure.rs`, `tests/j13b_thp_header_charge_carry.rs`.

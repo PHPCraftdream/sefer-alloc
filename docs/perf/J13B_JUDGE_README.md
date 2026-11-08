@@ -40,8 +40,8 @@ Job `j13b-judge-preparation` in `.github/workflows/ci.yml` runs `node --test tes
 ## Remaining integration obligations
 
 1. SeferAlloc adapter and real `GlobalAlloc` shims.
-2. Requested/resolved tuple readback, tuple conflict delta, mechanism counters.
-3. VM advice and residency (range advise / mincore) wiring.
+2. Requested/resolved tuple readback, tuple conflict delta, mechanism counters. **Allocator-side hooks now exist** (task #47: `AllocCore::dbg_thp_tuple`, `dbg_thp_tuple_conflicts`, `AllocStats::thp_tuple_conflicts`, plus ledger/advised-byte counters under `bench-internals`), CI pending; the judge still refuses every runtime arm and does not consume them yet.
+3. VM advice and residency (range advise / mincore) wiring. (Allocator-side range advice for fresh Large mappings is now wired by task #47, default Off; judge-side residency/mincore sampling is not.)
 4. Host and artifact (source/binary) identity capture.
 5. Per-window runtime rows (sparse/dense training/trained, mixed subwindows) from real events.
 6. Reviewed runtime report admission.

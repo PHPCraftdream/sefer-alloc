@@ -29,7 +29,7 @@
 //! read) and is enabled only to match the r12_o4 header gate.
 
 use core::alloc::Layout;
-use sefer_alloc::{AllocCore, SegmentLayout};
+use sefer_alloc::AllocCore;
 
 /// Index of `B4_SCAN_CALLS` in `dbg_b4_collapse_counters` (positional,
 /// pinned by the probe).

@@ -530,10 +530,6 @@ impl Segment {
         allow(dead_code)
     )]
     #[cfg(not(feature = "numa-aware"))]
-    #[allow(
-        dead_code,
-        reason = "staged bridge; runtime consumer is a dependent change"
-    )]
     pub(crate) fn try_advise_huge_pages_range(
         &self,
         offset: usize,
@@ -575,10 +571,6 @@ pub(crate) fn release_segment(reservation: *mut u8, reservation_len: usize) {
 
 /// Same ownership contract as [`release_segment`]; on error, never retry or access the mapping.
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-#[allow(
-    dead_code,
-    reason = "staged bridge; runtime consumer is a dependent change"
-)]
 pub(crate) fn try_release_segment(
     reservation: *mut u8,
     reservation_len: usize,

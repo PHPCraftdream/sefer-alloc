@@ -44,6 +44,14 @@ const FEATURES = {
   loom_route_pin_unlink: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_b4_r1_pin_cache: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_terminal_large: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
+  // J13b thp models: no included production file is feature-gated (the
+  // `#[path]` includes bypass mod.rs gating), so the tests themselves need
+  // only cfg(loom) + tagged-index-stack/loom — but `thp_advice.rs` names
+  // `aligned_vmem` (an alloc-core-gated dependency), so `alloc-core` is
+  // required; `alloc-xthread` mirrors the proven-compiling loom_terminal_large
+  // row (the CI job's string), keeping the lib build identical.
+  loom_thp_tuple_cell: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
+  loom_thp_ledger: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_exact_shard_actual: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_fallback_actual: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_b4_scan_skip_empty_publish: 'alloc-core,alloc-xthread,tagged-index-stack/loom',

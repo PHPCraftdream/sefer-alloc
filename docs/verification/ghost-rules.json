@@ -563,6 +563,55 @@
       "decision": "ghost",
       "phase": "SC-6",
       "reason": "SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spec): a negative discovery answer of an armed heap is trusted; R1 pins every ingress ordering, R3 the publish->check, mask->summary, store->fence and arm->drain orders; ghost events ingress/notified and ingress/taken"
+    },
+    {
+      "id": "P24",
+      "name": "large-THP tuple cell (write-once publication)",
+      "prod": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+      ],
+      "invariants": [
+        "I1 single winner: one strong compare_exchange(UNSET, PUBLISHING, AcqRel, Acquire) elects the only writer",
+        "I2 the five words are Relaxed-stored by the winner before the state store(PUBLISHED, Release)",
+        "I3 the words are never written after PUBLISHED (publish is the only writer, after the claiming CAS)",
+        "I4 the loser path, read and load_words have no loop, no spin and no weak-CAS retry: a loser that meets PUBLISHING reports a conflict",
+        "I5 readers decode the words only after an Acquire load observing PUBLISHED; unpublished or PUBLISHING gives the default tuple"
+      ],
+      "class": "none",
+      "loom": [
+        "tests/loom_thp_tuple_cell.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "yes: tests/loom_thp_tuple_cell.rs compiles the production thp_tuple_cell.rs (#[path]) onto the concurrency atomics; oracles: a reader never sees a torn tuple (result is exactly one candidate or the default), exactly one distinct-tuple publisher wins, a same-tuple race follows the over-count contract, and the model terminates under every interleaving (no spin)",
+      "decision": "rules + actual-source model + integration tests",
+      "phase": "J13b",
+      "reason": "J13b #47: R1 pins every ordering (claiming CAS, PUBLISHED store, state load, word stores and loads), R3 keeps the claim before the words and the last word before PUBLISHED, R5 keeps the words and spin primitives out of every other fn, R2 closes the ordered-op inventory of publish (no spin), R4 gates both word reads on PUBLISHED; behaviour is covered by the j13b_thp_publish_* and unpublished-default integration tests and by tests/loom_thp_tuple_cell.rs, the actual-source loom model of the cell"
+    },
+    {
+      "id": "P25",
+      "name": "large-THP budget ledger (advised bytes, bounded CAS reserve)",
+      "prod": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+        "src/alloc_core/alloc_core/mem/release_large_mapping.rs::release_large_mapping"
+      ],
+      "invariants": [
+        "I1 used never exceeds the budget of a successful reservation: a reservation is one compare_exchange_weak from the observed value",
+        "I2 try_reserve loops at most MAX_ATTEMPTS times and returns 0 (no advice) when it keeps losing",
+        "I3 give_back is a single fetch_sub of the reserved bytes",
+        "I4 Relaxed is sufficient: the only shared location is used and nothing else is published through it",
+        "I5 a Large mapping is released only by release_large_mapping, which gives the charge back after the unmap"
+      ],
+      "class": "none",
+      "loom": [
+        "tests/loom_thp_ledger.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "yes: tests/loom_thp_ledger.rs compiles the production thp_budget_ledger.rs (#[path]) onto the concurrency atomics; oracles: racing 6 MiB reserves against an 8 MiB budget never hand out more than the budget (an unconditional fetch_add reserve fails this), grants are exact granule multiples, and the ledger is empty after every thread returns exactly its own grant",
+      "decision": "rules + actual-source model + integration tests",
+      "phase": "J13b",
+      "reason": "J13b #47: R1 pins the Relaxed load, CAS and fetch_sub, R4 bounds the reserve loop, R3 ties the CAS to the observed value and the unmap to give_back, R5 keeps os::release_segment in the Large files inside the terminal funnel; behaviour is covered by the j13b_thp_budget_* integration tests and by tests/loom_thp_ledger.rs, the actual-source loom model of the ledger"
     }
   ],
   "scopes": [
@@ -1045,6 +1094,24 @@
         "src/ghost/**"
       ],
       "reason": "ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1)"
+    },
+    {
+      "id": "P24/thp-tuple-cell",
+      "class": "protocol",
+      "protocol": "P24",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+      ],
+      "reason": "write-once tuple cell: claiming CAS, Relaxed words, Release PUBLISHED, Acquire reader"
+    },
+    {
+      "id": "P25/thp-ledger",
+      "class": "protocol",
+      "protocol": "P25",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs"
+      ],
+      "reason": "budget ledger: Relaxed load, bounded CAS reserve, fetch_sub give-back on one counter"
     }
   ],
   "rules": [
@@ -6161,6 +6228,681 @@
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_arm_before_drain"
+    },
+    {
+      "id": "thp-cell/claim-cas",
+      "kind": "R1",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "state$"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "claim",
+        "compare_exchange",
+        "AcqRel",
+        "single winner"
+      ],
+      "reason": "I1: the single winner is elected by one strong CAS UNSET to PUBLISHING with AcqRel/Acquire; a weaker CAS or a second CAS breaks the single-winner election",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_claim_cas"
+    },
+    {
+      "id": "thp-cell/published-release",
+      "kind": "R1",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "site": {
+        "name": "store",
+        "receiver": "state$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "PUBLISHED",
+        "Release",
+        "store",
+        "publish"
+      ],
+      "reason": "I2: the PUBLISHED state store is the only Release store of the cell; it publishes the five Relaxed word stores to an Acquire reader, and no other state store may exist in publish",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_published_release",
+      "mutants": [
+        {
+          "id": "thp-published-store-relaxed",
+          "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+          "from": "self.state.store(PUBLISHED, Ordering::Release);",
+          "to": "self.state.store(PUBLISHED, Ordering::Relaxed);",
+          "checker": {
+            "name": "loom loom_thp_tuple_cell",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core alloc-xthread tagged-index-stack/loom",
+              "--test",
+              "loom_thp_tuple_cell"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
+    },
+    {
+      "id": "thp-cell/word-stores-relaxed",
+      "kind": "R1",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "site": {
+        "name": "store",
+        "receiver": "^self\\.w\\["
+      },
+      "orderings": [
+        "Relaxed"
+      ],
+      "count": 5,
+      "terms": [
+        "five words",
+        "Relaxed",
+        "store",
+        "publish"
+      ],
+      "reason": "I2: exactly five Relaxed word stores precede the Release store; Release on a word would be dead weight and a missing word would publish a torn tuple",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_word_stores_relaxed"
+    },
+    {
+      "id": "thp-cell/words-before-published",
+      "kind": "R3",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^self\\.w\\[4\\]$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "state$",
+        "orderings": [
+          "Release"
+        ]
+      },
+      "terms": [
+        "words",
+        "PUBLISHED",
+        "before",
+        "last word"
+      ],
+      "reason": "I2: the last word store precedes the PUBLISHED Release store in publish; a word stored after PUBLISHED would be seen torn by a reader that already observed PUBLISHED",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_words_before_published"
+    },
+    {
+      "id": "thp-cell/claim-before-words",
+      "kind": "R3",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "before": {
+        "name": "compare_exchange",
+        "receiver": "state$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^self\\.w\\["
+      },
+      "terms": [
+        "claim",
+        "words",
+        "before",
+        "winner"
+      ],
+      "reason": "I1/I3: every word store follows the claiming CAS, so only the single winner ever writes words and a loser cannot overwrite a published tuple",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_claim_before_words"
+    },
+    {
+      "id": "thp-cell/words-sole-writer",
+      "kind": "R5",
+      "protocol": "P24",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+      ],
+      "target": {
+        "name": "store",
+        "receiver": "^self\\.w\\["
+      },
+      "allowed": [
+        "ThpTupleCell::publish"
+      ],
+      "terms": [
+        "words",
+        "publish",
+        "never written",
+        "write-once"
+      ],
+      "reason": "I3: the word array is stored only inside publish (after the claiming CAS); a store anywhere else, such as the reader or the word loader, writes words after PUBLISHED",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_words_sole_writer"
+    },
+    {
+      "id": "thp-cell/publish-inventory",
+      "kind": "R2",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "receiver": "state$",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^self\\.w\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^self\\.w\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^self\\.w\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^self\\.w\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^self\\.w\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "state$",
+          "orderings": [
+            "Release"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "publish",
+        "no loop",
+        "loser"
+      ],
+      "reason": "I4: the ordered operations of publish are exactly one claiming CAS, five Relaxed word stores and one Release store; any other atomic access (a spin on the state, a weak CAS retry) is a wait in the loser path",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_publish_inventory"
+    },
+    {
+      "id": "thp-cell/no-spin-primitive",
+      "kind": "R5",
+      "protocol": "P24",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+      ],
+      "target": {
+        "name": "spin_loop",
+        "kind": "call"
+      },
+      "allowed": [],
+      "forbid": true,
+      "terms": [
+        "spin_loop",
+        "loser",
+        "never waits",
+        "PUBLISHING"
+      ],
+      "reason": "I4: nothing in the cell file may call spin_loop; a loser that meets PUBLISHING reports a conflict instead of waiting for the winner",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_no_spin_primitive"
+    },
+    {
+      "id": "thp-cell/reader-acquire",
+      "kind": "R1",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::read",
+      "site": {
+        "name": "load",
+        "receiver": "state$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "reader",
+        "Acquire",
+        "PUBLISHED",
+        "one load"
+      ],
+      "reason": "I4/I5: the reader performs exactly one Acquire load of the state; Relaxed would not pair with the Release store and a second load is a wait loop",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_reader_acquire"
+    },
+    {
+      "id": "thp-cell/reader-needs-published",
+      "kind": "R4",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::read",
+      "action": {
+        "name": "load_words"
+      },
+      "guard": "^self\\.state\\.load\\(Ordering::Acquire\\)==PUBLISHED$",
+      "terms": [
+        "reader",
+        "PUBLISHED",
+        "decode",
+        "default tuple"
+      ],
+      "reason": "I5: the reader decodes the words only in the branch that observed PUBLISHED through an Acquire load; unpublished or PUBLISHING yields the default tuple",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_reader_needs_published"
+    },
+    {
+      "id": "thp-cell/loser-needs-published",
+      "kind": "R4",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "action": {
+        "name": "load_words"
+      },
+      "guard": "=>Err\\(PUBLISHED\\)$",
+      "terms": [
+        "loser",
+        "PUBLISHED",
+        "words",
+        "PUBLISHING"
+      ],
+      "reason": "I5: a loser reads the words only in the arm that saw PUBLISHED (the failed CAS loaded it with Acquire); the PUBLISHING and any other arm must not read half-written words",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_loser_needs_published"
+    },
+    {
+      "id": "thp-cell/word-loads-relaxed",
+      "kind": "R1",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::load_words",
+      "site": {
+        "name": "load",
+        "receiver": "^self\\.w\\["
+      },
+      "orderings": [
+        "Relaxed"
+      ],
+      "count": 5,
+      "terms": [
+        "five words",
+        "Relaxed",
+        "load",
+        "load_words"
+      ],
+      "reason": "I5: the word loader performs exactly five Relaxed loads, ordered only by the caller Acquire load of PUBLISHED or by the failed-CAS Acquire; no state access and no loop live here",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_word_loads_relaxed"
+    },
+    {
+      "id": "thp-ledger/used-relaxed",
+      "kind": "R1",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::used",
+      "site": {
+        "name": "load",
+        "receiver": "used$"
+      },
+      "orderings": [
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "used",
+        "Relaxed",
+        "load",
+        "ledger"
+      ],
+      "reason": "I4: the observer read of used is one Relaxed load; nothing is published through used so no stronger order is needed",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_used_relaxed"
+    },
+    {
+      "id": "thp-ledger/reserve-load-relaxed",
+      "kind": "R1",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::try_reserve",
+      "site": {
+        "name": "load",
+        "receiver": "used$"
+      },
+      "orderings": [
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "try_reserve",
+        "Relaxed",
+        "observed",
+        "load"
+      ],
+      "reason": "I1/I4: try_reserve observes used with one Relaxed load per attempt; the CAS validates the value, so a stale read only fails the CAS",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_reserve_load_relaxed"
+    },
+    {
+      "id": "thp-ledger/reserve-cas-relaxed",
+      "kind": "R1",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::try_reserve",
+      "site": {
+        "name": "compare_exchange_weak",
+        "receiver": "used$"
+      },
+      "orderings": [
+        "Relaxed",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "compare_exchange_weak",
+        "Relaxed",
+        "reservation",
+        "never exceeds"
+      ],
+      "reason": "I1/I4: a reservation is exactly one compare_exchange_weak Relaxed/Relaxed from the observed value, so used never exceeds the budget; a fetch_add or store reserve overshoots under contention",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_reserve_cas_relaxed",
+      "mutants": [
+        {
+          "id": "thp-reserve-unconditional-add",
+          "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+          "from": "            if self\n                .used\n                .compare_exchange_weak(cur, next, Ordering::Relaxed, Ordering::Relaxed)\n                .is_ok()\n            {\n                return take as usize;\n            }\n",
+          "to": "            self.used.fetch_add(take, Ordering::Relaxed);\n            return take as usize;\n",
+          "checker": {
+            "name": "loom loom_thp_ledger",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core alloc-xthread tagged-index-stack/loom",
+              "--test",
+              "loom_thp_ledger"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
+    },
+    {
+      "id": "thp-ledger/give-back-fetch-sub",
+      "kind": "R1",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::give_back",
+      "site": {
+        "name": "fetch_sub",
+        "receiver": "used$"
+      },
+      "orderings": [
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "give_back",
+        "fetch_sub",
+        "Relaxed",
+        "single"
+      ],
+      "reason": "I3: give_back is one fetch_sub Relaxed; a store of a recomputed value would lose a concurrent reservation or return",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_give_back_fetch_sub"
+    },
+    {
+      "id": "thp-ledger/reserve-bounded",
+      "kind": "R4",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::try_reserve",
+      "action": {
+        "name": "compare_exchange_weak"
+      },
+      "guard": "^attempts<Self::MAX_ATTEMPTS$",
+      "terms": [
+        "bounded",
+        "MAX_ATTEMPTS",
+        "attempts",
+        "try_reserve"
+      ],
+      "reason": "I2: the reserve CAS sits only inside the loop bounded by attempts < MAX_ATTEMPTS, so a persistent loser gives up with zero bytes instead of spinning",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_reserve_bounded"
+    },
+    {
+      "id": "thp-ledger/cas-after-observe",
+      "kind": "R3",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::try_reserve",
+      "before": {
+        "name": "load",
+        "receiver": "used$"
+      },
+      "after": {
+        "name": "compare_exchange_weak",
+        "args": "^cur,"
+      },
+      "terms": [
+        "observed",
+        "compare_exchange_weak",
+        "cur",
+        "from the observed value"
+      ],
+      "reason": "I1: the reserve CAS expects the value loaded earlier in the same iteration (cur), so the budget check made against that value still holds when the CAS succeeds",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_cas_after_observe"
+    },
+    {
+      "id": "thp-ledger/unmap-before-give-back",
+      "kind": "R3",
+      "protocol": "P25",
+      "file": "src/alloc_core/alloc_core/mem/release_large_mapping.rs",
+      "fn": "release_large_mapping",
+      "before": {
+        "name": "try_release_segment",
+        "kind": "call"
+      },
+      "after": {
+        "name": "give_back"
+      },
+      "terms": [
+        "unmap",
+        "give_back",
+        "release_segment",
+        "before"
+      ],
+      "reason": "I5: the advice charge goes back to the ledger only after the mapping is released, so budget freed here cannot be handed to another reservation while the old mapping is still advised",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_unmap_before_give_back"
+    },
+    {
+      "id": "thp-ledger/large-release-sole-path",
+      "kind": "R5",
+      "protocol": "P25",
+      "files": [
+        "src/alloc_core/large/**",
+        "src/alloc_core/alloc_core/mem/**"
+      ],
+      "target": {
+        "name": "release_segment",
+        "kind": "call"
+      },
+      "allowed": [
+        "release_large_mapping"
+      ],
+      "terms": [
+        "release_segment",
+        "release_large_mapping",
+        "Large",
+        "give_back"
+      ],
+      "reason": "I5: in the Large files the OS release is called only from the terminal funnel release_large_mapping, which returns the advice charge after the unmap; a direct release leaks charged budget",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_large_release_sole_path"
+    },
+    {
+      "id": "thp-ledger/checked-release-sole-path",
+      "kind": "R5",
+      "protocol": "P25",
+      "files": [
+        "src/alloc_core/large/**",
+        "src/alloc_core/alloc_core/mem/**"
+      ],
+      "target": {
+        "name": "try_release_segment",
+        "kind": "call"
+      },
+      "allowed": ["release_large_mapping"],
+      "terms": ["checked release", "charge", "terminal funnel"],
+      "reason": "I5: charged Large releases use only the terminal funnel, which retains charge on an unproven native outcome.",
+      "tests": ["tests/j13b_thp_release_failure_retains_charge.rs"],
+      "fixtures": "tests/ghost_lint_fixtures/p25_checked_release_sole_path"
+    },
+    {
+      "id": "thp-ledger/return-needs-checked-success",
+      "kind": "R4",
+      "protocol": "P25",
+      "file": "src/alloc_core/alloc_core/mem/release_large_mapping.rs",
+      "fn": "release_large_mapping",
+      "action": {"name": "give_back"},
+      "guard": "^os::try_release_segment\\(reservation,reservation_len\\)\\.is_ok\\(\\)$",
+      "terms": ["checked release", "success", "retain on error"],
+      "reason": "I5: only a confirmed checked-release success permits returning charge; failure or unknown release must keep budget unavailable.",
+      "tests": ["tests/j13b_thp_release_failure_retains_charge.rs"],
+      "fixtures": "tests/ghost_lint_fixtures/p25_return_needs_checked_success"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

@@ -121,6 +121,42 @@ impl SegmentHeader {
         Node::read_usize(Node::offset(base, off) as *const usize)
     }
 
+    /// Read the header's `thp_charge` field only (field-specific `usize`
+    /// load, same pattern as `span_usable_at`): the bytes of huge-page advice
+    /// charged to this Large mapping, 0 when none.
+    ///
+    /// Written only by the owner (once after a successful advice) and carried
+    /// forward verbatim across cache deposit and reuse, so a field-specific
+    /// read does not race with the owner's disjoint `bump` writes.
+    #[cfg_attr(
+        not(all(feature = "alloc-decommit", not(feature = "numa-aware"))),
+        allow(dead_code)
+    )]
+    #[inline(always)]
+    pub(crate) fn thp_charge_at(base: *mut u8) -> usize {
+        let off = core::mem::offset_of!(SegmentHeader, thp_charge);
+        Node::read_usize(Node::offset(base, off) as *const usize)
+    }
+
+    /// Overwrite the header's `thp_charge` field only (field-specific `usize`
+    /// store, mirroring `thp_charge_at`'s read).
+    ///
+    /// Safety discipline: called ONLY by the owning thread, on a live Large
+    /// mapping it owns; the field sits at a fixed offset disjoint from `bump`
+    /// / `owner_state`, so there is no cross-field race, and no cross-thread
+    /// reader touches it.
+    // Sole caller is the mechanism-gated fresh-path charge store in
+    // alloc_core_large.rs; the attribute keeps other rows warning-clean.
+    #[cfg_attr(
+        not(all(feature = "alloc-decommit", not(feature = "numa-aware"))),
+        allow(dead_code)
+    )]
+    #[inline(always)]
+    pub(crate) fn set_thp_charge_at(base: *mut u8, charge: usize) {
+        let off = core::mem::offset_of!(SegmentHeader, thp_charge);
+        Node::write_usize(Node::offset(base, off) as *mut usize, charge);
+    }
+
     /// Overwrite the header's `large_size` field only (field-specific `usize`
     /// store, mirroring `large_size_at`'s read). Used by `AllocCore::realloc`
     /// to update the logical allocation size after an in-place Large grow
