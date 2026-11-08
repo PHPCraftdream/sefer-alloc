@@ -1,5 +1,15 @@
 # J13b judge — preparatory infrastructure manifest
 
+## Current Task54 artifact-routing step — 2026-11-08
+
+Status: immutable artifact routing authored; current-source CI acceptance pending. Class: `bench`; no allocator source/default/feature/dependency/version change, runtime adapter, static-reference overlay, campaign or measured result in this step. Task49's accepted runtime-learning source is `6c2ba419` (CI `42512485612`), not acceptance of this judge.
+
+The new manifest binds three distinct artifact paths and all nine arms, keeps `base/base2/mi` on the same historical executable, and requires a separately identified control-matched static-reference artifact. It validates exact metadata fields, source/binary hashes, overlay provenance and matched candidate/reference toolchain/features. The driver hashes actual executable bytes before and after each child and checks every window's artifact identity. Raw stdout remains preserved before post-child failures. Source provenance still requires a reviewed build flow; manifest strings and distinct hashes alone are not a static-reference correctness proof.
+
+Separate Node tests cover routing, immutable copies, rejecting metadata/overlay mutations, bounded strict-UTF-8 manifest reads, real file hashing, rejection before spawn, raw preservation after in-child executable mutation, identity mismatches and unchanged runtime-admission refusal. Existing mock transport/window tests now explicitly inject artifact-verification seams; their transport assertions are preserved. These tests execute only on GitHub CI, not locally.
+
+Real installed adapter, accurate lifetime/peak advice accounting, actual owner/remote workload/training windows, static-reference behavior, OS telemetry and runtime report admission remain open. The following original preparation record is historical, not a current-source CI receipt.
+
 ## Source and classification
 
 Base: `65b74fa4`. The judge-only commit list is derived, not hand-copied:

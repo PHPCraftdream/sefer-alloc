@@ -1,9 +1,10 @@
 import { closeSync, fsyncSync, openSync, writeSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { campaignSchedule, childKey, plannedRunCount } from './j13b_campaign.mjs';
 import { CELL_MATRIX, validateRuntimeRow } from './j13b_schema.mjs';
+import { bindArtifactJobs, readArtifactManifest, verifyArtifactRecord, verifyJobArtifact } from './j13b_artifacts.mjs';
 
 const CELLS = new Map(CELL_MATRIX.map(cell => [cell.id, cell]));
 const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true });
@@ -42,7 +43,8 @@ function decodeRecords(bytes, job, cell) {
   return { records, invocation: [...invocations][0] };
 }
 
-export function executeChildJobs({ jobs, spawn = spawnSync, sink, validate = validateRuntimeRow }) {
+export function executeChildJobs({ jobs, spawn = spawnSync, sink, validate = validateRuntimeRow,
+  verifyArtifact = verifyJobArtifact, verifyRecord = verifyArtifactRecord }) {
   const pending = new Set(jobs.map(childKey));
   const invocations = new Set();
   const staged = [];
@@ -50,17 +52,24 @@ export function executeChildJobs({ jobs, spawn = spawnSync, sink, validate = val
     const cell = CELLS.get(job.cell_id);
     if (!cell || !cell.arms.includes(job.arm)) throw Error('job not present in explicit cell matrix');
     if (!pending.delete(childKey(job))) throw Error('duplicate scheduled child');
+    verifyArtifact(job);
+    const { path: artifactPath, ...provenance } = job.artifact ?? {};
     const child = spawn(
       job.executable,
       [job.cell_id, job.arm, String(job.block), String(job.repeat)],
-      { encoding: 'buffer', timeout: 120000, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
+      { encoding: 'buffer', timeout: 120000, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
+        env: { ...process.env, SEFER_J13B_ARTIFACT: JSON.stringify({
+          ...provenance, run_id: job.run_id, artifact_id: job.artifact_id,
+        }) } },
     );
     const bytes = child.stdout;
     if (bytes && bytes.length > 0) sink(bytes);
+    verifyArtifact(job);
     if (child.error) throw child.error;
     if (!bytes) throw Error('child stdout capture absent; nothing was preserved');
     if (child.status !== 0) throw Error(`child failed with exit=${child.status}`);
     const { records, invocation } = decodeRecords(bytes, job, cell);
+    for (const record of records) verifyRecord(record, job);
     if (invocations.has(invocation)) throw Error('invocation_id reused across children');
     invocations.add(invocation);
     staged.push(...records);
@@ -70,17 +79,21 @@ export function executeChildJobs({ jobs, spawn = spawnSync, sink, validate = val
 }
 
 function main() {
-  const [executable, output] = process.argv.slice(2);
-  if (!executable || !output) {
-    console.error('usage: node scripts/j13b_run.mjs <judge-executable> <raw.jsonl>');
+  const [manifestPath, output, ...extra] = process.argv.slice(2);
+  if (!manifestPath || !output || extra.length) {
+    console.error('usage: node scripts/j13b_run.mjs <artifacts.json> <raw.jsonl>');
     process.exitCode = 2;
     return;
   }
   let fd;
   try {
-    fd = openSync(resolve(output), 'wx');
-    const jobs = campaignSchedule().map(job => ({ ...job, executable }));
+    const manifest = readArtifactManifest(resolve(manifestPath));
+    const jobs = bindArtifactJobs(manifest, campaignSchedule(), dirname(resolve(manifestPath)));
     if (jobs.length !== plannedRunCount()) throw Error('scheduled child count differs from fixed matrix');
+    for (const job of jobs.filter((job, index, all) => all.findIndex(other => other.artifact_id === job.artifact_id) === index)) {
+      verifyJobArtifact(job);
+    }
+    fd = openSync(resolve(output), 'wx');
     executeChildJobs({
       jobs,
       sink: bytes => {
