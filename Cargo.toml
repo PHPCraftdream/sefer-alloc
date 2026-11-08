@@ -494,12 +494,12 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "all
 # idiom already used for `benches/perf_gate_iai.rs` etc.), and every
 # `[[bench]]`/`[[example]]` Cargo.toml target whose file touches internals
 # lists `internals` in its own `required-features` so a plain `--features
-# production` build does not even attempt to compile them. `tests/` files are
-# NOT declared as explicit `[[test]]` Cargo.toml targets (auto-discovered),
-# so the per-target `required-features` mechanism does not apply to them —
-# every CI/local `cargo test` invocation that exercises this internals-facing
-# test suite passes `internals` alongside `production` on the command line
-# instead (see `scripts/check-matrix.mjs` and `.github/workflows/ci.yml`).
+# production` build does not even attempt to compile them. Most `tests/`
+# targets are auto-discovered and use source cfg gates. Selected explicit
+# `[[test]]` targets below also declare `required-features`, including the
+# evidence-pinned config-conflict harness. CI invocations exercising the
+# internals-facing suite pass `internals` alongside `production` (see
+# `scripts/check-matrix.mjs` and `.github/workflows/ci.yml`).
 # Task #1080 — the forced-page lazy-commit call-site regression test
 # (`tests/lazy_initial_commit_forced_page.rs`) needs the test-only
 # aligned-vmem page-size override, which since the task #962 conversion
@@ -1033,6 +1033,12 @@ iai-callgrind = "0.14"
 [[bench]]
 name = "locality"
 harness = false
+
+# Gate the historical config-conflict harness without changing its evidence-pinned source.
+[[test]]
+name = "regression_r4_3_config_conflict"
+path = "tests/regression_r4_3_config_conflict.rs"
+required-features = ["alloc-global", "alloc-decommit", "internals"]
 
 [[test]]
 name = "heap_core_depot"
