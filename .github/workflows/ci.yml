@@ -115,7 +115,7 @@ jobs:
         with:
           node-version: '22'
       - if: steps.paths.outputs.run == 'true'
-        run: node --test tests/j13b_schema.test.mjs
+        run: node --test tests/j13b_schema.test.mjs tests/j13b_artifacts.test.mjs
       - if: steps.paths.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
       - if: steps.paths.outputs.run == 'true'

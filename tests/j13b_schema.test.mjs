@@ -10,8 +10,14 @@ import {
   CELL_DEFINITIONS, CSV_HEADER, deriveSynthetic, equivalentWithinFivePercent, intervalContainsOne,
   pairedLogRatioCI, renderSyntheticCsv, renderSyntheticMarkdown, reportSyntheticJsonl,
 } from '../scripts/j13b_stats.mjs';
-import { executeChildJobs } from '../scripts/j13b_run.mjs';
+import { executeChildJobs as executeBoundChildJobs } from '../scripts/j13b_run.mjs';
 import { runReportCli } from '../scripts/j13b_report.mjs';
+
+// These existing tests isolate transport/window validation with a mock child.
+// Real artifact verification is covered separately in j13b_artifacts.test.mjs.
+const executeChildJobs = options => executeBoundChildJobs({
+  verifyArtifact: () => {}, verifyRecord: () => {}, ...options,
+});
 
 const MIB = 1024 * 1024;
 const HAND_WINDOWS = {
