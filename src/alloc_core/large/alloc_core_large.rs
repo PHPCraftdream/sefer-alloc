@@ -26,7 +26,11 @@ use crate::alloc_core::alloc_core::release_large_mapping;
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::alloc_core::LARGE_CACHE_SIZE_FACTOR;
-#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+#[cfg(all(
+    feature = "alloc-decommit",
+    feature = "alloc-xthread",
+    not(feature = "numa-aware")
+))]
 use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
 #[cfg(feature = "internals")]
 use core::sync::atomic::{AtomicBool, Ordering};

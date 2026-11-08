@@ -8,7 +8,11 @@
 //! validate_owner_geometry` directly through the public
 //! `alloc_core::policy` re-export. One scenario per binary (one `#[test]`).
 
-#![cfg(all(feature = "alloc-core", feature = "internals"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "internals"
+))]
 
 use sefer_alloc::alloc_core::policy::large_thp_observation::large_thp_observation_error::LargeThpObservationError;
 use sefer_alloc::alloc_core::policy::large_thp_observation::large_thp_span_geometry::LargeThpSpanGeometry;
