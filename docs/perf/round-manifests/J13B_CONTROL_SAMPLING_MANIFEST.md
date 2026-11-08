@@ -8,6 +8,8 @@ CI `42484277357` on `68af84a1d26b3cc5cbacbe729d000089892b16f2` exposed missing g
 
 The owning residency bridge is isolated in `src/alloc_core/alloc_core/mem/large_control/sample_owned_large_residency.rs`, next to its safe observer. This is a pure move with the same ownership/provenance contract and no algorithm or atomic change. `node.rs` is restored byte-for-byte to the previously verified source; the full source comparison against the R6a-M1 protected file is therefore unchanged. The new seam is inventoried in README and `src/lib.rs`. Replacing the old observer file with the three-file `large_control` directory keeps its parent at seven entries. Exact repaired-source CI remains required.
 
+Runtime CI `42487160786` on `6dab08ea` subsequently caught one remaining inventory-summary mismatch: the named sampler seam was listed, but README still summarized 28 rather than 29 tier-1 seams. The exact mechanical census is now 29 total (23 root, six companion-crate seams); the tripwire and its expectation algorithm are unchanged. Runtime acceptance remains pending.
+
 The remaining initial-run logs also exposed an incomplete feature gate on the owner-geometry test (`policy` is re-exported only with `alloc-decommit`) and stale root integration-test counts. The test now matches the import gate; README/ARCHITECTURE counts are derived from the 530 root test targets. The runtime-only diagnostics import matches its `alloc-xthread` consumer. The VM no-THP prerequisite is delivered in the existing VM PR #226, with its ancestry included in runtime PR #225: the fail-closed zero-cost classifier remains unchanged, and Miri-marked VM source is not disguised as a zero-cost runtime delta.
 
 ## Local verification actually done (Windows receipts, exit 0 each)
