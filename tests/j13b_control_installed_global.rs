@@ -79,4 +79,16 @@ fn installed_global_allocator_selects_and_observes_controls() {
         resident * 100 < sampled,
         "sparse control residency {resident}/{sampled} must be below 1%; header pages are excluded"
     );
+    let learning = AllocCore::dbg_thp_learning_telemetry()[GROUP_8_TO_32_MIB];
+    assert_eq!(
+        &learning[3..],
+        &[1, 0],
+        "only the clean control trains the installed allocator"
+    );
+    assert!(learning[0] < u64::from(sefer_alloc::LargeThpShare::SCALE));
+    assert!(learning[2] < u64::from(sefer_alloc::LargeThpShare::SCALE));
+    assert!(
+        AllocCore::dbg_thp_advised_bytes_total() > 0,
+        "non-control Auto allocations must actually activate advice"
+    );
 }

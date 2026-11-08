@@ -1,5 +1,18 @@
 # J13b preregistration — the Large-block THP hint under the program's control: mode, request-size threshold, per-size-bucket learned share, byte budget (Linux)
 
+## 2026-11-08 #49 runtime learning source amendment — CI pending
+
+The accepted #48 source is `aacf1d09` (CI `42490064262` SUCCESS), and the accepted standalone atomic-cell prerequisite is `91c875f3` (CI `42500341404` SUCCESS). Those receipts supersede the historical pending statuses below, but do not accept the new Task49 runtime source. No local runtime test/model was executed, no performance measurement exists and there is no performance GO.
+
+- Fresh eligible Auto requests still select their clean no-THP controls first, including at learned share zero. Non-controls now use the group's coherent estimator and the already-resolved gradient; the pure geometry baseline remains state-free. The prior is optimistic one, not a promise of low RSS.
+- Only a valid owner-first-life no-THP control feeds one observation `resident_pages / sampled_pages`, converted to Q31 with widened integer arithmetic. Zero denominators and resident counts above sampled counts are rejected. Independent accumulated telemetry never feeds the estimator. This is a bounded residency heuristic, not a measurement of useful bytes, physical THP occupancy or application/task identity.
+- Six process-group cells keep the accepted fast/slow math unchanged. Each observation has at most eight strong-CAS attempts; applied and dropped counters expose loss separately. A coherent e/m pair and its derived share are reported together, but the counters and whole array remain independent Relaxed diagnostics; closure requires worker quiescence. Bounded work does not prove fairness, unbiased admission or cache-line isolation.
+- Failed premise, sampler error, remote UNKNOWN, cache second life and invalidated old-realloc tokens do not train. A genuinely fresh moving destination can obtain its own clean control. The shared advice FI hook must target the next selected ordinal now that non-controls also issue advice; the failure/recovery expectations are not relaxed.
+- Authored activation oracles exercise a resolved custom gradient through sparse shrink, actual zero-advice suppression, dense recovery and group isolation; installed-GlobalAlloc/concurrent and rejection tests additionally check learner admission. Their exact-source CI acceptance is pending. Existing cell/native/Loom receipts are not receipts for this composition.
+- Default Off, Always/Off semantics, requested-size eligibility, outstanding advice-byte budget, checked charge release, header layout, dependencies and production feature composition remain unchanged. The real judge (#54), matched cost/benefit campaign (#50), current-layout evidence item271 and limitations item272 remain outstanding.
+
+See `docs/perf/round-manifests/J13B_RUNTIME_LEARNING_MANIFEST.md` for this source scope and acceptance obligations.
+
 ## 2026-11-08 #48 source implementation amendment
 
 This dated amendment records the current source state of the #48 control-sampling integration; it does not rewrite earlier amendments or the original preregistration. Status: **source implementation partial; tests and CI acceptance pending**. No local runtime behavior was observed, no J13b measurement exists, and there is NO GO. Do not describe #48 as fully accepted or as establishing valid remote-control sampling.

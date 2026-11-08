@@ -102,7 +102,7 @@ fn competing_observations_form_one_complete_serial_order_not_a_torn_pair() {
     builder.preemption_bound = Some(3);
     builder.check(|| {
         let gradient = LargeThpGradient::STEADY;
-        let low = LargeThpShare::ZERO;
+        let low = ThpLearningCell::observation(0, 1).expect("valid sparse observation");
         let high = LargeThpShare::from_raw(LargeThpShare::SCALE / 3);
         let cell = Arc::new(ThpLearningCell::new());
         let other = Arc::clone(&cell);
@@ -152,4 +152,33 @@ fn packed_pair_preserves_q31_endpoints_and_distinct_components() {
         assert!(cell.try_observe(&LargeThpGradient::STEADY, LargeThpShare::ZERO));
         assert_eq!(cell.snapshot(), expected);
     }
+}
+
+#[cfg(not(loom))]
+#[test]
+fn residency_conversion_rejects_invalid_counts_and_is_total_at_u64_bounds() {
+    assert_eq!(ThpLearningCell::observation(0, 0), None);
+    assert_eq!(ThpLearningCell::observation(1, 0), None);
+    assert_eq!(ThpLearningCell::observation(2, 1), None);
+    assert_eq!(ThpLearningCell::observation(u64::MAX, u64::MAX - 1), None);
+    assert_eq!(
+        ThpLearningCell::observation(0, 1),
+        Some(LargeThpShare::ZERO)
+    );
+    assert_eq!(
+        ThpLearningCell::observation(1, 2),
+        Some(LargeThpShare::from_raw(LargeThpShare::SCALE / 2))
+    );
+    assert_eq!(
+        ThpLearningCell::observation(u64::MAX, u64::MAX),
+        Some(LargeThpShare::ONE)
+    );
+    assert_eq!(
+        ThpLearningCell::observation(1, u64::MAX),
+        Some(LargeThpShare::ZERO)
+    );
+    assert_eq!(
+        ThpLearningCell::observation(u64::MAX - 1, u64::MAX),
+        Some(LargeThpShare::from_raw(LargeThpShare::SCALE - 1))
+    );
 }

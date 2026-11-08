@@ -73,6 +73,7 @@ fn oom_shrink_fallback_accounts_tokens_exactly_once_and_failed_realloc_preserves
     let layout12 = Layout::from_size_align(12 * MIB, 8).expect("valid 12 MiB layout");
     let layout16 = Layout::from_size_align(16 * MIB, 8).expect("valid 16 MiB layout");
 
+    let learning_before = AllocCore::dbg_thp_learning_telemetry();
     // --- Scenario A: success token through the OOM-shrink fallback.
     let mut cohort_a = [core::ptr::null_mut(); COHORT];
     for block in &mut cohort_a {
@@ -128,11 +129,15 @@ fn oom_shrink_fallback_accounts_tokens_exactly_once_and_failed_realloc_preserves
 
     // --- Cohort B: failed-premise token still PENDING. A 12 MiB request
     // cannot hit the cached 8 MiB-class slots, so every block is fresh.
-    aligned_vmem::fault_injection::arm_fail_next_advise_range(1);
     let mut cohort_b = [core::ptr::null_mut(); COHORT];
     for block in &mut cohort_b {
+        // This single-threaded fresh cohort targets only the next selected
+        // no-THP call, not an earlier non-control Auto advice operation.
+        let selected = AllocCore::dbg_thp_control_decision_at(AllocCore::dbg_thp_control_ordinal());
+        aligned_vmem::fault_injection::arm_fail_next_advise_range(if selected { 1 } else { 0 });
         // SAFETY: valid non-zero layout; the returned pointer is retained.
         *block = unsafe { GLOBAL.alloc(layout12) };
+        aligned_vmem::fault_injection::arm_fail_next_advise_range(0);
         assert!(!block.is_null(), "12 MiB allocation must succeed");
     }
     aligned_vmem::fault_injection::arm_fail_next_advise_range(0);
@@ -330,4 +335,9 @@ fn oom_shrink_fallback_accounts_tokens_exactly_once_and_failed_realloc_preserves
             "every other group must be all zeros, got group {group}: {counters:?}"
         );
     }
+    assert_eq!(
+        AllocCore::dbg_thp_learning_telemetry(),
+        learning_before,
+        "failed growth, failed premise and shrink-invalidated tokens must not train"
+    );
 }

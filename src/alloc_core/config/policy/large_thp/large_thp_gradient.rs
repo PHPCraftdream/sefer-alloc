@@ -41,8 +41,8 @@
 //!   downstream product bound is `u32::MAX * 2^31 < 2^63`, which fits `u64`
 //!   exactly — no intermediate anywhere can overflow.
 //!
-//! This module is a standalone fixed-point math component; runtime
-//! integration into the allocator is a separate future task.
+//! This module remains pure fixed-point math; the allocator uses it through
+//! the separate `large_thp_runtime` adapter.
 
 use super::large_thp_curve::LargeThpCurve;
 use super::large_thp_share::LargeThpShare;

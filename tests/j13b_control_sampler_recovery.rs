@@ -44,6 +44,7 @@ fn failed_residency_sample_is_counted_and_next_cohort_recovers() {
     core.dbg_set_large_cache_budget(Some(0));
     let layout = Layout::from_size_align(BLOCK, 8).expect("valid block layout");
 
+    let learning_before = AllocCore::dbg_thp_learning_telemetry();
     let failed = allocate_cohort(&mut core, layout);
     assert_eq!(
         AllocCore::dbg_thp_control_telemetry()[GROUP_8_TO_32_MIB],
@@ -63,6 +64,11 @@ fn failed_residency_sample_is_counted_and_next_cohort_recovers() {
         "failed sample contributes no page totals"
     );
 
+    assert_eq!(
+        AllocCore::dbg_thp_learning_telemetry(),
+        learning_before,
+        "a failed sample must not train or count as applied/dropped"
+    );
     let recovered = allocate_cohort(&mut core, layout);
     assert_eq!(
         AllocCore::dbg_thp_control_telemetry()[GROUP_8_TO_32_MIB][0],
@@ -74,6 +80,10 @@ fn failed_residency_sample_is_counted_and_next_cohort_recovers() {
     assert!(
         final_counts[7] > 0,
         "recovered valid observation samples payload pages"
+    );
+    assert_eq!(
+        &AllocCore::dbg_thp_learning_telemetry()[GROUP_8_TO_32_MIB][3..],
+        &[1, 0]
     );
     drop(core);
 }

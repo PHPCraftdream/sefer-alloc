@@ -64,7 +64,11 @@ pub(crate) fn advise_fresh_large(
             return (0, group_index + 9);
         }
     }
-    let share = ThpAdvice::share_for(&tuple, request_size);
+    let share = if tuple.mode == LargeThpMode::Auto {
+        ThpRuntime::learned_share(request_size, &tuple.gradient)
+    } else {
+        ThpAdvice::share_for(&tuple, request_size)
+    };
     let want = ThpAdvice::extent(usable_span, share, None, aligned_vmem::page_size());
     if want == 0 {
         return (0, 0);

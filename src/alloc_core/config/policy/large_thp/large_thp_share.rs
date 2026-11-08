@@ -13,8 +13,8 @@
 //! trapping) is the deliberate total-function choice — this type must not
 //! panic for ANY input value.
 //!
-//! This module is a standalone fixed-point math component; runtime
-//! integration into the allocator is a separate future task.
+//! This module remains pure fixed-point math; the allocator uses it through
+//! the separate `large_thp_runtime` adapter.
 
 /// A share in `[0, 1]` as Q31 fixed-point (`SCALE` raw units == `1.0`).
 ///

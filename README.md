@@ -404,10 +404,10 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 | `.depot_budget_bytes(N)` | `1 MiB` | Per-heap (per-thread) byte budget for full small-class magazines parked **above** the fixed depot floor, so a free burst larger than one magazine refills from parked magazines instead of round-tripping through segment free lists. `0` turns the overflow off. Rounded down to 256 B, capped at 16,774,912 B. Needs `fastbin` + `alloc-decommit` (ignored otherwise). See [Depot overflow budget](#depot-overflow-budget-fastbin--alloc-decommit). |
 | `.route_pin_cache_slots(N)` | `32` | Slots of the per-thread cache of route descriptors used when a block is freed on a thread other than the one that allocated it (`alloc-xthread`). Rounded down to a power of two, clamped to `4..=64`. More slots keep a producer that frees into more owner segments off the shared directory lookup, and raise the worst-case memory held by an idle producer thread (≈ 0.29 MiB per slot). Process-wide, first config wins. See [Foreign-free route pin cache](#foreign-free-route-pin-cache-alloc-xthread--alloc-decommit). |
 | `.huge_page_after_segments(N)` | `16` | Linux transparent-huge-page hint for growing heaps: from the N-th small segment (4 MiB each, counted over the process) on, a newly reserved small segment is advised `MADV_HUGEPAGE`. `0` never hints. Fewer page faults while a heap grows, more resident memory for lightly used segments. Process-wide, first config wins. See [Transparent huge pages](#transparent-huge-pages-linux). |
-| `.huge_page_mode(M)` | `Off` | Large-block THP advice: `LargeThpMode::Off` never advises, `Always` advises every eligible fresh Large block, `Auto` is reserved for a learned share and **does not learn yet** (advises nothing). Linux/Android only, process-wide as one tuple with the three knobs below, first config wins. See [Large-block THP advice](#large-block-thp-advice-linux-opt-in). |
+| `.huge_page_mode(M)` | `Off` | Large-block THP advice: `LargeThpMode::Off` never advises, `Always` advises every eligible fresh Large block, `Auto` learns a per-request-size-group share from clean owner-free controls (current runtime integration awaits exact-source CI). Linux/Android only, process-wide as one tuple with the three knobs below, first config wins. See [Large-block THP advice](#large-block-thp-advice-linux-opt-in). |
 | `.huge_page_block_min_bytes(N)` | `8 MiB` | A fresh Large block whose **requested** size is at least `N` is eligible. `0` makes every fresh Large block eligible; it is not "never" (use `Off`). |
 | `.huge_page_budget_bytes(N)` | `0` (unlimited) | Upper bound on the bytes **advised** for huge pages and still outstanding, process-wide. It bounds advice, not resident memory. Not the large-cache `budget_bytes`. |
-| `.huge_page_gradient(G)` | `LargeThpGradient::CAUTIOUS` | Learning-gradient parameters for `Auto`; inert while `Auto` does not learn. |
+| `.huge_page_gradient(G)` | `LargeThpGradient::CAUTIOUS` | Asymmetric rise/fall rates, slow-mean anchor, floor, gain and curve for `Auto`; ignored by `Off`/`Always`. Presets and normalized custom values are described below. |
 | `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: above headroom, the first eligible call primes a nonzero-interval timer; subsequent clock checks occur every 64th eligible large alloc/free and process bounded catch-up inline. A zero interval bypasses the stride and runs one step per eligible call, including the first. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
 
 The table lists the `LargeCacheConfig` methods that set a number directly. The empty-segment pool is set through
@@ -1592,17 +1592,17 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **532 integration test files**,
+needs its acceptance run. The present tree contains **533 integration test files**,
 **107 example binaries**, **34 benches**, and **29 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
 Counts cover root `*.rs` targets in each folder, excluding nested fixtures
-and support modules. The test tree also contains 15 nested Rust source files.
+and support modules. Nested helpers and fixtures are not separate integration targets.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (532 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (533 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (107 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -2012,27 +2012,40 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(
 ```
 
 - **`huge_page_mode`:** `Off` (default) never advises. `Always` advises each eligible fresh Large block over the 2 MiB-floored
-  prefix of its usable span, never beyond it and never widened. `Auto` is reserved for a share learned per request size; **that
-  learning is not implemented yet**, so `Auto` currently advises nothing.
+  prefix of its usable span, never beyond it and never widened. `Auto` uses a separate process-wide estimate for each of six requested-size groups.
+  Its prior is optimistic one. One fresh no-THP control per complete aligned cohort of eight eligible requests feeds bounded owner-free
+  residency observations; the other fresh requests use the learned share. Controls continue even at share zero, allowing recovery.
+  The current runtime integration is source-authored but awaits its own exact-source CI acceptance; the accepted cell foundation alone is not that receipt.
 - **`huge_page_block_min_bytes`:** eligibility is the *requested* size, default 8 MiB; `0` makes every fresh Large block eligible.
 - **`huge_page_budget_bytes`:** `0` is unlimited. Otherwise each advice is charged to a process-wide ledger before the `madvise`,
-  clipped to what is left, and the charge is held until the mapping is unmapped (it stays through the Large cache) and returned right
-  after the unmap. **The budget bounds the bytes advised, not process RSS**: the kernel may decline, partially grant or back memory
+  clipped to what is left, and the charge stays through the Large cache. It is returned only after checked successful native release;
+  release failure consumes ownership and retains the charge, without pointer reuse or retry. **The budget bounds the bytes advised, not process RSS**: the kernel may decline, partially grant or back memory
   regardless of the advice (system mode `always`), and a touched advised region becomes resident as a whole 2 MiB page.
+- **Gradient:** each valid control updates a fast estimate and a slow EMA mean, then applies the configured anchor, floor, curve and gain.
+  `CAUTIOUS` falls at 1/4 and recovers at 1/32 per admitted observation; `EAGER` falls at 1/32 and recovers at 1/4. `STEADY` uses 1/8 in both
+  directions, a 1/64 slow mean and a half-weight anchor. Smaller shift means faster response. These rates count observations, not time or all requests.
+  `LargeThpGradient::custom` normalizes shifts to 0..=31, Q31 anchor/floor to 0..=SCALE and a zero gain denominator to one; gain is an exact
+  rational, with explicit `Generous`/`Linear`/`Strict` curves. No callback or task/thread identity is involved.
+- **Admission limits:** only validated clean owner controls train. Remote UNKNOWN, sampler failures, cache second lives and invalidated old-realloc
+  tokens do not. Cohorts are global across eligible sizes, not per group; under-observed groups can retain the optimistic prior.
+  Each update has at most eight source-level CAS attempts; rejected updates are counted separately. This is not a wait-free, fairness or sampling-bias guarantee.
 - **Cost:** only fresh reservations are advised; a Large-cache hit, an in-place growth and the aligned-above-segment path never are.
-  One extra atomic load per fresh Large reservation, and `SegmentHeader` is 8 bytes larger to carry the charge (its instruction-count
-  effect is not measured yet).
-- **Combination:** minimum and budget apply to `Always` (and to `Auto` once it learns); the gradient is inert until then.
+  Eligible Auto requests take an ordinal RMW; non-controls read a coherent estimator pair, and valid owner controls pay bounded sampling/update work.
+  Header size is 144 bytes (128 to 136 for mapping charge, then to 144 for the observation token); this learning step adds no header field.
+  Process-state memory, instruction-count, contention and workload effects remain unmeasured; no cache-line isolation or speedup is claimed.
+- **Combination:** requested minimum and outstanding byte budget constrain both `Always` and `Auto`. The gradient affects only `Auto`; a learned
+  share never bypasses the budget or expands the mapping. Budget rejection does not disable future clean-control learning.
 - **Process-wide, first config wins as a whole.** The first heap materialised with any of the four knobs set publishes the whole
   tuple (unset knobs take their defaults); a later differing config is ignored and counted in `AllocStats::thp_tuple_conflicts`.
   The count is taken only at heap materialisation, not when a recycled heap is re-claimed or on the fallback path. A config that sets
   none of the four knobs publishes nothing.
 - **A no-op** off Linux/Android, with `numa-aware` and without `alloc-decommit`; the allocator never claims physical huge backing,
   only accepted advice.
-- **Not measured.** No benchmark, no acceptance and no GO exist for this setting. The static whole-block hint of the earlier J13
+- **Not measured.** No workload/performance acceptance or performance GO exists for this setting; correctness receipts do not measure cost or benefit. The static whole-block hint of the earlier J13
   proposal is not part of this tree; `Always` is a new implementation, not that hint (`docs/perf/J13B_BOUNDED_THP_PREREG.md`).
-- **Read it back** with `AllocCore::dbg_thp_tuple()`, `dbg_thp_tuple_conflicts()` and the advised/charged byte counters
-  (`bench-internals`); `LargeCacheConfig::dbg_resolved_thp_tuple()` (`internals`) resolves a config without allocating.
+- **Read it back** with `AllocCore::dbg_thp_tuple()`, `dbg_thp_tuple_conflicts()`, advised/charged byte counters and
+  `dbg_thp_learning_telemetry()` (`bench-internals` plus `internals`). Learning rows contain e/m/share from one coherent pair, then independent
+  applied/dropped counters; the whole array is not a coherent snapshot. `LargeCacheConfig::dbg_resolved_thp_tuple()` (`internals`) resolves a config without allocating.
 
 ---
 

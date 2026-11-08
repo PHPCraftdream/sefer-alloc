@@ -56,7 +56,8 @@ impl ThpAdvice {
         }
     }
 
-    /// Share of the span to advise for this request under `tuple`.
+    /// Pure mode baseline without estimator state: Off/Auto zero, Always one.
+    /// The fresh Auto path instead reads its process-group learned share.
     #[must_use]
     pub fn share_for(tuple: &ThpTuple, request_size: usize) -> LargeThpShare {
         match tuple.mode {
@@ -68,8 +69,8 @@ impl ThpAdvice {
         }
     }
 
-    /// Learned share for a request group. Learning is wired in scopes
-    /// #48/#49; Auto advises nothing until then.
+    /// Zero fallback for pure geometry/model callers without process state.
+    /// This is not the runtime learner; fresh Auto advice bypasses this helper.
     #[must_use]
     pub fn auto_share(group: LargeThpRequestGroup) -> LargeThpShare {
         let _ = group;

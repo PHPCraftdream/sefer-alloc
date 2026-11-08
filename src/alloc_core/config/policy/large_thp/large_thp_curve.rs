@@ -15,8 +15,8 @@
 //! added as an explicit new enum variant with its own bounded integer
 //! implementation and its own documented error bound.
 //!
-//! This module is a standalone fixed-point math component; runtime
-//! integration into the allocator is a separate future task.
+//! This module remains pure fixed-point math; the allocator uses it through
+//! the separate `large_thp_runtime` adapter.
 
 use super::large_thp_share::LargeThpShare;
 

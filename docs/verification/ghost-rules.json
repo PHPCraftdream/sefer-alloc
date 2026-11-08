@@ -6,13 +6,18 @@
       "id": "P27",
       "name": "large-THP coherent bounded estimator pair",
       "prod": [
-        "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs"
+        "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+        "src/alloc_core/alloc_core/mem/advise_fresh_large.rs"
       ],
       "invariants": [
         "I1 one AtomicU64 contains both Q31 estimator components; snapshot is one indivisible load",
         "I2 a successful CAS applies exactly one accepted pure-estimator update from its expected packed pair",
         "I3 at most eight CAS attempts per observation; exhaustion returns false without applying that observation",
-        "I4 Relaxed accesses publish no external payload; only the indivisible scalar pair is shared"
+        "I4 Relaxed accesses publish no external payload; only the indivisible scalar pair is shared",
+        "I5 only validated owner first-life no-THP observations feed the request group estimator; failed-premise, remote, cache and invalidated old-realloc tokens never feed it",
+        "I6 per-group applied/dropped diagnostics are independent wrapping counters, not estimator inputs; applied plus dropped closes against valid observations only after worker quiescence",
+        "I7 the optimistic prior is group-local; Off/Always bypass learned shares and Auto still selects controls before reading a zero learned share so recovery remains observable"
       ],
       "class": "none",
       "loom": [
@@ -20,10 +25,10 @@
       ],
       "pins": [],
       "registry": [],
-      "real_under_loom": "authored, CI pending: loom_thp_learning_cell.rs mounts the actual production cell and pure estimator on loom atomics; two different competing observations must match one complete serial order, never a torn pair or lost update",
+      "real_under_loom": "cell only: tests/loom_thp_learning_cell.rs mounts the actual production cell and math on model atomics; runtime routing/admission is exercised by native tests, not a whole-runtime model; current integration acceptance is pending CI",
       "decision": "rules + actual-source model + deterministic forced-CAS rejection test",
       "phase": "J13b",
-      "reason": "Task49 state foundation only; not yet admitted to runtime controls or advice. No runtime learning or performance acceptance is claimed."
+      "reason": "Task49 connects valid control observations and fresh non-control Auto advice to separate process-group cells, with explicit applied/dropped accounting; diagnostics never drive learning. No performance acceptance is claimed."
     },
     {
       "id": "P1",
@@ -662,6 +667,23 @@
   ],
   "scopes": [
     {
+      "id": "P27/runtime-learning-diagnostics",
+      "class": "counter",
+      "protocol": "P27",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+      ],
+      "fn": "^learning_telemetry$",
+      "receiver": "^LEARNING_(APPLIED|DROPPED)\\[.*\\]$",
+      "ops": [
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "independent diagnostic loads of applied/dropped wrapping counters; pair state is separately read through the coherent cell snapshot, never reconstructed from counters"
+    },
+    {
       "id": "P27/estimator-pair",
       "class": "protocol",
       "protocol": "P27",
@@ -1058,7 +1080,7 @@
         "crates/*/src/**"
       ],
       "receiver": "^(.*::)?[A-Z][A-Z0-9_]*(\\[.*\\])?$",
-      "receiver_not": "^(.*::)?(INIT_STATE|LOCK|STATE|PASSES|PAGE_SIZE_CACHE|QUERY|NEXT_[A-Z_]+|DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE|DBG_RESERVATION_OWNER_ID_COUNTER|TOKEN_BACKING_DEATHS|LIVE_TOKEN_BLOCKS|TARGET|CONTROL_ORDINAL|CONTROL_SELECTIONS|CONTROL_PREMISE_FAILURES|CONTROL_VALID_OBSERVATIONS|CONTROL_INVALIDATED_OBSERVATIONS|CONTROL_INVALIDATED_REALLOC|CONTROL_OBSERVATION_ERRORS|CONTROL_RESIDENT_PAGES|CONTROL_SAMPLED_PAGES|CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG)(\\[.*\\])?$",
+      "receiver_not": "^(.*::)?(INIT_STATE|LOCK|STATE|PASSES|PAGE_SIZE_CACHE|QUERY|NEXT_[A-Z_]+|DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE|DBG_RESERVATION_OWNER_ID_COUNTER|TOKEN_BACKING_DEATHS|LIVE_TOKEN_BLOCKS|TARGET|CONTROL_ORDINAL|CONTROL_SELECTIONS|CONTROL_PREMISE_FAILURES|CONTROL_VALID_OBSERVATIONS|CONTROL_INVALIDATED_OBSERVATIONS|CONTROL_INVALIDATED_REALLOC|CONTROL_OBSERVATION_ERRORS|CONTROL_RESIDENT_PAGES|CONTROL_SAMPLED_PAGES|CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG|LEARNING_APPLIED|LEARNING_DROPPED)(\\[.*\\])?$",
       "orderings": [
         "Relaxed"
       ],
@@ -1234,6 +1256,41 @@
     }
   ],
   "rules": [
+    {
+      "id": "thp-learning/diagnostic-load-inventory",
+      "kind": "R2",
+      "protocol": "P27",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::learning_telemetry",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^LEARNING_APPLIED\\[group\\]$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^LEARNING_DROPPED\\[group\\]$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "applied",
+        "dropped",
+        "Relaxed",
+        "independent"
+      ],
+      "reason": "I6: exactly one independent Relaxed load for each applied and dropped counter; these diagnostics are not a coherent whole-array snapshot or estimator input",
+      "tests": [
+        "tests/j13b_learning_runtime.rs",
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p27_diagnostic_load_inventory"
+    },
     {
       "id": "thp-learning/update-inventory",
       "kind": "R2",

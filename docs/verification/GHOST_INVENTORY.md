@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-728 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+730 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
 `HeapSlot::cas_state` whose arguments name an ordering) in 96 files of `src/**` and
-`crates/*/src/**`; each is claimed by exactly one of 52 scopes.
+`crates/*/src/**`; each is claimed by exactly one of 53 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/728 |
-| counter | 267 | 267/728 |
-| ghost | 10 | 10/728 |
-| id | 9 | 9/728 |
-| kani | 1 | 1/728 |
-| lock-local | 40 | 40/728 |
-| non-atomic | 3 | 3/728 |
-| protocol | 206 | 206/728 |
-| test-hook | 179 | 179/728 |
-| twin | 7 | 7/728 |
-| **claimed** | **728** | 728/728 |
-| unclaimed | 0 | 0/728 |
-| claimed twice | 0 | 0/728 |
+| cache | 6 | 6/730 |
+| counter | 269 | 269/730 |
+| ghost | 10 | 10/730 |
+| id | 9 | 9/730 |
+| kani | 1 | 1/730 |
+| lock-local | 40 | 40/730 |
+| non-atomic | 3 | 3/730 |
+| protocol | 206 | 206/730 |
+| test-hook | 179 | 179/730 |
+| twin | 7 | 7/730 |
+| **claimed** | **730** | 730/730 |
+| unclaimed | 0 | 0/730 |
+| claimed twice | 0 | 0/730 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -37,7 +37,7 @@ harness; `non-atomic` — named scanner false positives.
 
 | id | protocol | class | sites | loom tests | text pins | registry rows | real code under loom | decision | phase |
 |---|---|---|---:|---:|---:|---|---|---|---|
-| P27 | large-THP coherent bounded estimator pair | none | 3 | 1 | 0 | — | authored, CI pending: loom_thp_learning_cell.rs mounts the actual production cell and pure estimator on loom atomics; two different competing observations must match one complete serial order, never a torn pair or lost update | rules + actual-source model + deterministic forced-CAS rejection test | J13b |
+| P27 | large-THP coherent bounded estimator pair | none | 5 | 1 | 0 | — | cell only: tests/loom_thp_learning_cell.rs mounts the actual production cell and math on model atomics; runtime routing/admission is exercised by native tests, not a whole-runtime model; current integration acceptance is pending CI | rules + actual-source model + deterministic forced-CAS rejection test | J13b |
 | P1 | HeapLease FREE->LIVE claim / LIVE->FREE Release drop | S | 12 | 1 | 0 | R4a-05 R4a-06 R4a-07 R4a-08 R4a-09 R4c-09 | no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone | keep+R8 | G3 |
 | P2 | MaintenanceLease FREE->MAINTENANCE | S | 4 | 1 | 0 | R4c-19 | no: same registry bootstrap as P1 | keep+R8 | G4 |
 | P3 | publish \|\| recycle \|\| drain (TORN stamp, trim, drop, claimant drain) | S | 0 | 1 | 0 | R4b-03 R4b-13 R4b-14 R4b-15 | no: drain runs through HeapCore + AllocCore segment tables | keep+R8 | G3 |
@@ -72,15 +72,18 @@ Protocols with neither a loom nor a shadow model: P20, P26 (2 of 27).
 
 ### P27 — large-THP coherent bounded estimator pair
 
-Prod: `src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs`.
+Prod: `src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs`, `src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/alloc_core/mem/advise_fresh_large.rs`.
 
 - I1 one AtomicU64 contains both Q31 estimator components; snapshot is one indivisible load
 - I2 a successful CAS applies exactly one accepted pure-estimator update from its expected packed pair
 - I3 at most eight CAS attempts per observation; exhaustion returns false without applying that observation
 - I4 Relaxed accesses publish no external payload; only the indivisible scalar pair is shared
+- I5 only validated owner first-life no-THP observations feed the request group estimator; failed-premise, remote, cache and invalidated old-realloc tokens never feed it
+- I6 per-group applied/dropped diagnostics are independent wrapping counters, not estimator inputs; applied plus dropped closes against valid observations only after worker quiescence
+- I7 the optimistic prior is group-local; Off/Always bypass learned shares and Auto still selects controls before reading a zero learned share so recovery remains observable
 - loom: `tests/loom_thp_learning_cell.rs`
 
-Decision: **rules + actual-source model + deterministic forced-CAS rejection test** — Task49 state foundation only; not yet admitted to runtime controls or advice. No runtime learning or performance acceptance is claimed.
+Decision: **rules + actual-source model + deterministic forced-CAS rejection test** — Task49 connects valid control observations and fresh non-control Auto advice to separate process-group cells, with explicit applied/dropped accounting; diagnostics never drive learning. No performance acceptance is claimed.
 
 ### P1 — HeapLease FREE->LIVE claim / LIVE->FREE Release drop
 
@@ -360,6 +363,7 @@ Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed o
 
 | scope | class | protocol | sites | reason |
 |---|---|---|---:|---|
+| `P27/runtime-learning-diagnostics` | counter | P27 | 2 | independent diagnostic loads of applied/dropped wrapping counters; pair state is separately read through the coherent cell snapshot, never reconstructed from counters |
 | `P27/estimator-pair` | protocol | P27 | 3 | one packed pair, no external publication; bounded CAS commits both estimator components atomically |
 | `P1/heap-slot-cas` | protocol | P1 | 1 | the one CAS on HeapSlot::state; orderings come from call sites |
 | `P1/claim-call-sites` | protocol | P1 | 11 | claim CASes, generation/initialised publication, lease drops |
