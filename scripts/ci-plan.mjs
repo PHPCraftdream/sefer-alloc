@@ -78,6 +78,8 @@ export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false
     if (/(windows|macos|numa|platform|_os_)/.test(name)) g.add('os');
     return g;
   }
+  // Actual-source Miri fixture imports this benchmark-only unsafe owner.
+  if (p === 'examples/_shared/j13b_owned_block.rs') return new Set(['fast', 'seam']);
   if (/^(benches|examples|fuzz)\//.test(p)) return new Set(['fast']);
   m = /^scripts\/([^/]+)$/.exec(p);
   if (m) {
@@ -231,6 +233,8 @@ function selftest() {
   // tests / benches / examples without seam names: fast.
   eq(on(P(['tests/foo_bar.rs'])), 'always,fast', 'ordinary test');
   eq(on(P(['benches/r20_prf01_controls_iai.rs', 'examples/e.rs'])), 'always,fast', 'bench+example');
+  eq(on(P(['examples/_shared/j13b_owned_block.rs'])), 'always,fast,seam', 'unsafe judge owner source');
+  eq(on(P(['examples/_shared/j13b_workload.rs'])), 'always,fast', 'safe judge plan/kernel source');
   // test that appears in the loom/miri manifests or is named loom/miri: seam too.
   eq(on(P(['tests/class_leaves_publication_miri.rs'])), 'always,fast,seam', 'miri test');
   eq(on(P(['tests/loom_r20_prf01_summary_transition.rs'])), 'always,fast,seam', 'loom test');

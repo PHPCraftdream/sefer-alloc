@@ -27,6 +27,10 @@ const depot = (borrows) => green('miri-core', 'miri_depot_cycle', 'alloc-global 
 const plainFeatures = 'alloc-global alloc-xthread alloc-decommit internals bench-internals';
 export const MIRI_TARGETS = [
   green('miri-core', 'region_invariants'),
+  ...['sb', 'tb'].map((borrows) => green('miri-core', 'j13b_owned_block', '', {
+    borrows,
+    marker: 'test ownership_transfers_both_directions_and_is_freed_on_the_actual_destination ... ok',
+  })),
   narrow('sb'),
   narrow('tb'),
   r101('sb'),

@@ -100,8 +100,8 @@ impl OwnedBytes {
 pub const TOUCH_BYTE: u8 = 0x5a;
 /// Registered `stride` step: every 16th 2 MiB region.
 pub const STRIDE_STEP_BYTES: usize = 16 * 2 * 1024 * 1024;
-/// Judge-preparation constant for the `edge` shape's second page. A future runtime
-/// adapter must derive the real base page size from the host, not reuse this literal.
+/// Legacy preparation geometry. Runtime adapters pass the actual host page size
+/// to `touch_slots_with_page` instead of using this literal.
 pub const EDGE_BASE_PAGE_BYTES: usize = 4096;
 
 /// One writable byte slot. `u8` is the safe, inspectable test implementation;
@@ -120,15 +120,31 @@ impl WriteSlot for MaybeUninit<u8> {
     }
 }
 
-/// The ONLY place that maps a [`Shape`] to written offsets. Returns the number of
-/// slots written. Fail-closed: an empty slice, or an edge shape smaller than two
-/// pages, writes nothing and returns 0.
+/// Preparation entrypoint for the single shape-to-offset kernel. Returns the
+/// number of slots written. Empty slices and undersized edge shapes write nothing.
 pub fn touch_slots<T: WriteSlot>(slots: &mut [T], shape: Shape) -> usize {
     touch_slots_stepped(slots, shape, STRIDE_STEP_BYTES)
 }
 
 /// Same kernel with an explicit stride step so small buffers can exercise `Stride`.
 pub fn touch_slots_stepped<T: WriteSlot>(slots: &mut [T], shape: Shape, step: usize) -> usize {
+    touch_slots_kernel(slots, shape, step, EDGE_BASE_PAGE_BYTES)
+}
+
+/// Same write kernel with validated host page geometry for the edge shape.
+pub fn touch_slots_with_page<T: WriteSlot>(slots: &mut [T], shape: Shape, page: usize) -> usize {
+    if !page.is_power_of_two() {
+        return 0;
+    }
+    touch_slots_kernel(slots, shape, STRIDE_STEP_BYTES, page)
+}
+
+fn touch_slots_kernel<T: WriteSlot>(
+    slots: &mut [T],
+    shape: Shape,
+    step: usize,
+    page: usize,
+) -> usize {
     let n = slots.len();
     if n == 0 || step == 0 {
         return 0;
@@ -147,9 +163,9 @@ pub fn touch_slots_stepped<T: WriteSlot>(slots: &mut [T], shape: Shape, step: us
         Shape::SparseTwoPercent => (0..n / 50).for_each(|i| put(slots, i)),
         Shape::Quarter => (0..n / 4).for_each(|i| put(slots, i)),
         Shape::EdgeTwoPages => {
-            if n >= 2 * EDGE_BASE_PAGE_BYTES {
+            if page.checked_mul(2).is_some_and(|minimum| n >= minimum) {
                 put(slots, 0);
-                put(slots, n - EDGE_BASE_PAGE_BYTES);
+                put(slots, n - page);
             }
         }
     }

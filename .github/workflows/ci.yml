@@ -120,6 +120,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - if: steps.paths.outputs.run == 'true'
         run: cargo test --test j13b_judge_workload --features production
+      - name: J13b owned-buffer fixture and installed owner/foreign boundary
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -o pipefail
+          cargo test --locked --features 'production internals bench-internals' --test j13b_owned_block \
+            | tee "$RUNNER_TEMP/j13b-owned-fixtures.log"
+          grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/j13b-owned-fixtures.log"
+          cargo test --locked --features 'production internals bench-internals' --test j13b_owned_block_installed \
+            | tee "$RUNNER_TEMP/j13b-owned-native.log"
+          grep -F 'test real_owner_and_foreign_frees_preserve_learning_boundary ... ok' "$RUNNER_TEMP/j13b-owned-native.log"
+          grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-owned-native.log"
       - name: Static control-matched reference (disposable source copy only)
         if: steps.paths.outputs.run == 'true'
         run: |
@@ -3389,6 +3400,24 @@ jobs:
       # The core invariants (UB-free slotmap membrane), default features.
       - name: region_invariants
         run: cargo miri test --test region_invariants
+      - name: J13b owning buffers (strict provenance, Stacked Borrows)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+        run: |
+          set -o pipefail
+          cargo miri test --test j13b_owned_block 2>&1 | tee "$RUNNER_TEMP/miri-j13b-owned-sb.log"
+          grep -F 'test ownership_transfers_both_directions_and_is_freed_on_the_actual_destination ... ok' "$RUNNER_TEMP/miri-j13b-owned-sb.log"
+          grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-owned-sb.log"
+        shell: bash
+      - name: J13b owning buffers (strict provenance, Tree Borrows)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows"
+        run: |
+          set -o pipefail
+          cargo miri test --test j13b_owned_block 2>&1 | tee "$RUNNER_TEMP/miri-j13b-owned-tb.log"
+          grep -F 'test ownership_transfers_both_directions_and_is_freed_on_the_actual_destination ... ok' "$RUNNER_TEMP/miri-j13b-owned-tb.log"
+          grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-owned-tb.log"
+        shell: bash
       - name: installed Box narrow-provenance ownership round trip
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
