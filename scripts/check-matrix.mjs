@@ -341,6 +341,20 @@ export const PER_PR_ROWS = [
     target: { flag: '--test', name: 'j13b_control_ticket_log_capture_bounds' },
     note: 'The only row exercising the diagnostic ticket-log capture bounds (production packer/gate threshold and marker-0 rejection through the pure hooks, plus a real 129-record window rejected as over-cap through the installed GlobalAlloc), deliberately without numa-aware.',
   },
+  {
+    id: 'test-j13b-learning-cell-native',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    target: { flag: '--test', name: 'loom_thp_learning_cell' },
+    note: 'Native actual-source estimator cell: coherent pair, serial math equivalence, group isolation and accepted-update conservation. The separate Loom row executes its interleaving oracle.',
+  },
+  {
+    id: 'test-j13b-learning-contention-bound',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    target: { flag: '--test', name: 'j13b_learning_contention_bound' },
+    note: 'Forces the actual cell CAS seam to reject all eight attempts; proves bounded termination, rejection and unchanged estimator state.',
+  },
 ];
 
 /** Sentinel used in `features` to mean "--all-features" rather than a literal

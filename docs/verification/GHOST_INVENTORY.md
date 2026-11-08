@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-725 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 95 files of `src/**` and
-`crates/*/src/**`; each is claimed by exactly one of 51 scopes.
+728 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 96 files of `src/**` and
+`crates/*/src/**`; each is claimed by exactly one of 52 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/725 |
-| counter | 267 | 267/725 |
-| ghost | 10 | 10/725 |
-| id | 9 | 9/725 |
-| kani | 1 | 1/725 |
-| lock-local | 40 | 40/725 |
-| non-atomic | 3 | 3/725 |
-| protocol | 203 | 203/725 |
-| test-hook | 179 | 179/725 |
-| twin | 7 | 7/725 |
-| **claimed** | **725** | 725/725 |
-| unclaimed | 0 | 0/725 |
-| claimed twice | 0 | 0/725 |
+| cache | 6 | 6/728 |
+| counter | 267 | 267/728 |
+| ghost | 10 | 10/728 |
+| id | 9 | 9/728 |
+| kani | 1 | 1/728 |
+| lock-local | 40 | 40/728 |
+| non-atomic | 3 | 3/728 |
+| protocol | 206 | 206/728 |
+| test-hook | 179 | 179/728 |
+| twin | 7 | 7/728 |
+| **claimed** | **728** | 728/728 |
+| unclaimed | 0 | 0/728 |
+| claimed twice | 0 | 0/728 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -37,6 +37,7 @@ harness; `non-atomic` — named scanner false positives.
 
 | id | protocol | class | sites | loom tests | text pins | registry rows | real code under loom | decision | phase |
 |---|---|---|---:|---:|---:|---|---|---|---|
+| P27 | large-THP coherent bounded estimator pair | none | 3 | 1 | 0 | — | authored, CI pending: loom_thp_learning_cell.rs mounts the actual production cell and pure estimator on loom atomics; two different competing observations must match one complete serial order, never a torn pair or lost update | rules + actual-source model + deterministic forced-CAS rejection test | J13b |
 | P1 | HeapLease FREE->LIVE claim / LIVE->FREE Release drop | S | 12 | 1 | 0 | R4a-05 R4a-06 R4a-07 R4a-08 R4a-09 R4c-09 | no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone | keep+R8 | G3 |
 | P2 | MaintenanceLease FREE->MAINTENANCE | S | 4 | 1 | 0 | R4c-19 | no: same registry bootstrap as P1 | keep+R8 | G4 |
 | P3 | publish \|\| recycle \|\| drain (TORN stamp, trim, drop, claimant drain) | S | 0 | 1 | 0 | R4b-03 R4b-13 R4b-14 R4b-15 | no: drain runs through HeapCore + AllocCore segment tables | keep+R8 | G3 |
@@ -64,10 +65,22 @@ harness; `non-atomic` — named scanner false positives.
 | P25 | large-THP budget ledger (advised bytes, bounded CAS reserve) | none | 4 | 1 | 0 | — | yes: tests/loom_thp_ledger.rs compiles the production thp_budget_ledger.rs (#[path]) onto the concurrency atomics; oracles: racing 6 MiB reserves against an 8 MiB budget never hand out more than the budget (an unconditional fetch_add reserve fails this), grants are exact granule multiples, and the ledger is empty after every thread returns exactly its own grant | rules + actual-source model + integration tests | J13b |
 | P26 | large-THP deterministic control ordinal and diagnostic telemetry | none | 16 | 0 | 0 | — | no: this runtime uses process-wide core atomics; the deterministic selector is separately pure-tested, and no runtime model is claimed | rules + pure selector tests | J13b |
 
-Shadow-model protocols (class contains S): 13 of 26, each with a decision.
-Protocols with neither a loom nor a shadow model: P20, P26 (2 of 26).
+Shadow-model protocols (class contains S): 13 of 27, each with a decision.
+Protocols with neither a loom nor a shadow model: P20, P26 (2 of 27).
 
 ## 3. Invariants and prod places
+
+### P27 — large-THP coherent bounded estimator pair
+
+Prod: `src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs`.
+
+- I1 one AtomicU64 contains both Q31 estimator components; snapshot is one indivisible load
+- I2 a successful CAS applies exactly one accepted pure-estimator update from its expected packed pair
+- I3 at most eight CAS attempts per observation; exhaustion returns false without applying that observation
+- I4 Relaxed accesses publish no external payload; only the indivisible scalar pair is shared
+- loom: `tests/loom_thp_learning_cell.rs`
+
+Decision: **rules + actual-source model + deterministic forced-CAS rejection test** — Task49 state foundation only; not yet admitted to runtime controls or advice. No runtime learning or performance acceptance is claimed.
 
 ### P1 — HeapLease FREE->LIVE claim / LIVE->FREE Release drop
 
@@ -347,6 +360,7 @@ Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed o
 
 | scope | class | protocol | sites | reason |
 |---|---|---|---:|---|
+| `P27/estimator-pair` | protocol | P27 | 3 | one packed pair, no external publication; bounded CAS commits both estimator components atomically |
 | `P1/heap-slot-cas` | protocol | P1 | 1 | the one CAS on HeapSlot::state; orderings come from call sites |
 | `P1/claim-call-sites` | protocol | P1 | 11 | claim CASes, generation/initialised publication, lease drops |
 | `P2/maintenance` | protocol | P2 | 4 | FREE->MAINTENANCE claim |
