@@ -17,6 +17,8 @@
 use core::alloc::Layout;
 
 use crate::alloc_core::node::Node;
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+use crate::alloc_core::policy::large_thp_runtime::ThpRuntime;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 #[cfg(any(feature = "misuse-checks", debug_assertions))]
 use crate::alloc_core::AllocCore;
@@ -368,8 +370,22 @@ impl HeapCore {
                     let large_shrink =
                         new_eff < old_eff && SegmentHeader::kind_at(base) == SegmentKind::Large;
                     if large_shrink {
-                        let payload_off = SegmentHeader::read_at(base).payload_offset;
-                        if ptr.addr() == base.addr() + payload_off {
+                        // The successful fallback keeps the block in place,
+                        // so a pending first-life control observation must be
+                        // consumed exactly once with reason/group-correct
+                        // accounting BEFORE the size setter clears the token
+                        // (same capture-before-clear contract as the grow
+                        // paths). The truly failed legs above returned before
+                        // any header write and preserve the token untouched.
+                        let hdr = SegmentHeader::read_at(base);
+                        if ptr.addr() == base.addr() + hdr.payload_offset {
+                            #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+                            if hdr.thp_observation != 0 {
+                                ThpRuntime::note_realloc_invalidated_by_token(
+                                    hdr.thp_observation,
+                                    hdr.large_size,
+                                );
+                            }
                             SegmentHeader::set_large_size_at(base, new_eff);
                             return ptr;
                         }
@@ -377,6 +393,27 @@ impl HeapCore {
                     return core::ptr::null_mut();
                 }
                 let copy = old_layout.size().min(new_size);
+                // The own-block lookup above supplies the canonical base and
+                // proves this is our live mapping. Once replacement allocation
+                // succeeds, invalidate a Large source's control observation
+                // before the copy reads from it: that logical touch makes the
+                // old residency sample no longer representative. Allocation
+                // failure returns earlier and preserves the old token/lifetime.
+                // The token is read BEFORE the clear so the invalidation is
+                // attributed to its token-derived group exactly once; a zero
+                // token was never a control observation and is not sampled.
+                // The old recorded large size is read BEFORE the clear so an
+                // unknown token's defensive error is attributed to the
+                // reallocated mapping's own request size.
+                #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+                if SegmentHeader::kind_at(base) == SegmentKind::Large {
+                    let token = SegmentHeader::thp_observation_at(base);
+                    if token != 0 {
+                        let size = SegmentHeader::read_at(base).large_size;
+                        ThpRuntime::note_realloc_invalidated_by_token(token, size);
+                    }
+                    SegmentHeader::set_thp_observation_at(base, 0);
+                }
                 crate::alloc_core::node::Node::copy_nonoverlapping(block, new_ptr, copy);
                 // F6 (task #494): `base` is already in hand from the
                 // `contains_base(base)` check above — hand it directly to the

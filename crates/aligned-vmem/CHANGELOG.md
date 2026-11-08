@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **`Reservation::try_disable_transparent_huge_pages()`** — owning, whole-usable-span Linux/Android `MADV_NOHUGEPAGE` policy operation for a fresh mapping before payload faults. Success means the kernel accepted the VMA policy, including against THP `always`/mTHP; it does not prove already-faulted huge backing was split. Explicit huge mappings, unsupported targets, miri, mock, and injected pre-syscall failures return errors rather than success.
 - **Checked (fallible) release family** (task #56, J13b checked-release
   prerequisite) — `try_release(ptr, len, align)`, the typed twin
   `try_release_parts(ReservationParts)`, and the safe consuming method

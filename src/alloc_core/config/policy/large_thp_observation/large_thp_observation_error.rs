@@ -60,4 +60,15 @@ pub enum LargeThpObservationError {
     /// by the span size — but present so the constructors fail closed
     /// instead of silently wrapping out of range.
     InternalRange,
+    /// The recorded reservation root address was `0` — a live
+    /// reservation root is never null.
+    ZeroReservationAddress,
+    /// `reservation_len` was not a multiple of the base page size — an
+    /// adoption-caller obligation, validated here rather than deferred
+    /// to the caller.
+    ReservationLenNotPageAligned,
+    /// The usable base range did not sit inside the recorded
+    /// reservation: the base was below the reservation root, or the
+    /// usable range end extended past the reservation end.
+    BaseOutsideReservation,
 }

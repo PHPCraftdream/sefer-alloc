@@ -612,6 +612,29 @@
       "decision": "rules + actual-source model + integration tests",
       "phase": "J13b",
       "reason": "J13b #47: R1 pins the Relaxed load, CAS and fetch_sub, R4 bounds the reserve loop, R3 ties the CAS to the observed value and the unmap to give_back, R5 keeps os::release_segment in the Large files inside the terminal funnel; behaviour is covered by the j13b_thp_budget_* integration tests and by tests/loom_thp_ledger.rs, the actual-source loom model of the ledger"
+    },
+    {
+      "id": "P26",
+      "name": "large-THP deterministic control ordinal and diagnostic telemetry",
+      "prod": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+        "src/alloc_core/config/policy/large_thp_observation/large_thp_control_selector.rs"
+      ],
+      "invariants": [
+        "I1 each next_control call obtains one successive wrapping ticket from CONTROL_ORDINAL with one fetch_add(Relaxed); the returned ticket is the ordinal input to the deterministic selection, not a publication",
+        "I2 next_control uses the fixed CONTROL_SEED with the pure decision_at(seed, ordinal) selector; the selector defines exactly one control in each complete aligned cohort of eight ordinals (not every sliding window)",
+        "I3 control counters are diagnostic wrapping u64 totals only: Relaxed accesses publish no data and establish no happens-before edge",
+        "I4 control_telemetry reads each of eight fields independently with Relaxed loads; the returned array is not a coherent multiword snapshot",
+        "I5 the bench-internals ticket log records the (ordinal, decision) actually consumed per next_control call in bounded diagnostic storage; its entries are never gate inputs and all accesses stay Relaxed"
+      ],
+      "class": "none",
+      "loom": [],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "no: this runtime uses process-wide core atomics; the deterministic selector is separately pure-tested, and no runtime model is claimed",
+      "decision": "rules + pure selector tests",
+      "phase": "J13b",
+      "reason": "P26 rules pin the single Relaxed ordinal RMW, its fixed-seed decision call, and the diagnostic counter/load inventories; tests/j13b_observation_control_selector.rs checks the selector's one-control-per-complete-aligned-eight contract independently of runtime atomics"
     }
   ],
   "scopes": [
@@ -994,7 +1017,7 @@
         "crates/*/src/**"
       ],
       "receiver": "^(.*::)?[A-Z][A-Z0-9_]*(\\[.*\\])?$",
-      "receiver_not": "^(.*::)?(INIT_STATE|LOCK|STATE|PASSES|PAGE_SIZE_CACHE|QUERY|NEXT_[A-Z_]+|DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE|DBG_RESERVATION_OWNER_ID_COUNTER|TOKEN_BACKING_DEATHS|LIVE_TOKEN_BLOCKS|TARGET)$",
+      "receiver_not": "^(.*::)?(INIT_STATE|LOCK|STATE|PASSES|PAGE_SIZE_CACHE|QUERY|NEXT_[A-Z_]+|DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE|DBG_RESERVATION_OWNER_ID_COUNTER|TOKEN_BACKING_DEATHS|LIVE_TOKEN_BLOCKS|TARGET|CONTROL_ORDINAL|CONTROL_SELECTIONS|CONTROL_PREMISE_FAILURES|CONTROL_VALID_OBSERVATIONS|CONTROL_INVALIDATED_OBSERVATIONS|CONTROL_INVALIDATED_REALLOC|CONTROL_OBSERVATION_ERRORS|CONTROL_RESIDENT_PAGES|CONTROL_SAMPLED_PAGES|CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG)(\\[.*\\])?$",
       "orderings": [
         "Relaxed"
       ],
@@ -1112,6 +1135,61 @@
         "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs"
       ],
       "reason": "budget ledger: Relaxed load, bounded CAS reserve, fetch_sub give-back on one counter"
+    },
+    {
+      "id": "P26/control-ordinal",
+      "class": "protocol",
+      "protocol": "P26",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+      ],
+      "fn": "^(next_control|control_ordinal_probe)$",
+      "receiver": "^CONTROL_ORDINAL$",
+      "ops": [
+        "fetch_add",
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "one wrapping ordinal ticket per control decision; Relaxed because the value is only a selector input and publishes nothing; the bench-internals probe adds one Relaxed diagnostic load that mutates nothing"
+    },
+    {
+      "id": "P26/control-diagnostics",
+      "class": "counter",
+      "protocol": "P26",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+      ],
+      "fn": "^(note_group_counter|control_telemetry)$",
+      "receiver": "^(CONTROL_(SELECTIONS|PREMISE_FAILURES|VALID_OBSERVATIONS|INVALIDATED_OBSERVATIONS|INVALIDATED_REALLOC|OBSERVATION_ERRORS|RESIDENT_PAGES|SAMPLED_PAGES)\\[.*\\]|counters\\[.*\\])$",
+      "ops": [
+        "fetch_add",
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "diagnostic-only wrapping counter RMWs and independent telemetry loads; no publication or coherent snapshot"
+    },
+    {
+      "id": "P26/control-ticket-log",
+      "class": "counter",
+      "protocol": "P26",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+      ],
+      "fn": "^(record_control_ticket|ticket_log_reset|ticket_log_snapshot)$",
+      "receiver": "^(CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG\\[.*\\]|slot)$",
+      "ops": [
+        "fetch_add",
+        "load",
+        "store"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "bench-internals diagnostic ticket log: exactly one bounded cursor/store/load inventory per helper so tests can observe actual consumed tickets; publishes nothing"
     }
   ],
   "rules": [
@@ -6903,6 +6981,313 @@
       "reason": "I5: only a confirmed checked-release success permits returning charge; failure or unknown release must keep budget unavailable.",
       "tests": ["tests/j13b_thp_release_failure_retains_charge.rs"],
       "fixtures": "tests/ghost_lint_fixtures/p25_return_needs_checked_success"
+    },
+    {
+      "id": "thp-control/ordinal-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::next_control",
+      "sites": [
+        {
+          "name": "fetch_add",
+          "receiver": "CONTROL_ORDINAL",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "CONTROL_ORDINAL",
+        "fetch_add",
+        "Relaxed",
+        "one ordinal"
+      ],
+      "reason": "I1: exactly one Relaxed fetch_add issues the ticket; a load/store replacement, missing increment, added retry RMW, or stronger ordering changes this inventory",
+      "tests": [
+        "tests/j13b_observation_control_selector.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ordinal_inventory"
+    },
+    {
+      "id": "thp-control/ordinal-probe-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::control_ordinal_probe",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "CONTROL_ORDINAL",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "probe",
+        "CONTROL_ORDINAL",
+        "load",
+        "Relaxed"
+      ],
+      "reason": "the bench-internals diagnostic probe is exactly one Relaxed CONTROL_ORDINAL load; any mutation, second read, or stronger ordering changes this inventory",
+      "tests": [
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ordinal_probe"
+    },
+    {
+      "id": "thp-control/ordinal-before-decision",
+      "kind": "R3",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::next_control",
+      "before": {
+        "name": "fetch_add",
+        "receiver": "CONTROL_ORDINAL",
+        "orderings": [
+          "Relaxed"
+        ]
+      },
+      "after": {
+        "name": "decision_at",
+        "kind": "call",
+        "receiver": "LargeThpControlSelector",
+        "args": "^CONTROL_SEED,ordinal$"
+      },
+      "terms": [
+        "CONTROL_SEED",
+        "ordinal",
+        "decision_at",
+        "after"
+      ],
+      "reason": "I1/I2: the fixed-seed pure selector receives the ticket returned by the preceding ordinal RMW; it does not observe or publish shared state",
+      "tests": [
+        "tests/j13b_observation_control_selector.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ordinal_before_decision"
+    },
+    {
+      "id": "thp-control/diagnostic-counter-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "note_group_counter",
+      "sites": [
+        {
+          "name": "fetch_add",
+          "receiver": "^counters\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "diagnostic",
+        "fetch_add",
+        "Relaxed"
+      ],
+      "reason": "I3: helper counter updates are exactly one Relaxed wrapping fetch_add, not a load/store read-modify-write",
+      "fixtures": "tests/ghost_lint_fixtures/p26_diagnostic_counter_inventory"
+    },
+    {
+      "id": "thp-control/telemetry-load-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::control_telemetry",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^CONTROL_SELECTIONS\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_PREMISE_FAILURES\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_VALID_OBSERVATIONS\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_INVALIDATED_OBSERVATIONS\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_INVALIDATED_REALLOC\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_OBSERVATION_ERRORS\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_RESIDENT_PAGES\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_SAMPLED_PAGES\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "eight",
+        "Relaxed",
+        "telemetry",
+        "independent",
+        "snapshot"
+      ],
+      "reason": "I4: the stats array is assembled from eight independent Relaxed loads; it is diagnostic and is not a coherent multiword snapshot",
+      "fixtures": "tests/ghost_lint_fixtures/p26_telemetry_load_inventory"
+    },
+    {
+      "id": "thp-control/ticket-log-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "record_control_ticket",
+      "sites": [
+        {
+          "name": "fetch_add",
+          "receiver": "^CONTROL_TICKET_CURSOR$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^CONTROL_TICKET_LOG\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "ticket",
+        "log",
+        "cursor",
+        "Relaxed",
+        "diagnostic"
+      ],
+      "reason": "I3: the ticket log records exactly one Relaxed cursor fetch_add plus one Relaxed bounded slot store per consumed ticket; any second or stronger atomic changes the bounded record path tests rely on",
+      "tests": [
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ticket_log_inventory"
+    },
+    {
+      "id": "thp-control/ticket-log-after-decision",
+      "kind": "R3",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::next_control",
+      "before": {
+        "name": "decision_at",
+        "kind": "call",
+        "receiver": "^LargeThpControlSelector$",
+        "args": "^CONTROL_SEED,ordinal$"
+      },
+      "after": {
+        "name": "record_control_ticket",
+        "kind": "call"
+      },
+      "terms": [
+        "decision",
+        "ticket",
+        "record",
+        "after"
+      ],
+      "reason": "I1/I2: the ticket log must capture the decision the runtime actually computed for the ticket fetched in the same call, so the record call sits in a position dominated by the fixed-seed decision_at",
+      "tests": [
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ticket_log_after_decision"
+    },
+    {
+      "id": "thp-control/ticket-log-reset-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::ticket_log_reset",
+      "sites": [
+        {
+          "name": "store",
+          "receiver": "^CONTROL_TICKET_CURSOR$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "reset",
+        "cursor",
+        "store",
+        "Relaxed"
+      ],
+      "reason": "I5: the reset helper performs exactly one Relaxed CONTROL_TICKET_CURSOR store and nothing else atomic; a fetch_add replacement or stronger ordering changes the bounded reset path tests rely on for quiescent windows",
+      "tests": [
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ticket_log_reset_inventory"
+    },
+    {
+      "id": "thp-control/ticket-log-snapshot-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::ticket_log_snapshot",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^slot$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_TICKET_CURSOR$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "snapshot",
+        "cursor",
+        "load",
+        "Relaxed"
+      ],
+      "reason": "I5: the snapshot helper reads each log slot and the cursor with exactly one Relaxed load each; a second slot load, a store, or a stronger ordering changes the bounded read path tests rely on",
+      "tests": [
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ticket_log_snapshot_inventory"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

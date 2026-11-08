@@ -299,6 +299,48 @@ export const PER_PR_ROWS = [
     target: { flag: '--test', name: 'j13b_thp_release_failure_retains_charge' },
     note: 'Linux native root accounting: a backend-result surrogate release failure retains charge and prevents budget readmission; not kernel-refusal evidence.',
   },
+  {
+    id: 'test-j13b-control-premise-recovery',
+    kind: 'test',
+    features: 'production internals bench-internals lazy-commit-fault-injection',
+    target: { flag: '--test', name: 'j13b_control_premise_recovery' },
+    note: 'The only row exercising the injected no-THP-premise failure/recovery binary (Linux-only body, deliberately without numa-aware, mirroring test-j13b-thp-injected-pre-syscall).',
+  },
+  {
+    id: 'test-j13b-control-sampler-recovery',
+    kind: 'test',
+    features: 'production internals bench-internals lazy-commit-fault-injection',
+    target: { flag: '--test', name: 'j13b_control_sampler_recovery' },
+    note: 'The only row exercising the injected-residency-sampler failure/recovery binary (Linux-only body, deliberately without numa-aware, mirroring test-j13b-thp-injected-pre-syscall).',
+  },
+  {
+    id: 'test-j13b-control-concurrent-ordinal',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    target: { flag: '--test', name: 'j13b_control_concurrent_ordinal' },
+    note: 'The only row exercising concurrent competing eligible allocations through the process-global ordinal via the installed GlobalAlloc (Linux-only body, deliberately without numa-aware); asserts aligned full-cohort counts and exactly-once observations.',
+  },
+  {
+    id: 'test-j13b-control-reserved-capacity-invalidation',
+    kind: 'test',
+    features: 'production large-reserved-capacity internals bench-internals',
+    target: { flag: '--test', name: 'j13b_control_reserved_capacity_invalidation' },
+    note: 'The only row exercising the reserved-capacity + exact-span invalidation boundary (successful in-place reserved grow accounts once; failed grow preserves the token for the moving leg), deliberately without numa-aware.',
+  },
+  {
+    id: 'test-j13b-control-oom-shrink-invalidation',
+    kind: 'test',
+    features: 'production internals bench-internals lazy-commit-fault-injection',
+    target: { flag: '--test', name: 'j13b_control_oom_shrink_invalidation' },
+    note: 'The only row exercising the registry OOM-shrink fallback accounting (success and failed-premise tokens consumed exactly once; a truly failed growth realloc preserves telemetry), deliberately without numa-aware.',
+  },
+  {
+    id: 'test-j13b-control-ticket-log-capture-bounds',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    target: { flag: '--test', name: 'j13b_control_ticket_log_capture_bounds' },
+    note: 'The only row exercising the diagnostic ticket-log capture bounds (production packer/gate threshold and marker-0 rejection through the pure hooks, plus a real 129-record window rejected as over-cap through the installed GlobalAlloc), deliberately without numa-aware.',
+  },
 ];
 
 /** Sentinel used in `features` to mean "--all-features" rather than a literal

@@ -90,6 +90,7 @@ impl LargeThpControlSelector {
     /// A fresh selector whose first eligible fresh request opens cohort
     /// 0. A zero seed is a defined input.
     #[must_use]
+    #[allow(dead_code)] // stateful surface is exercised only by the #[path]-included tests/j13b_observation_control_selector.rs; the runtime consumes only decision_at
     pub const fn new(seed: u64) -> Self {
         Self {
             seed,
@@ -101,10 +102,11 @@ impl LargeThpControlSelector {
     /// TEST-ONLY bounded stream-position constructor, compiled solely
     /// under `cfg(test)`.
     ///
-    /// This module is not wired into the crate tree at all — it is
-    /// compiled only by the integration tests that include it via
-    /// `#[path]` — so this constructor never exists in any runtime or
-    /// library build. It exists to place the stream at an arbitrary
+    /// This module is now declared from `config/policy/mod.rs` (the
+    /// runtime consumes the pure `decision_at` surface), while this
+    /// `cfg(test)` constructor and the `#[path]`-included integration
+    /// tests still exercise the stateful surface. This constructor never
+    /// exists in any runtime or library build. It exists to place the stream at an arbitrary
     /// ordinal (e.g. `u64::MAX - 7`) so the real `u64` counter wrap can
     /// be driven through
     /// [`classify_eligible_request`](Self::classify_eligible_request)
@@ -132,6 +134,7 @@ impl LargeThpControlSelector {
     /// Total: never panics; the request counter wraps at `2^64` (defined,
     /// deterministic repeat of the no-reseed stream).
     #[must_use]
+    #[allow(dead_code)] // stateful surface is exercised only by the #[path]-included tests/j13b_observation_control_selector.rs; the runtime consumes only decision_at
     pub fn classify_eligible_request(&mut self) -> bool {
         let ordinal = self.requests_seen;
         if ordinal.is_multiple_of(Self::COHORT_LEN) {
@@ -168,6 +171,7 @@ impl LargeThpControlSelector {
     /// completes under the seed it opened with, so a scheduled reseed can
     /// never break the one-control-per-cohort property. Calling this
     /// again before it is consumed overwrites the armed value.
+    #[allow(dead_code)] // stateful surface is exercised only by the #[path]-included tests/j13b_observation_control_selector.rs; the runtime consumes only decision_at
     pub fn schedule_reseed(&mut self, seed: u64) {
         self.pending_seed = Some(seed);
     }
@@ -179,6 +183,7 @@ impl LargeThpControlSelector {
     /// call (which opens the next cohort), so this reads `true` between
     /// the two calls even though the cohort boundary has been crossed.
     #[must_use]
+    #[allow(dead_code)] // stateful surface is exercised only by the #[path]-included tests/j13b_observation_control_selector.rs; the runtime consumes only decision_at
     pub const fn has_pending_reseed(&self) -> bool {
         self.pending_seed.is_some()
     }
@@ -186,6 +191,7 @@ impl LargeThpControlSelector {
     /// The seed governing the CURRENT cohort; a scheduled reseed swaps
     /// this value only at a cohort boundary.
     #[must_use]
+    #[allow(dead_code)] // stateful surface is exercised only by the #[path]-included tests/j13b_observation_control_selector.rs; the runtime consumes only decision_at
     pub const fn effective_seed(&self) -> u64 {
         self.seed
     }
@@ -193,12 +199,14 @@ impl LargeThpControlSelector {
     /// The cohort index the NEXT classified request lands in
     /// (`requests_seen / COHORT_LEN`).
     #[must_use]
+    #[allow(dead_code)] // stateful surface is exercised only by the #[path]-included tests/j13b_observation_control_selector.rs; the runtime consumes only decision_at
     pub const fn cohort_index(&self) -> u64 {
         self.requests_seen / Self::COHORT_LEN
     }
 
     /// Eligible fresh requests classified so far.
     #[must_use]
+    #[allow(dead_code)] // stateful surface is exercised only by the #[path]-included tests/j13b_observation_control_selector.rs; the runtime consumes only decision_at
     pub const fn requests_seen(&self) -> u64 {
         self.requests_seen
     }

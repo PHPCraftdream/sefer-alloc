@@ -91,6 +91,8 @@ mod sidecar_test_hooks;
 mod mem;
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
 pub(crate) use mem::advise_fresh_large;
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+pub(crate) use mem::observe_large_control;
 pub(crate) use mem::release_large_mapping;
 // R6-T16: consumed by the fastbin-gated own-free/realloc paths and the
 // `medium-classes` promotion path via the `alloc_core::OwnedBlock` re-export.

@@ -26,6 +26,8 @@ use crate::alloc_core::alloc_core::release_large_mapping;
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::alloc_core::LARGE_CACHE_SIZE_FACTOR;
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
 #[cfg(feature = "internals")]
 use core::sync::atomic::{AtomicBool, Ordering};
 // R1-08: `CachedLarge` is constructed only inside `reclaim_large_segment`,
@@ -585,7 +587,7 @@ impl AllocCore {
             }
         };
         #[cfg(not(feature = "numa-aware"))]
-        let (base, reservation, reservation_len, reserved_capacity, thp_charge) = {
+        let (base, reservation, reservation_len, reserved_capacity, thp_charge, _thp_observation) = {
             // R12-4: the RESERVED VA span for this segment. With the feature
             // ON (`usable` already page-exact from `exact-span-large`
             // above), reserve a geometric multiple of `usable` — capped at
@@ -706,7 +708,7 @@ impl AllocCore {
                 let Some((b, r, rl)) = reserved else {
                     return (core::ptr::null_mut(), true);
                 };
-                (b, r, rl, reserved_capacity_target, 0usize)
+                (b, r, rl, reserved_capacity_target, 0usize, 0u64)
             } else {
                 let segment = match seg {
                     Some(s) => s,
@@ -718,15 +720,22 @@ impl AllocCore {
                 // Advise before the live `Segment` is forgotten; the charge stays a local
                 // until the header is written (or the registration failure returns it).
                 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-                let thp_charge = advise_fresh_large(&segment, size, usable);
+                let (thp_charge, thp_observation) = advise_fresh_large(&segment, size, usable);
                 #[cfg(not(all(feature = "alloc-decommit", not(feature = "numa-aware"))))]
-                let thp_charge = 0usize;
+                let (thp_charge, thp_observation) = (0usize, 0u64);
                 core::mem::forget(segment);
-                (b, r, rl, reserved_capacity_target, thp_charge)
+                (
+                    b,
+                    r,
+                    rl,
+                    reserved_capacity_target,
+                    thp_charge,
+                    thp_observation,
+                )
             }
         };
         #[cfg(feature = "numa-aware")]
-        let (reserved_capacity, thp_charge) = (usable, 0usize);
+        let (reserved_capacity, thp_charge, _thp_observation) = (usable, 0usize, 0u64);
 
         // no-panic: register returns None if the segment table is full (too many
         // live large allocations). We release the reservation and return null
@@ -775,6 +784,8 @@ impl AllocCore {
         if thp_charge != 0 {
             SegmentHeader::set_thp_charge_at(base, thp_charge);
         }
+        #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+        SegmentHeader::set_thp_observation_at(base, _thp_observation);
         // Phase C (numa-aware): stamp the NUMA node into the header after
         // writing it (the constructor sets node_id to NO_NODE_RAW).
         #[cfg(feature = "numa-aware")]
@@ -861,6 +872,23 @@ impl AllocCore {
             fatal(b"large: live claim credit missing\n");
         };
         let hdr = SegmentHeader::read_at(base);
+        // A foreign realloc may have copied this mapping's payload without
+        // updating its owner-only token. Consume remote controls conservatively;
+        // only the owner-free path may sample a live token.
+        #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+        {
+            let token = SegmentHeader::thp_observation_at(base);
+            if token != 0 {
+                SegmentHeader::set_thp_observation_at(base, 0);
+                if matches!(token, 1..=6) {
+                    ThpRuntime::note_invalidated_observation(hdr.large_size);
+                } else if matches!(token, 9..=14) {
+                    ThpRuntime::note_premise_failure(hdr.large_size);
+                } else {
+                    ThpRuntime::note_observation_error(hdr.large_size);
+                }
+            }
+        }
         // Remove from the table FIRST (frees the slot for reuse regardless of
         // which branch below runs) — mirrors the own-thread cache-deposit
         // ordering in `dealloc`'s Large branch.

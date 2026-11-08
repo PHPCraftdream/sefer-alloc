@@ -16,7 +16,11 @@ use super::super::counters::LARGE_ZERO_PASS_CALLS;
 use super::super::counters::SMALL_ZERO_PASS_CALLS;
 #[cfg(feature = "alloc-decommit")]
 use super::super::CachedLarge;
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+use crate::alloc_core::alloc_core::observe_large_control;
 use crate::alloc_core::alloc_core::AllocCore;
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
@@ -367,6 +371,8 @@ impl AllocCore {
         let Some(generation) = state.claim_live() else {
             fatal(b"mem_impl: large live credit missing on free\n");
         };
+        #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+        observe_large_control(base);
         // Large/huge: the segment is being freed. The full header read
         // here is on the cold Large path (one allocation per segment,
         // rare), so the dependent-load cost does not matter.
@@ -827,6 +833,23 @@ impl AllocCore {
         let new_ptr = self.alloc(new_layout);
         if new_ptr.is_null() {
             return core::ptr::null_mut();
+        }
+        // A successful move makes the old Large mapping's first-life THP
+        // control stale; failed allocation leaves its token untouched. The
+        // token is read BEFORE the clear so the invalidation is attributed
+        // to its token-derived group (successful control vs premise
+        // failure) exactly once; a zero token was never a control
+        // observation and is not sampled. The old recorded large size is
+        // read BEFORE the clear so an unknown token's defensive error is
+        // attributed to the reallocated mapping's own request size.
+        #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+        if SegmentHeader::kind_at(base) == SegmentKind::Large {
+            let token = SegmentHeader::thp_observation_at(base);
+            if token != 0 {
+                let size = SegmentHeader::read_at(base).large_size;
+                ThpRuntime::note_realloc_invalidated_by_token(token, size);
+            }
+            SegmentHeader::set_thp_observation_at(base, 0);
         }
         let copy = old_layout.size().min(new_size);
         Node::copy_nonoverlapping(block, new_ptr, copy);

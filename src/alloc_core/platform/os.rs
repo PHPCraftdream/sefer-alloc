@@ -523,6 +523,12 @@ impl Segment {
         self.0.advise_huge_pages()
     }
 
+    /// Disable transparent huge-page backing for this reservation's usable span.
+    #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+    pub(crate) fn try_disable_transparent_huge_pages(&self) -> Result<(), vmem::VmemError> {
+        self.0.try_disable_transparent_huge_pages()
+    }
+
     /// Range-limited huge-page hint for `[offset, offset + length)` of the span; returns the bytes the kernel accepted.
     // Used by the dependent fresh-path THP integration.
     #[cfg_attr(

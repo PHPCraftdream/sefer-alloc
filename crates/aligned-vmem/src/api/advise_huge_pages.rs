@@ -8,6 +8,75 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 use crate::Reservation;
 
 impl Reservation {
+    /// Disable transparent huge-page backing for this reservation's entire
+    /// usable span with Linux/Android `madvise(MADV_NOHUGEPAGE)`.
+    ///
+    /// This is an owning, whole-span operation: success means the kernel
+    /// accepted the no-THP VMA policy for the exact usable mapping, including
+    /// against system THP `always` and multi-size THP (mTHP). Call it on a
+    /// fresh mapping before touching its payload when a later base-page
+    /// residency sample needs that premise. It changes no payload bytes.
+    /// Success is NOT proof that already-faulted huge backing was split or
+    /// reclaimed; this operation is not retroactive evidence about residency.
+    ///
+    /// Explicit `MAP_HUGETLB` / other `is_huge()` reservations are rejected:
+    /// this API controls transparent backing, not explicit huge pages. The
+    /// complete usable range must be aligned to the runtime base-page size.
+    /// No rounding or range widening is performed.
+    ///
+    /// # Errors
+    ///
+    /// - [`VmemError::invalid_argument`] for an explicitly huge reservation
+    ///   or a usable span whose base/length is not runtime-page aligned;
+    /// - [`VmemError::os_refusal_unknown_code`] for a poisoned page-size
+    ///   query, unsupported targets, miri, `aligned_vmem_mock`, or the shared
+    ///   range-advice hook. These cases never pretend success;
+    /// - [`VmemError::last_os_error`] when the native `madvise` call fails.
+    pub fn try_disable_transparent_huge_pages(&self) -> Result<(), VmemError> {
+        if self.is_huge() {
+            return Err(VmemError::invalid_argument());
+        }
+        let ps = page_size_or_poison();
+        if ps == PAGE_SIZE_QUERY_FAILED {
+            return Err(VmemError::os_refusal_unknown_code());
+        }
+        let base = self.as_ptr().addr();
+        let length = self.len();
+        if !base.is_multiple_of(ps) || !length.is_multiple_of(ps) {
+            return Err(VmemError::invalid_argument());
+        }
+        #[cfg(all(
+            any(target_os = "linux", target_os = "android"),
+            not(miri),
+            not(aligned_vmem_mock)
+        ))]
+        {
+            #[cfg(feature = "fault-injection")]
+            if crate::fault_injection::should_fail_advise_huge_range() {
+                return Err(VmemError::os_refusal_unknown_code());
+            }
+            const MADV_NOHUGEPAGE: i32 = 15;
+            // SAFETY: `self` owns this live reservation; the whole usable
+            // span `[as_ptr(), as_ptr() + len())` is its mapped range, and
+            // the checks above prove the exact address and length are aligned
+            // to the runtime page size. MADV_NOHUGEPAGE changes VMA policy,
+            // not the mapping's payload bytes.
+            if unsafe { crate::os::madvise(self.as_ptr().cast(), length, MADV_NOHUGEPAGE) } == 0 {
+                Ok(())
+            } else {
+                Err(VmemError::last_os_error())
+            }
+        }
+        #[cfg(not(all(
+            any(target_os = "linux", target_os = "android"),
+            not(miri),
+            not(aligned_vmem_mock)
+        )))]
+        {
+            Err(VmemError::os_refusal_unknown_code())
+        }
+    }
+
     /// Range-limited huge-page advice: Linux/Android `madvise(2)` +
     /// `MADV_HUGEPAGE` over `[offset, offset + length)` of the usable span
     /// ([`as_ptr`](Reservation::as_ptr) .. +[`len`](Reservation::len)).

@@ -92,9 +92,81 @@ impl LargeThpSpanGeometry {
         })
     }
 
+    /// Validates the bounded owner-geometry triple of a first-life Large
+    /// mapping: the original reservation root/len and the aligned usable
+    /// base. Alignment slack (root strictly below base) is valid
+    /// ordinary-backend geometry; what must hold is bounding and
+    /// page/root alignment, not pointer equality between root and base.
+    ///
+    /// Rejections, in check order: `ZeroReservationAddress` (a live
+    /// reservation root is never null), `ZeroSpanSize` (zero reservation
+    /// length), `ZeroPageSize`, `PageSizeNotPowerOfTwo` (the base page
+    /// size and the base alignment must each be a nonzero power of two),
+    /// `ReservationLenNotPageAligned` (reservation length must be a
+    /// multiple of the base page size — an adoption-caller obligation),
+    /// `BaseNotPageAligned` (root not page-aligned; base alignment not a
+    /// multiple of the base page size; usable base not aligned to the
+    /// base alignment), `BaseOutsideReservation` (base below the
+    /// reservation root, or usable range end past the reservation end),
+    /// and `AddressOverflow` (any checked sum exceeds `u64::MAX`).
+    /// Total: never panics for any input.
+    #[allow(dead_code)] // the runtime consumer is the mechanism-gated owner-free observer; the pure surface is also exercised by tests
+    pub fn validate_owner_geometry(
+        reservation_address: u64,
+        reservation_len: u64,
+        base_address: u64,
+        usable_span: u64,
+        base_page_size: u64,
+        base_alignment: u64,
+    ) -> Result<(), LargeThpObservationError> {
+        if reservation_address == 0 {
+            return Err(LargeThpObservationError::ZeroReservationAddress);
+        }
+        if reservation_len == 0 {
+            return Err(LargeThpObservationError::ZeroSpanSize);
+        }
+        if base_page_size == 0 {
+            return Err(LargeThpObservationError::ZeroPageSize);
+        }
+        if base_page_size & (base_page_size - 1) != 0 {
+            return Err(LargeThpObservationError::PageSizeNotPowerOfTwo);
+        }
+        // from_raw_parts caller obligation: root and length must be
+        // page-aligned / page-multiples.
+        if !reservation_len.is_multiple_of(base_page_size) {
+            return Err(LargeThpObservationError::ReservationLenNotPageAligned);
+        }
+        if !reservation_address.is_multiple_of(base_page_size) {
+            return Err(LargeThpObservationError::BaseNotPageAligned);
+        }
+        if base_alignment == 0 || base_alignment & (base_alignment - 1) != 0 {
+            return Err(LargeThpObservationError::PageSizeNotPowerOfTwo);
+        }
+        if !base_alignment.is_multiple_of(base_page_size) {
+            return Err(LargeThpObservationError::BaseNotPageAligned);
+        }
+        if !base_address.is_multiple_of(base_alignment) {
+            return Err(LargeThpObservationError::BaseNotPageAligned);
+        }
+        if base_address < reservation_address {
+            return Err(LargeThpObservationError::BaseOutsideReservation);
+        }
+        let base_end = base_address
+            .checked_add(usable_span)
+            .ok_or(LargeThpObservationError::AddressOverflow)?;
+        let reservation_end = reservation_address
+            .checked_add(reservation_len)
+            .ok_or(LargeThpObservationError::AddressOverflow)?;
+        if base_end > reservation_end {
+            return Err(LargeThpObservationError::BaseOutsideReservation);
+        }
+        Ok(())
+    }
+
     /// The validated absolute base address (echo of the input; always a
     /// multiple of the base page size).
     #[must_use]
+    #[allow(dead_code)] // pure-API accessors exercised only by the #[path]-included tests/j13b_observation_residency_plan.rs; the runtime consumes new/full_page_count only
     pub const fn base_address(&self) -> u64 {
         self.base_address
     }
@@ -104,6 +176,7 @@ impl LargeThpSpanGeometry {
     /// Total: returns `AddressOverflow` instead of wrapping on overflow.
     /// For planner-produced window offsets the call cannot overflow —
     /// the whole range end was validated at construction.
+    #[allow(dead_code)] // pure-API accessors exercised only by the #[path]-included tests/j13b_observation_residency_plan.rs; the runtime consumes new/full_page_count only
     pub const fn checked_absolute_address(
         &self,
         span_relative_offset: u64,
@@ -116,6 +189,7 @@ impl LargeThpSpanGeometry {
 
     /// The validated span size in bytes (echo of the input).
     #[must_use]
+    #[allow(dead_code)] // pure-API accessors exercised only by the #[path]-included tests/j13b_observation_residency_plan.rs; the runtime consumes new/full_page_count only
     pub const fn span_size_bytes(&self) -> u64 {
         self.span_size_bytes
     }
@@ -138,6 +212,7 @@ impl LargeThpSpanGeometry {
     /// (`span_size_bytes % base_page_size`). Excluded from the
     /// sampleable range by contract; reported so nothing is silent.
     #[must_use]
+    #[allow(dead_code)] // pure-API accessors exercised only by the #[path]-included tests/j13b_observation_residency_plan.rs; the runtime consumes new/full_page_count only
     pub const fn trailing_partial_bytes(&self) -> u64 {
         self.trailing_partial_bytes
     }

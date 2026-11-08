@@ -18,6 +18,8 @@ use super::super::counters::{
     RELOC_INPLACE_SMALL_CALLS,
 };
 use crate::alloc_core::alloc_core::AllocCore;
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
 use crate::alloc_core::os;
 #[cfg(feature = "large-reserved-capacity")]
 use crate::alloc_core::segment_header::align_up;
@@ -415,7 +417,23 @@ impl AllocCore {
             let span_usable = SegmentHeader::span_usable_at(base);
             if let Some(end) = payload_off.checked_add(new_eff) {
                 if end <= span_usable {
+                    // A successful in-place grow invalidates the first-life
+                    // control observation: the token AND the old recorded
+                    // large size are read BEFORE the setter (which itself
+                    // clears the token) so the invalidation is attributed to
+                    // its token-derived group exactly once and an unknown
+                    // token's defensive error is attributed to the mapping's
+                    // own request size; zero = never a control observation,
+                    // nothing to sample.
+                    #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+                    let token = SegmentHeader::thp_observation_at(base);
+                    #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+                    let old_size = SegmentHeader::read_at(base).large_size;
                     SegmentHeader::set_large_size_at(base, new_eff);
+                    #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+                    if token != 0 {
+                        ThpRuntime::note_realloc_invalidated_by_token(token, old_size);
+                    }
                     #[cfg(feature = "alloc-stats")]
                     RELOC_INPLACE_LARGE_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     return Some(ptr);
@@ -430,11 +448,31 @@ impl AllocCore {
                 // `large-reserved-capacity` feature doc in `Cargo.toml`
                 // for the full R12-3/R12-4 motivation.
                 #[cfg(feature = "large-reserved-capacity")]
-                if self.try_grow_large_reserved_capacity(base, end) {
-                    SegmentHeader::set_large_size_at(base, new_eff);
-                    #[cfg(feature = "alloc-stats")]
-                    RELOC_INPLACE_LARGE_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    return Some(ptr);
+                {
+                    // Capture-before-implicit-clear: the token and old size
+                    // MUST be read BEFORE `try_grow_large_reserved_capacity`,
+                    // because on success that helper's `set_span_usable_at`
+                    // clears the token — reading after the call would always
+                    // yield 0. On success account exactly once (the helper
+                    // has already cleared); on failure do NOT account: the
+                    // helper leaves the header untouched, the token survives,
+                    // and the fall-through moving leg consumes it exactly
+                    // once — no double count.
+                    #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+                    let token = SegmentHeader::thp_observation_at(base);
+                    #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+                    let old_size = SegmentHeader::read_at(base).large_size;
+                    if self.try_grow_large_reserved_capacity(base, end) {
+                        SegmentHeader::set_large_size_at(base, new_eff);
+                        #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+                        if token != 0 {
+                            ThpRuntime::note_realloc_invalidated_by_token(token, old_size);
+                        }
+                        #[cfg(feature = "alloc-stats")]
+                        RELOC_INPLACE_LARGE_CALLS
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        return Some(ptr);
+                    }
                 }
             }
         }

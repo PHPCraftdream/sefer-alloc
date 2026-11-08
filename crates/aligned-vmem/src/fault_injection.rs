@@ -60,7 +60,8 @@
 //! rationale). Hook state is `Mutex`-serialized like `FAULT_STATE`
 //! (task #1021): arming, one-shot consumption and re-arm are the races to
 //! close, and the counters carry no cross-thread payload, so no ordering
-//! semantics are involved.
+//! semantics are involved. The range-advice hook also injects a pre-syscall
+//! failure for the whole-span `MADV_NOHUGEPAGE` control operation.
 //!
 //! The release pre-syscall hook returns before entering the checked backend.
 //! A separate backend-result surrogate is consumed INSIDE the checked backend
@@ -340,10 +341,11 @@ static RESIDENCY_SAMPLE_FAULT_STATE: Mutex<FailNextState> =
 ///
 /// Consulted only in the native Linux/Android arm, so inert under the
 /// `aligned_vmem_mock` cfg, under miri, and on non-Linux/Android hosts
-/// (call sites compiled out — see the module doc). Only the fail-next tier
-/// exists (no k-th hook). The state is Mutex-serialized per the
-/// `FAULT_STATE` (task #1021) pattern — no cross-thread payload, no
-/// ordering semantics.
+/// (call sites compiled out — see the module doc). The same hook is also
+/// consulted before the owning `MADV_NOHUGEPAGE` operation's syscall. Only
+/// the fail-next tier exists (no k-th hook). The state is Mutex-serialized
+/// per the `FAULT_STATE` (task #1021) pattern; no ordering semantics are
+/// involved.
 #[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
 pub fn arm_fail_next_advise_range(n: u32) {
     let mut state = ADVISE_RANGE_FAULT_STATE
@@ -370,13 +372,10 @@ pub fn arm_fail_next_residency_sample(n: u32) {
 
 /// Internal: consult the range-advice hook for the current real backend
 /// call. Returns `true` if this call should be forced to fail. Called once
-/// per real range-advice attempt, immediately before the `madvise` syscall
-/// — the only call sites are the native arms of
-/// `Reservation::try_advise_huge_pages_range` (`api/advise_huge_pages.rs`), compiled
-/// only under `all(any(target_os = "linux", target_os = "android"),
-/// not(miri), not(aligned_vmem_mock))`. The check and the decrement happen
-/// in the SAME lock critical section — no TOCTOU between check and
-/// decrement.
+/// before the real `madvise` syscall from range-advice and no-THP operations
+/// (`api/advise_huge_pages.rs`), only for native Linux/Android without miri
+/// or `aligned_vmem_mock`. Check and decrement happen in the same lock
+/// critical section; no TOCTOU between check and decrement.
 #[cfg_attr(
     any(
         aligned_vmem_mock,

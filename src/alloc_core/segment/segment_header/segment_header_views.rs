@@ -157,19 +157,52 @@ impl SegmentHeader {
         Node::write_usize(Node::offset(base, off) as *mut usize, charge);
     }
 
-    /// Overwrite the header's `large_size` field only (field-specific `usize`
-    /// store, mirroring `large_size_at`'s read). Used by `AllocCore::realloc`
-    /// to update the logical allocation size after an in-place Large grow
-    /// (the segment's physical span is unchanged — only the recorded size
-    /// advances).
+    /// Read the header's `thp_observation` field only (field-specific word
+    /// load). The stored word is `u64`; the allocator target is pinned to
+    /// 64-bit pointers, so the existing `Node` word-access seam preserves all
+    /// bits. 0 means no valid first-life observation token.
+    ///
+    /// Remote free never accesses this field. Read it only from code holding
+    /// the mapping's owner-only access contract.
+    #[cfg_attr(
+        not(all(feature = "alloc-decommit", not(feature = "numa-aware"))),
+        allow(dead_code)
+    )]
+    #[inline(always)]
+    pub(crate) fn thp_observation_at(base: *mut u8) -> u64 {
+        let off = core::mem::offset_of!(SegmentHeader, thp_observation);
+        Node::read_usize(Node::offset(base, off) as *const usize) as u64
+    }
+
+    /// Overwrite only the `thp_observation` field (field-specific word store).
+    /// The allocator target is pinned to 64-bit pointers, so `Node`'s `usize`
+    /// word-access seam preserves the full `u64` token.
+    ///
+    /// Safety discipline: the caller must be the owning thread with exclusive
+    /// owner access to a live mapping. The field is plain, not atomic; remote
+    /// free/publication never reads or writes it.
+    #[inline(always)]
+    pub(crate) fn set_thp_observation_at(base: *mut u8, token: u64) {
+        let off = core::mem::offset_of!(SegmentHeader, thp_observation);
+        Node::write_usize(Node::offset(base, off) as *mut usize, token as usize);
+    }
+
+    /// Overwrite the header's `large_size` field (field-specific `usize`
+    /// store, mirroring `large_size_at`'s read) and invalidate the first-life
+    /// THP observation token. Used by `AllocCore::realloc` to update the
+    /// logical allocation size after an in-place Large grow (the segment's
+    /// physical span is unchanged — only the recorded size advances).
     ///
     /// Safety discipline: called ONLY by the owning thread's `realloc` path,
     /// which is the single writer for this segment. The field sits at a fixed
     /// offset disjoint from `bump` / `owner_state`, so no cross-field race.
+    /// This setter also invalidates the first-life THP observation, including
+    /// on cache reuse (where it intentionally must not carry across occupants).
     #[inline(always)]
     pub(crate) fn set_large_size_at(base: *mut u8, size: usize) {
         let off = core::mem::offset_of!(SegmentHeader, large_size);
         Node::write_usize(Node::offset(base, off) as *mut usize, size);
+        Self::set_thp_observation_at(base, 0);
     }
 
     /// F12 (task #498): overwrite the header's `large_align` field only
@@ -269,8 +302,9 @@ impl SegmentHeader {
     }
 
     /// R12-4 (feature `large-reserved-capacity`): overwrite the header's
-    /// `span_usable` field only (field-specific `usize` store, mirroring
-    /// `span_usable_at`'s read). Used by the OPT-G grow path to advance the
+    /// `span_usable` field (field-specific `usize` store) and invalidate the
+    /// first-life THP observation token. Used by the OPT-G grow path to advance
+    /// the
     /// COMMITTED frontier after successfully committing
     /// `[old span_usable, new span_usable)` via
     /// [`crate::alloc_core::os::commit_pages`] — `span_usable`'s own meaning (the
@@ -288,12 +322,14 @@ impl SegmentHeader {
     /// ever need a LOWER BOUND on the committed span to stay sound — see
     /// `AllocCore::safe_payload_read_span`'s doc — and this call only ever
     /// GROWS the value, never shrinks it, so a stale (pre-grow) read is
-    /// merely conservative, never unsound).
+    /// merely conservative, never unsound). It also invalidates the owner's
+    /// first-life THP observation token on every call, even a same-value store.
     #[cfg_attr(not(feature = "large-reserved-capacity"), allow(dead_code))]
     #[inline(always)]
     pub(crate) fn set_span_usable_at(base: *mut u8, span_usable: usize) {
         let off = core::mem::offset_of!(SegmentHeader, span_usable);
         Node::write_usize(Node::offset(base, off) as *mut usize, span_usable);
+        Self::set_thp_observation_at(base, 0);
     }
 
     /// TEST-ONLY (task #135): overwrite the header's `segment_id` field only

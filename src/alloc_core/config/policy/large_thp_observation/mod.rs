@@ -30,15 +30,15 @@
 //! - [`LargeThpObservationError`](large_thp_observation_error::LargeThpObservationError):
 //!   the family's single explicit rejection vocabulary.
 //!
-//! ## Deliberate scope: not wired into the crate
+//! ## Current scope: declared and consumed by the crate
 //!
-//! This module is intentionally NOT declared from the parent
-//! `config/policy/mod.rs`. Integration tests include it through a
-//! `#[path]` attribute (`tests/j13b_observation_*.rs`) instead of a crate
-//! path, so no production integration is pretended. Runtime wiring
-//! (estimator feedback, the owning `mincore` primitive, tuple
-//! publication) is a separate future task; nothing here closes it and no
-//! runtime claim is made.
+//! This module IS declared from the parent `config/policy/mod.rs` as of
+//! the #48 runtime integration. The mechanism-gated runtime consumers
+//! live in `src/alloc_core/alloc_core/mem/observe_large_control.rs`
+//! together with the fresh-path advice. The `#[path]`-included tests
+//! (`tests/j13b_observation_*.rs`) continue to compile their own copy of
+//! the pure surface. No estimator feedback exists and no runtime claim
+//! beyond the pinned pure contracts is made.
 
 pub mod bounded_mix;
 pub mod large_thp_control_selector;

@@ -290,7 +290,8 @@ pub(crate) struct SegmentHeader {
     /// `large`/`primordial`) and never updated or read by any production
     /// path afterward (foreign-free routing resolves through the route
     /// directory's terminal descriptors); it is kept solely to pin the
-    /// 144-byte segment-header layout. Test hooks
+    /// 136-byte segment-header layout before the mapping observation token was
+    /// added. Test hooks
     /// and the `pack_owner`/`unpack_owner_id` round-trip pins still touch
     /// it. Stored as a plain `u64` for header snapshots. Foreign-free routing
     /// reads the independent route descriptor, not this field.
@@ -516,6 +517,22 @@ pub(crate) struct SegmentHeader {
         allow(dead_code)
     )]
     pub thp_charge: usize,
+    /// Mapping-owned first-life huge-page observation token. Runtime code
+    /// encodes its request group and state in this word; 0 means not selected
+    /// or invalid. Unlike `thp_charge`, this is not an accounting charge.
+    /// Adding it grows the header from 136 to 144 bytes; the page map remains
+    /// at the same page-aligned offset.
+    ///
+    /// Every fresh Small/Large constructor initializes it to 0. A large-cache
+    /// reuse invalidates it through `set_large_size_at`, rather than carrying
+    /// an observation from the prior occupant. Geometry/request updates via
+    /// `set_large_size_at` or `set_span_usable_at` also conservatively clear
+    /// it, including same-value stores.
+    ///
+    /// **Not atomic — owner-only.** Remote free/publication never reads or
+    /// writes this token; only the mapping's owner, including owner-side
+    /// reclaim, may access it through the field-specific view accessors.
+    pub thp_observation: u64,
     /// The segment's index in the global registry. `u32::MAX` until registered
     /// (the primordial segment is index 0). Unregister/recycle-only read.
     pub segment_id: u32,
@@ -585,9 +602,9 @@ pub(crate) struct SegmentHeader {
     /// U31 (OPEN_ITEMS item 90): owner-only sidecar-drain deferral window of
     /// this segment as `small_cur`, two bump offsets in 128-byte units packed
     /// as `start | end << 16` (0 = no window; see `scan_backoff.rs`).
-    /// Occupies the former tail padding: the header stays 144 bytes. Never
-    /// read by a producer; a stale value only delays drains while this
-    /// segment can still carve.
+    /// Occupies the final four bytes of the 144-byte header. Never read by a
+    /// producer; a stale value only delays drains while this segment can still
+    /// carve.
     #[cfg_attr(
         not(all(feature = "alloc-global", feature = "alloc-xthread")),
         allow(dead_code)
@@ -648,6 +665,8 @@ impl SegmentHeader {
             reserved_capacity: 0,
             // No advice charge on a fresh header.
             thp_charge: 0,
+            // A selection is made only after first-life observation.
+            thp_observation: 0,
             // Phase B: NUMA node is unknown at construction time; the caller
             // (reserve_small_segment under numa-aware) stamps the real value
             // immediately after writing the header via set_node_id.
@@ -739,6 +758,8 @@ impl SegmentHeader {
             // A fresh mapping carries no advice charge; the owner stamps it
             // after a successful advice.
             thp_charge: 0,
+            // A fresh mapping has no first-life observation yet.
+            thp_observation: 0,
             // Phase B: same sentinel as small(); the caller (alloc_large under
             // numa-aware) stamps the real value after writing the header.
             node_id: NO_NODE_RAW,
