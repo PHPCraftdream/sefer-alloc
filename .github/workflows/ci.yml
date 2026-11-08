@@ -115,11 +115,30 @@ jobs:
         with:
           node-version: '22'
       - if: steps.paths.outputs.run == 'true'
-        run: node --test tests/j13b_schema.test.mjs tests/j13b_artifacts.test.mjs
+        run: node --test tests/j13b_schema.test.mjs tests/j13b_artifacts.test.mjs tests/j13b_static_reference.test.mjs
       - if: steps.paths.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
       - if: steps.paths.outputs.run == 'true'
         run: cargo test --test j13b_judge_workload --features production
+      - name: Static control-matched reference (disposable source copy only)
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p .rush
+          copy=.rush/j13b-static-reference-ci
+          mkdir "$copy"
+          trap 'rm -rf -- "$copy"' EXIT
+          git archive HEAD | tar -x -C "$copy"
+          node scripts/j13b_static_reference.mjs "$copy"
+          cargo test --locked --manifest-path "$copy/Cargo.toml" \
+            --features 'production internals bench-internals' --test j13b_static_reference \
+            -- --ignored --exact static_reference_samples_real_controls_without_learning \
+            | tee .rush/j13b-static-reference-native.log
+          grep -F 'test static_reference_samples_real_controls_without_learning ... ok' .rush/j13b-static-reference-native.log
+          grep -F 'test result: ok. 1 passed; 0 failed;' .rush/j13b-static-reference-native.log
+          sha256sum -c <(printf '%s\n' \
+            '0bc8ea2de1612d2a3dd948e0ec92b7295840b3010d2b9df206e1a18db6cff8a9  src/alloc_core/alloc_core/mem/advise_fresh_large.rs' \
+            'a2476ebd40189187dd8ea5a6a0966861eb90f6a8eea3712eb4cd2403cc75dc89  src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs')
 
   # CI-T1 stage 3 (docs/CI_TIERS.md "Test-impact map"): which integration tests the diff can affect, from
   # the nightly test-impact map. Never fails: any problem yields "all". The selection is only REPORTED

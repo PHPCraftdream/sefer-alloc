@@ -1,8 +1,16 @@
 # J13b judge — preparatory infrastructure manifest
 
-## Current Task54 artifact-routing step — 2026-11-08
+## Current Task54 static-reference candidate — 2026-11-08
 
-Status: immutable artifact routing authored; current-source CI acceptance pending. Class: `bench`; no allocator source/default/feature/dependency/version change, runtime adapter, static-reference overlay, campaign or measured result in this step. Task49's accepted runtime-learning source is `6c2ba419` (CI `42512485612`), not acceptance of this judge.
+Status: source overlay and activating oracles authored; exact-source CI acceptance pending. Class: `bench`. The overlay changes only a disposable CI source copy, never shipping allocator source. It enables the existing Always controls, preserves fixed-one non-control advice and existing owner validation/sampling/counters, and bypasses only estimator admission. Two complete original-file hashes and exact text anchors are required; the receipt records both resulting file hashes and the overlay digest, not a whole-tree or binary identity.
+
+Six Node tests check confinement including Windows cross-drive paths, whole-file source pins, exact transform boundaries, production-source preservation, source-link rejection and refusal before writes for invalid input or an existing receipt. One ignored Rust test installs SeferAlloc and is explicitly activated only in the overlaid CI copy: two fresh cohorts must yield two real sparse controls, fourteen full 8 MiB advice extents, and unchanged e/m/target/applied/dropped. RAII retains exact layouts and frees all admitted blocks even when an assertion fails. Omitting selection, sampling, fixed-one advice or the admission bypass fails this behavior oracle.
+
+The narrow CI job archives its checked-out source into one temporary `.rush` copy, applies the overlay, executes the exact native test, requires a positive one-test PASS, verifies original production hashes and removes the copy/build directory on exit. No local test/model/workload, copy, branch or worktree was created. No library dependency, production composition, header, ordering site or lifecycle protocol changed. No whole-runtime model, full judge, runtime row admission, campaign or performance result is claimed.
+
+## Accepted Task54 artifact-routing step — 2026-11-08
+
+Status: accepted on `be5fd14b5a29ccfec295ede0bc34682ac16b4786` by CI `42517707507` SUCCESS; final PR checks 42 SUCCESS / 23 intended SKIPPED. Personal log review: 33 Node tests (eight new plus 25 existing) and 13 Rust tests PASS; semantic selftest 214 cases / 316 mutants / zero failures; linter mutants 10/10; protected range 15 commits / zero red (existing surplus-trailer WARNs remain). Class: `bench`; no allocator source/default/feature/dependency/version change, runtime adapter, static-reference overlay, campaign or measured result in this step. Task49's accepted runtime-learning source is `6c2ba419` (CI `42512485612`), not acceptance of this judge.
 
 The new manifest binds three distinct artifact paths and all nine arms, keeps `base/base2/mi` on the same historical executable, and requires a separately identified control-matched static-reference artifact. It validates exact metadata fields, source/binary hashes, overlay provenance and matched candidate/reference toolchain/features. The driver hashes actual executable bytes before and after each child and checks every window's artifact identity. Raw stdout remains preserved before post-child failures. Source provenance still requires a reviewed build flow; manifest strings and distinct hashes alone are not a static-reference correctness proof.
 
