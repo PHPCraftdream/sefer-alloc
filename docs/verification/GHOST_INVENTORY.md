@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-709 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+725 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
 `HeapSlot::cas_state` whose arguments name an ordering) in 95 files of `src/**` and
-`crates/*/src/**`; each is claimed by exactly one of 48 scopes.
+`crates/*/src/**`; each is claimed by exactly one of 51 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/709 |
-| counter | 253 | 253/709 |
-| ghost | 10 | 10/709 |
-| id | 9 | 9/709 |
-| kani | 1 | 1/709 |
-| lock-local | 40 | 40/709 |
-| non-atomic | 3 | 3/709 |
-| protocol | 201 | 201/709 |
-| test-hook | 179 | 179/709 |
-| twin | 7 | 7/709 |
-| **claimed** | **709** | 709/709 |
-| unclaimed | 0 | 0/709 |
-| claimed twice | 0 | 0/709 |
+| cache | 6 | 6/725 |
+| counter | 267 | 267/725 |
+| ghost | 10 | 10/725 |
+| id | 9 | 9/725 |
+| kani | 1 | 1/725 |
+| lock-local | 40 | 40/725 |
+| non-atomic | 3 | 3/725 |
+| protocol | 203 | 203/725 |
+| test-hook | 179 | 179/725 |
+| twin | 7 | 7/725 |
+| **claimed** | **725** | 725/725 |
+| unclaimed | 0 | 0/725 |
+| claimed twice | 0 | 0/725 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -62,9 +62,10 @@ harness; `non-atomic` — named scanner false positives.
 | P23 | remote-free ingress: producer notify \|\| owner take/arm/full drain (SC-6 A-exact) | A | 11 | 1 | 0 | — | yes: tests/loom_g1_ingress_exact.rs includes ingress.rs and sidecar_bitmap.rs | ghost | SC-6 |
 | P24 | large-THP tuple cell (write-once publication) | none | 13 | 1 | 0 | — | yes: tests/loom_thp_tuple_cell.rs compiles the production thp_tuple_cell.rs (#[path]) onto the concurrency atomics; oracles: a reader never sees a torn tuple (result is exactly one candidate or the default), exactly one distinct-tuple publisher wins, a same-tuple race follows the over-count contract, and the model terminates under every interleaving (no spin) | rules + actual-source model + integration tests | J13b |
 | P25 | large-THP budget ledger (advised bytes, bounded CAS reserve) | none | 4 | 1 | 0 | — | yes: tests/loom_thp_ledger.rs compiles the production thp_budget_ledger.rs (#[path]) onto the concurrency atomics; oracles: racing 6 MiB reserves against an 8 MiB budget never hand out more than the budget (an unconditional fetch_add reserve fails this), grants are exact granule multiples, and the ledger is empty after every thread returns exactly its own grant | rules + actual-source model + integration tests | J13b |
+| P26 | large-THP deterministic control ordinal and diagnostic telemetry | none | 16 | 0 | 0 | — | no: this runtime uses process-wide core atomics; the deterministic selector is separately pure-tested, and no runtime model is claimed | rules + pure selector tests | J13b |
 
-Shadow-model protocols (class contains S): 13 of 25, each with a decision.
-Protocols with neither a loom nor a shadow model: P20 (1 of 25).
+Shadow-model protocols (class contains S): 13 of 26, each with a decision.
+Protocols with neither a loom nor a shadow model: P20, P26 (2 of 26).
 
 ## 3. Invariants and prod places
 
@@ -330,6 +331,18 @@ Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs`, `sr
 
 Decision: **rules + actual-source model + integration tests** — J13b #47: R1 pins the Relaxed load, CAS and fetch_sub, R4 bounds the reserve loop, R3 ties the CAS to the observed value and the unmap to give_back, R5 keeps os::release_segment in the Large files inside the terminal funnel; behaviour is covered by the j13b_thp_budget_* integration tests and by tests/loom_thp_ledger.rs, the actual-source loom model of the ledger
 
+### P26 — large-THP deterministic control ordinal and diagnostic telemetry
+
+Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/config/policy/large_thp_observation/large_thp_control_selector.rs`.
+
+- I1 each next_control call obtains one successive wrapping ticket from CONTROL_ORDINAL with one fetch_add(Relaxed); the returned ticket is the ordinal input to the deterministic selection, not a publication
+- I2 next_control uses the fixed CONTROL_SEED with the pure decision_at(seed, ordinal) selector; the selector defines exactly one control in each complete aligned cohort of eight ordinals (not every sliding window)
+- I3 control counters are diagnostic wrapping u64 totals only: Relaxed accesses publish no data and establish no happens-before edge
+- I4 control_telemetry reads each of eight fields independently with Relaxed loads; the returned array is not a coherent multiword snapshot
+- I5 the bench-internals ticket log records the (ordinal, decision) actually consumed per next_control call in bounded diagnostic storage; its entries are never gate inputs and all accesses stay Relaxed
+
+Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed ordinal RMW, its fixed-seed decision call, and the diagnostic counter/load inventories; tests/j13b_observation_control_selector.rs checks the selector's one-control-per-complete-aligned-eight contract independently of runtime atomics
+
 ## 4. Scopes
 
 | scope | class | protocol | sites | reason |
@@ -382,3 +395,6 @@ Decision: **rules + actual-source model + integration tests** — J13b #47: R1 p
 | `ghost/shadow` | ghost | — | 10 | ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1) |
 | `P24/thp-tuple-cell` | protocol | P24 | 13 | write-once tuple cell: claiming CAS, Relaxed words, Release PUBLISHED, Acquire reader |
 | `P25/thp-ledger` | protocol | P25 | 4 | budget ledger: Relaxed load, bounded CAS reserve, fetch_sub give-back on one counter |
+| `P26/control-ordinal` | protocol | P26 | 2 | one wrapping ordinal ticket per control decision; Relaxed because the value is only a selector input and publishes nothing; the bench-internals probe adds one Relaxed diagnostic load that mutates nothing |
+| `P26/control-diagnostics` | counter | P26 | 9 | diagnostic-only wrapping counter RMWs and independent telemetry loads; no publication or coherent snapshot |
+| `P26/control-ticket-log` | counter | P26 | 5 | bench-internals diagnostic ticket log: exactly one bounded cursor/store/load inventory per helper so tests can observe actual consumed tickets; publishes nothing |

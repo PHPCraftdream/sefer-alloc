@@ -2,11 +2,11 @@
 
 use aligned_vmem::ResidencyRegion;
 
+use super::sample_owned_large_residency::sample_owned_large_residency;
 use crate::alloc_core::config::policy::large_thp::LargeThpRequestGroup;
 use crate::alloc_core::config::policy::large_thp_observation::large_thp_residency_plan::LargeThpResidencyPlan;
 use crate::alloc_core::config::policy::large_thp_observation::large_thp_span_geometry::LargeThpSpanGeometry;
 use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
-use crate::alloc_core::node::Node;
 use crate::alloc_core::segment_header::SegmentHeader;
 
 const MAX_WINDOWS: usize = 16;
@@ -16,7 +16,6 @@ const OBSERVATION_SEED: u64 = 0x8a5c_1d37_e249_b60f;
 /// mapping. The caller must have consumed the owner's lifetime credit and
 /// retain exclusive ownership before cache deposit or unmapping; this must
 /// never be called for a foreign live mapping.
-#[allow(dead_code)] // The owner-free caller is wired by the adjacent lifecycle task.
 pub(crate) fn observe_large_control(base: *mut u8) {
     let token = SegmentHeader::thp_observation_at(base);
     if token == 0 {
@@ -239,7 +238,7 @@ pub(crate) fn observe_large_control(base: *mut u8) {
     // Pass the untouched root pair plus the SEGMENT-aligned usable start/span;
     // the sampler reconstructs the reservation contract-faithfully, and the
     // region offsets above are usable-base-relative.
-    let sample = match Node::sample_owned_large_residency(
+    let sample = match sample_owned_large_residency(
         header.reservation,
         header.reservation_len,
         base,

@@ -34,7 +34,7 @@
 //!
 //! This module IS declared from the parent `config/policy/mod.rs` as of
 //! the #48 runtime integration. The mechanism-gated runtime consumers
-//! live in `src/alloc_core/alloc_core/mem/observe_large_control.rs`
+//! live in `src/alloc_core/alloc_core/mem/large_control/observe_large_control.rs`
 //! together with the fresh-path advice. The `#[path]`-included tests
 //! (`tests/j13b_observation_*.rs`) continue to compile their own copy of
 //! the pure surface. No estimator feedback exists and no runtime claim

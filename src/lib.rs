@@ -203,6 +203,10 @@
 //      * `alloc_core::platform::os`   — thin interop wrapper around aligned-vmem; any
 //                             additional unsafe blocks carry `// SAFETY:` proof.
 //                             (under `alloc-core`)
+//      * `alloc_core::alloc_core::mem::large_control::sample_owned_large_residency`
+//                             — temporary owning VM adoption for owner-terminal
+//                             sampling, with release suppressed; `alloc-decommit`,
+//                             non-NUMA only. The validated caller retains ownership.
 //      * `alloc_core::platform::node` — intrusive free-list node r/w through raw pointers;
 //                             the generalized `hand` discipline. (under `alloc-core`)
 //      * `alloc_core::platform::sidecar` — the owner-only lazily-materialised sidecar
