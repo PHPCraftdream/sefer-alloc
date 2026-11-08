@@ -3,8 +3,12 @@
 //! non-NUMA mechanism gate) its publication cell and process statics.
 
 pub mod thp_advice;
+#[path = "state/thp_advice_outcome.rs"]
 pub mod thp_advice_outcome;
 pub mod thp_budget_ledger;
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+#[path = "state/thp_learning_cell.rs"]
+pub(crate) mod thp_learning_cell;
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
 pub(crate) mod thp_runtime;
 pub mod thp_tuple;

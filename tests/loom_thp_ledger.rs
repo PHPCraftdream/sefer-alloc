@@ -50,7 +50,7 @@ mod large_thp_share;
 #[path = "../src/alloc_core/config/policy/large_thp_runtime/thp_advice.rs"]
 mod thp_advice;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp_runtime/thp_advice_outcome.rs"]
+#[path = "../src/alloc_core/config/policy/large_thp_runtime/state/thp_advice_outcome.rs"]
 mod thp_advice_outcome;
 #[path = "../src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs"]
 mod thp_budget_ledger;

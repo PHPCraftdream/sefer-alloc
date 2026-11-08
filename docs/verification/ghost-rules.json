@@ -3,6 +3,29 @@
   "doc": "Ghost-checks catalog (docs/GHOST_CHECKS_PLAN.md). `protocols` — G0 inventory to invariant level; `scopes` — every atomic/ordering site in src/** and crates/*/src/** claimed by exactly one scope (scripts/ghost_inventory.mjs --check); `rules` — per-site lint rules, filled from G1 on.",
   "protocols": [
     {
+      "id": "P27",
+      "name": "large-THP coherent bounded estimator pair",
+      "prod": [
+        "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs"
+      ],
+      "invariants": [
+        "I1 one AtomicU64 contains both Q31 estimator components; snapshot is one indivisible load",
+        "I2 a successful CAS applies exactly one accepted pure-estimator update from its expected packed pair",
+        "I3 at most eight CAS attempts per observation; exhaustion returns false without applying that observation",
+        "I4 Relaxed accesses publish no external payload; only the indivisible scalar pair is shared"
+      ],
+      "class": "none",
+      "loom": [
+        "tests/loom_thp_learning_cell.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "authored, CI pending: loom_thp_learning_cell.rs mounts the actual production cell and pure estimator on loom atomics; two different competing observations must match one complete serial order, never a torn pair or lost update",
+      "decision": "rules + actual-source model + deterministic forced-CAS rejection test",
+      "phase": "J13b",
+      "reason": "Task49 state foundation only; not yet admitted to runtime controls or advice. No runtime learning or performance acceptance is claimed."
+    },
+    {
       "id": "P1",
       "name": "HeapLease FREE->LIVE claim / LIVE->FREE Release drop",
       "prod": [
@@ -639,6 +662,24 @@
   ],
   "scopes": [
     {
+      "id": "P27/estimator-pair",
+      "class": "protocol",
+      "protocol": "P27",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs"
+      ],
+      "fn": "^(snapshot|try_observe)$",
+      "receiver": "^(self)?\\.state$",
+      "ops": [
+        "load",
+        "compare_exchange"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "one packed pair, no external publication; bounded CAS commits both estimator components atomically"
+    },
+    {
       "id": "P1/heap-slot-cas",
       "class": "protocol",
       "protocol": "P1",
@@ -1193,6 +1234,116 @@
     }
   ],
   "rules": [
+    {
+      "id": "thp-learning/update-inventory",
+      "kind": "R2",
+      "fn": "ThpLearningCell::try_observe",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.state$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "compare_exchange",
+          "receiver": "^(self)?\\.state$",
+          "orderings": [
+            "Relaxed",
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "packed pair",
+        "Relaxed",
+        "compare_exchange"
+      ],
+      "reason": "I2/I4: one load and one syntactic strong CAS site operate on the packed pair; no external publication",
+      "fixtures": "tests/ghost_lint_fixtures/p27_update_inventory",
+      "protocol": "P27",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "tests": [
+        "tests/loom_thp_learning_cell.rs",
+        "tests/j13b_learning_contention_bound.rs"
+      ]
+    },
+    {
+      "id": "thp-learning/snapshot-inventory",
+      "kind": "R2",
+      "fn": "ThpLearningCell::snapshot",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.state$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "snapshot",
+        "packed pair",
+        "Relaxed"
+      ],
+      "reason": "I1/I4: snapshot obtains both components from one Relaxed load of the packed pair",
+      "fixtures": "tests/ghost_lint_fixtures/p27_snapshot_inventory",
+      "protocol": "P27",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "tests": [
+        "tests/loom_thp_learning_cell.rs",
+        "tests/j13b_learning_contention_bound.rs"
+      ]
+    },
+    {
+      "id": "thp-learning/update-bounded",
+      "kind": "R4",
+      "fn": "ThpLearningCell::try_observe",
+      "action": {
+        "name": "compare_exchange"
+      },
+      "guard": "^attempts<Self::MAX_ATTEMPTS$",
+      "terms": [
+        "bounded",
+        "attempts",
+        "MAX_ATTEMPTS"
+      ],
+      "reason": "I3: the CAS is dominated by attempts < MAX_ATTEMPTS; forced rejection terminates after eight attempts",
+      "fixtures": "tests/ghost_lint_fixtures/p27_update_bounded",
+      "protocol": "P27",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "tests": [
+        "tests/loom_thp_learning_cell.rs",
+        "tests/j13b_learning_contention_bound.rs"
+      ]
+    },
+    {
+      "id": "thp-learning/cas-after-observe",
+      "kind": "R3",
+      "fn": "ThpLearningCell::try_observe",
+      "before": {
+        "name": "load",
+        "receiver": "state$"
+      },
+      "after": {
+        "name": "compare_exchange",
+        "args": "^current,"
+      },
+      "terms": [
+        "observed",
+        "current",
+        "compare_exchange"
+      ],
+      "reason": "I2: the CAS expects the observed current pair, so a competing update cannot be overwritten blindly",
+      "fixtures": "tests/ghost_lint_fixtures/p27_cas_after_observe",
+      "protocol": "P27",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "tests": [
+        "tests/loom_thp_learning_cell.rs",
+        "tests/j13b_learning_contention_bound.rs"
+      ]
+    },
     {
       "id": "ghost/hygiene",
       "kind": "R9",
