@@ -582,6 +582,11 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     //   `Self::try_decommit`, `Self::decommit_lazy` (src/reservation.rs),
     //   each `if self.is_huge() { count; return; }` — the flag can only
     //   SUPPRESS a backend OS call.
+    // - `Reservation::try_disable_transparent_huge_pages`
+    //   (src/api/advise_huge_pages.rs) rejects `is_huge()` with a typed
+    //   invalid-argument error before any policy syscall. A synthetic true
+    //   flag can only suppress that operation, never widen its range or
+    //   alter release, pointer provenance, or unsafe preconditions.
     // - `Reservation::from_raw_parts` itself (src/reservation.rs), as of
     //   task #1172's M1-hybrid: two `assert!`s, both Correctness-contract
     //   checks reading the PARAMETER (before it becomes the field) — (a)
@@ -608,7 +613,8 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     // `into_full_parts`, `ReservationFullParts::into_reservation`,
     // `finish_reservation`).
     // A wrong flag therefore changes two pure query RESULTS, whether up to
-    // three decommit backend calls are issued, and (new in task #1172)
+    // three decommit backend calls are issued, whether the no-THP policy
+    // operation is rejected before its syscall, and (new in task #1172)
     // whether `from_raw_parts` itself panics — never memory safety, never
     // release behavior, never an unsafe block's preconditions. SECONDARY,
     // and deliberately weaker: the rustdoc consequence quotes above say

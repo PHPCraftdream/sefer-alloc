@@ -56,6 +56,7 @@ Runnable form: `tests/readme_example.rs`.
 | `Reservation::is_huge() -> bool` | Detect whether a reservation actually got large/huge pages on either platform. |
 | `Reservation::try_advise_huge_pages_range(offset, length) -> Result<usize, VmemError>` (`&self`) | Range-limited MADV_HUGEPAGE advice on a Reservation's usable span; `Ok(advised_bytes)` on Linux/Android, typed unsupported/argument errors elsewhere. |
 | `Reservation::try_sample_residency(&[ResidencyRegion]) -> Result<ResidencySample, VmemError>` (`&self`) | Bounded residency sampling: <=16 regions x <=2 MiB, mincore(2) low-bit resident/sample page counts for an estimator ratio; no allocation, no fault-in, typed errors — never a forged zero sample. |
+| `Reservation::try_disable_transparent_huge_pages() -> Result<(), VmemError>` (`&self`) | Linux/Android owning whole-usable-span `MADV_NOHUGEPAGE`; success means the kernel accepted no-THP VMA policy (including THP `always`/mTHP), not that previously faulted huge backing was split. Typed errors for unsupported/mock/miri paths. |
 | `impl From<VmemError> for std::io::Error` | Convert `VmemError` to `std::io::Error` for error-propagation convenience. |
 | `Reservation::decommit(start, end)` / `Reservation::recommit(start, end)` (`&mut self`) | Safe, bounds-checked methods for callers already holding a `Reservation` — hint the OS to return page-granular physical backing / re-commit it. Forward to the free functions below with the reservation's own base and length. |
 | `Reservation::try_decommit(start, end)` / `Reservation::try_recommit(start, end)` / `Reservation::commit_range(start, end)` / `Reservation::try_commit_range(start, end)` (`&mut self`) | Fallible/boolean safe-method twins of the above, reporting a contract-violating range instead of silently no-oping (`decommit`) or panicking only in debug (see "Alignment contract" below). |
@@ -76,8 +77,10 @@ Runnable form: `tests/readme_example.rs`.
 | `LazyReservation::into_reservation(self) -> Reservation` | Give up tracking and take the plain `Reservation`, for a caller that keeps its own commit bookkeeping. |
 | `lazy_commit_is_honored() -> bool` (feature `lazy-commit`, `const fn`) | Whether the current platform's backend genuinely honors `initial_commit` (`true` only on the real Windows native backend; Unix, miri, and the mock backend all commit the whole span up front, making "lazy" a no-op there). |
 
-Every fallible entry point has an infallible `Option`/`bool` counterpart that
-discards the cause. Optional features: `lazy-commit` (incremental commit:
+**Residency control premise:** when a caller requires base-page residency observations (including on THP `always` or mTHP systems), it may call `Reservation::try_disable_transparent_huge_pages()` on the owned fresh mapping before touching payload pages. A successful `MADV_NOHUGEPAGE` only certifies that the kernel accepted the VMA policy for that exact usable span; it does **not** prove that already-faulted huge backing was split or reclaimed. Explicit huge-page reservations and unsupported/mock/miri backends are rejected rather than silently treated as controlled. `try_sample_residency` itself never changes VMA policy.
+
+Most fallible entry points have an infallible `Option`/`bool` counterpart that
+discards the cause. The premise-setting `try_disable_transparent_huge_pages` operation deliberately has no lossy counterpart. Optional features: `lazy-commit` (incremental commit:
 `reserve_aligned_lazy` + `commit_range`, and the `LazyReservation` watermark
 type above; the `alloc-lazy-commit` name is kept
 as a compat alias for one release and will be removed in 0.3.0/1.0.0 — migrate
