@@ -2,13 +2,13 @@
 
 > **ВНИМАНИЕ:** этот файл сгенерирован скриптом `scripts/generate-evidence-registry-md.mjs` из `docs/evidence/registry.csv` — НЕ править руками; правки только в `registry.csv`.
 
-Источник: sha256 registry.csv = cd2093a0
+Источник: sha256 registry.csv = 541841ac
 
 ## Сводка по статусам
 
 | Статус | Строк |
 |---|---:|
-| PASS | 130 |
+| PASS | 129 |
 | FAIL | 3 |
 | KNOWN-DEFECT | 6 |
 | KNOWN-RED | 3 |
@@ -18,7 +18,7 @@
 | BUILD_ONLY | 0 |
 | INCONCLUSIVE | 6 |
 | CI_PENDING | 3 |
-| CONDITIONAL | 9 |
+| CONDITIONAL | 10 |
 | TOTAL | 180 |
 
 ## Сводка по owner_phase
@@ -31,7 +31,7 @@
 | Ph0 | 28 | 19 | 5 | 4 |
 | Ph1b | 3 | 0 | 0 | 3 |
 | Ph3a | 2 | 1 | 0 | 1 |
-| Ph3b | 1 | 1 | 0 | 0 |
+| Ph3b | 1 | 0 | 0 | 1 |
 | Ph4a | 10 | 10 | 0 | 0 |
 | Ph4b | 15 | 14 | 0 | 1 |
 | Ph4c | 22 | 19 | 0 | 3 |
@@ -69,7 +69,7 @@
 | R-Ph1b-tb | C1 | prototype | CONDITIONAL | CONDITIONAL | прототип exact-object; не влит (ветка proto/exact-object-ph1b) |
 | R-Ph3a-iai | C1 | protocol | CONDITIONAL | CONDITIONAL | waiver: iai-замер не перепроверен (перезапуск iai запрещён рамками Ph7b), строка честно CONDITIONAL |
 | R-Ph3a-native | C1 | protocol | PASS | PASS | waiver: нативная часть покрыта тремя мутант-циклами Ph7b; iai выделен в отдельную строку |
-| R-Ph3b | C2 | reverify | PASS\|CONDITIONAL | PASS | перепроверка на HEAD после изменения теста; тест переписан после замера |
+| R-Ph3b | C2 | reverify | PASS\|CONDITIONAL | CONDITIONAL | перепроверка на HEAD после изменения теста; тест переписан после замера |
 | R0-01 | C1 | p1-box | FAIL | FAIL | исторический Ph0-witness P1-box |
 | R0-02 | C1 | p1-box | FAIL | FAIL | исторический Ph0-witness P1-box |
 | R0-03 | C7 | evidence-infra | NOT_RUN | NOT_RUN | CI job miri-core; результата нет |
@@ -211,7 +211,7 @@
 | Gate | Клетки | Статусы |
 |---|---|---|
 | C1 | 24 | R-PG1-b-sb=KNOWN-DEFECT, R-PG1-b-tb=KNOWN-DEFECT, R-Ph1b-native=CONDITIONAL, R-Ph1b-sb=CONDITIONAL, R-Ph1b-tb=CONDITIONAL, R-Ph3a-iai=CONDITIONAL, R-Ph3a-native=PASS, R0-01=FAIL, R0-02=FAIL, R0-11=CFG_EXCLUDED, R0-12=PASS, R0-13=PASS, R0-14=PASS, R0-15=PASS, R0-21=PASS, R0-22=PASS, R0-24=NOT_RUN, R5c-09=NOT_RUN, R5c-10=NOT_RUN, R6a-C2=KNOWN-DEFECT, R6a-C3=KNOWN-DEFECT, R6a-C4=KNOWN-DEFECT, R6a-C5=KNOWN-DEFECT, R6a-C5b=NOT_RUN |
-| C2 | 20 | R-Ph3b=PASS, R0-06=PASS, R0-16=PASS, R0-17=PASS, R0-19=PASS, R0-20=PASS, R5b-01=PASS, R5b-03=PASS, R5b-04=INCONCLUSIVE, R5c-01=PASS, R5c-02=PASS, R5c-11=PASS, R5c-12=PASS, R6a-C1=PASS, R6a-C6a=PASS, R6a-C6b=PASS, R6a-M2=PASS, R6a-M4=PASS, R6a-M5=PASS, R6a-M7=PASS |
+| C2 | 20 | R-Ph3b=CONDITIONAL, R0-06=PASS, R0-16=PASS, R0-17=PASS, R0-19=PASS, R0-20=PASS, R5b-01=PASS, R5b-03=PASS, R5b-04=INCONCLUSIVE, R5c-01=PASS, R5c-02=PASS, R5c-11=PASS, R5c-12=PASS, R6a-C1=PASS, R6a-C6a=PASS, R6a-C6b=PASS, R6a-M2=PASS, R6a-M4=PASS, R6a-M5=PASS, R6a-M7=PASS |
 | C3 | 5 | R5b-08=PASS, R5c-03=PASS, R5c-06=PASS, R5c-14=PASS, R5c-16=INCONCLUSIVE |
 | C4 | 11 | R-PG1-native=PASS, R-PG1-sb=MODEL-LIMIT, R-PG1-tb=MODEL-LIMIT, R-PG2-sb=CONDITIONAL, R-PG2-tb=CONDITIONAL, R4b-07=PASS, R4c-05=KNOWN-RED, R4c-06=KNOWN-RED, R5b-09-sb=MODEL-LIMIT, R5b-09-tb=MODEL-LIMIT, R6a-M8=PASS |
 | C5 | 42 | R0-23=NOT_RUN, R4a-01=PASS, R4a-05=PASS, R4a-06=PASS, R4a-07=PASS, R4a-08=PASS, R4a-09=PASS, R4a-10=PASS, R4b-06=PASS, R4b-08=PASS, R4b-09=PASS, R4b-10=INCONCLUSIVE, R4b-11=PASS, R4b-12=PASS, R4b-13=PASS, R4b-14=PASS, R4b-15=PASS, R4c-01=PASS, R4c-04=PASS, R4c-09=PASS, R4c-10=PASS, R4c-11=PASS, R4c-12=PASS, R4c-13=PASS, R4c-14=PASS, R4c-15=PASS, R4c-16=PASS, R4c-17=PASS, R4c-18=PASS, R4c-19=PASS, R4c-20=PASS, R4c-21=PASS, R4c-22=INCONCLUSIVE, R5b-11=PASS, R5b-12=PASS, R5b-13=PASS, R5b-14=PASS, R5b-15=CONDITIONAL, R6a-D=PASS, R6a-F=PASS, R6a-M1=PASS, R6a-M3=PASS |
@@ -262,7 +262,7 @@ Raw logs переносите в `docs/evidence` по трем CLAUDE.md tiers: 
 | R-Ph1b-tb | CONDITIONAL | Ph1b | installed SeferAlloc (exact-object-proto); paused-Box witness (TB) | exact-object-proto internals bench-internals | Windows x86_64 (host-Miri) | Miri TB (tree-borrows) | cargo +nightly miri test (MIRIFLAGS -Zmiri-tree-borrows) paused-Box witness; ветка proto/exact-ob… | paused-Box witness COMPLETE (TB); мутанты красные по нужным причинам; baseline (feature off) крас… | мутанты красные; baseline без feature красный | docs/reviews/2026-10-01-refactor-ph1b-exact-object-proto-receipt.md | shipping-installed | false | cabc785b2b18adbc1bb7278b95da5f4fca412b51 | CONDITIONAL(proto): код не влит (ветка proto/exact-object-ph1b, cabc785b); P1 ≥17 байт не закрыт; шаг 2 не сделан; перепроверка на HEAD оркестратором; сплит строки R-Ph1b; spike-not-merged:cabc785b (коммит только в локальной ветке спайка, не в main и не в CI-клоне) |
 | R-Ph3a-iai | CONDITIONAL | Ph3a | tests/r11_ph3a_issue_transaction_scalar.rs, tests/r11_ph3a_issue_transaction_batch.rs, tests/r11_… | production internals bench-internals + alloc-core | Windows x86_64 | native debug; iai (WSL+callgrind) | прогон новых tests/r11_ph3a_*.rs + мутант-прогоны + iai | 4 новых теста зелёные; iai hot −0.354% Ir (refill до −2.670% EstCycles) | мутанты (a)/(b)/(c) красные | docs/reviews/2026-10-02-ph3a-issue-transaction-receipt.md | crate-internal | false | faf253e9f18895c1044a20923f0f8df36b6d092a | iai-замер не перепроверен: перезапуск iai запрещён рамками Ph7b |
 | R-Ph3a-native | PASS | Ph3a | tests/r11_ph3a_issue_transaction_scalar.rs, tests/r11_ph3a_issue_transaction_batch.rs, tests/r11_… | production internals bench-internals + alloc-core | linux x64 | debug | tests/r11_ph3a_issue_transaction_scalar.rs; tests/r11_ph3a_issue_transaction_batch.rs; r11_ph3a_r… | r11_ph3a_scalar/batch/reserve/magazine: 4x test result: ok. 1 passed | 3 Ph7b mutants: (a) set_head<prepare — FAILED scalar_issue_transactions_roll_back_before_commit_a… | docs/evidence/_raw_reverify_R-Ph3a-native.log | crate-internal | true | dedd60718233950dc621cfa4f2c3b9af0596528e | E0 verified; preserve PASS |
-| R-Ph3b | PASS | Ph3b | installed SeferAlloc | production internals bench-internals (ключевой тест под medium-classes) | linux x64 | debug | прогон tests/r11_ph3b_kind_aware_entries.rs + мутант-прогоны + iai | r11_ph3b_kind_aware_entries: 5 passed (observed; old receipt said 7) | мутант (a) красный (tests/r11_ph3b_kind_aware_entries.rs:1052); (b)/(c) нативно зелёные (исход ид… | docs/evidence/_raw_reverify_R-Ph3b.log | crate-internal | true | f0586cce79213cc74bbcca50d14a902b691cd89e | E0 verified; preserve PASS |
+| R-Ph3b | CONDITIONAL | Ph3b | installed SeferAlloc | production internals bench-internals (ключевой тест под medium-classes) | linux x64 | debug | прогон tests/r11_ph3b_kind_aware_entries.rs + мутант-прогоны + iai | r11_ph3b_kind_aware_entries: 5 passed (observed; old receipt said 7) | мутант (a) красный (tests/r11_ph3b_kind_aware_entries.rs:1052); (b)/(c) нативно зелёные (исход ид… | docs/evidence/_raw_reverify_R-Ph3b.log | crate-internal | false | f0586cce79213cc74bbcca50d14a902b691cd89e | Historical PASS applies to f0586cce only; J13b changes SegmentHeader layout in 73af9b1e. Current-layout kind-aware tests and mutant revalidation remain required before restoring PASS. Original receipt and source identity are preserved. |
 | R0-01 | FAIL | Ph0 | installed #[global_allocator] SeferAlloc; miri_global_box_acceptance -- paused | alloc-global internals bench-internals | Windows 10 x86_64 MSVC (host-Miri) | Miri SB (strict-provenance) MIRIFLAGS S dev | прогон miri_global_box_acceptance -- paused в модели SB | лог v3-sb-sefer-paused.log: UB not granting access to tag <1479> ... weakly protected at node.rs:… | мутант-контроль W−1 уровня System (R0-12..R0-15) | docs/design/2026-10-01-proof-obligation-registry-draft.md | shipping-installed | false | ceffecb5c07d45e9d715670dfcaec3de69b2f9d2 | KNOWN-DEFECT P1-box: UB в src/alloc_core/platform/node.rs:90 Node::write_next при паузе внутри Box::drop (цепочка write_next ← reclaim_sidecar_record ← drain_sidecar_ingress ← trim_for_recycle); на момент Ph0 фиксировался как FAIL |
 | R0-02 | FAIL | Ph0 | installed #[global_allocator] SeferAlloc; miri_global_box_acceptance -- paused | alloc-global internals bench-internals | Windows 10 x86_64 MSVC (host-Miri) | Miri TB (tree-borrows) MIRIFLAGS T dev | прогон miri_global_box_acceptance -- paused в модели TB | лог v3-tb-sefer-paused.log: write access through <1414> (root of the allocation) ... forbidden; R… | мутант-контроль W−1 уровня System | docs/design/2026-10-01-proof-obligation-registry-draft.md | shipping-installed | false | ceffecb5c07d45e9d715670dfcaec3de69b2f9d2 | KNOWN-DEFECT P1-box: UB в src/alloc_core/platform/node.rs:90 Node::write_next при паузе внутри Box::drop (Reserved→Disabled; цепочка write_next ← reclaim_sidecar_record); на момент Ph0 фиксировался как FAIL |
 | R0-03 | NOT_RUN | Ph0 | CI job miri-core (ci.yml:2831-2845) | alloc-global internals bench-internals | ubuntu-latest | Miri SB / TB (CI) | CI-маркер COMPLETE paused_terminal_owner_retirement | результата CI нет | — | docs/design/2026-10-01-proof-obligation-registry-draft.md | shipping-installed | false | ceffecb5c07d45e9d715670dfcaec3de69b2f9d2 | нет результата CI; R11 manifest описывает тот же отказ |

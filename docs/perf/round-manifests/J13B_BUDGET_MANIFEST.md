@@ -2,6 +2,8 @@
 
 Status: integrated source candidate, dependent runtime CI pending; not a performance GO. Class: `perf(opt-in)` (defaults unchanged).
 
+Delivery is stacked: PR #226 preserves the verified VM foundation at `6c62ff0f`; PR #225 targets that SHA-pinned base branch and evaluates the runtime delta separately. The first combined-range run `42443060521` on `73af9b1e` rejected stale `R-Ph3b` evidence and failed zero-cost because earlier foundation Cargo/build-graph changes prevented the declared-runtime exception. No gate is weakened: the source-independent runtime classification applies only to the properly separated delta. `R-Ph3b` is now CONDITIONAL for the new header layout, with its historical receipt untouched; correctness item 271 requires fresh kind-aware tests and discriminating-mutant evidence before current-source PASS can return.
+
 Personal review found that the legacy infallible VM release discards native failure, so returning from it is not proof of unmapping. The checked-release prerequisite is now delivered and verified by CI `42426350786`; the independent cross-abort verification repair is verified by CI `42439762856` on `6c62ff0f`. The dependent runtime funnel uses checked release for charged mappings: only confirmed success returns charge, while error or unknown outcome retains it without retry. This runtime source and its failure-retention oracle still require their own CI; prerequisite success is not runtime acceptance.
 
 ## Commit identity

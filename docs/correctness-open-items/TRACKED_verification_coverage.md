@@ -335,3 +335,11 @@ Item 188 is CLOSED (2026-10-13); it is not a current record here — its closure
     > - **Current:** `tests/j13b_thp_remote_free_reclaim.rs` covers the owner-side reclaim that deposits into the Large cache. The cache-refusing branch of `reclaim_large_segment` (terminal release with the header's charge through `release_large_mapping`) has no root test of its own.
     > - **Next trigger:** a root test that forces the cache to refuse a remotely freed charged Large block and asserts `charged_total == returned_total`.
     > - **Evidence:** `src/alloc_core/large/alloc_core_large.rs` (`reclaim_large_segment`), `tests/j13b_thp_remote_free_reclaim.rs`.
+
+271. **[T, filed 2026-11-08] J13b header growth invalidates current-source PASS for historical kind-aware evidence R-Ph3b.**
+
+    > **Current state**
+    > - **Status:** OPEN — current-source evidence is CONDITIONAL; historical PASS and its immutable receipt remain intact.
+    > - **Current:** CI `42443060521` on `73af9b1e` rejected stale evidence because `SegmentHeader` implementation, views and layout assertions changed after the recorded source `f0586cce`. The registry row now states that its receipt proves the historical source only. Neither source scope nor required-cell statuses are narrowed; no current PASS is fabricated.
+    > - **Next trigger:** rerun the kind-aware entry tests and discriminating mutant on the new layout through GitHub CI, capture the exact source/receipt identity, and only then restore current-source PASS. Ordinary green compilation or unrelated THP tests are insufficient.
+    > - **Evidence:** `docs/evidence/registry.csv` and `source_scope.csv`, row `R-Ph3b`; `tests/r11_ph3b_kind_aware_entries.rs`; historical `docs/evidence/_raw_reverify_R-Ph3b.log`; CI evidence-registry job `128616183411`.
