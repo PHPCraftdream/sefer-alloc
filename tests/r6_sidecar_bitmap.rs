@@ -47,7 +47,11 @@ mod remote_bitmap;
 #[path = "../src/ghost/mod.rs"]
 mod ghost;
 
+#[path = "r6_sidecar_bitmap/child_process.rs"]
+mod child_process;
+
 mod tests {
+    use super::child_process::{run_child_bounded, ChildRun};
     use super::remote_bitmap::{BitmapRecord, SidecarBitmap};
     use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
     use std::sync::{Arc, Barrier};
@@ -75,10 +79,6 @@ mod tests {
     // filesystem calls themselves have no absolute OS deadline guarantee.
     const CHILD_BUDGET: std::time::Duration = std::time::Duration::from_secs(60);
     const CHILD: &str = "SEFER_R6_SIDECAR_INVALID_CLASS_CHILD";
-
-    #[path = "../r6_sidecar_bitmap/child_process.rs"]
-    mod child_process;
-    use child_process::{run_child_bounded, ChildRun};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum Termination {
