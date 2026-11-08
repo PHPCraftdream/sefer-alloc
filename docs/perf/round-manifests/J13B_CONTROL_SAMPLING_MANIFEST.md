@@ -1,6 +1,6 @@
 # J13b control sampling (task #48) — delivery manifest
 
-Status: implementation source state delivered; tests are authored but NOT executed locally; CI acceptance is pending. Class: `perf(opt-in)`. No measurements exist and there is NO GO of any kind.
+Status: exact-source CI acceptance verified on runtime `aacf1d097d9d9ab04f1b382c780602c713fbd8d0` and VM/build prerequisite `bec1e53f0a978125c39c281e1c96c19165fcfd6a`; original child preservation/cleanup is complete. Tests were NOT executed locally. Class: `perf(opt-in)`. No performance measurements exist and there is NO performance GO.
 
 ## First exact-source CI and corrective source boundary
 
@@ -14,6 +14,17 @@ Runtime CI `42487160786` on `6dab08ea` subsequently caught one remaining invento
 
 The remaining initial-run logs also exposed an incomplete feature gate on the owner-geometry test (`policy` is re-exported only with `alloc-decommit`) and stale root integration-test counts. The test now matches the import gate; README/ARCHITECTURE counts are derived from the 530 root test targets. The runtime-only diagnostics import matches its `alloc-xthread` consumer. The VM no-THP prerequisite is delivered in the existing VM PR #226, with its ancestry included in runtime PR #225: the fail-closed zero-cost classifier remains unchanged, and Miri-marked VM source is not disguised as a zero-cost runtime delta.
 
+## Exact-source GitHub CI acceptance
+
+- VM/build prerequisite: [CI 42489804247](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42489804247), exact `bec1e53f0a978125c39c281e1c96c19165fcfd6a`, completed SUCCESS. Native debug/release no-THP tests executed the mandatory whole-span `smaps nh`, untouched residency, fault-granularity and payload-preservation assertions; FI failure/recovery and reader enumeration passed. Mock typed-unsupported executed positively. The separate real-HugeTLB job confirmed a 64-page pool and real-grant/backend/decommit/release activation, but did not run the new conditional no-THP rejection test: grant-specific rejection coverage remains environmental, not proven by that job.
+- Runtime: [CI 42490064262](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42490064262), exact `aacf1d097d9d9ab04f1b382c780602c713fbd8d0`, completed SUCCESS. Final PR #225 checks were 54 SUCCESS and 23 intended SKIPPED, with no unfinished/failed checks. Auxiliary checks were included in this inspection.
+- [Runtime check-matrix job](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42490064262/job/128761040097): all fifteen `j13b_control_*` binaries had a nonzero successful execution (one test each). All six dedicated rows passed: premise recovery, sampler recovery, actual-ticket concurrent ordinal, reserved-capacity invalidation, OOM-shrink invalidation and capture bounds. Zero-test feature rows were not counted as positive receipts.
+- [Runtime ghost-guard job](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42490064262/job/128760359144): semantic selftest 209 cases / 310 mutants / zero failures; trailer-linter mutants 10/10 rejected; protected-range trailer check `bec1e53f..aacf1d09` covered ten commits with zero red. Foundation selftest independently passed 178 cases / 242 mutants; its fourteen-commit trailer range had zero red.
+- [Runtime zero-cost job](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42490064262/job/128761039963): declared-runtime scope SKIP with the unchanged classifier. This is not a normalized-text equality result, Ir measurement, default-path cost proof or speedup receipt.
+- Miri fastbin completed four targets with positive counts 1/2/2/1. The aarch64 production row positively ran owner geometry; it did not establish execution of the other native control bodies. Those positives come from the activating Linux check-matrix rows above.
+
+No learner, runtime judge, performance campaign, default promotion or main merge is accepted by these correctness receipts. Correctness item 271 remains CONDITIONAL. Historical failed attempts below remain failures; these new receipts do not relabel them.
+
 ## Local verification actually done (Windows receipts, exit 0 each)
 
 - `cargo clippy --locked --offline --lib --features "production" -- -D warnings` — exit 0 (the shipping default row, plain-production).
@@ -26,7 +37,7 @@ The remaining initial-run logs also exposed an incomplete feature gate on the ow
 - `node scripts/verify-structure-limits.mjs` — OK: self-test 21 cases; 9 directories and 28 files grandfathered by `docs/structure_limits_baseline.csv`; none new, none grown.
 - `node scripts/ghost_inventory.mjs --check` — OK: 725 sites, 95 files, 26 protocols, 51 scopes, 0 gaps / 0 double claims / 0 dead scopes / 0 protocol errors; 66 production paths checked; self-test OK (14 cases).
 
-**No test, model or binary was executed locally.** All 15 `tests/j13b_control_*.rs` binaries, the new VM test and every model/fixture run are pending GitHub CI across the rows: `production internals bench-internals`; `alloc-global alloc-xthread alloc-decommit internals bench-internals`; the `lazy-commit` fault-injection fixture rows; the six dedicated check-matrix rows (`tests/j13b_control_premise_recovery.rs`, `tests/j13b_control_sampler_recovery.rs`, `tests/j13b_control_concurrent_ordinal.rs`, `tests/j13b_control_reserved_capacity_invalidation.rs`, `tests/j13b_control_oom_shrink_invalidation.rs`, `tests/j13b_control_ticket_log_capture_bounds.rs`); and the aligned-vmem feature rows (including `fault-injection`). Ghost-lint execution over the P26 rules and the nine P26 fixture directories likewise runs on CI only and was never executed locally. One test binary is platform-independent and was therefore COMPILED (never run) by the Windows check rows above: `tests/j13b_control_owner_geometry.rs` is gated by `alloc-core` + `alloc-decommit` + `internals`, unlike the fourteen native Linux/Android-only binaries whose bodies compile empty on this host.
+**No test, model or binary was executed locally.** The following is the historical source-delivery checklist, now superseded by the exact-source CI receipts above: all 15 `tests/j13b_control_*.rs` binaries, the new VM test and every model/fixture run are pending GitHub CI across the rows: `production internals bench-internals`; `alloc-global alloc-xthread alloc-decommit internals bench-internals`; the `lazy-commit` fault-injection fixture rows; the six dedicated check-matrix rows (`tests/j13b_control_premise_recovery.rs`, `tests/j13b_control_sampler_recovery.rs`, `tests/j13b_control_concurrent_ordinal.rs`, `tests/j13b_control_reserved_capacity_invalidation.rs`, `tests/j13b_control_oom_shrink_invalidation.rs`, `tests/j13b_control_ticket_log_capture_bounds.rs`); and the aligned-vmem feature rows (including `fault-injection`). Ghost-lint execution over the P26 rules and the nine P26 fixture directories likewise runs on CI only and was never executed locally. One test binary is platform-independent and was therefore COMPILED (never run) by the Windows check rows above: `tests/j13b_control_owner_geometry.rs` is gated by `alloc-core` + `alloc-decommit` + `internals`, unlike the fourteen native Linux/Android-only binaries whose bodies compile empty on this host.
 
 ## Changed and new files (complete Task48 delta)
 
@@ -58,7 +69,7 @@ Three distinct quantities must not be conflated:
 - **Terminal-word offsets:** at base `42f67f14` the pins were header size 136, `TERMINAL_WORDS_OFF` 136, `REMOTE_HEAD_OFF` 136, `LARGE_STATE_OFF` 144. In the candidate, `TERMINAL_WORDS_OFF` and `REMOTE_HEAD_OFF` moved from 136 to 144 (the new `thp_observation` `u64` sits before them) and `LARGE_STATE_OFF` moved from 144 to 152, so the terminal words moved from 136/136/144 to 144/144/152.
 - **Reservation size:** the `SegmentHeader` struct grew by 8 bytes. This does NOT by itself prove the VM reservation of any mapping grew: large payload offsets are page-rounded, so whether a mapping's reservation size changed is geometry-dependent and unproven. No reservation-growth claim is made. `tests/r6_terminal_header_atomic.rs` pins 144 / 144 / 144 / 152 (header words / `TERMINAL_WORDS_OFF` / `REMOTE_HEAD_OFF` / `LARGE_STATE_OFF`).
 
-The iai Ir effect of this growth and of the added atomics remains UNKNOWN until CI.
+The iai Ir effect of this growth and of the added atomics remains UNKNOWN: the runtime zero-cost job classified the range as SKIP and did not measure it.
 
 ## Added atomics scope
 
@@ -88,8 +99,26 @@ Defaults, `Always`/`Off` semantics, production feature composition, and dependen
 
 ## Commit identity
 
-The commit list is not typed here because this manifest is written before the delivery commits exist. Derive it later from the parent commits of this branch; no SHA is invented in this file.
+The accepted source range is reproduced by `git log --format='%h %s' cfd8c130..aacf1d09`:
+
+```text
+aacf1d09 build: reconcile the evidence-preserving target metadata ancestry
+bec1e53f build: declare the historical config-conflict target features
+737e394d build: declare the historical config-conflict target features
+865b1981 docs: reconcile the named residency seam summary count
+6dab08ea build: reconcile the reviewed no-THP VM prerequisite ancestry
+ee4212c2 feat(vmem): add the owning fresh no-THP control premise
+60443384 fix: match control geometry feature gates and refresh test census
+d66a9d5a fix(perf): isolate Large residency ownership and repair CI proof pins
+68af84a1 perf(opt-in): integrate bounded first-life Large THP control observations
+```
+
+Net production feature composition/default impact: unchanged. Runtime sampling is opt-in Auto behavior, not a measured default speedup. No performance raw logs were produced or committed by Task48.
+
+## Child preservation and cleanup
+
+The original uncommitted child candidate was archived separately from the accepted parent source. All 8,194 non-target files (100,589,923 bytes) were hashed, archived, read back and hash-verified; a second source read matched every digest before removal. The source archive and per-file manifest remain in ignored parent scratch storage, and shared Rush history is retained. Only the reproducible `target/` build cache was excluded; no runtime acceptance was derived from it. The owned child worktree and its branch were removed after source acceptance. No older child file was copied over the repaired parent.
 
 ## Permission scope
 
-No permission to push or merge was granted by or for this delivery.
+This manifest grants no permission. Existing owner authorization covered scoped integration commits, branch publication, PR updates and owned-child cleanup for J13b. It did not authorize a main merge, default promotion, dependency/version changes or local runtime tests/workloads.
