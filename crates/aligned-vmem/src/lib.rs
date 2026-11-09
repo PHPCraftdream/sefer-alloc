@@ -220,7 +220,7 @@ mod bench_internals;
 pub use bench_internals::advice::{
     AdviceCapture, AdviceCaptureSnapshot, AdviceEvent, AdviceEventLog, AdviceLifetimeLedger,
     AdviceLifetimeSnapshot, AdviceReleaseMarker, AdviceReleaseScope, AdviceReplay,
-    AdviceReplaySnapshot,
+    AdviceReplaySnapshot, AdviceWindowSnapshot,
 };
 #[cfg(feature = "bench-internals")]
 pub use bench_internals::{

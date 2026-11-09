@@ -1,8 +1,10 @@
 //! Ordered replay outside allocator operations; addresses remain inert metadata.
 #![forbid(unsafe_code)]
-use super::ledger::AdviceLifetimeLedger;
-use super::replay_snapshot::AdviceReplaySnapshot;
-use super::stream::AdviceEvent;
+use super::super::ledger::AdviceLifetimeLedger;
+use super::super::snapshot::AdviceLifetimeSnapshot;
+use super::super::stream::{AdviceCaptureSnapshot, AdviceEvent};
+use super::snapshot::AdviceReplaySnapshot;
+use super::window::AdviceWindowSnapshot;
 
 type ReplayResult<T> = Result<T, &'static str>;
 
@@ -31,7 +33,7 @@ impl AdviceReplay {
             fresh_positions: [0; AdviceLifetimeLedger::CAPACITY],
             accepted_positions: [None; AdviceLifetimeLedger::CAPACITY],
             totals: AdviceReplaySnapshot {
-                advice: super::snapshot::AdviceLifetimeSnapshot::EMPTY,
+                advice: AdviceLifetimeSnapshot::EMPTY,
                 requests: [[0; 3]; 6],
                 requested_bytes: [0; 6],
                 usable_span_bytes: [0; 6],
@@ -215,13 +217,33 @@ impl AdviceReplay {
     /// subsequent mmap reused its range. Only one confirmed, begin-marked release
     /// can resolve that overlap; unknown/ambiguous outcomes never repair evidence.
     /// Scratch indexing allocates outside allocator operations, on caller System.
-    pub fn from_capture(capture: &super::stream::AdviceCaptureSnapshot) -> ReplayResult<Self> {
+    pub fn from_capture(capture: &AdviceCaptureSnapshot) -> ReplayResult<Self> {
+        Self::capture_replay(capture, None).map(|(replay, _)| replay)
+    }
+
+    /// One interval ending at this complete prefix. The caller establishes both
+    /// quiescent boundaries; no later capture outcome is borrowed to repair it.
+    pub fn window(
+        capture: &AdviceCaptureSnapshot,
+        begin: u64,
+    ) -> ReplayResult<AdviceWindowSnapshot> {
+        let (_, window) = Self::capture_replay(capture, Some(begin))?;
+        window.ok_or("advice window projection missing")
+    }
+
+    fn capture_replay(
+        capture: &AdviceCaptureSnapshot,
+        window_begin: Option<u64>,
+    ) -> ReplayResult<(Self, Option<AdviceWindowSnapshot>)> {
         let count = capture.records.len();
         if capture.encoding_version != AdviceEvent::ENCODING_VERSION
             || count > 65536
             || u64::try_from(count).ok() != Some(capture.boundary)
         {
             return Err("unsupported native capture envelope");
+        }
+        if window_begin.is_some_and(|begin| begin > capture.boundary) {
+            return Err("advice window begins after its captured end");
         }
         let mut releases = Vec::new();
         releases
@@ -236,6 +258,12 @@ impl AdviceReplay {
                     return Err("release begin marker is after its result");
                 }
                 if event.large_release() {
+                    let position =
+                        u64::try_from(index).map_err(|_| "native event position overflow")?;
+                    if window_begin.is_some_and(|boundary| begin < boundary && position >= boundary)
+                    {
+                        return Err("Large release crosses the claimed quiescent window boundary");
+                    }
                     releases.push(index);
                 }
             }
@@ -256,10 +284,21 @@ impl AdviceReplay {
             .map_err(|_| "release closure allocation failed")?;
         consumed.resize(count, false);
         let mut replay = Self::new();
+        let mut window = None;
         for (index, &event) in capture.records.iter().enumerate() {
             let position = u64::try_from(index).map_err(|_| "native event position overflow")?;
+            if window_begin == Some(position) {
+                window = Some(AdviceWindowSnapshot::start(
+                    position,
+                    capture.boundary,
+                    replay.snapshot()?,
+                ));
+            }
             if consumed[index] {
                 replay.totals.events = Self::add(replay.totals.events, 1)?;
+                if let Some(window) = window.as_mut() {
+                    window.observe(replay.snapshot()?);
+                }
                 continue;
             }
             if event.kind() == AdviceEvent::FRESH {
@@ -321,9 +360,19 @@ impl AdviceReplay {
                 }
             }
             replay.push(position, event)?;
+            if let Some(window) = window.as_mut() {
+                window.observe(replay.snapshot()?);
+            }
         }
         replay.supported()?;
-        Ok(replay)
+        if window_begin == Some(capture.boundary) {
+            window = Some(AdviceWindowSnapshot::start(
+                capture.boundary,
+                capture.boundary,
+                replay.snapshot()?,
+            ));
+        }
+        Ok((replay, window))
     }
 
     /// Every actual capture position is consumed once, including unrelated VM
