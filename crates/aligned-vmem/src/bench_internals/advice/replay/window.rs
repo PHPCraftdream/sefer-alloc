@@ -14,15 +14,23 @@ pub struct AdviceWindowSnapshot {
     pub after: AdviceReplaySnapshot,
     pub peak_groups: [u64; 6],
     pub peak_process: u64,
+    /// Actual logical Vec capacities used by replay indexes, not allocator/RSS overhead.
+    pub replay_index_capacity_bytes: usize,
 }
 
 impl AdviceWindowSnapshot {
-    pub(crate) fn start(begin: u64, end: u64, before: AdviceReplaySnapshot) -> Self {
+    pub(crate) fn start(
+        begin: u64,
+        end: u64,
+        before: AdviceReplaySnapshot,
+        replay_index_capacity_bytes: usize,
+    ) -> Self {
         Self {
             begin,
             end,
             before,
             after: before,
+            replay_index_capacity_bytes,
             peak_groups: before
                 .advice
                 .groups

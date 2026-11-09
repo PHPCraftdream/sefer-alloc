@@ -7,6 +7,7 @@
     feature = "bench-internals",
     not(feature = "numa-aware")
 ))]
+use super::advice_windows::AdviceWindows;
 use super::control_snapshot::ControlSnapshot;
 use super::measured_window::MeasuredWindow;
 use super::os_probe::OsProbe;
@@ -67,9 +68,10 @@ impl AdaptiveWindows {
         allocator: &SeferAlloc,
         scenario: &str,
         page: usize,
+        advice: &mut AdviceWindows,
     ) -> io::Result<Vec<MeasuredWindow>> {
         let cells = workload::plan(scenario).map_err(error)?;
-        Self::execute(allocator, &cells, page)
+        Self::execute(allocator, &cells, page, advice)
     }
 
     /// Same path for CI-sized geometry. Every result records the actual cell and
@@ -78,8 +80,11 @@ impl AdaptiveWindows {
         allocator: &SeferAlloc,
         cells: &[Cell],
         page: usize,
+        advice: &mut AdviceWindows,
     ) -> io::Result<Vec<MeasuredWindow>> {
-        if !cfg!(all(target_os = "linux", not(miri))) {
+        if !cfg!(all(target_os = "linux", not(miri)))
+            || !aligned_vmem::AdviceCapture::native_available()
+        {
             return Err(error("adaptive windows require native Linux OS epochs"));
         }
         let first = cells
@@ -176,21 +181,37 @@ impl AdaptiveWindows {
         for cell in cells {
             let full = Instant::now();
             let os = OsProbe::begin()?;
-            let (execution, live) = match cell.phase {
-                Phase::TrainSparse | Phase::TrainDense => {
-                    let run = OwnerTraining::run(allocator, cell.bytes, cell.shape, page)?;
-                    if AllocCore::dbg_thp_tuple().min_bytes != cell.minimum_request {
-                        return Err(error("training window resolved minimum mismatch"));
+            advice.begin()?;
+            let measured = (|| -> io::Result<_> {
+                let (execution, live) = match cell.phase {
+                    Phase::TrainSparse | Phase::TrainDense => {
+                        let run = OwnerTraining::run(allocator, cell.bytes, cell.shape, page)?;
+                        if AllocCore::dbg_thp_tuple().min_bytes != cell.minimum_request {
+                            return Err(error("training window resolved minimum mismatch"));
+                        }
+                        (WindowExecution::Training(run), None)
                     }
-                    (WindowExecution::Training(run), None)
-                }
-                Phase::Measure | Phase::TrainedSparse | Phase::TrainedDense | Phase::CoResident => {
-                    let (run, live) = Self::batch(allocator, cell, page, &os)?;
-                    (run, Some(live))
+                    Phase::Measure
+                    | Phase::TrainedSparse
+                    | Phase::TrainedDense
+                    | Phase::CoResident => {
+                        let (run, live) = Self::batch(allocator, cell, page, &os)?;
+                        (run, Some(live))
+                    }
+                };
+                // Both executors join every actor before terminal process probes.
+                let os = os.finish()?;
+                Ok((execution, live, os))
+            })();
+            let (execution, live, os) = match measured {
+                Ok(window) => window,
+                Err(failure) => {
+                    advice.abort();
+                    return Err(failure);
                 }
             };
-            // Both executors join every actor before the terminal process probes.
-            let os = os.finish()?;
+            // End replay is outside the OS envelope, but inside full_window_ns.
+            let advice = advice.finish()?;
             windows.push(MeasuredWindow {
                 cell: *cell,
                 registered_geometry,
@@ -198,6 +219,7 @@ impl AdaptiveWindows {
                 live,
                 full_window_ns: elapsed(full)?,
                 execution,
+                advice,
             });
         }
         Ok(windows)

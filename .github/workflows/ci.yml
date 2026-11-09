@@ -197,6 +197,17 @@ jobs:
           grep -F "[j13b-advice-child] off-legacy PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
           grep -F 'test actual_native_capture_closes_modes_cache_realloc_remote_and_release_failures ...' "$RUNNER_TEMP/j13b-advice-capture-native.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-advice-capture-native.log"
+      - name: J13b native advice windows across operation cache and failure boundaries
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -o pipefail
+          cargo test --locked --release --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_windows_native -- --nocapture 2>&1 \
+            | tee "$RUNNER_TEMP/j13b-advice-windows-native.log"
+          grep -F "[j13b-advice-windows] operations PASS" "$RUNNER_TEMP/j13b-advice-windows-native.log"
+          grep -F "[j13b-advice-windows] cache PASS" "$RUNNER_TEMP/j13b-advice-windows-native.log"
+          grep -F "[j13b-advice-windows] unknown PASS" "$RUNNER_TEMP/j13b-advice-windows-native.log"
+          grep -F "[j13b-advice-windows] off PASS" "$RUNNER_TEMP/j13b-advice-windows-native.log"
+          grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-advice-windows-native.log"
       - name: J13b window OS counters and native peak reset witness
         if: steps.paths.outputs.run == 'true'
         run: |
@@ -3575,6 +3586,15 @@ jobs:
           cargo miri test --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_capture_native 2>&1 | tee "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
           grep -F 'test native_advice_capture_rejects_unsupported_hosts_before_payload_claims ... ok' "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
+        shell: bash
+      - name: Native advice window controller rejects models before clocks or payload
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+        run: |
+          set -o pipefail
+          cargo miri test --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_windows_native 2>&1 | tee "$RUNNER_TEMP/miri-j13b-advice-windows-guard.log"
+          grep -F "test advice_windows_reject_models_before_clocks_capture_or_payload ... ok" "$RUNNER_TEMP/miri-j13b-advice-windows-guard.log"
+          grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-advice-windows-guard.log"
         shell: bash
       - name: Pure accepted-advice lifetime ledger under strict provenance
         env:

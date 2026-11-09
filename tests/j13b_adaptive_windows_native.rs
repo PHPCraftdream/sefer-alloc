@@ -9,6 +9,16 @@
 ))]
 #[path = "../examples/_shared/j13b_adaptive_windows.rs"]
 mod adaptive_windows;
+#[cfg(all(not(miri), target_os = "linux"))]
+#[path = "_shared/j13b_advice_assertions.rs"]
+mod advice_assertions;
+#[path = "../examples/_shared/j13b_advice_sample.rs"]
+#[cfg_attr(any(miri, not(target_os = "linux")), allow(dead_code))]
+mod advice_sample;
+// Nonadaptive entrypoints are exercised by the separate native window fixture.
+#[path = "../examples/_shared/j13b_advice_windows.rs"]
+#[allow(dead_code)]
+mod advice_windows;
 #[path = "../examples/_shared/j13b_control_interval.rs"]
 #[allow(dead_code)]
 mod control_interval;
@@ -52,10 +62,11 @@ use sefer_alloc::{LargeCacheConfig, SeferAlloc};
 #[cfg(any(miri, not(target_os = "linux")))]
 #[test]
 fn adaptive_windows_reject_model_or_unsupported_os_before_payloads() {
+    let mut advice = advice_windows::AdviceWindows::new();
     let allocator = SeferAlloc::with_config(LargeCacheConfig::new());
     let before = control_snapshot::ControlSnapshot::capture();
     for scenario in ["phased", "mixed"] {
-        let failure = AdaptiveWindows::run(&allocator, scenario, 4096).unwrap_err();
+        let failure = AdaptiveWindows::run(&allocator, scenario, 4096, &mut advice).unwrap_err();
         assert_eq!(
             failure.to_string(),
             "adaptive windows require native Linux OS epochs"
@@ -100,24 +111,25 @@ fn actual_phased_and_mixed_windows_preserve_training_and_live_os_boundaries() {
         }
         cells
     }
+    let mut advice = advice_windows::AdviceWindows::new();
     let phased = smoke("phased");
     // Rejection must precede claims and resets; not merely fail at a later probe.
     let before = ControlSnapshot::capture();
     assert_eq!(
-        AdaptiveWindows::run(&allocator, "cycle", page)
+        AdaptiveWindows::run(&allocator, "cycle", page, &mut advice)
             .unwrap_err()
             .to_string(),
         "unsupported adaptive scenario"
     );
     let mut reordered = phased.clone();
     reordered.swap(1, 2);
-    assert!(AdaptiveWindows::execute(&allocator, &reordered, page).is_err());
+    assert!(AdaptiveWindows::execute(&allocator, &reordered, page, &mut advice).is_err());
     assert_eq!(ControlSnapshot::capture(), before);
-    assert!(AdaptiveWindows::execute(&allocator, &phased[..4], page).is_err());
+    assert!(AdaptiveWindows::execute(&allocator, &phased[..4], page, &mut advice).is_err());
     assert_eq!(ControlSnapshot::capture(), before);
     let mut mismatched = phased.clone();
     mismatched[2].bytes = 8 * MIB;
-    assert!(AdaptiveWindows::execute(&allocator, &mismatched, page).is_err());
+    assert!(AdaptiveWindows::execute(&allocator, &mismatched, page, &mut advice).is_err());
     assert_eq!(ControlSnapshot::capture(), before);
     let mut same_group_mixed = smoke("mixed");
     for cell in &mut same_group_mixed {
@@ -127,23 +139,49 @@ fn actual_phased_and_mixed_windows_preserve_training_and_live_os_boundaries() {
             cell.co_resident = Some((shape, MIB, blocks));
         }
     }
-    assert!(AdaptiveWindows::execute(&allocator, &same_group_mixed, page).is_err());
+    assert!(AdaptiveWindows::execute(&allocator, &same_group_mixed, page, &mut advice).is_err());
     assert_eq!(ControlSnapshot::capture(), before);
     let lease = OsProbe::begin().expect("own-process epoch lease");
-    let overlap = AdaptiveWindows::execute(&allocator, &phased, page).unwrap_err();
+    let overlap = AdaptiveWindows::execute(&allocator, &phased, page, &mut advice).unwrap_err();
     assert_eq!(overlap.kind(), std::io::ErrorKind::WouldBlock);
     assert_eq!(ControlSnapshot::capture(), before);
     drop(lease);
 
+    let mut previous_advice = None;
     for scenario in ["phased", "mixed"] {
         let cells = smoke(scenario);
-        let windows =
-            AdaptiveWindows::execute(&allocator, &cells, page).expect("real measured windows");
+        let windows = AdaptiveWindows::execute(&allocator, &cells, page, &mut advice)
+            .expect("real measured windows");
         assert_eq!(windows.len(), cells.len());
         let mut previous = None;
         let mut training_count = 0;
         for (window, cell) in windows.iter().zip(&cells) {
             assert_eq!(window.cell, *cell);
+            advice_assertions::assert_sample(&window.advice);
+            if let Some(previous) = previous_advice {
+                assert_eq!(window.advice.window.before, previous);
+            }
+            previous_advice = Some(window.advice.window.after);
+            assert_eq!(window.advice.window.after.outstanding_fresh, 0);
+            assert_eq!(
+                window.advice.window.after.advice.process
+                    [aligned_vmem::AdviceLifetimeSnapshot::NOW],
+                0
+            );
+            let executor_ns = match &window.execution {
+                WindowExecution::Training(run) => run.wall_ns,
+                WindowExecution::Batch {
+                    executor_wall_ns, ..
+                } => *executor_wall_ns,
+            };
+            let reported = window
+                .advice
+                .observer_wall_ns
+                .iter()
+                .try_fold(executor_ns, |sum, &value| sum.checked_add(value))
+                .unwrap();
+            assert!(window.full_window_ns >= reported);
+            assert!(window.full_window_ns >= window.advice.observed_interval_ns);
             assert!(
                 !window.registered_geometry,
                 "CI geometry must never claim campaign identity"
@@ -244,6 +282,26 @@ fn actual_phased_and_mixed_windows_preserve_training_and_live_os_boundaries() {
                     (*before, *after)
                 }
             };
+            let fresh_before = window
+                .advice
+                .window
+                .before
+                .requests
+                .iter()
+                .map(|row| row[0])
+                .sum::<u64>();
+            let fresh_after = window
+                .advice
+                .window
+                .after
+                .requests
+                .iter()
+                .map(|row| row[0])
+                .sum::<u64>();
+            assert_eq!(
+                fresh_after.checked_sub(fresh_before),
+                Some(end.ordinal.checked_sub(start.ordinal).unwrap())
+            );
             if let Some(prior) = previous {
                 assert_eq!(start, prior, "no hidden eligible inter-window traffic");
             }
@@ -258,8 +316,17 @@ fn actual_phased_and_mixed_windows_preserve_training_and_live_os_boundaries() {
         cell.minimum_request = 0;
     }
     let before = ControlSnapshot::capture();
-    let failed = AdaptiveWindows::execute(&allocator, &wrong_minimum, page).unwrap_err();
+    let failed =
+        AdaptiveWindows::execute(&allocator, &wrong_minimum, page, &mut advice).unwrap_err();
     assert_eq!(failed.to_string(), "payload actor session failed");
+    assert!(
+        advice.finish().is_err(),
+        "failed executor cannot yield supported advice evidence"
+    );
+    assert!(
+        advice.begin().is_err(),
+        "an unclosed failed window cannot be repaired"
+    );
     assert_eq!(ControlSnapshot::capture(), before);
     drop(OsProbe::begin().expect("failed window released epoch lease"));
     assert_eq!(AllocCore::dbg_thp_tuple_conflicts(), 0);
