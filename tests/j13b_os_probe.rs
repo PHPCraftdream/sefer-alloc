@@ -5,7 +5,10 @@ mod os_probe;
 #[path = "../examples/_shared/j13b_os_sample.rs"]
 #[allow(dead_code)]
 mod os_sample;
+#[path = "support/j13b_peak_epoch_witness.rs"]
+mod peak_witness;
 use os_probe::OsProbe;
+use peak_witness::PeakEpochWitness;
 
 #[cfg(any(miri, not(target_os = "linux")))]
 #[test]
@@ -78,4 +81,57 @@ fn fault_deltas_reject_decrease_or_wrap_without_saturation() {
     assert!(OsProbe::fault_delta((7, 9), (6, 9)).is_err());
     assert!(OsProbe::fault_delta((7, 9), (7, 8)).is_err());
     assert!(OsProbe::fault_delta((u64::MAX, 0), (0, 0)).is_err());
+}
+
+#[test]
+fn peak_witness_rejects_wrong_sources_without_a_calibrated_accuracy_tolerance() {
+    const MIB: u64 = 1024 * 1024;
+    let valid = PeakEpochWitness {
+        old_peak: 40 * MIB,
+        reset_peak: 8 * MIB,
+        start_rss: 8 * MIB,
+        live_peak: 24 * MIB,
+        end_rss: 8 * MIB,
+        retained_peak: 23 * MIB,
+    };
+    // This synthetic difference is not an error bound. The kernel contract
+    // permits separate reported readings to differ; only causal signals matter.
+    assert!(valid.retained_peak < valid.live_peak);
+    assert!(valid.validate().is_ok());
+    for invalid in [
+        PeakEpochWitness {
+            reset_peak: valid.old_peak,
+            ..valid
+        },
+        PeakEpochWitness {
+            reset_peak: valid.old_peak - 4096,
+            ..valid
+        },
+        PeakEpochWitness {
+            retained_peak: valid.old_peak,
+            ..valid
+        },
+        PeakEpochWitness {
+            retained_peak: valid.old_peak - 4096,
+            ..valid
+        },
+        PeakEpochWitness {
+            retained_peak: valid.end_rss,
+            ..valid
+        },
+        PeakEpochWitness {
+            retained_peak: 0,
+            ..valid
+        },
+        PeakEpochWitness {
+            live_peak: valid.start_rss,
+            ..valid
+        },
+        PeakEpochWitness {
+            end_rss: u64::MAX,
+            ..valid
+        },
+    ] {
+        assert!(invalid.validate().is_err());
+    }
 }

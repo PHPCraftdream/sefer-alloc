@@ -3,6 +3,7 @@
 pub(crate) struct OsSample {
     pub rss_start_bytes: u64,
     pub rss_end_bytes: u64,
+    /// OS-reported approximate VmHWM, not an exact maximum of separate reads.
     pub rss_peak_bytes: u64,
     pub anon_huge_pages_bytes: u64,
     pub minor_faults: u64,

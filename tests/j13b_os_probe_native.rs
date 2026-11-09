@@ -4,7 +4,10 @@
 mod os_probe;
 #[path = "../examples/_shared/j13b_os_sample.rs"]
 mod os_sample;
+#[path = "support/j13b_peak_epoch_witness.rs"]
+mod peak_witness;
 use os_probe::OsProbe;
+use peak_witness::PeakEpochWitness;
 
 fn fault_mapping(bytes: usize) -> aligned_vmem::Reservation {
     let page = aligned_vmem::page_size();
@@ -42,8 +45,10 @@ fn reset_peak_is_real_window_scoped_and_faults_are_not_fabricated() {
     let probe = OsProbe::begin().expect("own clear_refs=5 epoch supported");
     let probe_start_peak = probe.start_peak_bytes();
     assert!(
-        probe_start_peak < old_peak,
-        "reset must really lower the previous peak"
+        old_peak
+            .checked_sub(probe_start_peak)
+            .is_some_and(|gap| gap > 16 * MIB as u64),
+        "reset must remove the prior 32 MiB signal, not just a small counter fluctuation"
     );
     let overlap = match OsProbe::begin() {
         Ok(_) => panic!("overlapping epochs must not reset an active window"),
@@ -64,11 +69,19 @@ fn reset_peak_is_real_window_scoped_and_faults_are_not_fabricated() {
         sample.rss_start_bytes, probe_start_peak, sample.rss_end_bytes,
         sample.rss_peak_bytes, sample.minor_faults, sample.major_faults,
     );
-    assert!(
-        sample.rss_peak_bytes >= peak_inside,
-        "a freed in-window peak must survive: retained={} live={peak_inside}",
-        sample.rss_peak_bytes,
-    );
+    // VmHWM is documented as inaccurate; a live read does not persist its
+    // max(current RSS, stored hiwater) result. Validate the predeclared causal
+    // signals instead of inventing an inter-read upper-bound guarantee.
+    PeakEpochWitness {
+        old_peak,
+        reset_peak: probe_start_peak,
+        start_rss: sample.rss_start_bytes,
+        live_peak: peak_inside,
+        end_rss: sample.rss_end_bytes,
+        retained_peak: sample.rss_peak_bytes,
+    }
+    .validate()
+    .expect("all four predeclared peak signals");
     assert!(
         sample.rss_peak_bytes < old_peak,
         "cumulative process peak must not leak into this window"
@@ -81,7 +94,7 @@ fn reset_peak_is_real_window_scoped_and_faults_are_not_fabricated() {
     assert!(sample.minor_faults > 0 || sample.major_faults > 0);
     assert_eq!(
         sample.peak_scope,
-        "own-process VmHWM since clear_refs=5, including probes"
+        "OS-reported approximate VmHWM since clear_refs=5, including probes"
     );
     assert!(sample.fault_scope.contains("excludes children"));
     // Zero is valid; missing telemetry is an error. Do not assert a
