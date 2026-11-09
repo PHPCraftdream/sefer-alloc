@@ -3,6 +3,32 @@
   "doc": "Ghost-checks catalog (docs/GHOST_CHECKS_PLAN.md). `protocols` — G0 inventory to invariant level; `scopes` — every atomic/ordering site in src/** and crates/*/src/** claimed by exactly one scope (scripts/ghost_inventory.mjs --check); `rules` — per-site lint rules, filled from G1 on.",
   "protocols": [
     {
+      "id": "P28",
+      "name": "benchmark advice event capture publication",
+      "prod": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+        "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
+      ],
+      "invariants": [
+        "I1 capture begins once before producers; published slots are never reset or recycled",
+        "I2 one cursor RMW reserves each event position; capacity and unsupported failures cannot yield truncated readable evidence",
+        "I3 one bounded empty-to-in-progress slot CAS precedes all scalar payload writes, preventing reuse even after cursor wrap",
+        "I4 all relaxed scalar payload stores precede Release completion; an Acquire matching completion precedes every relaxed payload load",
+        "I5 first-failure diagnostics are sticky, publish no payload and never influence allocator policy or native outcomes",
+        "I6 readable boundaries require producer quiescence and full prefix publication, validated encodings and unchanged cursor",
+        "I7 diagnostic addresses remain inert integers; no allocation, callbacks, mapping locks, mapped-memory access or unbounded retry exists in append",
+        "I8 release markers are sampled before the consuming native attempt; only a unique confirmed Large-source result whose marker includes the original fresh/advice publication can justify canonical closure before a reused range; thread-affine scalar source context restores on exit, unrelated VM callbacks never debit Large ownership, and unknown outcomes never repair evidence"
+      ],
+      "class": "S",
+      "loom": [],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "no: bounded actual-source thread/Miri fixtures are authored, execution acceptance pending; no whole-native-lifecycle or wait-freedom claim",
+      "decision": "benchmark-only bounded capture with fail-closed evidence",
+      "phase": "J13b",
+      "reason": "Task78 supplies diagnostic capture for the accepted pure advice ledger; native emitter/replay wiring and semantic fixtures are still in progress. No runtime or performance acceptance is implied."
+    },
+    {
       "id": "P27",
       "name": "large-THP coherent bounded estimator pair",
       "prod": [
@@ -667,6 +693,61 @@
   ],
   "scopes": [
     {
+      "id": "P28/capture-start",
+      "class": "S",
+      "protocol": "P28",
+      "files": ["crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"],
+      "fn": "^(begin|is_started)$",
+      "receiver": "^(self)?\\.started$",
+      "ops": ["compare_exchange", "load"],
+      "orderings": ["Release", "Relaxed", "Acquire"],
+      "reason": "single diagnostic epoch start; no reset or mapping ownership publication"
+    },
+    {
+      "id": "P28/capture-cursor",
+      "class": "counter",
+      "protocol": "P28",
+      "files": ["crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"],
+      "fn": "^(append|boundary|read|release_begin_hint)$",
+      "receiver": "^(self)?\\.cursor$",
+      "ops": ["fetch_add", "load"],
+      "orderings": ["Relaxed"],
+      "reason": "unique event positions only; payload publication is the independent completion marker"
+    },
+    {
+      "id": "P28/capture-failure",
+      "class": "counter",
+      "protocol": "P28",
+      "files": ["crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"],
+      "fn": "^(reject|supported)$",
+      "receiver": "^(self)?\\.failure$",
+      "ops": ["compare_exchange", "load"],
+      "orderings": ["Relaxed"],
+      "reason": "sticky diagnostic first-failure code; publishes no payload and never gates allocator behavior"
+    },
+    {
+      "id": "P28/slot-publication",
+      "class": "S",
+      "protocol": "P28",
+      "files": ["crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"],
+      "fn": "^publish$",
+      "receiver": "^((self)?\\.complete|field)$",
+      "ops": ["compare_exchange", "store"],
+      "orderings": ["Relaxed", "Release"],
+      "reason": "bounded empty-slot claim then relaxed scalar writes and Release completion; no slot reuse"
+    },
+    {
+      "id": "P28/slot-read",
+      "class": "S",
+      "protocol": "P28",
+      "files": ["crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"],
+      "fn": "^read$",
+      "receiver": "^((self)?\\.complete|field)$",
+      "ops": ["load"],
+      "orderings": ["Acquire", "Relaxed"],
+      "reason": "matching Acquire completion must precede reading immutable relaxed payload fields"
+    },
+    {
       "id": "P27/runtime-learning-diagnostics",
       "class": "counter",
       "protocol": "P27",
@@ -1256,6 +1337,477 @@
     }
   ],
   "rules": [
+    {
+      "id": "advice-capture/release-hint",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::release_begin_hint",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "release",
+        "marker",
+        "before",
+        "native"
+      ],
+      "reason": "pre-call position hints never reserve or mutate capture positions",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_replay.rs",
+        "tests/j13b_advice_capture_native.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_release_hint"
+    },
+    {
+      "id": "advice-capture/legacy-release-marker",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/os/release/legacy.rs",
+      "fn": "release_reservation",
+      "before": {
+        "name": "release_begin"
+      },
+      "after": {
+        "name": "libc_munmap"
+      },
+      "terms": [
+        "release",
+        "marker",
+        "before",
+        "native"
+      ],
+      "reason": "native release start marker precedes munmap; outcome publication remains after errno capture",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_replay.rs",
+        "tests/j13b_advice_capture_native.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_legacy_release_marker"
+    },
+    {
+      "id": "advice-capture/checked-release-marker",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/os/release/checked.rs",
+      "fn": "release_reservation_checked",
+      "before": {
+        "name": "release_begin"
+      },
+      "after": {
+        "name": "libc_munmap"
+      },
+      "terms": [
+        "release",
+        "marker",
+        "before",
+        "native"
+      ],
+      "reason": "native release start marker precedes munmap; outcome publication remains after errno capture",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_replay.rs",
+        "tests/j13b_advice_capture_native.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_checked_release_marker"
+    },
+    {
+      "id": "advice-capture/fi-seed-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::seed_cursor_for_test",
+      "sites": [
+        {
+          "name": "store",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "synthetic",
+        "local",
+        "fault-injection"
+      ],
+      "reason": "local metadata FI only; pin the test mutation surface independently of the private native global",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_fi_seed"
+    },
+    {
+      "id": "advice-capture/fi-reserve-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::reserve_unpublished_for_test",
+      "sites": [
+        {
+          "name": "fetch_add",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "synthetic",
+        "local",
+        "fault-injection"
+      ],
+      "reason": "local metadata FI only; pin the test mutation surface independently of the private native global",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_fi_reserve"
+    },
+    {
+      "id": "advice-capture/fi-complete-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::complete_reserved_for_test",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "synthetic",
+        "local",
+        "fault-injection"
+      ],
+      "reason": "local metadata FI only; pin the test mutation surface independently of the private native global",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_fi_complete"
+    },
+    {
+      "id": "advice-capture/slot-publish-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "receiver": "^(self)?\\.complete$",
+          "orderings": [
+            "Relaxed",
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^(self)?\\.complete$",
+          "orderings": [
+            "Release"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "one bounded slot claim; payload then Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_slot_publish"
+    },
+    {
+      "id": "advice-capture/slot-read-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::read",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.complete$",
+          "orderings": [
+            "Acquire"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^field$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "matching Acquire completion before immutable scalar payload reads",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_slot_read"
+    },
+    {
+      "id": "advice-capture/begin-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::begin",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "receiver": "^(self)?\\.started$",
+          "orderings": [
+            "Release",
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "one diagnostic begin; no reset or replacement epoch",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_begin"
+    },
+    {
+      "id": "advice-capture/failure-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::reject",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "receiver": "^(self)?\\.failure$",
+          "orderings": [
+            "Relaxed",
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "one strong first-failure CAS; spurious failure must not leave unsupported capture readable",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_failure"
+    },
+    {
+      "id": "advice-capture/failure-read-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::supported",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.failure$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "failure reads never clear or repair sticky unsupported state",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_failure_read"
+    },
+    {
+      "id": "advice-capture/reservation-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::append",
+      "sites": [
+        {
+          "name": "fetch_add",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "one cursor reservation per event; no skipped diagnostic positions",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_reservation"
+    },
+    {
+      "id": "advice-capture/boundary-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::boundary",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "quiescent prefix boundaries read cursor twice and never reset active capture",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_boundary"
+    },
+    {
+      "id": "advice-capture/prefix-read-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::read",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "prefix replay never reserves or mutates event positions",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_prefix_read"
+    },
+    {
+      "id": "advice-capture/started-read-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::is_started",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.started$",
+          "orderings": [
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "producer epoch reads never clear or rearm the capture flag",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_started_read"
+    },
+    {
+      "id": "advice-capture/publish-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "all scalar writes precede Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_order"
+    },
+    {
+      "id": "advice-capture/read-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::read",
+      "before": {
+        "name": "load",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "after": {
+        "name": "load",
+        "receiver": "^field$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "matching Acquire completion precedes scalar reads",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_read_order"
+    },
     {
       "id": "thp-learning/diagnostic-load-inventory",
       "kind": "R2",

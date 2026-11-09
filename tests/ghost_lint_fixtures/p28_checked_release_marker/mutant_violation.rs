@@ -1,6 +1,7 @@
+// expect: anchor (before) not found
 use core::ptr::NonNull;
 
-use super::unix::libc_munmap;
+use super::super::unix::libc_munmap;
 use crate::error::VmemError;
 #[cfg(feature = "fault-injection")]
 use crate::fault_injection;
@@ -25,6 +26,11 @@ pub(crate) unsafe fn release_reservation_checked(
     reservation_len: usize,
     _align: usize,
 ) -> Result<(), VmemError> {
+    #[cfg(feature = "bench-internals")]
+    let (reservation_addr, release_begin) = (
+        reservation.as_ptr().addr(),
+        None,
+    );
     #[cfg(feature = "fault-injection")]
     let surrogate = fault_injection::should_fail_release_backend_result();
     #[cfg(not(feature = "fault-injection"))]
@@ -47,6 +53,14 @@ pub(crate) unsafe fn release_reservation_checked(
             error.unwrap_or_else(VmemError::os_refusal_unknown_code),
         )
     };
+    // Native errno, if any, has already been captured; only copied keys remain.
+    #[cfg(feature = "bench-internals")]
+    crate::bench_internals::advice::AdviceCapture::release_end(
+        release_begin,
+        reservation_addr,
+        reservation_len,
+        ret == 0,
+    );
     if ret == 0 {
         Ok(())
     } else {

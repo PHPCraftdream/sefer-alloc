@@ -1,5 +1,11 @@
 # J13b preregistration — the Large-block THP hint under the program's control: mode, request-size threshold, per-size-bucket learned share, byte budget (Linux)
 
+## 2026-11-09 native advice event-order clarification — before measurements
+
+The #78 producer is a candidate, not execution-accepted evidence. A thread may be preempted after successful munmap and publish its release result after another thread has mapped and recorded a fresh reservation at the same address. Raw callback order therefore is not exact native lifetime order. Replay may close an overlapping old lifetime early only with one uniquely matching confirmed Large-source release whose pre-call cursor marker includes that lifetime's fresh/advice records and is no later than the reused Fresh position. Untracked VM callbacks never retire Large ownership. Missing, unproven or ambiguous results reject evidence rather than repairing it. Raw positions and the number of canonical closures must remain reported.
+
+Accepted/current/released advice and canonical event-accounting peaks are not charge, RSS, physical huge backing or an exact simultaneous-kernel-VMA maximum. Canonical accounting must not silently replace any gate that requires an unavailable exact quantity; such a row stays unsupported. Per-window binding must retain incoming cached advice, replay the complete interval and distinguish group peaks from the process peak. Capture storage (4 MiB slots plus metadata), scalar TLS context, replay scratch, faults and time are instrumentation cost; no hidden subtraction or production-cost extrapolation is authorized. Workload volumes, training targets, numeric gates, margins and statistics remain unchanged. No campaign or default decision is authorized by this clarification.
+
 ## 2026-11-09 judge entrypoint and OS-epoch clarification — before measurements
 
 No campaign measurements or performance GO exist. Runtime learning is accepted on `6c2ba419` (CI `42512485612`), artifact routing on `be5fd14b` (CI `42517707507`), the static reference on `ac8906cb` (CI `42526023632`), and owning buffers on `e1e98236` (CI `42534627862`). The dated pending statuses below remain implementation history, not current receipts. The new OS producer still needs exact-source CI acceptance. Numeric gates, workload sizes, training targets, margins and statistics are unchanged.

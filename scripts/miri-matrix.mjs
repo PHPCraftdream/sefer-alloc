@@ -27,6 +27,17 @@ const depot = (borrows) => green('miri-core', 'miri_depot_cycle', 'alloc-global 
 const plainFeatures = 'alloc-global alloc-xthread alloc-decommit internals bench-internals';
 export const MIRI_TARGETS = [
   green('miri-core', 'region_invariants'),
+  green('miri-core', 'advice_event_stream', 'bench-internals fault-injection', {
+    pkg: 'aligned-vmem',
+    marker: 'test cursor_wrap_never_turns_failed_capture_into_an_empty_success ... ok',
+  }),
+  green('miri-core', 'advice_event_replay', 'bench-internals', {
+    pkg: 'aligned-vmem',
+    marker: 'test unknown_release_and_partial_advice_never_yield_zero_or_repaired_rows ... ok',
+  }),
+  green('miri-core', 'j13b_advice_capture_native', 'production alloc-stats internals bench-internals lazy-commit-fault-injection', {
+    marker: 'test native_advice_capture_rejects_unsupported_hosts_before_payload_claims ... ok',
+  }),
   green('miri-core', 'advice_lifetime_ledger', 'bench-internals', {
     pkg: 'aligned-vmem',
     marker: 'test unsupported_release_preserves_entries_and_never_recovers_via_retry_or_reuse ... ok',

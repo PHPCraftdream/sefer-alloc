@@ -10,6 +10,9 @@ use crate::alloc_core::policy::large_thp_runtime::ThpRuntime;
 /// outcome consumes ownership and conservatively retains the charge; no retry.
 /// Uncharged mappings retain the legacy release path and touch no THP ledger.
 pub(crate) fn release_large_mapping(charge: usize, reservation: *mut u8, reservation_len: usize) {
+    #[cfg(feature = "bench-internals")]
+    let _capture_source =
+        aligned_vmem::AdviceCapture::large_release_scope(reservation.addr(), reservation_len);
     if charge == 0 {
         os::release_segment(reservation, reservation_len);
         return;
