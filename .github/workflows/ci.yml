@@ -131,6 +131,18 @@ jobs:
             | tee "$RUNNER_TEMP/j13b-owned-native.log"
           grep -F 'test real_owner_and_foreign_frees_preserve_learning_boundary ... ok' "$RUNNER_TEMP/j13b-owned-native.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-owned-native.log"
+      - name: J13b window OS counters and native peak reset witness
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -o pipefail
+          cargo test --locked --features 'production internals bench-internals' --test j13b_os_probe \
+            | tee "$RUNNER_TEMP/j13b-os-fixtures.log"
+          grep -F 'test result: ok. 4 passed; 0 failed;' "$RUNNER_TEMP/j13b-os-fixtures.log"
+          cargo test --locked --features 'production internals bench-internals' --test j13b_os_probe_native \
+            -- --ignored --exact reset_peak_is_real_window_scoped_and_faults_are_not_fabricated \
+            | tee "$RUNNER_TEMP/j13b-os-native.log"
+          grep -F 'test reset_peak_is_real_window_scoped_and_faults_are_not_fabricated ... ok' "$RUNNER_TEMP/j13b-os-native.log"
+          grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-os-native.log"
       - name: Static control-matched reference (disposable source copy only)
         if: steps.paths.outputs.run == 'true'
         run: |
@@ -3400,6 +3412,13 @@ jobs:
       # The core invariants (UB-free slotmap membrane), default features.
       - name: region_invariants
         run: cargo miri test --test region_invariants
+      - name: J13b OS ABI fixtures and model/native separation
+        run: |
+          set -o pipefail
+          cargo miri test --test j13b_os_probe 2>&1 | tee "$RUNNER_TEMP/miri-j13b-os.log"
+          grep -F 'test unsupported_os_or_model_is_rejected_before_any_probe ... ok' "$RUNNER_TEMP/miri-j13b-os.log"
+          grep -F 'test result: ok. 5 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-os.log"
+        shell: bash
       - name: J13b owning buffers (strict provenance, Stacked Borrows)
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
