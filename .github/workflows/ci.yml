@@ -153,6 +153,17 @@ jobs:
             | tee "$RUNNER_TEMP/j13b-actors-native.log"
           grep -F 'test real_actors_return_owner_samples_and_reject_remote_training_in_both_directions ... ok' "$RUNNER_TEMP/j13b-actors-native.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-actors-native.log"
+      - name: J13b single-control interval closure and actual ticket evidence
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -o pipefail
+          cargo test --locked --features 'production internals bench-internals' --test j13b_control_interval \
+            | tee "$RUNNER_TEMP/j13b-interval-core.log"
+          grep -F 'test result: ok. 8 passed; 0 failed;' "$RUNNER_TEMP/j13b-interval-core.log"
+          cargo test --locked --release --features 'production internals bench-internals' --test j13b_control_interval_native \
+            | tee "$RUNNER_TEMP/j13b-interval-native.log"
+          grep -F 'test actual_same_size_owner_cohorts_bind_single_sample_and_ticket_capture ... ok' "$RUNNER_TEMP/j13b-interval-native.log"
+          grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-interval-native.log"
       - name: J13b window OS counters and native peak reset witness
         if: steps.paths.outputs.run == 'true'
         run: |
