@@ -139,7 +139,7 @@ jobs:
             | tee "$RUNNER_TEMP/j13b-os-fixtures.log"
           grep -F 'test result: ok. 4 passed; 0 failed;' "$RUNNER_TEMP/j13b-os-fixtures.log"
           cargo test --locked --features 'production internals bench-internals' --test j13b_os_probe_native \
-            -- --ignored --exact reset_peak_is_real_window_scoped_and_faults_are_not_fabricated \
+            -- --ignored --exact reset_peak_is_real_window_scoped_and_faults_are_not_fabricated --nocapture \
             | tee "$RUNNER_TEMP/j13b-os-native.log"
           grep -F 'test reset_peak_is_real_window_scoped_and_faults_are_not_fabricated ... ok' "$RUNNER_TEMP/j13b-os-native.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-os-native.log"

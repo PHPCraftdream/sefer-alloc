@@ -40,8 +40,9 @@ fn reset_peak_is_real_window_scoped_and_faults_are_not_fabricated() {
     );
 
     let probe = OsProbe::begin().expect("own clear_refs=5 epoch supported");
+    let probe_start_peak = probe.start_peak_bytes();
     assert!(
-        probe.start_peak_bytes() < old_peak,
+        probe_start_peak < old_peak,
         "reset must really lower the previous peak"
     );
     let overlap = match OsProbe::begin() {
@@ -58,9 +59,15 @@ fn reset_peak_is_real_window_scoped_and_faults_are_not_fabricated() {
     let sample = probe
         .finish()
         .expect("complete non-fabricated window sample");
+    eprintln!(
+        "[j13b_os_probe_native] old_peak={old_peak} post_release_rss={now} start_rss={} start_peak={} live_peak={peak_inside} end_rss={} retained_peak={} minor={} major={}",
+        sample.rss_start_bytes, probe_start_peak, sample.rss_end_bytes,
+        sample.rss_peak_bytes, sample.minor_faults, sample.major_faults,
+    );
     assert!(
         sample.rss_peak_bytes >= peak_inside,
-        "a freed in-window peak must survive"
+        "a freed in-window peak must survive: retained={} live={peak_inside}",
+        sample.rss_peak_bytes,
     );
     assert!(
         sample.rss_peak_bytes < old_peak,
