@@ -15,9 +15,12 @@
 // ref, its first parent replaces BASE (`resolveBase`): the recorded
 // `pull_request.base.sha` goes stale once the base branch moves. Any other
 // checkout is red.
-// `--allow-declared-runtime`: pass without building when the commits BASE..HEAD
-// (merges excluded) fall under the fail-closed exception of
-// scripts/ghost_diff.mjs (`zeroCostSkip`).
+// `--allow-declared-runtime`: pass without building only when the entire range
+// satisfies scripts/ghost_diff.mjs (`zeroCostSkip`). For a mixed range, derive
+// the newest first-parent prefix admitted by that unchanged policy and require
+// exact production text/Ir identity for the entire remaining suffix. Report
+// both the original PR base and the derived prefix; never claim whole-PR
+// runtime identity from a suffix proof. Dirty trees retain the full proof.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -26,6 +29,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { REPO_ROOT } from './lib.mjs';
 import { changedLines, resolveBase, zeroCostSkip } from './ghost_diff.mjs';
+import { declaredRuntimePrefix } from './ghost_runtime_prefix.mjs';
+import { checkRuntimePrefixCases } from '../tests/ghost_runtime_prefix_fixtures.mjs';
 
 const EXAMPLE = 'ghost_zero_cost_probe';
 const RUSTFLAGS = '-C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5';
@@ -215,7 +220,8 @@ for (const [name, e, want] of END_CASES) {
   assert.equal(r.base ?? null, want, `resolveBase self-test "${name}"`);
   assert.equal(r.why === undefined, want !== null, `resolveBase self-test "${name}": a refusal carries a reason`);
 }
-console.log(`[ghost-zero-cost] scope self-test OK (${SKIP_CASES.length} + ${END_CASES.length} cases + changedLines)`);
+const prefixChecks = checkRuntimePrefixCases();
+console.log(`[ghost-zero-cost] scope self-test OK (${SKIP_CASES.length} + ${END_CASES.length} cases + changedLines; ${prefixChecks} runtime-prefix checks)`);
 if (argv.includes('--self-test')) process.exit(0);
 
 const g = (args) => run('git', args, { cwd: REPO_ROOT });
@@ -230,8 +236,9 @@ if (ends.why) {
   console.error(`[ghost-zero-cost] RED: ${ends.why}`);
   process.exit(1);
 }
-const baseSha = ends.base;
-const endpoints = { recorded_base: recorded, base: baseSha, checkout, head };
+const prBase = ends.base;
+let baseSha = prBase;
+const endpoints = { recorded_base: recorded, pr_base: prBase, base: baseSha, checkout, head };
 if (baseSha !== recorded) console.log(`[ghost-zero-cost] base ${baseSha}: the merge ref's first parent (recorded base ${recorded})`);
 
 if (argv.includes('--allow-declared-runtime')) {
@@ -246,9 +253,34 @@ if (argv.includes('--allow-declared-runtime')) {
     if (out) writeFileSync(out, JSON.stringify({ ...endpoints, skipped: true, reason, subjects, paths }, null, 2) + '\n');
     process.exit(0);
   }
-  console.log('[ghost-zero-cost] exception does not apply: the zero-cost proof is required');
-  // Local dry run of the scope decision: never builds.
-  if (argv.includes('--classify-only')) process.exit(0);
+  // A runtime-changing prefix may already satisfy the original skip policy.
+  // Derive it from history, never from measured output or a caller-picked ref.
+  function* candidates() {
+    const history = g(['rev-list', '--first-parent', '--no-merges', head, `^${prBase}`]).trim().split('\n').filter(Boolean);
+    for (const sha of history) {
+      if (sha === head) continue;
+      const prefixSubjects = g(['log', '--no-merges', '--format=%s', `${prBase}..${sha}`]).split('\n').filter(Boolean);
+      const prefixPaths = g(['diff', '--name-only', '-z', '--no-renames', prBase, sha]).split('\0').filter(Boolean);
+      const prefixChanged = new Map(prefixPaths.map((p) => [p, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', prBase, sha, '--', p]))]));
+      yield { sha, subjects: prefixSubjects, changed: prefixChanged };
+    }
+  }
+  const prefix = declaredRuntimePrefix(candidates(), { head, dirty });
+  if (prefix) {
+    baseSha = prefix.head;
+    endpoints.base = baseSha;
+    endpoints.runtime_prefix = { base: prBase, ...prefix };
+    endpoints.proof_scope = 'entire suffix after the policy-admitted runtime prefix; not whole-PR runtime identity';
+    console.log(`[ghost-zero-cost] runtime prefix ${prBase}..${baseSha}: admitted by the unchanged declared-runtime policy`);
+    console.log(`[ghost-zero-cost] exact production text/Ir proof REQUIRED for suffix ${baseSha}..${head}`);
+  } else {
+    console.log('[ghost-zero-cost] exception does not apply: the original full-range zero-cost proof is required');
+  }
+  // Scope decision only: never build or execute a probe in this mode.
+  if (argv.includes('--classify-only')) {
+    if (out) writeFileSync(out, JSON.stringify({ ...endpoints, skipped: false, proof_required: true }, null, 2) + '\n');
+    process.exit(0);
+  }
 }
 
 const work = mkdtempSync(join(tmpdir(), 'ghost-zero-cost-'));
