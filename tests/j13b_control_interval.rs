@@ -172,3 +172,61 @@ fn q31_and_learning_counter_boundaries_are_checked() {
         assert!(close(&prior, &after, &tickets).is_err());
     }
 }
+
+fn request_pair(selected: bool) -> (ControlSnapshot, ControlSnapshot, [u64; 1]) {
+    let (mut before, _, _) = pair(0, 0);
+    before.ordinal = 3;
+    let mut after = before;
+    after.ordinal = 4;
+    if selected {
+        after.controls[1] = [1, 0, 1, 0, 0, 0, 1, 100];
+        after.learning[1][3] = 1;
+    }
+    (before, after, [(3 << 2) | (u64::from(selected) << 1) | 1])
+}
+
+#[test]
+fn individual_requests_preserve_unaligned_boundaries_and_noncontrols() {
+    for selected in [false, true] {
+        let (before, after, tickets) = request_pair(selected);
+        let interval = ControlInterval::close_request(1, 4096, &before, &after, &tickets).unwrap();
+        assert_eq!(interval.eligible_fresh, 1);
+        assert_eq!(interval.applied, u64::from(selected));
+        assert_eq!(interval.class_valid(true), selected);
+        assert!(!interval.class_valid(false));
+        assert!(
+            close(&before, &after, &tickets).is_err(),
+            "complete cohort contract unchanged"
+        );
+    }
+}
+
+#[test]
+fn individual_request_capture_and_terminal_mutants_are_rejected() {
+    let (before, after, tickets) = request_pair(true);
+    for entry in [0, (4 << 2) | 3, tickets[0] & !2] {
+        assert!(ControlInterval::close_request(1, 4096, &before, &after, &[entry]).is_err());
+    }
+    assert!(ControlInterval::close_request(1, 4096, &before, &after, &[tickets[0]; 2]).is_err());
+    let mut wrong_end = after;
+    wrong_end.ordinal = 5;
+    assert!(ControlInterval::close_request(1, 4096, &before, &wrong_end, &tickets).is_err());
+    let (before, mut after, tickets) = request_pair(false);
+    after.controls[1][6] = 1;
+    after.controls[1][7] = 100;
+    assert!(ControlInterval::close_request(1, 4096, &before, &after, &tickets).is_err());
+}
+
+#[test]
+fn individual_invalid_controls_never_become_training_samples() {
+    for reason in [1, 3, 4, 5] {
+        let (before, mut after, tickets) = request_pair(true);
+        after.controls[1] = [1, 0, 0, 0, 0, 0, 0, 0];
+        after.controls[1][reason] = 1;
+        after.learning[1][3] = 0;
+        let interval = ControlInterval::close_request(1, 4096, &before, &after, &tickets).unwrap();
+        assert_eq!(interval.applied + interval.dropped, 0);
+        assert!(!interval.class_valid(true));
+        assert!(!interval.class_valid(false));
+    }
+}

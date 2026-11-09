@@ -7,8 +7,9 @@ fn error(message: &'static str) -> io::Error {
 }
 
 /// Decoder, not an authenticity or quiescence proof. The caller must execute
-/// eight same-group, same-size eligible fresh payload requests with no competing
-/// allocator traffic, then consume every control at a quiescent terminal boundary.
+/// a same-group, same-size fresh eligible interval (one request or a complete
+/// aligned eight-request cohort), with no competing allocator traffic, then
+/// consume every control at a quiescent terminal boundary.
 /// Actual captured tickets establish uniqueness/selection; ordinal reads alone do not.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ControlInterval {
@@ -29,12 +30,37 @@ impl ControlInterval {
         after: &ControlSnapshot,
         tickets: &[u64],
     ) -> io::Result<Self> {
+        Self::decode(group, page, before, after, tickets, 8)
+    }
+
+    /// Exactly one fresh request, selected or not, at any global ordinal.
+    /// This avoids padding or discarding traffic at training phase boundaries.
+    pub(crate) fn close_request(
+        group: usize,
+        page: usize,
+        before: &ControlSnapshot,
+        after: &ControlSnapshot,
+        tickets: &[u64],
+    ) -> io::Result<Self> {
+        Self::decode(group, page, before, after, tickets, 1)
+    }
+
+    fn decode(
+        group: usize,
+        page: usize,
+        before: &ControlSnapshot,
+        after: &ControlSnapshot,
+        tickets: &[u64],
+        requests: usize,
+    ) -> io::Result<Self> {
         const ONE: u64 = 1 << 31;
-        if group >= 6
+        let issued = u64::try_from(requests).map_err(|_| error("request count overflow"))?;
+        if !matches!(requests, 1 | 8)
+            || group >= 6
             || !page.is_power_of_two()
-            || tickets.len() != 8
-            || !before.ordinal.is_multiple_of(8)
-            || after.ordinal.checked_sub(before.ordinal) != Some(8)
+            || tickets.len() != requests
+            || requests == 8 && !before.ordinal.is_multiple_of(8)
+            || after.ordinal.checked_sub(before.ordinal) != Some(issued)
         {
             return Err(error("unsupported control cohort or page geometry"));
         }
@@ -48,13 +74,16 @@ impl ControlInterval {
                 .checked_sub(before.ordinal)
                 .ok_or_else(|| error("ticket precedes observed cohort"))?;
             let index = usize::try_from(offset).map_err(|_| error("ticket index overflow"))?;
-            if index >= 8 || seen[index] {
+            if index >= requests || seen[index] {
                 return Err(error("ticket outside cohort or duplicate ticket"));
             }
             seen[index] = true;
             selected += (entry >> 1) & 1;
         }
-        if !seen.iter().all(|value| *value) || selected != 1 {
+        if !seen[..requests].iter().all(|value| *value)
+            || selected > 1
+            || requests == 8 && selected != 1
+        {
             return Err(error(
                 "captured cohort does not contain exactly one control",
             ));
@@ -115,7 +144,7 @@ impl ControlInterval {
             ));
         }
         Ok(Self {
-            eligible_fresh: 8,
+            eligible_fresh: issued,
             reasons,
             resident_pages,
             sampled_pages,
