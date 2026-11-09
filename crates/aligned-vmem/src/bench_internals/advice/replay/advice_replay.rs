@@ -283,6 +283,16 @@ impl AdviceReplay {
             .try_reserve_exact(count)
             .map_err(|_| "release closure allocation failed")?;
         consumed.resize(count, false);
+        let index_capacity_bytes = releases
+            .capacity()
+            .checked_mul(core::mem::size_of::<usize>())
+            .and_then(|bytes| {
+                consumed
+                    .capacity()
+                    .checked_mul(core::mem::size_of::<bool>())
+                    .and_then(|consumed_bytes| bytes.checked_add(consumed_bytes))
+            })
+            .ok_or("replay index capacity overflow")?;
         let mut replay = Self::new();
         let mut window = None;
         for (index, &event) in capture.records.iter().enumerate() {
@@ -292,6 +302,7 @@ impl AdviceReplay {
                     position,
                     capture.boundary,
                     replay.snapshot()?,
+                    index_capacity_bytes,
                 ));
             }
             if consumed[index] {
@@ -370,6 +381,7 @@ impl AdviceReplay {
                 capture.boundary,
                 capture.boundary,
                 replay.snapshot()?,
+                index_capacity_bytes,
             ));
         }
         Ok((replay, window))

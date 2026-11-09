@@ -124,11 +124,16 @@ fn empty_windows_preserve_incoming_ownership_and_bad_boundaries_reject() {
     let rows = capture(vec![fresh(4096), advice(4096, 1024)]);
     let window = Replay::window(&rows, 2).unwrap();
     assert_eq!(window.before, window.after);
+    assert!(
+        window.replay_index_capacity_bytes
+            >= rows.records.len() * (core::mem::size_of::<usize>() + core::mem::size_of::<bool>())
+    );
     assert_eq!(window.peak_process, 1024);
     assert_eq!(window.before.outstanding_fresh, 1);
     assert!(Replay::window(&rows, 3).is_err());
     let empty = Replay::window(&capture(Vec::new()), 0).unwrap();
     assert_eq!(empty.peak_process, 0);
+    assert_eq!(empty.replay_index_capacity_bytes, 0);
     assert_eq!(empty.peak_groups, [0; 6]);
 }
 
