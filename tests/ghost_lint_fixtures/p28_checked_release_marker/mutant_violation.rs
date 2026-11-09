@@ -1,7 +1,7 @@
-// expect: anchor (before) not found
+// expect: not preceded by the required operation in a dominating position
 use core::ptr::NonNull;
 
-use super::super::unix::libc_munmap;
+use super::unix::libc_munmap;
 use crate::error::VmemError;
 #[cfg(feature = "fault-injection")]
 use crate::fault_injection;

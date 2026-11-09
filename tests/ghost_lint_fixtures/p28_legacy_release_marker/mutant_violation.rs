@@ -1,8 +1,5 @@
-// expect: anchor (before) not found
-//! Legacy release retains its original syscall and discarded-result behavior.
-use super::super::unix::libc_munmap;
-use core::ptr::NonNull;
-
+// expect: not preceded by the required operation in a dominating position
+// Included in os::unix to retain the original native function identity.
 /// # Safety
 /// The original exclusively owned mmap reservation is released exactly once;
 /// neither this function nor its caller may access the mapping afterwards.

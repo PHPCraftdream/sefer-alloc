@@ -405,7 +405,7 @@ fn try_reserve_aligned_exact(
     // so "the caller asked for huge and mmap succeeded" implies a grant.
     Ok((base, base, size, HUGE_SUPPORTED && huge))
 }
-
+include!("release/legacy.rs");
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): bypassed by the recording backend, unused when `mock`
 // alone is enabled without a real decommit call site reachable.
