@@ -35,6 +35,9 @@ export const MIRI_TARGETS = [
     borrows,
     marker: 'test persistent_actors_transfer_both_directions_on_actual_threads ... ok',
   })),
+  green('miri-core', 'j13b_owner_training_native', 'production internals bench-internals lazy-commit-fault-injection', {
+    marker: 'test unsupported_training_is_rejected_before_payload_claims ... ok',
+  }),
   green('miri-core', 'j13b_os_probe', '', {
     marker: 'test unsupported_os_or_model_is_rejected_before_any_probe ... ok',
   }),

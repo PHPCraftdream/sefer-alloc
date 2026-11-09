@@ -79,6 +79,28 @@ fn actual_same_size_owner_cohorts_bind_single_sample_and_ticket_capture() {
         assert!(interval.class_valid(sparse));
         assert!(!interval.class_valid(!sparse));
     }
+    for _ in 0..2 {
+        AllocCore::dbg_thp_control_ticket_log_reset();
+        let before = ControlSnapshot::capture();
+        let stats = WindowKernel::batch(
+            &allocator,
+            &[TouchPlan {
+                bytes,
+                shape: Shape::Sparse,
+            }],
+            page,
+        )
+        .expect("actual individual fresh request");
+        let after = ControlSnapshot::capture();
+        let (tickets, cursor) = AllocCore::dbg_thp_control_ticket_log().unwrap();
+        assert_eq!(cursor, 1);
+        assert_eq!(stats.allocations, 1);
+        assert_eq!(stats.frees, 1);
+        let interval = ControlInterval::close_request(GROUP, page, &before, &after, &tickets[..1])
+            .expect("individual request at aligned or unaligned ordinal");
+        assert_eq!(interval.eligible_fresh, 1);
+        assert_eq!(interval.reasons[1], u64::from(tickets[0] & 2 != 0));
+    }
     let tuple = AllocCore::dbg_thp_tuple();
     assert_eq!(tuple.mode, LargeThpMode::Auto);
     assert_eq!(tuple.min_bytes, bytes);
