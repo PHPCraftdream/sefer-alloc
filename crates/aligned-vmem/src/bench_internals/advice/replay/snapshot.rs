@@ -1,6 +1,6 @@
 //! Closed event-stream accounting, not authenticated native or residency evidence.
 #![forbid(unsafe_code)]
-use super::snapshot::AdviceLifetimeSnapshot;
+use super::super::snapshot::AdviceLifetimeSnapshot;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AdviceReplaySnapshot {

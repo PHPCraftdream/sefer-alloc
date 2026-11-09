@@ -566,6 +566,13 @@ jobs:
             | tee "$RUNNER_TEMP/advice-event-replay-native.log"
           grep -F 'test unknown_release_and_partial_advice_never_yield_zero_or_repaired_rows ... ok' "$RUNNER_TEMP/advice-event-replay-native.log"
           grep -F 'test result: ok. 9 passed; 0 failed;' "$RUNNER_TEMP/advice-event-replay-native.log"
+      - name: Pure per-window advice accounting (no native-boundary claim)
+        run: |
+          set -o pipefail
+          cargo test --locked -p aligned-vmem --release --features bench-internals --test advice_window \
+            | tee "$RUNNER_TEMP/advice-window-native.log"
+          grep -F "test historical_cumulative_peak_is_not_the_next_window_peak ... ok" "$RUNNER_TEMP/advice-window-native.log"
+          grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/advice-window-native.log"
       - name: Pure accepted-advice lifetime ledger (no native-event claim)
         run: |
           set -o pipefail
@@ -3550,6 +3557,15 @@ jobs:
           cargo miri test -p aligned-vmem --features bench-internals --test advice_event_replay 2>&1 | tee "$RUNNER_TEMP/miri-advice-event-replay.log"
           grep -F 'test unknown_release_and_partial_advice_never_yield_zero_or_repaired_rows ... ok' "$RUNNER_TEMP/miri-advice-event-replay.log"
           grep -F 'test result: ok. 9 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-event-replay.log"
+        shell: bash
+      - name: Pure per-window advice accounting under strict provenance
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+        run: |
+          set -o pipefail
+          cargo miri test -p aligned-vmem --features bench-internals --test advice_window 2>&1 | tee "$RUNNER_TEMP/miri-advice-window.log"
+          grep -F "test historical_cumulative_peak_is_not_the_next_window_peak ... ok" "$RUNNER_TEMP/miri-advice-window.log"
+          grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-window.log"
         shell: bash
       - name: Native advice capture rejects models before payload claims
         env:

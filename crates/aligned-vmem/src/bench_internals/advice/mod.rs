@@ -1,10 +1,8 @@
 mod capture;
 mod ledger;
 mod replay;
-mod replay_snapshot;
 
-pub use replay::AdviceReplay;
-pub use replay_snapshot::AdviceReplaySnapshot;
+pub use replay::{AdviceReplay, AdviceReplaySnapshot, AdviceWindowSnapshot};
 
 pub use capture::AdviceCapture;
 mod snapshot;
