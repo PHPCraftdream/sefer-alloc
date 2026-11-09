@@ -216,6 +216,9 @@ pub use validate_page_size::validate_page_size;
 #[cfg(feature = "bench-internals")]
 mod bench_internals;
 #[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub use bench_internals::advice::{AdviceLifetimeLedger, AdviceLifetimeSnapshot};
+#[cfg(feature = "bench-internals")]
 pub use bench_internals::{
     huge_decommit_attempts, reset_bench_internals_counters, unix_exact_reserve_attempts,
     unix_exact_reserve_hits, unix_madvise_attempts, unix_madvise_successes, unix_munmap_attempts,
