@@ -38,6 +38,9 @@ export const MIRI_TARGETS = [
   green('miri-core', 'j13b_owner_training_native', 'production internals bench-internals lazy-commit-fault-injection', {
     marker: 'test unsupported_training_is_rejected_before_payload_claims ... ok',
   }),
+  green('miri-core', 'j13b_adaptive_windows_native', 'production internals bench-internals', {
+    marker: 'test adaptive_windows_reject_model_or_unsupported_os_before_payloads ... ok',
+  }),
   green('miri-core', 'j13b_os_probe', '', {
     marker: 'test unsupported_os_or_model_is_rejected_before_any_probe ... ok',
   }),

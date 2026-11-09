@@ -56,6 +56,9 @@ fn reset_peak_is_real_window_scoped_and_faults_are_not_fabricated() {
     };
     assert_eq!(overlap.kind(), std::io::ErrorKind::WouldBlock);
     let active = fault_mapping(16 * MIB);
+    let (live_rss, live_huge) = probe.live_memory().expect("live whole-process OS readings");
+    assert!(live_rss > 0);
+    std::hint::black_box(live_huge);
     let peak_inside = proc_memstat::try_snapshot()
         .expect("in-window RSS")
         .peak_rss

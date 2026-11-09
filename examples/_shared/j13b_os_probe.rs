@@ -84,6 +84,16 @@ impl OsProbe {
         self.start_peak
     }
 
+    /// Read whole-process RSS and AnonHugePages while actors hold live payloads.
+    /// Workers must be quiescent; these separate reads are not an atomic snapshot.
+    pub(crate) fn live_memory(&self) -> io::Result<(u64, u64)> {
+        let huge = read_bounded("/proc/self/smaps_rollup")?;
+        let huge = std::str::from_utf8(&huge).map_err(|_| invalid("invalid smaps UTF-8"))?;
+        let huge = Self::parse_anon_huge(huge)?;
+        let (rss, _) = Self::memory()?;
+        Ok((rss, huge))
+    }
+
     /// Consumes the epoch once. Any error yields no sample and releases its lease.
     pub(crate) fn finish(self) -> io::Result<OsSample> {
         let huge = read_bounded("/proc/self/smaps_rollup")?;
