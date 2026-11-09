@@ -37,6 +37,9 @@ fn read_bounded(path: &str) -> io::Result<Vec<u8>> {
 /// quiesces workload workers at both boundaries and permits no external reset.
 /// Peak scope includes the boundary probes themselves. Separate procfs reads
 /// are not an atomic snapshot; faults are whole-process deltas, not child faults.
+/// Linux documents VmRSS/VmHWM as inaccurate. A live hiwater read can include
+/// current approximate RSS without persisting that maximum in stored hiwater;
+/// the final reported counter need not bound every earlier reported reading.
 pub(crate) struct OsProbe {
     _epoch: MutexGuard<'static, ()>,
     start_faults: (u64, u64),
@@ -96,7 +99,7 @@ impl OsProbe {
             anon_huge_pages_bytes,
             minor_faults,
             major_faults,
-            peak_scope: "own-process VmHWM since clear_refs=5, including probes",
+            peak_scope: "OS-reported approximate VmHWM since clear_refs=5, including probes",
             fault_scope: "own-process stat 10/12 delta before final RSS read; excludes children",
         })
     }
