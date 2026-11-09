@@ -15,6 +15,16 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 273 — CLOSED (2026-11-09)
+
+273. **[T, filed 2026-11-09, J13b #68] Native witness imposed an unsupported order on separate approximate VmHWM readings.**
+
+    - **Status:** CLOSED on exact `1df76807c0186861f4574f7062186ae6ac4736f6`, CI `42550096032` SUCCESS, after personal source and actual native/model log review; no waiver or deferred fix.
+    - **Current-number-or-verdict:** initial `ceb7dd9f` / CI `42545332077` failed `retained_peak >= live_peak`; unchanged-assertion diagnostic `a3db8675` / CI `42547103202` reproduced it with old peak 36446208, start/end RSS 2895872, live peak 19673088 and retained peak 19517440 bytes. The difference is 155648 bytes, while the in-window signal remains more than 8 MiB above end RSS. Kernel `get_mm_hiwater_rss` returns max(stored hiwater, current RSS) without persisting the observed maximum; its RSS inputs use approximate shared per-CPU counter reads, not a full sum. `proc_pid_status(5)` explicitly calls VmHWM/VmRSS inaccurate. Thus the strict inter-read order was an invalid witness contract, not evidence that the whole 16 MiB window peak vanished.
+    - **Same-workstream correction:** report the actual approximate OS counter without clamping or an inferred error band. Keep the original 32/16 MiB mapping signals and 16/8 MiB signal gaps; strengthen reset/lifetime rejection to those existing gaps and retain the freed-peak/end-RSS separation. A shared test-only contract gains negative controls for no-op, near-no-op, lifetime/near-lifetime, end-RSS, zero and invalid live signals; a synthetic lower retained/live reading is not an accuracy tolerance. Numeric allocator/performance gates remain unchanged. No per-window runtime admission or campaign verdict is accepted yet.
+    - **Verified closure:** five native parser/witness-contract cases and the real native epoch witness passed (zero ignored); actual-source strict Miri positively executed all six parser/model-rejection/negative-source cases with exact flags checked. Semantic selftest 214 cases / 316 mutants / zero failures, linter mutants 10/10, protected range 20 commits / zero red and final PR checks 42 SUCCESS / 23 intended SKIPPED passed. The producer still returns the unmodified approximate OS gauge; this is neither a physical-maximum proof nor full runtime-judge/campaign acceptance.
+    - **Evidence:** `tests/j13b_os_probe_native.rs`, `tests/support/j13b_peak_epoch_witness.rs`, `examples/_shared/j13b_os_probe.rs`, [diagnostic CI 42547103202](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42547103202), job `128934429242`; [proc_pid_status(5)](https://man7.org/linux/man-pages/man5/proc_pid_status.5.html), Linux v6.8 `include/linux/mm.h` and `include/linux/percpu_counter.h`. Earlier failures remain failures. No local probe/reset/test/model/workload was executed; these numbers diagnose correctness, not performance.
+
 ### 268 — CLOSED (2026-11-08)
 
 268. **Loom invocation continuation and tee pipeline status repaired and verified.**

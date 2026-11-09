@@ -1,6 +1,6 @@
 # J13b judge — staged integration; runtime admission disabled
 
-Artifact routing is accepted on `be5fd14b` by CI `42517707507`; the static reference is accepted on `ac8906cb` by CI `42526023632` after personal source/log review. The owning-buffer/realloc component is accepted on `e1e98236` by CI `42534627862`, including six native fixtures, one installed case, and six cases under each strict Miri borrowing model. The new per-window OS producer still requires exact-source acceptance. Neither receipt nor candidate is a performance measurement or complete runtime-judge acceptance.
+Artifact routing is accepted on `be5fd14b` by CI `42517707507`; the static reference is accepted on `ac8906cb` by CI `42526023632` after personal source/log review. The owning-buffer/realloc component is accepted on `e1e98236` by CI `42534627862`, including six native fixtures, one installed case, and six cases under each strict Miri borrowing model. The per-window OS producer is accepted on `1df76807` by CI `42550096032`. The new batch/grow/churn operation core requires exact-source acceptance. None is a performance measurement or complete runtime-judge acceptance.
 
 ## Design
 
@@ -8,7 +8,7 @@ Artifact routing is accepted on `be5fd14b` by CI `42517707507`; the static refer
 - **Canonical matrix:** `scripts/j13b_schema.mjs` `CELL_MATRIX` / `CELL_WINDOWS`. Simple cells have the single window `initial`.
   - `phased` (16 MiB, count 1): `initial`, `sparse-training`, `sparse-trained`, `dense-training`, `dense-trained`.
   - `mixed`: dense 16 MiB ×8 (bucket `[8,32)`) and sparse 64 MiB ×8 at 2% touch (bucket `[32,128)`); windows `dense-training`, `sparse-training`, `dense-only`, `sparse-only`, `co-resident`.
-- `grow-1g` keeps the historical single 1 GiB target with a 1 MiB start as plan metadata; no realloc loop is executed.
+- `grow-1g` retains the historical single 1 GiB target with a 1 MiB start. The candidate operation core implements real doubling realloc; the registered cell and runtime child are not yet connected.
 
 ## Schema `j13b.raw.v4` (training/trained windows)
 
@@ -54,7 +54,9 @@ The single shape kernel now has `touch_slots_with_page`, which validates host-pa
 
 CI explicitly requires seven native tests and six System-backed tests under each strict-provenance Stacked Borrows and Tree Borrows configuration. The unsafe owner helper itself selects the existing seam group; ordinary safe examples remain fast-only. These Miri cases verify the owner wrapper, not the entire SeferAlloc metadata lifecycle; correctness item271 remains CONDITIONAL. No local test/model/workload execution or new branch/worktree is used.
 
-## Per-window OS producer — candidate, acceptance pending
+## Per-window OS producer — accepted component
+
+Accepted on exact `1df76807c0186861f4574f7062186ae6ac4736f6`, CI `42550096032` SUCCESS: five native parser/witness-contract cases plus one real epoch witness and six actual-source strict Miri cases. Personal review also confirmed semantic selftest 214/316/0, linter mutants 10/10, protected range 20/0 and final PR checks 42 SUCCESS / 23 intended SKIPPED. Correctness item 273 is CLOSED. Earlier failures remain failures; this is not performance evidence.
 
 `j13b_os_probe.rs` uses fallible `proc-memstat 0.1.0` for actual VmRSS/VmHWM, bounded reads of process stat and smaps_rollup, unsigned/overflow/unit validation, and checked fault deltas. `OsSample` has named absolute RSS and huge-page byte quantities plus process fault deltas and explicit interval labels. No `Default`/zero fallback or cumulative-peak relabelling is used. Separate reads are not atomic, and no RSS/AnonHugePages equality or useful-byte claim is made.
 
@@ -66,6 +68,12 @@ CI requires five native parser/witness-contract tests, six parser/backend-separa
 
 The [dated prereg clarification](J13B_BOUNDED_THP_PREREG.md) preserves the original `g1_big_judge` payload layer: real static `SeferAlloc::GlobalAlloc` through non-inlined shims, with process-global System for bookkeeping. It is not an AllocCore shortcut and is not all-process-installed allocation timing; installed tests remain separate behavior evidence. This avoids competing allocator configs first-materializing registry slots. Future runtime admission still needs complete tuple/cache/conflict/activation, artifact identities, window/lifetime accounting and native touch observability. Workload volumes, margins and numeric gates are unchanged; no measurement verdict exists.
 
+## Actual operation core — candidate, acceptance pending
+
+`j13b_window_kernel.rs` executes real GlobalAlloc batches, doubling realloc and bounded four-worker churn through `OwnedBlock` and the shared runtime-page touch kernel. Whole batches remain live before touching; growth touches only the new tail. A compiler barrier exposes written payload to optimized code, but actual release-build dense/sparse residency activation must independently pass CI. Per-worker cache/conflict checks occur after the first allocation has claimed the actual worker heap, before touching. A start/cancel gate handles partial thread startup; every started worker is joined before processing errors or panic payloads.
+
+`RunStats` merges counters transactionally with overflow rejection. Parallel operation elapsed sums may exceed executor wall time. Requested-byte traffic is not mapping/advice bytes or RSS; executor wall excludes outer setup/probes/teardown and is not complete child time. Six tiny System/failure fixtures, one release-optimized SeferAlloc-facade activation test and six cases under each strict SB/TB Miri model are wired but not yet accepted. Payload uses the facade with System bookkeeping, not all-process-installed timing. Persistent actors, migration in both directions, real training/mixed windows, advice lifetime/peak accounting, artifact provenance and runtime admission remain open. No local test/model/workload execution or campaign.
+
 ## Rust side
 
 - `examples/_shared/j13b_workload.rs`: exact-cell planner over safe `Vec<MaybeUninit<u8>>` (no `unsafe` reads); one shared touch kernel (`touch_slots`) used for both the `MaybeUninit<u8>` buffers and the inspectable `u8` test slots. Legacy preparation tests inspect offsets on `u8` slots; the new owning-buffer fixtures also inspect explicitly initialized `MaybeUninit` storage. Neither is a full runtime-judge acceptance.
@@ -75,7 +83,7 @@ The [dated prereg clarification](J13B_BOUNDED_THP_PREREG.md) preserves the origi
 
 ## CI wiring
 
-Job `j13b-judge-preparation` in `.github/workflows/ci.yml` runs all three Node files (`j13b_schema`, `j13b_artifacts`, `j13b_static_reference`), the existing 13-test Rust workload suite, the six-test owned-buffer suite and isolated one-test installed boundary, five OS ABI/witness-contract fixtures and an isolated native peak witness, and the dedicated overlaid static-reference oracle. It runs on PR/push events only when changed paths match the J13b file patterns (`scripts/j13b_*.mjs`, `examples/_shared/*`, `examples/g1_j13b_*.rs`, `tests/j13b_*`, `Cargo.toml`, `ci.yml`) and always on schedule/workflow_dispatch. No full-CI activation or campaign dispatch is added. Accepted receipts apply only to their immutable sources (`be5fd14b`, `ac8906cb`, `e1e98236`), not the new OS producer. `miri-core` additionally requires the six-case owner tests under SB/TB and six OS parser/model-rejection/witness-contract cases. The exact OS producer path selects OS and seam coverage, not full CI.
+Job `j13b-judge-preparation` in `.github/workflows/ci.yml` runs all three Node files (`j13b_schema`, `j13b_artifacts`, `j13b_static_reference`), the existing 13-test Rust workload suite, the six-test owned-buffer suite and isolated one-test installed boundary, five OS ABI/witness-contract fixtures and an isolated native peak witness, and the dedicated overlaid static-reference oracle. It runs on PR/push events only when changed paths match the J13b file patterns (`scripts/j13b_*.mjs`, `examples/_shared/*`, `examples/g1_j13b_*.rs`, `tests/j13b_*`, `Cargo.toml`, `ci.yml`) and always on schedule/workflow_dispatch. No full-CI activation or campaign dispatch is added. Accepted receipts apply only to their immutable sources (`be5fd14b`, `ac8906cb`, `e1e98236`, `1df76807`), not the new operation core. New steps require six operation-core fixtures and one release-optimized facade activation case. `miri-core` additionally requires six owner and six operation-core cases under each SB/TB model and six OS parser/model-rejection/witness-contract cases. The exact OS producer path selects OS and seam coverage, not full CI.
 
 ## Remaining integration obligations
 
