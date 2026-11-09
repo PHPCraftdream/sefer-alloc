@@ -7,25 +7,26 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-730 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 96 files of `src/**` and
-`crates/*/src/**`; each is claimed by exactly one of 53 scopes.
+753 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 98 files of `src/**` and
+`crates/*/src/**`; each is claimed by exactly one of 58 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/730 |
-| counter | 269 | 269/730 |
-| ghost | 10 | 10/730 |
-| id | 9 | 9/730 |
-| kani | 1 | 1/730 |
-| lock-local | 40 | 40/730 |
-| non-atomic | 3 | 3/730 |
-| protocol | 206 | 206/730 |
-| test-hook | 179 | 179/730 |
-| twin | 7 | 7/730 |
-| **claimed** | **730** | 730/730 |
-| unclaimed | 0 | 0/730 |
-| claimed twice | 0 | 0/730 |
+| S | 13 | 13/753 |
+| cache | 6 | 6/753 |
+| counter | 276 | 276/753 |
+| ghost | 10 | 10/753 |
+| id | 9 | 9/753 |
+| kani | 1 | 1/753 |
+| lock-local | 40 | 40/753 |
+| non-atomic | 3 | 3/753 |
+| protocol | 206 | 206/753 |
+| test-hook | 182 | 182/753 |
+| twin | 7 | 7/753 |
+| **claimed** | **753** | 753/753 |
+| unclaimed | 0 | 0/753 |
+| claimed twice | 0 | 0/753 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -37,6 +38,7 @@ harness; `non-atomic` — named scanner false positives.
 
 | id | protocol | class | sites | loom tests | text pins | registry rows | real code under loom | decision | phase |
 |---|---|---|---:|---:|---:|---|---|---|---|
+| P28 | benchmark advice event capture publication | S | 20 | 0 | 0 | — | no: bounded actual-source thread/Miri fixtures are authored, execution acceptance pending; no whole-native-lifecycle or wait-freedom claim | benchmark-only bounded capture with fail-closed evidence | J13b |
 | P27 | large-THP coherent bounded estimator pair | none | 5 | 1 | 0 | — | cell only: tests/loom_thp_learning_cell.rs mounts the actual production cell and math on model atomics; runtime routing/admission is exercised by native tests, not a whole-runtime model; current integration acceptance is pending CI | rules + actual-source model + deterministic forced-CAS rejection test | J13b |
 | P1 | HeapLease FREE->LIVE claim / LIVE->FREE Release drop | S | 12 | 1 | 0 | R4a-05 R4a-06 R4a-07 R4a-08 R4a-09 R4c-09 | no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone | keep+R8 | G3 |
 | P2 | MaintenanceLease FREE->MAINTENANCE | S | 4 | 1 | 0 | R4c-19 | no: same registry bootstrap as P1 | keep+R8 | G4 |
@@ -65,10 +67,25 @@ harness; `non-atomic` — named scanner false positives.
 | P25 | large-THP budget ledger (advised bytes, bounded CAS reserve) | none | 4 | 1 | 0 | — | yes: tests/loom_thp_ledger.rs compiles the production thp_budget_ledger.rs (#[path]) onto the concurrency atomics; oracles: racing 6 MiB reserves against an 8 MiB budget never hand out more than the budget (an unconditional fetch_add reserve fails this), grants are exact granule multiples, and the ledger is empty after every thread returns exactly its own grant | rules + actual-source model + integration tests | J13b |
 | P26 | large-THP deterministic control ordinal and diagnostic telemetry | none | 16 | 0 | 0 | — | no: this runtime uses process-wide core atomics; the deterministic selector is separately pure-tested, and no runtime model is claimed | rules + pure selector tests | J13b |
 
-Shadow-model protocols (class contains S): 13 of 27, each with a decision.
-Protocols with neither a loom nor a shadow model: P20, P26 (2 of 27).
+Shadow-model protocols (class contains S): 14 of 28, each with a decision.
+Protocols with neither a loom nor a shadow model: P28, P20, P26 (3 of 28).
 
 ## 3. Invariants and prod places
+
+### P28 — benchmark advice event capture publication
+
+Prod: `crates/aligned-vmem/src/bench_internals/advice/stream/log.rs`, `crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs`.
+
+- I1 capture begins once before producers; published slots are never reset or recycled
+- I2 one cursor RMW reserves each event position; capacity and unsupported failures cannot yield truncated readable evidence
+- I3 one bounded empty-to-in-progress slot CAS precedes all scalar payload writes, preventing reuse even after cursor wrap
+- I4 all relaxed scalar payload stores precede Release completion; an Acquire matching completion precedes every relaxed payload load
+- I5 first-failure diagnostics are sticky, publish no payload and never influence allocator policy or native outcomes
+- I6 readable boundaries require producer quiescence and full prefix publication, validated encodings and unchanged cursor
+- I7 diagnostic addresses remain inert integers; no allocation, callbacks, mapping locks, mapped-memory access or unbounded retry exists in append
+- I8 release markers are sampled before the consuming native attempt; only a unique confirmed Large-source result whose marker includes the original fresh/advice publication can justify canonical closure before a reused range; thread-affine scalar source context restores on exit, unrelated VM callbacks never debit Large ownership, and unknown outcomes never repair evidence
+
+Decision: **benchmark-only bounded capture with fail-closed evidence** — Task78 supplies diagnostic capture for the accepted pure advice ledger; native emitter/replay wiring and semantic fixtures are still in progress. No runtime or performance acceptance is implied.
 
 ### P27 — large-THP coherent bounded estimator pair
 
@@ -363,6 +380,11 @@ Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed o
 
 | scope | class | protocol | sites | reason |
 |---|---|---|---:|---|
+| `P28/capture-start` | S | P28 | 2 | single diagnostic epoch start; no reset or mapping ownership publication |
+| `P28/capture-cursor` | counter | P28 | 5 | unique event positions only; payload publication is the independent completion marker |
+| `P28/capture-failure` | counter | P28 | 2 | sticky diagnostic first-failure code; publishes no payload and never gates allocator behavior |
+| `P28/slot-publication` | S | P28 | 9 | bounded empty-slot claim then relaxed scalar writes and Release completion; no slot reuse |
+| `P28/slot-read` | S | P28 | 2 | matching Acquire completion must precede reading immutable relaxed payload fields |
 | `P27/runtime-learning-diagnostics` | counter | P27 | 2 | independent diagnostic loads of applied/dropped wrapping counters; pair state is separately read through the coherent cell snapshot, never reconstructed from counters |
 | `P27/estimator-pair` | protocol | P27 | 3 | one packed pair, no external publication; bounded CAS commits both estimator components atomically |
 | `P1/heap-slot-cas` | protocol | P1 | 1 | the one CAS on HeapSlot::state; orderings come from call sites |
@@ -396,7 +418,7 @@ Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed o
 | `P20/maintenance-service` | protocol | P20 | 6 | service state + pass counter used as a wait condition |
 | `P21/exact-shard` | protocol | P21 | 7 | shard lock + live hint |
 | `hook/maintenance-service` | test-hook | — | 7 | fault/pause injection and test observers (FAIL_START swap is armed only by fail_next_start_for_test) |
-| `hook/test-fns` | test-hook | — | 152 | dbg_*/for_test/internals-only hooks |
+| `hook/test-fns` | test-hook | — | 155 | dbg_*/for_test/internals-only hooks |
 | `hook/inject-flags` | test-hook | — | 16 | fault-injection / test-control flags |
 | `cache/page-size` | cache | — | 4 | idempotent cache of a process constant; Relaxed: every writer stores the same value |
 | `cache/process-exit` | cache | — | 2 | resolved function pointer cache (windows); Relaxed: idempotent |

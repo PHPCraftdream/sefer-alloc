@@ -696,55 +696,93 @@
       "id": "P28/capture-start",
       "class": "S",
       "protocol": "P28",
-      "files": ["crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"],
+      "files": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"
+      ],
       "fn": "^(begin|is_started)$",
       "receiver": "^(self)?\\.started$",
-      "ops": ["compare_exchange", "load"],
-      "orderings": ["Release", "Relaxed", "Acquire"],
+      "ops": [
+        "compare_exchange",
+        "load"
+      ],
+      "orderings": [
+        "Release",
+        "Relaxed",
+        "Acquire"
+      ],
       "reason": "single diagnostic epoch start; no reset or mapping ownership publication"
     },
     {
       "id": "P28/capture-cursor",
       "class": "counter",
       "protocol": "P28",
-      "files": ["crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"],
+      "files": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"
+      ],
       "fn": "^(append|boundary|read|release_begin_hint)$",
       "receiver": "^(self)?\\.cursor$",
-      "ops": ["fetch_add", "load"],
-      "orderings": ["Relaxed"],
+      "ops": [
+        "fetch_add",
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
       "reason": "unique event positions only; payload publication is the independent completion marker"
     },
     {
       "id": "P28/capture-failure",
       "class": "counter",
       "protocol": "P28",
-      "files": ["crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"],
+      "files": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"
+      ],
       "fn": "^(reject|supported)$",
       "receiver": "^(self)?\\.failure$",
-      "ops": ["compare_exchange", "load"],
-      "orderings": ["Relaxed"],
+      "ops": [
+        "compare_exchange",
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
       "reason": "sticky diagnostic first-failure code; publishes no payload and never gates allocator behavior"
     },
     {
       "id": "P28/slot-publication",
       "class": "S",
       "protocol": "P28",
-      "files": ["crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"],
+      "files": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
+      ],
       "fn": "^publish$",
-      "receiver": "^((self)?\\.complete|field)$",
-      "ops": ["compare_exchange", "store"],
-      "orderings": ["Relaxed", "Release"],
+      "receiver": "^((self)?\\.complete|field[0-6])$",
+      "ops": [
+        "compare_exchange",
+        "store"
+      ],
+      "orderings": [
+        "Relaxed",
+        "Release"
+      ],
       "reason": "bounded empty-slot claim then relaxed scalar writes and Release completion; no slot reuse"
     },
     {
       "id": "P28/slot-read",
       "class": "S",
       "protocol": "P28",
-      "files": ["crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"],
+      "files": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
+      ],
       "fn": "^read$",
       "receiver": "^((self)?\\.complete|field)$",
-      "ops": ["load"],
-      "orderings": ["Acquire", "Relaxed"],
+      "ops": [
+        "load"
+      ],
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
       "reason": "matching Acquire completion must precede reading immutable relaxed payload fields"
     },
     {
@@ -1510,7 +1548,49 @@
         },
         {
           "name": "store",
-          "receiver": "^field$",
+          "receiver": "^field0$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field1$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field2$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field3$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field4$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field5$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field6$",
           "orderings": [
             "Relaxed"
           ]
@@ -1766,7 +1846,7 @@
       "fn": "AdviceSlot::publish",
       "before": {
         "name": "store",
-        "receiver": "^field$"
+        "receiver": "^field0$"
       },
       "after": {
         "name": "store",
@@ -1777,7 +1857,7 @@
         "completion",
         "payload"
       ],
-      "reason": "all scalar writes precede Release completion",
+      "reason": "payload field 0 store must dominate Release completion; sibling rules pin fields 1 through 6",
       "tests": [
         "crates/aligned-vmem/tests/advice_event_stream.rs"
       ],
@@ -2567,13 +2647,27 @@
       "protocol": "P3",
       "model": "tests/loom_nl3_owner_teardown.rs",
       "binds": [
-        { "rule": "heap-lease/drop-release" },
-        { "rule": "heap-lease/claim-free-live" },
-        { "rule": "teardown/trim-before-release" }
+        {
+          "rule": "heap-lease/drop-release"
+        },
+        {
+          "rule": "heap-lease/claim-free-live"
+        },
+        {
+          "rule": "teardown/trim-before-release"
+        }
       ],
-      "terms": ["model", "Release", "Acquire", "trim_for_recycle", "drop(lease)"],
+      "terms": [
+        "model",
+        "Release",
+        "Acquire",
+        "trim_for_recycle",
+        "drop(lease)"
+      ],
       "reason": "the owner lease constants and exercised teardown helper bind production lease orderings and trim-before-release; bitmap behavior runs from included source",
-      "tests": ["tests/loom_nl3_owner_teardown.rs"],
+      "tests": [
+        "tests/loom_nl3_owner_teardown.rs"
+      ],
       "fixtures": "tests/ghost_lint_fixtures/nl3_owner_model_bind"
     },
     {
@@ -7723,10 +7817,18 @@
         "name": "try_release_segment",
         "kind": "call"
       },
-      "allowed": ["release_large_mapping"],
-      "terms": ["checked release", "charge", "terminal funnel"],
+      "allowed": [
+        "release_large_mapping"
+      ],
+      "terms": [
+        "checked release",
+        "charge",
+        "terminal funnel"
+      ],
       "reason": "I5: charged Large releases use only the terminal funnel, which retains charge on an unproven native outcome.",
-      "tests": ["tests/j13b_thp_release_failure_retains_charge.rs"],
+      "tests": [
+        "tests/j13b_thp_release_failure_retains_charge.rs"
+      ],
       "fixtures": "tests/ghost_lint_fixtures/p25_checked_release_sole_path"
     },
     {
@@ -7735,11 +7837,19 @@
       "protocol": "P25",
       "file": "src/alloc_core/alloc_core/mem/release_large_mapping.rs",
       "fn": "release_large_mapping",
-      "action": {"name": "give_back"},
+      "action": {
+        "name": "give_back"
+      },
       "guard": "^os::try_release_segment\\(reservation,reservation_len\\)\\.is_ok\\(\\)$",
-      "terms": ["checked release", "success", "retain on error"],
+      "terms": [
+        "checked release",
+        "success",
+        "retain on error"
+      ],
       "reason": "I5: only a confirmed checked-release success permits returning charge; failure or unknown release must keep budget unavailable.",
-      "tests": ["tests/j13b_thp_release_failure_retains_charge.rs"],
+      "tests": [
+        "tests/j13b_thp_release_failure_retains_charge.rs"
+      ],
       "fixtures": "tests/ghost_lint_fixtures/p25_return_needs_checked_success"
     },
     {
@@ -8048,6 +8158,156 @@
         "tests/j13b_control_concurrent_ordinal.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p26_ticket_log_snapshot_inventory"
+    },
+    {
+      "id": "advice-capture/publish-field1-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field1$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 1 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field1_order"
+    },
+    {
+      "id": "advice-capture/publish-field2-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field2$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 2 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field2_order"
+    },
+    {
+      "id": "advice-capture/publish-field3-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field3$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 3 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field3_order"
+    },
+    {
+      "id": "advice-capture/publish-field4-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field4$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 4 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field4_order"
+    },
+    {
+      "id": "advice-capture/publish-field5-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field5$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 5 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field5_order"
+    },
+    {
+      "id": "advice-capture/publish-field6-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field6$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 6 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field6_order"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",
