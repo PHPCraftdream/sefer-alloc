@@ -38,7 +38,7 @@ on a schedule and on demand.
 |---|---|
 | `always` | every change: fmt, commit-prefix-lint, evidence-registry, deny, licenses, docs-consistency, j13b-judge-preparation (path-selected steps) |
 | `fast` | `src/**`, `crates/**`, `tests/**`, `benches/**`, `examples/**`, `fuzz/**`, `Cargo.*`, build scripts (`check-matrix`, `run-check-matrix`, `lib`, `check-all`), and any unrecognised path |
-| `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests, the actual-source unsafe owner `examples/_shared/j13b_owned_block.rs`, and the OS/model boundary producer `examples/_shared/j13b_os_probe.rs` |
+| `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests, the actual-source owner and operation core (`examples/_shared/j13b_owned_block.rs`, `examples/_shared/j13b_window_kernel.rs`), and the OS/model boundary producer `examples/_shared/j13b_os_probe.rs` |
 | `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**`, tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`), and `examples/_shared/j13b_os_probe.rs` |
 | `crate_*` | `crates/<name>/**`: the gates of that one workspace crate (its dependents also get `fast`+`seam`) |
 | everything | `schedule`, `workflow_dispatch`, and a `CI: full` trailer in the message of any commit of the range (PR: base..merge commit; push: before..sha) |

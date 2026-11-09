@@ -27,6 +27,10 @@ const depot = (borrows) => green('miri-core', 'miri_depot_cycle', 'alloc-global 
 const plainFeatures = 'alloc-global alloc-xthread alloc-decommit internals bench-internals';
 export const MIRI_TARGETS = [
   green('miri-core', 'region_invariants'),
+  ...['sb', 'tb'].map((borrows) => green('miri-core', 'j13b_window_kernel', '', {
+    borrows,
+    marker: 'test four_workers_execute_and_all_joins_precede_an_error_result ... ok',
+  })),
   green('miri-core', 'j13b_os_probe', '', {
     marker: 'test unsupported_os_or_model_is_rejected_before_any_probe ... ok',
   }),
