@@ -142,6 +142,17 @@ jobs:
             | tee "$RUNNER_TEMP/j13b-window-native.log"
           grep -F 'test optimized_facade_windows_keep_real_dense_sparse_growth_and_worker_activation ... ok' "$RUNNER_TEMP/j13b-window-native.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-window-native.log"
+      - name: J13b persistent payload actors and owner-return boundary
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -o pipefail
+          cargo test --locked --features 'production internals bench-internals' --test j13b_payload_actors \
+            | tee "$RUNNER_TEMP/j13b-actors-core.log"
+          grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/j13b-actors-core.log"
+          cargo test --locked --release --features 'production internals bench-internals' --test j13b_payload_actors_native \
+            | tee "$RUNNER_TEMP/j13b-actors-native.log"
+          grep -F 'test real_actors_return_owner_samples_and_reject_remote_training_in_both_directions ... ok' "$RUNNER_TEMP/j13b-actors-native.log"
+          grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-actors-native.log"
       - name: J13b window OS counters and native peak reset witness
         if: steps.paths.outputs.run == 'true'
         run: |
@@ -3440,6 +3451,24 @@ jobs:
           cargo miri test --test j13b_window_kernel 2>&1 | tee "$RUNNER_TEMP/miri-j13b-window-tb.log"
           grep -F 'test four_workers_execute_and_all_joins_precede_an_error_result ... ok' "$RUNNER_TEMP/miri-j13b-window-tb.log"
           grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-window-tb.log"
+        shell: bash
+      - name: J13b persistent payload actors (Stacked Borrows)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+        run: |
+          set -o pipefail
+          cargo miri test --test j13b_payload_actors 2>&1 | tee "$RUNNER_TEMP/miri-j13b-actors-sb.log"
+          grep -F 'test persistent_actors_transfer_both_directions_on_actual_threads ... ok' "$RUNNER_TEMP/miri-j13b-actors-sb.log"
+          grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-actors-sb.log"
+        shell: bash
+      - name: J13b persistent payload actors (Tree Borrows)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows"
+        run: |
+          set -o pipefail
+          cargo miri test --test j13b_payload_actors 2>&1 | tee "$RUNNER_TEMP/miri-j13b-actors-tb.log"
+          grep -F 'test persistent_actors_transfer_both_directions_on_actual_threads ... ok' "$RUNNER_TEMP/miri-j13b-actors-tb.log"
+          grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-actors-tb.log"
         shell: bash
       - name: J13b OS ABI fixtures and model/native separation
         run: |

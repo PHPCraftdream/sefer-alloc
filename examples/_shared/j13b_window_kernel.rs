@@ -53,7 +53,7 @@ impl WindowKernel {
         Ok(())
     }
 
-    fn touch<A: GlobalAlloc + Sync>(
+    pub(crate) fn touch<A: GlobalAlloc + Sync>(
         block: &mut OwnedBlock<'_, A>,
         from: usize,
         shape: Shape,

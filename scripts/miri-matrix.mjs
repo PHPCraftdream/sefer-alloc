@@ -31,6 +31,10 @@ export const MIRI_TARGETS = [
     borrows,
     marker: 'test four_workers_execute_and_all_joins_precede_an_error_result ... ok',
   })),
+  ...['sb', 'tb'].map((borrows) => green('miri-core', 'j13b_payload_actors', '', {
+    borrows,
+    marker: 'test persistent_actors_transfer_both_directions_on_actual_threads ... ok',
+  })),
   green('miri-core', 'j13b_os_probe', '', {
     marker: 'test unsupported_os_or_model_is_rejected_before_any_probe ... ok',
   }),
