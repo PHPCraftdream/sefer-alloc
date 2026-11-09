@@ -15,6 +15,19 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 260 — CLOSED (2026-11-09)
+
+Status: CLOSED on exact source `93f990173e37bdaab7334b58f2876ba6649e24c4`, CI `42693008438` attempt2 SUCCESS; final45SUCCESS/20intendedSKIPPED. The existing declared-runtime predicate is unchanged. A proper prefix is derived from history and the complete verification suffix must execute exact production text/Ir identity, not SKIP. The raw structured evidence, CI excerpt, generated table and CSV are preserved in `docs/perf/J13B_TASK78_ZERO_COST_RECEIPT.md`; no whole-PR runtime identity or speedup is claimed. Eighteen policy assertions and retained semantic/model checks passed. Initial macOS runner-capacity cancellation was retried on the same source and all platform steps passed. Full J13b windows/admission/campaign remain separate obligations.
+
+#### Historical pre-acceptance card (superseded by the closure above)
+
+260. **[T] `ghost-zero-cost` has no mode for a runtime PR that must also add `cfg(kani)` code.** (Filed 2026-10-29, PR #128 / G1-K7; read-only consultations of the rush reviewer and @ox.)
+
+    - **Status:** OPEN — two-phase implementation candidate; exact-source CI acceptance pending. J13b PR #225 now needs this contract because its benchmark-only native/model guards add explicit Miri tokens after an already-declared runtime prefix.
+    - **Current-number-or-verdict:** the existing `zeroCostSkip` policy is unchanged. A fully admitted runtime range retains its existing skip; a mixed range derives the newest proper first-parent prefix whose complete `base..R` inputs satisfy that same policy, then requires exact production `.text` and Ir equality for the entire contiguous `R..head` suffix. No caller-picked prefix, HEAD-as-prefix, dirty-tree exemption, tolerance, excluded symbol or inferred whole-PR identity is added. If no prefix qualifies, the original full-range proof remains mandatory. Reports retain the original PR base, derived prefix, admitted-prefix reason/subjects/paths and measured suffix endpoints. Eighteen cargo-free policy assertions cover boundary selection and refusal; native proof execution remains CI-only. Historical motivation: PR #128 could split after reverting its Kani constructor/job coupling; the consultations already recommended precisely this two-phase contract rather than weakening token rejection.
+    - **Next trigger:** accept only after CI on the exact source positively executes the admitted-prefix plus nonempty-suffix proof, reports identical production text and zero Ir delta, and passes the retained model/semantic gates. A prefix classification alone is not a proof. Keep this card OPEN until then.
+    - **Evidence:** `scripts/ghost_diff.mjs` unchanged predicate; `scripts/ghost_runtime_prefix.mjs`; `scripts/ghost_zero_cost.mjs`; `tests/ghost_runtime_prefix_fixtures.mjs`; J13b judge manifest records the initial full-range failure and the earlier declared-runtime SKIP, not an earlier machine-identity receipt. Historical PR #128 `b09885b6`, item 259 and the consultations above remain motivation, not implementation acceptance.
+
 ### 273 — CLOSED (2026-11-09)
 
 273. **[T, filed 2026-11-09, J13b #68] Native witness imposed an unsupported order on separate approximate VmHWM readings.**

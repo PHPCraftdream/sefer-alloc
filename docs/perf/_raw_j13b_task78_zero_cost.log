@@ -1,0 +1,33 @@
+# TRUNCATED — setup/build/download chatter and duplicated JSON omitted; primary JSON preserved alongside.
+# Full log: gh api repos/PHPCraftdream/sefer-alloc/actions/jobs/129417650503/logs
+# Native reproduction is pinned in J13B_TASK78_ZERO_COST_RECEIPT.md and is CI-only by default.
+﻿2026-11-09T20:27:12.3966816Z Current runner version: '2.338.2'
+2026-11-09T20:27:12.3993532Z ##[group]Runner Image Provisioner
+2026-11-09T20:27:12.3994425Z Hosted Compute Agent
+2026-11-09T20:27:12.3995146Z Version: 20261028.624
+2026-11-09T20:27:12.3995882Z Commit: 54898b74c23fde5556c9b3c3a2290865feef0dfe
+2026-11-09T20:27:12.3996634Z Build Date: 2026-10-28T21:51:42Z
+2026-11-09T20:27:12.3997456Z Worker ID: {e99f33d3-844a-425f-97ce-7d421b7129da}
+2026-11-09T20:27:12.3998228Z Region: northcentralus
+2026-11-09T20:27:12.3999041Z Cloud: Azure
+2026-11-09T20:27:12.3999994Z ##[endgroup]
+2026-11-09T20:27:12.4001836Z ##[group]Operating System
+2026-11-09T20:27:12.4002641Z Ubuntu
+2026-11-09T20:27:12.4003229Z 24.04.5
+2026-11-09T20:27:12.4003844Z LTS
+2026-11-09T20:27:12.4004476Z ##[endgroup]
+2026-11-09T20:27:12.4005102Z ##[group]Runner Image
+2026-11-09T20:27:12.4005808Z Image: ubuntu-24.04
+2026-11-09T20:27:12.4006439Z Version: 20261101.360.1
+2026-11-09T20:27:12.4007906Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261101.360/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-09T20:27:12.4009548Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261101.360
+2026-11-09T20:27:12.4010971Z ##[endgroup]
+2026-11-09T20:27:12.4012251Z ##[group]GITHUB_TOKEN Permissions
+2026-11-09T20:27:12.4014562Z Contents: read
+2026-11-09T20:27:12.4015232Z Metadata: read
+2026-11-09T20:27:18.9580634Z rustc 1.99.1 (58cf8f9c3 2026-10-13)
+2026-11-09T20:27:18.9582783Z host: x86_64-unknown-linux-gnu
+2026-11-09T20:27:30.8184614Z [ghost-zero-cost] scope self-test OK (32 + 9 cases + changedLines; 18 runtime-prefix checks)
+2026-11-09T20:27:38.3740890Z [ghost-zero-cost] runtime prefix bec1e53f0a978125c39c281e1c96c19165fcfd6a..195d75dd93466520bf03d44aff15706c299f4dc8: admitted by the unchanged declared-runtime policy
+2026-11-09T20:27:38.3743237Z [ghost-zero-cost] exact production text/Ir proof REQUIRED for suffix 195d75dd93466520bf03d44aff15706c299f4dc8..93f990173e37bdaab7334b58f2876ba6649e24c4
+2026-11-09T20:28:51.6037191Z [ghost-zero-cost] OK: 546 functions identical, Ir delta 0

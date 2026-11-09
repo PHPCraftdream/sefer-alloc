@@ -38,7 +38,7 @@ harness; `non-atomic` — named scanner false positives.
 
 | id | protocol | class | sites | loom tests | text pins | registry rows | real code under loom | decision | phase |
 |---|---|---|---:|---:|---:|---|---|---|---|
-| P28 | benchmark advice event capture publication | S | 20 | 0 | 0 | — | no: bounded actual-source thread/Miri fixtures are authored, execution acceptance pending; no whole-native-lifecycle or wait-freedom claim | benchmark-only bounded capture with fail-closed evidence | J13b |
+| P28 | benchmark advice event capture publication | S | 20 | 0 | 0 | — | no Loom model: bounded actual-source thread/Miri, native emitter/replay and semantic fixtures accepted on 93f99017 by CI42693008438 attempt2; no whole-native-lifecycle or wait-freedom claim | benchmark-only bounded capture with fail-closed evidence | J13b |
 | P27 | large-THP coherent bounded estimator pair | none | 5 | 1 | 0 | — | cell only: tests/loom_thp_learning_cell.rs mounts the actual production cell and math on model atomics; runtime routing/admission is exercised by native tests, not a whole-runtime model; current integration acceptance is pending CI | rules + actual-source model + deterministic forced-CAS rejection test | J13b |
 | P1 | HeapLease FREE->LIVE claim / LIVE->FREE Release drop | S | 12 | 1 | 0 | R4a-05 R4a-06 R4a-07 R4a-08 R4a-09 R4c-09 | no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone | keep+R8 | G3 |
 | P2 | MaintenanceLease FREE->MAINTENANCE | S | 4 | 1 | 0 | R4c-19 | no: same registry bootstrap as P1 | keep+R8 | G4 |
@@ -85,7 +85,7 @@ Prod: `crates/aligned-vmem/src/bench_internals/advice/stream/log.rs`, `crates/al
 - I7 diagnostic addresses remain inert integers; no allocation, callbacks, mapping locks, mapped-memory access or unbounded retry exists in append
 - I8 release markers are sampled before the consuming native attempt; only a unique confirmed Large-source result whose marker includes the original fresh/advice publication can justify canonical closure before a reused range; thread-affine scalar source context restores on exit, unrelated VM callbacks never debit Large ownership, and unknown outcomes never repair evidence
 
-Decision: **benchmark-only bounded capture with fail-closed evidence** — Task78 supplies diagnostic capture for the accepted pure advice ledger; native emitter/replay wiring and semantic fixtures are still in progress. No runtime or performance acceptance is implied.
+Decision: **benchmark-only bounded capture with fail-closed evidence** — Task78 bounded native capture/replay is component-accepted with positive native/Miri/semantic and verification-suffix zero-cost receipts. Full window binding and runtime admission remain open; no performance or default promotion is implied.
 
 ### P27 — large-THP coherent bounded estimator pair
 

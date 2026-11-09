@@ -622,7 +622,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 257 | `RESOLVED.md` |
 | 258 | `RESOLVED.md` |
 | 259 | `RESOLVED.md` |
-| 260 | `TRACKED_ci_gate_coverage.md` |
+| 260 | `RESOLVED.md` |
 | 261 | `RESOLVED.md` |
 | 262 | `TRACKED_correctness_residuals.md` |
 | 263 | `TRACKED_correctness_residuals.md` |
