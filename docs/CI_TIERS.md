@@ -45,7 +45,7 @@ on a schedule and on demand.
 
 `j13b-judge-preparation` is in `always` but is not full CI: the job itself starts on every change, yet its
 Node and cargo steps are skipped unless a J13b path changed (`scripts/j13b_*.mjs`, `examples/_shared/**`,
-`examples/g1_j13b_*.rs`, `tests/j13b_*.{mjs,rs}`, `Cargo.toml`, `.github/workflows/ci.yml`) or the run is a
+`examples/g1_j13b_*.rs`, `tests/j13b_*.{mjs,rs}`, `crates/aligned-vmem/src/**`, `Cargo.toml`, `.github/workflows/ci.yml`) or the run is a
 schedule/manual dispatch.
 
 A change to `.github/workflows/ci.yml` or `scripts/ci-plan.mjs` selects `fast` (the planner self-test runs in

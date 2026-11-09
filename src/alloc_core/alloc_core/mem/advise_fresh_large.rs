@@ -43,6 +43,28 @@ pub(crate) fn advise_fresh_large(
         return (0, 0);
     }
     let tuple = ThpRuntime::current();
+    #[cfg(feature = "bench-internals")]
+    let capture_geometry = (
+        segment.reservation().as_ptr().addr(),
+        segment.reservation_len(),
+        segment.as_ptr().addr(),
+    );
+    #[cfg(feature = "bench-internals")]
+    let capture_mode = match tuple.mode {
+        LargeThpMode::Off => 0,
+        LargeThpMode::Always => 1,
+        LargeThpMode::Auto => 2,
+    };
+    #[cfg(feature = "bench-internals")]
+    aligned_vmem::AdviceCapture::record(aligned_vmem::AdviceEvent::fresh(
+        capture_geometry.0,
+        capture_geometry.1,
+        capture_geometry.2,
+        usable_span,
+        request_size,
+        tuple.min_bytes,
+        capture_mode,
+    ));
     if !ThpAdvice::eligible(tuple.mode, tuple.min_bytes, request_size) {
         return (0, 0);
     }
@@ -87,6 +109,16 @@ pub(crate) fn advise_fresh_large(
     match ThpAdvice::classify(segment.try_advise_huge_pages_range(0, given)) {
         ThpAdviceOutcome::Accepted(n) => {
             ThpRuntime::note_advised(n);
+            #[cfg(feature = "bench-internals")]
+            aligned_vmem::AdviceCapture::record(aligned_vmem::AdviceEvent::accepted(
+                capture_geometry.0,
+                capture_geometry.1,
+                capture_geometry.2,
+                usable_span,
+                request_size,
+                n,
+                capture_mode,
+            ));
             if budgeted {
                 (given, 0)
             } else {
@@ -101,6 +133,16 @@ pub(crate) fn advise_fresh_large(
             (0, 0)
         }
         ThpAdviceOutcome::UnknownPartial => {
+            #[cfg(feature = "bench-internals")]
+            aligned_vmem::AdviceCapture::record(aligned_vmem::AdviceEvent::unknown_advice(
+                capture_geometry.0,
+                capture_geometry.1,
+                capture_geometry.2,
+                usable_span,
+                request_size,
+                given,
+                capture_mode,
+            ));
             if budgeted {
                 (given, 0)
             } else {

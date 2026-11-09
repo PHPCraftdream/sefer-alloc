@@ -4,7 +4,7 @@ file,benches/medium_size_sweep.rs,1001,grandfathered when the structure limits l
 file,benches/perf_gate_iai.rs,3698,grandfathered when the structure limits landed (2026-10-12)
 file,benches/ph3c_leaf_proto.rs,2109,grandfathered when the structure limits landed (2026-10-12)
 file,benches/segment_directory_sweep.rs,1266,grandfathered when the structure limits landed (2026-10-12)
-file,crates/aligned-vmem/src/os/unix.rs,1169,grandfathered when the structure limits landed (2026-10-12)
+file,crates/aligned-vmem/src/os/unix.rs,1157,grandfathered when the structure limits landed (2026-10-12); legacy release extracted for bounded advice evidence
 file,crates/aligned-vmem/src/reservation.rs,1574,grandfathered when the structure limits landed (2026-10-12)
 file,crates/aligned-vmem/tests/decommit_capability.rs,1622,grandfathered when the structure limits landed (2026-10-12)
 file,crates/aligned-vmem/tests/smoke.rs,1912,grandfathered when the structure limits landed (2026-10-12)

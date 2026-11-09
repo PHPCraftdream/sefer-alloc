@@ -107,7 +107,7 @@ jobs:
             exit 0
           fi
           git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE="$HEAD_SHA^"
-          if git diff --name-only "$BASE" "$HEAD_SHA" | grep -qE '^(scripts/j13b_.*\.mjs|examples/(_shared/.*|g1_j13b_.*\.rs)|tests/j13b_.*\.(mjs|rs)|Cargo\.toml|\.github/workflows/ci\.yml)$'; then
+          if git diff --name-only "$BASE" "$HEAD_SHA" | grep -qE '^(scripts/j13b_.*\.mjs|examples/(_shared/.*|g1_j13b_.*\.rs)|tests/j13b_.*\.(mjs|rs)|crates/aligned-vmem/src/.*|Cargo\.toml|\.github/workflows/ci\.yml)$'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.paths.outputs.run == 'true'
@@ -180,6 +180,23 @@ jobs:
             | tee "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
           grep -F 'test actual_phased_and_mixed_windows_preserve_training_and_live_os_boundaries ... ok' "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
+      - name: J13b native advice capture across modes and lifecycle failures
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -o pipefail
+          cargo test --locked --release --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_capture_native -- --nocapture 2>&1 \
+            | tee "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F "[j13b-advice-child] concurrent PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F "[j13b-advice-child] always PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F "[j13b-advice-child] budget PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F "[j13b-advice-child] auto PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F "[j13b-advice-child] off PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F "[j13b-advice-child] advice-pre PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F "[j13b-advice-child] release-pre PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F "[j13b-advice-child] release-backend PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F "[j13b-advice-child] off-legacy PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F 'test actual_native_capture_closes_modes_cache_realloc_remote_and_release_failures ...' "$RUNNER_TEMP/j13b-advice-capture-native.log"
+          grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-advice-capture-native.log"
       - name: J13b window OS counters and native peak reset witness
         if: steps.paths.outputs.run == 'true'
         run: |
@@ -208,8 +225,14 @@ jobs:
             | tee .rush/j13b-static-reference-native.log
           grep -F 'test static_reference_samples_real_controls_without_learning ... ok' .rush/j13b-static-reference-native.log
           grep -F 'test result: ok. 1 passed; 0 failed;' .rush/j13b-static-reference-native.log
+          J13B_ADVICE_CAPTURE_CASE=static cargo test --locked --manifest-path "$copy/Cargo.toml" \
+            --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_capture_native \
+            -- --exact actual_native_capture_closes_modes_cache_realloc_remote_and_release_failures --nocapture 2>&1 \
+            | tee .rush/j13b-static-capture-native.log
+          grep -F '[j13b-advice-capture] case=static matched-controls-and-lifetime PASS' .rush/j13b-static-capture-native.log
+          grep -F 'test result: ok. 1 passed; 0 failed;' .rush/j13b-static-capture-native.log
           sha256sum -c <(printf '%s\n' \
-            '0bc8ea2de1612d2a3dd948e0ec92b7295840b3010d2b9df206e1a18db6cff8a9  src/alloc_core/alloc_core/mem/advise_fresh_large.rs' \
+            '84bf2f9c070271187c4bb07f3bdc552ce7d0f2a686bc62ffc28ee299b93d41c4  src/alloc_core/alloc_core/mem/advise_fresh_large.rs' \
             'a2476ebd40189187dd8ea5a6a0966861eb90f6a8eea3712eb4cd2403cc75dc89  src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs')
 
   # CI-T1 stage 3 (docs/CI_TIERS.md "Test-impact map"): which integration tests the diff can affect, from
@@ -531,6 +554,17 @@ jobs:
       # tests; does NOT run benchmarks -- bench targets are not #[test] functions).
       # Now runs the REAL backend since mock is cfg-gated off (task #962).
       - run: cargo test -p aligned-vmem --all-features
+      - name: Pure advice event capture and ordered replay
+        run: |
+          set -o pipefail
+          cargo test --locked -p aligned-vmem --release --features 'bench-internals fault-injection' --test advice_event_stream \
+            | tee "$RUNNER_TEMP/advice-event-stream-native.log"
+          grep -F 'test cursor_wrap_never_turns_failed_capture_into_an_empty_success ... ok' "$RUNNER_TEMP/advice-event-stream-native.log"
+          grep -F 'test result: ok. 9 passed; 0 failed;' "$RUNNER_TEMP/advice-event-stream-native.log"
+          cargo test --locked -p aligned-vmem --release --features bench-internals --test advice_event_replay \
+            | tee "$RUNNER_TEMP/advice-event-replay-native.log"
+          grep -F 'test unknown_release_and_partial_advice_never_yield_zero_or_repaired_rows ... ok' "$RUNNER_TEMP/advice-event-replay-native.log"
+          grep -F 'test result: ok. 9 passed; 0 failed;' "$RUNNER_TEMP/advice-event-replay-native.log"
       - name: Pure accepted-advice lifetime ledger (no native-event claim)
         run: |
           set -o pipefail
@@ -3503,6 +3537,27 @@ jobs:
           cargo miri test --test j13b_payload_actors 2>&1 | tee "$RUNNER_TEMP/miri-j13b-actors-tb.log"
           grep -F 'test persistent_actors_transfer_both_directions_on_actual_threads ... ok' "$RUNNER_TEMP/miri-j13b-actors-tb.log"
           grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-actors-tb.log"
+        shell: bash
+      - name: Advice event capture and ordered replay under strict provenance
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+        run: |
+          set -o pipefail
+          cargo miri test -p aligned-vmem --features 'bench-internals fault-injection' --test advice_event_stream 2>&1 | tee "$RUNNER_TEMP/miri-advice-event-stream.log"
+          grep -F 'test cursor_wrap_never_turns_failed_capture_into_an_empty_success ... ok' "$RUNNER_TEMP/miri-advice-event-stream.log"
+          grep -F 'test result: ok. 10 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-event-stream.log"
+          cargo miri test -p aligned-vmem --features bench-internals --test advice_event_replay 2>&1 | tee "$RUNNER_TEMP/miri-advice-event-replay.log"
+          grep -F 'test unknown_release_and_partial_advice_never_yield_zero_or_repaired_rows ... ok' "$RUNNER_TEMP/miri-advice-event-replay.log"
+          grep -F 'test result: ok. 9 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-event-replay.log"
+        shell: bash
+      - name: Native advice capture rejects models before payload claims
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+        run: |
+          set -o pipefail
+          cargo miri test --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_capture_native 2>&1 | tee "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
+          grep -F 'test native_advice_capture_rejects_unsupported_hosts_before_payload_claims ... ok' "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
+          grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
         shell: bash
       - name: Pure accepted-advice lifetime ledger under strict provenance
         env:

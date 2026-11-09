@@ -407,18 +407,6 @@ fn try_reserve_aligned_exact(
 }
 
 #[cfg(all(unix, not(miri)))]
-pub(crate) unsafe fn release_reservation(
-    reservation: NonNull<u8>,
-    reservation_len: usize,
-    _align: usize,
-) {
-    // SAFETY: on unix `reservation` is the start of the remaining mapping of length
-    // `reservation_len`; `libc_munmap` requires the address/len to be a live mmap'd
-    // region being unmapped once, which this call satisfies.
-    unsafe { libc_munmap(reservation.as_ptr(), reservation_len) };
-}
-
-#[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): bypassed by the recording backend, unused when `mock`
 // alone is enabled without a real decommit call site reachable.
 #[cfg_attr(aligned_vmem_mock, allow(dead_code))]
@@ -1112,7 +1100,7 @@ pub(crate) unsafe fn libc_munmap(addr: *mut u8, len: usize) -> i32 {
     // and succeeded" from "the call site was removed and never ran". Each increment is a
     // single relaxed fetch_add — zero overhead when the feature is off.
     // task #713 capture-timing contract: `release_reservation_checked` (in
-    // `os/release_reservation_checked.rs`) is the caller that maps the raw `-1` to a
+    // `os/release/checked.rs`) is the caller that maps the raw `-1` to a
     // `VmemError`; no errno-mutating operation may intervene between `munmap`
     // returning and the caller's `last_os_error()` read.
     #[cfg(feature = "bench-internals")]

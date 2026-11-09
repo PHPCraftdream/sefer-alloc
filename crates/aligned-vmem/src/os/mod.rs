@@ -3,7 +3,7 @@ mod decommit_kind;
 #[cfg(miri)]
 mod miri;
 #[cfg(all(unix, not(miri)))]
-mod release_reservation_checked;
+mod release;
 #[cfg(all(unix, not(miri)))]
 mod unix;
 #[cfg(all(windows, not(miri)))]
@@ -23,7 +23,7 @@ pub(crate) use miri::{decommit_pages_impl, recommit_pages_impl};
 pub(crate) use miri::{release_reservation, release_reservation_checked, reserve_aligned_raw};
 
 #[cfg(all(unix, not(miri)))]
-pub(crate) use release_reservation_checked::release_reservation_checked;
+pub(crate) use release::{release_reservation, release_reservation_checked};
 #[cfg(all(
     unix,
     not(miri),
@@ -45,7 +45,7 @@ pub(crate) use unix::{commit_range_impl, reserve_aligned_lazy_raw};
 #[cfg(all(unix, not(miri), not(aligned_vmem_mock)))]
 pub(crate) use unix::{decommit_pages_impl, recommit_pages_impl};
 #[cfg(all(unix, not(miri)))]
-pub(crate) use unix::{release_reservation, reserve_aligned_raw, sysconf, _SC_PAGESIZE};
+pub(crate) use unix::{reserve_aligned_raw, sysconf, _SC_PAGESIZE};
 
 #[cfg(all(windows, not(miri), feature = "huge-pages"))]
 pub(crate) use windows::reserve_aligned_huge_raw;
