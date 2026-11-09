@@ -78,8 +78,8 @@ export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false
     if (/(windows|macos|numa|platform|_os_)/.test(name)) g.add('os');
     return g;
   }
-  // Actual-source Miri fixture imports this benchmark-only unsafe owner.
-  if (p === 'examples/_shared/j13b_owned_block.rs' || p === 'examples/_shared/j13b_window_kernel.rs') return new Set(['fast', 'seam']);
+  // Actual-source Miri imports these payload helpers.
+  if (p === 'examples/_shared/j13b_owned_block.rs' || p === 'examples/_shared/j13b_window_kernel.rs' || p === 'examples/_shared/j13b_payload_actors.rs') return new Set(['fast', 'seam']);
   if (p === 'examples/_shared/j13b_os_probe.rs') return new Set(['fast', 'seam', 'os']);
   if (/^(benches|examples|fuzz)\//.test(p)) return new Set(['fast']);
   m = /^scripts\/([^/]+)$/.exec(p);
@@ -236,6 +236,7 @@ function selftest() {
   eq(on(P(['benches/r20_prf01_controls_iai.rs', 'examples/e.rs'])), 'always,fast', 'bench+example');
   eq(on(P(['examples/_shared/j13b_owned_block.rs'])), 'always,fast,seam', 'unsafe judge owner source');
   eq(on(P(['examples/_shared/j13b_window_kernel.rs'])), 'always,fast,seam', 'actual-source window operation model');
+  eq(on(P(['examples/_shared/j13b_payload_actors.rs'])), 'always,fast,seam', 'actual-source persistent payload actors');
   eq(on(P(['examples/_shared/j13b_run_stats.rs'])), 'always,fast', 'window statistic record only');
   eq(on(P(['examples/_shared/j13b_os_probe.rs'])), 'always,fast,os,seam', 'native OS producer and model rejection');
   eq(on(P(['examples/_shared/j13b_os_sample.rs'])), 'always,fast', 'OS quantity record only');
