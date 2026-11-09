@@ -31,9 +31,14 @@ impl AdviceSlot {
         {
             return Err("advice event slot cannot be reused");
         }
-        for (field, value) in self.payload.iter().zip(words) {
-            field.store(value, Ordering::Relaxed);
-        }
+        let [field0, field1, field2, field3, field4, field5, field6] = &self.payload;
+        field0.store(words[0], Ordering::Relaxed);
+        field1.store(words[1], Ordering::Relaxed);
+        field2.store(words[2], Ordering::Relaxed);
+        field3.store(words[3], Ordering::Relaxed);
+        field4.store(words[4], Ordering::Relaxed);
+        field5.store(words[5], Ordering::Relaxed);
+        field6.store(words[6], Ordering::Relaxed);
         self.complete.store(sequence, Ordering::Release);
         Ok(())
     }
