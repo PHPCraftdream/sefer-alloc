@@ -78,6 +78,9 @@
 //! without the feature). Relaxed — diagnostic only, no ordering obligation.
 
 #[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub mod advice;
+#[cfg(feature = "bench-internals")]
 mod huge;
 #[cfg(feature = "bench-internals")]
 mod reset;

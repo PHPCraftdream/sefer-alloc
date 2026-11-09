@@ -531,6 +531,13 @@ jobs:
       # tests; does NOT run benchmarks -- bench targets are not #[test] functions).
       # Now runs the REAL backend since mock is cfg-gated off (task #962).
       - run: cargo test -p aligned-vmem --all-features
+      - name: Pure accepted-advice lifetime ledger (no native-event claim)
+        run: |
+          set -o pipefail
+          cargo test --locked -p aligned-vmem --release --features bench-internals --test advice_lifetime_ledger \
+            | tee "$RUNNER_TEMP/advice-lifetime-ledger-native.log"
+          grep -F 'test unsupported_release_preserves_entries_and_never_recovers_via_retry_or_reuse ... ok' "$RUNNER_TEMP/advice-lifetime-ledger-native.log"
+          grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/advice-lifetime-ledger-native.log"
       # Task #962: mock-backend test coverage under the `--cfg aligned_vmem_mock`
       # build flag (previously this coverage came from `--all-features`, which
       # can no longer turn on mock — it is not a Cargo feature anymore).
@@ -3496,6 +3503,15 @@ jobs:
           cargo miri test --test j13b_payload_actors 2>&1 | tee "$RUNNER_TEMP/miri-j13b-actors-tb.log"
           grep -F 'test persistent_actors_transfer_both_directions_on_actual_threads ... ok' "$RUNNER_TEMP/miri-j13b-actors-tb.log"
           grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-actors-tb.log"
+        shell: bash
+      - name: Pure accepted-advice lifetime ledger under strict provenance
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+        run: |
+          set -o pipefail
+          cargo miri test -p aligned-vmem --features bench-internals --test advice_lifetime_ledger 2>&1 | tee "$RUNNER_TEMP/miri-advice-lifetime-ledger.log"
+          grep -F 'test unsupported_release_preserves_entries_and_never_recovers_via_retry_or_reuse ... ok' "$RUNNER_TEMP/miri-advice-lifetime-ledger.log"
+          grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-lifetime-ledger.log"
         shell: bash
       - name: J13b owner training rejects model residency before payload claims
         env:
