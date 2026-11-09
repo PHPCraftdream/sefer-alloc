@@ -172,6 +172,14 @@ jobs:
             | tee "$RUNNER_TEMP/j13b-owner-training-native.log"
           grep -F 'test actual_training_reaches_both_targets_and_caps_sampler_failure_without_padding ... ok' "$RUNNER_TEMP/j13b-owner-training-native.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-owner-training-native.log"
+      - name: J13b real adaptive windows and live OS boundaries
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -o pipefail
+          cargo test --locked --release --features 'production internals bench-internals' --test j13b_adaptive_windows_native \
+            | tee "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
+          grep -F 'test actual_phased_and_mixed_windows_preserve_training_and_live_os_boundaries ... ok' "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
+          grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
       - name: J13b window OS counters and native peak reset witness
         if: steps.paths.outputs.run == 'true'
         run: |
@@ -3497,6 +3505,15 @@ jobs:
           cargo miri test --features 'production internals bench-internals lazy-commit-fault-injection' --test j13b_owner_training_native 2>&1 | tee "$RUNNER_TEMP/miri-j13b-training-guard.log"
           grep -F 'test unsupported_training_is_rejected_before_payload_claims ... ok' "$RUNNER_TEMP/miri-j13b-training-guard.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-training-guard.log"
+        shell: bash
+      - name: J13b adaptive windows reject model OS epochs before payload claims
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+        run: |
+          set -o pipefail
+          cargo miri test --features 'production internals bench-internals' --test j13b_adaptive_windows_native 2>&1 | tee "$RUNNER_TEMP/miri-j13b-adaptive-windows-guard.log"
+          grep -F 'test adaptive_windows_reject_model_or_unsupported_os_before_payloads ... ok' "$RUNNER_TEMP/miri-j13b-adaptive-windows-guard.log"
+          grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-adaptive-windows-guard.log"
         shell: bash
       - name: J13b OS ABI fixtures and model/native separation
         run: |

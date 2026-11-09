@@ -80,7 +80,7 @@ export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false
   }
   // Actual-source Miri imports these payload helpers.
   if (p === 'examples/_shared/j13b_owned_block.rs' || p === 'examples/_shared/j13b_window_kernel.rs' || p === 'examples/_shared/j13b_payload_actors.rs' || p === 'examples/_shared/j13b_owner_training.rs') return new Set(['fast', 'seam']);
-  if (p === 'examples/_shared/j13b_os_probe.rs') return new Set(['fast', 'seam', 'os']);
+  if (p === 'examples/_shared/j13b_os_probe.rs' || p === 'examples/_shared/j13b_adaptive_windows.rs') return new Set(['fast', 'seam', 'os']);
   if (/^(benches|examples|fuzz)\//.test(p)) return new Set(['fast']);
   m = /^scripts\/([^/]+)$/.exec(p);
   if (m) {
@@ -220,7 +220,7 @@ export function docTableMatches(docText, ciText) {
 }
 
 function selftest() {
-  const seam = new Set(['class_leaves_publication_miri']);
+  const seam = new Set(['class_leaves_publication_miri', 'j13b_adaptive_windows_native']);
   const P = (files, event = 'pull_request', trailerFull = false) => plan({ files, event, trailerFull, seamTests: seam });
   const on = r => Object.keys(r).filter(k => r[k]).sort().join(',');
   const heavy = ['seam', 'os'];
@@ -241,6 +241,8 @@ function selftest() {
   eq(on(P(['examples/_shared/j13b_run_stats.rs'])), 'always,fast', 'window statistic record only');
   eq(on(P(['examples/_shared/j13b_os_probe.rs'])), 'always,fast,os,seam', 'native OS producer and model rejection');
   eq(on(P(['examples/_shared/j13b_os_sample.rs'])), 'always,fast', 'OS quantity record only');
+  eq(on(P(['examples/_shared/j13b_adaptive_windows.rs'])), 'always,fast,os,seam', 'adaptive native OS windows and model rejection');
+  eq(on(P(['tests/j13b_adaptive_windows_native.rs'])), 'always,fast,os,seam', 'adaptive window model-rejection fixture');
   eq(on(P(['examples/_shared/j13b_workload.rs'])), 'always,fast', 'safe judge plan/kernel source');
   // test that appears in the loom/miri manifests or is named loom/miri: seam too.
   eq(on(P(['tests/class_leaves_publication_miri.rs'])), 'always,fast,seam', 'miri test');
