@@ -1,6 +1,14 @@
 # J13b judge — preparatory infrastructure manifest
 
-## Native advice-lifetime producer candidate (#78) — 2026-11-09
+## Accepted native advice-lifetime producer (#78) — 2026-11-09
+
+Status: COMPONENT ACCEPTED on exact `93f990173e37bdaab7334b58f2876ba6649e24c4`, CI `42693008438` attempt 2 SUCCESS; final PR225 checks 45 SUCCESS / 20 intended SKIPPED. Personally reviewed all nine isolated native children, static capture and retained static oracle, VM native stream9/replay9, strict Miri stream10/replay9/early-native-rejection1 and pure ledger7, zero ignored; semantic237cases/340mutants/0failures, linter10/10, protected33commits/0red and retained Kani22/0. Retained Kani is not a proof of the new capture or native producer. Attempt 1's only terminal non-success was the macOS job acquiring no hosted runner and running no steps; targeted same-source attempt 2 executed all four test steps successfully. Earlier source/test/gate failures remain recorded below, not retroactively relabelled.
+
+The actual two-phase verification-suffix proof is preserved in [the generated receipt](../J13B_TASK78_ZERO_COST_RECEIPT.md), primary JSON, verbatim log excerpt and derived CSV, under the per-artifact ceiling. Its table is generated and arithmetic-checked by `scripts/j13b_zero_cost_receipt.mjs`; image/compiler, immutable source and measured tree, original base, derived prefix, complete comparison scope and raw content hash are recorded. This is not whole-PR runtime identity, free instrumented diagnostics, performance/campaign GO, defaults promotion or a complete allocator proof. Correctness item260's two-phase mechanism is closed; item271 remains CONDITIONAL, item272 limitations remain and item273 stays CLOSED. Full window binding/cost scopes are #79; complete arm capabilities/identities and admission remain #62/#63. No local native/model/workload execution, main merge or dependency/version change.
+
+## Native producer implementation and failed-attempt history (#78)
+
+The pending statuses in this historical section are superseded by the exact-source component acceptance above.
 
 Status: CANDIDATE / execution acceptance PENDING. Class: `bench`; production feature composition, header layout, policy, learner and syscall/FI outcomes are unchanged. A benchmark-only append-only capture has 65536 slots, seven atomic scalar payload words and a release/acquire completion word per slot: 4 MiB slot storage plus reported metadata. Scalar thread-local source classification adds two `usize` values per emitting thread (not the entire OS/TLS overhead). One cursor reservation and one empty-slot claim bound publication; no slot recycling, allocator-side allocation, mapping locks or user callbacks. Exhaustion, wrap, malformed/incomplete publication and lost context permanently disable evidence. Quiescence remains a controller acknowledgement/join premise, not something the cursor authenticates.
 

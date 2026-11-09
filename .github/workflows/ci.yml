@@ -291,6 +291,7 @@ jobs:
       - run: node scripts/verify-ci-sentinels.mjs
       - run: node scripts/verify-loom-target-wiring.mjs
       - run: node scripts/verify-miri-target-wiring.mjs
+      - run: node scripts/j13b_zero_cost_receipt.mjs --check
       - run: node scripts/verify-root-package-list.mjs
       - run: node scripts/verify-no-bare-abort.mjs
       # Ghost-checks G0 (docs/GHOST_CHECKS_PLAN.md): every ordering site claimed by exactly one
