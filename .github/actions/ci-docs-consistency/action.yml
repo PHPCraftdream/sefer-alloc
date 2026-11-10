@@ -1,0 +1,77 @@
+name: CI docs-consistency
+description: Original docs-consistency job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+    - run: node scripts/verify-structure-limits.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-ci-decomposition.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-ci-sentinels.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-loom-target-wiring.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-miri-target-wiring.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/j13b_zero_cost_receipt.mjs --check
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-root-package-list.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-no-bare-abort.mjs
+    # Ghost-checks G0 (docs/GHOST_CHECKS_PLAN.md): every ordering site claimed by exactly one
+    # catalog scope, the scanner's self-test and mutants, and the generated inventory is fresh.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/ghost_inventory.mjs --check --report docs/verification/GHOST_INVENTORY.md
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/ghost_inventory_mutants.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: git diff --exit-code -- docs/verification/
+    # B4-30 fix8 (P2-4): cargo-free gate for the measurement-logic pin of
+    # tests/b4_30_first_alloc_min_stack.rs. RC=1 on any change to the
+    # measurement logic (REPEATS, stride window, anchors, budget mapping)
+    # that is not reflected in the pinned sha in
+    # scripts/b4_30_fix7_evidence.mjs (constants-only rebases stay valid).
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-b4-30-pin.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/ci-plan.mjs --check-doc
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-sprint-close.mjs --selftest
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/test-impact-map.mjs --selftest
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/select-tests.mjs --selftest
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/r20-gate-config.mjs --selftest
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/r20_r6_ab_iai_run.mjs --selftest
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test --locked --test no_stale_doc_references --test r1_03_pool_docs_contract --test unsafe_allow_placement
+
+# Ghost checks (docs/GHOST_CHECKS_PLAN.md §7): the per-site semantic lint over the
+# tree, its fixture self-test (every rule rejects its mutants), and the ghost
+# macros' own self-test in a ghost build. Cheap, every change.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

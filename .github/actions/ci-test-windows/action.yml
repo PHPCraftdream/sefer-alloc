@@ -1,0 +1,198 @@
+name: CI test-windows
+description: Original test-windows job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    # The root A/B scratch-guard integration test invokes the repository's
+    # Node-based runner. Pin Node so this Windows row cannot pass vacuously.
+    - uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+    # `internals` added (R34-3/task #522) — whole-suite row.
+    - run: cargo test --features "production internals" --no-fail-fast
+    # B4-30 fix7: first-alloc stack budget, differential self-measurement,
+    # enforced (SEFER_B4_30_ENFORCE=1). NIGHTLY/OS GROUP ONLY: test-windows is
+    # gated by changes.outputs.os, so per-PR coverage for this Windows cell
+    # does not exist.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh
+    - name: b4-30 first-alloc stack budget (production internals, windows)
+      if: ${{ !cancelled() }}
+      env:
+        SEFER_B4_30_ENFORCE: '1'
+      run: |
+        cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+        grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+        cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-release.log"
+        grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-winprodint-release.log"
+        cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+        grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+        cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-release.log"
+        grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-winprodint-release.log"
+        cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+        grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-winprodint-debug.log"
+        cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-winprodint-release.log"
+        grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-winprodint-release.log"
+      shell: bash
+    - name: exact OS release (minimal global and decommit, Windows)
+      if: ${{ !cancelled() }}
+      run: |
+        RUSTC_WRAPPER='' cargo test --locked -j 1 --features "alloc-global alloc-decommit internals bench-internals" --test r8_os_release_oracle -- --exact owner_exit_last_remote_free_returns_exact_os_tokens --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-os-release-minimal-windows.log"
+        grep -F "test owner_exit_last_remote_free_returns_exact_os_tokens ... ok" "$RUNNER_TEMP/r8-os-release-minimal-windows.log"
+      shell: bash
+    - name: exact OS release (production, Windows)
+      if: ${{ !cancelled() }}
+      run: |
+        RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test r8_os_release_oracle -- --exact owner_exit_last_remote_free_returns_exact_os_tokens --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-os-release-production-windows.log"
+        grep -F "test owner_exit_last_remote_free_returns_exact_os_tokens ... ok" "$RUNNER_TEMP/r8-os-release-production-windows.log"
+      shell: bash
+    # CON-01 (item 185): Windows process exit must end in a bounded exit, not a stranded
+    # allocator lock. The detector probe and the main-return child have no libtest harness;
+    # their sentinels come from the binaries' own output.
+    - name: process exit (Windows, CON-01)
+      if: ${{ !cancelled() }}
+      run: |
+        RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test con01_exit_stranded_lock -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/con01-stranded-windows.log"
+        grep -F "test exit_stranded_lock ... ok" "$RUNNER_TEMP/con01-stranded-windows.log"
+        grep -F "test exit_fallback_escape ... ok" "$RUNNER_TEMP/con01-stranded-windows.log"
+        grep -F "test exit_remove_owner_retained ... ok" "$RUNNER_TEMP/con01-stranded-windows.log"
+        grep -F "test exit_shard_realloc_escape ... ok" "$RUNNER_TEMP/con01-stranded-windows.log"
+        grep -F "test exit_own_oom_escape ... ok" "$RUNNER_TEMP/con01-stranded-windows.log"
+        # R6-T23: the exact-object shard refuses its lock during exit.
+        RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production exact-object-proto internals bench-internals" --test con01_exit_stranded_lock -- --test-threads=1 --exact exit_exact_shard_refusal 2>&1 | tee "$RUNNER_TEMP/con01-exact-shard-windows.log"
+        grep -F "test exit_exact_shard_refusal ... ok" "$RUNNER_TEMP/con01-exact-shard-windows.log"
+        RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test con01_exit_main_return 2>&1 | tee "$RUNNER_TEMP/con01-main-return-windows.log"
+        grep -F "CON01_DTOR_DONE" "$RUNNER_TEMP/con01-main-return-windows.log"
+        RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test con01_exit_detector_probe 2>&1 | tee "$RUNNER_TEMP/con01-probe-windows.log"
+        grep -F "CON01_DETECTOR_PROBE_PASS" "$RUNNER_TEMP/con01-probe-windows.log"
+      shell: bash
+    # Task #1086 (M6): each forced-page row is now self-verifying —
+    # without the grep, a typo'd RUSTFLAGS cfg name (e.g. `--cfg
+    # aligned_vmem_page_size_overide`) silently compiles the forced
+    # module OUT and the row still passes green on the file's ungated
+    # pure tests (exit 0 with 1-2 tests), the same vacuous-green class
+    # the local gate's expectWork/expectTest assertions exist for (tasks
+    # #1071/#1086). `bash -eo pipefail` (the Actions default when
+    # `shell: bash` is set) fails the step if cargo fails even through
+    # the tee pipe; the grep then fails it unless the forced test's name
+    # appears in the harness output.
+    #
+    # Task #1099/I4 (2026-08-18): the `$RUNNER_TEMP/<name>.log` path in
+    # these three rows is a mixed-separator Windows path
+    # (`D:\a\_temp/x.log`) handed to MSYS tee/grep under Actions'
+    # `shell: bash` (Git-for-Windows bash). Originally recorded here as
+    # UNVERIFIED on a real windows runner (the rows and the note landed
+    # in the same wave). VERIFIED since (task #1352, item 115's P2-2,
+    # 2026-08-25): CI run 32828560947 (green, landing SHA 774716e), this
+    # job (`test windows (production)`, job id 97741909197, conclusion
+    # success) executed exactly this pattern — the raw job log shows the
+    # tee command under `C:\Program Files\Git\bin\bash.EXE`, the tee'd
+    # cargo output, AND grep's own stdout echoing the found sentinel
+    # line, proving tee wrote and grep read the mixed-separator path on
+    # a real windows-latest runner. The same construction is used by the
+    # numa-shim-windows job's mock sentinel rows (task #1299/T8), which
+    # this receipt covers by identity of pattern/runner/shell; the
+    # failure mode if anything ever differs remains LOUD (a red step
+    # with grep/tee's "No such file" naming the path), not a silent
+    # green.
+    - run: |
+        cargo test --features "production small-segment-lazy-commit internals" --test lazy_initial_commit_forced_page 2>&1 | tee "$RUNNER_TEMP/forced-page-lazy.log"
+        grep -F "test forced_page::lazy_initial_commit_call_sites_survive_a_forced_64k_page ... ok" "$RUNNER_TEMP/forced-page-lazy.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
+    # Task #1081: the decomp-hook forced-page regression — drives the REAL
+    # R29-3 decommit/recommit hooks under simulated 16/64 KiB runtime pages
+    # (same override seam as the row above; the F6 small_meta_end()
+    # boundary violation is invisible on 4 KiB hosts by construction).
+    # Same task #1086 self-verifying shape as the row above.
+    - run: |
+        cargo test --features "production internals bench-internals" --test decomp_hooks_forced_page 2>&1 | tee "$RUNNER_TEMP/forced-page-decomp.log"
+        grep -F "test forced_page::decomp_hooks_decommit_recommit_page_aligned_under_forced_pages ... ok" "$RUNNER_TEMP/forced-page-decomp.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
+    # Task #1087: the segment-state reconciliation oracle
+    # (tests/segment_state_reconciliation_oracle.rs) — two rows mirroring
+    # the two verified invocation shapes: the LAZY arm on the host's real
+    # page (no RUSTFLAGS), and the FORCED-page arm through the same
+    # override seam as the rows above. Both carry the grep assertion:
+    # that file deliberately compiles ZERO tests in the (no-override,
+    # no-lazy) combination, so a dropped feature or a typo'd cfg would
+    # otherwise pass green on an empty binary.
+    - run: |
+        cargo test --features "production internals bench-internals small-segment-lazy-commit" --test segment_state_reconciliation_oracle 2>&1 | tee "$RUNNER_TEMP/reconciliation-lazy.log"
+        grep -F "test retain_decommitted_retained_meta_bytes_oracle_lazy_real_page ... ok" "$RUNNER_TEMP/reconciliation-lazy.log"
+      shell: bash
+    - run: |
+        cargo test --features "production internals bench-internals" --test segment_state_reconciliation_oracle 2>&1 | tee "$RUNNER_TEMP/reconciliation-forced.log"
+        grep -F "test retain_decommitted_retained_meta_bytes_oracle_forced_pages ... ok" "$RUNNER_TEMP/reconciliation-forced.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
+    # The magazine-in-isolation config (fastbin without decommit) exercises the
+    # commit-only Windows vmem path (no MEM_DECOMMIT), complementing the
+    # production run above.
+    - run: cargo test --features "alloc-global alloc-xthread fastbin internals" --no-fail-fast
+    # R13-5 (task #275): `large-reserved-capacity`'s whole benefit
+    # (deferred-commit reserved-capacity in-place `realloc` growth via
+    # `aligned_vmem::commit_range`) is documented as a "Windows-gated
+    # EFFECT" (see the feature's Cargo.toml doc comment) — the incremental
+    # `VirtualAlloc(MEM_COMMIT)` commit-range path only has real teeth on
+    # Windows (Unix/miri backends already commit the whole reservation
+    # eagerly). This feature was never run on a real Windows kernel in CI
+    # before. Requires `exact-span-large` transitively (Cargo feature
+    # dependency).
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh
+    - run: cargo test --features "production exact-span-large large-reserved-capacity internals" --no-fail-fast
+    # Task #858/F2: aligned-vmem crate Windows test coverage for the REAL
+    # backend (VirtualAlloc/MEM_COMMIT/MEM_DECOMMIT) on real Windows hardware.
+    # NOTE: historically this explicit list had to EXCLUDE `mock` — a
+    # non-additive backend-replacing feature, so `--all-features` turned it
+    # on and tested the mock recording stub instead of the real Windows
+    # backend. Since task #962 `mock` is not a Cargo feature at all (it is
+    # the --cfg aligned_vmem_mock build flag), so `--all-features` and this
+    # list both build the REAL backend; the explicit list is kept as the
+    # documented form. The mock-cfg row below covers the mock backend.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh
+    - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
+    # Task #858/F2: aligned-vmem crate mock coverage. Tests the mock recording
+    # backend itself (NOT the real VirtualAlloc/MEM_DECOMMIT backend) with all
+    # optional features enabled. This is the only row that runs tests/mock.rs.
+    # Since task #962 the mock backend is enabled via the build-time
+    # --cfg aligned_vmem_mock flag (RUSTFLAGS), not --all-features (which can
+    # no longer reach it).
+    # Task #1101: tee + grep postcondition (task #1086 shape) — both mock
+    # test FILES compile to zero tests on a typo'd cfg with exit 0, so the
+    # greps require one named test per file. The same task #1099/I4
+    # mixed-separator caveat that covers the forced-page rows' $RUNNER_TEMP
+    # paths above applies to this row's log path unchanged.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh
+    - run: |
+        cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/vmem-mock-debug.log"
+        grep -F "test records_reserve_and_decommit ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+        grep -F "test reentrancy_is_silently_dropped_with_outer_record_intact ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_mock"
+
+    # Run the member and compile-fail suites directly; verify the root
+    # scratch guard executes both Windows junction oracles without skipping.
+    - run: cargo test -p tagged-index-stack --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh
+    - run: cargo test --test tagged_index_stack_compile_fail --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh
+    - run: |
+        set -euo pipefail
+        cargo test --test tagged_index_stack_ab_runner_scratch_guard --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tis-ab-scratch-guard.log"
+        grep -F "test out_dir_rejection_is_value_independent ... ok" "$RUNNER_TEMP/tis-ab-scratch-guard.log"
+        grep -F "test scratch_root_junction_redirect_leaves_victim_canary_intact ... ok" "$RUNNER_TEMP/tis-ab-scratch-guard.log"
+        if grep -q "skipping: node not on PATH" "$RUNNER_TEMP/tis-ab-scratch-guard.log"; then echo "FATAL: scratch-guard tests skipped (node not on PATH) - green is vacuous"; exit 1; fi
+        if grep -q "skipping: directory symlinks/junctions unavailable" "$RUNNER_TEMP/tis-ab-scratch-guard.log"; then echo "FATAL: junction-branch tests skipped - the Windows branch this row exists for did not run"; exit 1; fi
+      shell: bash

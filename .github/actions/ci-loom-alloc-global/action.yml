@@ -1,0 +1,42 @@
+name: CI loom-alloc-global
+description: Original loom-alloc-global job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    # CRATE-P3: the four in-tree shadow-model harnesses
+    # (loom_bootstrap_cas, loom_chunk_cas, loom_overflow_sidecar_cas,
+    # loom_fallback_init) that each transcribed the `UNINIT -> INITIALIZING
+    # -> READY` CAS-publish/OOM-rollback protocol were collapsed into ONE
+    # suite that model-checks the REAL `once_ptr_cell::OncePtrCell` type (the
+    # extracted crate aliases its atomics to `loom` under `--cfg loom`). It
+    # runs against the crate directly (`-p once-ptr-cell`, no sefer
+    # features) — see the `loom_once_ptr_cell` step below.
+    # Real-type `ArrayIndexStack` loom coverage runs with the job-level
+    # `RUSTFLAGS: "--cfg loom"` and the crate's optional `loom` feature.
+    # The suite includes untagged-corruption and empty-transition tag-reset
+    # counterfactuals, so a broken model fails rather than passing
+    # vacuously. One named grep sentinel per loom-gated test target ensures
+    # each target actually ran; `shell: bash` preserves failure through the
+    # `tee` pipe.
+    - run: |
+        cargo test --release -p tagged-index-stack --features loom --test loom_aba 2>&1 | tee "$RUNNER_TEMP/loom-aba.log"
+        grep -F "test pop_empty_transition_preserves_tag ... ok" "$RUNNER_TEMP/loom-aba.log"
+      shell: bash
+    # The dedicated loom clippy row uses the same cfg and feature as the
+    # model test, so loom-gated library and test code is linted as well.
+    - run: cargo clippy -p tagged-index-stack --features loom --all-targets -- -D warnings
+    # Rustdoc must receive the cfg through RUSTDOCFLAGS; Cargo does not
+    # forward the job's RUSTFLAGS to the rustdoc invocation.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="--cfg loom -D warnings" cargo doc -p tagged-index-stack --features loom --no-deps --document-private-items
+    # CRATE-P3: real-type `OncePtrCell` loom suite (replaces the 4 shadow
+    # models above). Includes the Relaxed-publish and spin-on-READY-livelock
+    # `#[should_panic]` counterfactuals proving the harness is non-vacuous.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: |
+        cargo test --release -p once-ptr-cell --test loom_once_ptr_cell 2>&1 | tee "$RUNNER_TEMP/loom-once-ptr-cell.log"
+        grep -F "test real_probe_rollback_does_not_clobber_concurrent_winner ... ok" "$RUNNER_TEMP/loom-once-ptr-cell.log"
+      shell: bash

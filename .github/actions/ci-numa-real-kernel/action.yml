@@ -1,0 +1,54 @@
+name: CI numa-real-kernel
+description: Original numa-real-kernel job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Install numactl
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y numactl
+    - name: Probe host NUMA topology (informational)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        numactl --hardware
+        echo "---"
+        # On a single-NUMA Actions runner this shows 1 node.  That is expected
+        # and correct: the goal of this job is real-kernel compilation + runtime
+        # coverage, not multi-node correctness (Phase 2.1 follow-up handles that).
+        kvm-ok || true
+    - name: Build (production + numa-aware)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo build --features "production numa-aware"
+    # `internals` added (R34-3/task #522): all three test files reach
+    # `sefer_alloc::alloc_core::{numa, AllocCore}` directly.
+    - name: Compile numa_alloc tests
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production numa-aware internals" --test numa_alloc --no-run
+    - name: Compile numa_segment_id tests
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production numa-aware internals" --test numa_segment_id --no-run
+    - name: Compile numa_seam tests
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production numa-aware internals" --test numa_seam --no-run
+    - name: Run numa_alloc tests (env-guarded)
+      env:
+        SEFER_NUMA_TEST: "1"
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production numa-aware internals" --test numa_alloc -- --nocapture
+    - name: Run numa_segment_id tests
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production numa-aware internals" --test numa_segment_id -- --nocapture
+    - name: Run numa_seam tests
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production numa-aware internals" --test numa_seam -- --nocapture

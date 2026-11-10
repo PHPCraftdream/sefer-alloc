@@ -41,6 +41,9 @@ export const MIRI_TARGETS = [
   green('miri-core', 'j13b_advice_windows_native', 'production alloc-stats internals bench-internals lazy-commit-fault-injection', {
     marker: 'test advice_windows_reject_models_before_clocks_capture_or_payload ... ok',
   }),
+  green('miri-core', 'j13b_native_identity', '', {
+    marker: 'test process_facts_reject_models_before_files_commands_or_payload ... ok',
+  }),
   green('miri-core', 'j13b_build_seal', '', {
     marker: 'test duplicate_or_escaped_compiled_keys_cannot_silently_override ... ok',
   }),

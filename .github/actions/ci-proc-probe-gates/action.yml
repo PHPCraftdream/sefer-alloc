@@ -1,0 +1,88 @@
+name: CI proc-probe-gates
+description: Original proc-probe-gates job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+        # Installs the bare-metal target up front (the action's own target
+        # installation, equivalent to `rustup target add`).
+        targets: thumbv7em-none-eabi
+
+    - name: fmt
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo fmt -p proc-probe -- --check
+
+    - name: clippy (all targets, warnings as errors)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo clippy -p proc-probe --all-targets -- -D warnings
+
+    - name: clippy (--no-default-features, warnings as errors)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo clippy -p proc-probe --all-targets --no-default-features -- -D warnings
+
+    # The crate's own integration suite (`tests/protocol.rs`): parser-model
+    # round-trips, the real re-exec'd-child stdout-bytes contract, and the
+    # node-verified ECMAScript-regex agreement test. Post the std/no_std
+    # gating fix, the std-gated tests carry `#[cfg(feature = "std")]`, so
+    # the suite still runs (and is meaningful) in BOTH configurations.
+    # Sol-codex review round 2, P3-2: the node-verified interop test in
+    # tests/protocol.rs legitimately SKIPs when the shared parser module or
+    # a runnable node is absent (a published-crate checkout has no
+    # scripts/). This job runs a normal repository checkout where both
+    # exist, so a skip here would be a real bug: assert both preconditions
+    # up front so the skip path is structurally impossible in CI.
+    # Round-3 review P3-1: the test no longer reads `paired-ab-runner.mjs`
+    # at all — it dynamically imports and calls the REAL `parseResult`
+    # function from `paired-ab-parse-result.mjs` directly, so that is the
+    # file whose presence actually matters; the runner file is checked too
+    # since `paired-ab-runner.mjs` itself imports the shared module and a
+    # missing runner would indicate a broken checkout.
+    - name: precondition (node + shared parser module present for the interop test)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        node --version
+        test -f scripts/paired-ab-parse-result.mjs
+        test -f scripts/paired-ab-runner.mjs
+
+    - name: test (default std features)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test -p proc-probe --all-targets
+
+    # Feature-off configuration: the emit family and the proc-memstat
+    # re-export are compiled out; what survives is the `RESULT_PREFIX`
+    # protocol constant and the std-independent parser-model tests. This
+    # row catches a compile break or a name-resolution regression in the
+    # configuration a no_std consumer actually builds.
+    - name: test (--no-default-features)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test -p proc-probe --no-default-features --all-targets
+
+    # Both renders are warning-gated because the two feature configs
+    # produce different item sets (the std-gated re-export and emit-family
+    # docs vanish under --no-default-features).
+    - name: rustdoc (warnings as errors, default features)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo doc -p proc-probe --no-deps
+      env:
+        RUSTDOCFLAGS: -D warnings
+
+    - name: rustdoc (--no-default-features, warnings as errors)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo doc -p proc-probe --no-default-features --no-deps
+      env:
+        RUSTDOCFLAGS: -D warnings
+
+    - name: no_std bare-metal cross-build (thumbv7em-none-eabi)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo build -p proc-probe --no-default-features --target thumbv7em-none-eabi

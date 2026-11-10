@@ -2,6 +2,7 @@
 // Manifest contract: MIRI_TARGETS entries use job/test/pkg/features/model/borrows/
 // args/expect/marker/redMessage/redSite/card; WAIVED also requires reason.
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { effectiveWorkflow } from './ci/effective-workflow.mjs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -123,7 +124,7 @@ function shellTokens(s) {
   return [...s.matchAll(re)].map((m) => m[1] ?? m[2] ?? m[3]);
 }
 function ciRows() {
-  const text = uncomment(read('.github/workflows/ci.yml'), 'yaml');
+  const text = uncomment(effectiveWorkflow(root).text, 'yaml');
   const jobs = [...text.matchAll(/^  ([\w-]+):\s*$/gm)], rows = [];
   for (let j = 0; j < jobs.length; j++) {
     const job = jobs[j][1], body = text.slice(jobs[j].index, jobs[j + 1]?.index ?? text.length);

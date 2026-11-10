@@ -1,0 +1,46 @@
+name: CI tis-weak-memory-wallclock-gate
+description: Original tis-weak-memory-wallclock-gate job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+      with:
+        toolchain: 1.97.0
+        targets: x86_64-unknown-linux-gnu
+    # No Rust-test grep sentinel is needed: bash `pipefail` propagates the
+    # runner's exit status through `tee`, and the runner's Node output is not
+    # a Rust test oracle for the repository sentinel checker.
+    - name: Static x86_64 codegen A/B (identity oracles)
+      run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode codegen --target x86_64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-codegen-x86_64.log"
+      shell: bash
+    - name: Static aarch64 codegen A/B (identity + delta oracles)
+      run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode codegen --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-codegen-aarch64.log"
+      shell: bash
+    - name: Contended wall-clock A/B (retry-counter oracle)
+      run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode wallclock --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-wallclock.log"
+      shell: bash
+    # This is the independent ratio oracle: it recomputes medians from the
+    # sample rows and compares them with the producer's `ratio_vs_base`.
+    # Passing the aarch64 target selects this run's fresh wall-clock CSV;
+    # both codegen CSVs above are fresh legs from the same runner/rustc.
+    - name: Summary ratio oracle (re-derived medians vs recorded ratio_vs_base)
+      run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode summary --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-summary.log"
+      shell: bash
+    # `if: always()` is deliberate: a failed oracle run still uploads its
+    # raw logs so the failure can be diagnosed offline.
+    - name: Upload raw artifacts
+      if: always()
+      uses: actions/upload-artifact@v6
+      with:
+        name: tis-p3-ab-aarch64-artifacts
+        path: |
+          docs/perf/_raw_tis_p3_ab_aarch64-unknown-linux-gnu_codegen.log
+          docs/perf/_raw_tis_p3_ab_aarch64-unknown-linux-gnu_codegen.s.all
+          docs/perf/_raw_tis_p3_ab_x86_64-unknown-linux-gnu_codegen.log
+          docs/perf/_raw_tis_p3_ab_x86_64-unknown-linux-gnu_codegen.s.all
+          docs/perf/_raw_tis_p3_ab_aarch64-unknown-linux-gnu_wallclock.log
+          docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_aarch64-unknown-linux-gnu.csv
+          docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_x86_64-unknown-linux-gnu.csv
+          docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_wallclock_aarch64-unknown-linux-gnu.csv
+          docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_summary.csv
+        if-no-files-found: error

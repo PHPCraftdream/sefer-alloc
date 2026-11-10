@@ -1,0 +1,304 @@
+name: CI aligned-vmem-gates
+description: Original aligned-vmem-gates job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    # Task #846 proved this combination catches the inverted #[cfg_attr]
+    # dead_code bug that shipped undetected when only --all-features ran.
+    - run: cargo clippy -p aligned-vmem --all-targets -- -D warnings
+    # Task #1231: `huge-pages` WITHOUT `bench-internals`, on a Unix target.
+    # This runner IS the unix target, which is the whole point — the local
+    # gate's `--features huge-pages` row runs on the host (Windows), where
+    # the linux/android-gated tests are compiled out, so it is vacuous for
+    # this class.
+    #
+    # Every other row in this job that names `huge-pages` also names
+    # `bench-internals`, and so did every row in every other job (verified
+    # by enumeration, task #1231). That blind spot was not theoretical: a
+    # `SERIAL.lock()` use with no `#[cfg]` of its own, inside a test gated
+    # only on `any(linux, android) + huge-pages`, referenced a `static
+    # SERIAL` gated on `bench-internals` — E0425 in exactly this row,
+    # continuously from `2828e04` (task #1174, which introduced the test)
+    # until `5979275` (task #1223) closed it. Nothing built this row for
+    # that entire window.
+    #
+    # `--all-targets` is load-bearing: the weekly `feature-powerset` job
+    # DOES compile this feature combination for this crate, but with
+    # `--no-dev-deps`, so it builds lib+bins only and never `tests/` —
+    # blind to this defect class by construction.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo check -p aligned-vmem --all-targets --features huge-pages
+    # R1/Q3: Mock is no longer a Cargo feature (converted to the build-time
+    # --cfg aligned_vmem_mock flag in task #962), so --all-features no longer lints
+    # the MOCK arm instead. Both this named-feature row and the --all-features
+    # row above lint the real backend; the mock arm gets its own RUSTFLAGS row below.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --all-targets -- -D warnings
+    # Full feature set: lazy-commit (incl. the alloc-lazy-commit compat alias),
+    # huge-pages, fault-injection, bench-internals (all "off by default", so
+    # --all-features is the union). Real backend only — mock unreachable via
+    # features since task #962 (--cfg aligned_vmem_mock flag instead).
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p aligned-vmem --all-features --all-targets -- -D warnings
+    # Task #962: mock-arm clippy coverage. `mock` is no longer a Cargo
+    # feature (converted to the build-time `--cfg aligned_vmem_mock` flag —
+    # cfg flags do not unify across the dependency graph, unlike features),
+    # so `--all-features` no longer compiles the mock backend. This row
+    # lints the mock cfg arm explicitly, mirroring the rows below.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --all-targets -- -D warnings
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_mock"
+    # Basic sanity check that the crate's tests pass (library + integration
+    # tests; does NOT run benchmarks -- bench targets are not #[test] functions).
+    # Now runs the REAL backend since mock is cfg-gated off (task #962).
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p aligned-vmem --all-features
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - name: Pure advice event capture and ordered replay
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked -p aligned-vmem --release --features 'bench-internals fault-injection' --test advice_event_stream \
+          | tee "$RUNNER_TEMP/advice-event-stream-native.log"
+        grep -F 'test cursor_wrap_never_turns_failed_capture_into_an_empty_success ... ok' "$RUNNER_TEMP/advice-event-stream-native.log"
+        grep -F 'test result: ok. 9 passed; 0 failed;' "$RUNNER_TEMP/advice-event-stream-native.log"
+        cargo test --locked -p aligned-vmem --release --features bench-internals --test advice_event_replay \
+          | tee "$RUNNER_TEMP/advice-event-replay-native.log"
+        grep -F 'test unknown_release_and_partial_advice_never_yield_zero_or_repaired_rows ... ok' "$RUNNER_TEMP/advice-event-replay-native.log"
+        grep -F 'test result: ok. 9 passed; 0 failed;' "$RUNNER_TEMP/advice-event-replay-native.log"
+    - name: Pure per-window advice accounting (no native-boundary claim)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked -p aligned-vmem --release --features bench-internals --test advice_window \
+          | tee "$RUNNER_TEMP/advice-window-native.log"
+        grep -F "test historical_cumulative_peak_is_not_the_next_window_peak ... ok" "$RUNNER_TEMP/advice-window-native.log"
+        grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/advice-window-native.log"
+    - name: Pure accepted-advice lifetime ledger (no native-event claim)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked -p aligned-vmem --release --features bench-internals --test advice_lifetime_ledger \
+          | tee "$RUNNER_TEMP/advice-lifetime-ledger-native.log"
+        grep -F 'test unsupported_release_preserves_entries_and_never_recovers_via_retry_or_reuse ... ok' "$RUNNER_TEMP/advice-lifetime-ledger-native.log"
+        grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/advice-lifetime-ledger-native.log"
+    # Task #962: mock-backend test coverage under the `--cfg aligned_vmem_mock`
+    # build flag (previously this coverage came from `--all-features`, which
+    # can no longer turn on mock — it is not a Cargo feature anymore).
+    # Task #1101: tee + grep postcondition, same self-verifying shape as
+    # the mock-release row below — tests/mock.rs and
+    # tests/mock_reentrancy.rs are BOTH `#![cfg(aligned_vmem_mock)]`-gated
+    # at the top level, so a typo'd cfg compiles them to ZERO tests with
+    # exit 0 (green-and-dead); the two greps require one named test per
+    # FILE. `shell: bash` for -o pipefail (see the mock-release row).
+    - run: |
+        cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" 2>&1 | tee "$RUNNER_TEMP/vmem-mock-debug.log"
+        grep -F "test records_reserve_and_decommit ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+        grep -F "test reentrancy_is_silently_dropped_with_outer_record_intact ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_mock"
+    # Task #1086 (L10): the RELEASE half of the mock decommit-contract
+    # oracle — `method_records_nothing_for_a_violated_range_in_release_mock`
+    # (tests/reservation_decommit_contract.rs) is gated
+    # all(aligned_vmem_mock, not(debug_assertions)), and before this row no
+    # row anywhere combined the mock cfg with --release, so it executed
+    # nowhere. Scoped to the one test target to keep the release-compile
+    # cost minimal; the grep keeps the row self-verifying the same way the
+    # forced-page rows above are. Explicit `shell: bash` for `-o pipefail`
+    # (the linux default shell runs without it, which would let a cargo
+    # failure hide behind the tee pipeline's exit status).
+    - run: |
+        cargo test --release -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --test reservation_decommit_contract 2>&1 | tee "$RUNNER_TEMP/reservation-decommit-release-mock.log"
+        grep -F "test method_records_nothing_for_a_violated_range_in_release_mock ... ok" "$RUNNER_TEMP/reservation-decommit-release-mock.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_mock"
+    # Task #1141 (L2): the row above was the ONLY release-profile coverage
+    # this crate had, and it runs under `--cfg aligned_vmem_mock` against a
+    # single test target — so every `not(debug_assertions)` behaviour of the
+    # REAL Unix/Windows backends went untested in release. That gap matters
+    # more here than it would elsewhere: this crate's contract-violation
+    # tripwires are `debug_assert!`, i.e. precisely the code whose behaviour
+    # DIFFERS between profiles, and several public methods document a
+    # "silent no-op in release" half that no debug row can ever exercise.
+    # Kept as a SEPARATE row rather than folded into the mock one above: the
+    # mock row tests a different property (a violated contract must never
+    # reach the recorder), which the real backend cannot express.
+    # Self-verifying (tee + `grep -F`) for the same reason as its
+    # neighbours — a row that compiled zero tests would pass green and dead.
+    # The sentinel names a test present in EVERY feature configuration, so a
+    # feature change cannot silence it, and `scripts/verify-ci-sentinels.mjs`
+    # (task #1150) checks the string against that test's real attributes.
+    - run: |
+        cargo test -p aligned-vmem --all-features --release --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/vmem-release-real.log"
+        grep -F "test reserve_is_aligned_and_writable ... ok" "$RUNNER_TEMP/vmem-release-real.log"
+      shell: bash
+    # Task #1095 (H1): the page-size-override FLOOR test — the only test
+    # pinning the task #1085 fix (set_page_size_override must reject a page
+    # below the host's real one; a declared publication blocker). The test
+    # file is `#![cfg(aligned_vmem_page_size_override)]`-gated at the top
+    # level, so without the cfg it compiles ZERO tests and passes
+    # green-and-dead. The test-windows forced-page rows set that cfg but
+    # build only ROOT-crate test targets, and this job's -p aligned-vmem
+    # rows build the package's own test targets without the cfg — so before
+    # this row the test executed in no CI row anywhere (plain `cargo test
+    # -p aligned-vmem --all-features --test page_size_override` prints
+    # "running 0 tests"). Same task #1086 self-verifying shape as the
+    # mock-release row above (tee + grep -F under `shell: bash`, so
+    # -o pipefail applies); ubuntu's $RUNNER_TEMP is a clean POSIX path,
+    # so the Windows mixed-separator note in test-windows does not apply
+    # to this row.
+    - run: |
+        cargo test -p aligned-vmem --all-features --test page_size_override 2>&1 | tee "$RUNNER_TEMP/page-size-override.log"
+        grep -F "test override_floor_is_the_real_os_page_size ... ok" "$RUNNER_TEMP/page-size-override.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
+    # Task #1139: the failed-OS-page-size-query oracle — the only test
+    # pinning the fail-CLOSED poison (a failed query must NOT be folded to
+    # 4 KiB and cached as if it were a real answer). Same
+    # `#![cfg(aligned_vmem_page_size_override)]` top-level gate, and
+    # therefore the same green-and-dead hazard, as the floor row above, so
+    # it carries the same self-verifying tee + grep -F shape: the named test
+    # must actually RUN, not merely compile to an empty binary. It needs its
+    # own row rather than folding into the row above because cargo builds
+    # one `--test` target per invocation.
+    - run: |
+        cargo test -p aligned-vmem --all-features --test page_size_query_failure 2>&1 | tee "$RUNNER_TEMP/page-size-query-failure.log"
+        grep -F "test failed_os_page_size_query_fails_closed ... ok" "$RUNNER_TEMP/page-size-query-failure.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
+    # Task #1173/L1: the poison-must-not-PANIC oracle — the third member of
+    # this same family, and it arrived with the same hazard. Its file is
+    # `#![cfg(aligned_vmem_page_size_override)]`-gated too, so without this
+    # row `cargo test -p aligned-vmem --all-features --test
+    # decommit_poison_no_panic` compiles to an EMPTY binary and prints
+    # "running 0 tests" while reporting ok — measured, not assumed, before
+    # this row was added. It pins the removal of a `debug_assert!(false,
+    # ..)` that made `decommit` panic in debug builds under a poisoned
+    # page-size query, contradicting both `page_size()`'s rustdoc and the
+    # README's "never panics" list (which task #1145's own commit `4cba9c1`
+    # had already recorded panicking as a REJECTED design option). Same
+    # self-verifying tee + grep -F shape and its own row, for the same
+    # one-`--test`-target-per-invocation reason as the two rows above.
+    - run: |
+        cargo test -p aligned-vmem --all-features --test decommit_poison_no_panic 2>&1 | tee "$RUNNER_TEMP/decommit-poison-no-panic.log"
+        grep -F "test method_decommit_is_a_silent_no_op_under_poison ... ok" "$RUNNER_TEMP/decommit-poison-no-panic.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
+    # Task #851: miri compilation gate. NO miri interpreter required — this
+    # is just `cargo check` with the `miri` cfg set, which catches the
+    # E0308 tuple-arity mismatch that shipped in #844 and blocked 0.2.0.
+    # Since task #962, the mock cfg rides along (--cfg aligned_vmem_mock)
+    # to preserve the previously-incidental mock+miri type coverage.
+    - run: RUSTFLAGS="--cfg miri --cfg aligned_vmem_mock" cargo check -p aligned-vmem --all-features
+    # Finding II-14 (2026-08-16 prerelease audit): 32-bit Unix exact-size fast
+    # path has zero CI coverage. Add at least a compile-only check for i686
+    # to catch regressions in the cfg-gated `try_reserve_aligned_exact` path.
+    # Finding II-1 (2026-08-16 closing review): add musl 32-bit target to compile-verify
+    # that the correct `off_t` arm is selected (gated `not(target_env = "musl")`).
+    # Finding II-14 (2026-08-16 closing review): extend coverage to tests and optional features.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: rustup target add i686-unknown-linux-gnu
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo check --target i686-unknown-linux-gnu --all-targets --features "lazy-commit huge-pages fault-injection bench-internals" -p aligned-vmem
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: rustup target add i686-unknown-linux-musl
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo check --target i686-unknown-linux-musl --all-targets --features "lazy-commit huge-pages fault-injection bench-internals" -p aligned-vmem
+    # R6-6 (2026-08-16 aligned-vmem prerelease audit): doc warnings, packaging, and
+    # semver gates — matching sefer-region-gates' coverage. aligned-vmem has no
+    # path dependencies (empty [dependencies]), so full `cargo publish --dry-run`
+    # works without modification.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p aligned-vmem --all-features --no-deps
+    # Task #1142: `--all-features` above is the ONE feature set docs.rs never
+    # actually builds with — `package.metadata.docs.rs.features` in
+    # Cargo.toml deliberately pins a narrower, publication-facing set
+    # (`lazy-commit`/`huge-pages`/`fault-injection`, excluding
+    # `bench-internals`), so a warning-free `--all-features` row does not
+    # prove the docs that actually render on docs.rs are warning-free. Four
+    # `crate::bench_internals::huge_decommit_attempts` intra-doc links were
+    # dead exactly under that narrower set (bench_internals is compiled only
+    # under `bench-internals`) while invisible to both the row above and to
+    # plain `cargo doc` with no features, because default features carries
+    # two ADDITIONAL unrelated dead links (`reserve_aligned_huge`, gated on
+    # `huge-pages`, which IS in the docs.rs set and so is NOT dead there) —
+    # neither existing row is the configuration that ships. This row derives
+    # the exact feature list from Cargo.toml via `cargo metadata` + `jq`
+    # (both already available on `ubuntu-latest`; `jq` already used earlier
+    # in this same workflow) rather than hardcoding a second copy of the
+    # list, so the two cannot drift apart the way `Cargo.toml`'s own comment
+    # on that key already warns readers to keep in sync manually.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - name: docs.rs feature-set doc build (mirrors package.metadata.docs.rs, not --all-features)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -euo pipefail
+        FEATURES=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "aligned-vmem") | .metadata.docs.rs.features | join(",")')
+        echo "Derived docs.rs feature set: $FEATURES"
+        test -n "$FEATURES"
+        RUSTDOCFLAGS="-D warnings" cargo doc -p aligned-vmem --no-deps --features "$FEATURES"
+    - run: cargo publish --dry-run -p aligned-vmem
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - name: Install cargo-semver-checks
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-semver-checks
+    # aligned-vmem 0.1.0 is published on crates.io; cargo-semver-checks fetches
+    # that baseline from the registry automatically, no local tag needed.
+    #
+    # HONEST SCOPE FOR THE CURRENT 0.1.0 -> 0.2.0 DELTA: this step runs ZERO
+    # of its 254 lints today and therefore cannot fail today. Measured
+    # locally at task #1039 (verbatim output):
+    #
+    #   Checking aligned-vmem v0.1.0 -> v0.2.0 (major change)
+    #    Checked [   0.000s] 0 checks: 0 pass, 254 skip
+    #    Summary no semver update required
+    #
+    # The reason is structural, not a misconfiguration: for a 0.x crate a
+    # minor bump IS the major bump, so once the version is already 0.2.0
+    # every major-breaking lint is skipped as "already accounted for" --
+    # exactly what 0.2.0's documented BREAKING change
+    # (`Reservation::from_raw_parts` gained a `granted_huge` parameter, see
+    # crates/aligned-vmem/CHANGELOG.md) requires. The step is kept anyway because it
+    # becomes discriminating the moment 0.2.0 is the published baseline: a
+    # later 0.2.1/0.2.x that breaks API shape then fails here. Until then,
+    # do NOT read a green result from this step as "no unintended breaking
+    # changes" -- it is not evidence of that.
+    #
+    # Scope limit that survives the version bump (same caveat as the
+    # sefer-region step above): cargo-semver-checks compares the SHAPE of
+    # the public API from rustdoc JSON -- signatures, item presence/absence,
+    # trait impls. It does NOT analyze runtime/behavioral semantics, and it
+    # does NOT check whether the version in Cargo.toml is already published.
+    # No `|| true` and no `continue-on-error` here: when it does have teeth,
+    # it is a real gate.
+    - run: cargo semver-checks check-release --package aligned-vmem
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

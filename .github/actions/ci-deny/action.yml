@@ -1,0 +1,13 @@
+name: CI deny
+description: Original deny job steps
+runs:
+  using: composite
+  steps:
+    - name: Install cargo-deny
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-deny
+    - run: cargo deny check advisories
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

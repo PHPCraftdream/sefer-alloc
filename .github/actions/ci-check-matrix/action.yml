@@ -1,0 +1,212 @@
+name: CI check-matrix
+description: Original check-matrix job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+    # The reviewed hook-security contract survives protocol/test retirement
+    # as executable repository tooling with stale allowlist checks.
+    - run: node scripts/verify-dbg-hook-safety.mjs
+    # R6-T38: the parser/table self-test (synthetic negative fixtures) is
+    # not exercised by the plain main-mode run above.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-dbg-hook-safety.mjs --self-test
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-loom-target-wiring.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-miri-target-wiring.mjs
+    # CLAUDE.md structure limits: at most 7 entries per src directory and 1000
+    # lines per code file; existing debt is ratcheted by docs/structure_limits_baseline.csv.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-structure-limits.mjs
+    # The test rows link the whole tests/ tree once per feature set; without freeing the
+    # executables between rows the job loses its worker with "No space left on device".
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/run-check-matrix.mjs --keep-going --free-between-rows --kind check --kind test
+    # R30-5: the generated "feature ABSENT" compile-check enumeration for
+    # every conditionally-registered iai arm in benches/perf_gate_iai.rs —
+    # the mechanical, automatic form of the stub rule R29-16 violated by
+    # omission (see scripts/verify-perf-gate-stubs.mjs's header). This is a
+    # pure text-scan of the bench source (no cargo invocation), so it runs
+    # in well under a second — folded into this job rather than a separate
+    # one to avoid another checkout+toolchain for a sub-second check.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-perf-gate-stubs.mjs
+    # R31-5a (task #480): structural checks over every docs/perf/R*_*.md
+    # gate report — companion summary CSV cited actually exists, its
+    # commit/SHA field(s) are a real 40-hex SHA and not a prose
+    # placeholder (the exact defect class R30-6's placeholder and R29-13's
+    # invalid 63-char hash both were), and every cited `_raw_*.log`
+    # filename actually exists on disk (see scripts/verify-gate-report.mjs's
+    # header). Also a pure text/regex scan (no cargo invocation) — folded
+    # in next to verify-perf-gate-stubs for the same reason.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-gate-report.mjs
+    # Task #1131: the Linux/Android doc-drift pairing guard (created in
+    # the M1/task-#1105 wave; sibling of the vmem-doc-drift-guard step in
+    # scripts/check-all.mjs, which runs it locally). Pure text scan (no
+    # cargo invocation), sub-second — folded in next to the two text
+    # scans above for the same reason. This row is what gives the guard
+    # CI coverage: check-all.mjs is the LOCAL pre-push gate and is NOT
+    # invoked by any job in this workflow (every "check-all" mention
+    # above is a comment), so the local step alone would cover only
+    # pushes whose author ran `npm run check`. That coverage is
+    # conditional in the ordinary fail-fast way, shared with its sibling
+    # text scans: the row runs only if the job's earlier cargo step
+    # (`run-check-matrix.mjs`) passed, so a red cargo row fails the job
+    # before the guard ever runs. The guard ran under
+    # NO gate from creation through seven hardening tasks (#1105→#1130)
+    # because the wiring note in the creating agent's report reached no
+    # index (the R22-3 class) — see docs/CORRECTNESS_OPEN_ITEMS.md
+    # item 80. Android is not exercised in CI, so no runtime test can
+    # catch a "Linux-only" contract claim the pair-gated cfg also
+    # enforces on Android — only this static scan can (its own header).
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/vmem-linux-android-pairing-guard.mjs
+    # Task #1135 (MEDIUM): the #1131 row above closed the pairing
+    # guard's own gap but left it the ONLY vmem text guard with a CI
+    # row. The census this task ran was scoped to guard-shaped
+    # check-all.mjs steps that have NO substantive-check row anywhere
+    # in this workflow; under that scope it found seven such scripts,
+    # so this was never a one-off: under CLAUDE.md's R33-2 standard,
+    # check-all-only coverage covers only pushes whose author ran
+    # `npm run check`, which is exactly how main once stayed red for
+    # 70 commits. Measured per script — runtime, exit code, and input
+    # surface — the four PURE TEXT SCANS below earn rows (same shape
+    # as the three above: no cargo invocation, no build artifacts,
+    # 0.4-1.8 s measured, each demonstrated failing on a broken
+    # scratch copy before being added). The other three deliberately
+    # get NO row: argv-roundtrip-test is a self-test of lib.mjs's
+    # run() — the ONE run-check-matrix.mjs step in THIS job (above)
+    # already exercises run() transitively, so a regression there
+    # breaks that row loudly anyway. That transitive coverage is
+    # narrower than "every cargo row in this workflow": 62 of this
+    # workflow's ~93 `- run:` steps invoke `cargo` directly and never
+    # go through lib.mjs's run() at all — only this one job's step
+    # does. It is also narrower than "every argv shape
+    # argv-roundtrip-test.mjs checks": run-check-matrix.mjs's rows
+    # pass their `--features` value as a single argv element built by
+    # `rowToCargoArgs()` (scripts/check-matrix.mjs) — e.g. the
+    # `hardened medium-classes internals` row — which is the same
+    # whitespace-containing-value shape as
+    # argv-roundtrip-test.mjs:35's `'production alloc-stats
+    # bench-internals'` case (the DEP0190 shell:true
+    # whitespace-splitting regression the test exists to catch), so
+    # THAT class is genuinely exercised transitively. The test's other
+    # tricky shapes (apostrophe+quotes, tabs, `&`/`|`, `%`, parens,
+    # non-ASCII) never occur in any run-check-matrix.mjs argv and are
+    # NOT transitively covered by anything in this workflow — only the
+    # local check-all.mjs step actually runs them; stale-artifact-
+    # diagnosis's bare invocation is a no-op (its CLI acts only under
+    # --self-test) and the
+    # shared-CARGO_TARGET_DIR cross-checkout replay it diagnoses
+    # cannot occur on an ephemeral single-checkout runner;
+    # verify-internals-negative-boundary runs two `cargo build
+    # --example` invocations — a build-needing compile-fail oracle,
+    # not a text scan, and its feature set would add a fresh compile
+    # block to this job. Local steps for all seven remain in
+    # check-all.mjs.
+    #
+    # An EIGHTH check-all.mjs step of the same guard shape,
+    # `semver-checks (aligned-vmem, optional)` (which runs
+    # scripts/aligned-vmem-semver-check-optional.mjs), was outside
+    # this census's scope from the start and is not a gap it missed:
+    # unlike the seven above, this row already has a substantive CI
+    # counterpart — `cargo semver-checks check-release --package
+    # aligned-vmem` runs unconditionally at line 289 of this same
+    # file (the `aligned-vmem-gates` job). The check-all.mjs step is
+    # a SKIP-IF-TOOL-ABSENT wrapper around that exact command (see
+    # scripts/aligned-vmem-semver-check-optional.mjs: it execs
+    # `cargo semver-checks --version` first and exits 0 with an
+    # explanatory message if the tool is missing, never invoking the
+    # real check in that case) — so a CI-shaped invocation of the
+    # wrapper here would be provably vacuous on this runner (the
+    # substantive command already ran, unconditionally, earlier in
+    # the same workflow), the same "provably vacuous" category this
+    # commit already used to exclude stale-artifact-diagnosis above.
+    # docs/CORRECTNESS_OPEN_ITEMS.md item 82 discusses this script in
+    # the context of the census that found it outside scope; this
+    # comment's exclusion rationale stands on the evidence above
+    # independent of that index entry's own wording.
+    # H2 (task #572): EXHAUSTIVE structural check that every
+    # `AllocCore::dbg_*` method is gated behind `internals` or
+    # explicitly allowlisted — the many-method complement to the
+    # one-method compile-fail oracle (verify-internals-negative-
+    # boundary, local-only per the exclusion note above). Pure text
+    # scan of src/alloc_core/**/*.rs + tests/*.rs, ~0.8 s measured —
+    # folded in next to the text scans above for the same reason.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs
+    # R6/task #871: vmem doc-drift guard — the 5x-recurred
+    # unconditional "over-reserve"/"trim" sentence class in
+    # crates/aligned-vmem rustdoc / Cargo.toml / README.md. This is
+    # the exact sibling the #1131 row's comment names ("sibling of the
+    # vmem-doc-drift-guard step in scripts/check-all.mjs"); adding
+    # that row without this one was the asymmetry #1135 exists to
+    # close. Pure text scan, ~0.5 s measured.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/vmem-doc-drift-guard.mjs
+    # Task #1067/F7: exhaustive completeness check that every
+    # `pub fn ...() -> u64` counter accessor in
+    # crates/aligned-vmem/src/bench_internals/ is CALLED by
+    # tests/bench_internals_counters.rs — the hand-maintained list
+    # there had silently drifted before (15 accessors declared, 14
+    # referenced) while its own comment claimed exhaustiveness. Pure
+    # text scan, ~0.4 s measured.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs
+    # Tasks #1076 + #1080: static guard against the compile-time PAGE
+    # constant flowing into page_size()-validated argument positions —
+    # the class that escaped three times (#1067 mock.rs, #1074
+    # bootstrap+siblings, #1075 smoke.rs x4) and is invisible on every
+    # 4 KiB-page host, INCLUDING this ubuntu-latest runner, so no
+    # runtime test in this workflow can catch it either; only this
+    # static scan can. Scan set = tracked ∪ untracked-not-ignored via
+    # `git ls-files` (a read-only index query, same class of git use
+    # the commit-prefix-lint job below already makes; on a fresh
+    # checkout the untracked set is empty by construction). ~1.8 s
+    # measured.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-vmem-page-constant-call-sites.mjs
+    # Task #1150: static guard over every `grep -F "test <NAME> ... ok"`
+    # postcondition in THIS file — the sentinel string must stay
+    # byte-identical to what libtest actually prints for the named `fn`,
+    # which depends on that fn's real `#[should_panic]`/`#[ignore]`
+    # attributes. Task #1146 (commit 77efd3a) found and fixed six
+    # sentinels that named `#[should_panic]` tests in the plain "... ok"
+    # form — two loom jobs went red on every push despite every test in
+    # them passing — with nothing catching the drift automatically
+    # before that task. A guard with no gate row is this repo's
+    # most-repeated defect (see item 80/task #1131 in
+    # docs/CORRECTNESS_OPEN_ITEMS.md — a guard hardened across seven
+    # tasks with no CI row at all); this row is what keeps this guard
+    # from joining that class. Pure text scan (no cargo invocation) of
+    # this workflow file plus tests/*.rs / crates/*/tests/*.rs — folded
+    # in next to the other text scans above for the same reason. See
+    # scripts/verify-ci-sentinels.mjs's own header for the full design
+    # and its documented does/does-NOT-cover split (also recorded in
+    # docs/CORRECTNESS_OPEN_ITEMS.md item 85).
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-ci-sentinels.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-root-package-list.mjs
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

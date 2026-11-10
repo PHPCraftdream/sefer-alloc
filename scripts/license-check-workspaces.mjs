@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { effectiveWorkflow } from './ci/effective-workflow.mjs';
 
 /** Third-party GitHub Actions: owner/repo -> SPDX expression of its repository license. */
 export const ACTIONS = {
@@ -74,6 +75,13 @@ export function problems({ files, deny, actions = ACTIONS }) {
     if (!(lock in files)) out.push(`uncovered workspace: ${path} has [workspace] but no tracked ${lock}`);
   }
   const workflows = Object.fromEntries(Object.entries(files).filter(([p]) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p)));
+  for (const [file, body] of Object.entries(workflows)) {
+    if (!body.includes('./.github/actions/ci-')) continue;
+    workflows[file] = effectiveWorkflow('.', { source: file, read: path => {
+      assert(Object.hasOwn(files, path), `missing local action source: ${path}`);
+      return text(files[path]);
+    } }).text;
+  }
   const uses = actionUses(workflows);
   for (const [repo, at] of uses) {
     if (!(repo in actions)) out.push(`action not in ACTIONS: ${repo} (${at[0]})`);
@@ -136,7 +144,7 @@ if (isMain) {
   } else if (process.argv.includes('--list')) {
     for (const d of lockDirs(trackedFiles())) console.log(d);
   } else if (process.argv.includes('--check')) {
-    const paths = trackedFiles().filter((p) => /(^|\/)Cargo\.(toml|lock)$|^\.github\/workflows\/[^/]+\.ya?ml$/.test(p));
+    const paths = trackedFiles().filter((p) => /(^|\/)Cargo\.(toml|lock)$|^\.github\/workflows\/[^/]+\.ya?ml$|^\.github\/actions\/ci-[^/]+\/action\.yml$/.test(p));
     const files = Object.fromEntries(paths.map((p) => [p, /Cargo\.lock$/.test(p) ? '' : readFileSync(p, 'utf8')]));
     const found = problems({ files, deny: readFileSync('deny.toml', 'utf8') });
     for (const p of found) console.error(`[license-check-workspaces] ${p}`);

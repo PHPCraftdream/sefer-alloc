@@ -1,0 +1,306 @@
+{
+  "schema": "ci.decomposition.v1",
+  "orchestration": "1710f4543f7933e85dc371d9ccc22bd27049d78bfb7fb00542234f4543f6897f",
+  "jobs": [
+    {
+      "id": "changes",
+      "metadata": "5fdc4df89b32fe8cdc9793270be9afc3d12d4703861893428694996f873e490d",
+      "steps": "854b980fc29d488ba0f3fb25987ed63e036b21a3c5b19b593cd79cc7cd885238"
+    },
+    {
+      "id": "j13b-judge-preparation",
+      "metadata": "12d71f089526cbe2378fed9277d7308920358924748ce4a3b8b08b4657f3f755",
+      "steps": "7bb9cdc76aa9d3ebaedd745adba473e1a5b51656e65367b7216492926fd2b815"
+    },
+    {
+      "id": "select-tests",
+      "metadata": "78d3b7f57f371b74a268835a37cd35dac982ad226edbd32c2fc6eb648c94a0ee",
+      "steps": "9c9d30ddc94b516b4bf7335efd002d919356d4b87ec3c1d6bbd41ff28fbc9895"
+    },
+    {
+      "id": "docs-consistency",
+      "metadata": "bab66112fe14c287ea446fa3f5f9ca0e6c9e8c8d21a969249302650dce4fbe2d",
+      "steps": "472b14afe9d63801439fa02f8c32495740c8cfaa25d8ac37e34e0640f9fc460a"
+    },
+    {
+      "id": "ghost-guard",
+      "metadata": "8b2ec8829d0c6313790165d9b067ad9f9bd8b127f1a90d6fd3d22ae844d82632",
+      "steps": "c6053a2bffd0299a37ff1b82c8bdc5d2cb7cef00ff877656a8b94d91acb79458"
+    },
+    {
+      "id": "ghost-zero-cost",
+      "metadata": "055ddd36180a734ac05453318cea329083091a7c4c6eae4faa949ee2de8b614e",
+      "steps": "ff931dfce7d25bb22735a305fba5df89a9580b4e0e9bd4633fa67d310c7f84be"
+    },
+    {
+      "id": "fmt",
+      "metadata": "136c7dadba382f69609752bd6ed35ac6414c849167cd3161ca73140f8fdbaf0d",
+      "steps": "eddf43ff6ef2f7c03560d90c2039c48a9dff53c71703fa4de09f77d43375c89f"
+    },
+    {
+      "id": "sefer-region-gates",
+      "metadata": "20ed58defd1d39070d5e62158505813cf2d9ee04b5d3a14bd853e59177ff9112",
+      "steps": "69ce83d5a8f4a474e06c3204f4f0bfa9ade5f6412217e98915024c68cf045a78"
+    },
+    {
+      "id": "aligned-vmem-gates",
+      "metadata": "c8db2d68caea96f46e830d1ef3f80d576309de5b39040ad72369b81d31030abf",
+      "steps": "b3405a42160263b5b0a72d35b3bb99ecf6058dc142c9aba638d8723d7a10cce5"
+    },
+    {
+      "id": "aligned-vmem-hugetlb-real",
+      "metadata": "1757169945974752b48a0d6b4abbc81e01ceecf46066ef3f1f0dfa561c8a3de9",
+      "steps": "bdabb90efecbac045586227814e57aa516756fee6d115073a0d9f248b6c8cb42"
+    },
+    {
+      "id": "aligned-vmem-miri",
+      "metadata": "5e13a3e793258b10929fa3b88c6183f3a8af3269c188b83629acf1086bc11bea",
+      "steps": "00c5693d5cef9c128a899df2431b00d31bb9b4e8c70ed8d05d9c5cfb03358f0b"
+    },
+    {
+      "id": "once-ptr-cell-gates",
+      "metadata": "2c69849bdf063d17102370204385a273ce9c4cb7847a52c27045a89f1c1f8c67",
+      "steps": "f8064ce42ddc680bf7c2e8d2344f0d029e71a3b85ad15e6e51c75a106a587a71"
+    },
+    {
+      "id": "size-classes-gates",
+      "metadata": "18d7d0166bddad64da52be70514c1a7c7e4b29c91d5a30517d3c70b2f36f607b",
+      "steps": "47bbd53cb31e75e6622f24be4587d723fca2ea04ab9189882cf958268fc006b8"
+    },
+    {
+      "id": "tagged-index-stack-gates",
+      "metadata": "c2971355fc744398541f7d4ff79f900cf0e9b825fe990c16d9b6e1b9523f2f3e",
+      "steps": "549263a358614e30f15b4e9828dd7b5dde25b8f0ee072ec72d3ba8aee44fa921"
+    },
+    {
+      "id": "once-ptr-cell-miri",
+      "metadata": "c00683be9a3ad54a2cf66541ab279d93127548576b533513298a419225767e03",
+      "steps": "541f7e8035226bd44c32a074da25c8c4101554f1be2976a26f158c682777589e"
+    },
+    {
+      "id": "globalalloc-model-miri",
+      "metadata": "e50e7110d0e7b60ac6bf1ba5d91862a97e4192f5c8a342cd2f8654e8cb0dffb4",
+      "steps": "a37bf7105a05389262e2c9bb327281dc7e0d25fdf15c05597aa8fd6112733e10"
+    },
+    {
+      "id": "proc-memstat-gates",
+      "metadata": "95153a650abd162554a461ab4755753ad27482889a932ee4ac40dc3544ad5aa8",
+      "steps": "cf7d41236be328dd3b0f06472014652bb8c568ef11b256a2f5c5b23260423639"
+    },
+    {
+      "id": "proc-probe-gates",
+      "metadata": "911cf97d13009e895506063e694367397d74f7b3ca8d0d8691a2e1820b60c6fe",
+      "steps": "f9a880c7b558417c8ca5cdd950d07c394ad0e3ef8b6c8e0bc51965f04c89a5bf"
+    },
+    {
+      "id": "clippy",
+      "metadata": "41e58bbafed8c1e7e57f247df6cf9037a129fe984525568bf7b866ae2b645fca",
+      "steps": "2fa385e7a75793a6227cdcd48a65bdac2db50a3a1b11a3b5ea53344de77cddd2"
+    },
+    {
+      "id": "evidence-registry",
+      "metadata": "6e55377e776d6d3caee8e1c9a6a70807ccf67c85dc08ecfe7979395d3bc85a3d",
+      "steps": "fcb74328b322ca3e81e58319827f5bbf4fdb35c1cd4388f2f5f6760669a7916b"
+    },
+    {
+      "id": "check-matrix",
+      "metadata": "1cc513406c3461396ab7a79fb19e8cdf618beb409da1b02fdbf39cd8e2a7cbf2",
+      "steps": "891fee9fc22279b775aea649d567eea161beb00a4c58d5254d1004e7bd0d141a"
+    },
+    {
+      "id": "commit-prefix-lint",
+      "metadata": "26ac45d22236bc4c52cea7918162ceb696d77d0c3160914074c495cd26f28e2a",
+      "steps": "cc8750f9c6554fa105faa7bc5ca139f7785ca3385ba4d012846cd6d67c140232"
+    },
+    {
+      "id": "test-ghost",
+      "metadata": "960eda003a8184ece265187265eba44310a5ab84e636f1fd64512240b3a077cb",
+      "steps": "c9a6c96876ff51f93fcf86ab128c34d475a49e04095af9b109870d898c464c79"
+    },
+    {
+      "id": "test-core",
+      "metadata": "06d2f0cb10fd4c5ed0cadced022379bd8810a298e2a30bcdab592b09a3b2963a",
+      "steps": "5dd67f57d9ad51601839517abde24d76f69793f8ebf7a2a2c06b11ccfb7c279c"
+    },
+    {
+      "id": "test-xthread",
+      "metadata": "de4f964768826fcf1fc6ea63cb44ecf9e8a5f1c7cea4828170e0ac3995a7096b",
+      "steps": "34856a5ab5172425428398b0a514d3656a3b5beaf1151628f989c16dbb8a7e82"
+    },
+    {
+      "id": "test-hardened",
+      "metadata": "1eb197d121330cca86e6854cb863463f96f8ce003dbe102d0ea15dac622b19f4",
+      "steps": "7d5cd6f64fdef19b3f2b197ecdc28abaaea4a9d71d63d539f948b0c86027e944"
+    },
+    {
+      "id": "test-gated-bodies",
+      "metadata": "61222e0f5d3702b02c75aa4e0b43fac345d8309d50bbee18532c05abedb01c7d",
+      "steps": "db250be9317a2bb9e62e51eb499b0c20e32ac07d142c536d2bd6e260b2bafac3"
+    },
+    {
+      "id": "test-feature-isolation",
+      "metadata": "f3e489ec158926ed67ffcae91488bdeb09d1079a754e507d78980c0494928148",
+      "steps": "59fbe43f91d93e870a985f25a475f5a211ac8802941257fc4086be7b29b66544"
+    },
+    {
+      "id": "global-regressions",
+      "metadata": "ef3650f66acc2cd55d6e289e3466e4452146ae822c175e97cbe6cb7e6639cd0c",
+      "steps": "5087f6e2ce413dc1482c5433433c9d1664e1fdaabdde38bf89515053d05bf7df"
+    },
+    {
+      "id": "test-windows",
+      "metadata": "84448d4d595d97d33c7d1b6321b1c0d2ebefd1e1574559476b170cbdc6e479a7",
+      "steps": "61add0e83b7d9134ad3ec7fe8700b195f912dbbe7a1c418ed5813f1b20444e2a"
+    },
+    {
+      "id": "test-macos",
+      "metadata": "c4f2c6db7cc292f859737dbddbc9eccb2b1332ec7985d443f7f0e8c56b880c71",
+      "steps": "e6d511e9cc8155b6e0dead2f3c92cad0fae743c0d88e3bff203c044aca1b38d8"
+    },
+    {
+      "id": "test-workspace",
+      "metadata": "40acb2def9c00e7827fc537b4c072de5aeb03e833f296ff336f68eb1847f82eb",
+      "steps": "d8004c7bd764f01d601f4ad6f6be85883f78959fe8af28ef95e383c7c7d6948a"
+    },
+    {
+      "id": "msrv",
+      "metadata": "82d6c581574793f7d7793be181f1c858dd5b4dd6c3643e0c5cf321fce9fb1934",
+      "steps": "690eca6903f11f2369c6632a70e3917c96cc990da83867028b1bd1897286df05"
+    },
+    {
+      "id": "msrv-runtime-windows",
+      "metadata": "10b51c87cae48dd2f3645924acf8961d993e312da1019a5da6e3466ca101d577",
+      "steps": "49a7133a0438f638e34f401c844c62cce306a5b26d8c122abcfbc44b72dd0a77"
+    },
+    {
+      "id": "no_std",
+      "metadata": "19d8b96268b75430d9110f9edb3f7d55342621700f4e62d4597134785ae4110f",
+      "steps": "b5cf1d06f4a2deab288789e014769d6a4c3f0b3fe0760b5d25336c0370d6ceaa"
+    },
+    {
+      "id": "miri-core",
+      "metadata": "d5a2b2aa6ec17581e843b939902a642406b03b621c21480bafdfdf1954b01439",
+      "steps": "ddfc5432cf8d0c4d7cd3cab3341fc70efb6dfe409c04457fd0f1a2ff37f59efa"
+    },
+    {
+      "id": "miri-core-tb",
+      "metadata": "813f7f4084563c0ae4dc64897e7786530e2bdbd434af41bf572feea276930c59",
+      "steps": "b6a3d4f58ff1220d247ed72c43971cedbcffae715aa2cd174bb0c38a0d31c4bf"
+    },
+    {
+      "id": "miri-alloc-core",
+      "metadata": "fca5e53b3bbe65abfcbd81b03cdb179013a319bd0471fb7c79ce7ec63b823f5c",
+      "steps": "6920ffebd51a6ffb626a81b4a8744bf9c702e5483654bffa1c3581ff1a58dab7"
+    },
+    {
+      "id": "miri-fastbin",
+      "metadata": "98cfa723d190664459b8afcb538e77fef539ae7234fc2f86f372d44ca3e388ee",
+      "steps": "c3d95d2a15495ef1a65c27dac3078d9b1969257999e6cf07ed039090548813a8"
+    },
+    {
+      "id": "miri-plain",
+      "metadata": "d3486fc6047f4cfa983cad90e19f0a16ed21021bf0b02ee560c5fb071358a16b",
+      "steps": "e33855e2bda6b8b2772f6fe12d43681298f4bcc7aa1d60cc9de9ee89b29183a0"
+    },
+    {
+      "id": "kani",
+      "metadata": "71d4b71216c99bccfe28ef34e2639d0a4201b4081d7d706673238bdd0678e7a9",
+      "steps": "1402fce042d099767d1efec01199f30a043cfc064de5de7a1424344b4f43a88e"
+    },
+    {
+      "id": "loom-alloc-global",
+      "metadata": "42da5b8f07f78d2f1564112d19270086583bd053b721fa0f86aebffc96b55e01",
+      "steps": "0123eb675d36df932b99bb8167c460e0e97f058b10900b449228c4b6db8b8843"
+    },
+    {
+      "id": "loom-xthread",
+      "metadata": "65632a4ecdc7dbb25657a1c505a9dbfe0d3e420dea67daeeeecd62ad3ecb90ab",
+      "steps": "9e63cabb1074d7320409a976603c9a57de923ff3243321fe355e77a18d28cd0a"
+    },
+    {
+      "id": "loom-experimental",
+      "metadata": "4aa258a320648753f9841b9012e7bab8631fac7b378d66ef68d7692ec1a058f5",
+      "steps": "6720c451e0a2a2d7a687cb76acc434ba4190e201ff0c60d1dba5851fbcb5197b"
+    },
+    {
+      "id": "loom-misc",
+      "metadata": "15ef87f7472f1e1ad5cc83ea19f57c8b6c2da9fc50f44beb77e6f5ae18888bab",
+      "steps": "afff72c077fc271032bea848fb3a7ccffb706b45692ab1b6b57f830041277dcb"
+    },
+    {
+      "id": "tsan",
+      "metadata": "09e7ac02a557bf6578afe35602472e45134a7701a24957bcee5923ba06d8f316",
+      "steps": "7269a632e9270d612fcbdef86688916f0502638ef2b531253ed716142b4b838c"
+    },
+    {
+      "id": "asan",
+      "metadata": "a48b9330f29142aabde44e316bbe2914d83f4d79268367210bfd8cf7235eb518",
+      "steps": "a4faf7ccc2dcdfd0988be7fb5854821c7d3eb45f0653e568b5ff35c1ef7bd3a8"
+    },
+    {
+      "id": "multi-arch",
+      "metadata": "1cfff8db0d27c7a0ddd533ca4c60f67a1b3b29f200e7449d60414201f5cb4f7a",
+      "steps": "fbc519ca5ffbbbcfd33ab90d2b79c78e4ecf7eb13d554cd2bcb33e1ad547e754"
+    },
+    {
+      "id": "tis-weak-memory-wallclock-gate",
+      "metadata": "9289b7ebe27017efb56dfbae29e850a02a067c32fc8bb8615bb7004c55e87e2b",
+      "steps": "45bfb6cabaccea7cbcad281992d9050467c464865bdf78775a4496c999d5565a"
+    },
+    {
+      "id": "numa-shim-mock",
+      "metadata": "38ade7f9a712031b0eaa45ee22efd41b95c28f186af81c3cf552b58efef70cbc",
+      "steps": "38946ed71db270bcf236031bb72764c97091afd5cb5865ff8598136c9901dc49"
+    },
+    {
+      "id": "numa-shim-windows",
+      "metadata": "ac71971faeca87c0fb0dc266bb5b36f18e7735371e4b3393eae4662ebfbd7ced",
+      "steps": "df5516a09905a36c1104466c457d827b777f8b7f15153e18340317e240937e77"
+    },
+    {
+      "id": "numa-shim-macos",
+      "metadata": "5edbae551655c61bce4e1bbbbb4f10bc75943ce6f114d738127a21c8dc2e43d6",
+      "steps": "532bcecca338f15c7dd3b54354dc5ad435c30032045ebae1beefb802b4cd5d0c"
+    },
+    {
+      "id": "numa-shim-macos-miri",
+      "metadata": "eb98612e7ab2a4a6db0c0f41b2d82d6bff25f172ae52548a0f1d58868f6a2871",
+      "steps": "d0a38878ece0712e184efa331da743b7ef461389824dfa10ec5dcd1e8e605b09"
+    },
+    {
+      "id": "numa-real-kernel",
+      "metadata": "c617f47ca04f25ed0228b6f1824d60a637c6a3ff011c741bbdee1bc29700a81c",
+      "steps": "86bcdf15019573741875ded48251da7f5769f5b08451f28c5da2593b64ca550d"
+    },
+    {
+      "id": "fuzz-build",
+      "metadata": "5541c5621790169a2804f378e435cefb8207f0315aba7257a44512e557b8b80c",
+      "steps": "98b1af712bf4bcb786545ff9d743ba6f22418f046637e56ab7a6b8d8a0e880cc"
+    },
+    {
+      "id": "fuzz-run",
+      "metadata": "ba29cdef5bf9d3ed05b33bd283acdc0e6ebb79cd2766f77aae6690be91fd6cec",
+      "steps": "1e49f05f15919831f626c74991d6ad905d0240176c009939dd56f4ebf69c7ea8"
+    },
+    {
+      "id": "docs",
+      "metadata": "90ab5c0352321f8797cd6db870073ddd1ba89b434edcddee6d4b0d9d55f676f8",
+      "steps": "4515ad7c71648e111e910b4c16ea0a94f087eb66a5e319352f3883be6d3016c2"
+    },
+    {
+      "id": "deny",
+      "metadata": "151444ecd7173171f015c02e4a409752a1eb7e1f8255bc9fc711961acba351e4",
+      "steps": "9dff37e4763f4f08a126623179b88622f3d9ca18c312b5a152e49709a239a9bc"
+    },
+    {
+      "id": "licenses",
+      "metadata": "7c1604a61cf0a5c0925ac12f1973dabc6f44ef4bcb76053369b8d282da59960c",
+      "steps": "bea12161c006948aa5138bae95636fc74b5346390744f0b68265853cc7832f88"
+    },
+    {
+      "id": "feature-powerset",
+      "metadata": "6d96f2053dfd396de747b01eb80f6feaff43f1465f0a469adf28e4fdabc745f8",
+      "steps": "004aabfbfee9277d436c8fcea3b469ccf52f7ab0b10d764bd48bc97361d11500"
+    }
+  ]
+}

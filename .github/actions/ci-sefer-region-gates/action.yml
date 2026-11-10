@@ -1,0 +1,92 @@
+name: CI sefer-region-gates
+description: Original sefer-region-gates job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo clippy -p sefer-region --all-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p sefer-region --no-default-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p sefer-region --all-features --no-deps
+    # F15's "host tests under --no-default-features" -- the existing
+    # test-workspace job only cross-BUILDS this configuration for the
+    # bare-metal target; it never TESTS it on a host target with std
+    # (SyncRegion, all `#[cfg(feature = "std")]` code) compiled out.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p sefer-region --no-default-features
+    # Packaging verification -- confirms the crate packages and its
+    # isolated build succeeds against the published manifest. This is
+    # NOT the same guarantee as F14's "run the benchmark from an
+    # extracted tarball with no ancestor workspace" concern (that
+    # would additionally require extracting the tarball to a scratch
+    # directory and running `cargo bench` there, which is not automated
+    # here -- see region_bench.rs's own comment on why: bench-scale-tool
+    # 0.1.0 exposes no public API to redirect its manifest path, so the
+    # exposure the finding describes is upstream, not fixable from this
+    # step).
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo publish --dry-run -p sefer-region
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - name: Install cargo-semver-checks
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-semver-checks
+    # sefer-region 0.1.0 is published on crates.io (task #785/F1's own
+    # finding); cargo-semver-checks fetches that baseline from the
+    # registry automatically, no local tag needed.
+    #
+    # Scope of this gate (task #806/F3 -- corrected from an earlier comment
+    # that overstated it): cargo-semver-checks compares the *shape* of the
+    # public API from rustdoc JSON -- signatures, item presence/absence,
+    # trait impls -- against the last published baseline. It does NOT
+    # analyze runtime/behavioral semantics (e.g. task #802/F2's Handle<T>
+    # cross-Region-identity change was a real breaking change in behavior
+    # that this tool reported as "no change; assume minor" / "no semver
+    # update required", because the public signatures involved did not
+    # change shape). It also does NOT check whether the version in
+    # Cargo.toml has already been published -- that is a distinct concern
+    # checked separately by the named step below so the two failure
+    # classes are distinguishable in the Actions UI. A real failure from
+    # this step is still a real gate for the class of bug it DOES cover --
+    # no `|| true` swallowing it.
+    - run: cargo semver-checks check-release --package sefer-region
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - name: Check whether this version is already published
+      # Distinct concern from cargo-semver-checks above (see that step's
+      # comment): this checks whether the version currently in
+      # crates/sefer-region/Cargo.toml is already present in the crates.io
+      # sparse index, which cargo-semver-checks does not check and a
+      # rustdoc-shape-only "no change" verdict can coexist with.
+      #
+      # Non-blocking by design (task #865-followup): sefer-region 0.2.0
+      # was published between rounds, and this job runs on every push to
+      # `main`, not just on a release commit -- a hard `exit 1` here made
+      # every ordinary post-release push permanently red until the next
+      # intentional version bump, which is the expected steady state, not
+      # a regression. Downgraded to a `::warning::` annotation: the actual
+      # backstop against publishing an already-taken version still exists
+      # independent of this step -- `cargo publish` itself rejects an
+      # already-taken version at crates.io, so nothing is unguarded by
+      # making this informational. Bump the version in
+      # crates/sefer-region/Cargo.toml only when actually preparing a new
+      # release, not to silence this warning.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -euo pipefail
+        version=$(cargo metadata --format-version=1 --no-deps \
+          | jq -r '.packages[] | select(.name == "sefer-region") | .version')
+        echo "Local sefer-region version: $version"
+        index_json=$(curl -sSf https://index.crates.io/se/fe/sefer-region)
+        if echo "$index_json" | jq -e --arg v "$version" 'select(.vers == $v)' >/dev/null; then
+          echo "::warning::sefer-region $version is already published on crates.io. This is expected on ordinary commits after a release -- CI does not block on it (an actual \`cargo publish\` of an already-taken version fails at crates.io itself regardless). Bump the version in crates/sefer-region/Cargo.toml only when preparing an actual new release."
+        else
+          echo "OK: sefer-region $version is not yet on crates.io."
+        fi

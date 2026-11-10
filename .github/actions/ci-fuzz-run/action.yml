@@ -1,0 +1,70 @@
+name: CI fuzz-run
+description: Original fuzz-run job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        # Same musl/gnu-target note as `fuzz-build` above: cargo-fuzz links
+        # against the prebuilt std of the build target; the runner's default
+        # resolves to x86_64-unknown-linux-musl whose std is NOT installed
+        # (E0463). Force the gnu target (its std ships with the toolchain).
+        targets: x86_64-unknown-linux-gnu
+        components: rust-src, llvm-tools-preview
+    - name: Configure fuzz symbolization
+      shell: bash
+      run: |
+        set -euo pipefail
+        host=$(rustc +nightly -vV | sed -n 's/^host: //p')
+        symbolizer="$(rustc +nightly --print sysroot)/lib/rustlib/$host/bin/llvm-symbolizer"
+        # Some llvm-tools-preview distributions do not ship llvm-symbolizer.
+        if [[ ! -x "$symbolizer" ]]; then
+          symbolizer=$(command -v llvm-symbolizer || true)
+        fi
+        if [[ ! -x "$symbolizer" ]]; then
+          for candidate in /usr/bin/llvm-symbolizer-[0-9]*; do
+            if [[ -x "$candidate" ]]; then symbolizer="$candidate"; break; fi
+          done
+        fi
+        # ASan supports binutils addr2line when explicitly enabled.
+        if [[ ! -x "$symbolizer" ]]; then
+          symbolizer=$(command -v addr2line)
+        fi
+        test -x "$symbolizer"
+        echo "ASAN_SYMBOLIZER_PATH=$symbolizer" >> "$GITHUB_ENV"
+        echo "ASAN_OPTIONS=symbolize=1:allow_addr2line=1" >> "$GITHUB_ENV"
+    - name: Install cargo-fuzz
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-fuzz
+    # Each target runs for 10 min (libFuzzer's -max_total_time bounds the wall
+    # clock). cargo-fuzz auto-discovers each target's seed corpus from
+    # fuzz/corpus/<target>/. A crash (ASAN/UB/panic) exits non-zero and fails
+    # the step — exactly the signal this weekly gate exists to produce. The
+    # runner is ephemeral, so any new corpus entries or crash artifacts
+    # written during the run are discarded (the committed seeds are the stable
+    # starting point).
+    - name: fuzz run region_ops (10 min)
+      working-directory: fuzz
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo +nightly fuzz run region_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
+    - name: fuzz run global_alloc_ops (10 min)
+      working-directory: fuzz
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo +nightly fuzz run global_alloc_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
+    - name: fuzz run heap_core_ops (10 min)
+      working-directory: fuzz
+      env:
+        LSAN_OPTIONS: suppressions=${{ github.workspace }}/fuzz/lsan.supp:print_suppressions=1
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo +nightly fuzz run heap_core_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
+    # NL-3: safe-only operation sequences with cross-thread handoff; the oracle is
+    # the whole-buffer pattern and exactly-once retirement.
+    - name: fuzz run safe_global_alloc_ops (10 min)
+      working-directory: fuzz
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo +nightly fuzz run safe_global_alloc_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600

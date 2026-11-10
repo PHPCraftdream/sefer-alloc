@@ -1,0 +1,28 @@
+name: CI evidence-registry
+description: Original evidence-registry job steps
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 22
+    - name: Strict evidence registry judge (optional baseline ratchet)
+      shell: bash
+      env:
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PUSH_BEFORE_SHA: ${{ github.event.before }}
+      run: |
+        baseline="$PR_BASE_SHA"
+        if [[ -z "$baseline" ]]; then baseline="$PUSH_BEFORE_SHA"; fi
+        if [[ -n "$baseline" && ! "$baseline" =~ ^0{40}$ ]]; then
+          node scripts/verify-evidence-registry.mjs --strict --baseline "$baseline"
+        else
+          node scripts/verify-evidence-registry.mjs --strict
+        fi
+    - run: node scripts/evidence-registry-selftest.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/generate-evidence-registry-md.mjs --check
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

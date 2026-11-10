@@ -1,0 +1,95 @@
+name: CI test-hardened
+description: Original test-hardened job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    # H1 (#167): the opt-in `hardened` misuse-guard tier. Without this
+    # step the interior-pointer guard and its counterfactual regression
+    # test (`regression_hardened_interior_ptr`, gated on the feature)
+    # would never RUN in CI — clippy's --all-features only compiles
+    # it. Also covers the fastbin-without-decommit config with the
+    # guard on.
+    # `internals` added (R34-3/task #522): `hardened` implies `fastbin`
+    # implies `alloc-global`, and this row runs the whole `tests/` tree.
+    - name: test (--features hardened)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "hardened internals" --no-fail-fast
+    # H1 follow-up: README calls `hardened` "additive over
+    # production", but no CI row built the two together — the
+    # paranoid guard tier was only ever exercised WITHOUT decommit
+    # (the step above is fastbin-without-decommit). This step is the
+    # flagship+paranoid combo so the misuse-guard runs alongside the
+    # decommit (M6) recommit cycle.
+    # Each suite below builds the whole tests/ tree for another feature set; the
+    # artefacts of the four builds together exceed the runner's disk ("No space left on device").
+    - name: free build artefacts of the previous suite
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: rm -rf target
+    - name: test (--features "production hardened")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production hardened internals" --no-fail-fast
+    - name: test (Small sidecar preflight, production hardened)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --locked --test r11_p3_small_sidecar_preflight --features "production hardened internals bench-internals"
+    # R14 hotfix (task #299): `tests/r11_4_dealloc_batch_hardened_guards.rs`
+    # exercises `HeapCore::dealloc_batch`'s hardened guards (F7/H1), which
+    # requires `batch-api` directly -- `hardened` alone does not pull it in
+    # (confirmed pre-existing: this combination was never covered by any
+    # step above, so the file's own `dealloc_batch` calls failed to compile
+    # under the plain `--features hardened` step until this file's
+    # `#![cfg]` gate was tightened to require `batch-api` too). Without
+    # this step the file compiles to 0 tests (pass by absence) under every
+    # other row here -- the same "written but never executed" class of gap
+    # R13-5 (task #275) closed for other combinations.
+    # `internals` added (R34-3/task #522) — same whole-suite rationale.
+    - name: free build artefacts of the previous suite
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: rm -rf target
+    - name: test (--features "hardened batch-api")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "hardened batch-api internals" --no-fail-fast
+    # R22-1 (task #352): commit 46ea2db (R19-1, task #337) fixed a real
+    # hardened/UAF-shaped contract-violation bug in the Large-dealloc branch
+    # (A) of `src/registry/heap_core/free/dealloc_own_base.rs` -- under `hardened`, it now
+    # checks `large_layout_consistent(base, layout.size())` before treating a
+    # cross-thread Large free as legitimate. Both that branch and its two new
+    # regression tests (`promoted_large_matching_free_actually_frees`,
+    # `large_ptr_small_layout_free_is_noop_branch_a` in
+    # `tests/regression_hardened_large_kind_own_free.rs`) require BOTH
+    # `hardened` AND the "promotion-reachable" predicate encoded in the
+    # `medium_promotion_reachable!` macro (`heap_core/free/dealloc.rs`, ~line 69):
+    # `medium-classes AND (not(exact-span-large) OR (large-reserved-capacity
+    # AND not(numa-aware)))`. No row above satisfies both: none of the three
+    # steps in THIS job turn on `medium-classes` at all, so branch (A) does
+    # not even compile there; `--all-features` (below, other job) turns on
+    # `medium-classes` but ALSO `exact-span-large` AND `numa-aware` together,
+    # which makes the predicate false. Plain `hardened medium-classes` (no
+    # `exact-span-large`) keeps the predicate's first disjunct
+    # (`not(exact-span-large)`) true, so the fix and both tests actually
+    # compile AND run here for the first time.
+    # `internals` added (R34-3/task #522): `hardened` implies `fastbin`
+    # implies `alloc-global`, and this repo's own white-box `tests/`
+    # suite reaches `alloc_core`/`global`/`registry` directly.
+    - name: free build artefacts of the previous suite
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: rm -rf target
+    - name: test (--features "hardened medium-classes")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "hardened medium-classes internals" --no-fail-fast
