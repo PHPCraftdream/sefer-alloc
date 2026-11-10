@@ -168,6 +168,27 @@ Accepted on exact `6c8d0c15e42a186ed49eeb4cf27d5877becf467c`, CI `42746622988` a
 
 The child reads `option_env!("SEFER_J13B_BUILD")`, not a runtime env substitute. Missing seal returns unavailable build_identity_missing; mismatches are invalid requests. Even an exactly matching compiled fixture returns unavailable identity_backend_missing, with no payload or identity/config/mechanism/sample claims. This proves consistency only under the eventual reviewed-builder premise, not actual source/compiler/executable/host authenticity. Seven pure seal fixtures passed release-native and strict Miri CI; seven actual compiled-fixture refusal cases and the retained seven unsealed refusals (with runtime seal forgery) passed on the exact source above. Synthetic compiled metadata is deliberately labelled as such and never promoted to a real identity. Local checks/syntax are not test execution. Actual running-image/host facts are #88, reviewed source/compiler/features builder #89, then payload #85 and admission #63. No dependency, raw.v4/artifacts.v1, defaults or campaign changes.
 
+## Native facts helper and CI composition — accepted components (#88/#90)
+
+Accepted on exact `d5c61f44d6d1fa0e72884cea5ef91397c03c69bb`, CI42762365242 SUCCESS,
+59 successful jobs/four intended skips. [Primary and generated CI evidence](J13B_TASK90_CI_RECEIPT.md)
+confirms seven native/zero ignored and seven strict Miri/zero ignored helper tests,
+independent executable digest and host readbacks, unchanged60-job orchestration and230
+sentinels. [Suffix text/Ir evidence](J13B_TASK90_ZERO_COST_RECEIPT.md) remains separately scoped.
+
+The parent opens `/proc/self/exe` before spawning trusted GNU sha256sum; passing the
+pathname to that child would hash the wrong process. Stable file metadata and exact
+GNU digest formatting are checked. Bounded CPU/kernel/boot/top-level THP observations
+require a matching supported compiled architecture; unknown/missing data fail closed.
+Top-level THP enabled mode is not per-size/defrag policy authentication, and a backing
+file digest is not running-memory or hostile-host attestation. No source/compiler
+provenance is invented from labels.
+
+These helpers are not yet connected to child execution. The g1 child deliberately
+retains `identity_backend_missing`, no payload and null identity/sample fields.
+Reviewed builder89, integration84, execution85/capabilities86 and admission63 remain
+open. No campaign, performance GO or default promotion follows.
+
 ## Rust side
 
 - `examples/_shared/j13b_workload.rs`: exact-cell planner over safe `Vec<MaybeUninit<u8>>` (no `unsafe` reads); one shared touch kernel (`touch_slots`) used for both the `MaybeUninit<u8>` buffers and the inspectable `u8` test slots. Legacy preparation tests inspect offsets on `u8` slots; the new owning-buffer fixtures also inspect explicitly initialized `MaybeUninit` storage. Neither is a full runtime-judge acceptance.

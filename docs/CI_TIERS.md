@@ -51,10 +51,14 @@ guard includes its local action. License coverage follows reachable third-party 
 the `licenses` job remains inline, so its fingerprint still includes its actual check
 text and inventory script rather than a wrapper that could hide changed checks.
 
-Local static equivalence is not a GitHub execution receipt. Until the exact candidate
-has applicable green CI, composite runtime behavior and Task88 native observations
-remain unaccepted. No local builds, tests, models or workloads are implied by these
-static checks.
+Exact-source acceptance: `d5c61f44d6d1fa0e72884cea5ef91397c03c69bb`, CI42762365242
+SUCCESS, 59 successful jobs and four intended weekly/dispatch skips. Actual positive
+logs confirm the decomposition gate, both repaired documentation guards, restored
+Miri passes, and scoped Task88 native/model helpers. The [generated receipt](perf/J13B_TASK90_CI_RECEIPT.md)
+preserves primary job conclusions and excerpts; the separate zero-cost receipt proves
+only its declared production verification suffix. Child identity integration, reviewed
+builder provenance and payload/admission remain downstream. No local builds, tests,
+models or workloads were executed.
 
 ## Mechanics
 
