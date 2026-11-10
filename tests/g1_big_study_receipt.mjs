@@ -10,6 +10,31 @@ assert.equal(receiptLines.length, 1, 'expected one actual CI build-host observat
 const receiptMatch = receiptLines[0].match(/jq -n .*? '(\{.*\})' > "\$receipt_dir\/ci-build-host-observation\.json"/);
 assert.ok(receiptMatch, 'could not extract the receipt command jq filter');
 const receiptFilter = receiptMatch[1];
+const contextLines = action.split(/\r?\n/).filter(line => line.includes('> "$receipt_dir/build-context.json"'));
+assert.equal(contextLines.length, 1, 'expected one actual build-context command');
+const contextMatch = contextLines[0].match(/jq -n .*? '(\{.*\})' > "\$receipt_dir\/build-context\.json"/);
+assert.ok(contextMatch, 'could not extract the actual build-context filter');
+
+test('actual build-context filter preserves unset and explicit empty/nonempty compiler flags', () => {
+  for (const flags of [null, '', '-C opt-level=3']) {
+    const args = ['-c', '-n'];
+    for (const [name, value] of Object.entries({ commit: 'fixture-commit', tree: 'fixture-tree', status: '', rustc: 'fixture-rustc', cargo: 'fixture-cargo', host: 'x86_64-unknown-linux-gnu', rustflags: flags ?? '', encoded_flags: flags ?? '' })) {
+      args.push('--arg', name, value);
+    }
+    args.push('--argjson', 'rustflags_set', String(flags !== null), '--argjson', 'encoded_flags_set', String(flags !== null), contextMatch[1]);
+    const result = spawnSync('jq', args, { encoding: 'utf8', timeout: 5000, maxBuffer: 64 * 1024 });
+    assert.equal(result.error, undefined, result.error?.message);
+    assert.equal(result.status, 0, result.stderr);
+    const rows = result.stdout.trim().split(/\r?\n/);
+    assert.equal(rows.length, 1);
+    const context = JSON.parse(rows[0]);
+    assert.equal(context.dirty, false);
+    assert.equal(context.commit, 'fixture-commit');
+    for (const key of ['RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS']) {
+      assert.deepEqual(context[key], { set: flags !== null, value: flags });
+    }
+  }
+});
 
 function observation(enabledRaw, meminfoRaw, enabledAvailable = true, meminfoAvailable = true) {
   return {
