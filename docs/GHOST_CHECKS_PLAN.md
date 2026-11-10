@@ -303,6 +303,28 @@ scope `verification` / `ghost*` / `loom` / `miri` / `kani`; не изменен�
 доказательство отсутствия ghost-кода: оно опирается на линтер префиксов и на
 то, что ghost-макросы вне `cfg(any(loom, miri, kani, sefer_ghost))` пусты.
 
+### 2026-11-09 two-phase candidate for mixed runtime/verification ranges
+
+Correctness item 260's previously recorded alternative to separate PRs is now
+implemented as a candidate, pending exact-source CI acceptance. The existing
+whole-range `zeroCostSkip` predicate remains unchanged. When it rejects a mixed
+range, the runner may derive the newest proper prefix on the head's first-parent
+history whose complete `base..R` inputs pass that same predicate. It must then
+build and compare production for **all of `R..head`**, using the same head probe,
+feature set, flags, complete normalized function comparison and exact zero Ir
+criterion. No eligible prefix means the original full-range proof is retained.
+Dirty trees cannot select a prefix; the head cannot exempt its own suffix.
+
+The report records the effective original PR base, derived prefix identity,
+policy reason/subjects/paths, checkout/head identities and actual measured proof
+endpoints. This is a policy-admitted runtime prefix plus a measured zero-cost
+verification suffix, **not** a whole-PR production-identity claim. No numeric
+tolerance, symbol exclusion, baseline selected from measurement results, new
+skip flag or reduction of the retained layout/iai/model obligations is allowed.
+The scope decision and its negative fixtures never build or execute the probe;
+the native comparison still runs in GitHub CI. Separate PRs remain the fallback
+when a valid partition cannot be established and the original proof fails.
+
 ## 7. CI
 
 - Новая задача `ghost-guard` в постоянном ярусе (дешёвая): `ghost-lint

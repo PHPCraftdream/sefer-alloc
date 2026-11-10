@@ -1,0 +1,220 @@
+name: CI j13b-judge-preparation
+description: Original j13b-judge-preparation job steps
+runs:
+  using: composite
+  steps:
+    - name: Check changed paths
+      id: paths
+      env:
+        BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        HEAD_SHA: ${{ github.sha }}
+        EVENT: ${{ github.event_name }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        if [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ]; then
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE="$HEAD_SHA^"
+        if git diff --name-only "$BASE" "$HEAD_SHA" | grep -qE '^(scripts/j13b_.*\.mjs|examples/(_shared/.*|g1_j13b_.*\.rs)|tests/j13b_.*\.(mjs|rs)|crates/aligned-vmem/src/.*|Cargo\.toml|\.github/workflows/ci\.yml|\.github/actions/ci-j13b-judge-preparation/action\.yml)$'; then
+          echo "run=true" >> "$GITHUB_OUTPUT"
+        fi
+    - if: steps.paths.outputs.run == 'true'
+      uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+    - if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: node --test tests/j13b_schema.test.mjs tests/j13b_artifacts.test.mjs tests/j13b_static_reference.test.mjs
+    - if: steps.paths.outputs.run == 'true'
+      uses: dtolnay/rust-toolchain@stable
+    - if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --test j13b_judge_workload --features production
+    - name: J13b owned-buffer fixture and installed owner/foreign boundary
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --features 'production internals bench-internals' --test j13b_owned_block \
+          | tee "$RUNNER_TEMP/j13b-owned-fixtures.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/j13b-owned-fixtures.log"
+        cargo test --locked --features 'production internals bench-internals' --test j13b_owned_block_installed \
+          | tee "$RUNNER_TEMP/j13b-owned-native.log"
+        grep -F 'test real_owner_and_foreign_frees_preserve_learning_boundary ... ok' "$RUNNER_TEMP/j13b-owned-native.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-owned-native.log"
+    - name: J13b actual window operations and optimized facade activation
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --features 'production internals bench-internals' --test j13b_window_kernel \
+          | tee "$RUNNER_TEMP/j13b-window-core.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/j13b-window-core.log"
+        cargo test --locked --release --features 'production internals bench-internals' --test j13b_window_kernel_native \
+          | tee "$RUNNER_TEMP/j13b-window-native.log"
+        grep -F 'test optimized_facade_windows_keep_real_dense_sparse_growth_and_worker_activation ... ok' "$RUNNER_TEMP/j13b-window-native.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-window-native.log"
+    - name: J13b persistent payload actors and owner-return boundary
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --features 'production internals bench-internals' --test j13b_payload_actors \
+          | tee "$RUNNER_TEMP/j13b-actors-core.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/j13b-actors-core.log"
+        cargo test --locked --release --features 'production internals bench-internals' --test j13b_payload_actors_native \
+          | tee "$RUNNER_TEMP/j13b-actors-native.log"
+        grep -F 'test real_actors_return_owner_samples_and_reject_remote_training_in_both_directions ... ok' "$RUNNER_TEMP/j13b-actors-native.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-actors-native.log"
+    - name: J13b single-control interval closure and actual ticket evidence
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --features 'production internals bench-internals' --test j13b_control_interval \
+          | tee "$RUNNER_TEMP/j13b-interval-core.log"
+        grep -F 'test result: ok. 11 passed; 0 failed;' "$RUNNER_TEMP/j13b-interval-core.log"
+        cargo test --locked --release --features 'production internals bench-internals' --test j13b_control_interval_native \
+          | tee "$RUNNER_TEMP/j13b-interval-native.log"
+        grep -F 'test actual_same_size_owner_cohorts_bind_single_sample_and_ticket_capture ... ok' "$RUNNER_TEMP/j13b-interval-native.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-interval-native.log"
+    - name: J13b actual owner-return training targets and insufficient-signal cap
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --release --features 'production internals bench-internals lazy-commit-fault-injection' --test j13b_owner_training_native \
+          | tee "$RUNNER_TEMP/j13b-owner-training-native.log"
+        grep -F 'test actual_training_reaches_both_targets_and_caps_sampler_failure_without_padding ... ok' "$RUNNER_TEMP/j13b-owner-training-native.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-owner-training-native.log"
+    - name: J13b real adaptive windows and live OS boundaries
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --release --features 'production internals bench-internals' --test j13b_adaptive_windows_native \
+          | tee "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
+        grep -F 'test actual_phased_and_mixed_windows_preserve_training_and_live_os_boundaries ... ok' "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
+    - name: J13b bounded artifact request and fail-closed child dispatch
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --release --test j13b_artifact_request \
+          | tee "$RUNNER_TEMP/j13b-artifact-request.log"
+        grep -F "test duplicate_decoded_keys_and_escaped_aliases_are_rejected ... ok" "$RUNNER_TEMP/j13b-artifact-request.log"
+        grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/j13b-artifact-request.log"
+        env -u SEFER_J13B_BUILD cargo build --locked --release --features production --example g1_j13b_judge
+        node tests/j13b_request_refusal.mjs target/release/examples/g1_j13b_judge
+    - name: J13b compiled seal consistency without identity or payload admission
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --release --test j13b_build_seal | tee "$RUNNER_TEMP/j13b-build-seal.log"
+        grep -F "test duplicate_or_escaped_compiled_keys_cannot_silently_override ... ok" "$RUNNER_TEMP/j13b-build-seal.log"
+        grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/j13b-build-seal.log"
+        SEFER_J13B_BUILD="$(node tests/j13b_build_seal_refusal.mjs --seal)" \
+          cargo build --locked --release --features production --example g1_j13b_judge
+        node tests/j13b_build_seal_refusal.mjs target/release/examples/g1_j13b_judge
+    - name: J13b actual executable and scoped native host observations
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --release --test j13b_native_identity -- --include-ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/j13b-native-identity.log"
+        grep -F "[j13b-native-facts] actual-image-and-host PASS" "$RUNNER_TEMP/j13b-native-identity.log"
+        grep -F 'test result: ok. 7 passed; 0 failed; 0 ignored;' "$RUNNER_TEMP/j13b-native-identity.log"
+        node tests/j13b_native_facts_check.mjs "$RUNNER_TEMP/j13b-native-identity.log"
+    - name: J13b native advice capture across modes and lifecycle failures
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --release --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_capture_native -- --nocapture 2>&1 \
+          | tee "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F "[j13b-advice-child] concurrent PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F "[j13b-advice-child] always PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F "[j13b-advice-child] budget PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F "[j13b-advice-child] auto PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F "[j13b-advice-child] off PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F "[j13b-advice-child] advice-pre PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F "[j13b-advice-child] release-pre PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F "[j13b-advice-child] release-backend PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F "[j13b-advice-child] off-legacy PASS" "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F 'test actual_native_capture_closes_modes_cache_realloc_remote_and_release_failures ...' "$RUNNER_TEMP/j13b-advice-capture-native.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-advice-capture-native.log"
+    - name: J13b native advice windows across operation cache and failure boundaries
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --release --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_windows_native -- --nocapture 2>&1 \
+          | tee "$RUNNER_TEMP/j13b-advice-windows-native.log"
+        grep -F "[j13b-advice-windows] operations PASS" "$RUNNER_TEMP/j13b-advice-windows-native.log"
+        grep -F "[j13b-advice-windows] cache PASS" "$RUNNER_TEMP/j13b-advice-windows-native.log"
+        grep -F "[j13b-advice-windows] unknown PASS" "$RUNNER_TEMP/j13b-advice-windows-native.log"
+        grep -F "[j13b-advice-windows] off PASS" "$RUNNER_TEMP/j13b-advice-windows-native.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-advice-windows-native.log"
+    - name: J13b window OS counters and native peak reset witness
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --features 'production internals bench-internals' --test j13b_os_probe \
+          | tee "$RUNNER_TEMP/j13b-os-fixtures.log"
+        grep -F 'test result: ok. 5 passed; 0 failed;' "$RUNNER_TEMP/j13b-os-fixtures.log"
+        cargo test --locked --features 'production internals bench-internals' --test j13b_os_probe_native \
+          -- --ignored --exact reset_peak_is_real_window_scoped_and_faults_are_not_fabricated --nocapture \
+          | tee "$RUNNER_TEMP/j13b-os-native.log"
+        grep -F 'test reset_peak_is_real_window_scoped_and_faults_are_not_fabricated ... ok' "$RUNNER_TEMP/j13b-os-native.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-os-native.log"
+    - name: Static control-matched reference (disposable source copy only)
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -euo pipefail
+        mkdir -p .rush
+        copy=.rush/j13b-static-reference-ci
+        mkdir "$copy"
+        trap 'rm -rf -- "$copy"' EXIT
+        git archive HEAD | tar -x -C "$copy"
+        node scripts/j13b_static_reference.mjs "$copy"
+        cargo test --locked --manifest-path "$copy/Cargo.toml" \
+          --features 'production internals bench-internals' --test j13b_static_reference \
+          -- --ignored --exact static_reference_samples_real_controls_without_learning \
+          | tee .rush/j13b-static-reference-native.log
+        grep -F 'test static_reference_samples_real_controls_without_learning ... ok' .rush/j13b-static-reference-native.log
+        grep -F 'test result: ok. 1 passed; 0 failed;' .rush/j13b-static-reference-native.log
+        J13B_ADVICE_CAPTURE_CASE=static cargo test --locked --manifest-path "$copy/Cargo.toml" \
+          --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_capture_native \
+          -- --exact actual_native_capture_closes_modes_cache_realloc_remote_and_release_failures --nocapture 2>&1 \
+          | tee .rush/j13b-static-capture-native.log
+        grep -F '[j13b-advice-capture] case=static matched-controls-and-lifetime PASS' .rush/j13b-static-capture-native.log
+        grep -F 'test result: ok. 1 passed; 0 failed;' .rush/j13b-static-capture-native.log
+        sha256sum -c <(printf '%s\n' \
+          '84bf2f9c070271187c4bb07f3bdc552ce7d0f2a686bc62ffc28ee299b93d41c4  src/alloc_core/alloc_core/mem/advise_fresh_large.rs' \
+          'a2476ebd40189187dd8ea5a6a0966861eb90f6a8eea3712eb4cd2403cc75dc89  src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs')
+
+# CI-T1 stage 3 (docs/CI_TIERS.md "Test-impact map"): which integration tests the diff can affect, from
+# the nightly test-impact map. Never fails: any problem yields "all". The selection is only REPORTED
+# (step summary + artifact) unless the repository variable TEST_SELECTION is `enforce`, in which case
+# `test-core` runs just the selected tests.

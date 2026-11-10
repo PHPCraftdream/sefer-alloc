@@ -1,10 +1,60 @@
 # CI tiers: which jobs run for which change
 
-`.github/workflows/ci.yml` has ~50 jobs. Running all of them for every push to a pull request made
+`.github/workflows/ci.yml` declares 60 jobs. Running all of them for every push to a pull request made
 fix series queue for an hour or more (measured on 2026-10-13: PR runs averaged ~85 minutes, up to 175
 minutes with queueing) and re-ran Miri/Loom/macOS/Windows for pull requests that only touched documents.
 Runs are therefore **tiered**: a job runs when the files of the change need it, and the complete set runs
 on a schedule and on demand.
+
+## File layout and decomposition contract
+
+`ci.yml` is the orchestration graph: triggers, concurrency, permissions, job names/IDs,
+conditions, dependencies, runners, matrices and job environment stay here. Cohesive
+execution sequences live in 51 repository-local composite actions under
+`.github/actions/ci-<job>/action.yml`. Checkout stays before each local action call.
+The extraction reduced the working workflow from 5,437 to 954 lines without changing
+its 60 job definitions. This is a maintainability change, not a faster allocator or
+an authorization to run additional campaigns.
+
+Nine jobs intentionally remain inline: `changes`, `select-tests`, `clippy`, `test-core`,
+`licenses`, `multi-arch`, `aligned-vmem-hugetlb-real`, `globalalloc-model-miri`, and `docs`. They own cross-job/output,
+matrix, license-cache or direct Rust source-inspection contracts. Similar commands
+are not automatically interchangeable.
+
+`node scripts/verify-ci-decomposition.mjs` expands only actions actually called by
+this workflow, verifies the pre-extraction digest receipt in
+`docs/verification/ci-decomposition-baseline.json`, and runs cargo-free positive and
+negative reader/selection/license fixtures. It runs in the existing always-on
+consistency job. The receipt includes pending Task88 native-facts gates; it does not
+claim that those tests have executed successfully. Two explicitly checked additions
+are excluded from the historical comparison: this integrity step and the relocated
+J13b source-path selector. Intentional future command/graph changes require a reviewed
+update of the affected receipt digests, not removal of the gate or regeneration in CI.
+`--record` is deliberately limited to the original pre-extraction workflow shape.
+
+`scripts/ci/effective-workflow.mjs` is a restricted static reader, not a YAML execution
+engine. Local action calls must be unconditional single-key calls after checkout.
+Action inputs/outputs, nested local actions, unsupported contexts, missing files and
+path escapes fail closed. Context-sensitive sequences remain inline. Source locations
+are retained for sentinel diagnostics. Unused action files cannot satisfy wiring gates.
+
+Composite steps require explicit shells. The `ci-default-shell` marker records a
+validated equivalent of the original implicit shell: `bash -e {0}` on Unix, `pwsh`
+on Windows, with a runner expression for the existing multi-OS matrix. Existing
+explicit shells are unchanged; choosing explicit `bash` instead would add `pipefail`
+and would not be a pure move.
+
+Action-source edits select the groups of every owning job; shared-reader edits select
+the union of its consumers. This does not set `full` or override weekly/dispatch-only
+conditions or the existing main-push heavy-group suppression. J13b's own changed-path
+guard includes its local action. License coverage follows reachable third-party uses;
+the `licenses` job remains inline, so its fingerprint still includes its actual check
+text and inventory script rather than a wrapper that could hide changed checks.
+
+Local static equivalence is not a GitHub execution receipt. Until the exact candidate
+has applicable green CI, composite runtime behavior and Task88 native observations
+remain unaccepted. No local builds, tests, models or workloads are implied by these
+static checks.
 
 ## Mechanics
 
@@ -38,14 +88,14 @@ on a schedule and on demand.
 |---|---|
 | `always` | every change: fmt, commit-prefix-lint, evidence-registry, deny, licenses, docs-consistency, j13b-judge-preparation (path-selected steps) |
 | `fast` | `src/**`, `crates/**`, `tests/**`, `benches/**`, `examples/**`, `fuzz/**`, `Cargo.*`, build scripts (`check-matrix`, `run-check-matrix`, `lib`, `check-all`), and any unrecognised path |
-| `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests |
-| `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**`, tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`) |
+| `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests, the actual-source owner, operation core, persistent actors and training guard (`examples/_shared/j13b_owned_block.rs`, `examples/_shared/j13b_window_kernel.rs`, `examples/_shared/j13b_payload_actors.rs`, `examples/_shared/j13b_owner_training.rs`), and the OS/model boundary producer `examples/_shared/j13b_os_probe.rs` and its adaptive window executor `examples/_shared/j13b_adaptive_windows.rs` |
+| `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**`, tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`), and `examples/_shared/j13b_os_probe.rs` and its adaptive window executor `examples/_shared/j13b_adaptive_windows.rs` |
 | `crate_*` | `crates/<name>/**`: the gates of that one workspace crate (its dependents also get `fast`+`seam`) |
 | everything | `schedule`, `workflow_dispatch`, and a `CI: full` trailer in the message of any commit of the range (PR: base..merge commit; push: before..sha) |
 
 `j13b-judge-preparation` is in `always` but is not full CI: the job itself starts on every change, yet its
 Node and cargo steps are skipped unless a J13b path changed (`scripts/j13b_*.mjs`, `examples/_shared/**`,
-`examples/g1_j13b_*.rs`, `tests/j13b_*.{mjs,rs}`, `Cargo.toml`, `.github/workflows/ci.yml`) or the run is a
+`examples/g1_j13b_*.rs`, `tests/j13b_*.{mjs,rs}`, `crates/aligned-vmem/src/**`, `Cargo.toml`, `.github/workflows/ci.yml`) or the run is a
 schedule/manual dispatch.
 
 A change to `.github/workflows/ci.yml` or `scripts/ci-plan.mjs` selects `fast` (the planner self-test runs in

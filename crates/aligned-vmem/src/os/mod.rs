@@ -3,6 +3,7 @@ mod decommit_kind;
 #[cfg(miri)]
 mod miri;
 #[cfg(all(unix, not(miri)))]
+#[path = "release/checked.rs"]
 mod release_reservation_checked;
 #[cfg(all(unix, not(miri)))]
 mod unix;

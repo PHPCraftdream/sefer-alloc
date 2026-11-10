@@ -1,0 +1,33 @@
+name: CI miri-plain
+description: Original miri-plain job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    # Retained concurrent allocator regressions, plus the b4-r1 cached-pin
+    # fast path (miss then same-base hit, TLS exit release). Full owner and
+    # sidecar-miss workloads stay native; the tiny owner-credit invariant
+    # runs separately.
+    - run: >-
+        cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals"
+        --test regression_xthread_large_free_no_leak
+        --test regression_xthread_thread_free_alias_miri
+        --test regression_xthread_small_ring_miri
+        --test b4_r1_pin_cache_miri
+    # VER-03: inherit plain provenance, Stacked Borrows and preemption=0.5.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - name: regression_r2_06_header_race_miri
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --locked --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test regression_r2_06_header_race_miri
+    - name: tiny terminal owner invariant
+      run: |
+        cargo miri test --features "alloc-global alloc-xthread internals bench-internals" --test r6_terminal_owner_drain -- --exact requested_sizes_one_through_seven_retire_once_and_reissue 2>&1 | tee "$RUNNER_TEMP/miri-terminal-owner-tiny.log"
+        grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/miri-terminal-owner-tiny.log"
+      shell: bash
+
+# Loom checks terminal publication/cuts, owner credits, registry free slots,
+# and the maintenance lease separately from actual allocator runtime tests.

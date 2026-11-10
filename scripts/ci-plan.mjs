@@ -23,7 +23,9 @@
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { basename } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { effectiveWorkflow } from './ci/effective-workflow.mjs';
 
 export const CRATE_GROUPS = {
   'aligned-vmem': 'crate_aligned_vmem',
@@ -56,6 +58,17 @@ const SEAM_SCRIPTS = new Set(['loom.mjs', 'miri.mjs', 'miri-matrix.mjs']);
 export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false) {
   const p = path.replace(/\\/g, '/');
   if (FAST_FILES.has(p)) return new Set(['fast']);
+  if (p.startsWith('.github/actions/') || p.startsWith('scripts/ci/') || p === 'scripts/verify-ci-decomposition.mjs') {
+    const expanded = effectiveWorkflow(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+    const jobs = parseJobs(expanded.text);
+    // A deleted action still selects its job after the body moves back inline.
+    const owners = expanded.dependencies.get(p) ?? new Set(jobs
+      .filter(job => p === `.github/actions/ci-${job.id}/action.yml`).map(job => job.id));
+    if (owners.size) return new Set(jobs.filter(job => owners.has(job.id))
+      .map(job => GROUPS.includes(job.group) ? job.group : 'fast'));
+    if (p.startsWith('scripts/')) return new Set(GROUPS.filter(group => group !== 'full'));
+    return new Set(['fast']);
+  }
   let m = /^crates\/([^/]+)\//.exec(p);
   if (m) {
     const g = new Set(['fast', 'seam']); // the root crate depends on every workspace crate
@@ -78,6 +91,9 @@ export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false
     if (/(windows|macos|numa|platform|_os_)/.test(name)) g.add('os');
     return g;
   }
+  // Actual-source Miri imports these payload helpers.
+  if (p === 'examples/_shared/j13b_owned_block.rs' || p === 'examples/_shared/j13b_window_kernel.rs' || p === 'examples/_shared/j13b_payload_actors.rs' || p === 'examples/_shared/j13b_owner_training.rs') return new Set(['fast', 'seam']);
+  if (p === 'examples/_shared/j13b_os_probe.rs' || p === 'examples/_shared/j13b_adaptive_windows.rs') return new Set(['fast', 'seam', 'os']);
   if (/^(benches|examples|fuzz)\//.test(p)) return new Set(['fast']);
   m = /^scripts\/([^/]+)$/.exec(p);
   if (m) {
@@ -217,7 +233,7 @@ export function docTableMatches(docText, ciText) {
 }
 
 function selftest() {
-  const seam = new Set(['class_leaves_publication_miri']);
+  const seam = new Set(['class_leaves_publication_miri', 'j13b_adaptive_windows_native']);
   const P = (files, event = 'pull_request', trailerFull = false) => plan({ files, event, trailerFull, seamTests: seam });
   const on = r => Object.keys(r).filter(k => r[k]).sort().join(',');
   const heavy = ['seam', 'os'];
@@ -231,6 +247,16 @@ function selftest() {
   // tests / benches / examples without seam names: fast.
   eq(on(P(['tests/foo_bar.rs'])), 'always,fast', 'ordinary test');
   eq(on(P(['benches/r20_prf01_controls_iai.rs', 'examples/e.rs'])), 'always,fast', 'bench+example');
+  eq(on(P(['examples/_shared/j13b_owned_block.rs'])), 'always,fast,seam', 'unsafe judge owner source');
+  eq(on(P(['examples/_shared/j13b_window_kernel.rs'])), 'always,fast,seam', 'actual-source window operation model');
+  eq(on(P(['examples/_shared/j13b_payload_actors.rs'])), 'always,fast,seam', 'actual-source persistent payload actors');
+  eq(on(P(['examples/_shared/j13b_owner_training.rs'])), 'always,fast,seam', 'actual-source training model-rejection guard');
+  eq(on(P(['examples/_shared/j13b_run_stats.rs'])), 'always,fast', 'window statistic record only');
+  eq(on(P(['examples/_shared/j13b_os_probe.rs'])), 'always,fast,os,seam', 'native OS producer and model rejection');
+  eq(on(P(['examples/_shared/j13b_os_sample.rs'])), 'always,fast', 'OS quantity record only');
+  eq(on(P(['examples/_shared/j13b_adaptive_windows.rs'])), 'always,fast,os,seam', 'adaptive native OS windows and model rejection');
+  eq(on(P(['tests/j13b_adaptive_windows_native.rs'])), 'always,fast,os,seam', 'adaptive window model-rejection fixture');
+  eq(on(P(['examples/_shared/j13b_workload.rs'])), 'always,fast', 'safe judge plan/kernel source');
   // test that appears in the loom/miri manifests or is named loom/miri: seam too.
   eq(on(P(['tests/class_leaves_publication_miri.rs'])), 'always,fast,seam', 'miri test');
   eq(on(P(['tests/loom_r20_prf01_summary_transition.rs'])), 'always,fast,seam', 'loom test');

@@ -55,6 +55,14 @@ const _: () =
 const _: () = assert!(size_of::<SegmentHeader>() <= PAGE);
 const _: () = assert!(Layout::page_map_off() == PAGE);
 const _: () = assert!(TERMINAL_WORDS_OFF >= size_of::<SegmentHeader>());
+// The mapping-owned observation token is an aligned 64-bit word immediately
+// after the unchanged THP accounting charge field.
+const _: () = assert!(
+    core::mem::offset_of!(SegmentHeader, thp_observation)
+        == core::mem::offset_of!(SegmentHeader, thp_charge) + size_of::<usize>()
+);
+const _: () = assert!(core::mem::offset_of!(SegmentHeader, thp_observation)
+    .is_multiple_of(core::mem::align_of::<u64>()));
 const _: () =
     assert!(REMOTE_HEAD_OFF.is_multiple_of(core::mem::align_of::<core::sync::atomic::AtomicU32>()));
 const _: () =
@@ -77,7 +85,7 @@ const _: () = assert!(NO_NODE_RAW == u32::MAX);
 ///
 /// Each field's classification (what the large-cache hit path does with it):
 ///
-/// **Written before register (7 fields)** — actively stored by the hit path
+/// **Written before register (8 fields)** — actively stored by the hit path
 /// before `register()` publishes the segment (F12 targeted writes +
 /// R34-14 owner/deferred resets):
 /// - `magic` -> `SEGMENT_MAGIC` (F12)
@@ -88,6 +96,8 @@ const _: () = assert!(NO_NODE_RAW == u32::MAX);
 ///   value is correct for same-heap reuse but widens the register-to-stamp
 ///   defensive window for stale/invalid frees)
 /// - `payload_offset` -> new explicit payload start
+/// - `sidecar_defer_window` -> 0 (R34-14 owner-window reset)
+/// - `thp_observation` -> 0 (cache reuse invalidates the prior occupant's token)
 ///
 /// **Patched after register (1 field)** — written after `register()` returns
 /// the real slot index:
@@ -98,7 +108,7 @@ const _: () = assert!(NO_NODE_RAW == u32::MAX);
 /// debug_assert_eq! in the hit path):
 /// - `span_usable`, `reserved_capacity`, `reservation`, `reservation_len`
 ///
-/// **Carried forward, inert for Large (10 fields)** — Large segments never
+/// **Carried forward, inert for Large (8 fields)** — Large segments never
 /// use these; the stale values are never read:
 /// - `kind` (already `Large`; cache only holds former Large segments)
 /// - `live_count`, `decommitted` (Large has no small-segment decommit)
@@ -107,6 +117,11 @@ const _: () = assert!(NO_NODE_RAW == u32::MAX);
 /// - `node_id` (re-stamped under `numa-aware`; otherwise inert)
 /// - `payload_virgin` (Large has no virgin-zero-skip)
 /// - `sidecar_defer_window` (U31 small-only owner window; Large never scans)
+///
+/// **Carried forward, owner-set once (1 field)** — the advice charge of the
+/// mapping: set once after a successful advice, preserved by deposit (magic
+/// word only) and by the hit path's targeted writes, read by terminal release:
+/// - `thp_charge`
 const _: () = {
     let SegmentHeader {
         bump,
@@ -125,6 +140,8 @@ const _: () = {
         pool_prev,
         committed_payload_end,
         reserved_capacity,
+        thp_charge,
+        thp_observation,
         segment_id,
         node_id,
         payload_virgin,
@@ -147,6 +164,8 @@ const _: () = {
         pool_prev,
         committed_payload_end,
         reserved_capacity,
+        thp_charge,
+        thp_observation,
         segment_id,
         node_id,
         payload_virgin,

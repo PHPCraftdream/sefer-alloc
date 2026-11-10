@@ -7,25 +7,26 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-682 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 92 files of `src/**` and
-`crates/*/src/**`; each is claimed by exactly one of 46 scopes.
+753 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 98 files of `src/**` and
+`crates/*/src/**`; each is claimed by exactly one of 58 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/682 |
-| counter | 245 | 245/682 |
-| ghost | 10 | 10/682 |
-| id | 9 | 9/682 |
-| kani | 1 | 1/682 |
-| lock-local | 40 | 40/682 |
-| non-atomic | 3 | 3/682 |
-| protocol | 184 | 184/682 |
-| test-hook | 177 | 177/682 |
-| twin | 7 | 7/682 |
-| **claimed** | **682** | 682/682 |
-| unclaimed | 0 | 0/682 |
-| claimed twice | 0 | 0/682 |
+| S | 13 | 13/753 |
+| cache | 6 | 6/753 |
+| counter | 276 | 276/753 |
+| ghost | 10 | 10/753 |
+| id | 9 | 9/753 |
+| kani | 1 | 1/753 |
+| lock-local | 40 | 40/753 |
+| non-atomic | 3 | 3/753 |
+| protocol | 206 | 206/753 |
+| test-hook | 182 | 182/753 |
+| twin | 7 | 7/753 |
+| **claimed** | **753** | 753/753 |
+| unclaimed | 0 | 0/753 |
+| claimed twice | 0 | 0/753 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -37,6 +38,8 @@ harness; `non-atomic` — named scanner false positives.
 
 | id | protocol | class | sites | loom tests | text pins | registry rows | real code under loom | decision | phase |
 |---|---|---|---:|---:|---:|---|---|---|---|
+| P28 | benchmark advice event capture publication | S | 20 | 0 | 0 | — | no Loom model: bounded actual-source thread/Miri, native emitter/replay and semantic fixtures accepted on 93f99017 by CI42693008438 attempt2; no whole-native-lifecycle or wait-freedom claim | benchmark-only bounded capture with fail-closed evidence | J13b |
+| P27 | large-THP coherent bounded estimator pair | none | 5 | 1 | 0 | — | cell only: tests/loom_thp_learning_cell.rs mounts the actual production cell and math on model atomics; runtime routing/admission is exercised by native tests, not a whole-runtime model; current integration acceptance is pending CI | rules + actual-source model + deterministic forced-CAS rejection test | J13b |
 | P1 | HeapLease FREE->LIVE claim / LIVE->FREE Release drop | S | 12 | 1 | 0 | R4a-05 R4a-06 R4a-07 R4a-08 R4a-09 R4c-09 | no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone | keep+R8 | G3 |
 | P2 | MaintenanceLease FREE->MAINTENANCE | S | 4 | 1 | 0 | R4c-19 | no: same registry bootstrap as P1 | keep+R8 | G4 |
 | P3 | publish \|\| recycle \|\| drain (TORN stamp, trim, drop, claimant drain) | S | 0 | 1 | 0 | R4b-03 R4b-13 R4b-14 R4b-15 | no: drain runs through HeapCore + AllocCore segment tables | keep+R8 | G3 |
@@ -60,11 +63,44 @@ harness; `non-atomic` — named scanner false positives.
 | P21 | exact-object shard lock + live hint | A | 7 | 1 | 0 | — | yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super) | ghost | G6 |
 | P22 | route ShardLock (spin lock over the directory shard) | S | 5 | 1 | 0 | — | yes: one AtomicBool | translate (with P5) | G2 |
 | P23 | remote-free ingress: producer notify \|\| owner take/arm/full drain (SC-6 A-exact) | A | 11 | 1 | 0 | — | yes: tests/loom_g1_ingress_exact.rs includes ingress.rs and sidecar_bitmap.rs | ghost | SC-6 |
+| P24 | large-THP tuple cell (write-once publication) | none | 13 | 1 | 0 | — | yes: tests/loom_thp_tuple_cell.rs compiles the production thp_tuple_cell.rs (#[path]) onto the concurrency atomics; oracles: a reader never sees a torn tuple (result is exactly one candidate or the default), exactly one distinct-tuple publisher wins, a same-tuple race follows the over-count contract, and the model terminates under every interleaving (no spin) | rules + actual-source model + integration tests | J13b |
+| P25 | large-THP budget ledger (advised bytes, bounded CAS reserve) | none | 4 | 1 | 0 | — | yes: tests/loom_thp_ledger.rs compiles the production thp_budget_ledger.rs (#[path]) onto the concurrency atomics; oracles: racing 6 MiB reserves against an 8 MiB budget never hand out more than the budget (an unconditional fetch_add reserve fails this), grants are exact granule multiples, and the ledger is empty after every thread returns exactly its own grant | rules + actual-source model + integration tests | J13b |
+| P26 | large-THP deterministic control ordinal and diagnostic telemetry | none | 16 | 0 | 0 | — | no: this runtime uses process-wide core atomics; the deterministic selector is separately pure-tested, and no runtime model is claimed | rules + pure selector tests | J13b |
 
-Shadow-model protocols (class contains S): 13 of 23, each with a decision.
-Protocols with neither a loom nor a shadow model: P20 (1 of 23).
+Shadow-model protocols (class contains S): 14 of 28, each with a decision.
+Protocols with neither a loom nor a shadow model: P28, P20, P26 (3 of 28).
 
 ## 3. Invariants and prod places
+
+### P28 — benchmark advice event capture publication
+
+Prod: `crates/aligned-vmem/src/bench_internals/advice/stream/log.rs`, `crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs`.
+
+- I1 capture begins once before producers; published slots are never reset or recycled
+- I2 one cursor RMW reserves each event position; capacity and unsupported failures cannot yield truncated readable evidence
+- I3 one bounded empty-to-in-progress slot CAS precedes all scalar payload writes, preventing reuse even after cursor wrap
+- I4 all relaxed scalar payload stores precede Release completion; an Acquire matching completion precedes every relaxed payload load
+- I5 first-failure diagnostics are sticky, publish no payload and never influence allocator policy or native outcomes
+- I6 readable boundaries require producer quiescence and full prefix publication, validated encodings and unchanged cursor
+- I7 diagnostic addresses remain inert integers; no allocation, callbacks, mapping locks, mapped-memory access or unbounded retry exists in append
+- I8 release markers are sampled before the consuming native attempt; only a unique confirmed Large-source result whose marker includes the original fresh/advice publication can justify canonical closure before a reused range; thread-affine scalar source context restores on exit, unrelated VM callbacks never debit Large ownership, and unknown outcomes never repair evidence
+
+Decision: **benchmark-only bounded capture with fail-closed evidence** — Task78 bounded native capture/replay is component-accepted with positive native/Miri/semantic and verification-suffix zero-cost receipts. Window binding/cost component accepted on95ee28ef by CI42724018048; complete adapters, identities and runtime admission remain open, with no performance or default promotion implied.
+
+### P27 — large-THP coherent bounded estimator pair
+
+Prod: `src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs`, `src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/alloc_core/mem/advise_fresh_large.rs`.
+
+- I1 one AtomicU64 contains both Q31 estimator components; snapshot is one indivisible load
+- I2 a successful CAS applies exactly one accepted pure-estimator update from its expected packed pair
+- I3 at most eight CAS attempts per observation; exhaustion returns false without applying that observation
+- I4 Relaxed accesses publish no external payload; only the indivisible scalar pair is shared
+- I5 only validated owner first-life no-THP observations feed the request group estimator; failed-premise, remote, cache and invalidated old-realloc tokens never feed it
+- I6 per-group applied/dropped diagnostics are independent wrapping counters, not estimator inputs; applied plus dropped closes against valid observations only after worker quiescence
+- I7 the optimistic prior is group-local; Off/Always bypass learned shares and Auto still selects controls before reading a zero learned share so recovery remains observable
+- loom: `tests/loom_thp_learning_cell.rs`
+
+Decision: **rules + actual-source model + deterministic forced-CAS rejection test** — Task49 connects valid control observations and fresh non-control Auto advice to separate process-group cells, with explicit applied/dropped accounting; diagnostics never drive learning. No performance acceptance is claimed.
 
 ### P1 — HeapLease FREE->LIVE claim / LIVE->FREE Release drop
 
@@ -302,10 +338,55 @@ Prod: `src/registry/segment_route/directory/ingress.rs`, `src/registry/segment_r
 
 Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spec): a negative discovery answer of an armed heap is trusted; R1 pins every ingress ordering, R3 the publish->check, mask->summary, store->fence and arm->drain orders; ghost events ingress/notified and ingress/taken
 
+### P24 — large-THP tuple cell (write-once publication)
+
+Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs`.
+
+- I1 single winner: one strong compare_exchange(UNSET, PUBLISHING, AcqRel, Acquire) elects the only writer
+- I2 the five words are Relaxed-stored by the winner before the state store(PUBLISHED, Release)
+- I3 the words are never written after PUBLISHED (publish is the only writer, after the claiming CAS)
+- I4 the loser path, read and load_words have no loop, no spin and no weak-CAS retry: a loser that meets PUBLISHING reports a conflict
+- I5 readers decode the words only after an Acquire load observing PUBLISHED; unpublished or PUBLISHING gives the default tuple
+- loom: `tests/loom_thp_tuple_cell.rs`
+
+Decision: **rules + actual-source model + integration tests** — J13b #47: R1 pins every ordering (claiming CAS, PUBLISHED store, state load, word stores and loads), R3 keeps the claim before the words and the last word before PUBLISHED, R5 keeps the words and spin primitives out of every other fn, R2 closes the ordered-op inventory of publish (no spin), R4 gates both word reads on PUBLISHED; behaviour is covered by the j13b_thp_publish_* and unpublished-default integration tests and by tests/loom_thp_tuple_cell.rs, the actual-source loom model of the cell
+
+### P25 — large-THP budget ledger (advised bytes, bounded CAS reserve)
+
+Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs`, `src/alloc_core/alloc_core/mem/release_large_mapping.rs::release_large_mapping`.
+
+- I1 used never exceeds the budget of a successful reservation: a reservation is one compare_exchange_weak from the observed value
+- I2 try_reserve loops at most MAX_ATTEMPTS times and returns 0 (no advice) when it keeps losing
+- I3 give_back is a single fetch_sub of the reserved bytes
+- I4 Relaxed is sufficient: the only shared location is used and nothing else is published through it
+- I5 a Large mapping is released only by release_large_mapping, which gives the charge back after the unmap
+- loom: `tests/loom_thp_ledger.rs`
+
+Decision: **rules + actual-source model + integration tests** — J13b #47: R1 pins the Relaxed load, CAS and fetch_sub, R4 bounds the reserve loop, R3 ties the CAS to the observed value and the unmap to give_back, R5 keeps os::release_segment in the Large files inside the terminal funnel; behaviour is covered by the j13b_thp_budget_* integration tests and by tests/loom_thp_ledger.rs, the actual-source loom model of the ledger
+
+### P26 — large-THP deterministic control ordinal and diagnostic telemetry
+
+Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/config/policy/large_thp_observation/large_thp_control_selector.rs`.
+
+- I1 each next_control call obtains one successive wrapping ticket from CONTROL_ORDINAL with one fetch_add(Relaxed); the returned ticket is the ordinal input to the deterministic selection, not a publication
+- I2 next_control uses the fixed CONTROL_SEED with the pure decision_at(seed, ordinal) selector; the selector defines exactly one control in each complete aligned cohort of eight ordinals (not every sliding window)
+- I3 control counters are diagnostic wrapping u64 totals only: Relaxed accesses publish no data and establish no happens-before edge
+- I4 control_telemetry reads each of eight fields independently with Relaxed loads; the returned array is not a coherent multiword snapshot
+- I5 the bench-internals ticket log records the (ordinal, decision) actually consumed per next_control call in bounded diagnostic storage; its entries are never gate inputs and all accesses stay Relaxed
+
+Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed ordinal RMW, its fixed-seed decision call, and the diagnostic counter/load inventories; tests/j13b_observation_control_selector.rs checks the selector's one-control-per-complete-aligned-eight contract independently of runtime atomics
+
 ## 4. Scopes
 
 | scope | class | protocol | sites | reason |
 |---|---|---|---:|---|
+| `P28/capture-start` | S | P28 | 2 | single diagnostic epoch start; no reset or mapping ownership publication |
+| `P28/capture-cursor` | counter | P28 | 5 | unique event positions only; payload publication is the independent completion marker |
+| `P28/capture-failure` | counter | P28 | 2 | sticky diagnostic first-failure code; publishes no payload and never gates allocator behavior |
+| `P28/slot-publication` | S | P28 | 9 | bounded empty-slot claim then relaxed scalar writes and Release completion; no slot reuse |
+| `P28/slot-read` | S | P28 | 2 | matching Acquire completion must precede reading immutable relaxed payload fields |
+| `P27/runtime-learning-diagnostics` | counter | P27 | 2 | independent diagnostic loads of applied/dropped wrapping counters; pair state is separately read through the coherent cell snapshot, never reconstructed from counters |
+| `P27/estimator-pair` | protocol | P27 | 3 | one packed pair, no external publication; bounded CAS commits both estimator components atomically |
 | `P1/heap-slot-cas` | protocol | P1 | 1 | the one CAS on HeapSlot::state; orderings come from call sites |
 | `P1/claim-call-sites` | protocol | P1 | 11 | claim CASes, generation/initialised publication, lease drops |
 | `P2/maintenance` | protocol | P2 | 4 | FREE->MAINTENANCE claim |
@@ -337,12 +418,12 @@ Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spe
 | `P20/maintenance-service` | protocol | P20 | 6 | service state + pass counter used as a wait condition |
 | `P21/exact-shard` | protocol | P21 | 7 | shard lock + live hint |
 | `hook/maintenance-service` | test-hook | — | 7 | fault/pause injection and test observers (FAIL_START swap is armed only by fail_next_start_for_test) |
-| `hook/test-fns` | test-hook | — | 151 | dbg_*/for_test/internals-only hooks |
-| `hook/inject-flags` | test-hook | — | 15 | fault-injection / test-control flags |
+| `hook/test-fns` | test-hook | — | 155 | dbg_*/for_test/internals-only hooks |
+| `hook/inject-flags` | test-hook | — | 16 | fault-injection / test-control flags |
 | `cache/page-size` | cache | — | 4 | idempotent cache of a process constant; Relaxed: every writer stores the same value |
 | `cache/process-exit` | cache | — | 2 | resolved function pointer cache (windows); Relaxed: idempotent |
 | `id/generators` | id | — | 7 | unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed |
-| `counter/statics` | counter | — | 228 | statistics / diagnostic counters: Relaxed, no protocol reads them |
+| `counter/statics` | counter | — | 236 | statistics / diagnostic counters: Relaxed, no protocol reads them |
 | `counter/per-heap` | counter | — | 13 | per-heap hit counters published Relaxed (owner-written, read by stats) |
 | `counter/pin-cache-macro` | counter | — | 1 | macro_rules! count bumps a static counter |
 | `counter/tier1-bump` | counter | — | 2 | unlocked Relaxed load+store bump of a bench-internals Tier-1 counter (DZ-2): no protocol reads it |
@@ -352,3 +433,8 @@ Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spe
 | `id/region-id` | id | — | 1 | region id minting: Relaxed fetch_update gives uniqueness |
 | `counter/registry-high-water` | counter | — | 1 | stats read of the registry count: Relaxed is enough for a high-water report |
 | `ghost/shadow` | ghost | — | 10 | ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1) |
+| `P24/thp-tuple-cell` | protocol | P24 | 13 | write-once tuple cell: claiming CAS, Relaxed words, Release PUBLISHED, Acquire reader |
+| `P25/thp-ledger` | protocol | P25 | 4 | budget ledger: Relaxed load, bounded CAS reserve, fetch_sub give-back on one counter |
+| `P26/control-ordinal` | protocol | P26 | 2 | one wrapping ordinal ticket per control decision; Relaxed because the value is only a selector input and publishes nothing; the bench-internals probe adds one Relaxed diagnostic load that mutates nothing |
+| `P26/control-diagnostics` | counter | P26 | 9 | diagnostic-only wrapping counter RMWs and independent telemetry loads; no publication or coherent snapshot |
+| `P26/control-ticket-log` | counter | P26 | 5 | bench-internals diagnostic ticket log: exactly one bounded cursor/store/load inventory per helper so tests can observe actual consumed tickets; publishes nothing |

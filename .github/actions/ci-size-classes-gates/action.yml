@@ -1,0 +1,14 @@
+name: CI size-classes-gates
+description: Original size-classes-gates job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    # Packaging verification only, per the finding: confirms the crate
+    # packages and the packaged tarball's own isolated build succeeds
+    # against the published manifest (no reliance on workspace-inherited
+    # lints/deps that would not exist for a real crates.io consumer).
+    - run: cargo publish --dry-run -p size-classes
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

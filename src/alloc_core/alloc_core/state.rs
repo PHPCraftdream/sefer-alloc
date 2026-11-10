@@ -99,8 +99,14 @@ impl AllocCore {
     /// alongside a hypothetical debug accessor for the counter never observes
     /// a stale non-zero count paired with a `None` cache.
     ///
-    /// Gate: only present under `numa-aware`.
+    /// Gate: only present under `numa-aware`; callers live only under
+    /// `alloc-global` (claim-path invalidation) or `internals` (dbg hook),
+    /// so the attribute covers the remaining NUMA rows.
     #[cfg(feature = "numa-aware")]
+    #[cfg_attr(
+        not(any(feature = "alloc-global", feature = "internals")),
+        allow(dead_code)
+    )]
     #[inline]
     pub(crate) fn invalidate_numa_node_cache(&mut self) {
         self.cached_numa_node = None;

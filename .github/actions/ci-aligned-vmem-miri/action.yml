@@ -1,0 +1,23 @@
+name: CI aligned-vmem-miri
+description: Original aligned-vmem-miri job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    # Two runs: default features and --all-features (lazy-commit +
+    # alloc-lazy-commit compat + huge-pages + fault-injection +
+    # bench-internals). No additional single-feature runs: every feature's
+    # cfg-gated code (including src/os/miri.rs's lazy-commit and huge-pages
+    # arms) is compiled and exercised under --all-features, so narrower runs
+    # would re-interpret overlapping suites at full cost for no unique
+    # coverage; fault-injection is API-layer (feature-gated in
+    # src/api/commit_range.rs, pre-backend) and runs green under miri.
+    - run: cargo miri test -p aligned-vmem
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo miri test -p aligned-vmem --all-features
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

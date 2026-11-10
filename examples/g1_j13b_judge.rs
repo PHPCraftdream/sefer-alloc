@@ -1,4 +1,10 @@
-//! Fail-closed J13b child. No runtime adapter means no workload is entered.
+//! Fail-closed J13b child. Dispatch metadata is not proof of actual artifact identity.
+#[path = "_shared/j13b_artifact_request.rs"]
+mod artifact_request;
+#[path = "_shared/j13b_build_seal.rs"]
+mod build_seal;
+#[path = "_shared/j13b_strict_object.rs"]
+mod strict_object;
 #[path = "_shared/j13b_workload.rs"]
 #[allow(dead_code)]
 mod workload;
@@ -67,13 +73,61 @@ fn main() -> ExitCode {
         emit(cell, arm, block, repeat, "invalid_request", "unknown_arm");
         return ExitCode::from(2);
     }
+    let metadata = match env::var("SEFER_J13B_ARTIFACT") {
+        Ok(metadata) => metadata,
+        Err(env::VarError::NotPresent) => {
+            emit(
+                cell,
+                arm,
+                block,
+                repeat,
+                "unavailable",
+                "artifact_metadata_missing",
+            );
+            return ExitCode::from(3);
+        }
+        Err(env::VarError::NotUnicode(_)) => {
+            emit(
+                cell,
+                arm,
+                block,
+                repeat,
+                "invalid_request",
+                "artifact_metadata_utf8",
+            );
+            return ExitCode::from(2);
+        }
+    };
+    let request = match artifact_request::ArtifactRequest::parse(metadata.as_bytes(), arm) {
+        Ok(request) => request,
+        Err(reason) => {
+            emit(cell, arm, block, repeat, "invalid_request", reason);
+            return ExitCode::from(2);
+        }
+    };
+    let Some(compiled) = option_env!("SEFER_J13B_BUILD") else {
+        emit(
+            cell,
+            arm,
+            block,
+            repeat,
+            "unavailable",
+            "build_identity_missing",
+        );
+        return ExitCode::from(3);
+    };
+    if let Err(reason) = build_seal::BuildSeal::parse_and_match(compiled.as_bytes(), &request) {
+        emit(cell, arm, block, repeat, "invalid_request", reason);
+        return ExitCode::from(2);
+    }
+    // Compiled consistency cannot authorize actual identity, payload or admission.
     emit(
         cell,
         arm,
         block,
         repeat,
         "unavailable",
-        "runtime_adapter_missing",
+        "identity_backend_missing",
     );
     ExitCode::from(3)
 }

@@ -73,10 +73,14 @@
 //!   "single-call failed with large pages, retry with plain pages succeeded"
 //!   (both increment the same counter). Added by R7-3.
 //!
-//! `AtomicU64` storage, increments gated on `bench-internals` so a plain build
-//! carries zero extra instructions (storage itself is also gated, not compiled
-//! without the feature). Relaxed — diagnostic only, no ordering obligation.
+//! The counter families above use `bench-internals`-gated `AtomicU64` storage
+//! and Relaxed increments; they publish no payload. The separate advice capture
+//! uses Release/Acquire scalar-slot publication and bounded native event storage.
+//! Its writes/footprint are measurement overhead, not a zero-cost claim.
 
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub mod advice;
 #[cfg(feature = "bench-internals")]
 mod huge;
 #[cfg(feature = "bench-internals")]

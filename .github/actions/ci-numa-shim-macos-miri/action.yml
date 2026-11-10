@@ -1,0 +1,49 @@
+name: CI numa-shim-macos-miri
+description: Original numa-shim-macos-miri job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    - run: cargo miri test -p numa-shim
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo miri test -p numa-shim --features vmem-integration
+    # task #1288: mock via the build-time cfg (RUSTFLAGS propagates through
+    # cargo to the miri-driven compilation, same as the aligned-vmem miri
+    # row's use of RUSTFLAGS cfgs)
+    # task #1299 (T8, item 103): sentinel added — this is the only miri x
+    # mock cell in the whole workflow, so a typo'd cfg compiling this row's
+    # tests to zero and exiting 0 (task #1101/#1070 "Breakage B"
+    # green-and-dead hazard) would otherwise go undetected here specifically.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: |
+        RUSTFLAGS="--cfg numa_shim_mock" cargo miri test -p numa-shim 2>&1 | tee "$RUNNER_TEMP/numa-shim-macos-miri-mock.log"
+        grep -F "test current_node_records_scripted_value ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock.log"
+        grep -F "test resolution_matches_current_node_resolved_zero ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock.log"
+      shell: bash
+    # task #1356 (P3-5 of item 117's twenty-fifth independent review,
+    # docs/correctness-open-items/TRACKED_publish_readiness.md; framed by
+    # the review itself as hardening, not a release blocker): the miri
+    # twin of numa-shim-macos's mock+vmem-integration row above — the last
+    # uncovered cell of this crate's {real, mock} x {default,
+    # vmem-integration} miri matrix, a known gap since task #1325 (see
+    # the now-updated comment on that job's row). The mock's positive
+    # path is miri-compatible by construction: under `numa_shim_mock` the
+    # smoke.rs platform branches all take the mock arm (task #1325 made
+    # them backend-aware, target_os-independent), and the mock's
+    # reservation comes from aligned-vmem's own `#[cfg(miri)]` backend
+    # (crates/aligned-vmem/src/os/miri.rs), not a real mmap. Same three
+    # sentinels as the non-miri twin above (task #1101 pattern; the task
+    # #1070 "Breakage B" vacuous-green hazard): this is the workflow's
+    # only miri x mock x feature cell, so a typo'd cfg or dropped feature
+    # compiling its tests to zero would otherwise be undetected here
+    # specifically.
+    - run: |
+        RUSTFLAGS="--cfg numa_shim_mock" cargo miri test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-macos-miri-mock-vmem.log"
+        grep -F "test reserve_preferred_on_node_returns_valid_span ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock-vmem.log"
+        grep -F "test reserve_preferred_on_node_large_align_round_trip ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock-vmem.log"
+        grep -F "test reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock-vmem.log"
+      shell: bash

@@ -1,0 +1,124 @@
+name: CI proc-memstat-gates
+description: Original proc-memstat-gates job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+
+    - name: fmt
+      # ci-default-shell: preserve original implicit runner shell
+      shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash -e {0}' }}
+      run: cargo fmt -p proc-memstat -- --check
+
+    - name: clippy (all targets, warnings as errors)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash -e {0}' }}
+      run: cargo clippy -p proc-memstat --all-targets -- -D warnings
+
+    # Runs the crate's OWN integration tests — `tests/monotonicity.rs`
+    # (which re-executes itself per scenario in a fresh process),
+    # `tests/platform_contract.rs` (the per-platform counter-availability
+    # and kB-vs-bytes oracles) and `tests/status_parse.rs` (the byte-level
+    # /proc parser). On the ubuntu row this is the first time the Linux
+    # shape assertions and the real `/proc/self/status` read are exercised
+    # anywhere in CI; on the macOS row, linking these binaries is itself
+    # the P2-1 smoke.
+    - name: test
+      # ci-default-shell: preserve original implicit runner shell
+      shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash -e {0}' }}
+      run: cargo test -p proc-memstat --all-targets
+
+    - name: rustdoc (warnings as errors)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash -e {0}' }}
+      run: cargo doc -p proc-memstat --no-deps
+      env:
+        RUSTDOCFLAGS: -D warnings
+
+    # A real consumer OUTSIDE the workspace: its own `[workspace]` table
+    # detaches it, so it resolves proc-memstat the way a crates.io consumer
+    # would rather than inheriting workspace lints/deps. It LINKS and CALLS
+    # `snapshot()`, then asserts the result is not the all-zero stub — which
+    # on a supported OS can only mean the backend failed. `cargo test`
+    # above already links; this additionally proves a plain downstream
+    # binary does, through the manifest a real user sees.
+    - name: link smoke — downstream binary that calls snapshot()
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/pm-consumer/src"
+        cat > "$RUNNER_TEMP/pm-consumer/Cargo.toml" <<'TOML'
+        [workspace]
+
+        [package]
+        name = "pm-consumer"
+        version = "0.0.0"
+        edition = "2021"
+
+        [dependencies]
+        proc-memstat = { path = "PM_PATH" }
+        TOML
+        # Absolute path substituted rather than written literally: the
+        # consumer lives in RUNNER_TEMP, not next to the repo.
+        python3 - "$RUNNER_TEMP/pm-consumer/Cargo.toml" "$GITHUB_WORKSPACE/crates/proc-memstat" <<'PY'
+        import sys, pathlib
+        manifest = pathlib.Path(sys.argv[1])
+        manifest.write_text(manifest.read_text().replace("PM_PATH", sys.argv[2].replace("\\", "/")))
+        PY
+        cat > "$RUNNER_TEMP/pm-consumer/src/main.rs" <<'RS'
+        fn main() {
+            let m = proc_memstat::snapshot();
+            println!(
+                "rss={} virtual_size={:?} commit_charge={:?} peak_rss={:?}",
+                m.rss, m.virtual_size, m.commit_charge, m.peak_rss
+            );
+            // On every OS this job runs, the backend is a real one, so the
+            // all-zero stub shape means the platform read failed rather
+            // than that the platform is unsupported.
+            assert!(m.rss > 0, "a linked consumer must observe a non-zero rss");
+            assert!(
+                m.peak_rss.is_some(),
+                "every OS in this matrix exposes a peak-RSS counter"
+            );
+            assert!(
+                m.virtual_size.is_some() || m.commit_charge.is_some(),
+                "each supported OS provides exactly one of virtual_size / commit_charge"
+            );
+        }
+        RS
+        cd "$RUNNER_TEMP/pm-consumer"
+        cargo run --quiet
+
+    # Review P4-2 asks for a MEASUREMENT before deciding whether the
+    # three-scan Linux reader is worth fusing into one pass. Linux-only
+    # (that is the backend in question) and reported into the job summary
+    # so the numbers land somewhere durable rather than scrolling past in a
+    # log. Not a gate: it has no pass/fail threshold, because the finding
+    # asks what the cost IS, not that it stay under a bound.
+    - name: measure — three-scan vs one-scan /proc/self/status cost (P4-2)
+      if: matrix.os == 'ubuntu-latest'
+      shell: bash
+      run: |
+        set -euo pipefail
+        out=$(cargo run --release -q -p proc-memstat --example status_scan_cost)
+        echo "$out"
+        {
+          echo "### proc-memstat P4-2 — scan-cost measurement"
+          echo
+          echo '```text'
+          echo "$out"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    # Packaging verification, matching the convention the once-ptr-cell and
+    # size-classes jobs above state: confirms the crate packages and that
+    # the packaged tarball builds in isolation against its published
+    # manifest. Ubuntu-only — packaging is OS-independent and there is no
+    # reason to pay for it three times.
+    - name: package (dry-run publish)
+      if: matrix.os == 'ubuntu-latest'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash -e {0}' }}
+      run: cargo publish --dry-run -p proc-memstat

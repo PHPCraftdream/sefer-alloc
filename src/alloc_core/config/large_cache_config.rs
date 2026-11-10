@@ -33,6 +33,8 @@
 // `LargeCacheMode` lives in the sibling sub-module `alloc_core::large_cache_mode`
 // and is re-exported by `alloc_core::mod.rs`.
 use crate::alloc_core::config::large_cache_mode::LargeCacheMode;
+use crate::alloc_core::config::policy::large_thp::{LargeThpGradient, LargeThpMode};
+use crate::alloc_core::config::policy::large_thp_runtime::ThpTuple;
 // `SmallSegmentPoolConfig` (Mechanism 2, task #51) lives in the sibling
 // sub-module `alloc_core::small_segment_pool_config`. It is carried as a field
 // here — both are `alloc-decommit`-gated construction-time knobs threaded
@@ -228,6 +230,21 @@ pub struct LargeCacheConfig {
     /// Resolved by
     /// [`resolved_huge_page_after_segments`](Self::resolved_huge_page_after_segments).
     pub(crate) huge_page_after_segments: Option<usize>,
+
+    /// Large-THP advice mode; `None` resolves to `LargeThpMode::Off`.
+    pub(crate) huge_page_mode: Option<LargeThpMode>,
+
+    /// Smallest fresh Large block (bytes) eligible for THP advice; `None`
+    /// resolves to 8 MiB, `Some(0)` makes every fresh Large block eligible.
+    pub(crate) huge_page_block_min_bytes: Option<usize>,
+
+    /// Bound on ADVISED Large bytes; `None` resolves to `0` (unlimited).
+    /// Independent of the cache `budget_bytes`.
+    pub(crate) huge_page_budget_bytes: Option<usize>,
+
+    /// Gradient parameters for `LargeThpMode::Auto`; `None` resolves to
+    /// `LargeThpGradient::CAUTIOUS`.
+    pub(crate) huge_page_gradient: Option<LargeThpGradient>,
 }
 
 /// Default of [`LargeCacheConfig::huge_page_after_segments`]: the 16th small
@@ -297,6 +314,10 @@ impl LargeCacheConfig {
             depot_budget_bytes: None,
             route_pin_cache_slots: None,
             huge_page_after_segments: None,
+            huge_page_mode: None,
+            huge_page_block_min_bytes: None,
+            huge_page_budget_bytes: None,
+            huge_page_gradient: None,
         }
     }
 
@@ -535,7 +556,13 @@ impl LargeCacheConfig {
 
     /// Resolve the route-pin-cache slot count: default when unset, rounded
     /// down to a power of two, clamped to `PIN_CACHE_SLOTS_MIN..=MAX`.
+    /// Callers live only under `alloc-global` (heap-core materialisation and
+    /// its live-config check) or `internals` (dbg hook).
     #[must_use]
+    #[cfg_attr(
+        not(any(feature = "alloc-global", feature = "internals")),
+        allow(dead_code)
+    )]
     pub(crate) const fn resolved_route_pin_cache_slots(&self) -> usize {
         let n = match self.route_pin_cache_slots {
             Some(v) => v,
@@ -582,6 +609,105 @@ impl LargeCacheConfig {
         self
     }
 
+    /// Large-allocation transparent-huge-page mode: [`LargeThpMode::Off`]
+    /// (default) never hints, `Always` hints every eligible fresh Large range,
+    /// `Auto` is reserved for the learned share and **does not learn yet** (it
+    /// currently advises nothing).
+    ///
+    /// **Process-wide, first config wins whole**: the first heap materialised
+    /// with ANY of the four `huge_page_mode` / `huge_page_block_min_bytes` /
+    /// `huge_page_budget_bytes` / `huge_page_gradient` knobs publishes the
+    /// whole tuple (unset knobs take their defaults); later differing configs
+    /// are ignored. Explicit-only: a config setting none of them publishes
+    /// nothing. Linux/Android only; a no-op elsewhere and forced to a no-op
+    /// under `numa-aware`.
+    #[must_use]
+    pub const fn huge_page_mode(mut self, mode: LargeThpMode) -> Self {
+        self.huge_page_mode = Some(mode);
+        self
+    }
+
+    /// Smallest fresh Large block, in bytes, eligible for THP advice
+    /// (default 8 MiB). **`0` makes every fresh Large block eligible; it is
+    /// NOT an alias for "never"** (use `LargeThpMode::Off` for that). Same
+    /// process-wide, first-config-wins, explicit-only, Linux/Android-only and
+    /// `numa-aware` no-op rules as [`huge_page_mode`](Self::huge_page_mode).
+    #[must_use]
+    pub const fn huge_page_block_min_bytes(mut self, bytes: usize) -> Self {
+        self.huge_page_block_min_bytes = Some(bytes);
+        self
+    }
+
+    /// Bound on the bytes **advised** for huge pages (not on RSS): default and
+    /// `0` mean unlimited. Distinct from the cache
+    /// [`budget_bytes`](Self::budget_bytes). Same process-wide,
+    /// first-config-wins, explicit-only, Linux/Android-only and `numa-aware`
+    /// no-op rules as [`huge_page_mode`](Self::huge_page_mode).
+    #[must_use]
+    pub const fn huge_page_budget_bytes(mut self, bytes: usize) -> Self {
+        self.huge_page_budget_bytes = Some(bytes);
+        self
+    }
+
+    /// Gradient parameters for `LargeThpMode::Auto` (default
+    /// [`LargeThpGradient::CAUTIOUS`]); inert while `Auto` does not learn. Same
+    /// process-wide, first-config-wins, explicit-only, Linux/Android-only and
+    /// `numa-aware` no-op rules as [`huge_page_mode`](Self::huge_page_mode).
+    #[must_use]
+    pub const fn huge_page_gradient(mut self, gradient: LargeThpGradient) -> Self {
+        self.huge_page_gradient = Some(gradient);
+        self
+    }
+
+    /// `true` when any of the four large-THP knobs was set explicitly.
+    #[must_use]
+    // Sole caller is the lifecycle tuple publication, itself compiled out
+    // under numa-aware; the internals dbg hook reads the tuple directly.
+    #[cfg_attr(feature = "numa-aware", allow(dead_code))]
+    pub(crate) const fn has_explicit_thp_knob(&self) -> bool {
+        self.huge_page_mode.is_some()
+            || self.huge_page_block_min_bytes.is_some()
+            || self.huge_page_budget_bytes.is_some()
+            || self.huge_page_gradient.is_some()
+    }
+
+    /// Resolve the four large-THP knobs into one tuple (unset => default).
+    #[must_use]
+    // Callers: the lifecycle publication (non-NUMA) and the internals
+    // dbg_resolved_thp_tuple; the attribute covers rows with neither.
+    #[cfg_attr(
+        all(feature = "numa-aware", not(feature = "internals")),
+        allow(dead_code)
+    )]
+    pub(crate) const fn resolved_thp_tuple(&self) -> ThpTuple {
+        ThpTuple {
+            mode: match self.huge_page_mode {
+                Some(m) => m,
+                None => ThpTuple::DEFAULT.mode,
+            },
+            min_bytes: match self.huge_page_block_min_bytes {
+                Some(n) => n,
+                None => ThpTuple::DEFAULT.min_bytes,
+            },
+            budget_bytes: match self.huge_page_budget_bytes {
+                Some(n) => n,
+                None => ThpTuple::DEFAULT.budget_bytes,
+            },
+            gradient: match self.huge_page_gradient {
+                Some(g) => g,
+                None => ThpTuple::DEFAULT.gradient,
+            },
+        }
+    }
+
+    /// TEST-ONLY: the resolved large-THP tuple of this config.
+    #[doc(hidden)]
+    #[cfg(feature = "internals")]
+    #[must_use]
+    pub const fn dbg_resolved_thp_tuple(&self) -> ThpTuple {
+        self.resolved_thp_tuple()
+    }
+
     /// TEST-ONLY: the resolved huge-page threshold of this config
     /// (`0` = never hint).
     #[doc(hidden)]
@@ -619,8 +745,14 @@ impl LargeCacheConfig {
 
     /// Resolve the depot-overflow budget (G1-K7): default when unset, then
     /// capped at [`DEPOT_BUDGET_MAX`] and rounded down to
-    /// [`DEPOT_BUDGET_GRAIN`].
+    /// [`DEPOT_BUDGET_GRAIN`]. Callers live only under `alloc-global`
+    /// (heap-core depot budget materialisation and its live-config check)
+    /// or `internals` (dbg hook).
     #[must_use]
+    #[cfg_attr(
+        not(any(feature = "alloc-global", feature = "internals")),
+        allow(dead_code)
+    )]
     pub(crate) const fn resolved_depot_budget_bytes(&self) -> usize {
         let b = match self.depot_budget_bytes {
             Some(v) => v,

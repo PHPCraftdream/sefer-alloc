@@ -1,0 +1,35 @@
+name: CI miri-alloc-core
+description: Original miri-alloc-core job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    # NOTE: `regression_own_segment_cache_invalidation` (the Э3 own-segment
+    # cache invalidation) was evaluated for miri and DEFERRED (R3, #155):
+    # its correctness assertion needs ROUND_BLOCKS=18_000 across
+    # TARGET_SEGMENTS=6 (~100k interpreted 256 B allocations), which did
+    # not even finish compiling+running under miri in ~9 min locally — it
+    # would time out CI. The block-count is invariant-load-bearing (it
+    # must span >= 6 real 4 MiB segments), so it cannot be
+    # `cfg(miri)`-capped without voiding the test. Its decommit/recommit
+    # UB surface is already covered by `decommit_miri_cycle` above.
+    - run: >-
+        cargo miri test --features alloc-core
+        --test regression_large_align_no_segment_exhaustion
+        --test regression_page_aligned_no_segment_exhaustion
+        --test regression_realloc_cross_class_shrink
+        --test stress_boundary_sweep
+    # R6-T22 (R6-MS-1): foreign address sharing the 4 MiB key window under
+    # `exact-span-large` must reject before `Node::deref`'s `add`. Separate
+    # step/feature string (`internals` is needed for the span probe) so it
+    # does not force a rebuild of the alloc-core group above.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: >-
+        cargo miri test --features "exact-span-large internals"
+        --test regression_r6_t22_foreign_window_key_miri
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

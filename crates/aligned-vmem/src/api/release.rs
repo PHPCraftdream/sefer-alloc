@@ -171,6 +171,16 @@ pub(crate) unsafe fn dispatch_try_release(
     #[cfg(feature = "fault-injection")]
     {
         if fault_injection::should_fail_release() {
+            #[cfg(feature = "bench-internals")]
+            crate::bench_internals::advice::AdviceCapture::release_end(
+                crate::bench_internals::advice::AdviceCapture::release_begin(
+                    reservation.as_ptr().addr(),
+                    reservation_len,
+                ),
+                reservation.as_ptr().addr(),
+                reservation_len,
+                false,
+            );
             // task #713: SIMULATED failure — no syscall ran, so there is no
             // real OS code to report; `last_os_error()` here would fabricate
             // a stale cause from an unrelated prior call.

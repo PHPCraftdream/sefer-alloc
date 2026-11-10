@@ -15,6 +15,52 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 260 — CLOSED (2026-11-09)
+
+Status: CLOSED on exact source `93f990173e37bdaab7334b58f2876ba6649e24c4`, CI `42693008438` attempt2 SUCCESS; final45SUCCESS/20intendedSKIPPED. The existing declared-runtime predicate is unchanged. A proper prefix is derived from history and the complete verification suffix must execute exact production text/Ir identity, not SKIP. The raw structured evidence, CI excerpt, generated table and CSV are preserved in `docs/perf/J13B_TASK78_ZERO_COST_RECEIPT.md`; no whole-PR runtime identity or speedup is claimed. Eighteen policy assertions and retained semantic/model checks passed. Initial macOS runner-capacity cancellation was retried on the same source and all platform steps passed. Full J13b windows/admission/campaign remain separate obligations.
+
+#### Historical pre-acceptance card (superseded by the closure above)
+
+260. **[T] `ghost-zero-cost` has no mode for a runtime PR that must also add `cfg(kani)` code.** (Filed 2026-10-29, PR #128 / G1-K7; read-only consultations of the rush reviewer and @ox.)
+
+    - **Status:** OPEN — two-phase implementation candidate; exact-source CI acceptance pending. J13b PR #225 now needs this contract because its benchmark-only native/model guards add explicit Miri tokens after an already-declared runtime prefix.
+    - **Current-number-or-verdict:** the existing `zeroCostSkip` policy is unchanged. A fully admitted runtime range retains its existing skip; a mixed range derives the newest proper first-parent prefix whose complete `base..R` inputs satisfy that same policy, then requires exact production `.text` and Ir equality for the entire contiguous `R..head` suffix. No caller-picked prefix, HEAD-as-prefix, dirty-tree exemption, tolerance, excluded symbol or inferred whole-PR identity is added. If no prefix qualifies, the original full-range proof remains mandatory. Reports retain the original PR base, derived prefix, admitted-prefix reason/subjects/paths and measured suffix endpoints. Eighteen cargo-free policy assertions cover boundary selection and refusal; native proof execution remains CI-only. Historical motivation: PR #128 could split after reverting its Kani constructor/job coupling; the consultations already recommended precisely this two-phase contract rather than weakening token rejection.
+    - **Next trigger:** accept only after CI on the exact source positively executes the admitted-prefix plus nonempty-suffix proof, reports identical production text and zero Ir delta, and passes the retained model/semantic gates. A prefix classification alone is not a proof. Keep this card OPEN until then.
+    - **Evidence:** `scripts/ghost_diff.mjs` unchanged predicate; `scripts/ghost_runtime_prefix.mjs`; `scripts/ghost_zero_cost.mjs`; `tests/ghost_runtime_prefix_fixtures.mjs`; J13b judge manifest records the initial full-range failure and the earlier declared-runtime SKIP, not an earlier machine-identity receipt. Historical PR #128 `b09885b6`, item 259 and the consultations above remain motivation, not implementation acceptance.
+
+### 273 — CLOSED (2026-11-09)
+
+273. **[T, filed 2026-11-09, J13b #68] Native witness imposed an unsupported order on separate approximate VmHWM readings.**
+
+    - **Status:** CLOSED on exact `1df76807c0186861f4574f7062186ae6ac4736f6`, CI `42550096032` SUCCESS, after personal source and actual native/model log review; no waiver or deferred fix.
+    - **Current-number-or-verdict:** initial `ceb7dd9f` / CI `42545332077` failed `retained_peak >= live_peak`; unchanged-assertion diagnostic `a3db8675` / CI `42547103202` reproduced it with old peak 36446208, start/end RSS 2895872, live peak 19673088 and retained peak 19517440 bytes. The difference is 155648 bytes, while the in-window signal remains more than 8 MiB above end RSS. Kernel `get_mm_hiwater_rss` returns max(stored hiwater, current RSS) without persisting the observed maximum; its RSS inputs use approximate shared per-CPU counter reads, not a full sum. `proc_pid_status(5)` explicitly calls VmHWM/VmRSS inaccurate. Thus the strict inter-read order was an invalid witness contract, not evidence that the whole 16 MiB window peak vanished.
+    - **Same-workstream correction:** report the actual approximate OS counter without clamping or an inferred error band. Keep the original 32/16 MiB mapping signals and 16/8 MiB signal gaps; strengthen reset/lifetime rejection to those existing gaps and retain the freed-peak/end-RSS separation. A shared test-only contract gains negative controls for no-op, near-no-op, lifetime/near-lifetime, end-RSS, zero and invalid live signals; a synthetic lower retained/live reading is not an accuracy tolerance. Numeric allocator/performance gates remain unchanged. No per-window runtime admission or campaign verdict is accepted yet.
+    - **Verified closure:** five native parser/witness-contract cases and the real native epoch witness passed (zero ignored); actual-source strict Miri positively executed all six parser/model-rejection/negative-source cases with exact flags checked. Semantic selftest 214 cases / 316 mutants / zero failures, linter mutants 10/10, protected range 20 commits / zero red and final PR checks 42 SUCCESS / 23 intended SKIPPED passed. The producer still returns the unmodified approximate OS gauge; this is neither a physical-maximum proof nor full runtime-judge/campaign acceptance.
+    - **Evidence:** `tests/j13b_os_probe_native.rs`, `tests/support/j13b_peak_epoch_witness.rs`, `examples/_shared/j13b_os_probe.rs`, [diagnostic CI 42547103202](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42547103202), job `128934429242`; [proc_pid_status(5)](https://man7.org/linux/man-pages/man5/proc_pid_status.5.html), Linux v6.8 `include/linux/mm.h` and `include/linux/percpu_counter.h`. Earlier failures remain failures. No local probe/reset/test/model/workload was executed; these numbers diagnose correctness, not performance.
+
+### 268 — CLOSED (2026-11-08)
+
+268. **Loom invocation continuation and tee pipeline status repaired and verified.**
+
+    > **Current state**
+    > - **Status:** CLOSED — exact CI `42444595011` completed SUCCESS on `f7925dc899707281af2d7acf59cc4705503144a4`.
+    > - **Mechanism and repair:** a literal backslash-n in the misuse-checks command was replaced by a real shell continuation; both affected tee pipelines explicitly enable pipefail. No test sentinel or gate was removed.
+    > - **Evidence:** parent personally inspected job `128621483903`: the actual misuse-checks `loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup` executed successfully, as did all three THP tuple and both ledger cases. The recorded commands preserve Cargo failure through tee. This closes invocation wiring, not unexecuted real-code model mutants or absent Kani arithmetic in item 265. No models executed locally.
+
+### 270 — CLOSED (2026-11-08)
+
+270. **[T, filed 2026-11-08] Cross/QEMU invalid-class abort test accepted an ELF launch failure as success.**
+
+    > **Current state**
+    > - **Status:** CLOSED (2026-11-08) — exact-source native and aarch64/QEMU CI verified.
+    > - **Mechanism:** aarch64 job `128553410933` in CI `42422343034` emitted shell ELF syntax errors while `r6_invalid_class_aborts_without_unwind` passed. Direct child re-exec bypassed the configured target runner; any unsuccessful status except 101 counted as abort.
+    > - **Repair:** preserve both invalid-class modes, use the configured runner without a shell, require fresh activation in a parent-exclusively reserved directory, the expected platform abort status, and the exact production fatal line. File-backed stderr avoids inherited-pipe EOF dependencies; an owned-child guard and finite observation budget supervise the direct exec transport. Negative controls cover argv, exclusive creation, invalid launch arguments, normal return, missing activation, unrelated diagnostics and an activated parked child with no output streams.
+    > - **Limits:** each abort mode currently consumes its full 60-second observation budget; counterfactual subprocess budgets are 10 seconds. No early-completion timing claim or arbitrary process-tree containment is made. OS kill/wait/filesystem calls have no absolute syscall deadline. Failure/unwind cleanup and stderr-size rejection are source-reviewed but lack injected-error regression coverage.
+    > - **Evidence:** `tests/r6_sidecar_bitmap.rs`, `tests/r6_sidecar_bitmap/child_process.rs`, `Cross.toml`; failed CI `42422343034` and repeated shell errors in `42426350786`. No local test or child execution was performed.
+
+    > - **Verified closure:** CI [42439762856](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42439762856) completed SUCCESS on `6c62ff0f53e05c4a0f589010cc4956bf478d524f`. Parent personally read aarch64 job `128607142479`: three feature executions passed the actual abort test and all negative controls; no shell/ELF syntax errors remained. Windows job `128607142537` and macOS job `128607142294` also executed and passed those tests. The first candidate `6adb7772` failed Unix compilation in run `42438004734`; moving the helper declaration to the integration crate root repaired the nonexistent intermediate path without changing the oracle.
+    > - **Delivery:** parent preserved and compared all child-worktree changes, retained exact differing snapshots in ignored local preservation artifacts, and removed the delivered cross-abort worktree and task branch. The documented runtime-cost and coverage limitations above remain; closure does not claim they disappeared.
+
 ### 269 — CLOSED (2026-11-08)
 
 269. **[T, filed 2026-11-08] Teardown-trim regression observed counters before TLS destruction was guaranteed complete.**

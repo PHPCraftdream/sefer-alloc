@@ -181,4 +181,14 @@ pub struct AllocStats {
     /// `alloc-decommit` feature (where `claim_lease_with_config` exists); `0`
     /// otherwise.
     pub config_conflicts: u64,
+    /// Large-THP tuple publications that found a different tuple already
+    /// published by an earlier explicit configuration (the first tuple wins
+    /// process-wide, as for `huge_page_after_segments`). Only configurations
+    /// that set a large-THP knob publish; the count is taken at heap
+    /// materialisation, not on re-claim of an existing heap or on the
+    /// fallback path. A publication racing the winner's in-progress publish
+    /// is counted too, so a same-tuple race can over-count by one. Always
+    /// compiled (cold path only); `0` without `alloc-decommit` or under
+    /// `numa-aware`, where the mechanism is compiled out.
+    pub thp_tuple_conflicts: u64,
 }

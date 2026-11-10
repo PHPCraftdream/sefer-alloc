@@ -141,6 +141,8 @@ job). Lookup rows updated; card counts in the tier files re-typed.
 
 **Round-6 closure update (2026-10-16).** Items 206–208 are now CLOSED and resolve to `docs/correctness-open-items/RESOLVED.md`; see entries 206–208 for verified PR/task evidence. No item numbers changed.
 
+**J13b #47 limitations (2026-11-06).** Items 262–267 record the declared limitations of the bounded Large-block THP implementation (tuple conflicts only at heap materialisation, the PUBLISHING-window behaviour, the 128 → 136 byte header with unknown Ir, loom models written and wired but CI-execution pending, kani model open, the non-injectable cache-reuse registration failure, the uncovered cache-refusing remote-free reclaim). Cards: 262, 263, 264, 266 in `TRACKED_correctness_residuals.md`; 265, 267 in `TRACKED_verification_coverage.md`. All OPEN, none measured or executed locally.
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
@@ -284,7 +286,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   50/51/54/55/64/65/70/72/73/74/76/88/92 are each "a real test exists, but
   no gate runs it, or runs it under the wrong profile/feature set"; 19/25
   are the same shape for MSRV and a compile-fail harness specifically.
-- **`docs/correctness-open-items/TRACKED_test_flakiness.md`** (3
+- **`docs/correctness-open-items/TRACKED_test_flakiness.md`** (2
   open cards + 8 retained resolved records) — flaky /
   order-dependent / scheduler-sensitive tests. Criterion:
   a test that fails intermittently because of timing, thread ordering, or
@@ -620,10 +622,20 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 257 | `RESOLVED.md` |
 | 258 | `RESOLVED.md` |
 | 259 | `RESOLVED.md` |
-| 260 | `TRACKED_ci_gate_coverage.md` |
+| 260 | `RESOLVED.md` |
 | 261 | `RESOLVED.md` |
+| 262 | `TRACKED_correctness_residuals.md` |
+| 263 | `TRACKED_correctness_residuals.md` |
+| 264 | `TRACKED_correctness_residuals.md` |
+| 265 | `TRACKED_verification_coverage.md` |
+| 266 | `TRACKED_correctness_residuals.md` |
+| 267 | `TRACKED_verification_coverage.md` |
+| 268 | `RESOLVED.md` |
 | 269 | `RESOLVED.md` |
-| 270 | `TRACKED_test_flakiness.md` |
+| 270 | `RESOLVED.md` |
+| 271 | `TRACKED_verification_coverage.md` |
+| 272 | `TRACKED_correctness_residuals.md` |
+| 273 | `RESOLVED.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains

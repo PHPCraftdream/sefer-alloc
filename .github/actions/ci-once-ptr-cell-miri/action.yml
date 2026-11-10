@@ -1,0 +1,17 @@
+name: CI once-ptr-cell-miri
+description: Original once-ptr-cell-miri job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    - run: cargo miri test -p once-ptr-cell
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo miri test -p once-ptr-cell
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance"
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

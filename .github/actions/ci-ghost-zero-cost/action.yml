@@ -1,0 +1,27 @@
+name: CI ghost-zero-cost
+description: Original ghost-zero-cost job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+    - run: sudo apt-get update -q && sudo apt-get install -y -q valgrind binutils
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: |
+        BASE="${{ github.event.pull_request.base.sha }}"
+        [ -z "$BASE" ] && BASE="${{ github.event.before }}"
+        git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE=HEAD^
+        PR_HEAD="${{ github.event.pull_request.head.sha }}"
+        [ -z "$PR_HEAD" ] && PR_HEAD=HEAD
+        node scripts/ghost_zero_cost.mjs --base "$BASE" --allow-declared-runtime --head "$PR_HEAD" --require-ir --out "$RUNNER_TEMP/ghost_zero_cost.json"
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: ghost-zero-cost
+        path: ${{ runner.temp }}/ghost_zero_cost.json
+        if-no-files-found: ignore

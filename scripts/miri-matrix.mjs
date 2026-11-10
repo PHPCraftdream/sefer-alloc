@@ -27,6 +27,58 @@ const depot = (borrows) => green('miri-core', 'miri_depot_cycle', 'alloc-global 
 const plainFeatures = 'alloc-global alloc-xthread alloc-decommit internals bench-internals';
 export const MIRI_TARGETS = [
   green('miri-core', 'region_invariants'),
+  green('miri-core', 'advice_event_stream', 'bench-internals fault-injection', {
+    pkg: 'aligned-vmem',
+    marker: 'test cursor_wrap_never_turns_failed_capture_into_an_empty_success ... ok',
+  }),
+  green('miri-core', 'advice_event_replay', 'bench-internals', {
+    pkg: 'aligned-vmem',
+    marker: 'test unknown_release_and_partial_advice_never_yield_zero_or_repaired_rows ... ok',
+  }),
+  green('miri-core', 'j13b_advice_capture_native', 'production alloc-stats internals bench-internals lazy-commit-fault-injection', {
+    marker: 'test native_advice_capture_rejects_unsupported_hosts_before_payload_claims ... ok',
+  }),
+  green('miri-core', 'j13b_advice_windows_native', 'production alloc-stats internals bench-internals lazy-commit-fault-injection', {
+    marker: 'test advice_windows_reject_models_before_clocks_capture_or_payload ... ok',
+  }),
+  green('miri-core', 'j13b_native_identity', '', {
+    marker: 'test process_facts_reject_models_before_files_commands_or_payload ... ok',
+  }),
+  green('miri-core', 'j13b_build_seal', '', {
+    marker: 'test duplicate_or_escaped_compiled_keys_cannot_silently_override ... ok',
+  }),
+  green('miri-core', 'j13b_artifact_request', '', {
+    marker: 'test duplicate_decoded_keys_and_escaped_aliases_are_rejected ... ok',
+  }),
+  green('miri-core', 'advice_window', 'bench-internals', {
+    pkg: 'aligned-vmem',
+    marker: 'test historical_cumulative_peak_is_not_the_next_window_peak ... ok',
+  }),
+  green('miri-core', 'advice_lifetime_ledger', 'bench-internals', {
+    pkg: 'aligned-vmem',
+    marker: 'test unsupported_release_preserves_entries_and_never_recovers_via_retry_or_reuse ... ok',
+  }),
+  ...['sb', 'tb'].map((borrows) => green('miri-core', 'j13b_window_kernel', '', {
+    borrows,
+    marker: 'test four_workers_execute_and_all_joins_precede_an_error_result ... ok',
+  })),
+  ...['sb', 'tb'].map((borrows) => green('miri-core', 'j13b_payload_actors', '', {
+    borrows,
+    marker: 'test persistent_actors_transfer_both_directions_on_actual_threads ... ok',
+  })),
+  green('miri-core', 'j13b_owner_training_native', 'production internals bench-internals lazy-commit-fault-injection', {
+    marker: 'test unsupported_training_is_rejected_before_payload_claims ... ok',
+  }),
+  green('miri-core', 'j13b_adaptive_windows_native', 'production internals bench-internals', {
+    marker: 'test adaptive_windows_reject_model_or_unsupported_os_before_payloads ... ok',
+  }),
+  green('miri-core', 'j13b_os_probe', '', {
+    marker: 'test unsupported_os_or_model_is_rejected_before_any_probe ... ok',
+  }),
+  ...['sb', 'tb'].map((borrows) => green('miri-core', 'j13b_owned_block', '', {
+    borrows,
+    marker: 'test ownership_transfers_both_directions_and_is_freed_on_the_actual_destination ... ok',
+  })),
   narrow('sb'),
   narrow('tb'),
   r101('sb'),

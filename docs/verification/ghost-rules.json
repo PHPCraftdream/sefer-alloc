@@ -3,6 +3,60 @@
   "doc": "Ghost-checks catalog (docs/GHOST_CHECKS_PLAN.md). `protocols` — G0 inventory to invariant level; `scopes` — every atomic/ordering site in src/** and crates/*/src/** claimed by exactly one scope (scripts/ghost_inventory.mjs --check); `rules` — per-site lint rules, filled from G1 on.",
   "protocols": [
     {
+      "id": "P28",
+      "name": "benchmark advice event capture publication",
+      "prod": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+        "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
+      ],
+      "invariants": [
+        "I1 capture begins once before producers; published slots are never reset or recycled",
+        "I2 one cursor RMW reserves each event position; capacity and unsupported failures cannot yield truncated readable evidence",
+        "I3 one bounded empty-to-in-progress slot CAS precedes all scalar payload writes, preventing reuse even after cursor wrap",
+        "I4 all relaxed scalar payload stores precede Release completion; an Acquire matching completion precedes every relaxed payload load",
+        "I5 first-failure diagnostics are sticky, publish no payload and never influence allocator policy or native outcomes",
+        "I6 readable boundaries require producer quiescence and full prefix publication, validated encodings and unchanged cursor",
+        "I7 diagnostic addresses remain inert integers; no allocation, callbacks, mapping locks, mapped-memory access or unbounded retry exists in append",
+        "I8 release markers are sampled before the consuming native attempt; only a unique confirmed Large-source result whose marker includes the original fresh/advice publication can justify canonical closure before a reused range; thread-affine scalar source context restores on exit, unrelated VM callbacks never debit Large ownership, and unknown outcomes never repair evidence"
+      ],
+      "class": "S",
+      "loom": [],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "no Loom model: bounded actual-source thread/Miri, native emitter/replay and semantic fixtures accepted on 93f99017 by CI42693008438 attempt2; no whole-native-lifecycle or wait-freedom claim",
+      "decision": "benchmark-only bounded capture with fail-closed evidence",
+      "phase": "J13b",
+      "reason": "Task78 bounded native capture/replay is component-accepted with positive native/Miri/semantic and verification-suffix zero-cost receipts. Window binding/cost component accepted on95ee28ef by CI42724018048; complete adapters, identities and runtime admission remain open, with no performance or default promotion implied."
+    },
+    {
+      "id": "P27",
+      "name": "large-THP coherent bounded estimator pair",
+      "prod": [
+        "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+        "src/alloc_core/alloc_core/mem/advise_fresh_large.rs"
+      ],
+      "invariants": [
+        "I1 one AtomicU64 contains both Q31 estimator components; snapshot is one indivisible load",
+        "I2 a successful CAS applies exactly one accepted pure-estimator update from its expected packed pair",
+        "I3 at most eight CAS attempts per observation; exhaustion returns false without applying that observation",
+        "I4 Relaxed accesses publish no external payload; only the indivisible scalar pair is shared",
+        "I5 only validated owner first-life no-THP observations feed the request group estimator; failed-premise, remote, cache and invalidated old-realloc tokens never feed it",
+        "I6 per-group applied/dropped diagnostics are independent wrapping counters, not estimator inputs; applied plus dropped closes against valid observations only after worker quiescence",
+        "I7 the optimistic prior is group-local; Off/Always bypass learned shares and Auto still selects controls before reading a zero learned share so recovery remains observable"
+      ],
+      "class": "none",
+      "loom": [
+        "tests/loom_thp_learning_cell.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "cell only: tests/loom_thp_learning_cell.rs mounts the actual production cell and math on model atomics; runtime routing/admission is exercised by native tests, not a whole-runtime model; current integration acceptance is pending CI",
+      "decision": "rules + actual-source model + deterministic forced-CAS rejection test",
+      "phase": "J13b",
+      "reason": "Task49 connects valid control observations and fresh non-control Auto advice to separate process-group cells, with explicit applied/dropped accounting; diagnostics never drive learning. No performance acceptance is claimed."
+    },
+    {
       "id": "P1",
       "name": "HeapLease FREE->LIVE claim / LIVE->FREE Release drop",
       "prod": [
@@ -563,9 +617,209 @@
       "decision": "ghost",
       "phase": "SC-6",
       "reason": "SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spec): a negative discovery answer of an armed heap is trusted; R1 pins every ingress ordering, R3 the publish->check, mask->summary, store->fence and arm->drain orders; ghost events ingress/notified and ingress/taken"
+    },
+    {
+      "id": "P24",
+      "name": "large-THP tuple cell (write-once publication)",
+      "prod": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+      ],
+      "invariants": [
+        "I1 single winner: one strong compare_exchange(UNSET, PUBLISHING, AcqRel, Acquire) elects the only writer",
+        "I2 the five words are Relaxed-stored by the winner before the state store(PUBLISHED, Release)",
+        "I3 the words are never written after PUBLISHED (publish is the only writer, after the claiming CAS)",
+        "I4 the loser path, read and load_words have no loop, no spin and no weak-CAS retry: a loser that meets PUBLISHING reports a conflict",
+        "I5 readers decode the words only after an Acquire load observing PUBLISHED; unpublished or PUBLISHING gives the default tuple"
+      ],
+      "class": "none",
+      "loom": [
+        "tests/loom_thp_tuple_cell.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "yes: tests/loom_thp_tuple_cell.rs compiles the production thp_tuple_cell.rs (#[path]) onto the concurrency atomics; oracles: a reader never sees a torn tuple (result is exactly one candidate or the default), exactly one distinct-tuple publisher wins, a same-tuple race follows the over-count contract, and the model terminates under every interleaving (no spin)",
+      "decision": "rules + actual-source model + integration tests",
+      "phase": "J13b",
+      "reason": "J13b #47: R1 pins every ordering (claiming CAS, PUBLISHED store, state load, word stores and loads), R3 keeps the claim before the words and the last word before PUBLISHED, R5 keeps the words and spin primitives out of every other fn, R2 closes the ordered-op inventory of publish (no spin), R4 gates both word reads on PUBLISHED; behaviour is covered by the j13b_thp_publish_* and unpublished-default integration tests and by tests/loom_thp_tuple_cell.rs, the actual-source loom model of the cell"
+    },
+    {
+      "id": "P25",
+      "name": "large-THP budget ledger (advised bytes, bounded CAS reserve)",
+      "prod": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+        "src/alloc_core/alloc_core/mem/release_large_mapping.rs::release_large_mapping"
+      ],
+      "invariants": [
+        "I1 used never exceeds the budget of a successful reservation: a reservation is one compare_exchange_weak from the observed value",
+        "I2 try_reserve loops at most MAX_ATTEMPTS times and returns 0 (no advice) when it keeps losing",
+        "I3 give_back is a single fetch_sub of the reserved bytes",
+        "I4 Relaxed is sufficient: the only shared location is used and nothing else is published through it",
+        "I5 a Large mapping is released only by release_large_mapping, which gives the charge back after the unmap"
+      ],
+      "class": "none",
+      "loom": [
+        "tests/loom_thp_ledger.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "yes: tests/loom_thp_ledger.rs compiles the production thp_budget_ledger.rs (#[path]) onto the concurrency atomics; oracles: racing 6 MiB reserves against an 8 MiB budget never hand out more than the budget (an unconditional fetch_add reserve fails this), grants are exact granule multiples, and the ledger is empty after every thread returns exactly its own grant",
+      "decision": "rules + actual-source model + integration tests",
+      "phase": "J13b",
+      "reason": "J13b #47: R1 pins the Relaxed load, CAS and fetch_sub, R4 bounds the reserve loop, R3 ties the CAS to the observed value and the unmap to give_back, R5 keeps os::release_segment in the Large files inside the terminal funnel; behaviour is covered by the j13b_thp_budget_* integration tests and by tests/loom_thp_ledger.rs, the actual-source loom model of the ledger"
+    },
+    {
+      "id": "P26",
+      "name": "large-THP deterministic control ordinal and diagnostic telemetry",
+      "prod": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+        "src/alloc_core/config/policy/large_thp_observation/large_thp_control_selector.rs"
+      ],
+      "invariants": [
+        "I1 each next_control call obtains one successive wrapping ticket from CONTROL_ORDINAL with one fetch_add(Relaxed); the returned ticket is the ordinal input to the deterministic selection, not a publication",
+        "I2 next_control uses the fixed CONTROL_SEED with the pure decision_at(seed, ordinal) selector; the selector defines exactly one control in each complete aligned cohort of eight ordinals (not every sliding window)",
+        "I3 control counters are diagnostic wrapping u64 totals only: Relaxed accesses publish no data and establish no happens-before edge",
+        "I4 control_telemetry reads each of eight fields independently with Relaxed loads; the returned array is not a coherent multiword snapshot",
+        "I5 the bench-internals ticket log records the (ordinal, decision) actually consumed per next_control call in bounded diagnostic storage; its entries are never gate inputs and all accesses stay Relaxed"
+      ],
+      "class": "none",
+      "loom": [],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "no: this runtime uses process-wide core atomics; the deterministic selector is separately pure-tested, and no runtime model is claimed",
+      "decision": "rules + pure selector tests",
+      "phase": "J13b",
+      "reason": "P26 rules pin the single Relaxed ordinal RMW, its fixed-seed decision call, and the diagnostic counter/load inventories; tests/j13b_observation_control_selector.rs checks the selector's one-control-per-complete-aligned-eight contract independently of runtime atomics"
     }
   ],
   "scopes": [
+    {
+      "id": "P28/capture-start",
+      "class": "S",
+      "protocol": "P28",
+      "files": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"
+      ],
+      "fn": "^(begin|is_started)$",
+      "receiver": "^(self)?\\.started$",
+      "ops": [
+        "compare_exchange",
+        "load"
+      ],
+      "orderings": [
+        "Release",
+        "Relaxed",
+        "Acquire"
+      ],
+      "reason": "single diagnostic epoch start; no reset or mapping ownership publication"
+    },
+    {
+      "id": "P28/capture-cursor",
+      "class": "counter",
+      "protocol": "P28",
+      "files": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"
+      ],
+      "fn": "^(append|boundary|read|release_begin_hint)$",
+      "receiver": "^(self)?\\.cursor$",
+      "ops": [
+        "fetch_add",
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "unique event positions only; payload publication is the independent completion marker"
+    },
+    {
+      "id": "P28/capture-failure",
+      "class": "counter",
+      "protocol": "P28",
+      "files": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"
+      ],
+      "fn": "^(reject|supported)$",
+      "receiver": "^(self)?\\.failure$",
+      "ops": [
+        "compare_exchange",
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "sticky diagnostic first-failure code; publishes no payload and never gates allocator behavior"
+    },
+    {
+      "id": "P28/slot-publication",
+      "class": "S",
+      "protocol": "P28",
+      "files": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
+      ],
+      "fn": "^publish$",
+      "receiver": "^((self)?\\.complete|field[0-6])$",
+      "ops": [
+        "compare_exchange",
+        "store"
+      ],
+      "orderings": [
+        "Relaxed",
+        "Release"
+      ],
+      "reason": "bounded empty-slot claim then relaxed scalar writes and Release completion; no slot reuse"
+    },
+    {
+      "id": "P28/slot-read",
+      "class": "S",
+      "protocol": "P28",
+      "files": [
+        "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
+      ],
+      "fn": "^read$",
+      "receiver": "^((self)?\\.complete|field)$",
+      "ops": [
+        "load"
+      ],
+      "orderings": [
+        "Acquire",
+        "Relaxed"
+      ],
+      "reason": "matching Acquire completion must precede reading immutable relaxed payload fields"
+    },
+    {
+      "id": "P27/runtime-learning-diagnostics",
+      "class": "counter",
+      "protocol": "P27",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+      ],
+      "fn": "^learning_telemetry$",
+      "receiver": "^LEARNING_(APPLIED|DROPPED)\\[.*\\]$",
+      "ops": [
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "independent diagnostic loads of applied/dropped wrapping counters; pair state is separately read through the coherent cell snapshot, never reconstructed from counters"
+    },
+    {
+      "id": "P27/estimator-pair",
+      "class": "protocol",
+      "protocol": "P27",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs"
+      ],
+      "fn": "^(snapshot|try_observe)$",
+      "receiver": "^(self)?\\.state$",
+      "ops": [
+        "load",
+        "compare_exchange"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "one packed pair, no external publication; bounded CAS commits both estimator components atomically"
+    },
     {
       "id": "P1/heap-slot-cas",
       "class": "protocol",
@@ -945,7 +1199,7 @@
         "crates/*/src/**"
       ],
       "receiver": "^(.*::)?[A-Z][A-Z0-9_]*(\\[.*\\])?$",
-      "receiver_not": "^(.*::)?(INIT_STATE|LOCK|STATE|PASSES|PAGE_SIZE_CACHE|QUERY|NEXT_[A-Z_]+|DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE|DBG_RESERVATION_OWNER_ID_COUNTER|TOKEN_BACKING_DEATHS|LIVE_TOKEN_BLOCKS|TARGET)$",
+      "receiver_not": "^(.*::)?(INIT_STATE|LOCK|STATE|PASSES|PAGE_SIZE_CACHE|QUERY|NEXT_[A-Z_]+|DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE|DBG_RESERVATION_OWNER_ID_COUNTER|TOKEN_BACKING_DEATHS|LIVE_TOKEN_BLOCKS|TARGET|CONTROL_ORDINAL|CONTROL_SELECTIONS|CONTROL_PREMISE_FAILURES|CONTROL_VALID_OBSERVATIONS|CONTROL_INVALIDATED_OBSERVATIONS|CONTROL_INVALIDATED_REALLOC|CONTROL_OBSERVATION_ERRORS|CONTROL_RESIDENT_PAGES|CONTROL_SAMPLED_PAGES|CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG|LEARNING_APPLIED|LEARNING_DROPPED)(\\[.*\\])?$",
       "orderings": [
         "Relaxed"
       ],
@@ -1045,9 +1299,740 @@
         "src/ghost/**"
       ],
       "reason": "ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1)"
+    },
+    {
+      "id": "P24/thp-tuple-cell",
+      "class": "protocol",
+      "protocol": "P24",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+      ],
+      "reason": "write-once tuple cell: claiming CAS, Relaxed words, Release PUBLISHED, Acquire reader"
+    },
+    {
+      "id": "P25/thp-ledger",
+      "class": "protocol",
+      "protocol": "P25",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs"
+      ],
+      "reason": "budget ledger: Relaxed load, bounded CAS reserve, fetch_sub give-back on one counter"
+    },
+    {
+      "id": "P26/control-ordinal",
+      "class": "protocol",
+      "protocol": "P26",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+      ],
+      "fn": "^(next_control|control_ordinal_probe)$",
+      "receiver": "^CONTROL_ORDINAL$",
+      "ops": [
+        "fetch_add",
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "one wrapping ordinal ticket per control decision; Relaxed because the value is only a selector input and publishes nothing; the bench-internals probe adds one Relaxed diagnostic load that mutates nothing"
+    },
+    {
+      "id": "P26/control-diagnostics",
+      "class": "counter",
+      "protocol": "P26",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+      ],
+      "fn": "^(note_group_counter|control_telemetry)$",
+      "receiver": "^(CONTROL_(SELECTIONS|PREMISE_FAILURES|VALID_OBSERVATIONS|INVALIDATED_OBSERVATIONS|INVALIDATED_REALLOC|OBSERVATION_ERRORS|RESIDENT_PAGES|SAMPLED_PAGES)\\[.*\\]|counters\\[.*\\])$",
+      "ops": [
+        "fetch_add",
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "diagnostic-only wrapping counter RMWs and independent telemetry loads; no publication or coherent snapshot"
+    },
+    {
+      "id": "P26/control-ticket-log",
+      "class": "counter",
+      "protocol": "P26",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+      ],
+      "fn": "^(record_control_ticket|ticket_log_reset|ticket_log_snapshot)$",
+      "receiver": "^(CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG\\[.*\\]|slot)$",
+      "ops": [
+        "fetch_add",
+        "load",
+        "store"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "bench-internals diagnostic ticket log: exactly one bounded cursor/store/load inventory per helper so tests can observe actual consumed tickets; publishes nothing"
     }
   ],
   "rules": [
+    {
+      "id": "advice-capture/release-hint",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::release_begin_hint",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "release",
+        "marker",
+        "before",
+        "native"
+      ],
+      "reason": "pre-call position hints never reserve or mutate capture positions",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_replay.rs",
+        "tests/j13b_advice_capture_native.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_release_hint"
+    },
+    {
+      "id": "advice-capture/legacy-release-marker",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/os/release/legacy.rs",
+      "fn": "release_reservation",
+      "before": {
+        "name": "release_begin"
+      },
+      "after": {
+        "name": "libc_munmap"
+      },
+      "terms": [
+        "release",
+        "marker",
+        "before",
+        "native"
+      ],
+      "reason": "native release start marker precedes munmap; outcome publication remains after errno capture",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_replay.rs",
+        "tests/j13b_advice_capture_native.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_legacy_release_marker"
+    },
+    {
+      "id": "advice-capture/checked-release-marker",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/os/release/checked.rs",
+      "fn": "release_reservation_checked",
+      "before": {
+        "name": "release_begin"
+      },
+      "after": {
+        "name": "libc_munmap"
+      },
+      "terms": [
+        "release",
+        "marker",
+        "before",
+        "native"
+      ],
+      "reason": "native release start marker precedes munmap; outcome publication remains after errno capture",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_replay.rs",
+        "tests/j13b_advice_capture_native.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_checked_release_marker"
+    },
+    {
+      "id": "advice-capture/fi-seed-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::seed_cursor_for_test",
+      "sites": [
+        {
+          "name": "store",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "synthetic",
+        "local",
+        "fault-injection"
+      ],
+      "reason": "local metadata FI only; pin the test mutation surface independently of the private native global",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_fi_seed"
+    },
+    {
+      "id": "advice-capture/fi-reserve-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::reserve_unpublished_for_test",
+      "sites": [
+        {
+          "name": "fetch_add",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "synthetic",
+        "local",
+        "fault-injection"
+      ],
+      "reason": "local metadata FI only; pin the test mutation surface independently of the private native global",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_fi_reserve"
+    },
+    {
+      "id": "advice-capture/fi-complete-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::complete_reserved_for_test",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "synthetic",
+        "local",
+        "fault-injection"
+      ],
+      "reason": "local metadata FI only; pin the test mutation surface independently of the private native global",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_fi_complete"
+    },
+    {
+      "id": "advice-capture/slot-publish-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "receiver": "^(self)?\\.complete$",
+          "orderings": [
+            "Relaxed",
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field0$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field1$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field2$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field3$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field4$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field5$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^field6$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^(self)?\\.complete$",
+          "orderings": [
+            "Release"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "one bounded slot claim; payload then Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_slot_publish"
+    },
+    {
+      "id": "advice-capture/slot-read-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::read",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.complete$",
+          "orderings": [
+            "Acquire"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^field$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "matching Acquire completion before immutable scalar payload reads",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_slot_read"
+    },
+    {
+      "id": "advice-capture/begin-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::begin",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "receiver": "^(self)?\\.started$",
+          "orderings": [
+            "Release",
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "one diagnostic begin; no reset or replacement epoch",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_begin"
+    },
+    {
+      "id": "advice-capture/failure-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::reject",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "receiver": "^(self)?\\.failure$",
+          "orderings": [
+            "Relaxed",
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "one strong first-failure CAS; spurious failure must not leave unsupported capture readable",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_failure"
+    },
+    {
+      "id": "advice-capture/failure-read-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::supported",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.failure$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "failure reads never clear or repair sticky unsupported state",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_failure_read"
+    },
+    {
+      "id": "advice-capture/reservation-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::append",
+      "sites": [
+        {
+          "name": "fetch_add",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "one cursor reservation per event; no skipped diagnostic positions",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_reservation"
+    },
+    {
+      "id": "advice-capture/boundary-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::boundary",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "quiescent prefix boundaries read cursor twice and never reset active capture",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_boundary"
+    },
+    {
+      "id": "advice-capture/prefix-read-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::read",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.cursor$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "prefix replay never reserves or mutates event positions",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_prefix_read"
+    },
+    {
+      "id": "advice-capture/started-read-inventory",
+      "kind": "R2",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "fn": "AdviceEventLog::is_started",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.started$",
+          "orderings": [
+            "Acquire"
+          ]
+        }
+      ],
+      "terms": [
+        "bounded",
+        "diagnostic",
+        "publication"
+      ],
+      "reason": "producer epoch reads never clear or rearm the capture flag",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_started_read"
+    },
+    {
+      "id": "advice-capture/publish-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field0$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 0 store must dominate Release completion; sibling rules pin fields 1 through 6",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_order"
+    },
+    {
+      "id": "advice-capture/read-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::read",
+      "before": {
+        "name": "load",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "after": {
+        "name": "load",
+        "receiver": "^field$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "matching Acquire completion precedes scalar reads",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_read_order"
+    },
+    {
+      "id": "thp-learning/diagnostic-load-inventory",
+      "kind": "R2",
+      "protocol": "P27",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::learning_telemetry",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^LEARNING_APPLIED\\[group\\]$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^LEARNING_DROPPED\\[group\\]$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "applied",
+        "dropped",
+        "Relaxed",
+        "independent"
+      ],
+      "reason": "I6: exactly one independent Relaxed load for each applied and dropped counter; these diagnostics are not a coherent whole-array snapshot or estimator input",
+      "tests": [
+        "tests/j13b_learning_runtime.rs",
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p27_diagnostic_load_inventory"
+    },
+    {
+      "id": "thp-learning/update-inventory",
+      "kind": "R2",
+      "fn": "ThpLearningCell::try_observe",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.state$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "compare_exchange",
+          "receiver": "^(self)?\\.state$",
+          "orderings": [
+            "Relaxed",
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "packed pair",
+        "Relaxed",
+        "compare_exchange"
+      ],
+      "reason": "I2/I4: one load and one syntactic strong CAS site operate on the packed pair; no external publication",
+      "fixtures": "tests/ghost_lint_fixtures/p27_update_inventory",
+      "protocol": "P27",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "tests": [
+        "tests/loom_thp_learning_cell.rs",
+        "tests/j13b_learning_contention_bound.rs"
+      ]
+    },
+    {
+      "id": "thp-learning/snapshot-inventory",
+      "kind": "R2",
+      "fn": "ThpLearningCell::snapshot",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.state$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "snapshot",
+        "packed pair",
+        "Relaxed"
+      ],
+      "reason": "I1/I4: snapshot obtains both components from one Relaxed load of the packed pair",
+      "fixtures": "tests/ghost_lint_fixtures/p27_snapshot_inventory",
+      "protocol": "P27",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "tests": [
+        "tests/loom_thp_learning_cell.rs",
+        "tests/j13b_learning_contention_bound.rs"
+      ]
+    },
+    {
+      "id": "thp-learning/update-bounded",
+      "kind": "R4",
+      "fn": "ThpLearningCell::try_observe",
+      "action": {
+        "name": "compare_exchange"
+      },
+      "guard": "^attempts<Self::MAX_ATTEMPTS$",
+      "terms": [
+        "bounded",
+        "attempts",
+        "MAX_ATTEMPTS"
+      ],
+      "reason": "I3: the CAS is dominated by attempts < MAX_ATTEMPTS; forced rejection terminates after eight attempts",
+      "fixtures": "tests/ghost_lint_fixtures/p27_update_bounded",
+      "protocol": "P27",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "tests": [
+        "tests/loom_thp_learning_cell.rs",
+        "tests/j13b_learning_contention_bound.rs"
+      ]
+    },
+    {
+      "id": "thp-learning/cas-after-observe",
+      "kind": "R3",
+      "fn": "ThpLearningCell::try_observe",
+      "before": {
+        "name": "load",
+        "receiver": "state$"
+      },
+      "after": {
+        "name": "compare_exchange",
+        "args": "^current,"
+      },
+      "terms": [
+        "observed",
+        "current",
+        "compare_exchange"
+      ],
+      "reason": "I2: the CAS expects the observed current pair, so a competing update cannot be overwritten blindly",
+      "fixtures": "tests/ghost_lint_fixtures/p27_cas_after_observe",
+      "protocol": "P27",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "tests": [
+        "tests/loom_thp_learning_cell.rs",
+        "tests/j13b_learning_contention_bound.rs"
+      ]
+    },
     {
       "id": "ghost/hygiene",
       "kind": "R9",
@@ -1662,13 +2647,27 @@
       "protocol": "P3",
       "model": "tests/loom_nl3_owner_teardown.rs",
       "binds": [
-        { "rule": "heap-lease/drop-release" },
-        { "rule": "heap-lease/claim-free-live" },
-        { "rule": "teardown/trim-before-release" }
+        {
+          "rule": "heap-lease/drop-release"
+        },
+        {
+          "rule": "heap-lease/claim-free-live"
+        },
+        {
+          "rule": "teardown/trim-before-release"
+        }
       ],
-      "terms": ["model", "Release", "Acquire", "trim_for_recycle", "drop(lease)"],
+      "terms": [
+        "model",
+        "Release",
+        "Acquire",
+        "trim_for_recycle",
+        "drop(lease)"
+      ],
       "reason": "the owner lease constants and exercised teardown helper bind production lease orderings and trim-before-release; bitmap behavior runs from included source",
-      "tests": ["tests/loom_nl3_owner_teardown.rs"],
+      "tests": [
+        "tests/loom_nl3_owner_teardown.rs"
+      ],
       "fixtures": "tests/ghost_lint_fixtures/nl3_owner_model_bind"
     },
     {
@@ -6161,6 +7160,1154 @@
         "tests/g1_ingress_remote_free_reuse.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p23_arm_before_drain"
+    },
+    {
+      "id": "thp-cell/claim-cas",
+      "kind": "R1",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "site": {
+        "name": "compare_exchange",
+        "receiver": "state$"
+      },
+      "orderings": [
+        "AcqRel",
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "claim",
+        "compare_exchange",
+        "AcqRel",
+        "single winner"
+      ],
+      "reason": "I1: the single winner is elected by one strong CAS UNSET to PUBLISHING with AcqRel/Acquire; a weaker CAS or a second CAS breaks the single-winner election",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_claim_cas"
+    },
+    {
+      "id": "thp-cell/published-release",
+      "kind": "R1",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "site": {
+        "name": "store",
+        "receiver": "state$"
+      },
+      "orderings": [
+        "Release"
+      ],
+      "count": 1,
+      "terms": [
+        "PUBLISHED",
+        "Release",
+        "store",
+        "publish"
+      ],
+      "reason": "I2: the PUBLISHED state store is the only Release store of the cell; it publishes the five Relaxed word stores to an Acquire reader, and no other state store may exist in publish",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_published_release",
+      "mutants": [
+        {
+          "id": "thp-published-store-relaxed",
+          "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+          "from": "self.state.store(PUBLISHED, Ordering::Release);",
+          "to": "self.state.store(PUBLISHED, Ordering::Relaxed);",
+          "checker": {
+            "name": "loom loom_thp_tuple_cell",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core alloc-xthread tagged-index-stack/loom",
+              "--test",
+              "loom_thp_tuple_cell"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
+    },
+    {
+      "id": "thp-cell/word-stores-relaxed",
+      "kind": "R1",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "site": {
+        "name": "store",
+        "receiver": "^self\\.w\\["
+      },
+      "orderings": [
+        "Relaxed"
+      ],
+      "count": 5,
+      "terms": [
+        "five words",
+        "Relaxed",
+        "store",
+        "publish"
+      ],
+      "reason": "I2: exactly five Relaxed word stores precede the Release store; Release on a word would be dead weight and a missing word would publish a torn tuple",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_word_stores_relaxed"
+    },
+    {
+      "id": "thp-cell/words-before-published",
+      "kind": "R3",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^self\\.w\\[4\\]$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "state$",
+        "orderings": [
+          "Release"
+        ]
+      },
+      "terms": [
+        "words",
+        "PUBLISHED",
+        "before",
+        "last word"
+      ],
+      "reason": "I2: the last word store precedes the PUBLISHED Release store in publish; a word stored after PUBLISHED would be seen torn by a reader that already observed PUBLISHED",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_words_before_published"
+    },
+    {
+      "id": "thp-cell/claim-before-words",
+      "kind": "R3",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "before": {
+        "name": "compare_exchange",
+        "receiver": "state$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^self\\.w\\["
+      },
+      "terms": [
+        "claim",
+        "words",
+        "before",
+        "winner"
+      ],
+      "reason": "I1/I3: every word store follows the claiming CAS, so only the single winner ever writes words and a loser cannot overwrite a published tuple",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_claim_before_words"
+    },
+    {
+      "id": "thp-cell/words-sole-writer",
+      "kind": "R5",
+      "protocol": "P24",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+      ],
+      "target": {
+        "name": "store",
+        "receiver": "^self\\.w\\["
+      },
+      "allowed": [
+        "ThpTupleCell::publish"
+      ],
+      "terms": [
+        "words",
+        "publish",
+        "never written",
+        "write-once"
+      ],
+      "reason": "I3: the word array is stored only inside publish (after the claiming CAS); a store anywhere else, such as the reader or the word loader, writes words after PUBLISHED",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_words_sole_writer"
+    },
+    {
+      "id": "thp-cell/publish-inventory",
+      "kind": "R2",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "sites": [
+        {
+          "name": "compare_exchange",
+          "receiver": "state$",
+          "orderings": [
+            "AcqRel",
+            "Acquire"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^self\\.w\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^self\\.w\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^self\\.w\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^self\\.w\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^self\\.w\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "state$",
+          "orderings": [
+            "Release"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "publish",
+        "no loop",
+        "loser"
+      ],
+      "reason": "I4: the ordered operations of publish are exactly one claiming CAS, five Relaxed word stores and one Release store; any other atomic access (a spin on the state, a weak CAS retry) is a wait in the loser path",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_publish_inventory"
+    },
+    {
+      "id": "thp-cell/no-spin-primitive",
+      "kind": "R5",
+      "protocol": "P24",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+      ],
+      "target": {
+        "name": "spin_loop",
+        "kind": "call"
+      },
+      "allowed": [],
+      "forbid": true,
+      "terms": [
+        "spin_loop",
+        "loser",
+        "never waits",
+        "PUBLISHING"
+      ],
+      "reason": "I4: nothing in the cell file may call spin_loop; a loser that meets PUBLISHING reports a conflict instead of waiting for the winner",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_no_spin_primitive"
+    },
+    {
+      "id": "thp-cell/reader-acquire",
+      "kind": "R1",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::read",
+      "site": {
+        "name": "load",
+        "receiver": "state$"
+      },
+      "orderings": [
+        "Acquire"
+      ],
+      "count": 1,
+      "terms": [
+        "reader",
+        "Acquire",
+        "PUBLISHED",
+        "one load"
+      ],
+      "reason": "I4/I5: the reader performs exactly one Acquire load of the state; Relaxed would not pair with the Release store and a second load is a wait loop",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_reader_acquire"
+    },
+    {
+      "id": "thp-cell/reader-needs-published",
+      "kind": "R4",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::read",
+      "action": {
+        "name": "load_words"
+      },
+      "guard": "^self\\.state\\.load\\(Ordering::Acquire\\)==PUBLISHED$",
+      "terms": [
+        "reader",
+        "PUBLISHED",
+        "decode",
+        "default tuple"
+      ],
+      "reason": "I5: the reader decodes the words only in the branch that observed PUBLISHED through an Acquire load; unpublished or PUBLISHING yields the default tuple",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_reader_needs_published"
+    },
+    {
+      "id": "thp-cell/loser-needs-published",
+      "kind": "R4",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::publish",
+      "action": {
+        "name": "load_words"
+      },
+      "guard": "=>Err\\(PUBLISHED\\)$",
+      "terms": [
+        "loser",
+        "PUBLISHED",
+        "words",
+        "PUBLISHING"
+      ],
+      "reason": "I5: a loser reads the words only in the arm that saw PUBLISHED (the failed CAS loaded it with Acquire); the PUBLISHING and any other arm must not read half-written words",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_loser_needs_published"
+    },
+    {
+      "id": "thp-cell/word-loads-relaxed",
+      "kind": "R1",
+      "protocol": "P24",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "fn": "ThpTupleCell::load_words",
+      "site": {
+        "name": "load",
+        "receiver": "^self\\.w\\["
+      },
+      "orderings": [
+        "Relaxed"
+      ],
+      "count": 5,
+      "terms": [
+        "five words",
+        "Relaxed",
+        "load",
+        "load_words"
+      ],
+      "reason": "I5: the word loader performs exactly five Relaxed loads, ordered only by the caller Acquire load of PUBLISHED or by the failed-CAS Acquire; no state access and no loop live here",
+      "tests": [
+        "tests/j13b_thp_publish_first_wins.rs",
+        "tests/j13b_thp_publish_concurrent.rs",
+        "tests/j13b_thp_unpublished_default.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p24_word_loads_relaxed"
+    },
+    {
+      "id": "thp-ledger/used-relaxed",
+      "kind": "R1",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::used",
+      "site": {
+        "name": "load",
+        "receiver": "used$"
+      },
+      "orderings": [
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "used",
+        "Relaxed",
+        "load",
+        "ledger"
+      ],
+      "reason": "I4: the observer read of used is one Relaxed load; nothing is published through used so no stronger order is needed",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_used_relaxed"
+    },
+    {
+      "id": "thp-ledger/reserve-load-relaxed",
+      "kind": "R1",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::try_reserve",
+      "site": {
+        "name": "load",
+        "receiver": "used$"
+      },
+      "orderings": [
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "try_reserve",
+        "Relaxed",
+        "observed",
+        "load"
+      ],
+      "reason": "I1/I4: try_reserve observes used with one Relaxed load per attempt; the CAS validates the value, so a stale read only fails the CAS",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_reserve_load_relaxed"
+    },
+    {
+      "id": "thp-ledger/reserve-cas-relaxed",
+      "kind": "R1",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::try_reserve",
+      "site": {
+        "name": "compare_exchange_weak",
+        "receiver": "used$"
+      },
+      "orderings": [
+        "Relaxed",
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "compare_exchange_weak",
+        "Relaxed",
+        "reservation",
+        "never exceeds"
+      ],
+      "reason": "I1/I4: a reservation is exactly one compare_exchange_weak Relaxed/Relaxed from the observed value, so used never exceeds the budget; a fetch_add or store reserve overshoots under contention",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_reserve_cas_relaxed",
+      "mutants": [
+        {
+          "id": "thp-reserve-unconditional-add",
+          "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+          "from": "            if self\n                .used\n                .compare_exchange_weak(cur, next, Ordering::Relaxed, Ordering::Relaxed)\n                .is_ok()\n            {\n                return take as usize;\n            }\n",
+          "to": "            self.used.fetch_add(take, Ordering::Relaxed);\n            return take as usize;\n",
+          "checker": {
+            "name": "loom loom_thp_ledger",
+            "cmd": [
+              "cargo",
+              "test",
+              "--release",
+              "--features",
+              "alloc-core alloc-xthread tagged-index-stack/loom",
+              "--test",
+              "loom_thp_ledger"
+            ],
+            "env": {
+              "RUSTFLAGS": "--cfg loom"
+            },
+            "expect": "test result: FAILED"
+          }
+        }
+      ]
+    },
+    {
+      "id": "thp-ledger/give-back-fetch-sub",
+      "kind": "R1",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::give_back",
+      "site": {
+        "name": "fetch_sub",
+        "receiver": "used$"
+      },
+      "orderings": [
+        "Relaxed"
+      ],
+      "count": 1,
+      "terms": [
+        "give_back",
+        "fetch_sub",
+        "Relaxed",
+        "single"
+      ],
+      "reason": "I3: give_back is one fetch_sub Relaxed; a store of a recomputed value would lose a concurrent reservation or return",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_give_back_fetch_sub"
+    },
+    {
+      "id": "thp-ledger/reserve-bounded",
+      "kind": "R4",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::try_reserve",
+      "action": {
+        "name": "compare_exchange_weak"
+      },
+      "guard": "^attempts<Self::MAX_ATTEMPTS$",
+      "terms": [
+        "bounded",
+        "MAX_ATTEMPTS",
+        "attempts",
+        "try_reserve"
+      ],
+      "reason": "I2: the reserve CAS sits only inside the loop bounded by attempts < MAX_ATTEMPTS, so a persistent loser gives up with zero bytes instead of spinning",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_reserve_bounded"
+    },
+    {
+      "id": "thp-ledger/cas-after-observe",
+      "kind": "R3",
+      "protocol": "P25",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "fn": "ThpBudgetLedger::try_reserve",
+      "before": {
+        "name": "load",
+        "receiver": "used$"
+      },
+      "after": {
+        "name": "compare_exchange_weak",
+        "args": "^cur,"
+      },
+      "terms": [
+        "observed",
+        "compare_exchange_weak",
+        "cur",
+        "from the observed value"
+      ],
+      "reason": "I1: the reserve CAS expects the value loaded earlier in the same iteration (cur), so the budget check made against that value still holds when the CAS succeeds",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_cas_after_observe"
+    },
+    {
+      "id": "thp-ledger/unmap-before-give-back",
+      "kind": "R3",
+      "protocol": "P25",
+      "file": "src/alloc_core/alloc_core/mem/release_large_mapping.rs",
+      "fn": "release_large_mapping",
+      "before": {
+        "name": "try_release_segment",
+        "kind": "call"
+      },
+      "after": {
+        "name": "give_back"
+      },
+      "terms": [
+        "unmap",
+        "give_back",
+        "release_segment",
+        "before"
+      ],
+      "reason": "I5: the advice charge goes back to the ledger only after the mapping is released, so budget freed here cannot be handed to another reservation while the old mapping is still advised",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_unmap_before_give_back"
+    },
+    {
+      "id": "thp-ledger/large-release-sole-path",
+      "kind": "R5",
+      "protocol": "P25",
+      "files": [
+        "src/alloc_core/large/**",
+        "src/alloc_core/alloc_core/mem/**"
+      ],
+      "target": {
+        "name": "release_segment",
+        "kind": "call"
+      },
+      "allowed": [
+        "release_large_mapping"
+      ],
+      "terms": [
+        "release_segment",
+        "release_large_mapping",
+        "Large",
+        "give_back"
+      ],
+      "reason": "I5: in the Large files the OS release is called only from the terminal funnel release_large_mapping, which returns the advice charge after the unmap; a direct release leaks charged budget",
+      "tests": [
+        "tests/j13b_thp_budget_ledger.rs",
+        "tests/j13b_thp_budget_ledger_stress.rs",
+        "tests/j13b_thp_budget_conservation.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_large_release_sole_path"
+    },
+    {
+      "id": "thp-ledger/checked-release-sole-path",
+      "kind": "R5",
+      "protocol": "P25",
+      "files": [
+        "src/alloc_core/large/**",
+        "src/alloc_core/alloc_core/mem/**"
+      ],
+      "target": {
+        "name": "try_release_segment",
+        "kind": "call"
+      },
+      "allowed": [
+        "release_large_mapping"
+      ],
+      "terms": [
+        "checked release",
+        "charge",
+        "terminal funnel"
+      ],
+      "reason": "I5: charged Large releases use only the terminal funnel, which retains charge on an unproven native outcome.",
+      "tests": [
+        "tests/j13b_thp_release_failure_retains_charge.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_checked_release_sole_path"
+    },
+    {
+      "id": "thp-ledger/return-needs-checked-success",
+      "kind": "R4",
+      "protocol": "P25",
+      "file": "src/alloc_core/alloc_core/mem/release_large_mapping.rs",
+      "fn": "release_large_mapping",
+      "action": {
+        "name": "give_back"
+      },
+      "guard": "^os::try_release_segment\\(reservation,reservation_len\\)\\.is_ok\\(\\)$",
+      "terms": [
+        "checked release",
+        "success",
+        "retain on error"
+      ],
+      "reason": "I5: only a confirmed checked-release success permits returning charge; failure or unknown release must keep budget unavailable.",
+      "tests": [
+        "tests/j13b_thp_release_failure_retains_charge.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p25_return_needs_checked_success"
+    },
+    {
+      "id": "thp-control/ordinal-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::next_control",
+      "sites": [
+        {
+          "name": "fetch_add",
+          "receiver": "CONTROL_ORDINAL",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "CONTROL_ORDINAL",
+        "fetch_add",
+        "Relaxed",
+        "one ordinal"
+      ],
+      "reason": "I1: exactly one Relaxed fetch_add issues the ticket; a load/store replacement, missing increment, added retry RMW, or stronger ordering changes this inventory",
+      "tests": [
+        "tests/j13b_observation_control_selector.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ordinal_inventory"
+    },
+    {
+      "id": "thp-control/ordinal-probe-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::control_ordinal_probe",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "CONTROL_ORDINAL",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "probe",
+        "CONTROL_ORDINAL",
+        "load",
+        "Relaxed"
+      ],
+      "reason": "the bench-internals diagnostic probe is exactly one Relaxed CONTROL_ORDINAL load; any mutation, second read, or stronger ordering changes this inventory",
+      "tests": [
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ordinal_probe"
+    },
+    {
+      "id": "thp-control/ordinal-before-decision",
+      "kind": "R3",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::next_control",
+      "before": {
+        "name": "fetch_add",
+        "receiver": "CONTROL_ORDINAL",
+        "orderings": [
+          "Relaxed"
+        ]
+      },
+      "after": {
+        "name": "decision_at",
+        "kind": "call",
+        "receiver": "LargeThpControlSelector",
+        "args": "^CONTROL_SEED,ordinal$"
+      },
+      "terms": [
+        "CONTROL_SEED",
+        "ordinal",
+        "decision_at",
+        "after"
+      ],
+      "reason": "I1/I2: the fixed-seed pure selector receives the ticket returned by the preceding ordinal RMW; it does not observe or publish shared state",
+      "tests": [
+        "tests/j13b_observation_control_selector.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ordinal_before_decision"
+    },
+    {
+      "id": "thp-control/diagnostic-counter-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "note_group_counter",
+      "sites": [
+        {
+          "name": "fetch_add",
+          "receiver": "^counters\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "inventory",
+        "diagnostic",
+        "fetch_add",
+        "Relaxed"
+      ],
+      "reason": "I3: helper counter updates are exactly one Relaxed wrapping fetch_add, not a load/store read-modify-write",
+      "fixtures": "tests/ghost_lint_fixtures/p26_diagnostic_counter_inventory"
+    },
+    {
+      "id": "thp-control/telemetry-load-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::control_telemetry",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^CONTROL_SELECTIONS\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_PREMISE_FAILURES\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_VALID_OBSERVATIONS\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_INVALIDATED_OBSERVATIONS\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_INVALIDATED_REALLOC\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_OBSERVATION_ERRORS\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_RESIDENT_PAGES\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_SAMPLED_PAGES\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "eight",
+        "Relaxed",
+        "telemetry",
+        "independent",
+        "snapshot"
+      ],
+      "reason": "I4: the stats array is assembled from eight independent Relaxed loads; it is diagnostic and is not a coherent multiword snapshot",
+      "fixtures": "tests/ghost_lint_fixtures/p26_telemetry_load_inventory"
+    },
+    {
+      "id": "thp-control/ticket-log-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "record_control_ticket",
+      "sites": [
+        {
+          "name": "fetch_add",
+          "receiver": "^CONTROL_TICKET_CURSOR$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "store",
+          "receiver": "^CONTROL_TICKET_LOG\\[",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "ticket",
+        "log",
+        "cursor",
+        "Relaxed",
+        "diagnostic"
+      ],
+      "reason": "I3: the ticket log records exactly one Relaxed cursor fetch_add plus one Relaxed bounded slot store per consumed ticket; any second or stronger atomic changes the bounded record path tests rely on",
+      "tests": [
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ticket_log_inventory"
+    },
+    {
+      "id": "thp-control/ticket-log-after-decision",
+      "kind": "R3",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::next_control",
+      "before": {
+        "name": "decision_at",
+        "kind": "call",
+        "receiver": "^LargeThpControlSelector$",
+        "args": "^CONTROL_SEED,ordinal$"
+      },
+      "after": {
+        "name": "record_control_ticket",
+        "kind": "call"
+      },
+      "terms": [
+        "decision",
+        "ticket",
+        "record",
+        "after"
+      ],
+      "reason": "I1/I2: the ticket log must capture the decision the runtime actually computed for the ticket fetched in the same call, so the record call sits in a position dominated by the fixed-seed decision_at",
+      "tests": [
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ticket_log_after_decision"
+    },
+    {
+      "id": "thp-control/ticket-log-reset-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::ticket_log_reset",
+      "sites": [
+        {
+          "name": "store",
+          "receiver": "^CONTROL_TICKET_CURSOR$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "reset",
+        "cursor",
+        "store",
+        "Relaxed"
+      ],
+      "reason": "I5: the reset helper performs exactly one Relaxed CONTROL_TICKET_CURSOR store and nothing else atomic; a fetch_add replacement or stronger ordering changes the bounded reset path tests rely on for quiescent windows",
+      "tests": [
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ticket_log_reset_inventory"
+    },
+    {
+      "id": "thp-control/ticket-log-snapshot-inventory",
+      "kind": "R2",
+      "protocol": "P26",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::ticket_log_snapshot",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^slot$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "load",
+          "receiver": "^CONTROL_TICKET_CURSOR$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "snapshot",
+        "cursor",
+        "load",
+        "Relaxed"
+      ],
+      "reason": "I5: the snapshot helper reads each log slot and the cursor with exactly one Relaxed load each; a second slot load, a store, or a stronger ordering changes the bounded read path tests rely on",
+      "tests": [
+        "tests/j13b_control_concurrent_ordinal.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p26_ticket_log_snapshot_inventory"
+    },
+    {
+      "id": "advice-capture/publish-field1-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field1$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 1 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field1_order"
+    },
+    {
+      "id": "advice-capture/publish-field2-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field2$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 2 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field2_order"
+    },
+    {
+      "id": "advice-capture/publish-field3-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field3$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 3 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field3_order"
+    },
+    {
+      "id": "advice-capture/publish-field4-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field4$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 4 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field4_order"
+    },
+    {
+      "id": "advice-capture/publish-field5-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field5$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 5 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field5_order"
+    },
+    {
+      "id": "advice-capture/publish-field6-order",
+      "kind": "R3",
+      "protocol": "P28",
+      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "fn": "AdviceSlot::publish",
+      "before": {
+        "name": "store",
+        "receiver": "^field6$"
+      },
+      "after": {
+        "name": "store",
+        "receiver": "^(self)?\\.complete$"
+      },
+      "terms": [
+        "publication",
+        "completion",
+        "payload"
+      ],
+      "reason": "payload field 6 store must dominate Release completion",
+      "tests": [
+        "crates/aligned-vmem/tests/advice_event_stream.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p28_publish_field6_order"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

@@ -1,0 +1,173 @@
+name: CI test-xthread
+description: Original test-xthread job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    # Phases 9–11: per-thread Heap + SeferAlloc + cross-thread free.
+    # `internals` added (R34-3/task #522) — same whole-suite rationale.
+    - name: test (--features "alloc-global alloc-xthread")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "alloc-global alloc-xthread internals" --no-fail-fast
+    # + Phase 35 M6 decommit.
+    - name: test (--features "alloc-global alloc-xthread alloc-decommit")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "alloc-global alloc-xthread alloc-decommit internals" --no-fail-fast
+    # #137: the fastbin (magazine/tcache) path and the flagship
+    # `production` bundle were NOT exercised in CI — the entire
+    # magazine code path (the churn hot path) ran untested. Cover both:
+    # `fastbin` in isolation (magazine without decommit) and the full
+    # `production` bundle (fastbin + decommit + everything).
+    - name: test (--features "alloc-global alloc-xthread fastbin")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "alloc-global alloc-xthread fastbin internals" --no-fail-fast
+    # Each suite builds the whole tests/ tree for another feature set; the artefacts of the
+    # debug suites above plus the production suite exceed the runner's disk ("No space left on
+    # device", seen as a lost job without logs), so the build is dropped between them.
+    - name: free build artefacts of the previous suite
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: rm -rf target
+    - name: test (--features production)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production internals" --no-fail-fast # #137: the recommended flagship config (fastbin + decommit)
+    # NL-3: the cross-thread reuse oracles also run optimised. A mode that drops
+    # the misuse checks is a release-profile change; its debug assertions do not
+    # exist there, so only a behaviour oracle in a release row can see a lost block.
+    - name: free build artefacts of the production suite
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: rm -rf target
+    - name: nl3 remote-free burst reuse oracle (production internals, release)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production internals" --release --test nl3_xthread_remote_free_reuse_small_classes
+    - name: nl3 ping-pong reuse oracle (production internals, release)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production internals" --release --test nl3_xthread_pingpong_reuse
+    - name: nl3 safe cross-thread churn oracle (production internals, release)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production internals" --release --test nl3_safe_xthread_churn_integrity
+    - name: nl7 safe large realloc and free oracle (production internals, release)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production internals" --release --test nl7_safe_large_realloc_integrity
+    # NL-1/NL-9: the same oracles with the checks that reject a contract violation
+    # compiled in (the checking mode; `production` above runs the trusting mode).
+    - name: nl3 remote-free burst reuse oracle (production with misuse-checks, release)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production internals misuse-checks" --release --test nl3_xthread_remote_free_reuse_small_classes
+    - name: nl3 ping-pong reuse oracle (production with misuse-checks, release)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production internals misuse-checks" --release --test nl3_xthread_pingpong_reuse
+    - name: nl3 safe cross-thread churn oracle (production with misuse-checks, release)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production internals misuse-checks" --release --test nl3_safe_xthread_churn_integrity
+    - name: nl7 safe large realloc and free oracle (production with misuse-checks, release)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production internals misuse-checks" --release --test nl7_safe_large_realloc_integrity
+    # B4-30 fix7: first-alloc stack budget, differential self-measurement,
+    # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
+    - name: nl1 state byte switch (alloc-core, no misuse-checks, release)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "alloc-core internals" --release --test nl1_misuse_checks_state_byte_switch
+    - name: nl1 shadow reject (alloc-core, no misuse-checks, debug)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "alloc-core internals" --test nl1_misuse_checks_state_byte_switch
+    - name: nl1 shadow reject (alloc-core, misuse-checks, debug)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "alloc-core internals misuse-checks" --test nl1_misuse_checks_state_byte_switch
+    - name: b4-30 first-alloc stack budget (production internals, linux)
+      if: ${{ !cancelled() }}
+      env:
+        SEFER_B4_30_ENFORCE: '1'
+      run: |
+        cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-debug.log"
+        grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-prodint-debug.log"
+        cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-release.log"
+        grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-prodint-release.log"
+        cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-debug.log"
+        grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-prodint-debug.log"
+        cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-release.log"
+        grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-prodint-release.log"
+        cargo test --features "production internals" --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-debug.log"
+        grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-prodint-debug.log"
+        cargo test --features "production internals" --release --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-prodint-release.log"
+        grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-prodint-release.log"
+      shell: bash
+    # Direct child mode exposes the real ownerless oracle after the final
+    # user frees: no alloc, registry claim or artificial worker wakeup.
+    # Exact single-test isolation keeps nocapture output sentinel-safe.
+    - name: ownerless terminal retirement (minimal alloc-global)
+      run: |
+        SEFER_R8_MAINTENANCE_CHILD=ownerless cargo test --features "alloc-global internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --show-output --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-ownerless-minimal.log"
+        grep -F "RETIRED_WITHOUT_ALLOCATOR_CALL" "$RUNNER_TEMP/r8-ownerless-minimal.log"
+        grep -F "test autonomous_maintenance_global_alloc ... ok" "$RUNNER_TEMP/r8-ownerless-minimal.log"
+      shell: bash
+    - name: ownerless terminal retirement (production)
+      run: |
+        SEFER_R8_MAINTENANCE_CHILD=ownerless cargo test --features "production internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --show-output --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-ownerless-production.log"
+        grep -F "RETIRED_WITHOUT_ALLOCATOR_CALL" "$RUNNER_TEMP/r8-ownerless-production.log"
+        grep -F "test autonomous_maintenance_global_alloc ... ok" "$RUNNER_TEMP/r8-ownerless-production.log"
+      shell: bash
+    - name: maintenance startup, busy fallback and terminal worker failures
+      run: |
+        cargo test --features "production internals bench-internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-maintenance-scenarios.log"
+        grep -F "test autonomous_maintenance_global_alloc ... ok" "$RUNNER_TEMP/r8-maintenance-scenarios.log"
+        SEFER_R8_MAINTENANCE_CHILD=fallback cargo test --features "production internals bench-internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-maintenance-fallback.log"
+        grep -F "FALLBACK_RETIRED_AFTER_UNLOCK" "$RUNNER_TEMP/r8-maintenance-fallback.log"
+        SEFER_R8_MAINTENANCE_CHILD=startup cargo test --features "production internals bench-internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-maintenance-startup.log"
+        grep -F "STARTUP_FAILURE_RACE_AND_RETRY" "$RUNNER_TEMP/r8-maintenance-startup.log"
+      shell: bash
+    - name: fallback worker ingress-only while active (R6-T27)
+      run: |
+        cargo test --features "production internals bench-internals" --test r6_t27_fallback_worker_ingress_only -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r6-t27-fallback-ingress.log"
+        grep -F "test fallback_worker_ingress_only_while_active ... ok" "$RUNNER_TEMP/r6-t27-fallback-ingress.log"
+      shell: bash
+    - name: exact OS release (minimal global and decommit, Linux)
+      if: ${{ !cancelled() }}
+      run: |
+        RUSTC_WRAPPER='' cargo test --locked -j 1 --features "alloc-global alloc-decommit internals bench-internals" --test r8_os_release_oracle -- --exact owner_exit_last_remote_free_returns_exact_os_tokens --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-os-release-minimal-linux.log"
+        grep -F "test owner_exit_last_remote_free_returns_exact_os_tokens ... ok" "$RUNNER_TEMP/r8-os-release-minimal-linux.log"
+      shell: bash
+    - name: exact OS release (production, Linux)
+      if: ${{ !cancelled() }}
+      run: |
+        RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test r8_os_release_oracle -- --exact owner_exit_last_remote_free_returns_exact_os_tokens --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-os-release-production-linux.log"
+        grep -F "test owner_exit_last_remote_free_returns_exact_os_tokens ... ok" "$RUNNER_TEMP/r8-os-release-production-linux.log"
+      shell: bash
+    - name: maintenance registry bounded scan
+      run: |
+        cargo test --features "alloc-global internals" --test r8_maintenance_registry 2>&1 | tee "$RUNNER_TEMP/r8-registry-maintenance.log"
+        grep -F "test bounded_scan_skips_uninitialized_busy_and_absent_slots ... ok" "$RUNNER_TEMP/r8-registry-maintenance.log"
+      shell: bash

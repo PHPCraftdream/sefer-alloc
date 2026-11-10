@@ -1,0 +1,19 @@
+name: CI miri-fastbin
+description: Original miri-fastbin job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    # `internals` added (R34-3/task #522): `regression_magazine_oracles.rs`
+    # reaches `sefer_alloc::registry::{bootstrap, HeapRegistry}` directly.
+    - run: >-
+        cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin internals"
+        --test regression_magazine_oracles
+        --test regression_bump_direct_refill
+        --test nl3_safe_xthread_churn_integrity
+        --test nl7_safe_large_realloc_integrity
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

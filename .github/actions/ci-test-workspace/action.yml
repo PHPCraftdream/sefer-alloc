@@ -1,0 +1,374 @@
+name: CI test-workspace
+description: Original test-workspace job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: thumbv7em-none-eabi,x86_64-unknown-none,i686-unknown-linux-gnu,thumbv6m-none-eabi
+    - run: cargo test -p aligned-vmem -p sefer-region -p malloc-bench-rs --no-fail-fast
+    # Default features intentionally exclude the `loom`-gated target; its
+    # real-type model runs in `loom-alloc-global`. This row covers the
+    # crate's ordinary non-loom tests, including the current tag-seal and
+    # stack-unit invariants.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p tagged-index-stack --no-fail-fast
+    # Keep a release-profile run separate from the default-profile suite;
+    # assertions and optimized code paths must be exercised under the
+    # profile used by release artifacts.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p tagged-index-stack --release --no-fail-fast
+    # The repository cfg enables the crate's instrumentation and white-box
+    # tests, which are compiled out of both default-feature rows. Run every
+    # test target rather than naming files so new gated tests are included;
+    # the deterministic backoff and terminal-seal assertions are
+    # load-bearing. The cfg is declared in the crate manifest's check-cfg
+    # table, so a typo is diagnosed instead of becoming a no-op.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: |
+        set -euo pipefail
+        RUSTFLAGS="--cfg tagged_index_stack_test" cargo test -p tagged-index-stack --release --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tagged-index-stack-repository-cfg-release.log"
+        grep -F "test backoff_progression_and_saturation_are_exact ... ok" "$RUNNER_TEMP/tagged-index-stack-repository-cfg-release.log"
+        grep -F "test seal_sequence_ok_ok_err_with_permanent_seal_after_drain ... ok" "$RUNNER_TEMP/tagged-index-stack-repository-cfg-release.log"
+        grep -F "test empty_transition_preserves_running_tag ... ok" "$RUNNER_TEMP/tagged-index-stack-repository-cfg-release.log"
+      shell: bash
+    # Publish-readiness task #639 (P5, gap 2 of 4): the crate-scoped
+    # `aligned-vmem` step above ran default-features-only, so 3 of the
+    # crate's 4 test files (`fault_injection.rs`, `lazy_commit.rs`,
+    # `mock.rs` — all gated on the `fault-injection`/`lazy-commit` features
+    # and, for `mock.rs`, the `aligned_vmem_mock` cfg since task #962) compiled to zero tests, and the Linux `MAP_HUGETLB`
+    # `huge-pages` code path had never been compiled by CI on any OS.
+    # After task #962, `--all-features` runs all remaining features on the
+    # REAL backend (`lazy_commit.rs`/`smoke.rs` now actually run, and
+    # `fault_injection.rs` also runs instead of compiling to zero tests
+    # under mock as it did historically). The step below exercises mock
+    # coverage separately via the build-time --cfg aligned_vmem_mock flag.
+    # Task #1144 (N5) — CORRECTION, and a coverage gap this comment used to
+    # conceal. This block previously claimed the step "as a side effect also
+    # exercises `rust-version = \"1.88\"`'s MSRV-completeness for the crate
+    # standalone with every feature on". That is FALSE on two counts:
+    #   (a) this step lives in the `test workspace members` job, whose
+    #       toolchain is `dtolnay/rust-toolchain@stable` — it never sees
+    #       1.88 at all. Only the `msrv` job pins `@1.88`;
+    #   (b) the real `msrv` job runs ROOT-scoped `cargo check --all-features`,
+    #       and the root manifest forwards only `bench-internals`,
+    #       `fault-injection` and `lazy-commit` into aligned-vmem
+    #       (`grep -oE '"aligned-vmem\??/[a-z-]+"' Cargo.toml | sort -u`) —
+    #       NEVER `huge-pages`.
+    # So the `huge-pages` code is compiled on MSRV by NO job, and the claim
+    # asserted coverage that does not exist — the same
+    # comment-claims-coverage-it-does-not-have class this campaign has been
+    # closing all round. This step's real value is a full `--all-features`
+    # RUN on stable; MSRV coverage for `huge-pages` remains an open gap.
+    - run: cargo test -p aligned-vmem --all-features --no-fail-fast
+    # Task #962: mock-backend coverage for aligned-vmem on Linux. `mock`
+    # was converted from a Cargo feature to the build-time
+    # `--cfg aligned_vmem_mock` flag (cfg flags do not unify across the
+    # dependency graph, unlike Cargo features), so `--all-features` in the
+    # step above no longer compiles it — this row runs `mock.rs` /
+    # `mock_reentrancy.rs` (and `smoke.rs` under the recording backend)
+    # with all remaining optional features enabled.
+    # Task #1101: tee + grep postcondition (task #1086 shape) — both mock
+    # test FILES compile to zero tests on a typo'd cfg with exit 0, so the
+    # greps require one named test per file.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: |
+        cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/vmem-mock-debug.log"
+        grep -F "test records_reserve_and_decommit ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+        grep -F "test reentrancy_is_silently_dropped_with_outer_record_intact ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_mock"
+    # rust-intel audit finding (task #699, HIGH, 2026-08-09):
+    # `--all-features` does NOT actually run `fault_injection.rs` -- this
+    # step's own comment above previously claimed it did ("plus
+    # fault_injection.rs compiling and running under mock"), which was
+    # false: the file's own `#![cfg(all(feature = "fault-injection",
+    # feature = "lazy-commit", not(aligned_vmem_mock)))]` gate requires
+    # mock OFF (it tests the REAL commit-fault-injection hook on the
+    # real syscall backend, which `mock` entirely replaces), so turning
+    # `mock` on alongside it via `--all-features` made the whole file
+    # compile to ZERO tests. Since task #962 mock is a --cfg flag, so the
+    # step above now correctly runs this file. This file's own tests
+    # had therefore never executed in ANY CI configuration until task #699.
+    # Fixed with a dedicated step using the file's actual required
+    # feature combination. Deliberately not stating a test COUNT here
+    # (task #776, F10) -- a hardcoded count goes stale the moment a test
+    # is added or removed, exactly as happened to this comment's own
+    # original "4 passed" once `#718` added a 5th test five commits
+    # later without anyone revisiting it; `cargo test`'s own output is
+    # the live source of truth for the current count.
+    - run: cargo test -p aligned-vmem --features "fault-injection lazy-commit" --no-fail-fast
+    # Publish-readiness task #639 (P5, gaps 3+4 of 4): CI's `no_std` job
+    # (below) only ever built the ROOT crate's default-features-off
+    # configuration as its no_std signal — `size-classes` (root-gated
+    # behind `alloc-core`) and `once-ptr-cell` both advertise `no_std` as a
+    # headline claim in their published descriptions/categories
+    # (`no-std::no-alloc`) but were never built standalone in CI. Neither
+    # crate declares a `std` Cargo feature to disable (`--no-default-
+    # features` is a no-op flag for both, verified via `cargo metadata`),
+    # so the actual proof is compiling for a genuine bare-metal target with
+    # no std in its sysroot at all — the same `thumbv7em-none-eabi` target
+    # the `no_std` job already uses for the root crate (installed via the
+    # toolchain step above). Verified locally: both compile clean.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo build -p size-classes --no-default-features --target thumbv7em-none-eabi
+    # The `cargo build` step above compiles no test target, so run the full
+    # size-classes suite in both profiles. The release row is load-bearing
+    # for the crate's profile-specific assertion contract.
+    # The `--release` row specifically matters here, mirroring the
+    # `once-ptr-cell` release-row rationale immediately below: task #729's
+    # `class_for` precondition is enforced by a `debug_assert!`
+    # (deliberately not promoted to a release-active `assert!`, see its
+    # own doc comment), so a debug-only `cargo test` run would stay green
+    # even if that guard's presence were silently reverted -- release has
+    # nothing to assert there by design, which is exactly why
+    # `class_for_non_pow2_align_violates_debug_assert`
+    # (tests/builder.rs) is itself `#[cfg(debug_assertions)]`-gated rather
+    # than expected to pass in both profiles.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p size-classes --all-features --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p size-classes --all-features --release --no-fail-fast
+    # fh publication audit P4-2: before this row, every extreme-value test
+    # in this crate was `#[cfg(target_pointer_width = "64")]`-gated (the
+    # 64-bit-only overflow boundaries), and the `thumbv7em-none-eabi`
+    # no_std row above is a lib-only `cargo build` that compiles no test
+    # target -- so the crate's own doc-cited "84 on a 32-bit `usize`"
+    # overflow boundary had never actually run anywhere. `i686-unknown-
+    # linux-gnu` is a real 32-bit `usize` target that GitHub's
+    # `ubuntu-latest` runner can both link and execute natively (x86_64
+    # CPUs run i686 user-mode binaries directly); `gcc-multilib` supplies
+    # the 32-bit glibc/linker needed to actually run the resulting test
+    # binary, not just compile it (contrast with the `aligned-vmem` i686
+    # rows elsewhere in this file, which are compile-only `cargo check`
+    # and so don't need this package). Sol-run9 P4-1: this comment
+    # originally said "is ... gated" in the present tense, which this
+    # same commit's own new 32-bit-gated tests immediately made no
+    # longer literally true -- fixed to the past tense above.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p size-classes --target i686-unknown-linux-gnu --all-features --no-fail-fast
+    # size-classes publication audit run 1 (Sol-codex, P3-3): no `cargo
+    # clippy -p size-classes` or `cargo doc -p size-classes` row existed
+    # anywhere in this file -- the root-scoped clippy/docs jobs below
+    # don't substitute: root clippy never lints this crate's OWN
+    # `tests/`/`benches/` targets as ITS crate root (only as a dependency
+    # of `sefer-alloc`), and root `docs` is `--no-deps` (never reaches a
+    # dependency crate) and drops `RUSTDOCFLAGS: "-D warnings"`. Same gap
+    # class `once-ptr-cell` already closed two rows below (task #1379/
+    # cycle 4). `--all-targets` covers both `tests/builder.rs`/
+    # `tests/proptest_builder.rs` and `benches/size_classes_bench.rs` in
+    # one step; no `--all-features` needed for either row (the crate
+    # declares no Cargo features and no `[package.metadata.docs.rs]`, so
+    # the doc row is docs.rs's exact build).
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p size-classes --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p size-classes --no-deps
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo build -p once-ptr-cell --no-default-features --target thumbv7em-none-eabi
+    # The two builds above compile no test target, while the loom row uses
+    # a different cfg-gated target. Run the ordinary suite in both profiles
+    # so its release-active assertion contract is checked as well.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p once-ptr-cell --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p once-ptr-cell --release --no-fail-fast
+    # publication readiness review cycle 2 (claude/oh, F3, task #1367):
+    # `benches/once_ptr_cell_bench.rs` ships in the published tarball but
+    # neither `cargo test` step above compiles it -- the crate's
+    # `[[bench]]` section sets `harness = false` AND, since task #1395,
+    # `test = false` explicitly (the comment here previously cited a
+    # `test = false` key the manifest had never actually contained; the
+    # key was added rather than the claim dropped, so the intent is now
+    # stated in the manifest instead of resting on a cargo default). No
+    # `cargo clippy -p once-ptr-cell` row existed anywhere in this file
+    # either -- `--all-targets` below covers both test files and the bench
+    # in one step.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p once-ptr-cell --all-targets -- -D warnings
+    # publication readiness review cycle 4 (claude/oh, F2, task #1379): no
+    # `cargo doc -p once-ptr-cell` row existed anywhere in this file, and
+    # the root `docs` job below is `--no-deps` (never reaches a dependency
+    # crate) and deliberately drops `RUSTDOCFLAGS: "-D warnings"` -- not
+    # hypothetical, task #1376's own commit caught two broken intra-doc
+    # links in this crate by a manual local run two commits ago. No
+    # `--all-features` needed: the crate declares no Cargo features and no
+    # `[package.metadata.docs.rs]`, so this row is docs.rs's exact build.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p once-ptr-cell --no-deps
+    # globalalloc-model publish-readiness prep: no CI row existed anywhere
+    # for this crate before this row (confirmed via grep). Default build
+    # (no features) is genuinely `no_std` (core+alloc only) -- proved with
+    # a real bare-metal target, not just `--no-default-features` (a no-op
+    # flag here, since `default = []` already). The `arbitrary` feature
+    # pulls `std` back in (an upstream `derive_arbitrary` limitation, see
+    # the crate's own lib.rs doc comment), so it is deliberately excluded
+    # from this bare-metal row.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo build -p globalalloc-model --target thumbv7em-none-eabi
+    # P2-4 (pre-publish review run 1, 2026-09-06): the `proptest` dependency
+    # is declared `default-features = false, features = ["alloc", "no_std"]`,
+    # so the `proptest` front-end is genuinely `no_std`-compatible; this row
+    # proves the claim the README makes about it (the row above covers only
+    # the default build). The `arbitrary` front-end stays excluded for the
+    # reason the comment above states.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo build -p globalalloc-model --features proptest --target thumbv7em-none-eabi
+    # The build above compiles no test target. `--all-features` runs both
+    # optional front-ends (proptest + arbitrary) plus the always-on
+    # miri_bounded test; both profiles since no debug_assert!-gated
+    # behavior exists here today, but the crate's own asserts are the
+    # oracle's entire purpose and cheap to double-check in release too.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p globalalloc-model --all-features --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p globalalloc-model --all-features --release --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p globalalloc-model --all-features --all-targets -- -D warnings
+    # `--all-features` is NO LONGER this crate's docs.rs build: since the
+    # `internals` feature was added there are THREE features, while
+    # `[package.metadata.docs.rs]` pins only ["proptest", "arbitrary"].
+    # This row is the all-features internal configuration (a superset of
+    # the docs.rs build); the EXACT published feature set is built by
+    # globalalloc-model.yml's `docsrs` job ("Build EXACT docs.rs feature
+    # set" step), the canonical home for that check.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p globalalloc-model --all-features --no-deps
+    # P3-13 (pre-publish review run 1, 2026-09-06): the crate's ADVERTISED
+    # default is `default = []` — the same gate-blindness shape CLAUDE.md's
+    # feature-set doc-lint rule describes, inverted (the unbuilt
+    # configuration here is the default, not the published one). This row
+    # is that default build.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p globalalloc-model --no-deps
+    # `tagged-index-stack` advertises a no-std/no-alloc category but its
+    # head uses `AtomicU64`; use `x86_64-unknown-none`, which provides native
+    # 64-bit atomics in a no-std sysroot, rather than the 32-bit-atomic
+    # thumb target used by other members. This plain build deliberately
+    # omits the separate `loom` and repository-cfg configurations.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo build -p tagged-index-stack --target x86_64-unknown-none
+    # The unsupported-target guard must fail with exactly one named
+    # `compile_error!` and no secondary numbered diagnostics. `--color=never`
+    # is load-bearing because the workflow's global color setting would
+    # otherwise break the plain-text greps below.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - name: tagged-index-stack unsupported-target guard emits exactly ONE named error (no cascade)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        if cargo check -p tagged-index-stack --target thumbv6m-none-eabi --color=never > /tmp/tis_thumbv6m_check.log 2>&1; then
+          echo "FAIL: thumbv6m-none-eabi build unexpectedly succeeded (the crate requires 64-bit atomics)"
+          exit 1
+        fi
+        cascade=$(grep -c '^error\[' /tmp/tis_thumbv6m_check.log || true)
+        named=$(grep '^error:' /tmp/tis_thumbv6m_check.log | grep -vc 'could not compile' || true)
+        guard=$(grep '^error:' /tmp/tis_thumbv6m_check.log | grep -c 'requires a target with native 64-bit atomics' || true)
+        echo "numbered cascade errors: $cascade / named error lines: $named / named-guard hits: $guard"
+        if [ "$cascade" != "0" ] || [ "$named" != "1" ] || [ "$guard" != "1" ]; then
+          echo "FAIL: expected exactly the one named compile_error! and no secondary E0432/E0433 cascade:"
+          cat /tmp/tis_thumbv6m_check.log
+          exit 1
+        fi
+    # These crate-scoped rows are required because root-scoped clippy and
+    # docs jobs do not lint or document this dependency's own test/bench
+    # targets.
+    # `--all-targets` covers the crate's tests and bench in one step. The
+    # default row deliberately omits `loom` and the repository cfg: loom has
+    # a dedicated cfg+feature job, while instrumentation is linted by the
+    # separate row below.
+    - run: cargo clippy -p tagged-index-stack --all-targets -- -D warnings
+    # Lint the repository-cfg probes and oracle code explicitly. Do
+    # not combine it with `loom`: loom requires the matching cfg and has its
+    # own dedicated clippy row.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTFLAGS="--cfg tagged_index_stack_test" cargo clippy -p tagged-index-stack --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p tagged-index-stack --no-deps
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTFLAGS="--cfg tagged_index_stack_test" RUSTDOCFLAGS="-D warnings" cargo doc -p tagged-index-stack --no-deps --document-private-items
+    # sefer-region (task #667, gap-audit item filed 2026-08-07): same class
+    # of gap, but UNLIKE the two crates above, sefer-region genuinely
+    # declares a `std` Cargo feature to disable (`default = ["std"]`,
+    # `std = ["slotmap/std"]`, gating `SyncRegion`) — so this is not a
+    # no-op flag for it, and the bare-metal target is what actually proves
+    # the `no_std + alloc` configuration its own README/keywords advertise.
+    # Verified locally: compiles clean.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo build -p sefer-region --no-default-features --target thumbv7em-none-eabi
+    # sefer-region layout assertions (task #822, item 6) -- INVESTIGATED, not
+    # added: `tests/handle_static_asserts.rs` itself uses only
+    # `core`-compatible features, but `cargo check -p sefer-region
+    # --no-default-features --target thumbv7em-none-eabi --tests` (and even
+    # naming the single target explicitly via `--test
+    # handle_static_asserts`) still fails -- both pull in the full package's
+    # `[dev-dependencies]` unit graph for that target, which includes
+    # std-requiring crates (captrack, bench-scale-tool -> serde/once_cell)
+    # used by OTHER test/bench files in this same package, not by
+    # handle_static_asserts.rs itself. Verified locally: both invocations
+    # produce ~200-5800 `core`-vs-`std` prelude errors from those
+    # transitive std-only deps, not from this crate's own code. This is
+    # exactly why every OTHER `--target thumbv7em-none-eabi` line in this
+    # workflow (sefer-region, size-classes, once-ptr-cell) uses plain
+    # `cargo build` (library only, no `--tests`) rather than `--tests` --
+    # an established convention this finding did not previously explain.
+    # The layout assertions themselves remain verified empirically (see
+    # `handle_static_asserts.rs`'s own doc comments citing measured
+    # x86_64/i686 sizes) and via this workspace's regular
+    # `cargo test -p sefer-region --no-default-features` CI job, just not
+    # CI-gated specifically on the 32-bit bare-metal target. Closing this
+    # fully would require either splitting dev-dependencies so
+    # `handle_static_asserts.rs` doesn't share a unit graph with
+    # captrack/bench-scale-tool-using targets, or a
+    # per-test-target-isolated build mechanism this repo does not have --
+    # out of scope for this task; filed as a residual limitation rather
+    # than silently left unexplained.
+    # rust-intel audit (task #693, finding 2, 2026-08-07): sefer-region's own
+    # test comments (coverage_gaps.rs: region_reserve_overflow_panics,
+    # region_with_capacity_overflow_panics) claim their panic contracts hold
+    # "in both debug and release builds (profile-independent)" -- but every
+    # other step above runs in debug only, so that specific claim was never
+    # actually CI-verified for the release binary. Cheap to close (the suite
+    # is tiny, seconds of extra CI time): run the same suite once more under
+    # --release. This closes the gap for real now that task #690 added a
+    # checked-arithmetic guard making the two profiles agree (previously,
+    # release-mode overflow-checks-off arithmetic silently wrapped instead of
+    # panicking -- this step would have caught that divergence directly).
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p sefer-region --release --no-fail-fast
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

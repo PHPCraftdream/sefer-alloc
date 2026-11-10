@@ -179,6 +179,8 @@ const PURE_OBSERVERS = [
   // CF-2: pure const resolution of a by-value config.
   "src/alloc_core/config/large_cache_config.rs::dbg_resolved_route_pin_cache_slots",
   "src/alloc_core/config/large_cache_config.rs::dbg_resolved_huge_page_after_segments",
+  // J13b: pure const resolution of a by-value config into a Copy tuple.
+  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_thp_tuple",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",
@@ -375,6 +377,10 @@ const SAFE_MUTATORS = [
     "sets a plain AtomicBool test-injection flag only; the first non-NUMA biased reserve reports None, the already-handled production reserve-failure result; the retry stays real (R6-T34)"
   ],
   [
+    "src/alloc_core/large/alloc_core_large.rs::dbg_set_inject_large_register_fail",
+    "sets a plain AtomicBool test-injection flag only; the fresh-path Large registration reports failure, the already-handled production table-full result; the reservation is released through the terminal funnel (J13b)"
+  ],
+  [
     "src/alloc_core/large/alloc_core_large.rs::dbg_alloc_large_for_test",
     "delegates to the real production AllocCore::alloc_large with a caller size and alignment; takes no pointer, returns a fresh allocation or null; overflow guards are the code under test (R6-T30)"
   ]
@@ -457,6 +463,7 @@ export const REVIEWED_SURFACE = [
     ['src/registry/segment_route/small_sidecar.rs', ['owner_state_for_test'], 'unsafe', 'caller owns mapped reservation; raw metadata snapshot'],
     ['src/alloc_core/large/alloc_core_large_cache_eviction.rs', ['terminal_cached_large_state_for_test'], 'observer', 'owner cache terminal snapshot'],
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['terminal_header_layout_for_test', 'terminal_header_snapshot_for_test', 'terminal_primordial_snapshot_for_test', 'terminal_next_generation_for_test'], 'observer', 'checked header layout/state and generation geometry'],
+    ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['large_thp_charge_for_test'], 'observer', 'owned Large header field read; kind-checked, no pointer dereference beyond the owned header'],
     ['src/concurrent/sharded/sharded_region.rs', ['_set_remote_free_hint_for_tests'], 'mutator', 'advisory hint only; real queue remains authoritative'],
     ['src/registry/segment_route/pin.rs', ['dbg_publish_cached_for_test'], 'unsafe', 'entry into the production cached fast path; the address must be the caller’s CURRENT issued Small/Primordial allocation — publication consumes ownership once, and a bare address never establishes it (publishing a foreign live address forces the owner to reclaim a live instance: UAF by construction)'],
     ['src/registry/segment_route/pin.rs', ['dbg_cache_insert_for_test'], 'mutator', 'inserts caller-looked-up pin; no publish/reclaim obligation'],
@@ -466,6 +473,9 @@ export const REVIEWED_SURFACE = [
     ['src/concurrent/lock_free/lock_free_region.rs', ['_forge_handle_for_tests', '_page_arc_clones_for_tests', '_checked_total_slots_for_tests'], 'observer', 'by-value handle/geometry or TLS counter; ordinary operations still validate handles'],
     ['src/concurrent/lock_free/lock_free_region.rs', ['_reset_page_arc_clones_for_tests'], 'mutator', 'TLS diagnostic counter only'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['bench-internals'] }))),
+  { id: 'crates/aligned-vmem/src/bench_internals/advice/stream/log.rs::seed_cursor_for_test', kind: 'mutator', reason: 'seeds only the caller-owned synthetic log cursor; no global native-log accessor, mapping access or allocator-policy effect; sticky publication failures remain', gates: ['bench-internals', 'fault-injection'] },
+  { id: 'crates/aligned-vmem/src/bench_internals/advice/stream/log.rs::reserve_unpublished_for_test', kind: 'mutator', reason: 'reserves one deliberately incomplete scalar slot in the caller-owned synthetic log; bounded capacity and sticky unsupported closure remain', gates: ['bench-internals', 'fault-injection'] },
+  { id: 'crates/aligned-vmem/src/bench_internals/advice/stream/log.rs::complete_reserved_for_test', kind: 'mutator', reason: 'publishes inert words only into a reserved caller-owned synthetic-log slot through the real immutable slot protocol; cannot clear failure or access mappings/native global', gates: ['bench-internals', 'fault-injection'] },
   { id: 'src/alloc_core/segment/segment_table/harness.rs::hide_root_for_test', kind: 'mutator', reason: 'isolated numeric harness; no dereference; external alloc_core module path requires internals, not a compilation gate', gates: [] },
   { id: 'src/registry/segment_route/directory/route_directory.rs::register', kind: 'mutator', reason: 'internals-only public form of the crate-only register_route; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
   { id: 'src/registry/segment_route/directory/route_directory.rs::lookup', kind: 'observer', reason: 'the real production lookup path; the pointer is only a numeric shard key, never dereferenced', gates: [] },

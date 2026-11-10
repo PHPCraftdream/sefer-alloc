@@ -1,0 +1,18 @@
+name: CI kani
+description: Original kani job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Install kani-verifier
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo install --locked kani-verifier
+    - name: cargo kani setup
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo kani setup
+    - name: cargo kani (all harnesses)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo kani --features "alloc-core experimental alloc-global internals fastbin alloc-decommit"

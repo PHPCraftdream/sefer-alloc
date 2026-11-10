@@ -12,15 +12,26 @@ use crate::alloc_core::node::Node;
 #[cfg(feature = "numa-aware")]
 use crate::alloc_core::numa;
 #[cfg(not(feature = "numa-aware"))]
+use crate::alloc_core::os;
+#[cfg(not(feature = "numa-aware"))]
 use crate::alloc_core::os::Segment;
-use crate::alloc_core::os::{self, SEGMENT};
+use crate::alloc_core::os::SEGMENT;
 #[cfg(any(feature = "alloc-xthread", feature = "numa-aware"))]
 use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::segment_header::{align_up, SegmentHeader, SegmentKind};
 
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+use crate::alloc_core::alloc_core::advise_fresh_large;
+use crate::alloc_core::alloc_core::release_large_mapping;
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::alloc_core::LARGE_CACHE_SIZE_FACTOR;
+#[cfg(all(
+    feature = "alloc-decommit",
+    feature = "alloc-xthread",
+    not(feature = "numa-aware")
+))]
+use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
 #[cfg(feature = "internals")]
 use core::sync::atomic::{AtomicBool, Ordering};
 // R1-08: `CachedLarge` is constructed only inside `reclaim_large_segment`,
@@ -109,6 +120,10 @@ static DBG_INJECT_LARGE_ALLOC_OOM: AtomicBool = AtomicBool::new(false);
 // to fail; the post-drain retry stays real.
 #[cfg(feature = "internals")]
 static DBG_INJECT_BIASED_RESERVE_FAIL: AtomicBool = AtomicBool::new(false);
+
+// Forces the fresh-path `register_payload` failure branch (advice already reserved).
+#[cfg(feature = "internals")]
+static DBG_INJECT_LARGE_REGISTER_FAIL: AtomicBool = AtomicBool::new(false);
 
 fn large_payload_offset(align: usize) -> usize {
     if align >= SEGMENT {
@@ -365,7 +380,11 @@ impl AllocCore {
                         ) {
                             fatal(b"large: cached release failed\n");
                         }
-                        os::release_segment(slot.reservation, slot.reservation_len);
+                        release_large_mapping(
+                            SegmentHeader::thp_charge_at(slot.base),
+                            slot.reservation,
+                            slot.reservation_len,
+                        );
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
                 };
@@ -409,6 +428,8 @@ impl AllocCore {
                         "F12: large-cache slot's in-memory reservation_len diverged from slot.reservation_len"
                     );
                 }
+                #[cfg(debug_assertions)]
+                let charge_before = SegmentHeader::thp_charge_at(slot.base);
                 // The header is prepared before route registration. The
                 // legacy magic field uses an atomic owner-side store; the
                 // other targeted writes are owner-side initialization, not
@@ -426,6 +447,12 @@ impl AllocCore {
                         core::mem::offset_of!(SegmentHeader, payload_offset),
                     ) as *mut usize,
                     hdr_aligned,
+                );
+                #[cfg(debug_assertions)]
+                debug_assert_eq!(
+                    SegmentHeader::thp_charge_at(slot.base),
+                    charge_before,
+                    "F12: large-cache hit's targeted header writes must not change thp_charge"
                 );
                 // NOW publish `slot.base` to `contains_base`/remote routing.
                 // Under alloc-decommit, `recycle()` left a NULL slot that
@@ -448,7 +475,11 @@ impl AllocCore {
                         {
                             fatal(b"large: initializing release failed\n");
                         }
-                        os::release_segment(slot.reservation, slot.reservation_len);
+                        release_large_mapping(
+                            SegmentHeader::thp_charge_at(slot.base),
+                            slot.reservation,
+                            slot.reservation_len,
+                        );
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
                 };
@@ -560,7 +591,7 @@ impl AllocCore {
             }
         };
         #[cfg(not(feature = "numa-aware"))]
-        let (base, reservation, reservation_len, reserved_capacity) = {
+        let (base, reservation, reservation_len, reserved_capacity, thp_charge, _thp_observation) = {
             // R12-4: the RESERVED VA span for this segment. With the feature
             // ON (`usable` already page-exact from `exact-span-large`
             // above), reserve a geometric multiple of `usable` — capped at
@@ -681,7 +712,7 @@ impl AllocCore {
                 let Some((b, r, rl)) = reserved else {
                     return (core::ptr::null_mut(), true);
                 };
-                (b, r, rl, reserved_capacity_target)
+                (b, r, rl, reserved_capacity_target, 0usize, 0u64)
             } else {
                 let segment = match seg {
                     Some(s) => s,
@@ -690,26 +721,48 @@ impl AllocCore {
                 let b = segment.as_ptr();
                 let r = segment.reservation();
                 let rl = segment.reservation_len();
+                // Advise before the live `Segment` is forgotten; the charge stays a local
+                // until the header is written (or the registration failure returns it).
+                #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+                let (thp_charge, thp_observation) = advise_fresh_large(&segment, size, usable);
+                #[cfg(not(all(feature = "alloc-decommit", not(feature = "numa-aware"))))]
+                let (thp_charge, thp_observation) = (0usize, 0u64);
                 core::mem::forget(segment);
-                (b, r, rl, reserved_capacity_target)
+                (
+                    b,
+                    r,
+                    rl,
+                    reserved_capacity_target,
+                    thp_charge,
+                    thp_observation,
+                )
             }
         };
         #[cfg(feature = "numa-aware")]
-        let reserved_capacity = usable;
+        let (reserved_capacity, thp_charge, _thp_observation) = (usable, 0usize, 0u64);
 
         // no-panic: register returns None if the segment table is full (too many
         // live large allocations). We release the reservation and return null
         // (graceful OOM) rather than panicking.
-        let id = match self.table.register_payload(
-            base,
-            reserved_capacity,
-            SegmentKind::Large,
-            Node::offset(base, hdr_aligned),
-        ) {
+        #[cfg(feature = "internals")]
+        let inject_register_fail = DBG_INJECT_LARGE_REGISTER_FAIL.load(Ordering::Relaxed);
+        #[cfg(not(feature = "internals"))]
+        let inject_register_fail = false;
+        let registered = if inject_register_fail {
+            None
+        } else {
+            self.table.register_payload(
+                base,
+                reserved_capacity,
+                SegmentKind::Large,
+                Node::offset(base, hdr_aligned),
+            )
+        };
+        let id = match registered {
             Some(id) => id,
             None => {
-                // Release the reservation we own.
-                os::release_segment(reservation.as_ptr(), reservation_len);
+                // Release the reservation we own, then return any advice charge.
+                release_large_mapping(thp_charge, reservation.as_ptr(), reservation_len);
                 return (core::ptr::null_mut(), true);
             }
         };
@@ -732,6 +785,11 @@ impl AllocCore {
         );
         Node::write_struct(base as *mut SegmentHeader, hdr);
         crate::alloc_core::segment_header::SegmentMeta::new(base).init_large_terminal();
+        if thp_charge != 0 {
+            SegmentHeader::set_thp_charge_at(base, thp_charge);
+        }
+        #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+        SegmentHeader::set_thp_observation_at(base, _thp_observation);
         // Phase C (numa-aware): stamp the NUMA node into the header after
         // writing it (the constructor sets node_id to NO_NODE_RAW).
         #[cfg(feature = "numa-aware")]
@@ -758,6 +816,14 @@ impl AllocCore {
     #[doc(hidden)]
     pub fn dbg_set_inject_biased_reserve_fail(on: bool) {
         DBG_INJECT_BIASED_RESERVE_FAIL.store(on, Ordering::Relaxed);
+    }
+
+    /// `#[doc(hidden)]` test hook — not public API. Forces the fresh-path
+    /// Large registration to fail while set, after any advice was reserved.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_set_inject_large_register_fail(on: bool) {
+        DBG_INJECT_LARGE_REGISTER_FAIL.store(on, Ordering::Relaxed);
     }
 
     /// `#[doc(hidden)]` test forwarder (R6-CR-4) — not public API. Reaches
@@ -795,6 +861,12 @@ impl AllocCore {
     /// (`drain_large_sidecar_ingress`) on the owner's
     /// `alloc_large` slow-path, once per queued base.
     #[cfg(feature = "alloc-xthread")]
+    // Sole caller (`retire_large_route`) lives in `alloc_core/sidecar_drain.rs`,
+    // compiled only under `all(feature = "alloc-global", feature = "alloc-xthread")`.
+    #[cfg_attr(
+        not(all(feature = "alloc-global", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
     pub(crate) fn reclaim_large_segment(&mut self, base: *mut u8) {
         let terminal_meta = SegmentMeta::new(base);
         let state = LargeReservationState::new(terminal_meta.large_state_atomic());
@@ -804,6 +876,23 @@ impl AllocCore {
             fatal(b"large: live claim credit missing\n");
         };
         let hdr = SegmentHeader::read_at(base);
+        // A foreign realloc may have copied this mapping's payload without
+        // updating its owner-only token. Consume remote controls conservatively;
+        // only the owner-free path may sample a live token.
+        #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+        {
+            let token = SegmentHeader::thp_observation_at(base);
+            if token != 0 {
+                SegmentHeader::set_thp_observation_at(base, 0);
+                if matches!(token, 1..=6) {
+                    ThpRuntime::note_invalidated_observation(hdr.large_size);
+                } else if matches!(token, 9..=14) {
+                    ThpRuntime::note_premise_failure(hdr.large_size);
+                } else {
+                    ThpRuntime::note_observation_error(hdr.large_size);
+                }
+            }
+        }
         // Remove from the table FIRST (frees the slot for reuse regardless of
         // which branch below runs) — mirrors the own-thread cache-deposit
         // ordering in `dealloc`'s Large branch.
@@ -899,6 +988,6 @@ impl AllocCore {
         if !state.release_consumed(generation) {
             fatal(b"large: consumed release failed\n");
         }
-        os::release_segment(hdr.reservation, hdr.reservation_len);
+        release_large_mapping(hdr.thp_charge, hdr.reservation, hdr.reservation_len);
     }
 }

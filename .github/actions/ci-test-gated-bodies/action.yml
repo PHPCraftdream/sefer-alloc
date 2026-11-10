@@ -1,0 +1,74 @@
+name: CI test-gated-bodies
+description: Original test-gated-bodies job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    # R24-6 (task #384): `bench-internals` added so
+    # `tests/class_aware_dirty_oom_latch.rs` (which now additionally gates
+    # on that feature — see `Cargo.toml`'s `bench-internals` doc) keeps
+    # running here instead of silently being skipped by its own `#![cfg]`.
+    # `internals` added (R34-3/task #522): this row runs the whole
+    # `tests/` tree, which reaches `alloc_core`/`global`/`registry` directly.
+    - name: test (--features "production alloc-stats bench-internals")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production alloc-stats bench-internals internals" --no-fail-fast
+    - name: test (--features pinning)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features pinning --no-fail-fast
+    # `--all-features` as the closing step: exercises every gated tier
+    # together (adds experimental + hardened + numa-aware on top). The
+    # numa_alloc real-mbind assertions are env-guarded
+    # (SEFER_NUMA_TEST=1, set ONLY by the scheduled `numa-real-kernel`
+    # job) and skip trivially on this single-NUMA runner, so
+    # `--all-features` here is a compile+link+run check of the full
+    # feature union, not a NUMA correctness gate. Verified green
+    # locally under the same conditions.
+    - name: test (--all-features)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --all-features --no-fail-fast
+    # B4-30 fix7: first-alloc stack budget, differential self-measurement,
+    # enforced (SEFER_B4_30_ENFORCE=1) on the measured (os, profile) cells; greps the ENFORCE-only markers, so a silent loss of enforcement fails the step.
+    - name: b4-30 first-alloc stack budget (--all-features, linux)
+      if: ${{ !cancelled() }}
+      env:
+        SEFER_B4_30_ENFORCE: '1'
+      run: |
+        cargo test --all-features --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+        grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+        cargo test --all-features --release --test b4_30_first_alloc_min_stack -- --exact b4_30_small_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-release.log"
+        grep -F "[b4-30] enforced scenario=small" "$RUNNER_TEMP/b4-30-allfeat-release.log"
+        cargo test --all-features --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+        grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+        cargo test --all-features --release --test b4_30_first_alloc_min_stack -- --exact b4_30_large_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-release.log"
+        grep -F "[b4-30] enforced scenario=large" "$RUNNER_TEMP/b4-30-allfeat-release.log"
+        cargo test --all-features --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+        grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-allfeat-debug.log"
+        cargo test --all-features --release --test b4_30_first_alloc_min_stack -- --exact b4_30_foreign_free_first_alloc_stack_budget --nocapture 2>&1 | tee "$RUNNER_TEMP/b4-30-allfeat-release.log"
+        grep -F "[b4-30] enforced scenario=foreign-free" "$RUNNER_TEMP/b4-30-allfeat-release.log"
+      shell: bash
+    # task #1288: `--all-features` above no longer activates numa-shim's mock
+    # backend (the `mock` Cargo feature is gone — replaced by the build-time
+    # `--cfg numa_shim_mock`), so the six `numa-aware-mock` mock-gated root
+    # test files (numa_cache_invalidation, numa_periodic_refresh, the
+    # segment_directory_numa* family) SKIP cleanly under it. This row is
+    # their dedicated coverage: all features PLUS the cfg flag, which is
+    # exactly what the old `--all-features` row ran them under via feature
+    # unification. The six grep sentinels (task #1101 pattern; task #1299/T9
+    # added the five below beyond the original one) prove the mock files
+    # actually RAN — without the cfg this row would be green-and-dead.
+    - run: |
+        RUSTFLAGS="--cfg numa_shim_mock" cargo test --all-features --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/root-numa-mock.log"
+        grep -F "test cached_node_invalidates_across_slot_recycle ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+        grep -F "test cached_node_refreshes_after_mid_claim_migration ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+        grep -F "test per_node_oracle_holds_after_mixed_node_workload ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+        grep -F "test ninth_node_reuses_freed_bucket_after_earlier_node_goes_idle ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+        grep -F "test directory_returns_local_not_foreign_for_high_node_ids ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+        grep -F "test clear_bit_on_never_registered_node_does_not_claim_a_bucket ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+      shell: bash

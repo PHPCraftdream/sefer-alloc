@@ -1,0 +1,166 @@
+name: CI test-feature-isolation
+description: Original test-feature-isolation job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    # R12-3 EXPERIMENTAL: exact-page-rounded Large spans instead of
+    # whole-SEGMENT rounding. Additive over `alloc-core`; verified locally
+    # green together with `production`.
+    # `internals` added (R34-3/task #522) — whole-suite row.
+    - name: test (--features "production exact-span-large")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production exact-span-large internals" --no-fail-fast
+    # R13-3: virgin-zero-skip through the magazine + the drain-prelude fix
+    # (task #273/#285's sibling defect). `alloc-stats` for the
+    # `SMALL_ZERO_PASS_CALLS` skip-fired oracle in
+    # `r13_3_magazine_virgin_hit_skips_zero.rs`.
+    # `internals` added (R34-3/task #522) — whole-suite row.
+    - name: test (--features "production virgin-zero-skip alloc-stats bench-internals")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "production virgin-zero-skip alloc-stats bench-internals internals" --no-fail-fast
+    # R12-11: PageMap diagnostic write sites. Additive over `alloc-core`;
+    # exercises the 4 test files whose class-mismatch oracles need the
+    # PageMap actually maintained to compare against.
+    - name: test (--features "alloc-core page-map-diag")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: >-
+        cargo test --features "alloc-core page-map-diag" --no-fail-fast
+        --test phase13_3_dealloc_layout_class
+        --test phase13_drain_reclaim_layout_class
+        --test regression_carve_batch
+        --test medium_classes_correctness
+    # R13-3/#285 follow-up finding (task #285): `alloc-xthread`, `fastbin`,
+    # `alloc-decommit` WITHOUT `alloc-segment-directory` — `production`
+    # always turns both `alloc-segment-directory` and these three on
+    # together, so this specific "xthread stack without the directory"
+    # combination was NEVER built in CI before, and is exactly the
+    # combination that hid the `drain_heap_overflow` E0599 compile error
+    # fixed by commit e7617d1 (R13-12, task #285). Build-only (per the
+    # task brief): this combination has near-zero dedicated test coverage
+    # of its own beyond what `test-xthread`'s narrower rows already run,
+    # so a compile check is the target regression gate, not a full test
+    # run.
+    - name: build (--features "alloc-global alloc-xthread fastbin alloc-decommit")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo build --features "alloc-global alloc-xthread fastbin alloc-decommit"
+    # R16-1 (task #311, P1): R15-3 (task #305, commit 4de4ef2) added a
+    # compile-time `#[cfg]` gate around `try_promote_to_large`
+    # (`src/registry/heap_core/free/realloc.rs`) that splits the Small/medium ->
+    # Large realloc promotion (R14-4/task #289, the largest Round 14 perf
+    # item) into two MUTUALLY EXCLUSIVE compiled behaviours depending on
+    # whether the build has grow headroom past a promoted block's committed
+    # span. Neither behaviour was ever exercised per-PR: no row in this job
+    # (or anywhere else in the `test`/`test-*` jobs) turns on
+    # `medium-classes` at all, so `try_promote_to_large` and its call site
+    # never compiled, let alone ran, outside the weekly, test-free
+    # `cargo-hack --feature-powerset check` job. This is the same class of
+    # gap R13-12/#285 already caught once: a real behaviour gated behind a
+    # feature COMBINATION no CI row happens to build. Two rows below cover
+    # both sides of the R15-3 split:
+    #   - `production medium-classes` (no `exact-span-large`): SEGMENT
+    #     rounding gives headroom by construction, so `HAS_PROMOTION` is
+    #     `true` here — promotion compiles in and fires. Exercises
+    #     `second_grow_past_threshold_hits_opt_g_no_move` /
+    #     `repeated_post_promotion_grows_all_hit_opt_g` in
+    #     `tests/r14_4_promotion_move_leg_reduction.rs`, which previously
+    #     skipped their own bodies in EVERY CI configuration (their
+    #     `if !HAS_PROMOTION { return; }` guard always tripped).
+    #   - `production medium-classes exact-span-large` (no
+    #     `large-reserved-capacity`, no `numa-aware`): zero-headroom
+    #     combination, `HAS_PROMOTION` is `false` — R15-3's gate compiles
+    #     `try_promote_to_large` OUT entirely, and growth instead takes the
+    #     ordinary medium-ladder move-leg/OPT-F path. Exercises the R15-3
+    #     `promotion_off_*` tests in the same file plus
+    #     `tests/r14_4_promotion_feature_off_non_disturbance.rs`'s
+    #     `HAS_LARGE_GROW_HEADROOM`-gated assertions.
+    # `--test`-filtered (narrow), matching this job's established style for
+    # rows whose target is a specific mechanism rather than a broad
+    # feature-union smoke check (see the `page-map-diag` row above).
+    # `internals` added (R34-3/task #522): the test file itself reaches
+    # `sefer_alloc::registry::HeapCore` directly.
+    # R6-T20: this row is predicate-TRUE (`production medium-classes`, no
+    # `exact-span-large`) — it runs the predicate single-source-of-truth
+    # equivalence oracle in the polarity where a wrong const copy (false)
+    # or a wrong macro copy would diverge.
+    - name: test (--features "production medium-classes")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: >-
+        cargo test --features "production medium-classes internals"
+        --test r14_4_promotion_move_leg_reduction
+        --test r6_t20_medium_promotion_predicate
+        --no-fail-fast
+    # R19-PRF02R lookup-count oracle (tier-1 own_cache counters need
+    # `bench-internals`): no other row builds it, which is how it went stale
+    # after R6-T01 removed the promotion stamp. Default arm B only.
+    - name: test (--features "production medium-classes bench-internals", PRF-02R)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: >-
+        cargo test --features "production medium-classes internals bench-internals"
+        --test r19_prf02r_realloc_tail
+        --no-fail-fast
+    # `internals` added (R34-3/task #522):
+    # `r14_4_promotion_move_leg_reduction.rs` reaches
+    # `sefer_alloc::registry::HeapCore` directly.
+    # R6-T20: this row is predicate-FALSE (zero-headroom combination) —
+    # the negative-control polarity for the same equivalence oracle.
+    - name: test (--features "production medium-classes exact-span-large")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: >-
+        cargo test --features "production medium-classes exact-span-large internals" --no-fail-fast
+        --test r14_4_promotion_move_leg_reduction
+        --test r14_4_promotion_feature_off_non_disturbance
+        --test r6_t20_medium_promotion_predicate
+    # R29-14 (P2, sourced from the 2026-07-29 "oh-acceleration-code-project"
+    # readonly review, §3.3): post-#1288 `--all-features` no longer forces anything
+    # in numa-shim (the mock is a `--cfg numa_shim_mock` build flag; `numa-aware-mock`
+    # no longer forwards to it), so the real (non-mock) cfg arm is what
+    # `--all-features` compiles everywhere. The shim crate itself IS tested on real
+    # kernels per-PR (`numa-shim-windows`/`numa-shim-macos`, `-p numa-shim`
+    # without `mock`), but that covers only the shim IN ISOLATION — not
+    # whether `sefer-alloc` built with `numa-aware` and WITHOUT
+    # `numa-aware-mock` still compiles/links against it (the actual
+    # integration surface: `src/alloc_core/platform/numa.rs`'s thin wrapper calling
+    # into the shim's real functions). The only job that builds this
+    # combination is `numa-real-kernel` below, gated to `schedule`/
+    # `workflow_dispatch` (weekly) — a signature drift in e.g.
+    # `reserve_aligned_on_node` would surface at worst a week later, not on
+    # the introducing PR. A single check-only step closes that per-PR gap
+    # cheaply: `cargo check` typechecks the real (non-mock) cfg arm without
+    # needing NUMA-capable hardware to execute it (confirmed via `cargo
+    # metadata --features "production numa-aware"`: `numa-shim`'s resolved
+    # feature set is `["default", "vmem-integration"]` — `mock` is absent,
+    # and the cfg cannot be set by features at all). Folded into this
+    # job (not a new one) because it is already the home for narrow
+    # feature-COMBINATION checks on `ubuntu-latest`, including one
+    # build-only row just above (`build (--features "alloc-global
+    # alloc-xthread fastbin alloc-decommit")`) for exactly the same
+    # "compiles under no existing row" reason.
+    - name: check (--features "production numa-aware")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo check --features "production numa-aware"
+
+    # R6-T09: the batch API must route narrow layouts through `ExactNarrow`
+    # exactly like the scalar `GlobalAlloc` methods. No other CI row builds
+    # `exact-object-proto` together with `batch-api`.
+    - name: test (--features "exact-object-proto batch-api internals bench-internals")
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --features "exact-object-proto batch-api internals bench-internals" --test r6_t09_batch_exact_narrow

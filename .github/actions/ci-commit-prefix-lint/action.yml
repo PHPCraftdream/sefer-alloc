@@ -1,0 +1,51 @@
+name: CI commit-prefix-lint
+description: Original commit-prefix-lint job steps
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+    - name: Lint the commit range this event introduced
+      run: |
+        set -euo pipefail
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+        else
+          BEFORE="${{ github.event.before }}"
+          # All-zero (branch creation) or unreachable (force-push) `before`:
+          # there is no resolvable range, so fall back to the script's own
+          # default rather than failing on a bad revision.
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "push event has no resolvable 'before' SHA ($BEFORE) — using the script's default range"
+            node scripts/verify-commit-prefixes.mjs
+            exit $?
+          fi
+          RANGE="$BEFORE..${{ github.sha }}"
+        fi
+        echo "linting range: $RANGE"
+        node scripts/verify-commit-prefixes.mjs "$RANGE"
+      shell: bash
+
+# Consolidated (2026-07-12, CI job-count reduction) from 13 single-
+# feature-set matrix jobs into 4 jobs, grouped by theme (the same
+# grouping the original per-entry comments already used). Unlike
+# `loom`/`miri` above, these 13 entries have 13 DIFFERENT feature
+# strings (no pair shares one, so there is no "share one cargo
+# invocation" trick available) — each step below is its own `cargo
+# test <features> --no-fail-fast` invocation, same as before.
+#
+# Every step carries `if: ${{ !cancelled() }}` so a failure in one
+# feature-set's step does NOT skip the remaining steps in the same job
+# (GitHub Actions' default is to skip subsequent steps after a
+# failure) — this preserves, at the feature-set granularity, the exact
+# property `--no-fail-fast` already guarantees at the test-binary
+# granularity within one step: "a failure in one row never masks
+# failures in later rows" (the explicit 0.3.0-hardening-pass lesson
+# this repo learned the hard way once already). The job's own overall
+# conclusion still correctly reports failure if any step failed.
+# Ghost build (docs/GHOST_CHECKS_PLAN.md §3): the whole suite with
+# `--cfg sefer_ghost`, so every ghost check in production code runs on every
+# test, not only in the miri/loom targets. Also compiles every test that
+# path-mounts src/ (it must mount src/ghost/ too).

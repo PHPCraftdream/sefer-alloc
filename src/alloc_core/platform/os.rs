@@ -523,6 +523,12 @@ impl Segment {
         self.0.advise_huge_pages()
     }
 
+    /// Disable transparent huge-page backing for this reservation's usable span.
+    #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+    pub(crate) fn try_disable_transparent_huge_pages(&self) -> Result<(), vmem::VmemError> {
+        self.0.try_disable_transparent_huge_pages()
+    }
+
     /// Range-limited huge-page hint for `[offset, offset + length)` of the span; returns the bytes the kernel accepted.
     // Used by the dependent fresh-path THP integration.
     #[cfg_attr(
@@ -530,10 +536,6 @@ impl Segment {
         allow(dead_code)
     )]
     #[cfg(not(feature = "numa-aware"))]
-    #[allow(
-        dead_code,
-        reason = "staged bridge; runtime consumer is a dependent change"
-    )]
     pub(crate) fn try_advise_huge_pages_range(
         &self,
         offset: usize,
@@ -575,10 +577,6 @@ pub(crate) fn release_segment(reservation: *mut u8, reservation_len: usize) {
 
 /// Same ownership contract as [`release_segment`]; on error, never retry or access the mapping.
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-#[allow(
-    dead_code,
-    reason = "staged bridge; runtime consumer is a dependent change"
-)]
 pub(crate) fn try_release_segment(
     reservation: *mut u8,
     reservation_len: usize,

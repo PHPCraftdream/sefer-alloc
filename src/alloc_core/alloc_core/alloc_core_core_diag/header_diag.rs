@@ -83,6 +83,20 @@ impl AllocCore {
         assert!(generation <= MAX_LARGE_GENERATION);
         next_large_generation(generation)
     }
+
+    /// Test-only: the advice charge stored in the header of the live Large
+    /// mapping that `ptr` points into; `None` for an unowned or non-Large
+    /// pointer.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn large_thp_charge_for_test(&self, ptr: *mut u8) -> Option<usize> {
+        let base = self.table.canonical_base_of(os::segment_base_of_ptr(ptr))?;
+        if SegmentHeader::kind_at(base) != SegmentKind::Large {
+            return None;
+        }
+        Some(SegmentHeader::thp_charge_at(base))
+    }
+
     /// TEST-ONLY (L-5, UBFIX-11): read the RAW `kind` discriminant byte of
     /// `ptr`'s segment header (not decoded through `SegmentHeader::kind_at` —
     /// the exact byte at the `kind` field's offset). Lets a test capture the

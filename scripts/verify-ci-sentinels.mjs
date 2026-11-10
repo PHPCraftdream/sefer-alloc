@@ -170,13 +170,10 @@
 //     false positive that is subsumed: any step holding such a line
 //     already fails via point 6's own dead-sentinel error plus the
 //     floor drop (the dead line no longer counts toward checkedCount).
-
 import fs from 'node:fs';
 import path from 'node:path';
+import { effectiveWorkflow } from './ci/effective-workflow.mjs';
 import { REPO_ROOT } from './lib.mjs';
-
-const CI_YML = path.join(REPO_ROOT, '.github', 'workflows', 'ci.yml');
-
 /** Map of workspace member crate name -> its tests/ dir, relative to REPO_ROOT. */
 const CRATE_TEST_DIRS = {
   'aligned-vmem': 'crates/aligned-vmem/tests',
@@ -190,7 +187,6 @@ const CRATE_TEST_DIRS = {
   'proc-memstat': 'crates/proc-memstat/tests',
   'proc-probe': 'crates/proc-probe/tests',
 };
-
 /**
  * Split ci.yml into "step blocks": each block is the text of one `- run:`
  * step (inline `- run: cmd` or block-scalar `- run: |` ... indented lines),
@@ -827,7 +823,8 @@ function listTestFiles(testsDir) {
 }
 
 function verifyCiSentinels() {
-  const raw = fs.readFileSync(CI_YML, 'utf8');
+  const expanded = effectiveWorkflow(REPO_ROOT);
+  const raw = expanded.text;
   const lines = raw.split(/\r?\n/);
   const steps = splitIntoRunSteps(lines);
 
@@ -987,7 +984,10 @@ function verifyCiSentinels() {
     }
   }
 
-  return { checkedCount, errors };
+  return { checkedCount, errors: errors.map(error => error.replace(/ci\.yml:(\d+)/g, (_, line) => {
+    const origin = expanded.origins[Number(line) - 1];
+    return origin ? `${origin.file}:${origin.line}` : `ci.yml:${line}`;
+  })) };
 }
 
 // F12 (task #1157) minimum-count floor.
@@ -1110,7 +1110,7 @@ function verifyCiSentinels() {
 // unchanged. This is the current exact floor, not a parser exemption.
 // The harness-free installed-Box target replaces four libtest result sentinels
 // with four asserted completion markers; the live count remains 101.
-const MIN_SENTINEL_COUNT = 191;
+const MIN_SENTINEL_COUNT = 230;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {
