@@ -85,7 +85,7 @@ Prod: `crates/aligned-vmem/src/bench_internals/advice/stream/log.rs`, `crates/al
 - I7 diagnostic addresses remain inert integers; no allocation, callbacks, mapping locks, mapped-memory access or unbounded retry exists in append
 - I8 release markers are sampled before the consuming native attempt; only a unique confirmed Large-source result whose marker includes the original fresh/advice publication can justify canonical closure before a reused range; thread-affine scalar source context restores on exit, unrelated VM callbacks never debit Large ownership, and unknown outcomes never repair evidence
 
-Decision: **benchmark-only bounded capture with fail-closed evidence** — Task78 bounded native capture/replay is component-accepted with positive native/Miri/semantic and verification-suffix zero-cost receipts. Full window binding and runtime admission remain open; no performance or default promotion is implied.
+Decision: **benchmark-only bounded capture with fail-closed evidence** — Task78 bounded native capture/replay is component-accepted with positive native/Miri/semantic and verification-suffix zero-cost receipts. Window binding/cost component accepted on95ee28ef by CI42724018048; complete adapters, identities and runtime admission remain open, with no performance or default promotion implied.
 
 ### P27 — large-THP coherent bounded estimator pair
 

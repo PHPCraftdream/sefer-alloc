@@ -26,7 +26,7 @@
       "real_under_loom": "no Loom model: bounded actual-source thread/Miri, native emitter/replay and semantic fixtures accepted on 93f99017 by CI42693008438 attempt2; no whole-native-lifecycle or wait-freedom claim",
       "decision": "benchmark-only bounded capture with fail-closed evidence",
       "phase": "J13b",
-      "reason": "Task78 bounded native capture/replay is component-accepted with positive native/Miri/semantic and verification-suffix zero-cost receipts. Full window binding and runtime admission remain open; no performance or default promotion is implied."
+      "reason": "Task78 bounded native capture/replay is component-accepted with positive native/Miri/semantic and verification-suffix zero-cost receipts. Window binding/cost component accepted on95ee28ef by CI42724018048; complete adapters, identities and runtime admission remain open, with no performance or default promotion implied."
     },
     {
       "id": "P27",
