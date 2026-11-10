@@ -30,6 +30,8 @@ import { join } from 'node:path';
 import { REPO_ROOT } from './lib.mjs';
 import { changedLines, resolveBase, zeroCostSkip } from './ghost_diff.mjs';
 import { declaredRuntimePrefix } from './ghost_runtime_prefix.mjs';
+import { runtimeHistory } from './ghost_runtime_history.mjs';
+import { checkRuntimeHistoryCases } from '../tests/ghost_runtime_history_fixtures.mjs';
 import { checkRuntimePrefixCases } from '../tests/ghost_runtime_prefix_fixtures.mjs';
 
 const EXAMPLE = 'ghost_zero_cost_probe';
@@ -221,6 +223,7 @@ for (const [name, e, want] of END_CASES) {
   assert.equal(r.why === undefined, want !== null, `resolveBase self-test "${name}": a refusal carries a reason`);
 }
 const prefixChecks = checkRuntimePrefixCases();
+console.log(`[ghost-zero-cost] landing-history self-test OK (${checkRuntimeHistoryCases()} cases)`);
 console.log(`[ghost-zero-cost] scope self-test OK (${SKIP_CASES.length} + ${END_CASES.length} cases + changedLines; ${prefixChecks} runtime-prefix checks)`);
 if (argv.includes('--self-test')) process.exit(0);
 
@@ -255,23 +258,25 @@ if (argv.includes('--allow-declared-runtime')) {
   }
   // A runtime-changing prefix may already satisfy the original skip policy.
   // Derive it from history, never from measured output or a caller-picked ref.
+  const sourceHistory = dirty.length ? { base: prBase, head } : runtimeHistory({ base: prBase, head }, g);
+  if (sourceHistory.bridge) endpoints.history_bridge = sourceHistory.bridge;
   function* candidates() {
-    const history = g(['rev-list', '--first-parent', '--no-merges', head, `^${prBase}`]).trim().split('\n').filter(Boolean);
+    const history = g(['rev-list', '--first-parent', '--no-merges', sourceHistory.head, `^${sourceHistory.base}`]).trim().split('\n').filter(Boolean);
     for (const sha of history) {
-      if (sha === head) continue;
-      const prefixSubjects = g(['log', '--no-merges', '--format=%s', `${prBase}..${sha}`]).split('\n').filter(Boolean);
-      const prefixPaths = g(['diff', '--name-only', '-z', '--no-renames', prBase, sha]).split('\0').filter(Boolean);
-      const prefixChanged = new Map(prefixPaths.map((p) => [p, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', prBase, sha, '--', p]))]));
+      if (sha === sourceHistory.head) continue;
+      const prefixSubjects = g(['log', '--no-merges', '--format=%s', `${sourceHistory.base}..${sha}`]).split('\n').filter(Boolean);
+      const prefixPaths = g(['diff', '--name-only', '-z', '--no-renames', sourceHistory.base, sha]).split('\0').filter(Boolean);
+      const prefixChanged = new Map(prefixPaths.map((p) => [p, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', sourceHistory.base, sha, '--', p]))]));
       yield { sha, subjects: prefixSubjects, changed: prefixChanged };
     }
   }
-  const prefix = declaredRuntimePrefix(candidates(), { head, dirty });
+  const prefix = declaredRuntimePrefix(candidates(), { head: sourceHistory.head, dirty });
   if (prefix) {
     baseSha = prefix.head;
     endpoints.base = baseSha;
-    endpoints.runtime_prefix = { base: prBase, ...prefix };
+    endpoints.runtime_prefix = { base: sourceHistory.base, ...prefix };
     endpoints.proof_scope = 'entire suffix after the policy-admitted runtime prefix; not whole-PR runtime identity';
-    console.log(`[ghost-zero-cost] runtime prefix ${prBase}..${baseSha}: admitted by the unchanged declared-runtime policy`);
+    console.log(`[ghost-zero-cost] runtime prefix ${sourceHistory.base}..${baseSha}: admitted by the unchanged declared-runtime policy`);
     console.log(`[ghost-zero-cost] exact production text/Ir proof REQUIRED for suffix ${baseSha}..${head}`);
   } else {
     console.log('[ghost-zero-cost] exception does not apply: the original full-range zero-cost proof is required');
