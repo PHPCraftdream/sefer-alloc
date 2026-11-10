@@ -1,0 +1,61 @@
+# TRUNCATED — verbatim positive lines only, in job order129650924346/129650924301/129651026347/129651026428.
+# Full logs: gh api repos/PHPCraftdream/sefer-alloc/actions/jobs/<job-id>/logs
+# Setup, build chatter, unrelated tests and retained expected-red witnesses omitted; no native reproduction was run locally.
+2026-11-10T05:29:08.0589595Z [ci-effective-workflow] 15 positive/negative static fixtures passed
+2026-11-10T05:29:08.4022374Z [ci-decomposition-contracts] 51 action routes plus license reachability/missing/unknown/forbidden/detached counterfactuals passed
+2026-11-10T05:29:08.4024232Z [ci-decomposition] 60 jobs unchanged; 51 reachable local actions; orchestration/commands identical
+2026-11-10T05:29:08.8050048Z [verify-ci-sentinels] OK — 230 sentinel(s) checked against their real `fn` attributes, all match.
+2026-11-10T05:29:41.0833057Z test architecture_test_file_count_matches_reality ... ok
+2026-11-10T05:29:41.1679656Z test verification_inventory_matches_docs ... ok
+2026-11-10T05:29:41.2224045Z test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+2026-11-10T05:29:41.2258256Z test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+2026-11-10T05:29:41.2613749Z test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+2026-11-10T05:30:39.4410713Z [36;1mgrep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/j13b-artifact-request.log"[0m
+2026-11-10T05:30:43.6654819Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+2026-11-10T05:30:43.6727854Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+2026-11-10T05:30:48.7535905Z [36;1mgrep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/j13b-build-seal.log"[0m
+2026-11-10T05:30:52.9263320Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+2026-11-10T05:30:52.9341403Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+2026-11-10T05:30:55.9381311Z [36;1mgrep -F "[j13b-native-facts] actual-image-and-host PASS" "$RUNNER_TEMP/j13b-native-identity.log"[0m
+2026-11-10T05:30:55.9382008Z [36;1mgrep -F 'test result: ok. 7 passed; 0 failed; 0 ignored;' "$RUNNER_TEMP/j13b-native-identity.log"[0m
+2026-11-10T05:30:59.9832532Z [j13b-native-facts-json] {"executable_path":"/home/runner/work/sefer-alloc/sefer-alloc/target/release/deps/j13b_native_identity-fab193b5e258ff76","observed":{"binary_sha256":"87d61eec78f7f5ddd9b4422e4dccc10a1868a354455ec1f92232279e709fafff","build_provenance":"compiled declarations still require reviewed builder","host":{"arch":"x86_64","boot_id":"c964a7bb-7ef1-4dda-bc3b-9d82221052d6","cpu":"AMD EPYC 7763 64-Core Processor","host_id":"[\"x86_64\",\"7.0.0-1017-azure\",\"AMD EPYC 7763 64-Core Processor\",\"c964a7bb-7ef1-4dda-bc3b-9d82221052d6\"]","kernel":"7.0.0-1017-azure","thp_policy_scope":"top-level enabled only; per-size/defrag policy not authenticated","thp_top_level_mode":"madvise"},"kind":"observed-linux-process-facts","scope":"trusted host/coreutils; not hostile-host attestation or payload admission"}}
+2026-11-10T05:30:59.9835758Z [j13b-native-facts] actual-image-and-host PASS
+2026-11-10T05:30:59.9837066Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+2026-11-10T05:30:59.9901967Z [j13b-native-facts] actual-image-and-host PASS
+2026-11-10T05:30:59.9915069Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+2026-11-10T05:31:00.0256009Z [j13b-native-facts-check] actual image matches independent Node digest; host observations scoped, no payload/source claim
+2026-11-10T05:32:01.9217287Z [36;1mgrep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-window.log"[0m
+2026-11-10T05:32:06.2751665Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.79s
+2026-11-10T05:32:06.3036456Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.79s
+2026-11-10T05:32:08.9515646Z [36;1mgrep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-artifact-request.log"[0m
+2026-11-10T05:32:46.2493534Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 36.68s
+2026-11-10T05:32:46.2847708Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 36.68s
+2026-11-10T05:32:46.2879616Z [36;1mgrep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-build-seal.log"[0m
+2026-11-10T05:33:01.0433323Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.09s
+2026-11-10T05:33:01.0787020Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.09s
+2026-11-10T05:33:01.0828522Z [36;1mgrep -F "test process_facts_reject_models_before_files_commands_or_payload ... ok" "$RUNNER_TEMP/miri-j13b-native-identity.log"[0m
+2026-11-10T05:33:01.0829657Z [36;1mgrep -F 'test result: ok. 7 passed; 0 failed; 0 ignored;' "$RUNNER_TEMP/miri-j13b-native-identity.log"[0m
+2026-11-10T05:33:02.5850600Z test host_formats_preserve_actual_values_and_active_top_level_thp ... ok
+2026-11-10T05:33:03.4925370Z test process_facts_reject_models_before_files_commands_or_payload ... ok
+2026-11-10T05:33:03.5447278Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.81s
+2026-11-10T05:33:03.5792488Z test process_facts_reject_models_before_files_commands_or_payload ... ok
+2026-11-10T05:33:03.5803147Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.81s
+2026-11-10T05:33:04.4988136Z [36;1mgrep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-lifetime-ledger.log"[0m
+2026-11-10T05:33:22.8877393Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.79s
+2026-11-10T05:33:22.9165394Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.79s
+2026-11-10T05:34:16.9251198Z test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+2026-11-10T05:34:18.2033398Z test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.52s
+2026-11-10T05:34:18.7770091Z test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+2026-11-10T05:34:23.3524542Z test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.23s
+2026-11-10T05:34:25.7175140Z test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.63s
+2026-11-10T05:34:26.0792919Z test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+2026-11-10T05:34:41.0036259Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 40.66s
+2026-11-10T05:35:56.1330811Z test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 190.04s
+2026-11-10T05:35:56.8614240Z test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+2026-11-10T05:35:58.1210003Z test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.52s
+2026-11-10T05:35:58.7032454Z test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+2026-11-10T05:36:03.3559577Z test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.23s
+2026-11-10T05:36:05.6795800Z test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.63s
+2026-11-10T05:36:06.0309187Z test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+2026-11-10T05:36:21.0736847Z test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 40.66s
+2026-11-10T05:37:34.8415597Z test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 190.04s

@@ -1,0 +1,12 @@
+# TRUNCATED — setup/build/download chatter and duplicated JSON omitted; primary JSON preserved alongside.
+# Full log: gh api repos/PHPCraftdream/sefer-alloc/actions/jobs/129651025596/logs
+# Native reproduction is pinned in J13B_TASK90_ZERO_COST_RECEIPT.md and is CI-only by default.
+2026-11-10T05:29:18.9055880Z Image: ubuntu-24.04
+2026-11-10T05:29:25.5486356Z   stable-x86_64-unknown-linux-gnu unchanged - rustc 1.99.1 (58cf8f9c3 2026-10-13)
+2026-11-10T05:29:25.5739857Z   stable-x86_64-unknown-linux-gnu unchanged - rustc 1.99.1 (58cf8f9c3 2026-10-13)
+2026-11-10T05:29:25.7277579Z rustc 1.99.1 (58cf8f9c3 2026-10-13)
+2026-11-10T05:29:35.6640621Z [ghost-zero-cost] normalize self-test OK (9 cases)
+2026-11-10T05:29:35.6654567Z [ghost-zero-cost] scope self-test OK (32 + 9 cases + changedLines; 18 runtime-prefix checks)
+2026-11-10T05:29:54.5574780Z [ghost-zero-cost] runtime prefix bec1e53f0a978125c39c281e1c96c19165fcfd6a..195d75dd93466520bf03d44aff15706c299f4dc8: admitted by the unchanged declared-runtime policy
+2026-11-10T05:29:54.5575548Z [ghost-zero-cost] exact production text/Ir proof REQUIRED for suffix 195d75dd93466520bf03d44aff15706c299f4dc8..d5c61f44d6d1fa0e72884cea5ef91397c03c69bb
+2026-11-10T05:30:52.5502402Z [ghost-zero-cost] OK: 546 functions identical, Ir delta 0
