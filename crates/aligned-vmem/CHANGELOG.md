@@ -6,13 +6,63 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## Unreleased
 
+### Fixed
+
+- Checked release validation now matches the release/raw-adoption geometry contract without reserve's `len + align` bound. Release fault-hook state uses the existing mutex pattern, and a separate backend-result surrogate covers error classification without claiming a kernel refusal.
+
 ### Added
 
+- **`Reservation::try_disable_transparent_huge_pages()`** — owning, whole-usable-span Linux/Android `MADV_NOHUGEPAGE` policy operation for a fresh mapping before payload faults. Success means the kernel accepted the VMA policy, including against THP `always`/mTHP; it does not prove already-faulted huge backing was split. Explicit huge mappings, unsupported targets, miri, mock, and injected pre-syscall failures return errors rather than success.
+- **Checked (fallible) release family** (task #56, J13b checked-release
+  prerequisite) — `try_release(ptr, len, align)`, the typed twin
+  `try_release_parts(ReservationParts)`, and the safe consuming method
+  `Reservation::try_release(self)`, all `-> Result<(), VmemError>`. `Ok`
+  reflects the native release call's own success (`munmap(2)`'s `0` on
+  Unix, `VirtualFree(MEM_RELEASE)`'s nonzero on Windows, terminal-within-
+  model under miri); `Err` reports a contract violation (instead of the
+  infallible `release`'s panic), an armed fault-injection hook (no-code
+  sentinel), or a real backend refusal with the immediately-captured OS
+  cause. Exact-once-even-on-`Err`: on `Err` the release is unproven — the
+  caller must never retry, never treat the pointer as live, and must
+  retain any outstanding accounting charge; the crate never retries
+  internally. Null stays the documented no-op.
+- **Backend-result surrogate:** `arm_fail_next_release_backend_result(n)` skips native release inside each checked backend and supplies an explicit no-code refusal to its backend-result classification. This tests error propagation only, not OS/kernel refusal. The ordinary `arm_fail_next_release(n)` remains a pre-syscall hook.
 - **`Reservation::advise_huge_pages`** (TH-1) — a transparent-huge-page hint
   for the usable span (`madvise(MADV_HUGEPAGE)` on Linux/Android; `false` and
   no syscall elsewhere, under miri and under the mock backend). Advisory: the
   mapping and its contents do not change; returns whether the kernel accepted
   it.
+- **`Reservation::try_advise_huge_pages_range(offset, length)`** (task #53,
+  J13b VM-part) — range-limited `MADV_HUGEPAGE` advice on a sub-range of the
+  usable span (`&self`): validates both endpoints against the runtime
+  `page_size()` in ABSOLUTE address terms (the kernel never receives a
+  silently-widened range), `Ok(length)` on Linux/Android is exactly-`length`
+  bytes advised, a well-formed empty range is `Ok(0)` on every platform, and
+  platforms without the backend get the typed unsupported sentinel — never a
+  silent no-op. Advisory-only success: it never implies physical huge-page
+  backing.
+- **`Reservation::try_sample_residency(&[ResidencyRegion])`** with the new
+  `ResidencyRegion` / `ResidencySample` types (task #53) — bounded passive
+  residency sampling: at most 16 regions x 2 MiB per call, one `mincore(2)`
+  per region, no heap allocation, no `/proc` reads, no fault-in; returns
+  resident/sampled BASE-page counts for an estimator ratio. An unsupported
+  backend is a typed `Err`, never a forged zero sample.
+- **Two new `fault-injection` hooks** (task #53) —
+  `arm_fail_next_advise_range` / `arm_fail_next_residency_sample`, fail-next
+  only, Mutex-guarded (arm/consume/re-arm serialization per the `FAULT_STATE`
+  task-#1021 pattern), consulted in front of
+  the real syscall in the respective native arm; inert where those arms are
+  compiled out.
+- **Layout (pure moves, public paths unchanged)** — lazy-commit free
+  functions grouped under `api/lazy_commit/`; task-#53 surfaces moved to
+  `api/advise_huge_pages.rs` and `api/residency/{region,sample,mincore}.rs`;
+  `api/reserve.rs` restored to its pre-task content. Budget contract
+  corrected: an OS `madvise` refusal leaves the hint effect UNKNOWN (not
+  certified zero) — only pre-syscall failures certify "nothing touched".
+- **Docs**: `VmemError::os_refusal_unknown_code`'s source count is FOUR ->
+  FIVE (the uncompilable-backend source). Non-goals: the whole-map
+  `advise_huge_pages` behavior is unchanged; no new features or
+  dependencies.
 
 ### Changed
 

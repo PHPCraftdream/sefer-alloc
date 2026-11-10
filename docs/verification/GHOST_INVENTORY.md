@@ -7,25 +7,25 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-680 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+682 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
 `HeapSlot::cas_state` whose arguments name an ordering) in 92 files of `src/**` and
 `crates/*/src/**`; each is claimed by exactly one of 46 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| cache | 6 | 6/680 |
-| counter | 244 | 244/680 |
-| ghost | 10 | 10/680 |
-| id | 9 | 9/680 |
-| kani | 1 | 1/680 |
-| lock-local | 40 | 40/680 |
-| non-atomic | 2 | 2/680 |
-| protocol | 184 | 184/680 |
-| test-hook | 177 | 177/680 |
-| twin | 7 | 7/680 |
-| **claimed** | **680** | 680/680 |
-| unclaimed | 0 | 0/680 |
-| claimed twice | 0 | 0/680 |
+| cache | 6 | 6/682 |
+| counter | 245 | 245/682 |
+| ghost | 10 | 10/682 |
+| id | 9 | 9/682 |
+| kani | 1 | 1/682 |
+| lock-local | 40 | 40/682 |
+| non-atomic | 3 | 3/682 |
+| protocol | 184 | 184/682 |
+| test-hook | 177 | 177/682 |
+| twin | 7 | 7/682 |
+| **claimed** | **682** | 682/682 |
+| unclaimed | 0 | 0/682 |
+| claimed twice | 0 | 0/682 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -342,13 +342,13 @@ Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spe
 | `cache/page-size` | cache | — | 4 | idempotent cache of a process constant; Relaxed: every writer stores the same value |
 | `cache/process-exit` | cache | — | 2 | resolved function pointer cache (windows); Relaxed: idempotent |
 | `id/generators` | id | — | 7 | unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed |
-| `counter/statics` | counter | — | 227 | statistics / diagnostic counters: Relaxed, no protocol reads them |
+| `counter/statics` | counter | — | 228 | statistics / diagnostic counters: Relaxed, no protocol reads them |
 | `counter/per-heap` | counter | — | 13 | per-heap hit counters published Relaxed (owner-written, read by stats) |
 | `counter/pin-cache-macro` | counter | — | 1 | macro_rules! count bumps a static counter |
 | `counter/tier1-bump` | counter | — | 2 | unlocked Relaxed load+store bump of a bench-internals Tier-1 counter (DZ-2): no protocol reads it |
 | `hook/terminal-gate` | test-hook | — | 4 | test gate that pauses a producer after publication |
 | `node/atomic-read` | lock-local | — | 1 | Node::read_struct_with_atomic_word: Relaxed read of a word whose ordering the caller establishes |
-| `nonatomic/mock-record` | non-atomic | — | 2 | false positive: mock::record(Op::Release ...) — Release is an enum variant, not an ordering |
+| `nonatomic/mock-record` | non-atomic | — | 3 | false positive: mock::record(Op::Release ...) — Release is an enum variant, not an ordering |
 | `id/region-id` | id | — | 1 | region id minting: Relaxed fetch_update gives uniqueness |
 | `counter/registry-high-water` | counter | — | 1 | stats read of the registry count: Relaxed is enough for a high-water report |
 | `ghost/shadow` | ghost | — | 10 | ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1) |

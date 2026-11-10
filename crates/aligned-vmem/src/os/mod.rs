@@ -3,9 +3,9 @@ mod decommit_kind;
 #[cfg(miri)]
 mod miri;
 #[cfg(all(unix, not(miri)))]
+mod release_reservation_checked;
+#[cfg(all(unix, not(miri)))]
 mod unix;
-#[cfg(all(not(windows), not(unix), not(miri)))]
-mod unsupported;
 #[cfg(all(windows, not(miri)))]
 mod windows;
 
@@ -20,8 +20,10 @@ pub(crate) use miri::{commit_range_impl, reserve_aligned_lazy_raw};
 #[cfg(all(miri, not(aligned_vmem_mock)))]
 pub(crate) use miri::{decommit_pages_impl, recommit_pages_impl};
 #[cfg(miri)]
-pub(crate) use miri::{release_reservation, reserve_aligned_raw};
+pub(crate) use miri::{release_reservation, release_reservation_checked, reserve_aligned_raw};
 
+#[cfg(all(unix, not(miri)))]
+pub(crate) use release_reservation_checked::release_reservation_checked;
 #[cfg(all(
     unix,
     not(miri),
@@ -53,5 +55,6 @@ pub(crate) use windows::{commit_range_impl, reserve_aligned_lazy_raw};
 pub(crate) use windows::{decommit_pages_impl, recommit_pages_impl};
 #[cfg(all(windows, not(miri)))]
 pub(crate) use windows::{
-    release_reservation, reserve_aligned_raw, GetSystemInfo, SystemInfo, WIN_ALLOCATION_GRANULARITY,
+    release_reservation, release_reservation_checked, reserve_aligned_raw, GetSystemInfo,
+    SystemInfo, WIN_ALLOCATION_GRANULARITY,
 };

@@ -1,4 +1,10 @@
-//! Real-path commit fault injection (feature `fault-injection`).
+//! `fault_injection` provides controlled fault seams for real backend paths.
+//! The checked-release pre-syscall hook returns before entering the backend;
+//! its backend-result surrogate is consumed INSIDE each checked backend and
+//! enters that backend's ordinary result classification. The surrogate skips
+//! native release and uses an explicit no-code error; it proves classification
+//! propagation only, never OS/kernel refusal. The hook mutex is released before
+//! any native operation, and native error capture precedes any later hook lock.
 //!
 //! Distinct from `crate::mock` (cfg `aligned_vmem_mock`, not necessarily set
 //! alongside `fault-injection`): `mock` replaces the *entire* backend for
@@ -11,10 +17,10 @@
 //! `aligned_vmem_mock` cfg is NOT set** (task #1106/L1). Under
 //! `aligned_vmem_mock`, `try_commit_range`'s real-path branch — the single
 //! call site of `should_fail_commit` — is compiled out and replaced by the
-//! mock backend, so this module's hooks are never consulted: the mock's own
+//! mock backend, so the commit hooks are not consulted: the mock's own
 //! fault script (`crate::mock::fail_next_commit` etc. — a separate mechanism,
-//! compiled only under the mock cfg) takes precedence, and arming THESE hooks
-//! is silently inert. CI deliberately builds exactly that combination
+//! compiled only under the mock cfg) takes precedence. Arming commit hooks
+//! is inert there; checked-release hooks remain active. CI deliberately builds exactly that combination
 //! (`.github/workflows/ci.yml` sets the mock cfg alongside the full feature
 //! set including `fault-injection`), so the combination is real, not
 //! theoretical; the hooks are `allow(dead_code)` in
@@ -40,30 +46,35 @@
 //! hook, because no test has needed one — add it by mirroring
 //! [`arm_fail_at`]/`FAULT_STATE` if one ever does.
 //!
-//! Two independent, additive hooks (mirrors the two-tier hook that
-//! `sefer-alloc` carried before this crate absorbed it):
-//! - [`arm_fail_next`]: the next `n` real commit calls fail.
-//! - [`arm_fail_at`]: the k-th real commit call from now (1-based) fails;
-//!   one-shot, disarms itself after firing.
+//! task #53 adds two further fail-next hooks,
+//! [`arm_fail_next_advise_range`] and [`arm_fail_next_residency_sample`],
+//! consulted in front of the real `madvise(MADV_HUGEPAGE)` / `mincore(2)`
+//! call in the respective native arm of
+//! `Reservation::try_advise_huge_pages_range` (`api/advise_huge_pages.rs`)
+//! and `Reservation::try_sample_residency` (`api/residency/sample.rs`). An
+//! armed fire yields `VmemError::os_refusal_unknown_code()` — no syscall
+//! ran, so there is no real OS code to report (the task-#713 reasoning
+//! above). Inert wherever those arms are compiled out (`aligned_vmem_mock`,
+//! miri, non-Linux/Android hosts — hence the wider dead-code cfg on the two
+//! consult functions). Only the fail-next tier exists (the same #1219
+//! rationale). Hook state is `Mutex`-serialized like `FAULT_STATE`
+//! (task #1021): arming, one-shot consumption and re-arm are the races to
+//! close, and the counters carry no cross-thread payload, so no ordering
+//! semantics are involved. The range-advice hook also injects a pre-syscall
+//! failure for the whole-span `MADV_NOHUGEPAGE` control operation.
 //!
-//! `arm_fail_next`'s "fail next N" is checked first and has priority; when it
-//! is disarmed (0), `arm_fail_at`'s "fail the k-th" is checked. Both may be
-//! armed simultaneously.
+//! The release pre-syscall hook returns before entering the checked backend.
+//! A separate backend-result surrogate is consumed INSIDE the checked backend
+//! and reaches its ordinary result classification. It skips native release,
+//! supplies an explicit no-code error, and proves classification propagation
+//! only—not operating-system or kernel refusal.
 //!
-//! Process-wide atomics (not thread-local): a test typically arms a fault
-//! from one thread and triggers the committing call from another (e.g. an
-//! `alloc-xthread` reclaim test spawning worker threads while the main test
-//! thread stays armed), so this module does NOT assume the arming and
-//! committing thread are the same (task #718 -- an earlier revision of this
-//! doc claimed exactly that "owner-only discipline" assumption and used
-//! `Relaxed` throughout on that basis; the assumption does not hold for
-//! multi-threaded consumers, so it is not a safe basis for the ordering
-//! choice). Concretely: [`arm_fail_at`] now uses a `Mutex<FaultState>` to
-//! serialize arming and disarming, closing the concurrent re-arm race
-//! (task #1021/R4-8). `FAIL_NEXT`'s decrement uses [`AtomicU32::fetch_update`
-//! (a genuine atomic read-modify-write) instead of a separate load then store,
-//! which would otherwise race under concurrent callers and lose or duplicate a
-//! decrement.
+//! Two independent, additive commit hooks; release hooks are separately
+//! documented as pre-syscall and backend-result surrogates above.
+//!
+//! Multi-threaded commit hook state is process-wide; see its mutex and atomic
+//! notes below. The release hook mutex protects independent remaining counts;
+//! the lock is not held over native release or OS-error capture.
 //!
 //! Zero cost when the feature is off: this entire module is compiled out
 //! (`#[cfg(feature = "fault-injection")]` on the `mod` declaration in
@@ -247,4 +258,165 @@ pub(crate) fn should_fail_decommit() -> bool {
             (next > 0).then(|| next - 1)
         })
         .is_ok()
+}
+
+/// Independent counters for pre-syscall and backend-result surrogate hooks.
+/// The mutex protects both counts; it is released before any native operation.
+struct ReleaseFaultState {
+    pre_syscall_remaining: u32,
+    backend_result_remaining: u32,
+}
+
+static RELEASE_FAULT_STATE: Mutex<ReleaseFaultState> = Mutex::new(ReleaseFaultState {
+    pre_syscall_remaining: 0,
+    backend_result_remaining: 0,
+});
+
+/// Arm the pre-syscall release failure hook. Fails the next `n` checked
+/// releases without calling the backend; `n == 0` disarms this hook.
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
+pub fn arm_fail_next_release(n: u32) {
+    RELEASE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .pre_syscall_remaining = n;
+}
+
+/// Arm a backend-result surrogate. Each of the next `n` checked releases
+/// performs no release syscall and classifies a synthetic failure result
+/// (-1 on Unix, zero on Windows); the reservation is conservatively leaked.
+/// `n == 0` disarms this independent hook.
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
+pub fn arm_fail_next_release_backend_result(n: u32) {
+    RELEASE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .backend_result_remaining = n;
+}
+
+/// Consume a pre-syscall failure count. Lock is not held across native calls.
+pub(crate) fn should_fail_release() -> bool {
+    let mut state = RELEASE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if state.pre_syscall_remaining > 0 {
+        state.pre_syscall_remaining -= 1;
+        true
+    } else {
+        false
+    }
+}
+
+/// Consume a backend-result surrogate count. Lock is not held across native calls.
+pub(crate) fn should_fail_release_backend_result() -> bool {
+    let mut state = RELEASE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if state.backend_result_remaining > 0 {
+        state.backend_result_remaining -= 1;
+        true
+    } else {
+        false
+    }
+}
+
+/// Remaining one-shot failures for the range huge-page-advice hook
+/// (task #53). Mutex-serialized per the `FAULT_STATE` (task #1021) pattern
+/// — no cross-thread payload, no ordering semantics.
+struct FailNextState {
+    /// Remaining one-shot failures (0 = disarmed).
+    remaining: u32,
+}
+
+static ADVISE_RANGE_FAULT_STATE: Mutex<FailNextState> = Mutex::new(FailNextState { remaining: 0 });
+static RESIDENCY_SAMPLE_FAULT_STATE: Mutex<FailNextState> =
+    Mutex::new(FailNextState { remaining: 0 });
+
+/// Arm the "fail the next N REAL range-advice backend calls" hook
+/// (task #53). The next `n` calls through
+/// `Reservation::try_advise_huge_pages_range`'s native arm — the real
+/// `madvise(MADV_HUGEPAGE)` path — return
+/// `Err(VmemError::os_refusal_unknown_code())` without touching the OS.
+/// `n == 0` disarms.
+///
+/// Consulted only in the native Linux/Android arm, so inert under the
+/// `aligned_vmem_mock` cfg, under miri, and on non-Linux/Android hosts
+/// (call sites compiled out — see the module doc). The same hook is also
+/// consulted before the owning `MADV_NOHUGEPAGE` operation's syscall. Only
+/// the fail-next tier exists (no k-th hook). The state is Mutex-serialized
+/// per the `FAULT_STATE` (task #1021) pattern; no ordering semantics are
+/// involved.
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
+pub fn arm_fail_next_advise_range(n: u32) {
+    let mut state = ADVISE_RANGE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    state.remaining = n;
+}
+
+/// Arm the "fail the next N REAL residency-sample backend calls" hook
+/// (task #53). The next `n` calls through
+/// `Reservation::try_sample_residency`'s native arm — the real `mincore(2)`
+/// path — return `Err(VmemError::os_refusal_unknown_code())` without
+/// touching the OS. `n == 0` disarms.
+///
+/// Same native-arm-only consultation and inertness matrix as
+/// [`arm_fail_next_advise_range`].
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
+pub fn arm_fail_next_residency_sample(n: u32) {
+    let mut state = RESIDENCY_SAMPLE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    state.remaining = n;
+}
+
+/// Internal: consult the range-advice hook for the current real backend
+/// call. Returns `true` if this call should be forced to fail. Called once
+/// before the real `madvise` syscall from range-advice and no-THP operations
+/// (`api/advise_huge_pages.rs`), only for native Linux/Android without miri
+/// or `aligned_vmem_mock`. Check and decrement happen in the same lock
+/// critical section; no TOCTOU between check and decrement.
+#[cfg_attr(
+    any(
+        aligned_vmem_mock,
+        miri,
+        not(any(target_os = "linux", target_os = "android"))
+    ),
+    allow(dead_code)
+)]
+pub(crate) fn should_fail_advise_huge_range() -> bool {
+    let mut state = ADVISE_RANGE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if state.remaining > 0 {
+        state.remaining -= 1;
+        true
+    } else {
+        false
+    }
+}
+
+/// Internal: consult the residency-sample hook for the current real backend
+/// call. Same shape, same single-critical-section check-and-decrement, and
+/// same only-call-sites-in-the-native-arm caveat as
+/// [`should_fail_advise_huge_range`] — the call sites are the native arms
+/// of `Reservation::try_sample_residency` (`api/residency/sample.rs`).
+#[cfg_attr(
+    any(
+        aligned_vmem_mock,
+        miri,
+        not(any(target_os = "linux", target_os = "android"))
+    ),
+    allow(dead_code)
+)]
+pub(crate) fn should_fail_residency_sample() -> bool {
+    let mut state = RESIDENCY_SAMPLE_FAULT_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if state.remaining > 0 {
+        state.remaining -= 1;
+        true
+    } else {
+        false
+    }
 }

@@ -11,7 +11,8 @@
 //! reservation and justifies the synthesis with an enumeration: within
 //! `crates/aligned-vmem/src/`, the flag's only behavioral readers are
 //! `is_huge()` itself, the pure query `can_decommit_reclaim_and_zero()`,
-//! the three decommit-family huge-skips, and — as of task #1172's
+//! the three decommit-family huge-skips, the no-THP policy operation's
+//! explicit-huge rejection (which returns before any syscall), and — as of task #1172's
 //! M1-hybrid — `from_raw_parts`'s own two Correctness-contract asserts
 //! (the `huge-pages`-feature-required check and the Linux/Android 2-MiB-
 //! multiple check) — so a wrong flag can change query results, suppress OS
@@ -212,8 +213,10 @@ fn expected_for(rel: &str) -> (usize, usize, usize, usize) {
         "src/reservation.rs" => (5, 3, 6, 13),
         "src/reservation_full_parts.rs" => (0, 1, 0, 4),
         "src/api/internal.rs" => (0, 1, 0, 5),
+        // No-THP control rejects an explicit-huge flag before entering the backend.
+        "src/api/advise_huge_pages.rs" => (1, 0, 1, 0),
         "src/api/reserve.rs" => (0, 0, 0, 1),
-        "src/api/reserve_aligned_lazy.rs" => (0, 0, 0, 1),
+        "src/api/lazy_commit/reserve_aligned_lazy.rs" => (0, 0, 0, 1),
         "src/os/unix.rs" => (0, 0, 0, 7),
         "src/os/windows.rs" => (0, 0, 0, 2),
         _ => (0, 0, 0, 0),
@@ -273,9 +276,9 @@ fn granted_huge_reader_enumeration_is_pinned() {
         total.bare_is_huge += c.bare_is_huge;
         total.bare_granted_huge += c.bare_granted_huge;
     }
-    assert_eq!(total.is_huge_calls, 5, "{REDERIVE_MSG}");
+    assert_eq!(total.is_huge_calls, 6, "{REDERIVE_MSG}");
     assert_eq!(total.granted_huge_member_reads, 5, "{REDERIVE_MSG}");
-    assert_eq!(total.bare_is_huge, 6, "{REDERIVE_MSG}");
+    assert_eq!(total.bare_is_huge, 7, "{REDERIVE_MSG}");
     assert_eq!(total.bare_granted_huge, 33, "{REDERIVE_MSG}");
 
     let reservation_rs =

@@ -86,6 +86,41 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: node scripts/ci-plan.mjs --event "$EVENT" --base "$BASE" --head "$HEAD_SHA"
 
+  # Lightweight J13b judge-preparation gate. Keep independent of the tier planner:
+  # its narrow path guard includes current judge files and their shared/helper patterns.
+  j13b-judge-preparation:
+    name: J13b judge preparation (schema + workload contract)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Check changed paths
+        id: paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE="$HEAD_SHA^"
+          if git diff --name-only "$BASE" "$HEAD_SHA" | grep -qE '^(scripts/j13b_.*\.mjs|examples/(_shared/.*|g1_j13b_.*\.rs)|tests/j13b_.*\.(mjs|rs)|Cargo\.toml|\.github/workflows/ci\.yml)$'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.paths.outputs.run == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - if: steps.paths.outputs.run == 'true'
+        run: node --test tests/j13b_schema.test.mjs
+      - if: steps.paths.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+      - if: steps.paths.outputs.run == 'true'
+        run: cargo test --test j13b_judge_workload --features production
+
   # CI-T1 stage 3 (docs/CI_TIERS.md "Test-impact map"): which integration tests the diff can affect, from
   # the nightly test-impact map. Never fails: any problem yields "all". The selection is only REPORTED
   # (step summary + artifact) unless the repository variable TEST_SELECTION is `enforce`, in which case

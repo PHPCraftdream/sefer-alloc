@@ -425,6 +425,7 @@ BENCH_UNSAFE_HOOKS.add("src/registry/segment_route/pin.rs::dbg_publish_cached_fo
 
 // Explicit reviewed rows; groups share only a reviewed contract, never a name wildcard.
 export const REVIEWED_SURFACE = [
+  { id: 'crates/aligned-vmem/src/api/release.rs::release_size_align_is_valid_for_test', kind: 'observer', reason: 'pure release geometry validation over integers; no pointers, mapped storage or OS access', gates: ['fault-injection'] },
   { id: 'src/registry/heap_core/diag/queries.rs::dbg_sidecar_scan_measurement', kind: 'mutator', reason: 'thread-local optional diagnostic counts and original-versus-prefilter scan mode only; no pointers or allocator metadata access', gates: ['bench-internals', 'r18_sidecar_scan_bench'] },
   ...[
     ['src/alloc_core/segment/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],

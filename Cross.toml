@@ -1,0 +1,13 @@
+# Pinned aarch64 test-runner transport for `cross test` (ci.yml multi-arch job).
+# cross passes the configured target runner into the container as the CROSS_RUNNER
+# environment variable (cross src/docker/shared.rs, docker_envvars), and the cross
+# image's runner script resolves `qemu-user` to `exec qemu-aarch64 <binary> <args>`.
+# tests/r6_sidecar_bitmap.rs re-executes its child through the same configured runner
+# by reading CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER from the container
+# environment the cross image bakes in for cargo, so parent and child share one
+# transport. A raw execve of the child ELF from inside the emulated parent fails
+# with ENOEXEC in this container (no in-container binfmt handler) and used to end
+# as a shell-as-script exit 2 that the old "any nonzero exit" oracle wrongly
+# accepted as an expected abort.
+[target.aarch64-unknown-linux-gnu]
+runner = "qemu-user"

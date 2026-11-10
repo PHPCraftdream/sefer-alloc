@@ -80,6 +80,16 @@
 //! Before task #1180 this was a bare `Ok(())`, indistinguishable from every
 //! other well-formed outcome.
 //!
+//! The release family now also has checked twins ([`try_release`],
+//! [`try_release_parts`], [`Reservation::try_release`](crate::Reservation::try_release))
+//! whose `Ok` reflects the native release call's own success — the `munmap`
+//! return on Unix, the `VirtualFree(MEM_RELEASE)` BOOL on Windows, and a
+//! terminal-within-model `Ok` under miri; under the mock cfg the record is
+//! written and the real platform backend still runs. Their `Err` reports a
+//! contract violation, an armed fault-injection hook, or a genuine backend
+//! refusal. On `Err` the release is unproven: the caller must retain any
+//! outstanding charge and never retry the release.
+//!
 //! # Example
 //!
 //! ```text
@@ -236,13 +246,31 @@ mod reservation_full_parts;
 pub use reservation_full_parts::ReservationFullParts;
 
 mod api;
+#[cfg(feature = "fault-injection")]
+#[doc(hidden)]
+pub use api::release_size_align_is_valid_for_test;
+
 #[cfg(feature = "lazy-commit")]
 pub use api::{commit_range, reserve_aligned_lazy, try_commit_range, try_reserve_aligned_lazy};
 pub use api::{
     decommit, decommit_lazy, leak_zeroed_pages, recommit, release, release_parts, reserve_aligned,
-    try_decommit, try_recommit, try_reserve_aligned,
+    try_decommit, try_recommit, try_release, try_release_parts, try_reserve_aligned,
+    ResidencyRegion, ResidencySample,
 };
 #[cfg(feature = "huge-pages")]
 pub use api::{reserve_aligned_huge, try_reserve_aligned_huge};
 
 mod os;
+
+// Pure relocation from the deleted `src/os/unsupported.rs` (freeing an
+// `src/os/` directory slot for the new checked-release backend module; no
+// path outside the crate referenced that file — verified). Message text
+// preserved verbatim.
+#[cfg(all(not(windows), not(unix), not(miri)))]
+compile_error!(
+    "aligned-vmem does not currently support this target because no \
+     `reserve_aligned_raw` / `release_reservation` implementation exists \
+     for it. The crate provides backends only for Windows, Unix, and miri. \
+     Adding support requires implementing those two functions for this \
+     target family."
+);

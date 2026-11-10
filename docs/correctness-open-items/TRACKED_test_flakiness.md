@@ -351,6 +351,16 @@ resolved" in RESOLVED.md.)_
 
 150. **[T, CLOSED] `tagged_index_stack_ab_runner_scratch_guard::build_check_success_leaves_no_scratch_root`** — CLOSED 2026-09-23. Captured LNK1104 named an input `.rlib` at 281 UTF-16 units; relocating the Windows fixture below a short, unique sibling of the system temp root and enforcing a <260-unit representative link path fixed the targeted test. Full closure evidence: `RESOLVED.md` item 150 and `ARCHIVE.md` item 150.
 
+270. **[T, filed 2026-11-08] Cross/QEMU invalid-class abort test accepted an ELF launch failure as success.**
+
+    > **Current state**
+    > - **Status:** OPEN — first repaired SHA `6adb7772` failed Linux/macOS compilation in CI `42438004734`: the inline-module helper path included a nonexistent `tests/tests` intermediate directory. The helper declaration is moved to the integration crate root with a direct path; runtime oracles are unchanged. Exact-source native and cross runtime CI remains pending.
+    > - **Mechanism:** aarch64 job `128553410933` in CI `42422343034` emitted shell ELF syntax errors while `r6_invalid_class_aborts_without_unwind` passed. Direct child re-exec bypassed the configured target runner; any unsuccessful status except 101 counted as abort.
+    > - **Repair:** preserve both invalid-class modes, use the configured runner without a shell, require fresh activation in a parent-exclusively reserved directory, the expected platform abort status, and the exact production fatal line. File-backed stderr avoids inherited-pipe EOF dependencies; an owned-child guard and finite observation budget supervise the direct exec transport. Negative controls cover argv, exclusive creation, invalid launch arguments, normal return, missing activation, unrelated diagnostics and an activated parked child with no output streams.
+    > - **Limits:** each abort mode currently consumes its full 60-second observation budget; counterfactual subprocess budgets are 10 seconds. No early-completion timing claim or arbitrary process-tree containment is made. OS kill/wait/filesystem calls have no absolute syscall deadline. Failure/unwind cleanup and stderr-size rejection are source-reviewed but lack injected-error regression coverage.
+    > - **Next trigger:** exact-source CI must execute the repaired test and counterfactuals under aarch64/QEMU and native Windows/Unix, with actual activation and abort evidence; then record closure. Do not infer acceptance from compilation or the earlier green VM run.
+    > - **Evidence:** `tests/r6_sidecar_bitmap.rs`, `tests/r6_sidecar_bitmap/child_process.rs`, `Cross.toml`; failed CI `42422343034` and repeated shell errors in `42426350786`. No local test or child execution was performed.
+
 153. **[T] Local Windows builds: `rustc` or `link.exe` intermittently exits 1 with no diagnostic — killed by a stale-PID `taskkill` from concurrent Claude Code sessions.** (Filed 2026-09-28, observed during the src review round 1 remediation; mechanism identified the same day.)
 
     - **Status:** OPEN — the cause is outside this repository (host tooling). Mechanism identified; the local fix is to rerun the failed step. CI is unaffected.

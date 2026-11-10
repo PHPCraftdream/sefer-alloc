@@ -15,6 +15,17 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 269 — CLOSED (2026-11-08)
+
+269. **[T, filed 2026-11-08] Teardown-trim regression observed counters before TLS destruction was guaranteed complete.**
+
+    > **Current state**
+    > - **Status:** CLOSED — exact-source CI confirmed the explicit-join repair.
+    > - **Mechanism:** CI `42422343034` on `0cb93713` failed `regression_r4_3_teardown_trim` with `segments_released_total` unchanged after eight workers. Discarded scoped handles left only implicit scope completion, which may precede TLS destruction; the observed trim runs in `LeaseReleaseGuard::drop`.
+    > - **Fix:** `0a6059c65e2b04df744f353abf61afe00d372bd5` spawns all eight workers before explicitly joining every handle, then reads the counters. Explicit joins include TLS destruction. The original `delta > 0` assertion is unchanged; no retry, sleep, ignore or widened tolerance was added.
+    > - **Evidence:** [CI run 42426350786](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42426350786) completed successfully on that exact SHA. The aarch64 job `128565405614` log contains two actual successful executions of `teardown_trim_releases_retained_large_cache_spans`; zero-test feature rows are not counted. Windows/macOS and native test jobs also succeeded, as did both final core TreeBorrows and fastbin Miri jobs. The independent cross/QEMU abort-oracle defect is not closed by this result.
+    > - **Scope:** test observation only; no allocator behavior or default changed. No local test execution was performed.
+
 ### 261 — CLOSED (2026-10-29)
 
 261. **[T] Squash-merging PR #128 turned `main` red: the squash body repeated every commit's `Invariant-Check:` trailers, and the evidence rows re-verified on the branch kept `source_sha` values that the squash left off `main`.** (Filed and closed 2026-10-29, main CI run `40921322531` on landing `9fd4c9fb`: `ghost-guard` — "duplicate Invariant-Check for depot/owner-only-access" and 25 more; `evidence-registry` strict — `source-scope-git` / `identity-unpublished` for R-Ph3a-native (`6796c78f`) and R-Ph3b, R4a-01/02/05, R4b-13/14, R4c-02/03/09 (`29bbc749`).)

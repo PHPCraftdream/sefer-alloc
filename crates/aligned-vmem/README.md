@@ -39,6 +39,8 @@ Runnable form: `tests/readme_example.rs`.
 
 ## What it does
 
+`try_release` validates the original release geometry: nonzero page-multiple length, power-of-two alignment at least `PAGE`, and a valid `Layout`. Release validation adds no reservation-constructor arithmetic. `arm_fail_next_release(n)` fails before backend entry; `arm_fail_next_release_backend_result(n)` skips native release inside the checked backend and exercises result classification with a no-code error only—this surrogate is not OS/kernel refusal evidence.
+
 | API | Purpose |
 |---|---|
 | `reserve_aligned(size, align) -> Option<Reservation>` | Reserve `size` bytes whose base is `align`-aligned. On 32-bit Unix, first tries an exact-size mmap fast path; on a miss, or on 64-bit Unix (where the fast path is compiled out — see P-1 below), over-reserves `size + align` and keeps the full mapping. On Windows, when `align > WIN_ALLOCATION_GRANULARITY` (typically 64 KiB) and the whole span is committed, finds an aligned address with an over-reserve probe, releases the probe and reserves+commits exactly `size` bytes there in one call (retried up to 4 times when another thread takes the address; such a region is released in microseconds, a reserve-then-commit one in tens to hundreds of microseconds); otherwise (a lazily committed span, or every retry lost) over-reserves `size + align` and keeps the full mapping; for `align <= WIN_ALLOCATION_GRANULARITY` uses a single-call fast path with no over-reserve (threshold widens to `GetLargePageMinimum()` when requesting large pages). On 32-bit Unix, a fast-path miss holds `size + align` bytes of virtual address space for the reservation's lifetime (measured hit rate: 34.4% at 64 KiB align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849; measured on WSL2/Linux, x86_64; 30-run aggregate; scope: 32-bit only — the hit rate is kernel- and ASLR-dependent and is not expected to transfer to other Unix platforms). On 64-bit Unix, every reservation usually over-reserves in one `mmap` call — the exact-size fast path never runs, so these hit-rate numbers do not apply there (task #944, finding P-1: `try_reserve_aligned_exact` is gated `target_pointer_width = "32"`). Exception on Linux and Android: when `align == LINUX_HUGE_PAGE_SIZE` with huge pages requested, an exact-size `MAP_HUGETLB` fast path avoids the over-reserve (kernel guarantees huge-page-aligned base). |
@@ -48,7 +50,13 @@ Runnable form: `tests/readme_example.rs`.
 | `Reservation::into_full_parts() -> ReservationFullParts` | Take the raw reservation, suppress `Drop`, lossless six-field form (also preserves `base`, usable `len`, and `granted_huge`, which `into_reservation_parts` discards). |
 | `release(ptr, len, align)` (unsafe) | Release a reservation taken via `into_parts`, exactly once (legacy tuple form). |
 | `release_parts(ReservationParts)` (unsafe) | Release a reservation taken via `into_reservation_parts`, exactly once (typed form). |
+| `try_release(ptr, len, align)` (unsafe) `-> Result<(), VmemError>` | Checked twin of `release`: `Ok` reflects the native release call's own success — `munmap(2)`'s `0` on Unix, `VirtualFree(MEM_RELEASE)`'s nonzero on Windows, terminal-within-model under miri. `Err` for a contract violation (the fallible form reports instead of the infallible form's panic), an armed fault-injection hook (no-code sentinel), or a real backend refusal with the OS cause. On `Err` the release is unproven — never retry, never treat the pointer as live, retain any outstanding accounting charge. Null is the same documented no-op as `release`. |
+| `try_release_parts(ReservationParts)` (unsafe) `-> Result<(), VmemError>` | Checked typed twin of `try_release`, same `Ok`/`Err` semantics; only the parameter shape differs. |
+| `Reservation::try_release(self) -> Result<(), VmemError>` | Safe, consuming checked release of the handle: ownership is consumed regardless of outcome, and `Drop` does not run afterwards. |
 | `Reservation::is_huge() -> bool` | Detect whether a reservation actually got large/huge pages on either platform. |
+| `Reservation::try_advise_huge_pages_range(offset, length) -> Result<usize, VmemError>` (`&self`) | Range-limited MADV_HUGEPAGE advice on a Reservation's usable span; `Ok(advised_bytes)` on Linux/Android, typed unsupported/argument errors elsewhere. |
+| `Reservation::try_sample_residency(&[ResidencyRegion]) -> Result<ResidencySample, VmemError>` (`&self`) | Bounded residency sampling: <=16 regions x <=2 MiB, mincore(2) low-bit resident/sample page counts for an estimator ratio; no allocation, no fault-in, typed errors — never a forged zero sample. |
+| `Reservation::try_disable_transparent_huge_pages() -> Result<(), VmemError>` (`&self`) | Linux/Android owning whole-usable-span `MADV_NOHUGEPAGE`; success means the kernel accepted no-THP VMA policy (including THP `always`/mTHP), not that previously faulted huge backing was split. Typed errors for unsupported/mock/miri paths. |
 | `impl From<VmemError> for std::io::Error` | Convert `VmemError` to `std::io::Error` for error-propagation convenience. |
 | `Reservation::decommit(start, end)` / `Reservation::recommit(start, end)` (`&mut self`) | Safe, bounds-checked methods for callers already holding a `Reservation` — hint the OS to return page-granular physical backing / re-commit it. Forward to the free functions below with the reservation's own base and length. |
 | `Reservation::try_decommit(start, end)` / `Reservation::try_recommit(start, end)` / `Reservation::commit_range(start, end)` / `Reservation::try_commit_range(start, end)` (`&mut self`) | Fallible/boolean safe-method twins of the above, reporting a contract-violating range instead of silently no-oping (`decommit`) or panicking only in debug (see "Alignment contract" below). |
@@ -69,8 +77,10 @@ Runnable form: `tests/readme_example.rs`.
 | `LazyReservation::into_reservation(self) -> Reservation` | Give up tracking and take the plain `Reservation`, for a caller that keeps its own commit bookkeeping. |
 | `lazy_commit_is_honored() -> bool` (feature `lazy-commit`, `const fn`) | Whether the current platform's backend genuinely honors `initial_commit` (`true` only on the real Windows native backend; Unix, miri, and the mock backend all commit the whole span up front, making "lazy" a no-op there). |
 
-Every fallible entry point has an infallible `Option`/`bool` counterpart that
-discards the cause. Optional features: `lazy-commit` (incremental commit:
+**Residency control premise:** when a caller requires base-page residency observations (including on THP `always` or mTHP systems), it may call `Reservation::try_disable_transparent_huge_pages()` on the owned fresh mapping before touching payload pages. A successful `MADV_NOHUGEPAGE` only certifies that the kernel accepted the VMA policy for that exact usable span; it does **not** prove that already-faulted huge backing was split or reclaimed. Explicit huge-page reservations and unsupported/mock/miri backends are rejected rather than silently treated as controlled. `try_sample_residency` itself never changes VMA policy.
+
+Most fallible entry points have an infallible `Option`/`bool` counterpart that
+discards the cause. The premise-setting `try_disable_transparent_huge_pages` operation deliberately has no lossy counterpart. Optional features: `lazy-commit` (incremental commit:
 `reserve_aligned_lazy` + `commit_range`, and the `LazyReservation` watermark
 type above; the `alloc-lazy-commit` name is kept
 as a compat alias for one release and will be removed in 0.3.0/1.0.0 — migrate
@@ -82,14 +92,15 @@ request is rejected up front**; **on Windows, large pages (`MEM_LARGE_PAGES`) ar
 to ordinary pages — see the function's own rustdoc for the full technical
 explanation; use `Reservation::is_huge` to detect whether a reservation actually
 got large/huge pages on either platform), and `fault-injection` — a PUBLIC,
-process-global, opt-in Cargo feature with armed hooks on TWO real syscall
-paths: `fault_injection::arm_fail_next` / `arm_fail_at` on the REAL
-`try_commit_range` syscall path, and (since task #1219)
-`fault_injection::arm_fail_next_decommit` on the REAL decommit dispatch path
-(`try_decommit` / `Reservation::try_decommit`) — DISTINCT from the mock
-backend: it changes nothing about which backend runs, it only forces a
-specific real commit or decommit call to report failure, for a consumer that
-needs the genuine OS backend under test. The mock backend (recording call log +
+process-global, opt-in Cargo feature with controlled faults for commit,
+decommit, range advice, residency sampling, and checked release. The hooks
+change no backend selection: they suppress a selected operation and report
+an explicit simulated failure. Checked release also has a backend-result
+surrogate for error propagation, not kernel-refusal evidence. Release hooks
+stay live under `aligned_vmem_mock`, which does not replace the release
+backend; legacy infallible release does not consult them. Commit/decommit,
+range-advice and residency hooks follow their own platform/mock gates.
+These hooks are DISTINCT from backend replacement. The mock backend (recording call log +
 `fail_next_reserve` / `fail_next_commit` fault injection for deterministic
 OOM-path tests on any target — **replaces** the commit/decommit/recommit
 backend with a stub) is enabled via the `aligned_vmem_mock` cfg flag

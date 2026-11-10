@@ -7,7 +7,7 @@ use crate::os::reserve_aligned_lazy_raw;
 #[cfg(aligned_vmem_mock)]
 use crate::os::reserve_aligned_raw;
 
-use super::internal::{
+use crate::api::internal::{
     finish_reservation, validate_initial_commit, validate_size_align, RawReservation,
 };
 

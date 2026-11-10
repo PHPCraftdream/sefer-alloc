@@ -2,6 +2,8 @@ use core::ptr::NonNull;
 use std::alloc::{GlobalAlloc, Layout, System};
 
 use crate::error::VmemError;
+#[cfg(feature = "fault-injection")]
+use crate::fault_injection;
 use crate::os::DecommitKind;
 
 /// task #713: a bad `(size, align)` `Layout` combination is a caller contract
@@ -37,6 +39,35 @@ pub(crate) unsafe fn release_reservation(
     // SAFETY: `reservation` is the original `System.alloc` pointer, still live
     // and uniquely owned, and `layout` is the exact original allocation layout.
     unsafe { System.dealloc(reservation.as_ptr(), layout) };
+}
+
+/// Checked (fallible) miri release backend. Mirrors `release_reservation`'s
+/// body; returns `Ok(())` because `System.dealloc` has no failure mode to
+/// report — `Ok` is terminal release within miri's model (no real OS call
+/// exists to prove more).
+#[cfg(miri)]
+pub(crate) unsafe fn release_reservation_checked(
+    reservation: NonNull<u8>,
+    reservation_len: usize,
+    align: usize,
+) -> Result<(), VmemError> {
+    #[cfg(feature = "fault-injection")]
+    let surrogate = fault_injection::should_fail_release_backend_result();
+    #[cfg(not(feature = "fault-injection"))]
+    let surrogate = false;
+    let result = if surrogate {
+        // Simulated backend-result propagation only; miri has no native
+        // release failure and this is not kernel evidence.
+        Err(VmemError::os_refusal_unknown_code())
+    } else {
+        // Constructors create this layout; checked API validates it first.
+        let layout =
+            Layout::from_size_align(reservation_len, align).expect("release: invalid layout");
+        // SAFETY: original System allocation, live, uniquely owned, exact layout.
+        unsafe { System.dealloc(reservation.as_ptr(), layout) };
+        Ok(())
+    };
+    result
 }
 
 #[cfg(miri)]

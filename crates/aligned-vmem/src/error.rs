@@ -72,11 +72,12 @@ impl VmemError {
     }
 
     /// A no-code failure on the OS side — the operation failed without a
-    /// real OS error code to report. FOUR sources — **keep this count in
+    /// real OS error code to report. FIVE sources — **keep this count in
     /// sync with the list below when adding one**: task #1139 added the
     /// fourth and left the count reading "Three", corrected by task #1141
     /// (task #1106/L2 — an earlier revision of this doc called ALL of them
-    /// a "genuine OS refusal", which is false for the third and fourth):
+    /// a "genuine OS refusal", which is false for the third and fourth;
+    /// task #53 added the fifth):
     /// - under miri (no real `errno`/`GetLastError` exists to read) — a
     ///   genuine refusal by the miri stand-in;
     /// - the rare case where the platform's own `raw_os_error()` itself
@@ -97,41 +98,27 @@ impl VmemError {
     ///   caller's arguments are not at fault, and no per-call OS code
     ///   exists (the query failed once, at first use, possibly long before
     ///   the reporting call). Same no-new-kind reasoning as the third
-    ///   source above.
+    ///   source above;
+    /// - a well-formed call whose dedicated backend is not compiled in for
+    ///   this build — task #53 (J13b VM-part):
+    ///   `Reservation::try_advise_huge_pages_range` and
+    ///   `Reservation::try_sample_residency` report this sentinel on
+    ///   non-Linux/Android native targets, under miri, and under the
+    ///   `aligned_vmem_mock` cfg, where no huge-page-advice/mincore backend
+    ///   exists. Nothing was asked of any OS; the caller's arguments are
+    ///   not at fault; the caller can distinguish it from
+    ///   `invalid_argument` via `is_invalid_argument() == false`.
     ///
     /// Distinct from [`invalid_argument`](Self::invalid_argument):
     /// `is_invalid_argument()` is `false` here — the failure originated on
     /// the OS side (or in the crate's response to an unusable OS grant), not
     /// in the caller's arguments.
     ///
-    /// **This FOUR-source count is scoped to production causes; it
-    /// deliberately excludes two TEST-ONLY construction SOURCES, spread
-    /// across FOUR TEST-ONLY construction SITES** (task #1173/L2,
-    /// re-measured for this doc's own correction — task #1194 — against the
-    /// actual call sites rather than re-asserted from an earlier audit's
-    /// count; re-measured again task #1249 after task #1219 added the
-    /// decommit-side fault-injection hook, which grew the `fault-injection`
-    /// source from one site to two. Counted with doc mentions EXCLUDED,
-    /// because a raw `grep -rn "VmemError::os_refusal_unknown_code()"
-    /// crates/aligned-vmem/src/` also matches prose like this very
-    /// sentence — its total therefore changes whenever this paragraph is
-    /// edited, which is exactly how task #1194's first attempt recorded a
-    /// figure its own edit falsified one line later. The stable count is
-    /// `grep -rn "VmemError::os_refusal_unknown_code()"
-    /// crates/aligned-vmem/src/ | grep -vE ":\s*(///|//!|//)"` → 11 real
-    /// construction sites; of those 11, 7 are production sites — matching
-    /// the four causes below — and 4 are
-    /// test-only sites): the `aligned_vmem_mock` backend's scripted
-    /// commit/reserve fault injection (`crate::mock`, gated on that cfg —
-    /// TWO sites, `take_reserve_fault`/`take_commit_fault`) and the
-    /// real-path `fault-injection` feature's simulated commit AND decommit
-    /// failures (`crate::fault_injection`, TWO sites — `api/commit_range.rs`
-    /// and, since task #1219, `api/decommit.rs`'s `dispatch_try_decommit`)
-    /// both also construct this sentinel, to simulate a no-code OS failure
-    /// deterministically without touching the OS — see each module's own
-    /// doc for why NEITHER SOURCE is a fifth or sixth PRODUCTION source:
-    /// all four sites exist only under test-only cfgs or an explicitly-armed
-    /// opt-in feature, and none is reachable in an ordinary disarmed build.
+    /// Test-only no-code sentinel construction sources include the mock
+    /// reserve/commit failures and fault-injection commit, decommit,
+    /// range-advice, residency, and release pre-dispatch failures, plus checked
+    /// backend-result surrogates. These are test seams, not production OS
+    /// failure causes.
     #[must_use]
     #[inline]
     pub const fn os_refusal_unknown_code() -> Self {

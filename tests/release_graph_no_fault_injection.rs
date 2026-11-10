@@ -92,8 +92,8 @@ fn release_graph_has_no_fault_injection_and_test_graph_keeps_it() {
 fn commit_path_fault_hook_call_site_is_cfg_gated() {
     let vmem_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/aligned-vmem/src");
 
-    let commit_range =
-        fs::read_to_string(vmem_src.join("api/commit_range.rs")).expect("read commit_range.rs");
+    let commit_range = fs::read_to_string(vmem_src.join("api/lazy_commit/commit_range.rs"))
+        .expect("read commit_range.rs");
     const CALL: &str = "if fault_injection::should_fail_commit() {";
     assert_eq!(
         commit_range.matches(CALL).count(),
