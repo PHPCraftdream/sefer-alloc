@@ -180,6 +180,16 @@ jobs:
             | tee "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
           grep -F 'test actual_phased_and_mixed_windows_preserve_training_and_live_os_boundaries ... ok' "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/j13b-adaptive-windows-native.log"
+      - name: J13b bounded artifact request and fail-closed child dispatch
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -o pipefail
+          cargo test --locked --release --test j13b_artifact_request \
+            | tee "$RUNNER_TEMP/j13b-artifact-request.log"
+          grep -F "test duplicate_decoded_keys_and_escaped_aliases_are_rejected ... ok" "$RUNNER_TEMP/j13b-artifact-request.log"
+          grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/j13b-artifact-request.log"
+          cargo build --locked --release --features production --example g1_j13b_judge
+          node tests/j13b_request_refusal.mjs target/release/examples/g1_j13b_judge
       - name: J13b native advice capture across modes and lifecycle failures
         if: steps.paths.outputs.run == 'true'
         run: |
@@ -3586,6 +3596,15 @@ jobs:
           cargo miri test --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_capture_native 2>&1 | tee "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
           grep -F 'test native_advice_capture_rejects_unsupported_hosts_before_payload_claims ... ok' "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
           grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
+        shell: bash
+      - name: Bounded artifact dispatch parser under strict provenance
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+        run: |
+          set -o pipefail
+          cargo miri test --test j13b_artifact_request 2>&1 | tee "$RUNNER_TEMP/miri-j13b-artifact-request.log"
+          grep -F "test duplicate_decoded_keys_and_escaped_aliases_are_rejected ... ok" "$RUNNER_TEMP/miri-j13b-artifact-request.log"
+          grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-artifact-request.log"
         shell: bash
       - name: Native advice window controller rejects models before clocks or payload
         env:
