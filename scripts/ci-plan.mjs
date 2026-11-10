@@ -60,9 +60,11 @@ export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false
   if (FAST_FILES.has(p)) return new Set(['fast']);
   if (p.startsWith('.github/actions/') || p.startsWith('scripts/ci/') || p === 'scripts/verify-ci-decomposition.mjs') {
     const expanded = effectiveWorkflow(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-    const owners = expanded.dependencies.get(p);
     const jobs = parseJobs(expanded.text);
-    if (owners) return new Set(jobs.filter(job => owners.has(job.id))
+    // A deleted action still selects its job after the body moves back inline.
+    const owners = expanded.dependencies.get(p) ?? new Set(jobs
+      .filter(job => p === `.github/actions/ci-${job.id}/action.yml`).map(job => job.id));
+    if (owners.size) return new Set(jobs.filter(job => owners.has(job.id))
       .map(job => GROUPS.includes(job.group) ? job.group : 'fast'));
     if (p.startsWith('scripts/')) return new Set(GROUPS.filter(group => group !== 'full'));
     return new Set(['fast']);

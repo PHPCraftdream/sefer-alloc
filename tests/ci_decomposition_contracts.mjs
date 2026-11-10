@@ -16,6 +16,8 @@ for (const [file, owners] of expanded.dependencies) {
   assert.deepEqual(classifyPath(file), expected, `${file}: select all owning job groups`);
 }
 assert.deepEqual(classifyPath('.github/actions/ci-unknown/action.yml'), new Set(['fast']));
+assert.deepEqual(classifyPath('.github/actions/ci-globalalloc-model-miri/action.yml'), new Set(['crate_globalalloc_model']),
+  'deleting an action to restore its job inline must still select that job');
 const workflow = `jobs:
   check:
     runs-on: ubuntu-latest

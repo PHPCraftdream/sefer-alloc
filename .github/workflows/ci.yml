@@ -279,7 +279,114 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/ci-globalalloc-model-miri
+      - name: miri target list covers every tests/*.rs in BOTH miri passes
+        run: |
+          set -euo pipefail
+          job=$(awk '/^  globalalloc-model-miri:/{seen=1; next} seen && /^  [^ ]/{seen=0} seen{print}' .github/workflows/ci.yml)
+          if [ -z "$job" ]; then
+            echo "could not extract the globalalloc-model-miri job block from ci.yml" >&2
+            exit 1
+          fi
+          # Anchored at "- run:" (review run 5, P3-2): a commented-out step
+          # must not donate its targets to the listed side — disabling a pass
+          # has to fail the count assert below instead.
+          found=$(printf '%s\n' "$job" \
+            | grep -cE '^[[:space:]]*- run: cargo miri test -p globalalloc-model' || true)
+          if [ "$found" -ne 4 ]; then
+            echo "expected exactly 4 'cargo miri test -p globalalloc-model' run lines in this job (2 passes, each = one -Zmiri-ignore-leaks step + one multi-target step), found $found" >&2
+            echo "If a step was added, removed, or commented out, restore it or reshape this check to the new step layout." >&2
+            exit 1
+          fi
+          actual=$(ls crates/globalalloc-model/tests/*.rs | xargs -n1 basename | sed 's/\.rs$//' | sort)
+          # PER PASS, not per union (review run 5, P3-2): each pass's two run
+          # lines together must name exactly tests/*.rs, so a file added to
+          # only one of the two miri configurations fails. Pass 1 = run lines
+          # 1-2 (plain), pass 2 = run lines 3-4 (-Zmiri-strict-provenance).
+          # A target name may be spelled --test=name and may contain '-'.
+          pass=0
+          for range in 1,2 3,4; do
+            pass=$((pass + 1))
+            listed=$(printf '%s\n' "$job" \
+              | grep -E '^[[:space:]]*- run: cargo miri test -p globalalloc-model' \
+              | sed -n "${range}p" \
+              | grep -oE -- '--test[= ][A-Za-z0-9_-]+' \
+              | sed -E 's/^--test[= ]//' \
+              | sort -u)
+            if ! diff <(printf '%s\n' "$listed") <(printf '%s\n' "$actual"); then
+              echo "pass $pass: LEFT = targets named by this pass's two run lines; RIGHT = crates/globalalloc-model/tests/*.rs on disk" >&2
+              echo "Add every new test file to BOTH miri passes (each pass's -Zmiri-ignore-leaks step AND its multi-target step); remove entries when a file is deleted." >&2
+              exit 1
+            fi
+          done
+          # Each step's MIRIFLAGS shape is pinned PER STEP, not counted
+          # globally (review run 6, P4-1: a global count passed a
+          # compensating PAIR of drifts — one step flipped to strict while
+          # another was flipped to plain — because the total stayed at 2).
+          # Each run line is extracted together with its following
+          # MIRIFLAGS: line, so a flag value can never be attributed to the
+          # wrong step. (This job's own history: the plain multi-target step
+          # once drifted to strict, running strict twice and plain never —
+          # review run 3, P2-1.)
+          steps=$(printf '%s\n' "$job" | awk '
+            /^[[:space:]]*- run: cargo miri test -p globalalloc-model/ {
+              if (rec != "") print rec
+              rec = "-"
+              next
+            }
+            rec != "" && /^[[:space:]]+MIRIFLAGS:/ {
+              sub(/^[[:space:]]+MIRIFLAGS:[[:space:]]*/, "")
+              gsub(/"/, "")
+              rec = rec "|" $0
+            }
+            END { if (rec != "") print rec }
+          ')
+          stepcount=$(printf '%s\n' "$steps" | grep -c . || true)
+          if [ "$stepcount" -ne 4 ]; then
+            echo "expected exactly 4 miri run steps, found $stepcount" >&2
+            exit 1
+          fi
+          expect_flags() {
+            got=$(printf '%s\n' "$steps" | sed -n "$1p")
+            if [ "$got" != "$2" ]; then
+              echo "miri run step $1: MIRIFLAGS drifted from its expected shape" >&2
+              echo "  expected: $2" >&2
+              echo "  actual:   $got" >&2
+              exit 1
+            fi
+          }
+          expect_flags 1 '-|-Zmiri-ignore-leaks'
+          expect_flags 2 '-'
+          expect_flags 3 '-|-Zmiri-ignore-leaks -Zmiri-strict-provenance'
+          expect_flags 4 '-|-Zmiri-strict-provenance'
+          # `--all-features` is pinned PER RUN LINE too (review run 7, P3-2):
+          # this crate's `default = []` cfg-gates system_proptest.rs,
+          # system_arbitrary.rs and two config_validate tests to EMPTY, so a
+          # run line that silently loses `--all-features` keeps every existing
+          # check above green (the target list still matches, MIRIFLAGS is
+          # untouched) while miri covers 3 of 6 targets per pass.
+          missing=$(printf '%s\n' "$job" \
+            | grep -E '^[[:space:]]*- run: cargo miri test -p globalalloc-model' \
+            | grep -cv -- '--all-features' || true)
+          if [ "$missing" -ne 0 ]; then
+            echo "$missing miri run line(s) lack --all-features; the proptest/arbitrary" >&2
+            echo "test files are cfg-gated to EMPTY without it (default = [])." >&2
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - run: cargo miri test -p globalalloc-model --all-features --test double_free_no_op
+        env:
+          MIRIFLAGS: "-Zmiri-ignore-leaks"
+      # Plain pass (review run 3, P2-1: this step's MIRIFLAGS had drifted to strict-provenance, running the strict pass twice and the plain pass never).
+      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest --test config_validate --test peak_live_count --test size_strategy_avoids_boxed_value_trees
+      - run: cargo miri test -p globalalloc-model --all-features --test double_free_no_op
+        env:
+          MIRIFLAGS: "-Zmiri-ignore-leaks -Zmiri-strict-provenance"
+      # Strict-provenance pass.
+      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest --test config_validate --test peak_live_count --test size_strategy_avoids_boxed_value_trees
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance"
 
   proc-memstat-gates:
     needs: changes

@@ -10,14 +10,14 @@ on a schedule and on demand.
 
 `ci.yml` is the orchestration graph: triggers, concurrency, permissions, job names/IDs,
 conditions, dependencies, runners, matrices and job environment stay here. Cohesive
-execution sequences live in 52 repository-local composite actions under
+execution sequences live in 51 repository-local composite actions under
 `.github/actions/ci-<job>/action.yml`. Checkout stays before each local action call.
-The extraction reduced the working workflow from 5,437 to 847 lines without changing
+The extraction reduced the working workflow from 5,437 to 954 lines without changing
 its 60 job definitions. This is a maintainability change, not a faster allocator or
 an authorization to run additional campaigns.
 
-Eight jobs intentionally remain inline: `changes`, `select-tests`, `clippy`, `test-core`,
-`licenses`, `multi-arch`, `aligned-vmem-hugetlb-real`, and `docs`. They own cross-job/output,
+Nine jobs intentionally remain inline: `changes`, `select-tests`, `clippy`, `test-core`,
+`licenses`, `multi-arch`, `aligned-vmem-hugetlb-real`, `globalalloc-model-miri`, and `docs`. They own cross-job/output,
 matrix, license-cache or direct Rust source-inspection contracts. Similar commands
 are not automatically interchangeable.
 
