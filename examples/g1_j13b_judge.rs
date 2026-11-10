@@ -1,4 +1,6 @@
-//! Fail-closed J13b child. No runtime adapter means no workload is entered.
+//! Fail-closed J13b child. Dispatch metadata is not proof of actual artifact identity.
+#[path = "_shared/j13b_artifact_request.rs"]
+mod artifact_request;
 #[path = "_shared/j13b_workload.rs"]
 #[allow(dead_code)]
 mod workload;
@@ -67,6 +69,36 @@ fn main() -> ExitCode {
         emit(cell, arm, block, repeat, "invalid_request", "unknown_arm");
         return ExitCode::from(2);
     }
+    let metadata = match env::var("SEFER_J13B_ARTIFACT") {
+        Ok(metadata) => metadata,
+        Err(env::VarError::NotPresent) => {
+            emit(
+                cell,
+                arm,
+                block,
+                repeat,
+                "unavailable",
+                "artifact_metadata_missing",
+            );
+            return ExitCode::from(3);
+        }
+        Err(env::VarError::NotUnicode(_)) => {
+            emit(
+                cell,
+                arm,
+                block,
+                repeat,
+                "invalid_request",
+                "artifact_metadata_utf8",
+            );
+            return ExitCode::from(2);
+        }
+    };
+    if let Err(reason) = artifact_request::ArtifactRequest::parse(metadata.as_bytes(), arm) {
+        emit(cell, arm, block, repeat, "invalid_request", reason);
+        return ExitCode::from(2);
+    }
+    // Shape/routing validation cannot authorize payload or runtime admission.
     emit(
         cell,
         arm,

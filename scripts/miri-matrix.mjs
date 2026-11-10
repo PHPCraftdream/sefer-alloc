@@ -41,6 +41,9 @@ export const MIRI_TARGETS = [
   green('miri-core', 'j13b_advice_windows_native', 'production alloc-stats internals bench-internals lazy-commit-fault-injection', {
     marker: 'test advice_windows_reject_models_before_clocks_capture_or_payload ... ok',
   }),
+  green('miri-core', 'j13b_artifact_request', '', {
+    marker: 'test duplicate_decoded_keys_and_escaped_aliases_are_rejected ... ok',
+  }),
   green('miri-core', 'advice_window', 'bench-internals', {
     pkg: 'aligned-vmem',
     marker: 'test historical_cumulative_peak_is_not_the_next_window_peak ... ok',
