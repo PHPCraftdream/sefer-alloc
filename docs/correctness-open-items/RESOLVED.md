@@ -1,5 +1,12 @@
 # Correctness / CI-debt open items — Recently resolved (closure trail)
 
+274. **[T, filed 2026-11-10] Tree-identical runtime landing merge hides the admitted source-history prefix from first-parent-only zero-cost discovery.**
+
+    - **Status:** CLOSED on corrected main f911b200ff33596b4baaad29f6a41da8bdabaddb; CI42787520715 SUCCESS, with the actual landing strict full-range proof executed successfully. PR227 exact019a8251 CI42782410284 also passed. The original9060 landing failure is retained, not relabelled PASS.
+    - **Initial failure:** main landing9060f625 has exactly accepted PR head d5c61f44's tree723f61ff, and first parent0e5b5a5e has exactly common basebec1e53f's tree9be20e72. CI42777603736 job129708019161 nevertheless searches only the landing's first-parent non-merge commits and loses the previously admitted runtime prefix. It demands VM-to-runtime whole-range identity and reports535/546 functions,339different/11new, Irdelta-758. These are actual full-range differences, not accepted suffix identity or a measured allocator regression.
+    - **Resolution:** accept a narrowly guarded source-history bridge only for an exact two-parent landing, matching compared first parent, unique merge base and both tree equalities. The unchanged zeroCostSkip policy must still admit the prefix; actual landing text/Ir suffix proof remains mandatory. All other graphs retain the full-range requirement. New pure fixtures reject conflict-resolution trees, changed main/base trees, ambiguous ancestry and wrong parent shapes. No allocator/default/dependency change, tolerance, symbol exclusion or caller-chosen proof baseline.
+    - **Evidence:** actual failed landingCI https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42777603736/job/129708019161; prior successful sourceCI42762365242; scripts/ghost_runtime_history.mjs; tests/ghost_runtime_history_fixtures.mjs. Corrected actual main proof: https://github.com/PHPCraftdream/sefer-alloc/actions/runs/42787520715/job/129732475653. Actual output confirms the landing-history fixtures and mandatory full proof, not SKIP; no production policy, admission predicate, tolerance or symbol coverage changed.
+
 **Part of the split index.** This file holds the recently resolved closure
 trail. Recent review closures may retain full narrative here; older moved
 entries point to `docs/correctness-open-items/ARCHIVE.md`.
