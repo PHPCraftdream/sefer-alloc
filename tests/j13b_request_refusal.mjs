@@ -11,19 +11,22 @@ const candidate = {
   rustc: 'unverified-label', features: 'production', original_source_sha256: null, overlay_sha256: null,
 };
 const valid = JSON.stringify(candidate);
+const runtimeForgery = { ...candidate };
+for (const key of ['run_id', 'artifact_id', 'binary_sha256']) delete runtimeForgery[key];
 const cases = [
   ['missing', 'd', null, 3, 'artifact_metadata_missing'],
   ['malformed', 'd', '{', 2, 'artifact_metadata_json'],
   ['duplicate', 'd', valid.replace('"run_id":', '"run_id":"other","run_id":'), 2, 'artifact_duplicate_key'],
   ['mismatch', 'base', valid, 2, 'artifact_arm_variant_mismatch'],
-  ['candidate-unverified', 'd', valid, 3, 'runtime_adapter_missing'],
-  ['baseline-unverified', 'base', JSON.stringify({ ...candidate, variant: 'baseline' }), 3, 'runtime_adapter_missing'],
+  ['candidate-unverified', 'd', valid, 3, 'build_identity_missing'],
+  ['baseline-unverified', 'base', JSON.stringify({ ...candidate, variant: 'baseline' }), 3, 'build_identity_missing'],
   ['static-unverified', 'f', JSON.stringify({ ...candidate, variant: 'static-control',
-    original_source_sha256: 'd'.repeat(64), overlay_sha256: 'e'.repeat(64) }), 3, 'runtime_adapter_missing'],
+    original_source_sha256: 'd'.repeat(64), overlay_sha256: 'e'.repeat(64) }), 3, 'build_identity_missing'],
 ];
 assert.equal(cases.length, 7, 'all refusal scenarios must remain covered');
 for (const [name, arm, metadata, status, reason] of cases) {
-  const env = { ...process.env };
+  // Runtime env must not substitute for option_env! captured at compilation.
+  const env = { ...process.env, SEFER_J13B_BUILD: JSON.stringify(runtimeForgery) };
   if (metadata === null) delete env.SEFER_J13B_ARTIFACT;
   else env.SEFER_J13B_ARTIFACT = metadata;
   const child = spawnSync(resolve(path), ['cycle-1m', arm, '0', '0'], {

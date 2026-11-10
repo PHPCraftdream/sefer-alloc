@@ -1,6 +1,10 @@
 //! Fail-closed J13b child. Dispatch metadata is not proof of actual artifact identity.
 #[path = "_shared/j13b_artifact_request.rs"]
 mod artifact_request;
+#[path = "_shared/j13b_build_seal.rs"]
+mod build_seal;
+#[path = "_shared/j13b_strict_object.rs"]
+mod strict_object;
 #[path = "_shared/j13b_workload.rs"]
 #[allow(dead_code)]
 mod workload;
@@ -94,18 +98,36 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    if let Err(reason) = artifact_request::ArtifactRequest::parse(metadata.as_bytes(), arm) {
+    let request = match artifact_request::ArtifactRequest::parse(metadata.as_bytes(), arm) {
+        Ok(request) => request,
+        Err(reason) => {
+            emit(cell, arm, block, repeat, "invalid_request", reason);
+            return ExitCode::from(2);
+        }
+    };
+    let Some(compiled) = option_env!("SEFER_J13B_BUILD") else {
+        emit(
+            cell,
+            arm,
+            block,
+            repeat,
+            "unavailable",
+            "build_identity_missing",
+        );
+        return ExitCode::from(3);
+    };
+    if let Err(reason) = build_seal::BuildSeal::parse_and_match(compiled.as_bytes(), &request) {
         emit(cell, arm, block, repeat, "invalid_request", reason);
         return ExitCode::from(2);
     }
-    // Shape/routing validation cannot authorize payload or runtime admission.
+    // Compiled consistency cannot authorize actual identity, payload or admission.
     emit(
         cell,
         arm,
         block,
         repeat,
         "unavailable",
-        "runtime_adapter_missing",
+        "identity_backend_missing",
     );
     ExitCode::from(3)
 }
