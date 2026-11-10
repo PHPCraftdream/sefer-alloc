@@ -1,0 +1,12 @@
+quantity,value
+"Source","d5c61f44d6d1fa0e72884cea5ef91397c03c69bb"
+"Primary evidence files","4"
+"Primary evidence total bytes","39845"
+"CI run","42762365242"
+"Successful jobs","59"
+"Intended skipped jobs","4"
+"Observed helper executable SHA-256","87d61eec78f7f5ddd9b4422e4dccc10a1868a354455ec1f92232279e709fafff"
+"Observed CI host architecture","x86_64"
+"Observed CI host CPU","AMD EPYC 7763 64-Core Processor"
+"Observed CI host kernel","7.0.0-1017-azure"
+"Observed top-level THP mode","madvise"

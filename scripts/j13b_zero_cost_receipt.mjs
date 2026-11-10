@@ -70,4 +70,6 @@ receipt(81, "782545ac0edc82ff4baae3476b3f6030c8c3264c", 42706389108, 12946429484
 receipt(82, "95ee28efa2e3a956428e71348226121d3b98e0b3", 42724018048, 129524990738);
 receipt(83, "21c9e51066d0493f69f3688cd9f45ffcebc503c6", 42735977436, 129565261483);
 receipt(87, "6c8d0c15e42a186ed49eeb4cf27d5877becf467c", 42746622988, 129600266101);
+receipt(90, "d5c61f44d6d1fa0e72884cea5ef91397c03c69bb", 42762365242, 129651025596);
+await import('./ci/task90-receipt.mjs');
 console.log('[j13b-zero-cost-receipt] structured identity, exact arithmetic and derived artifacts OK');
