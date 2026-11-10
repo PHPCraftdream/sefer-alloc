@@ -188,8 +188,18 @@ jobs:
             | tee "$RUNNER_TEMP/j13b-artifact-request.log"
           grep -F "test duplicate_decoded_keys_and_escaped_aliases_are_rejected ... ok" "$RUNNER_TEMP/j13b-artifact-request.log"
           grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/j13b-artifact-request.log"
-          cargo build --locked --release --features production --example g1_j13b_judge
+          env -u SEFER_J13B_BUILD cargo build --locked --release --features production --example g1_j13b_judge
           node tests/j13b_request_refusal.mjs target/release/examples/g1_j13b_judge
+      - name: J13b compiled seal consistency without identity or payload admission
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -o pipefail
+          cargo test --locked --release --test j13b_build_seal | tee "$RUNNER_TEMP/j13b-build-seal.log"
+          grep -F "test duplicate_or_escaped_compiled_keys_cannot_silently_override ... ok" "$RUNNER_TEMP/j13b-build-seal.log"
+          grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/j13b-build-seal.log"
+          SEFER_J13B_BUILD="$(node tests/j13b_build_seal_refusal.mjs --seal)" \
+            cargo build --locked --release --features production --example g1_j13b_judge
+          node tests/j13b_build_seal_refusal.mjs target/release/examples/g1_j13b_judge
       - name: J13b native advice capture across modes and lifecycle failures
         if: steps.paths.outputs.run == 'true'
         run: |
@@ -3605,6 +3615,15 @@ jobs:
           cargo miri test --test j13b_artifact_request 2>&1 | tee "$RUNNER_TEMP/miri-j13b-artifact-request.log"
           grep -F "test duplicate_decoded_keys_and_escaped_aliases_are_rejected ... ok" "$RUNNER_TEMP/miri-j13b-artifact-request.log"
           grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-artifact-request.log"
+        shell: bash
+      - name: Bounded compiled seal matching under strict provenance
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+        run: |
+          set -o pipefail
+          cargo miri test --test j13b_build_seal 2>&1 | tee "$RUNNER_TEMP/miri-j13b-build-seal.log"
+          grep -F "test duplicate_or_escaped_compiled_keys_cannot_silently_override ... ok" "$RUNNER_TEMP/miri-j13b-build-seal.log"
+          grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-build-seal.log"
         shell: bash
       - name: Native advice window controller rejects models before clocks or payload
         env:

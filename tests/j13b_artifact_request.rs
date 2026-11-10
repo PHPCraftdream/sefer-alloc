@@ -1,6 +1,8 @@
 //! Dispatch-shape fixtures only; valid labels are not actual artifact identity.
 #[path = "../examples/_shared/j13b_artifact_request.rs"]
 mod artifact_request;
+#[path = "../examples/_shared/j13b_strict_object.rs"]
+mod strict_object;
 use artifact_request::ArtifactRequest as Request;
 use serde_json::{json, Value};
 

@@ -1,7 +1,6 @@
 //! Bounded dispatch metadata, not proof of actual source, compiler or executable identity.
 #![forbid(unsafe_code)]
-use serde_json::{Map, Value};
-use std::collections::BTreeSet;
+use super::strict_object::StrictObject;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ArtifactRequest {
@@ -17,20 +16,6 @@ pub(crate) struct ArtifactRequest {
     pub overlay_sha256: Option<String>,
 }
 
-fn text(object: &Map<String, Value>, key: &str) -> Result<String, &'static str> {
-    object
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .ok_or("artifact_field_type")
-}
-fn optional_hash(object: &Map<String, Value>, key: &str) -> Result<Option<String>, &'static str> {
-    match object.get(key) {
-        Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        _ => Err("artifact_overlay_field_type"),
-    }
-}
 fn hash(value: &str, len: usize) -> bool {
     value.len() == len
         && value
@@ -38,53 +23,8 @@ fn hash(value: &str, len: usize) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-// serde_json validates the complete grammar first. This scan only identifies
-// decoded top-level keys, because Value would otherwise discard duplicates.
-fn unique_keys(input: &str) -> Result<(), &'static str> {
-    let bytes = input.as_bytes();
-    let mut keys = BTreeSet::new();
-    let mut depth = 0usize;
-    let mut index = 0usize;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'{' | b'[' => depth += 1,
-            b'}' | b']' => depth = depth.checked_sub(1).ok_or("artifact_json_depth")?,
-            b'"' => {
-                let start = index;
-                index += 1;
-                while index < bytes.len() {
-                    match bytes[index] {
-                        b'\\' => index += 2,
-                        b'"' => {
-                            index += 1;
-                            break;
-                        }
-                        _ => index += 1,
-                    }
-                }
-                let mut next = index;
-                while bytes.get(next).is_some_and(u8::is_ascii_whitespace) {
-                    next += 1;
-                }
-                if depth == 1 && bytes.get(next) == Some(&b':') {
-                    let literal = input.get(start..index).ok_or("artifact_key_range")?;
-                    let key: String =
-                        serde_json::from_str(literal).map_err(|_| "artifact_key_invalid")?;
-                    if !keys.insert(key) {
-                        return Err("artifact_duplicate_key");
-                    }
-                }
-                continue;
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-    Ok(())
-}
-
 impl ArtifactRequest {
-    pub const MAX_BYTES: usize = 64 * 1024;
+    pub const MAX_BYTES: usize = StrictObject::MAX_BYTES;
     const FIELDS: [&'static str; 10] = [
         "run_id",
         "artifact_id",
@@ -99,31 +39,21 @@ impl ArtifactRequest {
     ];
 
     pub(crate) fn parse(bytes: &[u8], arm: &str) -> Result<Self, &'static str> {
-        if bytes.is_empty() || bytes.len() > Self::MAX_BYTES {
+        if bytes.len() > Self::MAX_BYTES {
             return Err("artifact_metadata_size");
         }
-        let input = std::str::from_utf8(bytes).map_err(|_| "artifact_metadata_utf8")?;
-        let value: Value = serde_json::from_str(input).map_err(|_| "artifact_metadata_json")?;
-        let object = value.as_object().ok_or("artifact_metadata_object")?;
-        if object.len() != Self::FIELDS.len()
-            || object
-                .keys()
-                .any(|key| !Self::FIELDS.contains(&key.as_str()))
-        {
-            return Err("artifact_metadata_fields");
-        }
-        unique_keys(input)?;
+        let object = StrictObject::parse(bytes, &Self::FIELDS)?;
         let request = Self {
-            run_id: text(object, "run_id")?,
-            artifact_id: text(object, "artifact_id")?,
-            variant: text(object, "variant")?,
-            source_commit: text(object, "source_commit")?,
-            source_sha256: text(object, "source_sha256")?,
-            binary_sha256: text(object, "binary_sha256")?,
-            rustc: text(object, "rustc")?,
-            features: text(object, "features")?,
-            original_source_sha256: optional_hash(object, "original_source_sha256")?,
-            overlay_sha256: optional_hash(object, "overlay_sha256")?,
+            run_id: object.text("run_id")?,
+            artifact_id: object.text("artifact_id")?,
+            variant: object.text("variant")?,
+            source_commit: object.text("source_commit")?,
+            source_sha256: object.text("source_sha256")?,
+            binary_sha256: object.text("binary_sha256")?,
+            rustc: object.text("rustc")?,
+            features: object.text("features")?,
+            original_source_sha256: object.nullable_text("original_source_sha256")?,
+            overlay_sha256: object.nullable_text("overlay_sha256")?,
         };
         request.validate(arm)?;
         Ok(request)
