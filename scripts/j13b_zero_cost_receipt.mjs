@@ -68,4 +68,5 @@ function receipt(task, source, run, job) {
 receipt(78, "93f990173e37bdaab7334b58f2876ba6649e24c4", 42693008438, 129417650503);
 receipt(81, "782545ac0edc82ff4baae3476b3f6030c8c3264c", 42706389108, 129464294849);
 receipt(82, "95ee28efa2e3a956428e71348226121d3b98e0b3", 42724018048, 129524990738);
+receipt(83, "21c9e51066d0493f69f3688cd9f45ffcebc503c6", 42735977436, 129565261483);
 console.log('[j13b-zero-cost-receipt] structured identity, exact arithmetic and derived artifacts OK');
