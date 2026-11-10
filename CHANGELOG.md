@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Current-state reconciliation (2026-11-10; docs-only)
+
+- [docs] J13b runtime/VM foundations are merged in main through PRs #226 (VM foundation), #225 (runtime), #227 (landing-history repair), and #228 (closure); `Auto` learning is accepted on exact `6c2ba419` (CI `42512485612`). `Off` remains the current default. There is no J13b campaign measurement or GO. Historical J13 campaign-2 RSS NO-GO and owner exception remain in immutable `7ae557aa:docs/perf/J13_OWNER_DECISION.md`; the historical misses are not an automatic veto for review of materially new problems in current range Always. The owner-approved next delivery is the limited Always/Off comparison in `docs/perf/J13_LIMITED_STUDY_PREREG.md`, with initial figures in its first implementation PR; no execution is authorized by this docs update. The remaining product question is disposition of materially new regressions; no new numeric gate is implied. Fault counts/AnonHugePages corroborate activation only, not exact attribution or standalone speed. `SegmentHeader` is 144 bytes; Ir cost remains unknown (correctness item 264).
+
 ### Opt-in: bounded Large-block THP advice, off by default (2026-11-06)
 
 - [opt-in] `LargeCacheConfig::huge_page_mode(LargeThpMode)` (`Off` default / `Always` / `Auto`), `huge_page_block_min_bytes(n)` (default 8 MiB;
