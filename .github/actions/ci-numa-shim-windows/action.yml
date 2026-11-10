@@ -1,0 +1,69 @@
+name: CI numa-shim-windows
+description: Original numa-shim-windows job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - run: cargo test -p numa-shim
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh
+    - run: cargo test -p numa-shim --features vmem-integration
+    # task #1288: mock via the build-time cfg (see the numa-shim-mock job's
+    # sentinel rows; plain conversion here — the Linux job is the primary
+    # mock-coverage home).
+    #
+    # task #1291: this job's `run:` steps default to `pwsh` (windows-latest
+    # has no workflow-level `shell: bash` default), which does not
+    # understand bash's `VAR=val cmd` prefix syntax — the inline
+    # `RUSTFLAGS="--cfg ..." cargo ...` form landed by #1288 failed CI here
+    # with "The term 'RUSTFLAGS=--cfg numa_shim_mock' is not recognized...".
+    # An `env:` block is shell-agnostic (Actions sets the env var on the
+    # child process before invoking the shell, regardless of shell), so it
+    # works under both pwsh and bash without needing `shell: bash` too.
+    # task #1299 (T8, item 103's twelfth independent readiness review): the
+    # mock rows below previously had no `tee`+`grep -F` sentinel, unlike the
+    # Linux job's own mock rows above ("`#![cfg(numa_shim_mock)]`-gated at
+    # the top level, so a typo'd cfg compiles them to ZERO tests with exit 0
+    # (green-and-dead) — the greps require one named test per FILE" — task
+    # #1101 sentinel pattern, guarding against the task #1070 "Breakage B"
+    # vacuous-green hazard). Adding the same sentinels here closes that gap.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh
+    - run: |
+        cargo test -p numa-shim 2>&1 | tee "$RUNNER_TEMP/numa-shim-windows-mock.log"
+        grep -F "test current_node_records_scripted_value ... ok" "$RUNNER_TEMP/numa-shim-windows-mock.log"
+        grep -F "test resolution_matches_current_node_resolved_zero ... ok" "$RUNNER_TEMP/numa-shim-windows-mock.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg numa_shim_mock"
+    - run: |
+        cargo test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-windows-mock-vmem.log"
+        grep -F "test reserve_preferred_on_node_records_args ... ok" "$RUNNER_TEMP/numa-shim-windows-mock-vmem.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg numa_shim_mock"
+    # task #778 (round-closing review, F9): DEFAULT features is what
+    # `cargo add numa-shim` produces for a downstream consumer -- checked
+    # here (Windows, this crate's primary platform) rather than on the
+    # Linux mock job above, alongside --all-features for the Windows-only
+    # code paths (VirtualAllocExNuma, ProcessorNumber) clippy would
+    # otherwise never see exercised.
+    - run: cargo clippy -p numa-shim --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh
+    - run: cargo clippy -p numa-shim --all-features --all-targets -- -D warnings
+    # task #1288: `--all-features` above can no longer reach the mock (it is
+    # not a Cargo feature), so the mock arm gets this dedicated row — the
+    # exact treatment the numa-shim-mock job's own mock clippy row gives it.
+    # task #1291: `env:` block, not an inline `VAR=val` prefix — see the
+    # note on this job's `cargo test` mock rows above for why.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh
+    - run: cargo clippy -p numa-shim --all-targets -- -D warnings
+      env:
+        RUSTFLAGS: "--cfg numa_shim_mock"
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: pwsh

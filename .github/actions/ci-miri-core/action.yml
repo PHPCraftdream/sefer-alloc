@@ -1,0 +1,414 @@
+name: CI miri-core
+description: Original miri-core job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    # The core invariants (UB-free slotmap membrane), default features.
+    - name: region_invariants
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --test region_invariants
+    - name: J13b actual window operations (Stacked Borrows)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test --test j13b_window_kernel 2>&1 | tee "$RUNNER_TEMP/miri-j13b-window-sb.log"
+        grep -F 'test four_workers_execute_and_all_joins_precede_an_error_result ... ok' "$RUNNER_TEMP/miri-j13b-window-sb.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-window-sb.log"
+      shell: bash
+    - name: J13b actual window operations (Tree Borrows)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows"
+      run: |
+        set -o pipefail
+        cargo miri test --test j13b_window_kernel 2>&1 | tee "$RUNNER_TEMP/miri-j13b-window-tb.log"
+        grep -F 'test four_workers_execute_and_all_joins_precede_an_error_result ... ok' "$RUNNER_TEMP/miri-j13b-window-tb.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-window-tb.log"
+      shell: bash
+    - name: J13b persistent payload actors (Stacked Borrows)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test --test j13b_payload_actors 2>&1 | tee "$RUNNER_TEMP/miri-j13b-actors-sb.log"
+        grep -F 'test persistent_actors_transfer_both_directions_on_actual_threads ... ok' "$RUNNER_TEMP/miri-j13b-actors-sb.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-actors-sb.log"
+      shell: bash
+    - name: J13b persistent payload actors (Tree Borrows)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows"
+      run: |
+        set -o pipefail
+        cargo miri test --test j13b_payload_actors 2>&1 | tee "$RUNNER_TEMP/miri-j13b-actors-tb.log"
+        grep -F 'test persistent_actors_transfer_both_directions_on_actual_threads ... ok' "$RUNNER_TEMP/miri-j13b-actors-tb.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-actors-tb.log"
+      shell: bash
+    - name: Advice event capture and ordered replay under strict provenance
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test -p aligned-vmem --features 'bench-internals fault-injection' --test advice_event_stream 2>&1 | tee "$RUNNER_TEMP/miri-advice-event-stream.log"
+        grep -F 'test cursor_wrap_never_turns_failed_capture_into_an_empty_success ... ok' "$RUNNER_TEMP/miri-advice-event-stream.log"
+        grep -F 'test result: ok. 10 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-event-stream.log"
+        cargo miri test -p aligned-vmem --features bench-internals --test advice_event_replay 2>&1 | tee "$RUNNER_TEMP/miri-advice-event-replay.log"
+        grep -F 'test unknown_release_and_partial_advice_never_yield_zero_or_repaired_rows ... ok' "$RUNNER_TEMP/miri-advice-event-replay.log"
+        grep -F 'test result: ok. 9 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-event-replay.log"
+      shell: bash
+    - name: Pure per-window advice accounting under strict provenance
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test -p aligned-vmem --features bench-internals --test advice_window 2>&1 | tee "$RUNNER_TEMP/miri-advice-window.log"
+        grep -F "test historical_cumulative_peak_is_not_the_next_window_peak ... ok" "$RUNNER_TEMP/miri-advice-window.log"
+        grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-window.log"
+      shell: bash
+    - name: Native advice capture rejects models before payload claims
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_capture_native 2>&1 | tee "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
+        grep -F 'test native_advice_capture_rejects_unsupported_hosts_before_payload_claims ... ok' "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-advice-capture-guard.log"
+      shell: bash
+    - name: Bounded artifact dispatch parser under strict provenance
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test --test j13b_artifact_request 2>&1 | tee "$RUNNER_TEMP/miri-j13b-artifact-request.log"
+        grep -F "test duplicate_decoded_keys_and_escaped_aliases_are_rejected ... ok" "$RUNNER_TEMP/miri-j13b-artifact-request.log"
+        grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-artifact-request.log"
+      shell: bash
+    - name: Bounded compiled seal matching under strict provenance
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test --test j13b_build_seal 2>&1 | tee "$RUNNER_TEMP/miri-j13b-build-seal.log"
+        grep -F "test duplicate_or_escaped_compiled_keys_cannot_silently_override ... ok" "$RUNNER_TEMP/miri-j13b-build-seal.log"
+        grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-build-seal.log"
+      shell: bash
+    - name: Native identity rejects models before files commands or payload
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test --test j13b_native_identity 2>&1 | tee "$RUNNER_TEMP/miri-j13b-native-identity.log"
+        grep -F "test process_facts_reject_models_before_files_commands_or_payload ... ok" "$RUNNER_TEMP/miri-j13b-native-identity.log"
+        grep -F 'test result: ok. 7 passed; 0 failed; 0 ignored;' "$RUNNER_TEMP/miri-j13b-native-identity.log"
+      shell: bash
+    - name: Native advice window controller rejects models before clocks or payload
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test --features 'production alloc-stats internals bench-internals lazy-commit-fault-injection' --test j13b_advice_windows_native 2>&1 | tee "$RUNNER_TEMP/miri-j13b-advice-windows-guard.log"
+        grep -F "test advice_windows_reject_models_before_clocks_capture_or_payload ... ok" "$RUNNER_TEMP/miri-j13b-advice-windows-guard.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-advice-windows-guard.log"
+      shell: bash
+    - name: Pure accepted-advice lifetime ledger under strict provenance
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test -p aligned-vmem --features bench-internals --test advice_lifetime_ledger 2>&1 | tee "$RUNNER_TEMP/miri-advice-lifetime-ledger.log"
+        grep -F 'test unsupported_release_preserves_entries_and_never_recovers_via_retry_or_reuse ... ok' "$RUNNER_TEMP/miri-advice-lifetime-ledger.log"
+        grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/miri-advice-lifetime-ledger.log"
+      shell: bash
+    - name: J13b owner training rejects model residency before payload claims
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test --features 'production internals bench-internals lazy-commit-fault-injection' --test j13b_owner_training_native 2>&1 | tee "$RUNNER_TEMP/miri-j13b-training-guard.log"
+        grep -F 'test unsupported_training_is_rejected_before_payload_claims ... ok' "$RUNNER_TEMP/miri-j13b-training-guard.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-training-guard.log"
+      shell: bash
+    - name: J13b adaptive windows reject model OS epochs before payload claims
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test --features 'production internals bench-internals' --test j13b_adaptive_windows_native 2>&1 | tee "$RUNNER_TEMP/miri-j13b-adaptive-windows-guard.log"
+        grep -F 'test adaptive_windows_reject_model_or_unsupported_os_before_payloads ... ok' "$RUNNER_TEMP/miri-j13b-adaptive-windows-guard.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-adaptive-windows-guard.log"
+      shell: bash
+    - name: J13b OS ABI fixtures and model/native separation
+      run: |
+        set -o pipefail
+        cargo miri test --test j13b_os_probe 2>&1 | tee "$RUNNER_TEMP/miri-j13b-os.log"
+        grep -F 'test unsupported_os_or_model_is_rejected_before_any_probe ... ok' "$RUNNER_TEMP/miri-j13b-os.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-os.log"
+      shell: bash
+    - name: J13b owning buffers (strict provenance, Stacked Borrows)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      run: |
+        set -o pipefail
+        cargo miri test --test j13b_owned_block 2>&1 | tee "$RUNNER_TEMP/miri-j13b-owned-sb.log"
+        grep -F 'test ownership_transfers_both_directions_and_is_freed_on_the_actual_destination ... ok' "$RUNNER_TEMP/miri-j13b-owned-sb.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-owned-sb.log"
+      shell: bash
+    - name: J13b owning buffers (strict provenance, Tree Borrows)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows"
+      run: |
+        set -o pipefail
+        cargo miri test --test j13b_owned_block 2>&1 | tee "$RUNNER_TEMP/miri-j13b-owned-tb.log"
+        grep -F 'test ownership_transfers_both_directions_and_is_freed_on_the_actual_destination ... ok' "$RUNNER_TEMP/miri-j13b-owned-tb.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/miri-j13b-owned-tb.log"
+      shell: bash
+    - name: installed Box narrow-provenance ownership round trip
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+      run: |
+        set -o pipefail
+        cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-installed-box.log"
+        grep -F "[miri_global_box_acceptance] COMPLETE narrow_two_rounds" "$RUNNER_TEMP/miri-installed-box.log"
+      shell: bash
+    - name: installed Box narrow-provenance under TreeBorrows
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+      run: |
+        set -o pipefail
+        cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-tree.log"
+        grep -F "[miri_global_box_acceptance] COMPLETE narrow_two_rounds" "$RUNNER_TEMP/miri-installed-box-tree.log"
+      shell: bash
+    # b4-r1 round 2 (P2): pin-cache cell under narrow provenance. REAL Box
+    # ownership via a Send wrapper; activation oracle = PIN_CACHE_HITS
+    # delta >= 1 (reds a "publish_cached always returns Miss" mutant);
+    # gated pending-bit delivery via TerminalPublicationGate and TLS
+    # thread-exit release (PIN_CACHE_THREAD_RELEASES delta >= 2).
+    - name: b4-r1 pin cache narrow provenance (miss, same-base hit, delivery, TLS release)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+      run: |
+        set -o pipefail
+        cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
+        grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
+      shell: bash
+    - name: installed Box R1-01 cap-frame flush witness (SB)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+      run: |
+        # R1-01 witness on the `cnt == cap < TCACHE_CAP` dealloc branch (magazine path,
+        # dealloc_own_base.rs): the freelist-next write into the CURRENT block's body
+        # inside the live Box::drop frame was closed by swap-top (magazine evicts the
+        # top slot to the substrate, the current block takes the slot; count unchanged,
+        # byte budget preserved). `fastbin` is REQUIRED — without it the R1-01 branch
+        # does not compile and the witness goes red on a pre-existing
+        # dealloc_small/P1-box path instead.
+        set -o pipefail
+        cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_r1_01_cap_frame 2>&1 | tee "$RUNNER_TEMP/miri-r101-cap-frame.log"
+        grep -F "[miri_r1_01_cap_frame] COMPLETE r1_01_cap_frame" "$RUNNER_TEMP/miri-r101-cap-frame.log"
+      shell: bash
+    - name: installed Box R1-01 cap-frame flush witness under TreeBorrows
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+      run: |
+        # R1-01 witness under TreeBorrows; see the SB step above for the swap-top
+        # closure note and why `fastbin` is required.
+        set -o pipefail
+        cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_r1_01_cap_frame 2>&1 | tee "$RUNNER_TEMP/miri-r101-cap-frame-tree.log"
+        grep -F "[miri_r1_01_cap_frame] COMPLETE r1_01_cap_frame" "$RUNNER_TEMP/miri-r101-cap-frame-tree.log"
+      shell: bash
+    - name: installed Box depot park/reload/recycle witness (SB)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+      run: |
+        # B4 depot (DP-4): Box drops park full magazines, misses reload them,
+        # thread exit drains the depot and the next thread reuses the slot's
+        # retained &'static mut Depot binding. `fastbin` is REQUIRED.
+        set -o pipefail
+        cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_depot_cycle 2>&1 | tee "$RUNNER_TEMP/miri-depot-cycle.log"
+        grep -F "[miri_depot_cycle] COMPLETE depot_cycle" "$RUNNER_TEMP/miri-depot-cycle.log"
+      shell: bash
+    - name: installed Box depot park/reload/recycle witness under TreeBorrows
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+      run: |
+        # B4 depot witness under TreeBorrows; see the SB step above.
+        set -o pipefail
+        cargo miri test --features "alloc-global fastbin internals bench-internals" --test miri_depot_cycle 2>&1 | tee "$RUNNER_TEMP/miri-depot-cycle-tree.log"
+        grep -F "[miri_depot_cycle] COMPLETE depot_cycle" "$RUNNER_TEMP/miri-depot-cycle-tree.log"
+      shell: bash
+    - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - alloc-global - strict Stacked Borrows)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+      run: |
+        # KNOWN RED (P1, docs/correctness-open-items/ACTIVE.md): strict trim writes the intrusive
+        # freelist link through the reservation root while the producer's Box::drop frame is live.
+        # Pins the failure site, not just the message (docs/design/2026-10-02-adr-addendum-ph3c-escalation.md
+        # §5-§6): green witness, different error text, or UB outside Node::write_next called from
+        # reclaim_sidecar_record/flush_run/dealloc_small all fail this step. Frame format per
+        # docs/perf/_raw_ph3c_b3s_miri_mutant.log and docs/reviews/2026-10-01-adr-pg1-w0-receipt.md §6.
+        set +e
+        cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
+        status=${PIPESTATUS[0]}
+        set -e
+        if grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"; then
+          echo "::error::the P1 witness is green: remove this expected-red wrapper and close the P1 card"
+          exit 1
+        fi
+        test "$status" -ne 0
+        log="$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
+        grep -E "Undefined Behavior: not granting access to tag .* weakly protected" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
+        bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
+        if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+          echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+          exit 1
+        fi
+      shell: bash
+    - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - alloc-global - TreeBorrows)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+      run: |
+        # KNOWN RED (P1, docs/correctness-open-items/ACTIVE.md): strict trim writes the intrusive
+        # freelist link through the reservation root while the producer's Box::drop frame is live.
+        # Pins the failure site, not just the message (docs/design/2026-10-02-adr-addendum-ph3c-escalation.md
+        # §5-§6): green witness, different error text, or UB outside Node::write_next called from
+        # reclaim_sidecar_record/flush_run/dealloc_small all fail this step. Frame format per
+        # docs/perf/_raw_ph3c_b3s_miri_mutant.log and docs/reviews/2026-10-01-adr-pg1-w0-receipt.md §6.
+        set +e
+        cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
+        status=${PIPESTATUS[0]}
+        set -e
+        if grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"; then
+          echo "::error::the P1 witness is green: remove this expected-red wrapper and close the P1 card"
+          exit 1
+        fi
+        test "$status" -ne 0
+        log="$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
+        grep -E "Undefined Behavior: write access through .* is forbidden" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
+        bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
+        if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+          echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+          exit 1
+        fi
+      shell: bash
+    - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - production - strict Stacked Borrows)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+      run: |
+        # KNOWN RED (P1, docs/correctness-open-items/ACTIVE.md): strict trim writes the intrusive
+        # freelist link through the reservation root while the producer's Box::drop frame is live.
+        # Pins the failure site, not just the message (docs/design/2026-10-02-adr-addendum-ph3c-escalation.md
+        # §5-§6): green witness, different error text, or UB outside Node::write_next called from
+        # reclaim_sidecar_record/flush_run/dealloc_small all fail this step. Frame format per
+        # docs/perf/_raw_ph3c_b3s_miri_mutant.log and docs/reviews/2026-10-01-adr-pg1-w0-receipt.md §6.
+        # Production variant mirrors PG-1's witness run: --features "production internals bench-internals".
+        set +e
+        cargo miri test --features "production internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause-prod.log"
+        status=${PIPESTATUS[0]}
+        set -e
+        if grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause-prod.log"; then
+          echo "::error::the P1 witness is green: remove this expected-red wrapper and close the P1 card"
+          exit 1
+        fi
+        test "$status" -ne 0
+        log="$RUNNER_TEMP/miri-installed-box-terminal-pause-prod.log"
+        grep -E "Undefined Behavior: not granting access to tag .* weakly protected" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
+        bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
+        if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+          echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+          exit 1
+        fi
+      shell: bash
+    - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - production - TreeBorrows)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+      run: |
+        # KNOWN RED (P1, docs/correctness-open-items/ACTIVE.md): strict trim writes the intrusive
+        # freelist link through the reservation root while the producer's Box::drop frame is live.
+        # Pins the failure site, not just the message (docs/design/2026-10-02-adr-addendum-ph3c-escalation.md
+        # §5-§6): green witness, different error text, or UB outside Node::write_next called from
+        # reclaim_sidecar_record/flush_run/dealloc_small all fail this step. Frame format per
+        # docs/perf/_raw_ph3c_b3s_miri_mutant.log and docs/reviews/2026-10-01-adr-pg1-w0-receipt.md §6.
+        # Production variant mirrors PG-1's witness run: --features "production internals bench-internals".
+        set +e
+        cargo miri test --features "production internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause-prod-tree.log"
+        status=${PIPESTATUS[0]}
+        set -e
+        if grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause-prod-tree.log"; then
+          echo "::error::the P1 witness is green: remove this expected-red wrapper and close the P1 card"
+          exit 1
+        fi
+        test "$status" -ne 0
+        log="$RUNNER_TEMP/miri-installed-box-terminal-pause-prod-tree.log"
+        grep -E "Undefined Behavior: write access through .* is forbidden" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
+        bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
+        if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+          echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+          exit 1
+        fi
+      shell: bash
+    # Tagged-index-stack Miri automation: the package-specific unchecked-storage oracle for
+    # `tagged-index-stack`. Keep this as an explicit Miri invocation under
+    # the same strict-provenance flags as the root invariants above; a plain
+    # `cargo test` run would not exercise the interpreter's bounds/provenance
+    # checks for the narrower declared link domain.
+    - name: narrow_domain_unchecked_storage
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test -p tagged-index-stack --test narrow_domain_unchecked_storage
+    # Phase 8 core invariants under miri: the M6 decommit/recommit cycle
+    # (zero-crossing of payload pages) over the segment substrate.
+    # `internals` added (R34-3/task #522): reaches `sefer_alloc::alloc_core::AllocCore` directly.
+    - name: decommit_miri_cycle
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --features "alloc-core alloc-decommit internals" --test decommit_miri_cycle
+    # R7-A5's own miri target (task #606/K11 — item 17: alloc_core::sidecar
+    # had NO miri coverage at all; this file exists and passes but was never
+    # wired into any CI job). Below-threshold only (the directory sidecar's
+    # own module doc explains why the full 32-segment materialised path
+    # is impractically slow under miri) — see the test file's own header
+    # comment for the exact scope: the null-pointer guard path in
+    # `try_materialise_directory` + the A2 publish helpers, both reachable
+    # even when the directory sidecar is never actually reserved.
+    - name: segment_directory_a5_miri
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --features "alloc-segment-directory internals" --test segment_directory_a5_miri
+    # Ghost-checks G1 (docs/GHOST_CHECKS_PLAN.md): ghost macros + shadow table, cfg(miri) is a ghost build.
+    - name: ghost_infra
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --features "internals" --test ghost_infra
+    # Ghost-checks G2: P5 last-reference free vs a concurrent pin drop (real directory).
+    - name: route_pin_last_ref_miri
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --features "alloc-global internals" --test route_pin_last_ref_miri
+    # VER-03: explicit GREEN targets, matching scripts/miri-matrix.mjs.
+    # Inherit strict provenance and Stacked Borrows from this job.
+    - name: r11_ph4a_lease_miri
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --locked --features "alloc-global alloc-xthread internals" --test r11_ph4a_lease_miri
+    - name: r11_ph4b_lease_miri
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --locked --features "alloc-global alloc-xthread internals" --test r11_ph4b_lease_miri
+    - name: regression_r2_05_diag_provenance_miri
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --locked --features "alloc-core internals" --test regression_r2_05_diag_provenance_miri
+    - name: regression_w3_stats_aliasing_miri
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --locked --features "std" --test regression_w3_stats_aliasing_miri
+    - name: class_leaves_publication_miri
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --locked --features "alloc-core" --test class_leaves_publication_miri
+
+# The TreeBorrows run of the pin-cache cell alone takes about half an hour; as a step of
+# `miri-core` it set the wall clock of the whole workflow. Its own job runs beside the rest.

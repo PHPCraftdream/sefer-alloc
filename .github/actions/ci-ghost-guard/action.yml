@@ -1,0 +1,62 @@
+name: CI ghost-guard
+description: Original ghost-guard job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+    - run: cargo build --locked -q -p ghost-lint
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: target/debug/ghost-lint check
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: target/debug/ghost-lint selftest
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-invariant-trailers-mutants.mjs
+    # Invariant-Check trailers (plan §5) over the commits of this PR / push.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: |
+        BASE="${{ github.event.pull_request.base.sha }}"
+        HEAD="${{ github.event.pull_request.head.sha }}"
+        [ -z "$BASE" ] && BASE="${{ github.event.before }}" && HEAD="${{ github.sha }}"
+        git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE="$HEAD^"
+        node scripts/verify-invariant-trailers.mjs "$BASE..$HEAD"
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTFLAGS="--cfg sefer_ghost" cargo test --locked --features internals --test ghost_infra
+    # Real-code mutants (plan §4.3): when the catalog or a protected file
+    # changes, every catalog mutant must be caught by BOTH the linter and its
+    # loom/miri checker. Scheduled runs exercise the same step every week.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - id: mutants
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        BASE="${{ github.event.pull_request.base.sha }}"
+        [ -z "$BASE" ] && BASE="${{ github.event.before }}"
+        git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE=HEAD^
+        if [ "${{ github.event_name }}" = schedule ] || git diff --name-only "$BASE" HEAD | grep -qE '^(docs/verification/ghost-rules\.json|src/registry/segment_route/directory/|src/registry/heap_registry/claim\.rs|src/global/tls_heap\.rs|src/registry/heap_core/state/tcache_flush\.rs|src/registry/bootstrap/(free_slot_hint|saturation)\.rs|tests/loom_registry_hints_actual\.rs|src/alloc_core/segment/remote_bitmap/(sidecar_bitmap|bitmap_scan)\.rs|tests/loom_sidecar_bitmap_actual\.rs|tests/route_pin_last_ref_miri\.rs|tests/loom_r11_ph4[ab]_[a-z_]+\.rs|tests/loom_depot_recycle_handoff\.rs|tests/loom_r8_maintenance_lease\.rs|src/registry/heap_core_xthread/route_pin_cache\.rs|tests/loom_b4_r1_pin_cache\.rs|src/global/exact_object/exact_shard\.rs|tests/loom_exact_shard_actual\.rs|src/global/fallback\.rs|tests/loom_fallback_actual\.rs|src/alloc_core/large/reservation_state\.rs|tests/loom_terminal_large\.rs|scripts/ghost_mutants\.mjs)'; then
+          echo "run=true" >> "$GITHUB_OUTPUT"
+        fi
+    - if: steps.mutants.outputs.run == 'true'
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    - if: steps.mutants.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: node scripts/ghost_mutants.mjs --out "$RUNNER_TEMP/ghost_mutants.json"
+      env:
+        GHOST_LINT: target/debug/ghost-lint
+
+# Ghost-checks zero-cost proof (plan §6): the production build of
+# examples/ghost_zero_cost_probe.rs has the same normalized .text and the same
+# callgrind Ir at the base and at the head of the change; on a PR the base is
+# the merge ref's first parent (scripts/ghost_diff.mjs resolveBase), since
+# pull_request.base.sha is not refreshed when the base branch moves.

@@ -23,7 +23,9 @@
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { basename } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { effectiveWorkflow } from './ci/effective-workflow.mjs';
 
 export const CRATE_GROUPS = {
   'aligned-vmem': 'crate_aligned_vmem',
@@ -56,6 +58,15 @@ const SEAM_SCRIPTS = new Set(['loom.mjs', 'miri.mjs', 'miri-matrix.mjs']);
 export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false) {
   const p = path.replace(/\\/g, '/');
   if (FAST_FILES.has(p)) return new Set(['fast']);
+  if (p.startsWith('.github/actions/') || p.startsWith('scripts/ci/') || p === 'scripts/verify-ci-decomposition.mjs') {
+    const expanded = effectiveWorkflow(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+    const owners = expanded.dependencies.get(p);
+    const jobs = parseJobs(expanded.text);
+    if (owners) return new Set(jobs.filter(job => owners.has(job.id))
+      .map(job => GROUPS.includes(job.group) ? job.group : 'fast'));
+    if (p.startsWith('scripts/')) return new Set(GROUPS.filter(group => group !== 'full'));
+    return new Set(['fast']);
+  }
   let m = /^crates\/([^/]+)\//.exec(p);
   if (m) {
     const g = new Set(['fast', 'seam']); // the root crate depends on every workspace crate

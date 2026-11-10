@@ -1,0 +1,134 @@
+name: CI feature-powerset
+description: Original feature-powerset job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack
+    - uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+    - name: powerset summary self-test
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: node scripts/powerset-summary.mjs --self-test
+    # Fix for the 2026-10-12 weekly red (run 38260710015): cargo-hack
+    # --no-dev-deps temporarily rewrites the manifests (drops dev-deps), so
+    # cargo wants to update Cargo.lock and `--locked` (added in 091ca50c)
+    # rejects that for all 390 combinations ("cannot update the lock file").
+    # Determinism is kept without --locked: `cargo fetch --locked` once
+    # pins+downloads exactly the committed lockfile, then every hack
+    # invocation runs `--offline` so cargo may reconcile the lock locally
+    # but can never hit the network or pull a different version.
+    - name: cargo fetch --locked (pin the lockfile once, offline hack runs follow)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo fetch --locked
+    - name: cargo hack check --feature-powerset --depth 2
+      shell: bash
+      run: |
+        set -o pipefail
+        cargo hack check --offline --feature-powerset --depth 2 --no-dev-deps --keep-going 2>&1 | tee powerset-root.log
+    - name: Summarize powerset (root)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: node scripts/powerset-summary.mjs powerset-root.log >> "$GITHUB_STEP_SUMMARY"
+    # Card 95: the root powerset stays lib-only (--no-dev-deps), so these three
+    # test targets are cfg-gated out under the feature sets that used to break
+    # them. A check that compiles is the expected (empty-crate) outcome.
+    - name: Root test targets stay cfg-gated out under their old breaking feature sets (card 95)
+      shell: bash
+      run: |
+        set -euo pipefail
+        cargo check --offline --no-default-features --test concurrent_stress
+        cargo check --offline --no-default-features --features alloc-decommit --test regression_r4_3_teardown_trim
+        cargo check --offline --no-default-features --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test r3_1_fallback_remote_free
+    # Task #856/W14-3: aligned-vmem crate feature-powerset check. 5 features
+    # (lazy-commit, alloc-lazy-commit alias, huge-pages, fault-injection,
+    # bench-internals) — mock is no longer a Cargo feature (task #962,
+    # converted to the build-time --cfg aligned_vmem_mock flag, outside
+    # cargo-hack's feature space entirely). Invocation count shrank
+    # accordingly; re-derive via --print-command-list if a specific number
+    # is needed (this repo's convention avoids hardcoded counts per task
+    # #776/F10; --dry-run, named in this comment before task #1242, no
+    # longer exists in current cargo-hack — it is forwarded to cargo, which
+    # rejects it). Added to the same weekly cadence as the root crate's
+    # powerset job for consistency.
+    #
+    # Task #1242 (acting on task #1240's measurement,
+    # docs/reviews/2026-08-20-feature-powerset-test-target-gap.md):
+    # --no-dev-deps was REPLACED by --all-targets — cargo-hack
+    # hard-rejects the pair ("--no-dev-deps may not be used together with
+    # --all-targets"), and the dropped flag protected nothing here
+    # (aligned-vmem has an empty [dependencies] section). The step now
+    # also typechecks tests/benches/examples per combination — the #1231
+    # class (gate mismatches visible only under feature combinations no
+    # hand-written row builds) — at measured-trivial cost (same invocation
+    # count; ~1.45x wall in #1240's local measurement). The ROOT step
+    # above deliberately KEEPS --no-dev-deps: the root crate is born-red
+    # under --all-targets (one ungated test file — `concurrent_stress.rs`,
+    # no `#![cfg]` at all — one WRONGLY-gated test file, and a deliberate
+    # compile-fail example tripwire) — that is a decision, not an
+    # oversight; see docs/CORRECTNESS_OPEN_ITEMS.md item 95 before
+    # "finishing" this.
+    - name: cargo hack check --feature-powerset --depth 2 (aligned-vmem)
+      if: ${{ !cancelled() }}
+      shell: bash
+      run: |
+        set -o pipefail
+        cargo hack check --offline --feature-powerset --depth 2 -p aligned-vmem --all-targets --keep-going 2>&1 | tee powerset-aligned-vmem.log
+    - name: Summarize powerset (aligned-vmem)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: node scripts/powerset-summary.mjs powerset-aligned-vmem.log >> "$GITHUB_STEP_SUMMARY"
+    - name: Allocation policy depth-3 powerset
+      if: ${{ !cancelled() }}
+      shell: bash
+      run: |
+        set -o pipefail
+        cargo hack check --offline --feature-powerset --depth 3 --no-dev-deps --keep-going --include-features fastbin,medium-classes,medium-classes-wide,exact-span-large,large-reserved-capacity,numa-aware,hardened,alloc-decommit,alloc-segment-directory,virgin-zero-skip 2>&1 | tee powerset-policy.log
+    - name: Summarize powerset (policy)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: node scripts/powerset-summary.mjs powerset-policy.log >> "$GITHUB_STEP_SUMMARY"
+    - name: MSRV each-feature check
+      if: ${{ !cancelled() }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        msrv=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["rust-version"])')
+        rustup toolchain install "$msrv" --profile minimal
+        cargo +"$msrv" hack check --offline --each-feature --no-dev-deps --keep-going 2>&1 | tee powerset-msrv.log
+    - name: Summarize powerset (MSRV)
+      if: ${{ !cancelled() }}
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: node scripts/powerset-summary.mjs powerset-msrv.log >> "$GITHUB_STEP_SUMMARY"
+    - name: experimental requires 64-bit atomics (powerpc-unknown-linux-gnu)
+      if: ${{ !cancelled() }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        rustup target add powerpc-unknown-linux-gnu
+        cfg=$(rustc --print cfg --target powerpc-unknown-linux-gnu)
+        grep -qx 'target_has_atomic="ptr"' <<<"$cfg"
+        if grep -qx 'target_has_atomic="64"' <<<"$cfg"; then
+          echo 'expected target without 64-bit atomics'; exit 1
+        fi
+        cargo check --locked --color never --target powerpc-unknown-linux-gnu --no-default-features --features std
+        if cargo check --locked --color never --target powerpc-unknown-linux-gnu --no-default-features --features experimental > powerset-experimental.log 2>&1; then
+          echo 'expected experimental compile_error'; exit 1
+        fi
+        grep -F 'requires 64-bit atomics (target_has_atomic = "64")' powerset-experimental.log
+    - uses: actions/upload-artifact@v6
+      if: ${{ failure() && !cancelled() }}
+      with:
+        name: feature-powerset-logs
+        path: powerset-*.log
+        retention-days: 30

@@ -1,0 +1,12 @@
+name: CI fmt
+description: Original fmt job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+    - run: cargo fmt --all -- --check
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

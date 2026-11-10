@@ -1,0 +1,36 @@
+name: CI no_std
+description: Original no_std job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: thumbv7em-none-eabi
+    # A bare-metal target with no std, so a successful compile proves the core
+    # truly is no_std + alloc (not just "host build without the std feature").
+    - run: cargo build --no-default-features --target thumbv7em-none-eabi
+
+# Consolidated (2026-07-12, CI job-count reduction) from 9 single-test
+# matrix jobs into 3 jobs, grouped by feature string (tests sharing a
+# feature string share ONE `cargo miri test` invocation with multiple
+# `--test` flags — one compile instead of N — rather than merely sharing a
+# job with N separate invocations). Each job below still pays only one
+# checkout + nightly+miri toolchain install. Per-test rationale comments
+# from the original single-job-per-test layout are preserved next to each
+# `--test` entry.
+#
+# BUG FIX folded in here: the `region_invariants` entry below used to run
+# as the bare positional filter `cargo miri test region_invariants` — a
+# SUBSTRING filter over TEST FUNCTION NAMES, not a target selector. None of
+# `region_invariants.rs`'s actual test functions
+# (`insert_get_remove_keeps_others_valid`, `stale_handle_after_reuse_is_none`,
+# `get_mut_mutates_in_place`, `drops_each_value_exactly_once`,
+# `clear_invalidates_all_handles`) contain the substring "region_invariants",
+# so that invocation silently matched and ran ZERO tests (verified: `cargo
+# test region_invariants` reports "0 passed" across every one of the
+# workspace's ~137 test binaries) while still reporting a green `pass` —
+# this CI job has been checking nothing since it was added. Fixed by using
+# `--test region_invariants` (selects the BINARY; all 5 tests inside it run)
+# like every other entry in this matrix already did correctly.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

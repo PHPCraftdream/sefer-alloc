@@ -1,0 +1,44 @@
+name: CI test-macos
+description: Original test-macos job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    # `internals` added (R34-3/task #522) — whole-suite row.
+    - run: cargo test --features "production internals" --no-fail-fast
+    # The decommit path in isolation: MADV_DONTNEED on Darwin is advisory/lazy
+    # (no zero-fill guarantee); these tests assert correctness holds regardless.
+    # `internals` added (R34-3/task #522): both test files reach
+    # `sefer_alloc::alloc_core::AllocCore` directly.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals misuse-checks" --test decommit_soak --test r6_terminal_owner_drain --no-fail-fast # duplicate/stale sidecar records are rejected only with misuse-checks
+    # Task #856/W14-2: aligned-vmem crate macOS test coverage for the REAL
+    # Darwin backend (mmap/madvise/MADV_DONTNEED) on real macOS hardware.
+    # NOTE: historically this explicit list had to EXCLUDE `mock` — a
+    # non-additive backend-replacing feature, so `--all-features` turned it
+    # on and tested the mock recording stub instead of the real Darwin
+    # backend. Since task #962 `mock` is not a Cargo feature at all (it is
+    # the --cfg aligned_vmem_mock build flag), so `--all-features` and this
+    # list both build the REAL backend; the explicit list is kept as the
+    # documented form. The mock-cfg row below covers the mock backend.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
+    # Task #856/W14-2: aligned-vmem crate mock coverage on macOS. Tests the mock
+    # recording backend itself (NOT the real mmap/madvise/MADV_DONTNEED backend)
+    # with all optional features enabled. This is the only row that runs
+    # tests/mock.rs on macOS. Since task #962 the mock backend is enabled via
+    # the build-time --cfg aligned_vmem_mock flag (RUSTFLAGS), not --all-features.
+    # Task #1101: tee + grep postcondition (task #1086 shape) — both mock
+    # test FILES compile to zero tests on a typo'd cfg with exit 0, so the
+    # greps require one named test per file.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: |
+        cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/vmem-mock-debug.log"
+        grep -F "test records_reserve_and_decommit ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+        grep -F "test reentrancy_is_silently_dropped_with_outer_record_intact ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+      shell: bash
+      env:
+        RUSTFLAGS: "--cfg aligned_vmem_mock"

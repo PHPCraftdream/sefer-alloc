@@ -2,11 +2,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from './lib.mjs';
+import { effectiveWorkflow } from './ci/effective-workflow.mjs';
 
 const tests = readdirSync(join(REPO_ROOT, 'tests'))
   .filter((name) => /^loom_[A-Za-z0-9_]+\.rs$/.test(name))
   .map((name) => name.slice(0, -3));
-const ci = readFileSync(join(REPO_ROOT, '.github/workflows/ci.yml'), 'utf8')
+const ci = effectiveWorkflow(REPO_ROOT).text
   .split(/\r?\n/)
   .filter((line) => !/^\s*#/.test(line))
   .join('\n');

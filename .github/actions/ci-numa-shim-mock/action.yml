@@ -1,0 +1,179 @@
+name: CI numa-shim-mock
+description: Original numa-shim-mock job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    # task #1276 (N2, 2026-08-23 numa-shim publication-readiness review):
+    # the REAL Linux backend, no `mock`. The two `mock` test steps below now
+    # set the build-time cfg `numa_shim_mock` via RUSTFLAGS, and `--all-features`
+    # no longer turns `mock` on at all (task #1288). Until this step no per-PR
+    # CI job ran `cargo test -p numa-shim` on Linux without it:
+    # tests/smoke.rs's `sched_getcpu` + sysfs cpumap reader + real
+    # mbind(2) syscall coverage never ran on the one OS where those are
+    # real, and `pub mod linux` + tests/node_resolution_linux.rs (gated
+    # `all(target_os = "linux", not(miri), not(numa_shim_mock))`) were
+    # compiled by no CI job on ANY platform -- leaving
+    # NodeResolution::FellBackToZero with zero automated coverage. Job id
+    # intentionally kept as `numa-shim-mock` despite no longer being
+    # mock-only: the id is cited by name in CHANGELOG.md,
+    # docs/correctness-open-items/*, and several review docs.
+    - run: cargo test -p numa-shim
+    # task #1288: `mock` is no longer a Cargo feature — the mock backend is
+    # compiled in only by the build-time cfg `numa_shim_mock` (RUSTFLAGS).
+    # tests/mock_dispatch.rs and tests/node_resolution.rs are both
+    # `#![cfg(numa_shim_mock)]`-gated at the top level, so a typo'd cfg
+    # compiles them to ZERO tests with exit 0 (green-and-dead) — the greps
+    # require one named test per FILE (task #1101 sentinel pattern; the
+    # vacuous-green hazard this guards against is task #1070 "Breakage B").
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: |
+        RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim 2>&1 | tee "$RUNNER_TEMP/numa-shim-mock.log"
+        grep -F "test current_node_records_scripted_value ... ok" "$RUNNER_TEMP/numa-shim-mock.log"
+        grep -F "test resolution_matches_current_node_resolved_zero ... ok" "$RUNNER_TEMP/numa-shim-mock.log"
+      shell: bash
+    # The same cfg plus `vmem-integration` (still a real Cargo feature), so
+    # mock_dispatch.rs's `reserve_preferred_on_node` arms compile and run.
+    # Same self-verifying grep (the sentinel test only exists under BOTH
+    # the cfg and the feature). task #1306: sentinel renamed along with the
+    # function it names (reserve_on_node -> reserve_preferred_on_node).
+    - run: |
+        RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-mock-vmem.log"
+        grep -F "test reserve_preferred_on_node_records_args ... ok" "$RUNNER_TEMP/numa-shim-mock-vmem.log"
+      shell: bash
+    # task #1282 (E2, 2026-08-23 publication-readiness review, item 102):
+    # the REAL Linux `reserve_preferred_on_node` path —
+    # `platform::reserve_preferred_on_node_impl` in
+    # crates/numa-shim/src/lib.rs, `aligned_vmem::try_reserve_aligned` +
+    # `mbind_preferred_linux` (task #1306 rename), i.e. a real mbind(2)
+    # against a real fresh mmap — was compiled by the `--all-features`
+    # clippy row below but EXECUTED by no CI job on any platform: the
+    # three test rows above either leave `vmem-integration` off (so
+    # `reserve_preferred_on_node` does not exist) or turn `mock` on (so
+    # the real backend is bypassed), while the identical
+    # `--features vmem-integration` rows in numa-shim-windows /
+    # numa-shim-macos run the real backend only on non-Linux kernels.
+    # This row runs tests/smoke.rs's `reserve_preferred_on_node_*` tests
+    # against the real Linux mbind(2) — the crate's headline capability
+    # on its headline platform.
+    #
+    # task #1324 (P2-1 of the seventeenth independent review,
+    # docs/reviews/2026-08-24-223343-numa-shim-publication-audit-oh.md):
+    # NUMA_SHIM_REQUIRE_ORACLE=1 makes the `current_node() == None` skip
+    # arms of the four positive tests this row runs (policy_oracle_linux.rs
+    # x2, smoke.rs x2) PANIC instead of skip. The inverse of
+    # numa-real-kernel's SEFER_NUMA_TEST=1 opt-in gate: that env var says
+    # "run the expensive real-hardware test"; this one says "this host is
+    # SUPPOSED to have working detection" — current_node() is this crate's
+    # own chain (sched_getcpu -> sysfs cpumap -> ReverseIndex::lookup), so
+    # a None here means detection regressed and the row must go red, not
+    # silently skip green (an internally-skipped test still prints
+    # "... ok"). This row ONLY: the mock rows above, the Windows/macOS
+    # jobs below, and local/dev runs keep the tolerant skip.
+    #
+    # task #1338 (P2-3 of the nineteenth independent review,
+    # docs/reviews/2026-08-25-022026-numa-shim-publication-audit-oh.md):
+    # green-and-dead sentinels for this row (task #1101 sentinel pattern;
+    # task #1070 "Breakage B" is the vacuous-green hazard). This is the one
+    # CI row that executes tests/policy_oracle_linux.rs — the kernel-record
+    # oracle for the crate's headline capability — and that file compiles
+    # under FIVE simultaneous `#![cfg(...)]` conditions (target_os = "linux",
+    # not(miri), not(numa_shim_mock), feature = "vmem-integration",
+    # any(target_arch = "x86_64", target_arch = "aarch64")). If any one
+    # silently breaks (feature rename, stray cfg leak, arch-clause edit, cfg
+    # typo) the file compiles to ZERO tests and this row still exits 0 with
+    # no signal — NUMA_SHIM_REQUIRE_ORACLE=1 (task #1324) closes the
+    # silent-SKIP hole but cannot close the never-COMPILED hole: an absent
+    # test cannot read an env var. The greps make that a hard CI failure.
+    - run: |
+        cargo test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-oracle-linux.log"
+        grep -F "test reserve_preferred_on_node_installs_mpol_preferred_on_the_usable_span ... ok" "$RUNNER_TEMP/numa-shim-oracle-linux.log"
+        grep -F "test plain_unbound_reservation_is_not_reported_as_preferred_for_our_node ... ok" "$RUNNER_TEMP/numa-shim-oracle-linux.log"
+        grep -F "test readme_vmem_integration_example_compiles_and_runs ... ok" "$RUNNER_TEMP/numa-shim-oracle-linux.log"
+      shell: bash
+      env:
+        NUMA_SHIM_REQUIRE_ORACLE: "1"
+    # task #778 (round-closing review, F9): crates/numa-shim had NO clippy
+    # coverage anywhere in this file -- the four numa-shim-* jobs all ran
+    # cargo test only, so a clippy regression here (e.g. the
+    # GetCurrentProcess-unused-in-default-features bug F9 itself fixed)
+    # had zero CI signal. `--all-features` here is now real-backend-only
+    # (the mock is a build cfg, not a feature, so --all-features cannot
+    # reach it); DEFAULT features is checked on numa-shim-windows below,
+    # since Windows is this crate's own primary dev platform for its
+    # Windows-only code.
+    - run: cargo clippy -p numa-shim --all-features --all-targets -- -D warnings
+    # task #1288: `--all-features` above can no longer reach the mock (it is
+    # not a Cargo feature), so the mock arm gets this dedicated row — the
+    # exact treatment aligned-vmem's conversion (task #962) gave its own mock
+    # clippy coverage.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTFLAGS="--cfg numa_shim_mock" cargo clippy -p numa-shim --all-targets -- -D warnings
+    # task #1276 (N3, same review): numa-shim had ZERO rustdoc CI
+    # coverage while its Cargo.toml pins a docs.rs feature set
+    # (`vmem-integration`) narrower than `--all-features`. Per CLAUDE.md's
+    # doc-lint rule (task #1142, the aligned-vmem-gates pattern above)
+    # both rows are required because neither subsumes the other:
+    # `--all-features` is now exactly the docs.rs set (the crate's only
+    # remaining opt-in feature is `vmem-integration`; the mock is unreachable
+    # via features entirely), while the derived row below builds exactly
+    # what docs.rs renders.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p numa-shim --all-features --no-deps
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - name: docs.rs feature-set doc build (mirrors package.metadata.docs.rs, not --all-features)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -euo pipefail
+        FEATURES=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "numa-shim") | .metadata.docs.rs.features | join(",")')
+        echo "Derived docs.rs feature set: $FEATURES"
+        test -n "$FEATURES"
+        RUSTDOCFLAGS="-D warnings" cargo doc -p numa-shim --no-deps --features "$FEATURES"
+    # task #1326 (P2-3 of the seventeenth independent review,
+    # docs/reviews/2026-08-24-223343-numa-shim-publication-audit-oh.md;
+    # independently found as F8 of the eighteenth,
+    # docs/reviews/2026-08-24-224323-numa-shim-publication-audit-Sol-codex.md):
+    # both rows above build numa-shim with `vmem-integration` ON (one
+    # --all-features, one derived from docs.rs's pinned set, which for this
+    # crate IS that feature), so three ungated intra-doc links to the
+    # feature-gated `reserve_preferred_on_node` (crate platform matrix,
+    # `NodeId::new`, `NodeResolution::TopologyUnavailable`) passed both while
+    # DEFAULT features -- the exact configuration `cargo add numa-shim`
+    # produces for a downstream consumer -- failed rustdoc with 3
+    # unresolved-link errors. Same gate-blindness class as CLAUDE.md's
+    # doc-lint rule (task #1142) and a recurrence of the broken-link class
+    # task #1277 fixed here once with no recurrence guard; this row is that
+    # guard. Mirrors the task #778 DEFAULT-features clippy row's rationale
+    # (numa-shim-windows below): default features is what `cargo add
+    # numa-shim` produces, and no feature-on row subsumes it.
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p numa-shim --no-deps
+    # task #1356 (P3-5 of item 117's twenty-fifth independent review,
+    # docs/correctness-open-items/TRACKED_publish_readiness.md): the three
+    # rustdoc rows above never compile `pub mod mock` — it is gated behind
+    # the build-time cfg `numa_shim_mock` (not a Cargo feature since task
+    # #1288), so no combination of `--features`/`--all-features` can reach
+    # it, and its public items (`MockCall`, `set_current_node`, `drain`,
+    # `CALLS_CAP`, ...) had zero rustdoc coverage in CI — a broken
+    # intra-doc link or rustdoc lint inside the module would pass every
+    # row above. The cfg rides in RUSTDOCFLAGS, NOT RUSTFLAGS: cargo does
+    # not forward RUSTFLAGS to rustdoc invocations (verified locally with
+    # `cargo doc -v`: the rustdoc command line carries only the Cargo.toml
+    # `[lints.rust unexpected_cfgs]`-derived `--check-cfg
+    # 'cfg(numa_shim_mock)'`, never the cfg itself), so an
+    # `RUSTFLAGS=... cargo doc` row would be green-and-dead — no mock docs
+    # generated, zero warnings, exit 0. Inline `VAR=val` prefixes match
+    # this job's own rows above (ubuntu bash; the `env:`-block form is the
+    # Windows-shell workaround of task #1291, not needed here).
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="--cfg numa_shim_mock -D warnings" cargo doc -p numa-shim --no-deps
+
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

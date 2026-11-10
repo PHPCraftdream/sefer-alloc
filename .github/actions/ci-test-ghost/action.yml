@@ -1,0 +1,12 @@
+name: CI test-ghost
+description: Original test-ghost job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - name: test (production internals bench-internals batch-api, --cfg sefer_ghost)
+      env:
+        RUSTFLAGS: "--cfg sefer_ghost"
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo test --no-fail-fast --features "production internals bench-internals batch-api"
