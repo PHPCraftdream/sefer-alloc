@@ -1,6 +1,21 @@
 # J13 limited Always/Off study — preregistration
 
-**Registered:** 2026-11-10. **Status:** design only; no execution authorization. This docs-only repair performs no measurements.
+**Registered:** 2026-11-10. **Status:** owner-authorized manual CI study; not yet measured. The dated amendment below supersedes the original operational prerequisites only.
+
+## Dated premeasurement owner amendment — 2026-11-11
+
+The owner approved measurement-first delivery on the green `25fcdfe08f44ae5e287e4abd2768cd8931b1dbf0` baseline (CI42919482576), with these narrow compatibility and smoke amendments approved before data. The owner answer and subsequent approval are recorded in the session; neither is measurement evidence.
+
+- No new harness/controller/runner/benchmark implementation. Remove only the reducer's obsolete swap/pressure admission predicate: 470 helper + 48 judge + 21 parser + 101 runner + 259 reducer = **899/900**. Preserve all other host, identity, mechanism and statistic checks. The historical 900/900 tally below precedes this deletion.
+- The former 1024-allocation/1024-free64-byte Small-Ir prerequisite is superseded: Small-path cost verification moves to #107 using existing IAI/zero-cost CI gates on the changed default binary. No new Small benchmark or unperformed zero-delta result is claimed. Correctness item264 remains OPEN.
+- Actual-host preflight requires Linux x86_64, base pages4096 bytes, THP2097152 bytes, top-level THP `madvise`, and MemAvailable >=8 GiB. Missing facts fail admission. No host tuning. Record raw facts, not an earlier build-host admission. Host MemAvailable is the declared memory check, not a guarantee of cgroup headroom.
+- Replace no-active-swap/pressure admission with registered per-cell A/A readability. An A/A interval containing 1 does not prove absence of host/quota bias. No swap/PSI/cgroup observer or continuous/shared controller is required.
+- Keep one child at a time, <=2 actors, <=2 GiB live payload, existing<=120s direct-child timeout and a 30-minute CI measurement-step timeout including preflight/runner/report overhead. Build/component checks are outside it. Separate runner invocations are accepted. The prior 256 MiB hard cumulative-evidence bound is superseded, not enforced by child buffers; record artifact sizes and apply repository raw-storage policy.
+- Smoke is cycle8 MiB and cache16 MiB, one ABBA plus one A/A block each (16 children), numbers discarded in advance. Strict reducer sample-count refusal is expected; no fabricated smoke CSV/CI. Full-shape synthetic fixtures cover rendering; registered data exercise actual measured generation.
+- Before registered dispatch assess full 960-child feasibility within **20 minutes** from smoke timings, naming assumptions and unmeasured large-cell uncertainty. If it does not fit, stop and ask before dispatch. An unsupported estimate is not a pass. Hard step timeout remains30 minutes.
+- If interrupted before all cells finish, the owner permits **one full repeat**. Retain both attempts and partial raw separately; never splice cells, selectively replace observations or run a third campaign. A campaign completing all measurement cells is final even if later report/upload fails: recover existing evidence, do not repeat payload.
+- Cells, counts, touch kernels, configuration/mechanism evidence, estimator and raw-first reporting remain unchanged. Accepted memory cost up to2 MiB per touched2 MiB region is reported, not a veto; materially new regressions go to the owner. No new numeric product gate.
+- Manual `workflow_dispatch` only; no automatic PR/push/schedule campaign. PR229 delivers actual raw/generated CSV/Markdown first, then the owner decides the default before #107. Auto/budget later; full builder/scalar paused. No local native execution, checkpoint publication or unknown-lock removal is authorized.
 
 ## Purpose and approved sequence
 
@@ -47,11 +62,11 @@ Historical J13 references (cite original J13 preregistration §§4 and 6 and J13
 - **Edge/control references:** edge median cold time ≤2 ms is historical context, not a new gate. A/A readability and the historical 1 MiB fault difference ≤5% are descriptive only.
 - For applicable cells ≥16 MiB, an interval wholly above 1.10 is an **investigation trigger**, not a kill/veto; edge retains its absolute-time reference. Investigate materially new regressions and obtain owner disposition before any default decision.
 
-The 64-byte Small-path Ir comparison is 1,024 allocs and 1,024 frees per child. Verify actual Small classification; identical compiler/features; target zero delta. Review any nonzero result individually; invent no tolerance. This is current Always-vs-Off default-path cost, not the whole historical header cost.
+The original 64-byte Small-Ir prerequisite is superseded by the dated amendment: #107 owns changed-binary Small-path cost verification through existing gates. No standalone 1024-allocation result is claimed by this Large study.
 
 ## Operational bounds and later registrations
 
-Study safety bounds, not product caps: one child at a time; at most two actor workers; ≤2 GiB live payload; ≥8 GiB available host memory before first child; no active swap/pressure; 120 seconds per child, 30 minutes total, 256 MiB raw. A bound hit aborts the affected study/cell as INCONCLUSIVE, not product failure. Do not tune THP/sysfs. Report actual observed scopes separately; unavailable exact physical, bucket, or exhaustive-ledger metrics do not block this limited comparison.
+Current operational enforcement is the dated amendment above: one child at a time, at most two actors, ≤2 GiB payload, actual-host preflight with ≥8 GiB MemAvailable, ≤120s direct-child timeout and 30-minute measurement-step timeout. The20-minute feasibility check is a pre-dispatch owner gate. Swap/pressure admission and the cumulative256 MiB hard bound are superseded. A failed enforced bound makes the affected attempt INCONCLUSIVE, not product failure; preserve both attempts if the one full repeat is used. Do not tune THP/sysfs. Report actual observed scopes separately; unavailable exact physical, bucket, or exhaustive-ledger metrics do not block this limited comparison.
 
 The following Auto and budget paragraphs preserve later obligations; they are **not** prerequisites for the limited first study. Their own campaign needs separate registration. Retain six request groups `[0,1)`, `[1,8)`, `[8,32)`, `[32,128)`, `[128,512)`, `[512,∞)` MiB. Auto uses globally eligible, aligned cohorts of exactly eight, with exactly one control in each cohort (not one control total). For each selected control, sample at most 16 windows × 2 MiB; include only clean owner-first-life evidence, excluding remote UNKNOWN and cache/realloc-invalid evidence.
 
