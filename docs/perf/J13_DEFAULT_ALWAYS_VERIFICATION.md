@@ -1,6 +1,7 @@
 # J13 default Always — implementation verification record
 
 Date: 2026-11-11
+Updated: 2026-11-12
 Status: NOT DELIVERED — candidate correctness CI and IAI verification are incomplete
 
 ## Scope and immutable identities
@@ -82,9 +83,17 @@ error[E0433]: cannot find `policy` in `alloc_core`
 error[E0432]: unresolved imports `sefer_alloc::LargeThpCurve`, `sefer_alloc::LargeThpGradient`, `sefer_alloc::LargeThpMode`
 ```
 
-Cause: the codec test's gate had been broadened to `alloc-core` plus `internals`, but its THP imports are intentionally exported only with `alloc-decommit`. The repair restores the original `internals` plus `alloc-decommit` test gate. It does not widen production visibility, remove a supported test case, or alter the Linux default predicate. The original candidate remains a failed execution; no rerun without a source fix is used to hide it.
+Cause: the codec test's gate had been broadened to `alloc-core` plus `internals`, but its THP imports are intentionally exported only with `alloc-decommit`. The repair restores the original `internals` plus `alloc-decommit` test gate. It does not widen production visibility, remove a supported test case, or alter the Linux default predicate. That Clippy execution remains a failure; the overall initial run was later cancelled by the superseding source push, not turned into a pass. No rerun without a source fix is used to hide it. The repair commit `aba7cea27b7396857092bd85311ad537506edc6b` passed actual Clippy job `130848024206` in run `43117096166`; that run subsequently exposed the separate synthetic-fixture failure below.
 
 Initial local Clippy checks targeted library feature combinations and therefore did not establish all-targets coverage. The repaired source passed all eight actual CI Clippy commands locally, including the hardened all-targets row, under the existing CPU cap. These were type/lint checks, not native test executions; exact-source CI acceptance remains required.
+
+## Synthetic legacy-runner fixture isolation
+
+Run `43117096166` on `aba7cea2` failed preparation job `130847893232` in `tests/g1_big_study_runner.mjs:71`: the synthetic legacy RESULT invocation returned `status: null`, not the expected 0. Its parent `spawnSync` has an 8000 ms deadline. The original assertion did not print `spawnSync.error`, so the precise stalled subprocess was not captured; this is not evidence of a THP runtime failure.
+
+Source inspection found an avoidable dependency: unlike the JSON path, legacy provenance invokes real `rustc --version --verbose`, and the preparation action runs these synthetic process fixtures before its Rust toolchain installation. Synthetic RESULT parsing need not initialize rustup or depend on compiler availability. The focused fixture repair supplies a temporary Linux-only `rustc` metadata stub through that one invocation's PATH, rejects wrong probe arguments, and asserts that the actual saved receipt contains the synthetic metadata string. PATH changes do not escape the fixture invocation; real build and measurement provenance are untouched.
+
+The existing 8000 ms outer deadline, 1000 ms child deadline, all four process-failure tests and legacy/JSON output assertions are retained. An explicit `assert.ifError(legacyResult.error)` now preserves a future parent-spawn error rather than reducing it to `null !== 0`. No runner implementation, study source budget, timing policy or workflow is changed. This repair requires actual Linux CI execution; it was not tested through local process execution. A session-local copy of the original failure is `.rush/stdin/j13-default-aba7cea2-preparation-failure.log`.
 
 ## Behavioral coverage and remaining gates
 
