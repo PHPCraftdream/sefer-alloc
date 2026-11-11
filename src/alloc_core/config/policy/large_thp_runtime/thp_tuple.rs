@@ -42,9 +42,18 @@ impl ThpTuple {
     /// Default minimum block: 8 MiB.
     pub const DEFAULT_MIN_BYTES: usize = 8 * 1024 * 1024;
 
-    /// `(Off, 8 MiB, 0 = unlimited, CAUTIOUS)`: today's behaviour.
+    /// Always on supported Linux; Off elsewhere. Minimum 8 MiB, unlimited
+    /// advice bytes and CAUTIOUS learning parameters for explicit Auto.
     pub const DEFAULT: Self = Self {
-        mode: LargeThpMode::Off,
+        mode: if cfg!(all(
+            target_os = "linux",
+            feature = "alloc-decommit",
+            not(feature = "numa-aware")
+        )) {
+            LargeThpMode::Always
+        } else {
+            LargeThpMode::Off
+        },
         min_bytes: Self::DEFAULT_MIN_BYTES,
         budget_bytes: 0,
         gradient: LargeThpGradient::CAUTIOUS,

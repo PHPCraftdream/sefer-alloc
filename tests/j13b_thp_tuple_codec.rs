@@ -1,5 +1,5 @@
 //! J13b C1: `ThpTuple` five-word pack/unpack codec.
-#![cfg(all(feature = "internals", feature = "alloc-decommit"))]
+#![cfg(all(feature = "internals", feature = "alloc-core"))]
 
 use sefer_alloc::alloc_core::policy::large_thp_runtime::ThpTuple;
 use sefer_alloc::{LargeThpCurve, LargeThpGradient, LargeThpMode};
@@ -25,7 +25,18 @@ fn tuple(mode: LargeThpMode, min: usize, budget: usize, g: LargeThpGradient) -> 
 #[test]
 fn default_tuple_roundtrips() {
     let d = ThpTuple::DEFAULT;
-    assert_eq!(d.mode, LargeThpMode::Off);
+    assert_eq!(
+        d.mode,
+        if cfg!(all(
+            target_os = "linux",
+            feature = "alloc-decommit",
+            not(feature = "numa-aware")
+        )) {
+            LargeThpMode::Always
+        } else {
+            LargeThpMode::Off
+        }
+    );
     assert_eq!(d.min_bytes, 8 * MIB);
     assert_eq!(d.budget_bytes, 0);
     assert_eq!(d.gradient, LargeThpGradient::CAUTIOUS);

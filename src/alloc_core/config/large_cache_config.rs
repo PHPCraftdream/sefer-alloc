@@ -231,7 +231,8 @@ pub struct LargeCacheConfig {
     /// [`resolved_huge_page_after_segments`](Self::resolved_huge_page_after_segments).
     pub(crate) huge_page_after_segments: Option<usize>,
 
-    /// Large-THP advice mode; `None` resolves to `LargeThpMode::Off`.
+    /// Large-THP advice mode; `None` uses the platform default: Always on
+    /// supported Linux, Off elsewhere.
     pub(crate) huge_page_mode: Option<LargeThpMode>,
 
     /// Smallest fresh Large block (bytes) eligible for THP advice; `None`
@@ -609,10 +610,12 @@ impl LargeCacheConfig {
         self
     }
 
-    /// Large-allocation transparent-huge-page mode: [`LargeThpMode::Off`]
-    /// (default) never hints, `Always` hints every eligible fresh Large range,
-    /// `Auto` is reserved for the learned share and **does not learn yet** (it
-    /// currently advises nothing).
+    /// Large-allocation transparent-huge-page mode: `Always` is the default on
+    /// Linux with `alloc-decommit` and without `numa-aware`; it hints every
+    /// eligible fresh Large range (requested size at least 8 MiB by default).
+    /// [`LargeThpMode::Off`] never hints. `Auto` learns a per-request-size-group
+    /// share from clean owner-free controls; it is not the default. Other
+    /// platforms, including Android, retain the Off default.
     ///
     /// **Process-wide, first config wins whole**: the first heap materialised
     /// with ANY of the four `huge_page_mode` / `huge_page_block_min_bytes` /
@@ -650,7 +653,7 @@ impl LargeCacheConfig {
     }
 
     /// Gradient parameters for `LargeThpMode::Auto` (default
-    /// [`LargeThpGradient::CAUTIOUS`]); inert while `Auto` does not learn. Same
+    /// [`LargeThpGradient::CAUTIOUS`]); used only by explicit `Auto`. Same
     /// process-wide, first-config-wins, explicit-only, Linux/Android-only and
     /// `numa-aware` no-op rules as [`huge_page_mode`](Self::huge_page_mode).
     #[must_use]

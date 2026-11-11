@@ -346,7 +346,7 @@ first touch); returning it lowers RSS. The defaults favour speed for bursts that
 | `.depot_budget_bytes` (default 1 MiB per heap) | Full magazines of freed small blocks are parked up to this budget instead of going back to segment free lists | A free burst is followed by an alloc burst of the same sizes | The budget per heap | Memory per thread matters more than this path (`0` turns it off) |
 | `.route_pin_cache_slots` (default 32, process-wide) | Per-thread cache used when a block is freed by a thread other than the one that allocated it | Producer/consumer threads free into many owners' segments | ≈ 0.29 MiB per slot per freeing thread | Many cross-thread owners per freeing thread (raise) or many idle producer threads (lower) |
 | `.huge_page_after_segments` (Linux, default 16, process-wide) | From the N-th small segment of the process on, new small segments are advised `MADV_HUGEPAGE`; `0` never advises | A heap grows large and touches its memory densely | Up to 2 MiB extra RSS per lightly used segment | Strict RSS limits (`0`), or a large heap from the start (lower it) |
-| `.huge_page_mode` / `.huge_page_block_min_bytes` / `.huge_page_budget_bytes` / `.huge_page_gradient` (Linux, default `Off`, process-wide, opt-in) | `Always` advises `MADV_HUGEPAGE` over the 2 MiB-floored prefix of each fresh Large block of at least `block_min_bytes` (default 8 MiB); `budget_bytes` bounds the advised bytes (`0` unlimited); `Auto` learns a per-request-size-group share from clean owner controls (runtime learner accepted on `6c2ba419`, CI `42512485612`). | Large blocks touched densely right after first allocation | Up to 2 MiB extra RSS per touched 2 MiB region of an advised block; the budget bounds advised bytes, not RSS | Sparse touching of big blocks or strict RSS limits: keep `Off`; J13b cost and gates remain under review ([details](#large-block-thp-advice-linux-opt-in)) |
+| `.huge_page_mode` / `.huge_page_block_min_bytes` / `.huge_page_budget_bytes` / `.huge_page_gradient` (supported Linux default `Always`, process-wide) | `Always` advises `MADV_HUGEPAGE` over the 2 MiB-floored prefix of each fresh Large block of at least `block_min_bytes` (default 8 MiB); `budget_bytes` bounds the advised bytes (`0` unlimited); `Auto` learns a per-request-size-group share from clean owner controls (runtime learner accepted on `6c2ba419`, CI `42512485612`). | Large blocks touched densely right after first allocation | Up to 2 MiB extra RSS per touched 2 MiB region of an advised block; the budget bounds advised bytes, not RSS | Sparse touching, first-touch latency or strict RSS limits: select explicit `Off`; fresh short-process evidence does not measure long-lived fragmented-memory compaction stalls ([details](#large-block-thp-advice-linux-default-explicit-overrides)) |
 
 Three facts that the table cannot show:
 
@@ -404,7 +404,7 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 | `.depot_budget_bytes(N)` | `1 MiB` | Per-heap (per-thread) byte budget for full small-class magazines parked **above** the fixed depot floor, so a free burst larger than one magazine refills from parked magazines instead of round-tripping through segment free lists. `0` turns the overflow off. Rounded down to 256 B, capped at 16,774,912 B. Needs `fastbin` + `alloc-decommit` (ignored otherwise). See [Depot overflow budget](#depot-overflow-budget-fastbin--alloc-decommit). |
 | `.route_pin_cache_slots(N)` | `32` | Slots of the per-thread cache of route descriptors used when a block is freed on a thread other than the one that allocated it (`alloc-xthread`). Rounded down to a power of two, clamped to `4..=64`. More slots keep a producer that frees into more owner segments off the shared directory lookup, and raise the worst-case memory held by an idle producer thread (≈ 0.29 MiB per slot). Process-wide, first config wins. See [Foreign-free route pin cache](#foreign-free-route-pin-cache-alloc-xthread--alloc-decommit). |
 | `.huge_page_after_segments(N)` | `16` | Linux transparent-huge-page hint for growing heaps: from the N-th small segment (4 MiB each, counted over the process) on, a newly reserved small segment is advised `MADV_HUGEPAGE`. `0` never hints. Fewer page faults while a heap grows, more resident memory for lightly used segments. Process-wide, first config wins. See [Transparent huge pages](#transparent-huge-pages-linux). |
-| `.huge_page_mode(M)` | `Off` | Large-block THP advice: `LargeThpMode::Off` never advises, `Always` advises every eligible fresh Large block, `Auto` learns a per-request-size-group share from clean owner-free controls (runtime learning accepted on exact `6c2ba419`, CI `42512485612`; measurement/cost remain unknown). Linux/Android only, process-wide as one tuple with the three knobs below, first config wins. See [Large-block THP advice](#large-block-thp-advice-linux-opt-in). |
+| `.huge_page_mode(M)` | `Always` on supported Linux; `Off` elsewhere | Large-block THP advice: `Off` never advises; `Always` advises eligible fresh Large requests (default minimum 8 MiB); explicit `Auto` learns a per-request-size-group share from clean owner-free controls. Linux default requires `alloc-decommit` and no `numa-aware`; Android keeps its Off default. Explicit advice remains Linux/Android only, process-wide as one tuple with the three knobs below, first config wins. See [Large-block THP advice](#large-block-thp-advice-linux-default-explicit-overrides). |
 | `.huge_page_block_min_bytes(N)` | `8 MiB` | A fresh Large block whose **requested** size is at least `N` is eligible. `0` makes every fresh Large block eligible; it is not "never" (use `Off`). |
 | `.huge_page_budget_bytes(N)` | `0` (unlimited) | Upper bound on the bytes **advised** for huge pages and still outstanding, process-wide. It bounds advice, not resident memory. Not the large-cache `budget_bytes`. |
 | `.huge_page_gradient(G)` | `LargeThpGradient::CAUTIOUS` | Asymmetric rise/fall rates, slow-mean anchor, floor, gain and curve for `Auto`; ignored by `Off`/`Always`. Presets and normalized custom values are described below. |
@@ -1035,9 +1035,16 @@ Headings such as "current" mean current **at the cited run**, not this dirty
 snapshot. No throughput, latency or RSS improvement is inferred for the
 new ingress or maintenance worker without a fresh controlled gate.
 
-**J13b limited-study direction (2026-11-10).** `examples/g1_big_judge.rs` is the existing touch-routine reference, not a claim the limited harness already exists. The owner-approved plan is a limited Always/Off comparison via environment configuration in that entrypoint, with initial figures delivered alongside harness/docs/focused checks in the first implementation PR. No new entrypoint, workflow, general builder, blocking docs PR, or A→B→C trilogy; Auto/budget work follows Always delivery. See [`docs/perf/J13_LIMITED_STUDY_PREREG.md`](docs/perf/J13_LIMITED_STUDY_PREREG.md). This direction does not authorize execution.
+**J13 current state (2026-11-11).** The [registered range-Always/Off study](docs/perf/j13_limited_20261111/J13_LIMITED_ALWAYS_OFF.md)
+measured 960 children across ten cells on source `573cb7c2`; PR #229 published its raw evidence and generated report. The owner accepted
+its disclosed sparse-edge/CACHE costs and approved supported-Linux default `Always` for requested sizes at least 8 MiB, with explicit
+`Off` retained. This is separate from Auto runtime correctness acceptance on `6c2ba419` (CI `42512485612`); Auto performance remains
+unmeasured and Auto is not the default. See [THP guidance](#large-block-thp-advice-linux-default-explicit-overrides) for scope and limits.
 
-**Current-state reconciliation (2026-11-10).** HEAD `bad95849` contains merged PR #226 (VM foundation), #225 (J13b runtime), #227 (landing-history repair) and #228 (closure). Auto runtime learning is accepted on exact source `6c2ba419`, CI `42512485612`; the THP default remains `Off`. There is no J13b campaign result or GO. J13 campaign 2's preregistered RSS limits failed by 2–142 KiB; owner acceptance is recorded in immutable object `7ae557aa:docs/perf/J13_OWNER_DECISION.md`. The historical misses are not an automatic veto for materially-new-problem review of current range Always. The owner-approved limited Always-vs-Off first-PR delivery direction is registered at `docs/perf/J13_LIMITED_STUDY_PREREG.md`; this neither authorizes execution nor replaces the broader plan. The remaining product question is disposition of materially new regressions; no new numeric gate is implied. Fault counts and AnonHugePages corroborate activation, not exact attribution or standalone speed. Current `SegmentHeader` is 144 bytes and Ir cost remains unknown (correctness item 264).
+Historical whole-mapping J13 campaign-2 RSS limits failed by 2–142 KiB; owner acceptance remains recorded separately in immutable
+`7ae557aa:docs/perf/J13_OWNER_DECISION.md`. Those historical misses are not an automatic veto for current range Always. Fault counts and
+AnonHugePages corroborate activation, not exact attribution or standalone speed. `SegmentHeader` remains 144 bytes; correctness item 264
+remains open, and layout is not proof of instruction-count neutrality.
 
 **sefer-alloc 0.3.x — small-class churn/cold tables re-measured 2026-07-23
 post-Round13 (class-aware dirty routing promoted to `production` in R13-9,
@@ -2001,10 +2008,16 @@ How to choose:
 Measurements (Linux, WSL2, i7-11800H, 9 interleaved processes per cell): `docs/perf/CF3_HUGE_PAGE_THRESHOLD.md`. Wall-clock medians on the
 shared machine did not separate the thresholds; the page-fault counts above are exact.
 
-### Large-block THP advice (Linux, opt-in)
+### Large-block THP advice (Linux default, explicit overrides)
 
-Separate from the small-segment hint above, a **fresh Large block** can be advised `MADV_HUGEPAGE` too. It is **off by default and the
-default is unchanged**: with none of the four knobs set nothing is published and no Large block is ever advised.
+Separate from the small-segment hint above, a **fresh Large block** is advised `MADV_HUGEPAGE` by default on Linux with
+`alloc-decommit` and without `numa-aware`, when its **requested size is at least 8 MiB**. The default mode is `Always`, the advice-byte
+budget is unlimited (`0`), and the minimum remains 8 MiB. Android and other unsupported default scopes remain `Off`.
+A knobless config publishes nothing: until an explicit tuple is published, the runtime uses this platform default.
+
+Use `.huge_page_mode(LargeThpMode::Off)` for sparse-touch or latency-sensitive workloads where advice is unsuitable. All measured
+cells were fresh, short processes: first-touch memory-compaction stalls in a long-lived process on fragmented memory were **not
+measured**. The evidence comes from **one hosted Linux x86_64 machine with THP mode `madvise`**, not a cross-platform guarantee.
 
 ```text
 static GLOBAL: SeferAlloc = SeferAlloc::with_config(
@@ -2015,7 +2028,7 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(
 );
 ```
 
-- **`huge_page_mode`:** `Off` (default) never advises. `Always` advises each eligible fresh Large block over the 2 MiB-floored
+- **`huge_page_mode`:** `Off` never advises. `Always` (the supported-Linux default) advises each eligible fresh Large block over the 2 MiB-floored
   prefix of its usable span, never beyond it and never widened. `Auto` uses a separate process-wide estimate for each of six requested-size groups.
   Its prior is optimistic one. One fresh no-THP control per complete aligned cohort of eight eligible requests feeds bounded owner-free
   residency observations; the other fresh requests use the learned share. Controls continue even at share zero, allowing recovery.
@@ -2045,7 +2058,12 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(
   none of the four knobs publishes nothing.
 - **A no-op** off Linux/Android, with `numa-aware` and without `alloc-decommit`; the allocator never claims physical huge backing,
   only accepted advice.
-- **Not measured.** No J13b workload/performance acceptance or campaign GO exists; correctness receipts do not measure cost or benefit. Historical J13's static whole-block hint is not the current main implementation; `Always` here is not that patch (`docs/perf/J13B_BOUNDED_THP_PREREG.md`). Historical campaign-2 RSS misses are not an automatic veto for materially-new-problem review of current range Always. The owner-approved limited Always-vs-Off first-PR plan is registered at `docs/perf/J13_LIMITED_STUDY_PREREG.md`; no execution is authorized. The remaining product question is disposition of materially new regressions; no new numeric gate is implied. Fault counts/AnonHugePages are activation corroboration, not exact attribution or standalone speed proof.
+- **Measured tradeoff, owner accepted.** The [registered range-Always/Off study](docs/perf/j13_limited_20261111/J13_LIMITED_ALWAYS_OFF.md)
+  found dense eligible payload ratios of 0.1273–0.1597 (Always/Off, six cells). Sparse `edge-128MiB` had a ratio of 10.0406;
+  CACHE second-life payload had a ratio of 1.0231. These costs are not erased by the dense benefit. The study reports approximately
+  2 MiB extra peak RSS in cycle cells; the advice budget is not an RSS limit. Cold, cache and whole-child scopes remain separate.
+  Auto performance and long-lived fragmented-memory behavior remain unmeasured. Historical whole-mapping J13 results are not this
+  range-based implementation. Fault counts/AnonHugePages corroborate activation, not exact physical attribution or standalone speed.
 - **Read it back** with `AllocCore::dbg_thp_tuple()`, `dbg_thp_tuple_conflicts()`, advised/charged byte counters and
   `dbg_thp_learning_telemetry()` (`bench-internals` plus `internals`). Learning rows contain e/m/share from one coherent pair, then independent
   applied/dropped counters; the whole array is not a coherent snapshot. `LargeCacheConfig::dbg_resolved_thp_tuple()` (`internals`) resolves a config without allocating.

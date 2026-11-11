@@ -8,11 +8,12 @@
 /// `numa-aware`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LargeThpMode {
-    /// Never hints a Large range (the default).
+    /// Never hints a Large range; the default outside supported Linux.
     Off,
-    /// Hints every eligible fresh Large range.
+    /// Hints every eligible fresh Large range; the default on Linux with
+    /// `alloc-decommit` and without `numa-aware` (minimum requested 8 MiB).
     Always,
-    /// Hints a learned share of each request group. Learning is NOT wired in
-    /// this stage: `Auto` currently advises nothing.
+    /// Hints a learned share of each request group from clean owner controls.
+    /// Explicit opt-in, not the default.
     Auto,
 }

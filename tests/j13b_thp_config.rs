@@ -6,6 +6,11 @@ use sefer_alloc::alloc_core::policy::large_thp_runtime::ThpTuple;
 use sefer_alloc::{LargeCacheConfig, LargeThpGradient, LargeThpMode};
 
 const MIB: usize = 1024 * 1024;
+const DEFAULT_MODE: LargeThpMode = if cfg!(all(target_os = "linux", not(feature = "numa-aware"))) {
+    LargeThpMode::Always
+} else {
+    LargeThpMode::Off
+};
 
 const CONST_CFG: LargeCacheConfig = LargeCacheConfig::new()
     .huge_page_mode(LargeThpMode::Always)
@@ -16,7 +21,7 @@ const CONST_CFG: LargeCacheConfig = LargeCacheConfig::new()
 #[test]
 fn plain_config_is_the_default_tuple() {
     let t = LargeCacheConfig::new().dbg_resolved_thp_tuple();
-    assert_eq!(t.mode, LargeThpMode::Off);
+    assert_eq!(t.mode, DEFAULT_MODE);
     assert_eq!(t.min_bytes, 8 * MIB);
     assert_eq!(t.budget_bytes, 0);
     assert_eq!(t.gradient, LargeThpGradient::CAUTIOUS);
@@ -41,7 +46,7 @@ fn min_alone_zero_is_not_off() {
         .huge_page_block_min_bytes(0)
         .dbg_resolved_thp_tuple();
     assert_eq!(t.min_bytes, 0);
-    assert_eq!(t.mode, LargeThpMode::Off);
+    assert_eq!(t.mode, DEFAULT_MODE);
     let t = LargeCacheConfig::new()
         .huge_page_block_min_bytes(3 * MIB)
         .dbg_resolved_thp_tuple();
@@ -67,7 +72,7 @@ fn gradient_alone() {
         .huge_page_gradient(LargeThpGradient::STEADY)
         .dbg_resolved_thp_tuple();
     assert_eq!(t.gradient, LargeThpGradient::STEADY);
-    assert_eq!(t.mode, LargeThpMode::Off);
+    assert_eq!(t.mode, DEFAULT_MODE);
     assert_eq!(t.min_bytes, 8 * MIB);
     assert_eq!(t.budget_bytes, 0);
 }
