@@ -30,7 +30,7 @@
     {
       "id": "ghost-zero-cost",
       "metadata": "055ddd36180a734ac05453318cea329083091a7c4c6eae4faa949ee2de8b614e",
-      "steps": "ff931dfce7d25bb22735a305fba5df89a9580b4e0e9bd4633fa67d310c7f84be"
+      "steps": "9689ffe5c14011e3df6f6bfd5692414975d4dba6b3486c2ee3cf20169a0ceb8b"
     },
     {
       "id": "fmt",
@@ -160,7 +160,7 @@
     {
       "id": "test-workspace",
       "metadata": "40acb2def9c00e7827fc537b4c072de5aeb03e833f296ff336f68eb1847f82eb",
-      "steps": "d8004c7bd764f01d601f4ad6f6be85883f78959fe8af28ef95e383c7c7d6948a"
+      "steps": "5fc803415461295b067d2315d011bae4ac5121c5a9541cf47700a246f88515a2"
     },
     {
       "id": "msrv",

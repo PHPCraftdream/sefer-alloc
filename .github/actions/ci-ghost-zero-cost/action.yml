@@ -7,7 +7,14 @@ runs:
     - uses: actions/setup-node@v5
       with:
         node-version: '22'
-    - run: sudo apt-get update -q && sudo apt-get install -y -q valgrind binutils
+    - run: |
+        . /etc/os-release
+        test "$ID" = ubuntu
+        test -n "${VERSION_CODENAME:-}"
+        printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu %s main restricted universe multiverse\n' "$VERSION_CODENAME" "$VERSION_CODENAME-updates" "$VERSION_CODENAME-backports" > "$RUNNER_TEMP/ubuntu-ci.list"
+        printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu %s-security main restricted universe multiverse\n' "$VERSION_CODENAME" >> "$RUNNER_TEMP/ubuntu-ci.list"
+        sudo apt-get -o Dir::Etc::sourcelist="$RUNNER_TEMP/ubuntu-ci.list" -o Dir::Etc::sourceparts="-" update -q
+        sudo apt-get -o Dir::Etc::sourcelist="$RUNNER_TEMP/ubuntu-ci.list" -o Dir::Etc::sourceparts="-" install -y -q valgrind binutils
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: |

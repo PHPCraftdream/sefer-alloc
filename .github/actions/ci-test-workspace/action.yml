@@ -155,7 +155,14 @@ runs:
     # longer literally true -- fixed to the past tense above.
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
-    - run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+    - run: |
+        . /etc/os-release
+        test "$ID" = ubuntu
+        test -n "${VERSION_CODENAME:-}"
+        printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu %s main restricted universe multiverse\n' "$VERSION_CODENAME" "$VERSION_CODENAME-updates" "$VERSION_CODENAME-backports" > "$RUNNER_TEMP/ubuntu-ci.list"
+        printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu %s-security main restricted universe multiverse\n' "$VERSION_CODENAME" >> "$RUNNER_TEMP/ubuntu-ci.list"
+        sudo apt-get -o Dir::Etc::sourcelist="$RUNNER_TEMP/ubuntu-ci.list" -o Dir::Etc::sourceparts="-" update
+        sudo apt-get -o Dir::Etc::sourcelist="$RUNNER_TEMP/ubuntu-ci.list" -o Dir::Etc::sourceparts="-" install -y gcc-multilib
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: cargo test -p size-classes --target i686-unknown-linux-gnu --all-features --no-fail-fast

@@ -29,7 +29,7 @@ The table below is derived from `git log --reverse --format='%H%x09%s' bad95849f
 
 ## Evidence storage snapshot
 
-- Manifest-listed evidence files: 83; stored bytes: 557174 (manifest file itself excluded).
+- Manifest-listed evidence files: 83; stored bytes: 556169 (manifest file itself excluded).
 - Original JSON documents are losslessly compressed under the per-file storage policy; compressed and uncompressed hashes are retained. Discarded smoke is separately identified and never pooled with registered data.
 - Combined first-study executable-source tally remains899/900. Native fixture/fuzz correctness repairs are not new measurement/controller implementation. Workflow remains981lines; license extraction preserved expanded commands.
 - This manifest does not close the round. Actual report publication/landing, owner default decision and later full-CI closeout remain outstanding.
