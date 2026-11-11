@@ -476,10 +476,10 @@
     },
     {
       "path": "J13_LIMITED_ALWAYS_OFF.md",
-      "bytes": 29430,
-      "sha256": "9ef2ad94c256fdddeb001dc5260ca0756608d2f989e258eb698456fb53ef5ae9",
-      "uncompressed_bytes": 29430,
-      "uncompressed_sha256": "9ef2ad94c256fdddeb001dc5260ca0756608d2f989e258eb698456fb53ef5ae9"
+      "bytes": 29568,
+      "sha256": "0ad2614b7affddd6876484ac23fcee6daff50ad8dcd31983040ff14e57c10bd1",
+      "uncompressed_bytes": 29568,
+      "uncompressed_sha256": "0ad2614b7affddd6876484ac23fcee6daff50ad8dcd31983040ff14e57c10bd1"
     },
     {
       "path": "J13_LIMITED_ALWAYS_OFF_summary.csv",
@@ -592,6 +592,6 @@
   "artifact_url": "https://github.com/PHPCraftdream/sefer-alloc/actions/runs/43014496362/artifacts/13853977544",
   "generated_metric_rows": 91,
   "children_plus_report_seconds": 173.815,
-  "files_bytes": 557036,
+  "files_bytes": 557174,
   "discarded_smoke": "discarded-smoke is excluded from960registeredchildren and allperformanceintervals; smoke-runtime-plan is pre-dispatchplanningonly"
 }

@@ -9,7 +9,7 @@
 - Evidence/report: `../j13_limited_20261111/J13_LIMITED_ALWAYS_OFF.md`, its generated summary CSV, original compressed raw and reducer outputs, and content-hash manifest. Smoke data remain separately marked discarded for performance inference.
 - Large timing/RSS/fault/AnonHugePages results are the generated report, not hand-transcribed into this manifest. Sparse edge and CACHE costs require explicit owner review alongside dense benefit. No product GO or default decision is inferred.
 - Small-Ir: no standalone measurement; #107 owns existing changed-default Small-path gates. Correctness item264 remains OPEN.
-- Native fixture failure and independent fuzz-adapter false capability are tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`. The former is verified resolved; fuzz regression replay/CI on `eef21ab2` is still awaiting acceptance at this snapshot. The old-source manual workflow is not relabelled overall SUCCESS.
+- Native fixture failure and independent fuzz-adapter false capability are tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`. Both are verified resolved: the exact captured-input fuzz replay passed in job130532120647, and CI43023190555 completed SUCCESS on `639b4ba1`, which contains test-only repair `eef21ab2`. This is not a random-fuzz campaign. The old-source manual workflow is not relabelled overall SUCCESS.
 - #107 requires the owner's decision after the report. #115 Auto/budget and full round closeout remain later; #113/#114 remain paused. Unknown contract worktree lock cleanup remains administrative and unresolved, not a performance veto.
 
 ## Derived commit inventory
@@ -29,7 +29,7 @@ The table below is derived from `git log --reverse --format='%H%x09%s' bad95849f
 
 ## Evidence storage snapshot
 
-- Manifest-listed evidence files: 83; stored bytes: 557036 (manifest file itself excluded).
+- Manifest-listed evidence files: 83; stored bytes: 557174 (manifest file itself excluded).
 - Original JSON documents are losslessly compressed under the per-file storage policy; compressed and uncompressed hashes are retained. Discarded smoke is separately identified and never pooled with registered data.
 - Combined first-study executable-source tally remains899/900. Native fixture/fuzz correctness repairs are not new measurement/controller implementation. Workflow remains981lines; license extraction preserved expanded commands.
 - This manifest does not close the round. Actual report publication/landing, owner default decision and later full-CI closeout remain outstanding.

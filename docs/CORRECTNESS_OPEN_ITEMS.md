@@ -4,12 +4,7 @@
 
 **J13b concurrent-capture fixture (2026-11-11, task #111): CLOSED** — verified on `573cb7c2`, CI43008649237 and smoke preparation43013696396/job130499378480; full closure in [RESOLVED.md](correctness-open-items/RESOLVED.md#j13b-concurrent-capture-fixture--2026-11-11).
 
-**J13 manual-dispatch fuzz target correction (2026-11-11, task #111).**
-- **Status:** FIX AWAITING CI; no production allocator defect or performance result is inferred.
-- **Current finding:** smoke workflow43013696396/job130499378696 failed in `global_alloc_ops`. The decoded input is a valid allocation of2561 bytes/alignment8 followed by Dealloc(0), but the shared driver issued a second free because the fuzz adapter unsafely enabled `DoubleFreeOk`. `AllocCore::dealloc` requires at-most-once free; debug-only misuse checks abort this violation.
-- **Correction:** remove that unsupported capability from the fuzz configuration, preserving valid allocation/reallocation/content/alignment checks. Replay the exact captured input in existing fuzz-build CI. No runtime or Large measurement-source change.
-- **Next trigger:** exact-source CI regression replay and retained gates; do not retry random fuzz to claim the cause fixed. Registered run43014496362 remains separately identified and has no substituted source or cells.
-- **Evidence:** [actual fuzz failure](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/43013696396/job/130499378696), input `//8C+wAD/zoA9/8AAIA=`; `crates/globalalloc-model/src/drive.rs` Dealloc branch; `fuzz/fuzz_targets/global_alloc_ops.rs`; `AllocCore::dealloc` safety contract. Item264 stays OPEN and unrelated.
+**J13 fuzz adapter false double-free capability (2026-11-11, task #111): CLOSED** — exact captured-input replay passed in job130532120647 and CI43023190555 completed SUCCESS on `639b4ba1`; full closure in [RESOLVED.md](correctness-open-items/RESOLVED.md#j13-fuzz-adapter-false-double-free-capability--2026-11-11).
 
 **Purpose.** A single durable, session-surviving checklist of correctness,
 flakiness, and CI-coverage-gap items that a commit message, code comment, or
