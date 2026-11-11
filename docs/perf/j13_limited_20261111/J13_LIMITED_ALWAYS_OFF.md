@@ -44,141 +44,141 @@ Estimator: minimum of exactly 2 raw launches per slot/block; exp(mean of 12 pair
 
 ### cycle-1MiB
 
-| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off â†’ Always median |
+| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off → Always median |
 |---|---|---|---|---:|---:|---:|
-| cycle-1MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.9882 (0.9745â€“1.0021) Always/Off | 1.0081 (0.9737â€“1.0437); A/A interval contains 1; readability only, not speed evidence | 387634 â†’ 386924.5 |
-| cycle-1MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0081 (0.9737â€“1.0437); A/A interval contains 1; readability only, not speed evidence | 2801396.5 â†’ 2908158 |
-| cycle-1MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0081 (0.9737â€“1.0437); A/A interval contains 1; readability only, not speed evidence | 451 â†’ 451 |
-| cycle-1MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0081 (0.9737â€“1.0437); A/A interval contains 1; readability only, not speed evidence | 3715072 â†’ 3702784 |
-| cycle-1MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0081 (0.9737â€“1.0437); A/A interval contains 1; readability only, not speed evidence | 2889728 â†’ 2861056 |
-| cycle-1MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0081 (0.9737â€“1.0437); A/A interval contains 1; readability only, not speed evidence | 0 â†’ 0 |
-| cycle-1MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0081 (0.9737â€“1.0437); A/A interval contains 1; readability only, not speed evidence | 4194304 â†’ 4194304 |
-| cycle-1MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0081 (0.9737â€“1.0437); A/A interval contains 1; readability only, not speed evidence | 4194320 â†’ 4194320 |
-| cycle-1MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0081 (0.9737â€“1.0437); A/A interval contains 1; readability only, not speed evidence | 16 â†’ 16 |
+| cycle-1MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.9882 (0.9745–1.0021) Always/Off | 1.0081 (0.9737–1.0437); A/A interval contains 1; readability only, not speed evidence | 387634 → 386924.5 |
+| cycle-1MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0081 (0.9737–1.0437); A/A interval contains 1; readability only, not speed evidence | 2801396.5 → 2908158 |
+| cycle-1MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0081 (0.9737–1.0437); A/A interval contains 1; readability only, not speed evidence | 451 → 451 |
+| cycle-1MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0081 (0.9737–1.0437); A/A interval contains 1; readability only, not speed evidence | 3715072 → 3702784 |
+| cycle-1MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0081 (0.9737–1.0437); A/A interval contains 1; readability only, not speed evidence | 2889728 → 2861056 |
+| cycle-1MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0081 (0.9737–1.0437); A/A interval contains 1; readability only, not speed evidence | 0 → 0 |
+| cycle-1MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0081 (0.9737–1.0437); A/A interval contains 1; readability only, not speed evidence | 4194304 → 4194304 |
+| cycle-1MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0081 (0.9737–1.0437); A/A interval contains 1; readability only, not speed evidence | 4194320 → 4194320 |
+| cycle-1MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0081 (0.9737–1.0437); A/A interval contains 1; readability only, not speed evidence | 16 → 16 |
 
 ### cycle-8MiB-minus-1
 
-| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off â†’ Always median |
+| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off → Always median |
 |---|---|---|---|---:|---:|---:|
-| cycle-8MiB-minus-1 | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.9940 (0.9820â€“1.0062) Always/Off | 1.0048 (0.9899â€“1.0200); A/A interval contains 1; readability only, not speed evidence | 2973892.5 â†’ 2963466 |
-| cycle-8MiB-minus-1 | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0048 (0.9899â€“1.0200); A/A interval contains 1; readability only, not speed evidence | 5395510.5 â†’ 5496272.5 |
-| cycle-8MiB-minus-1 | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0048 (0.9899â€“1.0200); A/A interval contains 1; readability only, not speed evidence | 2244 â†’ 2244 |
-| cycle-8MiB-minus-1 | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0048 (0.9899â€“1.0200); A/A interval contains 1; readability only, not speed evidence | 11042816 â†’ 11042816 |
-| cycle-8MiB-minus-1 | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0048 (0.9899â€“1.0200); A/A interval contains 1; readability only, not speed evidence | 2879488 â†’ 2885632 |
-| cycle-8MiB-minus-1 | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0048 (0.9899â€“1.0200); A/A interval contains 1; readability only, not speed evidence | 0 â†’ 0 |
-| cycle-8MiB-minus-1 | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0048 (0.9899â€“1.0200); A/A interval contains 1; readability only, not speed evidence | 4194304 â†’ 4194304 |
-| cycle-8MiB-minus-1 | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0048 (0.9899â€“1.0200); A/A interval contains 1; readability only, not speed evidence | 4194320 â†’ 4194320 |
-| cycle-8MiB-minus-1 | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0048 (0.9899â€“1.0200); A/A interval contains 1; readability only, not speed evidence | 16 â†’ 16 |
+| cycle-8MiB-minus-1 | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.9940 (0.9820–1.0062) Always/Off | 1.0048 (0.9899–1.0200); A/A interval contains 1; readability only, not speed evidence | 2973892.5 → 2963466 |
+| cycle-8MiB-minus-1 | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0048 (0.9899–1.0200); A/A interval contains 1; readability only, not speed evidence | 5395510.5 → 5496272.5 |
+| cycle-8MiB-minus-1 | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0048 (0.9899–1.0200); A/A interval contains 1; readability only, not speed evidence | 2244 → 2244 |
+| cycle-8MiB-minus-1 | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0048 (0.9899–1.0200); A/A interval contains 1; readability only, not speed evidence | 11042816 → 11042816 |
+| cycle-8MiB-minus-1 | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0048 (0.9899–1.0200); A/A interval contains 1; readability only, not speed evidence | 2879488 → 2885632 |
+| cycle-8MiB-minus-1 | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0048 (0.9899–1.0200); A/A interval contains 1; readability only, not speed evidence | 0 → 0 |
+| cycle-8MiB-minus-1 | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0048 (0.9899–1.0200); A/A interval contains 1; readability only, not speed evidence | 4194304 → 4194304 |
+| cycle-8MiB-minus-1 | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0048 (0.9899–1.0200); A/A interval contains 1; readability only, not speed evidence | 4194320 → 4194320 |
+| cycle-8MiB-minus-1 | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0048 (0.9899–1.0200); A/A interval contains 1; readability only, not speed evidence | 16 → 16 |
 
 ### cycle-8MiB
 
-| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off â†’ Always median |
+| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off → Always median |
 |---|---|---|---|---:|---:|---:|
-| cycle-8MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1336 (0.1177â€“0.1518) Always/Off | 0.9908 (0.9802â€“1.0016); A/A interval contains 1; readability only, not speed evidence | 3036332 â†’ 477341.5 |
-| cycle-8MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 0.9908 (0.9802â€“1.0016); A/A interval contains 1; readability only, not speed evidence | 5505875 â†’ 2853511 |
-| cycle-8MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 0.9908 (0.9802â€“1.0016); A/A interval contains 1; readability only, not speed evidence | 2242 â†’ 199 |
-| cycle-8MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 0.9908 (0.9802â€“1.0016); A/A interval contains 1; readability only, not speed evidence | 11046912 â†’ 13176832 |
-| cycle-8MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 0.9908 (0.9802â€“1.0016); A/A interval contains 1; readability only, not speed evidence | 2859008 â†’ 2867200 |
-| cycle-8MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 0.9908 (0.9802â€“1.0016); A/A interval contains 1; readability only, not speed evidence | 0 â†’ 10485760 |
-| cycle-8MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9908 (0.9802â€“1.0016); A/A interval contains 1; readability only, not speed evidence | 4194304 â†’ 4194304 |
-| cycle-8MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9908 (0.9802â€“1.0016); A/A interval contains 1; readability only, not speed evidence | 4194320 â†’ 4194320 |
-| cycle-8MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 0.9908 (0.9802â€“1.0016); A/A interval contains 1; readability only, not speed evidence | 16 â†’ 16 |
+| cycle-8MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1336 (0.1177–0.1518) Always/Off | 0.9908 (0.9802–1.0016); A/A interval contains 1; readability only, not speed evidence | 3036332 → 477341.5 |
+| cycle-8MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 0.9908 (0.9802–1.0016); A/A interval contains 1; readability only, not speed evidence | 5505875 → 2853511 |
+| cycle-8MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 0.9908 (0.9802–1.0016); A/A interval contains 1; readability only, not speed evidence | 2242 → 199 |
+| cycle-8MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 0.9908 (0.9802–1.0016); A/A interval contains 1; readability only, not speed evidence | 11046912 → 13176832 |
+| cycle-8MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 0.9908 (0.9802–1.0016); A/A interval contains 1; readability only, not speed evidence | 2859008 → 2867200 |
+| cycle-8MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 0.9908 (0.9802–1.0016); A/A interval contains 1; readability only, not speed evidence | 0 → 10485760 |
+| cycle-8MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9908 (0.9802–1.0016); A/A interval contains 1; readability only, not speed evidence | 4194304 → 4194304 |
+| cycle-8MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9908 (0.9802–1.0016); A/A interval contains 1; readability only, not speed evidence | 4194320 → 4194320 |
+| cycle-8MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 0.9908 (0.9802–1.0016); A/A interval contains 1; readability only, not speed evidence | 16 → 16 |
 
 ### cycle-16MiB
 
-| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off â†’ Always median |
+| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off → Always median |
 |---|---|---|---|---:|---:|---:|
-| cycle-16MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1421 (0.1393â€“0.1451) Always/Off | 0.9976 (0.9877â€“1.0077); A/A interval contains 1; readability only, not speed evidence | 6149720.5 â†’ 884646 |
-| cycle-16MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 0.9976 (0.9877â€“1.0077); A/A interval contains 1; readability only, not speed evidence | 9033921 â†’ 3503092.5 |
-| cycle-16MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 0.9976 (0.9877â€“1.0077); A/A interval contains 1; readability only, not speed evidence | 4292 â†’ 204 |
-| cycle-16MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 0.9976 (0.9877â€“1.0077); A/A interval contains 1; readability only, not speed evidence | 19437568 â†’ 21565440 |
-| cycle-16MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 0.9976 (0.9877â€“1.0077); A/A interval contains 1; readability only, not speed evidence | 2883584 â†’ 2881536 |
-| cycle-16MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 0.9976 (0.9877â€“1.0077); A/A interval contains 1; readability only, not speed evidence | 0 â†’ 18874368 |
-| cycle-16MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9976 (0.9877â€“1.0077); A/A interval contains 1; readability only, not speed evidence | 4194304 â†’ 4194304 |
-| cycle-16MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9976 (0.9877â€“1.0077); A/A interval contains 1; readability only, not speed evidence | 4194320 â†’ 4194320 |
-| cycle-16MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 0.9976 (0.9877â€“1.0077); A/A interval contains 1; readability only, not speed evidence | 16 â†’ 16 |
+| cycle-16MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1421 (0.1393–0.1451) Always/Off | 0.9976 (0.9877–1.0077); A/A interval contains 1; readability only, not speed evidence | 6149720.5 → 884646 |
+| cycle-16MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 0.9976 (0.9877–1.0077); A/A interval contains 1; readability only, not speed evidence | 9033921 → 3503092.5 |
+| cycle-16MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 0.9976 (0.9877–1.0077); A/A interval contains 1; readability only, not speed evidence | 4292 → 204 |
+| cycle-16MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 0.9976 (0.9877–1.0077); A/A interval contains 1; readability only, not speed evidence | 19437568 → 21565440 |
+| cycle-16MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 0.9976 (0.9877–1.0077); A/A interval contains 1; readability only, not speed evidence | 2883584 → 2881536 |
+| cycle-16MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 0.9976 (0.9877–1.0077); A/A interval contains 1; readability only, not speed evidence | 0 → 18874368 |
+| cycle-16MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9976 (0.9877–1.0077); A/A interval contains 1; readability only, not speed evidence | 4194304 → 4194304 |
+| cycle-16MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9976 (0.9877–1.0077); A/A interval contains 1; readability only, not speed evidence | 4194320 → 4194320 |
+| cycle-16MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 0.9976 (0.9877–1.0077); A/A interval contains 1; readability only, not speed evidence | 16 → 16 |
 
 ### cycle-128MiB
 
-| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off â†’ Always median |
+| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off → Always median |
 |---|---|---|---|---:|---:|---:|
-| cycle-128MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1307 (0.1266â€“0.1350) Always/Off | 1.0107 (0.9908â€“1.0311); A/A interval contains 1; readability only, not speed evidence | 50361941.5 â†’ 6390493.5 |
-| cycle-128MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0107 (0.9908â€“1.0311); A/A interval contains 1; readability only, not speed evidence | 55764617.5 â†’ 9417961.5 |
-| cycle-128MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0107 (0.9908â€“1.0311); A/A interval contains 1; readability only, not speed evidence | 32964 â†’ 260 |
-| cycle-128MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0107 (0.9908â€“1.0311); A/A interval contains 1; readability only, not speed evidence | 136888320 â†’ 139012096 |
-| cycle-128MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0107 (0.9908â€“1.0311); A/A interval contains 1; readability only, not speed evidence | 2875392 â†’ 2883584 |
-| cycle-128MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0107 (0.9908â€“1.0311); A/A interval contains 1; readability only, not speed evidence | 0 â†’ 136314880 |
-| cycle-128MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0107 (0.9908â€“1.0311); A/A interval contains 1; readability only, not speed evidence | 4194304 â†’ 4194304 |
-| cycle-128MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0107 (0.9908â€“1.0311); A/A interval contains 1; readability only, not speed evidence | 4194320 â†’ 4194320 |
-| cycle-128MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0107 (0.9908â€“1.0311); A/A interval contains 1; readability only, not speed evidence | 16 â†’ 16 |
+| cycle-128MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1307 (0.1266–0.1350) Always/Off | 1.0107 (0.9908–1.0311); A/A interval contains 1; readability only, not speed evidence | 50361941.5 → 6390493.5 |
+| cycle-128MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0107 (0.9908–1.0311); A/A interval contains 1; readability only, not speed evidence | 55764617.5 → 9417961.5 |
+| cycle-128MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0107 (0.9908–1.0311); A/A interval contains 1; readability only, not speed evidence | 32964 → 260 |
+| cycle-128MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0107 (0.9908–1.0311); A/A interval contains 1; readability only, not speed evidence | 136888320 → 139012096 |
+| cycle-128MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0107 (0.9908–1.0311); A/A interval contains 1; readability only, not speed evidence | 2875392 → 2883584 |
+| cycle-128MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0107 (0.9908–1.0311); A/A interval contains 1; readability only, not speed evidence | 0 → 136314880 |
+| cycle-128MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0107 (0.9908–1.0311); A/A interval contains 1; readability only, not speed evidence | 4194304 → 4194304 |
+| cycle-128MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0107 (0.9908–1.0311); A/A interval contains 1; readability only, not speed evidence | 4194320 → 4194320 |
+| cycle-128MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0107 (0.9908–1.0311); A/A interval contains 1; readability only, not speed evidence | 16 → 16 |
 
 ### cycle-1024MiB
 
-| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off â†’ Always median |
+| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off → Always median |
 |---|---|---|---|---:|---:|---:|
-| cycle-1024MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1273 (0.1253â€“0.1292) Always/Off | 1.0018 (0.9847â€“1.0193); A/A interval contains 1; readability only, not speed evidence | 403793011.5 â†’ 51069253 |
-| cycle-1024MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0018 (0.9847â€“1.0193); A/A interval contains 1; readability only, not speed evidence | 424478179 â†’ 54739998.5 |
-| cycle-1024MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0018 (0.9847â€“1.0193); A/A interval contains 1; readability only, not speed evidence | 262339.5 â†’ 707 |
-| cycle-1024MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0018 (0.9847â€“1.0193); A/A interval contains 1; readability only, not speed evidence | 1076920320 â†’ 1079072768 |
-| cycle-1024MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0018 (0.9847â€“1.0193); A/A interval contains 1; readability only, not speed evidence | 3434496 â†’ 3420160 |
-| cycle-1024MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0018 (0.9847â€“1.0193); A/A interval contains 1; readability only, not speed evidence | 0 â†’ 1075838976 |
-| cycle-1024MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0018 (0.9847â€“1.0193); A/A interval contains 1; readability only, not speed evidence | 4194304 â†’ 4194304 |
-| cycle-1024MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0018 (0.9847â€“1.0193); A/A interval contains 1; readability only, not speed evidence | 4194320 â†’ 4194320 |
-| cycle-1024MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0018 (0.9847â€“1.0193); A/A interval contains 1; readability only, not speed evidence | 16 â†’ 16 |
+| cycle-1024MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1273 (0.1253–0.1292) Always/Off | 1.0018 (0.9847–1.0193); A/A interval contains 1; readability only, not speed evidence | 403793011.5 → 51069253 |
+| cycle-1024MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0018 (0.9847–1.0193); A/A interval contains 1; readability only, not speed evidence | 424478179 → 54739998.5 |
+| cycle-1024MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0018 (0.9847–1.0193); A/A interval contains 1; readability only, not speed evidence | 262339.5 → 707 |
+| cycle-1024MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0018 (0.9847–1.0193); A/A interval contains 1; readability only, not speed evidence | 1076920320 → 1079072768 |
+| cycle-1024MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0018 (0.9847–1.0193); A/A interval contains 1; readability only, not speed evidence | 3434496 → 3420160 |
+| cycle-1024MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0018 (0.9847–1.0193); A/A interval contains 1; readability only, not speed evidence | 0 → 1075838976 |
+| cycle-1024MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0018 (0.9847–1.0193); A/A interval contains 1; readability only, not speed evidence | 4194304 → 4194304 |
+| cycle-1024MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0018 (0.9847–1.0193); A/A interval contains 1; readability only, not speed evidence | 4194320 → 4194320 |
+| cycle-1024MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0018 (0.9847–1.0193); A/A interval contains 1; readability only, not speed evidence | 16 → 16 |
 
 ### grow-1GiB
 
-| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off â†’ Always median |
+| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off → Always median |
 |---|---|---|---|---:|---:|---:|
-| grow-1GiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1597 (0.1566â€“0.1628) Always/Off | 0.9998 (0.9880â€“1.0118); A/A interval contains 1; readability only, not speed evidence | 896388132 â†’ 143366975 |
-| grow-1GiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 0.9998 (0.9880â€“1.0118); A/A interval contains 1; readability only, not speed evidence | 915574447.5 â†’ 147220769 |
-| grow-1GiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 0.9998 (0.9880â€“1.0118); A/A interval contains 1; readability only, not speed evidence | 523982 â†’ 2765 |
-| grow-1GiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 0.9998 (0.9880â€“1.0118); A/A interval contains 1; readability only, not speed evidence | 1076953088 â†’ 1081159680 |
-| grow-1GiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 0.9998 (0.9880â€“1.0118); A/A interval contains 1; readability only, not speed evidence | 3426304 â†’ 3457024 |
-| grow-1GiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 0.9998 (0.9880â€“1.0118); A/A interval contains 1; readability only, not speed evidence | 0 â†’ 1075838976 |
-| grow-1GiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9998 (0.9880â€“1.0118); A/A interval contains 1; readability only, not speed evidence | 4194304 â†’ 4194304 |
-| grow-1GiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9998 (0.9880â€“1.0118); A/A interval contains 1; readability only, not speed evidence | 4194320 â†’ 4194320 |
-| grow-1GiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 0.9998 (0.9880â€“1.0118); A/A interval contains 1; readability only, not speed evidence | 16 â†’ 16 |
+| grow-1GiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1597 (0.1566–0.1628) Always/Off | 0.9998 (0.9880–1.0118); A/A interval contains 1; readability only, not speed evidence | 896388132 → 143366975 |
+| grow-1GiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 0.9998 (0.9880–1.0118); A/A interval contains 1; readability only, not speed evidence | 915574447.5 → 147220769 |
+| grow-1GiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 0.9998 (0.9880–1.0118); A/A interval contains 1; readability only, not speed evidence | 523982 → 2765 |
+| grow-1GiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 0.9998 (0.9880–1.0118); A/A interval contains 1; readability only, not speed evidence | 1076953088 → 1081159680 |
+| grow-1GiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 0.9998 (0.9880–1.0118); A/A interval contains 1; readability only, not speed evidence | 3426304 → 3457024 |
+| grow-1GiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 0.9998 (0.9880–1.0118); A/A interval contains 1; readability only, not speed evidence | 0 → 1075838976 |
+| grow-1GiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9998 (0.9880–1.0118); A/A interval contains 1; readability only, not speed evidence | 4194304 → 4194304 |
+| grow-1GiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9998 (0.9880–1.0118); A/A interval contains 1; readability only, not speed evidence | 4194320 → 4194320 |
+| grow-1GiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 0.9998 (0.9880–1.0118); A/A interval contains 1; readability only, not speed evidence | 16 → 16 |
 
 ### many-128x16MiB
 
-| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off â†’ Always median |
+| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off → Always median |
 |---|---|---|---|---:|---:|---:|
-| many-128x16MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1462 (0.1439â€“0.1485) Always/Off | 1.0024 (0.9913â€“1.0137); A/A interval contains 1; readability only, not speed evidence | 783398866.5 â†’ 113130919.5 |
-| many-128x16MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0024 (0.9913â€“1.0137); A/A interval contains 1; readability only, not speed evidence | 816139763.5 â†’ 116950016 |
-| many-128x16MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0024 (0.9913â€“1.0137); A/A interval contains 1; readability only, not speed evidence | 524628 â†’ 1415 |
-| many-128x16MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0024 (0.9913â€“1.0137); A/A interval contains 1; readability only, not speed evidence | 2150660096 â†’ 2418669568 |
-| many-128x16MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0024 (0.9913â€“1.0137); A/A interval contains 1; readability only, not speed evidence | 2945024 â†’ 3158016 |
-| many-128x16MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0024 (0.9913â€“1.0137); A/A interval contains 1; readability only, not speed evidence | 0 â†’ 2415919104 |
-| many-128x16MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0024 (0.9913â€“1.0137); A/A interval contains 1; readability only, not speed evidence | 4194304 â†’ 4194304 |
-| many-128x16MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0024 (0.9913â€“1.0137); A/A interval contains 1; readability only, not speed evidence | 4194320 â†’ 4194320 |
-| many-128x16MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0024 (0.9913â€“1.0137); A/A interval contains 1; readability only, not speed evidence | 16 â†’ 16 |
+| many-128x16MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 0.1462 (0.1439–0.1485) Always/Off | 1.0024 (0.9913–1.0137); A/A interval contains 1; readability only, not speed evidence | 783398866.5 → 113130919.5 |
+| many-128x16MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0024 (0.9913–1.0137); A/A interval contains 1; readability only, not speed evidence | 816139763.5 → 116950016 |
+| many-128x16MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0024 (0.9913–1.0137); A/A interval contains 1; readability only, not speed evidence | 524628 → 1415 |
+| many-128x16MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0024 (0.9913–1.0137); A/A interval contains 1; readability only, not speed evidence | 2150660096 → 2418669568 |
+| many-128x16MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0024 (0.9913–1.0137); A/A interval contains 1; readability only, not speed evidence | 2945024 → 3158016 |
+| many-128x16MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0024 (0.9913–1.0137); A/A interval contains 1; readability only, not speed evidence | 0 → 2415919104 |
+| many-128x16MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0024 (0.9913–1.0137); A/A interval contains 1; readability only, not speed evidence | 4194304 → 4194304 |
+| many-128x16MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0024 (0.9913–1.0137); A/A interval contains 1; readability only, not speed evidence | 4194320 → 4194320 |
+| many-128x16MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0024 (0.9913–1.0137); A/A interval contains 1; readability only, not speed evidence | 16 → 16 |
 
 ### edge-128MiB
 
-| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off â†’ Always median |
+| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off → Always median |
 |---|---|---|---|---:|---:|---:|
-| edge-128MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 10.0406 (8.7064â€“11.5792) Always/Off | 0.9574 (0.9001â€“1.0184); A/A interval contains 1; readability only, not speed evidence | 15198.5 â†’ 176632 |
-| edge-128MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 0.9574 (0.9001â€“1.0184); A/A interval contains 1; readability only, not speed evidence | 2242137 â†’ 2504117.5 |
-| edge-128MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 0.9574 (0.9001â€“1.0184); A/A interval contains 1; readability only, not speed evidence | 197 â†’ 196 |
-| edge-128MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 0.9574 (0.9001â€“1.0184); A/A interval contains 1; readability only, not speed evidence | 2875392 â†’ 6891520 |
-| edge-128MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 0.9574 (0.9001â€“1.0184); A/A interval contains 1; readability only, not speed evidence | 2875392 â†’ 2879488 |
-| edge-128MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 0.9574 (0.9001â€“1.0184); A/A interval contains 1; readability only, not speed evidence | 0 â†’ 4194304 |
-| edge-128MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9574 (0.9001â€“1.0184); A/A interval contains 1; readability only, not speed evidence | 4194304 â†’ 4194304 |
-| edge-128MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9574 (0.9001â€“1.0184); A/A interval contains 1; readability only, not speed evidence | 4194320 â†’ 4194320 |
-| edge-128MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 0.9574 (0.9001â€“1.0184); A/A interval contains 1; readability only, not speed evidence | 16 â†’ 16 |
+| edge-128MiB | COLD | selected (runner_root.cold_ns) | allocation+touch+free | 10.0406 (8.7064–11.5792) Always/Off | 0.9574 (0.9001–1.0184); A/A interval contains 1; readability only, not speed evidence | 15198.5 → 176632 |
+| edge-128MiB | COLD | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 0.9574 (0.9001–1.0184); A/A interval contains 1; readability only, not speed evidence | 2242137 → 2504117.5 |
+| edge-128MiB | COLD | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 0.9574 (0.9001–1.0184); A/A interval contains 1; readability only, not speed evidence | 197 → 196 |
+| edge-128MiB | COLD | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 0.9574 (0.9001–1.0184); A/A interval contains 1; readability only, not speed evidence | 2875392 → 6891520 |
+| edge-128MiB | COLD | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 0.9574 (0.9001–1.0184); A/A interval contains 1; readability only, not speed evidence | 2875392 → 2879488 |
+| edge-128MiB | COLD | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 0.9574 (0.9001–1.0184); A/A interval contains 1; readability only, not speed evidence | 0 → 4194304 |
+| edge-128MiB | COLD | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9574 (0.9001–1.0184); A/A interval contains 1; readability only, not speed evidence | 4194304 → 4194304 |
+| edge-128MiB | COLD | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 0.9574 (0.9001–1.0184); A/A interval contains 1; readability only, not speed evidence | 4194320 → 4194320 |
+| edge-128MiB | COLD | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 0.9574 (0.9001–1.0184); A/A interval contains 1; readability only, not speed evidence | 16 → 16 |
 
 ### cache-16MiB
 
-| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off â†’ Always median |
+| Cell | Regime | Metric | Scope | Always/Off (95% CI) | A/A payload B/A | AB Off → Always median |
 |---|---|---|---|---:|---:|---:|
-| cache-16MiB | CACHE | selected (parsed_row.cache_ns) | allocation+touch+free | 1.0231 (1.0093â€“1.0371) Always/Off | 1.0125 (0.9929â€“1.0324); A/A interval contains 1; readability only, not speed evidence | 36961 â†’ 37917.5 |
-| cache-16MiB | CACHE | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0125 (0.9929â€“1.0324); A/A interval contains 1; readability only, not speed evidence | 9267249 â†’ 3563783 |
-| cache-16MiB | CACHE | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0125 (0.9929â€“1.0324); A/A interval contains 1; readability only, not speed evidence | 4291 â†’ 203 |
-| cache-16MiB | CACHE | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0125 (0.9929â€“1.0324); A/A interval contains 1; readability only, not speed evidence | 19429376 â†’ 21557248 |
-| cache-16MiB | CACHE | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0125 (0.9929â€“1.0324); A/A interval contains 1; readability only, not speed evidence | 2873344 â†’ 2889728 |
-| cache-16MiB | CACHE | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0125 (0.9929â€“1.0324); A/A interval contains 1; readability only, not speed evidence | 0 â†’ 18874368 |
-| cache-16MiB | CACHE | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0125 (0.9929â€“1.0324); A/A interval contains 1; readability only, not speed evidence | 4194304 â†’ 4194304 |
-| cache-16MiB | CACHE | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0125 (0.9929â€“1.0324); A/A interval contains 1; readability only, not speed evidence | 4194320 â†’ 4194320 |
-| cache-16MiB | CACHE | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0125 (0.9929â€“1.0324); A/A interval contains 1; readability only, not speed evidence | 16 â†’ 16 |
-| cache-16MiB | COLD | cold_first_life (runner_root.cold_ns) | first-life allocation+touch+free; COLD | descriptive; no ratio | COLD first-life median; descriptive, no CI | 5122188 â†’ 808230.5 |
+| cache-16MiB | CACHE | selected (parsed_row.cache_ns) | allocation+touch+free | 1.0231 (1.0093–1.0371) Always/Off | 1.0125 (0.9929–1.0324); A/A interval contains 1; readability only, not speed evidence | 36961 → 37917.5 |
+| cache-16MiB | CACHE | child (runner_launch.child_wall_ns) | full direct child | descriptive; no ratio | 1.0125 (0.9929–1.0324); A/A interval contains 1; readability only, not speed evidence | 9267249 → 3563783 |
+| cache-16MiB | CACHE | faults (parsed_row.os.faults) | process fault observation | descriptive; no ratio | 1.0125 (0.9929–1.0324); A/A interval contains 1; readability only, not speed evidence | 4291 → 203 |
+| cache-16MiB | CACHE | peak_rss (parsed_row.os.peak_rss) | approximate process peak RSS | descriptive; no ratio | 1.0125 (0.9929–1.0324); A/A interval contains 1; readability only, not speed evidence | 19429376 → 21557248 |
+| cache-16MiB | CACHE | end_rss (parsed_row.os.end_rss) | process end RSS | descriptive; no ratio | 1.0125 (0.9929–1.0324); A/A interval contains 1; readability only, not speed evidence | 2873344 → 2889728 |
+| cache-16MiB | CACHE | anon_huge_peak (parsed_row.os.anon_huge_peak) | live AnonHugePages observation | descriptive; no ratio | 1.0125 (0.9929–1.0324); A/A interval contains 1; readability only, not speed evidence | 0 → 18874368 |
+| cache-16MiB | CACHE | capture_slot (parsed_row.capture_slot_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0125 (0.9929–1.0324); A/A interval contains 1; readability only, not speed evidence | 4194304 → 4194304 |
+| cache-16MiB | CACHE | capture_total (parsed_row.capture_total_storage_bytes) | native advice capture storage | descriptive; no ratio | 1.0125 (0.9929–1.0324); A/A interval contains 1; readability only, not speed evidence | 4194320 → 4194320 |
+| cache-16MiB | CACHE | capture_tls (parsed_row.capture_tls_context_bytes_per_thread) | native advice capture storage | descriptive; no ratio | 1.0125 (0.9929–1.0324); A/A interval contains 1; readability only, not speed evidence | 16 → 16 |
+| cache-16MiB | COLD | cold_first_life (runner_root.cold_ns) | first-life allocation+touch+free; COLD | descriptive; no ratio | COLD first-life median; descriptive, no CI | 5122188 → 808230.5 |
