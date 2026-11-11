@@ -1,0 +1,38 @@
+{
+  "kind": "pre-dispatch runtime planning estimate, not performance evidence",
+  "source": "573cb7c213eb72fe070776efb3a8e44548633ba6",
+  "smoke_run": "43013696396",
+  "smoke_children": 16,
+  "smoke_numbers_discarded_for_performance": true,
+  "slowest_cold_ns_per_MiB": 391611.0,
+  "largest_nonpayload_child_ns": 4439610,
+  "smoke_outer_seconds": 0.397,
+  "smoke_outside_children_seconds": 0.299510007,
+  "planning_MiB_per_child_by_cell": {
+    "cycle-1MiB": 1,
+    "cycle-8MiB-minus-1": 8,
+    "cycle-8MiB": 8,
+    "cycle-16MiB": 16,
+    "cycle-128MiB": 128,
+    "cycle-1024MiB": 1024,
+    "grow-1GiB": 3072,
+    "many-128x16MiB": 2048,
+    "edge-128MiB": 128,
+    "cache-16MiB": 32
+  },
+  "launches_per_cell": 96,
+  "total_launches": 960,
+  "linear_payload_seconds": 243.04945104,
+  "payload_margin_factor": 4,
+  "nonpayload_and_runner_seconds": 22.23262602,
+  "planning_total_seconds": 994.43043018,
+  "owner_launch_limit_seconds": 1200,
+  "fits_planning_limit": true,
+  "assumptions": [
+    "Observed slowest 8/16MiB cold time per MiB extrapolated linearly; not a measured large-cell runtime",
+    "Grow charged as 1GiB touches plus 1GiB read and 1GiB write for copies; edge charged as full dense128MiB and cache as two dense16MiB lives",
+    "Fourfold payload-time planning allowance, not a proven upper bound or a new product gate",
+    "Large-footprint page fault, THP, memory bandwidth and host changes can violate the model; actual host preflight and hard30minute step timeout remain required",
+    "No extra probes or warmups; both smoke cells only; registered campaign remains unchanged"
+  ]
+}

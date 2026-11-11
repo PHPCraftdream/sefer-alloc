@@ -1,5 +1,7 @@
 # J13b judge — staged integration; runtime admission disabled
 
+**Current state (2026-11-10):** The J13b runtime is merged in current main (PR #226 VM foundation, #225 runtime, #227 landing-history repair, #228 closure; HEAD `bad95849`). Auto learning is accepted on exact `6c2ba419`, CI `42512485612`; full runtime-row admission is still disabled. There is no J13b campaign measurement or GO. Historical J13 campaign-2 RSS NO-GO and owner exception remain in immutable `7ae557aa:docs/perf/J13_OWNER_DECISION.md`; the old misses are not an automatic veto for materially-new-problem review of current range Always. The owner-approved limited Always-vs-Off first-PR delivery direction is registered in `J13_LIMITED_STUDY_PREREG.md`; this is not execution authorization and does not replace the larger campaign. The remaining product question is disposition of materially new regressions; no new numeric gate is implied. Fault counts/AnonHugePages corroborate activation only, not exact attribution or standalone speed. Current `SegmentHeader` is 144 bytes with unknown Ir effect (correctness item 264).
+
 Artifact routing is accepted on `be5fd14b` by CI `42517707507`; the static reference is accepted on `ac8906cb` by CI `42526023632` after personal source/log review. The owning-buffer/realloc component is accepted on `e1e98236` by CI `42534627862`, including six native fixtures, one installed case, and six cases under each strict Miri borrowing model. The per-window OS producer is accepted on `1df76807` by CI `42550096032`. The batch/grow/churn operation core is accepted on `6fe91c04` by CI `42559717731`. None is a performance measurement or complete runtime-judge acceptance.
 
 ## Design
@@ -200,14 +202,12 @@ open. No campaign, performance GO or default promotion follows.
 
 Job `j13b-judge-preparation` in `.github/workflows/ci.yml` runs all three Node files (`j13b_schema`, `j13b_artifacts`, `j13b_static_reference`), the existing 13-test Rust workload suite, the six-test owned-buffer suite and isolated one-test installed boundary, five OS ABI/witness-contract fixtures and an isolated native peak witness, and the dedicated overlaid static-reference oracle. It runs on PR/push events only when changed paths match the J13b file patterns (`scripts/j13b_*.mjs`, `examples/_shared/*`, `examples/g1_j13b_*.rs`, `tests/j13b_*`, `Cargo.toml`, `ci.yml`) and always on schedule/workflow_dispatch. No full-CI activation or campaign dispatch is added. Accepted receipts apply only to their immutable sources (`be5fd14b`, `ac8906cb`, `e1e98236`, `1df76807`, `6fe91c04`, `eeddec91`, `36a94887`), not the still-missing full runtime adapter. Operation-core steps require six fixtures and one release-optimized facade activation case; actor steps require six fixtures and one release-native owner/remote boundary case; interval steps now require eleven pure fixtures and the extended release-native single-control case. The new training step requires the real targets/FI-cap oracle with the existing fault-injection feature; a separate strict Miri step requires one model-rejection case, not native training. `miri-core` additionally requires six owner, six operation-core and six actor cases under each SB/TB model and six OS parser/model-rejection/witness-contract cases. The exact OS producer path selects OS and seam coverage, not full CI.
 
-## Remaining integration obligations
+## Current work still blocked
 
-1. SeferAlloc adapter and real `GlobalAlloc` shims.
-2. Requested/resolved tuple readback, tuple conflict delta, mechanism counters. **Allocator-side hooks now exist** (task #47: `AllocCore::dbg_thp_tuple`, `dbg_thp_tuple_conflicts`, `AllocStats::thp_tuple_conflicts`, plus ledger/advised-byte counters under `bench-internals`), CI pending; the judge still refuses every runtime arm and does not consume them yet.
-3. VM advice and residency (range advise / mincore) wiring. (Allocator-side range advice for fresh Large mappings is now wired by task #47, default Off; judge-side residency/mincore sampling is not.)
-4. Host and artifact (source/binary) identity capture.
-5. Per-window runtime rows (sparse/dense training/trained, mixed subwindows) from real events.
-6. Reviewed runtime report admission.
-7. Owner-authorized campaign execution.
+1. Runtime identity/backend and reviewed source/compiler/features builder; complete child payload serialization and arm adapters.
+2. Complete current/static/historical capability binding, runtime-row validation/admission, and campaign authorization.
+3. Product review before a default decision: investigate materially new regressions in current range Always and record owner disposition. Historical J13 campaign-2 RSS-limit NO-GO and the separate owner acceptance in `7ae557aa:docs/perf/J13_OWNER_DECISION.md` are preserved; the old misses are not an automatic veto. Do not invent new numeric product gates after measurement.
+4. The next limited Always-vs-Off delivery is registered in `J13_LIMITED_STUDY_PREREG.md`; it does not replace the broader plan. Execution is not authorized by this document or its implementation direction.
+5. Preserve correctness limitations 262–267, 272 and current-layout/Ir UNKNOWN item 264. Fault counts/AnonHugePages can corroborate activation but are not exact attribution or standalone speed evidence.
 
 No raw runtime JSONL, identity hashes, report, measurements or verdict exist.

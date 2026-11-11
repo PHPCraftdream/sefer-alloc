@@ -1,0 +1,7 @@
+{
+  "run_id": "43014496362",
+  "run_attempt": "1",
+  "smoke": false,
+  "smoke_numbers_discarded": false,
+  "policy": "2026-11-11 prereg amendment; no automatic retry; operator reviews 20-minute feasibility before registered dispatch"
+}

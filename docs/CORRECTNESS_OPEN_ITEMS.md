@@ -1,5 +1,11 @@
 # Correctness / CI-debt open items — cross-round tracking index
 
+**J13b current-state reconciliation (2026-11-10).** PR #226 VM foundation, #225 J13b runtime, #227 landing-history repair, and #228 closure are merged in HEAD `bad95849`; Auto learning is accepted on `6c2ba419`, CI `42512485612`. This docs-only round LEAVES all unrelated OPEN correctness/CI items unchanged and out of scope. Relevant THP limitations remain open below: item 263 records its actual-source Loom CI execution receipt, without claiming complete proof; item 264 records current 144-byte header layout and Ir UNKNOWN; 262, 265–267 and 272 remain limitations. No local/native execution or cost inference is claimed.
+
+**J13b concurrent-capture fixture (2026-11-11, task #111): CLOSED** — verified on `573cb7c2`, CI43008649237 and smoke preparation43013696396/job130499378480; full closure in [RESOLVED.md](correctness-open-items/RESOLVED.md#j13b-concurrent-capture-fixture--2026-11-11).
+
+**J13 fuzz adapter false double-free capability (2026-11-11, task #111): CLOSED** — exact captured-input replay passed in job130532120647 and CI43023190555 completed SUCCESS on `639b4ba1`; full closure in [RESOLVED.md](correctness-open-items/RESOLVED.md#j13-fuzz-adapter-false-double-free-capability--2026-11-11).
+
 **Purpose.** A single durable, session-surviving checklist of correctness,
 flakiness, and CI-coverage-gap items that a commit message, code comment, or
 review doc has flagged as *open / follow-up / "left for later"* — the sibling
@@ -141,7 +147,10 @@ job). Lookup rows updated; card counts in the tier files re-typed.
 
 **Round-6 closure update (2026-10-16).** Items 206–208 are now CLOSED and resolve to `docs/correctness-open-items/RESOLVED.md`; see entries 206–208 for verified PR/task evidence. No item numbers changed.
 
+**J13b #47–#49 current-state note (2026-11-10).** Historical #47/#48 pending wording in the cards remains dated history; Task49 Auto learning is accepted on exact `6c2ba419` (CI `42512485612`). Runtime learning acceptance does not close component limitations or imply campaign/performance GO. The current header is 144 bytes; item 264 Ir uncertainty remains OPEN. Tuple-publication and ledger Loom models passed exact-source CI `42444595011` on `f7925dc8` (job `128621483903`, three tuple and two ledger cases)—this is the Loom receipt, not the Auto-learning CI run. Retain item 263's limitation, not a claim of complete proof. No local execution is claimed.
+
 **J13b #47 limitations (2026-11-06).** Items 262–267 record the declared limitations of the bounded Large-block THP implementation (tuple conflicts only at heap materialisation, the PUBLISHING-window behaviour, the 128 → 136 byte header with unknown Ir, loom models written and wired but CI-execution pending, kani model open, the non-injectable cache-reuse registration failure, the uncovered cache-refusing remote-free reclaim). Cards: 262, 263, 264, 266 in `TRACKED_correctness_residuals.md`; 265, 267 in `TRACKED_verification_coverage.md`. All OPEN, none measured or executed locally.
+
 
 ---
 

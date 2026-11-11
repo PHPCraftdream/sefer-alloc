@@ -89,10 +89,12 @@
 //   node scripts/paired-ab-runner.mjs --config run.json --arms A,A  # same-vs-same control over a config arm
 //   npm run paired-ab                                          # if wired in package.json
 
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { writeFileSync, mkdirSync, existsSync, readFileSync, realpathSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { resolve } from 'node:path';
 import { REPO_ROOT, run } from './lib.mjs';
-import { parseResult } from './paired-ab-parse-result.mjs';
+import { parseResult, parseJsonResult } from './paired-ab-parse-result.mjs';
 
 const isWin = process.platform === 'win32';
 
@@ -108,7 +110,9 @@ const verifyOnly = args.includes('--verify-only');
 // --quick drops this to a fast smoke-test count for iteration.
 const PAIRS = pairsArg ? Number(pairsArg) : quick ? 4 : 20;
 
-const OUT_DIR = `${REPO_ROOT}/docs/perf/paired_ab_runs`;
+const OUT_DIR = process.env.PAIRED_AB_OUT_DIR ?? `${REPO_ROOT}/docs/perf/paired_ab_runs`;
+const binaryHashes = new Map();
+let sourceIdentity = null;
 
 // ── Config: built-in sefer arms by default, arbitrary commands via --config ──
 //
@@ -182,19 +186,33 @@ function loadConfig() {
     if (arm.args != null && !Array.isArray(arm.args)) {
       throw new Error(`--config ${path}: arm "${name}".args must be an array of strings`);
     }
+    if (arm.env != null && raw.result_format === 'json' && (!arm.env || typeof arm.env !== 'object' || Array.isArray(arm.env) || Object.values(arm.env).some((v) => typeof v !== 'string'))) {
+      throw new Error(`--config JSON arm "${name}".env must contain string values`);
+    }
+    if (raw.result_format === 'json' && (!arm.env || (arm.args ?? []).some((v) => typeof v !== 'string'))) {
+      throw new Error(`--config JSON arm "${name}" requires string args and explicit environment values`);
+    }
   }
-  const armNames = Object.keys(raw.arms);
+  const jsonArms = Object.entries(raw.arms);
+  if (raw.result_format === 'json' && (jsonArms.length < 1 || jsonArms.length > 2 || (jsonArms.length === 2 && (jsonArms[0][1].command !== jsonArms[1][1].command || JSON.stringify(jsonArms[0][1].args ?? []) !== JSON.stringify(jsonArms[1][1].args ?? []))))) {
+    throw new Error('--config JSON mode requires one arm or two arms using the same executable and arguments');
+  }
   const cfg = {
-    metric: raw.metric || 'elapsed_ns',
+    metric: raw.metric || (raw.result_format === 'json' ? 'cold_ns' : 'elapsed_ns'),
+    result_format: raw.result_format ?? 'result',
+    timeout_ms: raw.timeout_ms ?? 120_000,
     build: raw.build ?? null,
     arms: raw.arms,
     sanity: raw.sanity ?? null,
-    // Default: if exactly 2 arms are defined, compare them; else require --arms.
-    default_comparisons:
-      raw.default_comparisons ?? (armNames.length === 2 ? [[armNames[0], armNames[1]]] : null),
+    default_comparisons: raw.default_comparisons ?? (jsonArms.length === 2 ? [[jsonArms[0][0], jsonArms[1][0]]] : null),
     features_note: raw.features_note ?? '(via --config)',
     is_sefer_builtin: false,
   };
+  if (!['result', 'json'].includes(cfg.result_format)) throw new Error('--config result_format must be result or json');
+  if (cfg.result_format === 'json' && cfg.metric !== 'cold_ns') throw new Error('--config JSON metric must be cold_ns');
+  if (cfg.result_format === 'json' && (!Number.isInteger(cfg.timeout_ms) || cfg.timeout_ms < 1 || cfg.timeout_ms > 120_000)) throw new Error('--config JSON timeout_ms must be 1..120000');
+  if (cfg.result_format === 'json' && cfg.build) throw new Error('--config JSON mode requires a prebuilt executable; build steps are not allowed');
+  if (cfg.result_format === 'json' && cfg.sanity) throw new Error('--config JSON mode does not accept RESULT sanity gates');
   if (cfg.build && (typeof cfg.build.command !== 'string' || !Array.isArray(cfg.build.args ?? []))) {
     throw new Error(`--config ${path}: "build" must be {command: string, args?: string[]}`);
   }
@@ -216,10 +234,11 @@ const REQUESTED_ARMS = armsArg ? armsArg.split(',').map((s) => s.trim()) : null;
 function armSpec(arm) {
   const spec = CONFIG.arms[arm];
   if (!spec) throw new Error(`unknown arm '${arm}' — must be one of ${ALL_ARMS.join(', ')}`);
-  return { command: spec.command, args: spec.args ?? [] };
+  return { command: spec.command, args: spec.args ?? [], env: spec.env ?? {} };
 }
 
 async function buildArms(arms) {
+  if (CONFIG.result_format === 'json') return;
   const unique = [...new Set(arms)];
   if (CONFIG.is_sefer_builtin) {
     // Built-in sefer profile: build all requested `paired_ab_*` examples in ONE
@@ -251,16 +270,44 @@ async function buildArms(arms) {
   }
 }
 
-async function runOnce(arm) {
-  const { command, args: cmdArgs } = armSpec(arm);
-  const { out } = await run(command, cmdArgs, { cwd: REPO_ROOT });
-  const r = parseResult(out);
-  if (r[METRIC] == null) {
-    throw new Error(
-      `arm '${arm}' (${command}) produced no RESULT ${METRIC} line — harness bug (raw output:\n${out}\n)`,
-    );
+async function runOnce(arm, context = {}) {
+  const { command, args: cmdArgs, env } = armSpec(arm);
+  if (CONFIG.result_format !== 'json') {
+    const options = { cwd: REPO_ROOT, ...(Object.keys(env).length ? { env: { ...process.env, ...env } } : {}) };
+    const { out } = await run(command, cmdArgs, options);
+    const r = parseResult(out);
+    if (r[METRIC] == null) throw new Error(`arm '${arm}' (${command}) produced no RESULT ${METRIC} line — harness bug (raw output:\n${out}\n)`);
+    return r;
   }
-  return r;
+  let executable = null, before = null, after = null;
+  let stdout = '', stderr = '', status = null, signal = null, error = null, wallNs, timedOut = false;
+  try {
+    executable = realpathSync(resolve(REPO_ROOT, command));
+    before = createHash('sha256').update(readFileSync(executable)).digest('hex');
+    if (binaryHashes.has(executable) && binaryHashes.get(executable) !== before) throw new Error('executable changed between launches');
+    binaryHashes.set(executable, before);
+    const started = process.hrtime.bigint();
+    const child = spawnSync(executable, cmdArgs, { cwd: REPO_ROOT, env: { ...process.env, ...env }, timeout: CONFIG.timeout_ms, killSignal: 'SIGKILL', maxBuffer: 128 * 1024, encoding: 'utf8' });
+    wallNs = Number(process.hrtime.bigint() - started);
+    stdout = child.stdout ?? ''; stderr = child.stderr ?? ''; status = child.status; signal = child.signal;
+    error = child.error?.message ?? null;
+    timedOut = child.error?.code === 'ETIMEDOUT';
+    after = createHash('sha256').update(readFileSync(executable)).digest('hex');
+    if (before !== after) throw new Error('executable changed during launch');
+    if (error || status !== 0) throw new Error(`exit=${status}; signal=${signal}; timeout=${timedOut}; error=${error ?? 'none'}`);
+    const parsed = parseJsonResult(stdout, METRIC);
+    const launch = { command, args: cmdArgs, executable_path: executable, binary_sha256: before, binary_sha256_after: after,
+      raw_stdout: stdout, raw_stderr: stderr, env_overrides: env, child_exit_code: status, signal, error, timed_out: timedOut, child_wall_ns: wallNs };
+    return { ...parsed, parsed_row: parsed, block: context.block ?? null, slot: context.slot ?? context.phase ?? null, arm: String(arm), launch };
+  } catch (failure) {
+    const receipt = { source_identity: sourceIdentity, raw_log: context.rawLog ?? [], failed: {
+      arm, block: context.block ?? null, slot: context.slot ?? context.phase ?? null, command, args: cmdArgs,
+      executable_path: executable, binary_sha256: before, binary_sha256_after: after, raw_stdout: stdout, raw_stderr: stderr,
+      env_overrides: env, child_exit_code: status, signal, error, timed_out: timedOut, child_wall_ns: wallNs, failure: failure.message } };
+    const evidenceFile = `${OUT_DIR}/failed-${Date.now()}-${process.pid}.json`;
+    writeFileSync(evidenceFile, JSON.stringify(receipt, null, 2));
+    throw new Error(`JSON launch evidence saved at ${evidenceFile}: ${failure.message}`);
+  }
 }
 
 // ── Installed-allocator sanity check (task's own verification requirement) ──
@@ -411,10 +458,12 @@ async function runPairedComparison(armA, armB, pairs) {
     const blockSamples = { A: [], B: [] };
     for (const slot of order) {
       const arm = slot === 'A' ? armA : armB;
-      const sample = await runOnce(arm);
-      checkInstalledAllocator(arm, sample);
+      const sample = await runOnce(arm, { block, slot, rawLog });
+      if (CONFIG.result_format !== 'json') checkInstalledAllocator(arm, sample);
       blockSamples[slot].push(sample);
-      rawLog.push({ block, slot, arm, ...sample, wall_clock_iso: new Date().toISOString() });
+      rawLog.push(CONFIG.result_format === 'json'
+        ? { ...sample, block, slot, arm, wall_clock_iso: new Date().toISOString() }
+        : { block, slot, arm, ...sample, wall_clock_iso: new Date().toISOString() });
       process.stdout.write('.');
     }
     // Each block contributes exactly one A-sample and one B-sample per the
@@ -455,7 +504,7 @@ function printComparison(result) {
     console.log(
       `  n=${tTest.n}  mean Δ=${fmtNs(tTest.mean)}  sd=${fmtNs(tTest.sd)}  se=${fmtNs(tTest.se)}  ` +
         `t=${tTest.t.toFixed(3)}  df=${tTest.df}  crit(p<0.05)=${tTest.crit?.toFixed(3) ?? 'n/a'}  ` +
-        `${tTest.significant ? '=> REAL (rejects null)' : '=> NOT statistically distinguishable from noise (fails to reject null)'}`,
+        `${CONFIG.result_format === 'json' ? '=> DESCRIPTIVE ONLY' : tTest.significant ? '=> REAL (rejects null)' : '=> NOT statistically distinguishable from noise (fails to reject null)'}`,
     );
   } else {
     console.log('  (not enough samples for a t-test)');
@@ -469,11 +518,20 @@ async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
 
   const arms = REQUESTED_ARMS ?? ALL_ARMS;
+  if (CONFIG.result_format === 'json' && (!Number.isInteger(PAIRS) || PAIRS < 1 || PAIRS > 32)) {
+    throw new Error('JSON study pairs must be 1..32 for bounded raw receipts');
+  }
   for (const a of arms) {
     if (!ALL_ARMS.includes(a)) throw new Error(`unknown arm '${a}' — must be one of ${ALL_ARMS.join(', ')}`);
   }
 
+  const sourceIdentityBeforeLaunch = CONFIG.result_format === 'json' ? gitCommit() : null;
   await buildArms(arms);
+  if (CONFIG.result_format === 'json') sourceIdentity = {
+    commit: sourceIdentityBeforeLaunch,
+    tree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: REPO_ROOT }).toString().trim(),
+    dirty: gitDirty(),
+  };
 
   if (verifyOnly) {
     // Quick structural check only: run each requested arm once, confirm the
@@ -483,10 +541,10 @@ async function main() {
     console.log('\n[paired-ab] --verify-only: one sample per arm, checking sanity counters...');
     const sanityKey = CONFIG.sanity?.key;
     for (const arm of [...new Set(arms)]) {
-      const s = await runOnce(arm);
-      checkInstalledAllocator(arm, s);
-      const sanityStr = sanityKey ? ` ${sanityKey}=${s[sanityKey]}` : '';
-      console.log(`  ${arm}: ${METRIC}=${s[METRIC]}${sanityStr} -- OK`);
+      const sample = await runOnce(arm, { phase: 'verify' });
+      checkInstalledAllocator(arm, sample);
+      const sanityStr = sanityKey ? ` ${sanityKey}=${sample[sanityKey]}` : '';
+      console.log(`  ${arm}: ${METRIC}=${sample[METRIC]}${sanityStr} -- OK`);
     }
     console.log('\n[paired-ab] PASS -- all requested arms genuinely install their own (or no) allocator as claimed.');
     return;
@@ -521,13 +579,9 @@ async function main() {
   const outFile = `${OUT_DIR}/${timestamp}.json`;
   const provenance = {
     timestamp: new Date().toISOString(),
-    git_commit: gitCommit(),
-    git_dirty: gitDirty(),
-    rustc_version_verbose: rustcVersion(),
-    cpu_info: cpuInfo(),
-    power_plan: powerPlan(),
-    platform: process.platform,
-    cargo_features_built_with: CONFIG.features_note,
+    ...(CONFIG.result_format === 'json'
+      ? { result_format: 'json', source_identity: sourceIdentity, summary_warning: 'Descriptive statistics only; use the preregistered reducer for decisions.' }
+      : { git_commit: gitCommit(), git_dirty: gitDirty(), rustc_version_verbose: rustcVersion(), cpu_info: cpuInfo(), power_plan: powerPlan(), platform: process.platform, cargo_features_built_with: CONFIG.features_note }),
     metric: METRIC,
     protocol: 'A/B/B/A, pairs = one block of 4 launches (A B B A), block value = mean of the 2 same-arm samples',
     pairs_per_comparison: PAIRS,
@@ -546,14 +600,19 @@ async function main() {
   writeFileSync(outFile, JSON.stringify(provenance, null, 2));
   console.log(`\n[paired-ab] provenance written to ${outFile}`);
 
-  console.log(
-    '\n[paired-ab] Reading this output: `t` past `crit` (or sign test heavily lopsided, e.g. 17+/20) means a REAL,\n' +
-      '  non-noise wall-clock difference on THIS host for THIS workload — mirroring\n' +
-      '  docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md\'s verdict criteria. A same-vs-same control run\n' +
-      '  (--arms sefer,sefer) should show t well under `crit` and a roughly even sign-test split --\n' +
-      '  if it does not, that indicates a harness bug (non-reproducible workload, background load\n' +
-      '  bleeding into the timed region), not a real self-difference.',
-  );
+  if (CONFIG.result_format === 'json') console.log(`[paired-ab] ${provenance.summary_warning}`);
+  if (CONFIG.result_format === 'json') {
+    console.log('\n[paired-ab] JSON summary is descriptive only; use the preregistered reducer for decisions.');
+  } else {
+    console.log(
+      '\n[paired-ab] Reading this output: `t` past `crit` (or sign test heavily lopsided, e.g. 17+/20) means a REAL,\n' +
+        '  non-noise wall-clock difference on THIS host for THIS workload — mirroring\n' +
+        '  docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md\'s verdict criteria. A same-vs-same control run\n' +
+        '  (--arms sefer,sefer) should show t well under `crit` and a roughly even sign-test split --\n' +
+        '  if it does not, that indicates a harness bug (non-reproducible workload, background load\n' +
+        '  bleeding into the timed region), not a real self-difference.',
+    );
+  }
 }
 
 main().catch((e) => {

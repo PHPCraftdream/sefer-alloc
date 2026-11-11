@@ -2751,6 +2751,31 @@ required-features = ["production"]
 
 # G1 big-block judge (measurement only): single blocks from 1 MiB to several GiB, one allocator
 # arm per process (J11).
+[[test]]
+name = "g1_big_study_config"
+path = "tests/g1_big_study_config.rs"
+required-features = ["production", "alloc-stats", "internals", "bench-internals"]
+
+[[test]]
+name = "g1_big_study_native_off"
+path = "tests/g1_big_study_native_off.rs"
+required-features = ["production", "alloc-stats", "internals", "bench-internals"]
+
+[[test]]
+name = "g1_big_study_native_always"
+path = "tests/g1_big_study_native_always.rs"
+required-features = ["production", "alloc-stats", "internals", "bench-internals"]
+
+[[test]]
+name = "g1_big_study_native_below"
+path = "tests/g1_big_study_native_below.rs"
+required-features = ["production", "alloc-stats", "internals", "bench-internals"]
+
+[[test]]
+name = "g1_big_study_native_cache"
+path = "tests/g1_big_study_native_cache.rs"
+required-features = ["production", "alloc-stats", "internals", "bench-internals"]
+
 [[example]]
 name = "g1_big_judge"
 required-features = ["production"]

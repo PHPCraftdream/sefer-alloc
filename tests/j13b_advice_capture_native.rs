@@ -176,6 +176,12 @@ fn run_native_case(case: &str) {
     let page = aligned_vmem::page_size();
 
     if case == "concurrent" {
+        // Capture concurrency, not the documented PUBLISHING conflict race.
+        assert_eq!(allocator.dbg_current_large_cache_budget(), Some(0));
+        assert_eq!(AllocCore::dbg_thp_tuple().mode, LargeThpMode::Always);
+        assert_eq!(AllocCore::dbg_thp_tuple().min_bytes, MIB);
+        assert_eq!(AllocCore::dbg_thp_tuple().budget_bytes, 0);
+        assert_eq!(AllocCore::dbg_thp_tuple_conflicts(), 0);
         let stats = window_kernel::WindowKernel::churn(
             &allocator,
             TouchPlan {

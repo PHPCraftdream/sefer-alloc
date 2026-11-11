@@ -1,5 +1,11 @@
 # J13b preregistration — the Large-block THP hint under the program's control: mode, request-size threshold, per-size-bucket learned share, byte budget (Linux)
 
+## 2026-11-10 limited-study status clarification — before measurements
+
+Current main `bad95849` contains PRs #225–#228; Auto is implemented, default Off, and there is no J13b performance GO. The approved next delivery is the limited existing-judge/environment-config Always-vs-Off first PR with figures, docs, harness, and checks—not the full builder.
+
+Historical J13 RSS misses and the separate owner exception at `7ae557aa:docs/perf/J13_OWNER_DECISION.md` are distinct; the old misses are not an automatic veto for current range Always. No new numeric gate is approved; findings require owner review. Link: `docs/perf/J13_LIMITED_STUDY_PREREG.md`. No execution is authorized.
+
 ## 2026-11-09 native advice event-order clarification — before measurements
 
 The #78 producer is a candidate, not execution-accepted evidence. A thread may be preempted after successful munmap and publish its release result after another thread has mapped and recorded a fresh reservation at the same address. Raw callback order therefore is not exact native lifetime order. Replay may close an overlapping old lifetime early only with one uniquely matching confirmed Large-source release whose pre-call cursor marker includes that lifetime's fresh/advice records and is no later than the reused Fresh position. Untracked VM callbacks never retire Large ownership. Missing, unproven or ambiguous results reject evidence rather than repairing it. Raw positions and the number of canonical closures must remain reported.

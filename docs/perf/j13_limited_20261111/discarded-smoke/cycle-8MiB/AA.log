@@ -1,0 +1,12 @@
+
+[paired-ab] A vs A — 1 pairs, A/B/B/A protocol
+....
+
+  === A(A-slot) vs A(B-slot) (A - B, ns)  [SAME-VS-SAME CONTROL] ===
+  (not enough samples for a t-test)
+  sign test: A(A-slot)-faster=0/1  A(B-slot)-faster=1/1  ties=0
+
+[paired-ab] provenance written to /home/runner/work/_temp/j13-limited-evidence/cycle-8MiB/AA/2026-11-11T11-41-38-126Z.json
+[paired-ab] Descriptive statistics only; use the preregistered reducer for decisions.
+
+[paired-ab] JSON summary is descriptive only; use the preregistered reducer for decisions.

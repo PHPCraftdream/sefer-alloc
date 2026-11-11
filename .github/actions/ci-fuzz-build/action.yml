@@ -26,3 +26,9 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo +nightly fuzz build --target x86_64-unknown-linux-gnu
+    - name: Replay valid-free regression from manual J13 smoke CI
+      working-directory: fuzz
+      shell: bash -e {0}
+      run: |
+        printf '%s' '//8C+wAD/zoA9/8AAIA=' | base64 --decode > "$RUNNER_TEMP/global-alloc-valid-free.regression"
+        cargo +nightly fuzz run global_alloc_ops --target x86_64-unknown-linux-gnu "$RUNNER_TEMP/global-alloc-valid-free.regression" -- -runs=1

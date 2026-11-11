@@ -1,0 +1,638 @@
+evidence_class,cell,regime,metric,source,field,unit,scope,numerator,denominator,ratio,ci95_lo,ci95_hi,aa_payload_ratio,aa_payload_ci95_lo,aa_payload_ci95_hi,aa_readability_only,AB_Off_median,AB_Always_median,control_A_median,control_B_median,estimator_metadata,measurement_commit,measurement_tree,binary_sha256,resolved_features_json,rustc_version_verbose,cpu_model
+measured,cache-16MiB,CACHE,selected,parsed_row,cache_ns,ns,allocation+touch+free,Always,Off,1.0231015824191438,1.0093268272318685,1.0370643281317375,1.0124590916503222,0.9928579347933228,1.032447217616062,"A/A interval contains 1; readability only, not speed evidence",36961,37917.5,35569.5,36015,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cache-16MiB,CACHE,child,runner_launch,child_wall_ns,ns,full direct child,Always,Off,,,,1.0124590916503222,0.9928579347933228,1.032447217616062,"A/A interval contains 1; readability only, not speed evidence",9267249,3563783,9011913.5,9192391,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cache-16MiB,CACHE,faults,parsed_row.os,faults,count,process fault observation,Always,Off,,,,1.0124590916503222,0.9928579347933228,1.032447217616062,"A/A interval contains 1; readability only, not speed evidence",4291,203,4290.5,4290,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cache-16MiB,CACHE,peak_rss,parsed_row.os,peak_rss,bytes,approximate process peak RSS,Always,Off,,,,1.0124590916503222,0.9928579347933228,1.032447217616062,"A/A interval contains 1; readability only, not speed evidence",19429376,21557248,19431424,19431424,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cache-16MiB,CACHE,end_rss,parsed_row.os,end_rss,bytes,process end RSS,Always,Off,,,,1.0124590916503222,0.9928579347933228,1.032447217616062,"A/A interval contains 1; readability only, not speed evidence",2873344,2889728,2850816,2875392,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cache-16MiB,CACHE,anon_huge_peak,parsed_row.os,anon_huge_peak,bytes,live AnonHugePages observation,Always,Off,,,,1.0124590916503222,0.9928579347933228,1.032447217616062,"A/A interval contains 1; readability only, not speed evidence",0,18874368,0,0,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cache-16MiB,CACHE,capture_slot,parsed_row,capture_slot_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0124590916503222,0.9928579347933228,1.032447217616062,"A/A interval contains 1; readability only, not speed evidence",4194304,4194304,4194304,4194304,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cache-16MiB,CACHE,capture_total,parsed_row,capture_total_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0124590916503222,0.9928579347933228,1.032447217616062,"A/A interval contains 1; readability only, not speed evidence",4194320,4194320,4194320,4194320,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cache-16MiB,CACHE,capture_tls,parsed_row,capture_tls_context_bytes_per_thread,bytes,native advice capture storage,Always,Off,,,,1.0124590916503222,0.9928579347933228,1.032447217616062,"A/A interval contains 1; readability only, not speed evidence",16,16,16,16,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cache-16MiB,COLD,cold_first_life,runner_root,cold_ns,ns,first-life allocation+touch+free; COLD,Always,Off,,,,,,,"COLD first-life median; descriptive, no CI",5122188,808230.5,4933287.5,4879275,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1024MiB,COLD,selected,runner_root,cold_ns,ns,allocation+touch+free,Always,Off,0.12726607031431247,0.12533782568304427,0.12922397979206857,1.0018318353899487,0.984651537773753,1.0193118965416263,"A/A interval contains 1; readability only, not speed evidence",403793011.5,51069253,407328382.5,406255203,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1024MiB,COLD,child,runner_launch,child_wall_ns,ns,full direct child,Always,Off,,,,1.0018318353899487,0.984651537773753,1.0193118965416263,"A/A interval contains 1; readability only, not speed evidence",424478179,54739998.5,428125837.5,426364024.5,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1024MiB,COLD,faults,parsed_row.os,faults,count,process fault observation,Always,Off,,,,1.0018318353899487,0.984651537773753,1.0193118965416263,"A/A interval contains 1; readability only, not speed evidence",262339.5,707,262339,262339,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1024MiB,COLD,peak_rss,parsed_row.os,peak_rss,bytes,approximate process peak RSS,Always,Off,,,,1.0018318353899487,0.984651537773753,1.0193118965416263,"A/A interval contains 1; readability only, not speed evidence",1076920320,1079072768,1076924416,1076936704,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1024MiB,COLD,end_rss,parsed_row.os,end_rss,bytes,process end RSS,Always,Off,,,,1.0018318353899487,0.984651537773753,1.0193118965416263,"A/A interval contains 1; readability only, not speed evidence",3434496,3420160,3418112,3428352,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1024MiB,COLD,anon_huge_peak,parsed_row.os,anon_huge_peak,bytes,live AnonHugePages observation,Always,Off,,,,1.0018318353899487,0.984651537773753,1.0193118965416263,"A/A interval contains 1; readability only, not speed evidence",0,1075838976,0,0,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1024MiB,COLD,capture_slot,parsed_row,capture_slot_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0018318353899487,0.984651537773753,1.0193118965416263,"A/A interval contains 1; readability only, not speed evidence",4194304,4194304,4194304,4194304,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1024MiB,COLD,capture_total,parsed_row,capture_total_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0018318353899487,0.984651537773753,1.0193118965416263,"A/A interval contains 1; readability only, not speed evidence",4194320,4194320,4194320,4194320,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1024MiB,COLD,capture_tls,parsed_row,capture_tls_context_bytes_per_thread,bytes,native advice capture storage,Always,Off,,,,1.0018318353899487,0.984651537773753,1.0193118965416263,"A/A interval contains 1; readability only, not speed evidence",16,16,16,16,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-128MiB,COLD,selected,runner_root,cold_ns,ns,allocation+touch+free,Always,Off,0.13071317341875305,0.12659844264396908,0.1349616420894807,1.0107122557623713,0.9907504480585652,1.031076257346165,"A/A interval contains 1; readability only, not speed evidence",50361941.5,6390493.5,48539823,49781728,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-128MiB,COLD,child,runner_launch,child_wall_ns,ns,full direct child,Always,Off,,,,1.0107122557623713,0.9907504480585652,1.031076257346165,"A/A interval contains 1; readability only, not speed evidence",55764617.5,9417961.5,53562005.5,54661256,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-128MiB,COLD,faults,parsed_row.os,faults,count,process fault observation,Always,Off,,,,1.0107122557623713,0.9907504480585652,1.031076257346165,"A/A interval contains 1; readability only, not speed evidence",32964,260,32963,32963,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-128MiB,COLD,peak_rss,parsed_row.os,peak_rss,bytes,approximate process peak RSS,Always,Off,,,,1.0107122557623713,0.9907504480585652,1.031076257346165,"A/A interval contains 1; readability only, not speed evidence",136888320,139012096,136861696,136869888,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-128MiB,COLD,end_rss,parsed_row.os,end_rss,bytes,process end RSS,Always,Off,,,,1.0107122557623713,0.9907504480585652,1.031076257346165,"A/A interval contains 1; readability only, not speed evidence",2875392,2883584,2879488,2863104,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-128MiB,COLD,anon_huge_peak,parsed_row.os,anon_huge_peak,bytes,live AnonHugePages observation,Always,Off,,,,1.0107122557623713,0.9907504480585652,1.031076257346165,"A/A interval contains 1; readability only, not speed evidence",0,136314880,0,0,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-128MiB,COLD,capture_slot,parsed_row,capture_slot_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0107122557623713,0.9907504480585652,1.031076257346165,"A/A interval contains 1; readability only, not speed evidence",4194304,4194304,4194304,4194304,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-128MiB,COLD,capture_total,parsed_row,capture_total_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0107122557623713,0.9907504480585652,1.031076257346165,"A/A interval contains 1; readability only, not speed evidence",4194320,4194320,4194320,4194320,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-128MiB,COLD,capture_tls,parsed_row,capture_tls_context_bytes_per_thread,bytes,native advice capture storage,Always,Off,,,,1.0107122557623713,0.9907504480585652,1.031076257346165,"A/A interval contains 1; readability only, not speed evidence",16,16,16,16,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-16MiB,COLD,selected,runner_root,cold_ns,ns,allocation+touch+free,Always,Off,0.14214392743414386,0.1392597771829173,0.14508781009942368,0.9976141616206162,0.9876678661431738,1.0076606211280084,"A/A interval contains 1; readability only, not speed evidence",6149720.5,884646,6058988,6003153.5,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-16MiB,COLD,child,runner_launch,child_wall_ns,ns,full direct child,Always,Off,,,,0.9976141616206162,0.9876678661431738,1.0076606211280084,"A/A interval contains 1; readability only, not speed evidence",9033921,3503092.5,8959759.5,8983095,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-16MiB,COLD,faults,parsed_row.os,faults,count,process fault observation,Always,Off,,,,0.9976141616206162,0.9876678661431738,1.0076606211280084,"A/A interval contains 1; readability only, not speed evidence",4292,204,4290,4291,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-16MiB,COLD,peak_rss,parsed_row.os,peak_rss,bytes,approximate process peak RSS,Always,Off,,,,0.9976141616206162,0.9876678661431738,1.0076606211280084,"A/A interval contains 1; readability only, not speed evidence",19437568,21565440,19443712,19431424,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-16MiB,COLD,end_rss,parsed_row.os,end_rss,bytes,process end RSS,Always,Off,,,,0.9976141616206162,0.9876678661431738,1.0076606211280084,"A/A interval contains 1; readability only, not speed evidence",2883584,2881536,2867200,2875392,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-16MiB,COLD,anon_huge_peak,parsed_row.os,anon_huge_peak,bytes,live AnonHugePages observation,Always,Off,,,,0.9976141616206162,0.9876678661431738,1.0076606211280084,"A/A interval contains 1; readability only, not speed evidence",0,18874368,0,0,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-16MiB,COLD,capture_slot,parsed_row,capture_slot_storage_bytes,bytes,native advice capture storage,Always,Off,,,,0.9976141616206162,0.9876678661431738,1.0076606211280084,"A/A interval contains 1; readability only, not speed evidence",4194304,4194304,4194304,4194304,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-16MiB,COLD,capture_total,parsed_row,capture_total_storage_bytes,bytes,native advice capture storage,Always,Off,,,,0.9976141616206162,0.9876678661431738,1.0076606211280084,"A/A interval contains 1; readability only, not speed evidence",4194320,4194320,4194320,4194320,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-16MiB,COLD,capture_tls,parsed_row,capture_tls_context_bytes_per_thread,bytes,native advice capture storage,Always,Off,,,,0.9976141616206162,0.9876678661431738,1.0076606211280084,"A/A interval contains 1; readability only, not speed evidence",16,16,16,16,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1MiB,COLD,selected,runner_root,cold_ns,ns,allocation+touch+free,Always,Off,0.9881853803690956,0.9745086301137998,1.0020540771005597,1.0080899551361515,0.9737053373902287,1.0436888025798414,"A/A interval contains 1; readability only, not speed evidence",387634,386924.5,376875,382739,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1MiB,COLD,child,runner_launch,child_wall_ns,ns,full direct child,Always,Off,,,,1.0080899551361515,0.9737053373902287,1.0436888025798414,"A/A interval contains 1; readability only, not speed evidence",2801396.5,2908158,2727144.5,2704310,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1MiB,COLD,faults,parsed_row.os,faults,count,process fault observation,Always,Off,,,,1.0080899551361515,0.9737053373902287,1.0436888025798414,"A/A interval contains 1; readability only, not speed evidence",451,451,451,451,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1MiB,COLD,peak_rss,parsed_row.os,peak_rss,bytes,approximate process peak RSS,Always,Off,,,,1.0080899551361515,0.9737053373902287,1.0436888025798414,"A/A interval contains 1; readability only, not speed evidence",3715072,3702784,3719168,3702784,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1MiB,COLD,end_rss,parsed_row.os,end_rss,bytes,process end RSS,Always,Off,,,,1.0080899551361515,0.9737053373902287,1.0436888025798414,"A/A interval contains 1; readability only, not speed evidence",2889728,2861056,2879488,2879488,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1MiB,COLD,anon_huge_peak,parsed_row.os,anon_huge_peak,bytes,live AnonHugePages observation,Always,Off,,,,1.0080899551361515,0.9737053373902287,1.0436888025798414,"A/A interval contains 1; readability only, not speed evidence",0,0,0,0,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1MiB,COLD,capture_slot,parsed_row,capture_slot_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0080899551361515,0.9737053373902287,1.0436888025798414,"A/A interval contains 1; readability only, not speed evidence",4194304,4194304,4194304,4194304,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1MiB,COLD,capture_total,parsed_row,capture_total_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0080899551361515,0.9737053373902287,1.0436888025798414,"A/A interval contains 1; readability only, not speed evidence",4194320,4194320,4194320,4194320,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-1MiB,COLD,capture_tls,parsed_row,capture_tls_context_bytes_per_thread,bytes,native advice capture storage,Always,Off,,,,1.0080899551361515,0.9737053373902287,1.0436888025798414,"A/A interval contains 1; readability only, not speed evidence",16,16,16,16,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB,COLD,selected,runner_root,cold_ns,ns,allocation+touch+free,Always,Off,0.13362565790234918,0.11765804214938251,0.1517602717472157,0.9908120163082705,0.9801844542925534,1.0015548067117706,"A/A interval contains 1; readability only, not speed evidence",3036332,477341.5,2982575.5,2929705,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB,COLD,child,runner_launch,child_wall_ns,ns,full direct child,Always,Off,,,,0.9908120163082705,0.9801844542925534,1.0015548067117706,"A/A interval contains 1; readability only, not speed evidence",5505875,2853511,5495667,5552698,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB,COLD,faults,parsed_row.os,faults,count,process fault observation,Always,Off,,,,0.9908120163082705,0.9801844542925534,1.0015548067117706,"A/A interval contains 1; readability only, not speed evidence",2242,199,2243,2243,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB,COLD,peak_rss,parsed_row.os,peak_rss,bytes,approximate process peak RSS,Always,Off,,,,0.9908120163082705,0.9801844542925534,1.0015548067117706,"A/A interval contains 1; readability only, not speed evidence",11046912,13176832,11042816,11059200,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB,COLD,end_rss,parsed_row.os,end_rss,bytes,process end RSS,Always,Off,,,,0.9908120163082705,0.9801844542925534,1.0015548067117706,"A/A interval contains 1; readability only, not speed evidence",2859008,2867200,2867200,2879488,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB,COLD,anon_huge_peak,parsed_row.os,anon_huge_peak,bytes,live AnonHugePages observation,Always,Off,,,,0.9908120163082705,0.9801844542925534,1.0015548067117706,"A/A interval contains 1; readability only, not speed evidence",0,10485760,0,0,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB,COLD,capture_slot,parsed_row,capture_slot_storage_bytes,bytes,native advice capture storage,Always,Off,,,,0.9908120163082705,0.9801844542925534,1.0015548067117706,"A/A interval contains 1; readability only, not speed evidence",4194304,4194304,4194304,4194304,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB,COLD,capture_total,parsed_row,capture_total_storage_bytes,bytes,native advice capture storage,Always,Off,,,,0.9908120163082705,0.9801844542925534,1.0015548067117706,"A/A interval contains 1; readability only, not speed evidence",4194320,4194320,4194320,4194320,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB,COLD,capture_tls,parsed_row,capture_tls_context_bytes_per_thread,bytes,native advice capture storage,Always,Off,,,,0.9908120163082705,0.9801844542925534,1.0015548067117706,"A/A interval contains 1; readability only, not speed evidence",16,16,16,16,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB-minus-1,COLD,selected,runner_root,cold_ns,ns,allocation+touch+free,Always,Off,0.9940250193768138,0.9820142216948609,1.006182718455681,1.0048164009537093,0.9898760818166678,1.0199822161301209,"A/A interval contains 1; readability only, not speed evidence",2973892.5,2963466,2952766,2958929.5,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB-minus-1,COLD,child,runner_launch,child_wall_ns,ns,full direct child,Always,Off,,,,1.0048164009537093,0.9898760818166678,1.0199822161301209,"A/A interval contains 1; readability only, not speed evidence",5395510.5,5496272.5,5445315,5466898.5,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB-minus-1,COLD,faults,parsed_row.os,faults,count,process fault observation,Always,Off,,,,1.0048164009537093,0.9898760818166678,1.0199822161301209,"A/A interval contains 1; readability only, not speed evidence",2244,2244,2243,2243,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB-minus-1,COLD,peak_rss,parsed_row.os,peak_rss,bytes,approximate process peak RSS,Always,Off,,,,1.0048164009537093,0.9898760818166678,1.0199822161301209,"A/A interval contains 1; readability only, not speed evidence",11042816,11042816,11042816,11042816,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB-minus-1,COLD,end_rss,parsed_row.os,end_rss,bytes,process end RSS,Always,Off,,,,1.0048164009537093,0.9898760818166678,1.0199822161301209,"A/A interval contains 1; readability only, not speed evidence",2879488,2885632,2879488,2881536,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB-minus-1,COLD,anon_huge_peak,parsed_row.os,anon_huge_peak,bytes,live AnonHugePages observation,Always,Off,,,,1.0048164009537093,0.9898760818166678,1.0199822161301209,"A/A interval contains 1; readability only, not speed evidence",0,0,0,0,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB-minus-1,COLD,capture_slot,parsed_row,capture_slot_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0048164009537093,0.9898760818166678,1.0199822161301209,"A/A interval contains 1; readability only, not speed evidence",4194304,4194304,4194304,4194304,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB-minus-1,COLD,capture_total,parsed_row,capture_total_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0048164009537093,0.9898760818166678,1.0199822161301209,"A/A interval contains 1; readability only, not speed evidence",4194320,4194320,4194320,4194320,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,cycle-8MiB-minus-1,COLD,capture_tls,parsed_row,capture_tls_context_bytes_per_thread,bytes,native advice capture storage,Always,Off,,,,1.0048164009537093,0.9898760818166678,1.0199822161301209,"A/A interval contains 1; readability only, not speed evidence",16,16,16,16,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,edge-128MiB,COLD,selected,runner_root,cold_ns,ns,allocation+touch+free,Always,Off,10.04061686210497,8.706447240279942,11.579233663207168,0.9574297636039122,0.9001340552855059,1.0183724822453162,"A/A interval contains 1; readability only, not speed evidence",15198.5,176632,16504.5,16284.5,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,edge-128MiB,COLD,child,runner_launch,child_wall_ns,ns,full direct child,Always,Off,,,,0.9574297636039122,0.9001340552855059,1.0183724822453162,"A/A interval contains 1; readability only, not speed evidence",2242137,2504117.5,2361021.5,2385433,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,edge-128MiB,COLD,faults,parsed_row.os,faults,count,process fault observation,Always,Off,,,,0.9574297636039122,0.9001340552855059,1.0183724822453162,"A/A interval contains 1; readability only, not speed evidence",197,196,196,197,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,edge-128MiB,COLD,peak_rss,parsed_row.os,peak_rss,bytes,approximate process peak RSS,Always,Off,,,,0.9574297636039122,0.9001340552855059,1.0183724822453162,"A/A interval contains 1; readability only, not speed evidence",2875392,6891520,2850816,2883584,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,edge-128MiB,COLD,end_rss,parsed_row.os,end_rss,bytes,process end RSS,Always,Off,,,,0.9574297636039122,0.9001340552855059,1.0183724822453162,"A/A interval contains 1; readability only, not speed evidence",2875392,2879488,2850816,2883584,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,edge-128MiB,COLD,anon_huge_peak,parsed_row.os,anon_huge_peak,bytes,live AnonHugePages observation,Always,Off,,,,0.9574297636039122,0.9001340552855059,1.0183724822453162,"A/A interval contains 1; readability only, not speed evidence",0,4194304,0,0,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,edge-128MiB,COLD,capture_slot,parsed_row,capture_slot_storage_bytes,bytes,native advice capture storage,Always,Off,,,,0.9574297636039122,0.9001340552855059,1.0183724822453162,"A/A interval contains 1; readability only, not speed evidence",4194304,4194304,4194304,4194304,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,edge-128MiB,COLD,capture_total,parsed_row,capture_total_storage_bytes,bytes,native advice capture storage,Always,Off,,,,0.9574297636039122,0.9001340552855059,1.0183724822453162,"A/A interval contains 1; readability only, not speed evidence",4194320,4194320,4194320,4194320,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,edge-128MiB,COLD,capture_tls,parsed_row,capture_tls_context_bytes_per_thread,bytes,native advice capture storage,Always,Off,,,,0.9574297636039122,0.9001340552855059,1.0183724822453162,"A/A interval contains 1; readability only, not speed evidence",16,16,16,16,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,grow-1GiB,COLD,selected,runner_root,cold_ns,ns,allocation+touch+free,Always,Off,0.15969025556525127,0.15660066964138855,0.16284079615299113,0.9997949514112217,0.9879512282105262,1.0117806591302307,"A/A interval contains 1; readability only, not speed evidence",896388132,143366975,883650284,886068827.5,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,grow-1GiB,COLD,child,runner_launch,child_wall_ns,ns,full direct child,Always,Off,,,,0.9997949514112217,0.9879512282105262,1.0117806591302307,"A/A interval contains 1; readability only, not speed evidence",915574447.5,147220769,903504582.5,906600084,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,grow-1GiB,COLD,faults,parsed_row.os,faults,count,process fault observation,Always,Off,,,,0.9997949514112217,0.9879512282105262,1.0117806591302307,"A/A interval contains 1; readability only, not speed evidence",523982,2765,523982,523982,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,grow-1GiB,COLD,peak_rss,parsed_row.os,peak_rss,bytes,approximate process peak RSS,Always,Off,,,,0.9997949514112217,0.9879512282105262,1.0117806591302307,"A/A interval contains 1; readability only, not speed evidence",1076953088,1081159680,1076961280,1076908032,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,grow-1GiB,COLD,end_rss,parsed_row.os,end_rss,bytes,process end RSS,Always,Off,,,,0.9997949514112217,0.9879512282105262,1.0117806591302307,"A/A interval contains 1; readability only, not speed evidence",3426304,3457024,3434496,3399680,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,grow-1GiB,COLD,anon_huge_peak,parsed_row.os,anon_huge_peak,bytes,live AnonHugePages observation,Always,Off,,,,0.9997949514112217,0.9879512282105262,1.0117806591302307,"A/A interval contains 1; readability only, not speed evidence",0,1075838976,0,0,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,grow-1GiB,COLD,capture_slot,parsed_row,capture_slot_storage_bytes,bytes,native advice capture storage,Always,Off,,,,0.9997949514112217,0.9879512282105262,1.0117806591302307,"A/A interval contains 1; readability only, not speed evidence",4194304,4194304,4194304,4194304,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,grow-1GiB,COLD,capture_total,parsed_row,capture_total_storage_bytes,bytes,native advice capture storage,Always,Off,,,,0.9997949514112217,0.9879512282105262,1.0117806591302307,"A/A interval contains 1; readability only, not speed evidence",4194320,4194320,4194320,4194320,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,grow-1GiB,COLD,capture_tls,parsed_row,capture_tls_context_bytes_per_thread,bytes,native advice capture storage,Always,Off,,,,0.9997949514112217,0.9879512282105262,1.0117806591302307,"A/A interval contains 1; readability only, not speed evidence",16,16,16,16,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,many-128x16MiB,COLD,selected,runner_root,cold_ns,ns,allocation+touch+free,Always,Off,0.14616546808164008,0.14387099597723746,0.1484965327056268,1.0024249292948317,0.9912702162803647,1.0137051657239962,"A/A interval contains 1; readability only, not speed evidence",783398866.5,113130919.5,766162250.5,772776575.5,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,many-128x16MiB,COLD,child,runner_launch,child_wall_ns,ns,full direct child,Always,Off,,,,1.0024249292948317,0.9912702162803647,1.0137051657239962,"A/A interval contains 1; readability only, not speed evidence",816139763.5,116950016,798441832.5,805011609,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,many-128x16MiB,COLD,faults,parsed_row.os,faults,count,process fault observation,Always,Off,,,,1.0024249292948317,0.9912702162803647,1.0137051657239962,"A/A interval contains 1; readability only, not speed evidence",524628,1415,524628,524628,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,many-128x16MiB,COLD,peak_rss,parsed_row.os,peak_rss,bytes,approximate process peak RSS,Always,Off,,,,1.0024249292948317,0.9912702162803647,1.0137051657239962,"A/A interval contains 1; readability only, not speed evidence",2150660096,2418669568,2150653952,2150662144,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,many-128x16MiB,COLD,end_rss,parsed_row.os,end_rss,bytes,process end RSS,Always,Off,,,,1.0024249292948317,0.9912702162803647,1.0137051657239962,"A/A interval contains 1; readability only, not speed evidence",2945024,3158016,2942976,2945024,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,many-128x16MiB,COLD,anon_huge_peak,parsed_row.os,anon_huge_peak,bytes,live AnonHugePages observation,Always,Off,,,,1.0024249292948317,0.9912702162803647,1.0137051657239962,"A/A interval contains 1; readability only, not speed evidence",0,2415919104,0,0,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,many-128x16MiB,COLD,capture_slot,parsed_row,capture_slot_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0024249292948317,0.9912702162803647,1.0137051657239962,"A/A interval contains 1; readability only, not speed evidence",4194304,4194304,4194304,4194304,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,many-128x16MiB,COLD,capture_total,parsed_row,capture_total_storage_bytes,bytes,native advice capture storage,Always,Off,,,,1.0024249292948317,0.9912702162803647,1.0137051657239962,"A/A interval contains 1; readability only, not speed evidence",4194320,4194320,4194320,4194320,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor
+measured,many-128x16MiB,COLD,capture_tls,parsed_row,capture_tls_context_bytes_per_thread,bytes,native advice capture storage,Always,Off,,,,1.0024249292948317,0.9912702162803647,1.0137051657239962,"A/A interval contains 1; readability only, not speed evidence",16,16,16,16,"minimum of exactly 2 raw launches per slot/block; exp(mean of 12 paired log ratios); two-sided 95% paired t CI, df=11, t*=2.201",573cb7c213eb72fe070776efb3a8e44548633ba6,43c67faea6cc0b83929cf6ddd88e5bb199596110,44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6,"[""alloc-core"", ""alloc-decommit"", ""alloc-global"", ""alloc-segment-directory"", ""alloc-stats"", ""alloc-xthread"", ""bench-internals"", ""default"", ""fastbin"", ""internals"", ""primordial-lazy-commit"", ""production"", ""std""]","rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1",AMD EPYC 9V45 96-Core Processor

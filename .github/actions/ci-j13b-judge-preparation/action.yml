@@ -3,6 +3,10 @@ description: Original j13b-judge-preparation job steps
 runs:
   using: composite
   steps:
+    - name: Reject conflicting manual study inputs
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.j13_study == 'true' && github.event.inputs.j13_smoke == 'true'
+      shell: bash
+      run: exit 2
     - name: Check changed paths
       id: paths
       env:
@@ -17,7 +21,7 @@ runs:
           exit 0
         fi
         git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE="$HEAD_SHA^"
-        if git diff --name-only "$BASE" "$HEAD_SHA" | grep -qE '^(scripts/j13b_.*\.mjs|examples/(_shared/.*|g1_j13b_.*\.rs)|tests/j13b_.*\.(mjs|rs)|crates/aligned-vmem/src/.*|Cargo\.toml|\.github/workflows/ci\.yml|\.github/actions/ci-j13b-judge-preparation/action\.yml)$'; then
+        if git diff --name-only "$BASE" "$HEAD_SHA" | grep -qE '^(scripts/(j13b_.*|paired-ab-.*|j13_limited_report)\.mjs|examples/(g1_j13b_.*|g1_big_judge\.rs)|examples/_shared/.*|tests/(j13b_.*|g1_big_study_.*|j13_limited_report_fixtures)\.(mjs|rs)|crates/aligned-vmem/src/.*|Cargo\.toml|docs/perf/J13_LIMITED_(HARNESS_USAGE|STUDY_PREREG)\.md|docs/perf/j13_limited_cells/[^/]+\.json|\.github/workflows/ci\.yml|\.github/actions/ci-j13b-judge-preparation/action\.yml)$'; then
           echo "run=true" >> "$GITHUB_OUTPUT"
         fi
     - if: steps.paths.outputs.run == 'true'
@@ -28,8 +32,124 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: node --test tests/j13b_schema.test.mjs tests/j13b_artifacts.test.mjs tests/j13b_static_reference.test.mjs
+    - name: G1 big-study JSON parser fixtures
+      if: steps.paths.outputs.run == 'true'
+      shell: bash -e {0}
+      run: |
+        node --test tests/g1_big_study_parser.mjs
+        node tests/j13_limited_report_fixtures.mjs
+    - name: G1 CI build-host receipt jq fixtures (CI only)
+      if: steps.paths.outputs.run == 'true'
+      shell: bash -e {0}
+      run: node --test tests/g1_big_study_receipt.mjs
+    - name: G1 paired-runner synthetic process fixtures (CI only)
+      if: steps.paths.outputs.run == 'true'
+      shell: bash -e {0}
+      run: node --test tests/g1_big_study_runner.mjs
     - if: steps.paths.outputs.run == 'true'
       uses: dtolnay/rust-toolchain@stable
+    - name: G1 study parser, config, and Linux native-fixture gates
+      if: steps.paths.outputs.run == 'true'
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |
+        set -o pipefail
+        cargo test --locked --features 'production alloc-stats internals bench-internals' --test g1_big_study_config \
+          | tee "$RUNNER_TEMP/g1-big-study-config.log"
+        grep -F 'test no_environment_is_legacy ... ok' "$RUNNER_TEMP/g1-big-study-config.log"
+        grep -F 'test parser_rejects_partial_unknown_duplicate_nonunicode_and_bad_values ... ok' "$RUNNER_TEMP/g1-big-study-config.log"
+        grep -F 'test byte_override_coherence_and_repetition_contract_are_exact ... ok' "$RUNNER_TEMP/g1-big-study-config.log"
+        grep -F 'test validator_rejects_empty_eligible_missing_advice_and_wrong_accepted_prefix ... ok' "$RUNNER_TEMP/g1-big-study-config.log"
+        grep -F 'test cache_only_admits_two_16_mib_cycles ... ok' "$RUNNER_TEMP/g1-big-study-config.log"
+        grep -F 'test result: ok. 5 passed; 0 failed;' "$RUNNER_TEMP/g1-big-study-config.log"
+        cargo test --locked --features 'production alloc-stats internals bench-internals' --test g1_big_study_native_off \
+          | tee "$RUNNER_TEMP/g1-big-study-off.log"
+        grep -F 'test native_off_cycle_executes_real_allocator_and_readback_rejects_always ... ok' "$RUNNER_TEMP/g1-big-study-off.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/g1-big-study-off.log"
+        cargo test --locked --features 'production alloc-stats internals bench-internals' --test g1_big_study_native_always -- --nocapture \
+          | tee "$RUNNER_TEMP/g1-big-study-always.log"
+        grep -F 'test always_executes_eligible_cycle_once ... ok' "$RUNNER_TEMP/g1-big-study-always.log"
+        grep -F '"fresh_mappings":1' "$RUNNER_TEMP/g1-big-study-always.log"
+        grep -F '"fresh_requested_bytes":[8388608]' "$RUNNER_TEMP/g1-big-study-always.log"
+        grep -F '"accepted_advice_count":1' "$RUNNER_TEMP/g1-big-study-always.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/g1-big-study-always.log"
+        cargo test --locked --features 'production alloc-stats internals bench-internals' --test g1_big_study_native_below -- --nocapture \
+          | tee "$RUNNER_TEMP/g1-big-study-below.log"
+        grep -F 'test always_executes_actual_below_threshold_cycle ... ok' "$RUNNER_TEMP/g1-big-study-below.log"
+        grep -F '"fresh_mappings":1' "$RUNNER_TEMP/g1-big-study-below.log"
+        grep -F '"fresh_requested_bytes":[8388607]' "$RUNNER_TEMP/g1-big-study-below.log"
+        grep -F '"accepted_advice_count":0' "$RUNNER_TEMP/g1-big-study-below.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/g1-big-study-below.log"
+        cargo test --locked --features 'production alloc-stats internals bench-internals' --test g1_big_study_native_cache -- --nocapture \
+          | tee "$RUNNER_TEMP/g1-big-study-cache.log"
+        grep -F 'test cache_executes_two_cycles_hits_on_second_and_emits_no_second_advice ... ok' "$RUNNER_TEMP/g1-big-study-cache.log"
+        grep -F '"fresh_mappings":1' "$RUNNER_TEMP/g1-big-study-cache.log"
+        grep -F '"fresh_requested_bytes":[16777216]' "$RUNNER_TEMP/g1-big-study-cache.log"
+        grep -F '"cache_hit_confirmed":true' "$RUNNER_TEMP/g1-big-study-cache.log"
+        grep -F '"large_cache_hits":1' "$RUNNER_TEMP/g1-big-study-cache.log"
+        grep -F 'test result: ok. 1 passed; 0 failed;' "$RUNNER_TEMP/g1-big-study-cache.log"
+        cargo test --locked --all-features --test g1_big_study_config -- --nocapture \
+          | tee "$RUNNER_TEMP/g1-big-study-all-features.log"
+        grep -F 'test numa_runtime_admission_refuses_before_payload_execution ... ok' "$RUNNER_TEMP/g1-big-study-all-features.log"
+        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/g1-big-study-all-features.log"
+    - name: G1 limited-study single CI build and provenance receipt (not measurement admission)
+      if: steps.paths.outputs.run == 'true'
+      shell: bash -e {0}
+      run: |
+        set -euo pipefail
+        receipt_dir="$RUNNER_TEMP/g1-big-study-build"
+        mkdir -p "$receipt_dir"
+        git rev-parse HEAD > "$receipt_dir/source-commit.txt"
+        git rev-parse 'HEAD^{tree}' > "$receipt_dir/source-tree.txt"
+        git status --porcelain > "$receipt_dir/source-status-before-build.txt"
+        rustc --version --verbose > "$receipt_dir/rustc-version-verbose.txt"
+        cargo --version > "$receipt_dir/cargo-version.txt"
+        rustc_host=$(sed -n 's/^host: //p' "$receipt_dir/rustc-version-verbose.txt")
+        if [ -n "${RUSTFLAGS+x}" ]; then rustflags_set=true; rustflags="$RUSTFLAGS"; else rustflags_set=false; rustflags=''; fi
+        if [ -n "${CARGO_ENCODED_RUSTFLAGS+x}" ]; then encoded_flags_set=true; encoded_flags="$CARGO_ENCODED_RUSTFLAGS"; else encoded_flags_set=false; encoded_flags=''; fi
+        jq -n --arg commit "$(cat "$receipt_dir/source-commit.txt")" --arg tree "$(cat "$receipt_dir/source-tree.txt")" --arg status "$(cat "$receipt_dir/source-status-before-build.txt")" --arg rustc "$(cat "$receipt_dir/rustc-version-verbose.txt")" --arg cargo "$(cat "$receipt_dir/cargo-version.txt")" --arg host "$rustc_host" --arg rustflags "$rustflags" --arg encoded_flags "$encoded_flags" --argjson rustflags_set "$rustflags_set" --argjson encoded_flags_set "$encoded_flags_set" '{commit:$commit,tree:$tree,dirty:($status|length>0),status_porcelain:$status,rustc_version_verbose:$rustc,cargo_version:$cargo,rustc_host_target:$host,target_selection:{explicit:true,target:$host,meaning:"rustc host target explicitly passed to cargo --target"},RUSTFLAGS:{set:$rustflags_set,value:(if $rustflags_set then $rustflags else null end)},CARGO_ENCODED_RUSTFLAGS:{set:$encoded_flags_set,value:(if $encoded_flags_set then $encoded_flags else null end)}}' > "$receipt_dir/build-context.json"
+        set +e
+        pages=$(getconf PAGESIZE 2>"$receipt_dir/getconf-pagesize.error")
+        pages_status=$?
+        set -e
+        if [ "$pages_status" -eq 0 ]; then pages_json=$(jq -n --arg value "$pages" '{available:true,value:($value|tonumber)}'); else pages_json=$(jq -n --arg error "$(cat "$receipt_dir/getconf-pagesize.error")" '{available:false,value:null,error:$error}'); fi
+        observe_file() {
+          path=$1
+          output=$2
+          if [ -r "$path" ]; then
+            cp "$path" "$receipt_dir/$output.raw"
+            jq -n --arg path "$path" --rawfile raw "$receipt_dir/$output.raw" --arg file "$output.raw" '{available:true,path:$path,raw:$raw,raw_file:$file}'
+          else
+            jq -n --arg path "$path" --arg error 'not readable on CI build host' '{available:false,path:$path,raw:null,error:$error}'
+          fi
+        }
+        enabled=$(observe_file /sys/kernel/mm/transparent_hugepage/enabled thp-enabled)
+        defrag=$(observe_file /sys/kernel/mm/transparent_hugepage/defrag thp-defrag)
+        hpage=$(observe_file /sys/kernel/mm/transparent_hugepage/hpage_pmd_size thp-hpage-pmd-size)
+        meminfo=$(observe_file /proc/meminfo proc-meminfo)
+        swaps=$(observe_file /proc/swaps proc-swaps)
+        pressure_cpu=$(observe_file /proc/pressure/cpu proc-pressure-cpu)
+        pressure_memory=$(observe_file /proc/pressure/memory proc-pressure-memory)
+        pressure_io=$(observe_file /proc/pressure/io proc-pressure-io)
+        cpuinfo=$(observe_file /proc/cpuinfo proc-cpuinfo)
+        uname=$(uname -a)
+        jq -n --argjson base_page "$pages_json" --argjson enabled "$enabled" --argjson defrag "$defrag" --argjson hpage "$hpage" --argjson meminfo "$meminfo" --argjson swaps "$swaps" --argjson cpu "$pressure_cpu" --argjson memory "$pressure_memory" --argjson io "$pressure_io" --argjson cpuinfo "$cpuinfo" --arg uname "$uname" '{scope:"CI build host observation only; not evidence about a later measurement host and not admission",uname:$uname,cpuinfo:$cpuinfo,base_page_size_bytes:$base_page,transparent_hugepage:{enabled:$enabled,defrag:$defrag,hpage_pmd_size:$hpage,selected_mode:(if $enabled.available then ((try ($enabled.raw|capture("\\[(?<mode>[^]]+)\\]")|.mode) catch null) // null) else null end),hpage_pmd_size_bytes:(if $hpage.available then (try ($hpage.raw|tonumber) catch null) else null end)},meminfo:$meminfo,mem_available_kib:(if $meminfo.available then ((try ($meminfo.raw|capture("MemAvailable:\\s+(?<value>[0-9]+)\\s+kB")|.value|tonumber) catch null) // null) else null end),swaps:$swaps,active_swap_entries:(if $swaps.available then ($swaps.raw|split("\n")|.[1:]|map(select(test("\\S")))|length) else null end),pressure:{cpu:$cpu,memory:$memory,io:$io}}' > "$receipt_dir/ci-build-host-observation.json"
+        set -o pipefail
+        cargo build --locked --release --target "$rustc_host" --features 'production alloc-stats internals bench-internals' --example g1_big_judge --message-format=json-render-diagnostics | tee "$receipt_dir/compiler-artifacts.jsonl"
+        artifact=$(jq -s -c '[.[]|select(.reason=="compiler-artifact" and .target.name=="g1_big_judge" and .executable!=null)]|if length==1 then .[0] else error("expected exactly one g1_big_judge executable artifact") end' "$receipt_dir/compiler-artifacts.jsonl")
+        executable=$(jq -r '.executable' <<< "$artifact")
+        test -x "$executable"
+        binary_sha256=$(sha256sum "$executable" | awk '{print $1}')
+        cp "$executable" "$receipt_dir/measurement-executable"
+        copied_sha256=$(sha256sum "$receipt_dir/measurement-executable" | awk '{print $1}')
+        test "$binary_sha256" = "$copied_sha256"
+        jq -n --arg executable "$executable" --arg hash "$binary_sha256" --argjson artifact "$artifact" --slurpfile context "$receipt_dir/build-context.json" --arg host "$rustc_host" '{schema:"g1-big-study-ci-build-receipt.v1",build_context:$context[0],build:{command:["cargo","build","--locked","--release","--target",$host,"--features","production alloc-stats internals bench-internals","--example","g1_big_judge","--message-format=json-render-diagnostics"],executable_path:$executable,sha256:$hash,artifact_features:$artifact.features,artifact_target:$artifact.target,artifact_profile:$artifact.profile,artifact_filenames:$artifact.filenames,artifact_executable:$artifact.executable,artifact_kind:$artifact.target.kind},copied_artifact:{path:"measurement-executable",sha256:$hash},host_target:$host,host_observation_file:"ci-build-host-observation.json",registered_bounds:{per_child_timeout_ms:120000,total_study_timeout_ms:1800000,raw_output_bytes:null,raw_output_note:"2026-11-11 amendment supersedes hard cumulative byte enforcement; repository artifact storage policy applies",max_live_payload_bytes:2147483648,max_concurrent_children:1,max_actor_workers:2,min_available_memory_bytes_before_measurement:8589934592,noise_policy:"per-cell registered A/A readability; no swap/pressure admission claim"},admission:{status:"not evaluated by build step",required_later:"measurement parent must preflight the actual measurement host before any child"}}' > "$receipt_dir/build-receipt.json"
+    - if: steps.paths.outputs.run == 'true'
+      uses: actions/upload-artifact@v6
+      with:
+        name: g1-limited-study-ci-build-receipt
+        path: ${{ runner.temp }}/g1-big-study-build
+        retention-days: 14
     - if: steps.paths.outputs.run == 'true'
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}

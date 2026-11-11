@@ -30,3 +30,25 @@ export function parseResult(out) {
   }
   return r;
 }
+
+export function parseJsonResult(out, metric) {
+  const lines = out.split(/\r?\n/);
+  if (lines.at(-1) === '') lines.pop();
+  if (lines.length !== 1 || !lines[0].trim()) {
+    throw new Error('expected exactly one JSON object line');
+  }
+  let row;
+  try { row = JSON.parse(lines[0]); } catch (error) {
+    throw new Error(`invalid JSON result line: ${error.message}`);
+  }
+  if (row === null || typeof row !== 'object' || Array.isArray(row)) {
+    throw new Error('JSON result must be an object');
+  }
+  if (typeof row[metric] !== 'number' || !Number.isFinite(row[metric]) || row[metric] <= 0) {
+    throw new Error(`JSON result metric ${metric} must be finite and positive`);
+  }
+  if ('warm_ns' in row && row.warm_ns !== null) {
+    throw new Error('JSON result warm_ns must be null when present');
+  }
+  return row;
+}

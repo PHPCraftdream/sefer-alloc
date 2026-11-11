@@ -21,6 +21,16 @@ use std::time::Instant;
 static SEFER: sefer_alloc::SeferAlloc = sefer_alloc::SeferAlloc::new();
 static MI: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+#[path = "_shared/g1_big_study.rs"]
+pub mod g1_big_study;
+
+pub(crate) fn study_run(
+    args: &[String],
+    vars: impl IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+) -> Result<bool, String> {
+    g1_big_study::run_with(args, vars)
+}
+
 const ALIGN: usize = 8;
 const MIB: usize = 1 << 20;
 const PAGE: usize = 4096;
@@ -28,20 +38,23 @@ const PAGE: usize = 4096;
 const RSS_LIMIT: u64 = 7 << 30;
 
 #[derive(Clone, Copy)]
-enum Arm {
+#[allow(dead_code)]
+enum Arm<'a> {
     Sefer,
+    Configured(&'a sefer_alloc::SeferAlloc),
     Mi,
     Sys,
 }
 
 #[inline(never)]
-fn a_alloc(arm: Arm, size: usize) -> *mut u8 {
+fn a_alloc(arm: Arm<'_>, size: usize) -> *mut u8 {
     // SAFETY: nonzero size, power-of-two align.
     let l = unsafe { Layout::from_size_align_unchecked(size, ALIGN) };
     // SAFETY: valid nonzero layout.
     unsafe {
         match arm {
             Arm::Sefer => SEFER.alloc(l),
+            Arm::Configured(allocator) => allocator.alloc(l),
             Arm::Mi => MI.alloc(l),
             Arm::Sys => System.alloc(l),
         }
@@ -49,12 +62,13 @@ fn a_alloc(arm: Arm, size: usize) -> *mut u8 {
 }
 
 #[inline(never)]
-fn a_dealloc(arm: Arm, p: *mut u8, size: usize) {
+fn a_dealloc(arm: Arm<'_>, p: *mut u8, size: usize) {
     // SAFETY: `p` came from this arm with `size` bytes and is freed once.
     unsafe {
         let l = Layout::from_size_align_unchecked(size, ALIGN);
         match arm {
             Arm::Sefer => SEFER.dealloc(p, l),
+            Arm::Configured(allocator) => allocator.dealloc(p, l),
             Arm::Mi => MI.dealloc(p, l),
             Arm::Sys => System.dealloc(p, l),
         }
@@ -62,12 +76,13 @@ fn a_dealloc(arm: Arm, p: *mut u8, size: usize) {
 }
 
 #[inline(never)]
-fn a_realloc(arm: Arm, p: *mut u8, old: usize, new: usize) -> *mut u8 {
+fn a_realloc(arm: Arm<'_>, p: *mut u8, old: usize, new: usize) -> *mut u8 {
     // SAFETY: `p` is a live block of `old` bytes from this arm; `new` > 0.
     unsafe {
         let l = Layout::from_size_align_unchecked(old, ALIGN);
         match arm {
             Arm::Sefer => SEFER.realloc(p, l, new),
+            Arm::Configured(allocator) => allocator.realloc(p, l, new),
             Arm::Mi => MI.realloc(p, l, new),
             Arm::Sys => System.realloc(p, l, new),
         }
@@ -101,6 +116,25 @@ fn anon_huge_bytes() -> u64 {
         .map_or(0, |kb| kb * 1024)
 }
 
+#[cfg(all(
+    feature = "production",
+    feature = "alloc-stats",
+    feature = "internals",
+    feature = "bench-internals",
+    not(feature = "numa-aware")
+))]
+fn anon_huge_bytes_opt() -> Option<u64> {
+    std::fs::read_to_string("/proc/self/smaps_rollup")
+        .ok()?
+        .lines()
+        .find(|line| line.starts_with("AnonHugePages:"))?
+        .split_whitespace()
+        .nth(1)?
+        .parse::<u64>()
+        .ok()
+        .and_then(|kb| kb.checked_mul(1024))
+}
+
 fn sample_huge() {
     ANON_HUGE_PEAK.fetch_max(anon_huge_bytes(), std::sync::atomic::Ordering::Relaxed);
 }
@@ -110,7 +144,7 @@ fn ns(t: Instant) -> u64 {
 }
 
 /// One rep; returns `[alloc_ns, touch_ns, free_ns]`.
-fn once(arm: Arm, scen: &str, size: usize, k: usize) -> [u64; 3] {
+fn once(arm: Arm<'_>, scen: &str, size: usize, k: usize, mut sample: impl FnMut()) -> [u64; 3] {
     let (mut a, mut t, mut f) = (0u64, 0u64, 0u64);
     match scen {
         "cycle" | "edge" => {
@@ -129,7 +163,7 @@ fn once(arm: Arm, scen: &str, size: usize, k: usize) -> [u64; 3] {
                 }
             }
             t += ns(s);
-            sample_huge();
+            sample();
             let s = Instant::now();
             a_dealloc(arm, p, size);
             f += ns(s);
@@ -154,7 +188,7 @@ fn once(arm: Arm, scen: &str, size: usize, k: usize) -> [u64; 3] {
                 t += ns(s);
                 cur = new;
             }
-            sample_huge();
+            sample();
             let s = Instant::now();
             a_dealloc(arm, p, cur);
             f += ns(s);
@@ -171,7 +205,7 @@ fn once(arm: Arm, scen: &str, size: usize, k: usize) -> [u64; 3] {
                 t += ns(s);
                 v.push(p);
             }
-            sample_huge();
+            sample();
             while let Some(p) = v.pop() {
                 let s = Instant::now();
                 a_dealloc(arm, p, size);
@@ -260,6 +294,14 @@ fn cpu_and_faults() -> (u64, u64, u64) {
 
 fn main() {
     let a: Vec<String> = std::env::args().collect();
+    match study_run(&a, std::env::vars_os()) {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    }
     assert!(
         a.len() >= 5,
         "usage: g1_big_judge <cycle|edge|grow|many> <sefer|mi|sys> <size_mib> <reps> [k]"
@@ -282,7 +324,7 @@ fn main() {
         a[1].as_str()
     };
     for _ in 0..reps {
-        rep.push(once(arm, scen, size, k));
+        rep.push(once(arm, scen, size, k, sample_huge));
     }
     if a[1] == "idle" {
         for _ in 0..120 {
