@@ -2,6 +2,13 @@
 
 **J13b current-state reconciliation (2026-11-10).** PR #226 VM foundation, #225 J13b runtime, #227 landing-history repair, and #228 closure are merged in HEAD `bad95849`; Auto learning is accepted on `6c2ba419`, CI `42512485612`. This docs-only round LEAVES all unrelated OPEN correctness/CI items unchanged and out of scope. Relevant THP limitations remain open below: item 263 records its actual-source Loom CI execution receipt, without claiming complete proof; item 264 records current 144-byte header layout and Ir UNKNOWN; 262, 265–267 and 272 remain limitations. No local/native execution or cost inference is claimed.
 
+**J13b concurrent-capture fixture correction (2026-11-11, task #111).**
+- **Status:** FIX AWAITING CI; no runtime defect or measurement result is claimed.
+- **Current finding:** manual smoke run43004502130/job130468508544 failed before measurements with `concurrent capture worker config mismatch`. Four workers raced their first tuple publication while the fixture required zero conflicts; `ThpTupleCell` deliberately reports a conflict on `PUBLISHING`, including equal-tuple races.
+- **Correction:** materialize and assert the configured tuple once in the concurrent fixture setup before worker startup. Retain all worker readbacks, zero-conflict assertions, 64 allocation/free and capture/accounting checks. No runtime or measurement-source change.
+- **Next trigger:** exact-source CI and a new smoke after this fixture-only correction; do not treat a retry of unchanged source as a fix. Move this notice to the resolution trail after actual verification.
+- **Evidence:** [failed preparation](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/43004502130/job/130468508544); `tests/j13b_advice_capture_native.rs`; `src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs` publication contract. Correctness item264 remains OPEN and unrelated.
+
 **Purpose.** A single durable, session-surviving checklist of correctness,
 flakiness, and CI-coverage-gap items that a commit message, code comment, or
 review doc has flagged as *open / follow-up / "left for later"* — the sibling
