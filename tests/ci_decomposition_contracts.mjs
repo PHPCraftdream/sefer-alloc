@@ -74,4 +74,6 @@ assert(raw.includes(String.raw`|\.github/actions/ci-j13b-judge-preparation/actio
     assert.notEqual(canonical(licenses(changed.text)), canonical(licenses(before.text)), 'version, condition and command mutations must break equivalence');
   }
 }
+if (process.platform === 'linux') await import('./ci_ubuntu_apt_sources.mjs');
+else console.log('[ci-ubuntu-apt-sources] skipped: Ubuntu shell fixture requires Linux CI');
 console.log(`[ci-decomposition-contracts] ${expanded.dependencies.size} action routes plus license extraction/reachability/missing/unknown/forbidden/detached counterfactuals passed`);
