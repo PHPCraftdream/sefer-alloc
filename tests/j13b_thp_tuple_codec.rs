@@ -1,5 +1,5 @@
 //! J13b C1: `ThpTuple` five-word pack/unpack codec.
-#![cfg(all(feature = "internals", feature = "alloc-core"))]
+#![cfg(all(feature = "internals", feature = "alloc-decommit"))]
 
 use sefer_alloc::alloc_core::policy::large_thp_runtime::ThpTuple;
 use sefer_alloc::{LargeThpCurve, LargeThpGradient, LargeThpMode};
