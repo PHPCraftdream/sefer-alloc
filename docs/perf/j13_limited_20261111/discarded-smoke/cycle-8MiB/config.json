@@ -1,0 +1,33 @@
+{
+  "result_format": "json",
+  "metric": "cold_ns",
+  "timeout_ms": 120000,
+  "arms": {
+    "A": {
+      "command": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+      "args": [
+        "cycle",
+        "sefer",
+        "8",
+        "1"
+      ],
+      "env": {
+        "G1_BIG_THP": "off",
+        "G1_BIG_CACHE": "off"
+      }
+    },
+    "B": {
+      "command": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+      "args": [
+        "cycle",
+        "sefer",
+        "8",
+        "1"
+      ],
+      "env": {
+        "G1_BIG_THP": "always",
+        "G1_BIG_CACHE": "off"
+      }
+    }
+  }
+}

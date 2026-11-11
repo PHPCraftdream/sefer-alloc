@@ -1,0 +1,109 @@
+{
+  "schema": "g1-big-study-ci-build-receipt.v1",
+  "build_context": {
+    "commit": "573cb7c213eb72fe070776efb3a8e44548633ba6",
+    "tree": "43c67faea6cc0b83929cf6ddd88e5bb199596110",
+    "dirty": false,
+    "status_porcelain": "",
+    "rustc_version_verbose": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
+    "cargo_version": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "rustc_host_target": "x86_64-unknown-linux-gnu",
+    "target_selection": {
+      "explicit": true,
+      "target": "x86_64-unknown-linux-gnu",
+      "meaning": "rustc host target explicitly passed to cargo --target"
+    },
+    "RUSTFLAGS": {
+      "set": false,
+      "value": null
+    },
+    "CARGO_ENCODED_RUSTFLAGS": {
+      "set": false,
+      "value": null
+    }
+  },
+  "build": {
+    "command": [
+      "cargo",
+      "build",
+      "--locked",
+      "--release",
+      "--target",
+      "x86_64-unknown-linux-gnu",
+      "--features",
+      "production alloc-stats internals bench-internals",
+      "--example",
+      "g1_big_judge",
+      "--message-format=json-render-diagnostics"
+    ],
+    "executable_path": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+    "sha256": "44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6",
+    "artifact_features": [
+      "alloc-core",
+      "alloc-decommit",
+      "alloc-global",
+      "alloc-segment-directory",
+      "alloc-stats",
+      "alloc-xthread",
+      "bench-internals",
+      "default",
+      "fastbin",
+      "internals",
+      "primordial-lazy-commit",
+      "production",
+      "std"
+    ],
+    "artifact_target": {
+      "kind": [
+        "example"
+      ],
+      "crate_types": [
+        "bin"
+      ],
+      "name": "g1_big_judge",
+      "src_path": "/home/runner/work/sefer-alloc/sefer-alloc/examples/g1_big_judge.rs",
+      "edition": "2021",
+      "required-features": [
+        "production"
+      ],
+      "doc": false,
+      "doctest": false,
+      "test": false
+    },
+    "artifact_profile": {
+      "opt_level": "3",
+      "debuginfo": 0,
+      "debug_assertions": false,
+      "overflow_checks": false,
+      "test": false
+    },
+    "artifact_filenames": [
+      "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge"
+    ],
+    "artifact_executable": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+    "artifact_kind": [
+      "example"
+    ]
+  },
+  "copied_artifact": {
+    "path": "measurement-executable",
+    "sha256": "44d527cfa37f3ad38832c81af326f8c0899d31f58d08e3084969d41e442135b6"
+  },
+  "host_target": "x86_64-unknown-linux-gnu",
+  "host_observation_file": "ci-build-host-observation.json",
+  "registered_bounds": {
+    "per_child_timeout_ms": 120000,
+    "total_study_timeout_ms": 1800000,
+    "raw_output_bytes": null,
+    "raw_output_note": "2026-11-11 amendment supersedes hard cumulative byte enforcement; repository artifact storage policy applies",
+    "max_live_payload_bytes": 2147483648,
+    "max_concurrent_children": 1,
+    "max_actor_workers": 2,
+    "min_available_memory_bytes_before_measurement": 8589934592,
+    "noise_policy": "per-cell registered A/A readability; no swap/pressure admission claim"
+  },
+  "admission": {
+    "status": "not evaluated by build step",
+    "required_later": "measurement parent must preflight the actual measurement host before any child"
+  }
+}

@@ -1,0 +1,574 @@
+{
+  "timestamp": "2026-11-11T11:41:38.126Z",
+  "result_format": "json",
+  "source_identity": {
+    "commit": "573cb7c213eb72fe070776efb3a8e44548633ba6",
+    "tree": "43c67faea6cc0b83929cf6ddd88e5bb199596110",
+    "dirty": false
+  },
+  "summary_warning": "Descriptive statistics only; use the preregistered reducer for decisions.",
+  "metric": "cold_ns",
+  "protocol": "A/B/B/A, pairs = one block of 4 launches (A B B A), block value = mean of the 2 same-arm samples",
+  "pairs_per_comparison": 1,
+  "comparisons": [
+    {
+      "arm_a": "A",
+      "arm_b": "A",
+      "pairs": 1,
+      "samples_a_ns": [
+        3098020.5
+      ],
+      "samples_b_ns": [
+        3033132.5
+      ],
+      "deltas_a_minus_b_ns": [
+        64888
+      ],
+      "paired_t_test": null,
+      "sign_test": {
+        "aFaster": 0,
+        "bFaster": 1,
+        "ties": 0,
+        "n": 1
+      },
+      "raw_process_launches": [
+        {
+          "accepted_advice": [],
+          "accepted_advice_count": 0,
+          "advice_granule_bytes": 2097152,
+          "arm": "A",
+          "cache_hit_confirmed": false,
+          "cache_ns": null,
+          "cache_requested": "off",
+          "cache_resolved_budget_bytes": 0,
+          "capture_boundary": 2,
+          "capture_events": 2,
+          "capture_slot_storage_bytes": 4194304,
+          "capture_tls_context_bytes_per_thread": 16,
+          "capture_total_storage_bytes": 4194320,
+          "cold_ns": 3132888,
+          "config_conflicts": 0,
+          "diagnostics": "native-advice-capture",
+          "fresh_mappings": 1,
+          "fresh_requested_bytes": [
+            8388608
+          ],
+          "gradient_requested": "CAUTIOUS",
+          "gradient_resolved": "LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }",
+          "k": 1,
+          "large_cache_hits": 0,
+          "mode_requested": "Off",
+          "mode_resolved": "Off",
+          "os": {
+            "anon_huge_peak": 0,
+            "end_rss": 2879488,
+            "faults": 2241,
+            "kernel_ms": null,
+            "peak_rss": 11055104,
+            "user_ms": null
+          },
+          "rep": [
+            [
+              5408,
+              2637901,
+              489579
+            ]
+          ],
+          "reps": 1,
+          "requested_bytes": 8388608,
+          "scenario": "cycle",
+          "study": true,
+          "thp_budget_requested_bytes": 0,
+          "thp_budget_resolved_bytes": 0,
+          "thp_min_requested_bytes": 8388608,
+          "thp_min_resolved_bytes": 8388608,
+          "thp_tuple_conflicts": 0,
+          "timing_scope": "allocation+touch+free; runner full-child timing distinct",
+          "warm_ns": null,
+          "parsed_row": {
+            "accepted_advice": [],
+            "accepted_advice_count": 0,
+            "advice_granule_bytes": 2097152,
+            "arm": "sefer",
+            "cache_hit_confirmed": false,
+            "cache_ns": null,
+            "cache_requested": "off",
+            "cache_resolved_budget_bytes": 0,
+            "capture_boundary": 2,
+            "capture_events": 2,
+            "capture_slot_storage_bytes": 4194304,
+            "capture_tls_context_bytes_per_thread": 16,
+            "capture_total_storage_bytes": 4194320,
+            "cold_ns": 3132888,
+            "config_conflicts": 0,
+            "diagnostics": "native-advice-capture",
+            "fresh_mappings": 1,
+            "fresh_requested_bytes": [
+              8388608
+            ],
+            "gradient_requested": "CAUTIOUS",
+            "gradient_resolved": "LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }",
+            "k": 1,
+            "large_cache_hits": 0,
+            "mode_requested": "Off",
+            "mode_resolved": "Off",
+            "os": {
+              "anon_huge_peak": 0,
+              "end_rss": 2879488,
+              "faults": 2241,
+              "kernel_ms": null,
+              "peak_rss": 11055104,
+              "user_ms": null
+            },
+            "rep": [
+              [
+                5408,
+                2637901,
+                489579
+              ]
+            ],
+            "reps": 1,
+            "requested_bytes": 8388608,
+            "scenario": "cycle",
+            "study": true,
+            "thp_budget_requested_bytes": 0,
+            "thp_budget_resolved_bytes": 0,
+            "thp_min_requested_bytes": 8388608,
+            "thp_min_resolved_bytes": 8388608,
+            "thp_tuple_conflicts": 0,
+            "timing_scope": "allocation+touch+free; runner full-child timing distinct",
+            "warm_ns": null
+          },
+          "block": 0,
+          "slot": "A",
+          "launch": {
+            "command": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+            "args": [
+              "cycle",
+              "sefer",
+              "8",
+              "1"
+            ],
+            "executable_path": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+            "binary_sha256": "68374597f8b19694eaa6be18ec2e8c937d0cca6e8731a40f8b810fa7d431aa87",
+            "binary_sha256_after": "68374597f8b19694eaa6be18ec2e8c937d0cca6e8731a40f8b810fa7d431aa87",
+            "raw_stdout": "{\"accepted_advice\":[],\"accepted_advice_count\":0,\"advice_granule_bytes\":2097152,\"arm\":\"sefer\",\"cache_hit_confirmed\":false,\"cache_ns\":null,\"cache_requested\":\"off\",\"cache_resolved_budget_bytes\":0,\"capture_boundary\":2,\"capture_events\":2,\"capture_slot_storage_bytes\":4194304,\"capture_tls_context_bytes_per_thread\":16,\"capture_total_storage_bytes\":4194320,\"cold_ns\":3132888,\"config_conflicts\":0,\"diagnostics\":\"native-advice-capture\",\"fresh_mappings\":1,\"fresh_requested_bytes\":[8388608],\"gradient_requested\":\"CAUTIOUS\",\"gradient_resolved\":\"LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }\",\"k\":1,\"large_cache_hits\":0,\"mode_requested\":\"Off\",\"mode_resolved\":\"Off\",\"os\":{\"anon_huge_peak\":0,\"end_rss\":2879488,\"faults\":2241,\"kernel_ms\":null,\"peak_rss\":11055104,\"user_ms\":null},\"rep\":[[5408,2637901,489579]],\"reps\":1,\"requested_bytes\":8388608,\"scenario\":\"cycle\",\"study\":true,\"thp_budget_requested_bytes\":0,\"thp_budget_resolved_bytes\":0,\"thp_min_requested_bytes\":8388608,\"thp_min_resolved_bytes\":8388608,\"thp_tuple_conflicts\":0,\"timing_scope\":\"allocation+touch+free; runner full-child timing distinct\",\"warm_ns\":null}\n",
+            "raw_stderr": "",
+            "env_overrides": {
+              "G1_BIG_THP": "off",
+              "G1_BIG_CACHE": "off"
+            },
+            "child_exit_code": 0,
+            "signal": null,
+            "error": null,
+            "timed_out": false,
+            "child_wall_ns": 5394617
+          },
+          "wall_clock_iso": "2026-11-11T11:41:38.104Z"
+        },
+        {
+          "accepted_advice": [],
+          "accepted_advice_count": 0,
+          "advice_granule_bytes": 2097152,
+          "arm": "A",
+          "cache_hit_confirmed": false,
+          "cache_ns": null,
+          "cache_requested": "off",
+          "cache_resolved_budget_bytes": 0,
+          "capture_boundary": 2,
+          "capture_events": 2,
+          "capture_slot_storage_bytes": 4194304,
+          "capture_tls_context_bytes_per_thread": 16,
+          "capture_total_storage_bytes": 4194320,
+          "cold_ns": 3104395,
+          "config_conflicts": 0,
+          "diagnostics": "native-advice-capture",
+          "fresh_mappings": 1,
+          "fresh_requested_bytes": [
+            8388608
+          ],
+          "gradient_requested": "CAUTIOUS",
+          "gradient_resolved": "LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }",
+          "k": 1,
+          "large_cache_hits": 0,
+          "mode_requested": "Off",
+          "mode_resolved": "Off",
+          "os": {
+            "anon_huge_peak": 0,
+            "end_rss": 2859008,
+            "faults": 2239,
+            "kernel_ms": null,
+            "peak_rss": 11104256,
+            "user_ms": null
+          },
+          "rep": [
+            [
+              5188,
+              2592823,
+              506384
+            ]
+          ],
+          "reps": 1,
+          "requested_bytes": 8388608,
+          "scenario": "cycle",
+          "study": true,
+          "thp_budget_requested_bytes": 0,
+          "thp_budget_resolved_bytes": 0,
+          "thp_min_requested_bytes": 8388608,
+          "thp_min_resolved_bytes": 8388608,
+          "thp_tuple_conflicts": 0,
+          "timing_scope": "allocation+touch+free; runner full-child timing distinct",
+          "warm_ns": null,
+          "parsed_row": {
+            "accepted_advice": [],
+            "accepted_advice_count": 0,
+            "advice_granule_bytes": 2097152,
+            "arm": "sefer",
+            "cache_hit_confirmed": false,
+            "cache_ns": null,
+            "cache_requested": "off",
+            "cache_resolved_budget_bytes": 0,
+            "capture_boundary": 2,
+            "capture_events": 2,
+            "capture_slot_storage_bytes": 4194304,
+            "capture_tls_context_bytes_per_thread": 16,
+            "capture_total_storage_bytes": 4194320,
+            "cold_ns": 3104395,
+            "config_conflicts": 0,
+            "diagnostics": "native-advice-capture",
+            "fresh_mappings": 1,
+            "fresh_requested_bytes": [
+              8388608
+            ],
+            "gradient_requested": "CAUTIOUS",
+            "gradient_resolved": "LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }",
+            "k": 1,
+            "large_cache_hits": 0,
+            "mode_requested": "Off",
+            "mode_resolved": "Off",
+            "os": {
+              "anon_huge_peak": 0,
+              "end_rss": 2859008,
+              "faults": 2239,
+              "kernel_ms": null,
+              "peak_rss": 11104256,
+              "user_ms": null
+            },
+            "rep": [
+              [
+                5188,
+                2592823,
+                506384
+              ]
+            ],
+            "reps": 1,
+            "requested_bytes": 8388608,
+            "scenario": "cycle",
+            "study": true,
+            "thp_budget_requested_bytes": 0,
+            "thp_budget_resolved_bytes": 0,
+            "thp_min_requested_bytes": 8388608,
+            "thp_min_resolved_bytes": 8388608,
+            "thp_tuple_conflicts": 0,
+            "timing_scope": "allocation+touch+free; runner full-child timing distinct",
+            "warm_ns": null
+          },
+          "block": 0,
+          "slot": "B",
+          "launch": {
+            "command": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+            "args": [
+              "cycle",
+              "sefer",
+              "8",
+              "1"
+            ],
+            "executable_path": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+            "binary_sha256": "68374597f8b19694eaa6be18ec2e8c937d0cca6e8731a40f8b810fa7d431aa87",
+            "binary_sha256_after": "68374597f8b19694eaa6be18ec2e8c937d0cca6e8731a40f8b810fa7d431aa87",
+            "raw_stdout": "{\"accepted_advice\":[],\"accepted_advice_count\":0,\"advice_granule_bytes\":2097152,\"arm\":\"sefer\",\"cache_hit_confirmed\":false,\"cache_ns\":null,\"cache_requested\":\"off\",\"cache_resolved_budget_bytes\":0,\"capture_boundary\":2,\"capture_events\":2,\"capture_slot_storage_bytes\":4194304,\"capture_tls_context_bytes_per_thread\":16,\"capture_total_storage_bytes\":4194320,\"cold_ns\":3104395,\"config_conflicts\":0,\"diagnostics\":\"native-advice-capture\",\"fresh_mappings\":1,\"fresh_requested_bytes\":[8388608],\"gradient_requested\":\"CAUTIOUS\",\"gradient_resolved\":\"LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }\",\"k\":1,\"large_cache_hits\":0,\"mode_requested\":\"Off\",\"mode_resolved\":\"Off\",\"os\":{\"anon_huge_peak\":0,\"end_rss\":2859008,\"faults\":2239,\"kernel_ms\":null,\"peak_rss\":11104256,\"user_ms\":null},\"rep\":[[5188,2592823,506384]],\"reps\":1,\"requested_bytes\":8388608,\"scenario\":\"cycle\",\"study\":true,\"thp_budget_requested_bytes\":0,\"thp_budget_resolved_bytes\":0,\"thp_min_requested_bytes\":8388608,\"thp_min_resolved_bytes\":8388608,\"thp_tuple_conflicts\":0,\"timing_scope\":\"allocation+touch+free; runner full-child timing distinct\",\"warm_ns\":null}\n",
+            "raw_stderr": "",
+            "env_overrides": {
+              "G1_BIG_THP": "off",
+              "G1_BIG_CACHE": "off"
+            },
+            "child_exit_code": 0,
+            "signal": null,
+            "error": null,
+            "timed_out": false,
+            "child_wall_ns": 5237575
+          },
+          "wall_clock_iso": "2026-11-11T11:41:38.111Z"
+        },
+        {
+          "accepted_advice": [],
+          "accepted_advice_count": 0,
+          "advice_granule_bytes": 2097152,
+          "arm": "A",
+          "cache_hit_confirmed": false,
+          "cache_ns": null,
+          "cache_requested": "off",
+          "cache_resolved_budget_bytes": 0,
+          "capture_boundary": 2,
+          "capture_events": 2,
+          "capture_slot_storage_bytes": 4194304,
+          "capture_tls_context_bytes_per_thread": 16,
+          "capture_total_storage_bytes": 4194320,
+          "cold_ns": 2961870,
+          "config_conflicts": 0,
+          "diagnostics": "native-advice-capture",
+          "fresh_mappings": 1,
+          "fresh_requested_bytes": [
+            8388608
+          ],
+          "gradient_requested": "CAUTIOUS",
+          "gradient_resolved": "LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }",
+          "k": 1,
+          "large_cache_hits": 0,
+          "mode_requested": "Off",
+          "mode_resolved": "Off",
+          "os": {
+            "anon_huge_peak": 0,
+            "end_rss": 2871296,
+            "faults": 2242,
+            "kernel_ms": null,
+            "peak_rss": 11091968,
+            "user_ms": null
+          },
+          "rep": [
+            [
+              4857,
+              2454324,
+              502689
+            ]
+          ],
+          "reps": 1,
+          "requested_bytes": 8388608,
+          "scenario": "cycle",
+          "study": true,
+          "thp_budget_requested_bytes": 0,
+          "thp_budget_resolved_bytes": 0,
+          "thp_min_requested_bytes": 8388608,
+          "thp_min_resolved_bytes": 8388608,
+          "thp_tuple_conflicts": 0,
+          "timing_scope": "allocation+touch+free; runner full-child timing distinct",
+          "warm_ns": null,
+          "parsed_row": {
+            "accepted_advice": [],
+            "accepted_advice_count": 0,
+            "advice_granule_bytes": 2097152,
+            "arm": "sefer",
+            "cache_hit_confirmed": false,
+            "cache_ns": null,
+            "cache_requested": "off",
+            "cache_resolved_budget_bytes": 0,
+            "capture_boundary": 2,
+            "capture_events": 2,
+            "capture_slot_storage_bytes": 4194304,
+            "capture_tls_context_bytes_per_thread": 16,
+            "capture_total_storage_bytes": 4194320,
+            "cold_ns": 2961870,
+            "config_conflicts": 0,
+            "diagnostics": "native-advice-capture",
+            "fresh_mappings": 1,
+            "fresh_requested_bytes": [
+              8388608
+            ],
+            "gradient_requested": "CAUTIOUS",
+            "gradient_resolved": "LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }",
+            "k": 1,
+            "large_cache_hits": 0,
+            "mode_requested": "Off",
+            "mode_resolved": "Off",
+            "os": {
+              "anon_huge_peak": 0,
+              "end_rss": 2871296,
+              "faults": 2242,
+              "kernel_ms": null,
+              "peak_rss": 11091968,
+              "user_ms": null
+            },
+            "rep": [
+              [
+                4857,
+                2454324,
+                502689
+              ]
+            ],
+            "reps": 1,
+            "requested_bytes": 8388608,
+            "scenario": "cycle",
+            "study": true,
+            "thp_budget_requested_bytes": 0,
+            "thp_budget_resolved_bytes": 0,
+            "thp_min_requested_bytes": 8388608,
+            "thp_min_resolved_bytes": 8388608,
+            "thp_tuple_conflicts": 0,
+            "timing_scope": "allocation+touch+free; runner full-child timing distinct",
+            "warm_ns": null
+          },
+          "block": 0,
+          "slot": "B",
+          "launch": {
+            "command": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+            "args": [
+              "cycle",
+              "sefer",
+              "8",
+              "1"
+            ],
+            "executable_path": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+            "binary_sha256": "68374597f8b19694eaa6be18ec2e8c937d0cca6e8731a40f8b810fa7d431aa87",
+            "binary_sha256_after": "68374597f8b19694eaa6be18ec2e8c937d0cca6e8731a40f8b810fa7d431aa87",
+            "raw_stdout": "{\"accepted_advice\":[],\"accepted_advice_count\":0,\"advice_granule_bytes\":2097152,\"arm\":\"sefer\",\"cache_hit_confirmed\":false,\"cache_ns\":null,\"cache_requested\":\"off\",\"cache_resolved_budget_bytes\":0,\"capture_boundary\":2,\"capture_events\":2,\"capture_slot_storage_bytes\":4194304,\"capture_tls_context_bytes_per_thread\":16,\"capture_total_storage_bytes\":4194320,\"cold_ns\":2961870,\"config_conflicts\":0,\"diagnostics\":\"native-advice-capture\",\"fresh_mappings\":1,\"fresh_requested_bytes\":[8388608],\"gradient_requested\":\"CAUTIOUS\",\"gradient_resolved\":\"LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }\",\"k\":1,\"large_cache_hits\":0,\"mode_requested\":\"Off\",\"mode_resolved\":\"Off\",\"os\":{\"anon_huge_peak\":0,\"end_rss\":2871296,\"faults\":2242,\"kernel_ms\":null,\"peak_rss\":11091968,\"user_ms\":null},\"rep\":[[4857,2454324,502689]],\"reps\":1,\"requested_bytes\":8388608,\"scenario\":\"cycle\",\"study\":true,\"thp_budget_requested_bytes\":0,\"thp_budget_resolved_bytes\":0,\"thp_min_requested_bytes\":8388608,\"thp_min_resolved_bytes\":8388608,\"thp_tuple_conflicts\":0,\"timing_scope\":\"allocation+touch+free; runner full-child timing distinct\",\"warm_ns\":null}\n",
+            "raw_stderr": "",
+            "env_overrides": {
+              "G1_BIG_THP": "off",
+              "G1_BIG_CACHE": "off"
+            },
+            "child_exit_code": 0,
+            "signal": null,
+            "error": null,
+            "timed_out": false,
+            "child_wall_ns": 5730358
+          },
+          "wall_clock_iso": "2026-11-11T11:41:38.119Z"
+        },
+        {
+          "accepted_advice": [],
+          "accepted_advice_count": 0,
+          "advice_granule_bytes": 2097152,
+          "arm": "A",
+          "cache_hit_confirmed": false,
+          "cache_ns": null,
+          "cache_requested": "off",
+          "cache_resolved_budget_bytes": 0,
+          "capture_boundary": 2,
+          "capture_events": 2,
+          "capture_slot_storage_bytes": 4194304,
+          "capture_tls_context_bytes_per_thread": 16,
+          "capture_total_storage_bytes": 4194320,
+          "cold_ns": 3063153,
+          "config_conflicts": 0,
+          "diagnostics": "native-advice-capture",
+          "fresh_mappings": 1,
+          "fresh_requested_bytes": [
+            8388608
+          ],
+          "gradient_requested": "CAUTIOUS",
+          "gradient_resolved": "LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }",
+          "k": 1,
+          "large_cache_hits": 0,
+          "mode_requested": "Off",
+          "mode_resolved": "Off",
+          "os": {
+            "anon_huge_peak": 0,
+            "end_rss": 2875392,
+            "faults": 2243,
+            "kernel_ms": null,
+            "peak_rss": 11091968,
+            "user_ms": null
+          },
+          "rep": [
+            [
+              5378,
+              2541706,
+              516069
+            ]
+          ],
+          "reps": 1,
+          "requested_bytes": 8388608,
+          "scenario": "cycle",
+          "study": true,
+          "thp_budget_requested_bytes": 0,
+          "thp_budget_resolved_bytes": 0,
+          "thp_min_requested_bytes": 8388608,
+          "thp_min_resolved_bytes": 8388608,
+          "thp_tuple_conflicts": 0,
+          "timing_scope": "allocation+touch+free; runner full-child timing distinct",
+          "warm_ns": null,
+          "parsed_row": {
+            "accepted_advice": [],
+            "accepted_advice_count": 0,
+            "advice_granule_bytes": 2097152,
+            "arm": "sefer",
+            "cache_hit_confirmed": false,
+            "cache_ns": null,
+            "cache_requested": "off",
+            "cache_resolved_budget_bytes": 0,
+            "capture_boundary": 2,
+            "capture_events": 2,
+            "capture_slot_storage_bytes": 4194304,
+            "capture_tls_context_bytes_per_thread": 16,
+            "capture_total_storage_bytes": 4194320,
+            "cold_ns": 3063153,
+            "config_conflicts": 0,
+            "diagnostics": "native-advice-capture",
+            "fresh_mappings": 1,
+            "fresh_requested_bytes": [
+              8388608
+            ],
+            "gradient_requested": "CAUTIOUS",
+            "gradient_resolved": "LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }",
+            "k": 1,
+            "large_cache_hits": 0,
+            "mode_requested": "Off",
+            "mode_resolved": "Off",
+            "os": {
+              "anon_huge_peak": 0,
+              "end_rss": 2875392,
+              "faults": 2243,
+              "kernel_ms": null,
+              "peak_rss": 11091968,
+              "user_ms": null
+            },
+            "rep": [
+              [
+                5378,
+                2541706,
+                516069
+              ]
+            ],
+            "reps": 1,
+            "requested_bytes": 8388608,
+            "scenario": "cycle",
+            "study": true,
+            "thp_budget_requested_bytes": 0,
+            "thp_budget_resolved_bytes": 0,
+            "thp_min_requested_bytes": 8388608,
+            "thp_min_resolved_bytes": 8388608,
+            "thp_tuple_conflicts": 0,
+            "timing_scope": "allocation+touch+free; runner full-child timing distinct",
+            "warm_ns": null
+          },
+          "block": 0,
+          "slot": "A",
+          "launch": {
+            "command": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+            "args": [
+              "cycle",
+              "sefer",
+              "8",
+              "1"
+            ],
+            "executable_path": "/home/runner/work/sefer-alloc/sefer-alloc/target/x86_64-unknown-linux-gnu/release/examples/g1_big_judge",
+            "binary_sha256": "68374597f8b19694eaa6be18ec2e8c937d0cca6e8731a40f8b810fa7d431aa87",
+            "binary_sha256_after": "68374597f8b19694eaa6be18ec2e8c937d0cca6e8731a40f8b810fa7d431aa87",
+            "raw_stdout": "{\"accepted_advice\":[],\"accepted_advice_count\":0,\"advice_granule_bytes\":2097152,\"arm\":\"sefer\",\"cache_hit_confirmed\":false,\"cache_ns\":null,\"cache_requested\":\"off\",\"cache_resolved_budget_bytes\":0,\"capture_boundary\":2,\"capture_events\":2,\"capture_slot_storage_bytes\":4194304,\"capture_tls_context_bytes_per_thread\":16,\"capture_total_storage_bytes\":4194320,\"cold_ns\":3063153,\"config_conflicts\":0,\"diagnostics\":\"native-advice-capture\",\"fresh_mappings\":1,\"fresh_requested_bytes\":[8388608],\"gradient_requested\":\"CAUTIOUS\",\"gradient_resolved\":\"LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }\",\"k\":1,\"large_cache_hits\":0,\"mode_requested\":\"Off\",\"mode_resolved\":\"Off\",\"os\":{\"anon_huge_peak\":0,\"end_rss\":2875392,\"faults\":2243,\"kernel_ms\":null,\"peak_rss\":11091968,\"user_ms\":null},\"rep\":[[5378,2541706,516069]],\"reps\":1,\"requested_bytes\":8388608,\"scenario\":\"cycle\",\"study\":true,\"thp_budget_requested_bytes\":0,\"thp_budget_resolved_bytes\":0,\"thp_min_requested_bytes\":8388608,\"thp_min_resolved_bytes\":8388608,\"thp_tuple_conflicts\":0,\"timing_scope\":\"allocation+touch+free; runner full-child timing distinct\",\"warm_ns\":null}\n",
+            "raw_stderr": "",
+            "env_overrides": {
+              "G1_BIG_THP": "off",
+              "G1_BIG_CACHE": "off"
+            },
+            "child_exit_code": 0,
+            "signal": null,
+            "error": null,
+            "timed_out": false,
+            "child_wall_ns": 5136151
+          },
+          "wall_clock_iso": "2026-11-11T11:41:38.126Z"
+        }
+      ]
+    }
+  ]
+}

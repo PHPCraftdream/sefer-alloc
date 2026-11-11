@@ -1,0 +1,12 @@
+
+[paired-ab] A vs B — 1 pairs, A/B/B/A protocol
+....
+
+  === A vs B (A - B, ns) ===
+  (not enough samples for a t-test)
+  sign test: A-faster=0/1  B-faster=1/1  ties=0
+
+[paired-ab] provenance written to /home/runner/work/_temp/j13-limited-evidence/cache-16MiB/AB/2026-11-11T11-41-38-240Z.json
+[paired-ab] Descriptive statistics only; use the preregistered reducer for decisions.
+
+[paired-ab] JSON summary is descriptive only; use the preregistered reducer for decisions.

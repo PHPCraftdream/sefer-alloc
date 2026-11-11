@@ -1,0 +1,1 @@
+Discarded one-block smoke: strict registered reducer rejected sample count; no measured report.
