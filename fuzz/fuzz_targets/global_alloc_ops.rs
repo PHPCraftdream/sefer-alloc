@@ -1,7 +1,7 @@
 //! libFuzzer target for the Phase 8–11 allocator descent — exercises
 //! `sefer_alloc::AllocCore` (the segment substrate that `SeferAlloc` /
 //! `GlobalAlloc` is built on) with an `arbitrary`-derived op stream, checking
-//! the M1–M4 invariants from `docs/INVARIANTS.md`.
+//! the valid-call invariants from `docs/INVARIANTS.md` (not double-free misuse).
 //!
 //! The op model, reference model, and M1–M4 oracles now live in the shared
 //! `globalalloc-model` crate — this is the third consumer of that one harness
@@ -46,7 +46,7 @@ use std::alloc::Layout;
 use std::cell::RefCell;
 
 use arbitrary::Unstructured;
-use globalalloc_model::{drive, Config, DoubleFreeOk, OpStream, RawAllocator};
+use globalalloc_model::{drive, Config, OpStream, RawAllocator};
 use libfuzzer_sys::fuzz_target;
 use sefer_alloc::AllocCore;
 
@@ -93,15 +93,14 @@ unsafe impl RawAllocator for CoreUnderTest {
 // forwards to it, exactly as for the pre-centralization `OpStream` target.
 
 /// The fuzz target's own `Config`: restores this target's historical 2 MiB
-/// size / 2^21 align reach over the centralized front-end and opts into
-/// `AllocCore`'s M2 double-free-is-no-op contract.
+/// size / 2^21 align reach over the centralized front-end. Only valid
+/// allocation lifetimes are generated; caller misuse is tested separately.
 fn fuzz_config() -> Config {
     Config {
         large_max: 2 * 1024 * 1024,
         max_align: 2 * 1024 * 1024,
-        // SAFETY: `AllocCore` documents a redundant `dealloc` as a safe
-        // no-op (M2), which is exactly `DoubleFreeOk::new`'s contract.
-        double_free: Some(unsafe { DoubleFreeOk::new() }),
+        // `AllocCore::dealloc` requires at-most-once free; debug guards abort misuse.
+        double_free: None,
         ..Config::default()
     }
 }

@@ -22,6 +22,10 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### J13b concurrent-capture fixture — 2026-11-11
+
+**Status: CLOSED, task #111.** Manual smoke43004502130/job130468508544 failed before measurement with `concurrent capture worker config mismatch`: four workers raced first tuple publication while the fixture demanded zero conflicts. `ThpTupleCell` deliberately counts a loser meeting `PUBLISHING`, including equal-tuple races. Fixture-only commit `573cb7c213eb72fe070776efb3a8e44548633ba6` materializes and checks the same configuration before worker startup; all per-worker settings/conflict,64allocation/free and capture/accounting oracles remain. No runtime or measurement-source change. Exact-source CI43008649237 completed SUCCESS; its preparation log records concurrent joined-lifetimes PASS and concurrent child PASS. Corrected smoke43013696396/job130499378480 also passed preparation, the16-child measurement step and artifact upload. The separate fuzz-job failure in that manual workflow is tracked in the main index, not hidden by this fixture closure. Correctness item264 remains OPEN.
+
 ### 260 — CLOSED (2026-11-09)
 
 Status: CLOSED on exact source `93f990173e37bdaab7334b58f2876ba6649e24c4`, CI `42693008438` attempt2 SUCCESS; final45SUCCESS/20intendedSKIPPED. The existing declared-runtime predicate is unchanged. A proper prefix is derived from history and the complete verification suffix must execute exact production text/Ir identity, not SKIP. The raw structured evidence, CI excerpt, generated table and CSV are preserved in `docs/perf/J13B_TASK78_ZERO_COST_RECEIPT.md`; no whole-PR runtime identity or speedup is claimed. Eighteen policy assertions and retained semantic/model checks passed. Initial macOS runner-capacity cancellation was retried on the same source and all platform steps passed. Full J13b windows/admission/campaign remain separate obligations.
