@@ -49,4 +49,29 @@ const detached = { ...files, '.github/workflows/ci.yml': workflow.replace('     
 assert(problems({ files: detached, deny, actions }).some(error => error.includes('stale ACTIONS entry')));
 const raw = readFileSync(resolve(root, '.github/actions/ci-j13b-judge-preparation/action.yml'), 'utf8');
 assert(raw.includes(String.raw`|\.github/actions/ci-j13b-judge-preparation/action\.yml`), 'J13b guard includes its own action source');
-console.log(`[ci-decomposition-contracts] ${expanded.dependencies.size} action routes plus license reachability/missing/unknown/forbidden/detached counterfactuals passed`);
+// The actual licenses extraction preserves its inline commands and internal step scope.
+{
+  const source = '.github/workflows/ci.yml';
+  const call = '      - uses: ./.github/actions/ci-licenses\n';
+  const action = expanded.sources.get('.github/actions/ci-licenses/action.yml');
+  assert.ok(action, 'licenses action must be reachable');
+  const body = action.split('\n').slice(5).join('\n')
+    .replace(/      # ci-default-shell: preserve original implicit runner shell\n      shell: bash -e \{0\}\n/g, '')
+    .split('\n').map(line => line ? `  ${line}` : '').join('\n');
+  const workflow = expanded.sources.get(source);
+  assert.equal(workflow.split(call).length, 2);
+  const inline = workflow.replace(call, body);
+  const before = effectiveWorkflow(root, { read: file => file === source ? inline : expanded.sources.get(file) });
+  const licenses = text => text.slice(text.indexOf('\n  licenses:\n'), text.indexOf('\n  feature-powerset:\n')).trim();
+  const canonical = text => text.split('\n').filter(line => line.trim() && !line.trimStart().startsWith('#')).join('\n');
+  assert.equal(canonical(licenses(expanded.text)), canonical(licenses(before.text)));
+  for (const mutation of [
+    text => text.replace('actions/cache/save@v4', 'actions/cache/save@v3'),
+    text => text.replace("if: steps.seen.outputs.cache-hit != 'true'", "if: false"),
+    text => text.replace('cargo deny --manifest-path', 'cargo check --manifest-path'),
+  ]) {
+    const changed = effectiveWorkflow(root, { read: file => file === '.github/actions/ci-licenses/action.yml' ? mutation(action) : expanded.sources.get(file) });
+    assert.notEqual(canonical(licenses(changed.text)), canonical(licenses(before.text)), 'version, condition and command mutations must break equivalence');
+  }
+}
+console.log(`[ci-decomposition-contracts] ${expanded.dependencies.size} action routes plus license extraction/reachability/missing/unknown/forbidden/detached counterfactuals passed`);

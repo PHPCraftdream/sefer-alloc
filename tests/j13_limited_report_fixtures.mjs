@@ -246,6 +246,29 @@ const mutations = [
 ];
 for (const [mutate, expected] of mutations) rejects(mutate, expected);
 
+// Owner amendment: swap/pressure is context, not admission; absent facts are not false.
+for (const context of [{}, { active_swap: null, active_pressure: null }, { active_swap: true, active_pressure: true }]) {
+  const value = fixture();
+  delete value.measurement_host.active_swap;
+  delete value.measurement_host.active_pressure;
+  Object.assign(value.measurement_host, context);
+  assert.doesNotThrow(() => j13LimitedReport(value));
+}
+for (const field of ['base_page_bytes', 'thp_page_bytes', 'thp_mode']) {
+  rejects(value => { delete value.measurement_host[field]; }, /page\/THP facts mismatch/);
+  rejects(value => { value.measurement_host[field] = 'wrong'; }, /page\/THP facts mismatch/);
+}
+for (const field of ['os', 'arch', 'cpu_info'])
+  rejects(value => { delete value.measurement_host[field]; }, /scope\/identity required/);
+rejects(value => { delete value.measurement_host.memory_available_bytes; }, /preflight/);
+rejects(value => { delete value.measurement_host.captured_before; }, /preflight/);
+// A one-block smoke must not turn into a registered report.
+rejects(value => {
+  value.ab.document.pairs_per_comparison = 1;
+  value.ab.document.comparisons[0].pairs = 1;
+  value.ab.document.comparisons[0].raw_process_launches.length = 4;
+}, /AB: actual JSON runner root required/);
+
 // Extra transitive Cargo features are accepted when required resolved features are present.
 {
   const value = fixture();

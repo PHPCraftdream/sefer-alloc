@@ -10,6 +10,15 @@ on:
     - cron: '0 6 * * 1'   # weekly Monday 06:00 UTC: full tier + numa-real-kernel, fuzz-run, feature-powerset
     - cron: '0 3 * * *'   # nightly 03:00 UTC: full tier of the regular jobs (docs/CI_TIERS.md)
   workflow_dispatch:
+    inputs:
+      j13_study:
+        description: 'Run the owner-approved registered J13 study (960 children); smoke and 20-minute feasibility review required first'
+        type: boolean
+        default: false
+      j13_smoke:
+        description: 'Run discarded J13 wiring smoke (16 children), not registered measurements'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -64,6 +73,82 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/ci-j13b-judge-preparation
+      - name: Manual J13 measurement (owner-approved protocol; never automatic)
+        if: github.event_name == 'workflow_dispatch' && (github.event.inputs.j13_study == 'true' || github.event.inputs.j13_smoke == 'true')
+        timeout-minutes: 30
+        shell: bash
+        env:
+          SMOKE: ${{ github.event.inputs.j13_smoke }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/j13-limited-evidence"
+          receipt_dir="$RUNNER_TEMP/g1-big-study-build"
+          mkdir -p "$evidence/preflight"
+          cp "$receipt_dir/build-receipt.json" "$evidence/build-receipt.json"
+          jq -n --arg id "$RUN_ID" --arg attempt "$RUN_ATTEMPT" --arg smoke "$SMOKE" '{run_id:$id,run_attempt:$attempt,smoke:($smoke=="true"),smoke_numbers_discarded:($smoke=="true"),policy:"2026-11-11 prereg amendment; no automatic retry; operator reviews 20-minute feasibility before registered dispatch"}' > "$evidence/attempt.json"
+          git status --porcelain > "$evidence/source-status-before-measurement.txt"
+          test ! -s "$evidence/source-status-before-measurement.txt"
+          executable=$(jq -er '.build.executable_path' "$evidence/build-receipt.json")
+          printf '%s  %s\n' "$(jq -er '.build.sha256' "$evidence/build-receipt.json")" "$executable" | sha256sum -c -
+          uname -s > "$evidence/preflight/os.raw"
+          uname -m > "$evidence/preflight/arch.raw"
+          getconf PAGESIZE > "$evidence/preflight/pages.raw"
+          cat /sys/kernel/mm/transparent_hugepage/hpage_pmd_size > "$evidence/preflight/thp-size.raw"
+          cat /sys/kernel/mm/transparent_hugepage/enabled > "$evidence/preflight/thp-mode.raw"
+          cat /proc/meminfo > "$evidence/preflight/meminfo.raw"
+          cat /proc/cpuinfo > "$evidence/preflight/cpuinfo.raw"
+          jq -n --arg before "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" --rawfile os "$evidence/preflight/os.raw" --rawfile arch "$evidence/preflight/arch.raw" --rawfile pages "$evidence/preflight/pages.raw" --rawfile huge "$evidence/preflight/thp-size.raw" --rawfile mode "$evidence/preflight/thp-mode.raw" --rawfile mem "$evidence/preflight/meminfo.raw" --rawfile cpu "$evidence/preflight/cpuinfo.raw" '{scope:"measurement_host",os:($os|ascii_downcase|rtrimstr("\n")),arch:($arch|rtrimstr("\n")),cpu_info:$cpu,captured_before:$before,base_page_bytes:($pages|tonumber),thp_page_bytes:($huge|tonumber),thp_mode:((try ($mode|capture("\\[(?<mode>[^]]+)\\]")|.mode) catch null)//null),memory_available_bytes:((try ($mem|capture("MemAvailable:\\s+(?<kb>[0-9]+)\\s+kB")|.kb|tonumber|.*1024) catch null)//null)}' > "$evidence/measurement-host.json"
+          jq -e '.os=="linux" and .arch=="x86_64" and (.cpu_info|length>0) and .base_page_bytes==4096 and .thp_page_bytes==2097152 and .thp_mode=="madvise" and (.memory_available_bytes|type=="number") and .memory_available_bytes>=8589934592' "$evidence/measurement-host.json"
+          cells='cycle-1MiB cycle-8MiB-minus-1 cycle-8MiB cycle-16MiB cycle-128MiB cycle-1024MiB grow-1GiB many-128x16MiB edge-128MiB cache-16MiB'
+          pairs=12
+          if [ "$SMOKE" = true ]; then cells='cycle-8MiB cache-16MiB'; pairs=1; fi
+          date -u +%Y-%m-%dT%H:%M:%S.%3NZ > "$evidence/children-started.txt"
+          for cell in $cells; do
+            dir="$evidence/$cell"
+            mkdir -p "$dir/AB" "$dir/AA"
+            jq --arg executable "$executable" '.arms.A.command=$executable | .arms.B.command=$executable' "docs/perf/j13_limited_cells/$cell.json" > "$dir/config.json"
+            PAIRED_AB_OUT_DIR="$dir/AB" node scripts/paired-ab-runner.mjs --config "$dir/config.json" --arms A,B --pairs "$pairs" 2>&1 | tee "$dir/AB.log"
+            PAIRED_AB_OUT_DIR="$dir/AA" node scripts/paired-ab-runner.mjs --config "$dir/config.json" --arms A,A --pairs "$pairs" 2>&1 | tee "$dir/AA.log"
+            date -u +%Y-%m-%dT%H:%M:%S.%3NZ > "$dir/measurement-complete.txt"
+            node --input-type=module - "$evidence" "$cell" "$SMOKE" <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+          import { j13LimitedReport } from './scripts/j13_limited_report.mjs';
+          const [root, cell, smoke] = process.argv.slice(2), dir = `${root}/${cell}`;
+          const json = path => JSON.parse(readFileSync(path, 'utf8'));
+          const document = arm => {
+            const files = readdirSync(`${dir}/${arm}`).filter(name => name.endsWith('.json'));
+            assert.equal(files.length, 1, `${arm}: exactly one original runner document`);
+            return json(`${dir}/${arm}/${files[0]}`);
+          };
+          const facts = { cell, regime: cell === 'cache-16MiB' ? 'CACHE' : 'COLD' };
+          const input = { evidence_class: 'measured', build_receipt: json(`${root}/build-receipt.json`), measurement_host: json(`${root}/measurement-host.json`), ab: { document: document('AB'), facts }, control: { document: document('AA'), facts } };
+          if (smoke === 'true') {
+            assert.throws(() => j13LimitedReport(input), /^Error: AB: actual JSON runner root required$/);
+            writeFileSync(`${dir}/expected-reducer-refusal.txt`, 'Discarded one-block smoke: strict registered reducer rejected sample count; no measured report.\n');
+          } else {
+            const report = j13LimitedReport(input);
+            writeFileSync(`${dir}/report.csv`, report.csv);
+            writeFileSync(`${dir}/report.md`, report.markdown);
+          }
+          NODE
+          done
+          date -u +%Y-%m-%dT%H:%M:%S.%3NZ > "$evidence/completed.txt"
+          du -ab "$evidence" > "$RUNNER_TEMP/j13-evidence-sizes.txt"
+      - name: Preserve manual J13 partial evidence on success or failure
+        if: always() && github.event_name == 'workflow_dispatch' && (github.event.inputs.j13_study == 'true' || github.event.inputs.j13_smoke == 'true')
+        uses: actions/upload-artifact@v6
+        with:
+          name: j13-limited-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/j13-limited-evidence
+            ${{ runner.temp }}/g1-big-study-build
+            ${{ runner.temp }}/j13-evidence-sizes.txt
+          if-no-files-found: error
+          retention-days: 30
+
 
   select-tests:
     needs: changes
@@ -885,65 +970,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deny
-      - name: Self-test the fingerprint and the coverage check
-        run: |
-          node scripts/license-check-fingerprint.mjs --selftest
-          node scripts/license-check-workspaces.mjs --selftest
-      - name: Every Cargo workspace and third-party action is covered
-        run: node scripts/license-check-workspaces.mjs --check
-      - name: Dependency-set fingerprint
-        id: fp
-        run: |
-          set -euo pipefail
-          cargo metadata --locked --no-deps --format-version 1 > "$RUNNER_TEMP/members.json"
-          node scripts/license-check-fingerprint.mjs --metadata "$RUNNER_TEMP/members.json" --tool "$(cargo deny --version)"
-      - name: Did this dependency set already pass?
-        id: seen
-        uses: actions/cache/restore@v4
-        with:
-          path: .license-check-pass
-          key: license-check-${{ steps.fp.outputs.fingerprint }}
-          lookup-only: true
-      - name: cargo deny check licenses bans sources (every Cargo workspace)
-        if: steps.seen.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          node scripts/license-check-workspaces.mjs --list > "$RUNNER_TEMP/workspaces.txt"
-          while read -r dir; do
-            echo "::group::$dir"
-            cargo deny --manifest-path "$dir/Cargo.toml" --locked check licenses bans sources
-            echo "::endgroup::"
-          done < "$RUNNER_TEMP/workspaces.txt"
-      - name: Record the passed fingerprint
-        if: steps.seen.outputs.cache-hit != 'true'
-        env:
-          FINGERPRINT: ${{ steps.fp.outputs.fingerprint }}
-        run: |
-          mkdir -p .license-check-pass
-          printf '%s\n' "$FINGERPRINT" > .license-check-pass/fingerprint
-      - if: steps.seen.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: .license-check-pass
-          key: license-check-${{ steps.fp.outputs.fingerprint }}
-      - name: Report
-        env:
-          HIT: ${{ steps.seen.outputs.cache-hit }}
-          FINGERPRINT: ${{ steps.fp.outputs.fingerprint }}
-        run: |
-          if [ "$HIT" = "true" ]; then
-            msg="license check skipped: dependency set $FINGERPRINT already passed"
-          else
-            msg="license check ran and passed for dependency set $FINGERPRINT"
-          fi
-          echo "$msg" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: ./.github/actions/ci-licenses
 
   feature-powerset:
     name: cargo-hack feature-powerset (depth 2, check-only, weekly)

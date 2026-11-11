@@ -74,7 +74,6 @@ function validateHost(h, firstLaunch) {
     'measurement-host page/THP facts mismatch');
   need(iso(h.captured_before) && Date.parse(h.captured_before) <= firstLaunch && pos(h.memory_available_bytes)
     && h.memory_available_bytes >= 8*1024*M, 'measurement-host preflight timing/memory unavailable');
-  need(h.active_swap === false && h.active_pressure === false, 'measurement-host swap/pressure admission failed');
 }
 
 function validateProducer(row, cell, slot, role, receipt) {

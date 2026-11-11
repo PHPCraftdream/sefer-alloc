@@ -114,3 +114,47 @@ test('memory no-match does not erase a valid selected-mode observation', () => {
   assert.equal(value.transparent_hugepage.selected_mode, 'madvise');
   assert.equal(value.mem_available_kib, null);
 });
+
+test('actual measurement preflight filters reject missing or wrong facts without fake admission', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const hostLine = workflow.split('\n').find(line => line.includes('> "$evidence/measurement-host.json"'));
+  const hostFilter = hostLine.match(/ '(\{.*\})' > "\$evidence\/measurement-host\.json"/)[1];
+  const gateLine = workflow.split('\n').find(line => line.includes("jq -e '.os=="));
+  const gate = gateLine.match(/jq -e '([^']+)'/)[1];
+  const good = { before: '2026-11-11T00:00:00.000Z', os: 'Linux\n', arch: 'x86_64\n', pages: '4096\n', huge: '2097152\n', mode: 'always [madvise] never\n', mem: 'MemAvailable: 8388608 kB\n', cpu: 'synthetic CPU' };
+  const cases = [{ patch: {}, pass: true }, { patch: { mode: 'no marker' } }, { patch: { mem: 'no memory fact' } }, { patch: { mem: 'MemAvailable: 8388607 kB\n' } }, { patch: { pages: '16384' } }, { patch: { huge: '4096' } }, { patch: { os: 'Windows' } }, { patch: { arch: 'aarch64' } }, { patch: { cpu: '' } }, { patch: { mode: '[always] madvise never' } }];
+  for (const { patch, pass = false } of cases) {
+    const args = ['-n'];
+    for (const [key, value] of Object.entries({ ...good, ...patch })) args.push('--arg', key, value);
+    const host = spawnSync('jq', [...args, hostFilter], { encoding: 'utf8', timeout: 5000 });
+    assert.equal(host.status, 0, host.stderr);
+    const parsed = JSON.parse(host.stdout);
+    assert.equal(Object.hasOwn(parsed, 'active_swap'), false);
+    assert.equal(Object.hasOwn(parsed, 'active_pressure'), false);
+    const admitted = spawnSync('jq', ['-e', gate], { input: host.stdout, encoding: 'utf8', timeout: 5000 });
+    assert.equal(admitted.status, pass ? 0 : 1, admitted.stderr);
+  }
+});
+
+test('fixed cell templates retain every registered argument and explicit arm environment', () => {
+  const cells = {
+    'cycle-1MiB': ['cycle','sefer','1','1'], 'cycle-8MiB-minus-1': ['cycle','sefer','8','1'],
+    'cycle-8MiB': ['cycle','sefer','8','1'], 'cycle-16MiB': ['cycle','sefer','16','1'],
+    'cycle-128MiB': ['cycle','sefer','128','1'], 'cycle-1024MiB': ['cycle','sefer','1024','1'],
+    'grow-1GiB': ['grow','sefer','1024','1'], 'many-128x16MiB': ['many','sefer','16','1','128'],
+    'edge-128MiB': ['edge','sefer','128','1'], 'cache-16MiB': ['cycle','sefer','16','2','1'],
+  };
+  for (const [cell, args] of Object.entries(cells)) {
+    const config = JSON.parse(readFileSync(new URL(`../docs/perf/j13_limited_cells/${cell}.json`, import.meta.url), 'utf8'));
+    assert.deepEqual(Object.keys(config).sort(), ['arms','metric','result_format','timeout_ms']);
+    assert.equal(config.result_format, 'json');
+    assert.equal(config.metric, 'cold_ns');
+    assert.equal(config.timeout_ms, 120000);
+    assert.deepEqual(Object.keys(config.arms), ['A','B']);
+    for (const [arm, mode] of [['A','off'], ['B','always']]) {
+      assert.equal(config.arms[arm].command, '__CI_EXECUTABLE__');
+      assert.deepEqual(config.arms[arm].args, args);
+      assert.deepEqual(config.arms[arm].env, { G1_BIG_THP: mode, G1_BIG_CACHE: cell === 'cache-16MiB' ? 'on' : 'off', ...(cell === 'cycle-8MiB-minus-1' ? { G1_BIG_BYTES: '8388607' } : {}) });
+    }
+  }
+});

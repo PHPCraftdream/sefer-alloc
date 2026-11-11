@@ -1,0 +1,9 @@
+{
+  "result_format": "json",
+  "metric": "cold_ns",
+  "timeout_ms": 120000,
+  "arms": {
+    "A": { "command": "__CI_EXECUTABLE__", "args": ["cycle", "sefer", "8", "1"], "env": { "G1_BIG_THP": "off", "G1_BIG_CACHE": "off" } },
+    "B": { "command": "__CI_EXECUTABLE__", "args": ["cycle", "sefer", "8", "1"], "env": { "G1_BIG_THP": "always", "G1_BIG_CACHE": "off" } }
+  }
+}

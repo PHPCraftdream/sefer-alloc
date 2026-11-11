@@ -3,6 +3,10 @@ description: Original j13b-judge-preparation job steps
 runs:
   using: composite
   steps:
+    - name: Reject conflicting manual study inputs
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.j13_study == 'true' && github.event.inputs.j13_smoke == 'true'
+      shell: bash
+      run: exit 2
     - name: Check changed paths
       id: paths
       env:
@@ -17,7 +21,7 @@ runs:
           exit 0
         fi
         git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE="$HEAD_SHA^"
-        if git diff --name-only "$BASE" "$HEAD_SHA" | grep -qE '^(scripts/(j13b_.*|paired-ab-.*|j13_limited_report)\.mjs|examples/(g1_j13b_.*|g1_big_judge\.rs)|examples/_shared/.*|tests/(j13b_.*|g1_big_study_.*|j13_limited_report_fixtures)\.(mjs|rs)|crates/aligned-vmem/src/.*|Cargo\.toml|docs/perf/J13_LIMITED_(HARNESS_USAGE|STUDY_PREREG)\.md|\.github/workflows/ci\.yml|\.github/actions/ci-j13b-judge-preparation/action\.yml)$'; then
+        if git diff --name-only "$BASE" "$HEAD_SHA" | grep -qE '^(scripts/(j13b_.*|paired-ab-.*|j13_limited_report)\.mjs|examples/(g1_j13b_.*|g1_big_judge\.rs)|examples/_shared/.*|tests/(j13b_.*|g1_big_study_.*|j13_limited_report_fixtures)\.(mjs|rs)|crates/aligned-vmem/src/.*|Cargo\.toml|docs/perf/J13_LIMITED_(HARNESS_USAGE|STUDY_PREREG)\.md|docs/perf/j13_limited_cells/[^/]+\.json|\.github/workflows/ci\.yml|\.github/actions/ci-j13b-judge-preparation/action\.yml)$'; then
           echo "run=true" >> "$GITHUB_OUTPUT"
         fi
     - if: steps.paths.outputs.run == 'true'
@@ -139,7 +143,7 @@ runs:
         cp "$executable" "$receipt_dir/measurement-executable"
         copied_sha256=$(sha256sum "$receipt_dir/measurement-executable" | awk '{print $1}')
         test "$binary_sha256" = "$copied_sha256"
-        jq -n --arg executable "$executable" --arg hash "$binary_sha256" --argjson artifact "$artifact" --slurpfile context "$receipt_dir/build-context.json" --arg host "$rustc_host" '{schema:"g1-big-study-ci-build-receipt.v1",build_context:$context[0],build:{command:["cargo","build","--locked","--release","--target",$host,"--features","production alloc-stats internals bench-internals","--example","g1_big_judge","--message-format=json-render-diagnostics"],executable_path:$executable,sha256:$hash,artifact_features:$artifact.features,artifact_target:$artifact.target,artifact_profile:$artifact.profile,artifact_filenames:$artifact.filenames,artifact_executable:$artifact.executable,artifact_kind:$artifact.target.kind},copied_artifact:{path:"measurement-executable",sha256:$hash},host_target:$host,host_observation_file:"ci-build-host-observation.json",registered_bounds:{per_child_timeout_ms:120000,total_study_timeout_ms:1800000,raw_output_bytes:268435456,max_live_payload_bytes:2147483648,max_concurrent_children:1,max_actor_workers:2,min_available_memory_bytes_before_measurement:8589934592,require_no_active_swap:true,require_no_active_pressure:true},admission:{status:"not evaluated by build step",required_later:"measurement parent must preflight the actual measurement host before any child"}}' > "$receipt_dir/build-receipt.json"
+        jq -n --arg executable "$executable" --arg hash "$binary_sha256" --argjson artifact "$artifact" --slurpfile context "$receipt_dir/build-context.json" --arg host "$rustc_host" '{schema:"g1-big-study-ci-build-receipt.v1",build_context:$context[0],build:{command:["cargo","build","--locked","--release","--target",$host,"--features","production alloc-stats internals bench-internals","--example","g1_big_judge","--message-format=json-render-diagnostics"],executable_path:$executable,sha256:$hash,artifact_features:$artifact.features,artifact_target:$artifact.target,artifact_profile:$artifact.profile,artifact_filenames:$artifact.filenames,artifact_executable:$artifact.executable,artifact_kind:$artifact.target.kind},copied_artifact:{path:"measurement-executable",sha256:$hash},host_target:$host,host_observation_file:"ci-build-host-observation.json",registered_bounds:{per_child_timeout_ms:120000,total_study_timeout_ms:1800000,raw_output_bytes:null,raw_output_note:"2026-11-11 amendment supersedes hard cumulative byte enforcement; repository artifact storage policy applies",max_live_payload_bytes:2147483648,max_concurrent_children:1,max_actor_workers:2,min_available_memory_bytes_before_measurement:8589934592,noise_policy:"per-cell registered A/A readability; no swap/pressure admission claim"},admission:{status:"not evaluated by build step",required_later:"measurement parent must preflight the actual measurement host before any child"}}' > "$receipt_dir/build-receipt.json"
     - if: steps.paths.outputs.run == 'true'
       uses: actions/upload-artifact@v6
       with:
