@@ -327,4 +327,47 @@ rejects(value => {
   assert.match(result.rows.find(row => row.metric === 'cold_first_life').claimNote, /descriptive, no CI/);
 }
 
-console.log(`j13 limited report synthetic fixtures passed: ${mutations.length} fail-closed mutations plus cold/cache statistics, rendering, and null observations`);
+// Threshold-sweep cells run both arms under a 2 MiB minimum block size (G1_BIG_MIN).
+function sweep(scenario, mib, min = 2 * MIB) {
+  const value = fixture(), bytes = mib * MIB;
+  value.ab.facts.cell = value.control.facts.cell = `${scenario}-${mib}MiB`;
+  for (const [role, pair] of [['AB', value.ab], ['control', value.control]]) {
+    for (const row of pair.document.comparisons[0].raw_process_launches) {
+      const always = role === 'AB' && row.slot === 'B';
+      setProducer(row, p => {
+        Object.assign(p, { scenario, requested_bytes: bytes, fresh_requested_bytes: [bytes],
+          thp_min_requested_bytes: min, thp_min_resolved_bytes: min });
+        p.accepted_advice = always ? [{ requested_bytes: bytes, usable_span_bytes: bytes, accepted_bytes: bytes }] : [];
+      });
+      row.launch.args = [scenario, 'sefer', String(mib), '1'];
+      row.launch.env_overrides.G1_BIG_MIN = String(min);
+    }
+  }
+  return value;
+}
+const sweepCells = [['cycle', 2], ['cycle', 4], ['cycle', 6], ['edge', 4]];
+for (const [scenario, mib] of sweepCells) {
+  const result = j13LimitedReport(sweep(scenario, mib));
+  assert.equal(result.facts.AB.cell, `${scenario}-${mib}MiB`);
+  assert.equal(result.rows.find(row => row.metric === 'selected').mapping.field, 'cold_ns');
+  const rejectsSweep = (mutate, pattern) => {
+    const value = sweep(scenario, mib);
+    mutate(value);
+    assert.throws(() => j13LimitedReport(value), pattern);
+  };
+  const rows = value => value.ab.document.comparisons[0].raw_process_launches;
+  rejectsSweep(value => { setProducer(rows(value)[0], p => { p.thp_min_requested_bytes = 8388608; }); }, /resolved THP tuple/);
+  rejectsSweep(value => { setProducer(rows(value)[1], p => { p.thp_min_resolved_bytes = 8388608; }); }, /resolved THP tuple/);
+  rejectsSweep(value => { delete rows(value)[0].launch.env_overrides.G1_BIG_MIN; }, /launch args\/environment/);
+  rejectsSweep(value => { rows(value)[1].launch.env_overrides.G1_BIG_MIN = '8388608'; }, /launch args\/environment/);
+  rejectsSweep(value => { setProducer(rows(value)[1], p => { p.accepted_advice = []; p.accepted_advice_count = 0; }); }, /advice count\/mode/);
+}
+// A sweep-cell producer cannot be replayed as an 8 MiB cell, nor can an 8 MiB cell accept the override.
+assert.throws(() => j13LimitedReport(sweep('cycle', 16, 8 * MIB)), /launch args\/environment/);
+{
+  const value = fixture();
+  for (const row of value.ab.document.comparisons[0].raw_process_launches) row.launch.env_overrides.G1_BIG_MIN = '2097152';
+  assert.throws(() => j13LimitedReport(value), /launch args\/environment/);
+}
+
+console.log(`j13 limited report synthetic fixtures passed: ${mutations.length} fail-closed mutations plus cold/cache statistics, rendering, null observations, and ${sweepCells.length} threshold-sweep cells`);

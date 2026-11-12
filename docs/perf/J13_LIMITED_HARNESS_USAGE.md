@@ -6,6 +6,8 @@ The dated 2026-11-11 owner amendment in `J13_LIMITED_STUDY_PREREG.md` authorizes
 
 The study environment is `G1_BIG_THP=off|always` and `G1_BIG_CACHE=off|on`; both are required together. Optional `G1_BIG_BYTES` is an exact positive decimal byte count that must ceil to the CLI MiB argument. CLI: `g1_big_judge <cycle|edge|grow|many> sefer <size_mib> <reps> [k]`.
 
+Optional `G1_BIG_MIN` is the THP minimum block size as an exact positive decimal byte count (default 8388608). A cell sets it identically in both arms; the reducer derives the expected tuple, eligibility and environment from the cell's registered value, and the ten original cells keep the default. The 2026-11-12 threshold-sweep cells (`cycle-2MiB`, `cycle-4MiB`, `cycle-6MiB`, `edge-4MiB`) set `G1_BIG_MIN=2097152`; the campaign cell list in `ci.yml` selects them.
+
 - Boundary cycle: `cycle sefer 8 1`, `G1_BIG_BYTES=8388607`, cache off.
 - Cache cycle: `cycle sefer 16 2 1`, cache on; second life must be a real hit.
 - Other cells use exactly the registered scenario/size/reps/k. No additional measurement cells or warmups.
@@ -57,6 +59,8 @@ The owner accepts up to2 MiB per touched2 MiB region of an advised block; report
 ## Source budget and Small-path verification
 
 Historical source tally900/900 becomes **899/900** after deleting only the obsolete reducer predicate:470 helper+48 judge+21 parser+101 runner+259 full-physical-reducer lines. No minification/hidden implementation. Tests, ordinary YAML/JSON invocation declarations and documentation are not places to conceal new implementation.
+
+The 2026-11-12 threshold-sweep registration (per-cell `G1_BIG_MIN`) brings the tally to **900/900**: 471 helper+48 judge+21 parser+101 runner+259 full-physical-reducer lines; no new entrypoint, reducer or runner path.
 
 The original standalone 64-byte1024 alloc/free Small-Ir prerequisite is superseded. Task 107 owns changed-default Small-path cost verification through existing IAI/zero-cost gates; no unperformed standalone result or new benchmark is claimed. Correctness item264 stays OPEN.
 

@@ -190,6 +190,86 @@ fn cache_only_admits_two_16_mib_cycles() {
     .is_err());
 }
 
+const SWEEP_MIN: usize = 2 * 1024 * 1024;
+
+fn with_min(
+    mode: &str,
+    scenario: &str,
+    mib: usize,
+    min: &str,
+) -> Result<Option<judge::g1_big_study::Request>, String> {
+    let mut supplied = vars(mode, "off");
+    supplied.push((OsString::from("G1_BIG_MIN"), OsString::from(min)));
+    judge::g1_big_study::parse_request(&args(scenario, "sefer", mib, 1, 1), supplied)
+}
+
+#[test]
+fn threshold_override_is_exact_defaults_to_8_mib_and_applies_to_sweep_cells() {
+    assert_eq!(configured("always", "off", 8, 1).min, 8 * 1024 * 1024);
+    for (scenario, mib) in [("cycle", 2), ("cycle", 4), ("cycle", 6), ("edge", 4)] {
+        for mode in ["off", "always"] {
+            let request = with_min(mode, scenario, mib, "2097152").unwrap().unwrap();
+            assert_eq!(request.min, SWEEP_MIN);
+            assert_eq!(request.bytes, mib * 1024 * 1024);
+        }
+    }
+    for invalid in [
+        "",
+        "0",
+        "00",
+        "+2097152",
+        "2MiB",
+        "-1",
+        "1e6",
+        "99999999999999999999999",
+    ] {
+        assert!(
+            with_min("always", "cycle", 2, invalid).is_err(),
+            "accepted invalid threshold override {invalid:?}"
+        );
+    }
+    let mut duplicate = vars("off", "off");
+    duplicate.push((OsString::from("G1_BIG_MIN"), OsString::from("2097152")));
+    duplicate.push((OsString::from("G1_BIG_MIN"), OsString::from("2097152")));
+    assert!(
+        judge::g1_big_study::parse_request(&args("cycle", "sefer", 2, 1, 1), duplicate).is_err()
+    );
+    let alone = [(OsString::from("G1_BIG_MIN"), OsString::from("2097152"))];
+    assert!(judge::g1_big_study::parse_request(&args("cycle", "sefer", 2, 1, 1), alone).is_err());
+}
+
+fn event(accepted: bool, requested: usize, value: usize) -> aligned_vmem::AdviceEvent {
+    let (base, span, usable, usable_len) = (0x100000, 32 * 1024 * 1024, 0x100000, 16 * 1024 * 1024);
+    if accepted {
+        aligned_vmem::AdviceEvent::accepted(base, span, usable, usable_len, requested, value, 1)
+    } else {
+        aligned_vmem::AdviceEvent::fresh(base, span, usable, usable_len, requested, value, 1)
+    }
+    .unwrap()
+}
+
+#[test]
+fn validator_uses_the_requested_threshold_not_a_constant() {
+    let two = 2 * 1024 * 1024;
+    let request = with_min("always", "cycle", 2, "2097152").unwrap().unwrap();
+    let matching = capture(vec![event(false, two, SWEEP_MIN), event(true, two, two)]);
+    assert!(judge::g1_big_study::validate_capture(&request, &matching).is_ok());
+
+    let stale_8_mib = capture(vec![
+        event(false, two, 8 * 1024 * 1024),
+        event(true, two, two),
+    ]);
+    assert!(judge::g1_big_study::validate_capture(&request, &stale_8_mib).is_err());
+
+    let default_request = configured("always", "off", 2, 1);
+    assert!(judge::g1_big_study::validate_capture(&default_request, &matching).is_err());
+
+    let below = with_min("always", "cycle", 2, "4194304").unwrap().unwrap();
+    let ineligible = capture(vec![event(false, two, 4 * 1024 * 1024)]);
+    assert!(judge::g1_big_study::validate_capture(&below, &ineligible).is_ok());
+    assert!(judge::g1_big_study::validate_capture(&below, &matching).is_err());
+}
+
 #[cfg(feature = "numa-aware")]
 #[test]
 fn numa_runtime_admission_refuses_before_payload_execution() {
