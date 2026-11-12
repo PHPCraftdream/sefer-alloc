@@ -85,6 +85,8 @@ static SRC0: [AtomicUsize; 4] = [const { AtomicUsize::new(0) }; 4];
 static SRC1: [AtomicUsize; 4] = [const { AtomicUsize::new(0) }; 4];
 #[cfg(target_os = "linux")]
 static READY: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "linux")]
+static BOUNDS_SET: AtomicBool = AtomicBool::new(false);
 const STACK: usize = 2 * 1024 * 1024;
 const SC: &str = "SEFER_B4_30_SCENARIO";
 const D: &str = "SEFER_B4_30_P";
@@ -178,11 +180,52 @@ fn bounds() -> (usize, usize) {
     }
     #[cfg(target_os = "linux")]
     {
+        let (l, h, g) = pthread_stack();
+        LOW.store(l, Ordering::Relaxed);
+        HIGH.store(h, Ordering::Relaxed);
+        GUARD.store(g, Ordering::Relaxed);
+        BOUNDS_SET.store(true, Ordering::Release);
         while !READY.load(Ordering::Acquire) {
             std::hint::spin_loop()
         }
-        (LOW.load(Ordering::Relaxed), HIGH.load(Ordering::Relaxed))
+        (l, h)
     }
+}
+/// Opaque storage for `pthread_attr_t` (<= 64 B on every Linux ABI).
+#[cfg(target_os = "linux")]
+#[repr(C, align(16))]
+struct PthreadAttr([u8; 128]);
+#[cfg(target_os = "linux")]
+unsafe extern "C" {
+    fn pthread_self() -> usize;
+    fn pthread_getattr_np(thread: usize, attr: *mut PthreadAttr) -> i32;
+    fn pthread_attr_getstack(attr: *const PthreadAttr, addr: *mut *mut u8, size: *mut usize)
+        -> i32;
+    fn pthread_attr_getguardsize(attr: *const PthreadAttr, size: *mut usize) -> i32;
+    fn pthread_attr_destroy(attr: *mut PthreadAttr) -> i32;
+}
+/// Authoritative (low, high, guard) of the CALLING thread's stack from glibc.
+/// glibc >= 2.42 installs the guard with `MADV_GUARD_INSTALL` inside the one
+/// rw-p mapping (no `---p` VMA) and /proc/self/maps may merge adjacent thread
+/// stacks, so the VMA is not the stack; glibc reports `low` above the guard,
+/// `high` = top of the mapping and `high - low` = the requested stack size.
+#[cfg(target_os = "linux")]
+fn pthread_stack() -> (usize, usize, usize) {
+    let mut attr = PthreadAttr([0; 128]);
+    let (mut addr, mut size, mut guard) = (std::ptr::null_mut::<u8>(), 0usize, 0usize);
+    // SAFETY: `attr` is zeroed storage larger than any Linux pthread_attr_t;
+    // pthread_getattr_np initialises it for the calling thread, the outputs
+    // are writable locals, and it is destroyed exactly once after use.
+    let rc = unsafe {
+        let a = pthread_getattr_np(pthread_self(), &mut attr);
+        let b = pthread_attr_getstack(&attr, &mut addr, &mut size);
+        let c = pthread_attr_getguardsize(&attr, &mut guard);
+        let d = pthread_attr_destroy(&mut attr);
+        (a, b, c, d)
+    };
+    assert_eq!(rc, (0, 0, 0, 0), "pthread stack query failed");
+    let low = addr as usize;
+    (low, low + size, guard)
 }
 /// Recursion with a LIVE frame marker. The stop window is derived from the
 /// stride ACTUALLY observed between consecutive frames (prev - current): if
@@ -363,10 +406,19 @@ fn b4_30_probe_child() {
         .expect("unnamed worker");
     #[cfg(target_os = "linux")]
     {
-        while ENTRY.load(Ordering::Acquire) == 0 {
+        while !BOUNDS_SET.load(Ordering::Acquire) {
+            assert!(
+                !worker.is_finished(),
+                "worker ended before publishing stack bounds"
+            );
             std::hint::spin_loop()
         }
         let a = ENTRY.load(Ordering::Acquire);
+        let (low, high, g) = (
+            LOW.load(Ordering::Relaxed),
+            HIGH.load(Ordering::Relaxed),
+            GUARD.load(Ordering::Relaxed),
+        );
         let maps = std::fs::read_to_string("/proc/self/maps").expect("read maps");
         let mut found = None;
         let mut prev: Option<(usize, usize, String)> = None;
@@ -378,24 +430,31 @@ fn b4_30_probe_child() {
             let l = usize::from_str_radix(x, 16).unwrap();
             let h = usize::from_str_radix(y, 16).unwrap();
             if perm.starts_with("rw-p") && l <= a && a < h {
-                let guard = prev
+                let guard_vma = prev
                     .as_ref()
                     .filter(|(_, end, permissions)| *end == l && permissions.starts_with("---p"))
                     .map(|(start, end, _)| end - start)
                     .unwrap_or(0);
-                found = Some((l, h, guard));
+                found = Some((l, h, guard_vma));
                 break;
             }
             prev = Some((l, h, perm.to_string()));
         }
-        let (l, h, g) = found.expect("worker entry lacks rw-p VMA");
+        let (vl, vh, guard_vma) = found.expect("worker entry lacks rw-p VMA");
+        // The VMA may exceed the stack (merged neighbours): it must contain
+        // the whole glibc-reported stack, with the guard accounted either as
+        // the adjacent `---p` VMA (old glibc) or as the pages just below
+        // `low` inside this VMA (glibc >= 2.42 guard region).
         assert!(
-            h - l + g >= STACK,
-            "VMA and adjacent guard smaller than requested stack"
+            vl <= low && high <= vh && low < a && a < high,
+            "glibc stack [{low:#x}, {high:#x}) not inside the rw-p VMA [{vl:#x}, {vh:#x})"
         );
-        LOW.store(l, Ordering::Relaxed);
-        HIGH.store(h, Ordering::Relaxed);
-        GUARD.store(g, Ordering::Relaxed);
+        assert!(g > 0, "worker stack has no guard");
+        assert!(
+            (vl == low && guard_vma >= g) || vl + g <= low,
+            "guard {g} B below stack low {low:#x} not accounted by maps \
+             (guard VMA {guard_vma} B, rw-p VMA starts {vl:#x})"
+        );
         READY.store(true, Ordering::Release)
     }
     worker.join().expect("worker panic");
@@ -508,7 +567,8 @@ fn parse_probe(stdout: &str) -> Probe {
     let high = j["stack_high"].as_u64().expect("high") as usize;
     let stride_act = j["stride_actual"].as_u64().expect("stride") as usize;
     // Geometry oracle (fix4): fixed 2 MiB worker stack, deep below entry,
-    // both inside [low, high). high - deep is the physical depth.
+    // both inside [low, high). high - deep is the physical depth. Exact
+    // equality holds: low/high are glibc's own stack bounds (guard excluded).
     assert_eq!(high - low, STACK, "worker stack size != 2 MiB");
     assert!(
         low < deep && deep < entry && entry < high,

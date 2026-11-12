@@ -98,6 +98,15 @@ export const MASKED_TEST_SHA_PINS = {
     // all need/budget columns).
     "eec4ab36653e46c00752603373793347127923fddd2a9b26b533d7360251da43":
       "confirmation probe target raised by platform SLACK constant; boundary bisect and need formula untouched; probe does not participate in need",
+    // ubuntu-26.04 (glibc 2.42): the guard is an in-VMA MADV_GUARD_INSTALL
+    // region and adjacent thread stacks merge into one rw-p VMA, so the
+    // Linux worker's (low, high) now comes from pthread_getattr_np instead
+    // of the /proc/self/maps VMA bounds, cross-checked against the maps. On
+    // the old layout the values are identical (low = rw-p VMA start above
+    // the `---p` guard, high = VMA end); boundary_search, calibrate, the
+    // anchors, the need formula and budget() are untouched.
+    "d67f8ef73f9ecff9b87040fc67337afec0f99c1ac871bd0125a1c4719c6a235b":
+      "Linux stack bounds from pthread_getattr_np (glibc >= 2.42 in-VMA guard / merged VMAs); same (low, high) as the VMA bounds on the old layout; bisect, need formula and budgets untouched",
   },
   accepts(masked) {
     return masked === this.pin || Object.hasOwn(this.logicEquivalents, masked);
