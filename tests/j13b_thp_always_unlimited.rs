@@ -1,5 +1,5 @@
 //! J13b: `Always`, min 8 MiB, budget 0 (unlimited) advises exactly the
-//! 2 MiB-floored prefix of a fresh Large span, takes no charge, skips requests
+//! 2 MiB floor of the block's payload end, takes no charge, skips requests
 //! below the minimum, and never re-advises on a cache hit. Real advice is
 //! asserted on Linux only (elsewhere nothing is advised); physical huge-page
 //! backing is never asserted. One scenario per binary (process-global state).
@@ -19,9 +19,14 @@ use sefer_alloc::{AllocCore, LargeCacheConfig, LargeThpMode, LargeThpShare};
 
 const MIB: usize = 1024 * 1024;
 
-fn expected(span: usize) -> u64 {
+/// Advice for a fresh block: the span cap is the observed payload end (payload
+/// offset from the owner header plus the requested size).
+fn expected(core: &AllocCore, p: *mut u8, size: usize) -> u64 {
     if cfg!(target_os = "linux") {
-        ThpAdvice::extent(span, LargeThpShare::ONE, None, aligned_vmem::page_size()) as u64
+        let (_, _, base, offset, _) = core.large_geometry_for_test(p).expect("large block");
+        assert_eq!(p.addr(), base + offset);
+        let end = (offset + size).min(core.dbg_span_usable_of(p));
+        ThpAdvice::extent(end, LargeThpShare::ONE, None, aligned_vmem::page_size()) as u64
     } else {
         0
     }
@@ -41,12 +46,13 @@ fn always_unlimited_advises_floored_prefix_without_charge() {
 
     let a = core.alloc(big);
     assert!(!a.is_null());
-    let span_a = core.dbg_span_usable_of(a);
-    let want = expected(span_a);
+    let want = expected(&core, a, 16 * MIB);
     if cfg!(target_os = "linux") {
+        // The payload offset is below 2 MiB, so a 2 MiB multiple floors to itself.
+        assert_eq!(want, (16 * MIB) as u64, "advice ends at the requested size");
         assert!(
-            want >= 16 * MIB as u64,
-            "a 16 MiB request spans at least 16 MiB"
+            core.dbg_span_usable_of(a) > 16 * MIB,
+            "the span is rounded past the request"
         );
     }
     assert_eq!(AllocCore::dbg_thp_advised_bytes_total(), want);

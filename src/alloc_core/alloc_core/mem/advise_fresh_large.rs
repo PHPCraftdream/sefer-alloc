@@ -12,8 +12,14 @@ use crate::alloc_core::policy::large_thp_runtime::{ThpAdvice, ThpAdviceOutcome, 
 /// Must run while the caller still owns the live `Segment`, once per fresh
 /// reservation, never for a cache hit or an in-place growth. The tuple is read
 /// once. The advised range always starts at the usable root (offset 0) and
-/// spans `given <= usable_span` bytes, so it never widens past the span; the
-/// vmem wrapper additionally rejects any range beyond the mapping.
+/// spans `given <= payload_end <= usable_span` bytes, so it never widens past
+/// the span; the vmem wrapper additionally rejects any range beyond the mapping.
+///
+/// `payload_end` is the segment-relative end of the requested block (payload
+/// offset + requested size). The root is SEGMENT-aligned, so offsets from it
+/// are 2 MiB-aligned in absolute terms and the advised length is the 2 MiB
+/// floor of `payload_end`: a block whose end sits exactly on a 2 MiB multiple
+/// is not followed by one extra advised region that the span rounding adds.
 ///
 /// Budget 0 advises without touching the ledger and returns a zero charge.
 /// Otherwise the charge is reserved BEFORE the advice and:
@@ -38,6 +44,7 @@ pub(crate) fn advise_fresh_large(
     segment: &Segment,
     request_size: usize,
     usable_span: usize,
+    payload_end: usize,
 ) -> (usize, u64) {
     if !cfg!(any(target_os = "linux", target_os = "android")) {
         return (0, 0);
@@ -91,7 +98,8 @@ pub(crate) fn advise_fresh_large(
     } else {
         ThpAdvice::share_for(&tuple, request_size)
     };
-    let want = ThpAdvice::extent(usable_span, share, None, aligned_vmem::page_size());
+    let advised_span = payload_end.min(usable_span);
+    let want = ThpAdvice::extent(advised_span, share, None, aligned_vmem::page_size());
     if want == 0 {
         return (0, 0);
     }

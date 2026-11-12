@@ -33,8 +33,11 @@ fn realloc_returns_old_charge_once_and_never_widens() {
     let p = core.alloc(l);
     assert!(!p.is_null());
     let charge = if cfg!(target_os = "linux") {
+        // The span cap is the observed payload end (header offset plus request).
+        let (_, _, base, offset, _) = core.large_geometry_for_test(p).expect("large block");
+        assert_eq!(p.addr(), base + offset);
         ThpAdvice::extent(
-            core.dbg_span_usable_of(p),
+            (offset + 16 * MIB).min(core.dbg_span_usable_of(p)),
             LargeThpShare::ONE,
             Some(BUDGET),
             aligned_vmem::page_size(),

@@ -116,7 +116,7 @@ function validateProducer(row, cell, slot, role, receipt) {
   need(Array.isArray(advice) && p.accepted_advice_count === advice.length
     && advice.length === (always ? eligible.length : 0), `${role} ${slot}: advice count/mode mismatch`);
   need(advice.every((a, i) => plain(a) && a.requested_bytes === eligible[i] && pos(a.usable_span_bytes)
-    && pos(a.accepted_bytes) && a.accepted_bytes === Math.floor(a.usable_span_bytes/GRANULE)*GRANULE),
+    && pos(a.accepted_bytes) && a.accepted_bytes === Math.floor(Math.min(a.requested_bytes + 4096, a.usable_span_bytes)/GRANULE)*GRANULE),
     `${role} ${slot}: accepted advice prefix mismatch`);
   need(p.advice_granule_bytes === GRANULE, `${role} ${slot}: advice granule mismatch`);
   need(p.cache_hit_confirmed === cache && p.large_cache_hits === (cache ? 1 : 0), `${role} ${slot}: actual cache hit evidence mismatch`);

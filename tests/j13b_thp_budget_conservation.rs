@@ -25,10 +25,14 @@ fn page() -> usize {
     aligned_vmem::page_size()
 }
 
-/// Charge a fresh block gets while `used` bytes are already charged.
-fn expect_charge(span: usize, used: usize) -> usize {
+/// Charge a fresh 16 MiB block gets while `used` bytes are already charged;
+/// the span cap is the observed payload end (header offset plus request).
+fn expect_charge(core: &AllocCore, p: *mut u8, used: usize) -> usize {
     if cfg!(target_os = "linux") {
-        ThpAdvice::extent(span, LargeThpShare::ONE, Some(BUDGET - used), page())
+        let (_, _, base, offset, _) = core.large_geometry_for_test(p).expect("large block");
+        assert_eq!(p.addr(), base + offset);
+        let end = (offset + 16 * MIB).min(core.dbg_span_usable_of(p));
+        ThpAdvice::extent(end, LargeThpShare::ONE, Some(BUDGET - used), page())
     } else {
         0
     }
@@ -58,9 +62,9 @@ fn budget_is_conserved_across_deposit_hit_and_every_release() {
     let c = core.alloc(l);
     assert!(!a.is_null() && !b.is_null() && !c.is_null());
 
-    let ca = expect_charge(core.dbg_span_usable_of(a), 0);
-    let cb = expect_charge(core.dbg_span_usable_of(b), ca);
-    let cc = expect_charge(core.dbg_span_usable_of(c), ca + cb);
+    let ca = expect_charge(&core, a, 0);
+    let cb = expect_charge(&core, b, ca);
+    let cc = expect_charge(&core, c, ca + cb);
     if cfg!(target_os = "linux") {
         assert_eq!(ca, BUDGET, "the first block takes the whole budget");
         assert_eq!((cb, cc), (0, 0), "later blocks find the budget exhausted");
@@ -107,7 +111,7 @@ fn budget_is_conserved_across_deposit_hit_and_every_release() {
     // The budget is free again: a fresh block takes it.
     let d = core.alloc(l);
     assert!(!d.is_null());
-    let cd = expect_charge(core.dbg_span_usable_of(d), cb + cc);
+    let cd = expect_charge(&core, d, cb + cc);
     assert_eq!(core.large_thp_charge_for_test(d), Some(cd));
     assert_eq!(AllocCore::dbg_thp_ledger_used(), cb + cc + cd);
     assert!(AllocCore::dbg_thp_ledger_used() <= BUDGET);
@@ -122,7 +126,7 @@ fn budget_is_conserved_across_deposit_hit_and_every_release() {
 
     // One more charged block, left in the cache for the core drop to release.
     let f = core.alloc(l);
-    let cf = expect_charge(core.dbg_span_usable_of(f), cb + cc);
+    let cf = expect_charge(&core, f, cb + cc);
     assert_eq!(core.large_thp_charge_for_test(f), Some(cf));
     // SAFETY: all three are live with their original layouts.
     unsafe {

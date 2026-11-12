@@ -1603,7 +1603,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **556 integration test files**,
+needs its acceptance run. The present tree contains **558 integration test files**,
 **107 example binaries**, **34 benches**, and **29 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1613,7 +1613,7 @@ and support modules. Nested helpers and fixtures are not separate integration ta
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (556 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (558 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (107 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -2028,8 +2028,8 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(
 );
 ```
 
-- **`huge_page_mode`:** `Off` never advises. `Always` (the supported-Linux default) advises each eligible fresh Large block over the 2 MiB-floored
-  prefix of its usable span, never beyond it and never widened. `Auto` uses a separate process-wide estimate for each of six requested-size groups.
+- **`huge_page_mode`:** `Off` never advises. `Always` (the supported-Linux default) advises each eligible fresh Large block over a prefix that ends at the 2 MiB
+  floor of the requested size's end (payload offset plus requested size), not at the rounded-up usable span; it is never widened. `Auto` uses a separate process-wide estimate for each of six requested-size groups.
   Its prior is optimistic one. One fresh no-THP control per complete aligned cohort of eight eligible requests feeds bounded owner-free
   residency observations; the other fresh requests use the learned share. Controls continue even at share zero, allowing recovery.
   The runtime learner is accepted on exact source `6c2ba419` (CI `42512485612`); cost and performance effect remain unmeasured.

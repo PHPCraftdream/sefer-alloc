@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Large THP advice tail trim (2026-11-12)
+
+- [perf(runtime)] Fresh Large THP advice now ends at the 2 MiB floor of the requested block's end (payload offset plus requested size)
+  instead of the 2 MiB floor of the SEGMENT-rounded usable span, so a block ending on a 2 MiB multiple no longer gets one extra advised
+  2 MiB region. The advised length, the budget charge recorded in the header and the ledger return follow the shorter range through the
+  existing paths; `Auto`'s learned share scales the trimmed extent. No new setting, header field, threshold or feature change; explicit
+  `Off`, first-config-wins and the ledger protocol are unchanged. No measurement is claimed here; a rerun is registered in
+  `docs/perf/J13_LIMITED_STUDY_PREREG.md` (2026-11-12 tail-trim registration).
+
 ### Supported-Linux Large THP default Always (2026-11-11)
 
 - [perf(runtime)] Fresh Large requests of at least 8 MiB use range-based `Always` by default on Linux with `alloc-decommit` and without

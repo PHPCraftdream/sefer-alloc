@@ -234,10 +234,9 @@ pub fn validate_capture(
             E::ACCEPTED => {
                 let usable = words[E::USABLE_LEN];
                 let bytes = words[E::VALUE];
-                if bytes == 0 || bytes != usable / GRANULE as u64 * GRANULE as u64 {
-                    return Err(error(
-                        "accepted prefix differs from 2 MiB usable-span floor",
-                    ));
+                let end = (words[E::REQUESTED] + aligned_vmem::page_size() as u64).min(usable);
+                if bytes == 0 || bytes != end / GRANULE as u64 * GRANULE as u64 {
+                    return Err(error("accepted prefix differs from 2 MiB block-end floor"));
                 }
                 accepted += 1;
                 advice.push(serde_json::json!({

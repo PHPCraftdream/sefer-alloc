@@ -331,7 +331,7 @@ runs:
         grep -F '[j13b-advice-capture] case=static matched-controls-and-lifetime PASS' .rush/j13b-static-capture-native.log
         grep -F 'test result: ok. 1 passed; 0 failed;' .rush/j13b-static-capture-native.log
         sha256sum -c <(printf '%s\n' \
-          '84bf2f9c070271187c4bb07f3bdc552ce7d0f2a686bc62ffc28ee299b93d41c4  src/alloc_core/alloc_core/mem/advise_fresh_large.rs' \
+          'aae5a4a9d40106b1100a1021128b2b40afc985520efaffd229a82c20c2f783a4  src/alloc_core/alloc_core/mem/advise_fresh_large.rs' \
           'a2476ebd40189187dd8ea5a6a0966861eb90f6a8eea3712eb4cd2403cc75dc89  src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs')
 
 # CI-T1 stage 3 (docs/CI_TIERS.md "Test-impact map"): which integration tests the diff can affect, from
