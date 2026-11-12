@@ -23,7 +23,14 @@ fn knobless_configs_leave_the_default_tuple() {
     }
     let t = AllocCore::dbg_thp_tuple();
     assert_eq!(t, ThpTuple::DEFAULT);
-    assert_eq!(t.mode, LargeThpMode::Off);
+    assert_eq!(
+        t.mode,
+        if cfg!(target_os = "linux") {
+            LargeThpMode::Always
+        } else {
+            LargeThpMode::Off
+        }
+    );
     assert_eq!(t.min_bytes, 8 * 1024 * 1024);
     assert_eq!(t.budget_bytes, 0);
     assert_eq!(t.gradient, LargeThpGradient::CAUTIOUS);

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, copyFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -67,8 +67,22 @@ test('CI runner retains prior success on a later nonzero child and same-arm cont
   assert.doesNotMatch(success.stdout, /means a REAL|non-noise wall-clock/);
 
   const legacy = fixture(t, 'legacy', 'result');
-  const legacyResult = legacy.invoke({ arms: 'B,B' });
+  const env = {};
+  if (linux) {
+    // Synthetic RESULT parsing must not initialize a real rustup toolchain.
+    const bin = join(legacy.dir, 'bin'); mkdirSync(bin);
+    const rustc = join(bin, 'rustc');
+    writeFileSync(rustc, '#!/bin/sh\n[ "$#" -eq 2 ] && [ "$1" = --version ] && [ "$2" = --verbose ] || exit 2\nprintf "rustc synthetic-fixture-only\\n"\n');
+    chmodSync(rustc, 0o755);
+    env.PATH = `${bin}${delimiter}${process.env.PATH}`;
+  }
+  const legacyResult = legacy.invoke({ arms: 'B,B', env });
+  assert.ifError(legacyResult.error);
   assert.equal(legacyResult.status, 0, legacyResult.stderr);
+  if (linux) {
+    const saved = JSON.parse(readFileSync(join(legacy.out, readdirSync(legacy.out)[0]), 'utf8'));
+    assert.equal(saved.rustc_version_verbose, 'rustc synthetic-fixture-only');
+  }
   assert.match(legacyResult.stdout, /means a REAL/);
   assert.match(legacyResult.stdout, /non-noise wall-clock difference/);
   assert.doesNotMatch(legacyResult.stdout, /Descriptive statistics only; use the preregistered reducer/);

@@ -25,7 +25,18 @@ fn tuple(mode: LargeThpMode, min: usize, budget: usize, g: LargeThpGradient) -> 
 #[test]
 fn default_tuple_roundtrips() {
     let d = ThpTuple::DEFAULT;
-    assert_eq!(d.mode, LargeThpMode::Off);
+    assert_eq!(
+        d.mode,
+        if cfg!(all(
+            target_os = "linux",
+            feature = "alloc-decommit",
+            not(feature = "numa-aware")
+        )) {
+            LargeThpMode::Always
+        } else {
+            LargeThpMode::Off
+        }
+    );
     assert_eq!(d.min_bytes, 8 * MIB);
     assert_eq!(d.budget_bytes, 0);
     assert_eq!(d.gradient, LargeThpGradient::CAUTIOUS);

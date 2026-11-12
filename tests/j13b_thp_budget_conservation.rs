@@ -37,9 +37,16 @@ fn expect_charge(span: usize, used: usize) -> usize {
 #[test]
 fn budget_is_conserved_across_deposit_hit_and_every_release() {
     let cfg = LargeCacheConfig::new()
-        .huge_page_mode(LargeThpMode::Always)
         .huge_page_block_min_bytes(0)
         .huge_page_budget_bytes(BUDGET);
+    assert_eq!(
+        cfg.dbg_resolved_thp_tuple().mode,
+        if cfg!(target_os = "linux") {
+            LargeThpMode::Always
+        } else {
+            LargeThpMode::Off
+        }
+    );
     let mut core = AllocCore::new_with_config(cfg).expect("primordial bootstrap");
     core.dbg_set_large_cache_budget(None);
     // Park decay far away so only the explicit steps below evict.

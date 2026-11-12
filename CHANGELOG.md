@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
-### Current-state reconciliation (2026-11-10; docs-only)
+### Supported-Linux Large THP default Always (2026-11-11)
+
+- [perf(runtime)] Fresh Large requests of at least 8 MiB use range-based `Always` by default on Linux with `alloc-decommit` and without
+  `numa-aware`. Explicit `Off`, threshold/budget/gradient overrides, first-config-wins, cache accounting and confirmed-release rules
+  are preserved. Android and other unsupported default scopes remain Off. This changes the shared resolved/unpublished default tuple,
+  not the advice geometry, header layout or Auto cadence; no feature composition or version changes.
+- [measurement] The owner accepted the disclosed edge/CACHE costs from the ten-cell study published in PR #229. Dense eligible
+  payload Always/Off ratios were 0.1273–0.1597 across six cells; sparse edge was 10.0406 and second-life CACHE payload 1.0231.
+  Full raw, scopes and memory observations remain in `docs/perf/j13_limited_20261111/`. These are measurements of the existing
+  range policy, not a new campaign or a Small-path instruction-count result.
+- [docs] README documents explicit Off guidance, the one hosted Linux x86_64 THP-madvise host, and the unmeasured risk of first-touch
+  compaction stalls in long-lived processes on fragmented memory. Auto remains explicit opt-in. Item 264 remains open.
+
+### Historical reconciliation (2026-11-10; docs-only, superseded above)
 
 - [docs] J13b runtime/VM foundations are merged in main through PRs #226 (VM foundation), #225 (runtime), #227 (landing-history repair), and #228 (closure); `Auto` learning is accepted on exact `6c2ba419` (CI `42512485612`). `Off` remains the current default. There is no J13b campaign measurement or GO. Historical J13 campaign-2 RSS NO-GO and owner exception remain in immutable `7ae557aa:docs/perf/J13_OWNER_DECISION.md`; the historical misses are not an automatic veto for review of materially new problems in current range Always. The owner-approved next delivery is the limited Always/Off comparison in `docs/perf/J13_LIMITED_STUDY_PREREG.md`, with initial figures in its first implementation PR; no execution is authorized by this docs update. The remaining product question is disposition of materially new regressions; no new numeric gate is implied. Fault counts/AnonHugePages corroborate activation only, not exact attribution or standalone speed. `SegmentHeader` is 144 bytes; Ir cost remains unknown (correctness item 264).
 
