@@ -18,8 +18,22 @@ use sefer_alloc::{AllocCore, LargeCacheConfig, LargeThpMode, LargeThpShare};
 
 const MIB: usize = 1024 * 1024;
 const BUDGET: usize = 8 * MIB;
-// One SEGMENT-multiple Large span.
+// Requested size; its span is rounded up to 8 MiB but advice ends at its own end.
 const SPAN: usize = 4 * MIB;
+
+/// Budgeted advice for the `SPAN` block: the span cap is the observed payload
+/// end (header offset plus request), not the rounded-up usable span.
+fn trimmed_extent(core: &AllocCore, p: *mut u8) -> usize {
+    let (_, _, base, offset, _) = core.large_geometry_for_test(p).expect("large block");
+    assert_eq!(p.addr(), base + offset);
+    let end = (offset + SPAN).min(core.dbg_span_usable_of(p));
+    ThpAdvice::extent(
+        end,
+        LargeThpShare::ONE,
+        Some(BUDGET),
+        aligned_vmem::page_size(),
+    )
+}
 
 #[test]
 fn charge_carries_across_deposit_hit_and_is_returned_exactly_once() {
@@ -42,15 +56,9 @@ fn charge_carries_across_deposit_hit_and_is_returned_exactly_once() {
     let layout = Layout::from_size_align(SPAN, 8).unwrap();
     let first = core.alloc(layout);
     assert!(!first.is_null());
-    let span = core.dbg_span_usable_of(first);
     // Linux/Android exercise real advice; other targets check only the zero-charge lifecycle.
     let expected = if cfg!(any(target_os = "linux", target_os = "android")) {
-        ThpAdvice::extent(
-            span,
-            LargeThpShare::ONE,
-            Some(BUDGET),
-            aligned_vmem::page_size(),
-        )
+        trimmed_extent(&core, first)
     } else {
         0
     };
@@ -112,12 +120,7 @@ fn charge_carries_across_deposit_hit_and_is_returned_exactly_once() {
     let fresh = core.alloc(layout);
     assert!(!fresh.is_null());
     let fresh_expected = if cfg!(any(target_os = "linux", target_os = "android")) {
-        ThpAdvice::extent(
-            core.dbg_span_usable_of(fresh),
-            LargeThpShare::ONE,
-            Some(BUDGET),
-            aligned_vmem::page_size(),
-        )
+        trimmed_extent(&core, fresh)
     } else {
         0
     };
@@ -134,6 +137,7 @@ fn charge_carries_across_deposit_hit_and_is_returned_exactly_once() {
     if cfg!(target_os = "linux") {
         assert!(expected > 0, "Linux must produce a nonzero charge");
         assert_eq!(expected, fresh_expected);
+        assert_eq!(expected, SPAN, "the charge ends at the requested size");
     }
 }
 

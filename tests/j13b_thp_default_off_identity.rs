@@ -37,8 +37,13 @@ fn default_advice_uses_requested_threshold_and_does_not_publish() {
         let span = core.dbg_span_usable_of(p);
         assert!(span >= size);
         if cfg!(target_os = "linux") && size >= 8 * MIB {
+            // The span cap is the observed payload end (header offset plus request).
+            let (_, _, base, offset, _) = core.large_geometry_for_test(p).expect("large block");
+            assert_eq!(p.addr(), base + offset);
+            let end = (offset + size).min(span);
             let expected =
-                ThpAdvice::extent(span, LargeThpShare::ONE, None, aligned_vmem::page_size());
+                ThpAdvice::extent(end, LargeThpShare::ONE, None, aligned_vmem::page_size());
+            assert!(expected <= end, "advice never passes the payload end");
             assert!(expected > 0, "eligible default must activate advice");
             advised += expected as u64;
         }

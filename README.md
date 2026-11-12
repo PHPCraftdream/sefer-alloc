@@ -2028,8 +2028,8 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(
 );
 ```
 
-- **`huge_page_mode`:** `Off` never advises. `Always` (the supported-Linux default) advises each eligible fresh Large block over the 2 MiB-floored
-  prefix of its usable span, never beyond it and never widened. `Auto` uses a separate process-wide estimate for each of six requested-size groups.
+- **`huge_page_mode`:** `Off` never advises. `Always` (the supported-Linux default) advises each eligible fresh Large block over a prefix that ends at the 2 MiB
+  floor of the requested size's end (payload offset plus requested size), not at the rounded-up usable span; it is never widened. `Auto` uses a separate process-wide estimate for each of six requested-size groups.
   Its prior is optimistic one. One fresh no-THP control per complete aligned cohort of eight eligible requests feeds bounded owner-free
   residency observations; the other fresh requests use the learned share. Controls continue even at share zero, allowing recovery.
   The runtime learner is accepted on exact source `6c2ba419` (CI `42512485612`); cost and performance effect remain unmeasured.

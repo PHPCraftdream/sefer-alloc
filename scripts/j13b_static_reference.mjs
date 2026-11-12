@@ -16,7 +16,7 @@ const ADMISSION = `        let applied = LEARNERS[group].try_observe(&Self::curr
 
 // Whole-file hashes pin the reviewed seams, not just a coincidental text anchor.
 export const STATIC_REFERENCE_SOURCES = Object.freeze({
-  [FRESH]: '84bf2f9c070271187c4bb07f3bdc552ce7d0f2a686bc62ffc28ee299b93d41c4',
+  [FRESH]: 'aae5a4a9d40106b1100a1021128b2b40afc985520efaffd229a82c20c2f783a4',
   [RUNTIME]: 'a2476ebd40189187dd8ea5a6a0966861eb90f6a8eea3712eb4cd2403cc75dc89',
 });
 
