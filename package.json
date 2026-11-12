@@ -4,6 +4,9 @@
   "private": true,
   "description": "Dev-only hardening-sweep runners for sefer-alloc (loom / miri / TSan-via-WSL). Not published; no runtime deps.",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "loom": "node scripts/loom.mjs",
     "miri": "node scripts/miri.mjs",

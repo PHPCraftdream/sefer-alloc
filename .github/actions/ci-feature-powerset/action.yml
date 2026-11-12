@@ -10,7 +10,7 @@ runs:
         tool: cargo-hack
     - uses: actions/setup-node@v5
       with:
-        node-version: '22'
+        node-version: '24'
     - name: powerset summary self-test
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}

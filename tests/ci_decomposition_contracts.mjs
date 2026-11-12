@@ -66,7 +66,7 @@ assert(raw.includes(String.raw`|\.github/actions/ci-j13b-judge-preparation/actio
   const canonical = text => text.split('\n').filter(line => line.trim() && !line.trimStart().startsWith('#')).join('\n');
   assert.equal(canonical(licenses(expanded.text)), canonical(licenses(before.text)));
   for (const mutation of [
-    text => text.replace('actions/cache/save@v4', 'actions/cache/save@v3'),
+    text => text.replace('actions/cache/save@v5', 'actions/cache/save@v3'),
     text => text.replace("if: steps.seen.outputs.cache-hit != 'true'", "if: false"),
     text => text.replace('cargo deny --manifest-path', 'cargo check --manifest-path'),
   ]) {

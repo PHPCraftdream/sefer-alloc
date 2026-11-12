@@ -5,7 +5,7 @@ runs:
   steps:
     - uses: actions/setup-node@v5
       with:
-        node-version: '22'
+        node-version: '24'
     - name: Lint the commit range this event introduced
       run: |
         set -euo pipefail
