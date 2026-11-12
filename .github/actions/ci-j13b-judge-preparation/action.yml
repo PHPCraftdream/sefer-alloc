@@ -27,7 +27,7 @@ runs:
     - if: steps.paths.outputs.run == 'true'
       uses: actions/setup-node@v5
       with:
-        node-version: '22'
+        node-version: '24'
     - if: steps.paths.outputs.run == 'true'
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}

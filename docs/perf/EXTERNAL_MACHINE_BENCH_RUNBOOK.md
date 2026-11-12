@@ -37,7 +37,7 @@
 # Инструменты
 rustup toolchain install stable        # стабильный Rust, без rust-toolchain.toml
 rustup default stable
-node --version                         # нужен Node 22+
+node --version                         # нужен Node 24+
 git --version
 # Только для C1 (Linux):
 sudo apt-get install -y valgrind

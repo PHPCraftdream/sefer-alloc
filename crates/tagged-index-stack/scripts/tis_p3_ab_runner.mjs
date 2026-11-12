@@ -30,7 +30,7 @@
 //                      artifacts. An API break in `push`/`pop` fails regular per-PR CI
 //                      instead of staying invisible until a measurement run.
 //
-// Node >= 20, zero npm dependencies, Windows-safe (no POSIX-only APIs).
+// Node >= 24, zero npm dependencies, Windows-safe (no POSIX-only APIs).
 // Scratch vs tracked outputs: build-check mode writes ONLY under its own
 // invocation's scratch root target/tis_p3_ab-<mkdtemp>/ (the fixed children
 // build-check/ and build-check-codegen-wrapper/; no docs/perf output at

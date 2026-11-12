@@ -54,7 +54,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
       - name: Self-test the planner
         run: node scripts/ci-plan.mjs --selftest
       - name: Plan
@@ -165,7 +165,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
       - run: node scripts/select-tests.mjs --selftest
       - name: Select
         env:
@@ -568,8 +568,8 @@ jobs:
       - uses: actions/setup-node@v5
         if: ${{ vars.TEST_SELECTION == 'enforce' }}
         with:
-          node-version: '22'
-      - uses: actions/download-artifact@v6
+          node-version: '24'
+      - uses: actions/download-artifact@v7
         if: ${{ vars.TEST_SELECTION == 'enforce' }}
         continue-on-error: true
         with:
