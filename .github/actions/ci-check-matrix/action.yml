@@ -6,7 +6,7 @@ runs:
     - uses: dtolnay/rust-toolchain@stable
     - uses: actions/setup-node@v5
       with:
-        node-version: '22'
+        node-version: '24'
     # The reviewed hook-security contract survives protocol/test retirement
     # as executable repository tooling with stale allowlist checks.
     - run: node scripts/verify-dbg-hook-safety.mjs

@@ -126,7 +126,7 @@ jobs:
       - uses: actions/setup-node@v5
         if: env.R20_SKIP != '1'
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Install valgrind
         if: env.R20_SKIP != '1'

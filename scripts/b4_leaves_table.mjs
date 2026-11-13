@@ -5,7 +5,7 @@
 // delta -> verdict.
 //
 // Usage: node scripts/b4_leaves_table.mjs docs/perf/B4_CLASS_LEAVES_FREE_summary.csv
-// No cargo, no deps (node >= 18).
+// No cargo, no deps (node >= 24).
 
 import { readFileSync } from "node:fs";
 

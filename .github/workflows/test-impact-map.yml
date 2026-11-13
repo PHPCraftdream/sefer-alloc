@@ -40,7 +40,7 @@ jobs:
           components: llvm-tools-preview
       - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
       - run: node scripts/test-impact-map.mjs --selftest
       - run: node scripts/test-impact-map.mjs collect --features "${{ matrix.row == 'all-features' && 'all' || 'production internals' }}" --shard ${{ matrix.shard }}/4 --out part-${{ matrix.shard }}.json
       - uses: actions/upload-artifact@v6
@@ -66,8 +66,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v5
         with:
-          node-version: '22'
-      - uses: actions/download-artifact@v6
+          node-version: '24'
+      - uses: actions/download-artifact@v7
         with:
           pattern: test-impact-part-${{ matrix.row }}-*
           merge-multiple: true
