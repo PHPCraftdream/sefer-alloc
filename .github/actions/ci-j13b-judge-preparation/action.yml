@@ -61,7 +61,9 @@ runs:
         grep -F 'test byte_override_coherence_and_repetition_contract_are_exact ... ok' "$RUNNER_TEMP/g1-big-study-config.log"
         grep -F 'test validator_rejects_empty_eligible_missing_advice_and_wrong_accepted_prefix ... ok' "$RUNNER_TEMP/g1-big-study-config.log"
         grep -F 'test cache_only_admits_two_16_mib_cycles ... ok' "$RUNNER_TEMP/g1-big-study-config.log"
-        grep -F 'test result: ok. 5 passed; 0 failed;' "$RUNNER_TEMP/g1-big-study-config.log"
+        grep -F 'test threshold_override_is_exact_defaults_to_8_mib_and_applies_to_sweep_cells ... ok' "$RUNNER_TEMP/g1-big-study-config.log"
+        grep -F 'test validator_uses_the_requested_threshold_not_a_constant ... ok' "$RUNNER_TEMP/g1-big-study-config.log"
+        grep -F 'test result: ok. 7 passed; 0 failed;' "$RUNNER_TEMP/g1-big-study-config.log"
         cargo test --locked --features 'production alloc-stats internals bench-internals' --test g1_big_study_native_off \
           | tee "$RUNNER_TEMP/g1-big-study-off.log"
         grep -F 'test native_off_cycle_executes_real_allocator_and_readback_rejects_always ... ok' "$RUNNER_TEMP/g1-big-study-off.log"
@@ -91,7 +93,7 @@ runs:
         cargo test --locked --all-features --test g1_big_study_config -- --nocapture \
           | tee "$RUNNER_TEMP/g1-big-study-all-features.log"
         grep -F 'test numa_runtime_admission_refuses_before_payload_execution ... ok' "$RUNNER_TEMP/g1-big-study-all-features.log"
-        grep -F 'test result: ok. 6 passed; 0 failed;' "$RUNNER_TEMP/g1-big-study-all-features.log"
+        grep -F 'test result: ok. 8 passed; 0 failed;' "$RUNNER_TEMP/g1-big-study-all-features.log"
     - name: G1 limited-study single CI build and provenance receipt (not measurement admission)
       if: steps.paths.outputs.run == 'true'
       shell: bash -e {0}
