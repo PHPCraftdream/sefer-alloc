@@ -3,7 +3,9 @@
 //! rendered-content substrings, primary span inside the fixture's own
 //! main.rs).
 //! This harness invokes RUSTC (or rustc) directly. Candidates are collected
-//! from the test binary's `deps` directory and probed deterministically.
+//! from the test binary's sibling library artifacts — the classic `deps`
+//! directory, or the per-unit `build/<package>/<hash>/out` directories of
+//! Cargo's build-dir layout v2 (Cargo 1.100+) — and probed deterministically.
 //! Freshness uses each candidate's Cargo dep-info `.d`: only Rust sources
 //! listed there can stale an rlib. Package-manifest mtime and cfg-inactive
 //! source edits are not treated as evidence of staleness; missing/unreadable
@@ -210,15 +212,132 @@ fn as_str(value: &serde_json::Value) -> Option<&str> {
     value.as_str()
 }
 
-/// The deps directory: cargo places the test binary under
-/// `<profile>/deps/`, so `current_exe()`'s parent IS the deps directory for
-/// debug, release, and custom target dirs alike.
-fn deps_dir() -> PathBuf {
+/// The directory holding this test binary.
+fn test_exe_dir() -> PathBuf {
     std::env::current_exe()
         .expect("current_exe is resolvable")
         .parent()
         .unwrap_or_else(|| panic!("test binary has no parent directory"))
         .to_path_buf()
+}
+
+/// `<profile>/build` when `exe_dir` is a build-dir layout v2 unit directory
+/// `<profile>/build/<package>/<unit-hash>/out` (Cargo 1.100+). `None` for the
+/// classic `<profile>/deps` layout, including a classic build-script
+/// `<profile>/build/<package>-<hash>/out` shape (one level shallower).
+fn unit_build_root(exe_dir: &Path) -> Option<PathBuf> {
+    if exe_dir.file_name()? != "out" {
+        return None;
+    }
+    let root = exe_dir.parent()?.parent()?.parent()?;
+    (root.file_name()? == "build").then(|| root.to_path_buf())
+}
+
+fn subdirectories(dir: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(dir)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", dir.display()))
+        .map(|entry| {
+            entry
+                .unwrap_or_else(|error| {
+                    panic!("failed to read entry in {}: {error}", dir.display())
+                })
+                .path()
+        })
+        .filter(|path| path.is_dir())
+        .collect()
+}
+
+fn has_library_artifact(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry.path().extension().is_some_and(|ext| {
+                ["rlib", "rmeta", "so", "dylib", "dll"]
+                    .iter()
+                    .any(|kind| ext == *kind)
+            })
+        })
+    })
+}
+
+/// Library artifact directories for a test binary in `exe_dir`: the classic
+/// layout keeps every unit in `exe_dir` (`<profile>/deps`); layout v2 keeps
+/// each unit in its own `<profile>/build/<package>/<unit-hash>/out`, so every
+/// such directory holding a library artifact is returned, sorted.
+fn artifact_dirs_for(exe_dir: &Path) -> Vec<PathBuf> {
+    let Some(root) = unit_build_root(exe_dir) else {
+        return vec![exe_dir.to_path_buf()];
+    };
+    let mut dirs: Vec<PathBuf> = subdirectories(&root)
+        .iter()
+        .flat_map(|package| subdirectories(package))
+        .map(|unit| unit.join("out"))
+        .filter(|out| has_library_artifact(out))
+        .collect();
+    dirs.sort();
+    dirs
+}
+
+fn artifact_dirs() -> Vec<PathBuf> {
+    artifact_dirs_for(&test_exe_dir())
+}
+
+/// The directory searched for candidates, for diagnostics.
+fn artifact_search_root() -> PathBuf {
+    let exe_dir = test_exe_dir();
+    unit_build_root(&exe_dir).unwrap_or(exe_dir)
+}
+
+#[test]
+fn unit_build_root_recognizes_only_the_layout_v2_unit_shape() {
+    let v2 = Path::new("/t/x86_64-unknown-linux-gnu/debug/build/sefer-alloc/2836a84f/out");
+    assert_eq!(
+        unit_build_root(v2),
+        Some(PathBuf::from("/t/x86_64-unknown-linux-gnu/debug/build"))
+    );
+    assert_eq!(unit_build_root(Path::new("/t/debug/deps")), None);
+    assert_eq!(
+        unit_build_root(Path::new("/t/debug/build/sefer-alloc-0123/out")),
+        None
+    );
+    assert_eq!(
+        unit_build_root(Path::new("/t/debug/other/sefer-alloc/0123/out")),
+        None
+    );
+}
+
+#[test]
+fn artifact_dirs_cover_classic_deps_and_layout_v2_units() {
+    let unique = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let base = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("r14_layout_{}_{unique}", std::process::id()));
+    let result = std::panic::catch_unwind(|| {
+        let deps = base.join("classic/debug/deps");
+        std::fs::create_dir_all(&deps).unwrap();
+        assert_eq!(artifact_dirs_for(&deps), vec![deps.clone()]);
+
+        let build = base.join("v2/debug/build");
+        let unit = |package: &str, hash: &str, file: &str| {
+            let out = build.join(package).join(hash).join("out");
+            std::fs::create_dir_all(&out).unwrap();
+            std::fs::write(out.join(file), b"").unwrap();
+            out
+        };
+        let lib = unit("sefer-alloc", "aaaa", "libsefer_alloc-aaaa.rlib");
+        let dep = unit("dep", "bbbb", "libdep-bbbb.rmeta");
+        let test_exe = unit("sefer-alloc", "cccc", "r14-cccc");
+        assert_eq!(artifact_dirs_for(&test_exe), vec![dep.clone(), lib.clone()]);
+        assert_eq!(
+            candidate_rlibs(&artifact_dirs_for(&test_exe), "layout"),
+            vec![lib.join("libsefer_alloc-aaaa.rlib")]
+        );
+    });
+    std::fs::remove_dir_all(&base).unwrap();
+    if let Err(payload) = result {
+        std::panic::resume_unwind(payload);
+    }
 }
 
 /// Exclude only artifacts known to predate a readable source timestamp.
@@ -409,19 +528,25 @@ fn dep_info_freshness_ignores_cfg_inactive_sources() {
     }
 }
 
-/// Source-fresh or unknown-mtime rlibs under deps, sorted by path.
-fn candidate_rlibs(deps: &Path, tag: &str) -> Vec<PathBuf> {
-    let mut candidates: Vec<PathBuf> = std::fs::read_dir(deps)
-        .unwrap_or_else(|error| panic!("failed to read deps dir {}: {error}", deps.display()))
-        .map(|entry| {
-            entry
+/// Source-fresh or unknown-mtime rlibs under the artifact dirs, sorted by path.
+fn candidate_rlibs(dirs: &[PathBuf], tag: &str) -> Vec<PathBuf> {
+    let mut candidates: Vec<PathBuf> = dirs
+        .iter()
+        .flat_map(|dir| {
+            std::fs::read_dir(dir)
                 .unwrap_or_else(|error| {
-                    panic!(
-                        "failed to read deps dir entry in {}: {error}",
-                        deps.display()
-                    )
+                    panic!("failed to read artifact dir {}: {error}", dir.display())
                 })
-                .path()
+                .map(move |entry| {
+                    entry
+                        .unwrap_or_else(|error| {
+                            panic!(
+                                "failed to read artifact dir entry in {}: {error}",
+                                dir.display()
+                            )
+                        })
+                        .path()
+                })
         })
         .filter(|path| {
             let name = path.file_name().map_or_else(
@@ -453,9 +578,8 @@ fn candidate_rlibs(deps: &Path, tag: &str) -> Vec<PathBuf> {
     eprintln!("R14 {tag}: {stale_skipped} stale-source candidates skipped");
     assert!(
         !candidates.is_empty(),
-        "R14 {tag}: current build not found under {} after active-input freshness filtering; \
-         rebuild the crate with alloc-global + internals features",
-        deps.display()
+        "R14 {tag}: current build not found in {dirs:?} after active-input freshness filtering; \
+         rebuild the crate with alloc-global + internals features"
     );
     candidates
 }
@@ -505,15 +629,20 @@ fn run_rustc(fixture: &Path, candidate: &Path, out_dir: &Path) -> std::process::
         fixture.display(),
         candidate.display()
     );
-    std::process::Command::new(rustc_command())
+    let mut command = std::process::Command::new(rustc_command());
+    command
         .arg(fixture)
         .arg("--edition=2021")
         .arg("--emit=metadata")
         .arg("--error-format=json")
         .arg("--extern")
-        .arg(format!("sefer_alloc={}", candidate.display()))
-        .arg("-L")
-        .arg(format!("dependency={}", deps_dir().display()))
+        .arg(format!("sefer_alloc={}", candidate.display()));
+    for dir in artifact_dirs() {
+        command
+            .arg("-L")
+            .arg(format!("dependency={}", dir.display()));
+    }
+    command
         .arg("--out-dir")
         .arg(out_dir)
         .output()
@@ -640,7 +769,7 @@ fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<P
         "no compatible libsefer_alloc rlib under {} (candidates: {:?}); \
          build the crate with the alloc-global + internals + \
          bench-internals features first",
-        deps_dir().display(),
+        artifact_search_root().display(),
         candidates
     );
     eprintln!(
@@ -769,7 +898,7 @@ fn shared_sidecar_prepare_is_not_callable_from_outside_the_crate() {
     let variants = compatible_variants(
         "prepare",
         &probe_fixture(),
-        &candidate_rlibs(&deps_dir(), "prepare"),
+        &candidate_rlibs(&artifact_dirs(), "prepare"),
     );
     if variants.is_empty() {
         return;
@@ -795,7 +924,7 @@ fn shared_sidecar_issue_is_not_callable_from_outside_the_crate() {
     let variants = compatible_variants(
         "issue",
         &probe_fixture(),
-        &candidate_rlibs(&deps_dir(), "issue"),
+        &candidate_rlibs(&artifact_dirs(), "issue"),
     );
     if variants.is_empty() {
         return;
@@ -821,7 +950,7 @@ fn route_registration_shared_reference_must_not_be_sync() {
     let variants = compatible_variants(
         "sync",
         &probe_fixture(),
-        &candidate_rlibs(&deps_dir(), "sync"),
+        &candidate_rlibs(&artifact_dirs(), "sync"),
     );
     if variants.is_empty() {
         return;
