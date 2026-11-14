@@ -63,6 +63,12 @@
 //!   bounded-decorrelation mechanism, and the prereg's own words: "a
 //!   bounded PRNG alone gives no per-window hard cap; this does").
 //!
+//! Runtime note: the allocator treats each control above as a CANDIDATE.
+//! The per-group adaptive cadence (`large_thp_runtime::large_thp_cadence`)
+//! keeps at most one control per cohort and, at a constant level `l`,
+//! exactly one per aligned window of `8 * 2^l` requests; level 0 is
+//! exactly this selector.
+//!
 //! This module is a standalone pure component; runtime integration into
 //! the allocator is a separate future task.
 

@@ -1603,8 +1603,8 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **558 integration test files**,
-**107 example binaries**, **34 benches**, and **29 root Loom models**
+needs its acceptance run. The present tree contains **562 integration test files**,
+**107 example binaries**, **34 benches**, and **30 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1613,11 +1613,11 @@ and support modules. Nested helpers and fixtures are not separate integration ta
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (558 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (562 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (107 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (29 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
+| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (30 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri-matrix.mjs` is the single manifest of Miri targets (GREEN, EXPECTED-RED with its card, WAIVED); `scripts/miri.mjs` runs it and `scripts/verify-miri-target-wiring.mjs` checks that every Miri test file is classified and wired in CI; it includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
 | ThreadSanitizer | Real cross-thread races in selected binaries | `scripts/tsan.mjs` / CI; old ring-era results are not cutover acceptance |
@@ -2030,8 +2030,12 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(
 
 - **`huge_page_mode`:** `Off` never advises. `Always` (the supported-Linux default) advises each eligible fresh Large block over a prefix that ends at the 2 MiB
   floor of the requested size's end (payload offset plus requested size), not at the rounded-up usable span; it is never widened. `Auto` uses a separate process-wide estimate for each of six requested-size groups.
-  Its prior is optimistic one. One fresh no-THP control per complete aligned cohort of eight eligible requests feeds bounded owner-free
-  residency observations; the other fresh requests use the learned share. Controls continue even at share zero, allowing recovery.
+  Its prior is optimistic one. The fixed selector names one candidate per complete aligned cohort of eight eligible requests; a per-group
+  adaptive cadence thins those candidates: every four consecutive valid controls that agree with the estimate in force (within 1/8 of it)
+  halve the control rate, from 1 in 8 down to 1 in 256 after twenty agreements, and the first disagreeing control returns the group to
+  1 in 8. Each selected fresh no-THP control feeds bounded owner-free residency observations; the other fresh requests use the learned
+  share. Controls continue even at share zero (at least 1 in 256 requests of the group), allowing recovery; recovery after a workload
+  change can take up to about 511 requests of that group at the floor. The cadence thresholds are fixed, not configurable, and not measured.
   The runtime learner is accepted on exact source `6c2ba419` (CI `42512485612`); cost and performance effect remain unmeasured.
 - **`huge_page_block_min_bytes`:** eligibility is the *requested* size, default 8 MiB; `0` makes every fresh Large block eligible.
 - **`huge_page_budget_bytes`:** `0` is unlimited. Otherwise each advice is charged to a process-wide ledger before the `madvise`,
@@ -2044,10 +2048,12 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(
   `LargeThpGradient::custom` normalizes shifts to 0..=31, Q31 anchor/floor to 0..=SCALE and a zero gain denominator to one; gain is an exact
   rational, with explicit `Generous`/`Linear`/`Strict` curves. No callback or task/thread identity is involved.
 - **Admission limits:** only validated clean owner controls train. Remote UNKNOWN, sampler failures, cache second lives and invalidated old-realloc
-  tokens do not. Cohorts are global across eligible sizes, not per group; under-observed groups can retain the optimistic prior.
+  tokens do not. Candidate cohorts are global across eligible sizes, not per group (the cadence level is per group, so interleaved
+  groups see statistical rather than exact rates); under-observed groups can retain the optimistic prior.
   Each update has at most eight source-level CAS attempts; rejected updates are counted separately. This is not a wait-free, fairness or sampling-bias guarantee.
 - **Cost:** only fresh reservations are advised; a Large-cache hit, an in-place growth and the aligned-above-segment path never are.
-  Eligible Auto requests take an ordinal RMW; non-controls read a coherent estimator pair, and valid owner controls pay bounded sampling/update work.
+  Eligible Auto requests take an ordinal RMW; candidates read one cadence word, non-controls read a coherent estimator pair, and valid owner
+  controls pay bounded sampling/update work plus one bounded cadence CAS (agreement) or one `fetch_and` (disagreement).
   Header size is 144 bytes (128 to 136 for mapping charge, then to 144 for the observation token); this learning step adds no header field.
   Process-state memory, instruction-count, contention and workload effects remain unmeasured; no cache-line isolation or speedup is claimed.
 - **Combination:** requested minimum and outstanding byte budget constrain both `Always` and `Auto`. The gradient affects only `Auto`; a learned

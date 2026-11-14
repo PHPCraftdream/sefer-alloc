@@ -211,3 +211,7 @@ Job `j13b-judge-preparation` in `.github/workflows/ci.yml` runs all three Node f
 5. Preserve correctness limitations 262–267, 272 and current-layout/Ir UNKNOWN item 264. Fault counts/AnonHugePages can corroborate activation but are not exact attribution or standalone speed evidence.
 
 No raw runtime JSONL, identity hashes, report, measurements or verdict exist.
+
+## Amendment 2026-11-12: adaptive Auto control cadence
+
+Explicit `Auto` now thins the fixed 1-in-8 control candidates per request group (design: `J13_AUTO_ADAPTIVE_CADENCE_DESIGN.md`). The identity `eligible = 8 x valid` that the training target (96 valid within 1536 eligible) assumes holds only at cadence level 0, so the actual training and adaptive-window executors pin level 0 (`AllocCore::dbg_thp_cadence_pin`) and this judge keeps measuring the fixed selector; no schema or threshold changed. Settle-based training completion (`run >= 8`, raw schema `j13b.raw.v5`) and the fixed-1/8 relabelling of the static reference arm `f` are NOT implemented: they belong to the paused full-judge backlog and a separate registered J13c measurement.

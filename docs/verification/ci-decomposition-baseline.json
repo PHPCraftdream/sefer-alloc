@@ -10,7 +10,7 @@
     {
       "id": "j13b-judge-preparation",
       "metadata": "12d71f089526cbe2378fed9277d7308920358924748ce4a3b8b08b4657f3f755",
-      "steps": "28b20de7067d1ccd1eb95a0993faf4100cee6959a5977608046f6adc81244b6a"
+      "steps": "21618aaf550a34dc80d6df9788ef9b956fd7582d6c1304bd33674006ed5c739c"
     },
     {
       "id": "select-tests",
@@ -215,7 +215,7 @@
     {
       "id": "loom-xthread",
       "metadata": "65632a4ecdc7dbb25657a1c505a9dbfe0d3e420dea67daeeeecd62ad3ecb90ab",
-      "steps": "9e63cabb1074d7320409a976603c9a57de923ff3243321fe355e77a18d28cd0a"
+      "steps": "48c7405ac1ab2eff6b2429c7c56950e68f0db312268446fef0c0a692b9fe62c6"
     },
     {
       "id": "loom-experimental",

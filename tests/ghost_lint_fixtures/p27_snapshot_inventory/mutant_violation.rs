@@ -40,22 +40,35 @@ impl ThpLearningCell {
         gradient: &LargeThpGradient,
         observation: LargeThpShare,
     ) -> bool {
+        self.try_observe_with_prior(gradient, observation).is_some()
+    }
+
+    /// The single bounded update loop: at most eight CAS attempts. `Some`
+    /// carries the estimate in force immediately before the winning update,
+    /// derived from exactly the predecessor pair that CAS replaced (no
+    /// second load). `None` means the observation was not applied.
+    pub(crate) fn try_observe_with_prior(
+        &self,
+        gradient: &LargeThpGradient,
+        observation: LargeThpShare,
+    ) -> Option<LargeThpShare> {
         let mut current = self.state.load(Ordering::Relaxed);
         let mut attempts = 0;
         while attempts < Self::MAX_ATTEMPTS {
             attempts += 1;
             let mut next = Self::decode(current);
+            let prior = next.estimate(gradient);
             next.observe(gradient, observation);
             let packed = Self::encode(next);
             match self
                 .state
                 .compare_exchange(current, packed, Ordering::Relaxed, Ordering::Relaxed)
             {
-                Ok(_) => return true,
+                Ok(_) => return Some(prior),
                 Err(actual) => current = actual,
             }
         }
-        false
+        None
     }
 
     fn encode(estimator: LargeThpEstimator) -> u64 {

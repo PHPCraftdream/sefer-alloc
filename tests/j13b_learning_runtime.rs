@@ -123,6 +123,11 @@ fn clean_controls_drive_custom_gradient_through_zero_and_recovery_without_cross_
     assert_eq!(AllocCore::dbg_thp_tuple().mode, LargeThpMode::Auto);
     assert_eq!(AllocCore::dbg_thp_tuple_conflicts(), 0);
     core.dbg_set_large_cache_budget(Some(0));
+    // This oracle counts one control per cohort: pin the cadence at level 0
+    // (the fixed 1-in-8 selector); adaptive thinning has its own tests.
+    for group in 0..6 {
+        AllocCore::dbg_thp_cadence_pin(group, Some(0));
+    }
     let initial = AllocCore::dbg_thp_learning_telemetry();
     let mut expected = LargeThpEstimator::new();
     check_expected(2, expected, &gradient, 0);

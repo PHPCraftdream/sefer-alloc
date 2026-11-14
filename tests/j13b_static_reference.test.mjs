@@ -60,7 +60,7 @@ test('overlay changes only Always control selection and estimator admission, pre
     'if matches!(tuple.mode, LargeThpMode::Always | LargeThpMode::Auto) {\n        let (selected, _ordinal)');
   assert.notEqual(result.output[fresh], sources[fresh]);
   assert.equal(result.output[fresh], expectedFresh);
-  const admissionStart = sources[runtime].indexOf('        let applied = LEARNERS[group].try_observe(');
+  const admissionStart = sources[runtime].indexOf('        let prior = LEARNERS[group].try_observe_with_prior(');
   const admissionEnd = sources[runtime].indexOf('\n    }', admissionStart);
   assert.ok(admissionStart >= 0 && admissionEnd > admissionStart);
   assert.equal(result.output[runtime], sources[runtime].slice(0, admissionStart)

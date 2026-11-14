@@ -3,6 +3,35 @@
   "doc": "Ghost-checks catalog (docs/GHOST_CHECKS_PLAN.md). `protocols` — G0 inventory to invariant level; `scopes` — every atomic/ordering site in src/** and crates/*/src/** claimed by exactly one scope (scripts/ghost_inventory.mjs --check); `rules` — per-site lint rules, filled from G1 on.",
   "protocols": [
     {
+      "id": "P29",
+      "name": "large-THP adaptive control cadence",
+      "prod": [
+        "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+        "src/alloc_core/config/policy/large_thp_runtime/state/large_thp_cadence.rs",
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+        "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs"
+      ],
+      "invariants": [
+        "I1 one AtomicU64 per request group holds the saturating agreement run in bits 0..=4 (the other bits stay zero outside the bench-internals pin); the level is derived from a single Relaxed load",
+        "I2 the run is bounded 0..=20 at every observable instant (increments are CAS-guarded below the maximum, resets only clear bits) and the level is min(run/4, 5)",
+        "I3 an agreement update makes at most eight CAS attempts from the loaded value; exhaustion drops only that agreement, and a saturated run performs no read-modify-write",
+        "I4 a disagreement is one wait-free fetch_and that clears the run, is never dropped, and is the only clearer of the run bits",
+        "I5 the level is read only for fixed-selector candidates, never on the seven-in-eight non-candidate path",
+        "I6 agreement is classified from the estimate of the predecessor pair the winning estimator CAS replaced, with no second load",
+        "I7 final controls are a subset of the P26 candidates and, at a constant level l, exactly one per aligned window of 8 * 2^l ordinals; level 0 equals the fixed selector"
+      ],
+      "class": "none",
+      "loom": [
+        "tests/loom_thp_cadence_cell.rs"
+      ],
+      "pins": [],
+      "registry": [],
+      "real_under_loom": "cell only: tests/loom_thp_cadence_cell.rs mounts the actual production cell and pure cadence arithmetic on model atomics (racing agreements end at exactly run two, an agreement racing a disagreement ends at zero or one, a level reader sees only valid levels); runtime routing is exercised by tests/j13b_cadence_native.rs, not by a whole-runtime model",
+      "decision": "rules + actual-source model + deterministic forced-CAS rejection test + pure property tests",
+      "phase": "J13b",
+      "reason": "Auto control cadence adapts per request group: the level thins the fixed 1-in-8 candidates to 1/(8 * 2^level), rises after four consecutive agreeing valid observations per step and returns to level 0 on the first disagreement. Opt-in only; no performance acceptance is claimed."
+    },
+    {
       "id": "P28",
       "name": "benchmark advice event capture publication",
       "prod": [
@@ -39,11 +68,11 @@
       "invariants": [
         "I1 one AtomicU64 contains both Q31 estimator components; snapshot is one indivisible load",
         "I2 a successful CAS applies exactly one accepted pure-estimator update from its expected packed pair",
-        "I3 at most eight CAS attempts per observation; exhaustion returns false without applying that observation",
+        "I3 at most eight CAS attempts per observation (try_observe_with_prior is the single update loop); exhaustion returns None without applying that observation",
         "I4 Relaxed accesses publish no external payload; only the indivisible scalar pair is shared",
         "I5 only validated owner first-life no-THP observations feed the request group estimator; failed-premise, remote, cache and invalidated old-realloc tokens never feed it",
         "I6 per-group applied/dropped diagnostics are independent wrapping counters, not estimator inputs; applied plus dropped closes against valid observations only after worker quiescence",
-        "I7 the optimistic prior is group-local; Off/Always bypass learned shares and Auto still selects controls before reading a zero learned share so recovery remains observable"
+        "I7 the optimistic prior is group-local; Off/Always bypass learned shares and Auto still selects controls before reading a zero learned share so recovery remains observable, at a rate of at least 1/256 per request of that group (P29 floor)"
       ],
       "class": "none",
       "loom": [
@@ -676,10 +705,10 @@
       ],
       "invariants": [
         "I1 each next_control call obtains one successive wrapping ticket from CONTROL_ORDINAL with one fetch_add(Relaxed); the returned ticket is the ordinal input to the deterministic selection, not a publication",
-        "I2 next_control uses the fixed CONTROL_SEED with the pure decision_at(seed, ordinal) selector; the selector defines exactly one control in each complete aligned cohort of eight ordinals (not every sliding window)",
+        "I2 next_control uses the fixed CONTROL_SEED with the pure decision_at(seed, ordinal) selector, which defines exactly one candidate in each complete aligned cohort of eight ordinals (not every sliding window); a candidate becomes a control only when it is also live at the group cadence level (P29), so controls are a subset of candidates",
         "I3 control counters are diagnostic wrapping u64 totals only: Relaxed accesses publish no data and establish no happens-before edge",
         "I4 control_telemetry reads each of eight fields independently with Relaxed loads; the returned array is not a coherent multiword snapshot",
-        "I5 the bench-internals ticket log records the (ordinal, decision) actually consumed per next_control call in bounded diagnostic storage; its entries are never gate inputs and all accesses stay Relaxed"
+        "I5 the bench-internals ticket log records the (ordinal, decision) actually consumed per next_control call, plus a parallel level log with the candidate cadence level or 0xFF, in bounded diagnostic storage; its entries are never gate inputs and all accesses stay Relaxed"
       ],
       "class": "none",
       "loom": [],
@@ -809,7 +838,7 @@
       "files": [
         "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs"
       ],
-      "fn": "^(snapshot|try_observe)$",
+      "fn": "^(snapshot|try_observe_with_prior)$",
       "receiver": "^(self)?\\.state$",
       "ops": [
         "load",
@@ -819,6 +848,44 @@
         "Relaxed"
       ],
       "reason": "one packed pair, no external publication; bounded CAS commits both estimator components atomically"
+    },
+    {
+      "id": "P29/cadence-cell",
+      "class": "protocol",
+      "protocol": "P29",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs"
+      ],
+      "fn": "^(level|run|note_agree|note_disagree|pin)$",
+      "receiver": "^(self)?\\.state$",
+      "ops": [
+        "load",
+        "compare_exchange",
+        "fetch_and",
+        "fetch_or"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "one packed agreement-run word per group, no external publication; a bounded CAS raises the run, one wait-free fetch_and clears it, one load yields the level; the bench-internals pin edits only its own bits"
+    },
+    {
+      "id": "P29/cadence-diagnostics",
+      "class": "counter",
+      "protocol": "P29",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+      ],
+      "fn": "^(note_level_counter|cadence_telemetry|cadence_level_counters)$",
+      "receiver": "^(counters\\[.*\\]|CADENCE_(ELIGIBLE|AGREED|RESETS|AGREE_DROPPED)\\[.*\\]|candidate|selection)$",
+      "ops": [
+        "fetch_add",
+        "load"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "bench-internals diagnostic wrapping counters and independent telemetry loads of the cadence; never gate allocator behavior, publish nothing, no coherent snapshot"
     },
     {
       "id": "P1/heap-slot-cas",
@@ -1199,7 +1266,7 @@
         "crates/*/src/**"
       ],
       "receiver": "^(.*::)?[A-Z][A-Z0-9_]*(\\[.*\\])?$",
-      "receiver_not": "^(.*::)?(INIT_STATE|LOCK|STATE|PASSES|PAGE_SIZE_CACHE|QUERY|NEXT_[A-Z_]+|DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE|DBG_RESERVATION_OWNER_ID_COUNTER|TOKEN_BACKING_DEATHS|LIVE_TOKEN_BLOCKS|TARGET|CONTROL_ORDINAL|CONTROL_SELECTIONS|CONTROL_PREMISE_FAILURES|CONTROL_VALID_OBSERVATIONS|CONTROL_INVALIDATED_OBSERVATIONS|CONTROL_INVALIDATED_REALLOC|CONTROL_OBSERVATION_ERRORS|CONTROL_RESIDENT_PAGES|CONTROL_SAMPLED_PAGES|CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG|LEARNING_APPLIED|LEARNING_DROPPED)(\\[.*\\])?$",
+      "receiver_not": "^(.*::)?(INIT_STATE|LOCK|STATE|PASSES|PAGE_SIZE_CACHE|QUERY|NEXT_[A-Z_]+|DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE|DBG_RESERVATION_OWNER_ID_COUNTER|TOKEN_BACKING_DEATHS|LIVE_TOKEN_BLOCKS|TARGET|CONTROL_ORDINAL|CONTROL_SELECTIONS|CONTROL_PREMISE_FAILURES|CONTROL_VALID_OBSERVATIONS|CONTROL_INVALIDATED_OBSERVATIONS|CONTROL_INVALIDATED_REALLOC|CONTROL_OBSERVATION_ERRORS|CONTROL_RESIDENT_PAGES|CONTROL_SAMPLED_PAGES|CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG|LEARNING_APPLIED|LEARNING_DROPPED|CONTROL_LEVEL_LOG|CADENCE_(ELIGIBLE|AGREED|RESETS|AGREE_DROPPED))(\\[.*\\])?$",
       "orderings": [
         "Relaxed"
       ],
@@ -1361,8 +1428,8 @@
       "files": [
         "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
       ],
-      "fn": "^(record_control_ticket|ticket_log_reset|ticket_log_snapshot)$",
-      "receiver": "^(CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG\\[.*\\]|slot)$",
+      "fn": "^(record_control_ticket|ticket_log_reset|ticket_log_snapshot|level_log_snapshot)$",
+      "receiver": "^(CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG\\[.*\\]|CONTROL_LEVEL_LOG\\[.*\\]|slot)$",
       "ops": [
         "fetch_add",
         "load",
@@ -1371,7 +1438,7 @@
       "orderings": [
         "Relaxed"
       ],
-      "reason": "bench-internals diagnostic ticket log: exactly one bounded cursor/store/load inventory per helper so tests can observe actual consumed tickets; publishes nothing"
+      "reason": "bench-internals diagnostic ticket log and its parallel candidate-level log: exactly one bounded cursor/store/load inventory per helper so tests can observe actual consumed tickets and levels; publishes nothing"
     }
   ],
   "rules": [
@@ -1926,7 +1993,7 @@
     {
       "id": "thp-learning/update-inventory",
       "kind": "R2",
-      "fn": "ThpLearningCell::try_observe",
+      "fn": "ThpLearningCell::try_observe_with_prior",
       "sites": [
         {
           "name": "load",
@@ -1947,9 +2014,10 @@
       "terms": [
         "packed pair",
         "Relaxed",
-        "compare_exchange"
+        "compare_exchange",
+        "predecessor"
       ],
-      "reason": "I2/I4: one load and one syntactic strong CAS site operate on the packed pair; no external publication",
+      "reason": "I2/I4: one load and one syntactic strong CAS site operate on the packed pair in the single update loop, and the prior estimate is derived from the predecessor pair that CAS replaced (a second load or snapshot would add an ordered site); no external publication",
       "fixtures": "tests/ghost_lint_fixtures/p27_update_inventory",
       "protocol": "P27",
       "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
@@ -1988,7 +2056,7 @@
     {
       "id": "thp-learning/update-bounded",
       "kind": "R4",
-      "fn": "ThpLearningCell::try_observe",
+      "fn": "ThpLearningCell::try_observe_with_prior",
       "action": {
         "name": "compare_exchange"
       },
@@ -2010,7 +2078,7 @@
     {
       "id": "thp-learning/cas-after-observe",
       "kind": "R3",
-      "fn": "ThpLearningCell::try_observe",
+      "fn": "ThpLearningCell::try_observe_with_prior",
       "before": {
         "name": "load",
         "receiver": "state$"
@@ -8055,18 +8123,27 @@
           "orderings": [
             "Relaxed"
           ]
+        },
+        {
+          "name": "store",
+          "receiver": "^CONTROL_LEVEL_LOG\\[",
+          "orderings": [
+            "Relaxed"
+          ]
         }
       ],
       "terms": [
         "ticket",
         "log",
         "cursor",
+        "level",
         "Relaxed",
         "diagnostic"
       ],
-      "reason": "I3: the ticket log records exactly one Relaxed cursor fetch_add plus one Relaxed bounded slot store per consumed ticket; any second or stronger atomic changes the bounded record path tests rely on",
+      "reason": "I3/I5: the ticket log records exactly one Relaxed cursor fetch_add plus, inside the cap, one Relaxed ticket-slot store and one Relaxed level-slot store per consumed ticket; any second or stronger atomic changes the bounded record path tests rely on",
       "tests": [
-        "tests/j13b_control_concurrent_ordinal.rs"
+        "tests/j13b_control_concurrent_ordinal.rs",
+        "tests/j13b_cadence_native.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p26_ticket_log_inventory"
     },
@@ -8308,6 +8385,201 @@
         "crates/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_publish_field6_order"
+    },
+    {
+      "id": "thp-cadence/level-inventory",
+      "kind": "R2",
+      "protocol": "P29",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "fn": "ThpCadenceCell::level",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.state$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "level",
+        "single",
+        "load",
+        "Relaxed"
+      ],
+      "reason": "I1: the level is derived from exactly one Relaxed load of the group word; a second load or a stronger ordering changes this inventory",
+      "tests": [
+        "tests/loom_thp_cadence_cell.rs",
+        "tests/j13b_cadence_contention_bound.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p29_level_inventory"
+    },
+    {
+      "id": "thp-cadence/agree-inventory",
+      "kind": "R2",
+      "protocol": "P29",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "fn": "ThpCadenceCell::note_agree",
+      "sites": [
+        {
+          "name": "load",
+          "receiver": "^(self)?\\.state$",
+          "orderings": [
+            "Relaxed"
+          ]
+        },
+        {
+          "name": "compare_exchange",
+          "receiver": "^(self)?\\.state$",
+          "orderings": [
+            "Relaxed",
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "agreement",
+        "load",
+        "compare_exchange",
+        "Relaxed"
+      ],
+      "reason": "I3: an agreement update is one load and one syntactic strong CAS site on the group word; a blind store (which loses concurrent updates), a second RMW or a stronger ordering changes this inventory",
+      "tests": [
+        "tests/loom_thp_cadence_cell.rs",
+        "tests/j13b_cadence_contention_bound.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p29_agree_inventory"
+    },
+    {
+      "id": "thp-cadence/agree-bounded",
+      "kind": "R4",
+      "protocol": "P29",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "fn": "ThpCadenceCell::note_agree",
+      "action": {
+        "name": "compare_exchange"
+      },
+      "guard": "^attempts<Self::MAX_ATTEMPTS$",
+      "terms": [
+        "bounded",
+        "attempts",
+        "MAX_ATTEMPTS",
+        "eight"
+      ],
+      "reason": "I3: the CAS is dominated by attempts < MAX_ATTEMPTS, at most eight attempts; forced rejection drops the agreement after exactly eight",
+      "tests": [
+        "tests/loom_thp_cadence_cell.rs",
+        "tests/j13b_cadence_contention_bound.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p29_agree_bounded"
+    },
+    {
+      "id": "thp-cadence/agree-cas-after-load",
+      "kind": "R3",
+      "protocol": "P29",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "fn": "ThpCadenceCell::note_agree",
+      "before": {
+        "name": "load",
+        "receiver": "state$"
+      },
+      "after": {
+        "name": "compare_exchange",
+        "args": "^current,"
+      },
+      "terms": [
+        "observed",
+        "current",
+        "compare_exchange",
+        "load"
+      ],
+      "reason": "I2/I3: the CAS expects the observed current word, so a competing reset or increment cannot be overwritten blindly and the run never exceeds its bound",
+      "tests": [
+        "tests/loom_thp_cadence_cell.rs",
+        "tests/j13b_cadence_contention_bound.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p29_agree_cas_after_load"
+    },
+    {
+      "id": "thp-cadence/disagree-inventory",
+      "kind": "R2",
+      "protocol": "P29",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "fn": "ThpCadenceCell::note_disagree",
+      "sites": [
+        {
+          "name": "fetch_and",
+          "receiver": "^(self)?\\.state$",
+          "orderings": [
+            "Relaxed"
+          ]
+        }
+      ],
+      "terms": [
+        "disagreement",
+        "wait-free",
+        "fetch_and",
+        "Relaxed"
+      ],
+      "reason": "I4: a disagreement is exactly one wait-free Relaxed fetch_and on the group word and no CAS, so it can never be dropped by contention; a bounded-CAS reset or a stronger ordering changes this inventory",
+      "tests": [
+        "tests/loom_thp_cadence_cell.rs",
+        "tests/j13b_cadence_contention_bound.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p29_disagree_inventory"
+    },
+    {
+      "id": "thp-cadence/run-clear-sole-path",
+      "kind": "R5",
+      "protocol": "P29",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "files": [
+        "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs"
+      ],
+      "target": {
+        "name": "fetch_and",
+        "args": "^!Self::RUN_MASK,"
+      },
+      "allowed": [
+        "ThpCadenceCell::note_disagree"
+      ],
+      "terms": [
+        "run",
+        "fetch_and",
+        "note_disagree",
+        "only"
+      ],
+      "reason": "I4: the run bits are cleared only by note_disagree; any other fetch_and on them would be a second, unreviewed reset path",
+      "tests": [
+        "tests/loom_thp_cadence_cell.rs",
+        "tests/j13b_cadence_contention_bound.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p29_run_clear_sole_path"
+    },
+    {
+      "id": "thp-cadence/level-read-guarded-by-candidate",
+      "kind": "R4",
+      "protocol": "P29",
+      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "fn": "ThpRuntime::next_control",
+      "action": {
+        "name": "level",
+        "receiver": "^CADENCE\\[group\\]$",
+        "kind": "method"
+      },
+      "guard": "^candidate$",
+      "terms": [
+        "candidate",
+        "level",
+        "guarded",
+        "next_control"
+      ],
+      "reason": "I5: the group level is read only inside the branch of a fixed-selector candidate; an unconditional read would tax the seven-in-eight non-candidate fresh path",
+      "tests": [
+        "tests/j13b_cadence_native.rs",
+        "tests/j13b_cadence_pure.rs"
+      ],
+      "fixtures": "tests/ghost_lint_fixtures/p29_level_read_guarded"
     }
   ],
   "test_fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",

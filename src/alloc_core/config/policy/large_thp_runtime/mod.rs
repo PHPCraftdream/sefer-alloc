@@ -2,10 +2,16 @@
 //! the pure advice geometry, the budget ledger, and (under the decommit,
 //! non-NUMA mechanism gate) its publication cell and process statics.
 
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+#[path = "state/large_thp_cadence.rs"]
+pub(crate) mod large_thp_cadence;
 pub mod thp_advice;
 #[path = "state/thp_advice_outcome.rs"]
 pub mod thp_advice_outcome;
 pub mod thp_budget_ledger;
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+#[path = "state/thp_cadence_cell.rs"]
+pub(crate) mod thp_cadence_cell;
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
 #[path = "state/thp_learning_cell.rs"]
 pub(crate) mod thp_learning_cell;

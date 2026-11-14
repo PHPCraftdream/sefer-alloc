@@ -177,6 +177,11 @@ impl AdaptiveWindows {
             }
         }
         let registered_geometry = cells == canonical.as_slice();
+        // The registered cells predate the adaptive cadence and assume the
+        // fixed 1-in-8 selector (eligible = 8 x valid): pin level 0.
+        for group in 0..6 {
+            AllocCore::dbg_thp_cadence_pin(group, Some(0));
+        }
         let mut windows = Vec::with_capacity(cells.len());
         for cell in cells {
             let full = Instant::now();

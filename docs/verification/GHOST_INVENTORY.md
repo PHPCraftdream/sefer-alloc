@@ -7,26 +7,26 @@ blanked, braces give the item path); G1's `crates/ghost-lint` on `syn` replaces 
 
 ## 1. Ordering sites
 
-753 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 98 files of `src/**` and
-`crates/*/src/**`; each is claimed by exactly one of 58 scopes.
+769 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 99 files of `src/**` and
+`crates/*/src/**`; each is claimed by exactly one of 60 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| S | 13 | 13/753 |
-| cache | 6 | 6/753 |
-| counter | 276 | 276/753 |
-| ghost | 10 | 10/753 |
-| id | 9 | 9/753 |
-| kani | 1 | 1/753 |
-| lock-local | 40 | 40/753 |
-| non-atomic | 3 | 3/753 |
-| protocol | 206 | 206/753 |
-| test-hook | 182 | 182/753 |
-| twin | 7 | 7/753 |
-| **claimed** | **753** | 753/753 |
-| unclaimed | 0 | 0/753 |
-| claimed twice | 0 | 0/753 |
+| S | 13 | 13/769 |
+| cache | 6 | 6/769 |
+| counter | 285 | 285/769 |
+| ghost | 10 | 10/769 |
+| id | 9 | 9/769 |
+| kani | 1 | 1/769 |
+| lock-local | 40 | 40/769 |
+| non-atomic | 3 | 3/769 |
+| protocol | 213 | 213/769 |
+| test-hook | 182 | 182/769 |
+| twin | 7 | 7/769 |
+| **claimed** | **769** | 769/769 |
+| unclaimed | 0 | 0/769 |
+| claimed twice | 0 | 0/769 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -38,6 +38,7 @@ harness; `non-atomic` — named scanner false positives.
 
 | id | protocol | class | sites | loom tests | text pins | registry rows | real code under loom | decision | phase |
 |---|---|---|---:|---:|---:|---|---|---|---|
+| P29 | large-THP adaptive control cadence | none | 14 | 1 | 0 | — | cell only: tests/loom_thp_cadence_cell.rs mounts the actual production cell and pure cadence arithmetic on model atomics (racing agreements end at exactly run two, an agreement racing a disagreement ends at zero or one, a level reader sees only valid levels); runtime routing is exercised by tests/j13b_cadence_native.rs, not by a whole-runtime model | rules + actual-source model + deterministic forced-CAS rejection test + pure property tests | J13b |
 | P28 | benchmark advice event capture publication | S | 20 | 0 | 0 | — | no Loom model: bounded actual-source thread/Miri, native emitter/replay and semantic fixtures accepted on 93f99017 by CI42693008438 attempt2; no whole-native-lifecycle or wait-freedom claim | benchmark-only bounded capture with fail-closed evidence | J13b |
 | P27 | large-THP coherent bounded estimator pair | none | 5 | 1 | 0 | — | cell only: tests/loom_thp_learning_cell.rs mounts the actual production cell and math on model atomics; runtime routing/admission is exercised by native tests, not a whole-runtime model; current integration acceptance is pending CI | rules + actual-source model + deterministic forced-CAS rejection test | J13b |
 | P1 | HeapLease FREE->LIVE claim / LIVE->FREE Release drop | S | 12 | 1 | 0 | R4a-05 R4a-06 R4a-07 R4a-08 R4a-09 R4c-09 | no: HeapRegistry is a process-static built through bootstrap::ensure (OncePtrCell + chunked slots); cas_state itself is one CAS on HeapSlot::state and builds alone | keep+R8 | G3 |
@@ -65,12 +66,27 @@ harness; `non-atomic` — named scanner false positives.
 | P23 | remote-free ingress: producer notify \|\| owner take/arm/full drain (SC-6 A-exact) | A | 11 | 1 | 0 | — | yes: tests/loom_g1_ingress_exact.rs includes ingress.rs and sidecar_bitmap.rs | ghost | SC-6 |
 | P24 | large-THP tuple cell (write-once publication) | none | 13 | 1 | 0 | — | yes: tests/loom_thp_tuple_cell.rs compiles the production thp_tuple_cell.rs (#[path]) onto the concurrency atomics; oracles: a reader never sees a torn tuple (result is exactly one candidate or the default), exactly one distinct-tuple publisher wins, a same-tuple race follows the over-count contract, and the model terminates under every interleaving (no spin) | rules + actual-source model + integration tests | J13b |
 | P25 | large-THP budget ledger (advised bytes, bounded CAS reserve) | none | 4 | 1 | 0 | — | yes: tests/loom_thp_ledger.rs compiles the production thp_budget_ledger.rs (#[path]) onto the concurrency atomics; oracles: racing 6 MiB reserves against an 8 MiB budget never hand out more than the budget (an unconditional fetch_add reserve fails this), grants are exact granule multiples, and the ledger is empty after every thread returns exactly its own grant | rules + actual-source model + integration tests | J13b |
-| P26 | large-THP deterministic control ordinal and diagnostic telemetry | none | 16 | 0 | 0 | — | no: this runtime uses process-wide core atomics; the deterministic selector is separately pure-tested, and no runtime model is claimed | rules + pure selector tests | J13b |
+| P26 | large-THP deterministic control ordinal and diagnostic telemetry | none | 18 | 0 | 0 | — | no: this runtime uses process-wide core atomics; the deterministic selector is separately pure-tested, and no runtime model is claimed | rules + pure selector tests | J13b |
 
-Shadow-model protocols (class contains S): 14 of 28, each with a decision.
-Protocols with neither a loom nor a shadow model: P28, P20, P26 (3 of 28).
+Shadow-model protocols (class contains S): 14 of 29, each with a decision.
+Protocols with neither a loom nor a shadow model: P28, P20, P26 (3 of 29).
 
 ## 3. Invariants and prod places
+
+### P29 — large-THP adaptive control cadence
+
+Prod: `src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs`, `src/alloc_core/config/policy/large_thp_runtime/state/large_thp_cadence.rs`, `src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs`.
+
+- I1 one AtomicU64 per request group holds the saturating agreement run in bits 0..=4 (the other bits stay zero outside the bench-internals pin); the level is derived from a single Relaxed load
+- I2 the run is bounded 0..=20 at every observable instant (increments are CAS-guarded below the maximum, resets only clear bits) and the level is min(run/4, 5)
+- I3 an agreement update makes at most eight CAS attempts from the loaded value; exhaustion drops only that agreement, and a saturated run performs no read-modify-write
+- I4 a disagreement is one wait-free fetch_and that clears the run, is never dropped, and is the only clearer of the run bits
+- I5 the level is read only for fixed-selector candidates, never on the seven-in-eight non-candidate path
+- I6 agreement is classified from the estimate of the predecessor pair the winning estimator CAS replaced, with no second load
+- I7 final controls are a subset of the P26 candidates and, at a constant level l, exactly one per aligned window of 8 * 2^l ordinals; level 0 equals the fixed selector
+- loom: `tests/loom_thp_cadence_cell.rs`
+
+Decision: **rules + actual-source model + deterministic forced-CAS rejection test + pure property tests** — Auto control cadence adapts per request group: the level thins the fixed 1-in-8 candidates to 1/(8 * 2^level), rises after four consecutive agreeing valid observations per step and returns to level 0 on the first disagreement. Opt-in only; no performance acceptance is claimed.
 
 ### P28 — benchmark advice event capture publication
 
@@ -93,11 +109,11 @@ Prod: `src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs
 
 - I1 one AtomicU64 contains both Q31 estimator components; snapshot is one indivisible load
 - I2 a successful CAS applies exactly one accepted pure-estimator update from its expected packed pair
-- I3 at most eight CAS attempts per observation; exhaustion returns false without applying that observation
+- I3 at most eight CAS attempts per observation (try_observe_with_prior is the single update loop); exhaustion returns None without applying that observation
 - I4 Relaxed accesses publish no external payload; only the indivisible scalar pair is shared
 - I5 only validated owner first-life no-THP observations feed the request group estimator; failed-premise, remote, cache and invalidated old-realloc tokens never feed it
 - I6 per-group applied/dropped diagnostics are independent wrapping counters, not estimator inputs; applied plus dropped closes against valid observations only after worker quiescence
-- I7 the optimistic prior is group-local; Off/Always bypass learned shares and Auto still selects controls before reading a zero learned share so recovery remains observable
+- I7 the optimistic prior is group-local; Off/Always bypass learned shares and Auto still selects controls before reading a zero learned share so recovery remains observable, at a rate of at least 1/256 per request of that group (P29 floor)
 - loom: `tests/loom_thp_learning_cell.rs`
 
 Decision: **rules + actual-source model + deterministic forced-CAS rejection test** — Task49 connects valid control observations and fresh non-control Auto advice to separate process-group cells, with explicit applied/dropped accounting; diagnostics never drive learning. No performance acceptance is claimed.
@@ -369,10 +385,10 @@ Decision: **rules + actual-source model + integration tests** — J13b #47: R1 p
 Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/config/policy/large_thp_observation/large_thp_control_selector.rs`.
 
 - I1 each next_control call obtains one successive wrapping ticket from CONTROL_ORDINAL with one fetch_add(Relaxed); the returned ticket is the ordinal input to the deterministic selection, not a publication
-- I2 next_control uses the fixed CONTROL_SEED with the pure decision_at(seed, ordinal) selector; the selector defines exactly one control in each complete aligned cohort of eight ordinals (not every sliding window)
+- I2 next_control uses the fixed CONTROL_SEED with the pure decision_at(seed, ordinal) selector, which defines exactly one candidate in each complete aligned cohort of eight ordinals (not every sliding window); a candidate becomes a control only when it is also live at the group cadence level (P29), so controls are a subset of candidates
 - I3 control counters are diagnostic wrapping u64 totals only: Relaxed accesses publish no data and establish no happens-before edge
 - I4 control_telemetry reads each of eight fields independently with Relaxed loads; the returned array is not a coherent multiword snapshot
-- I5 the bench-internals ticket log records the (ordinal, decision) actually consumed per next_control call in bounded diagnostic storage; its entries are never gate inputs and all accesses stay Relaxed
+- I5 the bench-internals ticket log records the (ordinal, decision) actually consumed per next_control call, plus a parallel level log with the candidate cadence level or 0xFF, in bounded diagnostic storage; its entries are never gate inputs and all accesses stay Relaxed
 
 Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed ordinal RMW, its fixed-seed decision call, and the diagnostic counter/load inventories; tests/j13b_observation_control_selector.rs checks the selector's one-control-per-complete-aligned-eight contract independently of runtime atomics
 
@@ -387,6 +403,8 @@ Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed o
 | `P28/slot-read` | S | P28 | 2 | matching Acquire completion must precede reading immutable relaxed payload fields |
 | `P27/runtime-learning-diagnostics` | counter | P27 | 2 | independent diagnostic loads of applied/dropped wrapping counters; pair state is separately read through the coherent cell snapshot, never reconstructed from counters |
 | `P27/estimator-pair` | protocol | P27 | 3 | one packed pair, no external publication; bounded CAS commits both estimator components atomically |
+| `P29/cadence-cell` | protocol | P29 | 7 | one packed agreement-run word per group, no external publication; a bounded CAS raises the run, one wait-free fetch_and clears it, one load yields the level; the bench-internals pin edits only its own bits |
+| `P29/cadence-diagnostics` | counter | P29 | 7 | bench-internals diagnostic wrapping counters and independent telemetry loads of the cadence; never gate allocator behavior, publish nothing, no coherent snapshot |
 | `P1/heap-slot-cas` | protocol | P1 | 1 | the one CAS on HeapSlot::state; orderings come from call sites |
 | `P1/claim-call-sites` | protocol | P1 | 11 | claim CASes, generation/initialised publication, lease drops |
 | `P2/maintenance` | protocol | P2 | 4 | FREE->MAINTENANCE claim |
@@ -437,4 +455,4 @@ Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed o
 | `P25/thp-ledger` | protocol | P25 | 4 | budget ledger: Relaxed load, bounded CAS reserve, fetch_sub give-back on one counter |
 | `P26/control-ordinal` | protocol | P26 | 2 | one wrapping ordinal ticket per control decision; Relaxed because the value is only a selector input and publishes nothing; the bench-internals probe adds one Relaxed diagnostic load that mutates nothing |
 | `P26/control-diagnostics` | counter | P26 | 9 | diagnostic-only wrapping counter RMWs and independent telemetry loads; no publication or coherent snapshot |
-| `P26/control-ticket-log` | counter | P26 | 5 | bench-internals diagnostic ticket log: exactly one bounded cursor/store/load inventory per helper so tests can observe actual consumed tickets; publishes nothing |
+| `P26/control-ticket-log` | counter | P26 | 7 | bench-internals diagnostic ticket log and its parallel candidate-level log: exactly one bounded cursor/store/load inventory per helper so tests can observe actual consumed tickets and levels; publishes nothing |
