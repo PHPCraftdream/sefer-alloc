@@ -201,8 +201,7 @@ impl HeapCore {
         if depot.ovf.epoch_due() {
             // Floor parks count as activity: collect and clear their marks.
             let mut floor_parked = 0u32;
-            for c in 0..DEPOT_CLASSES {
-                let class = &mut self.tcache.classes[c];
+            for (c, class) in self.tcache.classes[..DEPOT_CLASSES].iter_mut().enumerate() {
                 floor_parked |= ((class.marks & super::tcache::MARK_FLOOR) as u32) << c;
                 class.marks &= !super::tcache::MARK_FLOOR;
             }

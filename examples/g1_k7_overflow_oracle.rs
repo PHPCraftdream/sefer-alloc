@@ -70,14 +70,14 @@ fn pair(size: usize, ops: u64, rng: &mut Rng) {
 
 fn bulk(slots: &mut Slots, n: usize, size: usize, passes: u64) {
     for _ in 0..passes {
-        for i in 0..n {
+        for p in &mut slots.p[..n] {
             // SAFETY: non-zero layout.
-            slots.p[i] = unsafe { alloc(l(size)) };
-            assert!(!slots.p[i].is_null());
+            *p = unsafe { alloc(l(size)) };
+            assert!(!p.is_null());
         }
-        for i in 0..n {
+        for &p in &slots.p[..n] {
             // SAFETY: allocated above with the same layout.
-            unsafe { dealloc(slots.p[i], l(size)) };
+            unsafe { dealloc(p, l(size)) };
         }
     }
 }

@@ -557,27 +557,25 @@ impl SegmentDirectory {
         debug_assert!(slot_idx < MAX_SEGMENTS);
         let (word, bit) = word_bit(slot_idx);
         let mask = !(1u64 << bit);
+        #[cfg(feature = "numa-aware")]
         for nb in 0..NODE_BITMAPS {
             let cell = &mut self.class_nonempty_by_node[nb][class_idx][word];
-            #[cfg(feature = "numa-aware")]
-            {
-                let was_set = *cell & !mask != 0;
-                *cell &= mask;
-                if was_set && nb < MAX_NODES {
-                    debug_assert!(
-                        self.active_bits_by_node[nb] > 0,
-                        "clear_bit_all_nodes: active_bits_by_node[{nb}] underflow"
-                    );
-                    self.active_bits_by_node[nb] -= 1;
-                    if self.active_bits_by_node[nb] == 0 {
-                        self.node_ids[nb] = NODE_SLOT_EMPTY;
-                    }
+            let was_set = *cell & !mask != 0;
+            *cell &= mask;
+            if was_set && nb < MAX_NODES {
+                debug_assert!(
+                    self.active_bits_by_node[nb] > 0,
+                    "clear_bit_all_nodes: active_bits_by_node[{nb}] underflow"
+                );
+                self.active_bits_by_node[nb] -= 1;
+                if self.active_bits_by_node[nb] == 0 {
+                    self.node_ids[nb] = NODE_SLOT_EMPTY;
                 }
             }
-            #[cfg(not(feature = "numa-aware"))]
-            {
-                *cell &= mask;
-            }
+        }
+        #[cfg(not(feature = "numa-aware"))]
+        for node in self.class_nonempty_by_node.iter_mut() {
+            node[class_idx][word] &= mask;
         }
     }
 
@@ -596,28 +594,28 @@ impl SegmentDirectory {
         debug_assert!(slot_idx < MAX_SEGMENTS);
         let (word, bit) = word_bit(slot_idx);
         let mask = !(1u64 << bit);
+        #[cfg(feature = "numa-aware")]
         for nb in 0..NODE_BITMAPS {
             for c in 0..SMALL_CLASS_COUNT {
                 let cell = &mut self.class_nonempty_by_node[nb][c][word];
-                #[cfg(feature = "numa-aware")]
-                {
-                    let was_set = *cell & !mask != 0;
-                    *cell &= mask;
-                    if was_set && nb < MAX_NODES {
-                        debug_assert!(
-                            self.active_bits_by_node[nb] > 0,
-                            "clear_slot: active_bits_by_node[{nb}] underflow"
-                        );
-                        self.active_bits_by_node[nb] -= 1;
-                        if self.active_bits_by_node[nb] == 0 {
-                            self.node_ids[nb] = NODE_SLOT_EMPTY;
-                        }
+                let was_set = *cell & !mask != 0;
+                *cell &= mask;
+                if was_set && nb < MAX_NODES {
+                    debug_assert!(
+                        self.active_bits_by_node[nb] > 0,
+                        "clear_slot: active_bits_by_node[{nb}] underflow"
+                    );
+                    self.active_bits_by_node[nb] -= 1;
+                    if self.active_bits_by_node[nb] == 0 {
+                        self.node_ids[nb] = NODE_SLOT_EMPTY;
                     }
                 }
-                #[cfg(not(feature = "numa-aware"))]
-                {
-                    *cell &= mask;
-                }
+            }
+        }
+        #[cfg(not(feature = "numa-aware"))]
+        for node in self.class_nonempty_by_node.iter_mut() {
+            for class in node.iter_mut() {
+                class[word] &= mask;
             }
         }
     }

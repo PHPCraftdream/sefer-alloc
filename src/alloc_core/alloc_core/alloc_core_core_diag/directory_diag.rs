@@ -417,11 +417,9 @@ impl AllocCore {
             let dir = unsafe { crate::alloc_core::sidecar::deref_mut(ptr, &*self) };
             // Zero out all bits first, then rebuild from scratch.
             // R11-6: iterate all node buckets.
-            for nb in 0..crate::alloc_core::segment_directory::NODE_BITMAPS {
-                for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
-                    for w in 0..crate::alloc_core::segment_directory::WORDS_PER_CLASS {
-                        dir.class_nonempty_by_node[nb][c][w] = 0;
-                    }
+            for node in dir.class_nonempty_by_node.iter_mut() {
+                for class in node.iter_mut() {
+                    class.fill(0);
                 }
             }
             // R13-2 (task #272): the bit storage above was zeroed by a RAW

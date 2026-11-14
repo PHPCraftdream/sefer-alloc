@@ -20,7 +20,6 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Directory removed recursively on drop, including when an assertion panics
 /// mid-test (keeps counterfactual runs from littering the temp dir). The
@@ -55,17 +54,9 @@ fn exclusive_dir_under(base: &Path, label: &str) -> DirGuard {
     fs::create_dir_all(base)
         .unwrap_or_else(|e| panic!("create exclusive directory base {}: {e}", base.display()));
     loop {
-        let subsec_nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.subsec_nanos())
-            .unwrap_or(0);
-        let dir = base.join(format!(
-            "tis_guard_{}_{}_{}_{}",
-            std::process::id(),
-            subsec_nanos,
-            next_uid(),
-            label
-        ));
+        // Compact name: Windows fixtures must keep linker paths below MAX_PATH;
+        // exclusive creation plus retry already rules out reuse.
+        let dir = base.join(format!("tg{}_{}_{label}", std::process::id(), next_uid()));
         match fs::create_dir(&dir) {
             Ok(()) => return DirGuard::new(dir),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -78,12 +69,21 @@ fn exclusive_temp_dir(label: &str) -> DirGuard {
     exclusive_dir_under(&std::env::temp_dir(), label)
 }
 
+/// Deepest build-check linker input: Cargo 1.100's layout v2 `build/<crate>/<hash>/out/`
+/// rlib outgrows the classic `deps/` one, so bounding it bounds both; the
+/// crate name is pinned to the runner's template.
 #[cfg(windows)]
 fn assert_short_link_path(repo_root: &Path) {
-    let candidate = repo_root.join(
-        "target/tis_p3_ab-123456/build-check-links_relaxed/target-production/\
-         x86_64-pc-windows-msvc/debug/deps/\
-         libtis_p3ab_build_check_links_relaxed-0000000000000000.rlib",
+    let runner = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs");
+    let runner_source = fs::read_to_string(&runner).expect("read runner source");
+    assert!(runner_source.contains("const crateName = `tis_bc_${variant}`;"));
+    let canonical = fs::canonicalize(repo_root).expect("canonicalize fixture repo root");
+    let text = canonical.to_string_lossy();
+    let candidate = PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text)).join(
+        "target/tis_p3_ab-123456/build-check-links_relaxed/target-activation/\
+         x86_64-pc-windows-msvc/debug/build/tis_bc_links_relaxed/0000000000000000/out/\
+         libtis_bc_links_relaxed-0000000000000000.rlib",
     );
     let path_len = candidate.as_os_str().encode_wide().count();
     assert!(
@@ -248,7 +248,7 @@ fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
     let parent = {
         let temp_root = std::env::temp_dir();
         let temp_parent = temp_root.parent().expect("system temp parent");
-        exclusive_dir_under(temp_parent, label)
+        exclusive_dir_under(temp_parent, &label[..1])
     };
     #[cfg(not(windows))]
     let parent = exclusive_dir_under(&repo_dir.join("target"), label);

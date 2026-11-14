@@ -916,9 +916,9 @@ impl SegmentTable {
     )]
     #[inline]
     pub(super) fn own_cache_clear(&mut self, base: *mut u8) {
-        for i in 0..OWN_CACHE_SIZE {
-            if self.own_cache[i].1 == base {
-                self.own_cache[i] = (OWN_CACHE_EMPTY_KEY, core::ptr::null_mut());
+        for slot in self.own_cache.iter_mut() {
+            if slot.1 == base {
+                *slot = (OWN_CACHE_EMPTY_KEY, core::ptr::null_mut());
             }
         }
         // N9: the last-segment memo is invalidated in lockstep with
