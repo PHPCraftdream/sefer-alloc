@@ -82,6 +82,11 @@ impl OwnerTraining {
             return Err(error("training live payload exceeds 512 MiB"));
         }
         let group = group_of(bytes)?;
+        // The registered training target assumes the fixed 1-in-8 selector
+        // (eligible = 8 x valid): pin cadence level 0.
+        for pinned in 0..6 {
+            AllocCore::dbg_thp_cadence_pin(pinned, Some(0));
+        }
         let wall = Instant::now();
         let cache_readbacks = std::sync::Mutex::new([None; 2]);
         let mut result = PayloadActors::with(

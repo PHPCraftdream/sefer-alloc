@@ -4,7 +4,9 @@
 use crate::alloc_core::config::policy::large_thp::large_thp_request_group::LargeThpRequestGroup;
 use crate::alloc_core::config::policy::large_thp::{LargeThpGradient, LargeThpShare};
 use crate::alloc_core::config::policy::large_thp_observation::large_thp_control_selector::LargeThpControlSelector;
+use crate::alloc_core::config::policy::large_thp_runtime::large_thp_cadence::LargeThpCadence;
 use crate::alloc_core::config::policy::large_thp_runtime::thp_budget_ledger::ThpBudgetLedger;
+use crate::alloc_core::config::policy::large_thp_runtime::thp_cadence_cell::ThpCadenceCell;
 use crate::alloc_core::config::policy::large_thp_runtime::thp_learning_cell::ThpLearningCell;
 use crate::alloc_core::config::policy::large_thp_runtime::thp_tuple_cell::{ThpTupleCell, UNSET};
 use crate::alloc_core::config::policy::large_thp_runtime::ThpTuple;
@@ -28,6 +30,13 @@ static LEDGER: ThpBudgetLedger = ThpBudgetLedger {
 static LEARNERS: [ThpLearningCell; CONTROL_GROUP_COUNT] = [const {
     ThpLearningCell {
         state: AtomicU64::new(ThpLearningCell::INITIAL),
+    }
+}; CONTROL_GROUP_COUNT];
+// Per-group adaptive control cadence: a saturating agreement run whose level
+// thins the candidate selector. Never an estimator input or admission gate.
+static CADENCE: [ThpCadenceCell; CONTROL_GROUP_COUNT] = [const {
+    ThpCadenceCell {
+        state: AtomicU64::new(ThpCadenceCell::INITIAL),
     }
 }; CONTROL_GROUP_COUNT];
 // Independent wrapping diagnostics, never estimator inputs or admission gates.
@@ -75,6 +84,39 @@ static CONTROL_TICKET_CURSOR: AtomicU64 = AtomicU64::new(0);
 static CONTROL_TICKET_LOG: [AtomicU64; TICKET_LOG_CAP] =
     [const { AtomicU64::new(0) }; TICKET_LOG_CAP];
 
+/// Parallel level log, written at the ticket log's slot: the candidate's
+/// cadence level, or [`NO_LEVEL`] for a non-candidate. Same bounds and
+/// quiescence rules as the ticket log; diagnostic only.
+#[cfg(feature = "bench-internals")]
+static CONTROL_LEVEL_LOG: [AtomicU64; TICKET_LOG_CAP] =
+    [const { AtomicU64::new(0) }; TICKET_LOG_CAP];
+#[cfg(feature = "bench-internals")]
+const NO_LEVEL: u64 = 0xFF;
+
+/// Bench-internals cadence diagnostics: independent wrapping counters, never
+/// gating allocator behavior. Per-group fields feed `cadence_telemetry`; the
+/// flat `[group * CADENCE_LEVELS + level]` arrays feed `cadence_level_counters`.
+#[cfg(feature = "bench-internals")]
+const CADENCE_LEVELS: usize = LargeThpCadence::LEVEL_MAX as usize + 1;
+#[cfg(feature = "bench-internals")]
+static CADENCE_ELIGIBLE: [AtomicU64; CONTROL_GROUP_COUNT] =
+    [const { AtomicU64::new(0) }; CONTROL_GROUP_COUNT];
+#[cfg(feature = "bench-internals")]
+static CADENCE_AGREED: [AtomicU64; CONTROL_GROUP_COUNT] =
+    [const { AtomicU64::new(0) }; CONTROL_GROUP_COUNT];
+#[cfg(feature = "bench-internals")]
+static CADENCE_RESETS: [AtomicU64; CONTROL_GROUP_COUNT] =
+    [const { AtomicU64::new(0) }; CONTROL_GROUP_COUNT];
+#[cfg(feature = "bench-internals")]
+static CADENCE_AGREE_DROPPED: [AtomicU64; CONTROL_GROUP_COUNT] =
+    [const { AtomicU64::new(0) }; CONTROL_GROUP_COUNT];
+#[cfg(feature = "bench-internals")]
+static CADENCE_CANDIDATES_BY_LEVEL: [AtomicU64; CONTROL_GROUP_COUNT * CADENCE_LEVELS] =
+    [const { AtomicU64::new(0) }; CONTROL_GROUP_COUNT * CADENCE_LEVELS];
+#[cfg(feature = "bench-internals")]
+static CADENCE_SELECTIONS_BY_LEVEL: [AtomicU64; CONTROL_GROUP_COUNT * CADENCE_LEVELS] =
+    [const { AtomicU64::new(0) }; CONTROL_GROUP_COUNT * CADENCE_LEVELS];
+
 /// Budget bytes charged to the ledger over the process lifetime.
 static THP_CHARGED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
@@ -110,15 +152,37 @@ impl ThpRuntime {
     /// Select a deterministic process-wide control for this request size.
     /// Exactly one relaxed ordinal increment occurs per call; wrapping is
     /// defined by the atomic counter and the selector's total `u64` domain.
+    /// The fixed selector yields one candidate per aligned cohort of eight;
+    /// the group's cadence level thins candidates to the single live cohort
+    /// of each `2^level` super-cohort. The level is read only for candidates.
     #[allow(dead_code)]
     pub(crate) fn next_control(request_size: usize) -> (bool, u64) {
         let ordinal = CONTROL_ORDINAL.fetch_add(1, Ordering::Relaxed);
-        let selected = LargeThpControlSelector::decision_at(CONTROL_SEED, ordinal);
-        if selected {
-            note_group_counter(&CONTROL_SELECTIONS, group_index(request_size), 1);
+        let candidate = LargeThpControlSelector::decision_at(CONTROL_SEED, ordinal);
+        let mut selected = false;
+        #[cfg(feature = "bench-internals")]
+        let mut level_word = NO_LEVEL;
+        if candidate {
+            let group = group_index(request_size);
+            let level = CADENCE[group].level();
+            selected = LargeThpCadence::live(CONTROL_SEED, ordinal, level);
+            if selected {
+                note_group_counter(&CONTROL_SELECTIONS, group, 1);
+            }
+            #[cfg(feature = "bench-internals")]
+            {
+                level_word = u64::from(level);
+                note_level_counter(&CADENCE_CANDIDATES_BY_LEVEL, group, level);
+                if selected {
+                    note_level_counter(&CADENCE_SELECTIONS_BY_LEVEL, group, level);
+                }
+            }
         }
         #[cfg(feature = "bench-internals")]
-        record_control_ticket(ordinal, selected);
+        {
+            note_group_counter(&CADENCE_ELIGIBLE, group_index(request_size), 1);
+            record_control_ticket(ordinal, selected, level_word);
+        }
         (selected, ordinal)
     }
 
@@ -143,11 +207,31 @@ impl ThpRuntime {
         note_group_counter(&CONTROL_VALID_OBSERVATIONS, group, 1);
         note_group_counter(&CONTROL_RESIDENT_PAGES, group, resident_pages);
         note_group_counter(&CONTROL_SAMPLED_PAGES, group, sampled_pages);
-        let applied = LEARNERS[group].try_observe(&Self::current().gradient, observation);
-        if applied {
-            note_group_counter(&LEARNING_APPLIED, group, 1);
-        } else {
-            note_group_counter(&LEARNING_DROPPED, group, 1);
+        let prior = LEARNERS[group].try_observe_with_prior(&Self::current().gradient, observation);
+        match prior {
+            Some(prior) => {
+                note_group_counter(&LEARNING_APPLIED, group, 1);
+                if LargeThpCadence::agrees(prior, observation) {
+                    let kept = CADENCE[group].note_agree();
+                    #[cfg(feature = "bench-internals")]
+                    note_group_counter(
+                        if kept {
+                            &CADENCE_AGREED
+                        } else {
+                            &CADENCE_AGREE_DROPPED
+                        },
+                        group,
+                        1,
+                    );
+                    #[cfg(not(feature = "bench-internals"))]
+                    let _ = kept;
+                } else {
+                    CADENCE[group].note_disagree();
+                    #[cfg(feature = "bench-internals")]
+                    note_group_counter(&CADENCE_RESETS, group, 1);
+                }
+            }
+            None => note_group_counter(&LEARNING_DROPPED, group, 1),
         }
     }
 
@@ -324,6 +408,70 @@ impl ThpRuntime {
         }
     }
 
+    /// Snapshot the parallel level log: per ticket slot the candidate's
+    /// cadence level, or `0xFF` for a non-candidate. Unsynchronized Relaxed
+    /// loads; coherent only under the same quiescence rules as the ticket log.
+    #[cfg(feature = "bench-internals")]
+    pub(crate) fn level_log_snapshot() -> [u8; TICKET_LOG_CAP] {
+        let mut levels = [0u8; TICKET_LOG_CAP];
+        for (slot, level) in CONTROL_LEVEL_LOG.iter().zip(levels.iter_mut()) {
+            *level = slot.load(Ordering::Relaxed) as u8;
+        }
+        levels
+    }
+
+    /// Per-group cadence diagnostics in `[group][field]` order: eligible
+    /// requests, agreements applied, disagreement resets, dropped agreements,
+    /// current agreement run. Independent loads; not a coherent snapshot.
+    #[cfg(feature = "bench-internals")]
+    pub(crate) fn cadence_telemetry() -> [[u64; 5]; CONTROL_GROUP_COUNT] {
+        let mut result = [[0; 5]; CONTROL_GROUP_COUNT];
+        for group in 0..CONTROL_GROUP_COUNT {
+            result[group] = [
+                CADENCE_ELIGIBLE[group].load(Ordering::Relaxed),
+                CADENCE_AGREED[group].load(Ordering::Relaxed),
+                CADENCE_RESETS[group].load(Ordering::Relaxed),
+                CADENCE_AGREE_DROPPED[group].load(Ordering::Relaxed),
+                u64::from(CADENCE[group].run()),
+            ];
+        }
+        result
+    }
+
+    /// Candidates (`[0]`) and selected controls (`[1]`) per `[group][level]`.
+    /// Independent loads; not a coherent snapshot.
+    #[cfg(feature = "bench-internals")]
+    pub(crate) fn cadence_level_counters() -> [[[u64; CADENCE_LEVELS]; CONTROL_GROUP_COUNT]; 2] {
+        let mut result = [[[0; CADENCE_LEVELS]; CONTROL_GROUP_COUNT]; 2];
+        for (index, (candidate, selection)) in CADENCE_CANDIDATES_BY_LEVEL
+            .iter()
+            .zip(CADENCE_SELECTIONS_BY_LEVEL.iter())
+            .enumerate()
+        {
+            let (group, level) = (index / CADENCE_LEVELS, index % CADENCE_LEVELS);
+            result[0][group][level] = candidate.load(Ordering::Relaxed);
+            result[1][group][level] = selection.load(Ordering::Relaxed);
+        }
+        result
+    }
+
+    /// Pin one group's cadence level for tests (`None` releases the pin).
+    /// An out-of-range group is ignored. Call it while no control decisions
+    /// are in flight.
+    #[cfg(feature = "bench-internals")]
+    pub(crate) fn cadence_pin(group: usize, level: Option<u32>) {
+        if group < CONTROL_GROUP_COUNT {
+            CADENCE[group].pin(level);
+        }
+    }
+
+    /// Pure diagnostic passthrough of the oracle decision for a raw
+    /// ordinal at a cadence level (a candidate that is also live).
+    #[cfg(feature = "bench-internals")]
+    pub(crate) fn control_select_for_ordinal(ordinal: u64, level: u32) -> bool {
+        LargeThpCadence::select(CONTROL_SEED, ordinal, level)
+    }
+
     // Callers: the AllocStats surface (alloc-global) and the bench-internals
     // dbg hook, both NUMA-out; the module itself only compiles under the
     // mechanism gate, so the attribute covers the remaining rows.
@@ -403,19 +551,36 @@ fn group_index(request_size: usize) -> usize {
     }
 }
 
-/// Record one consumed control ticket into the bench-internals diagnostic
-/// log. Exactly one Relaxed cursor fetch_add and one Relaxed slot store per
-/// call; the stored value is [`ThpRuntime::ticket_log_pack`] — the
-/// fail-closed packing whose valid bit makes a top-truncated ticket
-/// machine-detectable and rejected by the diagnostic hook instead of
-/// masquerading as usable evidence. Never gates allocator behavior.
+/// Bump the flat `[group * CADENCE_LEVELS + level]` diagnostic counter. Fail
+/// closed: an out-of-range group or level is ignored, never indexed.
 #[cfg(feature = "bench-internals")]
-fn record_control_ticket(ordinal: u64, selected: bool) {
+fn note_level_counter(
+    counters: &[AtomicU64; CONTROL_GROUP_COUNT * CADENCE_LEVELS],
+    group: usize,
+    level: u32,
+) {
+    debug_assert!(group < CONTROL_GROUP_COUNT && (level as usize) < CADENCE_LEVELS);
+    if group < CONTROL_GROUP_COUNT && (level as usize) < CADENCE_LEVELS {
+        counters[group * CADENCE_LEVELS + level as usize].fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record one consumed control ticket into the bench-internals diagnostic
+/// log. Exactly one Relaxed cursor fetch_add and, inside the cap, one Relaxed
+/// ticket-slot store plus one Relaxed level-slot store per call; the stored
+/// ticket is [`ThpRuntime::ticket_log_pack`] — the fail-closed packing whose
+/// valid bit makes a top-truncated ticket machine-detectable and rejected by
+/// the diagnostic hook instead of masquerading as usable evidence. The level
+/// slot holds the candidate's cadence level or [`NO_LEVEL`]. Never gates
+/// allocator behavior.
+#[cfg(feature = "bench-internals")]
+fn record_control_ticket(ordinal: u64, selected: bool, level: u64) {
     let slot = CONTROL_TICKET_CURSOR.fetch_add(1, Ordering::Relaxed);
     if slot < TICKET_LOG_CAP as u64 {
         CONTROL_TICKET_LOG[slot as usize].store(
             ThpRuntime::ticket_log_pack(ordinal, selected),
             Ordering::Relaxed,
         );
+        CONTROL_LEVEL_LOG[slot as usize].store(level, Ordering::Relaxed);
     }
 }

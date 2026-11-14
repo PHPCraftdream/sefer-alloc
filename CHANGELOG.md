@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Adaptive Auto control cadence (2026-11-12)
+
+- [perf(opt-in)] Explicit `Auto` thins its fixed 1-in-8 control candidates per request group: four consecutive valid owner controls that
+  agree with the estimate in force (within 1/8) raise a level, halving the control rate down to 1 in 256 after twenty agreements, and
+  the first disagreeing control returns the group to 1 in 8. A group that was never observed keeps today's exact 1-in-8 selection.
+  Constants are fixed (no setting, header field, tuple word or public API change); `Always`, `Off` and the default are unchanged.
+  Not measured: cost, recovery latency and any speedup remain unmeasured. Settle-based training completion and a new raw judge schema
+  stay in the paused full-judge backlog; the existing judge pins the cadence at level 0, so it still measures the fixed selector.
+  Design: `docs/perf/J13_AUTO_ADAPTIVE_CADENCE_DESIGN.md`.
+- [test] Actual-source pure, native-cell, forced-CAS and Loom models of the cadence cell, plus a native runtime test that raises, thins and
+  resets the level through real Auto controls. New protocol P29 with catalog scopes, rules and fixtures; P26/P27 rules re-pointed.
+
 ### Large THP advice tail trim (2026-11-12)
 
 - [perf(runtime)] Fresh Large THP advice now ends at the 2 MiB floor of the requested block's end (payload offset plus requested size)

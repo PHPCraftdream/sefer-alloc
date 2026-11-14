@@ -7,17 +7,37 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const FRESH = 'src/alloc_core/alloc_core/mem/advise_fresh_large.rs';
 const RUNTIME = 'src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs';
-const ADMISSION = `        let applied = LEARNERS[group].try_observe(&Self::current().gradient, observation);
-        if applied {
-            note_group_counter(&LEARNING_APPLIED, group, 1);
-        } else {
-            note_group_counter(&LEARNING_DROPPED, group, 1);
+const ADMISSION = `        let prior = LEARNERS[group].try_observe_with_prior(&Self::current().gradient, observation);
+        match prior {
+            Some(prior) => {
+                note_group_counter(&LEARNING_APPLIED, group, 1);
+                if LargeThpCadence::agrees(prior, observation) {
+                    let kept = CADENCE[group].note_agree();
+                    #[cfg(feature = "bench-internals")]
+                    note_group_counter(
+                        if kept {
+                            &CADENCE_AGREED
+                        } else {
+                            &CADENCE_AGREE_DROPPED
+                        },
+                        group,
+                        1,
+                    );
+                    #[cfg(not(feature = "bench-internals"))]
+                    let _ = kept;
+                } else {
+                    CADENCE[group].note_disagree();
+                    #[cfg(feature = "bench-internals")]
+                    note_group_counter(&CADENCE_RESETS, group, 1);
+                }
+            }
+            None => note_group_counter(&LEARNING_DROPPED, group, 1),
         }`;
 
 // Whole-file hashes pin the reviewed seams, not just a coincidental text anchor.
 export const STATIC_REFERENCE_SOURCES = Object.freeze({
   [FRESH]: 'aae5a4a9d40106b1100a1021128b2b40afc985520efaffd229a82c20c2f783a4',
-  [RUNTIME]: 'a2476ebd40189187dd8ea5a6a0966861eb90f6a8eea3712eb4cd2403cc75dc89',
+  [RUNTIME]: 'ebe390de935ac20260def7513b26c01faf7a0ce4b9901847dca9e04e172284a3',
 });
 
 function replaceOnce(source, before, after) {

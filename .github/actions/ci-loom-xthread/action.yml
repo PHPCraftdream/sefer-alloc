@@ -28,8 +28,13 @@ runs:
           --test loom_b4_scan_skip_empty_publish             --test loom_g1_ingress_exact \
           --test loom_thp_tuple_cell \
           --test loom_thp_ledger \
-          --test loom_thp_learning_cell 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
+          --test loom_thp_learning_cell \
+          --test loom_thp_cadence_cell 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
         grep -F "test competing_observations_form_one_complete_serial_order_not_a_torn_pair ... ok" "$RUNNER_TEMP/loom-xthread.log"
+        grep -F "test prior_estimate_of_racing_observations_matches_one_serial_order ... ok" "$RUNNER_TEMP/loom-xthread.log"
+        grep -F "test two_racing_agreements_end_at_exactly_run_two ... ok" "$RUNNER_TEMP/loom-xthread.log"
+        grep -F "test an_agreement_racing_a_disagreement_ends_at_zero_or_one_never_above ... ok" "$RUNNER_TEMP/loom-xthread.log"
+        grep -F "test a_level_reader_racing_a_writer_sees_only_valid_levels ... ok" "$RUNNER_TEMP/loom-xthread.log"
         grep -F "test l1_publish_races_take_arm_drain ... ok" "$RUNNER_TEMP/loom-xthread.log"
         grep -F "test l2_fresh_route_notifies ... ok" "$RUNNER_TEMP/loom-xthread.log"
         grep -F "test l3_two_producers_one_owner_round ... ok" "$RUNNER_TEMP/loom-xthread.log"

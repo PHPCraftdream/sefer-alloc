@@ -53,6 +53,7 @@ const FEATURES = {
   loom_thp_tuple_cell: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_thp_ledger: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_thp_learning_cell: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
+  loom_thp_cadence_cell: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_exact_shard_actual: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_fallback_actual: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_b4_scan_skip_empty_publish: 'alloc-core,alloc-xthread,tagged-index-stack/loom',

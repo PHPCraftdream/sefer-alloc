@@ -156,6 +156,68 @@ fn packed_pair_preserves_q31_endpoints_and_distinct_components() {
 
 #[cfg(not(loom))]
 #[test]
+fn prior_estimate_is_the_estimate_of_exactly_the_replaced_pair() {
+    for gradient in [
+        LargeThpGradient::CAUTIOUS,
+        LargeThpGradient::EAGER,
+        LargeThpGradient::STEADY,
+    ] {
+        let cell = ThpLearningCell::new();
+        let mut expected = LargeThpEstimator::new();
+        for observation in [
+            LargeThpShare::ZERO,
+            LargeThpShare::ONE,
+            LargeThpShare::from_raw(123_456_789),
+        ]
+        .into_iter()
+        .cycle()
+        .take(48)
+        {
+            let before = expected.estimate(&gradient);
+            expected.observe(&gradient, observation);
+            assert_eq!(
+                cell.try_observe_with_prior(&gradient, observation),
+                Some(before),
+                "prior must be the estimate in force before this update"
+            );
+            assert_eq!(cell.snapshot(), expected);
+        }
+    }
+}
+
+#[cfg(loom)]
+#[test]
+fn prior_estimate_of_racing_observations_matches_one_serial_order() {
+    use loom::{sync::Arc, thread};
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let gradient = LargeThpGradient::STEADY;
+        let low = ThpLearningCell::observation(0, 1).expect("valid sparse observation");
+        let high = LargeThpShare::from_raw(LargeThpShare::SCALE / 3);
+        let cell = Arc::new(ThpLearningCell::new());
+        let other = Arc::clone(&cell);
+        let worker = thread::spawn(move || other.try_observe_with_prior(&gradient, low));
+        let mine = cell.try_observe_with_prior(&gradient, high);
+        let theirs = worker.join().expect("worker must finish");
+        let (mine, theirs) = (mine.expect("applied"), theirs.expect("applied"));
+        let fresh = LargeThpEstimator::new().estimate(&gradient);
+        let mut after_low = LargeThpEstimator::new();
+        after_low.observe(&gradient, low);
+        let mut after_high = LargeThpEstimator::new();
+        after_high.observe(&gradient, high);
+        // One of the two saw the initial pair; the other saw the pair the
+        // first update produced. A second load would break this pairing.
+        assert!(
+            (theirs == fresh && mine == after_low.estimate(&gradient))
+                || (mine == fresh && theirs == after_high.estimate(&gradient)),
+            "priors must come from one serial order: {mine:?} {theirs:?}"
+        );
+    });
+}
+
+#[cfg(not(loom))]
+#[test]
 fn residency_conversion_rejects_invalid_counts_and_is_total_at_u64_bounds() {
     assert_eq!(ThpLearningCell::observation(0, 0), None);
     assert_eq!(ThpLearningCell::observation(1, 0), None);

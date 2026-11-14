@@ -362,6 +362,34 @@ export const PER_PR_ROWS = [
     target: { flag: '--test', name: 'j13b_learning_runtime' },
     note: 'Actual fresh controls drive the resolved custom gradient through sparse shrink, zero-share suppression, dense recovery and group isolation; asserts real advice activation, not just reported shares.',
   },
+  {
+    id: 'test-j13b-cadence-pure',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    target: { flag: '--test', name: 'j13b_cadence_pure' },
+    note: 'Actual-source pure cadence arithmetic: level-0 identity with the fixed selector, subset and exact-rate properties at every level, gap bound, decorrelation, wrap totality, run/level/agreement transitions.',
+  },
+  {
+    id: 'test-j13b-cadence-cell-native',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    target: { flag: '--test', name: 'loom_thp_cadence_cell' },
+    note: 'Native actual-source cadence cell: run/level transitions, saturation, disagreement reset, reserved-bit preservation, bench-internals pin. The separate Loom row executes its interleaving oracles.',
+  },
+  {
+    id: 'test-j13b-cadence-contention-bound',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    target: { flag: '--test', name: 'j13b_cadence_contention_bound' },
+    note: 'Forces the actual cadence cell CAS seam to reject all eight attempts; proves a bounded droppable agreement while the disagreement reset still lands (wait-free fetch_and).',
+  },
+  {
+    id: 'test-j13b-cadence-native',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    target: { flag: '--test', name: 'j13b_cadence_native' },
+    note: 'Actual Auto controls: the level rises under agreeing dense controls, thins real selections to one per 16 ordinals at level 1 (oracle-checked ticket by ticket) and resets to level 0 on the first disagreeing control; other groups stay untouched.',
+  },
 ];
 
 /** Sentinel used in `features` to mean "--all-features" rather than a literal

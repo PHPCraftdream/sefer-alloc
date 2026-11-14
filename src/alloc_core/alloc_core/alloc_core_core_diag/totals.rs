@@ -267,6 +267,78 @@ impl AllocCore {
         )
     }
 
+    /// J13b: the parallel level log of the diagnostic ticket log: per ticket
+    /// slot the candidate's adaptive-cadence level, or `0xFF` for a
+    /// non-candidate. Same quiescence rules as the ticket log; pair it with a
+    /// supported `dbg_thp_control_ticket_log` window.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_control_level_log() -> [u8; 128] {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::level_log_snapshot()
+    }
+
+    /// J13b: per-group adaptive-cadence diagnostics: eligible requests,
+    /// agreements applied, disagreement resets, dropped agreements, current
+    /// agreement run. Independent loads; closure needs worker quiescence.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_cadence_telemetry() -> [[u64; 5]; 6] {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::cadence_telemetry()
+    }
+
+    /// J13b: adaptive-cadence candidates (`[0]`) and selected controls
+    /// (`[1]`) per `[group][level]`. Independent loads; closure needs worker
+    /// quiescence.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_cadence_level_counters() -> [[[u64; 6]; 6]; 2] {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::cadence_level_counters()
+    }
+
+    /// J13b: pin one request group's adaptive-cadence level (`Some(0)` is the
+    /// fixed 1-in-8 selector; `None` releases the pin). An out-of-range group
+    /// is ignored. Call it while no control decisions are in flight.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    pub fn dbg_thp_cadence_pin(group: usize, level: Option<u32>) {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::cadence_pin(group, level);
+    }
+
+    /// J13b: the runtime's oracle control decision for a raw ordinal at a
+    /// cadence level: a fixed-selector candidate that is also live. Pure
+    /// diagnostic passthrough.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        not(feature = "numa-aware")
+    ))]
+    #[must_use]
+    pub fn dbg_thp_control_select_for_ordinal(ordinal: u64, level: u32) -> bool {
+        crate::alloc_core::policy::large_thp_runtime::ThpRuntime::control_select_for_ordinal(
+            ordinal, level,
+        )
+    }
+
     /// J13b: huge-page advice bytes currently charged to the budget ledger.
     #[doc(hidden)]
     #[cfg(all(

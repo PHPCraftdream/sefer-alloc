@@ -48,3 +48,15 @@ fn exhausted_cas_budget_reports_loss_without_mutating_or_retrying_forever() {
     assert_eq!(cell.state.attempts.load(Ordering::Relaxed), 8);
     assert_eq!(cell.snapshot(), LargeThpEstimator::new());
 }
+
+#[test]
+fn exhausted_prior_estimate_update_is_none_after_eight_attempts_without_mutating() {
+    let cell = ThpLearningCell::new();
+    let observation = ThpLearningCell::observation(0, 1).expect("valid observation reaches CAS");
+    assert_eq!(
+        cell.try_observe_with_prior(&LargeThpGradient::CAUTIOUS, observation),
+        None
+    );
+    assert_eq!(cell.state.attempts.load(Ordering::Relaxed), 8);
+    assert_eq!(cell.snapshot(), LargeThpEstimator::new());
+}
