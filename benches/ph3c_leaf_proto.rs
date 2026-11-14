@@ -1838,18 +1838,15 @@ mod tests {
                     "class {c}: cursor {cursor} above the lowest set word {lowest}"
                 );
             }
-            for w in 0..cursor {
-                assert_eq!(
-                    m.class_mask[c][w], 0,
-                    "class {c}: mask word {w} below the cursor is set"
-                );
+            for (w, word) in m.class_mask[c][..cursor].iter().enumerate() {
+                assert_eq!(*word, 0, "class {c}: mask word {w} below the cursor is set");
             }
         }
         for sl in 0..SUBLEAVES {
             let hdr = m.sub_hdr[sl];
             let mut expect = 0u64;
-            for w in 0..SUBLEAF_WORDS {
-                expect |= ((m.occ[sl][w] != 0) as u64) << w;
+            for (w, word) in m.occ[sl].iter().enumerate() {
+                expect |= ((*word != 0) as u64) << w;
             }
             assert_eq!(
                 hdr.words_mask, expect,
