@@ -13,6 +13,7 @@ const CELLS = {
   'many-128x16MiB': ['many', 16*M, 1, 128, ['many', 'sefer', '16', '1', '128']],
   'edge-128MiB': ['edge', 128*M, 1, 1, ['edge', 'sefer', '128', '1']],
   'cache-16MiB': ['cycle', 16*M, 2, 1, ['cycle', 'sefer', '16', '2', '1']],
+  ...Object.fromEntries([['cycle', 2], ['cycle', 4], ['cycle', 6], ['edge', 4]].map(([s, n]) => [`${s}-${n}MiB`, [s, n*M, 1, 1, [s, 'sefer', `${n}`, '1'], 2*M]])),
 };
 const FEATURE_SET = new Set(['production', 'alloc-stats', 'internals', 'bench-internals']);
 const GRADIENT = 'LargeThpGradient { down_shift: 2, up_shift: 5, mean_shift: 5, anchor_raw: 0, floor_raw: 214748365, gain_num: 5, gain_den: 4, curve: Linear }';
@@ -77,7 +78,7 @@ function validateHost(h, firstLaunch) {
 }
 
 function validateProducer(row, cell, slot, role, receipt) {
-  const [scenario, bytes, reps, k, args] = CELLS[cell], cache = cell === 'cache-16MiB';
+  const [scenario, bytes, reps, k, args, min = 8*M] = CELLS[cell], cache = cell === 'cache-16MiB';
   const p = row.parsed_row, l = row.launch, always = role === 'AB' && slot === 'B';
   need(plain(p) && plain(l) && typeof l.raw_stdout === 'string' && typeof l.raw_stderr === 'string'
     && same(JSON.parse(l.raw_stdout), p), `${role} ${slot}: complete producer/raw stdout mismatch`);
@@ -87,13 +88,12 @@ function validateProducer(row, cell, slot, role, receipt) {
     && p.scenario === scenario && p.requested_bytes === bytes && p.reps === reps && p.k === k,
     `${role} ${slot}: producer workload mismatch`);
   const mode = always ? 'Always' : 'Off';
-  need(p.mode_requested === mode && p.mode_resolved === mode && p.thp_min_requested_bytes === 8388608
-    && p.thp_min_resolved_bytes === 8388608 && p.thp_budget_requested_bytes === 0
-    && p.thp_budget_resolved_bytes === 0 && p.gradient_requested === 'CAUTIOUS'
-    && p.gradient_resolved === GRADIENT, `${role} ${slot}: resolved THP tuple mismatch`);
+  need(p.mode_requested === mode && p.mode_resolved === mode && p.thp_min_requested_bytes === min
+    && p.thp_min_resolved_bytes === min && p.thp_budget_requested_bytes === 0 && p.thp_budget_resolved_bytes === 0
+    && p.gradient_requested === 'CAUTIOUS' && p.gradient_resolved === GRADIENT, `${role} ${slot}: resolved THP tuple mismatch`);
   need(p.cache_requested === (cache ? 'on' : 'off') && p.cache_resolved_budget_bytes === (cache ? 33554432 : 0)
     && p.config_conflicts === 0 && p.thp_tuple_conflicts === 0, `${role} ${slot}: cache/config conflict mismatch`);
-  const env = { G1_BIG_THP: always ? 'always' : 'off', G1_BIG_CACHE: cache ? 'on' : 'off' };
+  const env = { G1_BIG_THP: always ? 'always' : 'off', G1_BIG_CACHE: cache ? 'on' : 'off', ...min !== 8*M && { G1_BIG_MIN: String(min) } };
   if (cell === 'cycle-8MiB-minus-1' || l.env_overrides?.G1_BIG_BYTES != null) env.G1_BIG_BYTES = String(bytes);
   need(same(l.env_overrides, env) && (same(l.args, args)
     || scenario !== 'many' && same(l.args, [...args, '1'])), `${role} ${slot}: actual launch args/environment mismatch`);
@@ -112,7 +112,7 @@ function validateProducer(row, cell, slot, role, receipt) {
       && fresh.every((v, i) => grow.indexOf(v) > (i ? grow.indexOf(fresh[i-1]) : -1))
     : fresh.length === (scenario === 'many' ? k : 1) && fresh.every(v => v === bytes);
   need(valid, `${role} ${slot}: fresh mapping count/order/size mismatch`);
-  const eligible = fresh.filter(v => v >= 8388608), advice = p.accepted_advice;
+  const eligible = fresh.filter(v => v >= min), advice = p.accepted_advice;
   need(Array.isArray(advice) && p.accepted_advice_count === advice.length
     && advice.length === (always ? eligible.length : 0), `${role} ${slot}: advice count/mode mismatch`);
   need(advice.every((a, i) => plain(a) && a.requested_bytes === eligible[i] && pos(a.usable_span_bytes)

@@ -97,3 +97,15 @@ This registration does not establish historical whole-mapping identity, complete
 **Side item.** The second-life CACHE payload ratio (+2.3 percent in the committed report) is a read-only investigation: no code, default or harness change is made for it here.
 
 This registration changes no harness, runner, reducer or gate and makes no default, dependency or version change. Fault counts and `AnonHugePages` still corroborate activation only; they do not prove exact attribution, physical peak or speed.
+
+## 2026-11-12 threshold-sweep registration
+
+**Registered before any measurement of the sweep cells.** Measurement only: this registration changes no default, including the default THP minimum block size (8 MiB). The owner decides any threshold change from the resulting report. It runs after the tail-trim rerun above, on the same tail-trimmed source, and is not a substitute for it.
+
+**Cells.** Four cold cells, one child per run, cache off, reps 1, k 1: `cycle-2MiB` (`cycle sefer 2 1`), `cycle-4MiB` (`cycle sefer 4 1`), `cycle-6MiB` (`cycle sefer 6 1`) and `edge-4MiB` (`edge sefer 4 1`); the edge cell is measured in the same regime as the cycle cells so the first-touch edge cost at 4 MiB is comparable with `cycle-4MiB`. Arm A is `Off`, arm B is `Always`; budget 0, `CAUTIOUS`, and the minimum block size is 2 MiB in **both** arms (`G1_BIG_MIN=2097152`), so the arms differ only in the THP mode and the Off arm resolves the same tuple minimum. At 2 MiB and above every requested size is threshold-eligible, so each Always run must accept exactly one advice.
+
+**Estimator and gates, unchanged.** Same paired runner, 12 ABBA blocks plus 12 A/A control blocks per cell, block-minimum paired log-ratio estimator and 95 percent interval, host preflight, operational bounds, receipts and fail-closed reducer as the sections above; the reducer derives the expected tuple, eligibility and environment from the cell's registered minimum. A failed enforced bound makes the affected attempt INCONCLUSIVE, not a product failure.
+
+**Reported per size (numbers, not verdicts).** Always/Off time ratio with its interval and the A/A control interval, peak and end RSS, faults, and live `AnonHugePages`, for the 2, 4 and 6 MiB cycle cells plus the 4 MiB edge cell. Fault counts and `AnonHugePages` corroborate activity only, not exact attribution, physical peak or speed. No new regression threshold is registered; materially new regressions go to the owner.
+
+**Harness change.** One optional environment variable, `G1_BIG_MIN` (exact positive decimal bytes, default 8388608), replaces the hard-coded 8 MiB constant in `examples/_shared/g1_big_study.rs` and in the reducer's per-cell table, within the 900-line source ceiling (471 helper + 48 judge + 21 parser + 101 runner + 259 reducer = **900/900**). The ten original cells do not set it and behave unchanged. No new entrypoint, runner or reducer path.

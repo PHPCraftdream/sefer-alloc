@@ -143,7 +143,10 @@ test('fixed cell templates retain every registered argument and explicit arm env
     'cycle-128MiB': ['cycle','sefer','128','1'], 'cycle-1024MiB': ['cycle','sefer','1024','1'],
     'grow-1GiB': ['grow','sefer','1024','1'], 'many-128x16MiB': ['many','sefer','16','1','128'],
     'edge-128MiB': ['edge','sefer','128','1'], 'cache-16MiB': ['cycle','sefer','16','2','1'],
+    'cycle-2MiB': ['cycle','sefer','2','1'], 'cycle-4MiB': ['cycle','sefer','4','1'],
+    'cycle-6MiB': ['cycle','sefer','6','1'], 'edge-4MiB': ['edge','sefer','4','1'],
   };
+  const sweep = new Set(['cycle-2MiB', 'cycle-4MiB', 'cycle-6MiB', 'edge-4MiB']);
   for (const [cell, args] of Object.entries(cells)) {
     const config = JSON.parse(readFileSync(new URL(`../docs/perf/j13_limited_cells/${cell}.json`, import.meta.url), 'utf8'));
     assert.deepEqual(Object.keys(config).sort(), ['arms','metric','result_format','timeout_ms']);
@@ -154,7 +157,7 @@ test('fixed cell templates retain every registered argument and explicit arm env
     for (const [arm, mode] of [['A','off'], ['B','always']]) {
       assert.equal(config.arms[arm].command, '__CI_EXECUTABLE__');
       assert.deepEqual(config.arms[arm].args, args);
-      assert.deepEqual(config.arms[arm].env, { G1_BIG_THP: mode, G1_BIG_CACHE: cell === 'cache-16MiB' ? 'on' : 'off', ...(cell === 'cycle-8MiB-minus-1' ? { G1_BIG_BYTES: '8388607' } : {}) });
+      assert.deepEqual(config.arms[arm].env, { G1_BIG_THP: mode, G1_BIG_CACHE: cell === 'cache-16MiB' ? 'on' : 'off', ...(cell === 'cycle-8MiB-minus-1' ? { G1_BIG_BYTES: '8388607' } : {}), ...(sweep.has(cell) ? { G1_BIG_MIN: '2097152' } : {}) });
     }
   }
 });

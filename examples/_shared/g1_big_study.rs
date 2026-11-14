@@ -9,7 +9,6 @@ use super::MIB;
 use super::RSS_LIMIT;
 use std::ffi::OsString;
 
-const MIN: usize = 8 * MIB;
 #[cfg(feature = "bench-internals")]
 const GRANULE: usize = 2 * 1024 * 1024;
 const MAX_LIVE: usize = 2 * 1024 * 1024 * 1024;
@@ -20,6 +19,7 @@ pub struct Request {
     pub mode: sefer_alloc::LargeThpMode,
     pub cache: bool,
     pub bytes: usize,
+    pub min: usize,
     pub reps: usize,
     pub k: usize,
     pub scenario: &'static str,
@@ -33,7 +33,7 @@ pub fn expected_config(request: &Request) -> sefer_alloc::LargeCacheConfig {
     sefer_alloc::LargeCacheConfig::new()
         .budget_bytes(if request.cache { CACHE_BUDGET } else { 0 })
         .huge_page_mode(request.mode)
-        .huge_page_block_min_bytes(MIN)
+        .huge_page_block_min_bytes(request.min)
         .huge_page_budget_bytes(0)
         .huge_page_gradient(sefer_alloc::LargeThpGradient::CAUTIOUS)
 }
@@ -42,7 +42,7 @@ pub fn parse_request(
     args: &[String],
     vars: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> Result<Option<Request>, String> {
-    let mut settings: [Option<String>; 3] = [None, None, None];
+    let mut settings: [Option<String>; 4] = [None, None, None, None];
     for (key, value) in vars {
         if !key.to_string_lossy().starts_with("G1_BIG_") {
             continue;
@@ -54,6 +54,7 @@ pub fn parse_request(
             "G1_BIG_THP" => 0,
             "G1_BIG_CACHE" => 1,
             "G1_BIG_BYTES" => 2,
+            "G1_BIG_MIN" => 3,
             _ => return Err(error(format!("unknown G1_BIG_* variable {key}"))),
         };
         let value = value
@@ -111,17 +112,17 @@ pub fn parse_request(
     let ceiling = mib
         .checked_mul(MIB)
         .ok_or_else(|| error("size_mib overflow"))?;
-    let bytes = match settings[2].as_deref() {
-        None => ceiling,
-        Some(value) if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) => {
-            let bytes = value.parse::<usize>().map_err(error)?;
-            if bytes == 0 || bytes > ceiling || bytes <= ceiling - MIB {
-                return Err(error("G1_BIG_BYTES does not ceil to CLI size_mib"));
-            }
-            bytes
+    let decimal = |name: &str, value: Option<&str>, default: usize| match value {
+        None => Ok(default),
+        Some(v) if v.bytes().all(|b| b.is_ascii_digit()) && v.bytes().any(|b| b != b'0') => {
+            v.parse::<usize>().map_err(error)
         }
-        _ => return Err(error("G1_BIG_BYTES must be exact positive decimal bytes")),
+        _ => Err(format!("{name} must be exact positive decimal bytes")),
     };
+    let bytes = decimal("G1_BIG_BYTES", settings[2].as_deref(), ceiling)?;
+    if bytes > ceiling || bytes <= ceiling - MIB {
+        return Err(error("G1_BIG_BYTES does not ceil to CLI size_mib"));
+    }
     let live = bytes
         .checked_mul(if scenario == "many" { k } else { 1 })
         .ok_or_else(|| error("live-byte overflow"))?;
@@ -139,6 +140,7 @@ pub fn parse_request(
         mode,
         cache,
         bytes,
+        min: decimal("G1_BIG_MIN", settings[3].as_deref(), 8 * MIB)?,
         reps,
         k,
         scenario,
@@ -179,7 +181,7 @@ pub fn configuration_readback_matches(
     let tuple = expected_config(request).dbg_resolved_thp_tuple();
     let stats = allocator.stats();
     tuple.mode == request.mode
-        && tuple.min_bytes == MIN
+        && tuple.min_bytes == request.min
         && tuple.budget_bytes == 0
         && tuple.gradient == sefer_alloc::LargeThpGradient::CAUTIOUS
         && sefer_alloc::AllocCore::dbg_thp_tuple() == tuple
@@ -221,10 +223,10 @@ pub fn validate_capture(
                     _ => bytes == request.bytes,
                 };
                 if !expected
-                    || words[E::VALUE] != MIN as u64
+                    || words[E::VALUE] != request.min as u64
                     || event.mode()
                         != Some(u8::from(request.mode == sefer_alloc::LargeThpMode::Always))
-                    || event.threshold_eligible() != (bytes >= MIN)
+                    || event.threshold_eligible() != (bytes >= request.min)
                 {
                     return Err(error("fresh request/config mismatch"));
                 }
@@ -427,7 +429,7 @@ mod configured {
             "timing_scope": "allocation+touch+free; runner full-child timing distinct", "rep": rows,
             "mode_requested": mode,
             "mode_resolved": if resolved.mode == sefer_alloc::LargeThpMode::Always { "Always" } else { "Off" },
-            "thp_min_requested_bytes": MIN, "thp_min_resolved_bytes": resolved.min_bytes,
+            "thp_min_requested_bytes": request.min, "thp_min_resolved_bytes": resolved.min_bytes,
             "thp_budget_requested_bytes": 0, "thp_budget_resolved_bytes": resolved.budget_bytes,
             "gradient_requested": "CAUTIOUS", "gradient_resolved": format!("{:?}", resolved.gradient),
             "cache_requested": if request.cache { "on" } else { "off" },
