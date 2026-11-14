@@ -75,12 +75,18 @@ const rows = kindFilter.size
   ? PER_PR_ROWS.filter((r) => kindFilter.has(r.kind))
   : PER_PR_ROWS;
 
-/** Delete the extension-less files (the executables) under target/debug/{deps,examples} and the incremental cache. */
+/**
+ * Delete the extension-less files (the executables) under target/debug/{deps,examples} and the incremental
+ * cache. Cargo 1.100's build-dir layout v2 keeps each unit in build/<package>/<hash>/out instead of deps/, so
+ * this package's unit dirs are swept too (it has no build script, so none of them is an OUT_DIR).
+ */
 function freeBuildArtefacts() {
   const debug = join(REPO_ROOT, 'target', 'debug');
   rmSync(join(debug, 'incremental'), { recursive: true, force: true });
   let files = 0;
-  for (const sub of ['deps', 'examples']) {
+  const ownUnits = join(debug, 'build', 'sefer-alloc');
+  const unitOuts = existsSync(ownUnits) ? readdirSync(ownUnits).map((hash) => join('build', 'sefer-alloc', hash, 'out')) : [];
+  for (const sub of ['deps', 'examples', ...unitOuts]) {
     const dir = join(debug, sub);
     if (!existsSync(dir)) continue;
     for (const name of readdirSync(dir)) {
