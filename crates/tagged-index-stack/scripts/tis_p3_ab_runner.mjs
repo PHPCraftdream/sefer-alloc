@@ -1928,7 +1928,7 @@ function modeBuildCheck(args, snapshot) {
   for (const variant of WALLCLOCK_VARIANTS) {
     const variantRoot = variant === 'base' ? root : path.join(scratchBase, `build-check-${variant}`);
     if (variant !== 'base') freshDir(variantRoot, scratchBase);
-    const crateName = `tis_p3ab_build_check_${variant}`;
+    const crateName = `tis_bc_${variant}`; // short: Cargo 1.100's build-dir path repeats it twice (Windows MAX_PATH)
     fs.writeFileSync(path.join(variantRoot, 'Cargo.toml'), cargoTmpl.replaceAll('{{CRATE_NAME}}', crateName));
     fs.mkdirSync(path.join(variantRoot, 'src', 'bin'), { recursive: true });
     fs.writeFileSync(path.join(variantRoot, 'lib.rs'), libSrc);
