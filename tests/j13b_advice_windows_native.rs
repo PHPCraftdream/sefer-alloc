@@ -111,6 +111,9 @@ fn run_case(case: &str) {
     use sefer_alloc::{AllocCore, LargeCacheConfig, LargeThpMode, SeferAlloc};
     use workload::{Shape, TouchPlan};
     const MIB: usize = 1024 * 1024;
+    // Advice ends at the 2 MiB floor of the block end: a plan block must reach
+    // 2 MiB to be advised; the minimum stays 1 MiB (request group 1).
+    const BLOCK: usize = 2 * MIB;
     fn config(
         actual: &SeferAlloc,
         cache: usize,
@@ -159,7 +162,7 @@ fn run_case(case: &str) {
     let mut windows = AdviceWindows::new();
     let page = aligned_vmem::page_size();
     let plan = TouchPlan {
-        bytes: MIB,
+        bytes: BLOCK,
         shape: Shape::Dense,
     };
     if case == "off" {
@@ -231,7 +234,7 @@ fn run_case(case: &str) {
             .churn(
                 &allocator,
                 TouchPlan {
-                    bytes: MIB,
+                    bytes: BLOCK,
                     shape: Shape::Quarter,
                 },
                 4,

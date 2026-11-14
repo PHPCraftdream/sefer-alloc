@@ -724,7 +724,8 @@ impl AllocCore {
                 // Advise before the live `Segment` is forgotten; the charge stays a local
                 // until the header is written (or the registration failure returns it).
                 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-                let (thp_charge, thp_observation) = advise_fresh_large(&segment, size, usable);
+                let (thp_charge, thp_observation) =
+                    advise_fresh_large(&segment, size, usable, hdr_aligned + size);
                 #[cfg(not(all(feature = "alloc-decommit", not(feature = "numa-aware"))))]
                 let (thp_charge, thp_observation) = (0usize, 0u64);
                 core::mem::forget(segment);

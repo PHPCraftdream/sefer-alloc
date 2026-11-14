@@ -77,3 +77,23 @@ Budget follow-up uses a 256 MiB budget and a requested live volume of 2 GiB (8 Ã
 ## Scope limits
 
 This registration does not establish historical whole-mapping identity, complete J13/J13b acceptance, exact physical backing/peak, bucket-attributed RSS, or a default change. Full builder identity/adapters/admission remain for a later full J13b campaign only, not shipping or this narrow study. Preserve historical NO-GO and owner exception as distinct facts; no default GO is inferred.
+
+## 2026-11-12 tail-trim registration
+
+**Registered before any measurement of the new source.** This section registers a rerun of the same ten-cell Always/Off campaign on a source that trims the advised range to the 2 MiB floor of the requested block's end (payload offset plus requested size) instead of the 2 MiB floor of the SEGMENT-rounded usable span (owner-approved default-Always follow-up, package "tail trim"). Nothing below is a result; every figure is a hypothesis to be confirmed or refuted by the rerun.
+
+**Scope of the rerun.** The same ten cells, the same two arms (A=Off, B=Always; both budget 0, requested-size minimum 8 MiB, `CAUTIOUS`), the same paired runner, pair counts, A/A controls, host preflight, operational bounds, receipts and statistics as the sections above, through the existing `examples/g1_big_judge.rs`. The only change is the source under test. The measured source commit and its trusted-CI build receipt are recorded before measurement; a rerun on any other source is not this registration.
+
+**Hypotheses (not results).**
+
+- `AnonHugePages` under Always: 8 MiB block 10 MiB to 8 MiB; 16 MiB block 18 MiB to 16 MiB; edge 4 MiB to 2 MiB. Off stays 0.
+- Cycle peak RSS, Always minus Off: about 2.03 MiB to about 0.
+- No dense Always/Off wall-clock ratio is worse than the corresponding ratio in the committed report (`docs/perf/j13_limited_20261111/J13_LIMITED_ALWAYS_OFF.md`).
+- Edge cost: about half of the committed edge Always/Off ratio (one fewer advised 2 MiB region is faulted).
+- `grow-1GiB` is checked specifically: its Always/Off ratio, faults, peak RSS and `AnonHugePages` are reported as numbers. No fix for it belongs to this package.
+
+**Stop rule.** If any dense Always/Off ratio is worse than the committed report's, stop and bring the report to the owner before any further step.
+
+**Side item.** The second-life CACHE payload ratio (+2.3 percent in the committed report) is a read-only investigation: no code, default or harness change is made for it here.
+
+This registration changes no harness, runner, reducer or gate and makes no default, dependency or version change. Fault counts and `AnonHugePages` still corroborate activation only; they do not prove exact attribution, physical peak or speed.

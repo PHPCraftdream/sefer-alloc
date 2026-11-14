@@ -105,6 +105,9 @@ fn run_native_case(case: &str) {
     use sefer_alloc::{AllocCore, LargeCacheConfig, LargeThpMode, SeferAlloc};
     use workload::{Shape, TouchPlan};
     const MIB: usize = 1024 * 1024;
+    // Advice ends at the 2 MiB floor of the block's end, so a block must reach
+    // 2 MiB to be advised at all; the minimum stays 1 MiB (request group 1).
+    const BLOCK: usize = 2 * MIB;
 
     fn raw() -> AdviceCaptureSnapshot {
         Capture::snapshot().expect("closed native capture")
@@ -185,7 +188,7 @@ fn run_native_case(case: &str) {
         let stats = window_kernel::WindowKernel::churn(
             &allocator,
             TouchPlan {
-                bytes: MIB,
+                bytes: BLOCK,
                 shape: Shape::Quarter,
             },
             4,
@@ -209,7 +212,7 @@ fn run_native_case(case: &str) {
         .expect("actual four-worker native capture");
         assert_eq!(stats.allocations, 64);
         assert_eq!(stats.frees, 64);
-        assert_eq!(stats.bytes_written, 64 * u64::try_from(MIB / 4).unwrap());
+        assert_eq!(stats.bytes_written, 64 * u64::try_from(BLOCK / 4).unwrap());
         let end = inspect();
         assert_eq!(end.requests[1], [64, 64, 64]);
         assert_eq!(end.outstanding_fresh, 0);
@@ -236,7 +239,7 @@ fn run_native_case(case: &str) {
         let mut blocks = Vec::with_capacity(16);
         for _ in 0..16 {
             let mut block =
-                OwnedBlock::allocate(&allocator, MIB).expect("static-reference payload");
+                OwnedBlock::allocate(&allocator, BLOCK).expect("static-reference payload");
             block.slots()[0].write(0x5a);
             blocks.push(block);
         }
@@ -258,8 +261,12 @@ fn run_native_case(case: &str) {
             assert_eq!(event.mode(), Some(1));
             assert_eq!(
                 event.words()[Event::VALUE],
-                event.words()[Event::USABLE_LEN],
-                "fixed-one non-control advice"
+                u64::try_from(BLOCK).unwrap(),
+                "fixed-one non-control advice ends at the requested block end"
+            );
+            assert!(
+                event.words()[Event::VALUE] < event.words()[Event::USABLE_LEN],
+                "the rounded-up span tail is not advised"
             );
         }
         assert_eq!(
@@ -292,7 +299,7 @@ fn run_native_case(case: &str) {
     if case == "advice-pre" {
         aligned_vmem::fault_injection::arm_fail_next_advise_range(1);
     }
-    let mut first = OwnedBlock::allocate(&allocator, MIB).expect("actual fresh Large payload");
+    let mut first = OwnedBlock::allocate(&allocator, BLOCK).expect("actual fresh Large payload");
     touch(&mut first, page);
     assert_eq!(allocator.dbg_current_large_cache_budget(), Some(8 * MIB));
     assert_eq!(AllocCore::dbg_thp_tuple().mode, mode);
@@ -328,7 +335,7 @@ fn run_native_case(case: &str) {
         let (charged, before) = std::thread::scope(|scope| {
             scope
                 .spawn(|| {
-                    let mut owned = OwnedBlock::allocate(&allocator, MIB)
+                    let mut owned = OwnedBlock::allocate(&allocator, BLOCK)
                         .expect("worker mapping before release FI");
                     touch(&mut owned, page);
                     assert_eq!(allocator.dbg_current_large_cache_budget(), Some(8 * MIB));
@@ -428,7 +435,7 @@ fn run_native_case(case: &str) {
         .iter()
         .find(|event| {
             event.kind() == Event::FRESH
-                && event.words()[Event::REQUESTED] == u64::try_from(MIB).unwrap()
+                && event.words()[Event::REQUESTED] == u64::try_from(BLOCK).unwrap()
         })
         .expect("actual original reservation")
         .words();
@@ -437,7 +444,7 @@ fn run_native_case(case: &str) {
     assert_eq!(cached.advice, live.advice, "deposit does not retire advice");
     assert_eq!(cached.outstanding_fresh, 1);
     let hits = allocator.stats().large_cache_hits;
-    let mut reused = OwnedBlock::allocate(&allocator, MIB).expect("actual cache reuse");
+    let mut reused = OwnedBlock::allocate(&allocator, BLOCK).expect("actual cache reuse");
     touch(&mut reused, page);
     assert!(
         allocator.stats().large_cache_hits > hits,
@@ -497,7 +504,7 @@ fn run_native_case(case: &str) {
             actors.allocate(
                 0,
                 &[TouchPlan {
-                    bytes: MIB,
+                    bytes: BLOCK,
                     shape: Shape::Dense,
                 }],
             )?;
@@ -530,7 +537,7 @@ fn run_native_case(case: &str) {
     }
 
     if case == "off-legacy" {
-        let block = OwnedBlock::allocate(&allocator, MIB).expect("legacy uncharged mapping");
+        let block = OwnedBlock::allocate(&allocator, BLOCK).expect("legacy uncharged mapping");
         drop(block);
         aligned_vmem::fault_injection::arm_fail_next_release(1);
         allocator.dbg_trim_current_thread();

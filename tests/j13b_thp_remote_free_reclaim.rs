@@ -47,7 +47,7 @@ fn remote_free_keeps_charge_until_owner_terminal_release() {
     assert!(!p.is_null());
     let charged = AllocCore::dbg_thp_charged_total();
     let expect = if cfg!(target_os = "linux") {
-        // The span is at least the 16 MiB request, so the budget is the cap.
+        // The payload end is at least the 16 MiB request, so the budget is the cap.
         ThpAdvice::extent(
             16 * MIB,
             LargeThpShare::ONE,
