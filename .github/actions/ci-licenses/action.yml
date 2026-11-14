@@ -5,7 +5,7 @@ runs:
   steps:
     - uses: actions/setup-node@v5
       with:
-        node-version: '22'
+        node-version: '24'
     - name: Install cargo-deny
       uses: taiki-e/install-action@v2
       with:
@@ -30,7 +30,7 @@ runs:
         node scripts/license-check-fingerprint.mjs --metadata "$RUNNER_TEMP/members.json" --tool "$(cargo deny --version)"
     - name: Did this dependency set already pass?
       id: seen
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: .license-check-pass
         key: license-check-${{ steps.fp.outputs.fingerprint }}
@@ -57,7 +57,7 @@ runs:
         mkdir -p .license-check-pass
         printf '%s\n' "$FINGERPRINT" > .license-check-pass/fingerprint
     - if: steps.seen.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       with:
         path: .license-check-pass
         key: license-check-${{ steps.fp.outputs.fingerprint }}

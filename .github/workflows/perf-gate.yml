@@ -117,7 +117,7 @@ jobs:
       # below is visible to labelled PR runs. `restore-keys` picks the most
       # recent `iai-baseline-main-*` entry when there is no exact-SHA hit.
       - name: Restore the main iai baseline
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: target/iai
           key: iai-baseline-main-${{ github.sha }}
@@ -166,7 +166,7 @@ jobs:
       # entries are immutable; `restore-keys` above finds the newest.
       - name: Save the main iai baseline
         if: github.event_name != 'pull_request'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: target/iai
           key: iai-baseline-main-${{ github.sha }}
