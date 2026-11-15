@@ -1,0 +1,246 @@
+#!/usr/bin/env node
+// G1 input: how many items would the P2 core split widen to `pub`?
+// (docs/plans/2026-11-15-workspace-restructure-plan.md, §G1 and §5 P2;
+// CLAUDE.md visibility rule for raw-pointer/allocator-metadata items.)
+//
+// Modes:
+//   (default | --report)  print the markdown report to stdout AND write it to
+//                         docs/perf/G1_P2_WIDENING_COUNT.md (override the path
+//                         with --report-path <p>). Two consecutive generations
+//                         are byte-identical: no clock, no machine paths.
+//   --check               compare the committed report file with a fresh
+//                         generation; nonzero exit on any difference (same
+//                         shape as the other --check scripts in this repo).
+//   --split-segment-route count only the split variant (sefer-segment and
+//                         sefer-route as separate crates; layers.json default).
+//   --merged-segment-route count only the merged variant (one crate
+//                         sefer-segment-route). Without either flag BOTH
+//                         variants and their difference are reported.
+//
+// All numbers in the written report are derived by this script (CLAUDE.md:
+// derived, not typed). The computation itself lives in
+// scripts/g1-widening-count/compute.mjs and reuses scripts/module-graph
+// (graph.mjs resolution incl. conduit semantics, lexer.mjs, parse.mjs).
+
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { computeVariant, mergedBoundaries, splitBoundaries, splitOnlyItems } from "./g1-widening-count/compute.mjs";
+
+const SCRIPT = "scripts/g1-widening-count.mjs";
+const DEFAULT_REPORT = "docs/perf/G1_P2_WIDENING_COUNT.md";
+
+function parseArgs(argv) {
+  const out = { mode: "report", reportPath: DEFAULT_REPORT };
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
+    if (a === "--report") out.mode = "report";
+    else if (a === "--check") out.mode = "check";
+    else if (a === "--split-segment-route") out.split = true;
+    else if (a === "--merged-segment-route") out.merged = true;
+    else if (a === "--report-path") out.reportPath = argv[++i] ?? fail("--report-path needs a value");
+    else if (a === "--src-dir") out.srcDir = argv[++i] ?? fail("--src-dir needs a value");
+    else if (a === "--config") out.config = argv[++i] ?? fail("--config needs a value");
+    else fail(`unknown argument: ${a}`);
+  }
+  if (out.split && out.merged) fail("--split-segment-route and --merged-segment-route are mutually exclusive");
+  return out;
+}
+function fail(msg) {
+  process.stderr.write(`${SCRIPT}: ${msg}\n`);
+  process.exit(2);
+}
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+const fmtUserCount = (n) => String(n);
+const safetyMark = (safety) => (safety.length === 0 ? "" : safety.join("+"));
+
+function boundaryTable(b) {
+  const lines = [];
+  lines.push(`### ${b.crate} — ${b.items.length} item(s)`);
+  lines.push("");
+  lines.push("Boundary prefixes: " + (b.prefixes.map((p) => "`" + p + "`").join(", ")));
+  lines.push("");
+  if (b.items.length === 0) {
+    lines.push("(no items would be widened)");
+    lines.push("");
+    return lines;
+  }
+  lines.push("| # | item | kind | vis | declared at | users | safety signal |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- |");
+  b.items.forEach((it, i) => {
+    lines.push(
+      `| ${i + 1} | \`${it.name}\` | ${it.declKind} | \`${it.vis}\` | \`${it.declFile}:${it.declLine}\` | ${fmtUserCount(it.userCount)} | ${safetyMark(it.safety)} |`,
+    );
+  });
+  lines.push("");
+  return lines;
+}
+
+function summaryTable(perBoundary) {
+  const lines = [];
+  lines.push("| boundary crate | items | unsafe/pointer-signalled |");
+  lines.push("| --- | --- | --- |");
+  for (const b of perBoundary) {
+    const sig = b.items.filter((it) => it.safety.length > 0).length;
+    lines.push(`| ${b.crate} | ${b.items.length} | ${sig} |`);
+  }
+  const total = perBoundary.reduce((n, b) => n + b.items.length, 0);
+  const sigTotal = perBoundary.reduce((n, b) => n + b.items.filter((it) => it.safety.length > 0).length, 0);
+  lines.push(`| **total** | **${total}** | **${sigTotal}** |`);
+  lines.push("");
+  return lines;
+}
+
+export function generateReport({ srcDir = "src", configPath = "scripts/module-graph/layers.json", variants = "both" } = {}) {
+  const cfgAbs = resolve(repoRoot, configPath);
+  const base = JSON.parse(readFileSync(cfgAbs, "utf8"));
+  const splitB = splitBoundaries(base);
+  const mergedB = mergedBoundaries(base);
+  const split = computeVariant({ srcDir, configPath: cfgAbs, boundaries: splitB });
+  const merged = computeVariant({ srcDir, configPath: cfgAbs, boundaries: mergedB });
+  const splitOnly = splitOnlyItems(split, merged);
+
+  const L = [];
+  L.push("# G1 input: items the P2 core split would widen to `pub`");
+  L.push("");
+  L.push("Generated by `" + SCRIPT + "` (derived numbers, none typed by hand; deterministic: no clock,");
+  L.push("no machine paths — two consecutive generations are byte-identical). Question per plan §G1:");
+  L.push("how many currently restricted-visibility items (`pub(crate)`, `pub(super)`, `pub(in …)`)");
+  L.push("would have to become `pub` if the P2 crate layout of");
+  L.push("`scripts/module-graph/layers.json` (§`boundaries`) were applied. This report is an INPUT");
+  L.push("to the G1 decision; it decides nothing.");
+  L.push("");
+  L.push("Source tree identity: content sha256 `" + split.identity.contentSha256 + "`, src tree " +
+    (split.identity.srcTreeSha === null ? "(not a git worktree)" : "`" + split.identity.srcTreeSha + "`") +
+    ", " + split.identity.fileCount + " .rs file(s).");
+  L.push("");
+  L.push("## Method");
+  L.push("");
+  L.push("- Boundaries: `scripts/module-graph/layers.json` §`boundaries` (the P2 layout, plan §2).");
+  L.push("  Conduit semantics (declared conduits `alloc_core`, `registry`): references THROUGH a");
+  L.push("  conduit resolve to the DEFINING module, so a use counts against the defining module's");
+  L.push("  future crate — reused from `scripts/module-graph/graph.mjs`, not reimplemented.");
+  L.push("- An item is counted as widened-to-`pub` iff it is declared with restricted visibility");
+  L.push("  (`pub(crate)`/`pub(super)`/`pub(in …)`) and is referenced from a module OUTSIDE its");
+  L.push("  future crate, where a reference is a resolved `use` item or `crate::`/`super::`-style");
+  L.push("  path reference (code, not comments; re-export `pub use` sites count, doc refs do not).");
+  L.push("- Resolution is by symbol NAME at the resolved target module (the same name-matching");
+  L.push("  `graph.mjs` §boundaryVisibility uses); module-graph resolves modules, not symbols.");
+  L.push("- What had to be added beyond module-graph (its exports stop at module level):");
+  L.push("  (a) attribution of `pub(crate) use` re-export DECLARATIONS inside the conduit mod.rs");
+  L.push("  files (`src/alloc_core/mod.rs`, `src/registry/mod.rs`) — their primary module maps to");
+  L.push("  no boundary, so `boundaryVisibility` skips them; each is attributed to the boundary of");
+  L.push("  the module its re-export hop resolves to, via the conduit's own re-export edge sites;");
+  L.push("  (b) the raw-pointer/`unsafe` safety signal, read from the declaration's signature text");
+  L.push("  (lexer reused so file:line stay valid; a bounded signature scan over the lexed code, so");
+  L.push("  strings/comments cannot forge a signal). No other parsing logic was duplicated.");
+  L.push("- Private (no `pub`) declarations are NOT counted: today they are unreachable from any");
+  L.push("  module outside their future crate except through a restricted re-export, which is");
+  L.push("  counted as its own declaration. The count is therefore a conservative UNDERCOUNT.");
+  L.push("- Unresolved path references are NOT attributed (data-quality signal,");
+  L.push("  " + split.identity.unresolvedRefs + " module-graph-unresolved refs in this tree; see");
+  L.push("  `node scripts/module-graph.mjs` output). Unsure means not counted.");
+  L.push("");
+  L.push("## Coverage and conservation asserts (fail loudly, never silently)");
+  L.push("");
+  L.push("- every `src/` module maps to exactly one boundary of the variant, or is a declared");
+  L.push("  conduit, or is the root module — otherwise the script exits nonzero;");
+  L.push("- sum(per-boundary counts) === total unique items; every item key `file|line|name`");
+  L.push("  appears exactly once across the report.");
+  L.push("");
+  L.push("## Variant A — split: `sefer-segment` and `sefer-route` separate crates");
+  L.push("");
+  L.push(...summaryTable(split.perBoundary));
+  for (const b of split.perBoundary) L.push(...boundaryTable(b));
+  if (variants === "both") {
+    L.push("## Variant B — merged: one crate `sefer-segment-route` (plan §2 allows the merge)");
+    L.push("");
+    L.push(...summaryTable(merged.perBoundary));
+    for (const b of merged.perBoundary) L.push(...boundaryTable(b));
+    L.push("## Difference: items cross-crate ONLY in the split variant");
+    L.push("");
+    L.push("These " + splitOnly.length + " item(s) would cross a crate boundary only if `sefer-route`");
+    L.push("stays a separate crate from `sefer-segment`; under the merged variant they stay intra-crate.");
+    L.push("");
+    if (splitOnly.length === 0) {
+      L.push("(none — the two variants widen the same set)");
+      L.push("");
+    } else {
+      L.push("| item | kind | vis | declared at | future crate (split) | users | safety signal |");
+      L.push("| --- | --- | --- | --- | --- | --- | --- |");
+      splitOnly.forEach((it, i) => {
+        L.push(`| ${i + 1} | \`${it.name}\` | ${it.declKind} | \`${it.vis}\` | \`${it.declFile}:${it.declLine}\` | ${it.boundary} | ${it.userCount} | ${safetyMark(it.safety)} |`);
+      });
+      L.push("");
+    }
+  }
+  L.push("## Raw-pointer / allocator-metadata items (CLAUDE.md boundary rule)");
+  L.push("");
+  L.push("Signal = `unsafe` in the declaration, `*const`/`*mut` in the signature, or the names");
+  L.push("`PointerType` / `NonNull` / `raw*` in the signature. Any such item widened to `pub` must");
+  L.push("become `pub unsafe fn` with a `# Safety` contract on the crate boundary (the P1.4");
+  L.push("precedent: seven raw-pointer functions became `pub unsafe fn` with safe `pub(crate)`");
+  L.push("wrappers, plan revision 3 fact 4). Split-variant counts:");
+  L.push("");
+  const sigItems = split.perBoundary.flatMap((b) => b.items.filter((it) => it.safety.length > 0).map((it) => ({ ...it, b: b.crate })));
+  L.push("| item | signal | declared at | future crate |");
+  L.push("| --- | --- | --- | --- |");
+  if (sigItems.length === 0) {
+    L.push("| (none) | | | |");
+  } else {
+    sigItems.sort((a, b) => a.declFile.localeCompare(b.declFile) || a.declLine - b.declLine).forEach((it) => {
+      L.push(`| \`${it.name}\` | ${safetyMark(it.safety)} | \`${it.declFile}:${it.declLine}\` | ${it.b} |`);
+    });
+  }
+  L.push("");
+  L.push("## Data-quality notes");
+  L.push("");
+  if (split.unresolvedConduitDecls.length === 0) {
+    L.push("- every conduit `pub(crate) use` declaration was attributed (none skipped).");
+  } else {
+    L.push("- conduit declarations NOT counted (conservative):");
+    for (const u of split.unresolvedConduitDecls) L.push(`  - \`${u.file}:${u.line}\` \`${u.name}\` — ${u.reason}`);
+  }
+  L.push("");
+  L.push("## Where `--check` could be wired in CI (not wired by this change)");
+  L.push("");
+  L.push("- `.github/actions/ci-docs-consistency/action.yml`, next to the existing");
+  L.push("  `node scripts/module-graph.mjs --check-backedges` step: a");
+  L.push("  `node scripts/g1-widening-count.mjs --check` step would pin the committed report to the");
+  L.push("  tree. It belongs there (always-on, cargo-free) or, once P1.5 lands and G1 is decided,");
+  L.push("  nowhere at all — after G1 the report is historical evidence.");
+  return L.join("\n") + "\n";
+}
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const opts = { srcDir: args.srcDir ?? "src", configPath: args.config ?? "scripts/module-graph/layers.json", variants: args.merged || args.split ? "single" : "both" };
+  const report = generateReport(opts);
+  process.stdout.write(report);
+  const reportPath = resolve(repoRoot, args.reportPath);
+  if (args.mode === "check") {
+    let committed;
+    try {
+      committed = readFileSync(reportPath, "utf8");
+    } catch {
+      process.stderr.write(`${SCRIPT}: --check: report file missing: ${args.reportPath}\n`);
+      process.exit(1);
+    }
+    if (committed !== report) {
+      process.stderr.write(
+        `${SCRIPT}: --check FAILED: ${args.reportPath} differs from a fresh generation ` +
+          "(run `node scripts/g1-widening-count.mjs --report` and commit the result)\n",
+      );
+      process.exit(1);
+    }
+    process.stdout.write(`${SCRIPT}: --check ok (${args.reportPath})\n`);
+    return;
+  }
+  mkdirSync(dirname(reportPath), { recursive: true });
+  writeFileSync(reportPath, report);
+  process.stdout.write(report);
+}
+
+main();
