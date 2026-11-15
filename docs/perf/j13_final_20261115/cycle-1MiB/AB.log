@@ -1,0 +1,12 @@
+
+[paired-ab] A vs B — 12 pairs, A/B/B/A protocol
+................................................
+
+  === A vs B (A - B, ns) ===
+  n=12  mean Δ=2.456 us  sd=35.965 us  se=10.382 us  t=0.237  df=11  crit(p<0.05)=2.228  => DESCRIPTIVE ONLY
+  sign test: A-faster=7/12  B-faster=5/12  ties=0
+
+[paired-ab] provenance written to /home/user/work/j13-full/j13-limited-evidence/cycle-1MiB/AB/2026-11-15T04-50-28-456Z.json
+[paired-ab] Descriptive statistics only; use the preregistered reducer for decisions.
+
+[paired-ab] JSON summary is descriptive only; use the preregistered reducer for decisions.

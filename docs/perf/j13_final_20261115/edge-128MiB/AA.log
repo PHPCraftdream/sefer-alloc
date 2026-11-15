@@ -1,0 +1,12 @@
+
+[paired-ab] A vs A — 12 pairs, A/B/B/A protocol
+................................................
+
+  === A(A-slot) vs A(B-slot) (A - B, ns)  [SAME-VS-SAME CONTROL] ===
+  n=12  mean Δ=188 ns  sd=3.104 us  se=896 ns  t=0.210  df=11  crit(p<0.05)=2.228  => DESCRIPTIVE ONLY
+  sign test: A(A-slot)-faster=5/12  A(B-slot)-faster=7/12  ties=0
+
+[paired-ab] provenance written to /home/user/work/j13-full/j13-limited-evidence/edge-128MiB/AA/2026-11-15T04-53-07-520Z.json
+[paired-ab] Descriptive statistics only; use the preregistered reducer for decisions.
+
+[paired-ab] JSON summary is descriptive only; use the preregistered reducer for decisions.
