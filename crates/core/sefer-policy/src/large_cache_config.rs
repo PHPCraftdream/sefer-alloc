@@ -278,6 +278,7 @@ pub const DEPOT_BUDGET_MAX: usize = (u16::MAX as usize - 8) * DEPOT_BUDGET_GRAIN
 impl Default for LargeCacheConfig {
     /// Returns [`LargeCacheConfig::DEFAULT`] — all knobs at their documented
     /// defaults.
+    #[inline]
     fn default() -> Self {
         Self::DEFAULT
     }
@@ -304,6 +305,7 @@ impl LargeCacheConfig {
     ///     .mode(LargeCacheMode::Lazy);
     /// ```
     #[must_use]
+    #[inline]
     pub const fn new() -> Self {
         Self {
             budget_bytes: None,
@@ -351,6 +353,7 @@ impl LargeCacheConfig {
     /// `large-cache-extended` OFF (see above for the feature-dependent
     /// resolved meaning).
     #[must_use]
+    #[inline]
     pub const fn budget_bytes(mut self, bytes: usize) -> Self {
         self.budget_bytes = Some(bytes);
         self
@@ -369,6 +372,7 @@ impl LargeCacheConfig {
     ///
     /// Default: 256 MiB.
     #[must_use]
+    #[inline]
     pub const fn headroom_bytes(mut self, bytes: usize) -> Self {
         self.headroom_bytes = Some(bytes);
         self
@@ -399,6 +403,7 @@ impl LargeCacheConfig {
     ///
     /// Default: 1000 ms (1 second).
     #[must_use]
+    #[inline]
     pub const fn decay_interval_ms(mut self, ms: u32) -> Self {
         self.decay_interval_ms = Some(ms);
         self
@@ -415,6 +420,7 @@ impl LargeCacheConfig {
     ///
     /// Default: 10 %.
     #[must_use]
+    #[inline]
     pub const fn decay_rate_percent(mut self, pct: u32) -> Self {
         self.decay_rate_percent = Some(pct);
         self
@@ -440,6 +446,7 @@ impl LargeCacheConfig {
     ///
     /// Default: `LargeCacheMode::Lazy`.
     #[must_use]
+    #[inline]
     pub const fn mode(mut self, m: LargeCacheMode) -> Self {
         self.mode = Some(m);
         self
@@ -470,6 +477,7 @@ impl LargeCacheConfig {
     /// `decay_rate_percent`, `mode`) stays at its own built-in default —
     /// chain further setter calls on the result to override them.
     #[must_use]
+    #[inline]
     pub const fn for_profile(profile: crate::policy::profile::Profile) -> Self {
         profile.to_config()
     }
@@ -483,6 +491,7 @@ impl LargeCacheConfig {
     /// (immediate release of every empty small segment — the pre-Mechanism-2
     /// behaviour).
     #[must_use]
+    #[inline]
     pub const fn pool(mut self, pool: SmallSegmentPoolConfig) -> Self {
         self.pool = pool;
         self
@@ -507,6 +516,7 @@ impl LargeCacheConfig {
     /// `config_conflicts_total`). Behaviour and measurements: README
     /// "Depot overflow budget".
     #[must_use]
+    #[inline]
     pub const fn depot_budget_bytes(mut self, bytes: usize) -> Self {
         self.depot_budget_bytes = Some(bytes);
         self
@@ -542,6 +552,7 @@ impl LargeCacheConfig {
     /// setting. Behaviour and
     /// measurements: README "Foreign-free route pin cache".
     #[must_use]
+    #[inline]
     pub const fn route_pin_cache_slots(mut self, slots: usize) -> Self {
         self.route_pin_cache_slots = Some(slots);
         self
@@ -551,6 +562,7 @@ impl LargeCacheConfig {
     #[doc(hidden)]
     #[cfg(feature = "internals")]
     #[must_use]
+    #[inline]
     pub const fn dbg_resolved_route_pin_cache_slots(&self) -> usize {
         self.resolved_route_pin_cache_slots()
     }
@@ -564,6 +576,7 @@ impl LargeCacheConfig {
         not(any(feature = "alloc-global", feature = "internals")),
         allow(dead_code)
     )]
+    #[inline]
     pub const fn resolved_route_pin_cache_slots(&self) -> usize {
         let n = match self.route_pin_cache_slots {
             Some(v) => v,
@@ -605,6 +618,7 @@ impl LargeCacheConfig {
     /// is ignored. Build the `SeferAlloc` static with this value so every heap
     /// carries the same setting. Measurements: README "Transparent huge pages".
     #[must_use]
+    #[inline]
     pub const fn huge_page_after_segments(mut self, segments: usize) -> Self {
         self.huge_page_after_segments = Some(segments);
         self
@@ -625,6 +639,7 @@ impl LargeCacheConfig {
     /// nothing. Linux/Android only; a no-op elsewhere and forced to a no-op
     /// under `numa-aware`.
     #[must_use]
+    #[inline]
     pub const fn huge_page_mode(mut self, mode: LargeThpMode) -> Self {
         self.huge_page_mode = Some(mode);
         self
@@ -636,6 +651,7 @@ impl LargeCacheConfig {
     /// process-wide, first-config-wins, explicit-only, Linux/Android-only and
     /// `numa-aware` no-op rules as [`huge_page_mode`](Self::huge_page_mode).
     #[must_use]
+    #[inline]
     pub const fn huge_page_block_min_bytes(mut self, bytes: usize) -> Self {
         self.huge_page_block_min_bytes = Some(bytes);
         self
@@ -647,6 +663,7 @@ impl LargeCacheConfig {
     /// first-config-wins, explicit-only, Linux/Android-only and `numa-aware`
     /// no-op rules as [`huge_page_mode`](Self::huge_page_mode).
     #[must_use]
+    #[inline]
     pub const fn huge_page_budget_bytes(mut self, bytes: usize) -> Self {
         self.huge_page_budget_bytes = Some(bytes);
         self
@@ -657,6 +674,7 @@ impl LargeCacheConfig {
     /// process-wide, first-config-wins, explicit-only, Linux/Android-only and
     /// `numa-aware` no-op rules as [`huge_page_mode`](Self::huge_page_mode).
     #[must_use]
+    #[inline]
     pub const fn huge_page_gradient(mut self, gradient: LargeThpGradient) -> Self {
         self.huge_page_gradient = Some(gradient);
         self
@@ -667,6 +685,7 @@ impl LargeCacheConfig {
     // Sole caller is the lifecycle tuple publication, itself compiled out
     // under numa-aware; the internals dbg hook reads the tuple directly.
     #[cfg_attr(feature = "numa-aware", allow(dead_code))]
+    #[inline]
     pub const fn has_explicit_thp_knob(&self) -> bool {
         self.huge_page_mode.is_some()
             || self.huge_page_block_min_bytes.is_some()
@@ -682,6 +701,7 @@ impl LargeCacheConfig {
         all(feature = "numa-aware", not(feature = "internals")),
         allow(dead_code)
     )]
+    #[inline]
     pub const fn resolved_thp_tuple(&self) -> ThpTuple {
         ThpTuple {
             mode: match self.huge_page_mode {
@@ -707,6 +727,7 @@ impl LargeCacheConfig {
     #[doc(hidden)]
     #[cfg(feature = "internals")]
     #[must_use]
+    #[inline]
     pub const fn dbg_resolved_thp_tuple(&self) -> ThpTuple {
         self.resolved_thp_tuple()
     }
@@ -716,6 +737,7 @@ impl LargeCacheConfig {
     #[doc(hidden)]
     #[cfg(feature = "internals")]
     #[must_use]
+    #[inline]
     pub const fn dbg_resolved_huge_page_after_segments(&self) -> usize {
         self.resolved_huge_page_after_segments()
     }
@@ -724,6 +746,7 @@ impl LargeCacheConfig {
     /// a value above [`HUGE_PAGE_AFTER_SEGMENTS_MAX`] also means "never".
     #[must_use]
     #[cfg_attr(feature = "numa-aware", allow(dead_code))]
+    #[inline]
     pub const fn resolved_huge_page_after_segments(&self) -> usize {
         let n = match self.huge_page_after_segments {
             Some(v) => v,
@@ -740,6 +763,7 @@ impl LargeCacheConfig {
     #[doc(hidden)]
     #[cfg(feature = "internals")]
     #[must_use]
+    #[inline]
     pub const fn dbg_resolved_depot_budget(&self) -> usize {
         self.resolved_depot_budget_bytes()
     }
@@ -756,6 +780,7 @@ impl LargeCacheConfig {
         not(any(feature = "alloc-global", feature = "internals")),
         allow(dead_code)
     )]
+    #[inline]
     pub const fn resolved_depot_budget_bytes(&self) -> usize {
         let b = match self.depot_budget_bytes {
             Some(v) => v,
@@ -782,6 +807,7 @@ impl LargeCacheConfig {
     /// this module. Base-cache builds (feature OFF) are unaffected: the
     /// stored `None` resolves to `None` exactly as before this task.
     #[must_use]
+    #[inline]
     pub const fn resolved_budget_bytes(&self) -> Option<usize> {
         #[cfg(feature = "large-cache-extended")]
         {
@@ -799,6 +825,7 @@ impl LargeCacheConfig {
     /// Resolve the headroom floor in bytes. Falls back to the default (256 MiB)
     /// when unset.
     #[must_use]
+    #[inline]
     pub const fn resolved_headroom_bytes(&self) -> usize {
         match self.headroom_bytes {
             Some(v) => v,
@@ -809,6 +836,7 @@ impl LargeCacheConfig {
     /// Resolve the decay interval as a `Duration`. Falls back to the default
     /// (1 000 ms) when unset.
     #[must_use]
+    #[inline]
     pub fn resolved_decay_interval(&self) -> core::time::Duration {
         let ms = match self.decay_interval_ms {
             Some(v) => v as u64,
@@ -821,6 +849,7 @@ impl LargeCacheConfig {
     /// clamped to `[1, 100]` and converted (`pct * 100 = basis points`).
     /// Falls back to the default (10 % → 1000 bp) when unset.
     #[must_use]
+    #[inline]
     pub const fn resolved_decay_rate_bp(&self) -> u32 {
         let pct = match self.decay_rate_percent {
             Some(p) => p,
@@ -839,6 +868,7 @@ impl LargeCacheConfig {
 
     /// Resolve the cache operating mode. Falls back to `Lazy` when unset.
     #[must_use]
+    #[inline]
     pub const fn resolved_mode(&self) -> LargeCacheMode {
         match self.mode {
             Some(m) => m,
@@ -848,6 +878,7 @@ impl LargeCacheConfig {
 
     /// Resolve the empty-small-segment pool config (Mechanism 2, task #51).
     #[must_use]
+    #[inline]
     pub const fn resolved_pool(&self) -> SmallSegmentPoolConfig {
         self.pool
     }

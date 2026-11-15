@@ -500,6 +500,7 @@ impl Segment {
     /// valid for the span's usable byte length (see the `reserve*`
     /// constructors), aligned to `SEGMENT`.
     #[must_use]
+    #[inline]
     pub fn as_ptr(&self) -> *mut u8 {
         self.0.as_ptr()
     }
@@ -508,6 +509,7 @@ impl Segment {
     /// due to the over-reserve + trim technique). Recorded in the segment
     /// header so `AllocCore::drop` can release the whole reservation.
     #[must_use]
+    #[inline]
     pub fn reservation(&self) -> NonNull<u8> {
         // SAFETY: `aligned_vmem::Reservation::reservation_ptr()` is always
         // non-null — it was returned by the OS (or `System.alloc` under miri)
@@ -517,12 +519,14 @@ impl Segment {
 
     /// The full size of the OS reservation (head + usable + tail).
     #[must_use]
+    #[inline]
     pub const fn reservation_len(&self) -> usize {
         self.0.reservation_len()
     }
 
     /// TH-1: transparent-huge-page hint for the span (Linux; no-op elsewhere).
     #[cfg(not(feature = "numa-aware"))]
+    #[inline]
     pub fn advise_huge_pages(&self) -> bool {
         self.0.advise_huge_pages()
     }
@@ -575,6 +579,10 @@ const _: () = {
 // P1.4: made `unsafe fn` (R25-1 class: a safe `pub fn` freeing memory via a
 // raw pointer must not be public API). The root keeps a `pub(crate)` safe
 // wrapper with the pre-extraction signature.
+// P1.6: `#[inline]` — thin `vmem::release` forwarder + counter; on the
+// decomp_os_roundtrip_8x IAI path this call is paid once per round-trip
+// through the root `pub(crate)` wrapper (plan step P1.6).
+#[inline]
 pub unsafe fn release_segment(reservation: *mut u8, reservation_len: usize) {
     if reservation.is_null() {
         return;
@@ -595,6 +603,7 @@ pub unsafe fn release_segment(reservation: *mut u8, reservation_len: usize) {
 /// `reservation_len`, transferred exactly once. On `Err` the caller must
 /// neither retry the release nor touch the mapping.
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+#[inline]
 pub unsafe fn try_release_segment(
     reservation: *mut u8,
     reservation_len: usize,
@@ -648,6 +657,7 @@ pub fn segments_released_total() -> u64 {
 /// block or reference exists in the range, and its contents are not read
 /// before a later recommit.
 #[cfg(feature = "alloc-decommit")]
+#[inline]
 pub unsafe fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) {
     // SAFETY: `base` is the base of a live segment owned by this allocator.
     // The caller guarantees no live blocks exist in the range, and offsets are
@@ -716,6 +726,7 @@ pub unsafe fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
     feature = "small-segment-lazy-commit",
     feature = "large-reserved-capacity"
 ))]
+#[inline]
 pub unsafe fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
     // SAFETY: `base` is the base of a live segment owned by this allocator.
     // The caller guarantees `[base + start_offset, base + end_offset)` is
@@ -746,6 +757,7 @@ pub unsafe fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize
     feature = "internals",
     feature = "alloc-decommit"
 ))]
+#[inline]
 pub unsafe fn commit_pages_for_measurement(
     base: *mut u8,
     start_offset: usize,
@@ -784,6 +796,7 @@ pub unsafe fn commit_pages_for_measurement(
 // — so this function's reachability tracks `small-segment-lazy-commit`
 // specifically, not the `primordial-lazy-commit` sibling. R12-9, task #260.)
 #[cfg_attr(feature = "small-segment-lazy-commit", allow(dead_code))]
+#[inline]
 pub unsafe fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
     // SAFETY: `base` is the base of a live segment owned by this allocator,
     // and `[base + start_offset, base + end_offset)` was previously decommitted.
@@ -829,6 +842,7 @@ pub fn reserve_depot_overflow(len: usize) -> Option<*mut u8> {
     feature = "fastbin",
     feature = "alloc-decommit"
 ))]
+#[inline]
 pub unsafe fn commit_depot_overflow(base: *mut u8, start: usize, end: usize) -> bool {
     // SAFETY: `base` is a live depot-overflow reservation (never released)
     // and the caller passes page-aligned offsets inside it.
@@ -849,6 +863,7 @@ pub unsafe fn commit_depot_overflow(base: *mut u8, start: usize, end: usize) -> 
     feature = "fastbin",
     feature = "alloc-decommit"
 ))]
+#[inline]
 pub unsafe fn decommit_depot_overflow(base: *mut u8, start: usize, end: usize) {
     // SAFETY: as in `commit_depot_overflow`; the caller holds no live record
     // in the range and will re-commit before writing it again. The contents

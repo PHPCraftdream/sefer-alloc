@@ -139,6 +139,7 @@ pub struct Profile {
 #[cfg(feature = "alloc-decommit")]
 impl Default for Profile {
     /// Returns [`Profile::DEFAULT`].
+    #[inline]
     fn default() -> Self {
         Self::DEFAULT
     }
@@ -157,6 +158,7 @@ impl Profile {
     /// [`small_pool`](Self::small_pool) / [`large_cache`](Self::large_cache)
     /// to opt into a named alternative on either axis.
     #[must_use]
+    #[inline]
     pub const fn new() -> Self {
         Self {
             small_pool: SmallPoolPolicy::Default,
@@ -169,6 +171,7 @@ impl Profile {
     ///
     /// Default: `SmallPoolPolicy::Default`.
     #[must_use]
+    #[inline]
     pub const fn small_pool(mut self, policy: SmallPoolPolicy) -> Self {
         self.small_pool = policy;
         self
@@ -180,6 +183,7 @@ impl Profile {
     ///
     /// Default: `LargeCachePolicy::Default`.
     #[must_use]
+    #[inline]
     pub const fn large_cache(mut self, policy: LargeCachePolicy) -> Self {
         self.large_cache = policy;
         self
@@ -225,6 +229,7 @@ impl Profile {
     /// currently-set policy. Equivalent to, and used by,
     /// [`LargeCacheConfig::for_profile`].
     #[must_use]
+    #[inline]
     pub const fn to_config(self) -> LargeCacheConfig {
         LargeCacheConfig::new()
             .headroom_bytes(self.headroom_bytes())

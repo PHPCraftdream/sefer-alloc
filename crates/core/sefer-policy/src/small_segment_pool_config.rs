@@ -116,6 +116,7 @@ pub struct SmallSegmentPoolConfig {
 #[cfg(feature = "alloc-decommit")]
 impl Default for SmallSegmentPoolConfig {
     /// Returns [`SmallSegmentPoolConfig::DEFAULT`].
+    #[inline]
     fn default() -> Self {
         Self::DEFAULT
     }
@@ -139,6 +140,7 @@ impl SmallSegmentPoolConfig {
     /// Construct a config with all knobs at their defaults (pool enabled,
     /// 4 segments / 16 MiB).
     #[must_use]
+    #[inline]
     pub const fn new() -> Self {
         Self {
             pool_segments: None,
@@ -160,6 +162,7 @@ impl SmallSegmentPoolConfig {
     ///
     /// Default: 4.
     #[must_use]
+    #[inline]
     pub const fn pool_segments(mut self, n: usize) -> Self {
         self.pool_segments = Some(n);
         self
@@ -173,6 +176,7 @@ impl SmallSegmentPoolConfig {
     ///
     /// Default: 16 MiB.
     #[must_use]
+    #[inline]
     pub const fn pool_byte_cap(mut self, bytes: usize) -> Self {
         self.pool_byte_cap = Some(bytes);
         self
@@ -182,6 +186,7 @@ impl SmallSegmentPoolConfig {
 
     /// Resolve the segment cap. Falls back to the default (4) when unset.
     #[must_use]
+    #[inline]
     pub const fn resolved_pool_segments(&self) -> usize {
         match self.pool_segments {
             Some(v) => v,
@@ -191,6 +196,7 @@ impl SmallSegmentPoolConfig {
 
     /// Resolve the byte cap. Falls back to the default (16 MiB) when unset.
     #[must_use]
+    #[inline]
     pub const fn resolved_pool_byte_cap(&self) -> usize {
         match self.pool_byte_cap {
             Some(v) => v,

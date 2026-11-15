@@ -25,6 +25,8 @@ pub(crate) use sefer_platform::os::*;
 // call site changes; they shadow the glob re-export above by name. The caller
 // contract of each is documented on the `sefer-platform` function.
 
+// P1.6: `#[inline]` — each wrapper is a one-line forwarder to `sefer-platform`; inlining it removes the extra call frame the P1.4 extraction put on every hot release/decommit/commit path (plan step P1.6, IAI run 43739148692).
+#[inline]
 pub(crate) fn release_segment(reservation: *mut u8, reservation_len: usize) {
     // SAFETY: P1.4: wrapper preserves the pre-extraction pub(crate) safe signature; the
     // caller contract is unchanged (see the documented contract in sefer-platform).
@@ -32,6 +34,7 @@ pub(crate) fn release_segment(reservation: *mut u8, reservation_len: usize) {
 }
 
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+#[inline]
 pub(crate) fn try_release_segment(
     reservation: *mut u8,
     reservation_len: usize,
@@ -42,6 +45,7 @@ pub(crate) fn try_release_segment(
 }
 
 #[cfg(feature = "alloc-decommit")]
+#[inline]
 pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) {
     // SAFETY: P1.4: wrapper preserves the pre-extraction pub(crate) safe signature; the
     // caller contract is unchanged (see the documented contract in sefer-platform).
@@ -54,6 +58,7 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
     feature = "small-segment-lazy-commit",
     feature = "large-reserved-capacity"
 ))]
+#[inline]
 pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
     // SAFETY: P1.4: wrapper preserves the pre-extraction pub(crate) safe signature; the
     // caller contract is unchanged (see the documented contract in sefer-platform).
@@ -63,6 +68,7 @@ pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize
 #[must_use]
 #[cfg(feature = "alloc-decommit")]
 #[cfg_attr(feature = "small-segment-lazy-commit", allow(dead_code))]
+#[inline]
 pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
     // SAFETY: P1.4: wrapper preserves the pre-extraction pub(crate) safe signature; the
     // caller contract is unchanged (see the documented contract in sefer-platform).
@@ -75,6 +81,7 @@ pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
     feature = "fastbin",
     feature = "alloc-decommit"
 ))]
+#[inline]
 pub(crate) fn commit_depot_overflow(base: *mut u8, start: usize, end: usize) -> bool {
     // SAFETY: P1.4: wrapper preserves the pre-extraction pub(crate) safe signature; the
     // caller contract is unchanged (see the documented contract in sefer-platform).
@@ -86,6 +93,7 @@ pub(crate) fn commit_depot_overflow(base: *mut u8, start: usize, end: usize) -> 
     feature = "fastbin",
     feature = "alloc-decommit"
 ))]
+#[inline]
 pub(crate) fn decommit_depot_overflow(base: *mut u8, start: usize, end: usize) {
     // SAFETY: P1.4: wrapper preserves the pre-extraction pub(crate) safe signature; the
     // caller contract is unchanged (see the documented contract in sefer-platform).
