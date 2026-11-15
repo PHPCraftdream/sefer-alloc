@@ -1,11 +1,9 @@
 //! `ThpAdvice` — pure geometry and classification for range-limited
 //! transparent-huge-page advice on a fresh Large mapping. No atomics, no OS.
 
-use crate::alloc_core::config::policy::large_thp::{
-    LargeThpMode, LargeThpRequestGroup, LargeThpShare,
-};
-use crate::alloc_core::config::policy::large_thp_runtime::thp_advice_outcome::ThpAdviceOutcome;
-use crate::alloc_core::config::policy::large_thp_runtime::ThpTuple;
+use crate::policy::large_thp::{LargeThpMode, LargeThpRequestGroup, LargeThpShare};
+use crate::policy::large_thp_runtime::thp_advice_outcome::ThpAdviceOutcome;
+use crate::policy::large_thp_runtime::ThpTuple;
 
 /// Namespace for the pure advice helpers; carries no state.
 pub struct ThpAdvice;

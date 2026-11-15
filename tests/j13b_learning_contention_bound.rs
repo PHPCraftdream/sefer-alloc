@@ -4,7 +4,15 @@
 #[path = "support/j13b_learning_math.rs"]
 mod math;
 pub(crate) use core::sync::atomic::Ordering;
-pub(crate) use math::alloc_core;
+// P1.3: the moved production sources resolve their imports at the
+// sefer-policy crate root (crate::policy::...); alias the shim tree under
+// those paths.
+#[allow(dead_code)]
+mod policy {
+    pub(crate) mod large_thp {
+        pub(crate) use super::super::math::{LargeThpEstimator, LargeThpGradient, LargeThpShare};
+    }
+}
 use math::{LargeThpEstimator, LargeThpGradient};
 
 pub(crate) struct AtomicU64 {
@@ -36,7 +44,7 @@ impl AtomicU64 {
     }
 }
 
-#[path = "../src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs"]
 mod thp_learning_cell;
 use thp_learning_cell::ThpLearningCell;
 

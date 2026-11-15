@@ -106,6 +106,7 @@
 // selected by features; four are development infrastructure, and
 // `tagged-index-stack` is verification-only:
 //
+//   sefer-policy       (crates/core/sefer-policy)        — allocator policy layer: config types, Large-THP policy runtime (feature: alloc-core)
 //   sefer-region       (crates/containers/sefer-region)             — typed handle store (this re-export; runtime, no feature gate)
 //   sefer-concurrent   (crates/containers/sefer-concurrent) — legacy/research concurrent tier (feature: experimental/pinning)
 //   aligned-vmem       (crates/platform/aligned-vmem)               — OS virtual-memory aperture          (feature: alloc-core)
@@ -162,6 +163,19 @@
 //   proc-memstat  (crates/platform/proc-memstat/src/lib.rs)  — #![allow(unsafe_code)]
 //     Sole purpose: OS-FFI self-probe (Windows K32GetProcessMemoryInfo, macOS
 //     task_info, Linux /proc). Every block carries `// SAFETY:`. Dev-only.
+//
+//   sefer-policy  (crates/core/sefer-policy/src/lib.rs)   — #![forbid(unsafe_code)]
+//     Allocator policy layer (the former src/alloc_core/config, moved P1.3).
+//     Zero own unsafe; pure core arithmetic, constants and atomic policy state.
+//
+//   sefer-concurrent (crates/containers/sefer-concurrent/src/lib.rs) — #![deny(unsafe_code)]
+//     One confined seam, `src/epoch/hand.rs` (the epoch-tier `AtomicSlot<T>`
+//     membrane over `crossbeam-epoch`); re-exported through sefer-alloc under
+//     `experimental`/`pinning` (legacy/research tier).
+//
+//   sefer-ghost   (crates/primitives/sefer-ghost/src/lib.rs) — #![forbid(unsafe_code)]
+//     Checking-build-only macros + a `core`-atomics shadow event table; no raw
+//     pointers, no allocation (rule R9).
 //
 //   sefer-region  (crates/containers/sefer-region/src/lib.rs)        — #![forbid(unsafe_code)]
 //     Handle<T> / Region<T> / SyncRegion<T>. Zero own unsafe; slotmap's

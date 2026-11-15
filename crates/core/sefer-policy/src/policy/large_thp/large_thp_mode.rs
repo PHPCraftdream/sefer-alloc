@@ -1,7 +1,7 @@
 //! `LargeThpMode` — how a fresh Large mapping is offered the transparent-huge-page hint.
 
 /// Selects the large-allocation THP advice policy of a
-/// [`LargeCacheConfig`](crate::alloc_core::config::large_cache_config::LargeCacheConfig).
+/// [`LargeCacheConfig`](crate::large_cache_config::LargeCacheConfig).
 ///
 /// Process-wide (the first explicit config published wins whole). Effective on
 /// Linux/Android only; a no-op elsewhere and forced to a no-op under

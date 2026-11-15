@@ -45,7 +45,7 @@
 /// two forms cannot diverge. Gated to its one consumer
 /// (`HeapCore::dbg_promotion_compiled`) so no build carries it unused.
 #[cfg(all(feature = "alloc-global", feature = "internals"))]
-pub(crate) const MEDIUM_PROMOTION_REACHABLE: bool = cfg!(all(
+pub const MEDIUM_PROMOTION_REACHABLE: bool = cfg!(all(
     feature = "medium-classes",
     any(
         not(feature = "exact-span-large"),
@@ -113,6 +113,7 @@ pub(crate) const MEDIUM_PROMOTION_REACHABLE: bool = cfg!(all(
 /// a lint, never code inclusion) or a predicate under `any(...)`/`not(...)`
 /// combined with foreign terms at the TOP level — for the negation use
 /// `medium_promotion_unreachable!`.
+#[macro_export]
 macro_rules! medium_promotion_reachable {
     ($(#[$m:meta])* $vis:vis const $($rest:tt)*) => {
         $(#[$m])*
@@ -179,6 +180,7 @@ macro_rules! medium_promotion_reachable {
 /// Gated like its only consumers (the `registry` tree, `alloc-global`), so an
 /// `alloc-core`-only build does not carry an unused macro.
 #[cfg(feature = "alloc-global")]
+#[macro_export]
 macro_rules! medium_promotion_unreachable {
     ($($rest:tt)*) => {
         #[cfg(not(all(
@@ -197,9 +199,9 @@ macro_rules! medium_promotion_unreachable {
 // cfg-gated to its consumer set, mirroring `alloc_core/mod.rs`'s own gated
 // re-export discipline (the const above is re-exported straight from
 // `alloc_core/mod.rs`: a same-module `use` of it would clash with its own
-// definition): an ungated `pub(crate) use` with no live consumer in
+// definition): an ungated `pub use` with no live consumer in
 // a build (e.g. `alloc-core`-only, where the `registry` tree does not
 // compile) is an unused-import error under `-D warnings`.
-pub(crate) use medium_promotion_reachable;
+pub use medium_promotion_reachable;
 #[cfg(feature = "alloc-global")]
-pub(crate) use medium_promotion_unreachable;
+pub use medium_promotion_unreachable;

@@ -1,24 +1,21 @@
 //! Coherent bounded updates of one request group's Q31 estimator pair.
 
 use super::{AtomicU64, Ordering};
-use crate::alloc_core::config::policy::large_thp::{
-    LargeThpEstimator, LargeThpGradient, LargeThpShare,
-};
+use crate::policy::large_thp::{LargeThpEstimator, LargeThpGradient, LargeThpShare};
 
 /// Both estimator components live in one atomic word; no external payload is
 /// published. Relaxed accesses suffice for the pair's indivisible value.
-pub(crate) struct ThpLearningCell {
-    pub(super) state: AtomicU64,
+pub struct ThpLearningCell {
+    pub state: AtomicU64,
 }
 
 impl ThpLearningCell {
-    pub(crate) const INITIAL: u64 =
-        ((LargeThpShare::SCALE as u64) << 32) | LargeThpShare::SCALE as u64;
+    pub const INITIAL: u64 = ((LargeThpShare::SCALE as u64) << 32) | LargeThpShare::SCALE as u64;
     const MAX_ATTEMPTS: usize = 8;
 
     // Process statics initialize directly; actual-source tests use new().
     #[allow(dead_code)]
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             state: AtomicU64::new(Self::INITIAL),
         }
@@ -26,7 +23,7 @@ impl ThpLearningCell {
 
     /// Convert one valid residency observation, never accumulated diagnostic
     /// loads. The widened product is below 2^95; the quotient is at most SCALE.
-    pub(crate) fn observation(resident_pages: u64, sampled_pages: u64) -> Option<LargeThpShare> {
+    pub fn observation(resident_pages: u64, sampled_pages: u64) -> Option<LargeThpShare> {
         if sampled_pages == 0 || resident_pages > sampled_pages {
             return None;
         }
@@ -35,7 +32,7 @@ impl ThpLearningCell {
     }
 
     /// One load obtains a coherent pair, not two independently sampled states.
-    pub(crate) fn snapshot(&self) -> LargeThpEstimator {
+    pub fn snapshot(&self) -> LargeThpEstimator {
         Self::decode(self.state.load(Ordering::Relaxed))
     }
 
@@ -43,11 +40,7 @@ impl ThpLearningCell {
     /// applied; the caller must account for that loss, never retry it later.
     /// Success linearizes exactly one update of both components together.
     #[allow(dead_code)] // the runtime calls try_observe_with_prior; actual-source tests call this
-    pub(crate) fn try_observe(
-        &self,
-        gradient: &LargeThpGradient,
-        observation: LargeThpShare,
-    ) -> bool {
+    pub fn try_observe(&self, gradient: &LargeThpGradient, observation: LargeThpShare) -> bool {
         self.try_observe_with_prior(gradient, observation).is_some()
     }
 
@@ -55,7 +48,7 @@ impl ThpLearningCell {
     /// carries the estimate in force immediately before the winning update,
     /// derived from exactly the predecessor pair that CAS replaced (no
     /// second load). `None` means the observation was not applied.
-    pub(crate) fn try_observe_with_prior(
+    pub fn try_observe_with_prior(
         &self,
         gradient: &LargeThpGradient,
         observation: LargeThpShare,
@@ -85,5 +78,11 @@ impl ThpLearningCell {
 
     fn decode(packed: u64) -> LargeThpEstimator {
         LargeThpEstimator::with_state((packed >> 32) as u32, packed as u32)
+    }
+}
+
+impl Default for ThpLearningCell {
+    fn default() -> Self {
+        Self::new()
     }
 }

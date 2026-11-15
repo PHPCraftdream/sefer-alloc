@@ -1,0 +1,1009 @@
+{
+ "schema": "policy.visibility-widening.v1",
+ "additive_total": 5,
+ "additive": [
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp/large_thp_request_group.rs",
+   "line": 67,
+   "item": "LargeThpRequestGroup::index (pub const fn, #[inline], exhaustive match)",
+   "lines": 14
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+   "line": 108,
+   "item": "impl Default for ThpCadenceCell",
+   "lines": 1
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
+   "line": 84,
+   "item": "impl Default for ThpLearningCell",
+   "lines": 1
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 537,
+   "item": "group_index body -> LargeThpRequestGroup::of_bytes(..).index() (private fn, logic unchanged)",
+   "lines": 1
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
+   "line": 93,
+   "item": "impl Default for ThpTupleCell",
+   "lines": 1
+  }
+ ],
+ "files_scanned": 33,
+ "lines_paired": 4732,
+ "widened_total": 120,
+ "categories": {
+  "const": 22,
+  "field/other": 25,
+  "function": 63,
+  "re-export": 5,
+  "type": 5
+ },
+ "raw_pointer_items": 0,
+ "widenings": [
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 50,
+   "kind": "pub(crate)",
+   "text": "pub const DEFAULT_HEADROOM_BYTES: usize = 256 * 1024 * 1024;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 53,
+   "kind": "pub(crate)",
+   "text": "pub const DEFAULT_DECAY_INTERVAL_MS: u64 = 1000;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 56,
+   "kind": "pub(crate)",
+   "text": "pub const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 149,
+   "kind": "pub(crate)",
+   "text": "pub const DEFAULT_EXTENDED_BUDGET_BYTES: usize = DEFAULT_HEADROOM_BYTES;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 187,
+   "kind": "pub(crate)",
+   "text": "pub budget_bytes: Option<usize>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 191,
+   "kind": "pub(crate)",
+   "text": "pub headroom_bytes: Option<usize>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 197,
+   "kind": "pub(crate)",
+   "text": "pub decay_interval_ms: Option<u32>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 203,
+   "kind": "pub(crate)",
+   "text": "pub decay_rate_percent: Option<u32>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 206,
+   "kind": "pub(crate)",
+   "text": "pub mode: Option<LargeCacheMode>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 215,
+   "kind": "pub(crate)",
+   "text": "pub pool: SmallSegmentPoolConfig,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 220,
+   "kind": "pub(crate)",
+   "text": "pub depot_budget_bytes: Option<usize>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 225,
+   "kind": "pub(crate)",
+   "text": "pub route_pin_cache_slots: Option<usize>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 232,
+   "kind": "pub(crate)",
+   "text": "pub huge_page_after_segments: Option<usize>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 236,
+   "kind": "pub(crate)",
+   "text": "pub huge_page_mode: Option<LargeThpMode>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 240,
+   "kind": "pub(crate)",
+   "text": "pub huge_page_block_min_bytes: Option<usize>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 244,
+   "kind": "pub(crate)",
+   "text": "pub huge_page_budget_bytes: Option<usize>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 248,
+   "kind": "pub(crate)",
+   "text": "pub huge_page_gradient: Option<LargeThpGradient>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 254,
+   "kind": "pub(crate)",
+   "text": "pub const DEFAULT_HUGE_PAGE_AFTER_SEGMENTS: usize = 16;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 257,
+   "kind": "pub(crate)",
+   "text": "pub const HUGE_PAGE_AFTER_SEGMENTS_MAX: usize = u32::MAX as usize;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 260,
+   "kind": "pub(crate)",
+   "text": "pub const DEFAULT_PIN_CACHE_SLOTS: usize = 32;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 262,
+   "kind": "pub(crate)",
+   "text": "pub const PIN_CACHE_SLOTS_MIN: usize = 4;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 265,
+   "kind": "pub(crate)",
+   "text": "pub const PIN_CACHE_SLOTS_MAX: usize = 64;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 268,
+   "kind": "pub(crate)",
+   "text": "pub const DEFAULT_DEPOT_BUDGET_BYTES: usize = 1024 * 1024;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 271,
+   "kind": "pub(crate)",
+   "text": "pub const DEPOT_BUDGET_GRAIN: usize = 256;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 275,
+   "kind": "pub(crate)",
+   "text": "pub const DEPOT_BUDGET_MAX: usize = (u16::MAX as usize - 8) * DEPOT_BUDGET_GRAIN;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 567,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_route_pin_cache_slots(&self) -> usize {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 670,
+   "kind": "pub(crate)",
+   "text": "pub const fn has_explicit_thp_knob(&self) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 685,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_thp_tuple(&self) -> ThpTuple {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 727,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_huge_page_after_segments(&self) -> usize {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 759,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_depot_budget_bytes(&self) -> usize {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 785,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_budget_bytes(&self) -> Option<usize> {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 802,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_headroom_bytes(&self) -> usize {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 812,
+   "kind": "pub(crate)",
+   "text": "pub fn resolved_decay_interval(&self) -> core::time::Duration {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 824,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_decay_rate_bp(&self) -> u32 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 842,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_mode(&self) -> LargeCacheMode {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/large_cache_config.rs",
+   "line": 851,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_pool(&self) -> SmallSegmentPoolConfig {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/medium_promotion.rs",
+   "line": 48,
+   "kind": "pub(crate)",
+   "text": "pub const MEDIUM_PROMOTION_REACHABLE: bool = cfg!(all(",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/medium_promotion.rs",
+   "line": 203,
+   "kind": "pub(crate)",
+   "text": "pub use medium_promotion_reachable;",
+   "raw_pointer": false,
+   "category": "re-export"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/medium_promotion.rs",
+   "line": 205,
+   "kind": "pub(crate)",
+   "text": "pub use medium_promotion_unreachable;",
+   "raw_pointer": false,
+   "category": "re-export"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/mod.rs",
+   "line": 7,
+   "kind": "pub(crate)",
+   "text": "pub mod large_thp_cadence;",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/mod.rs",
+   "line": 14,
+   "kind": "pub(crate)",
+   "text": "pub mod thp_cadence_cell;",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/mod.rs",
+   "line": 17,
+   "kind": "pub(crate)",
+   "text": "pub mod thp_learning_cell;",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/mod.rs",
+   "line": 19,
+   "kind": "pub(crate)",
+   "text": "pub mod thp_runtime;",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/mod.rs",
+   "line": 22,
+   "kind": "pub(crate)",
+   "text": "pub mod thp_tuple_cell;",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/mod.rs",
+   "line": 34,
+   "kind": "pub(crate)",
+   "text": "pub use thp_runtime::ThpRuntime;",
+   "raw_pointer": false,
+   "category": "re-export"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/mod.rs",
+   "line": 40,
+   "kind": "pub(crate)",
+   "text": "pub use core::sync::atomic::AtomicU8;",
+   "raw_pointer": false,
+   "category": "re-export"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/mod.rs",
+   "line": 41,
+   "kind": "pub(crate)",
+   "text": "pub use core::sync::atomic::{AtomicU64, Ordering};",
+   "raw_pointer": false,
+   "category": "re-export"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+   "line": 11,
+   "kind": "pub(crate)",
+   "text": "pub struct LargeThpCadence;",
+   "raw_pointer": false,
+   "category": "type"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+   "line": 18,
+   "kind": "pub(crate)",
+   "text": "pub const LEVEL_MAX: u32 = 5;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+   "line": 20,
+   "kind": "pub(crate)",
+   "text": "pub const RUNS_PER_LEVEL: u32 = 4;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+   "line": 22,
+   "kind": "pub(crate)",
+   "text": "pub const RUN_MAX: u32 = 20;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+   "line": 24,
+   "kind": "pub(crate)",
+   "text": "pub const TOLERANCE_RAW: u32 = LargeThpShare::SCALE / 8;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+   "line": 29,
+   "kind": "pub(crate)",
+   "text": "pub const fn level_of(run: u32) -> u32 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+   "line": 40,
+   "kind": "pub(crate)",
+   "text": "pub const fn next_run(run: u32, agreed: bool) -> u32 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+   "line": 53,
+   "kind": "pub(crate)",
+   "text": "pub const fn agrees(est: LargeThpShare, obs: LargeThpShare) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+   "line": 61,
+   "kind": "pub(crate)",
+   "text": "pub const fn live(seed: u64, ordinal: u64, level: u32) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+   "line": 78,
+   "kind": "pub(crate)",
+   "text": "pub const fn select(seed: u64, ordinal: u64, level: u32) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+   "line": 11,
+   "kind": "pub(crate)",
+   "text": "pub struct ThpCadenceCell {",
+   "raw_pointer": false,
+   "category": "type"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+   "line": 12,
+   "kind": "pub(super)",
+   "text": "pub state: AtomicU64,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+   "line": 20,
+   "kind": "pub(crate)",
+   "text": "pub const INITIAL: u64 = 0;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+   "line": 30,
+   "kind": "pub(crate)",
+   "text": "pub fn new() -> Self {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+   "line": 46,
+   "kind": "pub(crate)",
+   "text": "pub fn level(&self) -> u32 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+   "line": 57,
+   "kind": "pub(crate)",
+   "text": "pub fn run(&self) -> u32 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+   "line": 64,
+   "kind": "pub(crate)",
+   "text": "pub fn note_agree(&self) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+   "line": 89,
+   "kind": "pub(crate)",
+   "text": "pub fn note_disagree(&self) -> u32 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+   "line": 98,
+   "kind": "pub(crate)",
+   "text": "pub fn pin(&self, level: Option<u32>) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
+   "line": 10,
+   "kind": "pub(crate)",
+   "text": "pub struct ThpLearningCell {",
+   "raw_pointer": false,
+   "category": "type"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
+   "line": 11,
+   "kind": "pub(super)",
+   "text": "pub state: AtomicU64,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
+   "line": 15,
+   "kind": "pub(crate)",
+   "text": "pub const INITIAL: u64 = ((LargeThpShare::SCALE as u64) << 32) | LargeThpShare::SCALE as u64;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
+   "line": 21,
+   "kind": "pub(crate)",
+   "text": "pub fn new() -> Self {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
+   "line": 29,
+   "kind": "pub(crate)",
+   "text": "pub fn observation(resident_pages: u64, sampled_pages: u64) -> Option<LargeThpShare> {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
+   "line": 38,
+   "kind": "pub(crate)",
+   "text": "pub fn snapshot(&self) -> LargeThpEstimator {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
+   "line": 46,
+   "kind": "pub(crate)",
+   "text": "pub fn try_observe(&self, gradient: &LargeThpGradient, observation: LargeThpShare) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
+   "line": 58,
+   "kind": "pub(crate)",
+   "text": "pub fn try_observe_with_prior(",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs",
+   "line": 11,
+   "kind": "pub(crate)",
+   "text": "pub used: AtomicU64,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 134,
+   "kind": "pub(crate)",
+   "text": "pub struct ThpRuntime;",
+   "raw_pointer": false,
+   "category": "type"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 139,
+   "kind": "pub(crate)",
+   "text": "pub fn publish(t: &ThpTuple) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 148,
+   "kind": "pub(crate)",
+   "text": "pub fn current() -> ThpTuple {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 159,
+   "kind": "pub(crate)",
+   "text": "pub fn next_control(request_size: usize) -> (bool, u64) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 191,
+   "kind": "pub(crate)",
+   "text": "pub fn note_premise_failure(request_size: usize) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 197,
+   "kind": "pub(crate)",
+   "text": "pub fn note_valid_observation(request_size: usize, resident_pages: u64, sampled_pages: u64) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 240,
+   "kind": "pub(crate)",
+   "text": "pub fn learned_share(request_size: usize, gradient: &LargeThpGradient) -> LargeThpShare {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 250,
+   "kind": "pub(crate)",
+   "text": "pub fn learning_telemetry() -> [[u64; 5]; CONTROL_GROUP_COUNT] {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 269,
+   "kind": "pub(crate)",
+   "text": "pub fn note_invalidated_observation(request_size: usize) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 289,
+   "kind": "pub(crate)",
+   "text": "pub fn note_realloc_invalidated_by_token(token: u64, request_size: usize) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 303,
+   "kind": "pub(crate)",
+   "text": "pub fn note_observation_error(request_size: usize) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 315,
+   "kind": "pub(crate)",
+   "text": "pub fn control_telemetry() -> [[u64; Self::CONTROL_TELEMETRY_FIELD_COUNT]; CONTROL_GROUP_COUNT]",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 339,
+   "kind": "pub(crate)",
+   "text": "pub fn control_ordinal_probe() -> u64 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 347,
+   "kind": "pub(crate)",
+   "text": "pub fn control_decision_for_ordinal(ordinal: u64) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 357,
+   "kind": "pub(crate)",
+   "text": "pub fn ticket_log_reset() {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 371,
+   "kind": "pub(crate)",
+   "text": "pub fn ticket_log_snapshot() -> ([u64; TICKET_LOG_CAP], u64) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 385,
+   "kind": "pub(crate)",
+   "text": "pub fn ticket_log_capture_supported(entries: &[u64; TICKET_LOG_CAP], cursor: u64) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 403,
+   "kind": "pub(crate)",
+   "text": "pub fn ticket_log_pack(ordinal: u64, selected: bool) -> u64 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 415,
+   "kind": "pub(crate)",
+   "text": "pub fn level_log_snapshot() -> [u8; TICKET_LOG_CAP] {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 427,
+   "kind": "pub(crate)",
+   "text": "pub fn cadence_telemetry() -> [[u64; 5]; CONTROL_GROUP_COUNT] {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 444,
+   "kind": "pub(crate)",
+   "text": "pub fn cadence_level_counters() -> [[[u64; CADENCE_LEVELS]; CONTROL_GROUP_COUNT]; 2] {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 462,
+   "kind": "pub(crate)",
+   "text": "pub fn cadence_pin(group: usize, level: Option<u32>) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 471,
+   "kind": "pub(crate)",
+   "text": "pub fn control_select_for_ordinal(ordinal: u64, level: u32) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 487,
+   "kind": "pub(crate)",
+   "text": "pub fn conflicts() -> u64 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 492,
+   "kind": "pub(crate)",
+   "text": "pub fn ledger() -> &'static ThpBudgetLedger {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 497,
+   "kind": "pub(crate)",
+   "text": "pub fn note_charged(bytes: usize) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 502,
+   "kind": "pub(crate)",
+   "text": "pub fn note_returned(bytes: usize) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 507,
+   "kind": "pub(crate)",
+   "text": "pub fn note_advised(bytes: usize) {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 515,
+   "kind": "pub(crate)",
+   "text": "pub fn charged_total() -> u64 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 521,
+   "kind": "pub(crate)",
+   "text": "pub fn returned_total() -> u64 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+   "line": 527,
+   "kind": "pub(crate)",
+   "text": "pub fn advised_bytes_total() -> u64 {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
+   "line": 17,
+   "kind": "pub(crate)",
+   "text": "pub const UNSET: u8 = 0;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
+   "line": 22,
+   "kind": "pub(crate)",
+   "text": "pub struct ThpTupleCell {",
+   "raw_pointer": false,
+   "category": "type"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
+   "line": 23,
+   "kind": "pub(crate)",
+   "text": "pub state: AtomicU8,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
+   "line": 24,
+   "kind": "pub(crate)",
+   "text": "pub w: [AtomicU64; 5],",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
+   "line": 35,
+   "kind": "pub(crate)",
+   "text": "pub fn new() -> Self {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
+   "line": 52,
+   "kind": "pub(crate)",
+   "text": "pub fn publish(&self, t: &ThpTuple) -> bool {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
+   "line": 74,
+   "kind": "pub(crate)",
+   "text": "pub fn read(&self) -> ThpTuple {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/policy/profile.rs",
+   "line": 232,
+   "kind": "pub(crate)",
+   "text": "pub const fn to_config(self) -> LargeCacheConfig {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/small_segment_pool_config.rs",
+   "line": 107,
+   "kind": "pub(crate)",
+   "text": "pub pool_segments: Option<usize>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/small_segment_pool_config.rs",
+   "line": 113,
+   "kind": "pub(crate)",
+   "text": "pub pool_byte_cap: Option<usize>,",
+   "raw_pointer": false,
+   "category": "field/other"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/small_segment_pool_config.rs",
+   "line": 127,
+   "kind": "pub(crate)",
+   "text": "pub const DEFAULT_POOL_SEGMENTS: usize = 4;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/small_segment_pool_config.rs",
+   "line": 130,
+   "kind": "pub(crate)",
+   "text": "pub const DEFAULT_POOL_BYTE_CAP: usize = 16 * 1024 * 1024;",
+   "raw_pointer": false,
+   "category": "const"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/small_segment_pool_config.rs",
+   "line": 185,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_pool_segments(&self) -> usize {",
+   "raw_pointer": false,
+   "category": "function"
+  },
+  {
+   "file": "crates/core/sefer-policy/src/small_segment_pool_config.rs",
+   "line": 194,
+   "kind": "pub(crate)",
+   "text": "pub const fn resolved_pool_byte_cap(&self) -> usize {",
+   "raw_pointer": false,
+   "category": "function"
+  }
+ ]
+}

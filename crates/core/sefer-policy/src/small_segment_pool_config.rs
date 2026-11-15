@@ -71,7 +71,7 @@
 //! ## Wiring
 //!
 //! `SmallSegmentPoolConfig` is carried as a field of
-//! [`LargeCacheConfig`](crate::alloc_core::config::large_cache_config::LargeCacheConfig) — both are
+//! [`LargeCacheConfig`](crate::large_cache_config::LargeCacheConfig) — both are
 //! `alloc-decommit`-gated construction-time knobs threaded through the SAME
 //! single-config plumbing (`SeferAlloc::with_config` →
 //! `HeapRegistry::claim_lease_with_config` → `HeapCore::new_with_config` →
@@ -104,13 +104,13 @@ pub struct SmallSegmentPoolConfig {
     /// uses the default (4). `Some(0)` disables the pool (immediate release —
     /// the pre-Mechanism-2 behaviour). `Some(n > 0)` caps retention at `n`
     /// segments (subject also to `pool_byte_cap`).
-    pub(crate) pool_segments: Option<usize>,
+    pub pool_segments: Option<usize>,
 
     /// Maximum committed bytes held by the pool. `None` uses the default
     /// (16 MiB). `Some(0)` disables the pool. `Some(n > 0)` caps the pool's
     /// committed RSS; since every small segment is exactly `SEGMENT` bytes, the
     /// effective segment cap is `min(pool_segments, pool_byte_cap / SEGMENT)`.
-    pub(crate) pool_byte_cap: Option<usize>,
+    pub pool_byte_cap: Option<usize>,
 }
 
 #[cfg(feature = "alloc-decommit")]
@@ -124,10 +124,10 @@ impl Default for SmallSegmentPoolConfig {
 #[cfg(feature = "alloc-decommit")]
 impl SmallSegmentPoolConfig {
     /// Default number of pooled small segments: 4.
-    pub(crate) const DEFAULT_POOL_SEGMENTS: usize = 4;
+    pub const DEFAULT_POOL_SEGMENTS: usize = 4;
 
     /// Default pool byte ceiling: 16 MiB (= 4 × the 4 MiB `SEGMENT`).
-    pub(crate) const DEFAULT_POOL_BYTE_CAP: usize = 16 * 1024 * 1024;
+    pub const DEFAULT_POOL_BYTE_CAP: usize = 16 * 1024 * 1024;
 
     /// The default configuration — pool ENABLED at the production defaults
     /// (4 segments / 16 MiB). Equivalent to `SmallSegmentPoolConfig::new()`.
@@ -178,11 +178,11 @@ impl SmallSegmentPoolConfig {
         self
     }
 
-    // ── Resolution helpers (pub(crate)) ──────────────────────────────────────
+    // ── Resolution helpers (pub) ──────────────────────────────────────
 
     /// Resolve the segment cap. Falls back to the default (4) when unset.
     #[must_use]
-    pub(crate) const fn resolved_pool_segments(&self) -> usize {
+    pub const fn resolved_pool_segments(&self) -> usize {
         match self.pool_segments {
             Some(v) => v,
             None => Self::DEFAULT_POOL_SEGMENTS,
@@ -191,7 +191,7 @@ impl SmallSegmentPoolConfig {
 
     /// Resolve the byte cap. Falls back to the default (16 MiB) when unset.
     #[must_use]
-    pub(crate) const fn resolved_pool_byte_cap(&self) -> usize {
+    pub const fn resolved_pool_byte_cap(&self) -> usize {
         match self.pool_byte_cap {
             Some(v) => v,
             None => Self::DEFAULT_POOL_BYTE_CAP,

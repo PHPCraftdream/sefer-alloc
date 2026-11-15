@@ -1,7 +1,7 @@
-//! [`Profile`](crate::Profile) — a small builder over two independent,
-//! named, measured axes ([`SmallPoolPolicy`](crate::SmallPoolPolicy) and
-//! [`LargeCachePolicy`](crate::LargeCachePolicy)) that together resolve to a
-//! [`LargeCacheConfig`](crate::LargeCacheConfig) (feature = `alloc-decommit`).
+//! [`Profile`](crate::policy::profile::Profile) — a small builder over two independent,
+//! named, measured axes ([`SmallPoolPolicy`](crate::policy::small_pool_policy::SmallPoolPolicy) and
+//! [`LargeCachePolicy`](crate::policy::large_cache_policy::LargeCachePolicy)) that together resolve to a
+//! [`LargeCacheConfig`](crate::large_cache_config::LargeCacheConfig) (feature = `alloc-decommit`).
 //!
 //! ## Why this exists
 //!
@@ -30,9 +30,9 @@
 //!    resident per heap indefinitely, yet the variant's own name promised an
 //!    "RSS" outcome. Fixed by dropping the `Rss` name entirely: the low
 //!    large-cache-headroom choice is now
-//!    [`LargeCachePolicy::LowHeadroom`](crate::LargeCachePolicy::LowHeadroom),
+//!    [`LargeCachePolicy::LowHeadroom`](crate::policy::large_cache_policy::LargeCachePolicy::LowHeadroom),
 //!    whose own doc states plainly that it is a decay floor, not a cap, and
-//!    points to [`LargeCacheConfig::budget_bytes`](crate::LargeCacheConfig::budget_bytes)
+//!    points to [`LargeCacheConfig::budget_bytes`](crate::large_cache_config::LargeCacheConfig::budget_bytes)
 //!    for an actual admission
 //!    ceiling.
 //! 2. **The old `Profile::Throughput` silently lowered the large-cache
@@ -44,22 +44,22 @@
 //!    (87.5 % vs 100.0 %) once burst occupancy genuinely exceeds 64 MiB —
 //!    the exact regime a workload literally named "throughput" is likely to
 //!    hit. Splitting the axes means a caller who wants ONLY the small-pool
-//!    latency win ([`SmallPoolPolicy::Throughput`](crate::SmallPoolPolicy::Throughput))
+//!    latency win ([`SmallPoolPolicy::Throughput`](crate::policy::small_pool_policy::SmallPoolPolicy::Throughput))
 //!    no longer has to also
 //!    accept the large-cache narrowing as a package deal — and the large
 //!    cache's policies
-//!    ([`LargeCachePolicy::LowHeadroom`](crate::LargeCachePolicy::LowHeadroom) /
-//!    [`LargeCachePolicy::Trimmed64MiB`](crate::LargeCachePolicy::Trimmed64MiB) /
-//!    [`LargeCachePolicy::Default`](crate::LargeCachePolicy::Default))
+//!    ([`LargeCachePolicy::LowHeadroom`](crate::policy::large_cache_policy::LargeCachePolicy::LowHeadroom) /
+//!    [`LargeCachePolicy::Trimmed64MiB`](crate::policy::large_cache_policy::LargeCachePolicy::Trimmed64MiB) /
+//!    [`LargeCachePolicy::Default`](crate::policy::large_cache_policy::LargeCachePolicy::Default))
 //!    are named and documented for what they measurably cost, not what a
 //!    "Throughput"-branded bundle implied.
 //!
 //! Splitting into two independent axes also fixes the underlying structural
 //! problem: bundling meant evidence from ONE workload (small-pool
 //! single-thread teardown churn, or large-cache burst/idle) silently set
-//! policy for the OTHER, unrelated tier. [`Profile`](crate::Profile) now composes
-//! [`SmallPoolPolicy`](crate::SmallPoolPolicy) and
-//! [`LargeCachePolicy`](crate::LargeCachePolicy) independently — any of the
+//! policy for the OTHER, unrelated tier. [`Profile`](crate::policy::profile::Profile) now composes
+//! [`SmallPoolPolicy`](crate::policy::small_pool_policy::SmallPoolPolicy) and
+//! [`LargeCachePolicy`](crate::policy::large_cache_policy::LargeCachePolicy) independently — any of the
 //! 2×4 combinations is directly constructible, each axis documents its own
 //! citations, and a future measured axis value can be added to ONE axis
 //! without touching the other.
@@ -89,16 +89,16 @@
 //! `production`'s feature list and `Profile::DEFAULT` remains
 //! `LargeCachePolicy::Default` — this is additive, not a default change.**
 //!
-//! The low-level [`LargeCacheConfig`](crate::LargeCacheConfig) /
-//! [`SmallSegmentPoolConfig`](crate::SmallSegmentPoolConfig) builders
-//! remain the full-control escape hatch — [`Profile`](crate::Profile) is a convenience
+//! The low-level [`LargeCacheConfig`](crate::large_cache_config::LargeCacheConfig) /
+//! [`SmallSegmentPoolConfig`](crate::small_segment_pool_config::SmallSegmentPoolConfig) builders
+//! remain the full-control escape hatch — [`Profile`](crate::policy::profile::Profile) is a convenience
 //! layer over them, not a replacement: `LargeCacheConfig::new().headroom_bytes(n)…`
 //! and `SmallSegmentPoolConfig::new().pool_segments(n)…` are always
 //! available for exact manual tuning outside the named axis values.
 use super::large_cache_policy::LargeCachePolicy;
 use super::small_pool_policy::SmallPoolPolicy;
-use crate::alloc_core::config::large_cache_config::LargeCacheConfig;
-use crate::alloc_core::config::small_segment_pool_config::SmallSegmentPoolConfig;
+use crate::large_cache_config::LargeCacheConfig;
+use crate::small_segment_pool_config::SmallSegmentPoolConfig;
 
 /// A small builder composing the two independent, named, measured
 /// configuration axes: [`SmallPoolPolicy`] (small-segment-pool retention)
@@ -106,10 +106,10 @@ use crate::alloc_core::config::small_segment_pool_config::SmallSegmentPoolConfig
 ///
 /// Construct with [`Profile::new`] (equivalent to
 /// [`Profile::DEFAULT`] — both axes at `Default`, i.e. byte-identical to
-/// [`crate::SeferAlloc::new`]) and chain [`small_pool`](Self::small_pool) /
+/// `SeferAlloc::new`) and chain [`small_pool`](Self::small_pool) /
 /// [`large_cache`](Self::large_cache) to opt into a measured, named
 /// alternative on either axis independently. Consume via
-/// [`LargeCacheConfig::for_profile`] or [`crate::SeferAlloc::with_profile`];
+/// [`LargeCacheConfig::for_profile`] or `SeferAlloc::with_profile`;
 /// both are `const fn`, so a profile can be installed directly in a
 /// `#[global_allocator]` `static` initialiser (illustrative, not a doctest
 /// per this project's "no doctests" rule):
@@ -146,14 +146,14 @@ impl Default for Profile {
 
 #[cfg(feature = "alloc-decommit")]
 impl Profile {
-    /// Both axes at `Default` — byte-identical to [`crate::SeferAlloc::new`].
+    /// Both axes at `Default` — byte-identical to `SeferAlloc::new`.
     /// Equivalent to [`Profile::new`].
     pub const DEFAULT: Self = Self::new();
 
     /// Construct a profile with both axes at their `production` defaults
     /// (`SmallPoolPolicy::Default` + `LargeCachePolicy::Default`, i.e. `(4,
     /// 16 MiB)` small pool + `256 MiB` large-cache headroom — the SAME
-    /// defaults [`crate::SeferAlloc::new`] already uses). Chain
+    /// defaults `SeferAlloc::new` already uses). Chain
     /// [`small_pool`](Self::small_pool) / [`large_cache`](Self::large_cache)
     /// to opt into a named alternative on either axis.
     #[must_use]
@@ -210,17 +210,13 @@ impl Profile {
         match self.large_cache {
             LargeCachePolicy::LowHeadroom => 16 * 1024 * 1024,
             LargeCachePolicy::Trimmed64MiB => 64 * 1024 * 1024,
-            LargeCachePolicy::Default => {
-                crate::alloc_core::config::large_cache_config::DEFAULT_HEADROOM_BYTES
-            }
+            LargeCachePolicy::Default => crate::large_cache_config::DEFAULT_HEADROOM_BYTES,
             // Same numeric floor as `Default` — see `DiverseTurnover`'s own
             // doc comment for why this variant's real effect comes from the
             // `large-cache-extended` Cargo feature (a compile-time slot-count
             // change `Profile` cannot express), not from a different
             // `headroom_bytes` value.
-            LargeCachePolicy::DiverseTurnover => {
-                crate::alloc_core::config::large_cache_config::DEFAULT_HEADROOM_BYTES
-            }
+            LargeCachePolicy::DiverseTurnover => crate::large_cache_config::DEFAULT_HEADROOM_BYTES,
         }
     }
 
@@ -229,7 +225,7 @@ impl Profile {
     /// currently-set policy. Equivalent to, and used by,
     /// [`LargeCacheConfig::for_profile`].
     #[must_use]
-    pub(crate) const fn to_config(self) -> LargeCacheConfig {
+    pub const fn to_config(self) -> LargeCacheConfig {
         LargeCacheConfig::new()
             .headroom_bytes(self.headroom_bytes())
             .pool(

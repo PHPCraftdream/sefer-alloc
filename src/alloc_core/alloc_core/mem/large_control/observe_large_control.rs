@@ -31,14 +31,7 @@ pub(crate) fn observe_large_control(base: *mut u8) {
         ThpRuntime::note_observation_error(request_size);
         return;
     };
-    let group: u64 = match LargeThpRequestGroup::of_bytes(request_bytes) {
-        LargeThpRequestGroup::Under1MiB => 0,
-        LargeThpRequestGroup::MiB1To8 => 1,
-        LargeThpRequestGroup::MiB8To32 => 2,
-        LargeThpRequestGroup::MiB32To128 => 3,
-        LargeThpRequestGroup::MiB128To512 => 4,
-        LargeThpRequestGroup::Over512MiB => 5,
-    };
+    let group: u64 = LargeThpRequestGroup::of_bytes(request_bytes).index() as u64;
     if token == group + 9 {
         ThpRuntime::note_premise_failure(request_size);
         return;

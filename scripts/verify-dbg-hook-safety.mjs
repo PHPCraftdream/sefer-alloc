@@ -175,12 +175,12 @@ const PURE_OBSERVERS = [
   // WB-3: read-only copy of the overflow decay / ingress / latch state.
   "src/registry/heap_core/diag/queries.rs::dbg_depot_epoch",
   // G1-K7: pure const resolution of a by-value config.
-  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_depot_budget",
+  "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_depot_budget",
   // CF-2: pure const resolution of a by-value config.
-  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_route_pin_cache_slots",
-  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_huge_page_after_segments",
+  "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_route_pin_cache_slots",
+  "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_huge_page_after_segments",
   // J13b: pure const resolution of a by-value config into a Copy tuple.
-  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_thp_tuple",
+  "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_thp_tuple",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",

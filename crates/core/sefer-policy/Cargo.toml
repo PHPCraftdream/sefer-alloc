@@ -1,0 +1,56 @@
+[package]
+name = "sefer-policy"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Allocation policy layer of the sefer allocator: const-buildable configuration types (Profile, LargeCacheConfig, LargeCacheMode, SmallSegmentPoolConfig), the configuration-policy types, the medium-promotion reachability predicate and the Large-THP policy runtime (tuple, curves, cadence, codec) — zero own unsafe, no_std."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/core/sefer-policy"
+documentation = "https://docs.rs/sefer-policy"
+keywords = ["allocator", "configuration", "policy", "thp", "no-std"]
+categories = ["memory-management", "config", "no-std"]
+
+# docs.rs: render with all features so the alloc-decommit-gated types
+# (Profile / LargeCacheConfig / LargeCacheMode / SmallSegmentPoolConfig and
+# the Large-THP policy runtime) appear with their feature badges.
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+# Feature-mesh mirror of the sefer-alloc root-crate features the moved
+# sources gate on. The root crate forwards each of these 1:1
+# (`alloc-decommit = ["sefer-policy/alloc-decommit"]`, ...) so every
+# `#[cfg(feature = ...)]` inside the moved files evaluates identically to
+# when they lived in the root crate. None is on by default; none implies
+# another.
+alloc-decommit = []
+alloc-global = []
+bench-internals = []
+internals = []
+large-cache-extended = []
+medium-classes = []
+exact-span-large = []
+large-reserved-capacity = []
+numa-aware = []
+
+[dependencies]
+# Only for `ThpAdvice::classify`'s error type (`aligned_vmem::VmemError`):
+# the THP advice classifier distinguishes pre-syscall validation failures
+# from OS-level partial application by inspecting the aperture crate's
+# error. `default-features = false` — the policy layer touches no OS surface itself.
+aligned-vmem = { path = "../../platform/aligned-vmem", version = "0.2", default-features = false }
+
+[lints.rust]
+# The policy layer is pure safe code (constants, plain structs, `core`
+# atomics): forbid unsafe at the crate root.
+unsafe_code = "forbid"
+# sefer-policy does not use the loom or kani build-time cfgs (those are
+# workspace-only, for the main crate's concurrency harnesses and proof
+# harnesses), so we inherit the unexpected_cfgs policy with an empty
+# check-cfg. The docsrs cfg is well-known (recognized by docs.rs builds)
+# and does not need to be listed here.
+unexpected_cfgs = { level = "warn", check-cfg = [] }

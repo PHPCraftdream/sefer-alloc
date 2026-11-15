@@ -716,6 +716,7 @@ details but independently useful libraries:
 
 ```
 sefer-alloc
+ ├── sefer-policy       (crates/core/sefer-policy)                   — allocator POLICY layer (config types, Large-THP policy runtime) (feature: alloc-core)
  ├── sefer-region       (crates/containers/sefer-region)             — typed handle store (Handle<T>/Region<T>)
  ├── sefer-concurrent   (crates/containers/sefer-concurrent)    — legacy/research concurrent tier (feature: experimental/pinning)
  ├── aligned-vmem       (crates/platform/aligned-vmem)               — OS virtual-memory aperture           (feature: alloc-core)
@@ -738,7 +739,7 @@ in under the feature gates noted above (`alloc-core`, `alloc-global`,
 `sefer-ghost` unconditionally (it compiles to no code in production builds),
 and `tagged-index-stack` is verification-only (not a runtime dependency).
 
-(A former twelfth crate, `ring-mpsc` — a standalone bounded MPSC index ring
+(A former crate, `ring-mpsc` — a standalone bounded MPSC index ring
 + DirtyRouter — was removed from the workspace: it had zero production
 consumers; its old proposed ring replacement was investigated and found
 NO-GO before the terminal-sidecar cutover, see
@@ -748,7 +749,9 @@ Per-crate status:
 
 | crate | crates.io | docs.rs |
 |---|---|---|
+| `sefer-policy` | [![Crates.io](https://img.shields.io/crates/v/sefer-policy.svg)](https://crates.io/crates/sefer-policy) | [![Documentation](https://docs.rs/sefer-policy/badge.svg)](https://docs.rs/sefer-policy) |
 | `sefer-region` | [![Crates.io](https://img.shields.io/crates/v/sefer-region.svg)](https://crates.io/crates/sefer-region) | [![Documentation](https://docs.rs/sefer-region/badge.svg)](https://docs.rs/sefer-region) |
+| `sefer-concurrent` | [![Crates.io](https://img.shields.io/crates/v/sefer-concurrent.svg)](https://crates.io/crates/sefer-concurrent) | [![Documentation](https://docs.rs/sefer-concurrent/badge.svg)](https://docs.rs/sefer-concurrent) |
 | `aligned-vmem` | [![Crates.io](https://img.shields.io/crates/v/aligned-vmem.svg)](https://crates.io/crates/aligned-vmem) | [![Documentation](https://docs.rs/aligned-vmem/badge.svg)](https://docs.rs/aligned-vmem) |
 | `numa-shim` | [![Crates.io](https://img.shields.io/crates/v/numa-shim.svg)](https://crates.io/crates/numa-shim) | [![Documentation](https://docs.rs/numa-shim/badge.svg)](https://docs.rs/numa-shim) |
 | `malloc-bench-rs` | [![Crates.io](https://img.shields.io/crates/v/malloc-bench-rs.svg)](https://crates.io/crates/malloc-bench-rs) | [![Documentation](https://docs.rs/malloc-bench-rs/badge.svg)](https://docs.rs/malloc-bench-rs) |
@@ -786,6 +789,7 @@ the line to begin with the attribute, not a `//` prefix.
 | `once-ptr-cell` | `crates/primitives/once-ptr-cell/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe impl Send/Sync` for the `AtomicPtr`-backed cell + `NonNull::new_unchecked`; every site has `# Safety` / `// SAFETY:` |
 | `globalalloc-model` | `crates/verify/globalalloc-model/` | `#![allow(unsafe_code)]` — two documented reasons: (a) the `unsafe trait RawAllocator` (its impls must return valid pointers for the requested layout), every impl + call carrying `// SAFETY:`; (b) `DoubleFreeOk::new`, the unforgeable consent token for the M2 double-free oracle, an `unsafe fn` declaration carrying its own `# Safety` contract |
 | `proc-memstat` | `crates/platform/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
+| `sefer-policy` | `crates/core/sefer-policy/` | `#![forbid(unsafe_code)]` — zero own `unsafe`, a single dependency (`aligned-vmem`, error type only); pure `core` arithmetic, constants and `core::sync::atomic` policy state (the former `src/alloc_core/config` layer, moved P1.3) |
 | `sefer-region` | `crates/containers/sefer-region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/containers/sefer-region/README.md` "## Safety") |
 | `sefer-concurrent` | `crates/containers/sefer-concurrent/` | `#![deny(unsafe_code)]` — one confined seam, `src/epoch/hand.rs` (the epoch-tier `AtomicSlot<T>` membrane over `crossbeam-epoch`); re-exported through sefer-alloc under `experimental`/`pinning` |
 | `size-classes` | `crates/primitives/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |

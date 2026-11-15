@@ -78,14 +78,7 @@ pub(crate) fn advise_fresh_large(
     if tuple.mode == LargeThpMode::Auto {
         let (selected, _ordinal) = ThpRuntime::next_control(request_size);
         if selected {
-            let group_index = match LargeThpRequestGroup::of_bytes(request_size as u64) {
-                LargeThpRequestGroup::Under1MiB => 0,
-                LargeThpRequestGroup::MiB1To8 => 1,
-                LargeThpRequestGroup::MiB8To32 => 2,
-                LargeThpRequestGroup::MiB32To128 => 3,
-                LargeThpRequestGroup::MiB128To512 => 4,
-                LargeThpRequestGroup::Over512MiB => 5,
-            };
+            let group_index = LargeThpRequestGroup::of_bytes(request_size as u64).index() as u64;
             let success_token = group_index + 1;
             if segment.try_disable_transparent_huge_pages().is_ok() {
                 return (0, success_token);

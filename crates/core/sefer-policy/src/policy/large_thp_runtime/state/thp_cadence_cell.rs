@@ -8,8 +8,8 @@ use super::{AtomicU64, Ordering};
 /// production. The level is derived from one load of this word. Relaxed
 /// accesses suffice: the word publishes no external payload and a stale
 /// level only delays a rate change.
-pub(crate) struct ThpCadenceCell {
-    pub(super) state: AtomicU64,
+pub struct ThpCadenceCell {
+    pub state: AtomicU64,
 }
 
 // Under the mechanism gate the runtime uses only part of this surface; the
@@ -17,7 +17,7 @@ pub(crate) struct ThpCadenceCell {
 #[allow(dead_code)]
 impl ThpCadenceCell {
     /// Run zero: level 0, today's fixed 1-in-8 candidates.
-    pub(crate) const INITIAL: u64 = 0;
+    pub const INITIAL: u64 = 0;
     const RUN_MASK: u64 = 0x1F;
     const MAX_ATTEMPTS: usize = 8;
     /// Diagnostic pin: bit 5 enables it, bits `6..=8` carry the level.
@@ -27,7 +27,7 @@ impl ThpCadenceCell {
     const PIN_MASK: u64 = 0xF << 5;
 
     // Process statics initialize directly; actual-source tests use new().
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             state: AtomicU64::new(Self::INITIAL),
         }
@@ -43,7 +43,7 @@ impl ThpCadenceCell {
     }
 
     /// Current level from one load; bench-internals honours the pin.
-    pub(crate) fn level(&self) -> u32 {
+    pub fn level(&self) -> u32 {
         let word = self.state.load(Ordering::Relaxed);
         #[cfg(feature = "bench-internals")]
         if word & Self::PIN_VALID != 0 {
@@ -54,14 +54,14 @@ impl ThpCadenceCell {
     }
 
     /// Current agreement run from one load (telemetry).
-    pub(crate) fn run(&self) -> u32 {
+    pub fn run(&self) -> u32 {
         Self::run_of(self.state.load(Ordering::Relaxed))
     }
 
     /// Record one agreeing observation. At most eight CAS attempts; false
     /// means the agreement was dropped, which only keeps the rate higher. A
     /// saturated run returns without any read-modify-write.
-    pub(crate) fn note_agree(&self) -> bool {
+    pub fn note_agree(&self) -> bool {
         let mut current = self.state.load(Ordering::Relaxed);
         let mut attempts = 0;
         while attempts < Self::MAX_ATTEMPTS {
@@ -86,7 +86,7 @@ impl ThpCadenceCell {
     /// Record one disagreeing observation: one wait-free `fetch_and` clears
     /// the run, so a disagreement is never lost to contention. Returns the
     /// previous run.
-    pub(crate) fn note_disagree(&self) -> u32 {
+    pub fn note_disagree(&self) -> u32 {
         let previous = self.state.fetch_and(!Self::RUN_MASK, Ordering::Relaxed);
         Self::run_of(previous)
     }
@@ -95,12 +95,18 @@ impl ThpCadenceCell {
     /// The two steps are not one atomic action; call it while no control
     /// decisions are in flight.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn pin(&self, level: Option<u32>) {
+    pub fn pin(&self, level: Option<u32>) {
         self.state.fetch_and(!Self::PIN_MASK, Ordering::Relaxed);
         if let Some(level) = level {
             let level = u64::from(level.min(LargeThpCadence::LEVEL_MAX));
             self.state
                 .fetch_or(Self::PIN_VALID | (level << 6), Ordering::Relaxed);
         }
+    }
+}
+
+impl Default for ThpCadenceCell {
+    fn default() -> Self {
+        Self::new()
     }
 }

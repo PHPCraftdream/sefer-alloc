@@ -3,15 +3,15 @@
 //! (bounded mix and fixed control selector).
 #![allow(dead_code)]
 
-#[path = "../../src/alloc_core/config/policy/large_thp/large_thp_curve.rs"]
+#[path = "../../crates/core/sefer-policy/src/policy/large_thp/large_thp_curve.rs"]
 pub(crate) mod large_thp_curve;
-#[path = "../../src/alloc_core/config/policy/large_thp/large_thp_estimator.rs"]
+#[path = "../../crates/core/sefer-policy/src/policy/large_thp/large_thp_estimator.rs"]
 mod large_thp_estimator;
-#[path = "../../src/alloc_core/config/policy/large_thp/large_thp_gradient.rs"]
+#[path = "../../crates/core/sefer-policy/src/policy/large_thp/large_thp_gradient.rs"]
 mod large_thp_gradient;
-#[path = "../../src/alloc_core/config/policy/large_thp_observation/mod.rs"]
+#[path = "../../crates/core/sefer-policy/src/policy/large_thp_observation/mod.rs"]
 pub(crate) mod large_thp_observation;
-#[path = "../../src/alloc_core/config/policy/large_thp/large_thp_share.rs"]
+#[path = "../../crates/core/sefer-policy/src/policy/large_thp/large_thp_share.rs"]
 mod large_thp_share;
 
 #[allow(unused_imports)]
@@ -26,7 +26,6 @@ pub(crate) mod alloc_core {
             pub(crate) mod large_thp {
                 pub(crate) use super::super::super::super::LargeThpShare;
             }
-            pub(crate) use super::super::super::large_thp_observation;
         }
     }
 }
