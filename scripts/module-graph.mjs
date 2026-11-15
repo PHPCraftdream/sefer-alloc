@@ -8,29 +8,41 @@
 //   node scripts/module-graph.mjs --json                # full graph JSON to stdout
 //   node scripts/module-graph.mjs --csv <path>          # write the nested-edge CSV
 //   node scripts/module-graph.mjs --report [dir]        # write <dir>/MODULE_GRAPH_20261115.md + .csv (default docs/perf)
-//   node scripts/module-graph.mjs --check-backedges     # exit 1 if any back-edge exists (future A1 ratchet;
-//                                                       #   today prints the baseline count and exits 0)
+//   node scripts/module-graph.mjs --emit-baseline       # print the derived ratchet baseline CSV to stdout
+//                                                       #   (docs/layering_baseline.csv is derived from this)
+//   node scripts/module-graph.mjs --check-backedges     # A1 ratchet lint against the baseline CSV (exit 1 on violation)
+//
+// Ratchet semantics (--check-backedges, baseline default docs/layering_baseline.csv,
+// override with --baseline <path>): every known upward back-edge is pinned with its
+// reference count; counts may only shrink, via an explicit edit of the baseline:
+//   a) a NEW back-edge not in the baseline is RED;
+//   b) a count GROWTH beyond the baseline count is RED;
+//   c) a count drop is RED with a "lower the baseline" hint (lower it explicitly);
+//   d) a VANISHED edge with a stale baseline row is RED — same rule as (c).
+// Conduits: the group-wiring mod.rs modules `alloc_core` and `registry` are declared
+// status "conduit" in layers.json — their own re-export edges are never back-edges;
+// references THROUGH them resolve to the defining module (graph-level), so nothing is
+// lost. Layers: segment and route are ONE layer `segment_route` (order 4) until the
+// G1 order decision — their mutual references are same-layer, hence not back-edges.
 //
 // Shared flags: --src <dir> (default src) --config <path>
 //               (default scripts/module-graph/layers.json) --max-sites <N> (default 5)
 //
-// Exit codes: 0 ok; 1 runtime error or (--check-backedges, once the ratchet is
-// armed) check failure; 2 usage error.
+// Exit codes: 0 ok; 1 runtime error or (--check-backedges) check failure or
+// missing/malformed baseline; 2 usage error.
 
 import { writeFileSync } from "node:fs";
 import { buildModuleGraph } from "./module-graph/graph.mjs";
+import { checkBackedges, emitBaseline, loadBaseline } from "./module-graph/layering.mjs";
 import { renderCsv, renderMarkdown, writeReport } from "./module-graph/report.mjs";
 
 const USAGE = `usage: node scripts/module-graph.mjs [--level top|nested] [--json] [--csv <path>]
-                    [--report [dir]] [--check-backedges]
-                    [--src <dir>] [--config <path>] [--max-sites <N>]`;
-
-// A1 flips this to true: --check-backedges then exits 1 on any back-edge.
-const RATCHET_ENFORCED = false;
+                    [--report [dir]] [--check-backedges] [--emit-baseline]
+                    [--baseline <path>] [--src <dir>] [--config <path>] [--max-sites <N>]`;
 
 function parseArgs(argv) {
-  const opts = { src: "src", config: "scripts/module-graph/layers.json", maxSites: 5, modes: [] };
-  const wantValue = new Set(["--src", "--config", "--max-sites", "--csv"]);
+  const opts = { src: "src", config: "scripts/module-graph/layers.json", baseline: "docs/layering_baseline.csv", maxSites: 5, modes: [] };
+  const wantValue = new Set(["--src", "--config", "--max-sites", "--csv", "--baseline"]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const val = () => {
@@ -47,6 +59,7 @@ function parseArgs(argv) {
         break;
       }
       case "--csv": opts.csvPath = val(); opts.modes.push("csv"); break;
+      case "--baseline": opts.baseline = val(); break;
       case "--level": {
         const level = val();
         if (level !== "top" && level !== "nested") throw new Error("--level must be top or nested");
@@ -62,6 +75,7 @@ function parseArgs(argv) {
       }
       case "--json": opts.json = true; opts.modes.push("json"); break;
       case "--check-backedges": opts.checkBackedges = true; opts.modes.push("check"); break;
+      case "--emit-baseline": opts.emitBaseline = true; opts.modes.push("emit"); break;
       default: throw new Error(`unknown flag: ${a}`);
     }
   }
@@ -108,9 +122,25 @@ function run() {
   }
   const g = buildModuleGraph({ srcDir: opts.src, configPath: opts.config, maxSites: opts.maxSites });
   if (opts.checkBackedges) {
-    const n = g.backEdges.length;
-    console.log(`baseline: ${n} back-edges (ratchet target: shrink)`);
-    if (RATCHET_ENFORCED && n > 0) process.exit(1);
+    let baselineRows;
+    try {
+      baselineRows = loadBaseline(opts.baseline);
+    } catch (err) {
+      console.error(`layering lint: cannot load baseline ${opts.baseline}: ${err.message}`);
+      process.exit(1);
+    }
+    const findings = checkBackedges(g, baselineRows, { maxSites: opts.maxSites });
+    if (findings.length === 0) {
+      const n = g.backEdges.length;
+      console.log(`layering lint: OK — ${n} back-edge(s) within the ${baselineRows.length}-row baseline (${opts.baseline})`);
+      return;
+    }
+    console.error(`layering lint: ${findings.length} violation(s) against ${opts.baseline}:`);
+    for (const f of findings) console.error(f.message);
+    process.exit(1);
+  }
+  if (opts.emitBaseline) {
+    process.stdout.write(emitBaseline(g));
     return;
   }
   if (opts.json) {

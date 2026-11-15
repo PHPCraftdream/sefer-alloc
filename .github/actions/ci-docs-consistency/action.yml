@@ -10,6 +10,20 @@ runs:
     - run: node scripts/verify-structure-limits.mjs
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+    # A1 layering lint (plan step A1): ratchet the module graph's upward edges
+    # against docs/layering_baseline.csv. Red on a new back-edge, a ref-count
+    # growth, a shrink without a lowered baseline row, a stale baseline row, or
+    # an unmapped module. Cargo-free; see docs/CI_TIERS.md.
+    - run: node scripts/module-graph.mjs --check-backedges
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    # Cargo-free node suites of the module-graph/classify-tests scripts.
+    - run: node --test tests/module_graph.test.mjs tests/layering_lint.test.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node --test tests/classify_tests.test.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
     - run: node scripts/verify-ci-decomposition.mjs
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}

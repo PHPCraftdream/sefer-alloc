@@ -1,0 +1,14 @@
+# A1 layering ratchet base, derived by node scripts/module-graph.mjs --emit-baseline (layers per scripts/module-graph/layers.json); counts must only shrink, via an explicit edit of this file
+kind,path,count,reason
+backedge,alloc_core.config->alloc_core.segment,5,continuation_bounds reads segment layout
+backedge,alloc_core.platform->alloc_core.config,1,node.rs reads policy config
+backedge,alloc_core.platform->alloc_core.segment,10,platform os.rs reaches segment header/bitmap helpers; P2 relocation candidate
+backedge,alloc_core.segment->alloc_core.alloc_core,8,segment_table route_slots/impl reach AllocCore; P2.0a
+backedge,alloc_core.segment->alloc_core.large,1,terminal_words reach large
+backedge,alloc_core.segment->alloc_core.small,2,segment_header layout asserts reach small
+backedge,registry.heap_core_xthread->global.fallback,1,routing.rs try_with_heap; P2.0d hook
+backedge,registry.segment_route->alloc_core.alloc_core,6,route directory/pin reach AllocCore; P2.0a
+backedge,registry.segment_route->alloc_core.large,1,large_state.rs reaches large
+backedge,registry.segment_route->global.fallback,4,record_exit_lock_giveup; P2.0b
+backedge,registry.segment_route->global.process_exit,4,process_exit_in_progress; P2.0b
+backedge,registry.segment_route->registry.heap_core_xthread,5,route pin.rs -> route_pin_cache; P2.0c

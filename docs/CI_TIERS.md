@@ -69,8 +69,11 @@ models or workloads were executed.
   "skipped", which branch protection treats as passing; a workflow skipped by `paths:` would leave required
   checks pending forever.
 - `docs-consistency` is always on and cheap: the doc/inventory tests (`no_stale_doc_references`,
-  `r1_03_pool_docs_contract`, `unsafe_allow_placement`) and the repository guard scripts that read README,
-  ARCHITECTURE and `ci.yml`. A documents-only change still cannot publish a stale count.
+  `r1_03_pool_docs_contract`, `unsafe_allow_placement`), the repository guard scripts that read README,
+  ARCHITECTURE and `ci.yml`, the A1 layering lint (`node scripts/module-graph.mjs --check-backedges`
+  against `docs/layering_baseline.csv`), and the cargo-free node suites of those scripts
+  (`module_graph`, `layering_lint`, `classify_tests`). A documents-only change still cannot publish a
+  stale count, and a `src/**` change cannot silently add an upward module edge.
 - Concurrency: a newer push to the same PR cancels the older run (`cancel-in-progress` only for
   `pull_request`; main, schedule and dispatch runs are never cancelled).
 - `licenses` (license compatibility of third-party code, plus cargo-deny `bans` and `sources`) is always
