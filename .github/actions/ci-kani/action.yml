@@ -16,3 +16,10 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo kani --features "alloc-core experimental alloc-global internals fastbin alloc-decommit"
+    - name: cargo kani (sefer-concurrent harnesses)
+      # P1.2 moved the epoch `hand_proofs` (AtomicSlot vacant-slot facts) into
+      # the sefer-concurrent crate together with the internals they prove
+      # against; the root invocation above no longer sees them.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo kani -p sefer-concurrent

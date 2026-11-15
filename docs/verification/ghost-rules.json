@@ -411,8 +411,8 @@
       "id": "P13",
       "name": "epoch region remote-free pending flag (false full)",
       "prod": [
-        "src/concurrent/epoch/epoch_region.rs::drain_remote_free",
-        "src/concurrent/epoch/epoch_region.rs::remote_evict"
+        "crates/containers/sefer-concurrent/src/epoch/epoch_region.rs::drain_remote_free",
+        "crates/containers/sefer-concurrent/src/epoch/epoch_region.rs::remote_evict"
       ],
       "invariants": [
         "I1 a remote eviction sets remote_free_pending after pushing to the remote list (under the list mutex)",
@@ -420,7 +420,7 @@
       ],
       "class": "S",
       "loom": [
-        "tests/loom_r11_epoch_false_full.rs"
+        "crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs"
       ],
       "pins": [],
       "registry": [],
@@ -433,8 +433,8 @@
       "id": "P14",
       "name": "epoch AtomicSlot generation/value publication",
       "prod": [
-        "src/concurrent/epoch/hand.rs",
-        "src/concurrent/epoch/epoch_region.rs"
+        "crates/containers/sefer-concurrent/src/epoch/hand.rs",
+        "crates/containers/sefer-concurrent/src/epoch/epoch_region.rs"
       ],
       "invariants": [
         "I1 value is stored Release before generation is observed; readers load generation Acquire, value Acquire, generation Acquire (seqlock-style recheck)",
@@ -442,7 +442,7 @@
       ],
       "class": "S",
       "loom": [
-        "tests/loom_epoch.rs"
+        "crates/containers/sefer-concurrent/tests/loom_epoch.rs"
       ],
       "pins": [],
       "registry": [],
@@ -455,7 +455,7 @@
       "id": "P15",
       "name": "sharded region generation-CAS eviction, token blocks",
       "prod": [
-        "src/concurrent/sharded/sharded_region.rs"
+        "crates/containers/sefer-concurrent/src/sharded/sharded_region.rs"
       ],
       "invariants": [
         "I1 a shard claim CAS (Acquire) pairs with the guard's Release store",
@@ -463,7 +463,7 @@
       ],
       "class": "S",
       "loom": [
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "pins": [],
       "registry": [],
@@ -1085,7 +1085,7 @@
       "class": "protocol",
       "protocol": "P13",
       "files": [
-        "src/concurrent/epoch/epoch_region.rs"
+        "crates/containers/sefer-concurrent/src/epoch/epoch_region.rs"
       ],
       "receiver": "remote_free_pending$",
       "reason": "false-full flag"
@@ -1095,7 +1095,7 @@
       "class": "protocol",
       "protocol": "P14",
       "files": [
-        "src/concurrent/epoch/epoch_region.rs"
+        "crates/containers/sefer-concurrent/src/epoch/epoch_region.rs"
       ],
       "receiver": "len$",
       "reason": "region length"
@@ -1105,7 +1105,7 @@
       "class": "protocol",
       "protocol": "P14",
       "files": [
-        "src/concurrent/epoch/hand.rs"
+        "crates/containers/sefer-concurrent/src/epoch/hand.rs"
       ],
       "fn_not": "_for_tests?$",
       "reason": "generation/value publication"
@@ -1115,7 +1115,7 @@
       "class": "protocol",
       "protocol": "P15",
       "files": [
-        "src/concurrent/sharded/sharded_region.rs"
+        "crates/containers/sefer-concurrent/src/sharded/sharded_region.rs"
       ],
       "receiver_not": "^(PRUNE_CLAIM_CHECKS|NEXT_SHARDED_REGION_ID|self\\.inner\\.next_shard)$",
       "reason": "shard claims, token blocks"
@@ -1124,7 +1124,7 @@
       "id": "P15/sharded-rr",
       "class": "id",
       "files": [
-        "src/concurrent/sharded/sharded_region.rs"
+        "crates/containers/sefer-concurrent/src/sharded/sharded_region.rs"
       ],
       "receiver": "^self\\.inner\\.next_shard$",
       "reason": "round-robin start index, Relaxed fetch_add: any value is correct"
@@ -6605,7 +6605,7 @@
       "id": "epoch/install-release",
       "kind": "R1",
       "protocol": "P14",
-      "file": "src/concurrent/epoch/hand.rs",
+      "file": "crates/containers/sefer-concurrent/src/epoch/hand.rs",
       "fn": "AtomicSlot::install",
       "site": {
         "name": "store",
@@ -6623,8 +6623,8 @@
       ],
       "reason": "install publishes the value with Release; a reader that acquires it sees the installed object",
       "tests": [
-        "tests/loom_epoch.rs",
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_epoch.rs",
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p14_install_release"
     },
@@ -6632,7 +6632,7 @@
       "id": "epoch/evict-cas",
       "kind": "R1",
       "protocol": "P14",
-      "file": "src/concurrent/epoch/hand.rs",
+      "file": "crates/containers/sefer-concurrent/src/epoch/hand.rs",
       "fn": "AtomicSlot::try_evict_at",
       "site": {
         "name": "compare_exchange",
@@ -6651,8 +6651,8 @@
       ],
       "reason": "eviction bumps the generation with an AcqRel CAS from the expected generation; a stale evictor fails and leaves the value",
       "tests": [
-        "tests/loom_epoch.rs",
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_epoch.rs",
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p14_evict_cas"
     },
@@ -6660,7 +6660,7 @@
       "id": "epoch/evict-swap",
       "kind": "R1",
       "protocol": "P14",
-      "file": "src/concurrent/epoch/hand.rs",
+      "file": "crates/containers/sefer-concurrent/src/epoch/hand.rs",
       "fn": "AtomicSlot::try_evict_at",
       "site": {
         "name": "swap",
@@ -6678,8 +6678,8 @@
       ],
       "reason": "only the winning evictor swaps the value out with AcqRel and takes ownership of it",
       "tests": [
-        "tests/loom_epoch.rs",
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_epoch.rs",
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p14_evict_swap"
     },
@@ -6687,7 +6687,7 @@
       "id": "epoch/read-generation",
       "kind": "R1",
       "protocol": "P14",
-      "file": "src/concurrent/epoch/hand.rs",
+      "file": "crates/containers/sefer-concurrent/src/epoch/hand.rs",
       "fn": "AtomicSlot::read_with",
       "site": {
         "name": "load",
@@ -6705,8 +6705,8 @@
       ],
       "reason": "the reader loads the generation with Acquire before and after the value (seqlock recheck)",
       "tests": [
-        "tests/loom_epoch.rs",
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_epoch.rs",
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p14_read_generation"
     },
@@ -6714,7 +6714,7 @@
       "id": "epoch/read-value",
       "kind": "R1",
       "protocol": "P14",
-      "file": "src/concurrent/epoch/hand.rs",
+      "file": "crates/containers/sefer-concurrent/src/epoch/hand.rs",
       "fn": "AtomicSlot::read_with",
       "site": {
         "name": "load",
@@ -6732,8 +6732,8 @@
       ],
       "reason": "the reader loads the value with Acquire between the two generation loads",
       "tests": [
-        "tests/loom_epoch.rs",
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_epoch.rs",
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p14_read_value"
     },
@@ -6741,7 +6741,7 @@
       "id": "epoch/model-bind",
       "kind": "R8",
       "protocol": "P14",
-      "model": "tests/loom_epoch.rs",
+      "model": "crates/containers/sefer-concurrent/tests/loom_epoch.rs",
       "binds": [
         {
           "rule": "epoch/install-release"
@@ -6767,7 +6767,7 @@
       ],
       "reason": "the epoch shadow model (loom cannot run crossbeam-epoch) keeps the production orderings of install, eviction and the seqlock read",
       "tests": [
-        "tests/loom_epoch.rs"
+        "crates/containers/sefer-concurrent/tests/loom_epoch.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p14_model_bind"
     },
@@ -6775,7 +6775,7 @@
       "id": "sharded/model-bind",
       "kind": "R8",
       "protocol": "P15",
-      "model": "tests/loom_sharded.rs",
+      "model": "crates/containers/sefer-concurrent/tests/loom_sharded.rs",
       "binds": [
         {
           "rule": "epoch/install-release"
@@ -6801,7 +6801,7 @@
       ],
       "reason": "the sharded shadow model of the generation-CAS eviction keeps the production AtomicSlot orderings",
       "tests": [
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p15_model_bind"
     },
@@ -6809,7 +6809,7 @@
       "id": "sharded/claim-cas",
       "kind": "R1",
       "protocol": "P15",
-      "file": "src/concurrent/sharded/sharded_region.rs",
+      "file": "crates/containers/sefer-concurrent/src/sharded/sharded_region.rs",
       "fn": "ShardedRegion::claim_or_get_shard",
       "site": {
         "name": "compare_exchange",
@@ -6828,7 +6828,7 @@
       ],
       "reason": "a shard is claimed by a CAS with Acquire on success, pairing with the previous token release",
       "tests": [
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p15_claim_cas"
     },
@@ -6836,7 +6836,7 @@
       "id": "sharded/bind-cas",
       "kind": "R1",
       "protocol": "P15",
-      "file": "src/concurrent/sharded/sharded_region.rs",
+      "file": "crates/containers/sefer-concurrent/src/sharded/sharded_region.rs",
       "fn": "ShardedRegion::bind_current_thread_to_shard",
       "site": {
         "name": "compare_exchange",
@@ -6855,7 +6855,7 @@
       ],
       "reason": "binding the current thread claims its shard with the same Acquire CAS",
       "tests": [
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p15_bind_cas"
     },
@@ -6863,7 +6863,7 @@
       "id": "sharded/release-store",
       "kind": "R1",
       "protocol": "P15",
-      "file": "src/concurrent/sharded/sharded_region.rs",
+      "file": "crates/containers/sefer-concurrent/src/sharded/sharded_region.rs",
       "fn": "ErasedGuard::drop",
       "site": {
         "name": "store",
@@ -6881,7 +6881,7 @@
       ],
       "reason": "a dying token releases its shard with Release, publishing its shard writes to the next claimer",
       "tests": [
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p15_release_store"
     },
@@ -6889,7 +6889,7 @@
       "id": "sharded/death-release",
       "kind": "R1",
       "protocol": "P15",
-      "file": "src/concurrent/sharded/sharded_region.rs",
+      "file": "crates/containers/sefer-concurrent/src/sharded/sharded_region.rs",
       "fn": "TokenBlock::drop",
       "site": {
         "name": "fetch_add",
@@ -6907,7 +6907,7 @@
       ],
       "reason": "a token block death is counted with Release after its claims are released; claimers prune with Acquire",
       "tests": [
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p15_death_release"
     },
@@ -6915,7 +6915,7 @@
       "id": "sharded/prune-acquire",
       "kind": "R1",
       "protocol": "P15",
-      "file": "src/concurrent/sharded/sharded_region.rs",
+      "file": "crates/containers/sefer-concurrent/src/sharded/sharded_region.rs",
       "fn": "prune_dead_claims",
       "site": {
         "name": "load",
@@ -6933,7 +6933,7 @@
       ],
       "reason": "pruning reads the death epoch with Acquire, pairing with the Release death count",
       "tests": [
-        "tests/loom_sharded.rs"
+        "crates/containers/sefer-concurrent/tests/loom_sharded.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p15_prune_acquire"
     },

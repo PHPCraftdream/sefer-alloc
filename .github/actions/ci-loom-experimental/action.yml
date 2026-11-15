@@ -15,7 +15,7 @@ runs:
     # therefore never matched, failing this step even though every test
     # in both binaries passed.
     - run: |
-        cargo test --release --features "experimental tagged-index-stack/loom" \
+        cargo test --release -p sefer-concurrent \
           --test loom_sharded \
           --test loom_epoch \
           --test loom_r11_epoch_false_full 2>&1 | tee "$RUNNER_TEMP/loom-experimental.log"

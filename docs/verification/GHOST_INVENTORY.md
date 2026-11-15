@@ -251,31 +251,31 @@ Decision: **keep+R8+R3+R5** — G4: no atomics of its own. R3 depot/flush-reload
 
 ### P13 — epoch region remote-free pending flag (false full)
 
-Prod: `src/concurrent/epoch/epoch_region.rs::drain_remote_free`, `src/concurrent/epoch/epoch_region.rs::remote_evict`.
+Prod: `crates/containers/sefer-concurrent/src/epoch/epoch_region.rs::drain_remote_free`, `crates/containers/sefer-concurrent/src/epoch/epoch_region.rs::remote_evict`.
 
 - I1 a remote eviction sets remote_free_pending after pushing to the remote list (under the list mutex)
 - I2 a full region drains the remote list before reporting full
-- loom: `tests/loom_r11_epoch_false_full.rs`
+- loom: `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs`
 
 Decision: **keep+R8** — loom and crossbeam-epoch are incompatible
 
 ### P14 — epoch AtomicSlot generation/value publication
 
-Prod: `src/concurrent/epoch/hand.rs`, `src/concurrent/epoch/epoch_region.rs`.
+Prod: `crates/containers/sefer-concurrent/src/epoch/hand.rs`, `crates/containers/sefer-concurrent/src/epoch/epoch_region.rs`.
 
 - I1 value is stored Release before generation is observed; readers load generation Acquire, value Acquire, generation Acquire (seqlock-style recheck)
 - I2 eviction CASes generation AcqRel then swaps value AcqRel
-- loom: `tests/loom_epoch.rs`
+- loom: `crates/containers/sefer-concurrent/tests/loom_epoch.rs`
 
 Decision: **keep+R8** — G8: permanent shadow (loom cannot run crossbeam-epoch); R1 pins every AtomicSlot install / eviction / seqlock-read ordering in hand.rs and R8 binds the loom_epoch model lines to them.
 
 ### P15 — sharded region generation-CAS eviction, token blocks
 
-Prod: `src/concurrent/sharded/sharded_region.rs`.
+Prod: `crates/containers/sefer-concurrent/src/sharded/sharded_region.rs`.
 
 - I1 a shard claim CAS (Acquire) pairs with the guard's Release store
 - I2 TOKEN_BACKING_DEATHS is bumped Release after a token block dies; claimers prune with Acquire
-- loom: `tests/loom_sharded.rs`
+- loom: `crates/containers/sefer-concurrent/tests/loom_sharded.rs`
 
 Decision: **keep+R8** — G8: permanent shadow; R1 pins the shard claim / bind CAS, the release store and the token-death Release / Acquire pair in sharded_region.rs; R8 binds the loom_sharded generation-CAS model lines to the AtomicSlot rules.
 

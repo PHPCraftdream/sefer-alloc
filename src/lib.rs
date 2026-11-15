@@ -99,18 +99,20 @@
 //!
 //! Runnable form: `tests/region_invariants.rs`.
 
-// ── Workspace: ten independently-publishable companion crates ────────────────
+// ── Workspace: twelve independently-publishable companion crates ─────────────
 //
-// The workspace extracted ten building blocks that can also be used
-// standalone. Five are runtime dependencies, with allocator companions
+// The workspace extracted twelve building blocks that can also be used
+// standalone. Seven are runtime dependencies, with allocator companions
 // selected by features; four are development infrastructure, and
 // `tagged-index-stack` is verification-only:
 //
 //   sefer-region       (crates/sefer-region)             — typed handle store (this re-export; runtime, no feature gate)
+//   sefer-concurrent   (crates/containers/sefer-concurrent) — legacy/research concurrent tier (feature: experimental/pinning)
 //   aligned-vmem       (crates/aligned-vmem)               — OS virtual-memory aperture          (feature: alloc-core)
 //   numa-shim          (crates/numa-shim)               — NUMA detection + binding            (feature: numa-aware)
 //   once-ptr-cell      (crates/once-ptr-cell)      — lazy CAS-published pointer cell     (feature: alloc-core)
 //   size-classes       (crates/size-classes)       — const-built size-class tables       (feature: alloc-core)
+//   sefer-ghost        (crates/primitives/sefer-ghost) — checking-build-only ghost_assert!/ghost_event! (always; no feature gate)
 //   tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack (verification-only; not a runtime dependency)
 //   malloc-bench-rs    (crates/malloc-bench-rs)       — portable GlobalAlloc bench harness  (dev-only)
 //   globalalloc-model  (crates/globalalloc-model)  — differential op-stream test harness (dev-only)
@@ -288,11 +290,17 @@
 //                             dereferences via `sidecar::deref[_mut]`.
 //                             (under `large-cache-extended`)
 //
-//    Research / older tiers (not in production build):
-//      * `concurrent::epoch::hand`   — epoch-tier AtomicSlot<T>. (under `experimental`, legacy/research-tier)
-//
 //  So "the `unsafe` lives in named modules" is enforced by the compiler in
 //  EVERY configuration. Verifiable: `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`
+//
+//  Outside the src/ tier-1 inventory above (the canonical grep of src/ only),
+//  one WORKSPACE-CRATE seam exists; it is a dependency crate, not a root
+//  `src/` module, so it is documented here, below the closing line, and is
+//  NOT part of the src/ tier-1 enumeration:
+//
+//    * `sefer-concurrent::epoch::hand` (crates/containers/sefer-concurrent) —
+//                             epoch-tier AtomicSlot<T>. (root `experimental`
+//                             enables the crate; legacy/research-tier)
 //
 // ── The soundness boundary is WIDER than the unsafe-syntax boundary ────────────
 //
