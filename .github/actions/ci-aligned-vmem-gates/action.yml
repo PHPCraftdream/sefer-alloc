@@ -285,7 +285,7 @@ runs:
     # every major-breaking lint is skipped as "already accounted for" --
     # exactly what 0.2.0's documented BREAKING change
     # (`Reservation::from_raw_parts` gained a `granted_huge` parameter, see
-    # crates/aligned-vmem/CHANGELOG.md) requires. The step is kept anyway because it
+    # crates/platform/aligned-vmem/CHANGELOG.md) requires. The step is kept anyway because it
     # becomes discriminating the moment 0.2.0 is the published baseline: a
     # later 0.2.1/0.2.x that breaks API shape then fails here. Until then,
     # do NOT read a green result from this step as "no unintended breaking

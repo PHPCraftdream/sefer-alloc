@@ -1,7 +1,7 @@
 //! Root compile-fail driver for `tagged-index-stack`: one
 //! negative-regression test per fixture, each building a
 //! deliberately-broken fixture crate under
-//! `crates/tagged-index-stack/tests/compile_fail/<fixture>/`
+//! `crates/primitives/tagged-index-stack/tests/compile_fail/<fixture>/`
 //! in an out-of-process `cargo build` and asserting it fails with SPECIFIC
 //! errors (the test count is deliberately not quoted here — it drifts as
 //! new hazards get pinned; `tests/support/tagged_index_stack_compile_fail.rs`
@@ -153,7 +153,7 @@ fn diagnostic_parts(error: &CargoErrorDiagnostic, fixture_dir: &str) -> (String,
 fn is_tagged_index_stack_source(span: &compile_fail_support::CargoDiagnosticSpan) -> bool {
     span.file_name
         .replace('\\', "/")
-        .ends_with("/crates/tagged-index-stack/src/lib.rs")
+        .ends_with("/crates/primitives/tagged-index-stack/src/lib.rs")
 }
 
 /// API-boundary regression: two `ArrayLinks` backings plus one `StackHead`
@@ -173,11 +173,11 @@ fn is_tagged_index_stack_source(span: &compile_fail_support::CargoDiagnosticSpan
 /// no route from a shipped [`ArrayIndexStack`] to a `&StackHead`, so no
 /// competing binding around its head — is proven by the compile-fail
 /// oracle `competing_binding_around_array_index_stack_head_must_not_compile`
-/// below (fixture under `crates/tagged-index-stack/tests/compile_fail/array_index_stack_head/`).
+/// below (fixture under `crates/primitives/tagged-index-stack/tests/compile_fail/array_index_stack_head/`).
 /// The storage-binding rationale is in
 /// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`.
 ///
-/// The fixture at `crates/tagged-index-stack/tests/compile_fail/two_backings/src/main.rs` is exactly
+/// The fixture at `crates/primitives/tagged-index-stack/tests/compile_fail/two_backings/src/main.rs` is exactly
 /// two independent
 /// `ArrayLinks` backings (`a`, `b`) plus one `StackHead<16>`, with the
 /// stack's `push`/`pop` called externally against each. It must fail with
@@ -209,7 +209,7 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
 /// the extraction route is unexpressible and this fixture is the structural
 /// oracle.
 ///
-/// The fixture at `crates/tagged-index-stack/tests/compile_fail/array_index_stack_head/src/main.rs` tries
+/// The fixture at `crates/primitives/tagged-index-stack/tests/compile_fail/array_index_stack_head/src/main.rs` tries
 /// both routes: a generic `fn steal_head<S: StackStorage<16>>` (must fail with
 /// **E0277**, the trait bound `ArrayIndexStack<16, 64>: StackStorage<16>` not
 /// satisfied), a direct `owned.head()` method call (must fail with **E0599**,
@@ -336,8 +336,8 @@ fn hook_call_requires_unsafe_block() {
 /// bounds must stay enforced — a `TaggedIndex<0>` and a `TaggedIndex<17>`
 /// must NOT compile.
 ///
-/// The fixtures at `crates/tagged-index-stack/tests/compile_fail/index_bits_zero/src/main.rs` and
-/// `crates/tagged-index-stack/tests/compile_fail/index_bits_seventeen/src/main.rs` each read the
+/// The fixtures at `crates/primitives/tagged-index-stack/tests/compile_fail/index_bits_zero/src/main.rs` and
+/// `crates/primitives/tagged-index-stack/tests/compile_fail/index_bits_seventeen/src/main.rs` each read the
 /// associated constant of an out-of-range instantiation (`INDEX_BITS` of 0
 /// and 17 respectively). Both must fail with **E0080** carrying the crate's
 /// own assert message: `INDEX_BITS must be in 1..=16: the tag half must keep
@@ -483,7 +483,7 @@ fn array_index_stack_capacity_new_above_index_mask_must_not_compile() {
 fn array_index_stack_capacity_default_above_index_mask_must_not_compile() {
     assert_invalid_capacity_fixture_must_not_compile(
         "array_index_stack_capacity_default",
-        "crates/tagged-index-stack/src/imp.rs",
+        "crates/primitives/tagged-index-stack/src/imp.rs",
     );
 }
 
@@ -504,7 +504,7 @@ fn array_index_stack_capacity_default_above_index_mask_must_not_compile() {
 /// fix, the build also produced the E0433 unresolved-crate error on top of the
 /// `compile_error!`.
 ///
-/// The fixture at `crates/tagged-index-stack/tests/compile_fail/loom_cfg_without_feature/src/main.rs`
+/// The fixture at `crates/primitives/tagged-index-stack/tests/compile_fail/loom_cfg_without_feature/src/main.rs`
 /// deliberately references NO crate items: it only declares the path
 /// dependency (so the crate compiles) and its `fn main() {}` is empty — the
 /// dependency's `compile_error!` is the only diagnostic expected.

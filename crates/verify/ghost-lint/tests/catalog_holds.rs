@@ -6,7 +6,7 @@ use std::process::Command;
 
 #[test]
 fn catalog_rules_hold_on_the_repository() {
-    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../..");
     let out = Command::new(env!("CARGO_BIN_EXE_ghost-lint"))
         .args(["check", "--root", root])
         .output()

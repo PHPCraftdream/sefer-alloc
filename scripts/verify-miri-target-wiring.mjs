@@ -8,6 +8,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(root, p), 'utf8');
+// Workspace crates live one theme folder deep (crates/<theme>/<crate>/…);
+// resolve a package name to its directory by scanning the two-level layout.
+const pkgDirs = new Map();
+for (const theme of readdirSync(join(root, 'crates'))) {
+  let crates;
+  try { crates = readdirSync(join(root, 'crates', theme)); } catch { continue; }
+  for (const crate of crates) {
+    const manifest = join(root, 'crates', theme, crate, 'Cargo.toml');
+    if (!existsSync(manifest)) continue;
+    const name = readFileSync(manifest, 'utf8').match(/^\s*name\s*=\s*"([\w-]+)"/m)?.[1];
+    if (name) pkgDirs.set(name, `crates/${theme}/${crate}`);
+  }
+}
+const pkgPath = (pkg, rest) => (pkg ? `${pkgDirs.get(pkg) ?? `crates/${pkg}`}/${rest}` : rest);
 const failures = [];
 const fail = (s) => failures.push(s);
 const tokens = (s) => (Array.isArray(s) ? s : String(s ?? '').split(/[\s,]+/)).filter(Boolean);
@@ -101,7 +115,7 @@ function positiveMiri(ast, positive = true) {
 }
 const graphs = new Map();
 function closure(r) {
-  const path = r.pkg ? `crates/${r.pkg}/Cargo.toml` : 'Cargo.toml';
+  const path = r.pkg ? pkgPath(r.pkg, 'Cargo.toml') : 'Cargo.toml';
   if (!graphs.has(path)) {
     const text = read(path).replace(/^\s*#.*$/gm, '');
     const section = text.match(/^\[features\]\s*\n([\s\S]*?)(?=^\[|$(?![\s\S]))/m)?.[1] ?? '';
@@ -201,7 +215,7 @@ try {
       if (!r.reason?.trim() || !r.card) fail(`${label(r)}: WAIVED requires reason and card`);
       continue;
     }
-    const path = r.pkg ? `crates/${r.pkg}/tests/${r.test}.rs` : `tests/${r.test}.rs`;
+    const path = r.pkg ? pkgPath(r.pkg, `tests/${r.test}.rs`) : `tests/${r.test}.rs`;
     if (!existsSync(join(root, path))) { fail(`${label(r)}: missing test file`); continue; }
     const feats = closure(r);
     for (const expr of cfgs(uncomment(read(path), 'rust'), true)) {

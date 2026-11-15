@@ -538,7 +538,7 @@ fn parser_contract_matches_node_ecmascript_regex() {
     // (confirmed empirically) — the plain joined path (containing `..`) is
     // resolved correctly by `pathToFileURL` + dynamic `import()` instead.
     let parse_result_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../scripts/paired-ab-parse-result.mjs");
+        .join("../../../scripts/paired-ab-parse-result.mjs");
     match std::fs::metadata(&parse_result_path) {
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {

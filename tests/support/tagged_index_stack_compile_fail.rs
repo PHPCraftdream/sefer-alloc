@@ -62,11 +62,12 @@ pub struct CargoErrorDiagnostic {
 }
 
 /// Resolves the fixture manifest
-/// `crates/tagged-index-stack/tests/compile_fail/<fixture_dir>/Cargo.toml`
+/// `crates/primitives/tagged-index-stack/tests/compile_fail/<fixture_dir>/Cargo.toml`
 /// (public so callers can build their failure context from the same path).
 pub fn fixture_manifest(fixture_dir: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("crates")
+        .join("primitives")
         .join("tagged-index-stack")
         .join("tests")
         .join("compile_fail")

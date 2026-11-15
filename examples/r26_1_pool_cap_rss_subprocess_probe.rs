@@ -39,7 +39,7 @@
 //!     (`R26_1_POOL_SEGMENTS`, `R26_1_THREAD_COUNT`, `R26_1_REPETITION`), captures
 //!     the child's stdout, and parses the one machine-readable `RESULT key=value`
 //!     line per child run (this project's established probe protocol — see
-//!     `crates/proc-probe/src/lib.rs`'s `RESULT` convention).
+//!     `crates/platform/proc-probe/src/lib.rs`'s `RESULT` convention).
 //! - **Child/arm mode** (the env vars present): spawns `thread_count` OS
 //!   threads, each claiming its OWN heap via `HeapRegistry::claim_with_config`
 //!   (NOT `SeferAlloc` — this sidesteps `SeferAlloc`'s private `current_heap()`

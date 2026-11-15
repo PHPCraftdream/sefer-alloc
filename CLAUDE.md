@@ -50,7 +50,7 @@ Core instructions, mandatory for all code in this repository. They
      constants). The constants are that type's protocol, not independent
      exports in the sense of the rule.
   3. **single-file seam crates in `crates/`** — for a crate that is one file
-     (e.g. `crates/numa-shim/src/lib.rs`, `crates/malloc-bench-rs/src/lib.rs`), "the whole crate is one module"; it
+     (e.g. `crates/platform/numa-shim/src/lib.rs`, `crates/bench/malloc-bench-rs/src/lib.rs`), "the whole crate is one module"; it
      publishing several public items is normal, because the crate as a whole is
      the single focused library — that is its one responsibility.
   4. **`#[cfg(kani)]` proof harnesses in `src/`** (e.g. `src/kani_proofs.rs`) —
@@ -63,7 +63,7 @@ Core instructions, mandatory for all code in this repository. They
   exclusively `mod`/`pub mod`/`pub use` declarations. No logic, types,
   functions, or tests belong in `mod.rs` — it only wires modules together.
 - **Structure limits, checked automatically.** A source directory (`src/**` and
-  `crates/*/src/**`) holds at most **7 entries** (files plus subdirectories); a
+  `crates/<theme>/<crate>/src/**`) holds at most **7 entries** (files plus subdirectories); a
   code file (`.rs .mjs .js .py .sh`, anywhere outside `docs/`) has at most **1000
   lines**. `scripts/verify-structure-limits.mjs` enforces both in `npm run check`
   and in the `check-matrix` CI job; `tests/src_file_size_cap.rs` stays as the
@@ -1108,7 +1108,7 @@ Core instructions, mandatory for all code in this repository. They
   (`crate::ghost::ghost_assert!` / `ghost_event!`, compiled only under
   `cfg(any(loom, miri, kani, sefer_ghost))`, nothing in production), the
   per-site rules of `docs/verification/ghost-rules.json` checked by
-  `crates/ghost-lint` (`check`, `selftest`; CI job `ghost-guard`), and the
+  `crates/verify/ghost-lint` (`check`, `selftest`; CI job `ghost-guard`), and the
   ordering-site inventory (`node scripts/ghost_inventory.mjs --check`: every
   atomic/ordering site is claimed by exactly one catalog scope). Rules for
   writing such code — including for sub-agents, whose prompts must repeat them:

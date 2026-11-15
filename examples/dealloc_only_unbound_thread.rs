@@ -141,7 +141,7 @@ static GLOBAL: SeferAlloc = SeferAlloc::new();
 // RSS / commit-charge probes — thin KiB wrappers over the `proc-probe` crate's
 // re-export of `proc-memstat`'s same-instant `snapshot()` (bytes). The OS FFI
 // that used to be a self-contained copy here now lives in ONE place
-// (`crates/proc-memstat`, reached via `proc-probe`'s "measure + report"
+// (`crates/platform/proc-memstat`, reached via `proc-probe`'s "measure + report"
 // re-export), shared with `examples/first_alloc_process.rs` and the
 // `paired_ab_*` trio. The `RESULT` lines are emitted via `proc_probe::emit_*`
 // (see `main`). Printed line names/units are unchanged.

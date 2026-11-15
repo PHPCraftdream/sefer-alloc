@@ -3,13 +3,13 @@ name: globalalloc-model
 on:
   push:
     paths:
-      - "crates/globalalloc-model/**"
+      - "crates/verify/globalalloc-model/**"
       - ".github/workflows/globalalloc-model.yml"
       - "Cargo.toml"
       - "Cargo.lock"
   pull_request:
     paths:
-      - "crates/globalalloc-model/**"
+      - "crates/verify/globalalloc-model/**"
       - ".github/workflows/globalalloc-model.yml"
       - "Cargo.toml"
       - "Cargo.lock"

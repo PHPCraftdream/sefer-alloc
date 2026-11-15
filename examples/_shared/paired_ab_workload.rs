@@ -71,7 +71,7 @@ use std::hint::black_box;
 // re-export of `proc-memstat`'s same-instant `snapshot()` (bytes). Defined ONCE
 // here (this file is `include!`d verbatim into all three `paired_ab_*`
 // binaries), so the OS FFI that used to be copy-pasted into each of the three
-// binaries now lives in ONE place (`crates/proc-memstat`, reached via
+// binaries now lives in ONE place (`crates/platform/proc-memstat`, reached via
 // `proc-probe`'s "measure + report" re-export). Printed line names/units are
 // unchanged. The `RESULT` lines themselves are emitted via `proc_probe::emit_*`
 // (see each binary's `main`), so the stdout protocol the runner parses can

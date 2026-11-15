@@ -1,10 +1,10 @@
 // task #1067 (F7) — EXHAUSTIVE completeness check that every public
-// `bench-internals` counter accessor in crates/aligned-vmem is referenced by
+// `bench-internals` counter accessor in crates/platform/aligned-vmem is referenced by
 // the accessor-surface test.
 //
 // ## Background
 //
-// `crates/aligned-vmem/tests/bench_internals_counters.rs` imports every
+// `crates/platform/aligned-vmem/tests/bench_internals_counters.rs` imports every
 // counter accessor by name to prove at compile time that each name resolves.
 // That import is an EXISTENCE check, not a COMPLETENESS check: when R7-3
 // added `windows_large_page_plain_fallback_successes`
@@ -50,10 +50,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { REPO_ROOT } from './lib.mjs';
 
-const SRC_DIR = join(REPO_ROOT, 'crates', 'aligned-vmem', 'src', 'bench_internals');
+const SRC_DIR = join(REPO_ROOT, 'crates', 'platform', 'aligned-vmem', 'src', 'bench_internals');
 const TEST_FILE = join(
   REPO_ROOT,
   'crates',
+  'platform',
   'aligned-vmem',
   'tests',
   'bench_internals_counters.rs',

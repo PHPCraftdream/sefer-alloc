@@ -75,7 +75,7 @@ fn exclusive_temp_dir(label: &str) -> DirGuard {
 #[cfg(windows)]
 fn assert_short_link_path(repo_root: &Path) {
     let runner = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs");
+        .join("crates/primitives/tagged-index-stack/scripts/tis_p3_ab_runner.mjs");
     let runner_source = fs::read_to_string(&runner).expect("read runner source");
     assert!(runner_source.contains("const crateName = `tis_bc_${variant}`;"));
     let canonical = fs::canonicalize(repo_root).expect("canonicalize fixture repo root");
@@ -111,7 +111,7 @@ fn runner_command(runner: &Path) -> Command {
 #[test]
 fn evidence_snapshot_source_shape_is_pinned_and_build_check_stays_dirty_compatible() {
     let runner_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs");
+        .join("crates/primitives/tagged-index-stack/scripts/tis_p3_ab_runner.mjs");
     let source = fs::read_to_string(&runner_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", runner_path.display()))
         .replace("\r\n", "\n");
@@ -242,7 +242,7 @@ fn copy_file(src: &Path, dst: &Path) {
 /// repository layout the runner derives from its own location.
 fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
     let repo_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let crate_dir = repo_dir.join("crates/tagged-index-stack");
+    let crate_dir = repo_dir.join("crates/primitives/tagged-index-stack");
     // Keep Windows fixtures short and outside the runner's canonical temp root.
     #[cfg(windows)]
     let parent = {
@@ -276,7 +276,7 @@ fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
     let scripts = crate_dir.join("scripts");
     copy_file(
         &scripts.join("tis_p3_ab_runner.mjs"),
-        &root.join("crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs"),
+        &root.join("crates/primitives/tagged-index-stack/scripts/tis_p3_ab_runner.mjs"),
     );
     for tmpl in [
         "codegen_wrapper.rs.tmpl",
@@ -286,17 +286,17 @@ fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
         copy_file(
             &scripts.join("tis_p3_ab").join(tmpl),
             &root
-                .join("crates/tagged-index-stack/scripts/tis_p3_ab")
+                .join("crates/primitives/tagged-index-stack/scripts/tis_p3_ab")
                 .join(tmpl),
         );
     }
     copy_file(
         &crate_dir.join("src/lib.rs"),
-        &root.join("crates/tagged-index-stack/src/lib.rs"),
+        &root.join("crates/primitives/tagged-index-stack/src/lib.rs"),
     );
     copy_file(
         &crate_dir.join("src/imp.rs"),
-        &root.join("crates/tagged-index-stack/src/imp.rs"),
+        &root.join("crates/primitives/tagged-index-stack/src/imp.rs"),
     );
     copy_file(
         &repo_dir.join(".cargo/config.toml"),
@@ -323,7 +323,7 @@ fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
         .current_dir(&root)
         .output();
 
-    let runner = root.join("crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs");
+    let runner = root.join("crates/primitives/tagged-index-stack/scripts/tis_p3_ab_runner.mjs");
     (parent, DirGuard::new(root.clone()), runner)
 }
 
@@ -915,7 +915,7 @@ fn remove_kept_cargo_invocation(stderr: &str, expected_temp_root: &Path) {
 /// toolchain) — strictly after scratch-root creation, which makes the cleanup
 /// assertions non-vacuous.
 fn break_skeleton_imp_rs(skeleton_root: &Path) {
-    let imp = skeleton_root.join("crates/tagged-index-stack/src/imp.rs");
+    let imp = skeleton_root.join("crates/primitives/tagged-index-stack/src/imp.rs");
     let mut src = fs::read_to_string(&imp).expect("read skeleton imp.rs copy");
     src.push_str("\n__tis_scratch_guard_deliberate_syntax_error__\n");
     fs::write(&imp, src).expect("append deliberate syntax error to skeleton imp.rs copy");

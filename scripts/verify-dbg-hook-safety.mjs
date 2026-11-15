@@ -61,9 +61,9 @@ const PURE_OBSERVERS = [
   "src/registry/segment_route/directory/route_directory.rs::dbg_route_pin_refs",
   // Read-only Relaxed load of Entry.refs through the owner-held RouteRegistration's own EntryHandle; no address-keyed lookup, no pointer dereference beyond the already-owned entry.
   "src/registry/segment_route/registration.rs::dbg_entry_refs_relaxed",
-  "crates/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
-  "crates/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
-  "crates/once-ptr-cell/src/imp.rs::dbg_is_ready",
+  "crates/platform/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
+  "crates/platform/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
+  "crates/primitives/once-ptr-cell/src/imp.rs::dbg_is_ready",
   "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_foreign_or_unroutable_frees",
   "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_local_reject_frees",
   "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_reserved_total",
@@ -233,11 +233,11 @@ const SAFE_MUTATORS = [
     "test-only forwarder to MaintenanceLease::with_core after the Ph4c surface narrowing made it pub(crate) (ADR addendum section 2.6); the callback receives the exclusive &mut HeapCore guarded by the lease's won FREE->MAINTENANCE CAS, and the alias adds no access beyond the crate-only original"
   ],
   [
-    "crates/once-ptr-cell/src/imp.rs::dbg_rollback_reenterable",
+    "crates/primitives/once-ptr-cell/src/imp.rs::dbg_rollback_reenterable",
     "entry CAS is a point-in-time UNINIT check, not mutual exclusion across the whole probe; the final restore is gated on the probe's own postcondition CAS re-winning the cell, so a concurrent get_or_try_init racing in mid-probe is never clobbered"
   ],
   [
-    "crates/sefer-region/src/region.rs::dbg_try_mint_region_id",
+    "crates/containers/sefer-region/src/region.rs::dbg_try_mint_region_id",
     "test-only forwarder to the real region_id-minting CAS logic (task #813), but it takes an explicit `&AtomicUsize` parameter and never touches the real `NEXT_REGION_ID` process-wide static -- the only thing it mutates is whatever local counter the caller constructed and owns (integration tests use a fresh stack-local AtomicUsize per test), so there is no shared/allocator state and no soundness relevance"
   ],
   [
@@ -431,7 +431,7 @@ BENCH_UNSAFE_HOOKS.add("src/registry/segment_route/pin.rs::dbg_publish_cached_fo
 
 // Explicit reviewed rows; groups share only a reviewed contract, never a name wildcard.
 export const REVIEWED_SURFACE = [
-  { id: 'crates/aligned-vmem/src/api/release.rs::release_size_align_is_valid_for_test', kind: 'observer', reason: 'pure release geometry validation over integers; no pointers, mapped storage or OS access', gates: ['fault-injection'] },
+  { id: 'crates/platform/aligned-vmem/src/api/release.rs::release_size_align_is_valid_for_test', kind: 'observer', reason: 'pure release geometry validation over integers; no pointers, mapped storage or OS access', gates: ['fault-injection'] },
   { id: 'src/registry/heap_core/diag/queries.rs::dbg_sidecar_scan_measurement', kind: 'mutator', reason: 'thread-local optional diagnostic counts and original-versus-prefilter scan mode only; no pointers or allocator metadata access', gates: ['bench-internals', 'r18_sidecar_scan_bench'] },
   ...[
     ['src/alloc_core/segment/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],
@@ -473,9 +473,9 @@ export const REVIEWED_SURFACE = [
     ['src/concurrent/lock_free/lock_free_region.rs', ['_forge_handle_for_tests', '_page_arc_clones_for_tests', '_checked_total_slots_for_tests'], 'observer', 'by-value handle/geometry or TLS counter; ordinary operations still validate handles'],
     ['src/concurrent/lock_free/lock_free_region.rs', ['_reset_page_arc_clones_for_tests'], 'mutator', 'TLS diagnostic counter only'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['bench-internals'] }))),
-  { id: 'crates/aligned-vmem/src/bench_internals/advice/stream/log.rs::seed_cursor_for_test', kind: 'mutator', reason: 'seeds only the caller-owned synthetic log cursor; no global native-log accessor, mapping access or allocator-policy effect; sticky publication failures remain', gates: ['bench-internals', 'fault-injection'] },
-  { id: 'crates/aligned-vmem/src/bench_internals/advice/stream/log.rs::reserve_unpublished_for_test', kind: 'mutator', reason: 'reserves one deliberately incomplete scalar slot in the caller-owned synthetic log; bounded capacity and sticky unsupported closure remain', gates: ['bench-internals', 'fault-injection'] },
-  { id: 'crates/aligned-vmem/src/bench_internals/advice/stream/log.rs::complete_reserved_for_test', kind: 'mutator', reason: 'publishes inert words only into a reserved caller-owned synthetic-log slot through the real immutable slot protocol; cannot clear failure or access mappings/native global', gates: ['bench-internals', 'fault-injection'] },
+  { id: 'crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs::seed_cursor_for_test', kind: 'mutator', reason: 'seeds only the caller-owned synthetic log cursor; no global native-log accessor, mapping access or allocator-policy effect; sticky publication failures remain', gates: ['bench-internals', 'fault-injection'] },
+  { id: 'crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs::reserve_unpublished_for_test', kind: 'mutator', reason: 'reserves one deliberately incomplete scalar slot in the caller-owned synthetic log; bounded capacity and sticky unsupported closure remain', gates: ['bench-internals', 'fault-injection'] },
+  { id: 'crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs::complete_reserved_for_test', kind: 'mutator', reason: 'publishes inert words only into a reserved caller-owned synthetic-log slot through the real immutable slot protocol; cannot clear failure or access mappings/native global', gates: ['bench-internals', 'fault-injection'] },
   { id: 'src/alloc_core/segment/segment_table/harness.rs::hide_root_for_test', kind: 'mutator', reason: 'isolated numeric harness; no dereference; external alloc_core module path requires internals, not a compilation gate', gates: [] },
   { id: 'src/registry/segment_route/directory/route_directory.rs::register', kind: 'mutator', reason: 'internals-only public form of the crate-only register_route; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
   { id: 'src/registry/segment_route/directory/route_directory.rs::lookup', kind: 'observer', reason: 'the real production lookup path; the pointer is only a numeric shard key, never dereferenced', gates: [] },
@@ -488,8 +488,8 @@ export const REVIEWED_SURFACE = [
   { id: 'src/alloc_core/segment/segment_table/harness.rs::contains', kind: 'observer', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
   { id: 'src/alloc_core/segment/segment_table/harness.rs::contains_cached', kind: 'observer', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
   { id: 'src/alloc_core/segment/segment_table/harness.rs::canonical', kind: 'observer', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
-  { id: 'crates/aligned-vmem/src/reservation_parts.rs::new', kind: 'observer', reason: 'pure constructor storing the caller-owned reservation pointer and length into a parts struct; no dereference', gates: [] },
-  { id: 'crates/aligned-vmem/src/reservation_full_parts.rs::new', kind: 'observer', reason: 'pure field-by-field reconstruction of reservation parts; caller-owned pointers stored, never dereferenced', gates: [] },
+  { id: 'crates/platform/aligned-vmem/src/reservation_parts.rs::new', kind: 'observer', reason: 'pure constructor storing the caller-owned reservation pointer and length into a parts struct; no dereference', gates: [] },
+  { id: 'crates/platform/aligned-vmem/src/reservation_full_parts.rs::new', kind: 'observer', reason: 'pure field-by-field reconstruction of reservation parts; caller-owned pointers stored, never dereferenced', gates: [] },
   { id: 'src/alloc_core/small/alloc_core_small_magazine.rs::flush_class', kind: 'unsafe', reason: 'exclusive caller-owned live blocks, exactly once; delegates to flush substrate', gates: ['internals'] },
   { id: 'src/registry/bootstrap/ensure.rs::count_for_test', kind: 'mutator', reason: 'ensure may initialize registry; then monotonic count load', gates: [] },
   { id: 'src/registry/heap_registry/maintenance.rs::maintenance_pass_for_test', kind: 'mutator', reason: 'production CAS-owned bounded maintenance pass', gates: ['internals'] },
@@ -503,7 +503,7 @@ export const REVIEWED_SURFACE = [
     ['ArrayIndexStack::load_next_for_test', 'observer', ['test-model']],
     ['ArrayIndexStack::store_next_for_test', 'unsafe', ['loom']],
     ['ArrayIndexStack::with_tag_for_test', 'mutator', ['test-model']],
-  ].map(([name, kind, gates]) => ({ id: `crates/tagged-index-stack/src/imp.rs::${name}`, kind, gates, reason: 'isolated verification stack/model surface; raw link write requires its caller contract' })),
+  ].map(([name, kind, gates]) => ({ id: `crates/primitives/tagged-index-stack/src/imp.rs::${name}`, kind, gates, reason: 'isolated verification stack/model surface; raw link write requires its caller contract' })),
 ];
 const ROOT_FORWARDERS = [
   'src/alloc_core/small/alloc_core_small_magazine.rs::refill_class',
@@ -624,7 +624,7 @@ export function scanFile(id, text) {
       const lastImpl = impls.at(-1);
       const implTail = lastImpl ? mask.slice(lastImpl.index, match.index) : '';
       const owner = lastImpl && [...implTail].reduce((n, ch) => n + (ch === '{' ? 1 : ch === '}' ? -1 : 0), 0) > 0 ? lastImpl[1] : null;
-      const hookId = `${id}::${id === 'crates/tagged-index-stack/src/imp.rs' && owner ? `${owner}::` : ''}${name}`;
+      const hookId = `${id}::${id === 'crates/primitives/tagged-index-stack/src/imp.rs' && owner ? `${owner}::` : ''}${name}`;
       const named = /^dbg_|_for_tests?$|inject/.test(name) || ROOT_FORWARDERS.includes(hookId);
       // R6-T38 signature rule: safe crate-public fns with raw-pointer
       // parameters are inventoried regardless of name; gated unsafe fns with
@@ -851,8 +851,8 @@ function selfCheck() {
   // and therefore cannot serve as an independent classification/gating oracle.
   for (const row of REVIEWED_SURFACE) {
     const split = row.id.lastIndexOf('::'), name = row.id.slice(split + 2);
-    const qualified = row.id.startsWith('crates/tagged-index-stack/src/imp.rs::');
-    const file = qualified ? 'crates/tagged-index-stack/src/imp.rs' : row.id.slice(0, split);
+    const qualified = row.id.startsWith('crates/primitives/tagged-index-stack/src/imp.rs::');
+    const file = qualified ? 'crates/primitives/tagged-index-stack/src/imp.rs' : row.id.slice(0, split);
     const owner = qualified && row.id.slice(file.length + 2).includes('::') ? row.id.slice(file.length + 2, split) : 'Core';
     const namedHook = /^dbg_|_for_tests?$|inject/.test(name) || ROOT_FORWARDERS.includes(`${file}::${name}`);
     const params = namedHook ? '' : 'p: *mut u8';

@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 description = "NUMA detection and reservation in Rust — zero third-party C/C++ dependencies (no libnuma, no hwloc); direct system-libc/Win32 FFI only. Linux mbind(2) via raw syscall(2), Windows VirtualAllocExNuma, sysfs cpumap reader. Zero crate deps by default; the public API is fully forbid(unsafe_code)-friendly."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
-homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/numa-shim"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/platform/numa-shim"
 documentation = "https://docs.rs/numa-shim"
 keywords = ["numa", "mbind", "scheduling", "memory", "sysfs"]
 categories = ["os", "memory-management"]
@@ -71,7 +71,7 @@ aligned-vmem = { version = "0.2", path = "../aligned-vmem", optional = true }
 # it on, not per-crate locality. Avoiding dependency-triggered activation is
 # the whole point of the task #1288 conversion (mirroring aligned-vmem's
 # task #962). Declaring it here keeps `unexpected_cfgs` silent for this crate
-# (same pattern as `crates/aligned-vmem/Cargo.toml`'s own `[lints.rust]`
+# (same pattern as `crates/platform/aligned-vmem/Cargo.toml`'s own `[lints.rust]`
 # table; this crate has no `[lints] workspace = true`).
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(numa_shim_mock)'] }

@@ -149,7 +149,7 @@
 //     surface, not a two-line patch, and every sentinel-tracked test today
 //     is either unconditional or (the one real case: the hugetlb-page test
 //     naming `#[cfg(any(target_os = "linux", target_os = "android"))]` in
-//     `crates/aligned-vmem/tests/huge_pages.rs`, run from an
+//     `crates/platform/aligned-vmem/tests/huge_pages.rs`, run from an
 //     `ubuntu-latest` job) already platform-consistent — the class is
 //     currently LATENT, not live, so the cost of a possibly-subtly-wrong
 //     evaluator was judged higher than the value of closing a blind spot
@@ -176,16 +176,16 @@ import { effectiveWorkflow } from './ci/effective-workflow.mjs';
 import { REPO_ROOT } from './lib.mjs';
 /** Map of workspace member crate name -> its tests/ dir, relative to REPO_ROOT. */
 const CRATE_TEST_DIRS = {
-  'aligned-vmem': 'crates/aligned-vmem/tests',
-  'numa-shim': 'crates/numa-shim/tests',
-  'malloc-bench-rs': 'crates/malloc-bench-rs/tests',
-  'sefer-region': 'crates/sefer-region/tests',
-  'once-ptr-cell': 'crates/once-ptr-cell/tests',
-  'size-classes': 'crates/size-classes/tests',
-  'globalalloc-model': 'crates/globalalloc-model/tests',
-  'tagged-index-stack': 'crates/tagged-index-stack/tests',
-  'proc-memstat': 'crates/proc-memstat/tests',
-  'proc-probe': 'crates/proc-probe/tests',
+  'aligned-vmem': 'crates/platform/aligned-vmem/tests',
+  'numa-shim': 'crates/platform/numa-shim/tests',
+  'malloc-bench-rs': 'crates/bench/malloc-bench-rs/tests',
+  'sefer-region': 'crates/containers/sefer-region/tests',
+  'once-ptr-cell': 'crates/primitives/once-ptr-cell/tests',
+  'size-classes': 'crates/primitives/size-classes/tests',
+  'globalalloc-model': 'crates/verify/globalalloc-model/tests',
+  'tagged-index-stack': 'crates/primitives/tagged-index-stack/tests',
+  'proc-memstat': 'crates/platform/proc-memstat/tests',
+  'proc-probe': 'crates/platform/proc-probe/tests',
 };
 /**
  * Split ci.yml into "step blocks": each block is the text of one `- run:`
@@ -1053,7 +1053,7 @@ function verifyCiSentinels() {
 //
 // Task #1164: 38 -> 40. Closed item 59a's kernel-response gap
 // (`ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise` in
-// `crates/aligned-vmem/tests/decommit_capability.rs`), adding TWO sentinel
+// `crates/platform/aligned-vmem/tests/decommit_capability.rs`), adding TWO sentinel
 // lines to the `aligned-vmem-hugetlb-real` job in the SAME commit: one
 // `test <name> ... ok` line (the standard shape) plus one new
 // `[oracle] ARMED: kernel accepted ...` literal marker (the
@@ -1063,7 +1063,7 @@ function verifyCiSentinels() {
 // Task #1174: 40 -> 42. Closed item 87's own named gap ("the real-hugetlb
 // job proves dispatch and kernel acceptance, never that memory was actually
 // reclaimed/zeroed"). `ci_hugetlb_real_pool_decommit_actually_zeroes_memory_
-// on_reaccess` (`crates/aligned-vmem/tests/decommit_capability.rs`) adds a
+// on_reaccess` (`crates/platform/aligned-vmem/tests/decommit_capability.rs`) adds a
 // write -> decommit -> read-zero postcondition check, adding TWO sentinel
 // lines to the `aligned-vmem-hugetlb-real` job in the SAME commit: one
 // `test <name> ... ok` line plus one new `[oracle] ARMED: decommitted

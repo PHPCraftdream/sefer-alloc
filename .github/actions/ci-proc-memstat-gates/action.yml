@@ -62,7 +62,7 @@ runs:
         TOML
         # Absolute path substituted rather than written literally: the
         # consumer lives in RUNNER_TEMP, not next to the repo.
-        python3 - "$RUNNER_TEMP/pm-consumer/Cargo.toml" "$GITHUB_WORKSPACE/crates/proc-memstat" <<'PY'
+        python3 - "$RUNNER_TEMP/pm-consumer/Cargo.toml" "$GITHUB_WORKSPACE/crates/platform/proc-memstat" <<'PY'
         import sys, pathlib
         manifest = pathlib.Path(sys.argv[1])
         manifest.write_text(manifest.read_text().replace("PM_PATH", sys.argv[2].replace("\\", "/")))

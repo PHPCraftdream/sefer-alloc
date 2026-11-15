@@ -22,7 +22,7 @@ const BASELINE_REL = 'docs/structure_limits_baseline.csv';
 const BASELINE_HEADER = ['kind', 'path', 'count', 'reason'];
 const DEFAULT_REASON = 'grandfathered when the structure limits landed (2026-10-12)';
 
-const folderInScope = (dir) => dir === 'src' || dir.startsWith('src/') || /^crates\/[^/]+\/src(\/|$)/.test(dir);
+const folderInScope = (dir) => dir === 'src' || dir.startsWith('src/') || /^crates\/[^/]+\/[^/]+\/src(\/|$)/.test(dir);
 const fileInScope = (file) => /\.(rs|mjs|js|py|sh)$/.test(file) && !file.startsWith('docs/')
   && !file.startsWith('target/') && !file.startsWith('worktrees/');
 
@@ -111,8 +111,8 @@ function selfTest() {
   check('eight entries fail', names(measure(flat(8), lines({}))), ['folder:src/a:8']);
   check('subdirectories count as entries', names(measure([...flat(7), 'src/a/sub/x.rs'], lines({}))), ['folder:src/a:8']);
   check('mod.rs counts as an entry', names(measure([...flat(7), 'src/a/mod.rs'], lines({}))), ['folder:src/a:8']);
-  check('crate src is in scope', names(measure(flat(8, 'crates/k/src'), lines({}))), ['folder:crates/k/src:8']);
-  check('crate tests are exempt from the folder rule', measure(flat(40, 'crates/k/tests'), lines({})), []);
+  check('crate src is in scope', names(measure(flat(8, 'crates/theme/k/src'), lines({}))), ['folder:crates/theme/k/src:8']);
+  check('crate tests are exempt from the folder rule', measure(flat(40, 'crates/theme/k/tests'), lines({})), []);
   check('top-level tests, scripts and docs are exempt from the folder rule',
     measure([...flat(30, 'tests'), ...flat(30, 'scripts'), ...flat(30, 'docs/perf')], lines({})), []);
   check('exactly 1000 lines pass', measure(['src/x.rs'], lines({ 'src/x.rs': 1000 })), []);

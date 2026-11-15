@@ -22,7 +22,7 @@ const DATA_FILE = /^(docs\/|scripts\/|\.github\/|[^/]+\.(md|csv|json|txt)$)/;
 const READS_FILES = /(CARGO_MANIFEST_DIR|include_str!|include_bytes!|read_to_string|fs::read|File::open|read_dir|Command::new)/;
 /** Compiled only by tools that are not tests (kani); a change selects no test. */
 const TOOL_ONLY = new Set(['src/kani_proofs.rs']);
-const RUST_SRC = /^(src\/|crates\/[^/]+\/src\/).*\.rs$/;
+const RUST_SRC = /^(src\/|crates\/[^/]+\/[^/]+\/src\/).*\.rs$/;
 
 const all = reason => ({ mode: 'all', reason });
 
@@ -191,7 +191,7 @@ function selftest() {
   assert.equal(names(sel(['docs/perf/R.md'])), 'tests/d.rs,tests/e.rs');
   assert.equal(names(sel(['CHANGELOG.md', 'src/n.rs'])), 'tests/a.rs,tests/b.rs,tests/d.rs,tests/e.rs');
   // everything else is "all"
-  for (const f of ['Cargo.toml', 'Cargo.lock', 'build.rs', '.cargo/config.toml', 'src/new_file.rs', 'tests/fixtures/x.in', 'crates/q/src/lib.rs', 'weird.bin']) {
+  for (const f of ['Cargo.toml', 'Cargo.lock', 'build.rs', '.cargo/config.toml', 'src/new_file.rs', 'tests/fixtures/x.in', 'crates/q/w/src/lib.rs', 'weird.bin']) {
     assert.match(names(sel(['src/n.rs', f])), /^ALL:/, f);
   }
   assert.equal(names(sel(['src/kani_proofs.rs'])), 'tests/e.rs'); // kani-only file: no test affected

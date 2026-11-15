@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "doc": "Ghost-checks catalog (docs/GHOST_CHECKS_PLAN.md). `protocols` — G0 inventory to invariant level; `scopes` — every atomic/ordering site in src/** and crates/*/src/** claimed by exactly one scope (scripts/ghost_inventory.mjs --check); `rules` — per-site lint rules, filled from G1 on.",
+  "doc": "Ghost-checks catalog (docs/GHOST_CHECKS_PLAN.md). `protocols` — G0 inventory to invariant level; `scopes` — every atomic/ordering site in src/** and crates/**/src/** claimed by exactly one scope (scripts/ghost_inventory.mjs --check); `rules` — per-site lint rules, filled from G1 on.",
   "protocols": [
     {
       "id": "P29",
@@ -35,8 +35,8 @@
       "id": "P28",
       "name": "benchmark advice event capture publication",
       "prod": [
-        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
-        "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
+        "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+        "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
       ],
       "invariants": [
         "I1 capture begins once before producers; published slots are never reset or recycled",
@@ -497,7 +497,7 @@
         "src/registry/bootstrap/registry.rs"
       ],
       "invariants": [
-        "I1 the loom stand-in performs the same atomic sequence and orderings as crates/once-ptr-cell (load Acquire, CAS Acquire/Relaxed, store Release, rollback store Release)"
+        "I1 the loom stand-in performs the same atomic sequence and orderings as crates/primitives/once-ptr-cell (load Acquire, CAS Acquire/Relaxed, store Release, rollback store Release)"
       ],
       "class": "T",
       "loom": [],
@@ -506,15 +506,15 @@
       "real_under_loom": "is the loom twin",
       "decision": "R7",
       "phase": "G7",
-      "reason": "G7: R7 twins pin the bootstrap loom stand-in to crates/once-ptr-cell op by op: get, the init loop (real get_or_try_init slow path init_slow), and the rollback guard drop."
+      "reason": "G7: R7 twins pin the bootstrap loom stand-in to crates/primitives/once-ptr-cell op by op: get, the init loop (real get_or_try_init slow path init_slow), and the rollback guard drop."
     },
     {
       "id": "P18",
       "name": "cfg(loom) twins in crates and leaf init",
       "prod": [
-        "crates/once-ptr-cell/src/imp.rs",
-        "crates/tagged-index-stack/src/imp.rs",
-        "crates/aligned-vmem/src/mock.rs",
+        "crates/primitives/once-ptr-cell/src/imp.rs",
+        "crates/primitives/tagged-index-stack/src/imp.rs",
+        "crates/platform/aligned-vmem/src/mock.rs",
         "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
         "src/registry/heap_core_xthread/route_pin_cache.rs"
       ],
@@ -523,8 +523,8 @@
       ],
       "class": "T",
       "loom": [
-        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
-        "crates/tagged-index-stack/tests/loom_aba.rs"
+        "crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "crates/primitives/tagged-index-stack/tests/loom_aba.rs"
       ],
       "pins": [],
       "registry": [],
@@ -726,7 +726,7 @@
       "class": "S",
       "protocol": "P28",
       "files": [
-        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"
+        "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs"
       ],
       "fn": "^(begin|is_started)$",
       "receiver": "^(self)?\\.started$",
@@ -746,7 +746,7 @@
       "class": "counter",
       "protocol": "P28",
       "files": [
-        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"
+        "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs"
       ],
       "fn": "^(append|boundary|read|release_begin_hint)$",
       "receiver": "^(self)?\\.cursor$",
@@ -764,7 +764,7 @@
       "class": "counter",
       "protocol": "P28",
       "files": [
-        "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs"
+        "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs"
       ],
       "fn": "^(reject|supported)$",
       "receiver": "^(self)?\\.failure$",
@@ -782,7 +782,7 @@
       "class": "S",
       "protocol": "P28",
       "files": [
-        "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
+        "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
       ],
       "fn": "^publish$",
       "receiver": "^((self)?\\.complete|field[0-6])$",
@@ -801,7 +801,7 @@
       "class": "S",
       "protocol": "P28",
       "files": [
-        "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
+        "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs"
       ],
       "fn": "^read$",
       "receiver": "^((self)?\\.complete|field)$",
@@ -1143,7 +1143,7 @@
       "class": "protocol",
       "protocol": "P18",
       "files": [
-        "crates/once-ptr-cell/src/imp.rs"
+        "crates/primitives/once-ptr-cell/src/imp.rs"
       ],
       "reason": "one-time pointer cell (the real crate; its loom tests run it)"
     },
@@ -1152,7 +1152,7 @@
       "class": "protocol",
       "protocol": "P18",
       "files": [
-        "crates/tagged-index-stack/src/imp.rs"
+        "crates/primitives/tagged-index-stack/src/imp.rs"
       ],
       "receiver_not": "^(BACKOFF_SPIN_COUNT|POP_RETRY_COUNT|PUSH_RETRY_COUNT)$",
       "reason": "Treiber stack with tagged head"
@@ -1200,7 +1200,7 @@
       "class": "test-hook",
       "files": [
         "src/**",
-        "crates/*/src/**"
+        "crates/**/src/**"
       ],
       "fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",
       "reason": "dbg_*/for_test/internals-only hooks",
@@ -1213,7 +1213,7 @@
       "class": "test-hook",
       "files": [
         "src/**",
-        "crates/*/src/**"
+        "crates/**/src/**"
       ],
       "receiver": "^(.*::)?(DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE)$",
       "reason": "fault-injection / test-control flags",
@@ -1225,8 +1225,8 @@
       "id": "cache/page-size",
       "class": "cache",
       "files": [
-        "crates/aligned-vmem/src/page_size.rs",
-        "crates/aligned-vmem/src/page_size_override.rs"
+        "crates/platform/aligned-vmem/src/page_size.rs",
+        "crates/platform/aligned-vmem/src/page_size_override.rs"
       ],
       "receiver": "^PAGE_SIZE_CACHE$",
       "reason": "idempotent cache of a process constant; Relaxed: every writer stores the same value"
@@ -1245,7 +1245,7 @@
       "class": "id",
       "files": [
         "src/**",
-        "crates/*/src/**"
+        "crates/**/src/**"
       ],
       "receiver": "^(.*::)?(NEXT_[A-Z_]+|DBG_RESERVATION_OWNER_ID_COUNTER)$|next_incarnation$",
       "ops": [
@@ -1263,7 +1263,7 @@
       "class": "counter",
       "files": [
         "src/**",
-        "crates/*/src/**"
+        "crates/**/src/**"
       ],
       "receiver": "^(.*::)?[A-Z][A-Z0-9_]*(\\[.*\\])?$",
       "receiver_not": "^(.*::)?(INIT_STATE|LOCK|STATE|PASSES|PAGE_SIZE_CACHE|QUERY|NEXT_[A-Z_]+|DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FAIL_START|FAIL_WORKER|START_PAUSE|START_PAUSED|FALLBACK_VISITS|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE|DBG_RESERVATION_OWNER_ID_COUNTER|TOKEN_BACKING_DEATHS|LIVE_TOKEN_BLOCKS|TARGET|CONTROL_ORDINAL|CONTROL_SELECTIONS|CONTROL_PREMISE_FAILURES|CONTROL_VALID_OBSERVATIONS|CONTROL_INVALIDATED_OBSERVATIONS|CONTROL_INVALIDATED_REALLOC|CONTROL_OBSERVATION_ERRORS|CONTROL_RESIDENT_PAGES|CONTROL_SAMPLED_PAGES|CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG|LEARNING_APPLIED|LEARNING_DROPPED|CONTROL_LEVEL_LOG|CADENCE_(ELIGIBLE|AGREED|RESETS|AGREE_DROPPED))(\\[.*\\])?$",
@@ -1335,8 +1335,8 @@
       "id": "nonatomic/mock-record",
       "class": "non-atomic",
       "files": [
-        "crates/aligned-vmem/src/api/release.rs",
-        "crates/aligned-vmem/src/reservation.rs"
+        "crates/platform/aligned-vmem/src/api/release.rs",
+        "crates/platform/aligned-vmem/src/reservation.rs"
       ],
       "receiver": "mock$",
       "reason": "false positive: mock::record(Op::Release ...) — Release is an enum variant, not an ordering"
@@ -1345,7 +1345,7 @@
       "id": "id/region-id",
       "class": "id",
       "files": [
-        "crates/sefer-region/src/region.rs"
+        "crates/containers/sefer-region/src/region.rs"
       ],
       "receiver": "^counter$",
       "reason": "region id minting: Relaxed fetch_update gives uniqueness"
@@ -1446,7 +1446,7 @@
       "id": "advice-capture/release-hint",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::release_begin_hint",
       "sites": [
         {
@@ -1465,7 +1465,7 @@
       ],
       "reason": "pre-call position hints never reserve or mutate capture positions",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_replay.rs",
+        "crates/platform/aligned-vmem/tests/advice_event_replay.rs",
         "tests/j13b_advice_capture_native.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_release_hint"
@@ -1474,7 +1474,7 @@
       "id": "advice-capture/legacy-release-marker",
       "kind": "R3",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/os/release/legacy.rs",
+      "file": "crates/platform/aligned-vmem/src/os/release/legacy.rs",
       "fn": "release_reservation",
       "before": {
         "name": "release_begin"
@@ -1490,7 +1490,7 @@
       ],
       "reason": "native release start marker precedes munmap; outcome publication remains after errno capture",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_replay.rs",
+        "crates/platform/aligned-vmem/tests/advice_event_replay.rs",
         "tests/j13b_advice_capture_native.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_legacy_release_marker"
@@ -1499,7 +1499,7 @@
       "id": "advice-capture/checked-release-marker",
       "kind": "R3",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/os/release/checked.rs",
+      "file": "crates/platform/aligned-vmem/src/os/release/checked.rs",
       "fn": "release_reservation_checked",
       "before": {
         "name": "release_begin"
@@ -1515,7 +1515,7 @@
       ],
       "reason": "native release start marker precedes munmap; outcome publication remains after errno capture",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_replay.rs",
+        "crates/platform/aligned-vmem/tests/advice_event_replay.rs",
         "tests/j13b_advice_capture_native.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_checked_release_marker"
@@ -1524,7 +1524,7 @@
       "id": "advice-capture/fi-seed-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::seed_cursor_for_test",
       "sites": [
         {
@@ -1542,7 +1542,7 @@
       ],
       "reason": "local metadata FI only; pin the test mutation surface independently of the private native global",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_fi_seed"
     },
@@ -1550,7 +1550,7 @@
       "id": "advice-capture/fi-reserve-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::reserve_unpublished_for_test",
       "sites": [
         {
@@ -1568,7 +1568,7 @@
       ],
       "reason": "local metadata FI only; pin the test mutation surface independently of the private native global",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_fi_reserve"
     },
@@ -1576,7 +1576,7 @@
       "id": "advice-capture/fi-complete-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::complete_reserved_for_test",
       "sites": [
         {
@@ -1594,7 +1594,7 @@
       ],
       "reason": "local metadata FI only; pin the test mutation surface independently of the private native global",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_fi_complete"
     },
@@ -1602,7 +1602,7 @@
       "id": "advice-capture/slot-publish-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
       "fn": "AdviceSlot::publish",
       "sites": [
         {
@@ -1677,7 +1677,7 @@
       ],
       "reason": "one bounded slot claim; payload then Release completion",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_slot_publish"
     },
@@ -1685,7 +1685,7 @@
       "id": "advice-capture/slot-read-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
       "fn": "AdviceSlot::read",
       "sites": [
         {
@@ -1710,7 +1710,7 @@
       ],
       "reason": "matching Acquire completion before immutable scalar payload reads",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_slot_read"
     },
@@ -1718,7 +1718,7 @@
       "id": "advice-capture/begin-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::begin",
       "sites": [
         {
@@ -1737,7 +1737,7 @@
       ],
       "reason": "one diagnostic begin; no reset or replacement epoch",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_begin"
     },
@@ -1745,7 +1745,7 @@
       "id": "advice-capture/failure-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::reject",
       "sites": [
         {
@@ -1764,7 +1764,7 @@
       ],
       "reason": "one strong first-failure CAS; spurious failure must not leave unsupported capture readable",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_failure"
     },
@@ -1772,7 +1772,7 @@
       "id": "advice-capture/failure-read-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::supported",
       "sites": [
         {
@@ -1790,7 +1790,7 @@
       ],
       "reason": "failure reads never clear or repair sticky unsupported state",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_failure_read"
     },
@@ -1798,7 +1798,7 @@
       "id": "advice-capture/reservation-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::append",
       "sites": [
         {
@@ -1816,7 +1816,7 @@
       ],
       "reason": "one cursor reservation per event; no skipped diagnostic positions",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_reservation"
     },
@@ -1824,7 +1824,7 @@
       "id": "advice-capture/boundary-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::boundary",
       "sites": [
         {
@@ -1849,7 +1849,7 @@
       ],
       "reason": "quiescent prefix boundaries read cursor twice and never reset active capture",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_boundary"
     },
@@ -1857,7 +1857,7 @@
       "id": "advice-capture/prefix-read-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::read",
       "sites": [
         {
@@ -1875,7 +1875,7 @@
       ],
       "reason": "prefix replay never reserves or mutates event positions",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_prefix_read"
     },
@@ -1883,7 +1883,7 @@
       "id": "advice-capture/started-read-inventory",
       "kind": "R2",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/log.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs",
       "fn": "AdviceEventLog::is_started",
       "sites": [
         {
@@ -1901,7 +1901,7 @@
       ],
       "reason": "producer epoch reads never clear or rearm the capture flag",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_started_read"
     },
@@ -1909,7 +1909,7 @@
       "id": "advice-capture/publish-order",
       "kind": "R3",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
       "fn": "AdviceSlot::publish",
       "before": {
         "name": "store",
@@ -1926,7 +1926,7 @@
       ],
       "reason": "payload field 0 store must dominate Release completion; sibling rules pin fields 1 through 6",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_publish_order"
     },
@@ -1934,7 +1934,7 @@
       "id": "advice-capture/read-order",
       "kind": "R3",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
       "fn": "AdviceSlot::read",
       "before": {
         "name": "load",
@@ -1951,7 +1951,7 @@
       ],
       "reason": "matching Acquire completion precedes scalar reads",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_read_order"
     },
@@ -2107,7 +2107,7 @@
       "protocol": "-",
       "files": [
         "src/**",
-        "crates/*/src/**"
+        "crates/**/src/**"
       ],
       "reason": "plan §3.1/§4.2 R9: no ghost fields in prod structs, ghost macro arguments never write, ghost:: paths outside the macros only under a ghost cfg",
       "fixtures": "tests/ghost_lint_fixtures/r9_hygiene",
@@ -2117,7 +2117,7 @@
         "write"
       ],
       "exclude": [
-        "crates/ghost-lint/**"
+        "crates/verify/ghost-lint/**"
       ]
     },
     {
@@ -6483,7 +6483,7 @@
         "fn": "OncePtrCell::get"
       },
       "b": {
-        "file": "crates/once-ptr-cell/src/imp.rs",
+        "file": "crates/primitives/once-ptr-cell/src/imp.rs",
         "fn": "OncePtrCell::get"
       },
       "terms": [
@@ -6492,9 +6492,9 @@
         "Acquire",
         "get"
       ],
-      "reason": "the bootstrap loom stand-in reads the cell with the same Acquire load as crates/once-ptr-cell",
+      "reason": "the bootstrap loom stand-in reads the cell with the same Acquire load as crates/primitives/once-ptr-cell",
       "tests": [
-        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs",
         "tests/loom_r11_registry_claim.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p17_get_twin"
@@ -6508,7 +6508,7 @@
         "fn": "OncePtrCell::get_or_try_init"
       },
       "b": {
-        "file": "crates/once-ptr-cell/src/imp.rs",
+        "file": "crates/primitives/once-ptr-cell/src/imp.rs",
         "fn": "OncePtrCell::init_slow"
       },
       "terms": [
@@ -6519,7 +6519,7 @@
       ],
       "reason": "the stand-in init loop performs the same ordered sequence as the real slow path: Acquire load, Acquire/Relaxed CAS, Release publish or rollback, Acquire loser spin",
       "tests": [
-        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs",
         "tests/loom_r11_registry_claim.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p17_init_twin"
@@ -6533,7 +6533,7 @@
         "fn": "RollbackGuard::drop"
       },
       "b": {
-        "file": "crates/once-ptr-cell/src/imp.rs",
+        "file": "crates/primitives/once-ptr-cell/src/imp.rs",
         "fn": "RollbackGuard::drop"
       },
       "terms": [
@@ -6544,7 +6544,7 @@
       ],
       "reason": "the stand-in rollback guard releases the sentinel with the same Release store as the real one",
       "tests": [
-        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs",
         "tests/loom_r11_registry_claim.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p17_rollback_twin"
@@ -6554,12 +6554,12 @@
       "kind": "R7",
       "protocol": "P18",
       "a": {
-        "file": "crates/once-ptr-cell/src/imp.rs",
+        "file": "crates/primitives/once-ptr-cell/src/imp.rs",
         "fn": "OncePtrCell::new",
         "cfg": "not\\s*\\(\\s*loom\\s*\\)"
       },
       "b": {
-        "file": "crates/once-ptr-cell/src/imp.rs",
+        "file": "crates/primitives/once-ptr-cell/src/imp.rs",
         "fn": "OncePtrCell::new",
         "cfg": "(^|& )loom$"
       },
@@ -6571,7 +6571,7 @@
       ],
       "reason": "the const and the loom constructors differ only in constness; neither performs an ordered operation, so the loom tests run the shipped protocol",
       "tests": [
-        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs"
+        "crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p18_new_twin"
     },
@@ -6580,12 +6580,12 @@
       "kind": "R7",
       "protocol": "P18",
       "a": {
-        "file": "crates/tagged-index-stack/src/imp.rs",
+        "file": "crates/primitives/tagged-index-stack/src/imp.rs",
         "fn": "StackHead::new",
         "cfg": "not\\s*\\(\\s*loom\\s*\\)"
       },
       "b": {
-        "file": "crates/tagged-index-stack/src/imp.rs",
+        "file": "crates/primitives/tagged-index-stack/src/imp.rs",
         "fn": "StackHead::new",
         "cfg": "(^|& )loom$"
       },
@@ -6597,7 +6597,7 @@
       ],
       "reason": "the const and the loom head constructors differ only in constness and perform no ordered operation",
       "tests": [
-        "crates/tagged-index-stack/tests/loom_aba.rs"
+        "crates/primitives/tagged-index-stack/tests/loom_aba.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p18_head_new_twin"
     },
@@ -8240,7 +8240,7 @@
       "id": "advice-capture/publish-field1-order",
       "kind": "R3",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
       "fn": "AdviceSlot::publish",
       "before": {
         "name": "store",
@@ -8257,7 +8257,7 @@
       ],
       "reason": "payload field 1 store must dominate Release completion",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_publish_field1_order"
     },
@@ -8265,7 +8265,7 @@
       "id": "advice-capture/publish-field2-order",
       "kind": "R3",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
       "fn": "AdviceSlot::publish",
       "before": {
         "name": "store",
@@ -8282,7 +8282,7 @@
       ],
       "reason": "payload field 2 store must dominate Release completion",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_publish_field2_order"
     },
@@ -8290,7 +8290,7 @@
       "id": "advice-capture/publish-field3-order",
       "kind": "R3",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
       "fn": "AdviceSlot::publish",
       "before": {
         "name": "store",
@@ -8307,7 +8307,7 @@
       ],
       "reason": "payload field 3 store must dominate Release completion",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_publish_field3_order"
     },
@@ -8315,7 +8315,7 @@
       "id": "advice-capture/publish-field4-order",
       "kind": "R3",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
       "fn": "AdviceSlot::publish",
       "before": {
         "name": "store",
@@ -8332,7 +8332,7 @@
       ],
       "reason": "payload field 4 store must dominate Release completion",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_publish_field4_order"
     },
@@ -8340,7 +8340,7 @@
       "id": "advice-capture/publish-field5-order",
       "kind": "R3",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
       "fn": "AdviceSlot::publish",
       "before": {
         "name": "store",
@@ -8357,7 +8357,7 @@
       ],
       "reason": "payload field 5 store must dominate Release completion",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_publish_field5_order"
     },
@@ -8365,7 +8365,7 @@
       "id": "advice-capture/publish-field6-order",
       "kind": "R3",
       "protocol": "P28",
-      "file": "crates/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
+      "file": "crates/platform/aligned-vmem/src/bench_internals/advice/stream/slot.rs",
       "fn": "AdviceSlot::publish",
       "before": {
         "name": "store",
@@ -8382,7 +8382,7 @@
       ],
       "reason": "payload field 6 store must dominate Release completion",
       "tests": [
-        "crates/aligned-vmem/tests/advice_event_stream.rs"
+        "crates/platform/aligned-vmem/tests/advice_event_stream.rs"
       ],
       "fixtures": "tests/ghost_lint_fixtures/p28_publish_field6_order"
     },

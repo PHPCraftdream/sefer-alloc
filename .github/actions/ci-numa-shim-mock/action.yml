@@ -47,7 +47,7 @@ runs:
     # task #1282 (E2, 2026-08-23 publication-readiness review, item 102):
     # the REAL Linux `reserve_preferred_on_node` path —
     # `platform::reserve_preferred_on_node_impl` in
-    # crates/numa-shim/src/lib.rs, `aligned_vmem::try_reserve_aligned` +
+    # crates/platform/numa-shim/src/lib.rs, `aligned_vmem::try_reserve_aligned` +
     # `mbind_preferred_linux` (task #1306 rename), i.e. a real mbind(2)
     # against a real fresh mmap — was compiled by the `--all-features`
     # clippy row below but EXECUTED by no CI job on any platform: the
@@ -96,7 +96,7 @@ runs:
       shell: bash
       env:
         NUMA_SHIM_REQUIRE_ORACLE: "1"
-    # task #778 (round-closing review, F9): crates/numa-shim had NO clippy
+    # task #778 (round-closing review, F9): crates/platform/numa-shim had NO clippy
     # coverage anywhere in this file -- the four numa-shim-* jobs all ran
     # cargo test only, so a clippy regression here (e.g. the
     # GetCurrentProcess-unused-in-default-features bug F9 itself fixed)

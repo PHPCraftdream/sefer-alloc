@@ -130,9 +130,9 @@
 //     constant name is provenance, not an OS enumeration.
 //
 // SCAN SURFACE: identical to scripts/vmem-doc-drift-guard.mjs (task
-// #1078): every .rs file under crates/aligned-vmem/src/** recursively
-// (rustdoc /// and //! blocks only), plus crates/aligned-vmem/Cargo.toml
-// and crates/aligned-vmem/README.md (every non-blank line, split into
+// #1078): every .rs file under crates/platform/aligned-vmem/src/** recursively
+// (rustdoc /// and //! blocks only), plus crates/platform/aligned-vmem/Cargo.toml
+// and crates/platform/aligned-vmem/README.md (every non-blank line, split into
 // windows per the WINDOW RULE above). Deliberately NOT scanned: tests/,
 // benches/, examples/ (internal prose, never rendered as crate documentation)
 // and CHANGELOG.md (a historical record of what was true at each version —
@@ -527,37 +527,37 @@ const URL_TOKEN = /https?:\/\/\S+/g;
 // entry" until the entry is removed — the list cannot silently rot.
 const KNOWN_DRIFT = [
   {
-    file: 'crates/aligned-vmem/Cargo.toml',
+    file: 'crates/platform/aligned-vmem/Cargo.toml',
     sentenceRegex: /Linux `MAP_HUGETLB`, Windows `MEM_LARGE_PAGES`/,
     reason:
       'huge-pages feature comment block repeats the reserve_aligned_huge.rs summary; Cargo.toml was outside task #1105/agent-B file scope — reported to the orchestrator',
   },
   {
-    file: 'crates/aligned-vmem/src/api/lazy_commit/decommit_lazy.rs',
+    file: 'crates/platform/aligned-vmem/src/api/lazy_commit/decommit_lazy.rs',
     sentenceRegex: /Linux `MADV_FREE`, macOS\/iOS `MADV_FREE_REUSABLE`/,
     reason:
       'decommit_lazy.rs was outside task #1105/agent-B file scope — reported to the orchestrator (the README sibling row WAS fixed)',
   },
   {
-    file: 'crates/aligned-vmem/src/api/internal.rs',
+    file: 'crates/platform/aligned-vmem/src/api/internal.rs',
     sentenceRegex: /granted \(Linux `MAP_HUGETLB` \/ Windows `MEM_LARGE_PAGES`\)/,
     reason:
       'internal.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
   },
   {
-    file: 'crates/aligned-vmem/src/reservation.rs',
+    file: 'crates/platform/aligned-vmem/src/reservation.rs',
     sentenceRegex: /Linux \(`MAP_HUGETLB`\) or Windows \(`MEM_LARGE_PAGES`/,
     reason:
       'reservation.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
   },
   {
-    file: 'crates/aligned-vmem/src/reservation.rs',
+    file: 'crates/platform/aligned-vmem/src/reservation.rs',
     sentenceRegex: /from the OS \(Linux `MAP_HUGETLB` or Windows `MEM_LARGE_PAGES`\)/,
     reason:
       'reservation.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
   },
   {
-    file: 'crates/aligned-vmem/src/reservation.rs',
+    file: 'crates/platform/aligned-vmem/src/reservation.rs',
     sentenceRegex: /cheaper than \[`Self::decommit`\] \(Linux `MADV_FREE`/,
     reason:
       'reservation.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
@@ -569,7 +569,7 @@ const KNOWN_DRIFT = [
   // violation (`find`), leaving the second entry unmatched. They share a
   // window with the entries above and are live, unfixed drift.
   {
-    file: 'crates/aligned-vmem/Cargo.toml',
+    file: 'crates/platform/aligned-vmem/Cargo.toml',
     sentenceRegex: /\(Linux `MADV_HUGEPAGE`\)/,
     reason:
       'restored by task #1122 after #1114 deleted it via violation merging — the drift is live and unfixed (same huge-pages comment block as the MAP_HUGETLB entry above)',
@@ -584,7 +584,7 @@ const KNOWN_DRIFT = [
   // reliably unmap") and whose marker hit is a cross-reference ("the same
   // shape as the huge-page case above") — no pair-gated contract is stated.
   {
-    file: 'crates/aligned-vmem/src/api/decommit.rs',
+    file: 'crates/platform/aligned-vmem/src/api/decommit.rs',
     sentenceRegex: /Darwin zero-fill gap.*unlike Linux.*huge-page case above/,
     reason:
       'FALSE-POSITIVE SUPPRESSION (task #1122), not drift: "unlike Linux" is a Darwin/BSD comparison and "the huge-page case above" is a cross-reference — the paragraph states no Linux-only pair contract',
@@ -592,12 +592,12 @@ const KNOWN_DRIFT = [
 ];
 
 function main() {
-  const vmemDir = `${REPO_ROOT}/crates/aligned-vmem`;
+  const vmemDir = `${REPO_ROOT}/crates/platform/aligned-vmem`;
 
   const rsFiles = listRsFilesRecursive(`${vmemDir}/src`).sort();
   if (rsFiles.length === 0) {
     throw new Error(
-      'no .rs files found under crates/aligned-vmem/src — scan surface lost'
+      'no .rs files found under crates/platform/aligned-vmem/src — scan surface lost'
     );
   }
   const filePaths = [

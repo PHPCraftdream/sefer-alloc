@@ -34,7 +34,7 @@
 // on 16 KiB-page CI. Zero counts as safe (empty ranges are legal no-ops).
 //
 // ## What is scanned (derived from validate_initial_commit in
-// crates/aligned-vmem/src/api/internal.rs and the range validators in
+// crates/platform/aligned-vmem/src/api/internal.rs and the range validators in
 // src/api/{commit_range,decommit,decommit_lazy,recommit}.rs)
 //
 // FREE-FUNCTION forms — name possibly preceded by lowercase module paths

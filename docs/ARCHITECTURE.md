@@ -69,7 +69,7 @@ OS-backed segment allocator with its own Cartographer/Hand tiers:
   handle returns `None`, never undefined behaviour. The single-threaded core
   wraps the `slotmap` crate and is `#![forbid(unsafe_code)]` (no
   version-scoped audit record for `slotmap` is tracked by this project --
-  see `crates/sefer-region/README.md` "## Safety"); it has
+  see `crates/containers/sefer-region/README.md` "## Safety"); it has
   no OS segment, no page map, no page registry of its own. The
   concurrent tier (feature `experimental`) adds lock-free reads via `arc-swap`
   (RCU, zero own `unsafe`) or `crossbeam-epoch` (one confined `unsafe` module) --
@@ -132,10 +132,10 @@ audit story. The four original extractions were:
 
 ```
 sefer-alloc
- ├── sefer-region    (crates/sefer-region)       — Handle<T>/Region<T>/SyncRegion<T>
- ├── aligned-vmem    (crates/aligned-vmem)         — OS virtual-memory aperture  (feature: alloc-core)
- ├── numa-shim       (crates/numa-shim)         — NUMA detection + binding    (feature: numa-aware)
- └── malloc-bench-rs (crates/malloc-bench-rs) — portable GlobalAlloc bench harness (standalone)
+ ├── sefer-region    (crates/containers/sefer-region)       — Handle<T>/Region<T>/SyncRegion<T>
+ ├── aligned-vmem    (crates/platform/aligned-vmem)         — OS virtual-memory aperture  (feature: alloc-core)
+ ├── numa-shim       (crates/platform/numa-shim)         — NUMA detection + binding    (feature: numa-aware)
+ └── malloc-bench-rs (crates/bench/malloc-bench-rs) — portable GlobalAlloc bench harness (standalone)
 ```
 
 The workspace now has ten companion crates; the complete current list is in
@@ -150,10 +150,10 @@ small, single-responsibility crates that can be audited in complete isolation.
 
 | Crate | Path | Unsafe story |
 |---|---|---|
-| `aligned-vmem` | `crates/aligned-vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture; sole responsibility = SEGMENT-aligned mmap/VirtualAlloc + decommit. Small, audit in isolation. |
-| `numa-shim` | `crates/numa-shim/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim; sole responsibility = mbind(2)/VirtualAllocExNuma. Small, audit in isolation. |
-| `malloc-bench-rs` | `crates/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
-| `sefer-region` | `crates/sefer-region/` | `#![forbid(unsafe_code)]` — zero own unsafe (shown for contrast; does **not** match the grep above); slotmap's core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/sefer-region/README.md` "## Safety"). |
+| `aligned-vmem` | `crates/platform/aligned-vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture; sole responsibility = SEGMENT-aligned mmap/VirtualAlloc + decommit. Small, audit in isolation. |
+| `numa-shim` | `crates/platform/numa-shim/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim; sole responsibility = mbind(2)/VirtualAllocExNuma. Small, audit in isolation. |
+| `malloc-bench-rs` | `crates/bench/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
+| `sefer-region` | `crates/containers/sefer-region/` | `#![forbid(unsafe_code)]` — zero own unsafe (shown for contrast; does **not** match the grep above); slotmap's core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/containers/sefer-region/README.md` "## Safety"). |
 
 **Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):
 
@@ -506,7 +506,7 @@ do not certify the terminal-sidecar snapshot.
 | Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (562 files) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
 | miri | Selected provenance/aliasing checks; snapshot execution pending | manifest `scripts/miri-matrix.mjs` (GREEN / EXPECTED-RED / WAIVED) run by `scripts/miri.mjs` and checked against CI by `scripts/verify-miri-target-wiring.mjs`, including `r8_global_box_provenance` and tagged-index-stack `narrow_domain_unchecked_storage`; not a whole-project proof |
-| loom | Bounded interleavings; snapshot execution pending | **Root (30 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
+| loom | Bounded interleavings; snapshot execution pending | **Root (30 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs` |
 | ThreadSanitizer | Real cross-thread data races (not model-checked) | CI job + manual (verified x3: cross-thread path + decommit path) |
 | Valgrind memcheck | UAF, leaks at process level | CI job + manual (verified clean) |
 | aarch64 (qemu-user) | Code-gen correctness + relaxed-memory smoke | CI job + manual (verified 13/13 test suites) |
