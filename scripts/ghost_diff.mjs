@@ -9,7 +9,8 @@
 //   2. every subject has a conventional prefix and none is scoped to
 //      verification / ghost / loom / miri / kani;
 //   3. no changed path is a toolchain or build-graph input (Cargo.toml,
-//      Cargo.lock, build.rs, .cargo/, rust-toolchain*) or lies under src/ghost/;
+//      Cargo.lock, build.rs, .cargo/, rust-toolchain*) or lies under src/ghost/
+//      or crates/primitives/sefer-ghost/src/;
 //      the one exception is the root Cargo.toml when every changed line is the
 //      `production = [...]` composition line or a comment — a declared
 //      perf(runtime) change of the shipping feature set (NL-9) — and none of
@@ -21,7 +22,7 @@
 //      rejected free) is not a ghost token and is removed from the line first.
 // A ghost macro called through an alias changes nothing in production: the
 // macros compile to nothing outside cfg(any(loom, miri, kani, sefer_ghost)) and
-// their definitions are under src/ghost/ (rule 3).
+// their definitions are under src/ghost/ and crates/primitives/sefer-ghost/src/ (rule 3).
 
 const RUNTIME = /^(?:perf\((?:runtime|opt-in)\)|fix\(perf\))!?:/;
 const CONVENTIONAL = /^[a-z]+(?:\([^()]*\))?!?: \S/;
@@ -46,7 +47,7 @@ export function zeroCostSkip(subjects, changed, dirty = []) {
   }
   for (const [path, lines] of changed) {
     if (path === 'Cargo.toml' && productionCompositionOnly(lines)) continue;
-    if (BUILD_GRAPH.test(path) || path.startsWith('src/ghost/')) return null;
+    if (BUILD_GRAPH.test(path) || path.startsWith('src/ghost/') || path.startsWith('crates/primitives/sefer-ghost/src/')) return null;
     if (isBuildInput(path) && lines.some(hasGhostToken)) return null;
   }
   return 'the range declares a runtime change (perf(runtime) / perf(opt-in) / fix(perf)), has no verification-scoped commit and changes no ghost code or build-graph input';

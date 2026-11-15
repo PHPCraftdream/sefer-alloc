@@ -107,7 +107,7 @@ pub(crate) use loom::hint::spin_loop;
 pub(crate) use loom::thread::yield_now;
 
 #[allow(dead_code, unused_imports)]
-#[path = "../src/ghost/mod.rs"]
+#[path = "../crates/primitives/sefer-ghost/src/ghost/mod.rs"]
 mod ghost;
 
 /// The model never exits.

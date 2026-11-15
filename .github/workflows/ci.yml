@@ -45,6 +45,7 @@ jobs:
       crate_numa_shim: ${{ steps.plan.outputs.crate_numa_shim }}
       crate_once_ptr_cell: ${{ steps.plan.outputs.crate_once_ptr_cell }}
       crate_proc: ${{ steps.plan.outputs.crate_proc }}
+      crate_sefer_ghost: ${{ steps.plan.outputs.crate_sefer_ghost }}
       crate_sefer_region: ${{ steps.plan.outputs.crate_sefer_region }}
       crate_size_classes: ${{ steps.plan.outputs.crate_size_classes }}
       crate_tagged_index_stack: ${{ steps.plan.outputs.crate_tagged_index_stack }}
@@ -347,6 +348,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-tagged-index-stack-gates
+
+  sefer-ghost-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_sefer_ghost == 'true'
+    name: sefer-ghost package gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci-sefer-ghost-gates
 
   once-ptr-cell-miri:
     needs: changes

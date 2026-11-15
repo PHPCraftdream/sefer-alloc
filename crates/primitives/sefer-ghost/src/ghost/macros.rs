@@ -14,6 +14,7 @@
 #![allow(unused_macros)]
 
 #[cfg(all(any(loom, miri, sefer_ghost), not(kani)))]
+#[macro_export]
 macro_rules! ghost_assert {
     ($rule:literal, $cond:expr $(,)?) => {
         if !($cond) {
@@ -28,6 +29,7 @@ macro_rules! ghost_assert {
 }
 
 #[cfg(kani)]
+#[macro_export]
 macro_rules! ghost_assert {
     ($rule:literal, $cond:expr $(, $($arg:tt)*)?) => {
         kani::assert($cond, concat!("ghost check ", $rule))
@@ -37,6 +39,7 @@ macro_rules! ghost_assert {
 // `()` rather than nothing, so a check can stand where an expression is
 // expected (a match arm); the arguments are still not evaluated.
 #[cfg(not(any(loom, miri, kani, sefer_ghost)))]
+#[macro_export]
 macro_rules! ghost_assert {
     ($($t:tt)*) => {
         ()
@@ -44,6 +47,7 @@ macro_rules! ghost_assert {
 }
 
 #[cfg(all(any(loom, miri, sefer_ghost), not(kani)))]
+#[macro_export]
 macro_rules! ghost_event {
     ($rule:literal, $key:expr, $delta:expr $(,)?) => {
         $crate::ghost::record($rule, ($key) as u64, ($delta) as i64)
@@ -51,6 +55,7 @@ macro_rules! ghost_event {
 }
 
 #[cfg(any(kani, not(any(loom, miri, sefer_ghost))))]
+#[macro_export]
 macro_rules! ghost_event {
     ($($t:tt)*) => {
         ()
@@ -58,4 +63,4 @@ macro_rules! ghost_event {
 }
 
 #[allow(unused_imports)]
-pub(crate) use {ghost_assert, ghost_event};
+pub use {ghost_assert, ghost_event};

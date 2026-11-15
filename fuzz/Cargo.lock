@@ -246,6 +246,7 @@ version = "0.3.0"
 dependencies = [
  "aligned-vmem",
  "once-ptr-cell",
+ "sefer-ghost",
  "sefer-region",
  "size-classes",
  "tagged-index-stack",
@@ -260,6 +261,10 @@ dependencies = [
  "libfuzzer-sys",
  "sefer-alloc",
 ]
+
+[[package]]
+name = "sefer-ghost"
+version = "0.1.0"
 
 [[package]]
 name = "sefer-region"

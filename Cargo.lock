@@ -1090,6 +1090,7 @@ dependencies = [
  "proc-memstat",
  "proc-probe",
  "proptest",
+ "sefer-ghost",
  "sefer-region",
  "serde_json",
  "size-classes",
@@ -1097,6 +1098,10 @@ dependencies = [
  "tagged-index-stack",
  "tokio",
 ]
+
+[[package]]
+name = "sefer-ghost"
+version = "0.1.0"
 
 [[package]]
 name = "sefer-region"

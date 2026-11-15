@@ -45,9 +45,14 @@ version = "0.3.0"
 dependencies = [
  "arc-swap",
  "crossbeam-epoch",
+ "sefer-ghost",
  "sefer-region",
  "tagged-index-stack",
 ]
+
+[[package]]
+name = "sefer-ghost"
+version = "0.1.0"
 
 [[package]]
 name = "sefer-region"

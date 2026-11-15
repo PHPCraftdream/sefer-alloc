@@ -14,7 +14,7 @@ pub mod alloc_core;
 #[cfg(feature = "experimental")]
 #[path = "../src/concurrent/mod.rs"]
 mod concurrent;
-#[path = "../src/ghost/mod.rs"]
+#[path = "../crates/primitives/sefer-ghost/src/ghost/mod.rs"]
 mod ghost;
 #[path = "../src/global/mod.rs"]
 pub mod global;

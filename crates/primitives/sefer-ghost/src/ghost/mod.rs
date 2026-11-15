@@ -12,7 +12,7 @@ mod shadow;
 
 // First call sites in production code land with G2 (route pins).
 #[allow(unused_imports)]
-pub(crate) use macros::{ghost_assert, ghost_event};
+pub use macros::{ghost_assert, ghost_event};
 #[cfg(all(feature = "internals", any(loom, miri, sefer_ghost)))]
 pub use probe::probe;
 #[cfg(any(loom, miri, sefer_ghost))]

@@ -228,6 +228,10 @@ export function buildModuleGraph({ srcDir = "src", configPath = "scripts/module-
   const configPathAbs = resolve(configPath);
   const fileSet = new Set(listRsFiles(srcRoot));
   const EXTERN_NAMES = externCrateNames(dirname(srcRoot));
+  /** A use-binding whose target path leads with an extern crate name. */
+  const externBinding = (binding) =>
+    binding !== undefined && binding.kind !== "crate" && binding.kind !== "super" &&
+    binding.segs.length > 0 && EXTERN_NAMES.has(binding.segs[0]);
 
   // ── 1. parse cache: one lex+parse per unique file ─────────────────────
   const fileData = new Map();
@@ -303,13 +307,14 @@ export function buildModuleGraph({ srcDir = "src", configPath = "scripts/module-
       if (child !== undefined) { st.walked = true; return walkSegs(child.path, rest, st, approx); }
       const binding = node.importMap.get(s);
       if (binding !== undefined) {
+        if (externBinding(binding)) return { module: null, extern: true, viaGlob: st.viaGlob };
         const key = nodePath + "::" + s;
         if (st.visited.has(key)) return rest.length === 0 || st.walked ? { module: nodePath, viaGlob: st.viaGlob } : null;
         st.visited.add(key);
         st.walked = true;
         const t = walkSegsFrom(nodePath, binding, st);
         if (t === null) return rest.length === 0 || st.walked ? { module: nodePath, viaGlob: st.viaGlob } : null;
-        if (rest.length === 0) return { module: t.module, viaGlob: st.viaGlob || t.viaGlob };
+        if (rest.length === 0) return t.extern ? t : { module: t.module, viaGlob: st.viaGlob || t.viaGlob };
         return walkSegs(t.module, rest, st, approx);
       }
       for (const g of node.globs) {
@@ -378,6 +383,7 @@ export function buildModuleGraph({ srcDir = "src", configPath = "scripts/module-
           else unresolvedRefs.push({ file, line: u.line, kind: u.kind, segs });
           continue;
         }
+        if (t.extern) { externUses += 1; continue; }
         const site = { file, line: u.line, cfg: [modCfg, u.cfg].filter(Boolean).join(" && "), reexport: u.pubUse };
         addEdge(node.path, t.module, site);
         siteRefs.push({ fromModule: node.path, file, line: u.line, target: t.module, itemName: item.rename !== null ? item.rename : item.name, cfg: site.cfg, reexport: u.pubUse });
@@ -386,6 +392,7 @@ export function buildModuleGraph({ srcDir = "src", configPath = "scripts/module-
     for (const r of p.pathRefs) {
       const t = r.kind === "super" ? resolveAutoSuper(node.path, r.segs) : resolvePath(node.path, r.kind, r.segs);
       if (t === null) { unresolvedRefs.push({ file, line: r.line, kind: r.kind, segs: r.segs }); continue; }
+      if (t.extern) { externUses += 1; continue; }
       const site = { file, line: r.line, cfg: modCfg, reexport: false };
       addEdge(node.path, t.module, site);
       siteRefs.push({ fromModule: node.path, file, line: r.line, target: t.module, itemName: r.segs[r.segs.length - 1], cfg: modCfg, reexport: false });
@@ -406,7 +413,7 @@ export function buildModuleGraph({ srcDir = "src", configPath = "scripts/module-
         while (kind !== "crate" && segs.length > 0 && segs[0] === kind) segs = segs.slice(1);
         if (segs.length === 0) continue;
         const t = kind === "super" ? resolveAutoSuper(mod.path, segs) : resolvePath(mod.path, kind, segs);
-        docRefs.push({ module: mod.path, file, line: c.line, kind, segs, target: t === null ? null : t.module, text: c.text });
+        docRefs.push({ module: mod.path, file, line: c.line, kind, segs, target: t === null || t.extern ? null : t.module, text: c.text });
       }
     }
   }

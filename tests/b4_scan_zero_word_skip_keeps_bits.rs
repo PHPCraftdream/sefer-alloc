@@ -49,7 +49,7 @@ mod remote_bitmap;
 // Ghost checks in the included production files (docs/GHOST_CHECKS_PLAN.md):
 // ghost builds (miri, --cfg sefer_ghost) compile them.
 #[allow(dead_code, unused_imports)]
-#[path = "../src/ghost/mod.rs"]
+#[path = "../crates/primitives/sefer-ghost/src/ghost/mod.rs"]
 mod ghost;
 
 mod tests {

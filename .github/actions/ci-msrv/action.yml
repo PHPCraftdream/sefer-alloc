@@ -115,6 +115,20 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: cargo bench -p size-classes --no-run
+    # sefer-ghost-specific MSRV checks: root rows act on the root package
+    # only in this non-virtual workspace, so they never compile this
+    # member. The crate declares `rust-version = "1.88"`, matching this
+    # job's pin exactly; its real code is cfg(sefer_ghost)-gated, which no
+    # workspace-root row sets, so the latter two rows set it explicitly.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo check -p sefer-ghost
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTFLAGS="--cfg sefer_ghost" cargo check -p sefer-ghost --features internals
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTFLAGS="--cfg sefer_ghost" cargo test -p sefer-ghost --features internals --no-run
     # The root `--all-features` rows reach this crate only as a path-
     # dependency library, not as its own test/bench targets. These explicit
     # rows compile its library, tests, and bench under the pinned 1.88

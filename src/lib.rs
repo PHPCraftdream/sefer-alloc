@@ -547,9 +547,13 @@ mod kani_proofs;
 
 // Ghost checks (docs/GHOST_CHECKS_PLAN.md §3): `ghost_assert!` / `ghost_event!`
 // exist only in checking builds (loom, miri, kani, `--cfg sefer_ghost`) and expand
-// to nothing in production. `pub` + hidden only for the `internals` self-test.
+// to nothing in production. The macros and the shadow table live in the
+// `sefer-ghost` crate (crates/primitives/sefer-ghost, plan step P1.1); this
+// re-export keeps every `crate::ghost::…` call site resolving unchanged.
+// `pub` + hidden only for the `internals` self-test.
 #[cfg(all(feature = "internals", any(loom, miri, sefer_ghost)))]
 #[doc(hidden)]
-pub mod ghost;
+pub use sefer_ghost::ghost;
 #[cfg(not(all(feature = "internals", any(loom, miri, sefer_ghost))))]
-mod ghost;
+#[allow(unused_imports)] // the import is what `crate::ghost::…` call sites resolve through
+use sefer_ghost::ghost;
