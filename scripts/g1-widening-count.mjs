@@ -24,7 +24,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { computeVariant, mergedBoundaries, splitBoundaries, splitOnlyItems } from "./g1-widening-count/compute.mjs";
 
 const SCRIPT = "scripts/g1-widening-count.mjs";
@@ -243,4 +243,13 @@ function main() {
   process.stdout.write(report);
 }
 
-main();
+// Run main() only when this file is executed directly as the CLI, not when
+// imported (e.g. by tests/g1_widening_count.test.mjs) — importing must have
+// no side effects and must not rewrite docs/perf/G1_P2_WIDENING_COUNT.md.
+// The `-e`/`--eval` clause is needed because under `node -e "import(<this>)"`
+// process.argv[1] IS this file's path, so the URL check alone would fire.
+if (
+  process.argv[1]
+  && !process.execArgv.some((a) => a === "-e" || a === "--eval")
+  && pathToFileURL(resolve(process.argv[1])).href === import.meta.url
+) main();

@@ -3,7 +3,10 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { readdirSync } from 'node:fs';
 import { test } from 'node:test';
+
+const readDirNames = (dir) => readdirSync(dir);
 // Cargo-free, network-free, cargo-build-free suite (CLAUDE.md): everything
 // runs on synthetic trees in fresh mkdtemp dirs, exactly like
 // tests/module_graph.test.mjs. The one spawned process is the script's own
@@ -119,6 +122,24 @@ test('--check passes on a fresh report and fails on a tampered one (nonzero exit
   writeFileSync(reportPath, readFileSync(reportPath, 'utf8').replace('total', 'tampered-total'));
   assert.throws(() => run(), /--check FAILED/, 'tampered report must fail --check');
   rmSync(t.tmp, { recursive: true, force: true });
+});
+
+test('importing the module has no side effects: no report written, empty stdout, exit 0', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'g1-widening-import-'));
+  // On Windows a bare absolute path is not a valid ESM import specifier, so
+  // convert via pathToFileURL inside the child (same expression the guard
+  // in the script itself uses).
+  execFileSync(
+    process.execPath,
+    ['-e', 'import(require("node:url").pathToFileURL(process.argv[1]).href)', SCRIPT],
+    { cwd: tmp, encoding: 'utf8' },
+  ); // throws on nonzero exit
+  assert.deepEqual(
+    readDirNames(tmp),
+    [],
+    'importing the CLI module must not write docs/perf/G1_P2_WIDENING_COUNT.md (or anything else)',
+  );
+  rmSync(tmp, { recursive: true, force: true });
 });
 
 test('coverage assert: a module outside every boundary fails loudly', () => {

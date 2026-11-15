@@ -7,7 +7,7 @@ would have to become `pub` if the P2 crate layout of
 `scripts/module-graph/layers.json` (§`boundaries`) were applied. This report is an INPUT
 to the G1 decision; it decides nothing.
 
-Source tree identity: content sha256 `9a9f9246e9cacfc57efae91788b21d1499ab9a1b13ff1ddf5ea8fc3fa8120179`, src tree (not a git worktree), 219 .rs file(s).
+Source tree identity: content sha256 `1c991a6da5e649c3739252b5fec4d5951595b410186f3e2a117a63bec26ea0cd`, src tree (not a git worktree), 206 .rs file(s).
 
 ## Method
 
@@ -49,14 +49,14 @@ Source tree identity: content sha256 `9a9f9246e9cacfc57efae91788b21d1499ab9a1b13
 | --- | --- | --- |
 | sefer-alloc | 3 | 0 |
 | sefer-alloc-core | 37 | 0 |
-| sefer-concurrent | 1 | 0 |
+| sefer-concurrent | 0 | 0 |
 | sefer-ghost | 0 | 0 |
 | sefer-platform | 47 | 16 |
 | sefer-policy | 36 | 1 |
 | sefer-registry | 14 | 1 |
 | sefer-route | 4 | 0 |
 | sefer-segment | 41 | 1 |
-| **total** | **183** | **19** |
+| **total** | **182** | **19** |
 
 ### sefer-alloc — 3 item(s)
 
@@ -112,13 +112,11 @@ Boundary prefixes: `alloc_core.alloc_core`, `alloc_core.large`, `alloc_core.smal
 | 36 | `SIDECAR_INGRESS_DRAIN_CALLS` | use | `pub(crate)` | `alloc_core/mod.rs:269` | 3 |  |
 | 37 | `SIDECAR_INGRESS_RECORDS_CONSUMED` | use | `pub(crate)` | `alloc_core/mod.rs:269` | 3 |  |
 
-### sefer-concurrent — 1 item(s)
+### sefer-concurrent — 0 item(s)
 
 Boundary prefixes: `concurrent`
 
-| # | item | kind | vis | declared at | users | safety signal |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | `AtomicSlot` | struct | `pub(crate)` | `concurrent/epoch/hand.rs:116` | 1 |  |
+(no items would be widened)
 
 ### sefer-ghost — 0 item(s)
 
@@ -309,13 +307,13 @@ Boundary prefixes: `alloc_core.segment`
 | --- | --- | --- |
 | sefer-alloc | 3 | 0 |
 | sefer-alloc-core | 37 | 0 |
-| sefer-concurrent | 1 | 0 |
+| sefer-concurrent | 0 | 0 |
 | sefer-ghost | 0 | 0 |
 | sefer-platform | 47 | 16 |
 | sefer-policy | 36 | 1 |
 | sefer-registry | 14 | 1 |
 | sefer-segment-route | 43 | 1 |
-| **total** | **181** | **19** |
+| **total** | **180** | **19** |
 
 ### sefer-alloc — 3 item(s)
 
@@ -371,13 +369,11 @@ Boundary prefixes: `alloc_core.alloc_core`, `alloc_core.large`, `alloc_core.smal
 | 36 | `SIDECAR_INGRESS_DRAIN_CALLS` | use | `pub(crate)` | `alloc_core/mod.rs:269` | 3 |  |
 | 37 | `SIDECAR_INGRESS_RECORDS_CONSUMED` | use | `pub(crate)` | `alloc_core/mod.rs:269` | 3 |  |
 
-### sefer-concurrent — 1 item(s)
+### sefer-concurrent — 0 item(s)
 
 Boundary prefixes: `concurrent`
 
-| # | item | kind | vis | declared at | users | safety signal |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | `AtomicSlot` | struct | `pub(crate)` | `concurrent/epoch/hand.rs:116` | 1 |  |
+(no items would be widened)
 
 ### sefer-ghost — 0 item(s)
 
