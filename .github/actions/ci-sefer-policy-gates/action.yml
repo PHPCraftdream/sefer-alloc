@@ -1,0 +1,23 @@
+name: CI sefer-policy-gates
+description: sefer-policy package gates (P1.3 extraction)
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo clippy -p sefer-policy --all-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p sefer-policy --no-default-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p sefer-policy --all-features --no-deps
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    # Packaging verification — the crate must package and build in isolation
+    # against the published manifest. (No cargo-semver-checks row yet: the
+    # crate is version 0.1.0 and has no published baseline to compare
+    # against; add the row with the first publish, mirroring
+    # ci-sefer-region-gates.)
+    - run: cargo publish --dry-run -p sefer-policy
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

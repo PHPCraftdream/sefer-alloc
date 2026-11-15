@@ -6,7 +6,23 @@
 //! interleaving oracles on model atomics.
 #[path = "support/j13b_cadence_math.rs"]
 mod math;
-pub(crate) use math::alloc_core;
+// P1.3: the moved production sources resolve their imports at the
+// sefer-policy crate root (crate::policy::...); alias the shim tree under
+// those paths.
+#[allow(dead_code)]
+mod policy {
+    pub(crate) mod large_thp {
+        pub(crate) use super::super::math::alloc_core::config::policy::large_thp::LargeThpShare;
+    }
+    pub(crate) mod large_thp_observation {
+        pub(crate) mod bounded_mix {
+            pub(crate) use super::super::super::math::large_thp_observation::bounded_mix::bounded_mix;
+        }
+        pub(crate) mod large_thp_control_selector {
+            pub(crate) use super::super::super::math::large_thp_observation::large_thp_control_selector::LargeThpControlSelector;
+        }
+    }
+}
 
 #[cfg(not(loom))]
 pub(crate) use core::sync::atomic::{AtomicU64, Ordering};
@@ -14,9 +30,9 @@ pub(crate) use core::sync::atomic::{AtomicU64, Ordering};
 pub(crate) use loom::sync::atomic::{AtomicU64, Ordering};
 
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp_runtime/state/large_thp_cadence.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs"]
 mod large_thp_cadence;
-#[path = "../src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs"]
 mod thp_cadence_cell;
 use thp_cadence_cell::ThpCadenceCell;
 

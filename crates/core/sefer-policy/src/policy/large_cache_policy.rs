@@ -7,7 +7,7 @@
 // never names the type here. Same allow-with-explanation discipline as
 // `alloc_core/mod.rs`.
 #[allow(unused_imports)]
-use crate::alloc_core::config::large_cache_config::LargeCacheConfig;
+use crate::large_cache_config::LargeCacheConfig;
 
 /// The large-object-cache axis: the `headroom_bytes` anti-thrashing decay
 /// floor for the per-shard large-segment free-cache.
@@ -112,7 +112,7 @@ pub enum LargeCachePolicy {
     /// The `production` default: `256 MiB` headroom
     /// ([`LargeCacheConfig::DEFAULT`]'s own value, unchanged). Selecting
     /// this on the large-cache axis while opting into
-    /// [`SmallPoolPolicy::Throughput`](crate::SmallPoolPolicy::Throughput) on the small-pool axis is exactly how
+    /// [`SmallPoolPolicy::Throughput`](crate::policy::small_pool_policy::SmallPoolPolicy::Throughput) on the small-pool axis is exactly how
     /// defect #2 (R31-9, task #473) is fixed: the two axes are independent,
     /// so choosing a small-pool win no longer silently narrows the
     /// large-cache window as a package deal the way the old bundled

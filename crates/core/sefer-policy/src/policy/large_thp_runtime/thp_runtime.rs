@@ -1,15 +1,15 @@
 //! `ThpRuntime` — namespace over the process-wide large-THP statics: the
 //! publication cell and the always-compiled conflict counter.
 
-use crate::alloc_core::config::policy::large_thp::large_thp_request_group::LargeThpRequestGroup;
-use crate::alloc_core::config::policy::large_thp::{LargeThpGradient, LargeThpShare};
-use crate::alloc_core::config::policy::large_thp_observation::large_thp_control_selector::LargeThpControlSelector;
-use crate::alloc_core::config::policy::large_thp_runtime::large_thp_cadence::LargeThpCadence;
-use crate::alloc_core::config::policy::large_thp_runtime::thp_budget_ledger::ThpBudgetLedger;
-use crate::alloc_core::config::policy::large_thp_runtime::thp_cadence_cell::ThpCadenceCell;
-use crate::alloc_core::config::policy::large_thp_runtime::thp_learning_cell::ThpLearningCell;
-use crate::alloc_core::config::policy::large_thp_runtime::thp_tuple_cell::{ThpTupleCell, UNSET};
-use crate::alloc_core::config::policy::large_thp_runtime::ThpTuple;
+use crate::policy::large_thp::large_thp_request_group::LargeThpRequestGroup;
+use crate::policy::large_thp::{LargeThpGradient, LargeThpShare};
+use crate::policy::large_thp_observation::large_thp_control_selector::LargeThpControlSelector;
+use crate::policy::large_thp_runtime::large_thp_cadence::LargeThpCadence;
+use crate::policy::large_thp_runtime::thp_budget_ledger::ThpBudgetLedger;
+use crate::policy::large_thp_runtime::thp_cadence_cell::ThpCadenceCell;
+use crate::policy::large_thp_runtime::thp_learning_cell::ThpLearningCell;
+use crate::policy::large_thp_runtime::thp_tuple_cell::{ThpTupleCell, UNSET};
+use crate::policy::large_thp_runtime::ThpTuple;
 use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 const CONTROL_GROUP_COUNT: usize = 6;
@@ -131,12 +131,12 @@ static THP_ADVISED_BYTES_TOTAL: AtomicU64 = AtomicU64::new(0);
 static THP_TUPLE_CONFLICTS: AtomicU64 = AtomicU64::new(0);
 
 /// Process-wide large-THP tuple state; first publication wins.
-pub(crate) struct ThpRuntime;
+pub struct ThpRuntime;
 
 impl ThpRuntime {
     /// Publish `t`; returns `true` when the process tuple equals `t`
     /// afterwards, otherwise counts one conflict and returns `false`.
-    pub(crate) fn publish(t: &ThpTuple) -> bool {
+    pub fn publish(t: &ThpTuple) -> bool {
         let same = TUPLE.publish(t);
         if !same {
             THP_TUPLE_CONFLICTS.fetch_add(1, Ordering::Relaxed);
@@ -145,7 +145,7 @@ impl ThpRuntime {
     }
 
     /// The tuple in force: the published one, else [`ThpTuple::DEFAULT`].
-    pub(crate) fn current() -> ThpTuple {
+    pub fn current() -> ThpTuple {
         TUPLE.read()
     }
 
@@ -156,7 +156,7 @@ impl ThpRuntime {
     /// the group's cadence level thins candidates to the single live cohort
     /// of each `2^level` super-cohort. The level is read only for candidates.
     #[allow(dead_code)]
-    pub(crate) fn next_control(request_size: usize) -> (bool, u64) {
+    pub fn next_control(request_size: usize) -> (bool, u64) {
         let ordinal = CONTROL_ORDINAL.fetch_add(1, Ordering::Relaxed);
         let candidate = LargeThpControlSelector::decision_at(CONTROL_SEED, ordinal);
         let mut selected = false;
@@ -188,17 +188,13 @@ impl ThpRuntime {
 
     /// Record that an observation's preconditions were not met.
     #[allow(dead_code)]
-    pub(crate) fn note_premise_failure(request_size: usize) {
+    pub fn note_premise_failure(request_size: usize) {
         note_group_counter(&CONTROL_PREMISE_FAILURES, group_index(request_size), 1);
     }
 
     /// Record a valid observation and its resident/sample page totals.
     #[allow(dead_code)]
-    pub(crate) fn note_valid_observation(
-        request_size: usize,
-        resident_pages: u64,
-        sampled_pages: u64,
-    ) {
+    pub fn note_valid_observation(request_size: usize, resident_pages: u64, sampled_pages: u64) {
         let Some(observation) = ThpLearningCell::observation(resident_pages, sampled_pages) else {
             Self::note_observation_error(request_size);
             return;
@@ -237,7 +233,7 @@ impl ThpRuntime {
 
     /// Current share for one request group, from a coherent estimator pair.
     /// The caller supplies the same resolved gradient as its advice tuple.
-    pub(crate) fn learned_share(request_size: usize, gradient: &LargeThpGradient) -> LargeThpShare {
+    pub fn learned_share(request_size: usize, gradient: &LargeThpGradient) -> LargeThpShare {
         LEARNERS[group_index(request_size)]
             .snapshot()
             .bounded_share(gradient)
@@ -247,7 +243,7 @@ impl ThpRuntime {
     /// applied/dropped diagnostic loads. The whole array is not a snapshot;
     /// closure checks require quiescence after joining workers.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn learning_telemetry() -> [[u64; 5]; CONTROL_GROUP_COUNT] {
+    pub fn learning_telemetry() -> [[u64; 5]; CONTROL_GROUP_COUNT] {
         let gradient = Self::current().gradient;
         let mut result = [[0; 5]; CONTROL_GROUP_COUNT];
         for group in 0..CONTROL_GROUP_COUNT {
@@ -266,7 +262,7 @@ impl ThpRuntime {
     /// Record an observation invalidated after its preconditions were met and
     /// then consumed by a remote reclaim (the REMOTE-RECLAIM consumption).
     #[allow(dead_code)]
-    pub(crate) fn note_invalidated_observation(request_size: usize) {
+    pub fn note_invalidated_observation(request_size: usize) {
         note_group_counter(
             &CONTROL_INVALIDATED_OBSERVATIONS,
             group_index(request_size),
@@ -286,7 +282,7 @@ impl ThpRuntime {
     /// request size of the reallocated mapping, never to a token-derived
     /// group and never out of bounds.
     #[allow(dead_code)]
-    pub(crate) fn note_realloc_invalidated_by_token(token: u64, request_size: usize) {
+    pub fn note_realloc_invalidated_by_token(token: u64, request_size: usize) {
         if (1..=6).contains(&token) {
             // The token encodes group + 1 (success) or group + 9 (failed premise);
             // subtracting the offset yields the original group index directly.
@@ -300,7 +296,7 @@ impl ThpRuntime {
 
     /// Record an observation error.
     #[allow(dead_code)]
-    pub(crate) fn note_observation_error(request_size: usize) {
+    pub fn note_observation_error(request_size: usize) {
         note_group_counter(&CONTROL_OBSERVATION_ERRORS, group_index(request_size), 1);
     }
 
@@ -312,8 +308,8 @@ impl ThpRuntime {
 
     /// Per-group diagnostics in the field order above.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn control_telemetry(
-    ) -> [[u64; Self::CONTROL_TELEMETRY_FIELD_COUNT]; CONTROL_GROUP_COUNT] {
+    pub fn control_telemetry() -> [[u64; Self::CONTROL_TELEMETRY_FIELD_COUNT]; CONTROL_GROUP_COUNT]
+    {
         let mut result = [[0; Self::CONTROL_TELEMETRY_FIELD_COUNT]; CONTROL_GROUP_COUNT];
         for group in 0..CONTROL_GROUP_COUNT {
             result[group] = [
@@ -336,7 +332,7 @@ impl ThpRuntime {
     /// from the ticket log's actual `(ordinal, decision)` records, never
     /// from the difference of two probe reads.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn control_ordinal_probe() -> u64 {
+    pub fn control_ordinal_probe() -> u64 {
         CONTROL_ORDINAL.load(Ordering::Relaxed)
     }
 
@@ -344,7 +340,7 @@ impl ThpRuntime {
     /// ordinal. No atomics, no state; lets tests census the per-cohort
     /// decisions of an observed ordinal window.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn control_decision_for_ordinal(ordinal: u64) -> bool {
+    pub fn control_decision_for_ordinal(ordinal: u64) -> bool {
         LargeThpControlSelector::decision_at(CONTROL_SEED, ordinal)
     }
 
@@ -354,7 +350,7 @@ impl ThpRuntime {
     /// threads spawn. Entries are not cleared; the new cursor simply
     /// orphans the older records below it.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn ticket_log_reset() {
+    pub fn ticket_log_reset() {
         CONTROL_TICKET_CURSOR.store(0, Ordering::Relaxed);
     }
 
@@ -368,7 +364,7 @@ impl ThpRuntime {
     /// unsupported capture with `ticket_log_capture_supported` (the
     /// diagnostic hook does) before treating the window as usable evidence.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn ticket_log_snapshot() -> ([u64; TICKET_LOG_CAP], u64) {
+    pub fn ticket_log_snapshot() -> ([u64; TICKET_LOG_CAP], u64) {
         let mut entries = [0u64; TICKET_LOG_CAP];
         for (slot, entry) in CONTROL_TICKET_LOG.iter().zip(entries.iter_mut()) {
             *entry = slot.load(Ordering::Relaxed);
@@ -382,10 +378,7 @@ impl ThpRuntime {
     /// rejected at the diagnostic boundary instead of masquerading as
     /// complete usable evidence.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn ticket_log_capture_supported(
-        entries: &[u64; TICKET_LOG_CAP],
-        cursor: u64,
-    ) -> bool {
+    pub fn ticket_log_capture_supported(entries: &[u64; TICKET_LOG_CAP], cursor: u64) -> bool {
         if cursor > TICKET_LOG_CAP as u64 {
             return false;
         }
@@ -400,7 +393,7 @@ impl ThpRuntime {
     /// invalid marker 0. Pure value function — the diagnostic hooks expose
     /// it so tests bind to the production packing instead of duplicating it.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn ticket_log_pack(ordinal: u64, selected: bool) -> u64 {
+    pub fn ticket_log_pack(ordinal: u64, selected: bool) -> u64 {
         if ordinal < (1u64 << 62) {
             (ordinal << 2) | (u64::from(selected) << 1) | 1
         } else {
@@ -412,7 +405,7 @@ impl ThpRuntime {
     /// cadence level, or `0xFF` for a non-candidate. Unsynchronized Relaxed
     /// loads; coherent only under the same quiescence rules as the ticket log.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn level_log_snapshot() -> [u8; TICKET_LOG_CAP] {
+    pub fn level_log_snapshot() -> [u8; TICKET_LOG_CAP] {
         let mut levels = [0u8; TICKET_LOG_CAP];
         for (slot, level) in CONTROL_LEVEL_LOG.iter().zip(levels.iter_mut()) {
             *level = slot.load(Ordering::Relaxed) as u8;
@@ -424,7 +417,7 @@ impl ThpRuntime {
     /// requests, agreements applied, disagreement resets, dropped agreements,
     /// current agreement run. Independent loads; not a coherent snapshot.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn cadence_telemetry() -> [[u64; 5]; CONTROL_GROUP_COUNT] {
+    pub fn cadence_telemetry() -> [[u64; 5]; CONTROL_GROUP_COUNT] {
         let mut result = [[0; 5]; CONTROL_GROUP_COUNT];
         for group in 0..CONTROL_GROUP_COUNT {
             result[group] = [
@@ -441,7 +434,7 @@ impl ThpRuntime {
     /// Candidates (`[0]`) and selected controls (`[1]`) per `[group][level]`.
     /// Independent loads; not a coherent snapshot.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn cadence_level_counters() -> [[[u64; CADENCE_LEVELS]; CONTROL_GROUP_COUNT]; 2] {
+    pub fn cadence_level_counters() -> [[[u64; CADENCE_LEVELS]; CONTROL_GROUP_COUNT]; 2] {
         let mut result = [[[0; CADENCE_LEVELS]; CONTROL_GROUP_COUNT]; 2];
         for (index, (candidate, selection)) in CADENCE_CANDIDATES_BY_LEVEL
             .iter()
@@ -459,7 +452,7 @@ impl ThpRuntime {
     /// An out-of-range group is ignored. Call it while no control decisions
     /// are in flight.
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn cadence_pin(group: usize, level: Option<u32>) {
+    pub fn cadence_pin(group: usize, level: Option<u32>) {
         if group < CONTROL_GROUP_COUNT {
             CADENCE[group].pin(level);
         }
@@ -468,7 +461,7 @@ impl ThpRuntime {
     /// Pure diagnostic passthrough of the oracle decision for a raw
     /// ordinal at a cadence level (a candidate that is also live).
     #[cfg(feature = "bench-internals")]
-    pub(crate) fn control_select_for_ordinal(ordinal: u64, level: u32) -> bool {
+    pub fn control_select_for_ordinal(ordinal: u64, level: u32) -> bool {
         LargeThpCadence::select(CONTROL_SEED, ordinal, level)
     }
 
@@ -484,27 +477,27 @@ impl ThpRuntime {
         allow(dead_code)
     )]
     /// Conflicting publications so far.
-    pub(crate) fn conflicts() -> u64 {
+    pub fn conflicts() -> u64 {
         THP_TUPLE_CONFLICTS.load(Ordering::Relaxed)
     }
 
     /// The process-wide budget ledger.
-    pub(crate) fn ledger() -> &'static ThpBudgetLedger {
+    pub fn ledger() -> &'static ThpBudgetLedger {
         &LEDGER
     }
 
     /// Record `bytes` charged to the ledger.
-    pub(crate) fn note_charged(bytes: usize) {
+    pub fn note_charged(bytes: usize) {
         THP_CHARGED_TOTAL.fetch_add(bytes as u64, Ordering::Relaxed);
     }
 
     /// Record `bytes` given back to the ledger.
-    pub(crate) fn note_returned(bytes: usize) {
+    pub fn note_returned(bytes: usize) {
         THP_RETURNED_TOTAL.fetch_add(bytes as u64, Ordering::Relaxed);
     }
 
     /// Record `bytes` the kernel accepted advice for.
-    pub(crate) fn note_advised(bytes: usize) {
+    pub fn note_advised(bytes: usize) {
         THP_ADVISED_BYTES_TOTAL.fetch_add(bytes as u64, Ordering::Relaxed);
     }
 
@@ -512,19 +505,19 @@ impl ThpRuntime {
     // write side is live under the mechanism gate.
     #[cfg_attr(not(feature = "bench-internals"), allow(dead_code))]
     /// Total bytes charged.
-    pub(crate) fn charged_total() -> u64 {
+    pub fn charged_total() -> u64 {
         THP_CHARGED_TOTAL.load(Ordering::Relaxed)
     }
 
     #[cfg_attr(not(feature = "bench-internals"), allow(dead_code))]
     /// Total bytes returned.
-    pub(crate) fn returned_total() -> u64 {
+    pub fn returned_total() -> u64 {
         THP_RETURNED_TOTAL.load(Ordering::Relaxed)
     }
 
     #[cfg_attr(not(feature = "bench-internals"), allow(dead_code))]
     /// Total bytes the kernel accepted advice for.
-    pub(crate) fn advised_bytes_total() -> u64 {
+    pub fn advised_bytes_total() -> u64 {
         THP_ADVISED_BYTES_TOTAL.load(Ordering::Relaxed)
     }
 }
@@ -541,14 +534,7 @@ fn note_group_counter(counters: &[AtomicU64; CONTROL_GROUP_COUNT], group: usize,
 }
 
 fn group_index(request_size: usize) -> usize {
-    match LargeThpRequestGroup::of_bytes(request_size as u64) {
-        LargeThpRequestGroup::Under1MiB => 0,
-        LargeThpRequestGroup::MiB1To8 => 1,
-        LargeThpRequestGroup::MiB8To32 => 2,
-        LargeThpRequestGroup::MiB32To128 => 3,
-        LargeThpRequestGroup::MiB128To512 => 4,
-        LargeThpRequestGroup::Over512MiB => 5,
-    }
+    LargeThpRequestGroup::of_bytes(request_size as u64).index()
 }
 
 /// Bump the flat `[group * CADENCE_LEVELS + level]` diagnostic counter. Fail

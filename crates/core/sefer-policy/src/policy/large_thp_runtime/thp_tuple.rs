@@ -11,7 +11,7 @@
 //! Decoding rebuilds the gradient through the normalising
 //! [`LargeThpGradient::custom`], so a decoded tuple is always valid.
 
-use crate::alloc_core::config::policy::large_thp::{LargeThpCurve, LargeThpGradient, LargeThpMode};
+use crate::policy::large_thp::{LargeThpCurve, LargeThpGradient, LargeThpMode};
 
 /// Resolved large-THP tuple; see the module doc for the packed layout.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

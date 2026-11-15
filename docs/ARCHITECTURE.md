@@ -128,18 +128,19 @@ The founding principle (from [DESIGN.md](DESIGN.md)):
 ### Workspace companions
 
 Before discussing the internal seams, the workspace structure matters for the
-audit story. The four original extractions were:
+audit story. The four original extractions, plus `sefer-policy` (P1.3), were:
 
 ```
 sefer-alloc
+ ├── sefer-policy    (crates/core/sefer-policy)         — allocator POLICY layer: config types, policy builders, Large-THP policy runtime (feature: alloc-decommit)
  ├── sefer-region    (crates/containers/sefer-region)       — Handle<T>/Region<T>/SyncRegion<T>
  ├── aligned-vmem    (crates/platform/aligned-vmem)         — OS virtual-memory aperture  (feature: alloc-core)
  ├── numa-shim       (crates/platform/numa-shim)         — NUMA detection + binding    (feature: numa-aware)
  └── malloc-bench-rs (crates/bench/malloc-bench-rs) — portable GlobalAlloc bench harness (standalone)
 ```
 
-The workspace now has twelve companion crates; the complete current list is in
-[README §Workspace](../README.md#workspace-twelve-independently-publishable-companion-crates).
+The workspace now has thirteen companion crates (P1.3 added `sefer-policy`, the extracted `src/alloc_core/config` policy layer); the complete current list is in
+[README §Workspace](../README.md#workspace-thirteen-independently-publishable-companion-crates).
 Each original extraction is a real crates.io crate. The
 extraction **improved the audit story**: the two OS-unsafe sub-problems are now
 small, single-responsibility crates that can be audited in complete isolation.
@@ -153,6 +154,7 @@ small, single-responsibility crates that can be audited in complete isolation.
 | `aligned-vmem` | `crates/platform/aligned-vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture; sole responsibility = SEGMENT-aligned mmap/VirtualAlloc + decommit. Small, audit in isolation. |
 | `numa-shim` | `crates/platform/numa-shim/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim; sole responsibility = mbind(2)/VirtualAllocExNuma. Small, audit in isolation. |
 | `malloc-bench-rs` | `crates/bench/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
+| `sefer-policy` | `crates/core/sefer-policy/` | `#![forbid(unsafe_code)]` — zero own unsafe, zero raw pointers; the former `src/alloc_core/config` policy layer (moved P1.3). |
 | `sefer-region` | `crates/containers/sefer-region/` | `#![forbid(unsafe_code)]` — zero own unsafe (shown for contrast; does **not** match the grep above); slotmap's core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/containers/sefer-region/README.md` "## Safety"). |
 
 **Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):

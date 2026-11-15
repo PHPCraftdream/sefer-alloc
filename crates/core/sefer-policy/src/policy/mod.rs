@@ -1,5 +1,5 @@
-//! The three public configuration-policy types ([`Profile`](crate::Profile),
-//! [`SmallPoolPolicy`](crate::SmallPoolPolicy), [`LargeCachePolicy`](crate::LargeCachePolicy)),
+//! The three public configuration-policy types ([`Profile`](crate::policy::profile::Profile),
+//! [`SmallPoolPolicy`](crate::policy::small_pool_policy::SmallPoolPolicy), [`LargeCachePolicy`](crate::policy::large_cache_policy::LargeCachePolicy)),
 //! moved verbatim from the former single `profile.rs` per the one-file-one-export rule.
 
 pub mod large_cache_policy;

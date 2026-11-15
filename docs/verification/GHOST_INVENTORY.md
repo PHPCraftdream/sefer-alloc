@@ -75,7 +75,7 @@ Protocols with neither a loom nor a shadow model: P28, P20, P26 (3 of 29).
 
 ### P29 — large-THP adaptive control cadence
 
-Prod: `src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs`, `src/alloc_core/config/policy/large_thp_runtime/state/large_thp_cadence.rs`, `src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs`.
+Prod: `crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs`, `crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs`, `crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs`, `crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs`.
 
 - I1 one AtomicU64 per request group holds the saturating agreement run in bits 0..=4 (the other bits stay zero outside the bench-internals pin); the level is derived from a single Relaxed load
 - I2 the run is bounded 0..=20 at every observable instant (increments are CAS-guarded below the maximum, resets only clear bits) and the level is min(run/4, 5)
@@ -105,7 +105,7 @@ Decision: **benchmark-only bounded capture with fail-closed evidence** — Task7
 
 ### P27 — large-THP coherent bounded estimator pair
 
-Prod: `src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs`, `src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/alloc_core/mem/advise_fresh_large.rs`.
+Prod: `crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs`, `crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/alloc_core/mem/advise_fresh_large.rs`.
 
 - I1 one AtomicU64 contains both Q31 estimator components; snapshot is one indivisible load
 - I2 a successful CAS applies exactly one accepted pure-estimator update from its expected packed pair
@@ -356,7 +356,7 @@ Decision: **ghost** — SC-6 A-exact (docs/perf/g1_scan/SC6_ORACLE.md, .rush spe
 
 ### P24 — large-THP tuple cell (write-once publication)
 
-Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs`.
+Prod: `crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs`.
 
 - I1 single winner: one strong compare_exchange(UNSET, PUBLISHING, AcqRel, Acquire) elects the only writer
 - I2 the five words are Relaxed-stored by the winner before the state store(PUBLISHED, Release)
@@ -369,7 +369,7 @@ Decision: **rules + actual-source model + integration tests** — J13b #47: R1 p
 
 ### P25 — large-THP budget ledger (advised bytes, bounded CAS reserve)
 
-Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs`, `src/alloc_core/alloc_core/mem/release_large_mapping.rs::release_large_mapping`.
+Prod: `crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs`, `src/alloc_core/alloc_core/mem/release_large_mapping.rs::release_large_mapping`.
 
 - I1 used never exceeds the budget of a successful reservation: a reservation is one compare_exchange_weak from the observed value
 - I2 try_reserve loops at most MAX_ATTEMPTS times and returns 0 (no advice) when it keeps losing
@@ -382,7 +382,7 @@ Decision: **rules + actual-source model + integration tests** — J13b #47: R1 p
 
 ### P26 — large-THP deterministic control ordinal and diagnostic telemetry
 
-Prod: `src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/config/policy/large_thp_observation/large_thp_control_selector.rs`.
+Prod: `crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs`, `crates/core/sefer-policy/src/policy/large_thp_observation/large_thp_control_selector.rs`.
 
 - I1 each next_control call obtains one successive wrapping ticket from CONTROL_ORDINAL with one fetch_add(Relaxed); the returned ticket is the ordinal input to the deterministic selection, not a publication
 - I2 next_control uses the fixed CONTROL_SEED with the pure decision_at(seed, ordinal) selector, which defines exactly one candidate in each complete aligned cohort of eight ordinals (not every sliding window); a candidate becomes a control only when it is also live at the group cadence level (P29), so controls are a subset of candidates

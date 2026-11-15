@@ -10,18 +10,18 @@
 //! the conservative direction). A winner that never finishes leaves every
 //! reader on the default tuple.
 
-use crate::alloc_core::config::policy::large_thp_runtime::ThpTuple;
+use crate::policy::large_thp_runtime::ThpTuple;
 // Atomics through `super` so the actual-source concurrency model can bind.
 use super::{AtomicU64, AtomicU8, Ordering};
 
-pub(crate) const UNSET: u8 = 0;
+pub const UNSET: u8 = 0;
 const PUBLISHING: u8 = 1;
 const PUBLISHED: u8 = 2;
 
 /// Write-once cell holding a packed [`ThpTuple`]; see the module doc.
-pub(crate) struct ThpTupleCell {
-    pub(crate) state: AtomicU8,
-    pub(crate) w: [AtomicU64; 5],
+pub struct ThpTupleCell {
+    pub state: AtomicU8,
+    pub w: [AtomicU64; 5],
 }
 
 impl ThpTupleCell {
@@ -32,7 +32,7 @@ impl ThpTupleCell {
     // `new` is consumed by the root test binaries, which mount this file by
     // path and are invisible to lib-target dead-code analysis.
     #[allow(dead_code)]
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             state: AtomicU8::new(UNSET),
             w: [
@@ -49,7 +49,7 @@ impl ThpTupleCell {
     /// afterwards (this call won, or an equal tuple was already published) and
     /// `false` on a conflict: a different or undecodable published tuple, or a
     /// publication still in progress.
-    pub(crate) fn publish(&self, t: &ThpTuple) -> bool {
+    pub fn publish(&self, t: &ThpTuple) -> bool {
         match self
             .state
             .compare_exchange(UNSET, PUBLISHING, Ordering::AcqRel, Ordering::Acquire)
@@ -71,7 +71,7 @@ impl ThpTupleCell {
 
     /// The published tuple, or [`ThpTuple::DEFAULT`] while unset, still being
     /// published, or undecodable. One Acquire load.
-    pub(crate) fn read(&self) -> ThpTuple {
+    pub fn read(&self) -> ThpTuple {
         if self.state.load(Ordering::Acquire) == PUBLISHED {
             ThpTuple::unpack(self.load_words())
         } else {
@@ -87,5 +87,11 @@ impl ThpTupleCell {
             self.w[3].load(Ordering::Relaxed),
             self.w[4].load(Ordering::Relaxed),
         ]
+    }
+}
+
+impl Default for ThpTupleCell {
+    fn default() -> Self {
+        Self::new()
     }
 }

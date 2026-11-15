@@ -267,6 +267,7 @@ the smoke row covers those scenarios.
 | `proc-probe-gates` | proc-probe gates | `crate_proc`: changes under its crate |
 | `sefer-concurrent-gates` | sefer-concurrent-gates | `crate_sefer_concurrent`: changes under its crate |
 | `sefer-ghost-gates` | sefer-ghost package gates | `crate_sefer_ghost`: changes under its crate |
+| `sefer-policy-gates` | sefer-policy package gates | `crate_sefer_policy`: changes under its crate |
 | `sefer-region-gates` | sefer-region package gates | `crate_sefer_region`: changes under its crate |
 | `size-classes-gates` | size-classes package gates | `crate_size_classes`: changes under its crate |
 | `tagged-index-stack-gates` | tagged-index-stack package gates | `crate_tagged_index_stack`: changes under its crate |

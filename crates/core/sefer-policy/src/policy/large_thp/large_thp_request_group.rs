@@ -63,4 +63,18 @@ impl LargeThpRequestGroup {
             512..=u64::MAX => Self::Over512MiB,
         }
     }
+
+    /// Stable group index `0..=5` used by per-group arrays.
+    #[inline]
+    #[must_use]
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Under1MiB => 0,
+            Self::MiB1To8 => 1,
+            Self::MiB8To32 => 2,
+            Self::MiB32To128 => 3,
+            Self::MiB128To512 => 4,
+            Self::Over512MiB => 5,
+        }
+    }
 }

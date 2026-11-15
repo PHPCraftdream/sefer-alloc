@@ -4,8 +4,8 @@
 //! This replaces the environment-variable parsers that used to live in
 //! `alloc_core.rs`. The caller constructs a `LargeCacheConfig` value at
 //! compile time (or at runtime — the builder is `const` but not *required*
-//! to be) and passes it to [`AllocCore::new_with_config`](crate::alloc_core::AllocCore::new_with_config) or
-//! [`SeferAlloc::with_config`](crate::SeferAlloc::with_config). If the caller wants to read from the
+//! to be) and passes it to `AllocCore::new_with_config` or
+//! `SeferAlloc::with_config`. If the caller wants to read from the
 //! environment, a CLI flag, or a config file, they do that themselves and
 //! pass the resolved values here.
 //!
@@ -32,28 +32,28 @@
 
 // `LargeCacheMode` lives in the sibling sub-module `alloc_core::large_cache_mode`
 // and is re-exported by `alloc_core::mod.rs`.
-use crate::alloc_core::config::large_cache_mode::LargeCacheMode;
-use crate::alloc_core::config::policy::large_thp::{LargeThpGradient, LargeThpMode};
-use crate::alloc_core::config::policy::large_thp_runtime::ThpTuple;
+use crate::large_cache_mode::LargeCacheMode;
+use crate::policy::large_thp::{LargeThpGradient, LargeThpMode};
+use crate::policy::large_thp_runtime::ThpTuple;
 // `SmallSegmentPoolConfig` (Mechanism 2, task #51) lives in the sibling
 // sub-module `alloc_core::small_segment_pool_config`. It is carried as a field
 // here — both are `alloc-decommit`-gated construction-time knobs threaded
 // through the SAME single-config plumbing, so embedding it avoids adding a
 // second config parameter through four API layers (see that type's module
 // docs for the wiring rationale).
-use crate::alloc_core::config::small_segment_pool_config::SmallSegmentPoolConfig;
+use crate::small_segment_pool_config::SmallSegmentPoolConfig;
 
 // ── Default constants (kept in sync with the old env-parser defaults) ─────────
 
 /// Default headroom: 256 MiB. This is the decay trigger/target for
 /// anti-thrashing; FIFO eviction can release whole spans and overshoot it.
-pub(crate) const DEFAULT_HEADROOM_BYTES: usize = 256 * 1024 * 1024;
+pub const DEFAULT_HEADROOM_BYTES: usize = 256 * 1024 * 1024;
 
 /// Default decay interval: 1000 ms (1 second per due interval).
-pub(crate) const DEFAULT_DECAY_INTERVAL_MS: u64 = 1000;
+pub const DEFAULT_DECAY_INTERVAL_MS: u64 = 1000;
 
 /// Default decay rate: 10 % per tick, expressed as a percentage.
-pub(crate) const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;
+pub const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;
 
 /// R14-5 (task #290), revised R17-9 (task #326): default byte-budget ceiling
 /// applied ONLY when the `large-cache-extended` feature is compiled in AND
@@ -120,7 +120,7 @@ pub(crate) const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;
 /// address — but no such process-wide accounting infrastructure exists
 /// anywhere in this crate today to build on (`AllocCore`'s existing
 /// diagnostic counters, e.g. `large_cache_hits` in
-/// [`AllocStats`](crate::AllocStats), are per-heap fields collected by the
+/// `AllocStats`, are per-heap fields collected by the
 /// registry, not a shared atomic; see `src/global/alloc_stats.rs`). Adding
 /// one would mean a new global CAS-based protocol, its own loom
 /// verification, and new cross-heap contention on a path that is currently
@@ -146,7 +146,7 @@ pub(crate) const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;
 /// for THIS constant lives in
 /// `tests/large_cache_extended_budget_before_materialization.rs`).
 #[cfg(feature = "large-cache-extended")]
-pub(crate) const DEFAULT_EXTENDED_BUDGET_BYTES: usize = DEFAULT_HEADROOM_BYTES;
+pub const DEFAULT_EXTENDED_BUDGET_BYTES: usize = DEFAULT_HEADROOM_BYTES;
 
 // ── The config type ───────────────────────────────────────────────────────────
 
@@ -172,8 +172,8 @@ pub(crate) const DEFAULT_EXTENDED_BUDGET_BYTES: usize = DEFAULT_HEADROOM_BYTES;
 /// ```
 ///
 /// Passing `LargeCacheConfig::DEFAULT` (= `LargeCacheConfig::new()`) to
-/// [`SeferAlloc::with_config`](crate::SeferAlloc::with_config) produces
-/// byte-identical behaviour to [`SeferAlloc::new`](crate::SeferAlloc::new).
+/// `SeferAlloc::with_config` produces
+/// byte-identical behaviour to `SeferAlloc::new`.
 #[cfg(feature = "alloc-decommit")]
 #[derive(Copy, Clone, Debug)]
 pub struct LargeCacheConfig {
@@ -184,95 +184,95 @@ pub struct LargeCacheConfig {
     /// When set, FIFO eviction fires before admitting a new span that would
     /// push the total above this limit. If the limit is smaller than the span
     /// being freed, the span is released to the OS immediately (not cached).
-    pub(crate) budget_bytes: Option<usize>,
+    pub budget_bytes: Option<usize>,
 
     /// Anti-thrashing decay trigger/target, not a hard floor: whole-span FIFO
     /// eviction can release below this level. `None` uses the default (256 MiB).
-    pub(crate) headroom_bytes: Option<usize>,
+    pub headroom_bytes: Option<usize>,
 
     /// Elapsed-time period used to count due decay steps, in milliseconds.
     /// This is not a minimum spacing between invocations: bounded catch-up
     /// can process several due steps in one invocation.
     /// `None` uses the default (1000 ms).
-    pub(crate) decay_interval_ms: Option<u32>,
+    pub decay_interval_ms: Option<u32>,
 
     /// Fraction of the excess to release per tick, in integer percent
     /// `[1, 100]`. `None` uses the default (10 %).
     ///
     /// Values outside `[1, 100]` are clamped at resolution time.
-    pub(crate) decay_rate_percent: Option<u32>,
+    pub decay_rate_percent: Option<u32>,
 
     /// Cache operating mode. `None` uses the default (`Lazy`).
-    pub(crate) mode: Option<LargeCacheMode>,
+    pub mode: Option<LargeCacheMode>,
 
     /// Empty-small-segment hysteresis pool config (Mechanism 2, task #51).
     /// Carried here because it is threaded through the SAME construction-time
     /// plumbing as the large-cache knobs; see
-    /// [`SmallSegmentPoolConfig`](crate::alloc_core::config::small_segment_pool_config::SmallSegmentPoolConfig)
+    /// [`SmallSegmentPoolConfig`](crate::small_segment_pool_config::SmallSegmentPoolConfig)
     /// for the full rationale. Defaults to `SmallSegmentPoolConfig::DEFAULT`
     /// (pool ENABLED, 4 segments / 16 MiB) — so `production` gets pooling on by
     /// default with no explicit opt-in.
-    pub(crate) pool: SmallSegmentPoolConfig,
+    pub pool: SmallSegmentPoolConfig,
 
     /// G1-K7: per-heap byte budget of the magazine-depot overflow (blocks
     /// parked above the fixed per-class depot floor). `None` uses
     /// [`DEFAULT_DEPOT_BUDGET_BYTES`]; `Some(0)` disables the overflow.
-    pub(crate) depot_budget_bytes: Option<usize>,
+    pub depot_budget_bytes: Option<usize>,
 
     /// DZ-3 follow-up: slot count of the per-thread route pin cache of the
     /// foreign-free path. `None` uses [`DEFAULT_PIN_CACHE_SLOTS`]. Resolved
     /// by [`resolved_route_pin_cache_slots`](Self::resolved_route_pin_cache_slots).
-    pub(crate) route_pin_cache_slots: Option<usize>,
+    pub route_pin_cache_slots: Option<usize>,
 
     /// TH-1 follow-up: the small-segment count (process-wide) from which a
     /// newly reserved small segment gets the transparent-huge-page hint.
     /// `None` uses [`DEFAULT_HUGE_PAGE_AFTER_SEGMENTS`]; `Some(0)` never hints.
     /// Resolved by
     /// [`resolved_huge_page_after_segments`](Self::resolved_huge_page_after_segments).
-    pub(crate) huge_page_after_segments: Option<usize>,
+    pub huge_page_after_segments: Option<usize>,
 
     /// Large-THP advice mode; `None` uses the platform default: Always on
     /// supported Linux, Off elsewhere.
-    pub(crate) huge_page_mode: Option<LargeThpMode>,
+    pub huge_page_mode: Option<LargeThpMode>,
 
     /// Smallest fresh Large block (bytes) eligible for THP advice; `None`
     /// resolves to 8 MiB, `Some(0)` makes every fresh Large block eligible.
-    pub(crate) huge_page_block_min_bytes: Option<usize>,
+    pub huge_page_block_min_bytes: Option<usize>,
 
     /// Bound on ADVISED Large bytes; `None` resolves to `0` (unlimited).
     /// Independent of the cache `budget_bytes`.
-    pub(crate) huge_page_budget_bytes: Option<usize>,
+    pub huge_page_budget_bytes: Option<usize>,
 
     /// Gradient parameters for `LargeThpMode::Auto`; `None` resolves to
     /// `LargeThpGradient::CAUTIOUS`.
-    pub(crate) huge_page_gradient: Option<LargeThpGradient>,
+    pub huge_page_gradient: Option<LargeThpGradient>,
 }
 
 /// Default of [`LargeCacheConfig::huge_page_after_segments`]: the 16th small
 /// segment (64 MiB) is the first to get the transparent-huge-page hint.
 #[cfg_attr(feature = "numa-aware", allow(dead_code))]
-pub(crate) const DEFAULT_HUGE_PAGE_AFTER_SEGMENTS: usize = 16;
+pub const DEFAULT_HUGE_PAGE_AFTER_SEGMENTS: usize = 16;
 /// Largest threshold that is stored as is; a larger value means "never".
 #[cfg_attr(feature = "numa-aware", allow(dead_code))]
-pub(crate) const HUGE_PAGE_AFTER_SEGMENTS_MAX: usize = u32::MAX as usize;
+pub const HUGE_PAGE_AFTER_SEGMENTS_MAX: usize = u32::MAX as usize;
 
 /// Default slot count of the per-thread route pin cache.
-pub(crate) const DEFAULT_PIN_CACHE_SLOTS: usize = 32;
+pub const DEFAULT_PIN_CACHE_SLOTS: usize = 32;
 /// Smallest configurable slot count of the route pin cache.
-pub(crate) const PIN_CACHE_SLOTS_MIN: usize = 4;
+pub const PIN_CACHE_SLOTS_MIN: usize = 4;
 /// Largest configurable slot count of the route pin cache (the capacity of
 /// the per-thread slot array).
-pub(crate) const PIN_CACHE_SLOTS_MAX: usize = 64;
+pub const PIN_CACHE_SLOTS_MAX: usize = 64;
 
 /// G1-K7: default depot-overflow budget per heap (1 MiB of parked blocks).
-pub(crate) const DEFAULT_DEPOT_BUDGET_BYTES: usize = 1024 * 1024;
+pub const DEFAULT_DEPOT_BUDGET_BYTES: usize = 1024 * 1024;
 /// G1-K7: bytes of the smallest full magazine (16 blocks of 16 B); the
 /// budget resolves to a multiple of it.
-pub(crate) const DEPOT_BUDGET_GRAIN: usize = 256;
+pub const DEPOT_BUDGET_GRAIN: usize = 256;
 /// G1-K7: budget ceiling — `(u16::MAX - DEPOT_K_MAX) * 256`, so a class's
 /// `PerClass::parked: u16` holds its floor plus the whole overflow even for
 /// 16 B blocks (pinned against the registry constants in `state/depot.rs`).
-pub(crate) const DEPOT_BUDGET_MAX: usize = (u16::MAX as usize - 8) * DEPOT_BUDGET_GRAIN;
+pub const DEPOT_BUDGET_MAX: usize = (u16::MAX as usize - 8) * DEPOT_BUDGET_GRAIN;
 
 #[cfg(feature = "alloc-decommit")]
 impl Default for LargeCacheConfig {
@@ -445,11 +445,11 @@ impl LargeCacheConfig {
         self
     }
 
-    /// Build a config from a [`Profile`](crate::alloc_core::config::policy::profile::Profile) — a small
+    /// Build a config from a [`Profile`](crate::policy::profile::Profile) — a small
     /// builder over two independent, named, measured axes
-    /// ([`SmallPoolPolicy`](crate::alloc_core::config::policy::small_pool_policy::SmallPoolPolicy) for the
-    /// small-pool pair, [`LargeCachePolicy`](crate::alloc_core::config::policy::large_cache_policy::LargeCachePolicy)
-    /// for the large-cache `headroom_bytes`). See [`Profile`](crate::alloc_core::config::policy::profile::Profile)'s
+    /// ([`SmallPoolPolicy`](crate::policy::small_pool_policy::SmallPoolPolicy) for the
+    /// small-pool pair, [`LargeCachePolicy`](crate::policy::large_cache_policy::LargeCachePolicy)
+    /// for the large-cache `headroom_bytes`). See [`Profile`](crate::policy::profile::Profile)'s
     /// own docs for exactly what each axis sets and the measured gate reports
     /// (R27-3/R27-4/R30-6/R31-1/R31-2) each value is drawn from.
     ///
@@ -470,14 +470,14 @@ impl LargeCacheConfig {
     /// `decay_rate_percent`, `mode`) stays at its own built-in default —
     /// chain further setter calls on the result to override them.
     #[must_use]
-    pub const fn for_profile(profile: crate::alloc_core::config::policy::profile::Profile) -> Self {
+    pub const fn for_profile(profile: crate::policy::profile::Profile) -> Self {
         profile.to_config()
     }
 
     /// Set the empty-small-segment hysteresis pool config (Mechanism 2, task
     /// #51).
     ///
-    /// Default: [`SmallSegmentPoolConfig::DEFAULT`](crate::alloc_core::config::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT)
+    /// Default: [`SmallSegmentPoolConfig::DEFAULT`](crate::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT)
     /// (pool enabled, 4 segments / 16 MiB). Pass
     /// `SmallSegmentPoolConfig::new().pool_segments(0)` to disable pooling
     /// (immediate release of every empty small segment — the pre-Mechanism-2
@@ -564,7 +564,7 @@ impl LargeCacheConfig {
         not(any(feature = "alloc-global", feature = "internals")),
         allow(dead_code)
     )]
-    pub(crate) const fn resolved_route_pin_cache_slots(&self) -> usize {
+    pub const fn resolved_route_pin_cache_slots(&self) -> usize {
         let n = match self.route_pin_cache_slots {
             Some(v) => v,
             None => DEFAULT_PIN_CACHE_SLOTS,
@@ -667,7 +667,7 @@ impl LargeCacheConfig {
     // Sole caller is the lifecycle tuple publication, itself compiled out
     // under numa-aware; the internals dbg hook reads the tuple directly.
     #[cfg_attr(feature = "numa-aware", allow(dead_code))]
-    pub(crate) const fn has_explicit_thp_knob(&self) -> bool {
+    pub const fn has_explicit_thp_knob(&self) -> bool {
         self.huge_page_mode.is_some()
             || self.huge_page_block_min_bytes.is_some()
             || self.huge_page_budget_bytes.is_some()
@@ -682,7 +682,7 @@ impl LargeCacheConfig {
         all(feature = "numa-aware", not(feature = "internals")),
         allow(dead_code)
     )]
-    pub(crate) const fn resolved_thp_tuple(&self) -> ThpTuple {
+    pub const fn resolved_thp_tuple(&self) -> ThpTuple {
         ThpTuple {
             mode: match self.huge_page_mode {
                 Some(m) => m,
@@ -724,7 +724,7 @@ impl LargeCacheConfig {
     /// a value above [`HUGE_PAGE_AFTER_SEGMENTS_MAX`] also means "never".
     #[must_use]
     #[cfg_attr(feature = "numa-aware", allow(dead_code))]
-    pub(crate) const fn resolved_huge_page_after_segments(&self) -> usize {
+    pub const fn resolved_huge_page_after_segments(&self) -> usize {
         let n = match self.huge_page_after_segments {
             Some(v) => v,
             None => DEFAULT_HUGE_PAGE_AFTER_SEGMENTS,
@@ -744,7 +744,7 @@ impl LargeCacheConfig {
         self.resolved_depot_budget_bytes()
     }
 
-    // ── Resolution helpers (pub(crate)) ──────────────────────────────────────
+    // ── Resolution helpers (pub) ──────────────────────────────────────
 
     /// Resolve the depot-overflow budget (G1-K7): default when unset, then
     /// capped at [`DEPOT_BUDGET_MAX`] and rounded down to
@@ -756,7 +756,7 @@ impl LargeCacheConfig {
         not(any(feature = "alloc-global", feature = "internals")),
         allow(dead_code)
     )]
-    pub(crate) const fn resolved_depot_budget_bytes(&self) -> usize {
+    pub const fn resolved_depot_budget_bytes(&self) -> usize {
         let b = match self.depot_budget_bytes {
             Some(v) => v,
             None => DEFAULT_DEPOT_BUDGET_BYTES,
@@ -782,7 +782,7 @@ impl LargeCacheConfig {
     /// this module. Base-cache builds (feature OFF) are unaffected: the
     /// stored `None` resolves to `None` exactly as before this task.
     #[must_use]
-    pub(crate) const fn resolved_budget_bytes(&self) -> Option<usize> {
+    pub const fn resolved_budget_bytes(&self) -> Option<usize> {
         #[cfg(feature = "large-cache-extended")]
         {
             match self.budget_bytes {
@@ -799,7 +799,7 @@ impl LargeCacheConfig {
     /// Resolve the headroom floor in bytes. Falls back to the default (256 MiB)
     /// when unset.
     #[must_use]
-    pub(crate) const fn resolved_headroom_bytes(&self) -> usize {
+    pub const fn resolved_headroom_bytes(&self) -> usize {
         match self.headroom_bytes {
             Some(v) => v,
             None => DEFAULT_HEADROOM_BYTES,
@@ -809,7 +809,7 @@ impl LargeCacheConfig {
     /// Resolve the decay interval as a `Duration`. Falls back to the default
     /// (1 000 ms) when unset.
     #[must_use]
-    pub(crate) fn resolved_decay_interval(&self) -> core::time::Duration {
+    pub fn resolved_decay_interval(&self) -> core::time::Duration {
         let ms = match self.decay_interval_ms {
             Some(v) => v as u64,
             None => DEFAULT_DECAY_INTERVAL_MS,
@@ -821,7 +821,7 @@ impl LargeCacheConfig {
     /// clamped to `[1, 100]` and converted (`pct * 100 = basis points`).
     /// Falls back to the default (10 % → 1000 bp) when unset.
     #[must_use]
-    pub(crate) const fn resolved_decay_rate_bp(&self) -> u32 {
+    pub const fn resolved_decay_rate_bp(&self) -> u32 {
         let pct = match self.decay_rate_percent {
             Some(p) => p,
             None => DEFAULT_DECAY_RATE_PERCENT,
@@ -839,7 +839,7 @@ impl LargeCacheConfig {
 
     /// Resolve the cache operating mode. Falls back to `Lazy` when unset.
     #[must_use]
-    pub(crate) const fn resolved_mode(&self) -> LargeCacheMode {
+    pub const fn resolved_mode(&self) -> LargeCacheMode {
         match self.mode {
             Some(m) => m,
             None => LargeCacheMode::Lazy,
@@ -848,7 +848,7 @@ impl LargeCacheConfig {
 
     /// Resolve the empty-small-segment pool config (Mechanism 2, task #51).
     #[must_use]
-    pub(crate) const fn resolved_pool(&self) -> SmallSegmentPoolConfig {
+    pub const fn resolved_pool(&self) -> SmallSegmentPoolConfig {
         self.pool
     }
 }

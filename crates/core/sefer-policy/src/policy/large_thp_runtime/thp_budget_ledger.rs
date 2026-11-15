@@ -1,14 +1,14 @@
 //! `ThpBudgetLedger` — lock-free ledger of ADVISED bytes (not RSS) charged
 //! against a budget. Core only, no unsafe, no allocation.
 
-use crate::alloc_core::config::policy::large_thp_runtime::thp_advice::ThpAdvice;
+use crate::policy::large_thp_runtime::thp_advice::ThpAdvice;
 // Atomics through `super` so the actual-source concurrency model can bind.
 use super::{AtomicU64, Ordering};
 
 /// Outstanding charged bytes; invariant `used <= budget` of every successful
 /// reservation (a stale read can only make the CAS fail).
 pub struct ThpBudgetLedger {
-    pub(crate) used: AtomicU64,
+    pub used: AtomicU64,
 }
 
 // Sole production consumers are the mechanism-gated fresh-path advice

@@ -4,22 +4,22 @@
 
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
 #[path = "state/large_thp_cadence.rs"]
-pub(crate) mod large_thp_cadence;
+pub mod large_thp_cadence;
 pub mod thp_advice;
 #[path = "state/thp_advice_outcome.rs"]
 pub mod thp_advice_outcome;
 pub mod thp_budget_ledger;
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
 #[path = "state/thp_cadence_cell.rs"]
-pub(crate) mod thp_cadence_cell;
+pub mod thp_cadence_cell;
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
 #[path = "state/thp_learning_cell.rs"]
-pub(crate) mod thp_learning_cell;
+pub mod thp_learning_cell;
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-pub(crate) mod thp_runtime;
+pub mod thp_runtime;
 pub mod thp_tuple;
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-pub(crate) mod thp_tuple_cell;
+pub mod thp_tuple_cell;
 
 // Consumed in-crate by the mechanism-gated fresh-path advice (ThpAdvice/
 // ThpAdviceOutcome/ThpRuntime) and the config resolvers (ThpTuple);
@@ -31,11 +31,11 @@ pub use thp_advice_outcome::ThpAdviceOutcome;
 #[allow(unused_imports)]
 pub use thp_budget_ledger::ThpBudgetLedger;
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-pub(crate) use thp_runtime::ThpRuntime;
+pub use thp_runtime::ThpRuntime;
 pub use thp_tuple::ThpTuple;
 
 // Atomics through `super` so the actual-source concurrency model can bind.
 // Ungated: the ungated ledger module takes its `AtomicU64`/`Ordering` here.
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-pub(crate) use core::sync::atomic::AtomicU8;
-pub(crate) use core::sync::atomic::{AtomicU64, Ordering};
+pub use core::sync::atomic::AtomicU8;
+pub use core::sync::atomic::{AtomicU64, Ordering};

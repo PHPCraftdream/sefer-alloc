@@ -32,58 +32,54 @@ pub(crate) use loom::sync::atomic::{AtomicU64, Ordering};
 // Root-mounted production files (a `#[path]` inside a nested inline module
 // resolves through a `tests/<module>/` directory that does not exist).
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp/large_thp_curve.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp/large_thp_curve.rs"]
 mod large_thp_curve;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp/large_thp_gradient.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp/large_thp_gradient.rs"]
 mod large_thp_gradient;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp/large_thp_mode.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp/large_thp_mode.rs"]
 mod large_thp_mode;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp/large_thp_request_group.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp/large_thp_request_group.rs"]
 mod large_thp_request_group;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp/large_thp_share.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp/large_thp_share.rs"]
 mod large_thp_share;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp_runtime/thp_advice.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp_runtime/thp_advice.rs"]
 mod thp_advice;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp_runtime/state/thp_advice_outcome.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_advice_outcome.rs"]
 mod thp_advice_outcome;
-#[path = "../src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs"]
 mod thp_budget_ledger;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp_runtime/thp_tuple.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple.rs"]
 mod thp_tuple;
 
-// The production sources resolve `crate::alloc_core::config::policy::…`
-// paths; re-export the root-mounted real files under exactly those paths.
-mod alloc_core {
-    pub(crate) mod config {
-        pub(crate) mod policy {
-            pub(crate) mod large_thp {
-                pub(crate) use crate::large_thp_curve::LargeThpCurve;
-                pub(crate) use crate::large_thp_gradient::LargeThpGradient;
-                pub(crate) use crate::large_thp_mode::LargeThpMode;
-                pub(crate) use crate::large_thp_request_group::LargeThpRequestGroup;
-                pub(crate) use crate::large_thp_share::LargeThpShare;
-            }
-            pub(crate) mod large_thp_runtime {
-                pub(crate) mod thp_advice {
-                    pub(crate) use crate::thp_advice::ThpAdvice;
-                }
-                pub(crate) mod thp_advice_outcome {
-                    pub(crate) use crate::thp_advice_outcome::ThpAdviceOutcome;
-                }
-                pub(crate) use crate::thp_tuple::ThpTuple;
-            }
+// The production sources resolve crate::policy::... paths (the sefer-policy
+// crate root); re-export the root-mounted real files under exactly those paths.
+mod policy {
+    pub(crate) mod large_thp {
+        pub(crate) use crate::large_thp_curve::LargeThpCurve;
+        pub(crate) use crate::large_thp_gradient::LargeThpGradient;
+        pub(crate) use crate::large_thp_mode::LargeThpMode;
+        pub(crate) use crate::large_thp_request_group::LargeThpRequestGroup;
+        pub(crate) use crate::large_thp_share::LargeThpShare;
+    }
+    pub(crate) mod large_thp_runtime {
+        pub(crate) mod thp_advice {
+            pub(crate) use crate::thp_advice::ThpAdvice;
         }
+        pub(crate) mod thp_advice_outcome {
+            pub(crate) use crate::thp_advice_outcome::ThpAdviceOutcome;
+        }
+        pub(crate) use crate::thp_tuple::ThpTuple;
     }
 }
 
-use alloc_core::config::policy::large_thp_runtime::thp_advice::ThpAdvice;
+use policy::large_thp_runtime::thp_advice::ThpAdvice;
 use thp_budget_ledger::ThpBudgetLedger;
 
 const BUDGET: usize = 8 * 1024 * 1024;

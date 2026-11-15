@@ -1,36 +1,36 @@
 //! The public const-buildable configuration types (`Profile`,
-//! `LargeCacheConfig`, `LargeCacheMode`, `SmallSegmentPoolConfig`); the
-//! three configuration-policy types live in the `policy/` subdirectory.
+//! `LargeCacheConfig`, `LargeCacheMode`, `SmallSegmentPoolConfig`) and the
+//! configuration-policy types now live in the `sefer-policy` crate
+//! (`crates/core/sefer-policy`); this module re-exports them under their
+//! historic paths so every `crate::alloc_core::config::…` reference in the
+//! root crate (and the public API surface re-exported through
+//! `alloc_core`/`lib.rs`) keeps resolving unchanged.
 //
-// The five children keep their `alloc-decommit` gate HERE (mirroring the root
-// re-exports in `alloc_core/mod.rs`) because the FILES themselves are not
-// feature-independent: their principal types are `#[cfg(feature =
-// "alloc-decommit")]`-gated inside the files, so ungated compilation breaks
-// `alloc-core`-only builds (profile.rs's unconditional imports would not
-// resolve; policy/profile.rs likewise). Gating the declarations keeps their compiled-file set identical
-// to when they lived directly in `alloc_core`.
+// The re-exports keep the `alloc-decommit` gate HERE (mirroring the root
+// re-exports in `alloc_core/mod.rs`) and the per-module gate inside
+// sefer-policy's own `lib.rs`, so the compiled-file set is identical to when
+// the files lived directly in `alloc_core`.
+//
+// `continuation_bounds` is NOT policy — it is segment geometry for the
+// owner-only free-list walk (it reads `segment_header`, `os::SEGMENT`,
+// `fatal::fatal`, `size_classes::MIN_BLOCK`) — so it stays in the root crate
+// at this exact path. (It moves to the `sefer-segment` crate in plan step
+// P2.1.) `platform/node.rs` holds the only platform→config back-edge to it.
+// `medium_promotion`'s macros expand `#[cfg]`s that reference root features
+// at their use sites, and its `cfg!` const reads the same feature set; the
+// file moved to sefer-policy, which mirrors those feature names 1:1 (the
+// root manifest forwards them), and the module is re-exported here ungated
+// exactly as before.
 
 #[cfg(not(feature = "hardened"))]
 pub(crate) mod continuation_bounds;
+
 #[cfg(feature = "alloc-decommit")]
-pub mod large_cache_config;
-#[cfg(feature = "alloc-decommit")]
-pub mod large_cache_mode;
-/// R30-7 (task #456), reworked R31-9 (task #473):
-/// [`Profile`](crate::Profile) — a small builder composing two independent,
-/// named, measured configuration-policy axes
-/// ([`SmallPoolPolicy`](crate::SmallPoolPolicy) for `pool_segments`/`pool_byte_cap`,
-/// [`LargeCachePolicy`](crate::LargeCachePolicy) for large-cache `headroom_bytes`), from
-/// this project's own measured gate reports (R27-3/R27-4/R30-6/R31-1/R31-2).
-/// See the module doc for the full rationale and exact numbers.
-#[cfg(feature = "alloc-decommit")]
-pub mod policy;
-#[cfg(feature = "alloc-decommit")]
-pub mod small_segment_pool_config;
+pub use sefer_policy::{large_cache_config, large_cache_mode, policy, small_segment_pool_config};
 
 /// R6-T20: the medium-promotion reachability predicate's single source of
 /// truth (`cfg!` const + the two `#[cfg]` generator macros). Ungated — the
 /// file is feature-independent (only `cfg!` and `macro_rules!`, no imports)
 /// and must exist in every configuration: its consumers span the whole
 /// `alloc_core` tree (always) and the `registry` tree (`alloc-global`).
-pub(crate) mod medium_promotion;
+pub(crate) use sefer_policy::medium_promotion;

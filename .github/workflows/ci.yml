@@ -46,6 +46,7 @@ jobs:
       crate_proc: ${{ steps.plan.outputs.crate_proc }}
       crate_sefer_concurrent: ${{ steps.plan.outputs.crate_sefer_concurrent }}
       crate_sefer_ghost: ${{ steps.plan.outputs.crate_sefer_ghost }}
+      crate_sefer_policy: ${{ steps.plan.outputs.crate_sefer_policy }}
       crate_sefer_region: ${{ steps.plan.outputs.crate_sefer_region }}
       crate_size_classes: ${{ steps.plan.outputs.crate_size_classes }}
       crate_tagged_index_stack: ${{ steps.plan.outputs.crate_tagged_index_stack }}
@@ -150,7 +151,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-
   select-tests:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
@@ -213,14 +213,20 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/ci-ghost-zero-cost
-
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-fmt
-
+  sefer-policy-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_sefer_policy == 'true'
+    name: sefer-policy package gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci-sefer-policy-gates
   sefer-region-gates:
     needs: changes
     if: needs.changes.outputs.crate_sefer_region == 'true'
@@ -229,7 +235,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-sefer-region-gates
-
   sefer-concurrent-gates:
     needs: changes
     if: needs.changes.outputs.crate_sefer_concurrent == 'true'
@@ -238,7 +243,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-sefer-concurrent-gates
-
   aligned-vmem-gates:
     needs: changes
     if: needs.changes.outputs.crate_aligned_vmem == 'true'
@@ -247,7 +251,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-aligned-vmem-gates
-
   aligned-vmem-hugetlb-real:
     needs: changes
     if: needs.changes.outputs.crate_aligned_vmem == 'true'
@@ -330,7 +333,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-aligned-vmem-miri
-
   once-ptr-cell-gates:
     needs: changes
     if: needs.changes.outputs.crate_once_ptr_cell == 'true'
@@ -339,7 +341,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-once-ptr-cell-gates
-
   size-classes-gates:
     needs: changes
     if: needs.changes.outputs.crate_size_classes == 'true'
@@ -348,7 +349,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-size-classes-gates
-
   tagged-index-stack-gates:
     needs: changes
     if: needs.changes.outputs.crate_tagged_index_stack == 'true'

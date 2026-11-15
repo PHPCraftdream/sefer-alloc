@@ -1089,6 +1089,7 @@ dependencies = [
  "proptest",
  "sefer-concurrent",
  "sefer-ghost",
+ "sefer-policy",
  "sefer-region",
  "serde_json",
  "size-classes",
@@ -1111,6 +1112,13 @@ dependencies = [
 [[package]]
 name = "sefer-ghost"
 version = "0.1.0"
+
+[[package]]
+name = "sefer-policy"
+version = "0.1.0"
+dependencies = [
+ "aligned-vmem",
+]
 
 [[package]]
 name = "sefer-region"

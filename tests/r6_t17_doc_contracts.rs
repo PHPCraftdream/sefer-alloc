@@ -12,7 +12,7 @@ const IN_SCOPE: &[&str] = &[
     "src/registry/heap_core/diag/diag_probes.rs",
     "src/alloc_core/segment/segment_header/segment_header_impl.rs",
     "src/registry/heap_core/core.rs",
-    "src/alloc_core/config/large_cache_config.rs",
+    "crates/core/sefer-policy/src/large_cache_config.rs",
     "src/alloc_core/alloc_core/mod.rs",
     "src/alloc_core/alloc_core/alloc_core_impl.rs",
     "src/alloc_core/alloc_core/lifecycle.rs",
