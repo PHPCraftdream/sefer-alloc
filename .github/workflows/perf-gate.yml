@@ -42,6 +42,10 @@ name: perf-gate
 # `if: always()` OVERWRITES the frozen baseline, destroying the only
 # remaining reference point for the unexplained ~10-13% Ir regression in
 # 42d8d223..42d42061.
+#
+# Two perf-gate rows live below: `iai-callgrind` (workspace [profile.bench]
+# codegen) and `iai-callgrind-nolto` (user-default no-LTO codegen) — see each
+# job's leading comment.
 on:
   # schedule:
   #   - cron: '30 3 * * *' # nightly, offset from ci.yml's weekly NUMA cron
@@ -176,5 +180,89 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: perf-gate-callgrind-${{ github.run_id }}
+          path: target/iai/
+          retention-days: 30
+
+  # P1.0 of docs/plans/2026-11-15-workspace-restructure-plan.md — the SECOND
+  # perf-gate row: the same perf_gate_iai bench and feature set as the
+  # `iai-callgrind` job above, but built the way a downstream LIBRARY USER
+  # builds by default: no workspace LTO tuning. The repo's [profile.bench] is
+  # lto = "thin" / codegen-units = 1; users of the published crate compile with
+  # their own profile (lto = false, codegen-units = 16 — Cargo's defaults), and
+  # after the planned crate extractions only #[inline]/generic functions
+  # inline across crate boundaries in such a build. This row records that
+  # build's Ir on the UNSPLIT tree; every later extraction step compares its
+  # run against this row's own baseline (named `main-nolto`, a separate
+  # iai-callgrind named baseline, so the two rows' caches never mix).
+  #
+  # Mechanism: cargo profile overrides via environment variables — per the
+  # Cargo profiles reference, a profile setting from a config file or
+  # environment variable overrides the Cargo.toml value; the variable names
+  # are CARGO_PROFILE_<name>_<key> (Cargo environment-variables reference).
+  # `lto = false` is the user default itself (cargo's "thin local LTO", NOT
+  # `off`); `codegen-units = 16` is the cargo default for non-incremental
+  # builds. Everything else about the build (opt-level, panic strategy, ...)
+  # stays identical to the `iai-callgrind` row, so the two rows differ ONLY in
+  # these two codegen keys.
+  #
+  # Threshold: the workflow-level IAI_CALLGRIND_REGRESSION (Ir=10) applies to
+  # this job exactly as to `iai-callgrind`. The plan's "expected delta 0" for
+  # P1.6 is the AUDIT criterion read from the recorded numbers (code does not
+  # change across extractions), not a CI threshold — the same wording already
+  # applies to the existing row under the same 10% limit.
+  #
+  # Baseline numbers are recorded by CI only (local iai/valgrind runs are
+  # forbidden); `node scripts/iai-nolto-summary.mjs` turns this job's logs into
+  # the CSV/section in docs/perf/IAI_NOLTO_BASELINE.md.
+  iai-callgrind-nolto:
+    name: instruction-count regression gate (no-LTO, user-default codegen)
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.label.name == 'perf'
+    env:
+      CARGO_PROFILE_BENCH_LTO: 'false'
+      CARGO_PROFILE_BENCH_CODEGEN_UNITS: '16'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Valgrind
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y valgrind
+
+      - name: Install iai-callgrind-runner
+        run: cargo install iai-callgrind-runner --version "^0.14" --locked
+
+      - name: Restore the no-LTO main iai baseline
+        uses: actions/cache/restore@v5
+        with:
+          path: target/iai
+          key: iai-baseline-main-nolto-${{ github.sha }}
+          restore-keys: |
+            iai-baseline-main-nolto-
+
+      - name: Run perf-gate benchmarks (instruction counts, no LTO)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            cargo bench --bench perf_gate_iai --features "production bench-internals internals" -- --baseline=main-nolto
+          else
+            cargo bench --bench perf_gate_iai --features "production bench-internals internals" -- --save-baseline=main-nolto
+          fi
+
+      - name: Save the no-LTO main iai baseline
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v5
+        with:
+          path: target/iai
+          key: iai-baseline-main-nolto-${{ github.sha }}
+
+      - name: Upload no-LTO Callgrind artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: perf-gate-callgrind-nolto-${{ github.run_id }}
           path: target/iai/
           retention-days: 30
