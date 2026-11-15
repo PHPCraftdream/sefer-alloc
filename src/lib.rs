@@ -251,11 +251,11 @@
 //      * `global::exact_object::narrow` — exact `System` alloc/free of narrow
 //                             requests, original pointer and layout.
 //                             (`exact-object-proto` prototype only, not `production`)
-//      * `global::process_exit` — NOT a seam: a thin `pub use` re-export of
-//                             `sefer_platform::process_exit` (the FFI query of Windows
-//                             loader shutdown state lives there, see below).
 //        (R6-T37: the TLS heap module is no longer a tier-1 seam; its one
-//        `bench-internals` test hook is a tier-2 item-scoped allow.)
+//        `bench-internals` test hook is a tier-2 item-scoped allow. Note also
+//        that `global::process_exit` is NOT a seam: since P1.4 it is a thin
+//        `pub use` re-export of `sefer_platform::process_exit` — the FFI
+//        query of Windows loader shutdown state lives there, see below.)
 //      * `global::fallback`     — primordial fallback heap seam —
 //                             `static mut MaybeUninit<HeapCore>` + atomic-init
 //                             state-machine + spinlock-guarded `&mut` handout.
