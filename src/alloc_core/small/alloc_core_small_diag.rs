@@ -18,7 +18,7 @@
 //! sibling file needed a split because three of its methods DO have a
 //! stable-API caller — none of this file's methods do).
 
-#[cfg(feature = "hardened")]
+#[cfg(all(feature = "hardened", feature = "internals"))]
 use core::ptr::NonNull;
 
 // R6-T16: every import below feeds only the internals-gated dbg impl.
