@@ -103,6 +103,43 @@ export function normalize(objdump, rodata = new Set(), roRanges = []) {
   return fns;
 }
 
+// Pure line diff (diagnostics only; never feeds the verdict): classic LCS on
+// the line sequences, deterministic. Returns ops {t:'same'|'del'|'add', s}.
+export function diffLines(aText, bText) {
+  const a = aText.split('\n'), b = bText.split('\n');
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const ops = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { ops.push({ t: 'same', s: a[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ t: 'del', s: a[i] }); i++; }
+    else { ops.push({ t: 'add', s: b[j] }); j++; }
+  }
+  while (i < n) ops.push({ t: 'del', s: a[i++] });
+  while (j < m) ops.push({ t: 'add', s: b[j++] });
+  return ops;
+}
+
+// Classifier for one removed/added line pair. Token rule: strip every
+// `0x[hex]` immediate token (immediates are code, but two lines differing
+// ONLY in hex constants are an immediate-level diff, not a structural one),
+// and bare hex runs that appear after a `# ` comment marker (objdump
+// absolute target addresses not already masked by the RO rules — they are
+// addresses, not code). Remainders compared after whitespace collapse;
+// anything else (mnemonic, operand shapes, register names, struct offsets)
+// is 'structural'.
+const stripHexTokens = (s) => s
+  .replace(/0x[0-9a-fA-F]+/g, '')
+  .replace(/#(?:(\s+))[0-9a-f]+\b/g, '#$1');
+export function diffKind(delLine, addLine) {
+  const c = (s) => stripHexTokens(s).replace(/\s+/g, ' ').trim();
+  return c(delLine) === c(addLine) ? 'hex-immediate' : 'structural';
+}
+
 function rodataSymbols(bin) {
   const names = new Set();
   for (const line of run('objdump', ['-t', '-C', bin]).split('\n')) {
@@ -165,6 +202,27 @@ for (const [name, x, y, same] of NORMALIZE_CASES) {
   assert.equal(a === b, same, `normalize self-test "${name}": expected ${same ? 'equal' : 'different'}`);
 }
 console.log(`[ghost-zero-cost] normalize self-test OK (${NORMALIZE_CASES.length} cases)`);
+
+// diffLines/diffKind/diff-detail self-tests (diagnostics only; the verdict
+// code paths are unchanged).
+assert.equal(diffLines('a\nb\nc', 'a\nb\nc').filter((o) => o.t !== 'same').length, 0, 'diffLines self-test: identical inputs produce no del/add');
+assert.deepEqual(diffLines('a\nb\nc', 'a\nx\nc').filter((o) => o.t !== 'same'), [{ t: 'del', s: 'b' }, { t: 'add', s: 'x' }], 'diffLines self-test: one substitution');
+assert.equal(diffKind('mov eax,0x10', 'mov eax,0x18'), 'hex-immediate', 'diffKind self-test: immediate-only');
+assert.equal(diffKind('xchg DWORD PTR [rdi],esi', 'mov DWORD PTR [rdi],esi'), 'structural', 'diffKind self-test: different mnemonic');
+assert.equal(diffKind('movabs rax,0x1234567890abcdef', 'movabs rax,0xfeedfacefeedface'), 'hex-immediate', 'diffKind self-test: 64-bit immediate');
+assert.equal(diffKind('mov rax,QWORD PTR [rdi+0x10]', 'mov rax,QWORD PTR [rdi+0x18]'), 'hex-immediate', 'diffKind self-test: struct-offset-only is still hex-token-level');
+assert.equal(diffKind('call 1a2b <f>', 'call 1c40 <g>'), 'structural', 'diffKind self-test: different call targets differ in more than hex');
+assert.equal(diffKind('lea rax,[rip+0x10] # 5000 <REG+0x10>', 'lea rax,[rip+0x10] # 5000 <REG+0x18>'), 'hex-immediate', 'diffKind self-test: comment-address token stripped');
+assert.equal(diffKind('call 1a2b <f>', 'call 1a2b <g>'), 'structural', 'diffKind self-test: same address, different symbol is structural');
+const bigA = Array.from({ length: 40 }, (_, i) => `  i${i}: base line ${i}`).join('\n');
+const bigB = Array.from({ length: 40 }, (_, i) => `  i${i}: head line ${i}`).join('\n');
+const bigOps = diffLines(bigA, bigB).filter((o) => o.t !== 'same');
+const bigEmitCap = 30;
+const bigEmitted = Math.min(bigOps.length, bigEmitCap) + (bigOps.length > bigEmitCap ? 1 : 0);
+assert.ok(bigOps.length > 30, 'diffLines self-test: synthetic case exceeds the cap');
+assert.ok(bigEmitted <= bigEmitCap + 1, 'diff-detail self-test: emitted lines stay within cap + marker');
+assert.ok(bigOps.length > bigEmitCap, 'diff-detail self-test: truncation marker required');
+console.log(`[ghost-zero-cost] diff-diagnostics self-test OK (diffLines + diffKind + cap)`);
 
 const L = (...pairs) => new Map(pairs);
 const ok = ['perf(runtime): G1-K1 — drain'];
@@ -323,6 +381,31 @@ try {
   assert.equal(summary.identical + summary.differing + summary.only_base + summary.only_head, names.size, 'function accounting');
   console.log(JSON.stringify(summary, null, 2));
   for (const n of [...differing, ...onlyBase, ...onlyHead].slice(0, 20)) console.log(`DIFF ${n}`);
+  // Diagnostics only: show the mechanism of the first few differing functions.
+  const DETAIL_CAP = 30, DETAIL_FNS = 5;
+  for (const n of differing.slice(0, DETAIL_FNS)) {
+    console.log(`DIFFDETAIL ${n}`);
+    const ops = diffLines(a.get(n), b.get(n));
+    let emitted = 0, dels = 0, adds = 0, hexOnly = 0, structural = 0;
+    for (const { t, s } of ops) {
+      if (t === 'del') dels++; else if (t === 'add') adds++;
+      else continue;
+      if (emitted < DETAIL_CAP) { console.log(`${t === 'del' ? '-' : '+'} ${s}`); emitted++; }
+    }
+    if (dels + adds > emitted) console.log(`... truncated (${dels + adds - emitted} more diff lines)`);
+    // Pair dels with adds one-to-one (sorted multisets, so counts track);
+    // leftover of either side counts as structural.
+    const pairs = Math.min(dels, adds);
+    let di = 0, ai = 0;
+    for (let p = 0; p < pairs; p++) {
+      while (ops[di].t !== 'del') di++;
+      while (ops[ai].t !== 'add') ai++;
+      if (diffKind(ops[di].s, ops[ai].s) === 'hex-immediate') hexOnly++; else structural++;
+      di++; ai++;
+    }
+    structural += Math.abs(dels - adds);
+    console.log(`DIFFSTAT ${n}: differing pairs ${pairs}, hex-immediate-only ${hexOnly}, structural ${structural}`);
+  }
   if (out) writeFileSync(out, JSON.stringify(summary, null, 2) + '\n');
   const textSame = summary.differing === 0 && summary.only_base === 0 && summary.only_head === 0;
   assert.equal(textSame, summary.text_sha256_base === summary.text_sha256_head, 'per-function verdict agrees with the whole-text hash');
