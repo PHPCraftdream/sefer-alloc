@@ -24,7 +24,7 @@ for (const id of [129650924301, 129650924346, 129651026347, 129651026428, 129651
 const requireLine = text => assert(log.includes(`Z ${text}`), `missing actual output: ${text}`);
 requireLine('[ci-decomposition] 60 jobs unchanged; 51 reachable local actions; orchestration/commands identical');
 requireLine('[ci-effective-workflow] 15 positive/negative static fixtures passed');
-requireLine('[verify-ci-sentinels] OK — 230 sentinel(s) checked');
+requireLine('[verify-ci-sentinels] OK — 234 sentinel(s) checked');
 requireLine('test architecture_test_file_count_matches_reality ... ok');
 requireLine('test verification_inventory_matches_docs ... ok');
 requireLine('[j13b-native-facts] actual-image-and-host PASS');
