@@ -180,6 +180,7 @@ const CRATE_TEST_DIRS = {
   'numa-shim': 'crates/platform/numa-shim/tests',
   'malloc-bench-rs': 'crates/bench/malloc-bench-rs/tests',
   'sefer-region': 'crates/containers/sefer-region/tests',
+  'sefer-concurrent': 'crates/containers/sefer-concurrent/tests',
   'once-ptr-cell': 'crates/primitives/once-ptr-cell/tests',
   'size-classes': 'crates/primitives/size-classes/tests',
   'globalalloc-model': 'crates/verify/globalalloc-model/tests',
@@ -1108,8 +1109,7 @@ function verifyCiSentinels() {
 // registry/maintenance target has a real emitted-name or asserted-marker
 // sentinel. Attribute, marker assertion ordering and nocapture checks remain
 // unchanged. This is the current exact floor, not a parser exemption.
-// The harness-free installed-Box target replaces four libtest result sentinels
-// with four asserted completion markers; the live count remains 101.
+// The harness-free installed-Box target replaces four libtest result sentinels with four asserted completion markers; the live count remains 101.
 const MIN_SENTINEL_COUNT = 230;
 
 const { checkedCount, errors } = verifyCiSentinels();

@@ -1,38 +1,15 @@
-//! Concurrent tier (Phase 3b).
+//! Concurrent tier re-export shim (workspace-restructure plan step P1.2).
 //!
-//! Re-exports only — no logic lives here (per the one-export-per-file rule).
-//!
-//! # Status: legacy research-tier
-//!
-//! The concurrent region family ([`EpochRegion`], [`LockFreeRegion`],
-//! [`ShardedRegion`]) is now legacy: it is superseded by the production
-//! `alloc-xthread` cross-thread free path for the allocator face. These types
-//! are kept under the existing `experimental` feature for backward compatibility
-//! and as a research baseline, but no new development is planned on them.
-//!
-//! [`PinnedRunner`] (under the `pinning` feature) remains useful on its own as a
-//! thin safe wrapper over `core_affinity` for thread-per-core dispatch and is
-//! NOT deprecated.
+//! The tier itself moved to the `sefer-concurrent` crate
+//! (`crates/containers/sefer-concurrent`). This module exists only to keep the
+//! crate-root re-exports in `src/lib.rs` (`pub use concurrent::{...}`) and the
+//! public paths behind them working unchanged — re-exports only, no logic
+//! (per the one-export-per-file rule the old module header documented).
 
-pub(crate) mod epoch;
-pub(crate) mod lock_free;
-pub(crate) mod sharded;
+#[allow(deprecated)]
+pub use sefer_concurrent::{
+    EpochHandle, EpochRegion, LockFreeHandle, LockFreeRegion, ShardedHandle, ShardedRegion,
+};
 
 #[cfg(feature = "pinning")]
-mod pinning;
-
-#[allow(deprecated)]
-pub use epoch::epoch_handle::EpochHandle;
-#[allow(deprecated)]
-pub use epoch::epoch_region::EpochRegion;
-#[allow(deprecated)]
-pub use lock_free::lock_free_handle::LockFreeHandle;
-#[allow(deprecated)]
-pub use lock_free::lock_free_region::LockFreeRegion;
-#[allow(deprecated)]
-pub use sharded::sharded_handle::ShardedHandle;
-#[allow(deprecated)]
-pub use sharded::sharded_region::ShardedRegion;
-
-#[cfg(feature = "pinning")]
-pub use pinning::PinnedRunner;
+pub use sefer_concurrent::PinnedRunner;

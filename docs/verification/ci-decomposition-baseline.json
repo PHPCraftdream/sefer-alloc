@@ -4,7 +4,7 @@
   "jobs": [
     {
       "id": "changes",
-      "metadata": "49e94a9dab1fc08b673f1eb16bc510ec68b41327fca81e15c887c5f7653c50ea",
+      "metadata": "e8b2022411d4cc866b0a36ba770e1c1462dd05c8590fb1021be291901aaf306e",
       "steps": "1fe5589733f5bb700e49ab25de242b1626e691fd2ba507f210c3cd9d48c9cbd6"
     },
     {
@@ -41,6 +41,11 @@
       "id": "sefer-region-gates",
       "metadata": "20ed58defd1d39070d5e62158505813cf2d9ee04b5d3a14bd853e59177ff9112",
       "steps": "175c954e1a82ee92f73ce20761a87e5bd22ac00e81f0d624d52fde0bff4659f3"
+    },
+    {
+      "id": "sefer-concurrent-gates",
+      "metadata": "927c84798b3aa45cbf35cfcc976a7116d37a2129732294f0c41f335d2ace79fd",
+      "steps": "887aab6f15239d9247ecca796b2cd6dce67bf4e3db2746eb245088e316d4b55f"
     },
     {
       "id": "aligned-vmem-gates",
@@ -165,7 +170,7 @@
     {
       "id": "test-workspace",
       "metadata": "40acb2def9c00e7827fc537b4c072de5aeb03e833f296ff336f68eb1847f82eb",
-      "steps": "4580f9b5e2f2a60204dc7868f8b3115be3e29be1d6983b79ffd4849bd49efce5"
+      "steps": "e322b1bbb4860dd463f1e4dc9ea697fe14488f03f177fe07929cd38d74e73d6f"
     },
     {
       "id": "msrv",
@@ -210,7 +215,7 @@
     {
       "id": "kani",
       "metadata": "71d4b71216c99bccfe28ef34e2639d0a4201b4081d7d706673238bdd0678e7a9",
-      "steps": "1402fce042d099767d1efec01199f30a043cfc064de5de7a1424344b4f43a88e"
+      "steps": "e9f219f12dddc4a1425ec35b0c46b2d50db3c7fa97a8717e0ff2234ce71cd741"
     },
     {
       "id": "loom-alloc-global",
@@ -225,7 +230,7 @@
     {
       "id": "loom-experimental",
       "metadata": "4aa258a320648753f9841b9012e7bab8631fac7b378d66ef68d7692ec1a058f5",
-      "steps": "6720c451e0a2a2d7a687cb76acc434ba4190e201ff0c60d1dba5851fbcb5197b"
+      "steps": "b9314cd8520cdd88aeb0d81aaf24dba8afca30809ae0d0b29270bb81150b01db"
     },
     {
       "id": "loom-misc",

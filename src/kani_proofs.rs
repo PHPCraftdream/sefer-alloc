@@ -2,9 +2,6 @@
 //!
 //! - `node_proofs` checks pointer primitives on locally valid buffers, not
 //!   caller obligations (bounds, exclusivity, or lifetime).
-//! - `hand_proofs` checks two vacant-slot facts, not epoch concurrency.
-//!   The Loom tests are handwritten shadow publication models, not proofs of
-//!   the real `AtomicSlot` implementation or reclamation.
 //! - `large_state_proofs` checks the real Large codec and all nine sequential
 //!   transition methods, including rejection and generation exhaustion.
 //! - `saturation_proofs` checks the real versioned hint after bounded
@@ -138,25 +135,6 @@ mod node_proofs {
         Node::write_usize(ptr, val);
         let got = Node::read_usize(ptr as *const usize);
         assert_eq!(got, val);
-    }
-}
-
-// These harnesses never enter the epoch runtime. Loom covers a handwritten
-// shadow publication model, not the real AtomicSlot or its reclamation.
-#[cfg(all(kani, feature = "experimental"))]
-mod hand_proofs {
-    use crate::concurrent::epoch::hand::AtomicSlot;
-
-    #[kani::proof]
-    fn vacant_starts_at_generation_zero() {
-        let slot = AtomicSlot::<u32>::vacant();
-        assert_eq!(slot.generation(), 0);
-    }
-
-    #[kani::proof]
-    fn drop_value_vacant_is_noop() {
-        let mut slot = AtomicSlot::<u32>::vacant();
-        slot.drop_value();
     }
 }
 
