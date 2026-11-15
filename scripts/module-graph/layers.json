@@ -1,16 +1,18 @@
 {
-  "$schema-note": "Layer table for the A0 module graph and the future A1 layering lint. Layer order encodes the plan's HYPOTHESIS (docs/plans/2026-11-15-workspace-restructure-plan.md section 2); the plan itself marks the segment/route order as 'decided by A0' — the expected_back_edges list makes both directions observable. Back-edge = source layer order > target layer order (a dependency pointing UP the stack).",
+  "$schema-note": "Layer table for the A1 layering lint (graph.mjs section 8, layering.mjs). Layer orders encode the plan (docs/plans/2026-11-15-workspace-restructure-plan.md) section 2 bottom-to-top stack; expected_back_edges holds the plan section 1 claim checks (module-prefix based, independent of layer order). Back-edge = source layer order LOWER than target layer order (graph.mjs DEVIATION 1) — a dependency pointing UP the stack. segment and route are ONE layer segment_route (order 4) until the owner's G1 decision; their mutual references are same-layer and hence never back-edges (with the merged layer the old segment/route cycle observation produces zero cycleEdges — intended). The modules alloc_core and registry (group-wiring mod.rs files that only re-export across several future-crate boundaries) are declared status \"conduit\": their OWN edges are never back-edges, while references THROUGH them resolve to the defining module in the graph and count against the DEFINING module's layer; a module mapped to no layer and not declared a conduit is itself a lint finding (unmapped).",
   "plan": "docs/plans/2026-11-15-workspace-restructure-plan.md",
   "root_module": "root",
   "layers": [
     { "order": 1, "name": "primitives-verify", "crates": ["sefer-ghost", "sefer-concurrent"], "modules": ["ghost", "concurrent"] },
     { "order": 2, "name": "platform", "crates": ["sefer-platform"], "modules": ["alloc_core.platform"] },
     { "order": 3, "name": "policy", "crates": ["sefer-policy"], "modules": ["alloc_core.config"] },
-    { "order": 4, "name": "segment", "crates": ["sefer-segment"], "modules": ["alloc_core.segment"] },
-    { "order": 5, "name": "route", "crates": ["sefer-route"], "modules": ["registry.segment_route"] },
+    { "order": 4, "name": "segment_route", "crates": ["sefer-segment", "sefer-route"], "modules": ["alloc_core.segment", "registry.segment_route"] },
     { "order": 6, "name": "alloc-core", "crates": ["sefer-alloc-core"], "modules": ["alloc_core.alloc_core", "alloc_core.small", "alloc_core.large"] },
     { "order": 7, "name": "registry", "crates": ["sefer-registry"], "modules": ["registry.bootstrap", "registry.heap_core", "registry.heap_core_xthread", "registry.heap_registry", "registry.heap_slot"] },
     { "order": 8, "name": "facade", "crates": ["sefer-alloc"], "modules": ["global", "root", "kani_proofs"] }
+  ],
+  "conduits": [
+    { "modules": ["alloc_core", "registry"], "status": "conduit", "note": "group-wiring mod.rs files that only re-export across several future-crate boundaries (A0 report, Unmapped-layer modules). A1: the conduit's own re-export edges are never back-edges; references THROUGH it resolve to the defining module in the graph, so they are counted against the defining module's layer, not the conduit's." }
   ],
   "boundaries": [
     { "crate": "sefer-ghost", "prefixes": ["ghost"] },

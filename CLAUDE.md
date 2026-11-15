@@ -75,6 +75,29 @@ Core instructions, mandatory for all code in this repository. They
   `scripts/` and `docs/` are exempt from the directory rule (Cargo discovers
   `tests/*.rs` only when flat; `docs/` holds generated reports), not from the
   file-length rule.
+- **Layering lint, checked automatically.** The A0 module graph
+  (`scripts/module-graph.mjs`) lints upward module edges — a source module
+  whose layer order is lower than its target's — against the layer table
+  `scripts/module-graph/layers.json`, via `node scripts/module-graph.mjs
+  --check-backedges` in the always-on docs-consistency CI job (every change).
+  Red means: a new upward edge absent from the base; a reference-count growth
+  on a baselined edge; a count drop or a vanished edge without an explicit
+  edit of the base (the base may only shrink, and only by editing it in the
+  same change); a module mapped to no layer that is not a declared conduit.
+  Messages cite file:line of the current references. The ratchet base lives
+  in `docs/layering_baseline.csv` (`kind,path,count,reason`, same style as
+  `docs/structure_limits_baseline.csv`); its rows are derived — `node
+  scripts/module-graph.mjs --emit-baseline` prints them (edge, count) — so
+  the CSV and the script own the numbers, never this document. Two standing
+  decisions: the group-wiring `src/alloc_core/mod.rs` and `src/registry/mod.rs`
+  re-export conduits are declared `conduit` in the layer table — their own
+  re-export edges are never back-edges, and references through them count
+  against the defining module's layer; and `segment` + `route` are ONE layer
+  `segment_route` until the owner's G1 decision
+  (`docs/plans/2026-11-15-workspace-restructure-plan.md`), so their mutual
+  references are same-layer, not violations. This enforces the plan's §2
+  layering before any crate move (the virtual-crates step): a violation is
+  red in CI, not at review time.
 
 ## Tests
 

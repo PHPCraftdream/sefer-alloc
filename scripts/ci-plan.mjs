@@ -95,6 +95,10 @@ export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false
   if (p === 'examples/_shared/j13b_owned_block.rs' || p === 'examples/_shared/j13b_window_kernel.rs' || p === 'examples/_shared/j13b_payload_actors.rs' || p === 'examples/_shared/j13b_owner_training.rs') return new Set(['fast', 'seam']);
   if (p === 'examples/_shared/j13b_os_probe.rs' || p === 'examples/_shared/j13b_adaptive_windows.rs') return new Set(['fast', 'seam', 'os']);
   if (/^(benches|examples|fuzz)\//.test(p)) return new Set(['fast']);
+  // Cargo-free script packages (module-graph lint, classify-tests) consumed by
+  // always-group jobs: no cargo group exercises them, and their top-level
+  // entry points already classify 'always'.
+  if (/^scripts\/(module-graph|classify-tests)\//.test(p)) return new Set(['always']);
   m = /^scripts\/([^/]+)$/.exec(p);
   if (m) {
     if (SEAM_SCRIPTS.has(m[1])) return new Set(['fast', 'seam']);
@@ -275,6 +279,8 @@ function selftest() {
   eq(on(P(['scripts/check-matrix.mjs'])), 'always,fast', 'check-matrix');
   eq(on(P(['scripts/loom.mjs'])), 'always,fast,seam', 'loom script');
   eq(on(P(['scripts/verify-structure-limits.mjs'])), 'always', 'verify script');
+  eq(on(P(['scripts/module-graph/graph.mjs'])), 'always', 'module-graph package');
+  eq(on(P(['scripts/classify-tests/discover.mjs'])), 'always', 'classify-tests package');
   // unknown top-level path: fast (never nothing).
   eq(on(P(['weird/new/file.bin'])), 'always,fast', 'unknown path');
   // Schedule, dispatch and an explicit `CI: full` trailer select everything; ci.yml and the planner

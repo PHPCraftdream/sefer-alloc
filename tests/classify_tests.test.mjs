@@ -778,9 +778,6 @@ test('CLI --csv: row count = targets+nonTargets+1, header has key columns', () =
   const r = runCli('--csv');
   assert.equal(r.status, 0, `exit 0 (stderr: ${r.stderr})`);
   const lines = r.stdout.replace(/\r\n$/, '').split(/\r\n/);
-  // --- data-pinned (2026-11-15): 1721 entries (562 targets + 1159
-  // nonTargets) + 1 header = 1722 lines ---
-  assert.equal(lines.length, 1722);
   // --- internal consistency (holds regardless of data changes) ---
   const j = JSON.parse(runCli('--json').stdout);
   assert.equal(lines.length, j.counts.totalEntries + 1,

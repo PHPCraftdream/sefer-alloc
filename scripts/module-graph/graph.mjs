@@ -58,8 +58,8 @@
 //   7. docRefs carry the raw comment text and resolved target (needed by the
 //      claim checks); still never edges.
 //   8. sourceCrate/targetCrate use the boundary prefix match (the
-//      primitives-verify layer holds TWO crates); falls back to the layer's
-//      crate list.
+//      boundary list, not the layer's crate list — the primitives-verify
+//      layer holds TWO crates); falls back to the layer's crate list.
 //   9. A code-edge claim with the count satisfied but expect_file/expect_line
 //      unmet is "partial", not "confirmed".
 //   10. stats.useItems counts every grouped-use leaf item including globs.
@@ -69,6 +69,14 @@
 //       them as usage) and cfg-mentions-`kani` sites (verification-only per
 //       CLAUDE.md) are excluded from countedIncomingRefs; the raw counts
 //       stay in measured so nothing is hidden.
+//   12. A1 conduit exemption: modules declared with status "conduit"
+//      (config.conduits, exact path match) are excluded from back-edge
+//      candidacy by explicit declaration — previously they were skipped
+//      only implicitly, because they mapped to no layer. Refs THROUGH a
+//      conduit already resolve to the defining module upstream.
+//   13. With A1's merged `segment_route` layer the cycle-observation code
+//      (layers NAMED "segment"/"route") finds no such layers and produces
+//      zero cycleEdges — the intended consequence of the merge decision.
 //
 // Usage: `node scripts/module-graph/graph.mjs --selftest` runs the in-memory
 // micro-graph self-test; without --selftest it builds the graph of ./src and
@@ -463,9 +471,13 @@ export function buildModuleGraph({ srcDir = "src", configPath = "scripts/module-
     sourceCrate: boundaryOf(e.source) ?? s.crates.join("/"),
     targetCrate: boundaryOf(e.target) ?? t.crates.join("/"),
   });
+  const conduitSet = new Set((config.conduits ?? []).flatMap((c) => c.modules ?? []));
   const backEdges = [];
   const cycleEdges = [];
   for (const e of nestedEdges) {
+    // A1: conduit mod.rs re-export wiring is exempt; refs through it resolve
+    // to the defining module upstream, so only its own edges would show up here.
+    if (conduitSet.has(e.source) || conduitSet.has(e.target)) continue;
     const s = layerOf(e.source), t = layerOf(e.target);
     if (s === null || t === null) continue; // unmapped module: not comparable
     if (s.order < t.order) backEdges.push(annotate(e, s, t)); // DEVIATION 1
@@ -592,7 +604,7 @@ export function buildModuleGraph({ srcDir = "src", configPath = "scripts/module-
   };
   return {
     identity,
-    config: { path: configPathAbs, layers: config.layers ?? [], boundaries: config.boundaries ?? [], expected_back_edges: config.expected_back_edges ?? [] },
+    config: { path: configPathAbs, layers: config.layers ?? [], boundaries: config.boundaries ?? [], expected_back_edges: config.expected_back_edges ?? [], conduits: config.conduits ?? [] },
     modules: moduleList,
     edges: edgesList,
     topEdges,
