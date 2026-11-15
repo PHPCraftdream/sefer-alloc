@@ -3,9 +3,13 @@ import { test } from 'node:test';
 // node:test suite for scripts/iai-nolto-summary.mjs, styled after
 // tests/module_graph.test.mjs. Imports are relative to this file (no cwd
 // dependence); no network, no cargo. EVERY fixture below is a synthetic
-// string built HERE from arbitrary constants — no real CI data, no
-// measurements; expected values are derived from the same fixture constants
-// (never hand-typed twice).
+// string built HERE from arbitrary constants — no real CI measurements;
+// expected values are derived from the same fixture constants (never
+// hand-typed twice). ONE EXCEPTION: the colored-log fixture reproduces the
+// exact line shape of the CI log quoted in the P1.0 defect report (GitHub
+// Actions run 43712417106, job "no-LTO"); the first bench's values are from
+// that quoted excerpt, the second bench's metric values are synthetic. All
+// ESC bytes are written as '\x1b' escapes, never a raw ESC byte.
 import {
   buildCompareCsv,
   buildCsv,
@@ -13,7 +17,11 @@ import {
   compareRuns,
   parseCsv,
   parseIaiLog,
+  main,
 } from '../scripts/iai-nolto-summary.mjs';
+import { rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // --- synthetic fixtures -----------------------------------------------------
 
@@ -215,4 +223,164 @@ test('totals: CSV per-bench delta sum equals the markdown totals line', () => {
   assert.equal(totBase, perBench.reduce((s, r) => s + Number(r[1]), 0));
   assert.equal(totHead, perBench.reduce((s, r) => s + Number(r[2]), 0));
   assert.equal(totDelta, perBench.reduce((s, r) => s + Number(r[3]), 0));
+});
+
+// --- colored (real Actions) fixtures -----------------------------------------
+
+// Real CI log excerpt shape (P1.0 defect report, Actions run 43712417106,
+// job "no-LTO"; CARGO_TERM_COLOR=always makes iai color its output). The
+// first bench's values are from the quoted excerpt; the second bench's are
+// synthetic test constants.
+const REAL_TS = '2026-11-15T12:11:06.6808109Z ';
+const REAL_B1 = { name: 'small_churn_16b', ir: 53313, l1: 98029, l2: 203, ram: 1243, cycles: 142549 };
+const REAL_B2 = { name: 'small_churn_16b_2n', ir: 98765, l1: 11111, l2: 22, ram: 333, cycles: 4444 };
+
+const coloredRow = (label, v) =>
+  '\x1b[90m  \x1b[0m' + label + ':' + ' '.repeat(Math.max(1, 30 - label.length)) +
+  '\x1b[1m' + v + '\x1b[0m|N/A                  (\x1b[90m*********\x1b[0m)';
+const coloredHeader = (name) => REAL_TS + '\x1b[32mperf_gate_iai::perf_gate::' + name + '\x1b[0m';
+const coloredBlock = (b) =>
+  [coloredHeader(b.name), coloredRow('Instructions', b.ir), coloredRow('L1 Hits', b.l1),
+    coloredRow('L2 Hits', b.l2), coloredRow('RAM Hits', b.ram),
+    coloredRow('Estimated Cycles', b.cycles)].join('\n');
+
+// (a) the exact 8 quoted lines for bench 1 + bench 2 with synthetic rows.
+const coloredFixture = [coloredBlock(REAL_B1), coloredBlock(REAL_B2)].join('\n') + '\n';
+const stripAnsi = (s) => s.replace(/\x1b\[[0-9;:?]*[A-Za-z]/g, '');
+
+test('parse: colored (real-shape) Actions log parses the exact 2 benches', () => {
+  assert.deepEqual(parseIaiLog(coloredFixture), [
+    { name: REAL_B1.name, ir: REAL_B1.ir, l1: REAL_B1.l1, l2: REAL_B1.l2, ram: REAL_B1.ram, cycles: REAL_B1.cycles },
+    { name: REAL_B2.name, ir: REAL_B2.ir, l1: REAL_B2.l1, l2: REAL_B2.l2, ram: REAL_B2.ram, cycles: REAL_B2.cycles },
+  ]);
+});
+
+// (b) colored === colorless: stripping ANSI with a locally-declared regex of
+// the same shape as the script's ANSI_CSI_RE must change nothing.
+test('parse: colored and colorless logs parse identically (ANSI is inert)', () => {
+  const colorless = stripAnsi(coloredFixture);
+  assert.notEqual(colorless, coloredFixture, 'the twin must really have escapes removed');
+  assert.deepEqual(parseIaiLog(coloredFixture), parseIaiLog(colorless));
+  const first = parseIaiLog(colorless)[0];
+  assert.deepEqual(
+    first,
+    { name: REAL_B1.name, ir: REAL_B1.ir, l1: REAL_B1.l1, l2: REAL_B1.l2, ram: REAL_B1.ram, cycles: REAL_B1.cycles },
+    'full 6-metric first bench row',
+  );
+});
+
+// (c1) zero benches parsed is a hard error with diagnostic context, not [].
+test('parse: 0 benches parsed throws with Instructions-line diagnostics', () => {
+  // Colored metric rows but no bench header: nothing attaches to a bench.
+  const noHeader = coloredRow('Instructions', 12345) + '\n';
+  assert.throws(
+    () => parseIaiLog(noHeader),
+    (e) =>
+      e.message.includes('0 benches parsed') &&
+      e.message.includes('1 line(s)') &&
+      e.message.includes('Instructions:'),
+    'metric rows without a bench header must hard-error with diagnostics',
+  );
+  // Garbage log with no Instructions mention at all.
+  assert.throws(
+    () => parseIaiLog('some random cargo noise\n'),
+    (e) => e.message.includes('no line contains'),
+    'a log with no Instructions mention must hard-error too',
+  );
+});
+
+// (c2) end-to-end via main(): the old defect printed "OK — 0 bench(es)" and
+// exited 0; now it must FAIL with exit code 1 and no OK line.
+test('cli: garbage log FAILs with exit 1 and no OK line (zero-bench guard)', () => {
+  const tmpPath = join(tmpdir(), 'iai-nolto-summary-zero-test-' + process.pid + '-' + Date.now() + '.log');
+  const captured = [];
+  const origError = console.error;
+  console.error = (...args) => captured.push(args.join(' '));
+  let code;
+  try {
+    writeFileSync(tmpPath, 'some random cargo noise\n');
+    code = main(['--log', tmpPath]);
+  } finally {
+    console.error = origError;
+    rmSync(tmpPath, { force: true });
+  }
+  const stderr = captured.join('\n');
+  assert.equal(code, 1, 'must exit 1, NOT the old 0');
+  assert.ok(stderr.includes('[iai-nolto-summary] FAIL'), 'stderr must carry the FAIL line');
+  assert.ok(!stderr.includes('OK —'), 'stderr must NOT contain an OK line');
+});
+
+// (d) compare mode with the real iai 0.14 baseline-column shapes. Metric-row
+// format precedents: scripts/pg3_iai_table.mjs (~lines 29-33) and
+// scripts/ph3c_leaf_proto_table.mjs (~line 31):
+//   `Instructions:        196387|196387   (No change)`
+//   `Instructions:         392243|N/A      (*********)`
+//   `Instructions:        120258|120255   (+0.00249%) [+1.00002x]`
+// plus the observed `|N/A ... (*********)` shape from the defect excerpt.
+// The parser must always take the FIRST integer column (current run).
+const CMP2_BASE = [
+  { name: 'cmp_rise_bench', ir: 1200, l1: 1300, l2: 14, ram: 150, cycles: 1600 },
+  { name: 'cmp_fall_bench', ir: 9000, l1: 9500, l2: 96, ram: 970, cycles: 9800 },
+];
+const CMP2_HEAD = [
+  { name: 'cmp_rise_bench', ir: 1234, l1: 1333, l2: 15, ram: 152, cycles: 1601 },
+  { name: 'cmp_fall_bench', ir: 8888, l1: 9400, l2: 95, ram: 960, cycles: 9700 },
+];
+const cmpColoredRow = (label, v, baseline) =>
+  '\x1b[90m  \x1b[0m' + label + ':' + ' '.repeat(Math.max(1, 30 - label.length)) +
+  '\x1b[1m' + v + '\x1b[0m|' + baseline;
+const cmpHeadBlock = (b) =>
+  [coloredHeader(b.name),
+    cmpColoredRow('Instructions', b.ir, `${b.ir}   (+${Math.abs(((b.ir - 1) / b.ir) * 100).toFixed(5)}%) [+1.0${b.ir % 10}x]`),
+    cmpColoredRow('L1 Hits', b.l1, `${b.l1}`),
+    cmpColoredRow('L2 Hits', b.l2, `${b.l2}`),
+    cmpColoredRow('RAM Hits', b.ram, `${b.ram}`),
+    cmpColoredRow('Estimated Cycles', b.cycles, `${b.cycles}`),
+  ].join('\n');
+const cmpBaseBlock = (b) =>
+  [coloredHeader(b.name),
+    cmpColoredRow('Instructions', b.ir, 'N/A                  (\x1b[90m*********\x1b[0m)'),
+    cmpColoredRow('L1 Hits', b.l1, 'N/A                  (\x1b[90m*********\x1b[0m)'),
+    cmpColoredRow('L2 Hits', b.l2, 'N/A                  (\x1b[90m*********\x1b[0m)'),
+    cmpColoredRow('RAM Hits', b.ram, 'N/A                  (\x1b[90m*********\x1b[0m)'),
+    cmpColoredRow('Estimated Cycles', b.cycles, 'N/A                  (\x1b[90m*********\x1b[0m)'),
+  ].join('\n');
+const cmpHeadLog2 = CMP2_HEAD.map(cmpHeadBlock).join('\n') + '\n';
+const cmpBaseLog2 = CMP2_BASE.map(cmpBaseBlock).join('\n') + '\n';
+
+test('compare: baseline-column colored logs take the FIRST column on both sides', () => {
+  const baseRows = parseIaiLog(cmpBaseLog2);
+  const headRows = parseIaiLog(cmpHeadLog2);
+  for (let i = 0; i < CMP2_BASE.length; i++) {
+    const b = CMP2_BASE[i];
+    const h = CMP2_HEAD[i];
+    assert.deepEqual(headRows[i], { name: h.name, ir: h.ir, l1: h.l1, l2: h.l2, ram: h.ram, cycles: h.cycles });
+    assert.deepEqual(baseRows[i], { name: b.name, ir: b.ir, l1: b.l1, l2: b.l2, ram: b.ram, cycles: b.cycles });
+  }
+  const cmp = compareRuns(baseRows, headRows);
+  for (let i = 0; i < CMP2_BASE.length; i++) {
+    const b = CMP2_BASE[i];
+    const h = CMP2_HEAD[i];
+    const r = cmp.rows[i];
+    assert.equal(r.irBase, b.ir, `irBase takes base's FIRST column (${b.name})`);
+    assert.equal(r.irHead, h.ir, `irHead takes head's FIRST column (${h.name})`);
+    assert.equal(r.deltaIr, h.ir - b.ir, `deltaIr === head - base (${h.name})`);
+    const expectPct = Math.round(((h.ir - b.ir) / b.ir) * 10000) / 100;
+    assert.equal(r.deltaPct, expectPct, `deltaPct === two-decimal formula (${h.name})`);
+    assert.equal(r.deltaIr > 0, h.ir > b.ir, `delta sign matches head-vs-base (${h.name})`);
+  }
+  // The rise bench exercises +34 / +2.83% exactly.
+  assert.equal(cmp.rows[0].deltaIr, 34);
+  assert.equal(cmp.rows[0].deltaPct, 2.83);
+  assert.ok(cmp.rows[1].deltaIr < 0, 'the head<base bench must exercise the negative path');
+  // CSV round-trip via parseCsv.
+  const parsed = parseCsv(buildCompareCsv(cmp, META));
+  assert.equal(parsed.length, CMP2_BASE.length + 2, 'header + benches + TOTAL');
+  for (let i = 0; i < CMP2_BASE.length; i++) {
+    const p = parsed[i + 1];
+    assert.equal(p[0], CMP2_BASE[i].name);
+    assert.equal(Number(p[1]), CMP2_BASE[i].ir, `ir_base round-trip (${p[0]})`);
+    assert.equal(Number(p[2]), CMP2_HEAD[i].ir, `ir_head round-trip (${p[0]})`);
+    assert.equal(Number(p[3]), CMP2_HEAD[i].ir - CMP2_BASE[i].ir, `delta round-trip (${p[0]})`);
+  }
 });

@@ -14,7 +14,9 @@
 // CARGO-FREE: pure node (node:fs / node:url / node:assert only), it never
 // shells out, and it parses iai-callgrind 0.14 stdout exactly like
 // scripts/iai.mjs's proven parseMetrics (header/metric regexes credited
-// verbatim below), plus GitHub Actions log-line prefix stripping.
+// verbatim below), plus GitHub Actions log-line prefix stripping and
+// ANSI-escape stripping (the Actions workflow sets CARGO_TERM_COLOR=always,
+// so real CI logs carry colored iai output).
 //
 // NEVER INVENTS NUMBERS. Every Ir/cache figure emitted here is read verbatim
 // from the log file(s) passed on the command line; baseline values come ONLY
@@ -77,15 +79,19 @@ const L2_RE = metricRowRe('L2 Hits');
 const RAM_RE = metricRowRe('RAM Hits');
 const CYCLES_RE = metricRowRe('Estimated Cycles');
 
-// GitHub Actions log normalization: a raw downloaded Actions log line may be
+// GitHub Actions log normalization: a raw downloaded Actions log line may
+// carry ANSI CSI escapes (the workflow sets CARGO_TERM_COLOR=always, so real
+// Actions logs color iai output; cf. scripts/r20_r6_ab_iai_run.mjs), be
 // prefixed with tab-separated job/step fields and/or a leading ISO-8601
 // timestamp. Strip those and NOTHING else — the header/metric regexes above
 // must still anchor exactly as in scripts/iai.mjs.
+// CSI: ESC [ parameters (digits, ';', ':' subparams, '?') final letter.
+const ANSI_CSI_RE = /\x1b\[[0-9;:?]*[A-Za-z]/g;
 const ACTIONS_TS_RE = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z?\s+/;
 
-/** Strip leading tab-separated fields and a leading ISO-8601 timestamp. */
+/** Strip ANSI escapes, leading tab-separated fields, and the timestamp. */
 function normalizeActionsLine(line) {
-  let l = line;
+  let l = line.replace(ANSI_CSI_RE, '');
   for (;;) {
     const m = /^[^\t]*\t/.exec(l);
     if (!m) break;
@@ -111,7 +117,7 @@ const numFrom = (m) => Number(m[1].replace(/,/g, ''));
  *   - every parsed Ir must be a finite non-negative integer.
  */
 export function parseIaiLog(text) {
-  const lines = text.split(/\r?\n/);
+  const lines = text.split(/\r?\n/).map(normalizeActionsLine);
   const results = [];
   const dropped = [];
   let current = null;
@@ -119,8 +125,7 @@ export function parseIaiLog(text) {
   const closeBench = () => {
     if (current !== null && !currentHasIr) dropped.push(current);
   };
-  for (const rawLine of lines) {
-    const line = normalizeActionsLine(rawLine);
+  for (const line of lines) {
     const h = BENCH_HEADER_RE.exec(line);
     if (h) {
       closeBench();
@@ -159,6 +164,21 @@ export function parseIaiLog(text) {
     throw new Error(
       `iai log: ${dropped.length} bench header(s) produced no Instructions row ` +
         `(dropped benches would corrupt baseline deltas): ${dropped.join(', ')}`,
+    );
+  }
+  if (results.length === 0) {
+    const instrLines = lines.filter((l) => l.includes('Instructions:'));
+    if (instrLines.length > 0) {
+      const first = instrLines[0].length > 120 ? instrLines[0].slice(0, 120) + '...' : instrLines[0];
+      throw new Error(
+        `iai log: 0 benches parsed — ${instrLines.length} line(s) contain "Instructions:" ` +
+          `but none parsed as a metric row; first unrecognized line: ${JSON.stringify(first)}`,
+      );
+    }
+    const firstNonEmpty = lines.find((l) => l.length > 0);
+    throw new Error(
+      `iai log: 0 benches parsed — no line contains "Instructions:"; ` +
+        `first log line: ${JSON.stringify(firstNonEmpty === undefined ? '' : firstNonEmpty)}`,
     );
   }
   // De-dupe by name, keep first occurrence (one block per bench).
