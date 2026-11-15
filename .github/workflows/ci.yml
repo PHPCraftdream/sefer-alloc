@@ -602,6 +602,7 @@ jobs:
           echo "default=$(node scripts/select-tests.mjs args --selection sel/selection.json --features '')" >> "$GITHUB_OUTPUT"
           echo "experimental=$(node scripts/select-tests.mjs args --selection sel/selection.json --features experimental)" >> "$GITHUB_OUTPUT"
           echo "alloc_core=$(node scripts/select-tests.mjs args --selection sel/selection.json --features 'alloc-core internals')" >> "$GITHUB_OUTPUT"
+      - run: cargo fetch --locked # offline compile-fail fixtures need sefer-concurrent's registry deps (P1.2 weak forwards); rationale in the fixture manifests
       - name: test ()
         if: ${{ !cancelled() }}
         run: cargo test ${{ steps.sel.outputs.default }} --no-fail-fast # default: the safe core + SyncRegion
@@ -611,7 +612,6 @@ jobs:
       - name: test (--features alloc-core)
         if: ${{ !cancelled() }}
         run: cargo test --features "alloc-core internals" ${{ steps.sel.outputs.alloc_core }} --no-fail-fast
-
   test-xthread:
     needs: changes
     if: needs.changes.outputs.fast == 'true'

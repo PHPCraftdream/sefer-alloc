@@ -4,7 +4,13 @@
 # auto-discover nested test dirs, mirroring the established
 # crates/primitives/tagged-index-stack/tests/compile_fail/*/Cargo.toml pattern).
 # Deliberately dependency-free apart from the path dep, so
-# `cargo build --offline` needs no network.
+# `cargo build --offline` needs no network. Note: P1.2's weak root forwards
+# (`internals`/`bench-internals` -> `sefer-concurrent?/…`) still put
+# sefer-concurrent's registry deps (arc-swap, crossbeam-epoch,
+# crossbeam-utils, rustversion, pinned to the root Cargo.lock versions) into
+# this fixture's lock graph, so the offline child build requires them in the
+# cargo cache; CI provides them via `cargo fetch --locked` steps in the test
+# jobs.
 [workspace]
 
 [package]

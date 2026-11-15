@@ -1,3 +1,10 @@
+# Compile-fail fixture — compiled ONLY by root tests; the child
+# `cargo build --offline` needs no network apart from sefer-concurrent's
+# registry deps (arc-swap, crossbeam-epoch, crossbeam-utils, rustversion,
+# pinned to the root Cargo.lock versions), which P1.2's weak root forwards
+# (`internals`/`bench-internals` -> `sefer-concurrent?/…`) pull into this
+# fixture's lock graph. CI provides them in the cargo cache via
+# `cargo fetch --locked` steps in the test jobs.
 [package]
 name = "route-publication-requires-unsafe"
 version = "0.0.0"
