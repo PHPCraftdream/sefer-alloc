@@ -85,6 +85,17 @@ features = ["production"]
 #                                             #![forbid(unsafe_code)] (FFI stays in proc-memstat).
 #                                             Dev-only: the process-probe examples emit through it;
 #                                             NOT in sefer's runtime dep tree.
+#   - sefer-platform  (crates/platform/sefer-platform) — the platform seam: the sanctioned fatal
+#                                             terminator (`fatal`), the Windows process-exit probe
+#                                             (`process_exit`), and the SEGMENT-aligned OS aperture
+#                                             (`Segment`, the `SEGMENTS_*` counters, release/commit/
+#                                             decommit wrappers, depot-overflow storage). Pure-move
+#                                             extraction of `alloc_core::platform::{fatal,os}`'s backup
+#                                             half + `global::process_exit` (plan step P1.4); the root
+#                                             crate re-exports the whole surface through its
+#                                             `alloc_core::os` / `alloc_core::fatal` /
+#                                             `global::process_exit` conduits, so call-site paths
+#                                             are unchanged.
 #   - size-classes    (crates/primitives/size-classes)  — const-built size-class table + derived
 #                                             O(1) size->class lookup + alignment-jump
 #                                             classifier; #![forbid(unsafe_code)], no_std.
@@ -96,7 +107,7 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/platform/aligned-vmem", "crates/platform/numa-shim", "crates/bench/malloc-bench-rs", "crates/containers/sefer-region", "crates/core/sefer-policy", "crates/primitives/once-ptr-cell", "crates/primitives/sefer-ghost", "crates/primitives/size-classes", "crates/verify/globalalloc-model", "crates/primitives/tagged-index-stack", "crates/platform/proc-memstat", "crates/platform/proc-probe", "crates/verify/ghost-lint", "crates/containers/sefer-concurrent"]
+members = ["crates/platform/aligned-vmem", "crates/platform/numa-shim", "crates/bench/malloc-bench-rs", "crates/containers/sefer-region", "crates/core/sefer-policy", "crates/primitives/once-ptr-cell", "crates/primitives/sefer-ghost", "crates/primitives/size-classes", "crates/verify/globalalloc-model", "crates/primitives/tagged-index-stack", "crates/platform/proc-memstat", "crates/platform/proc-probe", "crates/platform/sefer-platform", "crates/verify/ghost-lint", "crates/containers/sefer-concurrent"]
 resolver = "2"
 
 # Task #711 (once-ptr-cell round-closing review, §C10 drift hazard): `loom`
@@ -110,6 +121,9 @@ resolver = "2"
 # `loom = { workspace = true }`.
 [workspace.dependencies]
 loom = "0.7"
+# P1.4: the platform-seam crate; the root package consumes it through the
+# `alloc_core::os` / `alloc_core::fatal` / `global::process_exit` conduits.
+sefer-platform = { path = "crates/platform/sefer-platform", version = "0.1" }
 
 # Workspace lint table — the root package and once-ptr-cell inherit it.
 # tagged-index-stack uses a crate-local allowlist for loom and its repository cfg.
@@ -180,7 +194,7 @@ pinning = ["experimental", "sefer-concurrent?/pinning"]
 # discipline) — so the crate switches to `deny(unsafe_code)` with this feature
 # on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
 # syscalls are std-gated). See `docs/ALLOC_PLAN.md` §5 P8 and §6.
-alloc-core = ["std", "dep:sefer-policy", "dep:aligned-vmem", "aligned-vmem/lazy-commit", "dep:once-ptr-cell", "dep:size-classes"]
+alloc-core = ["std", "dep:sefer-policy", "dep:aligned-vmem", "aligned-vmem/lazy-commit", "dep:once-ptr-cell", "dep:size-classes", "dep:sefer-platform"]
 # Cross-thread terminal publication and owner stamping. Global heaps consume
 # authoritative per-segment sidecar bits and maintain ownerless heaps through
 # the maintenance service. Requires alloc-core; implied by alloc-global.
@@ -212,7 +226,7 @@ alloc-xthread = ["alloc-core"]
 # from a cross-thread `realloc` (an abort for a moved-then-grown `Vec`).
 # `src/lib.rs` carries a `compile_error!` guard for a stale manifest;
 # `production` already enabled both.
-alloc-global = ["alloc-core", "alloc-xthread", "sefer-policy?/alloc-global"]
+alloc-global = ["alloc-core", "alloc-xthread", "sefer-policy?/alloc-global", "sefer-platform/alloc-global"]
 # Opt-in prototype (Ph1b): exact System object + out-of-object descriptor for
 # narrow requests. NOT part of `production`.
 exact-object-proto = ["alloc-global", "std"]
@@ -311,7 +325,7 @@ page-map-diag = ["alloc-core"]
 # decommit-safe WITHOUT crossbeam-epoch / M11 — see the safety argument at the
 # decommit point in `alloc_core` and `docs/PHASE35_DECOMMIT_DESIGN.md` §1.
 # Requires `alloc-core`. Default OFF.
-alloc-decommit = ["alloc-core", "sefer-policy?/alloc-decommit"]
+alloc-decommit = ["alloc-core", "sefer-policy?/alloc-decommit", "sefer-platform/alloc-decommit"]
 # Convenience alias: the recommended feature set for long-running multi-thread
 # workloads (DBMS-style, async runtimes, anything that creates and frees many
 # segments over time). Without `alloc-decommit` the SegmentTable free-list
@@ -356,7 +370,7 @@ alloc-decommit = ["alloc-core", "sefer-policy?/alloc-decommit"]
 # byte-for-byte identical to before (rounds up to a whole `SEGMENT`
 # multiple) — this feature adds a new path, it does not alter the default
 # one. Additive over `alloc-core`.
-exact-span-large = ["alloc-core", "sefer-policy?/exact-span-large"]
+exact-span-large = ["alloc-core", "sefer-policy?/exact-span-large", "sefer-platform/exact-span-large"]
 # R12-4 (P0-perf, EXPERIMENTAL Windows-gated-effect prototype): give a
 # GROWING Large `realloc` a cheap in-place path when `exact-span-large` has
 # shrunk the committed span so far that OPT-G (the existing Large->Large
@@ -405,7 +419,7 @@ exact-span-large = ["alloc-core", "sefer-policy?/exact-span-large"]
 # feature here). With this feature OFF, `alloc_large_slow` and the OPT-G
 # realloc fast path are BYTE-FOR-BYTE IDENTICAL to before — this feature
 # adds a new path, it does not alter the default one.
-large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit", "sefer-policy?/large-reserved-capacity"]
+large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit", "sefer-policy?/large-reserved-capacity", "sefer-platform/large-reserved-capacity"]
 # R13-7 (P1-perf, EXPERIMENTAL, task #277): widens `AllocCore::large_cache`'s
 # fixed 8 base slots (`LARGE_CACHE_SLOTS`) via a lazily-materialised extension
 # sidecar of 32 additional slots (40 total) — see
@@ -437,7 +451,7 @@ large-cache-adaptive = ["large-cache-extended"]
 # structure — a genuine data race, not merely a missed optimisation.
 # `alloc-xthread` supplies owner identity and terminal publication; `fastbin`
 # must never build without that cross-thread ownership protocol.
-fastbin = ["alloc-global", "alloc-xthread"]
+fastbin = ["alloc-global", "alloc-xthread", "sefer-platform/fastbin"]
 # Six-feature production bundle (listed below), excluding diagnostic features
 # `alloc-stats`, `internals`, and `bench-internals`. The allocator uses
 # authoritative sidecar terminal bits and owner maintenance, not the retired
@@ -522,7 +536,7 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "all
 # resolution can turn the override on; the test's runtime half is compiled
 # only in invocations that pass the flag (check-all step + ci.yml
 # `test-windows` row).
-internals = ["sefer-ghost/internals", "sefer-concurrent?/internals", "sefer-policy?/internals"]
+internals = ["sefer-ghost/internals", "sefer-concurrent?/internals", "sefer-policy?/internals", "sefer-platform?/internals"]
 # `internals` forwards to sefer-ghost's own `internals` so its
 # `probe` self-test entry stays gated identically across the crate
 # boundary (plan P1.1).
@@ -622,7 +636,8 @@ alloc-stats = ["alloc-core"]
 # is only pulled in by `alloc-core`, so both forwards are no-ops (unresolved
 # optional dep) unless `alloc-core` is also enabled — matching every other
 # `aligned-vmem/*` forward in this file (e.g. `alloc-lazy-commit` below).
-bench-internals = ["aligned-vmem?/bench-internals", "aligned-vmem?/lazy-commit", "sefer-concurrent?/bench-internals", "sefer-policy?/bench-internals"]
+# `sefer-platform` is optional too, so its forwards here use `?` (no dep activation).
+bench-internals = ["aligned-vmem?/bench-internals", "aligned-vmem?/lazy-commit", "sefer-concurrent?/bench-internals", "sefer-policy?/bench-internals", "sefer-platform?/bench-internals"]
 # R6-OPT-P0-3a: EXPERIMENTAL "medium" exact size classes — the cheap first
 # experiment `docs/agent_reviews_us/radical_optimization_review.md` §4 P0-3
 # recommends running BEFORE committing to the larger page-run-layer redesign
@@ -728,7 +743,7 @@ hardened = ["fastbin", "misuse-checks"]
 # Selects eager reservation for primordial and ordinary Small segments,
 # overriding both lazy-commit features. Excludes forced Small directory rescue;
 # NUMA Large reservations have no extra reserved-capacity growth headroom.
-numa-aware = ["alloc-core", "dep:numa-shim", "sefer-policy?/numa-aware"]
+numa-aware = ["alloc-core", "dep:numa-shim", "sefer-policy?/numa-aware", "sefer-platform/numa-aware"]
 # R11-5 TEST-ONLY: marker/gate feature for the NUMA mock integration tests
 # (numa_cache_invalidation, numa_periodic_refresh, segment_directory_numa*, etc.).
 # Task #1288: no longer forwards to `numa-shim/mock` (that feature no longer
@@ -834,6 +849,7 @@ alloc-lazy-commit = ["primordial-lazy-commit", "small-segment-lazy-commit"]
 primordial-lazy-commit = [
     "alloc-core",
     "aligned-vmem/lazy-commit",
+    "sefer-platform/primordial-lazy-commit",
 ]
 # R12-9 (task #260, P1): lazily commit ordinary (non-primordial) small
 # segments — `reserve_small_segment`'s `reserve_aligned_lazy` call, plus B3's
@@ -853,6 +869,7 @@ primordial-lazy-commit = [
 small-segment-lazy-commit = [
     "alloc-core",
     "aligned-vmem/lazy-commit",
+    "sefer-platform/small-segment-lazy-commit",
 ]
 # R2-19 (task #2021, docs/reviews/2026-09-22-120730-src-review-xa-round-2.md):
 # TEST-ONLY fixture package for the lazy-commit fault-injection hooks — the
@@ -952,6 +969,11 @@ sefer-policy = { path = "crates/core/sefer-policy", version = "0.1", optional = 
 # crate so it can be used and published independently. Pulled in ONLY by the
 # `alloc-core` feature (and every feature that depends on it).
 aligned-vmem = { path = "crates/platform/aligned-vmem", version = "0.2", optional = true }
+# P1.4: the platform-seam crate (optional, activated by `alloc-core`, which is
+# implied by everything that reaches the moved surface — `alloc-core` is
+# std-gated, matching `fatal`'s std usage; no_std/default builds never compile
+# the moved code, so they must not pull the crate).
+sefer-platform = { workspace = true, optional = true }
 # CRATE-P3: the lazy CAS-published pointer cell (UNINIT -> INITIALIZING -> READY
 # with OOM rollback + loser re-race), extracted from `src/registry/bootstrap/ensure.rs`'s
 # per-chunk materialisation state machine and

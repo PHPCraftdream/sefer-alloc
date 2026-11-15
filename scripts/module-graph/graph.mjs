@@ -317,8 +317,17 @@ export function buildModuleGraph({ srcDir = "src", configPath = "scripts/module-
         if (rest.length === 0) return t.extern ? t : { module: t.module, viaGlob: st.viaGlob || t.viaGlob };
         return walkSegs(t.module, rest, st, approx);
       }
-      for (const g of node.globs) {
-        const gt = resolvePath(nodePath, g.kind, g.segs, { approxFinal: false, superDepth: g.superDepth });
+      for (let gi = 0; gi < node.globs.length; gi += 1) {
+        const g = node.globs[gi];
+        // A glob whose own resolution re-enters this node (e.g. a glob re-export
+        // of an extern crate module whose first segment resolves to nothing
+        // here) must not recurse on itself: the per-resolvePath `visited` set
+        // only guards binding re-exports, so glob re-entry is guarded by its
+        // own per-resolvePath marker (task P1.4: sefer-platform glob conduit).
+        const gkey = nodePath + "::glob" + gi;
+        if (st.globVisited.has(gkey)) continue;
+        st.globVisited.add(gkey);
+        const gt = resolvePath(nodePath, g.kind, g.segs, { approxFinal: false, superDepth: g.superDepth, st });
         if (gt === null) continue;
         const gChild = nodes.get(gt.module)?.children.get(s);
         if (gChild !== undefined) { st.viaGlob = true; return walkSegs(gChild.path, rest, st, approx); }
@@ -333,9 +342,14 @@ export function buildModuleGraph({ srcDir = "src", configPath = "scripts/module-
     // cycles hit the guard instead of recursing forever.
     return scope === null ? null : walkSegs(scope, binding.segs, st, true);
   };
-  function resolvePath(fromPath, kind, segs, { approxFinal = true, superDepth = 1 } = {}) {
+  function resolvePath(fromPath, kind, segs, { approxFinal = true, superDepth = 1, st = null } = {}) {
     const scope = startScope(fromPath, kind, superDepth);
-    return scope === null ? null : walkSegs(scope, segs, { visited: new Set(), viaGlob: false, depth: 0, walked: false }, approxFinal);
+    if (scope === null) return null;
+    // Glob re-entry (a glob whose resolution re-enters this node, e.g. a glob
+    // re-export of an extern crate module — P1.4's `sefer_platform::os::*`
+    // conduit) must SHARE the caller's visited/globVisited/depth state: a fresh
+    // state per nested resolvePath defeats the depth cap and recurses forever.
+    return walkSegs(scope, segs, st ?? { visited: new Set(), globVisited: new Set(), viaGlob: false, depth: 0, walked: false }, approxFinal);
   }
   // For pathRefs/docRefs the parser lost the `super::` repetition count:
   // try ancestors nearest-first (deviation 3).

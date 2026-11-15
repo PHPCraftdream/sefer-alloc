@@ -96,7 +96,7 @@ models or workloads were executed.
 | `always` | every change: fmt, commit-prefix-lint, evidence-registry, deny, licenses, docs-consistency, j13b-judge-preparation (path-selected steps) |
 | `fast` | `src/**`, `crates/**`, `tests/**`, `benches/**`, `examples/**`, `fuzz/**`, `Cargo.*`, build scripts (`check-matrix`, `run-check-matrix`, `lib`, `check-all`), and any unrecognised path |
 | `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests, the actual-source owner, operation core, persistent actors and training guard (`examples/_shared/j13b_owned_block.rs`, `examples/_shared/j13b_window_kernel.rs`, `examples/_shared/j13b_payload_actors.rs`, `examples/_shared/j13b_owner_training.rs`), and the OS/model boundary producer `examples/_shared/j13b_os_probe.rs` and its adaptive window executor `examples/_shared/j13b_adaptive_windows.rs` |
-| `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**`, tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`), and `examples/_shared/j13b_os_probe.rs` and its adaptive window executor `examples/_shared/j13b_adaptive_windows.rs` |
+| `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**`, tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`, `sefer-platform`), and `examples/_shared/j13b_os_probe.rs` and its adaptive window executor `examples/_shared/j13b_adaptive_windows.rs` |
 | `crate_*` | `crates/<theme>/<name>/**`: the gates of that one workspace crate (its dependents also get `fast`+`seam`) |
 | everything | `schedule`, `workflow_dispatch`, and a `CI: full` trailer in the message of any commit of the range (PR: base..merge commit; push: before..sha) |
 
@@ -267,6 +267,7 @@ the smoke row covers those scenarios.
 | `proc-probe-gates` | proc-probe gates | `crate_proc`: changes under its crate |
 | `sefer-concurrent-gates` | sefer-concurrent-gates | `crate_sefer_concurrent`: changes under its crate |
 | `sefer-ghost-gates` | sefer-ghost package gates | `crate_sefer_ghost`: changes under its crate |
+| `sefer-platform-gates` | sefer-platform package gates | `crate_sefer_platform`: changes under its crate |
 | `sefer-policy-gates` | sefer-policy package gates | `crate_sefer_policy`: changes under its crate |
 | `sefer-region-gates` | sefer-region package gates | `crate_sefer_region`: changes under its crate |
 | `size-classes-gates` | size-classes package gates | `crate_size_classes`: changes under its crate |

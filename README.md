@@ -720,12 +720,13 @@ sefer-alloc
  ├── sefer-region       (crates/containers/sefer-region)             — typed handle store (Handle<T>/Region<T>)
  ├── sefer-concurrent   (crates/containers/sefer-concurrent)    — legacy/research concurrent tier (feature: experimental/pinning)
  ├── aligned-vmem       (crates/platform/aligned-vmem)               — OS virtual-memory aperture           (feature: alloc-core)
+ ├── sefer-platform     (crates/platform/sefer-platform)     — fatal/process-exit + SEGMENT OS aperture (feature: alloc-core)
  ├── numa-shim          (crates/platform/numa-shim)               — NUMA detection + binding             (feature: numa-aware)
  ├── malloc-bench-rs    (crates/bench/malloc-bench-rs)       — portable GlobalAlloc bench harness   (standalone, dev-only)
  ├── once-ptr-cell      (crates/primitives/once-ptr-cell)      — lazy CAS-published pointer cell      (feature: alloc-core)
  ├── size-classes       (crates/primitives/size-classes)       — const-built size-class tables + lookup (feature: alloc-core)
  ├── sefer-ghost        (crates/primitives/sefer-ghost)         — checking-build-only ghost_assert!/ghost_event! (always: not feature-gated)
- ├── tagged-index-stack (crates/primitives/tagged-index-stack) — ABA-tagged free-index stack          (feature: alloc-global)
+ ├── tagged-index-stack (crates/primitives/tagged-index-stack) — ABA-tagged free-index stack          (verification-only: loom/kani; not a runtime dep)
  ├── globalalloc-model  (crates/verify/globalalloc-model)  — differential op-stream test harness   (standalone, dev-only)
  ├── proc-memstat       (crates/platform/proc-memstat)       — same-instant RSS / commit self-probe (standalone, dev-only)
  └── proc-probe         (crates/platform/proc-probe)         — RESULT key=value stdout protocol     (standalone, dev-only)
@@ -784,6 +785,7 @@ the line to begin with the attribute, not a `//` prefix.
 | Crate | Path | Unsafe story |
 |---|---|---|
 | `aligned-vmem` | `crates/platform/aligned-vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture (`mmap`/`VirtualAlloc`/decommit); single responsibility, small, audit in isolation |
+| `sefer-platform` | `crates/platform/sefer-platform/` | `#![allow(unsafe_code)]` in `os.rs` (the SEGMENT-aligned OS aperture: `Segment` reservation/commit/decommit wrappers, page-aligned ranges inside allocator-owned reservations) and `process_exit.rs` (the Windows loader-shutdown FFI query, sole reason: the FFI call); `fatal.rs` is safe |
 | `numa-shim` | `crates/platform/numa-shim/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim (`mbind`/`VirtualAllocExNuma`); single responsibility, small, audit in isolation |
 | `malloc-bench-rs` | `crates/bench/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
 | `once-ptr-cell` | `crates/primitives/once-ptr-cell/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe impl Send/Sync` for the `AtomicPtr`-backed cell + `NonNull::new_unchecked`; every site has `# Safety` / `// SAFETY:` |
@@ -803,14 +805,15 @@ hard compile error in every configuration:
 
 | Module | What it owns | Loaded under |
 |---|---|---|
-| [`src/alloc_core/platform/os.rs`](src/alloc_core/platform/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit | `alloc-core` |
+| [`src/alloc_core/platform/os.rs`](src/alloc_core/platform/os.rs) | The directory-sidecar trio (`reserve_directory_sidecar` / `read_directory_*`); the SEGMENT OS aperture is `crates/platform/sefer-platform/src/os.rs` (tier-1 seam, re-exported through this file's conduit `pub(crate) use`) | `alloc-core` |
 | [`src/alloc_core/platform/node.rs`](src/alloc_core/platform/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline); also `release_segment` thin wrapper | `alloc-core` |
 | [`src/alloc_core/alloc_core/mem/large_control/sample_owned_large_residency.rs`](src/alloc_core/alloc_core/mem/large_control/sample_owned_large_residency.rs) | Temporary owning VM adoption for owner-terminal residency sampling; validated original geometry and provenance, with release suppressed so the caller retains ownership | `alloc-decommit`, non-`numa-aware` |
 | [`src/alloc_core/large/large_cache_extended.rs`](src/alloc_core/large/large_cache_extended.rs) | The lazily-materialised large-cache extension sidecar (owner-only, no `OncePtrCell` — no cross-thread publisher); reserves via `alloc_core::platform::sidecar::reserve`, dereferences via `sidecar::deref[_mut]` | `large-cache-extended` |
 | [`src/alloc_core/platform/sidecar.rs`](src/alloc_core/platform/sidecar.rs) | R14-9 (task #294): the shared owner-only lazily-materialised sidecar primitive (`reserve` / `reserve_zeroed_with` / `deref` / `deref_mut`) used by `os.rs`'s `SegmentDirectory` reservation and `large_cache_extended.rs`'s `LargeCacheExtension` reservation | `alloc-core` |
 | [`src/global/sefer_alloc/global_alloc.rs`](src/global/sefer_alloc/global_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore` (the registry-resident per-thread heap) | `alloc-global` |
 | [`src/global/sefer_alloc/batch.rs`](src/global/sefer_alloc/batch.rs) | The `batch-api` `alloc_batch`/`dealloc_batch` `unsafe fn` boundary pair — resolves the per-thread heap once, delegates to `HeapCore::alloc_batch`/`dealloc_batch` | `batch-api` |
-| [`src/global/process_exit.rs`](src/global/process_exit.rs) | Windows loader-shutdown query: `RtlDllShutdownInProgress`, resolved once (`GetModuleHandleW` / `GetProcAddress`) and cached so that lock-wait loops never re-enter the loader; a missing module or export and every non-Windows target return `false`. Sole reason for `unsafe`: the FFI call. | `alloc-global` |
+| [`crates/platform/sefer-platform/src/os.rs`](crates/platform/sefer-platform/src/os.rs) | The SEGMENT-aligned OS aperture moved here by P1.4 (`Segment`, `SEGMENTS_*` counters, reserve/release/commit/decommit wrappers, depot-overflow storage); page-aligned ranges inside allocator-owned reservations | `alloc-core` |
+| [`crates/platform/sefer-platform/src/process_exit.rs`](crates/platform/sefer-platform/src/process_exit.rs) | The Windows loader-shutdown FFI probe moved here by P1.4 (`src/global/process_exit.rs` is now a safe `pub use` conduit, not a seam) | `alloc-global` |
 | [`src/global/exact_object/exact_shard.rs`](src/global/exact_object/exact_shard.rs) | Opt-in prototype (`exact-object-proto`, not in `production`): out-of-object descriptor array in raw `System` memory under a shard spinlock. |
 | [`src/global/exact_object/narrow.rs`](src/global/exact_object/narrow.rs) | Opt-in prototype (`exact-object-proto`, not in `production`): exact `System` alloc/free of narrow requests with the original pointer and Layout. |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
@@ -829,13 +832,16 @@ hard compile error in every configuration:
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
-+ primordial-lazy-commit`) the active internal tier-1 seams are **fifteen**:
-`alloc_core::platform::{os, node, sidecar}` and
++ primordial-lazy-commit`) the active tier-1 seam files are **fifteen**:
+`alloc_core::platform::{os, node, sidecar}`,
+`alloc_core::alloc_core::mem::large_control::sample_owned_large_residency`
+(`alloc-decommit`, non-NUMA) and
 `alloc_core::segment::segment_table::route_slots`;
-`global::{sefer_alloc::global_alloc, fallback, process_exit}`;
+`sefer_platform::{os, process_exit}` (the P1.4 extraction crate);
+`global::{sefer_alloc::global_alloc, fallback}`;
 `registry::bootstrap::{registry, ensure}`, `registry::heap_slot`,
 `registry::heap_registry::claim`, and
-`registry::segment_route::{directory, shard_lock, small_sidecar}` and
+`registry::segment_route::{directory::{route_directory, blocks}, shard_lock, small_sidecar}` and
 `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes`.
 R6-T37 demoted `global::tls_heap` to a tier-2 item-scoped site (its sole `bench-internals`-gated `dbg_restore_local_for_test` hook); the module itself is safe.
 `registry::heap_registry::maintenance` is safe composition; its lease's

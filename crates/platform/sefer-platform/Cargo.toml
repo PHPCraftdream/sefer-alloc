@@ -1,0 +1,51 @@
+[package]
+name = "sefer-platform"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.93"
+license = "MIT OR Apache-2.0"
+description = "The sefer-alloc platform seam: the sanctioned fatal terminator, the Windows process-exit probe, and the SEGMENT-aligned OS aperture (Segment, reservation counters, commit/decommit wrappers). Pure-move extraction of sefer-alloc's alloc_core::platform::{fatal,os backup half} + global::process_exit."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/platform/sefer-platform"
+documentation = "https://docs.rs/sefer-platform"
+keywords = ["allocator", "virtualalloc", "mmap", "memory"]
+categories = ["memory-management", "os"]
+
+# docs.rs: render with every feature so the cfg-gated reservation/decommit
+# surface appears on the published page (the crate's features are all empty
+# policy toggles forwarded from the root allocator, so `all-features` is the
+# faithful render — same decision as sefer-region).
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+# Feature names mirror the root `sefer-alloc` crate one-for-one. The root
+# forwards each feature that gates moved code (`alloc-decommit = [...,
+# "sefer-platform/alloc-decommit"]`, ...); here each gate only selects which
+# of the moved items compile. All are empty toggles — the aligned-vmem
+# primitives this crate needs (lazy-commit, bench counters) are enabled
+# unconditionally on the dependency, matching the root's `alloc-core`
+# wiring (`dep:aligned-vmem`, `aligned-vmem/lazy-commit`).
+alloc-decommit = []
+numa-aware = []
+exact-span-large = []
+large-reserved-capacity = ["aligned-vmem/lazy-commit"]
+primordial-lazy-commit = ["aligned-vmem/lazy-commit"]
+small-segment-lazy-commit = ["aligned-vmem/lazy-commit"]
+bench-internals = ["aligned-vmem/bench-internals", "aligned-vmem/lazy-commit"]
+internals = []
+alloc-global = []
+fastbin = []
+
+[dependencies]
+aligned-vmem = { path = "../aligned-vmem", version = "0.2", default-features = false, features = ["lazy-commit"] }
+
+[lints.rust]
+# The moved code carries no hand-rolled build-time cfg (no loom/kani/mock
+# flags — verified by `node scripts/p14_extraction_inventory.mjs`); only the
+# well-known cfg(windows)/cfg(not(windows)) appear. sefer-region does not use
+# the loom or kani build-time cfgs (those are workspace-only, for the main
+# crate), so the inherited-style policy here is an empty check-cfg list.
+unexpected_cfgs = { level = "warn", check-cfg = [] }

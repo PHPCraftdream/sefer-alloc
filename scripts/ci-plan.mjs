@@ -36,6 +36,7 @@ export const CRATE_GROUPS = {
   'proc-probe': 'crate_proc',
   'sefer-concurrent': 'crate_sefer_concurrent',
   'sefer-ghost': 'crate_sefer_ghost',
+  'sefer-platform': 'crate_sefer_platform',
   'sefer-policy': 'crate_sefer_policy',
   'sefer-region': 'crate_sefer_region',
   'size-classes': 'crate_size_classes',
@@ -43,7 +44,7 @@ export const CRATE_GROUPS = {
 };
 export const GROUPS = ['always', 'fast', 'seam', 'os', ...new Set(Object.values(CRATE_GROUPS))];
 // Crates whose code is platform-specific: a change also exercises the cross-OS jobs.
-const OS_CRATES = new Set(['aligned-vmem', 'numa-shim', 'proc-memstat', 'proc-probe']);
+const OS_CRATES = new Set(['aligned-vmem', 'numa-shim', 'proc-memstat', 'proc-probe', 'sefer-platform']);
 
 // Edits of the workflow and of this planner run the build/test group (and the planner self-test);
 // the full set needs an explicit `CI: full` trailer, a manual dispatch or the schedule.
@@ -279,6 +280,7 @@ function selftest() {
   eq(on(P(['crates/primitives/sefer-ghost/src/lib.rs'])), 'always,crate_sefer_ghost,fast,seam', 'crate');
   eq(on(P(['crates/core/sefer-policy/src/lib.rs'])), 'always,crate_sefer_policy,fast,seam', 'crate');
   eq(on(P(['crates/platform/aligned-vmem/src/lib.rs'])), 'always,crate_aligned_vmem,fast,os,seam', 'platform crate');
+  eq(on(P(['crates/platform/sefer-platform/src/os.rs'])), 'always,crate_sefer_platform,fast,os,seam', 'sefer-platform crate');
   eq(on(P(['crates/platform/proc-probe/src/lib.rs', 'crates/platform/proc-memstat/src/lib.rs'])), 'always,crate_proc,fast,os,seam', 'proc');
   eq(on(P(['crates/brand-new/src/lib.rs'])), 'always,fast,seam', 'unknown crate is conservative');
   // scripts: matrix/manifest scripts feed fast/seam; other scripts are `always`.

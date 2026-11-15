@@ -4,7 +4,7 @@
   "jobs": [
     {
       "id": "changes",
-      "metadata": "e563128fd522ed31e152f423636be005107a0181d8b587f62b7a679ad22c8b07",
+      "metadata": "00fd8564279d15cf8823872dde4b3c2b8eda96e88af4ed7eb64c55ea6f79e942",
       "steps": "1fe5589733f5bb700e49ab25de242b1626e691fd2ba507f210c3cd9d48c9cbd6"
     },
     {
@@ -51,6 +51,11 @@
       "id": "sefer-concurrent-gates",
       "metadata": "927c84798b3aa45cbf35cfcc976a7116d37a2129732294f0c41f335d2ace79fd",
       "steps": "887aab6f15239d9247ecca796b2cd6dce67bf4e3db2746eb245088e316d4b55f"
+    },
+    {
+      "id": "sefer-platform-gates",
+      "metadata": "7c0a295bdf243ef1ed604c55ed180e4f28f40d8d7ebe85a4d14465c40456fc85",
+      "steps": "5b64669cf3b22c6e620f904ae2fc137ad93018d87b7673f5d3954a1fceb37734"
     },
     {
       "id": "aligned-vmem-gates",
