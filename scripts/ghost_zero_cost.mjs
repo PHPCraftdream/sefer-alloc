@@ -77,7 +77,31 @@ export const symbols = (t) => t
 // inside them is the constant pool whatever symbol objdump names it by
 // (anonymous strings resolve to the nearest preceding symbol, e.g.
 // `<__abi_tag+0x566e>`).
-export function normalize(objdump, rodata = new Set(), roRanges = []) {
+// `gotMap`: link-time virtual address -> `GOT:<symbol VALUE>` label from
+// `objdump -R` dynamic relocations. `.got`/`.got.plt` slots carry no per-slot
+// symbols, so objdump names their addresses by the nearest preceding symbol
+// (`_DYNAMIC+0x..`) — the slot ORDER depends on dynamic-symbol hash order
+// (`-C metadata`), so those comments diff when only the slots moved.
+// For the ET_DYN probe the `objdump -R` OFFSET and the `-d` comment address are
+// the same link-time virtual address (load base 0), which is what makes the
+// parseInt(addr, 16) lookups correct.
+// RELATIVE/IRELATIVE entries (VALUE `*ABS` / `*ABS+0x..`) carry a
+// build-specific addend address, so their label is the constant `GOT:RELATIVE`
+// and never leaks the addend. Last entry wins on duplicate offsets.
+export function gotRelocs(dump) {
+  const map = new Map();
+  let header = false;
+  for (const line of dump.split('\n')) {
+    if (!header) { if (/^OFFSET\s+TYPE\s+VALUE$/.test(line)) header = true; continue; }
+    const m = /^([0-9a-fA-F]+)\s+(\S+)\s+(\S.*?)\s*$/.exec(line);
+    if (!m) continue;
+    const value = m[3];
+    map.set(parseInt(m[1], 16), /^\*ABS/.test(value) ? 'GOT:RELATIVE' : `GOT:${value}`);
+  }
+  return map;
+}
+
+export function normalize(objdump, rodata = new Set(), roRanges = [], gotMap = new Map()) {
   const inRo = (hex) => { const x = parseInt(hex, 16); return roRanges.some(([lo, hi]) => x >= lo && x < hi); };
   const fns = new Map();
   let name = null, body = [];
@@ -92,7 +116,17 @@ export function normalize(objdump, rodata = new Set(), roRanges = []) {
     // targets (`call 1a2b <f>`, `# 84a38 <SYM>`). Immediates, struct offsets
     // and `<sym+0x..>` offsets stay — they are code.
     body.push(symbols(m[1])
-      .replace(/# ([0-9a-f]+) <[^<>]+>/g, (all, addr) => (inRo(addr) ? '# RO' : all))
+      .replace(/# ([0-9a-f]+) <[^<>]+>/g, (all, addr) => {
+        if (inRo(addr)) return '# RO';
+        // GOT slots: mask the slot's POSITION, not the imported symbol's
+        // identity — a relocated slot yields `# GOT:<import>` (or the constant
+        // `# GOT:RELATIVE`), so slot order changes normalize away while a
+        // renamed/changed import at a slot still diffs. Unmapped addresses fall
+        // through unchanged (including the `# RO`/rodata behavior, which keeps
+        // precedence over the GOT map).
+        if (gotMap.has(parseInt(addr, 16))) return `# ${gotMap.get(parseInt(addr, 16))}`;
+        return all;
+      })
       .replace(/\[rip([+-])0x[0-9a-f]+\]/g, '[rip$1X]')
       .replace(/\b[0-9a-f]+ </g, 'ADDR <')
       .replace(/<([^<>+]+)\+0x[0-9a-f]+>/g, (all, sym) => (rodata.has(sym) ? `<${sym}+R>` : all))
@@ -161,7 +195,7 @@ function rodataRanges(bin) {
 }
 
 function disasm(bin) {
-  return normalize(run('objdump', ['-d', '-C', '--no-show-raw-insn', '-M', 'intel', '-j', '.text', bin]), rodataSymbols(bin), rodataRanges(bin));
+  return normalize(run('objdump', ['-d', '-C', '--no-show-raw-insn', '-M', 'intel', '-j', '.text', bin]), rodataSymbols(bin), rodataRanges(bin), gotRelocs(run('objdump', ['-R', '-C', bin])));
 }
 
 function irTotal(bin, dir, tag) {
@@ -196,12 +230,39 @@ const NORMALIZE_CASES = [
   ['same nearest symbol, target outside the constant pool moved', fn('    1000:\tlea rdi,[rip+0x10] # 9000 <__abi_tag+0x8d04>'), fn('    1000:\tlea rdi,[rip+0x10] # 9008 <__abi_tag+0x8d0c>'), false],
 ];
 const RO_RANGES = [[0x5340, 0x8000]];
+const relocs = (...rows) => ['DYNAMIC RELOCATION RECORDS', 'OFFSET           TYPE              VALUE', ...rows].join('\n');
 for (const [name, x, y, same] of NORMALIZE_CASES) {
   const ro = new Set(['CONST']);
   const a = [...normalize(x, ro, RO_RANGES)].join('|'), b = [...normalize(y, ro, RO_RANGES)].join('|');
   assert.equal(a === b, same, `normalize self-test "${name}": expected ${same ? 'equal' : 'different'}`);
 }
 console.log(`[ghost-zero-cost] normalize self-test OK (${NORMALIZE_CASES.length} cases)`);
+
+// GOT-mask self-tests (runs unconditionally, before `--self-test` exits). The
+// two sides of each case carry DIFFERENT instruction addresses, so the only
+// thing that can make them equal is the masking itself.
+const gotCases = [
+  ['GOT slot moved, same import', '    1000:\tcall QWORD PTR [rip+0x2f97] # 1a230 <_DYNAMIC+0x200>', '    1010:\tcall QWORD PTR [rip+0x2f97] # 1a270 <_DYNAMIC+0x240>', relocs('000000000001a230 R_X86_64_JUMP_SLO printf@GLIBC_2.2.5+0x0'), relocs('000000000001a270 R_X86_64_JUMP_SLO printf@GLIBC_2.2.5+0x0'), true],
+  ['GOT slot kept, import renamed', '    1000:\tcall QWORD PTR [rip+0x2f97] # 1a230 <_DYNAMIC+0x200>', '    1010:\tcall QWORD PTR [rip+0x2f97] # 1a230 <_DYNAMIC+0x200>', relocs('000000000001a230 R_X86_64_JUMP_SLO printf@GLIBC_2.2.5+0x0'), relocs('000000000001a230 R_X86_64_JUMP_SLO puts@GLIBC_2.2.5+0x0'), false],
+  ['RELATIVE entries at moved slots, addends differ', '    1000:\tcall QWORD PTR [rip+0x2f97] # 1a010 <_DYNAMIC+0x1e0>', '    1010:\tcall QWORD PTR [rip+0x2f97] # 1a050 <_DYNAMIC+0x220>', relocs('000000000001a010 R_X86_64_RELATIVE *ABS+0x0000000000012345'), relocs('000000000001a050 R_X86_64_RELATIVE *ABS+0x0000000000019999'), true],
+];
+const fnGot = (body) => fn(`${body}\n    1008:\tret`);
+const gotNormalize = (body, map) => [...normalize(fnGot(body), new Set(), [], gotRelocs(map))].join('|');
+for (const [name, x, y, mx, my, same] of gotCases) {
+  assert.equal(gotNormalize(x, mx) === gotNormalize(y, my), same, `got-masking self-test "${name}": expected ${same ? 'equal' : 'different'}`);
+}
+// Unmapped address: old behavior preserved (the `ADDR <` rule still fires).
+const unmappedA = gotNormalize('    1000:\tcall QWORD PTR [rip+0x2f97] # 1a230 <_DYNAMIC+0x200>', relocs());
+const unmappedB = gotNormalize('    1010:\tcall QWORD PTR [rip+0x2f97] # 1a270 <_DYNAMIC+0x240>', relocs());
+assert.notEqual(unmappedA, unmappedB, 'got-masking self-test "unmapped address": bodies differ');
+assert.ok(unmappedA.includes('ADDR <') && unmappedB.includes('ADDR <'), 'got-masking self-test "unmapped address": ADDR < rule intact');
+// `# RO` precedence: rodata masking wins even when a GOT entry exists there.
+const roMap = relocs('000000000000596a R_X86_64_GLOB_DAT CONST+0x0');
+const roGotA = [...normalize(fn('    1000:\tlea rdi,[rip+0x10] # 596a <__abi_tag+0x566e>'), new Set(['CONST']), RO_RANGES, gotRelocs(roMap))].join('|');
+const roGotB = [...normalize(fn('    1010:\tlea rdi,[rip+0x10] # 596a <__abi_tag+0x569d>'), new Set(['CONST']), RO_RANGES, gotRelocs(roMap))].join('|');
+assert.equal(roGotA, roGotB, 'got-masking self-test "rodata precedence": # RO wins');
+assert.ok(roGotA.includes('# RO'), 'got-masking self-test "rodata precedence": masked as # RO');
+console.log(`[ghost-zero-cost] got-masking self-test OK (${gotCases.length + 2} cases)`);
 
 // diffLines/diffKind/diff-detail self-tests (diagnostics only; the verdict
 // code paths are unchanged).
