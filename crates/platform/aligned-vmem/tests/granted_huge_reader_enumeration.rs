@@ -9,7 +9,7 @@
 //! `method_try_decommit_reports_malformed_range_on_huge_flagged_reservation`
 //! synthesizes `granted_huge: true` over an ordinary-page, exactly-2-MiB
 //! reservation and justifies the synthesis with an enumeration: within
-//! `crates/aligned-vmem/src/`, the flag's only behavioral readers are
+//! `crates/platform/aligned-vmem/src/`, the flag's only behavioral readers are
 //! `is_huge()` itself, the pure query `can_decommit_reclaim_and_zero()`,
 //! the three decommit-family huge-skips, the no-THP policy operation's
 //! explicit-huge rejection (which returns before any syscall), and — as of task #1172's

@@ -1987,7 +1987,7 @@ mod platform {
     /// equivalent to Linux `mbind(2)`.
     ///
     /// Strategy (mirrors `aligned-vmem`'s own Windows reservation,
-    /// `win_reserve_commit` in `crates/aligned-vmem/src/lib.rs`): over-reserve
+    /// `win_reserve_commit` in `crates/platform/aligned-vmem/src/lib.rs`): over-reserve
     /// `size + align` bytes as ADDRESS SPACE ONLY (`MEM_RESERVE`, no
     /// `MEM_COMMIT`), find the aligned chunk inside, then commit only the
     /// caller-requested `size` bytes at that aligned sub-range (`MEM_COMMIT`,
@@ -2085,7 +2085,7 @@ mod platform {
         // reservation) at the computed aligned address, instead of the
         // previous `base_u as *mut u8` cast, which manufactured a pointer
         // with no established provenance — mirroring aligned-vmem's own
-        // task #717 fix (`crates/aligned-vmem/src/os/windows.rs`). Pure
+        // task #717 fix (`crates/platform/aligned-vmem/src/os/windows.rs`). Pure
         // provenance mechanics: the computed address is byte-identical to
         // the previous `raw as usize` → `base_u as *mut u8` round-trip.
         let raw_addr = raw.addr();

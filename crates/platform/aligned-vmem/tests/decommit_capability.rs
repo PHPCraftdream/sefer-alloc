@@ -965,7 +965,7 @@ fn ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise() {
     // internals_counters()`), so `attempts_before == successes_before == 0`
     // here and this equality is exactly the item's stated bar, not a weaker
     // stand-in for it: today's single-call-per-decommit dispatch
-    // (`decommit_pages_impl`, `crates/aligned-vmem/src/os/unix.rs:423-447` --
+    // (`decommit_pages_impl`, `crates/platform/aligned-vmem/src/os/unix.rs:423-447` --
     // `DecommitKind::Eager` reaches exactly one `libc_madvise` call, which
     // increments `UNIX_MADVISE_ATTEMPTS` by exactly 1 and `UNIX_MADVISE_
     // SUCCESSES` by 0 or 1 depending on the syscall's own return value) means

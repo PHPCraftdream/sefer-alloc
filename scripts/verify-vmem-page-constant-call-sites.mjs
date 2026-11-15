@@ -5,12 +5,12 @@
 // ## Background
 //
 // Three escapes of the same bug class happened in one campaign:
-//   - task #1067: `crates/aligned-vmem/tests/mock.rs` recorded mock calls with
+//   - task #1067: `crates/platform/aligned-vmem/tests/mock.rs` recorded mock calls with
 //     `PAGE`-sized offsets;
 //   - task #1074: `src/alloc_core/bootstrap.rs`-era production code (plus 5
 //     sibling sites) flowed meta-end sums built from `PAGE` into
 //     page_size()-validated positions;
-//   - task #1075: `crates/aligned-vmem/tests/smoke.rs` x4 `reserve_aligned_lazy`
+//   - task #1075: `crates/platform/aligned-vmem/tests/smoke.rs` x4 `reserve_aligned_lazy`
 //     calls passed bare `PAGE` as `initial_commit` in positive
 //     (success-expecting) contexts, since fixed to `ps`.
 //
@@ -137,7 +137,7 @@
 //     for the one site where this matters).
 //   - `crates/**` remains fold-only: the production provenance rule covers
 //     `src/` only, so a `let initial = PAGE;` in a non-src/ test (e.g.
-//     `crates/aligned-vmem/tests/lazy_commit.rs`'s `#[cfg(windows)]`-gated
+//     `crates/platform/aligned-vmem/tests/lazy_commit.rs`'s `#[cfg(windows)]`-gated
 //     `windows_lazy_reserve_saves_commit_charge`, valid only because
 //     runtime pages are 4 KiB there) is still invisible.
 //   - Unresolvable identifiers (struct fields, captured variables) are
@@ -1326,7 +1326,7 @@ function scanSetRsFiles() {
   // reported) once per stage, and "the count is a property of the commit" —
   // the whole reason task #1088/L7 moved the scan set into git — stops
   // holding. Reproduced during the OH3 review: a real conflict on
-  // `crates/aligned-vmem/src/page.rs` made this script print
+  // `crates/platform/aligned-vmem/src/page.rs` made this script print
   // `scanned 560 file(s) (560 tracked + 0 untracked)` and ALL GREEN, with two
   // phantom entries and the conflicted file examined three times.
   const tracked = [...new Set(run(['ls-files', '--cached', '--', '*.rs']))];

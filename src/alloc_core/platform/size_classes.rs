@@ -4,7 +4,7 @@
 //! **Thin compat shim over the [`size_classes`](size_classes) crate.** The
 //! const-built class table, the compile-time-derived O(1) `size→class` lookup,
 //! and the alignment-divisibility classifier all live in the standalone
-//! `size-classes` crate now (extracted verbatim — see `crates/size-classes`);
+//! `size-classes` crate now (extracted verbatim — see `crates/primitives/size-classes`);
 //! this module wires sefer's one concrete instantiation of that crate's
 //! `const`-generic builder and re-exports the exact surface every in-tree
 //! `crate::alloc_core::size_classes::*` call site already uses, so nothing else changed.

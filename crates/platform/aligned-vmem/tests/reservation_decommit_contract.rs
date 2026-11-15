@@ -566,7 +566,7 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     // PRIMARY justification — why neither violation can become a
     // memory-safety hazard in this crate TODAY — is the complete
     // enumeration of every reader of `granted_huge`/`is_huge()` in
-    // `crates/aligned-vmem/src/` (re-derived for task #1098, not copied
+    // `crates/platform/aligned-vmem/src/` (re-derived for task #1098, not copied
     // from the review, and mechanically pinned by
     // `tests/granted_huge_reader_enumeration.rs`, which fails when the
     // reader set changes so this argument cannot silently rot):
