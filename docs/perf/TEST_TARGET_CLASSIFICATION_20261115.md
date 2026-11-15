@@ -2,26 +2,23 @@
 
 Script: `scripts/classify-tests.mjs` (modules under `scripts/classify-tests/`).
 
-Sources: commit `8a56a9b9b4e1dfd7d94140208a907556cb5fd18e`, tree `dc029970a42cd6ded45b84f9268427a8435eb2ef`; tracked inputs clean.
+Sources: commit `9f964efb7862927195285e920ee0a9d253257f8c`, tree `5afced14f7fed71e62e3a34a3ea3cc81f66f7693`; tracked inputs clean.
 
 ## First-config-wins markers (derived from src/)
 
 | marker | first src/ hit (file:line) | provenance |
 | --- | --- | --- |
-| with_config | src/alloc_core/config/large_cache_config.rs:8 | src/global/sefer_alloc/core.rs:277 |
+| with_config | src/global/alloc_stats.rs:168 | src/global/sefer_alloc/core.rs:277 |
 | live_config_matches | src/alloc_core/alloc_core/lifecycle.rs:5 | src/alloc_core/alloc_core/lifecycle.rs:254 + src/registry/heap_core/core.rs:388 |
 | claim_lease_with_config | src/alloc_core/alloc_core/bootstrap.rs:185 | src/registry/heap_core/core.rs (derive output) |
 | current_for_alloc_with_config | src/global/sefer_alloc/core.rs:4 | src/global/tls_heap.rs:411 |
 | bind_slow_tagged_with_config | src/global/sefer_alloc/core.rs:339 | src/global/tls_heap.rs:491 |
 | new_with_config | src/alloc_core/alloc_core/alloc_core_impl.rs:159 | src/registry/heap_core/core.rs:316 (+ claim.rs) |
 | heap_ptr_with_config | src/global/fallback.rs:188 | src/global/fallback.rs:188 |
-| config_conflicts_total | src/alloc_core/config/large_cache_config.rs:507 | src/registry/heap_registry/counters.rs:99 |
+| config_conflicts_total | src/global/fallback.rs:430 | src/registry/heap_registry/counters.rs:99 |
 | config_conflicts | src/global/alloc_stats.rs:183 | src/global/alloc_stats.rs:183 (AllocStats field) |
 | fallback_config_conflicts | src/global/sefer_alloc/core.rs:244 | src/global/sefer_alloc/core.rs:372 |
-| thp_tuple_conflicts | src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs:130 | src/global/sefer_alloc/diag.rs (alloc_stats.rs:193 field family) |
-| thp_tuple | src/alloc_core/config/policy/large_thp_runtime/mod.rs:20 | src/alloc_core/config/policy/large_thp_runtime/thp_tuple.rs |
-| thp_runtime | src/alloc_core/config/policy/large_thp_runtime/mod.rs:19 | src/alloc_core/config/policy/large_thp_runtime/mod.rs |
-| thp_tuple_cell | src/alloc_core/config/policy/large_thp_runtime/mod.rs:22 | src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs |
+| thp_tuple_conflicts | src/global/alloc_stats.rs:193 | src/global/sefer_alloc/diag.rs (alloc_stats.rs:193 field family) |
 
 Dropped from the marker list: `publish_pending` (src/registry/segment_route/large_state.rs:25) — the Large-reservation route sidecar publication CAS (LIVE(g)->PENDING(g)), not a first-config-wins API. `claim_with_config` auto-dropped (no src/ hit).
 
@@ -29,28 +26,28 @@ Dropped from the marker list: `publish_pending` (src/registry/segment_route/larg
 
 | kind | files |
 | --- | --- |
-| ci_action | 52 |
+| ci_action | 56 |
 | ci_workflow | 8 |
-| doc | 1368 |
+| doc | 1375 |
 | doc_json | 2 |
-| script | 272 |
+| script | 279 |
 
 Note: the classification suite's own output artifacts (`docs/perf/TEST_TARGET_CLASSIFICATION_*.md`, `docs/test_target_classification_*.csv`) are excluded from the doc pin surface: scanning the report's own echo would pin the targets it lists, making the classification non-idempotent (self-reference, not a pre-existing pin).
 
-Targets externally pinned by name: **520** of 562.
+Targets externally pinned by name: **503** of 540.
 
 ## Plan hypotheses (plan §1) vs naive grep vs measured
 
 | metric | plan (2026-11-15) | naive grep | measured | verdict |
 | --- | --- | --- | --- | --- |
-| tests/ .rs files | 562 | 562 | 562 | confirmed |
-| file-level cfg | 514 | 514 | 514 | confirmed |
-| global_allocator | 79 | 79 | 64 | corrected |
-| first_config_wins | 111 | 24 | 81 | corrected |
+| tests/ .rs files | 562 | 540 | 540 | corrected |
+| file-level cfg | 514 | 493 | 493 | corrected |
+| global_allocator | 79 | 78 | 63 | corrected |
+| first_config_wins | 111 | 24 | 79 | corrected |
 | process_spawn | 33 | 32 | 33 | confirmed |
-| loom_only (plan definition: loom mentions) | 21 | 48 | 35 | corrected |
+| loom_only (plan definition: loom mentions) | 21 | 45 | 32 | corrected |
 | harness=false (all harness=false lines in Cargo.toml) | 52 | 52 | 13 | corrected |
-| [[test]] tables | 29 | 29 | 29 | confirmed |
+| [[test]] tables | 29 | 26 | 26 | corrected |
 
 Note: the plan's §1 numbers are grep approximations over overlapping sets — the `naive grep` column reproduces them over raw text (see the reconciliation table for exactly which files differ and why). Example: global_allocator plan 79 = naive grep 79; measured 64 because 15 files match only in comments/strings.
 ## Definitions
@@ -82,23 +79,23 @@ Note: the plan's §1 numbers are grep approximations over overlapping sets — t
 
 ## Flag-set intersections (pairwise, over all targets)
 
-| set (size) \ in | global_allocator (64) | first_config_wins (81) | process_spawn (33) | loom_only (35) | miri_only (50) | kani_gated (0) | harness_false (13) | test_disabled (11) | required_features (29) | file_cfg (514) | externally_pinned (520) |
+| set (size) \ in | global_allocator (63) | first_config_wins (79) | process_spawn (33) | loom_only (32) | miri_only (50) | kani_gated (0) | harness_false (13) | test_disabled (11) | required_features (26) | file_cfg (493) | externally_pinned (503) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **global_allocator** (64) | 64 | 14 | 4 | 1 | 11 | 0 | 11 | 11 | 13 | 53 | 61 |
-| **first_config_wins** (81) | 14 | 81 | 3 | 3 | 26 | 0 | 0 | 0 | 2 | 81 | 77 |
+| **global_allocator** (63) | 63 | 14 | 4 | 1 | 11 | 0 | 11 | 11 | 12 | 52 | 61 |
+| **first_config_wins** (79) | 14 | 79 | 3 | 1 | 26 | 0 | 0 | 0 | 2 | 79 | 75 |
 | **process_spawn** (33) | 4 | 3 | 33 | 0 | 3 | 0 | 1 | 0 | 2 | 25 | 33 |
-| **loom_only** (35) | 1 | 3 | 0 | 35 | 1 | 0 | 0 | 0 | 0 | 33 | 34 |
+| **loom_only** (32) | 1 | 1 | 0 | 32 | 1 | 0 | 0 | 0 | 0 | 30 | 31 |
 | **miri_only** (50) | 11 | 26 | 3 | 1 | 50 | 0 | 0 | 0 | 4 | 50 | 50 |
 | **kani_gated** (0) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | **harness_false** (13) | 11 | 0 | 1 | 0 | 0 | 0 | 13 | 11 | 13 | 0 | 13 |
 | **test_disabled** (11) | 11 | 0 | 0 | 0 | 0 | 0 | 11 | 11 | 11 | 0 | 11 |
-| **required_features** (29) | 13 | 2 | 2 | 0 | 4 | 0 | 13 | 11 | 29 | 15 | 27 |
-| **file_cfg** (514) | 53 | 81 | 25 | 33 | 50 | 0 | 0 | 0 | 15 | 514 | 473 |
-| **externally_pinned** (520) | 61 | 77 | 33 | 34 | 50 | 0 | 13 | 11 | 27 | 473 | 520 |
+| **required_features** (26) | 12 | 2 | 2 | 0 | 4 | 0 | 13 | 11 | 26 | 12 | 26 |
+| **file_cfg** (493) | 52 | 79 | 25 | 30 | 50 | 0 | 0 | 0 | 12 | 493 | 457 |
+| **externally_pinned** (503) | 61 | 75 | 33 | 31 | 50 | 0 | 13 | 11 | 26 | 457 | 503 |
 
-## Non-target inventory (1159 entries; 25 of them are top-level entries of tests/)
+## Non-target inventory (1162 entries; 28 of them are top-level entries of tests/)
 
-Top-level accounting: tests/ has **587** top-level entries; 562 are targets; the remaining **25** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
+Top-level accounting: tests/ has **568** top-level entries; 540 are targets; the remaining **28** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
 
 | path | kind |
 | --- | --- |
@@ -1238,6 +1235,7 @@ Top-level accounting: tests/ has **587** top-level entries; 562 are targets; the
 | tests/ghost_lint_fixtures/r9_hygiene/rule.json | other-file |
 | tests/ghost_runtime_history_fixtures.mjs | mjs-script |
 | tests/ghost_runtime_prefix_fixtures.mjs | mjs-script |
+| tests/iai_nolto_summary.test.mjs | mjs-script |
 | tests/j13_limited_report_fixtures.mjs | mjs-script |
 | tests/j13b_artifacts.test.mjs | mjs-script |
 | tests/j13b_build_seal_refusal.mjs | mjs-script |
@@ -1245,6 +1243,8 @@ Top-level accounting: tests/ has **587** top-level entries; 562 are targets; the
 | tests/j13b_request_refusal.mjs | mjs-script |
 | tests/j13b_schema.test.mjs | mjs-script |
 | tests/j13b_static_reference.test.mjs | mjs-script |
+| tests/layering_lint.test.mjs | mjs-script |
+| tests/module_graph.test.mjs | mjs-script |
 | tests/r11_p3_small_sidecar_issue_oom | directory-fixture |
 | tests/r11_p3_small_sidecar_issue_oom/support.rs | support-module |
 | tests/r6_sidecar_bitmap | directory-fixture |
@@ -1284,12 +1284,12 @@ By construction of the strict rule, no member is name-pinned externally. But ANY
 
 | file | line | text | numbers |
 | --- | --- | --- | --- |
-| docs/ARCHITECTURE.md | 506 | \| Unit / integration tests \| Construction, edge cases, invariants; snapshot acceptance pending \| `tests/*.rs` (562 files) \| | 562 |
-| docs/ARCHITECTURE.md | 509 | \| loom \| Bounded interleavings; snapshot execution pending \| **Root (30 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` \| | 30 |
-| docs/CI_TIERS.md | 177 | (a change of the segment-directory scan selects 369 of 484 tests), so the saving comes from peripheral and test-only | 369/484 |
+| docs/ARCHITECTURE.md | 516 | \| Unit / integration tests \| Construction, edge cases, invariants; snapshot acceptance pending \| `tests/*.rs` (540 files) \| | 540 |
+| docs/ARCHITECTURE.md | 519 | \| loom \| Bounded interleavings; snapshot execution pending \| **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs` \| | 27 |
+| docs/CI_TIERS.md | 180 | (a change of the segment-directory scan selects 369 of 484 tests), so the saving comes from peripheral and test-only | 369/484 |
 | docs/perf/b4_ablate/G1_K7_A6_VERDICT.md | 27 | (1606 files). Campaign driver output: `a6/campaign.log`. | 1606 |
 | docs/perf/R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md | 352 | - `docs/perf/_raw_r14_6_*.log` (14 files): iai baseline/treatment, R12-4 | 14 |
-| docs/plans/2026-11-15-workspace-restructure-plan.md | 29 | a segment-directory scan change selects 369 of 484 tests) because one crate holds all of the | 369/484 |
+| docs/plans/2026-11-15-workspace-restructure-plan.md | 40 | a segment-directory scan change selects 369 of 484 tests) because one crate holds all of the | 369/484 |
 | docs/reviews/2026-07-09-maintainability-architecture-review.md | 235 | (103 files)», фактически 117. | 103 |
 | docs/reviews/2026-07-17-deep-audit/08-test-verification-coverage.md | 3 | Scope: `tests/` (169 integration test files), `crates/*/tests/`, verification | 169 |
 | docs/reviews/2026-07-26-r19-r21-readonly-review.md | 346 | То же касается ручного `tests/*.rs (221 files)` в ARCHITECTURE: точное число | 221 |
@@ -1302,11 +1302,11 @@ By construction of the strict rule, no member is name-pinned externally. But ANY
 | docs/reviews/2026-10-05-ph4a-heap-lease-receipt.md | 90 | - README.md:1383 `tests/*.rs (330 files)` → `tests/*.rs (331 files)` | 330/331 |
 | docs/reviews/2026-10-05-ph4a-heap-lease-receipt.md | 91 | - docs/ARCHITECTURE.md:489 `tests/*.rs (330 files)` → `tests/*.rs (331 files)` | 330/331 |
 | docs/reviews/2026-10-08-src-review-oxx-round-17-code-quality.md | 487 | doc(hidden)  : grep -rnE '#\[doc\(hidden\)\]' src/ \| wc -l                     -> 455 (67 files) | 67 |
-| README.md | 1606 | needs its acceptance run. The present tree contains **562 integration test files**, | 562 |
-| README.md | 1616 | \| Unit / integration tests \| Construction, edge cases, end-to-end behaviour \| `tests/*.rs` (562 files) \| | 562 |
-| README.md | 1617 | \| Examples \| Executable soak, burn-in, RSS, and macro verification harnesses \| `examples/*.rs` (107 files) \| | 107 |
-| README.md | 1618 | \| Benches \| Reproducible performance and gate harnesses \| `benches/*.rs` (34 files) \| | 34 |
-| README.md | 1620 | \| `loom` \| Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations \| **Root (30 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` \| | 30 |
+| README.md | 1624 | needs its acceptance run. The present tree contains **540 integration test files**, | 540 |
+| README.md | 1634 | \| Unit / integration tests \| Construction, edge cases, end-to-end behaviour \| `tests/*.rs` (540 files) \| | 540 |
+| README.md | 1635 | \| Examples \| Executable soak, burn-in, RSS, and macro verification harnesses \| `examples/*.rs` (107 files) \| | 107 |
+| README.md | 1636 | \| Benches \| Reproducible performance and gate harnesses \| `benches/*.rs` (34 files) \| | 34 |
+| README.md | 1638 | \| `loom` \| Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations \| **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs` \| | 27 |
 
 j13 hash pins: scripts/j13_limited_report.mjs, scripts/j13_report.mjs, scripts/j13b_artifacts.mjs, scripts/j13b_static_reference.mjs, scripts/j13b_zero_cost_receipt.mjs hash src/ files; tests/ files hash-pinned: **none (expected)**.
 
@@ -1314,18 +1314,18 @@ j13 hash pins: scripts/j13_limited_report.mjs, scripts/j13_report.mjs, scripts/j
 
 | path | script | zone |
 | --- | --- | --- |
+| crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs | scripts/j13b_static_reference.mjs | src/other |
 | src/alloc_core/alloc_core/mem/advise_fresh_large.rs | scripts/j13b_static_reference.mjs | src/other |
-| src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs | scripts/j13b_static_reference.mjs | src/other |
 
 ## Relaxation ladder
 
 | rung | description | pilot-eligible | mergeable files | groups | total saved links |
 | --- | --- | --- | --- | --- | --- |
 | strict | strict rules (see report definitions) | no | 1 | 1 | 0 |
-| compat | uniform required-features + uniform file-level cfg in the group key; hard blockers apply; externally-pinned excluded | yes | 36 | 32 | 4 |
-| looser-features | additionally allow non-uniform required-features (still pinned-excluded) | no | 36 | 32 | 4 |
-| looser-cfg | additionally allow non-uniform file-level cfg | no | 36 | 14 | 22 |
-| allow-pinned | additionally allow externally-pinned names | no | 350 | 78 | 272 |
+| compat | uniform required-features + uniform file-level cfg in the group key; hard blockers apply; externally-pinned excluded | yes | 32 | 28 | 4 |
+| looser-features | additionally allow non-uniform required-features (still pinned-excluded) | no | 32 | 28 | 4 |
+| looser-cfg | additionally allow non-uniform file-level cfg | no | 32 | 12 | 20 |
+| allow-pinned | additionally allow externally-pinned names | no | 332 | 73 | 259 |
 
 ### Pilot eligibility per rung
 
@@ -1337,7 +1337,7 @@ Strict mergeable pool: **1** files in 1 groups (total saved links 0) — trivial
 | compat | yes | pilot-eligible: uniform required-features and uniform file-level cfg in the group key, hard blockers apply, externally-pinned names excluded | r20\|-\|all(feature = "alloc-global", feature = "internals") | 3 | 2 |
 | looser-features | no | not eligible unless group required-features become uniform: members may mix differing required-features | r20\|all(feature = "alloc-global", feature = "internals") | 3 | 2 |
 | looser-cfg | no | not eligible unless group file-level cfg becomes uniform: members may mix differing file-level cfgs | r10 | 7 | 6 |
-| allow-pinned | no | NOT pilot-eligible: members are externally name-pinned; listed for scale only | regression | 58 | 57 |
+| allow-pinned | no | NOT pilot-eligible: members are externally name-pinned; listed for scale only | regression | 55 | 54 |
 
 `compat` rung pilot candidate (the pilot candidate of the classification):
 
@@ -1353,7 +1353,7 @@ Pilot eligibility per rung is derived from each rung's relaxation rules; no go/n
 
 Naive baseline patterns (fixed, over RAW text — intentionally naive, these are the greps plan §1 used): global_allocator `/#\[global_allocator\]/`; first_config_wins `\b(with_config|config_conflicts|thp_tuple)\b`; process_spawn `(process::Command|current_exe|CARGO_BIN_EXE_)`; loom `\bloom\b`; miri `\bmiri\b`; file_level_cfg lines matching `^\s*#!\[cfg`. Baseline-only reason codes: comment-only, string-literal, item-level-attr-only (matched code, but not before the first item), marker-list (matched word is not a derived marker). Measured-only reason codes: multi-line-attr, cfg_attr-form, bare-Command-import (true positive via `use std::process::{Command, ...}` + bare `Command::new`, outside the naive pattern).
 
-### global_allocator — naive 79 vs measured 64
+### global_allocator — naive 78 vs measured 63
 
 Pattern: `/\#\[global_allocator\]/ on raw text`
 
@@ -1381,15 +1381,17 @@ Measured but not in baseline (0):
 
 (none)
 
-### first_config_wins — naive 24 vs measured 81
+### first_config_wins — naive 24 vs measured 79
 
 Pattern: `\b(with_config|config_conflicts|thp_tuple)\b on raw text`
 
-In baseline but not measured (3):
+In baseline but not measured (5):
 
 | path | reason |
 | --- | --- |
 | tests/j13b_advice_capture_native.rs | marker-list |
+| tests/loom_thp_ledger.rs | string-literal |
+| tests/loom_thp_tuple_cell.rs | comment-only |
 | tests/r14_4_promotion_free_correctness.rs | comment-only |
 | tests/sefer_alloc_examples.rs | comment-only |
 
@@ -1472,7 +1474,7 @@ Measured but not in baseline (1):
 | --- | --- |
 | tests/tagged_index_stack_ab_runner_scratch_guard.rs | bare-Command-import |
 
-### loom_tree — naive 48 vs measured 35
+### loom_tree — naive 45 vs measured 32
 
 Pattern: `\bloom\b on raw text`
 
@@ -1498,11 +1500,11 @@ Measured but not in baseline (0):
 
 (none)
 
-### miri_tree — naive 130 vs measured 50
+### miri_tree — naive 129 vs measured 50
 
 Pattern: `\bmiri\b on raw text`
 
-In baseline but not measured (80):
+In baseline but not measured (79):
 
 | path | reason |
 | --- | --- |
@@ -1529,7 +1531,6 @@ In baseline but not measured (80):
 | tests/large_cache.rs | comment-only |
 | tests/lazy_initial_commit_forced_page.rs | comment-only |
 | tests/loom_b4_scan_skip_empty_publish.rs | comment-only |
-| tests/loom_sharded.rs | comment-only |
 | tests/loom_sidecar_bitmap_actual.rs | comment-only |
 | tests/miri_global_box_acceptance.rs | item-level-attr-only |
 | tests/miri_r1_01_cap_frame.rs | comment-only |
@@ -1591,7 +1592,7 @@ Measured but not in baseline (0):
 
 (none)
 
-### file_level_cfg — naive 514 vs measured 514
+### file_level_cfg — naive 493 vs measured 493
 
 Pattern: `lines matching ^\s*#!\[cfg on raw text (line-anchored)`
 
