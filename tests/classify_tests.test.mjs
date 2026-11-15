@@ -755,12 +755,12 @@ test('CLI --json: counts match today\'s pinned values and structure holds', () =
   const data = JSON.parse(r.stdout);
   const c = data.counts;
   // --- data-pinned (2026-11-15) ---
-  assert.equal(c.targets, 562);
+  assert.equal(c.targets, 540);
   assert.equal(c.targetsTestFalse, 11);
-  assert.equal(c.declaredExplicit, 29);
+  assert.equal(c.declaredExplicit, 26);
   assert.equal(c.harnessFalse, 13);
-  assert.equal(c.file_level_cfg, 514);
-  assert.equal(c.global_allocator, 64);
+  assert.equal(c.file_level_cfg, 493);
+  assert.equal(c.global_allocator, 63);
   assert.equal(c.first_config_wins, 81);
   assert.equal(c.process_spawn, 33);
   // --- internal consistency (holds regardless of data changes) ---

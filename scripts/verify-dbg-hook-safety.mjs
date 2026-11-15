@@ -436,10 +436,10 @@ export const REVIEWED_SURFACE = [
   ...[
     ['src/alloc_core/segment/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],
     ['src/alloc_core/small/alloc_core_small_magazine.rs', ['refill_class', 'refill_class_bump', 'refill_class_bump_virgin'], 'mutator', 'delegates to allocation substrate; exclusive mutable core borrow'],
-    ['src/concurrent/epoch/epoch_region.rs', ['_remote_free_queue_buffer_identity_for_tests'], 'observer', 'locked buffer identity only; no dereference permission'],
-    ['src/concurrent/epoch/epoch_region.rs', ['_set_slot_generation_for_tests'], 'mutator', 'vacant-slot generation boundary; mutable region borrow'],
-    ['src/concurrent/sharded/sharded_region.rs', ['_reset_my_shard_binding_for_tests'], 'mutator', 'clears TLS routing cache, not occupied tokens; may consume additional claims'],
-    ['src/concurrent/sharded/sharded_region.rs', ['_remote_free_queue_buffer_identity_for_tests', '_live_token_blocks_for_tests', '_tls_claim_count_for_tests', '_prune_claim_checks_for_tests'], 'observer', 'identity and atomic/TLS count observations'],
+    ['crates/containers/sefer-concurrent/src/epoch/epoch_region.rs', ['_remote_free_queue_buffer_identity_for_tests'], 'observer', 'locked buffer identity only; no dereference permission'],
+    ['crates/containers/sefer-concurrent/src/epoch/epoch_region.rs', ['_set_slot_generation_for_tests'], 'mutator', 'vacant-slot generation boundary; mutable region borrow'],
+    ['crates/containers/sefer-concurrent/src/sharded/sharded_region.rs', ['_reset_my_shard_binding_for_tests'], 'mutator', 'clears TLS routing cache, not occupied tokens; may consume additional claims'],
+    ['crates/containers/sefer-concurrent/src/sharded/sharded_region.rs', ['_remote_free_queue_buffer_identity_for_tests', '_live_token_blocks_for_tests', '_tls_claim_count_for_tests', '_prune_claim_checks_for_tests'], 'observer', 'identity and atomic/TLS count observations'],
     ['src/registry/bootstrap/ensure.rs', ['dbg_num_chunks'], 'observer', 'constant geometry'],
     ['src/registry/heap_core/diag/diag_probes.rs', ['dbg_promotion_compiled', 'dbg_promotion_macro_gate'], 'observer', 'compile-time predicate'],
     ['src/global/maintenance_service.rs', ['passes_for_test', 'fallback_visits_for_test'], 'observer', 'atomic diagnostic counters'],
@@ -464,14 +464,14 @@ export const REVIEWED_SURFACE = [
     ['src/alloc_core/large/alloc_core_large_cache_eviction.rs', ['terminal_cached_large_state_for_test'], 'observer', 'owner cache terminal snapshot'],
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['terminal_header_layout_for_test', 'terminal_header_snapshot_for_test', 'terminal_primordial_snapshot_for_test', 'terminal_next_generation_for_test'], 'observer', 'checked header layout/state and generation geometry'],
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['large_thp_charge_for_test'], 'observer', 'owned Large header field read; kind-checked, no pointer dereference beyond the owned header'],
-    ['src/concurrent/sharded/sharded_region.rs', ['_set_remote_free_hint_for_tests'], 'mutator', 'advisory hint only; real queue remains authoritative'],
+    ['crates/containers/sefer-concurrent/src/sharded/sharded_region.rs', ['_set_remote_free_hint_for_tests'], 'mutator', 'advisory hint only; real queue remains authoritative'],
     ['src/registry/segment_route/pin.rs', ['dbg_publish_cached_for_test'], 'unsafe', 'entry into the production cached fast path; the address must be the caller’s CURRENT issued Small/Primordial allocation — publication consumes ownership once, and a bare address never establishes it (publishing a foreign live address forces the owner to reclaim a live instance: UAF by construction)'],
     ['src/registry/segment_route/pin.rs', ['dbg_cache_insert_for_test'], 'mutator', 'inserts caller-looked-up pin; no publish/reclaim obligation'],
     ['src/registry/segment_route/pin.rs', ['dbg_route_pin_cache_totals'], 'observer', 'pure Relaxed counter snapshot'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['internals', 'bench-internals'] }))),
   ...[
-    ['src/concurrent/lock_free/lock_free_region.rs', ['_forge_handle_for_tests', '_page_arc_clones_for_tests', '_checked_total_slots_for_tests'], 'observer', 'by-value handle/geometry or TLS counter; ordinary operations still validate handles'],
-    ['src/concurrent/lock_free/lock_free_region.rs', ['_reset_page_arc_clones_for_tests'], 'mutator', 'TLS diagnostic counter only'],
+    ['crates/containers/sefer-concurrent/src/lock_free/lock_free_region.rs', ['_forge_handle_for_tests', '_page_arc_clones_for_tests', '_checked_total_slots_for_tests'], 'observer', 'by-value handle/geometry or TLS counter; ordinary operations still validate handles'],
+    ['crates/containers/sefer-concurrent/src/lock_free/lock_free_region.rs', ['_reset_page_arc_clones_for_tests'], 'mutator', 'TLS diagnostic counter only'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['bench-internals'] }))),
   { id: 'crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs::seed_cursor_for_test', kind: 'mutator', reason: 'seeds only the caller-owned synthetic log cursor; no global native-log accessor, mapping access or allocator-policy effect; sticky publication failures remain', gates: ['bench-internals', 'fault-injection'] },
   { id: 'crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs::reserve_unpublished_for_test', kind: 'mutator', reason: 'reserves one deliberately incomplete scalar slot in the caller-owned synthetic log; bounded capacity and sticky unsupported closure remain', gates: ['bench-internals', 'fault-injection'] },
@@ -786,7 +786,7 @@ function handAuthoredCheck() {
     `reviewed hook missing internals gate: ${layout}::primordial_lazy_initial_commit`,
   ]);
 
-  const epoch = 'src/concurrent/epoch/epoch_region.rs';
+  const epoch = 'crates/containers/sefer-concurrent/src/epoch/epoch_region.rs';
   check(epoch, `#[cfg(feature = "internals")] impl EpochRegion<T> {
     pub fn _set_slot_generation_for_tests(&mut self, index: u32, generation: u32) {}
     pub fn _remote_free_queue_buffer_identity_for_tests(&self) -> (usize, usize, usize) { (0, 0, 0) }
@@ -798,7 +798,7 @@ function handAuthoredCheck() {
     `reviewed hook missing internals gate: ${epoch}::_set_slot_generation_for_tests`,
     `reviewed hook missing internals gate: ${epoch}::_remote_free_queue_buffer_identity_for_tests`,
   ]);
-  const sharded = 'src/concurrent/sharded/sharded_region.rs';
+  const sharded = 'crates/containers/sefer-concurrent/src/sharded/sharded_region.rs';
   check(sharded, `#[cfg(feature = "internals")] impl ShardedRegion<T> {
     pub fn _reset_my_shard_binding_for_tests() {}
     pub fn _remote_free_queue_buffer_identity_for_tests(&self, shard: u16) -> Option<(usize, usize, usize)> { None }

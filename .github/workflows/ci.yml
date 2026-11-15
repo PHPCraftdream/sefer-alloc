@@ -1,6 +1,5 @@
 name: CI
 
-
 on:
   push:
     branches: [main]
@@ -45,6 +44,7 @@ jobs:
       crate_numa_shim: ${{ steps.plan.outputs.crate_numa_shim }}
       crate_once_ptr_cell: ${{ steps.plan.outputs.crate_once_ptr_cell }}
       crate_proc: ${{ steps.plan.outputs.crate_proc }}
+      crate_sefer_concurrent: ${{ steps.plan.outputs.crate_sefer_concurrent }}
       crate_sefer_ghost: ${{ steps.plan.outputs.crate_sefer_ghost }}
       crate_sefer_region: ${{ steps.plan.outputs.crate_sefer_region }}
       crate_size_classes: ${{ steps.plan.outputs.crate_size_classes }}
@@ -229,6 +229,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-sefer-region-gates
+
+  sefer-concurrent-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_sefer_concurrent == 'true'
+    name: sefer-concurrent-gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci-sefer-concurrent-gates
 
   aligned-vmem-gates:
     needs: changes
@@ -593,6 +602,7 @@ jobs:
           echo "default=$(node scripts/select-tests.mjs args --selection sel/selection.json --features '')" >> "$GITHUB_OUTPUT"
           echo "experimental=$(node scripts/select-tests.mjs args --selection sel/selection.json --features experimental)" >> "$GITHUB_OUTPUT"
           echo "alloc_core=$(node scripts/select-tests.mjs args --selection sel/selection.json --features 'alloc-core internals')" >> "$GITHUB_OUTPUT"
+      - run: cargo fetch --locked # offline compile-fail fixtures need sefer-concurrent's registry deps (P1.2 weak forwards); rationale in the fixture manifests
       - name: test ()
         if: ${{ !cancelled() }}
         run: cargo test ${{ steps.sel.outputs.default }} --no-fail-fast # default: the safe core + SyncRegion
@@ -602,7 +612,6 @@ jobs:
       - name: test (--features alloc-core)
         if: ${{ !cancelled() }}
         run: cargo test --features "alloc-core internals" ${{ steps.sel.outputs.alloc_core }} --no-fail-fast
-
   test-xthread:
     needs: changes
     if: needs.changes.outputs.fast == 'true'

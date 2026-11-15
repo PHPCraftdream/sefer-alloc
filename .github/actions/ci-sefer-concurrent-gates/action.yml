@@ -1,0 +1,17 @@
+name: CI sefer-concurrent-gates
+description: Original sefer-concurrent-gates job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    # Packaging verification, mirroring once-ptr-cell-gates: confirms the
+    # crate packages and the packaged tarball's own isolated build succeeds
+    # against the published manifest (no reliance on workspace-inherited
+    # lints/deps that would not exist for a real crates.io consumer).
+    - run: cargo publish --dry-run -p sefer-concurrent
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    # No `cargo semver-checks` baseline exists yet: sefer-concurrent has
+    # never been published, so there is no registry baseline to compare
+    # against. Add the semver-checks step after the first release, like
+    # once-ptr-cell-gates.

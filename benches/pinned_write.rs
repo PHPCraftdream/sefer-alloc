@@ -8,7 +8,7 @@
 //!
 //! ## Honest verdict (workload-dependent)
 //!
-//! Pinning is **not** a guaranteed win — see `src/concurrent/pinning.rs` and
+//! Pinning is **not** a guaranteed win — see `crates/containers/sefer-concurrent/src/pinning.rs` and
 //! `docs/PLAN.md` §7c. It helps when the per-shard working set is cache-hot and
 //! shard access is truly thread-local; it does little when the workload is
 //! memory-bandwidth-bound or read-heavy with random cross-shard handles. This

@@ -43,11 +43,18 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 name = "sefer-alloc"
 version = "0.3.0"
 dependencies = [
- "arc-swap",
- "crossbeam-epoch",
+ "sefer-concurrent",
  "sefer-ghost",
  "sefer-region",
  "tagged-index-stack",
+]
+
+[[package]]
+name = "sefer-concurrent"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "crossbeam-epoch",
 ]
 
 [[package]]

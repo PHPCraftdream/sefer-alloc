@@ -708,15 +708,16 @@ The deliberate inversion: all the intelligence lives in the safe Cartographer,
 so the Hand stays mechanical and small. Verification is over a total Membrane
 and an integer algorithm, not a tangle of pointer math.
 
-### Workspace: eleven independently-publishable companion crates
+### Workspace: twelve independently-publishable companion crates
 
-The workspace extracted eleven building blocks. Each is a real crates.io crate
+The workspace extracted twelve building blocks. Each is a real crates.io crate
 someone can `cargo add` on its own — they are not internal implementation
 details but independently useful libraries:
 
 ```
 sefer-alloc
  ├── sefer-region       (crates/containers/sefer-region)             — typed handle store (Handle<T>/Region<T>)
+ ├── sefer-concurrent   (crates/containers/sefer-concurrent)    — legacy/research concurrent tier (feature: experimental/pinning)
  ├── aligned-vmem       (crates/platform/aligned-vmem)               — OS virtual-memory aperture           (feature: alloc-core)
  ├── numa-shim          (crates/platform/numa-shim)               — NUMA detection + binding             (feature: numa-aware)
  ├── malloc-bench-rs    (crates/bench/malloc-bench-rs)       — portable GlobalAlloc bench harness   (standalone, dev-only)
@@ -731,8 +732,11 @@ sefer-alloc
 
 `malloc-bench-rs`, `globalalloc-model`, `proc-memstat`, and `proc-probe` are
 not in sefer-alloc's runtime dependency tree — they are dev-only / example
-infra. The other seven are pulled in under the feature gates noted above
-(`alloc-core`, `alloc-global`, `numa-aware`) or, for `sefer-ghost`, unconditionally (it compiles to no code in production builds).
+infra. The remaining eight are runtime or opt-in dependencies: five are pulled
+in under the feature gates noted above (`alloc-core`, `alloc-global`,
+`numa-aware`), `sefer-concurrent` under `experimental`/`pinning`,
+`sefer-ghost` unconditionally (it compiles to no code in production builds),
+and `tagged-index-stack` is verification-only (not a runtime dependency).
 
 (A former twelfth crate, `ring-mpsc` — a standalone bounded MPSC index ring
 + DirtyRouter — was removed from the workspace: it had zero production
@@ -783,6 +787,7 @@ the line to begin with the attribute, not a `//` prefix.
 | `globalalloc-model` | `crates/verify/globalalloc-model/` | `#![allow(unsafe_code)]` — two documented reasons: (a) the `unsafe trait RawAllocator` (its impls must return valid pointers for the requested layout), every impl + call carrying `// SAFETY:`; (b) `DoubleFreeOk::new`, the unforgeable consent token for the M2 double-free oracle, an `unsafe fn` declaration carrying its own `# Safety` contract |
 | `proc-memstat` | `crates/platform/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
 | `sefer-region` | `crates/containers/sefer-region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/containers/sefer-region/README.md` "## Safety") |
+| `sefer-concurrent` | `crates/containers/sefer-concurrent/` | `#![deny(unsafe_code)]` — one confined seam, `src/epoch/hand.rs` (the epoch-tier `AtomicSlot<T>` membrane over `crossbeam-epoch`); re-exported through sefer-alloc under `experimental`/`pinning` |
 | `size-classes` | `crates/primitives/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |
 | `sefer-ghost` | `crates/primitives/sefer-ghost/` | `#![forbid(unsafe_code)]` — checking-build-only macros + a `core`-atomics shadow event table; no raw pointers, no allocation (rule R9) |
 | `tagged-index-stack` | `crates/primitives/tagged-index-stack/` | `#![deny(unsafe_code)]` with ten item-scoped allows in `src/imp.rs` (nine production regions plus one `--cfg loom` test forwarder). Its unsafe trait/bridge and push boundaries state caller and implementor obligations; the library does not use raw-pointer dereferences for its packed-head protocol. |
@@ -816,7 +821,7 @@ hard compile error in every configuration:
 | [`src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`](src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs) | Genuine System-backed mixed-leaf pointers, owner-only presence bits, and exact layout deallocation after unlink and the last pin. | `alloc-core`; used by `alloc-global` |
 | [`src/alloc_core/segment/segment_table/route_slots.rs`](src/alloc_core/segment/segment_table/route_slots.rs) | System-backed owner-only registration handles; unlink before segment OS release without GlobalAlloc recursion. | `alloc-global` |
 | [`src/registry/segment_route/shard_lock.rs`](src/registry/segment_route/shard_lock.rs) | Non-allocating spin lock guarding route-directory shards; std `Mutex` boxes a pthread mutex on first lock on macOS, which would re-enter the installed global allocator during heap construction. | `alloc-global` |
-| [`src/concurrent/epoch/hand.rs`](src/concurrent/epoch/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
+| [`sefer-concurrent/src/epoch/hand.rs`](crates/containers/sefer-concurrent/src/epoch/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier, extracted to the `sefer-concurrent` crate and re-exported through sefer-alloc under `experimental`/`pinning`; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
@@ -1606,8 +1611,8 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **562 integration test files**,
-**107 example binaries**, **34 benches**, and **30 root Loom models**
+needs its acceptance run. The present tree contains **540 integration test files**,
+**107 example binaries**, **34 benches**, and **27 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1616,11 +1621,11 @@ and support modules. Nested helpers and fixtures are not separate integration ta
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (562 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (540 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (107 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (30 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs` |
+| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs` |
 | `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri-matrix.mjs` is the single manifest of Miri targets (GREEN, EXPECTED-RED with its card, WAIVED); `scripts/miri.mjs` runs it and `scripts/verify-miri-target-wiring.mjs` checks that every Miri test file is classified and wired in CI; it includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
 | ThreadSanitizer | Real cross-thread races in selected binaries | `scripts/tsan.mjs` / CI; old ring-era results are not cutover acceptance |

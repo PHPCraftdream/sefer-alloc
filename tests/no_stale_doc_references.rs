@@ -236,7 +236,7 @@ fn no_removed_heap_type_doc_mentions() {
 /// `global/tls_heap.rs` — renamed to `LeaseReleaseGuard` in R6-T44, so no live
 /// type carries the "abandon" stem any more; the remaining "abandon"/"adopt"
 /// prose here is historical context, as is the "adopting thread" prose in
-/// `concurrent/sharded/sharded_region.rs` describing an unrelated, still-live
+/// `crates/containers/sefer-concurrent/src/sharded/sharded_region.rs` describing an unrelated, still-live
 /// shard-reuse mechanism — all correct and not the target of this guard.
 ///
 /// Doc-only guard: reads source text, never links the crate, so it runs in
@@ -2401,7 +2401,9 @@ fn doc_prose(path: &Path) -> String {
 /// every feature configuration.
 #[test]
 fn epoch_hand_doc_matches_conditional_confinement_and_bounded_impls() {
-    let path = src_dir().join("concurrent").join("epoch").join("hand.rs");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("crates")
+        .join("containers/sefer-concurrent/src/epoch/hand.rs");
     let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let flat = doc_prose(&path);
 
@@ -2413,7 +2415,7 @@ fn epoch_hand_doc_matches_conditional_confinement_and_bounded_impls() {
     ] {
         assert!(
             text.contains(impl_src),
-            "src/concurrent/epoch/hand.rs: the `{impl_src}` impl must stay bounded \
+            "crates/containers/sefer-concurrent/src/epoch/hand.rs: the `{impl_src}` impl must stay bounded \
              by `T: Send + Sync` (R2-23) — the stale doc claimed it was \
              unconditional, but the fix was DOC-SIDE ONLY; a widened impl here \
              would trade a wording bug for a soundness bug.",
@@ -2424,7 +2426,7 @@ fn epoch_hand_doc_matches_conditional_confinement_and_bounded_impls() {
     // (inventoried in src/lib.rs) — not the only one.
     assert!(
         flat.contains("one of the crate's confined `unsafe` seams"),
-        "src/concurrent/epoch/hand.rs: the module doc must describe \
+        "crates/containers/sefer-concurrent/src/epoch/hand.rs: the module doc must describe \
          `AtomicSlot` as ONE of the crate's confined `unsafe` seams (the \
          inventory lives in src/lib.rs), not as the sole such module (R2-23) — \
          the crate root's `forbid(unsafe_code)` is conditional and several \
@@ -2433,7 +2435,7 @@ fn epoch_hand_doc_matches_conditional_confinement_and_bounded_impls() {
     // ... and it must state the bound the impls actually carry.
     assert!(
         flat.contains("only where `T: Send + Sync`"),
-        "src/concurrent/epoch/hand.rs: the `Send`/`Sync` description must state \
+        "crates/containers/sefer-concurrent/src/epoch/hand.rs: the `Send`/`Sync` description must state \
          that `AtomicSlot<T>` is `Send`/`Sync` only where `T: Send + Sync` — \
          the impls are bounded, so prose claiming it holds for every `T` is a \
          doc/code contradiction (R2-23).",
@@ -2450,7 +2452,7 @@ fn epoch_hand_doc_matches_conditional_confinement_and_bounded_impls() {
     ] {
         assert!(
             !flat.contains(stale),
-            "src/concurrent/epoch/hand.rs: the stale claim `{stale}` reappeared \
+            "crates/containers/sefer-concurrent/src/epoch/hand.rs: the stale claim `{stale}` reappeared \
              (R2-23). `AtomicSlot` is ONE of several confined unsafe seams (the \
              crate root's forbid is conditional, not `everywhere`), and it is \
              `Send`/`Sync` only for `T: Send + Sync`, not unconditionally.",
@@ -2459,8 +2461,8 @@ fn epoch_hand_doc_matches_conditional_confinement_and_bounded_impls() {
 }
 
 /// R2-23 (independent src review round 2) — both cross-thread eviction paths
-/// (`EpochRegion::remote_evict` in `concurrent/epoch/epoch_region.rs` and its
-/// `ShardedRegion` counterpart in `concurrent/sharded/sharded_region.rs`) were
+/// (`EpochRegion::remote_evict` in `crates/containers/sefer-concurrent/src/epoch/epoch_region.rs` and its
+/// `ShardedRegion` counterpart in `crates/containers/sefer-concurrent/src/sharded/sharded_region.rs`) were
 /// documented as blanket "lock-free" paths. In reality only the eviction CAS
 /// is lock-free: after a winning compare-and-swap the remover ENQUEUES the
 /// freed index into a `Mutex<Vec<u32>>` remote-free queue, i.e. a brief
@@ -2478,7 +2480,7 @@ fn remote_evict_doc_names_the_blocking_bookkeeping() {
     // (file, positive needles that file's doc must carry)
     let sites: &[(&str, &[&str])] = &[
         (
-            "src/concurrent/epoch/epoch_region.rs",
+            "crates/containers/sefer-concurrent/src/epoch/epoch_region.rs",
             &[
                 "lock-free ONLY in its eviction step",
                 "brief blocking section on the REMOTE thread",
@@ -2486,7 +2488,7 @@ fn remote_evict_doc_names_the_blocking_bookkeeping() {
             ],
         ),
         (
-            "src/concurrent/sharded/sharded_region.rs",
+            "crates/containers/sefer-concurrent/src/sharded/sharded_region.rs",
             &["only the eviction CAS is lock-free", "brief blocking"],
         ),
     ];
@@ -2536,15 +2538,13 @@ fn remote_evict_doc_names_the_blocking_bookkeeping() {
 /// every feature configuration.
 #[test]
 fn lock_free_generation_max_doc_matches_the_final_reuse_policy() {
-    let path = src_dir()
-        .join("concurrent")
-        .join("lock_free")
-        .join("lock_free_region.rs");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/containers/sefer-concurrent/src/lock_free/lock_free_region.rs");
     let flat = doc_prose(&path);
 
     assert!(
         !flat.contains("neither ever mints or hands out a live handle at generation"),
-        "src/concurrent/lock_free/lock_free_region.rs: the stale blanket claim \
+        "crates/containers/sefer-concurrent/src/lock_free/lock_free_region.rs: the stale blanket claim \
          that neither tier hands out a live handle at generation `u32::MAX` \
          reappeared (R2-23). `LockFreeRegion` DOES hand out exactly one live \
          handle at generation `u32::MAX` — the MAX-1 → MAX slot's one final \
@@ -2553,7 +2553,7 @@ fn lock_free_generation_max_doc_matches_the_final_reuse_policy() {
 
     assert!(
         flat.contains("exactly ONE live handle at generation `u32::MAX`"),
-        "src/concurrent/lock_free/lock_free_region.rs: the generation-saturation \
+        "crates/containers/sefer-concurrent/src/lock_free/lock_free_region.rs: the generation-saturation \
          doc must state that this tier hands out exactly ONE live handle at \
          generation `u32::MAX` (the MAX-1 → MAX slot's one final reuse, removed \
          at insert_reusing/remove) (R2-23).",
