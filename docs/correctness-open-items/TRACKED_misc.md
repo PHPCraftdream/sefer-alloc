@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card lands here only if it does not share the defining criterion of any category above. Each card here is a genuine one-off: item 45 is a numa-shim RefCell-vs-Cell defensive-coding/panic-safety nit (not an OS-contract question, not a hook, not flakiness); item 49 is an aligned-vmem edition-2021-vs-2024 explicit-unsafe{}-block hygiene item (about FFI call-site annotation style, not about a dbg_* hook, a platform contract, or CI wiring).
 
-**Card count (re-derived 2026-10-09, R18 reconciliation):** 9 numbered records in this file — 7 open [T] cards (items 154, 158, 159, 160, 161, 191, 199) + 2 CLOSED/resolved pointers retained for lookup (items 45 and 49; full closure records are in `RESOLVED.md` and `ARCHIVE.md`). Items 157 and 176 moved to `RESOLVED.md`; 176 is not a current record here.
+**Card count (re-derived 2026-11-15; first derived 2026-10-09, R18 reconciliation):** 12 numbered records in this file — 10 open [T] cards (items 154, 158, 159, 160, 161, 191, 199, 277, 278, 279) + 2 CLOSED/resolved pointers retained for lookup (items 45 and 49; full closure records are in `RESOLVED.md` and `ARCHIVE.md`). Items 157 and 176 moved to `RESOLVED.md`; 176 is not a current record here.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -174,3 +174,27 @@ split the same day.)
     > - **Current:** the `medium_promotion_reachable` cfg predicate is manually rewritten at 18 sites in 9 files (one stale copy silently disables code), several function signatures are parameterized by feature cfg behind dense ladders, and the experimental R18/R19 cfgs sit in the hot path.
     > - **Next trigger:** R6-T20/R6-T46 in the round-6 queue; close via the single-constant unification and the cfg-ladder cleanup with a powerset check.
     > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-22/23/24; tasks R6-T20/T46.
+
+277. **[T] `scripts/classify-tests.mjs` does not recognise process-global state that blocks merging test targets into one process.** (Filed 2026-11-15; origin: pilot P0.2, `docs/perf/P0_2_TEST_MERGE_PILOT.md` — the file lands in main with the pilot PR and is not in this tree; this card asserts NO verdict.)
+
+    > **Current state**
+    > - **Status:** OPEN — needed before P0.3/P0.4 (which run only on GO).
+    > - **Current:** per the pilot's reported figures (not re-derived here): of 78 `regression_*` targets, 35 were merged, 20 excluded by P0.1 blockers and 23 excluded by a new, manually found feature the classifier lacks: process-global state observable across merged tests — exact deltas of global counters, registry lifecycle, identity of a leased heap, timeouts. `scripts/classify-tests.mjs` (flags derived via `scripts/classify-tests/features.mjs`) has no such flag. Evidence-registry rows `R4c-05`, `R4c-06`, `R4c-07` (`docs/evidence/registry.csv` lines 111, 118, 125) are the referenced Miri rows for `regression_r2_06_header_race_miri`, `regression_xthread_small_ring_miri`, `regression_xthread_thread_free_alias_miri`; that they illustrate the global-state blocker is as stated in the task note, not verified by me.
+    > - **Next trigger:** the pilot verdict in `docs/perf/P0_2_TEST_MERGE_PILOT.md`; if GO, add the global-state flag (and its scan) to the classifier before P0.3/P0.4.
+    > - **Evidence:** `scripts/classify-tests.mjs`; `docs/perf/P0_2_TEST_MERGE_PILOT.md` (path only); `docs/evidence/registry.csv` R4c-05..07; `docs/plans/2026-11-15-workspace-restructure-plan.md`.
+
+278. **[T] Doc comments in `src/` and crate sources still cite pre-T1 paths `crates/<name>` instead of `crates/<theme>/<name>`.** (Filed 2026-11-15; origin: plan step T1 layout, `docs/plans/2026-11-15-workspace-restructure-plan.md`.)
+
+    > **Current state**
+    > - **Status:** OPEN — docs-only step after P1; no file changed by this filing.
+    > - **Current:** the task note estimated ~48. Counted 2026-11-15 on this tree (HEAD `023214be`) with `rg` for `crates/(aligned-vmem|numa-shim|proc-memstat|proc-probe|once-ptr-cell|size-classes|tagged-index-stack|sefer-region|ghost-lint|globalalloc-model|malloc-bench-rs)` in `*.rs`: `src/` 34 lines in 10 files (6 of them `//`/`//!`/`///` comment lines); `crates/**` 21 lines (15 comment lines). Total 55 lines, 21 on comment-prefixed lines; the ~48 figure is not reproduced and depends on what counts (comments vs. string/attribute lines). Counts are as of that date and tree and will drift.
+    > - **Next trigger:** after P1 lands, a docs step rewrites the paths; recount with the same pattern at that time.
+    > - **Evidence:** the `rg` pattern above over `src/` and `crates/`; `docs/plans/2026-11-15-workspace-restructure-plan.md`.
+
+279. **[T] `cargo check --features hardened` warns `unused import: core::ptr::NonNull` at `src/alloc_core/small/alloc_core_small_diag.rs:22` — present on the base.** (Filed 2026-11-15; origin: agents' report during P1.1–P1.4.)
+
+    > **Current state**
+    > - **Status:** OPEN — warning, not an error; would fail a `-D warnings` row if one built this feature set without `internals`.
+    > - **Current:** OBSERVED 2026-11-15: `cargo check --features hardened` on HEAD `023214be` (== origin/main) printed `warning: unused import: core::ptr::NonNull` at `src\alloc_core\small\alloc_core_small_diag.rs:22:5`, 1 warning in `sefer-alloc` (lib). The file is byte-identical to `origin/main` (`git diff --stat` empty), so the warning is on the base. Cause by reading: line 21 `#[cfg(feature = "hardened")] use core::ptr::NonNull;`, while the only use (`NonNull::new`, line 182, in `dbg_corrupt_freelist_head_next`) is inside `#[cfg(feature = "internals")] impl AllocCore` (line 39); `hardened = ["fastbin", "misuse-checks"]` (`Cargo.toml:707`) does not enable `internals`. So the import is used only with `hardened`+`internals`. Not checked: `hardened internals` combination (inferred clean by reading).
+    > - **Next trigger:** a code step gating the import with `all(feature = "hardened", feature = "internals")` (or `internals` alone, matching the neighbouring imports) and a `cargo check --features hardened` clean-run receipt.
+    > - **Evidence:** `src/alloc_core/small/alloc_core_small_diag.rs:21–22,39,182`; `Cargo.toml:707`; cargo output above.
