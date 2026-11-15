@@ -22,6 +22,49 @@ const jrows = j.map(r => {
 
 const sha = b[0][bi.source_sha];
 const wn = b[0][bi.wnice_exe_sha256];
+const blockMib = (cell) => {
+  let m = cell.match(/^many-(\d+)x(\d+)MiB$/);
+  if (m) return Number(m[2]);
+  m = cell.match(/^(?:cycle|grow|edge)-(\d+)GiB$/);
+  if (m) return Number(m[1]) * 1024;
+  m = cell.match(/^(?:cycle|grow|edge)-(\d+)MiB-minus-1$/);
+  if (m) return Number(m[1]) - 1 / 1048576;
+  m = cell.match(/^(?:cycle|grow|edge|cache)-(\d+)MiB$/);
+  if (m) return Number(m[1]);
+  assert.fail(`cell size not derivable from its name: ${cell}`);
+};
+const THRESHOLD_MIB = 8;
+const cells = j.map(r => ({
+  cell: r[ji.cell], regime: r[ji.regime],
+  ratio: Number(r[ji.always_over_off]), lo: Number(r[ji.ci95_lo]), hi: Number(r[ji.ci95_hi]),
+  aaRatio: Number(r[ji.aa_ratio]), aaLo: Number(r[ji.aa_lo]), aaHi: Number(r[ji.aa_hi]),
+  offMedian: r[ji.off_median_ns], alwaysMedian: r[ji.always_median_ns],
+  sizeMib: blockMib(r[ji.cell]),
+}));
+const ciContains1 = (c) => c.lo <= 1 && 1 <= c.hi;
+for (const c of cells) {
+  if (c.cell === 'edge-128MiB') { assert(c.lo > 1, 'edge-128MiB: "slower" needs the whole interval above 1'); continue; }
+  if (c.regime === 'CACHE') continue;
+  assert.equal(c.regime, 'COLD', `${c.cell}: unexpected regime ${c.regime}`);
+  if (c.sizeMib >= THRESHOLD_MIB) assert(c.hi < 1, `${c.cell}: "Always faster" needs the whole interval below 1`);
+  else assert(ciContains1(c), `${c.cell}: "no difference" needs the interval to contain 1`);
+}
+const eligible = cells.filter(c => c.regime === 'COLD' && c.cell !== 'edge-128MiB' && c.sizeMib >= THRESHOLD_MIB);
+const below = cells.filter(c => c.regime === 'COLD' && c.cell !== 'edge-128MiB' && c.sizeMib < THRESHOLD_MIB);
+assert(eligible.length > 1 && below.length > 0, 'expected both eligible and below-threshold COLD cells');
+const rmin = Math.min(...eligible.map(c => c.ratio));
+const rmax = Math.max(...eligible.map(c => c.ratio));
+assert(rmin < rmax && rmax < 1);
+const fmin = Number((1 / rmax).toFixed(1));
+const fmax = Number((1 / rmin).toFixed(1));
+assert(fmin > 1 && fmax > 1, 'rounded speedups must stay above 1');
+const cache = cells.find(c => c.regime === 'CACHE');
+assert(cache && cache.hi < 1, 'cache-16MiB: "Always faster" needs the whole interval below 1');
+assert(cache.aaLo <= 1 && 1 <= cache.aaHi, 'cache-16MiB: A/A payload interval must contain 1 (payload readability)');
+const cacheX = (1 / cache.ratio).toFixed(2);
+assert(Number(cacheX) > 1);
+const readingJ13 = `Reading, with numerators and denominators: for cold allocation+touch+free at 8 MiB and above (${eligible.map(c => c.cell).join(', ')}), Always/Off is ${rmin.toFixed(2)}-${rmax.toFixed(2)} (geometric mean of the 12 per-block paired ratios of the cell's metric under Always over Off), i.e. Always is ${fmin}-${fmax}x faster; at ${below.map(c => c.cell).join(' and ')} (below the ${THRESHOLD_MIB} MiB threshold, advice not applied) no difference is detected (both 95% intervals contain 1). The CACHE cell (${cache.cell}, second life of a cached 16 MiB block) reads the opposite way on this host: Always/Off is ${cache.ratio.toFixed(4)} (${cache.lo.toFixed(4)}-${cache.hi.toFixed(4)}), Always ${cacheX}x faster (median ${cache.offMedian} ns Off -> ${cache.alwaysMedian} ns Always); the A/A payload interval (${cache.aaRatio.toFixed(4)}, ${cache.aaLo.toFixed(4)}-${cache.aaHi.toFixed(4)}) still contains 1, so payload readability holds. The earlier GitHub-runner study measured the same cell at 1.0231 (1.0093-1.0371): the direction differs between hosts; the cause is not investigated.`;
+
 const md = `# Final comparative measurements under hard limits (2026-11-15)
 
 Status: measurement-only. No \`perf(runtime)\` / \`perf(opt-in)\` change; no product GO/veto is derived here; relative numbers, not canonical ones.
@@ -89,7 +132,7 @@ Always/Off is the ratio of the selected metric (cold_ns, or cache_ns for the CAC
 |---|---|---:|---:|---:|---|
 ${jrows}
 
-Reading, with numerators and denominators: for cold allocation+touch+free at 8 MiB and above, Always/Off is 0.37-0.46 (geometric mean of 12 per-block ratios of Always over Off), i.e. Always is 2.2-2.7x faster; at 1 MiB and 8 MiB minus 1 byte (below the 8 MiB threshold, advice not applied) no difference is detected. The CACHE cell (second life of a cached 16 MiB block) shows no detectable difference (interval contains 1), unlike the earlier GitHub-runner study (1.0231, 1.0093-1.0371).
+${readingJ13}
 
 **Regression to report to the owner (not new, not a veto):** edge-128MiB (128 MiB request, 1 repetition, untouched payload, cache off) is ${Number(j.find(r => r[ji.cell] === 'edge-128MiB')[ji.always_over_off]).toFixed(1)}x slower with Always: median ${j.find(r => r[ji.cell] === 'edge-128MiB')[ji.off_median_ns]} ns (Off) -> ${j.find(r => r[ji.cell] === 'edge-128MiB')[ji.always_median_ns]} ns (Always), roughly 145 microseconds of madvise cost over 128 MiB when no page is touched. The earlier registered study measured the same cell at 10.04 (8.71-11.58). Advice has a fixed per-MiB cost that only pays off when the memory is touched; no default change is inferred.
 
