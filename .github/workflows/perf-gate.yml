@@ -120,6 +120,8 @@ jobs:
       # its base branch (main), so a baseline recorded by the nightly/main run
       # below is visible to labelled PR runs. `restore-keys` picks the most
       # recent `iai-baseline-main-*` entry when there is no exact-SHA hit.
+      # The no-LTO row's keys deliberately start `iai-baseline-nolto-main-`,
+      # NOT `iai-baseline-main-`, so this prefix can never match them.
       - name: Restore the main iai baseline
         uses: actions/cache/restore@v5
         with:
@@ -192,8 +194,9 @@ jobs:
   # after the planned crate extractions only #[inline]/generic functions
   # inline across crate boundaries in such a build. This row records that
   # build's Ir on the UNSPLIT tree; every later extraction step compares its
-  # run against this row's own baseline (named `main-nolto`, a separate
-  # iai-callgrind named baseline, so the two rows' caches never mix).
+  # run against this row's own baseline (named `main_nolto` — iai-callgrind
+  # baseline names accept only ASCII [A-Za-z0-9_]; cache keys start with
+  # `iai-baseline-nolto-main-` so the two rows' caches never prefix-match).
   #
   # Mechanism: cargo profile overrides via environment variables — per the
   # Cargo profiles reference, a profile setting from a config file or
@@ -240,16 +243,20 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: target/iai
-          key: iai-baseline-main-nolto-${{ github.sha }}
+          # Keys keep kebab-case (hyphens are fine in GitHub cache keys; only
+          # the iai baseline NAME is restricted to [A-Za-z0-9_]: `main_nolto`)
+          # and must NOT start with `iai-baseline-main-`, or restore-keys of
+          # the thin-LTO row above would prefix-match this row's caches.
+          key: iai-baseline-nolto-main-${{ github.sha }}
           restore-keys: |
-            iai-baseline-main-nolto-
+            iai-baseline-nolto-main-
 
       - name: Run perf-gate benchmarks (instruction counts, no LTO)
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            cargo bench --bench perf_gate_iai --features "production bench-internals internals" -- --baseline=main-nolto
+            cargo bench --bench perf_gate_iai --features "production bench-internals internals" -- --baseline=main_nolto
           else
-            cargo bench --bench perf_gate_iai --features "production bench-internals internals" -- --save-baseline=main-nolto
+            cargo bench --bench perf_gate_iai --features "production bench-internals internals" -- --save-baseline=main_nolto
           fi
 
       - name: Save the no-LTO main iai baseline
@@ -257,7 +264,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: target/iai
-          key: iai-baseline-main-nolto-${{ github.sha }}
+          key: iai-baseline-nolto-main-${{ github.sha }}
 
       - name: Upload no-LTO Callgrind artifacts
         if: always()
