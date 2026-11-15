@@ -138,8 +138,8 @@ sefer-alloc
  └── malloc-bench-rs (crates/bench/malloc-bench-rs) — portable GlobalAlloc bench harness (standalone)
 ```
 
-The workspace now has ten companion crates; the complete current list is in
-[README §Workspace](../README.md#workspace-ten-independently-publishable-companion-crates).
+The workspace now has twelve companion crates; the complete current list is in
+[README §Workspace](../README.md#workspace-twelve-independently-publishable-companion-crates).
 Each original extraction is a real crates.io crate. The
 extraction **improved the audit story**: the two OS-unsafe sub-problems are now
 small, single-responsibility crates that can be audited in complete isolation.

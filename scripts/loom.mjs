@@ -19,6 +19,10 @@ import { REPO_ROOT, run, verdict } from './lib.mjs';
 // `#![cfg(feature = "experimental")]` gate excluded the whole file → "0 tests"
 // that looks like a pass). Each model now builds under the exact features its
 // `#![cfg(...)]` gate requires — identical to what CI runs.
+// P1.2: the three experimental-tier models moved into the `sefer-concurrent`
+// crate. They are `#![cfg(loom)]` shadow models that import no crate code, so
+// they run with `-p sefer-concurrent` and no features — flagged by the
+// `crate:` prefix (handled specially in the run loop below).
 // CRATE-P3: the four in-tree shadow-model harnesses (loom_bootstrap_cas,
 // loom_chunk_cas, loom_overflow_sidecar_cas, loom_fallback_init) collapsed into
 // ONE suite that model-checks the REAL `once_ptr_cell::OncePtrCell` type (the
@@ -72,9 +76,9 @@ const FEATURES = {
   loom_r11_ph4b_publish_recycle_drain: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_nl3_remote_reclaim: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
   loom_nl3_owner_teardown: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
-  loom_sharded: 'experimental,tagged-index-stack/loom',
-  loom_epoch: 'experimental,tagged-index-stack/loom',
-  loom_r11_epoch_false_full: 'experimental,tagged-index-stack/loom',
+  loom_sharded: `${CRATE_PREFIX}sefer-concurrent`,
+  loom_epoch: `${CRATE_PREFIX}sefer-concurrent`,
+  loom_r11_epoch_false_full: `${CRATE_PREFIX}sefer-concurrent`,
 };
 
 const ALL = Object.keys(FEATURES);

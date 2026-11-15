@@ -43,6 +43,11 @@ features = ["production"]
 # extracted, independently-publishable building blocks live under `crates/`:
 #   - sefer-region    (crates/containers/sefer-region)       — typed handle store (Handle<T>/Region<T>)
 #                                             #![forbid(unsafe_code)]
+#   - sefer-concurrent (crates/containers/sefer-concurrent)   — legacy/research concurrent tier
+#                                             (EpochRegion/LockFreeRegion/ShardedRegion/
+#                                             PinnedRunner); #![deny(unsafe_code)] with
+#                                             the single confined epoch-hand seam.
+#                                             Re-exported under `experimental`/`pinning`.
 #   - aligned-vmem    (crates/platform/aligned-vmem)         — OS virtual-memory aperture
 #                                             #![allow(unsafe_code)], single-purpose, audit-friendly
 #   - numa-shim       (crates/platform/numa-shim)         — dependency-free NUMA detection + binding
@@ -89,7 +94,7 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/platform/aligned-vmem", "crates/platform/numa-shim", "crates/bench/malloc-bench-rs", "crates/containers/sefer-region", "crates/primitives/once-ptr-cell", "crates/primitives/sefer-ghost", "crates/primitives/size-classes", "crates/verify/globalalloc-model", "crates/primitives/tagged-index-stack", "crates/platform/proc-memstat", "crates/platform/proc-probe", "crates/verify/ghost-lint"]
+members = ["crates/platform/aligned-vmem", "crates/platform/numa-shim", "crates/bench/malloc-bench-rs", "crates/containers/sefer-region", "crates/primitives/once-ptr-cell", "crates/primitives/sefer-ghost", "crates/primitives/size-classes", "crates/verify/globalalloc-model", "crates/primitives/tagged-index-stack", "crates/platform/proc-memstat", "crates/platform/proc-probe", "crates/verify/ghost-lint", "crates/containers/sefer-concurrent"]
 resolver = "2"
 
 # Task #711 (once-ptr-cell round-closing review, §C10 drift hazard): `loom`
@@ -129,33 +134,34 @@ workspace = true
 # features to get the bare `no_std` + `alloc` core.
 default = ["std"]
 std = ["sefer-region/std"]
-# Phase 3b: lock-free reads. The concurrent tier is opt-in; it requires `std`
-# (its deps need it) and pulls in only `arc-swap` + `crossbeam-epoch` beyond the
-# core.
+# Phase 3b: lock-free reads. The legacy concurrent tier is opt-in; it requires
+# `std` and pulls in `sefer-concurrent`, which owns the `arc-swap` /
+# `crossbeam-epoch` dependencies beyond the core.
 # - 3b-I (`arc-swap`): RCU with page-granularity copy-on-write — zero `unsafe`
 #   of our own.
 # - 3b-II (`crossbeam-epoch`): per-slot atomics + epoch reclamation — the single
-#   confined `unsafe` Hand organ (src/concurrent/epoch/hand.rs), the only module with
-#   `#![allow(unsafe_code)]`. See docs/PLAN.md.
+#   confined `unsafe` Hand organ (sefer-concurrent's src/epoch/hand.rs), the only
+#   module with `#![allow(unsafe_code)]`. See docs/PLAN.md.
 # Requires `target_has_atomic = "64"` for AtomicU64; pointer-width atomics alone
 # do not suffice. `pinning` and `batch-api` inherit this requirement.
-experimental = ["std", "dep:arc-swap", "dep:crossbeam-epoch"]
-# Phase 7c: thread-per-core pinning. Additive over `experimental` — pulls in
-# `core_affinity` (a safe wrapper over the OS affinity syscalls; zero `unsafe`
-# of our own) and exposes an explicit shard-binding API plus a thread-per-core
-# runner on `ShardedRegion`. The default and `experimental` builds do NOT pull
-# `core_affinity`: this feature is purely opt-in. See docs/PLAN.md §7c.
+experimental = ["std", "dep:sefer-concurrent"]
+# Phase 7c: thread-per-core pinning. Additive over `experimental` — forwards to
+# `sefer-concurrent/pinning` (which pulls in `core_affinity`, a safe wrapper
+# over the OS affinity syscalls; zero `unsafe` of our own) and exposes an
+# explicit shard-binding API plus a thread-per-core runner on `ShardedRegion`.
+# The default and `experimental` builds do NOT pull `core_affinity`: this
+# feature is purely opt-in. See docs/PLAN.md §7c.
 #
 # NOTE (review 2.5): `pinning` inherits ALL of `experimental`'s deps — including
 # `arc-swap` + `crossbeam-epoch` (the legacy research concurrent tier) — even
 # though `PinnedRunner` itself uses ONLY `core_affinity` + `ShardedRegion`
-# (`src/concurrent/pinning.rs`; `sharded_region.rs` references neither arc-swap
+# (`sefer-concurrent`'s `src/pinning.rs`; `sharded_region.rs` references neither arc-swap
 # nor crossbeam-epoch). It depends on `experimental` because `ShardedRegion` is
 # gated there, not because it needs the epoch/RCU types. Narrowing this (moving
 # `ShardedRegion` behind a leaner sub-feature so `pinning` need not drag in the
 # whole legacy tier) is a real feature-graph refactor and is intentionally NOT
 # attempted here; documented as a known, accepted over-inclusion.
-pinning = ["experimental", "dep:core_affinity"]
+pinning = ["experimental", "sefer-concurrent?/pinning"]
 # Phase 8: the segment substrate + self-hosted metadata — the foundation of a
 # real allocator (the Membrane Inversion). OS-backed SEGMENT-aligned spans via a
 # confined `unsafe` aperture (`mmap`/`VirtualAlloc`, NO `std::alloc` anywhere),
@@ -512,7 +518,7 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "all
 # resolution can turn the override on; the test's runtime half is compiled
 # only in invocations that pass the flag (check-all step + ci.yml
 # `test-windows` row).
-internals = ["sefer-ghost/internals"]
+internals = ["sefer-ghost/internals", "sefer-concurrent?/internals"]
 # `internals` forwards to sefer-ghost's own `internals` so its
 # `probe` self-test entry stays gated identically across the crate
 # boundary (plan P1.1).
@@ -612,7 +618,7 @@ alloc-stats = ["alloc-core"]
 # is only pulled in by `alloc-core`, so both forwards are no-ops (unresolved
 # optional dep) unless `alloc-core` is also enabled — matching every other
 # `aligned-vmem/*` forward in this file (e.g. `alloc-lazy-commit` below).
-bench-internals = ["aligned-vmem?/bench-internals", "aligned-vmem?/lazy-commit"]
+bench-internals = ["aligned-vmem?/bench-internals", "aligned-vmem?/lazy-commit", "sefer-concurrent?/bench-internals"]
 # R6-OPT-P0-3a: EXPERIMENTAL "medium" exact size classes — the cheap first
 # experiment `docs/agent_reviews_us/radical_optimization_review.md` §4 P0-3
 # recommends running BEFORE committing to the larger page-run-layer redesign
@@ -918,22 +924,14 @@ virgin-zero-skip = ["alloc-decommit"]
 # its own `std` feature, which we re-enable via our own `std` feature so the
 # no_std core compiles without it and the default build gets SyncRegion as before.
 sefer-region = { path = "crates/containers/sefer-region", version = "0.2", default-features = false }
-# Phase 3b-I: atomic snapshot publication for lock-free reads. Optional — only
-# the `experimental` concurrent tier pulls it in. Its internal `unsafe` is the
-# dependency's, not ours; our crate stays `#![forbid(unsafe_code)]` with it on.
-arc-swap = { version = "1", optional = true }
-# Phase 3b-II: epoch-based memory reclamation for the per-slot-atomics lock-free
-# read tier. Optional — only pulled in by `experimental`. Its `unsafe` is the
-# dependency's; OUR `unsafe` is confined to src/concurrent/epoch/hand.rs (the single
-# documented `#![allow(unsafe_code)]` module) and is wrapped in a safe-to-use
-# `AtomicSlot<T>` API. See docs/PLAN.md.
-crossbeam-epoch = { version = "0.9", optional = true }
-# Phase 7c: OS thread-to-core pinning for the thread-per-core runner. A safe
-# wrapper over `sched_setaffinity` (Linux) / `SetThreadAffinityMask` (Windows)
-# / `thread_policy_set` (macOS). Optional — only the `pinning` feature pulls it
-# in. Pinning is best-effort on some OSes; the runner still runs correctly if
-# the host refuses the affinity. See docs/PLAN.md §7c.
-core_affinity = { version = "0.8", optional = true }
+# P1.2 (workspace restructure): the legacy/research concurrent tier, extracted
+# into its own crate. sefer-alloc re-exports its surface through the
+# `src/concurrent` shim so `sefer_alloc::{EpochRegion, ...}` and
+# `sefer_alloc::PinnedRunner` keep resolving unchanged. `experimental` enables
+# the dependency; `pinning` additionally forwards `pinning`; `internals` /
+# `bench-internals` forward the crate's same-named test-hook gates so the
+# feature-gating behavior of every pre-extraction build is preserved.
+sefer-concurrent = { path = "crates/containers/sefer-concurrent", version = "0.1", optional = true }
 # Phase 8 (alloc-core) OS aperture: SEGMENT-aligned anonymous virtual memory,
 # page-level decommit/recommit. Extracted from sefer-alloc into a standalone
 # crate so it can be used and published independently. Pulled in ONLY by the
@@ -2638,28 +2636,6 @@ required-features = ["production", "bench-internals", "internals"]
 [[example]]
 name = "r20_prf04_claim_path_oracle"
 required-features = ["production", "bench-internals", "internals"]
-
-# R2-20: this regression uses the arbitrary-handle test hook, which is
-# deliberately absent from ordinary `experimental` builds. Keep the Cargo test
-# target itself gated too, so plain `--features experimental` does not build an
-# empty integration-test binary.
-[[test]]
-name = "regression_r2_20_lock_free_rejected_no_cow"
-path = "tests/regression_r2_20_lock_free_rejected_no_cow.rs"
-required-features = ["experimental", "bench-internals"]
-
-# R5-03: this regression uses the capacity-check test hook, same rationale as
-# R2-20's entry immediately above — keep the Cargo test target gated too.
-[[test]]
-name = "xxs_r5_03_lock_free_with_pages_overflow"
-path = "tests/xxs_r5_03_lock_free_with_pages_overflow.rs"
-required-features = ["experimental", "bench-internals"]
-
-# R11 P4-2: counts page-`Arc` clones via the `bench-internals` test hook.
-[[test]]
-name = "r11_p4_2_lock_free_write_clone_count"
-path = "tests/r11_p4_2_lock_free_write_clone_count.rs"
-required-features = ["experimental", "bench-internals"]
 
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #

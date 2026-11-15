@@ -403,3 +403,22 @@ runs:
 
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+    # sefer-concurrent (P1.2 crate extraction): the concurrent-tier tests
+    # moved from the root crate's tests/ into this crate, so the root
+    # all-features rows no longer run them. The plain row covers the
+    # default-feature tests; the all-features row runs the
+    # internals/bench-internals-gated hooks plus `pinning`.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p sefer-concurrent --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p sefer-concurrent --all-features --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p sefer-concurrent --all-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p sefer-concurrent --all-features --no-deps
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

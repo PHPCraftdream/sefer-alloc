@@ -1,0 +1,90 @@
+[package]
+name = "sefer-concurrent"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Legacy/research concurrent region tiers extracted from sefer-alloc: EpochRegion (epoch-based reclamation), LockFreeRegion (RCU page snapshots), ShardedRegion (sharded Arc regions) and the PinnedRunner thread-per-core runner. sefer-alloc re-exports these types under its `experimental` feature."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/containers/sefer-concurrent"
+documentation = "https://docs.rs/sefer-concurrent"
+keywords = ["lock-free", "epoch", "sharded", "handle", "concurrency"]
+categories = ["concurrency", "data-structures", "memory-management"]
+
+# docs.rs: the crate's whole surface (including the internals/bench-internals
+# test hooks) is rendered, so the CI doc-lint row that builds --all-features
+# IS the docs.rs build configuration (CLAUDE.md docs.rs-row rule: a docs.rs
+# feature set narrower than --all-features would need its own row; this one
+# is not narrower).
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+# Phase 7c thread-per-core pinning: pulls in `core_affinity` (a safe wrapper
+# over the OS affinity syscalls) and exposes `PinnedRunner`. Mirrors the root
+# crate's `pinning` feature, which forwards here (`sefer-concurrent?/pinning`).
+pinning = ["dep:core_affinity"]
+# Test-only surfaces. These mirror the ROOT crate's same-named features: the
+# moved `_*_for_tests` hooks keep their `#[cfg(feature = "...")]` gates verbatim,
+# and the root features forward (`sefer-concurrent?/internals`,
+# `sefer-concurrent?/bench-internals`) so the feature-gating behavior of the
+# extraction is unchanged (a `sefer-alloc --features experimental,internals`
+# build still compiles the hooks it compiled before the move).
+internals = []
+bench-internals = []
+# Marker mirroring the root crate's same-named feature. This crate IS the
+# experimental tier (always compiled when the crate is a dependency), so the
+# feature gates no code; it exists only so `required-features` on the moved
+# regression targets below can preserve the root crate's pre-extraction
+# skip-semantics (the root's `experimental` enables this dependency rather
+# than forwarding a feature, so those targets could not name it otherwise).
+experimental = []
+
+[dependencies]
+# Phase 3b-I (LockFreeRegion): atomic snapshot publication for lock-free reads.
+arc-swap = "1"
+# Phase 3b-II (EpochRegion/AtomicSlot): epoch-based reclamation for the
+# per-slot-atomics lock-free read tier. Its `unsafe` is the dependency's; OUR
+# unsafe is confined to src/epoch/hand.rs (the crate's single documented
+# `#![allow(unsafe_code)]` seam), wrapped in the safe-to-use `AtomicSlot<T>` API.
+crossbeam-epoch = "0.9"
+# Phase 7c: OS thread-to-core pinning. Optional — only the `pinning` feature
+# pulls it in. Pinning is best-effort on some OSes; the runner still runs
+# correctly if the host refuses the affinity.
+core_affinity = { version = "0.8", optional = true }
+
+# Lints are shared at the workspace root (`[workspace.lints.rust]`): the
+# `loom` / `kani` build-time cfgs the tests and proof harness use are declared
+# there (same shape as once-ptr-cell's `[lints] workspace = true`).
+[lints]
+workspace = true
+
+[dev-dependencies]
+# Property-based differential tests moved in from the root crate's tests/
+# (tests/sharded.rs, tests/sharded_remote.rs).
+proptest = "1"
+
+# Phase 3b-II loom models moved in from the root crate's tests/ are shadow
+# models over `loom::sync::atomic` only (loom and crossbeam-epoch do not
+# compose), so loom is a cfg(loom) DEV-dependency and the models need no
+# crate features.
+[target.'cfg(loom)'.dev-dependencies]
+loom = { workspace = true }
+
+# The root crate declared these three regression targets with
+# `required-features` so non-matching feature rows SKIP the target entirely
+# instead of compiling an empty (0-test) binary; their file-level
+# `#![cfg(feature = "bench-internals")]` gates alone do not provide that.
+# Same targets, same feature lists as the old root [[test]] blocks.
+[[test]]
+name = "regression_r2_20_lock_free_rejected_no_cow"
+required-features = ["experimental", "bench-internals"]
+
+[[test]]
+name = "xxs_r5_03_lock_free_with_pages_overflow"
+required-features = ["experimental", "bench-internals"]
+
+[[test]]
+name = "r11_p4_2_lock_free_write_clone_count"
+required-features = ["experimental", "bench-internals"]

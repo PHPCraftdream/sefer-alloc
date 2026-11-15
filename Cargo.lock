@@ -1076,10 +1076,7 @@ name = "sefer-alloc"
 version = "0.3.0"
 dependencies = [
  "aligned-vmem",
- "arc-swap",
- "core_affinity",
  "criterion",
- "crossbeam-epoch",
  "globalalloc-model",
  "iai-callgrind",
  "loom",
@@ -1090,6 +1087,7 @@ dependencies = [
  "proc-memstat",
  "proc-probe",
  "proptest",
+ "sefer-concurrent",
  "sefer-ghost",
  "sefer-region",
  "serde_json",
@@ -1097,6 +1095,17 @@ dependencies = [
  "slotmap",
  "tagged-index-stack",
  "tokio",
+]
+
+[[package]]
+name = "sefer-concurrent"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "core_affinity",
+ "crossbeam-epoch",
+ "loom",
+ "proptest",
 ]
 
 [[package]]
