@@ -575,8 +575,8 @@ fn verification_inventory_matches_docs() {
     }
 
     for suite in [
-        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
-        "crates/tagged-index-stack/tests/loom_aba.rs",
+        "crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "crates/primitives/tagged-index-stack/tests/loom_aba.rs",
     ] {
         assert!(
             readme_verification.contains(suite),

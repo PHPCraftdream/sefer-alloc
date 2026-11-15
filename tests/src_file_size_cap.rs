@@ -3,7 +3,7 @@
 //! 1000-line file-size cap (cited by `src/registry/heap_core_xthread/overflow.rs`
 //! and `stall.rs`) had no check, and `src/registry/heap_overflow.rs` grew to
 //! 1367 lines unnoticed. Root-crate `src/` only: the cap is this crate's
-//! convention, not the published `crates/*` seams'. Source-text only, so
+//! convention, not the published `crates/*/*/` seams'. Source-text only, so
 //! it runs in every feature configuration.
 
 use std::fs;

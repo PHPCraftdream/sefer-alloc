@@ -77,7 +77,31 @@ export const symbols = (t) => t
 // inside them is the constant pool whatever symbol objdump names it by
 // (anonymous strings resolve to the nearest preceding symbol, e.g.
 // `<__abi_tag+0x566e>`).
-export function normalize(objdump, rodata = new Set(), roRanges = []) {
+// `gotMap`: link-time virtual address -> `GOT:<symbol VALUE>` label from
+// `objdump -R` dynamic relocations. `.got`/`.got.plt` slots carry no per-slot
+// symbols, so objdump names their addresses by the nearest preceding symbol
+// (`_DYNAMIC+0x..`) — the slot ORDER depends on dynamic-symbol hash order
+// (`-C metadata`), so those comments diff when only the slots moved.
+// For the ET_DYN probe the `objdump -R` OFFSET and the `-d` comment address are
+// the same link-time virtual address (load base 0), which is what makes the
+// parseInt(addr, 16) lookups correct.
+// RELATIVE/IRELATIVE entries (VALUE `*ABS` / `*ABS+0x..`) carry a
+// build-specific addend address, so their label is the constant `GOT:RELATIVE`
+// and never leaks the addend. Last entry wins on duplicate offsets.
+export function gotRelocs(dump) {
+  const map = new Map();
+  let header = false;
+  for (const line of dump.split('\n')) {
+    if (!header) { if (/^OFFSET\s+TYPE\s+VALUE$/.test(line)) header = true; continue; }
+    const m = /^([0-9a-fA-F]+)\s+(\S+)\s+(\S.*?)\s*$/.exec(line);
+    if (!m) continue;
+    const value = m[3];
+    map.set(parseInt(m[1], 16), /^\*ABS/.test(value) ? 'GOT:RELATIVE' : `GOT:${value}`);
+  }
+  return map;
+}
+
+export function normalize(objdump, rodata = new Set(), roRanges = [], gotMap = new Map()) {
   const inRo = (hex) => { const x = parseInt(hex, 16); return roRanges.some(([lo, hi]) => x >= lo && x < hi); };
   const fns = new Map();
   let name = null, body = [];
@@ -92,7 +116,17 @@ export function normalize(objdump, rodata = new Set(), roRanges = []) {
     // targets (`call 1a2b <f>`, `# 84a38 <SYM>`). Immediates, struct offsets
     // and `<sym+0x..>` offsets stay — they are code.
     body.push(symbols(m[1])
-      .replace(/# ([0-9a-f]+) <[^<>]+>/g, (all, addr) => (inRo(addr) ? '# RO' : all))
+      .replace(/# ([0-9a-f]+) <[^<>]+>/g, (all, addr) => {
+        if (inRo(addr)) return '# RO';
+        // GOT slots: mask the slot's POSITION, not the imported symbol's
+        // identity — a relocated slot yields `# GOT:<import>` (or the constant
+        // `# GOT:RELATIVE`), so slot order changes normalize away while a
+        // renamed/changed import at a slot still diffs. Unmapped addresses fall
+        // through unchanged (including the `# RO`/rodata behavior, which keeps
+        // precedence over the GOT map).
+        if (gotMap.has(parseInt(addr, 16))) return `# ${gotMap.get(parseInt(addr, 16))}`;
+        return all;
+      })
       .replace(/\[rip([+-])0x[0-9a-f]+\]/g, '[rip$1X]')
       .replace(/\b[0-9a-f]+ </g, 'ADDR <')
       .replace(/<([^<>+]+)\+0x[0-9a-f]+>/g, (all, sym) => (rodata.has(sym) ? `<${sym}+R>` : all))
@@ -101,6 +135,43 @@ export function normalize(objdump, rodata = new Set(), roRanges = []) {
   flush();
   for (const [k, v] of fns) fns.set(k, v.sort().join('\n--\n'));
   return fns;
+}
+
+// Pure line diff (diagnostics only; never feeds the verdict): classic LCS on
+// the line sequences, deterministic. Returns ops {t:'same'|'del'|'add', s}.
+export function diffLines(aText, bText) {
+  const a = aText.split('\n'), b = bText.split('\n');
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const ops = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { ops.push({ t: 'same', s: a[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ t: 'del', s: a[i] }); i++; }
+    else { ops.push({ t: 'add', s: b[j] }); j++; }
+  }
+  while (i < n) ops.push({ t: 'del', s: a[i++] });
+  while (j < m) ops.push({ t: 'add', s: b[j++] });
+  return ops;
+}
+
+// Classifier for one removed/added line pair. Token rule: strip every
+// `0x[hex]` immediate token (immediates are code, but two lines differing
+// ONLY in hex constants are an immediate-level diff, not a structural one),
+// and bare hex runs that appear after a `# ` comment marker (objdump
+// absolute target addresses not already masked by the RO rules — they are
+// addresses, not code). Remainders compared after whitespace collapse;
+// anything else (mnemonic, operand shapes, register names, struct offsets)
+// is 'structural'.
+const stripHexTokens = (s) => s
+  .replace(/0x[0-9a-fA-F]+/g, '')
+  .replace(/#(?:(\s+))[0-9a-f]+\b/g, '#$1');
+export function diffKind(delLine, addLine) {
+  const c = (s) => stripHexTokens(s).replace(/\s+/g, ' ').trim();
+  return c(delLine) === c(addLine) ? 'hex-immediate' : 'structural';
 }
 
 function rodataSymbols(bin) {
@@ -124,7 +195,7 @@ function rodataRanges(bin) {
 }
 
 function disasm(bin) {
-  return normalize(run('objdump', ['-d', '-C', '--no-show-raw-insn', '-M', 'intel', '-j', '.text', bin]), rodataSymbols(bin), rodataRanges(bin));
+  return normalize(run('objdump', ['-d', '-C', '--no-show-raw-insn', '-M', 'intel', '-j', '.text', bin]), rodataSymbols(bin), rodataRanges(bin), gotRelocs(run('objdump', ['-R', '-C', bin])));
 }
 
 function irTotal(bin, dir, tag) {
@@ -159,12 +230,60 @@ const NORMALIZE_CASES = [
   ['same nearest symbol, target outside the constant pool moved', fn('    1000:\tlea rdi,[rip+0x10] # 9000 <__abi_tag+0x8d04>'), fn('    1000:\tlea rdi,[rip+0x10] # 9008 <__abi_tag+0x8d0c>'), false],
 ];
 const RO_RANGES = [[0x5340, 0x8000]];
+const relocs = (...rows) => ['DYNAMIC RELOCATION RECORDS', 'OFFSET           TYPE              VALUE', ...rows].join('\n');
 for (const [name, x, y, same] of NORMALIZE_CASES) {
   const ro = new Set(['CONST']);
   const a = [...normalize(x, ro, RO_RANGES)].join('|'), b = [...normalize(y, ro, RO_RANGES)].join('|');
   assert.equal(a === b, same, `normalize self-test "${name}": expected ${same ? 'equal' : 'different'}`);
 }
 console.log(`[ghost-zero-cost] normalize self-test OK (${NORMALIZE_CASES.length} cases)`);
+
+// GOT-mask self-tests (runs unconditionally, before `--self-test` exits). The
+// two sides of each case carry DIFFERENT instruction addresses, so the only
+// thing that can make them equal is the masking itself.
+const gotCases = [
+  ['GOT slot moved, same import', '    1000:\tcall QWORD PTR [rip+0x2f97] # 1a230 <_DYNAMIC+0x200>', '    1010:\tcall QWORD PTR [rip+0x2f97] # 1a270 <_DYNAMIC+0x240>', relocs('000000000001a230 R_X86_64_JUMP_SLO printf@GLIBC_2.2.5+0x0'), relocs('000000000001a270 R_X86_64_JUMP_SLO printf@GLIBC_2.2.5+0x0'), true],
+  ['GOT slot kept, import renamed', '    1000:\tcall QWORD PTR [rip+0x2f97] # 1a230 <_DYNAMIC+0x200>', '    1010:\tcall QWORD PTR [rip+0x2f97] # 1a230 <_DYNAMIC+0x200>', relocs('000000000001a230 R_X86_64_JUMP_SLO printf@GLIBC_2.2.5+0x0'), relocs('000000000001a230 R_X86_64_JUMP_SLO puts@GLIBC_2.2.5+0x0'), false],
+  ['RELATIVE entries at moved slots, addends differ', '    1000:\tcall QWORD PTR [rip+0x2f97] # 1a010 <_DYNAMIC+0x1e0>', '    1010:\tcall QWORD PTR [rip+0x2f97] # 1a050 <_DYNAMIC+0x220>', relocs('000000000001a010 R_X86_64_RELATIVE *ABS+0x0000000000012345'), relocs('000000000001a050 R_X86_64_RELATIVE *ABS+0x0000000000019999'), true],
+];
+const fnGot = (body) => fn(`${body}\n    1008:\tret`);
+const gotNormalize = (body, map) => [...normalize(fnGot(body), new Set(), [], gotRelocs(map))].join('|');
+for (const [name, x, y, mx, my, same] of gotCases) {
+  assert.equal(gotNormalize(x, mx) === gotNormalize(y, my), same, `got-masking self-test "${name}": expected ${same ? 'equal' : 'different'}`);
+}
+// Unmapped address: old behavior preserved (the `ADDR <` rule still fires).
+const unmappedA = gotNormalize('    1000:\tcall QWORD PTR [rip+0x2f97] # 1a230 <_DYNAMIC+0x200>', relocs());
+const unmappedB = gotNormalize('    1010:\tcall QWORD PTR [rip+0x2f97] # 1a270 <_DYNAMIC+0x240>', relocs());
+assert.notEqual(unmappedA, unmappedB, 'got-masking self-test "unmapped address": bodies differ');
+assert.ok(unmappedA.includes('ADDR <') && unmappedB.includes('ADDR <'), 'got-masking self-test "unmapped address": ADDR < rule intact');
+// `# RO` precedence: rodata masking wins even when a GOT entry exists there.
+const roMap = relocs('000000000000596a R_X86_64_GLOB_DAT CONST+0x0');
+const roGotA = [...normalize(fn('    1000:\tlea rdi,[rip+0x10] # 596a <__abi_tag+0x566e>'), new Set(['CONST']), RO_RANGES, gotRelocs(roMap))].join('|');
+const roGotB = [...normalize(fn('    1010:\tlea rdi,[rip+0x10] # 596a <__abi_tag+0x569d>'), new Set(['CONST']), RO_RANGES, gotRelocs(roMap))].join('|');
+assert.equal(roGotA, roGotB, 'got-masking self-test "rodata precedence": # RO wins');
+assert.ok(roGotA.includes('# RO'), 'got-masking self-test "rodata precedence": masked as # RO');
+console.log(`[ghost-zero-cost] got-masking self-test OK (${gotCases.length + 2} cases)`);
+
+// diffLines/diffKind/diff-detail self-tests (diagnostics only; the verdict
+// code paths are unchanged).
+assert.equal(diffLines('a\nb\nc', 'a\nb\nc').filter((o) => o.t !== 'same').length, 0, 'diffLines self-test: identical inputs produce no del/add');
+assert.deepEqual(diffLines('a\nb\nc', 'a\nx\nc').filter((o) => o.t !== 'same'), [{ t: 'del', s: 'b' }, { t: 'add', s: 'x' }], 'diffLines self-test: one substitution');
+assert.equal(diffKind('mov eax,0x10', 'mov eax,0x18'), 'hex-immediate', 'diffKind self-test: immediate-only');
+assert.equal(diffKind('xchg DWORD PTR [rdi],esi', 'mov DWORD PTR [rdi],esi'), 'structural', 'diffKind self-test: different mnemonic');
+assert.equal(diffKind('movabs rax,0x1234567890abcdef', 'movabs rax,0xfeedfacefeedface'), 'hex-immediate', 'diffKind self-test: 64-bit immediate');
+assert.equal(diffKind('mov rax,QWORD PTR [rdi+0x10]', 'mov rax,QWORD PTR [rdi+0x18]'), 'hex-immediate', 'diffKind self-test: struct-offset-only is still hex-token-level');
+assert.equal(diffKind('call 1a2b <f>', 'call 1c40 <g>'), 'structural', 'diffKind self-test: different call targets differ in more than hex');
+assert.equal(diffKind('lea rax,[rip+0x10] # 5000 <REG+0x10>', 'lea rax,[rip+0x10] # 5000 <REG+0x18>'), 'hex-immediate', 'diffKind self-test: comment-address token stripped');
+assert.equal(diffKind('call 1a2b <f>', 'call 1a2b <g>'), 'structural', 'diffKind self-test: same address, different symbol is structural');
+const bigA = Array.from({ length: 40 }, (_, i) => `  i${i}: base line ${i}`).join('\n');
+const bigB = Array.from({ length: 40 }, (_, i) => `  i${i}: head line ${i}`).join('\n');
+const bigOps = diffLines(bigA, bigB).filter((o) => o.t !== 'same');
+const bigEmitCap = 30;
+const bigEmitted = Math.min(bigOps.length, bigEmitCap) + (bigOps.length > bigEmitCap ? 1 : 0);
+assert.ok(bigOps.length > 30, 'diffLines self-test: synthetic case exceeds the cap');
+assert.ok(bigEmitted <= bigEmitCap + 1, 'diff-detail self-test: emitted lines stay within cap + marker');
+assert.ok(bigOps.length > bigEmitCap, 'diff-detail self-test: truncation marker required');
+console.log(`[ghost-zero-cost] diff-diagnostics self-test OK (diffLines + diffKind + cap)`);
 
 const L = (...pairs) => new Map(pairs);
 const ok = ['perf(runtime): G1-K1 — drain'];
@@ -323,6 +442,31 @@ try {
   assert.equal(summary.identical + summary.differing + summary.only_base + summary.only_head, names.size, 'function accounting');
   console.log(JSON.stringify(summary, null, 2));
   for (const n of [...differing, ...onlyBase, ...onlyHead].slice(0, 20)) console.log(`DIFF ${n}`);
+  // Diagnostics only: show the mechanism of the first few differing functions.
+  const DETAIL_CAP = 30, DETAIL_FNS = 5;
+  for (const n of differing.slice(0, DETAIL_FNS)) {
+    console.log(`DIFFDETAIL ${n}`);
+    const ops = diffLines(a.get(n), b.get(n));
+    let emitted = 0, dels = 0, adds = 0, hexOnly = 0, structural = 0;
+    for (const { t, s } of ops) {
+      if (t === 'del') dels++; else if (t === 'add') adds++;
+      else continue;
+      if (emitted < DETAIL_CAP) { console.log(`${t === 'del' ? '-' : '+'} ${s}`); emitted++; }
+    }
+    if (dels + adds > emitted) console.log(`... truncated (${dels + adds - emitted} more diff lines)`);
+    // Pair dels with adds one-to-one (sorted multisets, so counts track);
+    // leftover of either side counts as structural.
+    const pairs = Math.min(dels, adds);
+    let di = 0, ai = 0;
+    for (let p = 0; p < pairs; p++) {
+      while (ops[di].t !== 'del') di++;
+      while (ops[ai].t !== 'add') ai++;
+      if (diffKind(ops[di].s, ops[ai].s) === 'hex-immediate') hexOnly++; else structural++;
+      di++; ai++;
+    }
+    structural += Math.abs(dels - adds);
+    console.log(`DIFFSTAT ${n}: differing pairs ${pairs}, hex-immediate-only ${hexOnly}, structural ${structural}`);
+  }
   if (out) writeFileSync(out, JSON.stringify(summary, null, 2) + '\n');
   const textSame = summary.differing === 0 && summary.only_base === 0 && summary.only_head === 0;
   assert.equal(textSame, summary.text_sha256_base === summary.text_sha256_head, 'per-function verdict agrees with the whole-text hash');

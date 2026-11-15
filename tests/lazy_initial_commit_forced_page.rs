@@ -198,7 +198,7 @@ mod forced_page {
     #[test]
     fn lazy_initial_commit_call_sites_survive_a_forced_64k_page() {
         // Mirrors the mock suite's SERIAL discipline
-        // (crates/aligned-vmem/tests/smoke.rs): poisoned-lock-tolerant, so a
+        // (crates/platform/aligned-vmem/tests/smoke.rs): poisoned-lock-tolerant, so a
         // panicking prior holder does not poison this run.
         let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
 

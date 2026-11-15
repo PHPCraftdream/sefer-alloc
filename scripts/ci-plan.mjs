@@ -69,11 +69,11 @@ export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false
     if (p.startsWith('scripts/')) return new Set(GROUPS.filter(group => group !== 'full'));
     return new Set(['fast']);
   }
-  let m = /^crates\/([^/]+)\//.exec(p);
+  let m = /^crates\/([^/]+)\/([^/]+)\//.exec(p);
   if (m) {
     const g = new Set(['fast', 'seam']); // the root crate depends on every workspace crate
-    if (CRATE_GROUPS[m[1]]) g.add(CRATE_GROUPS[m[1]]);
-    if (OS_CRATES.has(m[1])) g.add('os');
+    if (CRATE_GROUPS[m[2]]) g.add(CRATE_GROUPS[m[2]]);
+    if (OS_CRATES.has(m[2])) g.add('os');
     return g;
   }
   if (/^src\/alloc_core\/platform\//.test(p)) return new Set(['fast', 'seam', 'os']);
@@ -267,9 +267,9 @@ function selftest() {
   // dependency / toolchain surface: fast+seam+os (MSRV, cross-OS).
   eq(on(P(['Cargo.lock'])), 'always,fast,os,seam', 'lock');
   // workspace crates: own gates + root dependents (+os for platform crates).
-  eq(on(P(['crates/sefer-region/src/lib.rs'])), 'always,crate_sefer_region,fast,seam', 'crate');
-  eq(on(P(['crates/aligned-vmem/src/lib.rs'])), 'always,crate_aligned_vmem,fast,os,seam', 'platform crate');
-  eq(on(P(['crates/proc-probe/src/lib.rs', 'crates/proc-memstat/src/lib.rs'])), 'always,crate_proc,fast,os,seam', 'proc');
+  eq(on(P(['crates/containers/sefer-region/src/lib.rs'])), 'always,crate_sefer_region,fast,seam', 'crate');
+  eq(on(P(['crates/platform/aligned-vmem/src/lib.rs'])), 'always,crate_aligned_vmem,fast,os,seam', 'platform crate');
+  eq(on(P(['crates/platform/proc-probe/src/lib.rs', 'crates/platform/proc-memstat/src/lib.rs'])), 'always,crate_proc,fast,os,seam', 'proc');
   eq(on(P(['crates/brand-new/src/lib.rs'])), 'always,fast,seam', 'unknown crate is conservative');
   // scripts: matrix/manifest scripts feed fast/seam; other scripts are `always`.
   eq(on(P(['scripts/check-matrix.mjs'])), 'always,fast', 'check-matrix');
@@ -299,12 +299,12 @@ function selftest() {
   // other workflows under .github do not select ci.yml groups.
   eq(on(P(['.github/workflows/r20-gates.yml'])), 'always', 'other workflow');
   // push to main: heavy groups are left to the nightly run, the rest follows the diff.
-  const push = P(['src/registry/heap_registry/claim.rs', 'crates/numa-shim/src/lib.rs'], 'push');
+  const push = P(['src/registry/heap_registry/claim.rs', 'crates/platform/numa-shim/src/lib.rs'], 'push');
   eq(on(push), 'always,crate_numa_shim,fast', 'push drops seam/os');
   for (const g of heavy) eq(push[g], false, `push ${g}`);
   eq(on(P(['docs/a.md'], 'push')), 'always', 'push docs');
   // an ordinary PR never silently drops a group a path asked for.
-  const mixed = P(['docs/a.md', 'tests/x.rs', 'src/lib.rs', 'crates/numa-shim/src/lib.rs']);
+  const mixed = P(['docs/a.md', 'tests/x.rs', 'src/lib.rs', 'crates/platform/numa-shim/src/lib.rs']);
   for (const g of ['always', 'fast', 'seam', 'os', 'crate_numa_shim']) eq(mixed[g], true, `mixed ${g}`);
   // Cargo.toml: only [[bench]]/[[example]]/[[test]] edits are fast-only; anything else keeps the full surface.
   const benchAdd = '@@ -1 +1,5 @@\n+\n+[[bench]]\n+name = "x"\n+harness = false\n+required-features = ["a"]\n';

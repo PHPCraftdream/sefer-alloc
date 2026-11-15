@@ -121,4 +121,4 @@ runs:
     - name: A/B wall-clock harness template still compiles (static gate)
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
-      run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode build-check
+      run: node crates/primitives/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode build-check

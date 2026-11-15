@@ -183,8 +183,12 @@ function walk(dir, out) {
 
 export function sourceFiles() {
   const files = walk('src', []);
-  for (const c of readdirSync(join(REPO_ROOT, 'crates'))) {
-    try { if (statSync(join(REPO_ROOT, 'crates', c, 'src')).isDirectory()) walk(`crates/${c}/src`, files); } catch { /* no src */ }
+  for (const theme of readdirSync(join(REPO_ROOT, 'crates'))) {
+    let crates = [];
+    try { crates = readdirSync(join(REPO_ROOT, 'crates', theme)); } catch { /* no crates dir */ }
+    for (const c of crates) {
+      try { if (statSync(join(REPO_ROOT, 'crates', theme, c, 'src')).isDirectory()) walk(`crates/${theme}/${c}/src`, files); } catch { /* no src */ }
+    }
   }
   return files.sort();
 }

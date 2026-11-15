@@ -494,7 +494,7 @@ For `no_std` + `alloc` targets, disable the `std` feature:
 default build is `#![forbid(unsafe_code)]` at the top; the only
 `unsafe` comes from `slotmap`'s core wrapped by a thin typed
 membrane. No version-scoped audit record for `slotmap` is tracked by
-this project (see `crates/sefer-region/README.md` "## Safety").
+this project (see `crates/containers/sefer-region/README.md` "## Safety").
 
 `SeferAlloc` (the `#[global_allocator]` below) is a separate, OS-backed
 segment allocator: ordinarily SEGMENT-aligned (4 MiB) OS-backed spans,
@@ -716,16 +716,16 @@ details but independently useful libraries:
 
 ```
 sefer-alloc
- ├── sefer-region       (crates/sefer-region)             — typed handle store (Handle<T>/Region<T>)
- ├── aligned-vmem       (crates/aligned-vmem)               — OS virtual-memory aperture           (feature: alloc-core)
- ├── numa-shim          (crates/numa-shim)               — NUMA detection + binding             (feature: numa-aware)
- ├── malloc-bench-rs    (crates/malloc-bench-rs)       — portable GlobalAlloc bench harness   (standalone, dev-only)
- ├── once-ptr-cell      (crates/once-ptr-cell)      — lazy CAS-published pointer cell      (feature: alloc-core)
- ├── size-classes       (crates/size-classes)       — const-built size-class tables + lookup (feature: alloc-core)
- ├── tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack          (feature: alloc-global)
- ├── globalalloc-model  (crates/globalalloc-model)  — differential op-stream test harness   (standalone, dev-only)
- ├── proc-memstat       (crates/proc-memstat)       — same-instant RSS / commit self-probe (standalone, dev-only)
- └── proc-probe         (crates/proc-probe)         — RESULT key=value stdout protocol     (standalone, dev-only)
+ ├── sefer-region       (crates/containers/sefer-region)             — typed handle store (Handle<T>/Region<T>)
+ ├── aligned-vmem       (crates/platform/aligned-vmem)               — OS virtual-memory aperture           (feature: alloc-core)
+ ├── numa-shim          (crates/platform/numa-shim)               — NUMA detection + binding             (feature: numa-aware)
+ ├── malloc-bench-rs    (crates/bench/malloc-bench-rs)       — portable GlobalAlloc bench harness   (standalone, dev-only)
+ ├── once-ptr-cell      (crates/primitives/once-ptr-cell)      — lazy CAS-published pointer cell      (feature: alloc-core)
+ ├── size-classes       (crates/primitives/size-classes)       — const-built size-class tables + lookup (feature: alloc-core)
+ ├── tagged-index-stack (crates/primitives/tagged-index-stack) — ABA-tagged free-index stack          (feature: alloc-global)
+ ├── globalalloc-model  (crates/verify/globalalloc-model)  — differential op-stream test harness   (standalone, dev-only)
+ ├── proc-memstat       (crates/platform/proc-memstat)       — same-instant RSS / commit self-probe (standalone, dev-only)
+ └── proc-probe         (crates/platform/proc-probe)         — RESULT key=value stdout protocol     (standalone, dev-only)
 ```
 
 `malloc-bench-rs`, `globalalloc-model`, `proc-memstat`, and `proc-probe` are
@@ -774,16 +774,16 @@ the line to begin with the attribute, not a `//` prefix.
 
 | Crate | Path | Unsafe story |
 |---|---|---|
-| `aligned-vmem` | `crates/aligned-vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture (`mmap`/`VirtualAlloc`/decommit); single responsibility, small, audit in isolation |
-| `numa-shim` | `crates/numa-shim/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim (`mbind`/`VirtualAllocExNuma`); single responsibility, small, audit in isolation |
-| `malloc-bench-rs` | `crates/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
-| `once-ptr-cell` | `crates/once-ptr-cell/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe impl Send/Sync` for the `AtomicPtr`-backed cell + `NonNull::new_unchecked`; every site has `# Safety` / `// SAFETY:` |
-| `globalalloc-model` | `crates/globalalloc-model/` | `#![allow(unsafe_code)]` — two documented reasons: (a) the `unsafe trait RawAllocator` (its impls must return valid pointers for the requested layout), every impl + call carrying `// SAFETY:`; (b) `DoubleFreeOk::new`, the unforgeable consent token for the M2 double-free oracle, an `unsafe fn` declaration carrying its own `# Safety` contract |
-| `proc-memstat` | `crates/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
-| `sefer-region` | `crates/sefer-region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/sefer-region/README.md` "## Safety") |
-| `size-classes` | `crates/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |
-| `tagged-index-stack` | `crates/tagged-index-stack/` | `#![deny(unsafe_code)]` with ten item-scoped allows in `src/imp.rs` (nine production regions plus one `--cfg loom` test forwarder). Its unsafe trait/bridge and push boundaries state caller and implementor obligations; the library does not use raw-pointer dereferences for its packed-head protocol. |
-| `proc-probe` | `crates/proc-probe/` | `#![forbid(unsafe_code)]` — pure protocol + re-export crate; the OS FFI stays in `proc-memstat` |
+| `aligned-vmem` | `crates/platform/aligned-vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture (`mmap`/`VirtualAlloc`/decommit); single responsibility, small, audit in isolation |
+| `numa-shim` | `crates/platform/numa-shim/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim (`mbind`/`VirtualAllocExNuma`); single responsibility, small, audit in isolation |
+| `malloc-bench-rs` | `crates/bench/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
+| `once-ptr-cell` | `crates/primitives/once-ptr-cell/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe impl Send/Sync` for the `AtomicPtr`-backed cell + `NonNull::new_unchecked`; every site has `# Safety` / `// SAFETY:` |
+| `globalalloc-model` | `crates/verify/globalalloc-model/` | `#![allow(unsafe_code)]` — two documented reasons: (a) the `unsafe trait RawAllocator` (its impls must return valid pointers for the requested layout), every impl + call carrying `// SAFETY:`; (b) `DoubleFreeOk::new`, the unforgeable consent token for the M2 double-free oracle, an `unsafe fn` declaration carrying its own `# Safety` contract |
+| `proc-memstat` | `crates/platform/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
+| `sefer-region` | `crates/containers/sefer-region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/containers/sefer-region/README.md` "## Safety") |
+| `size-classes` | `crates/primitives/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |
+| `tagged-index-stack` | `crates/primitives/tagged-index-stack/` | `#![deny(unsafe_code)]` with ten item-scoped allows in `src/imp.rs` (nine production regions plus one `--cfg loom` test forwarder). Its unsafe trait/bridge and push boundaries state caller and implementor obligations; the library does not use raw-pointer dereferences for its packed-head protocol. |
+| `proc-probe` | `crates/platform/proc-probe/` | `#![forbid(unsafe_code)]` — pure protocol + re-export crate; the OS FFI stays in `proc-memstat` |
 
 **Internal sefer-alloc seams — tier 1 (module-level)** — any `unsafe` token
 not covered by a tier-1 module OR a tier-2 item-level allow (see below) is a
@@ -884,10 +884,10 @@ item-scoped regions.
 | [`src/registry/heap_core_xthread/route_pin_cache.rs`](src/registry/heap_core_xthread/route_pin_cache.rs) | 1 | `publish_cached` — the per-thread cached-pin publication boundary: publishes through a still-linked cached pin without a directory lookup (the Release `linked = false` store on unlink under the shard lock is what makes the cached path sound). |
 | [`src/registry/heap_core_xthread/sidecar_drain.rs`](src/registry/heap_core_xthread/sidecar_drain.rs) | 2 | Test-only sidecar publication and synthetic detached-record reclaim boundaries. |
 | [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 10 | Exclusive current-heap trim and diagnostic delegation sites. |
-| [`crates/tagged-index-stack/src/imp.rs`](crates/tagged-index-stack/src/imp.rs) | 10 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` trait and bridge make all three hooks `unsafe fn`; the bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. The shared `push_index_impl` and `pop_index_impl` are the caller-side proof regions, while `StackOps::push_index` and `ArrayIndexStack::push` carry the public unsafe boundaries; the direct `ArrayIndexStack` sealed-hook implementation is the ninth region. The tenth is `store_next_for_test`, a `--cfg loom`-only raw link-cell write forwarder used solely by the loom tiny-tag counterfactual (an `unsafe fn`, not a safe one, since misuse can double-issue an index). The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
-| [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally; materialized by `scripts/tis_p3_ab_runner.mjs`. |
-| [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
-| [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
+| [`crates/primitives/tagged-index-stack/src/imp.rs`](crates/primitives/tagged-index-stack/src/imp.rs) | 10 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` trait and bridge make all three hooks `unsafe fn`; the bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. The shared `push_index_impl` and `pop_index_impl` are the caller-side proof regions, while `StackOps::push_index` and `ArrayIndexStack::push` carry the public unsafe boundaries; the direct `ArrayIndexStack` sealed-hook implementation is the ninth region. The tenth is `store_next_for_test`, a `--cfg loom`-only raw link-cell write forwarder used solely by the loom tiny-tag counterfactual (an `unsafe fn`, not a safe one, since misuse can double-issue an index). The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
+| [`crates/primitives/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/primitives/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally; materialized by `scripts/tis_p3_ab_runner.mjs`. |
+| [`crates/primitives/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/primitives/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
+| [`crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **29** tier-1 module-level seams (23 in
 `src/`, 6 in `crates/`) plus **112** tier-2 item-scoped allows across **34**
@@ -1617,7 +1617,7 @@ and support modules. Nested helpers and fixtures are not separate integration ta
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (107 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (30 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
+| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (30 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs` |
 | `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri-matrix.mjs` is the single manifest of Miri targets (GREEN, EXPECTED-RED with its card, WAIVED); `scripts/miri.mjs` runs it and `scripts/verify-miri-target-wiring.mjs` checks that every Miri test file is classified and wired in CI; it includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
 | ThreadSanitizer | Real cross-thread races in selected binaries | `scripts/tsan.mjs` / CI; old ring-era results are not cutover acceptance |

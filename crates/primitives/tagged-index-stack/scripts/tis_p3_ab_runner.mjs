@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // tis_p3_ab_runner.mjs — measurement driver for the link-ordering/CAS A/B study of
-// `crates/tagged-index-stack`:
+// `crates/primitives/tagged-index-stack`:
 //   Link ordering: RegistryShapedStorage hook Acquire/Release vs Relaxed.
 //   CAS strength/order: weak CAS and pop-success Relaxed are codegen negative
 //         controls; store_elided is a scratch-only push-loop candidate.
@@ -57,17 +57,17 @@ import { fileURLToPath } from 'node:url';
 const scriptPath = fileURLToPath(import.meta.url);
 const scriptDir = path.dirname(scriptPath);
 // repo root is three levels up from this script
-// (<repoRoot>/crates/tagged-index-stack/scripts/).
-const repoRoot = path.resolve(scriptDir, '..', '..', '..');
+// (<repoRoot>/crates/primitives/tagged-index-stack/scripts/).
+const repoRoot = path.resolve(scriptDir, '..', '..', '..', '..');
 const repoRootRealPath = fs.realpathSync(repoRoot);
 const docsPerfDir = path.join(repoRoot, 'docs', 'perf');
 const SOURCE_INPUT_RELATIVE_PATHS = Object.freeze([
-  'crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs',
-  'crates/tagged-index-stack/src/lib.rs',
-  'crates/tagged-index-stack/src/imp.rs',
-  'crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl',
-  'crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs',
-  'crates/tagged-index-stack/scripts/tis_p3_ab/scratch_Cargo.toml.tmpl',
+  'crates/primitives/tagged-index-stack/scripts/tis_p3_ab_runner.mjs',
+  'crates/primitives/tagged-index-stack/src/lib.rs',
+  'crates/primitives/tagged-index-stack/src/imp.rs',
+  'crates/primitives/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl',
+  'crates/primitives/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs',
+  'crates/primitives/tagged-index-stack/scripts/tis_p3_ab/scratch_Cargo.toml.tmpl',
 ]);
 // Repository scratch root: the only tree this runner creates or deletes under
 // the checkout. Created FRESH by each top-level mode invocation via mkdtemp
@@ -924,7 +924,7 @@ function captureSnapshotContext(args, readBytes) {
     target: args.target,
     mode: args.mode,
     anchors: Object.fromEntries(Object.entries(ANCHORS).map(([k, v]) => [k, { find: v.find, replace: v.replace }])),
-    driver: 'crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs',
+    driver: 'crates/primitives/tagged-index-stack/scripts/tis_p3_ab_runner.mjs',
   };
 }
 
@@ -1245,9 +1245,9 @@ function extractFunctions(asmText, target) {
 // LL/SC lowering where weak differs from strong, these asserts FAIL loudly
 // and make the CAS lowering change visible instead of silently hiding it.
 function modeCodegen(args, header) {
-  const impSrc = snapshotText(header, 'crates/tagged-index-stack/src/imp.rs');
-  const libSrc = snapshotText(header, 'crates/tagged-index-stack/src/lib.rs');
-  const wrapperTemplate = snapshotText(header, 'crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl');
+  const impSrc = snapshotText(header, 'crates/primitives/tagged-index-stack/src/imp.rs');
+  const libSrc = snapshotText(header, 'crates/primitives/tagged-index-stack/src/lib.rs');
+  const wrapperTemplate = snapshotText(header, 'crates/primitives/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl');
   verifyAllAnchorsOnce(impSrc);
 
   const scratchBase = makeScratchRoot();
@@ -1627,10 +1627,10 @@ function modeCodegen(args, header) {
 
 // ── Wallclock mode ──────────────────────────────────────────────────────────
 function modeWallclock(args, header) {
-  const impSrc = snapshotText(header, 'crates/tagged-index-stack/src/imp.rs');
-  const libSrc = snapshotText(header, 'crates/tagged-index-stack/src/lib.rs');
-  const cargoTmpl = snapshotText(header, 'crates/tagged-index-stack/scripts/tis_p3_ab/scratch_Cargo.toml.tmpl');
-  const harnessTemplate = snapshotText(header, 'crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs');
+  const impSrc = snapshotText(header, 'crates/primitives/tagged-index-stack/src/imp.rs');
+  const libSrc = snapshotText(header, 'crates/primitives/tagged-index-stack/src/lib.rs');
+  const cargoTmpl = snapshotText(header, 'crates/primitives/tagged-index-stack/scripts/tis_p3_ab/scratch_Cargo.toml.tmpl');
+  const harnessTemplate = snapshotText(header, 'crates/primitives/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs');
   verifyAllAnchorsOnce(impSrc);
   if (args.target !== header.rustcHost) {
     fail(`--mode wallclock builds natively for rustc host ${header.rustcHost}; --target must match it exactly (got ${JSON.stringify(args.target)})`);
@@ -1908,11 +1908,11 @@ function modeWallclock(args, header) {
 // Both Cargo builds name the verified rustc host explicitly. The same snapshot
 // also materializes the independent codegen wrapper for metadata-only checking.
 function modeBuildCheck(args, snapshot) {
-  const impSrc = snapshotText(snapshot, 'crates/tagged-index-stack/src/imp.rs');
-  const libSrc = snapshotText(snapshot, 'crates/tagged-index-stack/src/lib.rs');
-  const cargoTmpl = snapshotText(snapshot, 'crates/tagged-index-stack/scripts/tis_p3_ab/scratch_Cargo.toml.tmpl');
-  const harnessTmpl = snapshotText(snapshot, 'crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs');
-  const codegenWrapperTmpl = snapshotText(snapshot, 'crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl');
+  const impSrc = snapshotText(snapshot, 'crates/primitives/tagged-index-stack/src/imp.rs');
+  const libSrc = snapshotText(snapshot, 'crates/primitives/tagged-index-stack/src/lib.rs');
+  const cargoTmpl = snapshotText(snapshot, 'crates/primitives/tagged-index-stack/scripts/tis_p3_ab/scratch_Cargo.toml.tmpl');
+  const harnessTmpl = snapshotText(snapshot, 'crates/primitives/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs');
+  const codegenWrapperTmpl = snapshotText(snapshot, 'crates/primitives/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl');
   verifyAllAnchorsOnce(impSrc);
   const rustcVersion = runCapture('rustc', ['--version', '--verbose']).trim();
   const rustcHost = rustcHostFromVerbose(rustcVersion);

@@ -21,7 +21,7 @@ runs:
           exit 0
         fi
         git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE="$HEAD_SHA^"
-        if git diff --name-only "$BASE" "$HEAD_SHA" | grep -qE '^(scripts/(j13b_.*|paired-ab-.*|j13_limited_report)\.mjs|examples/(g1_j13b_.*|g1_big_judge\.rs)|examples/_shared/.*|tests/(j13b_.*|g1_big_study_.*|j13_limited_report_fixtures)\.(mjs|rs)|crates/aligned-vmem/src/.*|Cargo\.toml|docs/perf/J13_LIMITED_(HARNESS_USAGE|STUDY_PREREG)\.md|docs/perf/j13_limited_cells/[^/]+\.json|\.github/workflows/ci\.yml|\.github/actions/ci-j13b-judge-preparation/action\.yml)$'; then
+        if git diff --name-only "$BASE" "$HEAD_SHA" | grep -qE '^(scripts/(j13b_.*|paired-ab-.*|j13_limited_report)\.mjs|examples/(g1_j13b_.*|g1_big_judge\.rs)|examples/_shared/.*|tests/(j13b_.*|g1_big_study_.*|j13_limited_report_fixtures)\.(mjs|rs)|crates/platform/aligned-vmem/src/.*|Cargo\.toml|docs/perf/J13_LIMITED_(HARNESS_USAGE|STUDY_PREREG)\.md|docs/perf/j13_limited_cells/[^/]+\.json|\.github/workflows/ci\.yml|\.github/actions/ci-j13b-judge-preparation/action\.yml)$'; then
           echo "run=true" >> "$GITHUB_OUTPUT"
         fi
     - if: steps.paths.outputs.run == 'true'

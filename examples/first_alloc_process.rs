@@ -45,7 +45,7 @@
 //! not trimmed by the OS) confirming the first-touch pages were made resident.
 //!
 //! `commit_*_kib` is a SEPARATE axis from RSS (R6-OPT-A1, radical_optimization_
-//! review §4 P0-2 / §5.5 item 9 / §6 Stage A.3): on Windows, `crates/aligned-vmem`
+//! review §4 P0-2 / §5.5 item 9 / §6 Stage A.3): on Windows, `crates/platform/aligned-vmem`
 //! commits the FULL exact size of the Registry + inline `HeapOverflow` array in
 //! one `VirtualAlloc(MEM_COMMIT)` call, which shows up as Windows commit charge
 //! (`PagefileUsage`) even though it is largely demand-zero and therefore
@@ -58,7 +58,7 @@
 //! ## Platform honesty
 //!
 //! RSS, commit charge, and peak RSS are read from the `proc-probe` crate's
-//! re-export of `proc-memstat`'s `snapshot()` (`crates/proc-memstat`), which
+//! re-export of `proc-memstat`'s `snapshot()` (`crates/platform/proc-memstat`), which
 //! holds the OS FFI in ONE audited place (the readers used to be triplicated in
 //! this file); the `RESULT` lines are emitted via `proc_probe::emit_*`:
 //! - **Linux:** `/proc/self/statm` resident/size pages × page size, plus
@@ -118,7 +118,7 @@ use sefer_alloc::SeferAlloc;
 // RSS / commit-charge / peak-RSS probes — thin KiB wrappers over the
 // `proc-probe` crate's re-export of `proc-memstat`'s same-instant `snapshot()`
 // (bytes). The OS FFI that used to be triplicated in this file now lives in ONE
-// place (`crates/proc-memstat`, reached via `proc-probe`'s "measure + report"
+// place (`crates/platform/proc-memstat`, reached via `proc-probe`'s "measure + report"
 // re-export). The `RESULT` lines are emitted via `proc_probe::emit_*` (see
 // `main`). Printed line names/units are unchanged.
 // ---------------------------------------------------------------------------

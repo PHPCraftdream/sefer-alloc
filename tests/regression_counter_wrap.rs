@@ -16,7 +16,7 @@
 //! tag 32 → 48, the 48-bit `2^48` wrap boundary — moved to the extracted
 //! `tagged-index-stack` crate in CRATE-P7; the crate-side
 //! `tests/regression_counter_wrap.rs` was later retired and its two tests
-//! folded into `crates/tagged-index-stack/tests/stack_unit.rs`
+//! folded into `crates/primitives/tagged-index-stack/tests/stack_unit.rs`
 //! (`empty_sentinel_never_collides_with_a_live_index` +
 //! `empty_word_with_running_tag_reads_empty_through_tag_max`), run against the
 //! crate's real `TaggedIndex` packing. The registry's `free_slots` now consumes

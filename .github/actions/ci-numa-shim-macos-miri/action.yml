@@ -35,7 +35,7 @@ runs:
     # smoke.rs platform branches all take the mock arm (task #1325 made
     # them backend-aware, target_os-independent), and the mock's
     # reservation comes from aligned-vmem's own `#[cfg(miri)]` backend
-    # (crates/aligned-vmem/src/os/miri.rs), not a real mmap. Same three
+    # (crates/platform/aligned-vmem/src/os/miri.rs), not a real mmap. Same three
     # sentinels as the non-miri twin above (task #1101 pattern; the task
     # #1070 "Breakage B" vacuous-green hazard): this is the workflow's
     # only miri x mock x feature cell, so a typo'd cfg or dropped feature

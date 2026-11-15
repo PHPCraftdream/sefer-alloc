@@ -61,7 +61,7 @@ runs:
     - name: Check whether this version is already published
       # Distinct concern from cargo-semver-checks above (see that step's
       # comment): this checks whether the version currently in
-      # crates/sefer-region/Cargo.toml is already present in the crates.io
+      # crates/containers/sefer-region/Cargo.toml is already present in the crates.io
       # sparse index, which cargo-semver-checks does not check and a
       # rustdoc-shape-only "no change" verdict can coexist with.
       #
@@ -75,7 +75,7 @@ runs:
       # independent of this step -- `cargo publish` itself rejects an
       # already-taken version at crates.io, so nothing is unguarded by
       # making this informational. Bump the version in
-      # crates/sefer-region/Cargo.toml only when actually preparing a new
+      # crates/containers/sefer-region/Cargo.toml only when actually preparing a new
       # release, not to silence this warning.
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
@@ -86,7 +86,7 @@ runs:
         echo "Local sefer-region version: $version"
         index_json=$(curl -sSf https://index.crates.io/se/fe/sefer-region)
         if echo "$index_json" | jq -e --arg v "$version" 'select(.vers == $v)' >/dev/null; then
-          echo "::warning::sefer-region $version is already published on crates.io. This is expected on ordinary commits after a release -- CI does not block on it (an actual \`cargo publish\` of an already-taken version fails at crates.io itself regardless). Bump the version in crates/sefer-region/Cargo.toml only when preparing an actual new release."
+          echo "::warning::sefer-region $version is already published on crates.io. This is expected on ordinary commits after a release -- CI does not block on it (an actual \`cargo publish\` of an already-taken version fails at crates.io itself regardless). Bump the version in crates/containers/sefer-region/Cargo.toml only when preparing an actual new release."
         else
           echo "OK: sefer-region $version is not yet on crates.io."
         fi

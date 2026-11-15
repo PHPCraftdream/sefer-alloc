@@ -39,9 +39,9 @@ import { readFileSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
 
 async function main() {
-  const vmemDir = `${REPO_ROOT}/crates/aligned-vmem`;
+  const vmemDir = `${REPO_ROOT}/crates/platform/aligned-vmem`;
 
-  // Scan scope (task #1078): ALL of crates/aligned-vmem/src/**. The a4b8e50
+  // Scan scope (task #1078): ALL of crates/platform/aligned-vmem/src/**. The a4b8e50
   // modules-per-file split moved this guard's subject out of src/lib.rs into
   // src/api/*.rs, src/os/*.rs, src/reservation*.rs, ..., and this list had
   // been frozen at the pre-split three files — every drift in the new modules
@@ -59,7 +59,7 @@ async function main() {
   // falsify that record).
   const rsFiles = listRsFilesRecursive(`${vmemDir}/src`).sort();
   if (rsFiles.length === 0) {
-    throw new Error('no .rs files found under crates/aligned-vmem/src — scan surface lost');
+    throw new Error('no .rs files found under crates/platform/aligned-vmem/src — scan surface lost');
   }
   const filePaths = [
     ...rsFiles,

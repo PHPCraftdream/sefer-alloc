@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 description = "Lock-free, allocation-free, no_std free-list of small indices (a slot recycler) with a strictly monotonic, non-wrapping ABA-eliminating tag packed into one atomic word."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
-homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/tagged-index-stack"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/primitives/tagged-index-stack"
 documentation = "https://docs.rs/tagged-index-stack"
 keywords = ["lock-free", "aba", "free-list", "slab", "no-std"]
 categories = ["concurrency", "data-structures", "no-std::no-alloc"]
@@ -28,7 +28,7 @@ exclude = [
 # ship in this crate's published, normalized manifest looking like this
 # crate's own. `loom` and the repository test cfg are the non-standard cfgs
 # this crate's source uses
-# (same pattern as `crates/aligned-vmem/Cargo.toml`'s `[lints.rust]` table).
+# (same pattern as `crates/platform/aligned-vmem/Cargo.toml`'s `[lints.rust]` table).
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(tagged_index_stack_test)'] }
 

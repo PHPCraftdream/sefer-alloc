@@ -382,7 +382,7 @@ jobs:
             echo "If a step was added, removed, or commented out, restore it or reshape this check to the new step layout." >&2
             exit 1
           fi
-          actual=$(ls crates/globalalloc-model/tests/*.rs | xargs -n1 basename | sed 's/\.rs$//' | sort)
+          actual=$(ls crates/verify/globalalloc-model/tests/*.rs | xargs -n1 basename | sed 's/\.rs$//' | sort)
           # PER PASS, not per union (review run 5, P3-2): each pass's two run
           # lines together must name exactly tests/*.rs, so a file added to
           # only one of the two miri configurations fails. Pass 1 = run lines
@@ -398,7 +398,7 @@ jobs:
               | sed -E 's/^--test[= ]//' \
               | sort -u)
             if ! diff <(printf '%s\n' "$listed") <(printf '%s\n' "$actual"); then
-              echo "pass $pass: LEFT = targets named by this pass's two run lines; RIGHT = crates/globalalloc-model/tests/*.rs on disk" >&2
+              echo "pass $pass: LEFT = targets named by this pass's two run lines; RIGHT = crates/verify/globalalloc-model/tests/*.rs on disk" >&2
               echo "Add every new test file to BOTH miri passes (each pass's -Zmiri-ignore-leaks step AND its multi-target step); remove entries when a file is deleted." >&2
               exit 1
             fi

@@ -177,7 +177,7 @@
 //   40. node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs   (task
 //      #1067/F7: exhaustive completeness check that every
 //      `pub fn ...() -> u64` counter accessor in
-//      crates/aligned-vmem/src/bench_internals/ is CALLED by
+//      crates/platform/aligned-vmem/src/bench_internals/ is CALLED by
 //      tests/bench_internals_counters.rs — the hand-maintained list there
 //      claims exhaustiveness and had silently drifted; see that script's
 //      own header)
@@ -319,7 +319,7 @@ function registryBaseline() {
 const EVIDENCE_BASELINE = registryBaseline();
 
 // Task #1142: the feature set docs.rs ACTUALLY builds with, read out of
-// `crates/aligned-vmem/Cargo.toml`'s `[package.metadata.docs.rs]` rather than
+// `crates/platform/aligned-vmem/Cargo.toml`'s `[package.metadata.docs.rs]` rather than
 // hand-copied here. A second hand-maintained copy of that list is a drift
 // surface, and this gate exists precisely because a doc build under the WRONG
 // feature set proves nothing: `--all-features` (the row below this one, and
@@ -331,7 +331,7 @@ const EVIDENCE_BASELINE = registryBaseline();
 // cannot be read: a silently-empty feature list would make this row build the
 // DEFAULT feature set and quietly re-open the same blind spot.
 function docsRsFeatures() {
-  const manifest = join(REPO_ROOT, 'crates', 'aligned-vmem', 'Cargo.toml');
+  const manifest = join(REPO_ROOT, 'crates', 'platform', 'aligned-vmem', 'Cargo.toml');
   const text = readFileSync(manifest, 'utf8');
   const section = text.split('[package.metadata.docs.rs]')[1];
   if (section === undefined) {
@@ -890,12 +890,12 @@ const steps = [
   },
   {
     // task #1067 (F7): the accessor-existence test
-    // (crates/aligned-vmem/tests/bench_internals_counters.rs) imports each
+    // (crates/platform/aligned-vmem/tests/bench_internals_counters.rs) imports each
     // accessor by name — an EXISTENCE check with no completeness direction.
     // R7-3 added windows_large_page_plain_fallback_successes without the
     // test gaining it, and nothing noticed across several rounds of gate
     // runs. This step enumerates EVERY `pub fn ...() -> u64` accessor in
-    // crates/aligned-vmem/src/bench_internals/ and requires each to be
+    // crates/platform/aligned-vmem/src/bench_internals/ and requires each to be
     // CALLED by that test — see the script's own header.
     name: 'verify-aligned-vmem-bench-internals-exhaustive (vmem accessor completeness)',
     cmd: 'node',

@@ -46,7 +46,7 @@
 //! 5808, 6144, 7264, 8192 — giving classes 0, 25, 26, 30 above; the 49th
 //! and last entry (class 48) is 258752. Cross-checked against the
 //! `size-classes` crate's own pinned fixtures
-//! (`crates/size-classes/tests/common/mod.rs`: classes 6/14/18/22/36 =
+//! (`crates/primitives/size-classes/tests/common/mod.rs`: classes 6/14/18/22/36 =
 //! 144/608/1200/2368/17760, `SEFER_MAX` = 258752, `SEFER_L` = 16173).
 
 #![cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]

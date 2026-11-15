@@ -82,7 +82,7 @@ fn release_graph_has_no_fault_injection_and_test_graph_keeps_it() {
 /// Acceptance criterion 3 (R2-19 instrumentation leg): on vmem's real
 /// commit path, the ONLY consult of the fault hook — the only commit-path
 /// taker of the `FAULT_STATE` lock (`should_fail_commit` in
-/// `crates/aligned-vmem/src/fault_injection.rs`) — sits directly under the
+/// `crates/platform/aligned-vmem/src/fault_injection.rs`) — sits directly under the
 /// `#[cfg(feature = "fault-injection")]` gate, and the hook module itself
 /// is gated the same way. Combined with the release-graph assertion above
 /// (feature absent => module and call site are compiled out entirely, per
@@ -90,7 +90,7 @@ fn release_graph_has_no_fault_injection_and_test_graph_keeps_it() {
 /// `FAULT_STATE` lock is taken on the release commit path.
 #[test]
 fn commit_path_fault_hook_call_site_is_cfg_gated() {
-    let vmem_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/aligned-vmem/src");
+    let vmem_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/platform/aligned-vmem/src");
 
     let commit_range = fs::read_to_string(vmem_src.join("api/lazy_commit/commit_range.rs"))
         .expect("read commit_range.rs");

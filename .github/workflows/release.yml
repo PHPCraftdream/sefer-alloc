@@ -44,7 +44,7 @@ name: Release
 #   or on any other workspace member (`loom` is their only non-dev
 #   dependency for two of them, and it's a `cfg(loom)`-gated crates.io
 #   dependency, not a workspace path dep) -- verify with
-#   `grep -A3 '^\[dependencies\]' crates/{once-ptr-cell,size-classes,tagged-index-stack}/Cargo.toml`.
+#   `grep -A3 '^\[dependencies\]' crates/primitives/{once-ptr-cell,size-classes,tagged-index-stack}/Cargo.toml`.
 #   So there is no publish-ordering constraint among the three, or relative
 #   to `aligned-vmem`/`sefer-region`/`numa-shim`. They DO still need to
 #   publish before `sefer-alloc` itself, same as the other member crates
@@ -265,7 +265,7 @@ jobs:
         # Task #1102 CORRECTS this block's original premise: "None of the
         # member crates (aligned-vmem, sefer-region, malloc-bench-rs,
         # numa-shim) has a per-crate changelog yet" stopped being true when
-        # `crates/aligned-vmem/CHANGELOG.md` landed (it predates the guard's
+        # `crates/platform/aligned-vmem/CHANGELOG.md` landed (it predates the guard's
         # own skip branch and ships in `cargo package -p aligned-vmem --list`).
         #
         # Task #1115 CORRECTS the directory resolution: instead of assuming
@@ -294,7 +294,7 @@ jobs:
           fi
           if [[ ! -f "$CHANGELOG" ]]; then
             echo "::error::CHANGELOG not found at $CHANGELOG" >&2
-            echo "::error::Either add crates/$(basename "$(dirname "$CHANGELOG")")/CHANGELOG.md or update this guard" >&2
+            echo "::error::Either add $(realpath --relative-to=. "$(dirname "$CHANGELOG")")/CHANGELOG.md or update this guard" >&2
             exit 1
           fi
           VERSION='${{ steps.version.outputs.version }}'

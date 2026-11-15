@@ -94,12 +94,12 @@ models or workloads were executed.
 | `fast` | `src/**`, `crates/**`, `tests/**`, `benches/**`, `examples/**`, `fuzz/**`, `Cargo.*`, build scripts (`check-matrix`, `run-check-matrix`, `lib`, `check-all`), and any unrecognised path |
 | `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests, the actual-source owner, operation core, persistent actors and training guard (`examples/_shared/j13b_owned_block.rs`, `examples/_shared/j13b_window_kernel.rs`, `examples/_shared/j13b_payload_actors.rs`, `examples/_shared/j13b_owner_training.rs`), and the OS/model boundary producer `examples/_shared/j13b_os_probe.rs` and its adaptive window executor `examples/_shared/j13b_adaptive_windows.rs` |
 | `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**`, tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`), and `examples/_shared/j13b_os_probe.rs` and its adaptive window executor `examples/_shared/j13b_adaptive_windows.rs` |
-| `crate_*` | `crates/<name>/**`: the gates of that one workspace crate (its dependents also get `fast`+`seam`) |
+| `crate_*` | `crates/<theme>/<name>/**`: the gates of that one workspace crate (its dependents also get `fast`+`seam`) |
 | everything | `schedule`, `workflow_dispatch`, and a `CI: full` trailer in the message of any commit of the range (PR: base..merge commit; push: before..sha) |
 
 `j13b-judge-preparation` is in `always` but is not full CI: the job itself starts on every change, yet its
 Node and cargo steps are skipped unless a J13b path changed (`scripts/j13b_*.mjs`, `examples/_shared/**`,
-`examples/g1_j13b_*.rs`, `tests/j13b_*.{mjs,rs}`, `crates/aligned-vmem/src/**`, `Cargo.toml`, `.github/workflows/ci.yml`) or the run is a
+`examples/g1_j13b_*.rs`, `tests/j13b_*.{mjs,rs}`, `crates/platform/aligned-vmem/src/**`, `Cargo.toml`, `.github/workflows/ci.yml`) or the run is a
 schedule/manual dispatch.
 
 A change to `.github/workflows/ci.yml` or `scripts/ci-plan.mjs` selects `fast` (the planner self-test runs in
@@ -161,7 +161,7 @@ summary and to the artifact `test-selection`. Rules, all conservative (anything 
 
 - a full run (`CI: full`, schedule, dispatch) selects all;
 - `Cargo.toml`, `Cargo.lock`, `build.rs`, `.cargo/**`, toolchain and lint configs select all;
-- a changed test target selects itself; a changed `src/**`, `crates/*/src/**` or `tests/support/**` file selects every
+- a changed test target selects itself; a changed `src/**`, `crates/*/*/src/**` or `tests/support/**` file selects every
   test whose mapped set, in any row, contains it; `src/kani_proofs.rs` (compiled by no test) selects none;
 - a Rust or `tests/` file in no mapped set (a new file, a cfg'd-out file, a fixture) selects all;
 - `docs/**`, `scripts/**`, `.github/**` and root `*.md|csv|json|txt` select the tests that read files at run time

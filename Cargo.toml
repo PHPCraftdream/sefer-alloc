@@ -41,21 +41,21 @@ features = ["production"]
 
 # Workspace root. `sefer-alloc` is the root crate AND the workspace; the
 # extracted, independently-publishable building blocks live under `crates/`:
-#   - sefer-region    (crates/sefer-region)       — typed handle store (Handle<T>/Region<T>)
+#   - sefer-region    (crates/containers/sefer-region)       — typed handle store (Handle<T>/Region<T>)
 #                                             #![forbid(unsafe_code)]
-#   - aligned-vmem    (crates/aligned-vmem)         — OS virtual-memory aperture
+#   - aligned-vmem    (crates/platform/aligned-vmem)         — OS virtual-memory aperture
 #                                             #![allow(unsafe_code)], single-purpose, audit-friendly
-#   - numa-shim       (crates/numa-shim)         — dependency-free NUMA detection + binding
+#   - numa-shim       (crates/platform/numa-shim)         — dependency-free NUMA detection + binding
 #                                             #![allow(unsafe_code)], single-purpose, audit-friendly
-#   - malloc-bench-rs (crates/malloc-bench-rs) — portable GlobalAlloc benchmark harness
+#   - malloc-bench-rs (crates/bench/malloc-bench-rs) — portable GlobalAlloc benchmark harness
 #                                             standalone, not in sefer-alloc runtime dep tree
-#   - once-ptr-cell   (crates/once-ptr-cell)— lazy CAS-published pointer cell
+#   - once-ptr-cell   (crates/primitives/once-ptr-cell)— lazy CAS-published pointer cell
 #                                             #![allow(unsafe_code)], single-purpose, real-type loom
-#   - globalalloc-model (crates/globalalloc-model) — differential op-stream harness:
+#   - globalalloc-model (crates/verify/globalalloc-model) — differential op-stream harness:
 #                                             GlobalAlloc-vs-model M1-M4 oracles +
 #                                             proptest/arbitrary front-ends; dev-only
 #                                             test infra, NOT in sefer's runtime dep tree.
-#   - tagged-index-stack (crates/tagged-index-stack) — ABA-tagged Treiber free-index
+#   - tagged-index-stack (crates/primitives/tagged-index-stack) — ABA-tagged Treiber free-index
 #                                             stack (a slot recycler): packed
 #                                             `index | tag` head word, const-generic
 #                                             INDEX_BITS, slot-resident OR owned links.
@@ -65,20 +65,20 @@ features = ["production"]
 #                                             lives" docs for the exact count), no_std,
 #                                             real-type loom. sefer's registry
 #                                             free-index stack (verification-only; not used by sefer runtime).
-#   - proc-memstat    (crates/proc-memstat) — same-instant RSS + commit-charge + peak-RSS
+#   - proc-memstat    (crates/platform/proc-memstat) — same-instant RSS + commit-charge + peak-RSS
 #                                             self-probe (bytes, one snapshot call);
 #                                             #![allow(unsafe_code)] tier-1 seam (Windows
 #                                             K32GetProcessMemoryInfo / macOS task_info /
 #                                             Linux /proc). Dev-only: the three process-probe
 #                                             examples consume it; NOT in sefer's runtime dep tree.
-#   - proc-probe      (crates/proc-probe)    — the `RESULT key=value` stdout protocol every
+#   - proc-probe      (crates/platform/proc-probe)    — the `RESULT key=value` stdout protocol every
 #                                             fresh-process judge shares (`emit`/`emit_u64`/…),
 #                                             re-exporting proc-memstat's `snapshot`/`MemStat`
 #                                             so a probe has ONE "measure + report" dependency.
 #                                             #![forbid(unsafe_code)] (FFI stays in proc-memstat).
 #                                             Dev-only: the process-probe examples emit through it;
 #                                             NOT in sefer's runtime dep tree.
-#   - size-classes    (crates/size-classes)  — const-built size-class table + derived
+#   - size-classes    (crates/primitives/size-classes)  — const-built size-class table + derived
 #                                             O(1) size->class lookup + alignment-jump
 #                                             classifier; #![forbid(unsafe_code)], no_std.
 #                                             sefer's size_classes.rs is a thin shim over it.
@@ -86,13 +86,13 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/aligned-vmem", "crates/numa-shim", "crates/malloc-bench-rs", "crates/sefer-region", "crates/once-ptr-cell", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat", "crates/proc-probe", "crates/ghost-lint"]
+members = ["crates/platform/aligned-vmem", "crates/platform/numa-shim", "crates/bench/malloc-bench-rs", "crates/containers/sefer-region", "crates/primitives/once-ptr-cell", "crates/primitives/size-classes", "crates/verify/globalalloc-model", "crates/primitives/tagged-index-stack", "crates/platform/proc-memstat", "crates/platform/proc-probe", "crates/verify/ghost-lint"]
 resolver = "2"
 
 # Task #711 (once-ptr-cell round-closing review, §C10 drift hazard): `loom`
 # was pinned independently at "0.7" in three manifests (this root package's
-# own `[target.'cfg(loom)'.dev-dependencies]`, `crates/once-ptr-cell/Cargo.toml`,
-# `crates/tagged-index-stack/Cargo.toml`) with nothing keeping them in sync —
+# own `[target.'cfg(loom)'.dev-dependencies]`, `crates/primitives/once-ptr-cell/Cargo.toml`,
+# `crates/primitives/tagged-index-stack/Cargo.toml`) with nothing keeping them in sync —
 # a future minor-version bump to one would silently NOT propagate to the
 # other two, and a divergent version across crates in the same workspace
 # resolves to whichever `cargo` picks, not necessarily what each crate's own
@@ -314,7 +314,7 @@ alloc-decommit = ["alloc-core"]
 # actually needs (a 260 KiB request pays for 4 MiB — ~15x amplification).
 #
 # The segment's ALIGNMENT stays `SEGMENT` (4 MiB) unconditionally — only the
-# physical `usable` byte count shrinks. `crates/aligned-vmem`'s `reserve_aligned(size,
+# physical `usable` byte count shrinks. `crates/platform/aligned-vmem`'s `reserve_aligned(size,
 # align)` already supports `size != align` on both backends (Windows
 # `win_reserve_commit` / Unix `unix_reserve`: both over-reserve
 # `size + align`, then trim to an `align`-aligned `size`-byte span for
@@ -911,7 +911,7 @@ virgin-zero-skip = ["alloc-decommit"]
 # `default-features = false`: sefer-region gates its std-dependent SyncRegion on
 # its own `std` feature, which we re-enable via our own `std` feature so the
 # no_std core compiles without it and the default build gets SyncRegion as before.
-sefer-region = { path = "crates/sefer-region", version = "0.2", default-features = false }
+sefer-region = { path = "crates/containers/sefer-region", version = "0.2", default-features = false }
 # Phase 3b-I: atomic snapshot publication for lock-free reads. Optional — only
 # the `experimental` concurrent tier pulls it in. Its internal `unsafe` is the
 # dependency's, not ours; our crate stays `#![forbid(unsafe_code)]` with it on.
@@ -932,7 +932,7 @@ core_affinity = { version = "0.8", optional = true }
 # page-level decommit/recommit. Extracted from sefer-alloc into a standalone
 # crate so it can be used and published independently. Pulled in ONLY by the
 # `alloc-core` feature (and every feature that depends on it).
-aligned-vmem = { path = "crates/aligned-vmem", version = "0.2", optional = true }
+aligned-vmem = { path = "crates/platform/aligned-vmem", version = "0.2", optional = true }
 # CRATE-P3: the lazy CAS-published pointer cell (UNINIT -> INITIALIZING -> READY
 # with OOM rollback + loser re-race), extracted from `src/registry/bootstrap/ensure.rs`'s
 # per-chunk materialisation state machine and
@@ -940,25 +940,25 @@ aligned-vmem = { path = "crates/aligned-vmem", version = "0.2", optional = true 
 # `#[global_allocator]`-safe (no std sync, no reentrancy) — the exact niche the
 # registry bootstrap needs. Pulled in ONLY by `alloc-core` (and every feature
 # that depends on it), since the state machine lives on the allocator bootstrap
-# path. See `crates/once-ptr-cell/src/lib.rs`.
-once-ptr-cell = { path = "crates/once-ptr-cell", version = "0.1", optional = true }
+# path. See `crates/primitives/once-ptr-cell/src/lib.rs`.
+once-ptr-cell = { path = "crates/primitives/once-ptr-cell", version = "0.1", optional = true }
 # CRATE-P5: const-built size-class table + compile-time-derived O(1) size->class
 # lookup + alignment-divisibility classifier, extracted from
 # `src/alloc_core/platform/size_classes.rs` (pure safe const arithmetic — no unsafe, no
 # memory). `src/alloc_core/platform/size_classes.rs` is now a thin compat shim that wires
 # sefer's one concrete instantiation of the crate's const-generic builder and
 # re-exports the exact `super::size_classes::*` surface every in-tree call site
-# already uses. Pulled in ONLY by `alloc-core`. See `crates/size-classes`.
-size-classes = { path = "crates/size-classes", version = "0.1", optional = true }
+# already uses. Pulled in ONLY by `alloc-core`. See `crates/primitives/size-classes`.
+size-classes = { path = "crates/primitives/size-classes", version = "0.1", optional = true }
 # Phase 78 (numa-aware) NUMA seam: dependency-free NUMA detection + binding,
 # extracted from sefer-alloc into a standalone crate so it can be published
 # independently. Pulled in ONLY by the `numa-aware` feature.
-numa-shim = { path = "crates/numa-shim", version = "0.2", features = ["vmem-integration"], optional = true }
+numa-shim = { path = "crates/platform/numa-shim", version = "0.2", features = ["vmem-integration"], optional = true }
 
 [target.'cfg(any(loom, kani))'.dependencies]
 # Both the cfg(loom) bootstrap mirror and root Kani pack_proofs import the
 # crate's packing/sentinel types. Keep it out of the normal production graph.
-tagged-index-stack = { path = "crates/tagged-index-stack", version = "0.1" }
+tagged-index-stack = { path = "crates/primitives/tagged-index-stack", version = "0.1" }
 
 [dev-dependencies]
 # Phase 2 dependency: the locality bench compares `Region` against raw
@@ -987,7 +987,7 @@ mimalloc = "0.1"
 # CRATE-P1: the extracted larson/mstress macro-benchmark harness. Dev-only —
 # `examples/malloc_macro.rs` drives it (through its `run_with` per-thread pin
 # hook) instead of carrying a second copy of the workload. NOT a runtime dep.
-malloc-bench-rs = { path = "crates/malloc-bench-rs" }
+malloc-bench-rs = { path = "crates/bench/malloc-bench-rs" }
 # CRATE-P6: the extracted differential op-stream harness (reference model +
 # M1-M4 oracles). Dev-only — `tests/alloc_core_differential.rs` and
 # `tests/heap_differential.rs` are thin consumers of its `proptest` front-end
@@ -995,14 +995,14 @@ malloc-bench-rs = { path = "crates/malloc-bench-rs" }
 # `arbitrary` front-end from its own workspace). The M1-M4 oracle logic lives
 # ONLY in the crate now, so an oracle improvement reaches all three at once.
 # NOT a runtime dep.
-globalalloc-model = { path = "crates/globalalloc-model", features = ["proptest"] }
+globalalloc-model = { path = "crates/verify/globalalloc-model", features = ["proptest"] }
 # CRATE-P8: the extracted same-instant RSS + commit-charge + peak-RSS process
 # self-probe. Dev-only — the three process-probe examples
 # (`first_alloc_process`, `dealloc_only_unbound_thread`, the `paired_ab_*`
 # trio) fold their previously-triplicated `K32GetProcessMemoryInfo` /
 # `/proc/self/statm` FFI onto this crate's `snapshot()`. The FFI now lives in
 # ONE place. NOT a runtime dep.
-proc-memstat = { path = "crates/proc-memstat" }
+proc-memstat = { path = "crates/platform/proc-memstat" }
 # CRATE-P9: the extracted `RESULT key=value` stdout protocol
 # (`proc_probe::emit`/`emit_u64`/`emit_ns`/… + a re-export of proc-memstat's
 # `snapshot`/`MemStat`). Dev-only — the process-probe examples
@@ -1010,7 +1010,7 @@ proc-memstat = { path = "crates/proc-memstat" }
 # trio) emit their `RESULT` lines through it and read memory via its re-export,
 # so a probe binary has ONE "measure + report" dependency and the emit format
 # can never drift from what `scripts/*.mjs` parse. NOT a runtime dep.
-proc-probe = { path = "crates/proc-probe" }
+proc-probe = { path = "crates/platform/proc-probe" }
 
 # Phase 3b-II: loom model-checks the publication PROTOCOL (generation/value
 # ordering) of the epoch tier. loom and crossbeam-epoch do NOT compose (loom

@@ -151,7 +151,7 @@ runs:
     - run: node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs
     # R6/task #871: vmem doc-drift guard — the 5x-recurred
     # unconditional "over-reserve"/"trim" sentence class in
-    # crates/aligned-vmem rustdoc / Cargo.toml / README.md. This is
+    # crates/platform/aligned-vmem rustdoc / Cargo.toml / README.md. This is
     # the exact sibling the #1131 row's comment names ("sibling of the
     # vmem-doc-drift-guard step in scripts/check-all.mjs"); adding
     # that row without this one was the asymmetry #1135 exists to
@@ -161,7 +161,7 @@ runs:
     - run: node scripts/vmem-doc-drift-guard.mjs
     # Task #1067/F7: exhaustive completeness check that every
     # `pub fn ...() -> u64` counter accessor in
-    # crates/aligned-vmem/src/bench_internals/ is CALLED by
+    # crates/platform/aligned-vmem/src/bench_internals/ is CALLED by
     # tests/bench_internals_counters.rs — the hand-maintained list
     # there had silently drifted before (15 accessors declared, 14
     # referenced) while its own comment claimed exhaustiveness. Pure
