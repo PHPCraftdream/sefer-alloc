@@ -1,9 +1,20 @@
 # sefer-alloc — workspace restructure plan (tests, thematic crate folders, core split)
 
-Date: 2026-11-15. Status: planned, nothing started. Source tree measured at `main` `d093edd7`.
+Date: 2026-11-15. Status (revision 3): P1.1 is in PR #247 (not merged yet);
+P1.2–P1.4 are written and stacked for one integration PR (not opened yet); the P0.2 pilot is
+written and awaits CI measurement; P1.5, G1 and P2 are not started. (The old status "planned,
+nothing started" is replaced by revision 3.) Source tree measured at `main` `d093edd7`.
 Revision 2 (2026-11-15, self-review): added the visibility-widening cost, the test-inventory
 gate, the no-LTO baseline before P1, the explicit P2 decision gate G1, a narrower `CI: full`
 scope and a corrected order (G0 does not gate A0/A1/P0).
+Revision 3 (2026-11-15, after writing P1.1–P1.4 and the P0.2 pilot): leaf extraction alone does not make
+CI cheaper and each extraction adds CI work, so P1.5 comes right after the P1.1–P1.4 merge; P1.3
+and P1.4 landed narrower or wider than planned (facts below); the P0.2 pilot found a new
+exclusion class, and P0.3/P0.4 run only on GO; steps that edit the same derived files merge as a
+stack with one recompute pass and a fixed list of local cargo-free checks. Open items found in
+revision 3 are recorded in the open-items indexes (`docs/CORRECTNESS_OPEN_ITEMS.md`); list:
+sentinel floor, test-inventory `--ref`, process-global classifier, stale doc paths
+`crates/<name>`, `NonNull` warning in hardened (no numbers here).
 
 Goal: make a change pay only for the tests it can affect, and make the layering of the
 allocator explicit, without changing behavior or performance.
@@ -29,6 +40,45 @@ Still valid: the test-impact selector saves little for core changes (`docs/CI_TI
 a segment-directory scan change selects 369 of 484 tests) because one crate holds all of the
 core; the longest jobs of a full run are miri (33 + 33 + 24 + 22 min), `check-matrix` (30),
 aarch64 (23), windows (19), kani (18).
+
+### Revision 3 — facts
+
+1. Extracting a leaf crate does not make CI cheaper by itself: `scripts/ci-plan.mjs` enables the
+   root `fast` and `seam` groups for a change in any workspace crate (its selftest in the same
+   file: `crates/containers/sefer-region/src/lib.rs` → `always,crate_sefer_region,fast,seam`).
+   Savings for peripheral changes appear only with P1.5 (two-level test selection). Consequence
+   for the order: after P1.1–P1.4 merge, P1.5 (and the G1 input measurement) goes next, not
+   P0.3/P0.4.
+2. Every extraction adds CI work: a new `<crate>-gates` job and rows in `ci-test-workspace`,
+   `ci-msrv` and `ci-kani` (workflow files under `.github/workflows/`). The root crate gets path
+   dependencies on the new internal crates, so publishing `sefer-alloc` first requires publishing
+   them (leaf-first, decision G0.1).
+3. P1.3 `sefer-policy`: `src/alloc_core/config/continuation_bounds.rs` is not policy (segment
+   geometry, depends on `segment_header`) and stays in the root until P2; the root dependency is
+   optional under `alloc-core`; 120 items became `pub` at the crate boundary, none depends on raw
+   pointers (visibility report of the agent); `#[non_exhaustive]` on the public
+   `LargeThpRequestGroup` is kept, the group→index mapping moved into the crate (`index()`).
+4. P1.4 `sefer-platform` extracted less than planned: `fatal`, `process_exit` and the part of
+   `os` that does not depend on the root. Left in the root: `node.rs` (`ContinuationBounds`,
+   free-list metadata functions), `numa.rs`, `sidecar*.rs`, `size_classes.rs` and the directory
+   triple of `os.rs` (`reserve_directory_sidecar`, `read_directory_class_words`,
+   `read_directory_node_bucket`). Seven raw-pointer functions became `pub unsafe fn` with safe
+   `pub(crate)` wrappers in the root (class R25-1). The remainder is a P2.0/P2.1 candidate.
+5. P0.2 pilot: of 78 `regression_*` targets 35 were merged; 20 excluded by P0.1 blockers and 23
+   by a NEW attribute — shared process-global state in the merged process (exact deltas of
+   global counters, registry lifecycle, borrowed-heap identity, timeouts) or evidence-registry
+   rows R4c-05..07 citing the lines. The P0.1 classifier (`scripts/classify-tests.mjs`) does not
+   know this attribute — open item. Gain: −34 test binaries in rows that build all tests. The
+   GO/NO-GO verdict follows the criterion written in `docs/perf/P0_2_TEST_MERGE_PILOT.md` (the
+   file arrives in `main` with the pilot PR; this plan does not state the verdict). P0.3/P0.4 run
+   ONLY on GO.
+6. Process: steps that edit the same derived files — digests
+   `docs/verification/ci-decomposition-baseline.json`, `docs/CI_TIERS.md`, crate and test counters
+   in README/ARCHITECTURE/`src/lib.rs`, the test classification
+   `docs/test_target_classification_20261115.csv` with its pins, fixture lock files
+   `tests/compile_fail/*/Cargo.lock`, `fuzz/Cargo.lock` — merge as a stack: P1.2–P1.4 as one
+   integration PR of three commits after P1.1; derived data is recomputed in ONE pass on the clean
+   tree at the tip of the stack. See the rules in section 3.
 
 ## 2. Target layout
 
@@ -92,6 +142,23 @@ dependency that relocation does not remove; the plan does not assume the split.
   indexes, no version bump without the owner's request.
 - No local builds or tests: `cargo check`, `cargo clippy`, `cargo fmt` and cargo-free scripts
   only; everything else on GitHub CI.
+- Derived data in one pass (revision 3): steps that edit the same derived files (fact 6 of
+  "Revision 3 — facts") are stacked; derived data is recomputed once on the clean tree at the
+  tip, not per commit.
+- Local cargo-free checks before every push (revision 3): `cargo metadata --locked` for every
+  fixture `Cargo.lock` (`tests/compile_fail/*/Cargo.lock`, `fuzz/Cargo.lock`);
+  `scripts/verify-evidence-registry.mjs --strict`; classifier vs CSV
+  (`scripts/classify-tests.mjs` against `docs/test_target_classification_20261115.csv`);
+  `scripts/verify-structure-limits.mjs`; `scripts/verify-ci-decomposition.mjs`;
+  `scripts/ci-plan.mjs --selftest` and `--check-doc`; `scripts/module-graph.mjs
+  --check-backedges`; `scripts/ghost_inventory.mjs --check`;
+  `scripts/verify-dbg-hook-safety.mjs`; `scripts/verify-loom-target-wiring.mjs` and
+  `scripts/verify-miri-target-wiring.mjs`; `scripts/verify-ci-sentinels.mjs`.
+- EV-1 reverify (revision 3): changing a test file cited by an evidence-registry row requires
+  EV-1 reverify (`.github/evidence-reverify.json` plus the `gate-run` label; example: PR #247,
+  rows R0-21/R0-22).
+- No-LTO IAI before merge (revision 3): the no-LTO IAI row is measured on the integration
+  branch against the P1.0 base (`docs/perf/IAI_NOLTO_BASELINE.md`) BEFORE the merge.
 
 ## 4. Owner decisions (G0)
 
@@ -143,12 +210,14 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
 - **P0.1. Classify the 562 test files**: process-global state (global allocator,
   first-config-wins, THP tuple, sidecar), process spawning, loom, `harness = false`,
   `required-features`, file-level `cfg`; output a committed CSV and the mergeable groups.
-- **P0.2. Pilot**: merge one pure group (candidates: `regression_*` without global state)
+- **P0.2. Pilot** (pilot written, landing pending, revision 3: 35 of 78 `regression_*` targets merged, 20 + 23
+  excluded, −34 binaries; verdict by the criterion in `docs/perf/P0_2_TEST_MERGE_PILOT.md`,
+  facts 5): merge one pure group (candidates: `regression_*` without global state)
   into one target with per-module `cfg`; measure link count and job time on CI against the
   base; decide go/no-go from the numbers.
-- **P0.3. Selection granularity**: `select-tests` and the test-impact map address modules
+- **P0.3. Selection granularity** (only on GO of P0.2, revision 3): `select-tests` and the test-impact map address modules
   inside a merged target (test-name filters), so merging does not coarsen selection.
-- **P0.4. Roll-out** group by group (`r6`/`r11`, `segment`, `large`, `heap`, ...), updating
+- **P0.4. Roll-out** (only on GO of P0.2, revision 3) group by group (`r6`/`r11`, `segment`, `large`, `heap`, ...), updating
   name pins: check-matrix rows, CI greps, J13 file hashes, published counts.
 
 ### T — thematic folders for the existing crates (pure move)
@@ -168,10 +237,19 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
   tests move with it and run only when it changes.
 - **P1.3 `sefer-policy`**: `alloc_core/config` including the Large-THP runtime (tuple, curves,
   cadence, codec); pure policy tests become crate-local, J13b integration stays on top; the
-  J13 file pins and static reference are re-pointed.
+  J13 file pins and static reference are re-pointed. Written, landing pending, revision 3: `continuation_bounds.rs`
+  stays in the root (not policy), 120 items became `pub`, `index()` mapping in the crate
+  (facts 3). (The wording "`alloc_core/config` including ..." is replaced by revision 3 for
+  `continuation_bounds.rs`.)
 - **P1.4 `sefer-platform`** (or merge, decision G0.3): `os`, `node`, `fatal`, and the
-  process-exit state that `segment_route` needs.
-- **P1.5 Two-level selection**: crate graph from `cargo metadata` first, the existing
+  process-exit state that `segment_route` needs. (Replaced by revision 3: only `fatal`,
+  `process_exit` and the root-independent part of `os` were extracted; `node.rs`, `numa.rs`,
+  `sidecar*.rs`, `size_classes.rs` and the `os.rs` directory triple stay in the root until
+  P2.0/P2.1; facts 4.)
+- **P1.2–P1.4 landing** (revision 3): one integration PR of three commits after P1.1, derived
+  data recomputed once at the tip, no-LTO IAI measured before merge (section 3).
+- **P1.5 Two-level selection** (next after the P1.1–P1.4 merge, together with the measurement
+  of the G1 inputs, revision 3; facts 1): crate graph from `cargo metadata` first, the existing
   test-impact map inside the root crate second; miri, loom and kani run per changed crate.
 - **P1.6 Inline audit**: hot-path functions on the new crate boundaries are `#[inline]`;
   the no-LTO IAI row shows delta 0 against the P1.0 baseline.
@@ -200,9 +278,15 @@ layering and smaller per-crate verification (miri, loom, kani, powerset), not te
 
 1. Land this plan in `main` (agents work in worktrees made from `origin/main` and must be
    able to read it).
-2. Without G0: `A0` → `A1`, and in parallel `P0.1` → `P0.2` → `P0.3` → `P0.4`; `T1` and
-   `P1.0` at any time. `T1` and the `P0` steps both touch CI path rules, so they are
-   merged one after the other, not concurrently.
-3. After G0: `P1.1` … `P1.4` (one crate per PR) → `P1.5`, `P1.6`.
+2. (Replaced by revision 3: "Without G0: `A0` → `A1`, and in parallel `P0.1` → `P0.2` →
+   `P0.3` → `P0.4`; `T1` and `P1.0` at any time. `T1` and the `P0` steps both touch CI path
+   rules, so they are merged one after the other, not concurrently.") `A0`, `A1`, `P0.1`,
+   `P0.2` (pilot), `T1` and `P1.0` are as before; `T1` and the `P0` steps still merge one after
+   the other.
+3. (Replaced by revision 3: "After G0: `P1.1` … `P1.4` (one crate per PR) → `P1.5`, `P1.6`.")
+   Revision 3 order: `P1.1` → integration PR `P1.2`–`P1.4` (three commits) → `P1.5` (and
+   measurement of the G1 inputs) → `G1`. `P1.6` stays after `P1.5`. `P0.3`/`P0.4` only on GO of
+   `P0.2` (criterion in `docs/perf/P0_2_TEST_MERGE_PILOT.md`). Stacking, one-pass derived data,
+   local checks, EV-1 reverify and the pre-merge no-LTO IAI row: section 3.
 4. `G1` (owner decision on measured inputs) → `P2.0a–d` → `P2.1` → `P2.2` → `P2.3` → `P2.4`
    → `P2.5`.
