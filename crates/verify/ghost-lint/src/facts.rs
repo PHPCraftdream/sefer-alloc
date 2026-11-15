@@ -22,7 +22,7 @@ const ORDERING_PARAMS: [&str; 6] = [
     "fetch_order",
 ];
 
-/// The ghost-check macros (`src/ghost/`).
+/// The ghost-check macros (`crates/primitives/sefer-ghost/src/ghost/`).
 pub const GHOST_MACROS: [&str; 2] = ["ghost_assert", "ghost_event"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

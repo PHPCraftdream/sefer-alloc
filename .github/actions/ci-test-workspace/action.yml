@@ -187,6 +187,30 @@ runs:
     - run: RUSTDOCFLAGS="-D warnings" cargo doc -p size-classes --no-deps
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+    # sefer-ghost: the crate's real code exists only under
+    # cfg(any(loom, miri, kani, sefer_ghost)) -- without one of those
+    # cfg flags the crate and its file-level cfg'd tests compile EMPTY,
+    # so the meaningful rows below set RUSTFLAGS="--cfg sefer_ghost".
+    # This first row deliberately omits the flag: it proves the
+    # file-level gating itself (the test target compiles and runs empty).
+    - run: cargo test -p sefer-ghost --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTFLAGS="--cfg sefer_ghost" cargo test -p sefer-ghost --features internals --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTFLAGS="--cfg sefer_ghost" cargo clippy -p sefer-ghost --all-targets --features internals -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTFLAGS="--cfg sefer_ghost" RUSTDOCFLAGS="--cfg sefer_ghost -D warnings" cargo doc -p sefer-ghost --features internals --no-deps
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    # The crate is #![no_std] with zero deps; mirrors the size-classes
+    # thumb row above (target installed via the toolchain step's
+    # `targets:` list at the top of this action).
+    - run: cargo build -p sefer-ghost --no-default-features --target thumbv7em-none-eabi
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
     - run: cargo build -p once-ptr-cell --no-default-features --target thumbv7em-none-eabi
     # The two builds above compile no test target, while the loom row uses
     # a different cfg-gated target. Run the ordinary suite in both profiles

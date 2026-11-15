@@ -29,7 +29,9 @@ function withGraph(files, config = { layers: [], boundaries: [], expected_back_e
   try {
     const srcDir = join(tmp, 'src');
     for (const [rel, content] of Object.entries(files)) {
-      const abs = join(srcDir, ...rel.split('/'));
+      // Cargo.toml belongs at the repo root: externCrateNames reads
+      // dirname(srcRoot)/Cargo.toml to register extern crate names.
+      const abs = rel === 'Cargo.toml' ? join(tmp, rel) : join(srcDir, ...rel.split('/'));
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, content);
     }
@@ -377,4 +379,32 @@ test('git:false identity is content-only and rebuilds are deterministic', () => 
   assert.equal(g1.identity.contentSha256, g2.identity.contentSha256, 'same bytes -> same content hash');
   assert.equal(JSON.stringify(g1.edges), JSON.stringify(g2.edges), 'edges arrays are identical');
   assert.deepEqual(g1.modules.map(m => m.path), ['lonely', 'other', 'root']);
+});
+
+// Case 18 (regression): a crate-rooted path resolving THROUGH a use-binding
+// whose target leads with an extern crate name is an EXTERNAL reference - no
+// edge (in particular no misclassified edge to the facade pseudo-module
+// `root`), tallied as extern instead. A crate-internal control path still
+// edges normally, proving the extern predicate did not over-fire.
+test('extern-anchored bindings make pathRefs external, not root edges', () => {
+  const ctrlSrc = 'pub fn go() {\n    crate::thing::helper();\n    crate::inner::f();\n}\n';
+  const g = withGraph({
+    'Cargo.toml': '[package]\nname = "fixture"\n\n[dependencies]\nfakeextern = "1.0"\n',
+    'lib.rs': 'use fakeextern::thing;\nmod inner;\nmod ctrl;\n',
+    'inner.rs': 'pub fn f() {}\n',
+    'ctrl.rs': ctrlSrc,
+    'thing.rs': 'pub fn helper() {}\n',
+  });
+  assert.equal(g.edges.length, 1, 'only the crate-internal control edge exists');
+  const e = edgeOf(g, 'ctrl', 'inner');
+  assert.ok(e, 'crate::inner::f() resolves to the crate-internal module inner');
+  assert.equal(e.count, 1);
+  assert.equal(e.sites[0].line, lineOf(ctrlSrc, 'crate::inner::f()'));
+  assert.equal(edgeOf(g, 'ctrl', 'thing'), undefined,
+    'crate::thing::helper() resolves through the extern-anchored binding: no internal edge');
+  assert.ok(g.edges.every(x => x.source !== 'ctrl' || x.target === 'inner'),
+    'no edge involving root from the extern pathRef');
+  assert.equal(g.stats.externUses, 2,
+    'the extern pathRef (via the extern-anchored binding) + the extern use item are tallied');
+  assert.equal(g.unresolvedRefs.length, 0);
 });

@@ -265,6 +265,7 @@ the smoke row covers those scenarios.
 | `once-ptr-cell-miri` | once-ptr-cell under miri (interpreter, strict-provenance included) | `crate_once_ptr_cell`: changes under its crate |
 | `proc-memstat-gates` | proc-memstat gates (${{ matrix.os }}) | `crate_proc`: changes under its crate |
 | `proc-probe-gates` | proc-probe gates | `crate_proc`: changes under its crate |
+| `sefer-ghost-gates` | sefer-ghost package gates | `crate_sefer_ghost`: changes under its crate |
 | `sefer-region-gates` | sefer-region package gates | `crate_sefer_region`: changes under its crate |
 | `size-classes-gates` | size-classes package gates | `crate_size_classes`: changes under its crate |
 | `tagged-index-stack-gates` | tagged-index-stack package gates | `crate_tagged_index_stack`: changes under its crate |

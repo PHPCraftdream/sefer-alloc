@@ -1,0 +1,25 @@
+[package]
+name = "sefer-ghost"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Checking-build assertion and event-counter macros for the sefer allocator: ghost_assert!/ghost_event! compile to nothing outside loom/miri/kani/--cfg sefer_ghost builds, allocate nothing, and use core atomics only. no_std, zero deps, #![forbid(unsafe_code)]."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/primitives/sefer-ghost"
+documentation = "https://docs.rs/sefer-ghost"
+keywords = ["allocator", "model-checking", "loom", "miri", "no-std"]
+categories = ["development-tools::testing", "concurrency", "no-std"]
+
+[lints]
+# `loom` / `kani` / `sefer_ghost` cfg declarations are shared at the
+# workspace root ([workspace.lints.rust]); inherit them so
+# unexpected_cfgs stays silent in ghost builds.
+workspace = true
+
+[features]
+# Gates the `probe` self-test entry only (mirrors sefer-alloc's own
+# `internals` feature, which forwards here); no other item is feature-
+# gated.
+internals = []

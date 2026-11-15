@@ -1205,7 +1205,7 @@
       "fn": "^dbg_|_for_tests?$|^count_for_test$|^mixed_count$",
       "reason": "dbg_*/for_test/internals-only hooks",
       "exclude": [
-        "src/ghost/**"
+        "crates/primitives/sefer-ghost/src/ghost/**"
       ]
     },
     {
@@ -1218,7 +1218,7 @@
       "receiver": "^(.*::)?(DBG_INJECT_[A-Z_]+|DBG_HOLD_[A-Z_]+|FAIL_NEXT[A-Z_]*|FORCE_DECAY_CLOCK_READ|EARLY_FREE|QUERY_OVERRIDE)$",
       "reason": "fault-injection / test-control flags",
       "exclude": [
-        "src/ghost/**"
+        "crates/primitives/sefer-ghost/src/ghost/**"
       ]
     },
     {
@@ -1255,7 +1255,7 @@
       ],
       "reason": "unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed",
       "exclude": [
-        "src/ghost/**"
+        "crates/primitives/sefer-ghost/src/ghost/**"
       ]
     },
     {
@@ -1272,7 +1272,7 @@
       ],
       "reason": "statistics / diagnostic counters: Relaxed, no protocol reads them",
       "exclude": [
-        "src/ghost/**"
+        "crates/primitives/sefer-ghost/src/ghost/**"
       ]
     },
     {
@@ -1363,7 +1363,7 @@
       "id": "ghost/shadow",
       "class": "ghost",
       "files": [
-        "src/ghost/**"
+        "crates/primitives/sefer-ghost/src/ghost/**"
       ],
       "reason": "ghost side table (checking builds only): core Relaxed atomics, invisible to loom by design (plan §3.1)"
     },

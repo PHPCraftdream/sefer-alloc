@@ -62,7 +62,7 @@ mod bitmap_cut;
 mod bitmap_record;
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_scan.rs"]
 mod bitmap_scan;
-#[path = "../src/ghost/mod.rs"]
+#[path = "../crates/primitives/sefer-ghost/src/ghost/mod.rs"]
 mod ghost;
 #[path = "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs"]
 mod sidecar_bitmap;

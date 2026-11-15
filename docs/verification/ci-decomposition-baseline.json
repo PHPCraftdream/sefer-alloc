@@ -4,7 +4,7 @@
   "jobs": [
     {
       "id": "changes",
-      "metadata": "5fdc4df89b32fe8cdc9793270be9afc3d12d4703861893428694996f873e490d",
+      "metadata": "49e94a9dab1fc08b673f1eb16bc510ec68b41327fca81e15c887c5f7653c50ea",
       "steps": "1fe5589733f5bb700e49ab25de242b1626e691fd2ba507f210c3cd9d48c9cbd6"
     },
     {
@@ -71,6 +71,11 @@
       "id": "tagged-index-stack-gates",
       "metadata": "c2971355fc744398541f7d4ff79f900cf0e9b825fe990c16d9b6e1b9523f2f3e",
       "steps": "66dc8a9280c2f7411f51ddb06c0982fdd923f5010af57062ad41ca8bd043d86c"
+    },
+    {
+      "id": "sefer-ghost-gates",
+      "metadata": "2f2abab62fedd82ca96168b97e149999000d362ba4ea776109c33efeab7092fa",
+      "steps": "a17950f71a200d684a9644a90813cddc6dbb06959f726b6e750e15fee8260c74"
     },
     {
       "id": "once-ptr-cell-miri",
@@ -160,12 +165,12 @@
     {
       "id": "test-workspace",
       "metadata": "40acb2def9c00e7827fc537b4c072de5aeb03e833f296ff336f68eb1847f82eb",
-      "steps": "5fc803415461295b067d2315d011bae4ac5121c5a9541cf47700a246f88515a2"
+      "steps": "4580f9b5e2f2a60204dc7868f8b3115be3e29be1d6983b79ffd4849bd49efce5"
     },
     {
       "id": "msrv",
       "metadata": "82d6c581574793f7d7793be181f1c858dd5b4dd6c3643e0c5cf321fce9fb1934",
-      "steps": "690eca6903f11f2369c6632a70e3917c96cc990da83867028b1bd1897286df05"
+      "steps": "660fada5ee90c0af2423cd021925243737042ab4cad8cebf8f372ba7c8e061f8"
     },
     {
       "id": "msrv-runtime-windows",

@@ -708,9 +708,9 @@ The deliberate inversion: all the intelligence lives in the safe Cartographer,
 so the Hand stays mechanical and small. Verification is over a total Membrane
 and an integer algorithm, not a tangle of pointer math.
 
-### Workspace: ten independently-publishable companion crates
+### Workspace: eleven independently-publishable companion crates
 
-The workspace extracted ten building blocks. Each is a real crates.io crate
+The workspace extracted eleven building blocks. Each is a real crates.io crate
 someone can `cargo add` on its own — they are not internal implementation
 details but independently useful libraries:
 
@@ -722,6 +722,7 @@ sefer-alloc
  ├── malloc-bench-rs    (crates/bench/malloc-bench-rs)       — portable GlobalAlloc bench harness   (standalone, dev-only)
  ├── once-ptr-cell      (crates/primitives/once-ptr-cell)      — lazy CAS-published pointer cell      (feature: alloc-core)
  ├── size-classes       (crates/primitives/size-classes)       — const-built size-class tables + lookup (feature: alloc-core)
+ ├── sefer-ghost        (crates/primitives/sefer-ghost)         — checking-build-only ghost_assert!/ghost_event! (always: not feature-gated)
  ├── tagged-index-stack (crates/primitives/tagged-index-stack) — ABA-tagged free-index stack          (feature: alloc-global)
  ├── globalalloc-model  (crates/verify/globalalloc-model)  — differential op-stream test harness   (standalone, dev-only)
  ├── proc-memstat       (crates/platform/proc-memstat)       — same-instant RSS / commit self-probe (standalone, dev-only)
@@ -730,10 +731,10 @@ sefer-alloc
 
 `malloc-bench-rs`, `globalalloc-model`, `proc-memstat`, and `proc-probe` are
 not in sefer-alloc's runtime dependency tree — they are dev-only / example
-infra. The other six are pulled in under the feature gates noted above
-(`alloc-core`, `alloc-global`, `numa-aware`).
+infra. The other seven are pulled in under the feature gates noted above
+(`alloc-core`, `alloc-global`, `numa-aware`) or, for `sefer-ghost`, unconditionally (it compiles to no code in production builds).
 
-(A former eleventh crate, `ring-mpsc` — a standalone bounded MPSC index ring
+(A former twelfth crate, `ring-mpsc` — a standalone bounded MPSC index ring
 + DirtyRouter — was removed from the workspace: it had zero production
 consumers; its old proposed ring replacement was investigated and found
 NO-GO before the terminal-sidecar cutover, see
@@ -749,6 +750,7 @@ Per-crate status:
 | `malloc-bench-rs` | [![Crates.io](https://img.shields.io/crates/v/malloc-bench-rs.svg)](https://crates.io/crates/malloc-bench-rs) | [![Documentation](https://docs.rs/malloc-bench-rs/badge.svg)](https://docs.rs/malloc-bench-rs) |
 | `once-ptr-cell` | [![Crates.io](https://img.shields.io/crates/v/once-ptr-cell.svg)](https://crates.io/crates/once-ptr-cell) | [![Documentation](https://docs.rs/once-ptr-cell/badge.svg)](https://docs.rs/once-ptr-cell) |
 | `size-classes` | [![Crates.io](https://img.shields.io/crates/v/size-classes.svg)](https://crates.io/crates/size-classes) | [![Documentation](https://docs.rs/size-classes/badge.svg)](https://docs.rs/size-classes) |
+| `sefer-ghost` | [![Crates.io](https://img.shields.io/crates/v/sefer-ghost.svg)](https://crates.io/crates/sefer-ghost) | [![Documentation](https://docs.rs/sefer-ghost/badge.svg)](https://docs.rs/sefer-ghost) |
 | `tagged-index-stack` | [![Crates.io](https://img.shields.io/crates/v/tagged-index-stack.svg)](https://crates.io/crates/tagged-index-stack) | [![Documentation](https://docs.rs/tagged-index-stack/badge.svg)](https://docs.rs/tagged-index-stack) |
 | `globalalloc-model` | [![Crates.io](https://img.shields.io/crates/v/globalalloc-model.svg)](https://crates.io/crates/globalalloc-model) | [![Documentation](https://docs.rs/globalalloc-model/badge.svg)](https://docs.rs/globalalloc-model) |
 | `proc-memstat` | [![Crates.io](https://img.shields.io/crates/v/proc-memstat.svg)](https://crates.io/crates/proc-memstat) | [![Documentation](https://docs.rs/proc-memstat/badge.svg)](https://docs.rs/proc-memstat) |
@@ -782,6 +784,7 @@ the line to begin with the attribute, not a `//` prefix.
 | `proc-memstat` | `crates/platform/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
 | `sefer-region` | `crates/containers/sefer-region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/containers/sefer-region/README.md` "## Safety") |
 | `size-classes` | `crates/primitives/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |
+| `sefer-ghost` | `crates/primitives/sefer-ghost/` | `#![forbid(unsafe_code)]` — checking-build-only macros + a `core`-atomics shadow event table; no raw pointers, no allocation (rule R9) |
 | `tagged-index-stack` | `crates/primitives/tagged-index-stack/` | `#![deny(unsafe_code)]` with ten item-scoped allows in `src/imp.rs` (nine production regions plus one `--cfg loom` test forwarder). Its unsafe trait/bridge and push boundaries state caller and implementor obligations; the library does not use raw-pointer dereferences for its packed-head protocol. |
 | `proc-probe` | `crates/platform/proc-probe/` | `#![forbid(unsafe_code)]` — pure protocol + re-export crate; the OS FFI stays in `proc-memstat` |
 

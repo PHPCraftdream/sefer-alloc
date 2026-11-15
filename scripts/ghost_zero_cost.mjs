@@ -305,6 +305,7 @@ const SKIP_CASES = [
   ['Loom in another case', ok, L(['crates/x/src/lib.rs', ['#[cfg(Loom)]']]), false],
   ['shadow model call', ok, L(['src/a.rs', ['    shadow::record(x);']]), false],
   ['file under src/ghost', ok, L(['src/ghost/macros.rs', ['// note']]), false],
+  ['file under sefer-ghost crate', ok, L(['crates/primitives/sefer-ghost/src/ghost/shadow.rs', ['// note']]), false],
   ['root Cargo.toml: other feature line', ok, L(['Cargo.toml', ['fastbin = []']]), false],
   ['root Cargo.toml: production line and a dependency line', ok, L(['Cargo.toml', ['production = ["a"]', 'serde = "1"']]), false],
   ['root Cargo.toml: production line only (declared composition change)', ok, L(['Cargo.toml', ['production = ["a", "b"]', 'production = ["a"]', '# comment']]), true],

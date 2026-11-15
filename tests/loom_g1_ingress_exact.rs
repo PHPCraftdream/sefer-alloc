@@ -26,7 +26,7 @@ mod alloc_core {
 // The included production file resolves `super::` atomics; these are loom's.
 pub(crate) use loom::sync::atomic::{fence, AtomicU64, AtomicU8, Ordering};
 
-#[path = "../src/ghost/mod.rs"]
+#[path = "../crates/primitives/sefer-ghost/src/ghost/mod.rs"]
 mod ghost;
 #[path = "../src/registry/segment_route/directory/ingress.rs"]
 mod ingress;

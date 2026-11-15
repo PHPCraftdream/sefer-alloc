@@ -35,7 +35,7 @@ pub(crate) use loom::sync::atomic::{AtomicU64, Ordering};
 // The included production file records `crate::ghost::ghost_event!`; cfg(loom)
 // is a ghost build, so the events are recorded in every schedule.
 #[allow(dead_code, unused_imports)]
-#[path = "../src/ghost/mod.rs"]
+#[path = "../crates/primitives/sefer-ghost/src/ghost/mod.rs"]
 mod ghost;
 
 #[allow(dead_code)]

@@ -34,6 +34,7 @@ export const CRATE_GROUPS = {
   'once-ptr-cell': 'crate_once_ptr_cell',
   'proc-memstat': 'crate_proc',
   'proc-probe': 'crate_proc',
+  'sefer-ghost': 'crate_sefer_ghost',
   'sefer-region': 'crate_sefer_region',
   'size-classes': 'crate_size_classes',
   'tagged-index-stack': 'crate_tagged_index_stack',
@@ -272,6 +273,7 @@ function selftest() {
   eq(on(P(['Cargo.lock'])), 'always,fast,os,seam', 'lock');
   // workspace crates: own gates + root dependents (+os for platform crates).
   eq(on(P(['crates/containers/sefer-region/src/lib.rs'])), 'always,crate_sefer_region,fast,seam', 'crate');
+  eq(on(P(['crates/primitives/sefer-ghost/src/lib.rs'])), 'always,crate_sefer_ghost,fast,seam', 'crate');
   eq(on(P(['crates/platform/aligned-vmem/src/lib.rs'])), 'always,crate_aligned_vmem,fast,os,seam', 'platform crate');
   eq(on(P(['crates/platform/proc-probe/src/lib.rs', 'crates/platform/proc-memstat/src/lib.rs'])), 'always,crate_proc,fast,os,seam', 'proc');
   eq(on(P(['crates/brand-new/src/lib.rs'])), 'always,fast,seam', 'unknown crate is conservative');
