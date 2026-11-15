@@ -285,7 +285,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
 - **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (32
-  cards; items 175 and 107 are retained CLOSED pointers in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
+  cards; items 107, 175 and 275 are retained CLOSED pointers in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
   scripts, missing feature/profile rows, sentinel-guard scope — as opposed
@@ -350,9 +350,9 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   errors; 67/68/89 are citation/claim corrections; 20/21 are CHANGELOG/
   taxonomy record gaps; 86 is this very index's own split-deferral
   decision and its reversal — a record about the index, not about code.
-- **`docs/correctness-open-items/TRACKED_misc.md`** (10 open cards + 2
-  retained closed/resolved pointers; item157 moved to `RESOLVED.md` in R15;
-  item176 was added in R16 and moved to `RESOLVED.md` at the R16 close-out) --
+- **`docs/correctness-open-items/TRACKED_misc.md`** (16 open cards + 4
+  retained closed/resolved pointers; items 157, 176, 278 and 279 moved to
+  `RESOLVED.md` — 157/176 in R15/R16, 278/279 on 2026-11-15) --
   residual, does not fit any category above. Per this task's brief: a
   card that does not fit is collected here, NOT forced into the
   closest-sounding bucket. Item 45 (numa-shim `RefCell`-vs-`Cell`
@@ -648,11 +648,11 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 272 | `TRACKED_correctness_residuals.md` |
 | 273 | `RESOLVED.md` |
 | 274 | `RESOLVED.md` |
-| 275 | `TRACKED_ci_gate_coverage.md` |
+| 275 | `RESOLVED.md` |
 | 276 | `TRACKED_ci_gate_coverage.md` |
 | 277 | `TRACKED_misc.md` |
-| 278 | `TRACKED_misc.md` |
-| 279 | `TRACKED_misc.md` |
+| 278 | `RESOLVED.md` |
+| 279 | `RESOLVED.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains

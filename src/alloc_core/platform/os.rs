@@ -244,7 +244,7 @@ impl Segment {
     /// (4 MiB) aligned — only the span's byte length shrinks — so
     /// [`segment_base_of_ptr`] continues to resolve the correct segment base
     /// for an exact-span segment exactly as it does for a whole-segment one.
-    /// `crates/aligned-vmem::reserve_aligned(size, align)` already supports
+    /// `crates/platform/aligned-vmem::reserve_aligned(size, align)` already supports
     /// `size != align` on every backend (see the `exact-span-large` feature
     /// doc in `Cargo.toml` for the full backend-support argument); this
     /// constructor is a thin non-rounding sibling of [`reserve`](Self::reserve),

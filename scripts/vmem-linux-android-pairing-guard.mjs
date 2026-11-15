@@ -414,7 +414,7 @@
 //      pre-#1128 guard passed this shape green.
 //   8. (task #1129) Appending a realistic
 //      `[target."cfg(target_os = \"android\")".dependencies]` section to
-//      crates/aligned-vmem/Cargo.toml KEEPS the guard green with all 13
+//      crates/platform/aligned-vmem/Cargo.toml KEEPS the guard green with all 13
 //      allowlist entries active (AS OF TASK #1129's allowlist size at the
 //      time this counterfactual was run — the allowlist has since shrunk
 //      to 8 entries, task #1163/F7; the counterfactual's STRUCTURAL claim

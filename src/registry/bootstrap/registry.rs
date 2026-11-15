@@ -22,7 +22,7 @@ use core::sync::atomic::Ordering;
 // loom (see the imports above) for exactly this reason. So under loom we swap in
 // a const-capable, core-atomic shim with the identical API surface `bootstrap`
 // uses. This is sound: the real-type loom VERIFICATION of `OncePtrCell` lives in
-// the crate's OWN suite (`crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, run
+// the crate's OWN suite (`crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, run
 // via `-p once-ptr-cell`), which is the whole point of the extraction; sefer's
 // loom harnesses never exercise these chunk cells, so the shim is never on any
 // modeled interleaving — it exists only to keep the const static compiling.

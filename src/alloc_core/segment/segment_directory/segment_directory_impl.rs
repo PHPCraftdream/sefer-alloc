@@ -89,7 +89,7 @@ const _: () = assert!(
 //
 // ### R12-2: compact dense mapping (P0 design-defect fix)
 //
-// `numa-shim` scans up to 64 real OS node ids (`crates/numa-shim/src/lib.rs`
+// `numa-shim` scans up to 64 real OS node ids (`crates/platform/numa-shim/src/lib.rs`
 // `cpu_to_numa_node`), but pre-R12-2 `node_bucket` used the raw OS `node_id`
 // as a DIRECT array index clamped at `MAX_NODES = 8`: every node id `>= 8`
 // fell into the shared unknown bucket regardless of how many distinct nodes

@@ -306,7 +306,7 @@ fn dbg_rollback_reenterable_happy_path_and_not_applicable_arm() {
     // `dbg_rollback_reenterable`'s happy-path contract (Proven + the
     // restore postcondition) used to be asserted only in the PARENT repo's
     // own integration test, which does not ship with the standalone
-    // published crate. Within crates/once-ptr-cell itself the only call site
+    // published crate. Within crates/primitives/once-ptr-cell itself the only call site
     // discarded the result -- stubbing the probe to unconditionally return
     // the not-applicable arm left the whole suite green.
 

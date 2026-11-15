@@ -1188,7 +1188,7 @@ impl Reservation {
     ///     (plus its pinned physical huge pages) leaks for the life of the
     ///     process. This crate's own `reserve_aligned_huge` path already
     ///     documents and upholds this requirement (see
-    ///     `crates/aligned-vmem/src/os/unix.rs`'s huge-page-alignment
+    ///     `crates/platform/aligned-vmem/src/os/unix.rs`'s huge-page-alignment
     ///     comments); `from_raw_parts` did not previously carry the same
     ///     requirement for an ADOPTED huge mapping. See the "2 MiB-multiple
     ///     requirement" bullet in "Correctness contract" below for the
@@ -1283,7 +1283,7 @@ impl Reservation {
     ///   docs (`unix_reserve`'s task-#714 note), not executed in CI — no
     ///   CI host configures a hugetlb pool larger than 2 MiB, and this
     ///   crate never creates such a mapping itself, always requesting
-    ///   `MAP_HUGE_2MB` (`crates/aligned-vmem/src/os/unix.rs`).
+    ///   `MAP_HUGE_2MB` (`crates/platform/aligned-vmem/src/os/unix.rs`).
     ///
     /// - **2 MiB-multiple requirement, Linux/Android, `granted_huge == true`
     ///   (task #1172/M1-hybrid).** On `target_os = "linux"` or `"android"`,
@@ -1291,7 +1291,7 @@ impl Reservation {
     ///   `assert!`s that `len`, `reservation_len`, `reservation`, `base`,
     ///   and the offset `base - reservation` are all multiples of 2 MiB
     ///   (this crate's one supported HugeTLB granularity, `MAP_HUGE_2MB`; see
-    ///   `crates/aligned-vmem/src/os/unix.rs`'s `LINUX_HUGE_PAGE_SIZE`). Five
+    ///   `crates/platform/aligned-vmem/src/os/unix.rs`'s `LINUX_HUGE_PAGE_SIZE`). Five
     ///   names are listed, but only FOUR are independent: `reservation` and
     ///   `base` both being 2-MiB multiples already implies their difference
     ///   `base - reservation` is too, so the offset conjunct can never be

@@ -3,7 +3,7 @@
 // cfg context, classified by docs/verification/ghost-rules.json `scopes`. A site no scope claims is
 // a gap; `--check` is red on any gap, on a scope that claims nothing and on a site claimed twice.
 // Text scanner, not a parser: comments and literals are blanked first, braces give the item path.
-// G1's `crates/ghost-lint` (syn) replaces it as the authority; until then this is the G0 metric.
+// G1's `crates/verify/ghost-lint` (syn) replaces it as the authority; until then this is the G0 metric.
 //
 //   node scripts/ghost_inventory.mjs            # summary table
 //   node scripts/ghost_inventory.mjs --check    # red on gaps / dead scopes / double claims

@@ -254,7 +254,7 @@ fn main() {
     // session against other crates in this workspace), so contention
     // throughput is measured manually with real threads -- the same pattern
     // already established in
-    // `crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`'s
+    // `crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs`'s
     // "Multi-threaded contention workloads" section: N threads (capped),
     // each spinning a fixed-duration loop, summed ops/sec printed to stdout
     // after `h.run()` (not through the bench-iters.txt manifest, which is

@@ -1,7 +1,7 @@
 // Shared, side-effect-free `RESULT key=value` parser, extracted verbatim
 // from `paired-ab-runner.mjs` (Sol-codex proc-probe review round 3, P3-1).
 //
-// WHY THIS FILE EXISTS. `crates/proc-probe/tests/protocol.rs`'s Node-verified
+// WHY THIS FILE EXISTS. `crates/platform/proc-probe/tests/protocol.rs`'s Node-verified
 // interop test used to reconstruct the runner's regex/flags/trim semantics by
 // scanning the runner's SOURCE TEXT (`extract_runner_contract` in that file,
 // added in round 2 to fix a naive substring guard). That extractor was

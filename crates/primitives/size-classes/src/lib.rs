@@ -60,7 +60,7 @@
 //! static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 //! ```
 //!
-//! (Runnable form with concrete values in `crates/size-classes/README.md`.)
+//! (Runnable form with concrete values in `crates/primitives/size-classes/README.md`.)
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

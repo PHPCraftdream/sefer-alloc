@@ -233,7 +233,7 @@ mod real_emit {
     /// Marker env var, set ONLY on the freshly-spawned child: the marked
     /// process runs the emit body directly instead of spawning yet another
     /// copy of itself (the runner/child split from
-    /// `crates/proc-memstat/tests/non_utf8_name.rs`).
+    /// `crates/platform/proc-memstat/tests/non_utf8_name.rs`).
     const CHILD_MARKER: &str = "PROC_PROBE_PROTOCOL_EMIT_CHILD";
 
     /// The `--exact` filter selecting this test inside the re-exec'd binary.
@@ -375,7 +375,7 @@ mod real_emit {
     /// The real `emit*` functions must land on the child's real stdout as exact
     /// bytes matching independently hardcoded expectations (P2-2).
     ///
-    /// **Why a re-exec** (the `crates/proc-memstat/tests/non_utf8_name.rs`
+    /// **Why a re-exec** (the `crates/platform/proc-memstat/tests/non_utf8_name.rs`
     /// pattern): `emit*` write to the process's real stdout, which a
     /// same-process libtest cannot cleanly observe — when capturing, the
     /// harness redirects writes into a THREAD-LOCAL IN-PROCESS BUFFER
@@ -780,7 +780,7 @@ fn node_spawn_skip_reason(e: &std::io::Error) -> Option<String> {
 /// never does, so a captured skip is indistinguishable from a pass in CI
 /// logs (Sol-codex round-2 review P3-2b). `std::io::stderr().lock()` writes
 /// bypass capture entirely. Mirrors
-/// `crates/proc-memstat/tests/non_utf8_name.rs` exactly.
+/// `crates/platform/proc-memstat/tests/non_utf8_name.rs` exactly.
 fn report_skip(reason: &str) {
     writeln!(std::io::stderr().lock(), "[protocol] SKIP: {reason}").expect("report skip");
 }
@@ -866,7 +866,7 @@ fn stdin_write_failure_still_reaps_child() {
 /// P3-2b counterfactual (Sol-codex round-2 review): the SKIP notice must
 /// reach the REAL stderr even though libtest captures (and, for a passing
 /// test, DISCARDS) println!/eprintln! output — CI never passes --nocapture.
-/// Mirrors `crates/proc-memstat/tests/non_utf8_name.rs`'s
+/// Mirrors `crates/platform/proc-memstat/tests/non_utf8_name.rs`'s
 /// `skip_notice_survives_both_libtest_capture_layers`: re-exec this test
 /// binary with a marker env var and `.env_remove("RUST_TEST_NOCAPTURE")`, no
 /// `--nocapture`, and assert the direct-stderr notice appears in the child's

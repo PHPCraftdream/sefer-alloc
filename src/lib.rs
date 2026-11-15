@@ -106,18 +106,18 @@
 // selected by features; four are development infrastructure, and
 // `tagged-index-stack` is verification-only:
 //
-//   sefer-region       (crates/sefer-region)             — typed handle store (this re-export; runtime, no feature gate)
+//   sefer-region       (crates/containers/sefer-region)             — typed handle store (this re-export; runtime, no feature gate)
 //   sefer-concurrent   (crates/containers/sefer-concurrent) — legacy/research concurrent tier (feature: experimental/pinning)
-//   aligned-vmem       (crates/aligned-vmem)               — OS virtual-memory aperture          (feature: alloc-core)
-//   numa-shim          (crates/numa-shim)               — NUMA detection + binding            (feature: numa-aware)
-//   once-ptr-cell      (crates/once-ptr-cell)      — lazy CAS-published pointer cell     (feature: alloc-core)
-//   size-classes       (crates/size-classes)       — const-built size-class tables       (feature: alloc-core)
+//   aligned-vmem       (crates/platform/aligned-vmem)               — OS virtual-memory aperture          (feature: alloc-core)
+//   numa-shim          (crates/platform/numa-shim)               — NUMA detection + binding            (feature: numa-aware)
+//   once-ptr-cell      (crates/primitives/once-ptr-cell)      — lazy CAS-published pointer cell     (feature: alloc-core)
+//   size-classes       (crates/primitives/size-classes)       — const-built size-class tables       (feature: alloc-core)
 //   sefer-ghost        (crates/primitives/sefer-ghost) — checking-build-only ghost_assert!/ghost_event! (always; no feature gate)
-//   tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack (verification-only; not a runtime dependency)
-//   malloc-bench-rs    (crates/malloc-bench-rs)       — portable GlobalAlloc bench harness  (dev-only)
-//   globalalloc-model  (crates/globalalloc-model)  — differential op-stream test harness (dev-only)
-//   proc-memstat       (crates/proc-memstat)       — same-instant RSS / commit self-probe (dev-only)
-//   proc-probe         (crates/proc-probe)         — RESULT key=value stdout protocol    (dev-only)
+//   tagged-index-stack (crates/primitives/tagged-index-stack) — ABA-tagged free-index stack (verification-only; not a runtime dependency)
+//   malloc-bench-rs    (crates/bench/malloc-bench-rs)       — portable GlobalAlloc bench harness  (dev-only)
+//   globalalloc-model  (crates/verify/globalalloc-model)  — differential op-stream test harness (dev-only)
+//   proc-memstat       (crates/platform/proc-memstat)       — same-instant RSS / commit self-probe (dev-only)
+//   proc-probe         (crates/platform/proc-probe)         — RESULT key=value stdout protocol    (dev-only)
 //
 // (`ring-mpsc`, a standalone bounded MPSC index ring, was removed from the
 // workspace, task #655 — it had zero production consumers; the in-tree
@@ -135,46 +135,46 @@
 //
 // EXTERNAL publishable crates (each independently auditable):
 //
-//   aligned-vmem  (crates/aligned-vmem/src/lib.rs)         — #![allow(unsafe_code)]
+//   aligned-vmem  (crates/platform/aligned-vmem/src/lib.rs)         — #![allow(unsafe_code)]
 //     Sole purpose: SEGMENT-aligned mmap/VirtualAlloc + page decommit/recommit.
 //     Entire crate = OS aperture. Small, single-responsibility. Audit in isolation.
 //
-//   numa-shim     (crates/numa-shim/src/lib.rs)         — #![allow(unsafe_code)]
+//   numa-shim     (crates/platform/numa-shim/src/lib.rs)         — #![allow(unsafe_code)]
 //     Sole purpose: Linux mbind(2) via syscall(2), Windows VirtualAllocExNuma.
 //     No libnuma dep. Small, single-responsibility. Audit in isolation.
 //
-//   malloc-bench-rs (crates/malloc-bench-rs/src/lib.rs) — #![allow(unsafe_code)]
+//   malloc-bench-rs (crates/bench/malloc-bench-rs/src/lib.rs) — #![allow(unsafe_code)]
 //     Confined to alloc_block / free_block / drain_mailbox helpers plus one
 //     `unsafe impl Send for Block` (the cross-thread ownership-transfer token);
 //     every unsafe call carries a // SAFETY: comment. Bench harness, not runtime.
 //     Callers must supply a stateless-facade `A` (see `run`'s contract doc).
 //
-//   once-ptr-cell (crates/once-ptr-cell/src/lib.rs, applying to src/imp.rs) — #![allow(unsafe_code)]
+//   once-ptr-cell (crates/primitives/once-ptr-cell/src/lib.rs, applying to src/imp.rs) — #![allow(unsafe_code)]
 //     Single documented reason: `unsafe impl Send/Sync` for the AtomicPtr-backed
 //     cell + `NonNull::new_unchecked`. Lazy CAS-published pointer cell; every
 //     site has `# Safety` / `// SAFETY:`. Pulled in under `alloc-core`.
 //
-//   globalalloc-model (crates/globalalloc-model/src/lib.rs) — #![allow(unsafe_code)]
+//   globalalloc-model (crates/verify/globalalloc-model/src/lib.rs) — #![allow(unsafe_code)]
 //     Single documented reason: the `unsafe trait RawAllocator` (impls must
 //     return valid pointers for the requested layout); every impl + call
 //     carries `// SAFETY:`. Dev-only differential-test harness.
 //
-//   proc-memstat  (crates/proc-memstat/src/lib.rs)  — #![allow(unsafe_code)]
+//   proc-memstat  (crates/platform/proc-memstat/src/lib.rs)  — #![allow(unsafe_code)]
 //     Sole purpose: OS-FFI self-probe (Windows K32GetProcessMemoryInfo, macOS
 //     task_info, Linux /proc). Every block carries `// SAFETY:`. Dev-only.
 //
-//   sefer-region  (crates/sefer-region/src/lib.rs)        — #![forbid(unsafe_code)]
+//   sefer-region  (crates/containers/sefer-region/src/lib.rs)        — #![forbid(unsafe_code)]
 //     Handle<T> / Region<T> / SyncRegion<T>. Zero own unsafe; slotmap's
 //     unsafe owns the generational layout. No version-scoped audit record
-//     for slotmap is tracked by this project (see crates/sefer-region/README.md
+//     for slotmap is tracked by this project (see crates/containers/sefer-region/README.md
 //     "## Safety").
 //
-//   size-classes  (crates/size-classes/src/lib.rs)  — #![forbid(unsafe_code)]
+//   size-classes  (crates/primitives/size-classes/src/lib.rs)  — #![forbid(unsafe_code)]
 //     const-evaluated size-class tables + derived O(1) size→class lookup +
 //     alignment classifier. no_std, zero-dependency, no raw pointers anywhere.
 //     sefer's size_classes.rs is a thin shim over it. Pulled in under `alloc-core`.
 //
-//   tagged-index-stack (crates/tagged-index-stack/src/lib.rs) — #![deny(unsafe_code)]
+//   tagged-index-stack (crates/primitives/tagged-index-stack/src/lib.rs) — #![deny(unsafe_code)]
 //     ABA-tagged Treiber free-index stack via a single packed AtomicU64 head
 //     word (monotonic tag in the high bits). no_std, no raw-pointer derefs;
 //     TEN audited, item-scoped `#[allow(unsafe_code)]` regions, all in
@@ -185,7 +185,7 @@
 //     requiring link-domain, liveness, and exclusive-ownership obligations).
 //     Root packing proofs use it under `cfg(kani)`; sefer's runtime does not.
 //
-//   proc-probe    (crates/proc-probe/src/lib.rs)    — #![forbid(unsafe_code)]
+//   proc-probe    (crates/platform/proc-probe/src/lib.rs)    — #![forbid(unsafe_code)]
 //     The RESULT key=value stdout protocol + a re-export of proc-memstat's
 //     snapshot. Pure protocol crate; the OS FFI stays in proc-memstat. Dev-only.
 //
