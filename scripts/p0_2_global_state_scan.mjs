@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // P0.2 global-state interference scan for tests/regression_merged/*.
 //
-// The P0.2 pilot merged 58 flat test files into one process; modules whose
+// The P0.2 pilot merged 55 flat test files into one process (75 root regression_* pool minus 20 P0.1 hard blockers; 3 of the original 78 were moved to crates/containers/sefer-concurrent by P1.2); modules whose
 // assertions depend on PROCESS-GLOBAL state (dbg_* static counters, panic
 // hooks, env vars, RSS/thread queries, global registry lifecycle) can now
 // interfere with each other under the parallel in-process harness.
@@ -161,7 +161,7 @@ function runExclusions(jsonPath, md) {
   if (saved !== K - 1) fail(`saved ${saved} != K-1`);
   out.push(`excluded: ${N} modules, ${rows.length} entries; kept: ${merged} modules (merged); total: ${T}`);
   out.push(`binaries per full-target row: ${K} flat targets -> 1, saved ${saved}`);
-  if (T !== 58) fail(`total ${T} != 58`);
+  if (T !== 55) fail(`total ${T} != 55 (78 root regression_* pool - 3 moved to crates/containers/sefer-concurrent by P1.2 - 20 P0.1 hard blockers = 55)`);
   if (N !== 23) fail(`excluded modules ${N} != 23`);
   out.push('');
   out.push('Legend:');

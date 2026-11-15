@@ -96,12 +96,24 @@ export const MIRI_TARGETS = [
   green('miri-core', 'ghost_infra', 'internals'),
   // Ghost-checks G2 (P5 route pins, item 186): last-reference free vs a concurrent pin drop on the real directory.
   green('miri-core', 'route_pin_last_ref_miri', 'alloc-global internals'),
-  ...['regression_large_align_no_segment_exhaustion', 'regression_page_aligned_no_segment_exhaustion',
-    'regression_realloc_cross_class_shrink', 'stress_boundary_sweep']
-    .map((test) => green('miri-alloc-core', test, 'alloc-core')),
-  green('miri-alloc-core', 'regression_r6_t22_foreign_window_key_miri', 'exact-span-large internals'),
+  // P0.2 pilot — only the regression_* tests that are rows below with target
+  // `regression_merged` were merged into the single `regression_merged` target
+  // (tests/regression_merged.rs + tests/regression_merged/<name>.rs); the `--`
+  // name filters keep each row's executed test set identical to the pre-merge
+  // per-target run. All other regression_* rows stay flat targets.
+  green('miri-alloc-core', 'regression_merged', 'alloc-core', {
+    args: ['--', 'regression_large_align_no_segment_exhaustion::',
+      'regression_page_aligned_no_segment_exhaustion::', 'regression_realloc_cross_class_shrink::'],
+  }),
+  green('miri-alloc-core', 'stress_boundary_sweep', 'alloc-core'),
+  green('miri-alloc-core', 'regression_merged', 'exact-span-large internals', {
+    args: ['--', 'regression_r6_t22_foreign_window_key_miri::'],
+  }),
   // NL-3: bounded cross-thread safe churn (cfg(miri) caps the sequence inside the test).
-  ...['regression_magazine_oracles', 'regression_bump_direct_refill', 'nl3_safe_xthread_churn_integrity',
+  green('miri-fastbin', 'regression_merged', 'alloc-global alloc-xthread alloc-decommit fastbin internals', {
+    args: ['--', 'regression_magazine_oracles::'],
+  }),
+  ...['regression_bump_direct_refill', 'nl3_safe_xthread_churn_integrity',
     'nl7_safe_large_realloc_integrity']
     .map((test) => green('miri-fastbin', test, 'alloc-global alloc-xthread alloc-decommit fastbin internals')),
   ...['regression_xthread_large_free_no_leak', 'regression_xthread_thread_free_alias_miri',
@@ -125,15 +137,21 @@ export const MIRI_TARGETS = [
   }),
   green('miri-core', 'r11_ph4a_lease_miri', 'alloc-global alloc-xthread internals'),
   green('miri-core', 'r11_ph4b_lease_miri', 'alloc-global alloc-xthread internals'),
-  green('miri-core', 'regression_r2_05_diag_provenance_miri', 'alloc-core internals'),
-  green('miri-core', 'regression_w3_stats_aliasing_miri', 'std'),
+  green('miri-core', 'regression_merged', 'alloc-core internals', {
+    args: ['--', 'regression_r2_05_diag_provenance_miri::'],
+  }),
+  green('miri-core', 'regression_merged', 'std', {
+    args: ['--', 'regression_w3_stats_aliasing_miri::'],
+  }),
   green('miri-core', 'class_leaves_publication_miri', 'alloc-core'),
   green('miri-plain', 'regression_r2_06_header_race_miri', plainFeatures, { model: 'plain' }),
-  green('local-only', 'regression_realloc_oob_old_layout', 'alloc-core', {
+  green('local-only', 'regression_merged', 'alloc-core', {
+    args: ['--', 'regression_realloc_oob_old_layout::'],
     expect: 'WAIVED', card: 190,
     reason: 'Local-only until bounded Miri runtime is measured; no CI runtime receipt yet.',
   }),
-  green('local-only', 'regression_virgin_bitmap_skip', 'alloc-core internals', {
+  green('local-only', 'regression_merged', 'alloc-core internals', {
+    args: ['--', 'regression_virgin_bitmap_skip::'],
     expect: 'WAIVED', card: 190,
     reason: 'Local-only until Miri runtime is measured; under cfg(miri) zero-skip itself is disabled.',
   }),
