@@ -128,19 +128,20 @@ The founding principle (from [DESIGN.md](DESIGN.md)):
 ### Workspace companions
 
 Before discussing the internal seams, the workspace structure matters for the
-audit story. The four original extractions, plus `sefer-policy` (P1.3), were:
+audit story. The four original extractions, plus `sefer-policy` (P1.3) and `sefer-platform` (P1.4), were:
 
 ```
 sefer-alloc
  ├── sefer-policy    (crates/core/sefer-policy)         — allocator POLICY layer: config types, policy builders, Large-THP policy runtime (feature: alloc-decommit)
  ├── sefer-region    (crates/containers/sefer-region)       — Handle<T>/Region<T>/SyncRegion<T>
  ├── aligned-vmem    (crates/platform/aligned-vmem)         — OS virtual-memory aperture  (feature: alloc-core)
+ ├── sefer-platform  (crates/platform/sefer-platform)       — fatal/process-exit + SEGMENT OS aperture (feature: alloc-core)
  ├── numa-shim       (crates/platform/numa-shim)         — NUMA detection + binding    (feature: numa-aware)
  └── malloc-bench-rs (crates/bench/malloc-bench-rs) — portable GlobalAlloc bench harness (standalone)
 ```
 
-The workspace now has thirteen companion crates (P1.3 added `sefer-policy`, the extracted `src/alloc_core/config` policy layer); the complete current list is in
-[README §Workspace](../README.md#workspace-thirteen-independently-publishable-companion-crates).
+The workspace now has fourteen companion crates (P1.3 added `sefer-policy`, the extracted `src/alloc_core/config` policy layer; P1.4 added `sefer-platform`, the extracted fatal/process-exit/segment OS aperture); the complete current list is in
+[README §Workspace](../README.md#workspace-fourteen-independently-publishable-companion-crates).
 Each original extraction is a real crates.io crate. The
 extraction **improved the audit story**: the two OS-unsafe sub-problems are now
 small, single-responsibility crates that can be audited in complete isolation.
@@ -152,6 +153,7 @@ small, single-responsibility crates that can be audited in complete isolation.
 | Crate | Path | Unsafe story |
 |---|---|---|
 | `aligned-vmem` | `crates/platform/aligned-vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture; sole responsibility = SEGMENT-aligned mmap/VirtualAlloc + decommit. Small, audit in isolation. |
+| `sefer-platform` | `crates/platform/sefer-platform/` | `#![allow(unsafe_code)]` — the P1.4 platform-seam crate: `os.rs` (SEGMENT-aligned OS aperture moved out of the root's `alloc_core::platform::os`) and `process_exit.rs` (Windows loader-shutdown FFI query, moved out of `src/global/process_exit.rs`, now a re-export conduit); `fatal.rs` is safe |
 | `numa-shim` | `crates/platform/numa-shim/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim; sole responsibility = mbind(2)/VirtualAllocExNuma. Small, audit in isolation. |
 | `malloc-bench-rs` | `crates/bench/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
 | `sefer-policy` | `crates/core/sefer-policy/` | `#![forbid(unsafe_code)]` — zero own unsafe, zero raw pointers; the former `src/alloc_core/config` policy layer (moved P1.3). |
@@ -159,9 +161,9 @@ small, single-responsibility crates that can be audited in complete isolation.
 
 **Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):
 
-The current tree has **27** tier-1 `#![allow(unsafe_code)]` files (21 in
-`src/`, 6 in `crates/`) and **92** item-scoped allows across **28** files.
-The ordinary `production` build activates 15 internal tier-1 seams;
+The current tree has **30** tier-1 `#![allow(unsafe_code)]` files (21 in
+`src/`, 9 in `crates/`) and **112** item-scoped allows across **34** files.
+The ordinary `production` build activates 18 tier-1 seam files (16 in `src/`, 2 in `sefer-platform`);
 `--cfg loom` adds its bootstrap shim, while `batch-api`,
 `large-cache-extended` and `experimental` add optional seams. See
 [README §Where unsafe lives](../README.md#where-unsafe-lives-the-complete-list)
@@ -453,6 +455,12 @@ section.
 Full design: [PHASE_NUMA_DESIGN.md](PHASE_NUMA_DESIGN.md).
 
 ### OS seam: `src/alloc_core/platform/numa.rs`
+
+(P1.4: the SEGMENT-aligned OS aperture itself — `Segment`, the `SEGMENTS_*`
+counters, the reserve/release/commit/decommit wrappers — no longer lives in
+`src/alloc_core/platform/os.rs`; it moved to the `sefer-platform` crate
+(`crates/platform/sefer-platform/src/os.rs`) and is re-exported through
+the `alloc_core::os` conduit. `numa.rs` stayed in the root.)
 
 A confined `unsafe` module (modeled after `os.rs`) with three entry points:
 

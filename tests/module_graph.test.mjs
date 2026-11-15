@@ -408,3 +408,15 @@ test('extern-anchored bindings make pathRefs external, not root edges', () => {
     'the extern pathRef (via the extern-anchored binding) + the extern use item are tallied');
   assert.equal(g.unresolvedRefs.length, 0);
 });
+
+// Case: a glob re-export of an EXTERNAL crate module (`pub use ext::m::*;`)
+// must not make the resolver recurse on itself (P1.4 sefer-platform conduit).
+test('glob re-export of an extern crate module terminates and creates no edge', () => {
+  const g = withGraph({
+    'lib.rs': 'mod conduit;\nmod consumer;\n',
+    'conduit.rs': 'pub(crate) use extern_crate::module::*;\n',
+    'consumer.rs': 'use crate::conduit::Thing;\n\npub fn go() {\n    crate::conduit::helper();\n}\n',
+  });
+  assert.ok(edgeOf(g, 'consumer', 'conduit'), 'consumer -> conduit edge survives');
+  assert.equal(g.edges.some(e => e.target === 'extern_crate' || e.source === 'extern_crate'), false);
+});

@@ -1235,7 +1235,7 @@
       "id": "cache/process-exit",
       "class": "cache",
       "files": [
-        "src/global/process_exit.rs"
+        "crates/platform/sefer-platform/src/process_exit.rs"
       ],
       "receiver": "^QUERY$",
       "reason": "resolved function pointer cache (windows); Relaxed: idempotent"

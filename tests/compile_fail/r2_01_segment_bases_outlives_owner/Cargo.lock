@@ -194,6 +194,7 @@ dependencies = [
  "once-ptr-cell",
  "sefer-concurrent",
  "sefer-ghost",
+ "sefer-platform",
  "sefer-policy",
  "sefer-region",
  "size-classes",
@@ -211,6 +212,13 @@ dependencies = [
 [[package]]
 name = "sefer-ghost"
 version = "0.1.0"
+
+[[package]]
+name = "sefer-platform"
+version = "0.1.0"
+dependencies = [
+ "aligned-vmem",
+]
 
 [[package]]
 name = "sefer-policy"

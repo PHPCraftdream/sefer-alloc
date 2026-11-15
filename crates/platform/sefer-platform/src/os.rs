@@ -1,0 +1,877 @@
+//! [`Segment`] — the OS aperture for SEGMENT-aligned spans (the "backup"
+//! half of the former `sefer-alloc` `alloc_core::platform::os` seam, moved
+//! here by plan step P1.4 verbatim: same items, same cfg gates, same
+//! accounting). The root crate re-exports this module's surface through its
+//! `alloc_core::os` conduit, so all call-site paths are unchanged.
+//!
+//! This thin wrapper delegates platform syscalls and the Miri `System.alloc`
+//! fallback to `aligned-vmem`. Geometry helpers remain local; owned spans use
+//! `aligned_vmem::Reservation`. Legacy release is infallible; checked release
+//! reports the native outcome so advice charges are returned only on success.
+//! Decommit/recommit delegate to the corresponding `aligned-vmem` operations.
+
+// The crate is `#![deny(unsafe_code)]` with `alloc-core` on; this is one of
+// the documented `unsafe` seams. `allow` lifts the crate-level `deny` for
+// this file only for the unsafe release family in `aligned-vmem`.
+#![allow(unsafe_code)]
+
+use core::ptr::NonNull;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+use aligned_vmem as vmem;
+
+/// Process-wide count of successful OS segment reservations (every
+/// [`Segment::reserve`] success, plus NUMA-pinned reservations via
+/// `numa::reserve_aligned_on_node`, which bypasses `Segment::reserve` but
+/// still releases through [`release_segment`] below). Monotonic —
+/// increment-only, relaxed. Diagnostic only: exposed process-wide via
+/// `SeferAlloc::stats()` (`AllocStats::segments_reserved_total`) so a
+/// consumer can watch `segments_reserved_total - segments_released_total`
+/// (the live segment count) without walking any per-heap `SegmentTable`.
+///
+/// A monotonic pair (reserved/released totals) was chosen over a single
+/// balanced live-count atomic: every increment/decrement pair would need to
+/// be threaded through every segment-owning code path (small heap,
+/// large-cache, decommit recycle, cross-thread reclaim) and a single missed
+/// decrement anywhere silently desyncs the counter forever. The two totals
+/// likewise require every counted reservation to pair with exactly one release,
+/// either through owning [`Segment`] destruction or [`release_segment`] after
+/// ownership transfer.
+pub static SEGMENTS_RESERVED_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+/// Legacy release attempts, owning [`Segment`] destruction, and confirmed
+/// checked releases. Diagnostic only: legacy calls do not prove native success.
+/// Monotonic, relaxed. See [`SEGMENTS_RESERVED_TOTAL`].
+pub static SEGMENTS_RELEASED_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+/// Process-wide count of failed segment-reservation constructors, including
+/// `aligned_vmem::reserve_aligned{,_lazy}` failures. Monotonic, relaxed; the
+/// third member of the counter family above. The typed biased-window path
+/// excludes invalid arguments, but the `Option` paths cannot distinguish
+/// them. On Windows a lazy constructor can fail during its initial commit;
+/// its error does not identify the syscall stage. This is not an exact count
+/// of refused reserve syscalls or of later useful-window commit failures.
+///
+/// R35 (`docs/CORRECTNESS_OPEN_ITEMS.md` item 143): a capacity test that
+/// stops early cannot, from the outside, tell WHICH of two very different
+/// things happened — the allocator ran out of `SegmentTable` slots (the
+/// ceiling under test), or the OS refused to back another mapping (on
+/// Windows `ERROR_COMMITMENT_LIMIT`/1455, a system-wide RAM+pagefile
+/// budget shared with every other process on the machine). Both surface
+/// identically as a null return from `alloc`. Without this counter the
+/// only available assertion is "the count matched", which turns any
+/// machine under memory pressure into a red test that looks exactly like
+/// a slot-bookkeeping regression.
+///
+/// This is deliberately a FAILURE counter rather than an errno/GetLastError
+/// capture: the reservation primitives live behind `aligned_vmem`'s
+/// `Option` API and do not surface an OS error code, and the distinction
+/// the tests need is whether a reservation constructor failed, not its OS
+/// error code. With valid test inputs, a nonzero delta points outside slot
+/// bookkeeping; a zero delta does not rule out a separate later commit failure.
+pub static SEGMENTS_RESERVE_FAILED_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+/// The segment size and alignment, in bytes. 4 MiB — mimalloc's default. Every
+/// [`Segment`] handed up by this module is aligned to a multiple of this value,
+/// so [`segment_base_of_ptr`] can find an allocation's owning segment
+/// header in O(1) by masking the low bits of its address.
+///
+/// This is exposed (read-only) as `sefer_alloc`'s `SegmentLayout::SEGMENT`.
+pub const SEGMENT: usize = 1 << 22;
+
+/// A page size used by the page-granularity `PageMap`. 4 KiB — the smallest
+/// unit both `mmap` (unix) and `VirtualAlloc` (windows) will commit/decommit.
+/// Kept independent of [`SEGMENT`] so the page tables stay small (1024 pages
+/// per segment) while the alignment mask is the segment mask.
+///
+/// Re-exported from `aligned_vmem::PAGE` for a single source of truth.
+pub const PAGE: usize = vmem::PAGE;
+
+/// A conservative compile-time upper bound on every realistic real-world OS
+/// page size. 64 KiB covers the page sizes `aligned_vmem::page_size()` can
+/// actually return at runtime — 4 KiB (x86-64 default), 16 KiB (Apple Silicon
+/// macOS), and 64 KiB (some Linux/aarch64 configs). Being a power of two,
+/// alignment to it implies alignment to every smaller power-of-two page size.
+///
+/// This is a compile-time *superset* bound, used in place of the runtime
+/// `aligned_vmem::page_size()` wherever a decommit/recommit boundary offset
+/// (`Layout::small_meta_end` / `Layout::primordial_meta_end`) must be
+/// const-evaluated: those are `const fn` and cannot call the runtime query,
+/// but they MUST land on a real-page boundary on every platform, because
+/// `madvise`/`VirtualFree` silently round non-page-aligned offsets to the
+/// nearest real page (M6 would silently reclaim the wrong byte range — see
+/// `docs/reviews/2026-07-17-deep-audit/10-platform-portability.md`). Using
+/// `PAGE` (4 KiB) here was the latent bug: a 16 KiB-page machine got a
+/// boundary mid-page. Cost: at most ~64 KiB of extra committed-but-unused
+/// metadata slack per segment in the worst case (negligible against
+/// [`SEGMENT`] = 4 MiB).
+// R6-T16: read by the decommit boundaries, the lazy-commit initial-commit
+// math, and the reserved-capacity grow path; suppressed where all are absent.
+#[cfg_attr(
+    not(any(
+        feature = "alloc-decommit",
+        feature = "small-segment-lazy-commit",
+        feature = "primordial-lazy-commit",
+        feature = "large-reserved-capacity",
+        feature = "internals"
+    )),
+    allow(dead_code)
+)]
+pub const MAX_REALISTIC_PAGE_SIZE: usize = 1 << 16;
+
+/// Convert an address to the SEGMENT-aligned base it falls within.
+///
+/// Pure safe arithmetic — this is part of the Cartographer and lives outside
+/// the `unsafe` seam logically, but is so tightly coupled to [`SEGMENT`] that
+/// it is defined here next to the constant. Re-exported (as part of the
+/// module glob) by the root crate's `alloc_core::os` conduit and surfaced as
+/// `SegmentLayout` there.
+#[must_use]
+#[inline]
+pub const fn segment_base_of(addr: usize) -> usize {
+    addr & !(SEGMENT - 1)
+}
+
+/// Convert a raw pointer to the SEGMENT-aligned base pointer it falls within,
+/// **preserving provenance**.
+///
+/// This is the strict-provenance–clean equivalent of the old
+/// `segment_base_of(ptr as usize) as *mut u8` idiom: `ptr as usize` strips
+/// provenance (exposed-address cast, forbidden under `-Zmiri-strict-provenance`),
+/// while `ptr.map_addr(|a| a & !(SEGMENT - 1))` rounds the address down within
+/// the same provenance domain — sound under both permissive and strict-provenance
+/// models. The returned pointer carries the same provenance as `ptr` and points
+/// to the SEGMENT-aligned base of the segment that contains `ptr`.
+///
+/// `ptr` MUST lie within a segment owned by this allocator (the Cartographer's
+/// invariant); the result is the base of that segment. Pure address
+/// arithmetic: it does not dereference the pointer.
+#[must_use]
+#[inline(always)]
+pub fn segment_base_of_ptr(ptr: *mut u8) -> *mut u8 {
+    ptr.map_addr(|a| a & !(SEGMENT - 1))
+}
+
+/// A owning handle to one SEGMENT-aligned span of raw memory.
+///
+/// `base` is non-null, aligned to `SEGMENT`, and valid for `len` bytes for the
+/// lifetime of this `Segment`. Dropping the `Segment` returns the whole
+/// underlying OS reservation to the OS exactly once. The span is **not**
+/// initialised — callers must not read uninitialised bytes (matching the
+/// `GlobalAlloc::alloc` contract).
+///
+/// Internally wraps [`aligned_vmem::Reservation`]; exposes the same API as the
+/// original `Segment` type so all call sites are unchanged.
+///
+/// `Segment` is `Send` (but not `Sync`): the span is owned exclusively by the
+/// sending thread. `&Segment` grants only read access to the metadata.
+pub struct Segment(vmem::Reservation);
+
+impl Drop for Segment {
+    fn drop(&mut self) {
+        // Reservation's RAII release bypasses release_segment on bootstrap rollback.
+        SEGMENTS_RELEASED_TOTAL.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl Segment {
+    /// Reserve a checked biased Large window. The original release token keeps
+    /// SEGMENT alignment; metadata root is page-aligned before aligned payload.
+    #[cfg(not(feature = "numa-aware"))]
+    pub fn reserve_biased(
+        useful: usize,
+        committed: usize,
+        align: usize,
+        metadata: usize,
+    ) -> Option<(*mut u8, NonNull<u8>, usize)> {
+        let raw_len = useful.checked_add(align)?;
+        let lazy = match vmem::try_reserve_aligned_lazy(raw_len, SEGMENT, vmem::page_size()) {
+            Ok(lazy) => lazy,
+            Err(error) => {
+                // Preserve the OS-reserve refusal diagnostic, excluding argument/
+                // arithmetic rejection and the later useful-window commit failure.
+                if !error.is_invalid_argument() {
+                    SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+                }
+                return None;
+            }
+        };
+        let raw = lazy.into_reservation();
+        let origin = raw.as_ptr();
+        let payload = origin
+            .addr()
+            .checked_add(metadata)?
+            .checked_add(align - 1)?
+            & !(align - 1);
+        let root_offset = payload.checked_sub(metadata)?.checked_sub(origin.addr())?;
+        if root_offset.checked_add(useful)? > raw.len() || committed > useful {
+            return None;
+        }
+        // SAFETY: checked offsets lie in this exclusively owned reservation.
+        let root = unsafe { origin.add(root_offset) };
+        // SAFETY: the window is page-aligned and within the original reservation.
+        if !unsafe { vmem::commit_range(root, 0, committed) } {
+            return None;
+        }
+        let token = NonNull::new(raw.reservation_ptr())?;
+        let len = raw.reservation_len();
+        core::mem::forget(raw);
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some((root, token, len))
+    }
+    /// Reserve a SEGMENT-aligned span of `len` bytes from the OS.
+    ///
+    /// `len` is rounded UP to a multiple of `SEGMENT` (a span is always whole
+    /// segments). Returns `None` only on OOM or if `len == 0`.
+    #[must_use]
+    pub fn reserve(len: usize) -> Option<Self> {
+        if len == 0 {
+            return None;
+        }
+        let n_segments = len.div_ceil(SEGMENT);
+        let usable = n_segments * SEGMENT;
+        let Some(reservation) = vmem::reserve_aligned(usable, SEGMENT) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
+    /// R12-3 (EXPERIMENTAL, feature `exact-span-large`): reserve a
+    /// SEGMENT-ALIGNED span of EXACTLY `len` bytes — unlike [`reserve`](Self::reserve),
+    /// `len` is NOT rounded up to a whole number of `SEGMENT`s. The caller
+    /// (`alloc_large_slow`) is responsible for `len` already being a non-zero
+    /// multiple of the OS page size (`aligned_vmem::PAGE`) — `reserve_aligned`'s
+    /// own contract requirement — typically `round_up(header + size, PAGE)`.
+    ///
+    /// This exists so a Large/huge dedicated segment can reserve+commit only
+    /// the physically-needed span instead of a minimum of one whole `SEGMENT`
+    /// (4 MiB) regardless of the requested size. The base stays `SEGMENT`
+    /// (4 MiB) aligned — only the span's byte length shrinks — so
+    /// [`segment_base_of_ptr`] continues to resolve the correct segment base
+    /// for an exact-span segment exactly as it does for a whole-segment one.
+    /// `crates/aligned-vmem::reserve_aligned(size, align)` already supports
+    /// `size != align` on every backend (see the `exact-span-large` feature
+    /// doc in `Cargo.toml` for the full backend-support argument); this
+    /// constructor is a thin non-rounding sibling of [`reserve`](Self::reserve),
+    /// not a new OS-level capability.
+    ///
+    /// Returns `None` only on OOM, if `len == 0`, or if `len` is not a
+    /// multiple of the OS page size (forwarded from `vmem::reserve_aligned`'s
+    /// contract).
+    ///
+    /// `not(numa-aware)`: mirrors [`reserve_lazy`](Self::reserve_lazy)'s own
+    /// gating — the sole caller (`alloc_large_slow`'s `not(numa-aware)` OS
+    /// reservation arm) only takes this branch when `numa-aware` is off; the
+    /// numa-aware arm calls `numa::reserve_aligned_on_node` directly instead,
+    /// which already forwards `usable` unrounded regardless of this feature
+    /// (see the `exact-span-large` feature doc in `Cargo.toml`). Gating the
+    /// definition here too (rather than leaving it reachable-but-uncalled)
+    /// keeps `--all-features` (which enables `numa-aware` alongside
+    /// `exact-span-large`) free of a dead-code warning.
+    ///
+    /// R12-4: also excluded when `large-reserved-capacity` is on — that
+    /// feature's `alloc_large_slow` arm always calls
+    /// [`reserve_capacity_exact`](Self::reserve_capacity_exact) instead (a
+    /// strict superset of what this constructor does), so `reserve_exact`
+    /// would otherwise be genuinely unreachable-but-compiled under that
+    /// feature combination, same dead-code rationale as the `numa-aware`
+    /// exclusion above.
+    #[must_use]
+    #[cfg(all(
+        feature = "exact-span-large",
+        not(feature = "numa-aware"),
+        not(feature = "large-reserved-capacity")
+    ))]
+    pub fn reserve_exact(len: usize) -> Option<Self> {
+        if len == 0 {
+            return None;
+        }
+        let Some(reservation) = vmem::reserve_aligned(len, SEGMENT) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
+    /// R12-4 (EXPERIMENTAL, feature `large-reserved-capacity`): reserve a
+    /// SEGMENT-ALIGNED span of EXACTLY `reserved_len` bytes — like
+    /// [`reserve_exact`](Self::reserve_exact) — but commit only the first
+    /// `initial_commit` bytes; the remainder of `reserved_len` stays
+    /// reserved-but-uncommitted (Windows lazy-commit path; falls back to the
+    /// eager, fully-committed path on Unix/miri, matching
+    /// `aligned_vmem::reserve_aligned_lazy`'s own fallback — same portability
+    /// contract as [`reserve_lazy`](Self::reserve_lazy)).
+    ///
+    /// This is [`reserve_lazy`](Self::reserve_lazy)'s ARBITRARY-length sibling
+    /// (that constructor is hardcoded to a whole `SEGMENT`), combined with
+    /// [`reserve_exact`](Self::reserve_exact)'s non-rounding contract: the
+    /// caller (`alloc_large_slow`) picks `reserved_len` as a geometric multiple
+    /// of the page-rounded request (capped, see the `large-reserved-capacity`
+    /// feature doc in `Cargo.toml`) and `initial_commit` as the page-rounded
+    /// request itself, so a later growing `realloc` that still fits within
+    /// `reserved_len` can commit just the missing tail
+    /// ([`commit_pages`]) instead of moving the allocation.
+    ///
+    /// `initial_commit` must be a non-zero multiple of the RUNTIME page size
+    /// (`aligned_vmem::page_size()`, not the compile-time `PAGE` — task #1074:
+    /// the vmem lazy contract rejects 4 KiB-only multiples on 16/64 KiB-page
+    /// hosts) and `<= reserved_len`; `reserved_len` must itself be a non-zero
+    /// multiple of the runtime page size (forwarded from
+    /// `vmem::reserve_aligned_lazy`'s contract).
+    /// Returns `None` on OOM or a contract violation.
+    ///
+    /// `not(numa-aware)`: mirrors [`reserve_lazy`](Self::reserve_lazy) /
+    /// [`reserve_exact`](Self::reserve_exact)'s own gating — the sole caller
+    /// (`alloc_large_slow`'s `not(numa-aware)` OS reservation arm) only takes
+    /// this branch when `numa-aware` is off; the numa-aware arm always uses
+    /// the eager `numa::reserve_aligned_on_node` path (NUMA reservations are
+    /// not disturbed by the lazy path, same exclusion as the small-segment
+    /// lazy-commit path). Gating the definition here too (rather than leaving
+    /// it reachable-but-uncalled) keeps `--all-features` free of a dead-code
+    /// warning.
+    #[must_use]
+    #[cfg(all(feature = "large-reserved-capacity", not(feature = "numa-aware")))]
+    pub fn reserve_capacity_exact(reserved_len: usize, initial_commit: usize) -> Option<Self> {
+        if reserved_len == 0 {
+            return None;
+        }
+        // `into_reservation()` — same rationale as the sibling constructors.
+        //
+        // task #1080: both arguments are value-proven runtime-page multiples
+        // but form-opaque to the guard's text walker — `reserved_len` is
+        // `usable.saturating_mul(4).min(16 * SEGMENT).max(usable)` (integer
+        // ×4 / min / max over page-multiples preserves page-multiplicity),
+        // and `initial_commit` is `usable`, whose cfg-active
+        // `exact-span-large` arm is `align_up(needed, page_size())` and whose
+        // feature-OFF arm is a whole-SEGMENT multiple (4 MiB is a multiple
+        // of every supported runtime page ≤ 64 KiB); cfg-blind by design,
+        // both arms are checked. Runtime-pinned by
+        // tests/large_reserved_capacity.rs (task #1077's 64 KiB-multiple
+        // boundary assertion) and by `validate_initial_commit` itself.
+        // pageguard:allow — production provenance marker (task #1080)
+        let Some(lazy) = vmem::reserve_aligned_lazy(reserved_len, SEGMENT, initial_commit) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        let reservation = lazy.into_reservation();
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
+    /// Reserve a SEGMENT-aligned, exactly-`SEGMENT`-sized span from the OS,
+    /// committing only the first `initial_commit` bytes — the rest stays
+    /// reserved-but-uncommitted (Windows lazy-commit path; falls back to the
+    /// eager, fully-committed path on Unix/miri, matching
+    /// `aligned_vmem::reserve_aligned_lazy`'s own fallback).
+    ///
+    /// R7-B6 (primordial lazy commit): the primordial-segment analogue of
+    /// `reserve_small_segment`'s lazy branch,
+    /// factored here so `bootstrap::primordial` can call it without
+    /// duplicating the raw `aligned_vmem` plumbing outside this seam.
+    /// `initial_commit` must be a non-zero multiple of the RUNTIME page size
+    /// (`aligned_vmem::page_size()`, not the compile-time `PAGE` — task #1074:
+    /// the vmem lazy contract rejects 4 KiB-only multiples on 16/64 KiB-page
+    /// hosts) and `<= SEGMENT`; the caller (`bootstrap::primordial`) upholds
+    /// this via `Layout::lazy_initial_commit` plus a `debug_assert!`
+    /// mirroring `reserve_small_segment`'s identical
+    /// contract. Returns `None` on OOM or a contract violation.
+    ///
+    /// `not(numa-aware)`: the sole caller (`bootstrap::primordial`) only
+    /// takes this branch when `numa-aware` is off, mirroring
+    /// `reserve_small_segment`'s own NUMA exclusion (P2 gate: NUMA
+    /// reservations must not be disturbed by the lazy path) — see that call
+    /// site's doc for the full rationale. Gating the definition here too
+    /// (rather than leaving it reachable-but-uncalled) keeps `--all-features`
+    /// (which enables `numa-aware` alongside `alloc-lazy-commit`) free of a
+    /// dead-code warning.
+    ///
+    /// R12-9 (task #260): gated on `primordial-lazy-commit` specifically —
+    /// this is the constructor `bootstrap::primordial` alone calls, so it is
+    /// the one call site that must NOT compile when only
+    /// `small-segment-lazy-commit` is enabled (else it would be unreachable
+    /// dead code in that configuration).
+    #[must_use]
+    #[cfg(all(feature = "primordial-lazy-commit", not(feature = "numa-aware")))]
+    pub fn reserve_lazy(initial_commit: usize) -> Option<Self> {
+        // `into_reservation()`: see the note at `alloc_core_small.rs`'s lazy
+        // branch. The allocator's commit frontier lives in the segment header,
+        // reachable from a bare pointer on the hot path, so it does NOT use
+        // `LazyReservation`'s tracking and takes the explicit door out.
+        let Some(lazy) = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        let reservation = lazy.into_reservation();
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
+    /// Reserve a SEGMENT-aligned, exactly-`SEGMENT`-sized span from the OS
+    /// for an ORDINARY (non-primordial) small segment, committing only the
+    /// first `initial_commit` bytes — the rest stays reserved-but-
+    /// uncommitted (Windows lazy-commit path; falls back to the eager,
+    /// fully-committed path on Unix/miri, matching
+    /// `aligned_vmem::reserve_aligned_lazy`'s own fallback).
+    ///
+    /// oxx R2-05: byte-for-byte the same body as
+    /// [`reserve_lazy`](Self::reserve_lazy) (which serves the primordial
+    /// segment) — this is its `small-segment-lazy-commit` sibling, factored
+    /// out as its own accounting seam so `reserve_small_segment_impl`
+    /// (`alloc_core_small/reserve.rs`) no longer calls
+    /// `aligned_vmem::reserve_aligned_lazy` directly. The inline call it
+    /// used to make only incremented [`SEGMENTS_RESERVED_TOTAL`] via
+    /// `.inspect(..)` on the `Some` arm; the `None` arm returned straight
+    /// through `?`/`seg?` without ever touching
+    /// [`SEGMENTS_RESERVE_FAILED_TOTAL`], so an OS reservation refusal for
+    /// an ordinary small segment under `small-segment-lazy-commit` (without
+    /// `numa-aware`, which routes through the already-counted `numa.rs`
+    /// path instead) went unrecorded — breaking the "zero `_FAILED_TOTAL`
+    /// growth ⇒ blame the allocator, not the machine" oracle documented on
+    /// that counter. This constructor counts both outcomes, exactly like
+    /// every other `Segment` constructor in this file.
+    ///
+    /// `initial_commit` must be a non-zero multiple of the RUNTIME page size
+    /// (`aligned_vmem::page_size()`) and `<= SEGMENT`; the caller
+    /// (`reserve_small_segment_impl`) upholds this via
+    /// `Layout::lazy_initial_commit` plus a `debug_assert!`. Returns `None`
+    /// on OOM or a contract violation.
+    ///
+    /// `not(numa-aware)`: mirrors [`reserve_lazy`](Self::reserve_lazy)'s own
+    /// gating — the sole caller only takes this branch when `numa-aware` is
+    /// off; the numa-aware arm reserves via `numa::reserve_aligned_on_node`
+    /// instead (P2 gate: NUMA reservations must not be disturbed by the
+    /// lazy path). Gating the definition here too keeps `--all-features`
+    /// free of a dead-code warning.
+    #[must_use]
+    #[cfg(all(feature = "small-segment-lazy-commit", not(feature = "numa-aware")))]
+    pub fn reserve_small_lazy(initial_commit: usize) -> Option<Self> {
+        // `into_reservation()`: see the note at `reserve_lazy`'s identical
+        // body — the allocator's commit frontier lives in the segment
+        // header, reachable from a bare pointer on the hot path, so it does
+        // NOT use `LazyReservation`'s tracking and takes the explicit door
+        // out.
+        let Some(lazy) = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        let reservation = lazy.into_reservation();
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
+    /// task #504 (F11 step 2) MEASUREMENT-ONLY: identical mechanism to
+    /// [`reserve_lazy`](Self::reserve_lazy) (reserve a whole `SEGMENT`,
+    /// commit only `initial_commit` bytes up front via the same
+    /// `aligned_vmem::reserve_aligned_lazy` primitive), but gated on
+    /// `bench-internals` alone — NOT on the `primordial-lazy-commit` sefer-
+    /// level POLICY feature. This lets the R32-13 Windows decomposition gate
+    /// call the reserve-vs-commit SPLIT primitive to time
+    /// `VirtualAlloc(MEM_RESERVE)` separately from `VirtualAlloc(MEM_COMMIT)`
+    /// without pulling in (or depending on) any production reservation
+    /// policy change — see `bench-internals`'s own `Cargo.toml` doc for why
+    /// this split exists as its own hook rather than reusing `reserve_lazy`
+    /// directly. Same OOM/contract-violation `None` return; same Unix/miri
+    /// eager-fallback behavior (crate-documented on `aligned_vmem::
+    /// reserve_aligned_lazy`).
+    #[must_use]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "internals",
+        feature = "alloc-decommit"
+    ))]
+    pub fn reserve_lazy_for_measurement(initial_commit: usize) -> Option<Self> {
+        // `into_reservation()`: see the note at `alloc_core_small.rs`'s lazy
+        // branch. The allocator's commit frontier lives in the segment header,
+        // reachable from a bare pointer on the hot path, so it does NOT use
+        // `LazyReservation`'s tracking and takes the explicit door out.
+        let Some(lazy) = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        let reservation = lazy.into_reservation();
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
+    /// The SEGMENT-aligned usable base of this span, as a `*mut u8`. Non-null,
+    /// valid for the span's usable byte length (see the `reserve*`
+    /// constructors), aligned to `SEGMENT`.
+    #[must_use]
+    pub fn as_ptr(&self) -> *mut u8 {
+        self.0.as_ptr()
+    }
+
+    /// The start of the OS reservation (may extend below [`as_ptr`](Self::as_ptr)
+    /// due to the over-reserve + trim technique). Recorded in the segment
+    /// header so `AllocCore::drop` can release the whole reservation.
+    #[must_use]
+    pub fn reservation(&self) -> NonNull<u8> {
+        // SAFETY: `aligned_vmem::Reservation::reservation_ptr()` is always
+        // non-null — it was returned by the OS (or `System.alloc` under miri)
+        // and is non-null by the `reserve_aligned` contract.
+        unsafe { NonNull::new_unchecked(self.0.reservation_ptr()) }
+    }
+
+    /// The full size of the OS reservation (head + usable + tail).
+    #[must_use]
+    pub const fn reservation_len(&self) -> usize {
+        self.0.reservation_len()
+    }
+
+    /// TH-1: transparent-huge-page hint for the span (Linux; no-op elsewhere).
+    #[cfg(not(feature = "numa-aware"))]
+    pub fn advise_huge_pages(&self) -> bool {
+        self.0.advise_huge_pages()
+    }
+
+    /// Disable transparent huge-page backing for this reservation's usable span.
+    #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+    pub fn try_disable_transparent_huge_pages(&self) -> Result<(), vmem::VmemError> {
+        self.0.try_disable_transparent_huge_pages()
+    }
+
+    /// Range-limited huge-page hint for `[offset, offset + length)` of the span; returns the bytes the kernel accepted.
+    // Used by the dependent fresh-path THP integration.
+    #[cfg_attr(
+        any(not(feature = "alloc-decommit"), feature = "numa-aware"),
+        allow(dead_code)
+    )]
+    #[cfg(not(feature = "numa-aware"))]
+    pub fn try_advise_huge_pages_range(
+        &self,
+        offset: usize,
+        length: usize,
+    ) -> Result<usize, vmem::VmemError> {
+        self.0.try_advise_huge_pages_range(offset, length)
+    }
+}
+
+// Reservation already implements Send, so Segment derives it automatically.
+// Keep that derivation: a manual unsafe impl would conceal a future !Send field.
+// This assertion pins exclusive-ownership transfer without freezing that proof.
+const _: () = {
+    fn assert_send<T: Send>() {}
+    let _ = assert_send::<Segment>;
+};
+
+// NOTE: `Segment` is intentionally NOT `Sync` (same as before). Writes into
+// the span happen via raw pointers in the `node` seam under the single-threaded
+// Phase 8 invariant; no synchronisation for concurrent writes.
+
+/// Release a whole OS reservation. Thin wrapper over
+/// [`aligned_vmem::release`].
+///
+/// # Safety
+///
+/// `reservation` is either null (no-op) or the start of a live reservation
+/// obtained from [`Segment::reserve`] (or a sibling constructor) of this
+/// crate, with its original `reservation_len` and `SEGMENT` alignment. The
+/// caller transfers ownership exactly once: no `Segment` handle, alias or
+/// later call may use or release the range afterwards.
+//
+// P1.4: made `unsafe fn` (R25-1 class: a safe `pub fn` freeing memory via a
+// raw pointer must not be public API). The root keeps a `pub(crate)` safe
+// wrapper with the pre-extraction signature.
+pub unsafe fn release_segment(reservation: *mut u8, reservation_len: usize) {
+    if reservation.is_null() {
+        return;
+    }
+    // SAFETY: the caller's contract (documented above) guarantees `reservation`
+    // was returned by `aligned_vmem::reserve_aligned(_, SEGMENT)` and is freed
+    // exactly once. The `align` argument matches the original reservation.
+    unsafe { vmem::release(reservation, reservation_len, SEGMENT) };
+    SEGMENTS_RELEASED_TOTAL.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Same ownership contract as [`release_segment`]; on error, never retry or access the mapping.
+///
+/// # Safety
+///
+/// Same as [`release_segment`]: `reservation` is null or the start of a live,
+/// uniquely owned reservation of this crate with its original
+/// `reservation_len`, transferred exactly once. On `Err` the caller must
+/// neither retry the release nor touch the mapping.
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+pub unsafe fn try_release_segment(
+    reservation: *mut u8,
+    reservation_len: usize,
+) -> Result<(), vmem::VmemError> {
+    // SAFETY: caller transfers the live, uniquely owned reservation with its
+    // original geometry once; no owning handle remains to release it again.
+    unsafe { vmem::try_release(reservation, reservation_len, SEGMENT) }?;
+    if !reservation.is_null() {
+        SEGMENTS_RELEASED_TOTAL.fetch_add(1, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+/// Relaxed snapshot of [`SEGMENTS_RESERVED_TOTAL`]. Diagnostic only.
+// R6-T16: read by the AllocStats backing accessors (alloc-global) and the
+// internals diag aliases only.
+#[cfg_attr(
+    not(any(feature = "alloc-global", feature = "internals")),
+    allow(dead_code)
+)]
+#[must_use]
+pub fn segments_reserved_total() -> u64 {
+    SEGMENTS_RESERVED_TOTAL.load(Ordering::Relaxed)
+}
+
+/// Relaxed snapshot of [`SEGMENTS_RELEASED_TOTAL`]. Diagnostic only.
+// R6-T16: read by the AllocStats backing accessors (alloc-global) and the
+// internals diag aliases only.
+#[cfg_attr(
+    not(any(feature = "alloc-global", feature = "internals")),
+    allow(dead_code)
+)]
+#[must_use]
+pub fn segments_released_total() -> u64 {
+    SEGMENTS_RELEASED_TOTAL.load(Ordering::Relaxed)
+}
+
+/// Decommit the payload pages of a segment: return their physical backing to
+/// the OS while keeping the address-space reservation alive. Thin wrapper over
+/// [`aligned_vmem::decommit`].
+///
+/// `base` is the SEGMENT-aligned base. We decommit `[base + start_offset,
+/// base + end_offset)` — typically the payload region past the metadata. The
+/// offsets MUST be page-aligned and within the segment.
+///
+/// # Safety
+///
+/// `base` is the SEGMENT-aligned base of a live segment reserved by this
+/// crate. `start_offset < end_offset`, both page-aligned and within the
+/// segment's reservation (the callee does not check containment). No live
+/// block or reference exists in the range, and its contents are not read
+/// before a later recommit.
+#[cfg(feature = "alloc-decommit")]
+pub unsafe fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) {
+    // SAFETY: `base` is the base of a live segment owned by this allocator.
+    // The caller guarantees no live blocks exist in the range, and offsets are
+    // page-aligned. `aligned_vmem::decommit` validates only the offset
+    // alignment and `start < end` (NOT that the range lies within the segment —
+    // that is this caller's invariant), and is a no-op under miri.
+    unsafe { vmem::decommit(base, start_offset, end_offset) };
+}
+/// Commit a sub-range within a segment whose payload was only partially
+/// committed (the lazy-commit path). Thin wrapper over
+/// [`aligned_vmem::commit_range`].
+///
+/// Returns `true` if the range is now committed, `false` if the OS refused.
+/// On `false` the caller MUST NOT write into the range.
+///
+/// ## Fault injection (CRATE-P2 follow-up: absorbed into vmem)
+///
+/// The B2/B4 "fail the next N" / "fail the k-th" commit-failure fault
+/// injectors used to live here as sefer-local `COMMIT_FAIL_*` atomics. They
+/// have been absorbed into `aligned_vmem::fault_injection` (feature
+/// `aligned-vmem/fault-injection`, pulled in ONLY by the test-only
+/// `lazy-commit-fault-injection` fixture feature since R2-19 — no ordinary
+/// lazy-commit policy edge implies it any more): the hook now lives on
+/// vmem's REAL commit path
+/// (`try_commit_range`, checked immediately before the real syscall), so
+/// this function needs no fault-injection logic of its own — arming is done
+/// directly against `aligned_vmem::fault_injection::{arm_fail_next,
+/// arm_fail_at}` (see `AllocCore::dbg_arm_commit_fail` /
+/// `dbg_arm_commit_fail_at`). This is DISTINCT from vmem's `mock` feature,
+/// which replaces the whole backend (sefer needs the real segment
+/// reservation + real commit accounting under test, so it cannot build with
+/// `mock`).
+///
+/// ## Difference from [`recommit_pages`]
+///
+/// [`recommit_pages`] re-commits pages that were PREVIOUSLY committed and then
+/// decommitted via [`decommit_pages`]. `commit_pages` commits pages that were
+/// NEVER committed in the first place (reserved via the lazy path). The
+/// underlying Windows syscall is the same (`VirtualAlloc(MEM_COMMIT)`), but
+/// the semantic intent differs.
+///
+/// R12-4: also compiled under `large-reserved-capacity`, which reuses this
+/// exact wrapper to commit the missing tail of a Large segment's
+/// `reserved_capacity` on a growing in-place `realloc` — same underlying
+/// `aligned_vmem::commit_range` primitive as the small-segment lazy-commit
+/// path, just a different caller.
+///
+/// R12-9 (task #260): the B2 grow-on-carve caller in `carve_block`/
+/// `carve_batch` (`alloc_core_small.rs`) is SHARED between the primordial
+/// segment and ordinary small segments, so this wrapper is gated on `any(..)`
+/// of the two split lazy-commit sub-features (either one's initial partial
+/// reservation can leave a frontier below `SEGMENT` that a later carve grows
+/// past), not on either sub-feature alone.
+///
+/// # Safety
+///
+/// `base` is the SEGMENT-aligned base of a live segment reserved by this
+/// crate. `start_offset < end_offset`, both page-aligned, and
+/// `[base + start_offset, base + end_offset)` lies within the segment's VA
+/// reservation (the callee does not check containment); the range is
+/// reserved-but-uncommitted or already committed. On `false` the caller must
+/// not write into the range.
+#[must_use]
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit",
+    feature = "large-reserved-capacity"
+))]
+pub unsafe fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
+    // SAFETY: `base` is the base of a live segment owned by this allocator.
+    // The caller guarantees `[base + start_offset, base + end_offset)` is
+    // within the segment's VA reservation and currently reserved-but-
+    // uncommitted (or already committed — idempotent). `aligned_vmem::
+    // commit_range` validates only the offset alignment and `start < end`.
+    // The fault-injection check (when armed) happens INSIDE `commit_range`,
+    // immediately before the real syscall.
+    unsafe { vmem::commit_range(base, start_offset, end_offset) }
+}
+
+/// task #504 (F11 step 2) MEASUREMENT-ONLY: identical mechanism to
+/// [`commit_pages`] (thin wrapper over `aligned_vmem::commit_range`), gated
+/// on `bench-internals` alone instead of the three sefer-level lazy-commit
+/// POLICY features `commit_pages` requires. See
+/// [`Segment::reserve_lazy_for_measurement`] for the paired reserve-side
+/// hook and the full rationale for keeping this split independent of any
+/// production policy feature.
+///
+/// # Safety
+///
+/// Same caller contract as [`commit_pages`]: `[base + start_offset, base +
+/// end_offset)` must be within a live segment's VA reservation, currently
+/// reserved-but-uncommitted (or already committed — idempotent).
+#[must_use]
+#[cfg(all(
+    feature = "bench-internals",
+    feature = "internals",
+    feature = "alloc-decommit"
+))]
+pub unsafe fn commit_pages_for_measurement(
+    base: *mut u8,
+    start_offset: usize,
+    end_offset: usize,
+) -> bool {
+    // SAFETY: forwarded from this function's own `# Safety` contract, the
+    // same one `commit_pages` documents above.
+    unsafe { vmem::commit_range(base, start_offset, end_offset) }
+}
+
+/// Recommit previously-decommitted pages within a segment. Thin wrapper over
+/// [`aligned_vmem::recommit`].
+///
+/// Returns `true` if the range is now committed (writes into it are safe), and
+/// `false` if the OS refused the commit (commit-charge exhaustion / true OOM).
+/// On `false` the caller MUST NOT write into the range and MUST leave the
+/// segment marked decommitted — this is an honest OOM, propagated as a null
+/// carve, never a fault or panic (`sefer_alloc` OOM contract).
+///
+/// # Safety
+///
+/// `base` is the SEGMENT-aligned base of a live segment reserved by this
+/// crate. `start_offset < end_offset`, both page-aligned and within the
+/// segment's reservation (the callee does not check containment), and the
+/// range was previously decommitted via [`decommit_pages`]. On `false` the
+/// caller must not write into the range.
+#[must_use]
+#[cfg(feature = "alloc-decommit")]
+// B3: under `small-segment-lazy-commit` the recommit path in
+// carve_block/carve_batch is replaced by a lazy clear-decommitted-flag (the
+// initial chunk is already committed), so this function has no callers. It
+// IS called when `alloc-decommit` is ON but `small-segment-lazy-commit` is
+// OFF. (`primordial-lazy-commit` alone does not affect this: only `Small`
+// segments are ever decommitted — the primordial segment is structurally
+// excluded from the decommit/pool lifecycle, see `dec_live_and_maybe_decommit`
+// — so this function's reachability tracks `small-segment-lazy-commit`
+// specifically, not the `primordial-lazy-commit` sibling. R12-9, task #260.)
+#[cfg_attr(feature = "small-segment-lazy-commit", allow(dead_code))]
+pub unsafe fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
+    // SAFETY: `base` is the base of a live segment owned by this allocator,
+    // and `[base + start_offset, base + end_offset)` was previously decommitted.
+    // `aligned_vmem::recommit` validates only the offset alignment and
+    // `start < end` (NOT range containment — that is this caller's invariant),
+    // and is a no-op that reports success under miri.
+    unsafe { vmem::recommit(base, start_offset, end_offset) }
+}
+
+// ── G1-K7: depot-overflow record storage ───────────────────────────────────
+//
+// One lazily committed reservation per heap slot, holding only magazine
+// records (the control lives in the slot's zero-valid `Depot`). Like the
+// registry heaps it serves, the span lives for the process (bounded by
+// `MAX_HEAPS`); trim decommits its pages, the address range is kept.
+
+/// Reserve `len` bytes (a multiple of the runtime page size) for a heap's
+/// depot-overflow records, committing only the first page. Returns the base,
+/// or `None` on OOM (the overflow then stays off for this heap).
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+pub fn reserve_depot_overflow(len: usize) -> Option<*mut u8> {
+    let r = vmem::reserve_aligned_lazy(len, vmem::page_size(), vmem::page_size())?;
+    let (base, _len, _align) = r.into_reservation().into_parts();
+    Some(base)
+}
+
+/// Commit `[base + start, base + end)` of a depot-overflow reservation
+/// (page-aligned offsets inside the span returned by
+/// [`reserve_depot_overflow`]); `false` on commit failure (nothing changes).
+///
+/// # Safety
+///
+/// `base` is a live span returned by [`reserve_depot_overflow`] (never
+/// released). `start < end`, both page-aligned and inside that span (the
+/// callee does not check containment).
+#[must_use]
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+pub unsafe fn commit_depot_overflow(base: *mut u8, start: usize, end: usize) -> bool {
+    // SAFETY: `base` is a live depot-overflow reservation (never released)
+    // and the caller passes page-aligned offsets inside it.
+    unsafe { vmem::commit_range(base, start, end) }
+}
+
+/// Decommit `[base + start, base + end)` of a depot-overflow reservation once
+/// every record in the range is empty (teardown after the depot is drained).
+///
+/// # Safety
+///
+/// As [`commit_depot_overflow`]: `base` is a live span from
+/// [`reserve_depot_overflow`] and `start < end` are page-aligned offsets
+/// inside it. The caller holds no live record in the range, never reads its
+/// contents afterwards, and re-commits before writing it again.
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+pub unsafe fn decommit_depot_overflow(base: *mut u8, start: usize, end: usize) {
+    // SAFETY: as in `commit_depot_overflow`; the caller holds no live record
+    // in the range and will re-commit before writing it again. The contents
+    // are never read after this, so the lazy advice is enough where the eager
+    // one is advisory-only (Darwin and the BSDs, CORRECTNESS_OPEN_ITEMS 48).
+    #[cfg(any(
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    unsafe {
+        vmem::decommit_lazy(base, start, end)
+    };
+    #[cfg(not(any(
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    )))]
+    unsafe {
+        vmem::decommit(base, start, end)
+    };
+}
