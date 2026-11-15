@@ -408,8 +408,6 @@ runs:
     # all-features rows no longer run them. The plain row covers the
     # default-feature tests; the all-features row runs the
     # internals/bench-internals-gated hooks plus `pinning`.
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
     - run: cargo test -p sefer-concurrent --no-fail-fast
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
