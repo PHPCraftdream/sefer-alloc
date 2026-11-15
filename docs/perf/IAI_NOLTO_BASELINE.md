@@ -23,8 +23,11 @@ extraction PR compares its run against this row.
   `CARGO_PROFILE_BENCH_LTO=false` + `CARGO_PROFILE_BENCH_CODEGEN_UNITS=16`
   (cargo env-overrides-manifest precedence). `lto = false` is the user default
   itself — cargo's "thin local LTO", NOT `off`.
-- Baseline name `main-nolto`, cache keys `iai-baseline-main-nolto-*` — a
-  separate iai-callgrind named baseline, so the two rows' caches never mix.
+- Baseline name `main_nolto` — iai-callgrind baseline names accept only ASCII
+  `[A-Za-z0-9_]` (a hyphenated `main-nolto` made the job's first CI run fail)
+  — with cache keys `iai-baseline-nolto-main-*` (kebab-case is fine for cache
+  keys; the prefix deliberately doesn't start with `iai-baseline-main-`, so
+  the two rows' caches never mix).
 - CI threshold identical to the existing row (inherited
   `IAI_CALLGRIND_REGRESSION: 'Ir=10'`); the plan's "delta 0" for P1.6 is the
   audit expectation read from recorded numbers, not a CI threshold.
@@ -65,7 +68,7 @@ extraction run vs this baseline. No code is changed by this task.
 
 ## Comparison discipline
 
-- Compare only same-row runs: this row against its own `main-nolto` baseline;
+- Compare only same-row runs: this row against its own `main_nolto` baseline;
   never against the thin-LTO row's numbers — different binaries.
 - Bench-name sets must match exactly between the runs being diffed (the
   summary script enforces it).
