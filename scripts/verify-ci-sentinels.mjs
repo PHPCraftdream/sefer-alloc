@@ -1109,11 +1109,7 @@ function verifyCiSentinels() {
 // sentinel. Attribute, marker assertion ordering and nocapture checks remain
 // unchanged. This is the current exact floor, not a parser exemption.
 // The harness-free installed-Box target replaces four libtest result sentinels
-// with four asserted completion markers; the live count remains 101.
-// 2026-11-15: bumped 230 -> 234 for the four new sentinels added by the P1.1-P1.4
-// restructuring steps (no ci.yml edit in this step -- the count grew first; item 275
-// in docs/CORRECTNESS_OPEN_ITEMS.md records this). Re-derived by a live run of
-// `node scripts/verify-ci-sentinels.mjs` on this tree: 234 sentinel(s) checked.
+// with four asserted completion markers; the live count remains 101. 2026-11-15: bumped 230 -> 234 for the four new sentinels added by the P1.1-P1.4 restructuring steps (no ci.yml edit in this step -- the count grew first; item 275 in docs/CORRECTNESS_OPEN_ITEMS.md records this). Re-derived by a live run of `node scripts/verify-ci-sentinels.mjs` on this tree: 234 sentinel(s) checked.
 const MIN_SENTINEL_COUNT = 234;
 
 const { checkedCount, errors } = verifyCiSentinels();

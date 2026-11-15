@@ -341,7 +341,7 @@ impl AllocCore {
         // real OS backend zero-fills a fresh reservation (Windows
         // `VirtualAlloc` MEM_COMMIT demand-zero; Unix anonymous `mmap`
         // zero-fill), so `true` is correct there. Under `cfg!(miri)`,
-        // `crates/platform/aligned-vmem`'s aperture falls back to bare `std::alloc::alloc`,
+        // `crates/aligned-vmem`'s aperture falls back to bare `std::alloc::alloc`,
         // which does NOT zero — so the bit is withheld (`false`) under miri,
         // mirroring `alloc_large_slow`'s identical `cfg!(not(miri))` freshness
         // gate (task #221/R9-1). This must run BEFORE any carve on this
@@ -354,7 +354,7 @@ impl AllocCore {
         //
         // Three-way split, mirroring the THREE platform-specific
         // `reserve_aligned_lazy_raw` implementations in
-        // `crates/platform/aligned-vmem/src/lib.rs` (the OS-level reservation this function
+        // `crates/aligned-vmem/src/lib.rs` (the OS-level reservation this function
         // just completed via `Segment::reserve_lazy`):
         //
         //   1. `numa-aware` (any platform): `SEGMENT`. NUMA reservations go
@@ -382,7 +382,7 @@ impl AllocCore {
         //      POINTLESS (R8-5, task #218): every carve past the artificial
         //      frontier still ran through B2's grow-on-carve path (bounds
         //      check + a `commit_pages` call that is a correctness no-op on
-        //      these platforms per `crates/platform/aligned-vmem`'s own `commit_range_impl`
+        //      these platforms per `crates/aligned-vmem`'s own `commit_range_impl`
         //      for unix/miri + an atomic `GROW_COMMIT_COUNT` bump) for zero
         //      behavioral benefit. Stamping `SEGMENT` immediately restores
         //      the feature's promised zero-cost-when-unneeded property on
@@ -457,7 +457,7 @@ impl AllocCore {
         // `Segment::reserve`/`numa::reserve_aligned_on_node` a few lines above
         // (never carved, never decommit-reset), and the OS guarantees fresh
         // pages read as zero (Windows `MEM_COMMIT` demand-zero; POSIX
-        // anonymous `mmap` zero-fill — see `crates/platform/aligned-vmem/src/lib.rs`'s
+        // anonymous `mmap` zero-fill — see `crates/aligned-vmem/src/lib.rs`'s
         // reserve paths; the same argument
         // `tests/regression_virgin_bitmap_skip.rs`'s header documents for the
         // former bitmaps). Under `miri` this is NOT skipped: the vmem miri
