@@ -2070,6 +2070,15 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(
   2 MiB extra peak RSS in cycle cells; the advice budget is not an RSS limit. Cold, cache and whole-child scopes remain separate.
   Auto performance and long-lived fragmented-memory behavior remain unmeasured. Historical whole-mapping J13 results are not this
   range-based implementation. Fault counts/AnonHugePages corroborate activation, not exact physical attribution or standalone speed.
+- **Final comparative measurements (2026-11-15, relative, not canonical).** Under the owner-requested hard limits `wnice -p high -c 10` (a hard
+  10% CPU cap with HIGH priority, job-free launch), a [final comparative run](docs/perf/FINAL_COMPARATIVE_BENCH_20261115.md) repeated both
+  comparisons on a different host and compiler level than the 2026-11-11 study, so absolute multiples differ and only directions carry over.
+  Windows `bench:table` passed its self-check (51/51 expected bench ids): SeferAlloc was faster than mimalloc in every size cell except
+  churn+teardown at 1024B (1.40x slower) and `manual_realloc_sim` (1.14x slower). The WSL2 J13 rerun found cold eligible cells (8 MiB and
+  above) at Always/Off 0.37–0.46 (geometric mean of 12 per-block paired ratios of the Always metric over the Off metric), no difference below
+  the 8 MiB threshold, CACHE second life at 0.3043 (0.2592–0.3574) — Always about 3.29x faster on this host, the opposite direction to the
+  GitHub-runner study's 1.0231 (cause not investigated) — and sparse `edge-128MiB` 11.9x slower (10.0406 in the 2026-11-11 study). These
+  relative numbers are not canonical; no runtime, default or feature change.
 - **Read it back** with `AllocCore::dbg_thp_tuple()`, `dbg_thp_tuple_conflicts()`, advised/charged byte counters and
   `dbg_thp_learning_telemetry()` (`bench-internals` plus `internals`). Learning rows contain e/m/share from one coherent pair, then independent
   applied/dropped counters; the whole array is not a coherent snapshot. `LargeCacheConfig::dbg_resolved_thp_tuple()` (`internals`) resolves a config without allocating.

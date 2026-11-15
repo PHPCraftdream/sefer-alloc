@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Final comparative measurements under hard CPU limits (2026-11-15)
+
+- [measurement] Both comparisons re-run under the owner-requested hard limits `wnice -p high -c 10` (hard 10% CPU cap with HIGH priority,
+  job-free launch; measured commit `d093edd7`, limiter built by CI from win-nice master `0acb5f7`, build sha256 prefix `0f22f28a`). Windows
+  `bench:table` self-check PASS (51/51 expected bench ids): SeferAlloc faster than mimalloc in every size cell except churn+teardown 1024B
+  (1.40x slower, SeferAlloc/mimalloc of the printed point estimates) and `manual_realloc_sim` (1.14x slower). WSL2 J13 Always/Off (geometric
+  mean of 12 per-block paired ratios of the Always metric over the Off metric): cold cells from 8 MiB 0.37–0.46, below the 8 MiB threshold no
+  difference, CACHE second life 0.3043 (0.2592–0.3574) — Always about 3.29x faster on this host, the opposite direction to the earlier
+  GitHub-runner study's 1.0231 in the same cell (cause not investigated); sparse edge-128MiB 11.9x slower with Always (earlier study: 10.04).
+  Relative numbers, not canonical: different host and compiler level than the 2026-11-11 study, absolute multiples differ. Raw log, CSVs and
+  report: `docs/perf/FINAL_COMPARATIVE_BENCH_20261115.md`, `docs/perf/_raw_final_comparative_bench_20261115.log`,
+  `docs/perf/j13_final_20261115/`. No runtime, default or feature change.
+- [docs] The PR #237 report's hand-written CACHE sentence said "no detectable difference" while its own CSV row reads Always/Off 0.3043
+  (0.2592–0.3574), i.e. Always faster; the tables were already correct and are unchanged. The whole Reading paragraph is now derived by
+  `docs/perf/final_comparative_20261115_scripts/final-report.mjs` from the CSVs with interval-consistency asserts.
+
 ### Adaptive Auto control cadence (2026-11-12)
 
 - [perf(opt-in)] Explicit `Auto` thins its fixed 1-in-8 control candidates per request group: four consecutive valid owner controls that
