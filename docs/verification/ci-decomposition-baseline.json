@@ -4,13 +4,13 @@
   "jobs": [
     {
       "id": "changes",
-      "metadata": "e8b2022411d4cc866b0a36ba770e1c1462dd05c8590fb1021be291901aaf306e",
+      "metadata": "00fd8564279d15cf8823872dde4b3c2b8eda96e88af4ed7eb64c55ea6f79e942",
       "steps": "1fe5589733f5bb700e49ab25de242b1626e691fd2ba507f210c3cd9d48c9cbd6"
     },
     {
       "id": "j13b-judge-preparation",
       "metadata": "12d71f089526cbe2378fed9277d7308920358924748ce4a3b8b08b4657f3f755",
-      "steps": "8e64b79f4163100864042285df5d35dacc1cf8a60477a94e3c4e5c901a2be26c"
+      "steps": "37407357cc2877bddbcdb91c2c3a8217d6d3578c333da4723ba7a981f5fd6685"
     },
     {
       "id": "select-tests",
@@ -20,7 +20,7 @@
     {
       "id": "docs-consistency",
       "metadata": "bab66112fe14c287ea446fa3f5f9ca0e6c9e8c8d21a969249302650dce4fbe2d",
-      "steps": "f71ec644e5514cc77fb059a1ddc29af9e716f377c4eff645ca9340dfc7242e32"
+      "steps": "8a9bdc1194c7bf1ad272bd9ce06a34bbf391c5c6736187e17aabcf6bf6faa282"
     },
     {
       "id": "ghost-guard",
@@ -38,6 +38,11 @@
       "steps": "eddf43ff6ef2f7c03560d90c2039c48a9dff53c71703fa4de09f77d43375c89f"
     },
     {
+      "id": "sefer-policy-gates",
+      "metadata": "fe6ae12b6c1ae1f2d64e78f18b9c2e32283f590cb9bae2e6760a8c2adb93b205",
+      "steps": "08f6680b41208c60b8b6525f1a8af2cfebe981533c60ea6627dc1a411040a869"
+    },
+    {
       "id": "sefer-region-gates",
       "metadata": "20ed58defd1d39070d5e62158505813cf2d9ee04b5d3a14bd853e59177ff9112",
       "steps": "175c954e1a82ee92f73ce20761a87e5bd22ac00e81f0d624d52fde0bff4659f3"
@@ -46,6 +51,11 @@
       "id": "sefer-concurrent-gates",
       "metadata": "927c84798b3aa45cbf35cfcc976a7116d37a2129732294f0c41f335d2ace79fd",
       "steps": "887aab6f15239d9247ecca796b2cd6dce67bf4e3db2746eb245088e316d4b55f"
+    },
+    {
+      "id": "sefer-platform-gates",
+      "metadata": "7c0a295bdf243ef1ed604c55ed180e4f28f40d8d7ebe85a4d14465c40456fc85",
+      "steps": "5b64669cf3b22c6e620f904ae2fc137ad93018d87b7673f5d3954a1fceb37734"
     },
     {
       "id": "aligned-vmem-gates",

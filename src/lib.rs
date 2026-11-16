@@ -99,16 +99,18 @@
 //!
 //! Runnable form: `tests/region_invariants.rs`.
 
-// ── Workspace: twelve independently-publishable companion crates ─────────────
+// ── Workspace: fourteen independently-publishable companion crates ────────────
 //
-// The workspace extracted twelve building blocks that can also be used
-// standalone. Seven are runtime dependencies, with allocator companions
+// The workspace extracted fourteen building blocks that can also be used
+// standalone. Nine are runtime dependencies, with allocator companions
 // selected by features; four are development infrastructure, and
 // `tagged-index-stack` is verification-only:
 //
+//   sefer-policy       (crates/core/sefer-policy)        — allocator policy layer: config types, Large-THP policy runtime (feature: alloc-core)
 //   sefer-region       (crates/containers/sefer-region)             — typed handle store (this re-export; runtime, no feature gate)
 //   sefer-concurrent   (crates/containers/sefer-concurrent) — legacy/research concurrent tier (feature: experimental/pinning)
 //   aligned-vmem       (crates/platform/aligned-vmem)               — OS virtual-memory aperture          (feature: alloc-core)
+//   sefer-platform     (crates/platform/sefer-platform)             — fatal/process-exit + SEGMENT OS aperture (feature: alloc-core)
 //   numa-shim          (crates/platform/numa-shim)               — NUMA detection + binding            (feature: numa-aware)
 //   once-ptr-cell      (crates/primitives/once-ptr-cell)      — lazy CAS-published pointer cell     (feature: alloc-core)
 //   size-classes       (crates/primitives/size-classes)       — const-built size-class tables       (feature: alloc-core)
@@ -163,6 +165,19 @@
 //     Sole purpose: OS-FFI self-probe (Windows K32GetProcessMemoryInfo, macOS
 //     task_info, Linux /proc). Every block carries `// SAFETY:`. Dev-only.
 //
+//   sefer-policy  (crates/core/sefer-policy/src/lib.rs)   — #![forbid(unsafe_code)]
+//     Allocator policy layer (the former src/alloc_core/config, moved P1.3).
+//     Zero own unsafe; pure core arithmetic, constants and atomic policy state.
+//
+//   sefer-concurrent (crates/containers/sefer-concurrent/src/lib.rs) — #![deny(unsafe_code)]
+//     One confined seam, `src/epoch/hand.rs` (the epoch-tier `AtomicSlot<T>`
+//     membrane over `crossbeam-epoch`); re-exported through sefer-alloc under
+//     `experimental`/`pinning` (legacy/research tier).
+//
+//   sefer-ghost   (crates/primitives/sefer-ghost/src/lib.rs) — #![forbid(unsafe_code)]
+//     Checking-build-only macros + a `core`-atomics shadow event table; no raw
+//     pointers, no allocation (rule R9).
+//
 //   sefer-region  (crates/containers/sefer-region/src/lib.rs)        — #![forbid(unsafe_code)]
 //     Handle<T> / Region<T> / SyncRegion<T>. Zero own unsafe; slotmap's
 //     unsafe owns the generational layout. No version-scoped audit record
@@ -189,6 +204,13 @@
 //     The RESULT key=value stdout protocol + a re-export of proc-memstat's
 //     snapshot. Pure protocol crate; the OS FFI stays in proc-memstat. Dev-only.
 //
+//   sefer-platform (crates/platform/sefer-platform/src/{os,process_exit}.rs) — #![allow(unsafe_code)]
+//     P1.4 platform seam (feature: `alloc-core`, optional dep). `os.rs`: the
+//     SEGMENT-aligned OS aperture (`Segment`, reserve/commit/decommit wrappers);
+//     `process_exit.rs`: the Windows loader-shutdown FFI probe. `fatal.rs` has
+//     no unsafe. The root re-exports through `alloc_core::os` /
+//     `global::process_exit` conduits.
+//
 // INTERNAL sefer-alloc seams (compiler-enforced — a stray `unsafe` outside
 // these named modules is a hard compile error in every configuration):
 //
@@ -202,9 +224,11 @@
 //  error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //
 //    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit):
-//      * `alloc_core::platform::os`   — thin interop wrapper around aligned-vmem; any
-//                             additional unsafe blocks carry `// SAFETY:` proof.
-//                             (under `alloc-core`)
+//      * `alloc_core::platform::os`   — unsafe now lives in `sefer-platform::os`; the root
+//                             keeps this seam: the directory-sidecar trio
+//                             (`reserve_directory_sidecar` / `read_directory_class_words` /
+//                             `read_directory_node_bucket`) plus 7 safe wrappers over
+//                             the crate's `pub unsafe fn`s. (under `alloc-core`)
 //      * `alloc_core::alloc_core::mem::large_control::sample_owned_large_residency`
 //                             — temporary owning VM adoption for owner-terminal
 //                             sampling, with release suppressed; `alloc-decommit`,
@@ -227,9 +251,11 @@
 //      * `global::exact_object::narrow` — exact `System` alloc/free of narrow
 //                             requests, original pointer and layout.
 //                             (`exact-object-proto` prototype only, not `production`)
-//      * `global::process_exit` — FFI query of Windows loader shutdown state.
 //        (R6-T37: the TLS heap module is no longer a tier-1 seam; its one
-//        `bench-internals` test hook is a tier-2 item-scoped allow.)
+//        `bench-internals` test hook is a tier-2 item-scoped allow. Note also
+//        that `global::process_exit` is NOT a seam: since P1.4 it is a thin
+//        `pub use` re-export of `sefer_platform::process_exit` — the FFI
+//        query of Windows loader shutdown state lives there, see below.)
 //      * `global::fallback`     — primordial fallback heap seam —
 //                             `static mut MaybeUninit<HeapCore>` + atomic-init
 //                             state-machine + spinlock-guarded `&mut` handout.

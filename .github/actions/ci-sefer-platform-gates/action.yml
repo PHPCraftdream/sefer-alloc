@@ -1,0 +1,20 @@
+name: CI sefer-platform-gates
+description: Original sefer-platform-gates job steps
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - run: cargo clippy -p sefer-platform --all-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p sefer-platform --no-default-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo check -p sefer-platform --all-features --all-targets
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p sefer-platform --all-features --no-deps
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}

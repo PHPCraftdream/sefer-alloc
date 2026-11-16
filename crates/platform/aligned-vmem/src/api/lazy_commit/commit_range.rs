@@ -58,6 +58,7 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 #[must_use]
 #[cfg(feature = "lazy-commit")]
 #[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
+#[inline]
 pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
     // SAFETY: forwarded from the caller's contract.
     unsafe { try_commit_range(base, start, end).is_ok() }
@@ -73,6 +74,7 @@ pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
 /// Same as [`commit_range`].
 #[cfg(feature = "lazy-commit")]
 #[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
+#[inline]
 pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
     let ps = page_size_or_poison();
     // Failed OS page-size query: fail closed with the OS-side no-code error

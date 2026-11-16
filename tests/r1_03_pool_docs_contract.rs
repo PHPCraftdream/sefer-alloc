@@ -14,7 +14,8 @@
 //! to their pre-fix text and confirming both assertion groups fail.
 
 const README: &str = include_str!("../README.md");
-const POOL_CONFIG: &str = include_str!("../src/alloc_core/config/small_segment_pool_config.rs");
+const POOL_CONFIG: &str =
+    include_str!("../crates/core/sefer-policy/src/small_segment_pool_config.rs");
 
 /// Windows CI checks these files out with CRLF line endings; the needles use
 /// `\n`, so compare against an LF-normalized copy.

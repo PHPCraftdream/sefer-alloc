@@ -3,8 +3,10 @@
 // ## The two rules
 //
 //   Rule 1 (NO-BARE-ABORT): every `std::process::abort` occurrence under
-//   `src/**/*.rs` must live in `src/alloc_core/platform/fatal.rs` (the ONE
-//   sanctioned terminator). R6-T15 converted the bare-abort sites to
+//   `src/**/*.rs` must live in the ONE sanctioned terminator file — since plan
+//   step P1.4 that is `crates/platform/sefer-platform/src/fatal.rs` (the
+//   `sefer-alloc` side keeps only the `alloc_core::fatal` conduit, which
+//   contains no abort). R6-T15 converted the bare-abort sites to
 //   `platform::fatal` so every termination carries a diagnostic message; the
 //   allowlist mechanism is RETAINED but currently EMPTY, so any bare abort
 //   outside fatal.rs fails this gate.
@@ -57,7 +59,7 @@ const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 // Rule 1 configuration
 // ---------------------------------------------------------------------------
 
-const ABORT_EXEMPT_FILE = 'src/alloc_core/platform/fatal.rs';
+const ABORT_EXEMPT_FILE = 'crates/platform/sefer-platform/src/fatal.rs';
 
 // Empty since the PR #49 / PR #50 merges: every remaining bare-abort file was
 // converted (R6-T15 complete). Do NOT re-add an entry without a task and a
@@ -323,7 +325,7 @@ const FIXTURES = [
     why: 'fatal() is the sanctioned terminator, not an abort hit',
   },
   {
-    path: 'src/alloc_core/platform/fatal.rs',
+    path: 'crates/platform/sefer-platform/src/fatal.rs',
     kind: 'abort',
     content: 'pub fn fatal(msg: &[u8]) -> ! {\n    std::process::abort()\n}\n',
     expect: 'allowed',

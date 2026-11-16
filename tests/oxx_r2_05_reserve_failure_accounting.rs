@@ -3,7 +3,7 @@
 //! (including typed `try_` variants)
 //! on a segment-reservation path must count BOTH outcomes into the process-
 //! wide counter pair documented on `SEGMENTS_RESERVE_FAILED_TOTAL`
-//! (`src/alloc_core/platform/os.rs`): success into
+//! (`crates/platform/sefer-platform/src/os.rs`): success into
 //! `SEGMENTS_RESERVED_TOTAL`, OS refusal into `SEGMENTS_RESERVE_FAILED_TOTAL`.
 //!
 //! Before the fix, `reserve_small_segment_impl`
@@ -28,8 +28,10 @@
 //! / `tests/no_stale_doc_references.rs`: there is no reservation-failure
 //! fault injector for this call (only commit-failure injection exists), so a
 //! behavioral test cannot exercise the `None` arm directly. Instead this
-//! scans `src/**/*.rs` (never `crates/`, which is `aligned_vmem` itself —
-//! the primitive being called, not a caller) for every raw
+//! scans `src/**/*.rs` plus `crates/platform/sefer-platform/src/**/*.rs` and
+//! `crates/core/sefer-policy/src/**/*.rs` (the moved caller crates); the other
+//! `crates/` trees remain unscanned, including `aligned-vmem` itself — the
+//! primitive being called, not a caller. It finds every raw
 //! `reserve_aligned(`/`reserve_aligned_lazy(` call and requires each one to
 //! be inside an explicitly reviewed, justified wrapper function (the
 //! `ALLOWLIST` below) whose body demonstrably increments
@@ -63,43 +65,43 @@ struct Allow {
 
 const ALLOWLIST: &[Allow] = &[
     Allow {
-        file: "src/alloc_core/platform/os.rs",
+        file: "crates/platform/sefer-platform/src/os.rs",
         func: "reserve",
         requires_failed_counter: true,
         note: "Segment::reserve — eager whole-SEGMENT reservation, accounts both outcomes",
     },
     Allow {
-        file: "src/alloc_core/platform/os.rs",
+        file: "crates/platform/sefer-platform/src/os.rs",
         func: "reserve_exact",
         requires_failed_counter: true,
         note: "Segment::reserve_exact (exact-span-large) — accounts both outcomes",
     },
     Allow {
-        file: "src/alloc_core/platform/os.rs",
+        file: "crates/platform/sefer-platform/src/os.rs",
         func: "reserve_capacity_exact",
         requires_failed_counter: true,
         note: "Segment::reserve_capacity_exact (large-reserved-capacity) — accounts both outcomes",
     },
     Allow {
-        file: "src/alloc_core/platform/os.rs",
+        file: "crates/platform/sefer-platform/src/os.rs",
         func: "reserve_lazy",
         requires_failed_counter: true,
         note: "Segment::reserve_lazy (primordial-lazy-commit) — accounts both outcomes",
     },
     Allow {
-        file: "src/alloc_core/platform/os.rs",
+        file: "crates/platform/sefer-platform/src/os.rs",
         func: "reserve_small_lazy",
         requires_failed_counter: true,
         note: "oxx R2-05 fix: Segment::reserve_small_lazy (small-segment-lazy-commit) — accounts both outcomes",
     },
     Allow {
-        file: "src/alloc_core/platform/os.rs",
+        file: "crates/platform/sefer-platform/src/os.rs",
         func: "reserve_biased",
         requires_failed_counter: true,
         note: "Segment::reserve_biased excludes invalid arguments and later useful-window commit failure; the lazy constructor cannot distinguish initial commit from reserve failure",
     },
     Allow {
-        file: "src/alloc_core/platform/os.rs",
+        file: "crates/platform/sefer-platform/src/os.rs",
         func: "reserve_lazy_for_measurement",
         requires_failed_counter: true,
         note: "Segment::reserve_lazy_for_measurement (bench-internals) — accounts both outcomes",
@@ -120,7 +122,7 @@ const ALLOWLIST: &[Allow] = &[
                sidecar_stats::record_sidecar_reservation, a separate counter family",
     },
     Allow {
-        file: "src/alloc_core/platform/os.rs",
+        file: "crates/platform/sefer-platform/src/os.rs",
         func: "reserve_depot_overflow",
         requires_failed_counter: false,
         note: "G1-K7 depot-overflow record storage is NOT a segment reservation; a refusal leaves the overflow off and is counted by DepotOverflow::stats.os_refusals",
@@ -215,6 +217,14 @@ fn no_unaccounted_reserve_aligned_calls() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     collect_rs(&root.join("src"), &mut files);
+    let platform_src = root.join("crates/platform/sefer-platform/src");
+    if platform_src.is_dir() {
+        collect_rs(&platform_src, &mut files);
+    }
+    let policy_src = root.join("crates/core/sefer-policy/src");
+    if policy_src.is_dir() {
+        collect_rs(&policy_src, &mut files);
+    }
     assert!(
         files.len() > 100,
         "scanner found only {} files — src/ layout changed?",
@@ -306,8 +316,8 @@ fn no_unaccounted_reserve_aligned_calls() {
 
     assert!(
         total_call_sites >= 8,
-        "scanner found only {total_call_sites} reserve_aligned{{,_lazy}} call sites in src/ — \
-         scan logic likely broken (expected at least os.rs's 6 + numa.rs's 2)"
+        "scanner found only {total_call_sites} reserve_aligned{{,_lazy}} call sites in src/ + moved crates/ — \
+         scan logic likely broken (expected at least sefer-platform os.rs's 6 + numa.rs's 2)"
     );
 
     assert!(

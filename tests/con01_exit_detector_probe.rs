@@ -1,4 +1,4 @@
-#[path = "../src/global/process_exit.rs"]
+#[path = "../crates/platform/sefer-platform/src/process_exit.rs"]
 mod process_exit;
 
 #[cfg(windows)]

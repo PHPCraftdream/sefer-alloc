@@ -1,6 +1,6 @@
 //! R6-T20 (review R6-CQ-22) — equivalence oracle for the medium→Large
 //! promotion-reachability predicate's single source of truth
-//! (`src/alloc_core/config/medium_promotion.rs`).
+//! (`crates/core/sefer-policy/src/medium_promotion.rs`).
 //!
 //! After R6-T20 the predicate exists in exactly three irreducible places:
 //! the `cfg!` const (`MEDIUM_PROMOTION_REACHABLE`), the `#[cfg]` generator

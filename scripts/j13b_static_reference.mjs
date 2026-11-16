@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const FRESH = 'src/alloc_core/alloc_core/mem/advise_fresh_large.rs';
-const RUNTIME = 'src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs';
+const RUNTIME = 'crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs';
 const ADMISSION = `        let prior = LEARNERS[group].try_observe_with_prior(&Self::current().gradient, observation);
         match prior {
             Some(prior) => {
@@ -36,8 +36,8 @@ const ADMISSION = `        let prior = LEARNERS[group].try_observe_with_prior(&S
 
 // Whole-file hashes pin the reviewed seams, not just a coincidental text anchor.
 export const STATIC_REFERENCE_SOURCES = Object.freeze({
-  [FRESH]: 'aae5a4a9d40106b1100a1021128b2b40afc985520efaffd229a82c20c2f783a4',
-  [RUNTIME]: 'ebe390de935ac20260def7513b26c01faf7a0ce4b9901847dca9e04e172284a3',
+  [FRESH]: '4a2dba89a7662efc00be360921dc74ee18afa0cf48af8006ec4677e17cc5317e',
+  [RUNTIME]: '23af4323fa1f677b249276e63a43e19e960fe964ad45a808f68e7cf2ab11d6f2',
 });
 
 function replaceOnce(source, before, after) {
