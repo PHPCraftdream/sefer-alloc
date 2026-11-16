@@ -400,11 +400,11 @@ runs:
     - name: regression_r2_05_diag_provenance_miri (module filter in regression_merged)
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
-      run: cargo miri test --locked --features "alloc-core internals" --test regression_merged -- regression_r2_05_diag_provenance_miri::
+      run: 'cargo miri test --locked --features "alloc-core internals" --test regression_merged -- regression_r2_05_diag_provenance_miri::'
     - name: regression_w3_stats_aliasing_miri (module filter in regression_merged)
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
-      run: cargo miri test --locked --features "std" --test regression_merged -- regression_w3_stats_aliasing_miri::
+      run: 'cargo miri test --locked --features "std" --test regression_merged -- regression_w3_stats_aliasing_miri::'
     - name: class_leaves_publication_miri
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
