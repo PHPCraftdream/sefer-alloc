@@ -842,7 +842,8 @@ Under the recommended `production` feature
 `global::{sefer_alloc::global_alloc, fallback}`;
 `registry::bootstrap::{registry, ensure}`, `registry::heap_slot`,
 `registry::heap_registry::claim`, and
-`alloc_core::segment_route::{directory::{route_directory, blocks}, shard_lock, small_sidecar}` and
+`alloc_core::segment::segment_route::directory::{blocks, route_directory}` and
+`alloc_core::segment::segment_route::route_state::{shard_lock, small_sidecar}` and
 `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes`.
 R6-T37 demoted `global::tls_heap` to a tier-2 item-scoped site (its sole `bench-internals`-gated `dbg_restore_local_for_test` hook); the module itself is safe.
 `registry::heap_registry::maintenance` is safe composition; its lease's
@@ -1622,7 +1623,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **509 integration test files**,
+needs its acceptance run. The present tree contains **510 integration test files**,
 **107 example binaries**, **34 benches**, and **27 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1632,7 +1633,7 @@ and support modules. Nested helpers and fixtures are not separate integration ta
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (509 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (510 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (107 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

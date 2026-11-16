@@ -252,14 +252,29 @@ fn fallback_init_and_lock_on_production_source() {
             !ran_before_init,
             "unregistered hook must not invoke closure"
         );
+        let mut fallback_ran_before_init = false;
+        assert!(fallback::try_with_heap(|_| fallback_ran_before_init = true).is_none());
+        assert!(
+            !fallback_ran_before_init,
+            "pre-init fallback try must not invoke closure"
+        );
         assert_eq!(INITS.load(StdOrdering::SeqCst), before_init);
 
-        let _ = fallback::try_with_heap(|heap| heap.touch());
-        let _ = fallback::with_heap(|heap| heap.touch());
-        let mut hook_touched = 0;
+        let fallback_touched = fallback::with_heap(|heap| heap.touch()).expect("ready fallback");
+        let inits_after_ready = INITS.load(StdOrdering::SeqCst);
+        let mut hook_touched = None;
         assert!(registry::fallback_hook::FallbackHook::global()
-            .try_with_heap(&mut |heap| hook_touched = heap.touch()));
-        assert_eq!(hook_touched, 3, "registered hook reaches ready fallback");
+            .try_with_heap(&mut |heap| hook_touched = Some(heap.touch())));
+        assert_eq!(
+            INITS.load(StdOrdering::SeqCst),
+            inits_after_ready,
+            "registered hook must use the already-ready fallback"
+        );
+        assert_eq!(
+            hook_touched,
+            Some(fallback_touched + 1),
+            "registered hook must access the same fallback heap as the direct witness"
+        );
         let _ = fallback::lock_acquisitions();
         fallback::record_exit_lock_giveup();
     });

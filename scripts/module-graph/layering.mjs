@@ -22,7 +22,13 @@ const KIND_ORDER = { unmapped: 0, "new-edge": 1, growth: 2, ratchet: 3 };
 /** Parse the baseline CSV tolerantly (CRLF, blanks, `#` comments, quoted
  * fields with `""` escapes). Throws with the offending line number. */
 export function loadBaseline(path) {
-  const text = readFileSync(path, "utf8").replace(/\r/g, "");
+  return parseBaselineText(readFileSync(path, "utf8"), path);
+}
+
+/** Parse baseline text with the same CSV rules as loadBaseline. */
+export function parseBaselineText(text, path = "<baseline>") {
+  if (typeof text !== "string") throw new TypeError(`${path}: baseline text must be a string`);
+  text = text.replace(/\r/g, "");
   const lines = text.split("\n");
   const rows = [];
   let seenHeader = false;
@@ -50,10 +56,11 @@ export function loadBaseline(path) {
     if (src === "" || tgt === "") {
       throw new Error(`${path}: line ${i + 1}: edge must be "<source>-><target>" with non-empty sides, got "${edge}"`);
     }
-    if (!/^\d+$/.test(count.trim())) {
+    if (!/^(?:0|[1-9]\d*)$/.test(count.trim())) {
       throw new Error(`${path}: line ${i + 1}: count must be a non-negative integer, got "${count}"`);
     }
     rows.push({ kind, edge, count: Number(count.trim()), reason });
+    if (!Number.isSafeInteger(rows.at(-1).count)) throw new Error(`${path}: line ${i + 1}: count exceeds safe integer range`);
   }
   if (!seenHeader) throw new Error(`${path}: missing header "kind,path,count,reason"`);
   return rows;
@@ -61,7 +68,7 @@ export function loadBaseline(path) {
 
 /** One CSV line -> fields; double-quoted fields may contain commas and
  * escaped (`""`) quotes; a quote may only open at a field start. */
-function splitCsvLine(line) {
+export function splitCsvLine(line) {
   const fields = [];
   let cur = "";
   let i = 0;
