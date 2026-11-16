@@ -113,6 +113,10 @@ pub use platform::sidecar_stats::{dbg_sidecar_reservation_stats, SidecarReservat
 #[allow(unused_imports)]
 pub(crate) use platform::sidecar;
 pub(crate) use platform::size_classes;
+#[cfg(feature = "alloc-global")]
+pub(crate) use sefer_platform::process_exit::process_exit_in_progress;
+#[cfg(feature = "alloc-global")]
+pub(crate) use sefer_platform::record_exit_lock_giveup::record_exit_lock_giveup;
 // The former flat small-path child modules now live in the `small/` group
 // module and are re-exported here (at their original visibility/cfg parity)
 // so every one stays reachable at its existing `alloc_core::<name>` module

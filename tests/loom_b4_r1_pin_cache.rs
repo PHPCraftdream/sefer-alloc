@@ -61,9 +61,6 @@
 //!   shim for the Large-span membership check; the model registers only
 //!   Small routes, so the check is never called (see `pin.rs::
 //!   span_contains_addr`'s Large branch and `lookup`'s Large branch).
-//! - `global::process_exit_in_progress` / `global::fallback::
-//!   record_exit_lock_giveup` — `const false` / no-op: the model never
-//!   exits.
 //! - `shard_lock::ShardLock` — model-provided const-constructible spin-lock
 //!   wrapper with the production API (`lock`, `lock_unless_exiting`); every
 //!   retry yields via `loom::thread::yield_now()` so the cooperative
@@ -180,6 +177,10 @@ pub(crate) use loom::sync::atomic::{
 };
 
 mod alloc_core {
+    pub(crate) fn process_exit_in_progress() -> bool {
+        false
+    }
+    pub(crate) fn record_exit_lock_giveup() {}
     // Mirrors `alloc_core::state_byte::StateByte::shadow_reject` for the source-included
     // `SidecarBitmap::publish` (a debug-build abort for a rejected misuse; loom models do not take it).
     #[allow(dead_code)]
@@ -280,16 +281,6 @@ mod alloc_core {
         ) -> bool {
             false
         }
-    }
-}
-
-// The model never exits; the production exit hooks degrade to constants.
-mod global {
-    pub fn process_exit_in_progress() -> bool {
-        false
-    }
-    pub(crate) mod fallback {
-        pub fn record_exit_lock_giveup() {}
     }
 }
 

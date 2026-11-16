@@ -56,7 +56,7 @@ const PURE_OBSERVERS = [
   "src/alloc_core/segment/segment_route/route_state/small_sidecar.rs::dbg_route_slots_system_totals",
   "src/alloc_core/segment/segment_route/route_state/small_sidecar.rs::dbg_route_slot_bytes",
   // Read-only Relaxed load of the cold-path giveup counter.
-  "src/global/fallback.rs::dbg_exit_lock_giveups",
+  "crates/platform/sefer-platform/src/dbg_exit_lock_giveups.rs::dbg_exit_lock_giveups",
   // Read-only Relaxed descriptor count; the borrowed RoutePin retains its lifetime.
   "src/alloc_core/segment/segment_route/directory/route_directory.rs::dbg_route_pin_refs",
   // Read-only Relaxed load of Entry.refs through the owner-held RouteRegistration's own EntryHandle; no address-keyed lookup, no pointer dereference beyond the already-owned entry.

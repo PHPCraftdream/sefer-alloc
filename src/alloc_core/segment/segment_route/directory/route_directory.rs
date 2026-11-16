@@ -656,8 +656,8 @@ impl RouteDirectory {
         loop {
             let mut guard = shard
                 .lock_unless_exiting(
-                    crate::global::process_exit_in_progress,
-                    crate::global::fallback::record_exit_lock_giveup,
+                    crate::alloc_core::process_exit_in_progress,
+                    crate::alloc_core::record_exit_lock_giveup,
                 )
                 .ok_or(RouteError::ProcessExiting)?;
             let (need_block, index_cap) = match guard.insert(key, entry.ptr()) {
@@ -688,8 +688,8 @@ impl RouteDirectory {
             };
             let mut guard = shard
                 .lock_unless_exiting(
-                    crate::global::process_exit_in_progress,
-                    crate::global::fallback::record_exit_lock_giveup,
+                    crate::alloc_core::process_exit_in_progress,
+                    crate::alloc_core::record_exit_lock_giveup,
                 )
                 .ok_or(RouteError::ProcessExiting)?;
             let surplus = guard.install(block, enlarged);
@@ -723,8 +723,8 @@ impl RouteDirectory {
         crate::alloc_core::B4_DIRECTORY_LOOKUPS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let (addr, key) = (ptr.addr(), ptr.addr() & !(SEGMENT - 1));
         let guard = self.shards[Self::shard_index(key)].lock_unless_exiting(
-            crate::global::process_exit_in_progress,
-            crate::global::fallback::record_exit_lock_giveup,
+            crate::alloc_core::process_exit_in_progress,
+            crate::alloc_core::record_exit_lock_giveup,
         )?;
         let raw = guard.find(key)?;
         // SAFETY: the shard lock excludes unlink and final release; the entry
@@ -754,8 +754,8 @@ impl RouteDirectory {
         let key = entry.key();
         let shard = &self.shards[Self::shard_index(key)];
         let Some(mut guard) = shard.lock_unless_exiting(
-            crate::global::process_exit_in_progress,
-            crate::global::fallback::record_exit_lock_giveup,
+            crate::alloc_core::process_exit_in_progress,
+            crate::alloc_core::record_exit_lock_giveup,
         ) else {
             return false;
         };

@@ -15,6 +15,10 @@
 //! Feature names mirror the root crate one-for-one; the root forwards every
 //! feature that gates moved code (see the root `Cargo.toml`).
 
+/// Read the process-wide allocator-lock giveup count in benchmark builds.
+#[cfg(feature = "bench-internals")]
+pub mod dbg_exit_lock_giveups;
+mod exit_lock_giveups;
 /// The one sanctioned process terminator: writes a best-effort static
 /// diagnostic and terminates without unwinding.
 pub mod fatal;
@@ -22,3 +26,5 @@ pub mod fatal;
 pub mod os;
 /// The Windows loader-shutdown FFI probe (`process_exit_in_progress`).
 pub mod process_exit;
+/// Record an allocator-lock giveup while process exit is in progress.
+pub mod record_exit_lock_giveup;

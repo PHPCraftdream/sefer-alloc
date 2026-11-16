@@ -115,7 +115,23 @@ pub fn process_exit_in_progress() -> bool {
     false
 }
 
+static EXIT_LOCK_GIVEUPS: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn record_exit_lock_giveup() {
+    EXIT_LOCK_GIVEUPS.fetch_add(1, Ordering::Relaxed);
+}
+
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn dbg_exit_lock_giveups() -> u64 {
+    EXIT_LOCK_GIVEUPS.load(Ordering::Relaxed)
+}
+
 mod alloc_core {
+    #[cfg(feature = "bench-internals")]
+    pub(crate) use crate::dbg_exit_lock_giveups;
+    pub(crate) use crate::record_exit_lock_giveup;
+
     pub(crate) mod segment_header {
         pub const OWNER_ID_FALLBACK: u32 = 0x7FFF_FFFE;
     }

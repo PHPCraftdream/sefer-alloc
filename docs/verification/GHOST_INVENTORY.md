@@ -8,7 +8,7 @@ blanked, braces give the item path); G1's `crates/verify/ghost-lint` on `syn` re
 ## 1. Ordering sites
 
 769 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 99 files of `src/**` and
+`HeapSlot::cas_state` whose arguments name an ordering) in 101 files of `src/**` and
 `crates/**/src/**`; each is claimed by exactly one of 60 scopes.
 
 | class | sites | of all sites |
