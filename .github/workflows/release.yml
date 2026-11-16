@@ -35,7 +35,8 @@ name: Release
 #
 # - For sub-crates that depend on each other (`numa-shim` depends on
 #   `aligned-vmem`, `sefer-alloc` depends on `sefer-region` + `aligned-vmem`
-#   + `numa-shim`), the upstream version MUST already be on crates.io
+#   + `numa-shim`, `sefer-platform` depends on `aligned-vmem`), the upstream
+#   version MUST already be on crates.io
 #   before the dependent crate's publish is triggered. Standard
 #   `cargo publish` validation will fail loudly if not.
 #
@@ -86,6 +87,7 @@ on:
     tags:
       - 'aligned-vmem-v*'
       - 'sefer-region-v*'
+      - 'sefer-platform-v*'
       - 'malloc-bench-rs-v*'
       - 'numa-shim-v*'
       - 'once-ptr-cell-v*'
@@ -104,6 +106,7 @@ on:
         options:
           - aligned-vmem
           - sefer-region
+          - sefer-platform
           - malloc-bench-rs
           - numa-shim
           - once-ptr-cell

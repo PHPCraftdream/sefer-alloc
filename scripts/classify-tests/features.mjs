@@ -186,7 +186,7 @@ export function deriveFirstConfigWinMarkers(srcDir, candidates, grepFirstHit) {
  * fallback_config_conflicts src/global/sefer_alloc/core.rs:372
  * thp_tuple_conflicts    src/global/alloc_stats.rs:193 (field)
  * thp_tuple / thp_tuple_cell / thp_runtime
- *                        src/alloc_core/config/policy/large_thp_runtime/
+ *                        crates/core/sefer-policy/src/policy/large_thp_runtime/ (moved P1.3;
  * config_conflicts       src/global/alloc_stats.rs:183 (AllocStats field)
  *
  * DROPPED marker: `publish_pending`
@@ -232,9 +232,9 @@ export const MARKER_PROVENANCE = {
   config_conflicts: 'src/global/alloc_stats.rs:183 (AllocStats field)',
   fallback_config_conflicts: 'src/global/sefer_alloc/core.rs:372',
   thp_tuple_conflicts: 'src/global/sefer_alloc/diag.rs (alloc_stats.rs:193 field family)',
-  thp_tuple: 'src/alloc_core/config/policy/large_thp_runtime/thp_tuple.rs',
-  thp_runtime: 'src/alloc_core/config/policy/large_thp_runtime/mod.rs',
-  thp_tuple_cell: 'src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs',
+  thp_tuple: 'crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple.rs',
+  thp_runtime: 'crates/core/sefer-policy/src/policy/large_thp_runtime/mod.rs',
+  thp_tuple_cell: 'crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs',
 };
 
 export function markerRegex(marker) {

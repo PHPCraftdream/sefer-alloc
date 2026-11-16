@@ -2619,10 +2619,9 @@ fn crate_root_stats_blurb_matches_method_level_contract() {
 /// every feature configuration.
 #[test]
 fn large_cache_config_doc_matches_budget_and_headroom_behavior() {
-    let path = src_dir()
-        .join("alloc_core")
-        .join("config")
-        .join("large_cache_config.rs");
+    // P1.3: the file moved to the sefer-policy crate.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/core/sefer-policy/src/large_cache_config.rs");
     let flat = doc_prose(&path);
 
     for stale in [
@@ -2631,7 +2630,7 @@ fn large_cache_config_doc_matches_budget_and_headroom_behavior() {
     ] {
         assert!(
             !flat.contains(stale),
-            "src/alloc_core/config/large_cache_config.rs: the stale claim \
+            "crates/core/sefer-policy/src/large_cache_config.rs: the stale claim \
              `{stale}` reappeared (R2-23). The default budget's RESOLVED \
              meaning is feature-dependent (unbounded with \
              `large-cache-extended` OFF, the finite \
@@ -2649,7 +2648,7 @@ fn large_cache_config_doc_matches_budget_and_headroom_behavior() {
     ] {
         assert!(
             flat.contains(needle),
-            "src/alloc_core/config/large_cache_config.rs: the large-cache \
+            "crates/core/sefer-policy/src/large_cache_config.rs: the large-cache \
              budget/headroom doc must keep the R2-23 wording — missing \
              `{needle}`. The default's RESOLVED meaning is feature-dependent \
              (finite `DEFAULT_EXTENDED_BUDGET_BYTES` under \

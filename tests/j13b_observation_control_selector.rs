@@ -38,7 +38,7 @@
 //! be the broken-decorrelator defect the test exists to catch).
 
 #[allow(dead_code)]
-#[path = "../src/alloc_core/config/policy/large_thp_observation/mod.rs"]
+#[path = "../crates/core/sefer-policy/src/policy/large_thp_observation/mod.rs"]
 mod large_thp_observation;
 
 use large_thp_observation::bounded_mix::bounded_mix;

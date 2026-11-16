@@ -175,12 +175,12 @@ const PURE_OBSERVERS = [
   // WB-3: read-only copy of the overflow decay / ingress / latch state.
   "src/registry/heap_core/diag/queries.rs::dbg_depot_epoch",
   // G1-K7: pure const resolution of a by-value config.
-  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_depot_budget",
+  "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_depot_budget",
   // CF-2: pure const resolution of a by-value config.
-  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_route_pin_cache_slots",
-  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_huge_page_after_segments",
+  "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_route_pin_cache_slots",
+  "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_huge_page_after_segments",
   // J13b: pure const resolution of a by-value config into a Copy tuple.
-  "src/alloc_core/config/large_cache_config.rs::dbg_resolved_thp_tuple",
+  "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_thp_tuple",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",
@@ -432,6 +432,17 @@ BENCH_UNSAFE_HOOKS.add("src/registry/segment_route/pin.rs::dbg_publish_cached_fo
 // Explicit reviewed rows; groups share only a reviewed contract, never a name wildcard.
 export const REVIEWED_SURFACE = [
   { id: 'crates/platform/aligned-vmem/src/api/release.rs::release_size_align_is_valid_for_test', kind: 'observer', reason: 'pure release geometry validation over integers; no pointers, mapped storage or OS access', gates: ['fault-injection'] },
+  // P1.4: these moved verbatim from `src/alloc_core/platform/os.rs` (formerly
+  // `pub(crate)` and therefore invisible to this scanner) to the new
+  // `sefer-platform` crate and are now crate-public. The raw-pointer OS-page
+  // functions are `pub unsafe fn` with a `# Safety` contract (R25-1 class; the
+  // root keeps pub(crate) safe wrappers) and are production unsafe API outside
+  // internals/bench-internals, which this inventory deliberately does not list
+  // (see the tier-policy skip in verifyHooks). Only `segment_base_of_ptr` (pure
+  // address arithmetic, no dereference) is a safe observer row; the gated
+  // measurement twin is an unsafe row.
+  { id: 'crates/platform/sefer-platform/src/os.rs::segment_base_of_ptr', kind: 'observer', reason: 'SEGMENT-aligned base-of-pointer arithmetic over an allocator-owned segment (Cartographer invariant documented at the definition); no dereference, no OS access', gates: [] },
+  { id: 'crates/platform/sefer-platform/src/os.rs::commit_pages_for_measurement', kind: 'unsafe', reason: 'measurement-side twin of commit_pages: same caller contract (# Safety at the definition) over an allocator-owned segment reservation; bench-internals+internals gated', gates: ['bench-internals', 'internals', 'alloc-decommit'] },
   { id: 'src/registry/heap_core/diag/queries.rs::dbg_sidecar_scan_measurement', kind: 'mutator', reason: 'thread-local optional diagnostic counts and original-versus-prefilter scan mode only; no pointers or allocator metadata access', gates: ['bench-internals', 'r18_sidecar_scan_bench'] },
   ...[
     ['src/alloc_core/segment/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],

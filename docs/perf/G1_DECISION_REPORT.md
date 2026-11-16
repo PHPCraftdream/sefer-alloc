@@ -319,3 +319,11 @@ These are reopening triggers, not promises that P2 will be feasible or pass. Mis
 The strict registry command returned rc0, but its verdict is **INCOMPLETE(strict)**, not PASS: unpublished spike rows are **R-PG3, R-Ph1b-native, R-Ph1b-sb, R-Ph1b-tb, R-PG2-sb, R-PG2-tb, R5b-09-sb, R5b-09-tb**; separately, required cells await final status. The docs-consistency suite passed locally (all listed Node steps PASS; 0 failing steps; rc0) using `<J13B>/.rush/stdin/docs-consistency-check.sh <root>`; landing CI must still confirm it.
 
 This is a docs-only edit: no evidence paths were touched, no changed file was cited by the registry, and no EV-1-triggering edit was made; rules/scopes are unchanged. Derived inventories and digests remain unchanged and are not stale; lockfiles/dependencies are unchanged. Rust tests and benchmarks were not executed, and CI diff-selected checks remain unverified on the new landing.
+
+## Owner override (2026-11-16)
+
+> «мы в любом случае должны всё разделить на крейты - всё должно быть атомарно - это точно снизить аффект тесты»
+
+**Normative decision: G1 = DO.** This owner override supersedes the historical measured STOP disposition above. Landing of P1.3, P1.4 and P1.6 is authorized; P2.0–P2.5 and P1.5 are authorized to proceed. All extraction work must follow the mandatory [extraction policy](../GHOST_CHECKS_PLAN.md#extraction-ranges).
+
+This authorization does not alter the historical measurements or make them evidence of new acceleration or CI improvement. CI, performance, and no-LTO validation remain pending; no new results are claimed here.

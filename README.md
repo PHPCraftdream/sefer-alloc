@@ -708,23 +708,25 @@ The deliberate inversion: all the intelligence lives in the safe Cartographer,
 so the Hand stays mechanical and small. Verification is over a total Membrane
 and an integer algorithm, not a tangle of pointer math.
 
-### Workspace: twelve independently-publishable companion crates
+### Workspace: fourteen independently-publishable companion crates
 
-The workspace extracted twelve building blocks. Each is a real crates.io crate
+The workspace extracted fourteen building blocks. Each is a real crates.io crate
 someone can `cargo add` on its own — they are not internal implementation
 details but independently useful libraries:
 
 ```
 sefer-alloc
+ ├── sefer-policy       (crates/core/sefer-policy)                   — allocator POLICY layer (config types, Large-THP policy runtime) (feature: alloc-core)
  ├── sefer-region       (crates/containers/sefer-region)             — typed handle store (Handle<T>/Region<T>)
  ├── sefer-concurrent   (crates/containers/sefer-concurrent)    — legacy/research concurrent tier (feature: experimental/pinning)
  ├── aligned-vmem       (crates/platform/aligned-vmem)               — OS virtual-memory aperture           (feature: alloc-core)
+ ├── sefer-platform     (crates/platform/sefer-platform)     — fatal/process-exit + SEGMENT OS aperture (feature: alloc-core)
  ├── numa-shim          (crates/platform/numa-shim)               — NUMA detection + binding             (feature: numa-aware)
  ├── malloc-bench-rs    (crates/bench/malloc-bench-rs)       — portable GlobalAlloc bench harness   (standalone, dev-only)
  ├── once-ptr-cell      (crates/primitives/once-ptr-cell)      — lazy CAS-published pointer cell      (feature: alloc-core)
  ├── size-classes       (crates/primitives/size-classes)       — const-built size-class tables + lookup (feature: alloc-core)
  ├── sefer-ghost        (crates/primitives/sefer-ghost)         — checking-build-only ghost_assert!/ghost_event! (always: not feature-gated)
- ├── tagged-index-stack (crates/primitives/tagged-index-stack) — ABA-tagged free-index stack          (feature: alloc-global)
+ ├── tagged-index-stack (crates/primitives/tagged-index-stack) — ABA-tagged free-index stack          (verification-only: loom/kani; not a runtime dep)
  ├── globalalloc-model  (crates/verify/globalalloc-model)  — differential op-stream test harness   (standalone, dev-only)
  ├── proc-memstat       (crates/platform/proc-memstat)       — same-instant RSS / commit self-probe (standalone, dev-only)
  └── proc-probe         (crates/platform/proc-probe)         — RESULT key=value stdout protocol     (standalone, dev-only)
@@ -732,13 +734,14 @@ sefer-alloc
 
 `malloc-bench-rs`, `globalalloc-model`, `proc-memstat`, and `proc-probe` are
 not in sefer-alloc's runtime dependency tree — they are dev-only / example
-infra. The remaining eight are runtime or opt-in dependencies: five are pulled
+infra. The remaining nine are runtime or opt-in dependencies: six are pulled
 in under the feature gates noted above (`alloc-core`, `alloc-global`,
-`numa-aware`), `sefer-concurrent` under `experimental`/`pinning`,
-`sefer-ghost` unconditionally (it compiles to no code in production builds),
-and `tagged-index-stack` is verification-only (not a runtime dependency).
+`numa-aware`), `sefer-concurrent` under `experimental`/`pinning`, and
+`sefer-region` plus `sefer-ghost` unconditionally (`sefer-ghost` compiles to no
+code in production builds). `tagged-index-stack` is verification-only (not a
+runtime dependency).
 
-(A former twelfth crate, `ring-mpsc` — a standalone bounded MPSC index ring
+(A former crate, `ring-mpsc` — a standalone bounded MPSC index ring
 + DirtyRouter — was removed from the workspace: it had zero production
 consumers; its old proposed ring replacement was investigated and found
 NO-GO before the terminal-sidecar cutover, see
@@ -748,7 +751,9 @@ Per-crate status:
 
 | crate | crates.io | docs.rs |
 |---|---|---|
+| `sefer-policy` | [![Crates.io](https://img.shields.io/crates/v/sefer-policy.svg)](https://crates.io/crates/sefer-policy) | [![Documentation](https://docs.rs/sefer-policy/badge.svg)](https://docs.rs/sefer-policy) |
 | `sefer-region` | [![Crates.io](https://img.shields.io/crates/v/sefer-region.svg)](https://crates.io/crates/sefer-region) | [![Documentation](https://docs.rs/sefer-region/badge.svg)](https://docs.rs/sefer-region) |
+| `sefer-concurrent` | [![Crates.io](https://img.shields.io/crates/v/sefer-concurrent.svg)](https://crates.io/crates/sefer-concurrent) | [![Documentation](https://docs.rs/sefer-concurrent/badge.svg)](https://docs.rs/sefer-concurrent) |
 | `aligned-vmem` | [![Crates.io](https://img.shields.io/crates/v/aligned-vmem.svg)](https://crates.io/crates/aligned-vmem) | [![Documentation](https://docs.rs/aligned-vmem/badge.svg)](https://docs.rs/aligned-vmem) |
 | `numa-shim` | [![Crates.io](https://img.shields.io/crates/v/numa-shim.svg)](https://crates.io/crates/numa-shim) | [![Documentation](https://docs.rs/numa-shim/badge.svg)](https://docs.rs/numa-shim) |
 | `malloc-bench-rs` | [![Crates.io](https://img.shields.io/crates/v/malloc-bench-rs.svg)](https://crates.io/crates/malloc-bench-rs) | [![Documentation](https://docs.rs/malloc-bench-rs/badge.svg)](https://docs.rs/malloc-bench-rs) |
@@ -781,11 +786,13 @@ the line to begin with the attribute, not a `//` prefix.
 | Crate | Path | Unsafe story |
 |---|---|---|
 | `aligned-vmem` | `crates/platform/aligned-vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture (`mmap`/`VirtualAlloc`/decommit); single responsibility, small, audit in isolation |
+| `sefer-platform` | `crates/platform/sefer-platform/` | `#![allow(unsafe_code)]` in `os.rs` (the SEGMENT-aligned OS aperture: `Segment` reservation/commit/decommit wrappers, page-aligned ranges inside allocator-owned reservations) and `process_exit.rs` (the Windows loader-shutdown FFI query, sole reason: the FFI call); `fatal.rs` is safe |
 | `numa-shim` | `crates/platform/numa-shim/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim (`mbind`/`VirtualAllocExNuma`); single responsibility, small, audit in isolation |
 | `malloc-bench-rs` | `crates/bench/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
 | `once-ptr-cell` | `crates/primitives/once-ptr-cell/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe impl Send/Sync` for the `AtomicPtr`-backed cell + `NonNull::new_unchecked`; every site has `# Safety` / `// SAFETY:` |
 | `globalalloc-model` | `crates/verify/globalalloc-model/` | `#![allow(unsafe_code)]` — two documented reasons: (a) the `unsafe trait RawAllocator` (its impls must return valid pointers for the requested layout), every impl + call carrying `// SAFETY:`; (b) `DoubleFreeOk::new`, the unforgeable consent token for the M2 double-free oracle, an `unsafe fn` declaration carrying its own `# Safety` contract |
 | `proc-memstat` | `crates/platform/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
+| `sefer-policy` | `crates/core/sefer-policy/` | `#![forbid(unsafe_code)]` — zero own `unsafe`, a single dependency (`aligned-vmem`, error type only); pure `core` arithmetic, constants and `core::sync::atomic` policy state (the former `src/alloc_core/config` layer, moved P1.3) |
 | `sefer-region` | `crates/containers/sefer-region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/containers/sefer-region/README.md` "## Safety") |
 | `sefer-concurrent` | `crates/containers/sefer-concurrent/` | `#![deny(unsafe_code)]` — one confined seam, `src/epoch/hand.rs` (the epoch-tier `AtomicSlot<T>` membrane over `crossbeam-epoch`); re-exported through sefer-alloc under `experimental`/`pinning` |
 | `size-classes` | `crates/primitives/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |
@@ -799,14 +806,15 @@ hard compile error in every configuration:
 
 | Module | What it owns | Loaded under |
 |---|---|---|
-| [`src/alloc_core/platform/os.rs`](src/alloc_core/platform/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit | `alloc-core` |
+| [`src/alloc_core/platform/os.rs`](src/alloc_core/platform/os.rs) | The directory-sidecar trio (`reserve_directory_sidecar` / `read_directory_*`); the SEGMENT OS aperture is `crates/platform/sefer-platform/src/os.rs` (tier-1 seam, re-exported through this file's conduit `pub(crate) use`) | `alloc-core` |
 | [`src/alloc_core/platform/node.rs`](src/alloc_core/platform/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline); also `release_segment` thin wrapper | `alloc-core` |
 | [`src/alloc_core/alloc_core/mem/large_control/sample_owned_large_residency.rs`](src/alloc_core/alloc_core/mem/large_control/sample_owned_large_residency.rs) | Temporary owning VM adoption for owner-terminal residency sampling; validated original geometry and provenance, with release suppressed so the caller retains ownership | `alloc-decommit`, non-`numa-aware` |
 | [`src/alloc_core/large/large_cache_extended.rs`](src/alloc_core/large/large_cache_extended.rs) | The lazily-materialised large-cache extension sidecar (owner-only, no `OncePtrCell` — no cross-thread publisher); reserves via `alloc_core::platform::sidecar::reserve`, dereferences via `sidecar::deref[_mut]` | `large-cache-extended` |
 | [`src/alloc_core/platform/sidecar.rs`](src/alloc_core/platform/sidecar.rs) | R14-9 (task #294): the shared owner-only lazily-materialised sidecar primitive (`reserve` / `reserve_zeroed_with` / `deref` / `deref_mut`) used by `os.rs`'s `SegmentDirectory` reservation and `large_cache_extended.rs`'s `LargeCacheExtension` reservation | `alloc-core` |
 | [`src/global/sefer_alloc/global_alloc.rs`](src/global/sefer_alloc/global_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore` (the registry-resident per-thread heap) | `alloc-global` |
 | [`src/global/sefer_alloc/batch.rs`](src/global/sefer_alloc/batch.rs) | The `batch-api` `alloc_batch`/`dealloc_batch` `unsafe fn` boundary pair — resolves the per-thread heap once, delegates to `HeapCore::alloc_batch`/`dealloc_batch` | `batch-api` |
-| [`src/global/process_exit.rs`](src/global/process_exit.rs) | Windows loader-shutdown query: `RtlDllShutdownInProgress`, resolved once (`GetModuleHandleW` / `GetProcAddress`) and cached so that lock-wait loops never re-enter the loader; a missing module or export and every non-Windows target return `false`. Sole reason for `unsafe`: the FFI call. | `alloc-global` |
+| [`crates/platform/sefer-platform/src/os.rs`](crates/platform/sefer-platform/src/os.rs) | The SEGMENT-aligned OS aperture moved here by P1.4 (`Segment`, `SEGMENTS_*` counters, reserve/release/commit/decommit wrappers, depot-overflow storage); page-aligned ranges inside allocator-owned reservations | `alloc-core` |
+| [`crates/platform/sefer-platform/src/process_exit.rs`](crates/platform/sefer-platform/src/process_exit.rs) | The Windows loader-shutdown FFI probe moved here by P1.4 (`src/global/process_exit.rs` is now a safe `pub use` conduit, not a seam) | `alloc-global` |
 | [`src/global/exact_object/exact_shard.rs`](src/global/exact_object/exact_shard.rs) | Opt-in prototype (`exact-object-proto`, not in `production`): out-of-object descriptor array in raw `System` memory under a shard spinlock. |
 | [`src/global/exact_object/narrow.rs`](src/global/exact_object/narrow.rs) | Opt-in prototype (`exact-object-proto`, not in `production`): exact `System` alloc/free of narrow requests with the original pointer and Layout. |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
@@ -825,13 +833,16 @@ hard compile error in every configuration:
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
-+ primordial-lazy-commit`) the active internal tier-1 seams are **fifteen**:
-`alloc_core::platform::{os, node, sidecar}` and
++ primordial-lazy-commit`) the active tier-1 seam files are **eighteen**:
+`alloc_core::platform::{os, node, sidecar}`,
+`alloc_core::alloc_core::mem::large_control::sample_owned_large_residency`
+(`alloc-decommit`, non-NUMA) and
 `alloc_core::segment::segment_table::route_slots`;
-`global::{sefer_alloc::global_alloc, fallback, process_exit}`;
+`sefer_platform::{os, process_exit}` (the P1.4 extraction crate);
+`global::{sefer_alloc::global_alloc, fallback}`;
 `registry::bootstrap::{registry, ensure}`, `registry::heap_slot`,
 `registry::heap_registry::claim`, and
-`registry::segment_route::{directory, shard_lock, small_sidecar}` and
+`registry::segment_route::{directory::{route_directory, blocks}, shard_lock, small_sidecar}` and
 `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes`.
 R6-T37 demoted `global::tls_heap` to a tier-2 item-scoped site (its sole `bench-internals`-gated `dbg_restore_local_for_test` hook); the module itself is safe.
 `registry::heap_registry::maintenance` is safe composition; its lease's
@@ -891,14 +902,14 @@ item-scoped regions.
 | [`src/registry/heap_core_xthread/routing.rs`](src/registry/heap_core_xthread/routing.rs) | 3 | Unique-transfer foreign publication boundaries: `dealloc_routing`'s call-site block, `publish_foreign` (cached-pin fast path + uncached fallback), and `publish_foreign_uncached`. |
 | [`src/registry/heap_core_xthread/route_pin_cache.rs`](src/registry/heap_core_xthread/route_pin_cache.rs) | 1 | `publish_cached` — the per-thread cached-pin publication boundary: publishes through a still-linked cached pin without a directory lookup (the Release `linked = false` store on unlink under the shard lock is what makes the cached path sound). |
 | [`src/registry/heap_core_xthread/sidecar_drain.rs`](src/registry/heap_core_xthread/sidecar_drain.rs) | 2 | Test-only sidecar publication and synthetic detached-record reclaim boundaries. |
-| [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 10 | Exclusive current-heap trim and diagnostic delegation sites. |
+| [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 12 | Exclusive current-heap trim and diagnostic delegation sites. |
 | [`crates/primitives/tagged-index-stack/src/imp.rs`](crates/primitives/tagged-index-stack/src/imp.rs) | 10 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` trait and bridge make all three hooks `unsafe fn`; the bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. The shared `push_index_impl` and `pop_index_impl` are the caller-side proof regions, while `StackOps::push_index` and `ArrayIndexStack::push` carry the public unsafe boundaries; the direct `ArrayIndexStack` sealed-hook implementation is the ninth region. The tenth is `store_next_for_test`, a `--cfg loom`-only raw link-cell write forwarder used solely by the loom tiny-tag counterfactual (an `unsafe fn`, not a safe one, since misuse can double-issue an index). The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
 | [`crates/primitives/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/primitives/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/primitives/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/primitives/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **29** tier-1 module-level seams (23 in
-`src/`, 6 in `crates/`) plus **112** tier-2 item-scoped allows across **34**
+That's the full list (both tiers): **30** tier-1 module-level seams (21 in
+`src/`, 9 in `crates/`) plus **112** tier-2 item-scoped allows across **34**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.

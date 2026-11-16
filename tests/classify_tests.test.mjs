@@ -761,7 +761,7 @@ test('CLI --json: counts match today\'s pinned values and structure holds', () =
   assert.equal(c.harnessFalse, 13);
   assert.equal(c.file_level_cfg, 461);
   assert.equal(c.global_allocator, 63);
-  assert.equal(c.first_config_wins, 81);
+  assert.equal(c.first_config_wins, 79);
   assert.equal(c.process_spawn, 33);
   // --- internal consistency (holds regardless of data changes) ---
   assert.equal(c.totalEntries, c.targets + c.nonTargets,

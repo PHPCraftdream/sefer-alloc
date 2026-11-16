@@ -6,10 +6,10 @@
       "id": "P29",
       "name": "large-THP adaptive control cadence",
       "prod": [
-        "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
-        "src/alloc_core/config/policy/large_thp_runtime/state/large_thp_cadence.rs",
-        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
-        "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/state/large_thp_cadence.rs",
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs"
       ],
       "invariants": [
         "I1 one AtomicU64 per request group holds the saturating agreement run in bits 0..=4 (the other bits stay zero outside the bench-internals pin); the level is derived from a single Relaxed load",
@@ -61,8 +61,8 @@
       "id": "P27",
       "name": "large-THP coherent bounded estimator pair",
       "prod": [
-        "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
-        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
         "src/alloc_core/alloc_core/mem/advise_fresh_large.rs"
       ],
       "invariants": [
@@ -651,7 +651,7 @@
       "id": "P24",
       "name": "large-THP tuple cell (write-once publication)",
       "prod": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs"
       ],
       "invariants": [
         "I1 single winner: one strong compare_exchange(UNSET, PUBLISHING, AcqRel, Acquire) elects the only writer",
@@ -675,7 +675,7 @@
       "id": "P25",
       "name": "large-THP budget ledger (advised bytes, bounded CAS reserve)",
       "prod": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs",
         "src/alloc_core/alloc_core/mem/release_large_mapping.rs::release_large_mapping"
       ],
       "invariants": [
@@ -700,8 +700,8 @@
       "id": "P26",
       "name": "large-THP deterministic control ordinal and diagnostic telemetry",
       "prod": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
-        "src/alloc_core/config/policy/large_thp_observation/large_thp_control_selector.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
+        "crates/core/sefer-policy/src/policy/large_thp_observation/large_thp_control_selector.rs"
       ],
       "invariants": [
         "I1 each next_control call obtains one successive wrapping ticket from CONTROL_ORDINAL with one fetch_add(Relaxed); the returned ticket is the ordinal input to the deterministic selection, not a publication",
@@ -819,7 +819,7 @@
       "class": "counter",
       "protocol": "P27",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs"
       ],
       "fn": "^learning_telemetry$",
       "receiver": "^LEARNING_(APPLIED|DROPPED)\\[.*\\]$",
@@ -836,7 +836,7 @@
       "class": "protocol",
       "protocol": "P27",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs"
       ],
       "fn": "^(snapshot|try_observe_with_prior)$",
       "receiver": "^(self)?\\.state$",
@@ -854,7 +854,7 @@
       "class": "protocol",
       "protocol": "P29",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs"
       ],
       "fn": "^(level|run|note_agree|note_disagree|pin)$",
       "receiver": "^(self)?\\.state$",
@@ -874,7 +874,7 @@
       "class": "counter",
       "protocol": "P29",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs"
       ],
       "fn": "^(note_level_counter|cadence_telemetry|cadence_level_counters)$",
       "receiver": "^(counters\\[.*\\]|CADENCE_(ELIGIBLE|AGREED|RESETS|AGREE_DROPPED)\\[.*\\]|candidate|selection)$",
@@ -1235,7 +1235,7 @@
       "id": "cache/process-exit",
       "class": "cache",
       "files": [
-        "src/global/process_exit.rs"
+        "crates/platform/sefer-platform/src/process_exit.rs"
       ],
       "receiver": "^QUERY$",
       "reason": "resolved function pointer cache (windows); Relaxed: idempotent"
@@ -1372,7 +1372,7 @@
       "class": "protocol",
       "protocol": "P24",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs"
       ],
       "reason": "write-once tuple cell: claiming CAS, Relaxed words, Release PUBLISHED, Acquire reader"
     },
@@ -1381,7 +1381,7 @@
       "class": "protocol",
       "protocol": "P25",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs"
       ],
       "reason": "budget ledger: Relaxed load, bounded CAS reserve, fetch_sub give-back on one counter"
     },
@@ -1390,7 +1390,7 @@
       "class": "protocol",
       "protocol": "P26",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs"
       ],
       "fn": "^(next_control|control_ordinal_probe)$",
       "receiver": "^CONTROL_ORDINAL$",
@@ -1408,7 +1408,7 @@
       "class": "counter",
       "protocol": "P26",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs"
       ],
       "fn": "^(note_group_counter|control_telemetry)$",
       "receiver": "^(CONTROL_(SELECTIONS|PREMISE_FAILURES|VALID_OBSERVATIONS|INVALIDATED_OBSERVATIONS|INVALIDATED_REALLOC|OBSERVATION_ERRORS|RESIDENT_PAGES|SAMPLED_PAGES)\\[.*\\]|counters\\[.*\\])$",
@@ -1426,7 +1426,7 @@
       "class": "counter",
       "protocol": "P26",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs"
       ],
       "fn": "^(record_control_ticket|ticket_log_reset|ticket_log_snapshot|level_log_snapshot)$",
       "receiver": "^(CONTROL_TICKET_CURSOR|CONTROL_TICKET_LOG\\[.*\\]|CONTROL_LEVEL_LOG\\[.*\\]|slot)$",
@@ -1959,7 +1959,7 @@
       "id": "thp-learning/diagnostic-load-inventory",
       "kind": "R2",
       "protocol": "P27",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "ThpRuntime::learning_telemetry",
       "sites": [
         {
@@ -2020,7 +2020,7 @@
       "reason": "I2/I4: one load and one syntactic strong CAS site operate on the packed pair in the single update loop, and the prior estimate is derived from the predecessor pair that CAS replaced (a second load or snapshot would add an ordered site); no external publication",
       "fixtures": "tests/ghost_lint_fixtures/p27_update_inventory",
       "protocol": "P27",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
       "tests": [
         "tests/loom_thp_learning_cell.rs",
         "tests/j13b_learning_contention_bound.rs"
@@ -2047,7 +2047,7 @@
       "reason": "I1/I4: snapshot obtains both components from one Relaxed load of the packed pair",
       "fixtures": "tests/ghost_lint_fixtures/p27_snapshot_inventory",
       "protocol": "P27",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
       "tests": [
         "tests/loom_thp_learning_cell.rs",
         "tests/j13b_learning_contention_bound.rs"
@@ -2069,7 +2069,7 @@
       "reason": "I3: the CAS is dominated by attempts < MAX_ATTEMPTS; forced rejection terminates after eight attempts",
       "fixtures": "tests/ghost_lint_fixtures/p27_update_bounded",
       "protocol": "P27",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
       "tests": [
         "tests/loom_thp_learning_cell.rs",
         "tests/j13b_learning_contention_bound.rs"
@@ -2095,7 +2095,7 @@
       "reason": "I2: the CAS expects the observed current pair, so a competing update cannot be overwritten blindly",
       "fixtures": "tests/ghost_lint_fixtures/p27_cas_after_observe",
       "protocol": "P27",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_learning_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs",
       "tests": [
         "tests/loom_thp_learning_cell.rs",
         "tests/j13b_learning_contention_bound.rs"
@@ -7233,7 +7233,7 @@
       "id": "thp-cell/claim-cas",
       "kind": "R1",
       "protocol": "P24",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
       "fn": "ThpTupleCell::publish",
       "site": {
         "name": "compare_exchange",
@@ -7262,7 +7262,7 @@
       "id": "thp-cell/published-release",
       "kind": "R1",
       "protocol": "P24",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
       "fn": "ThpTupleCell::publish",
       "site": {
         "name": "store",
@@ -7288,7 +7288,7 @@
       "mutants": [
         {
           "id": "thp-published-store-relaxed",
-          "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+          "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
           "from": "self.state.store(PUBLISHED, Ordering::Release);",
           "to": "self.state.store(PUBLISHED, Ordering::Relaxed);",
           "checker": {
@@ -7314,7 +7314,7 @@
       "id": "thp-cell/word-stores-relaxed",
       "kind": "R1",
       "protocol": "P24",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
       "fn": "ThpTupleCell::publish",
       "site": {
         "name": "store",
@@ -7342,7 +7342,7 @@
       "id": "thp-cell/words-before-published",
       "kind": "R3",
       "protocol": "P24",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
       "fn": "ThpTupleCell::publish",
       "before": {
         "name": "store",
@@ -7373,7 +7373,7 @@
       "id": "thp-cell/claim-before-words",
       "kind": "R3",
       "protocol": "P24",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
       "fn": "ThpTupleCell::publish",
       "before": {
         "name": "compare_exchange",
@@ -7402,7 +7402,7 @@
       "kind": "R5",
       "protocol": "P24",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs"
       ],
       "target": {
         "name": "store",
@@ -7429,7 +7429,7 @@
       "id": "thp-cell/publish-inventory",
       "kind": "R2",
       "protocol": "P24",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
       "fn": "ThpTupleCell::publish",
       "sites": [
         {
@@ -7502,7 +7502,7 @@
       "kind": "R5",
       "protocol": "P24",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs"
       ],
       "target": {
         "name": "spin_loop",
@@ -7528,7 +7528,7 @@
       "id": "thp-cell/reader-acquire",
       "kind": "R1",
       "protocol": "P24",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
       "fn": "ThpTupleCell::read",
       "site": {
         "name": "load",
@@ -7556,7 +7556,7 @@
       "id": "thp-cell/reader-needs-published",
       "kind": "R4",
       "protocol": "P24",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
       "fn": "ThpTupleCell::read",
       "action": {
         "name": "load_words"
@@ -7580,7 +7580,7 @@
       "id": "thp-cell/loser-needs-published",
       "kind": "R4",
       "protocol": "P24",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
       "fn": "ThpTupleCell::publish",
       "action": {
         "name": "load_words"
@@ -7604,7 +7604,7 @@
       "id": "thp-cell/word-loads-relaxed",
       "kind": "R1",
       "protocol": "P24",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_tuple_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_tuple_cell.rs",
       "fn": "ThpTupleCell::load_words",
       "site": {
         "name": "load",
@@ -7632,7 +7632,7 @@
       "id": "thp-ledger/used-relaxed",
       "kind": "R1",
       "protocol": "P25",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs",
       "fn": "ThpBudgetLedger::used",
       "site": {
         "name": "load",
@@ -7660,7 +7660,7 @@
       "id": "thp-ledger/reserve-load-relaxed",
       "kind": "R1",
       "protocol": "P25",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs",
       "fn": "ThpBudgetLedger::try_reserve",
       "site": {
         "name": "load",
@@ -7688,7 +7688,7 @@
       "id": "thp-ledger/reserve-cas-relaxed",
       "kind": "R1",
       "protocol": "P25",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs",
       "fn": "ThpBudgetLedger::try_reserve",
       "site": {
         "name": "compare_exchange_weak",
@@ -7715,7 +7715,7 @@
       "mutants": [
         {
           "id": "thp-reserve-unconditional-add",
-          "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+          "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs",
           "from": "            if self\n                .used\n                .compare_exchange_weak(cur, next, Ordering::Relaxed, Ordering::Relaxed)\n                .is_ok()\n            {\n                return take as usize;\n            }\n",
           "to": "            self.used.fetch_add(take, Ordering::Relaxed);\n            return take as usize;\n",
           "checker": {
@@ -7741,7 +7741,7 @@
       "id": "thp-ledger/give-back-fetch-sub",
       "kind": "R1",
       "protocol": "P25",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs",
       "fn": "ThpBudgetLedger::give_back",
       "site": {
         "name": "fetch_sub",
@@ -7769,7 +7769,7 @@
       "id": "thp-ledger/reserve-bounded",
       "kind": "R4",
       "protocol": "P25",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs",
       "fn": "ThpBudgetLedger::try_reserve",
       "action": {
         "name": "compare_exchange_weak"
@@ -7793,7 +7793,7 @@
       "id": "thp-ledger/cas-after-observe",
       "kind": "R3",
       "protocol": "P25",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_budget_ledger.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs",
       "fn": "ThpBudgetLedger::try_reserve",
       "before": {
         "name": "load",
@@ -7924,7 +7924,7 @@
       "id": "thp-control/ordinal-inventory",
       "kind": "R2",
       "protocol": "P26",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "ThpRuntime::next_control",
       "sites": [
         {
@@ -7951,7 +7951,7 @@
       "id": "thp-control/ordinal-probe-inventory",
       "kind": "R2",
       "protocol": "P26",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "ThpRuntime::control_ordinal_probe",
       "sites": [
         {
@@ -7978,7 +7978,7 @@
       "id": "thp-control/ordinal-before-decision",
       "kind": "R3",
       "protocol": "P26",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "ThpRuntime::next_control",
       "before": {
         "name": "fetch_add",
@@ -8009,7 +8009,7 @@
       "id": "thp-control/diagnostic-counter-inventory",
       "kind": "R2",
       "protocol": "P26",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "note_group_counter",
       "sites": [
         {
@@ -8033,7 +8033,7 @@
       "id": "thp-control/telemetry-load-inventory",
       "kind": "R2",
       "protocol": "P26",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "ThpRuntime::control_telemetry",
       "sites": [
         {
@@ -8107,7 +8107,7 @@
       "id": "thp-control/ticket-log-inventory",
       "kind": "R2",
       "protocol": "P26",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "record_control_ticket",
       "sites": [
         {
@@ -8151,7 +8151,7 @@
       "id": "thp-control/ticket-log-after-decision",
       "kind": "R3",
       "protocol": "P26",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "ThpRuntime::next_control",
       "before": {
         "name": "decision_at",
@@ -8179,7 +8179,7 @@
       "id": "thp-control/ticket-log-reset-inventory",
       "kind": "R2",
       "protocol": "P26",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "ThpRuntime::ticket_log_reset",
       "sites": [
         {
@@ -8206,7 +8206,7 @@
       "id": "thp-control/ticket-log-snapshot-inventory",
       "kind": "R2",
       "protocol": "P26",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "ThpRuntime::ticket_log_snapshot",
       "sites": [
         {
@@ -8390,7 +8390,7 @@
       "id": "thp-cadence/level-inventory",
       "kind": "R2",
       "protocol": "P29",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
       "fn": "ThpCadenceCell::level",
       "sites": [
         {
@@ -8418,7 +8418,7 @@
       "id": "thp-cadence/agree-inventory",
       "kind": "R2",
       "protocol": "P29",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
       "fn": "ThpCadenceCell::note_agree",
       "sites": [
         {
@@ -8454,7 +8454,7 @@
       "id": "thp-cadence/agree-bounded",
       "kind": "R4",
       "protocol": "P29",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
       "fn": "ThpCadenceCell::note_agree",
       "action": {
         "name": "compare_exchange"
@@ -8477,7 +8477,7 @@
       "id": "thp-cadence/agree-cas-after-load",
       "kind": "R3",
       "protocol": "P29",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
       "fn": "ThpCadenceCell::note_agree",
       "before": {
         "name": "load",
@@ -8504,7 +8504,7 @@
       "id": "thp-cadence/disagree-inventory",
       "kind": "R2",
       "protocol": "P29",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
       "fn": "ThpCadenceCell::note_disagree",
       "sites": [
         {
@@ -8532,9 +8532,9 @@
       "id": "thp-cadence/run-clear-sole-path",
       "kind": "R5",
       "protocol": "P29",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs",
       "files": [
-        "src/alloc_core/config/policy/large_thp_runtime/state/thp_cadence_cell.rs"
+        "crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_cadence_cell.rs"
       ],
       "target": {
         "name": "fetch_and",
@@ -8560,7 +8560,7 @@
       "id": "thp-cadence/level-read-guarded-by-candidate",
       "kind": "R4",
       "protocol": "P29",
-      "file": "src/alloc_core/config/policy/large_thp_runtime/thp_runtime.rs",
+      "file": "crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs",
       "fn": "ThpRuntime::next_control",
       "action": {
         "name": "level",
