@@ -1,17 +1,22 @@
 #!/usr/bin/env node
 // CI job duration comparison for the P0.2 test-merge pilot (docs/perf/P0_2_TEST_MERGE_PILOT.md).
-// Compares `gh run view <id> --json jobs` dumps (one JSON file per run, one --before and one
+// Compares GitHub Actions job dumps (one JSON file per run, one --before and one
 // --after directory) and reports, per affected job, the median seconds spent in `cargo test`
 // steps before vs. after a change. Derived, never typed: every median, delta and count is
 // re-verified by an independent in-script assertion before anything is printed.
+//
+// Both dump formats are accepted:
+//   - `gh run view <id> --json jobs` (camelCase: startedAt / completedAt), and
+//   - `gh api repos/<owner>/<repo>/actions/runs/<id>/jobs?per_page=100` (snake_case: started_at / completed_at).
 //
 // Usage:
 //   node scripts/ci-job-durations.mjs --before <dir> --after <dir> [--csv <out.csv>]
 //       [--step-pattern <regex>] [--jobs <n1,n2,...>] [--min-runs 3]
 //
 // Exit code is 0 on success even if verdicts are "grew" — this script reports, it does not
-// decide GO/NO-GO. Exit 1 on corrupt input JSON (the offending file is named) or on any
-// failed internal assertion. Node >= 24, zero npm dependencies, no network.
+// decide GO/NO-GO. Exit 1 on corrupt input JSON or input files with no valid job records
+// (the offending file is named), or on any failed internal assertion. Node >= 24, zero npm
+// dependencies, no network.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -56,10 +61,21 @@ export function cargoTestStepSeconds(job, pattern) {
   return sum === null ? null : { seconds: sum, raws };
 }
 
+function normalizeJob(job) {
+  const out = { ...job, started_at: job.started_at ?? job.startedAt, completed_at: job.completed_at ?? job.completedAt };
+  if (Array.isArray(job.steps)) {
+    out.steps = job.steps.map((s) => ({ ...s, started_at: s.started_at ?? s.startedAt, completed_at: s.completed_at ?? s.completedAt }));
+  }
+  return out;
+}
+
 /**
  * Read every *.json file in `dir`; each must parse as `{jobs: [...]}`.
+ * Both snake_case (gh api .../jobs) and camelCase (gh run view --json jobs) records are
+ * accepted: timestamps are normalized to started_at/completed_at at read time.
  * Returns Map(jobName -> [{ cargoTestSeconds, metric, jobSeconds }]) — one entry per run.
  * A step/job with missing or invalid timestamps contributes a `skipped` count.
+ * Throws when a file contains jobs but none yielded a valid record, or `jobs` is empty.
  */
 export function collectRuns(dir, pattern) {
   const perJob = new Map(); // job name -> array of per-run records
@@ -74,7 +90,10 @@ export function collectRuns(dir, pattern) {
       throw new Error(`failed to parse ${path}: ${e.message}`);
     }
     if (!Array.isArray(doc?.jobs)) throw new Error(`${path}: missing "jobs" array`);
-    for (const job of doc.jobs) {
+    if (doc.jobs.length === 0) throw new Error(`${path}: empty "jobs" array`);
+    let valid = 0;
+    for (const raw of doc.jobs) {
+      const job = normalizeJob(raw);
       const name = String(job.name ?? '');
       if (!perJob.has(name)) perJob.set(name, []);
       const stepSum = cargoTestStepSeconds(job, pattern);
@@ -86,10 +105,12 @@ export function collectRuns(dir, pattern) {
         rec = { seconds: jobSeconds, metric: 'job', raws: null, jobSeconds };
       } else {
         rec = null;
-        skipped += 1;
       }
       if (rec) perJob.get(name).push(rec);
+      else skipped += 1;
+      if (rec) valid += 1;
     }
+    if (valid === 0) throw new Error(`${path}: no valid job record(s) — all ${doc.jobs.length} record(s) skipped (missing/invalid timestamps)`);
   }
   return { perJob, skipped, files: files.length };
 }

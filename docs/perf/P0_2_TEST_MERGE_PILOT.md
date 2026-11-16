@@ -227,8 +227,11 @@ is invented.
 Collection recipe (for the parent):
 
 1. Collect ≥3 ordinary CI runs from BEFORE the pilot branch landed (main runs
-   before this PR: `gh run view <run-id> --json jobs > <file>.json`) and ≥3
-   from AFTER (runs on this PR or on main after merge). Do NOT launch any
+   before this PR) and ≥3 from AFTER (runs on this PR or on main after merge).
+   BOTH collection methods work, and the script accepts both dump formats:
+   `gh run view <run-id> --json jobs > <file>.json` (camelCase records) and
+   `gh api repos/PHPCraftdream/sefer-alloc/actions/runs/<run-id>/jobs?per_page=100`
+   (snake_case records). Do NOT launch any
    dedicated benchmark/test campaign — ordinary runs only (plan §3 "Measured
    decisions").
 2. Put the JSON files under `docs/perf/p0_2_ci_runs/before/` and
@@ -240,5 +243,8 @@ Collection recipe (for the parent):
    delta %) for the affected cargo-test jobs and writes the summary CSV; paste
    its output table into this section and apply the Decision criterion above.
    No number in this report is typed by hand — everything is script output.
+   The script exits nonzero (rc=1) naming the offending file if a dump file
+   contains no valid job records (e.g. an empty `jobs` array or all records
+   missing/invalid timestamps).
 
 > PENDING: no CI duration data collected yet — this section is filled only from scripts/ci-job-durations.mjs output over committed run JSONs.
