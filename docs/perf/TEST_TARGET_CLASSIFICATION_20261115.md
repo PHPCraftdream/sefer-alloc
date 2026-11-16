@@ -2,7 +2,7 @@
 
 Script: `scripts/classify-tests.mjs` (modules under `scripts/classify-tests/`).
 
-Sources: commit `d323c9c2136e32444658dedfc2a006052e3496bb`, tree `f90f0c0ccacae6f39861caa361caa25642e46416`; tracked inputs clean.
+Sources: commit `b5e2976fba3962c1a791f689eea61d7a9ddfa960`, tree `118129f979782519ff81313ad414fbe37a8759da`; tracked inputs clean.
 
 ## First-config-wins markers (derived from src/)
 
@@ -28,9 +28,9 @@ Dropped from the marker list: `publish_pending` (src/registry/segment_route/larg
 | --- | --- |
 | ci_action | 56 |
 | ci_workflow | 8 |
-| doc | 1381 |
+| doc | 1383 |
 | doc_json | 2 |
-| script | 285 |
+| script | 287 |
 
 Note: the classification suite's own output artifacts (`docs/perf/TEST_TARGET_CLASSIFICATION_*.md`, `docs/test_target_classification_*.csv`) are excluded from the doc pin surface: scanning the report's own echo would pin the targets it lists, making the classification non-idempotent (self-reference, not a pre-existing pin).
 
@@ -93,9 +93,9 @@ Note: the plan's §1 numbers are grep approximations over overlapping sets — t
 | **file_cfg** (461) | 52 | 79 | 25 | 30 | 50 | 0 | 0 | 0 | 12 | 461 | 428 |
 | **externally_pinned** (475) | 61 | 75 | 33 | 31 | 50 | 0 | 13 | 11 | 26 | 428 | 475 |
 
-## Non-target inventory (1203 entries; 37 of them are top-level entries of tests/)
+## Non-target inventory (1204 entries; 38 of them are top-level entries of tests/)
 
-Top-level accounting: tests/ has **546** top-level entries; 509 are targets; the remaining **37** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
+Top-level accounting: tests/ has **547** top-level entries; 509 are targets; the remaining **38** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
 
 | path | kind |
 | --- | --- |
@@ -105,6 +105,7 @@ Top-level accounting: tests/ has **546** top-level entries; 509 are targets; the
 | tests/ci_decomposition_contracts.mjs | mjs-script |
 | tests/ci_effective_workflow_fixtures.mjs | mjs-script |
 | tests/ci_job_durations.test.mjs | mjs-script |
+| tests/ci_long_jobs.test.mjs | mjs-script |
 | tests/ci_selection_history.test.mjs | mjs-script |
 | tests/ci_ubuntu_apt_sources.mjs | mjs-script |
 | tests/classify_tests.test.mjs | mjs-script |
