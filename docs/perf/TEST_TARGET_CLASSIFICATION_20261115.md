@@ -2,7 +2,7 @@
 
 Script: `scripts/classify-tests.mjs` (modules under `scripts/classify-tests/`).
 
-Sources: commit `1991a5695efa075efd0668e9e97639026ade6c9f`, tree `f8ab7893d5bf5600b059d02ee2bfe8d86ddd2e82`; tracked inputs clean.
+Sources: commit `7ba0a5d93d5864332d73c7fa0d40455d3558c48a`, tree `a7951c80755fb5bdb8d89c8af7761445723072ce`; tracked inputs clean.
 
 ## First-config-wins markers (derived from src/)
 
@@ -14,8 +14,8 @@ Sources: commit `1991a5695efa075efd0668e9e97639026ade6c9f`, tree `f8ab7893d5bf56
 | current_for_alloc_with_config | src/global/sefer_alloc/core.rs:4 | src/global/tls_heap.rs:411 |
 | bind_slow_tagged_with_config | src/global/sefer_alloc/core.rs:339 | src/global/tls_heap.rs:491 |
 | new_with_config | src/alloc_core/alloc_core/alloc_core_impl.rs:159 | src/registry/heap_core/core.rs:316 (+ claim.rs) |
-| heap_ptr_with_config | src/global/fallback.rs:192 | src/global/fallback.rs:188 |
-| config_conflicts_total | src/global/fallback.rs:437 | src/registry/heap_registry/counters.rs:99 |
+| heap_ptr_with_config | src/global/fallback.rs:184 | src/global/fallback.rs:188 |
+| config_conflicts_total | src/global/fallback.rs:429 | src/registry/heap_registry/counters.rs:99 |
 | config_conflicts | src/global/alloc_stats.rs:183 | src/global/alloc_stats.rs:183 (AllocStats field) |
 | fallback_config_conflicts | src/global/sefer_alloc/core.rs:244 | src/global/sefer_alloc/core.rs:372 |
 | thp_tuple_conflicts | src/global/alloc_stats.rs:193 | src/global/sefer_alloc/diag.rs (alloc_stats.rs:193 field family) |
@@ -93,9 +93,9 @@ Note: the plan's §1 numbers are grep approximations over overlapping sets — t
 | **file_cfg** (461) | 52 | 79 | 25 | 30 | 50 | 0 | 0 | 0 | 12 | 461 | 428 |
 | **externally_pinned** (475) | 61 | 75 | 33 | 31 | 50 | 0 | 13 | 11 | 26 | 428 | 475 |
 
-## Non-target inventory (1203 entries; 37 of them are top-level entries of tests/)
+## Non-target inventory (1204 entries; 38 of them are top-level entries of tests/)
 
-Top-level accounting: tests/ has **547** top-level entries; 510 are targets; the remaining **37** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
+Top-level accounting: tests/ has **548** top-level entries; 510 are targets; the remaining **38** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
 
 | path | kind |
 | --- | --- |
@@ -152,6 +152,7 @@ Top-level accounting: tests/ has **547** top-level entries; 510 are targets; the
 | tests/g1_widening_count.test.mjs | mjs-script |
 | tests/ghost_extraction_policy_fixtures.mjs | mjs-script |
 | tests/ghost_extraction_policy.test.mjs | mjs-script |
+| tests/ghost_layer_restructuring_policy_fixtures.mjs | mjs-script |
 | tests/ghost_lint_fixtures | directory-fixture |
 | tests/ghost_lint_fixtures/nl3_owner_model_bind | directory-fixture |
 | tests/ghost_lint_fixtures/nl3_owner_model_bind/mutant_claim_ordering.rs | support-module |
@@ -1326,8 +1327,8 @@ By construction of the strict rule, no member is name-pinned externally. But ANY
 
 | file | line | text | numbers |
 | --- | --- | --- | --- |
-| docs/ARCHITECTURE.md | 509 | Flat root-level Rust inventories: **509 integration test files** (`tests/*.rs`), | 509 |
-| docs/ARCHITECTURE.md | 518 | \| Unit / integration tests \| Construction, edge cases, invariants; snapshot acceptance pending \| `tests/*.rs` (509 files) \| | 509 |
+| docs/ARCHITECTURE.md | 509 | Flat root-level Rust inventories: **510 integration test files** (`tests/*.rs`), | 510 |
+| docs/ARCHITECTURE.md | 518 | \| Unit / integration tests \| Construction, edge cases, invariants; snapshot acceptance pending \| `tests/*.rs` (510 files) \| | 510 |
 | docs/ARCHITECTURE.md | 521 | \| loom \| Bounded interleavings; snapshot execution pending \| **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs` \| | 27 |
 | docs/CI_TIERS.md | 180 | (a change of the segment-directory scan selects 369 of 484 tests), so the saving comes from peripheral and test-only | 369/484 |
 | docs/perf/b4_ablate/G1_K7_A6_VERDICT.md | 27 | (1606 files). Campaign driver output: `a6/campaign.log`. | 1606 |
@@ -1346,11 +1347,11 @@ By construction of the strict rule, no member is name-pinned externally. But ANY
 | docs/reviews/2026-10-05-ph4a-heap-lease-receipt.md | 90 | - README.md:1383 `tests/*.rs (330 files)` → `tests/*.rs (331 files)` | 330/331 |
 | docs/reviews/2026-10-05-ph4a-heap-lease-receipt.md | 91 | - docs/ARCHITECTURE.md:489 `tests/*.rs (330 files)` → `tests/*.rs (331 files)` | 330/331 |
 | docs/reviews/2026-10-08-src-review-oxx-round-17-code-quality.md | 487 | doc(hidden)  : grep -rnE '#\[doc\(hidden\)\]' src/ \| wc -l                     -> 455 (67 files) | 67 |
-| README.md | 1625 | needs its acceptance run. The present tree contains **509 integration test files**, | 509 |
-| README.md | 1635 | \| Unit / integration tests \| Construction, edge cases, end-to-end behaviour \| `tests/*.rs` (509 files) \| | 509 |
-| README.md | 1636 | \| Examples \| Executable soak, burn-in, RSS, and macro verification harnesses \| `examples/*.rs` (107 files) \| | 107 |
-| README.md | 1637 | \| Benches \| Reproducible performance and gate harnesses \| `benches/*.rs` (34 files) \| | 34 |
-| README.md | 1639 | \| `loom` \| Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations \| **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs` \| | 27 |
+| README.md | 1626 | needs its acceptance run. The present tree contains **510 integration test files**, | 510 |
+| README.md | 1636 | \| Unit / integration tests \| Construction, edge cases, end-to-end behaviour \| `tests/*.rs` (510 files) \| | 510 |
+| README.md | 1637 | \| Examples \| Executable soak, burn-in, RSS, and macro verification harnesses \| `examples/*.rs` (107 files) \| | 107 |
+| README.md | 1638 | \| Benches \| Reproducible performance and gate harnesses \| `benches/*.rs` (34 files) \| | 34 |
+| README.md | 1640 | \| `loom` \| Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations \| **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs` \| | 27 |
 
 j13 hash pins: scripts/j13_limited_report.mjs, scripts/j13_report.mjs, scripts/j13b_artifacts.mjs, scripts/j13b_static_reference.mjs, scripts/j13b_zero_cost_receipt.mjs hash src/ files; tests/ files hash-pinned: **none (expected)**.
 
