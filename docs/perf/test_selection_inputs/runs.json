@@ -1,0 +1,456 @@
+{
+ "provenance": {
+  "repo": "PHPCraftdream/sefer-alloc",
+  "workflow": "ci.yml",
+  "artifact": "test-selection",
+  "selection_events": "pull_request and push (branch main), completed runs; successful completed candidates preferred, newest first within success class; failed/cancelled completed runs not sampled; NOT an unbiased latest-ordinary-runs sample",
+  "collection_limitations": {
+   "requested_gh_call_budget": 45,
+   "actual_gh_call_total": 69,
+   "budget_exceeded_by": 24,
+   "protocol_fully_met": false,
+   "sampling": "28 artifacts retained; preferred successful completed PR/push-main candidates, newest-first within success class; failed/cancelled completed runs were not sampled; therefore not an unbiased latest ordinary runs sample",
+   "download_failures": "Failed downloads were redirected away; error details were not retained. No artifact was retrieved, but artifact absence and failure cause are not established.",
+   "possible_skip_explanation": "Workflow gates select-tests on fast changes; docs-only changes may skip it, but that is not confirmed for these run ids. No further collection was performed."
+  },
+  "gh_call_budget": 45,
+  "gh_calls": {
+   "run_list": 1,
+   "artifact_download_attempts": 40,
+   "artifact_downloads_succeeded": 28,
+   "jobs_api": 28,
+   "total": 69
+  },
+  "download_attempt_order": [
+   {
+    "id": 43831250776,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43830468979,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43816251511,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43812355480,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43795646256,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43793136615,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43785254102,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43781371392,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43777538709,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43771528526,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43768376047,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43763683224,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43760252461,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43759839231,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43759580924,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43737516212,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43737040768,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43736773355,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43729237828,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43721485925,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43714854608,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43712408883,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43712109672,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43708132388,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43707240497,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43704041163,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43699943390,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43698934642,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43694903327,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43694231582,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43691863525,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43684363742,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43683521862,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43682454961,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43682083518,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43678995827,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43678842551,
+    "downloaded": false,
+    "conclusion": "success"
+   },
+   {
+    "id": 43642694744,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43639040715,
+    "downloaded": true,
+    "conclusion": "success"
+   },
+   {
+    "id": 43638984576,
+    "downloaded": true,
+    "conclusion": "success"
+   }
+  ],
+  "jobs_api_note": "GET /repos/PHPCraftdream/sefer-alloc/actions/runs/<id>/jobs?per_page=100, one call per run with an artifact",
+  "storage_note": "TRUNCATED — other jobs and unrelated API fields omitted; retained test-core values verbatim. Reproduce with gh api repos/PHPCraftdream/sefer-alloc/actions/runs/<id>/jobs?per_page=100",
+  "attempt_conclusion_note": "conclusion of each attempted run, from the same run-list call (completed runs only); runs without an artifact are recorded here so the report states facts, not only inference"
+ },
+ "runs": [
+  {
+   "id": 43638984576,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-14T20:43:17Z",
+   "head_sha": "140b9f8dff518803b15002ca90003d8cfe567829",
+   "head_branch": "main"
+  },
+  {
+   "id": 43639040715,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-14T20:43:57Z",
+   "head_sha": "78eea7d69993116047c2a4e9cc5cb9464326f105",
+   "head_branch": "j13-auto-cadence-20261114"
+  },
+  {
+   "id": 43642694744,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-14T21:25:01Z",
+   "head_sha": "d093edd78f33edc5b0517e677c320c21b45c0220",
+   "head_branch": "main"
+  },
+  {
+   "id": 43691863525,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T07:52:13Z",
+   "head_sha": "7df263b9083c6aa1854efb5bd0e681edd83a07d2",
+   "head_branch": "p01-test-classify-20261115"
+  },
+  {
+   "id": 43694231582,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-15T08:22:56Z",
+   "head_sha": "a012c8aa044d4ffefdb4b1c381c8504df9f02f28",
+   "head_branch": "main"
+  },
+  {
+   "id": 43694903327,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T08:31:27Z",
+   "head_sha": "1f6215c50f2781eecde773e2e98410094d08f8f0",
+   "head_branch": "a0-module-graph-20261115"
+  },
+  {
+   "id": 43698934642,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-15T09:22:21Z",
+   "head_sha": "62df2019f6853fb20528af5897e83ca180cea0c3",
+   "head_branch": "main"
+  },
+  {
+   "id": 43699943390,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T09:35:02Z",
+   "head_sha": "5fdb54132c8a238e79e2a812d72e4b9c6f5d8bbf",
+   "head_branch": "t1-crate-folders-20261115"
+  },
+  {
+   "id": 43704041163,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-15T10:25:53Z",
+   "head_sha": "0a03810645ed16fb0a37608a6af9f4990fc4da46",
+   "head_branch": "main"
+  },
+  {
+   "id": 43707240497,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T11:05:45Z",
+   "head_sha": "b92ad549b2c6282c613fc7fcf75707d5deb808e0",
+   "head_branch": "p10-iai-nolto-20261115"
+  },
+  {
+   "id": 43708132388,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T11:16:36Z",
+   "head_sha": "44e9a3b3cd8b45431cee1e22730b9b992ac5940e",
+   "head_branch": "a1-layering-lint-20261115"
+  },
+  {
+   "id": 43714854608,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T12:38:11Z",
+   "head_sha": "ad3da344723bca8d9c87e8183544b53bda0a0ac8",
+   "head_branch": "p10-fix-ansi-20261115"
+  },
+  {
+   "id": 43721485925,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-15T13:54:55Z",
+   "head_sha": "023214be0309733755e5deeabf116ceeba6aff5f",
+   "head_branch": "main"
+  },
+  {
+   "id": 43729237828,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T15:19:32Z",
+   "head_sha": "366aab2a1e0dcb1a176143d6b70c90c3369ea69e",
+   "head_branch": "p11-sefer-ghost-20261115"
+  },
+  {
+   "id": 43737516212,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-15T16:48:13Z",
+   "head_sha": "fdc5f0a846dddec9ec8bc32a313d5e5615f27cb2",
+   "head_branch": "main"
+  },
+  {
+   "id": 43759580924,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T20:42:30Z",
+   "head_sha": "8e82339ab89041f218b270039b94d84a55574e32",
+   "head_branch": "p12-sefer-concurrent-20261115"
+  },
+  {
+   "id": 43759839231,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T20:45:21Z",
+   "head_sha": "9be31c2c8244512499dea985beb50a0d8bd6fd36",
+   "head_branch": "g1-inputs-20261115"
+  },
+  {
+   "id": 43760252461,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T20:49:55Z",
+   "head_sha": "b81714b81387e38cc6c7e7d71bd031aeb75a167a",
+   "head_branch": "p15-hygiene-20261115"
+  },
+  {
+   "id": 43763683224,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-15T21:26:18Z",
+   "head_sha": "5c6edc44052d6c04b26d48b6ece7f9a8e481f032",
+   "head_branch": "main"
+  },
+  {
+   "id": 43768376047,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-15T22:16:39Z",
+   "head_sha": "b5779b5f90576cc99a443ec6dcd5c29995078183",
+   "head_branch": "main"
+  },
+  {
+   "id": 43771528526,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-15T22:50:40Z",
+   "head_sha": "5a8a8d98c7f27e312f5bf14ab1534d3a8456d7ef",
+   "head_branch": "p15-hygiene-20261115"
+  },
+  {
+   "id": 43777538709,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-15T23:57:05Z",
+   "head_sha": "c6524f402c91c408b36f2e326ff785e0c1c466e8",
+   "head_branch": "main"
+  },
+  {
+   "id": 43781371392,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-16T00:36:29Z",
+   "head_sha": "5a8e0904db315398aa93809dd7091193673cc6e8",
+   "head_branch": "p02-test-merge-pilot-20261115"
+  },
+  {
+   "id": 43785254102,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-16T01:16:08Z",
+   "head_sha": "8013c80d859a7ffe41deb280463acd407b074f89",
+   "head_branch": "main"
+  },
+  {
+   "id": 43793136615,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-16T02:35:51Z",
+   "head_sha": "0047084be53a5b561d801914c25fe07d9ec34f18",
+   "head_branch": "p15x-selection-potential-20261116"
+  },
+  {
+   "id": 43795646256,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-16T03:01:43Z",
+   "head_sha": "ded4029003a9e3805b7ecba3e4f20dd9fb3c1d55",
+   "head_branch": "main"
+  },
+  {
+   "id": 43812355480,
+   "event": "pull_request",
+   "conclusion": "success",
+   "created_at": "2026-11-16T05:46:02Z",
+   "head_sha": "6aacc851a92df9a92129e20685a3936e6e858476",
+   "head_branch": "cjd-fix-20261116"
+  },
+  {
+   "id": 43816251511,
+   "event": "push",
+   "conclusion": "success",
+   "created_at": "2026-11-16T06:21:57Z",
+   "head_sha": "79796189f61fb68f0fd171cf8fc5e62d0e1b1b62",
+   "head_branch": "main"
+  }
+ ]
+}
