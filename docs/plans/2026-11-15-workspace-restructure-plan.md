@@ -1,9 +1,6 @@
 # sefer-alloc — workspace restructure plan (tests, thematic crate folders, core split)
 
-Date: 2026-11-15. Status (revision 3): P1.1 is in PR #247 (not merged yet);
-P1.2–P1.4 are written and stacked for one integration PR (not opened yet); the P0.2 pilot is
-written and awaits CI measurement; P1.5, G1 and P2 are not started. (The old status "planned,
-nothing started" is replaced by revision 3.) Source tree measured at `main` `d093edd7`.
+Date: 2026-11-15. Status (revision 4, 2026-11-16): P1.3/P1.4/P1.6 implementation is integrated in the landing stack; CI/perf are pending and this does not claim a merge to main. P1.5 is approved to proceed, implementation not started. G1 is DO by owner override; P2.0–P2.5 are approved to proceed, implementation not started. P0.2's ordinary-CI measurement remains pending. Revision 3's earlier STOP dispositions are historical and superseded as current authorization by the owner override below. Source tree measured at `main` `d093edd7`.
 Revision 2 (2026-11-15, self-review): added the visibility-widening cost, the test-inventory
 gate, the no-LTO baseline before P1, the explicit P2 decision gate G1, a narrower `CI: full`
 scope and a corrected order (G0 does not gate A0/A1/P0).
@@ -194,7 +191,7 @@ Decision: do P2, or stop at lint-enforced layering. The owner delegated it; the 
 written into the G1 report before the numbers are read, and the decision with its numbers is
 reported to the owner. Default when the numbers do not show a clear benefit: stop.
 
-**G1 — Decided 2026-11-16: STOP.** Inputs show no clear P2 benefit: stop at A1, whose lint remains the sole layer enforcement. P1.3, P1.4 and P1.6 are NOT MERGING; branch `p14-sefer-platform-20261115` remains a record only, with no PR. P1.5 potential is measured in [`docs/perf/P1_5_SELECTION_POTENTIAL.md`](../perf/P1_5_SELECTION_POTENTIAL.md), but it is not implemented, shows no savings, and the two-level selector will not proceed. See [`docs/perf/G1_DECISION_REPORT.md`](../perf/G1_DECISION_REPORT.md).
+**G1 — Historical evidence-based STOP, superseded as current authorization by owner override (2026-11-16):** the measured inputs and historical STOP are preserved in [`docs/perf/G1_DECISION_REPORT.md`](../perf/G1_DECISION_REPORT.md). The owner override sets the normative disposition to DO: continue the core split and selector; P1.3/P1.4/P1.6 are to merge, and P1.5 plus P2.0–P2.5 are to proceed. P1.3/P1.4/P1.6 implementation is integrated in the landing stack; CI/perf remain pending, and no merge to main or measured acceleration is claimed. The extraction-policy reference is [`docs/GHOST_CHECKS_PLAN.md#extraction-ranges`](../GHOST_CHECKS_PLAN.md#extraction-ranges).
 
 ## 5. Steps
 
@@ -243,22 +240,22 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
   stays in the root (not policy), 120 items became `pub`, `index()` mapping in the crate
   (facts 3). (The wording "`alloc_core/config` including ..." is replaced by revision 3 for
   `continuation_bounds.rs`.)
-  Status (2026-11-16): NOT MERGING; branch `p14-sefer-platform-20261115` remains a record only, with no PR.
+  Status (2026-11-16): owner approved merge; implementation integrated in the landing stack; CI/perf pending; not claimed merged to main.
 - **P1.4 `sefer-platform`** (or merge, decision G0.3): `os`, `node`, `fatal`, and the
   process-exit state that `segment_route` needs. (Replaced by revision 3: only `fatal`,
   `process_exit` and the root-independent part of `os` were extracted; `node.rs`, `numa.rs`,
   `sidecar*.rs`, `size_classes.rs` and the `os.rs` directory triple stay in the root until
   P2.0/P2.1; facts 4.)
-  Status (2026-11-16): NOT MERGING; branch `p14-sefer-platform-20261115` remains a record only, with no PR.
+  Status (2026-11-16): owner approved merge; implementation integrated in the landing stack; CI/perf pending; not claimed merged to main.
 - **P1.2–P1.4 landing** (revision 3): one integration PR of three commits after P1.1, derived
   data recomputed once at the tip, no-LTO IAI measured before merge (section 3).
 - **P1.5 Two-level selection** (next after the P1.1–P1.4 merge, together with the measurement
   of the G1 inputs, revision 3; facts 1): crate graph from `cargo metadata` first, the existing
   test-impact map inside the root crate second; miri, loom and kani run per changed crate.
-  Status (2026-11-16): Potential measured in [`docs/perf/P1_5_SELECTION_POTENTIAL.md`](../perf/P1_5_SELECTION_POTENTIAL.md); not implemented, no savings shown, and the two-level selector will not proceed under G1 STOP.
+  Status (2026-11-16): owner approved P1.5 to proceed; implementation not started; modeled history shows no selector savings, and actual CI/perf remain pending.
 - **P1.6 Inline audit**: hot-path functions on the new crate boundaries are `#[inline]`;
   the no-LTO IAI row shows delta 0 against the P1.0 baseline.
-  Status (2026-11-16): NOT MERGING under the G1 STOP decision.
+  Status (2026-11-16): owner approved merge; implementation integrated in landing stack; CI/perf pending; not claimed merged to main.
 
 ### P2 — core split
 
@@ -275,7 +272,7 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
 - **P2.5 Close-out**: per-crate feature powerset, README "where unsafe lives", docs.rs
   feature rows per crate, CHANGELOG, round manifest, sprint-close `CI: full` run.
 
-Status (2026-11-16): P2.0–P2.5 not started; stop at G1.
+Status (2026-11-16): owner override approves P2.0–P2.5 to proceed; implementation not started; CI/perf pending.
 
 Expected benefit, stated honestly: P0 and P1 reduce cost for peripheral, policy, container
 and test-only changes. A change in `segment` or `small` will still reach most tests after
