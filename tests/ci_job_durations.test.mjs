@@ -108,6 +108,137 @@ test('step-pattern fallback: job without matching steps uses whole job duration 
   }
 });
 
+// ------------------------------------------------------------- camelCase / mixed-format checks
+
+/** camelCase job record, exactly like `gh run view <id> --json jobs` output. */
+function camelRunFile(side, fileName, jobName, steps, baseMs = 1730000000000) {
+  const t = (sec) => new Date(baseMs + sec * 1000).toISOString();
+  const job = {
+    name: jobName,
+    databaseId: 1234567890,
+    startedAt: t(0),
+    completedAt: t(100),
+    conclusion: 'success',
+    steps: steps.map(([name, dur], i) => ({
+      name, number: i + 1, startedAt: t(0), completedAt: t(dur), conclusion: 'success',
+    })),
+  };
+  writeFileSync(join(side, fileName), JSON.stringify({ jobs: [job] }));
+}
+
+test('camelCase dump (gh run view --json jobs) produces valid steps and whole-job records', () => {
+  const ws = makeWorkspace();
+  try {
+    camelRunFile(ws.before, 'r1.json', 'J', [['cargo test', 100]]);
+    camelRunFile(ws.after, 'r1.json', 'J', [['cargo test', 50]]);
+    camelRunFile(ws.before, 'fallback.json', 'Fallback', []);
+    camelRunFile(ws.after, 'fallback.json', 'Fallback', []);
+    const pattern = /cargo test/;
+    const b = collectRuns(ws.before, pattern);
+    const a = collectRuns(ws.after, pattern);
+    assert.deepEqual(b.perJob.get('J').map((r) => [r.seconds, r.metric]), [[100, 'steps']]);
+    assert.deepEqual(a.perJob.get('J').map((r) => [r.seconds, r.metric]), [[50, 'steps']]);
+    assert.deepEqual(b.perJob.get('Fallback').map((r) => [r.seconds, r.metric]), [[100, 'job']]);
+    assert.deepEqual(a.perJob.get('Fallback').map((r) => [r.seconds, r.metric]), [[100, 'job']]);
+    const rows = computeRows({ before: b, after: a, jobs: ['J'], minRuns: 1 });
+    assert.equal(rows[0].metric, 'steps');
+    assert.equal(rows[0].delta, -50);
+    assert.equal(rows[0].verdict, 'fell');
+    assertRows(rows, { before: b, after: a });
+  } finally {
+    rmSync(ws.dir, { recursive: true, force: true });
+  }
+});
+
+test('mixed formats: snake_case and camelCase records both count as valid runs', () => {
+  const ws = makeWorkspace();
+  try {
+    runFile(ws.before, 'snake.json', 'J', [['cargo test', 100]]);
+    camelRunFile(ws.before, 'camel.json', 'J', [['cargo test', 110]], 1730000000000 + 3600 * 1000);
+    runFile(ws.after, 'snake.json', 'J', [['cargo test', 50]]);
+    camelRunFile(ws.after, 'camel.json', 'J', [['cargo test', 60]], 1730000000000 + 3600 * 1000);
+    const pattern = /cargo test/;
+    const b = collectRuns(ws.before, pattern);
+    const a = collectRuns(ws.after, pattern);
+    // files are processed in sorted order: camel.json before snake.json
+    assert.deepEqual(b.perJob.get('J').map((r) => r.seconds), [110, 100]);
+    assert.deepEqual(a.perJob.get('J').map((r) => r.seconds), [60, 50]);
+    const rows = computeRows({ before: b, after: a, jobs: ['J'], minRuns: 2 });
+    assert.equal(rows[0].verdict, 'fell');
+    assert.equal(rows[0].b.med, 105);
+    assert.equal(rows[0].a.med, 55);
+    assertRows(rows, { before: b, after: a });
+  } finally {
+    rmSync(ws.dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI: invalid snake_case and camelCase job timestamps => exit 1 naming each file', () => {
+  const cases = [
+    {
+      side: 'before',
+      file: 'bad_snake.json',
+      jobs: [
+        { name: 'J', started_at: 'not-a-date', completed_at: 'also-bad', steps: [{ name: 'cargo test', started_at: 'not-a-date', completed_at: 'also-bad' }] },
+        { name: 'J' },
+      ],
+    },
+    {
+      side: 'after',
+      file: 'bad_camel.json',
+      jobs: [
+        { name: 'J', startedAt: 'not-a-date', completedAt: 'also-bad', steps: [{ name: 'cargo test', startedAt: 'not-a-date', completedAt: 'also-bad' }] },
+        { name: 'J' },
+      ],
+    },
+  ];
+  for (const { side, file, jobs } of cases) {
+    const ws = makeWorkspace();
+    try {
+      writeFileSync(join(ws[side], file), JSON.stringify({ jobs }));
+      const other = side === 'before' ? ws.after : ws.before;
+      runFile(other, 'ok.json', 'Other', [['cargo test', 10]]);
+      const r = spawnSync(process.execPath, [SCRIPT, '--before', ws.before, '--after', ws.after], { encoding: 'utf8' });
+      assert.equal(r.status, 1);
+      assert.match(r.stderr, /no valid job record/);
+      assert.ok(r.stderr.includes(file));
+    } finally {
+      rmSync(ws.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('CLI: valid and invalid records in one file still succeed and count skipped', () => {
+  const ws = makeWorkspace();
+  try {
+    const valid = {
+      name: 'J', started_at: '2026-01-01T00:00:00Z', completed_at: '2026-01-01T00:01:00Z',
+      steps: [{ name: 'cargo test', started_at: '2026-01-01T00:00:00Z', completed_at: '2026-01-01T00:00:10Z' }],
+    };
+    writeFileSync(join(ws.before, 'mixed.json'), JSON.stringify({ jobs: [valid, { name: 'J' }] }));
+    runFile(ws.after, 'ok.json', 'J', [['cargo test', 5]]);
+    const r = spawnSync(process.execPath, [SCRIPT, '--before', ws.before, '--after', ws.after], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /skipped \(missing\/invalid timestamps\): 1 job record\(s\)/);
+  } finally {
+    rmSync(ws.dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI: empty jobs array => exit 1 naming the file', () => {
+  const ws = makeWorkspace();
+  try {
+    writeFileSync(join(ws.before, 'empty.json'), JSON.stringify({ jobs: [] }));
+    runFile(ws.after, 'ok.json', 'Other', [['cargo test', 10]]);
+    const r = spawnSync(process.execPath, [SCRIPT, '--before', ws.before, '--after', ws.after], { encoding: 'utf8' });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /empty "jobs" array/);
+    assert.match(r.stderr, /empty\.json/);
+  } finally {
+    rmSync(ws.dir, { recursive: true, force: true });
+  }
+});
+
 test('min-runs=3: two runs per side => verdict insufficient-runs', () => {
   const ws = makeWorkspace();
   try {
