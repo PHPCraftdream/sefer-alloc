@@ -1,0 +1,102 @@
+{
+ "run_id": 43737516212,
+ "jobs": [
+  {
+   "name": "test (core tiers)",
+   "conclusion": "success",
+   "status": "completed",
+   "started_at": "2026-11-15T17:12:27Z",
+   "completed_at": "2026-11-15T17:16:33Z",
+   "steps": [
+    {
+     "number": 1,
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success",
+     "started_at": "2026-11-15T17:12:27Z",
+     "completed_at": "2026-11-15T17:12:29Z"
+    },
+    {
+     "number": 2,
+     "name": "Run actions/checkout@v5",
+     "status": "completed",
+     "conclusion": "success",
+     "started_at": "2026-11-15T17:12:29Z",
+     "completed_at": "2026-11-15T17:12:35Z"
+    },
+    {
+     "number": 3,
+     "name": "Run dtolnay/rust-toolchain@stable",
+     "status": "completed",
+     "conclusion": "success",
+     "started_at": "2026-11-15T17:12:35Z",
+     "completed_at": "2026-11-15T17:12:47Z"
+    },
+    {
+     "number": 4,
+     "name": "Run actions/setup-node@v5",
+     "status": "completed",
+     "conclusion": "skipped",
+     "started_at": "2026-11-15T17:12:47Z",
+     "completed_at": "2026-11-15T17:12:47Z"
+    },
+    {
+     "number": 5,
+     "name": "Run actions/download-artifact@v7",
+     "status": "completed",
+     "conclusion": "skipped",
+     "started_at": "2026-11-15T17:12:47Z",
+     "completed_at": "2026-11-15T17:12:47Z"
+    },
+    {
+     "number": 6,
+     "name": "Selected tests",
+     "status": "completed",
+     "conclusion": "skipped",
+     "started_at": "2026-11-15T17:12:47Z",
+     "completed_at": "2026-11-15T17:12:47Z"
+    },
+    {
+     "number": 7,
+     "name": "test ()",
+     "status": "completed",
+     "conclusion": "success",
+     "started_at": "2026-11-15T17:12:47Z",
+     "completed_at": "2026-11-15T17:13:32Z"
+    },
+    {
+     "number": 8,
+     "name": "test (--features experimental)",
+     "status": "completed",
+     "conclusion": "success",
+     "started_at": "2026-11-15T17:13:32Z",
+     "completed_at": "2026-11-15T17:13:54Z"
+    },
+    {
+     "number": 9,
+     "name": "test (--features alloc-core)",
+     "status": "completed",
+     "conclusion": "success",
+     "started_at": "2026-11-15T17:13:54Z",
+     "completed_at": "2026-11-15T17:16:31Z"
+    },
+    {
+     "number": 18,
+     "name": "Post Run actions/checkout@v5",
+     "status": "completed",
+     "conclusion": "success",
+     "started_at": "2026-11-15T17:16:31Z",
+     "completed_at": "2026-11-15T17:16:32Z"
+    },
+    {
+     "number": 19,
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success",
+     "started_at": "2026-11-15T17:16:32Z",
+     "completed_at": "2026-11-15T17:16:32Z"
+    }
+   ]
+  }
+ ]
+}

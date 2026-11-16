@@ -35,6 +35,11 @@ runs:
     - run: node --test tests/ghost_extraction_policy.test.mjs
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+    # TEST_SELECTION=enforce impact measurement (G1 follow-up; docs/perf/TEST_SELECTION_ENFORCE_IMPACT.md,
+    # scripts/test-selection-impact.mjs).
+    - run: node --test tests/test_selection_impact.test.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
     - run: node --test tests/test_inventory.test.mjs tests/ci_job_durations.test.mjs
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
