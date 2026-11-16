@@ -1,5 +1,5 @@
-name: CI miri-core
-description: Original miri-core job steps
+name: CI miri-core-rest
+description: miri-core sharded by measured target wall time — every target except the dominant b4-r1 pin-cache target
 runs:
   using: composite
   steps:
@@ -180,19 +180,6 @@ runs:
         set -o pipefail
         cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-tree.log"
         grep -F "[miri_global_box_acceptance] COMPLETE narrow_two_rounds" "$RUNNER_TEMP/miri-installed-box-tree.log"
-      shell: bash
-    # b4-r1 round 2 (P2): pin-cache cell under narrow provenance. REAL Box
-    # ownership via a Send wrapper; activation oracle = PIN_CACHE_HITS
-    # delta >= 1 (reds a "publish_cached always returns Miss" mutant);
-    # gated pending-bit delivery via TerminalPublicationGate and TLS
-    # thread-exit release (PIN_CACHE_THREAD_RELEASES delta >= 2).
-    - name: b4-r1 pin cache narrow provenance (miss, same-base hit, delivery, TLS release)
-      env:
-        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
-      run: |
-        set -o pipefail
-        cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
-        grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
       shell: bash
     - name: installed Box R1-01 cap-frame flush witness (SB)
       env:
@@ -409,6 +396,3 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo miri test --locked --features "alloc-core" --test class_leaves_publication_miri
-
-# The TreeBorrows run of the pin-cache cell alone takes about half an hour; as a step of
-# `miri-core` it set the wall clock of the whole workflow. Its own job runs beside the rest.

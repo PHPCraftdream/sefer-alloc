@@ -58,6 +58,14 @@ runs:
     - run: node scripts/verify-miri-target-wiring.mjs
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+    # Miri sharding equivalence gate (2026-11-16): the shard unions of
+    # miri-core/fastbin/plain must equal the pre-sharding command sets exactly.
+    - run: node scripts/verify-miri-sharding.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node --test tests/miri_sharding.test.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
     - run: node scripts/j13b_zero_cost_receipt.mjs --check
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}

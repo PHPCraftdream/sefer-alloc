@@ -67,7 +67,6 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: node scripts/ci-plan.mjs --event "$EVENT" --base "$BASE" --head "$HEAD_SHA"
-
   j13b-judge-preparation:
     name: J13b judge preparation (schema + workload contract)
     runs-on: ubuntu-latest
@@ -151,7 +150,6 @@ jobs:
             ${{ runner.temp }}/j13-evidence-sizes.txt
           if-no-files-found: error
           retention-days: 30
-
   select-tests:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
@@ -187,14 +185,12 @@ jobs:
           name: test-selection
           path: selection.json
           retention-days: 14
-
   docs-consistency:
     name: docs consistency (always)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-docs-consistency
-
   ghost-guard:
     name: ghost-guard (semantic lint + ghost self-test)
     runs-on: ubuntu-latest
@@ -203,7 +199,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/ci-ghost-guard
-
   ghost-zero-cost:
     name: ghost-zero-cost (.text diff + Ir vs base)
     needs: changes
@@ -331,7 +326,6 @@ jobs:
           echo "HugePages_Free after align>2MiB pool-amplification test (observation only, not a gate -- see step comment above):"
           grep -i HugePages_Free /proc/meminfo
         shell: bash
-
   aligned-vmem-miri:
     needs: changes
     if: needs.changes.outputs.crate_aligned_vmem == 'true'
@@ -366,7 +360,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-tagged-index-stack-gates
-
   sefer-ghost-gates:
     needs: changes
     if: needs.changes.outputs.crate_sefer_ghost == 'true'
@@ -375,7 +368,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-sefer-ghost-gates
-
   once-ptr-cell-miri:
     needs: changes
     if: needs.changes.outputs.crate_once_ptr_cell == 'true'
@@ -384,7 +376,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-once-ptr-cell-miri
-
   globalalloc-model-miri:
     needs: changes
     if: needs.changes.outputs.crate_globalalloc_model == 'true'
@@ -500,7 +491,6 @@ jobs:
       - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest --test config_validate --test peak_live_count --test size_strategy_avoids_boxed_value_trees
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance"
-
   proc-memstat-gates:
     needs: changes
     if: needs.changes.outputs.crate_proc == 'true'
@@ -513,7 +503,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-proc-memstat-gates
-
   proc-probe-gates:
     needs: changes
     if: needs.changes.outputs.crate_proc == 'true'
@@ -522,7 +511,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-proc-probe-gates
-
   clippy:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
@@ -549,7 +537,6 @@ jobs:
         run: cargo clippy --lib --features "numa-aware internals" -- -D warnings
       - name: clippy (--features "alloc-global alloc-xthread")
         run: cargo clippy --lib --features "alloc-global alloc-xthread" -- -D warnings
-
   evidence-registry:
     runs-on: ubuntu-latest
     steps:
@@ -557,7 +544,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/ci-evidence-registry
-
   check-matrix:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
@@ -566,7 +552,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-check-matrix
-
   commit-prefix-lint:
     name: commit-prefix-lint (R30-12 taxonomy, PR range + pushed range)
     runs-on: ubuntu-latest
@@ -575,7 +560,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/ci-commit-prefix-lint
-
   test-ghost:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
@@ -584,7 +568,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-test-ghost
-
   test-core:
     needs: [changes, select-tests]
     if: ${{ !cancelled() && needs.changes.outputs.fast == 'true' }}
@@ -709,18 +692,28 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-no_std
-  miri-core:
+  miri-core-pin-cache:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
-    name: miri (core)
+    name: miri (core, pin cache)
     runs-on: ubuntu-latest
     env:
       MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
       RUSTC_WRAPPER: ""
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/ci-miri-core
-
+      - uses: ./.github/actions/ci-miri-core-pin-cache
+  miri-core-rest:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
+    name: miri (core, rest)
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      RUSTC_WRAPPER: ""
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci-miri-core-rest
   miri-core-tb:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
@@ -732,7 +725,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-miri-core-tb
-
   miri-alloc-core:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
@@ -743,29 +735,46 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-miri-alloc-core
-
-  miri-fastbin:
+  miri-fastbin-oracles:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
-    name: miri (fastbin)
+    name: miri (fastbin, magazine oracles)
     runs-on: ubuntu-latest
     env:
       MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/ci-miri-fastbin
-
-  miri-plain:
+      - uses: ./.github/actions/ci-miri-fastbin-oracles
+  miri-fastbin-integrity:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
-    name: miri-plain
+    name: miri (fastbin, integrity)
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci-miri-fastbin-integrity
+  miri-plain-heavy:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
+    name: miri-plain (heavy regressions)
     runs-on: ubuntu-latest
     env:
       MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/ci-miri-plain
-
+      - uses: ./.github/actions/ci-miri-plain-heavy
+  miri-plain-rest:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
+    name: miri-plain (rest)
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci-miri-plain-rest
   kani:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
@@ -774,7 +783,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-kani
-
   loom-alloc-global:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
@@ -785,7 +793,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-loom-alloc-global
-
   loom-xthread:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
@@ -796,7 +803,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-loom-xthread
-
   loom-experimental:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
@@ -807,7 +813,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-loom-experimental
-
   loom-misc:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
@@ -818,7 +823,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-loom-misc
-
   tsan:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
@@ -829,7 +833,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-tsan
-
   asan:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
@@ -842,7 +845,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-asan
-
   multi-arch:
     needs: changes
     if: needs.changes.outputs.os == 'true'
@@ -887,7 +889,6 @@ jobs:
       - name: Run production tests (cross)
         if: ${{ matrix.use_cross }}
         run: cross test --target ${{ matrix.target }} --features "production internals"
-
   tis-weak-memory-wallclock-gate:
     name: tagged-index-stack weak-memory wall-clock A/B gate (arm64)
     runs-on: ubuntu-24.04-arm
@@ -895,7 +896,6 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: ./.github/actions/ci-tis-weak-memory-wallclock-gate
-
   numa-shim-mock:
     needs: changes
     if: needs.changes.outputs.crate_numa_shim == 'true'
@@ -904,7 +904,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-numa-shim-mock
-
   numa-shim-windows:
     needs: changes
     if: needs.changes.outputs.crate_numa_shim == 'true'
@@ -913,7 +912,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-numa-shim-windows
-
   numa-shim-macos:
     needs: changes
     if: needs.changes.outputs.crate_numa_shim == 'true'
@@ -922,7 +920,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-numa-shim-macos
-
   numa-shim-macos-miri:
     needs: changes
     if: needs.changes.outputs.crate_numa_shim == 'true'
@@ -933,7 +930,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-numa-shim-macos-miri
-
   numa-real-kernel:
     name: NUMA on real Linux kernel (numactl smoke + env-guarded tests)
     runs-on: ubuntu-latest
@@ -941,7 +937,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-numa-real-kernel
-
   fuzz-build:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
@@ -950,7 +945,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-fuzz-build
-
   fuzz-run:
     name: fuzz targets run (weekly, 10 min/target)
     runs-on: ubuntu-latest
@@ -958,7 +952,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-fuzz-run
-
   docs:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
@@ -974,21 +967,18 @@ jobs:
           FEATURES=$(cargo metadata --locked --no-deps --format-version 1 | jq -er '.packages[] | select(.name == "sefer-alloc") | .metadata.docs.rs.features | join(",")')
           test -n "$FEATURES"
           RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps -p sefer-alloc --features "$FEATURES"
-
   deny:
     name: cargo-deny advisories
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-deny
-
   licenses:
     name: license compatibility (only when dependencies changed)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-licenses
-
   feature-powerset:
     name: cargo-hack feature-powerset (depth 2, check-only, weekly)
     runs-on: ubuntu-latest

@@ -185,11 +185,16 @@ export function buildWeightsFromJobs(runJson, ciJobs) {
   const byName = new Map();
   for (const j of ciJobs) { const k = j.name || j.id; if (k && !byName.has(k)) byName.set(k, j); }
   const pending = ciJobs.filter(j => j.name && /\$\{\{/.test(j.name)).map(j => ({ j, rx: nameRx(j.name) }));
+  // Historical run dumps predate the 2026-11-16 miri sharding; map each old job
+  // name to a shard with the identical gating group (all six shards are `seam`),
+  // so saved runs keep contributing their weights instead of landing unmapped.
+  const SHARD_ALIASES = { 'miri (core)': 'miri-core-rest', 'miri (fastbin)': 'miri-fastbin-integrity', 'miri-plain': 'miri-plain-rest' };
+  const byId = new Map(ciJobs.map(j => [j.id, j]));
   const weights = new Map(ROOT_GROUPS.concat().map(g => [g, 0]));
   const unmapped = [], skipped = [], excluded = [];
   let mapped = 0, zeroTimestamp = 0;
   for (const run of runJson.jobs ?? []) {
-    let job = byName.get(run.name);
+    let job = byName.get(run.name) ?? (SHARD_ALIASES[run.name] ? byId.get(SHARD_ALIASES[run.name]) : undefined);
     if (!job) {
       const cands = pending.filter(p => p.rx.test(run.name));
       if (cands.length === 1) job = cands[0].j; // matrix rows share one workflow job

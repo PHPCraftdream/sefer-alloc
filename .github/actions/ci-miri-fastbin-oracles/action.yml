@@ -1,5 +1,5 @@
-name: CI miri-fastbin
-description: Original miri-fastbin job steps
+name: CI miri-fastbin-oracles
+description: miri-fastbin sharded by step — the regression_merged magazine-oracles filter
 runs:
   using: composite
   steps:
@@ -10,9 +10,7 @@ runs:
     # (now tests/regression_merged/regression_magazine_oracles.rs under the
     # P0.2 `regression_merged` target) reaches
     # `sefer_alloc::registry::{bootstrap, HeapRegistry}` directly.
-    - run: |
-          cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin internals" --test regression_merged -- regression_magazine_oracles::
-          cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin internals" --test regression_bump_direct_refill --test nl3_safe_xthread_churn_integrity --test nl7_safe_large_realloc_integrity
-
+    - name: regression_merged magazine oracles
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+      run: cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin internals" --test regression_merged -- regression_magazine_oracles::
