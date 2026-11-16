@@ -842,7 +842,7 @@ Under the recommended `production` feature
 `global::{sefer_alloc::global_alloc, fallback}`;
 `registry::bootstrap::{registry, ensure}`, `registry::heap_slot`,
 `registry::heap_registry::claim`, and
-`alloc_core::segment_route::{directory::{route_directory, blocks}, route_state::{shard_lock, small_sidecar}}` and
+`alloc_core::segment_route::{directory::{route_directory, blocks}, shard_lock, small_sidecar}` and
 `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes`.
 R6-T37 demoted `global::tls_heap` to a tier-2 item-scoped site (its sole `bench-internals`-gated `dbg_restore_local_for_test` hook); the module itself is safe.
 `registry::heap_registry::maintenance` is safe composition; its lease's

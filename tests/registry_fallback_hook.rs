@@ -11,8 +11,8 @@ mod registry {
     }
 }
 
-use registry::HeapCore;
 use registry::fallback_hook::FallbackHook;
+use registry::HeapCore;
 
 fn registered_callback(f: &mut dyn FnMut(&mut HeapCore)) -> bool {
     let mut heap = HeapCore { value: 11 };

@@ -755,7 +755,7 @@ test('CLI --json: counts match today\'s pinned values and structure holds', () =
   const data = JSON.parse(r.stdout);
   const c = data.counts;
   // --- data-pinned (2026-11-15) ---
-  assert.equal(c.targets, 509);
+  assert.equal(c.targets, 510);
   assert.equal(c.targetsTestFalse, 11);
   assert.equal(c.declaredExplicit, 26);
   assert.equal(c.harnessFalse, 13);

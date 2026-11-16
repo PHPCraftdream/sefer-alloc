@@ -187,8 +187,8 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/queries.rs::dbg_kind_at_tag",
   "src/registry/heap_core/diag/queries.rs::dbg_kind_byte_of",
   // Pure numeric size-class divisibility forwarders (no pointer, no state).
-  "src/alloc_core/segment/segment_layout.rs::dbg_size_class_divides",
-  "src/alloc_core/segment/segment_layout.rs::dbg_size_class_divisor",
+  "src/alloc_core/segment/segment_directory/segment_layout.rs::dbg_size_class_divides",
+  "src/alloc_core/segment/segment_directory/segment_layout.rs::dbg_size_class_divisor",
   // Non-panicking SegmentTable membership probe (canonical_root_for); read-only.
   "src/registry/heap_core/diag/queries.rs::dbg_segment_registered_for",
   "src/registry/heap_core/diag/queries.rs::dbg_table_count",
@@ -445,7 +445,7 @@ export const REVIEWED_SURFACE = [
   { id: 'crates/platform/sefer-platform/src/os.rs::commit_pages_for_measurement', kind: 'unsafe', reason: 'measurement-side twin of commit_pages: same caller contract (# Safety at the definition) over an allocator-owned segment reservation; bench-internals+internals gated', gates: ['bench-internals', 'internals', 'alloc-decommit'] },
   { id: 'src/registry/heap_core/diag/queries.rs::dbg_sidecar_scan_measurement', kind: 'mutator', reason: 'thread-local optional diagnostic counts and original-versus-prefilter scan mode only; no pointers or allocator metadata access', gates: ['bench-internals', 'r18_sidecar_scan_bench'] },
   ...[
-    ['src/alloc_core/segment/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],
+    ['src/alloc_core/segment/segment_directory/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],
     ['src/alloc_core/small/alloc_core_small_magazine.rs', ['refill_class', 'refill_class_bump', 'refill_class_bump_virgin'], 'mutator', 'delegates to allocation substrate; exclusive mutable core borrow'],
     ['crates/containers/sefer-concurrent/src/epoch/epoch_region.rs', ['_remote_free_queue_buffer_identity_for_tests'], 'observer', 'locked buffer identity only; no dereference permission'],
     ['crates/containers/sefer-concurrent/src/epoch/epoch_region.rs', ['_set_slot_generation_for_tests'], 'mutator', 'vacant-slot generation boundary; mutable region borrow'],
@@ -521,10 +521,10 @@ const ROOT_FORWARDERS = [
   'src/alloc_core/small/alloc_core_small_magazine.rs::refill_class_bump',
   'src/alloc_core/small/alloc_core_small_magazine.rs::refill_class_bump_virgin',
   'src/alloc_core/small/alloc_core_small_magazine.rs::flush_class',
-  'src/alloc_core/segment/segment_layout.rs::small_decommit_start',
-  'src/alloc_core/segment/segment_layout.rs::primordial_decommit_start',
-  'src/alloc_core/segment/segment_layout.rs::small_lazy_initial_commit',
-  'src/alloc_core/segment/segment_layout.rs::primordial_lazy_initial_commit',
+  'src/alloc_core/segment/segment_directory/segment_layout.rs::small_decommit_start',
+  'src/alloc_core/segment/segment_directory/segment_layout.rs::primordial_decommit_start',
+  'src/alloc_core/segment/segment_directory/segment_layout.rs::small_lazy_initial_commit',
+  'src/alloc_core/segment/segment_directory/segment_layout.rs::primordial_lazy_initial_commit',
 ];
 
 export function rustMask(text) {
@@ -779,7 +779,7 @@ function handAuthoredCheck() {
     `reviewed hook missing internals gate: ${magazine}::flush_class`,
   ]);
 
-  const layout = 'src/alloc_core/segment/segment_layout.rs';
+  const layout = 'src/alloc_core/segment/segment_directory/segment_layout.rs';
   const layoutSource = `#[cfg(feature = "internals")]
   impl SegmentLayout {
     pub fn small_decommit_start() -> usize { 0 }
