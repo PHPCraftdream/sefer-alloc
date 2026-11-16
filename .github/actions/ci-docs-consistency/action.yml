@@ -31,6 +31,9 @@ runs:
     - run: node --test tests/test_inventory.test.mjs tests/ci_job_durations.test.mjs
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+    - run: node --test tests/verify_miri_target_wiring_quoting.test.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
     - run: node scripts/verify-ci-decomposition.mjs
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
