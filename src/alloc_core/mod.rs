@@ -81,10 +81,11 @@ pub use segment::segment_header;
 // `alloc_core::segment_header_layout` / `_meta_fields` / `_views` module
 // paths valid (module-path parity with the pre-reorg `mod` declarations).
 pub(crate) use segment::segment_layout;
+#[cfg(feature = "alloc-global")]
+#[path = "segment/segment_route/mod.rs"]
+#[doc(hidden)]
+pub mod segment_route;
 pub(crate) use segment::segment_table;
-#[allow(unused_imports)]
-use segment::{segment_header_layout, segment_header_meta_fields, segment_header_views};
-
 // The ten former flat child modules now live in two group modules — the
 // `platform/` shims+seams and `config/` configuration types — and are
 // re-exported here (at their original visibility/cfg/doc-hidden parity) so

@@ -53,14 +53,14 @@ const PURE_OBSERVERS = [
   "src/global/tls_heap.rs::dbg_saturation_retry_decision",
   // CI-2b: relaxed cumulative System totals and actual slot layout only;
   // no pointer input, metadata access, allocation, mutation, or counter reset.
-  "src/registry/segment_route/small_sidecar.rs::dbg_route_slots_system_totals",
-  "src/registry/segment_route/small_sidecar.rs::dbg_route_slot_bytes",
+  "src/alloc_core/segment/segment_route/route_state/small_sidecar.rs::dbg_route_slots_system_totals",
+  "src/alloc_core/segment/segment_route/route_state/small_sidecar.rs::dbg_route_slot_bytes",
   // Read-only Relaxed load of the cold-path giveup counter.
   "src/global/fallback.rs::dbg_exit_lock_giveups",
   // Read-only Relaxed descriptor count; the borrowed RoutePin retains its lifetime.
-  "src/registry/segment_route/directory/route_directory.rs::dbg_route_pin_refs",
+  "src/alloc_core/segment/segment_route/directory/route_directory.rs::dbg_route_pin_refs",
   // Read-only Relaxed load of Entry.refs through the owner-held RouteRegistration's own EntryHandle; no address-keyed lookup, no pointer dereference beyond the already-owned entry.
-  "src/registry/segment_route/registration.rs::dbg_entry_refs_relaxed",
+  "src/alloc_core/segment/segment_route/route_state/registration.rs::dbg_entry_refs_relaxed",
   "crates/platform/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
   "crates/platform/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
   "crates/primitives/once-ptr-cell/src/imp.rs::dbg_is_ready",
@@ -205,7 +205,7 @@ const SAFE_MUTATORS = [
     "src/global/sefer_alloc/diag.rs::dbg_background_maintenance_current_thread",
     "delegates only to the production bounded background_maintenance_step for current_for_trim's current-thread exclusive live HeapCore; no FREE-slot lease or lifecycle mutation; bench-internals + internals gated"
   ],  [
-    "src/registry/segment_route/directory/route_directory.rs::dbg_with_shard_of_locked_for_test",
+    "src/alloc_core/segment/segment_route/directory/route_directory.rs::dbg_with_shard_of_locked_for_test",
     "bench-internals-only ordinary shard guard; pointer address is only a shard key, never dereferenced; callback receives no protected data; reentry or a stranded holder risks liveness, not memory safety; unwind releases the guard"
   ],
   ["src/registry/bootstrap/registry.rs::dbg_slot_state", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic state, without borrowing the core"],
@@ -427,7 +427,7 @@ BENCH_UNSAFE_HOOKS.add(CURRENT_RESERVATION_HOOK);
 // internals + bench-internals); UNSAFE_HOOKS and REVIEWED_SURFACE are mutually
 // exclusive (unique gate), so the row carries the registration and the add
 // below carries the bench-gate requirement.
-BENCH_UNSAFE_HOOKS.add("src/registry/segment_route/pin.rs::dbg_publish_cached_for_test");
+BENCH_UNSAFE_HOOKS.add("src/alloc_core/segment/segment_route/route_state/pin.rs::dbg_publish_cached_for_test");
 
 // Explicit reviewed rows; groups share only a reviewed contract, never a name wildcard.
 export const REVIEWED_SURFACE = [
@@ -455,30 +455,30 @@ export const REVIEWED_SURFACE = [
     ['src/registry/heap_core/diag/diag_probes.rs', ['dbg_promotion_compiled', 'dbg_promotion_macro_gate'], 'observer', 'compile-time predicate'],
     ['src/global/maintenance_service.rs', ['passes_for_test', 'fallback_visits_for_test'], 'observer', 'atomic diagnostic counters'],
     ['src/global/maintenance_service.rs', ['wait_after_for_test'], 'mutator', 'locks/waits on production completion condition'],
-    ['src/registry/segment_route/directory/route_directory.rs', ['fail_next_registration_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
-    ['src/registry/segment_route/directory/route_directory.rs', ['with_initial_incarnation_for_test'], 'mutator', 'constructs isolated directory with chosen initial incarnation'],
-    ['src/registry/segment_route/directory/route_directory.rs', ['retained_pointer_capacity_for_test', 'moved_pointer_cells_for_test', 'shard_index_for_test', 'live_route_census_for_test'], 'observer', 'directory capacity/census under its locks'],
-    ['src/registry/segment_route/small_sidecar.rs', ['class_at_for_test', 'mixed_leaves_for_test', 'system_totals_for_test', 'chunk_totals_for_test'], 'observer', 'sidecar class/counter observations'],
-    ['src/registry/segment_route/registration.rs', ['class_at_global_address_for_test'], 'observer', 'lookup pins independent sidecar before class read'],
-    ['src/registry/segment_route/large_state.rs', ['word_for_test'], 'observer', 'atomic terminal state snapshot'],
-    ['src/registry/segment_route/pin.rs', ['pending_for_test'], 'observer', 'pinned sidecar pending state'],
+    ['src/alloc_core/segment/segment_route/directory/route_directory.rs', ['fail_next_registration_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
+    ['src/alloc_core/segment/segment_route/directory/route_directory.rs', ['with_initial_incarnation_for_test'], 'mutator', 'constructs isolated directory with chosen initial incarnation'],
+    ['src/alloc_core/segment/segment_route/directory/route_directory.rs', ['retained_pointer_capacity_for_test', 'moved_pointer_cells_for_test', 'shard_index_for_test', 'live_route_census_for_test'], 'observer', 'directory capacity/census under its locks'],
+    ['src/alloc_core/segment/segment_route/route_state/small_sidecar.rs', ['class_at_for_test', 'mixed_leaves_for_test', 'system_totals_for_test', 'chunk_totals_for_test'], 'observer', 'sidecar class/counter observations'],
+    ['src/alloc_core/segment/segment_route/route_state/registration.rs', ['class_at_global_address_for_test'], 'observer', 'lookup pins independent sidecar before class read'],
+    ['src/alloc_core/segment/segment_route/route_protocol/large_state.rs', ['word_for_test'], 'observer', 'atomic terminal state snapshot'],
+    ['src/alloc_core/segment/segment_route/route_state/pin.rs', ['pending_for_test'], 'observer', 'pinned sidecar pending state'],
     ['src/alloc_core/platform/numa.rs', ['biased_root_offset_for_test'], 'observer', 'pure checked geometry'],
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['large_geometry_for_test'], 'observer', 'validated owned header geometry'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['internals'] }))),
   ...[
     ['src/alloc_core/segment/segment_table/harness.rs', ['attach_routes_for_test', 'register_route_for_test'], 'mutator', 'exclusive owned fixture delegates to real attachment/registration; synthetic address keys never dereferenced and descriptors unlinked on drop'],
     ['src/global/maintenance_service.rs', ['try_fallback_step_for_test', 'fail_next_start_for_test', 'pause_start_for_test', 'wait_start_paused_for_test', 'fail_worker_for_test'], 'mutator', 'bounded maintenance step or explicit startup/worker fault injection; synchronization retained'],
-    ['src/registry/segment_route/directory/route_directory.rs', ['fail_next_registrations_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
-    ['src/registry/segment_route/small_sidecar.rs', ['fail_spill_after_for_test', 'fail_next_spills_for_test', 'fail_prepare_after_for_test'], 'mutator', 'atomic fallible preparation/spill fault injection'],
-    ['src/registry/segment_route/small_sidecar.rs', ['spill_failures_remaining_for_test'], 'observer', 'atomic injection countdown'],
-    ['src/registry/segment_route/small_sidecar.rs', ['owner_state_for_test'], 'unsafe', 'caller owns mapped reservation; raw metadata snapshot'],
+    ['src/alloc_core/segment/segment_route/directory/route_directory.rs', ['fail_next_registrations_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
+    ['src/alloc_core/segment/segment_route/route_state/small_sidecar.rs', ['fail_spill_after_for_test', 'fail_next_spills_for_test', 'fail_prepare_after_for_test'], 'mutator', 'atomic fallible preparation/spill fault injection'],
+    ['src/alloc_core/segment/segment_route/route_state/small_sidecar.rs', ['spill_failures_remaining_for_test'], 'observer', 'atomic injection countdown'],
+    ['src/alloc_core/segment/segment_route/route_state/small_sidecar.rs', ['owner_state_for_test'], 'unsafe', 'caller owns mapped reservation; raw metadata snapshot'],
     ['src/alloc_core/large/alloc_core_large_cache_eviction.rs', ['terminal_cached_large_state_for_test'], 'observer', 'owner cache terminal snapshot'],
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['terminal_header_layout_for_test', 'terminal_header_snapshot_for_test', 'terminal_primordial_snapshot_for_test', 'terminal_next_generation_for_test'], 'observer', 'checked header layout/state and generation geometry'],
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['large_thp_charge_for_test'], 'observer', 'owned Large header field read; kind-checked, no pointer dereference beyond the owned header'],
     ['crates/containers/sefer-concurrent/src/sharded/sharded_region.rs', ['_set_remote_free_hint_for_tests'], 'mutator', 'advisory hint only; real queue remains authoritative'],
-    ['src/registry/segment_route/pin.rs', ['dbg_publish_cached_for_test'], 'unsafe', 'entry into the production cached fast path; the address must be the caller’s CURRENT issued Small/Primordial allocation — publication consumes ownership once, and a bare address never establishes it (publishing a foreign live address forces the owner to reclaim a live instance: UAF by construction)'],
-    ['src/registry/segment_route/pin.rs', ['dbg_cache_insert_for_test'], 'mutator', 'inserts caller-looked-up pin; no publish/reclaim obligation'],
-    ['src/registry/segment_route/pin.rs', ['dbg_route_pin_cache_totals'], 'observer', 'pure Relaxed counter snapshot'],
+    ['src/alloc_core/segment/segment_route/route_state/pin.rs', ['dbg_publish_cached_for_test'], 'unsafe', 'entry into the production cached fast path; the address must be the caller’s CURRENT issued Small/Primordial allocation — publication consumes ownership once, and a bare address never establishes it (publishing a foreign live address forces the owner to reclaim a live instance: UAF by construction)'],
+    ['src/alloc_core/segment/segment_route/route_state/pin.rs', ['dbg_cache_insert_for_test'], 'mutator', 'inserts caller-looked-up pin; no publish/reclaim obligation'],
+    ['src/alloc_core/segment/segment_route/route_state/pin.rs', ['dbg_route_pin_cache_totals'], 'observer', 'pure Relaxed counter snapshot'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['internals', 'bench-internals'] }))),
   ...[
     ['crates/containers/sefer-concurrent/src/lock_free/lock_free_region.rs', ['_forge_handle_for_tests', '_page_arc_clones_for_tests', '_checked_total_slots_for_tests'], 'observer', 'by-value handle/geometry or TLS counter; ordinary operations still validate handles'],
@@ -488,9 +488,9 @@ export const REVIEWED_SURFACE = [
   { id: 'crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs::reserve_unpublished_for_test', kind: 'mutator', reason: 'reserves one deliberately incomplete scalar slot in the caller-owned synthetic log; bounded capacity and sticky unsupported closure remain', gates: ['bench-internals', 'fault-injection'] },
   { id: 'crates/platform/aligned-vmem/src/bench_internals/advice/stream/log.rs::complete_reserved_for_test', kind: 'mutator', reason: 'publishes inert words only into a reserved caller-owned synthetic-log slot through the real immutable slot protocol; cannot clear failure or access mappings/native global', gates: ['bench-internals', 'fault-injection'] },
   { id: 'src/alloc_core/segment/segment_table/harness.rs::hide_root_for_test', kind: 'mutator', reason: 'isolated numeric harness; no dereference; external alloc_core module path requires internals, not a compilation gate', gates: [] },
-  { id: 'src/registry/segment_route/directory/route_directory.rs::register', kind: 'mutator', reason: 'internals-only public form of the crate-only register_route; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
-  { id: 'src/registry/segment_route/directory/route_directory.rs::lookup', kind: 'observer', reason: 'the real production lookup path; the pointer is only a numeric shard key, never dereferenced', gates: [] },
-  { id: 'src/registry/segment_route/pin.rs::contains_payload', kind: 'observer', reason: 'pure span-geometry comparison of the caller pointer against the pinned entry bounds; no dereference', gates: [] },
+  { id: 'src/alloc_core/segment/segment_route/directory/route_directory.rs::register', kind: 'mutator', reason: 'internals-only public form of the crate-only register_route; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
+  { id: 'src/alloc_core/segment/segment_route/directory/route_directory.rs::lookup', kind: 'observer', reason: 'the real production lookup path; the pointer is only a numeric shard key, never dereferenced', gates: [] },
+  { id: 'src/alloc_core/segment/segment_route/route_state/pin.rs::contains_payload', kind: 'observer', reason: 'pure span-geometry comparison of the caller pointer against the pinned entry bounds; no dereference', gates: [] },
   { id: 'src/registry/heap_core/alloc/batch.rs::alloc_batch', kind: 'mutator', reason: 'production batch allocation path; writes issued block pointers into the caller-owned out slice', gates: [] },
   { id: 'src/alloc_core/segment/segment_table/harness.rs::insert', kind: 'mutator', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
   { id: 'src/alloc_core/segment/segment_table/harness.rs::insert_root_for_key', kind: 'mutator', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
@@ -739,7 +739,7 @@ function handAuthoredCheck() {
     assert.deepEqual(errors, []);
     return parsed;
   };
-  const sidecar = 'src/registry/segment_route/small_sidecar.rs';
+  const sidecar = 'src/alloc_core/segment/segment_route/route_state/small_sidecar.rs';
   const ownerSource = `impl SmallSidecar {
     /// # Safety
     /// Caller exclusively owns the live mapped reservation.
@@ -889,7 +889,7 @@ function selfCheck() {
   function signatureCheck() {
     // R6-T38 signature rule: safe crate-public fns with raw-pointer parameters
     // are inventoried regardless of name.
-    const directory = 'src/registry/segment_route/directory/route_directory.rs';
+    const directory = 'src/alloc_core/segment/segment_route/directory/route_directory.rs';
     const signature = '#[cfg(feature = "internals")]\nimpl RouteDirectory {\n  pub fn register(&self, root: *mut u8, len: usize, route_ptr: *mut u8, owner: usize) {}\n}';
     const signatureHook = scanFile(directory, signature);
     assert.equal(signatureHook.hooks.length, 1);

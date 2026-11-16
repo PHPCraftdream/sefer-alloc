@@ -409,7 +409,7 @@ impl SegmentTable {
         base: *mut u8,
         high_water: usize,
         word: usize,
-    ) -> Option<crate::registry::segment_route::RouteScan<'_>> {
+    ) -> Option<crate::alloc_core::segment_route::RouteScan<'_>> {
         self.routes
             .as_ref()?
             .scan_small_from(index, base, high_water, word)

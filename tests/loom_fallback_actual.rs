@@ -125,6 +125,10 @@ mod alloc_core {
 static INITS: StdUsize = StdUsize::new(0);
 
 mod registry {
+    pub(crate) mod fallback_hook {
+        include!("../src/registry/fallback_hook.rs");
+    }
+
     /// Stand-in heap: one loom cell every closure writes.
     pub struct HeapCore {
         cell: loom::cell::UnsafeCell<u32>,
@@ -240,8 +244,22 @@ fn fallback_init_and_lock_on_production_source() {
     // Warm-up: registers every static stand-in.
     loom::model(|| {
         epoch();
+        let before_init = INITS.load(StdOrdering::SeqCst);
+        let mut ran_before_init = false;
+        assert!(!registry::fallback_hook::FallbackHook::global()
+            .try_with_heap(&mut |_| ran_before_init = true));
+        assert!(
+            !ran_before_init,
+            "unregistered hook must not invoke closure"
+        );
+        assert_eq!(INITS.load(StdOrdering::SeqCst), before_init);
+
         let _ = fallback::try_with_heap(|heap| heap.touch());
         let _ = fallback::with_heap(|heap| heap.touch());
+        let mut hook_touched = 0;
+        assert!(registry::fallback_hook::FallbackHook::global()
+            .try_with_heap(&mut |heap| hook_touched = heap.touch()));
+        assert_eq!(hook_touched, 3, "registered hook reaches ready fallback");
         let _ = fallback::lock_acquisitions();
         fallback::record_exit_lock_giveup();
     });

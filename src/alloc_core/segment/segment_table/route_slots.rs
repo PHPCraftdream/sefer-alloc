@@ -16,8 +16,8 @@ use crate::alloc_core::os::SEGMENT;
 use crate::alloc_core::remote_bitmap::{ClassLeaves, LeafCursor};
 use crate::alloc_core::segment_header::SegmentHeader;
 use crate::alloc_core::segment_header::SegmentKind;
+use crate::alloc_core::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
 use crate::alloc_core::size_classes::MIN_BLOCK;
-use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
 
 use super::issue_transaction::IssueTransaction;
 use super::MAX_SEGMENTS;

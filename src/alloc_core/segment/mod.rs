@@ -50,7 +50,10 @@ pub(crate) mod directory_stats;
 // instead of an unconditional allow.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
 pub(crate) mod remote_bitmap;
-/// The per-segment geometry tables (`SegmentLayout`), moved unchanged.
+/// The per-segment geometry tables (`SegmentLayout`), declared at its stable
+/// historical module path while the file is physically grouped with the
+/// segment directory.
+#[path = "segment_directory/segment_layout.rs"]
 pub(crate) mod segment_layout;
 /// The global registry of all live segments, self-hosted in the primordial
 /// segment's payload (mod.rs + the `hash.rs` open-addressing helpers + the

@@ -38,7 +38,7 @@
 //! Ghost builds record `pin-cache/held` (+1 when a pin enters a slot, -1 when
 //! it leaves), keyed by segment base; `tests/loom_b4_r1_pin_cache.rs` checks it
 //! against `Entry::refs`.
-use crate::registry::segment_route::RoutePin;
+use crate::alloc_core::segment_route::RoutePin;
 use core::cell::RefCell;
 
 /// Capacity of the slot array, the largest configurable slot count. The slots
