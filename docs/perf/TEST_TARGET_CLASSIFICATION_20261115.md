@@ -2,7 +2,7 @@
 
 Script: `scripts/classify-tests.mjs` (modules under `scripts/classify-tests/`).
 
-Sources: commit `b5e2976fba3962c1a791f689eea61d7a9ddfa960`, tree `118129f979782519ff81313ad414fbe37a8759da`; tracked inputs clean.
+Sources: commit `131c65968b909c034fbd75246c79907cfb0de05a`, tree `844fd790bf79db308ffd479a576cfd189f83105f`; tracked inputs clean.
 
 ## First-config-wins markers (derived from src/)
 
@@ -26,11 +26,11 @@ Dropped from the marker list: `publish_pending` (src/registry/segment_route/larg
 
 | kind | files |
 | --- | --- |
-| ci_action | 56 |
+| ci_action | 59 |
 | ci_workflow | 8 |
 | doc | 1383 |
 | doc_json | 2 |
-| script | 287 |
+| script | 288 |
 
 Note: the classification suite's own output artifacts (`docs/perf/TEST_TARGET_CLASSIFICATION_*.md`, `docs/test_target_classification_*.csv`) are excluded from the doc pin surface: scanning the report's own echo would pin the targets it lists, making the classification non-idempotent (self-reference, not a pre-existing pin).
 
@@ -93,9 +93,9 @@ Note: the plan's §1 numbers are grep approximations over overlapping sets — t
 | **file_cfg** (461) | 52 | 79 | 25 | 30 | 50 | 0 | 0 | 0 | 12 | 461 | 428 |
 | **externally_pinned** (475) | 61 | 75 | 33 | 31 | 50 | 0 | 13 | 11 | 26 | 428 | 475 |
 
-## Non-target inventory (1204 entries; 38 of them are top-level entries of tests/)
+## Non-target inventory (1206 entries; 40 of them are top-level entries of tests/)
 
-Top-level accounting: tests/ has **547** top-level entries; 509 are targets; the remaining **38** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
+Top-level accounting: tests/ has **549** top-level entries; 509 are targets; the remaining **40** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
 
 | path | kind |
 | --- | --- |
@@ -1250,6 +1250,8 @@ Top-level accounting: tests/ has **547** top-level entries; 509 are targets; the
 | tests/j13b_schema.test.mjs | mjs-script |
 | tests/j13b_static_reference.test.mjs | mjs-script |
 | tests/layering_lint.test.mjs | mjs-script |
+| tests/miri_sharding_before_19cbc5f8.json | other-file |
+| tests/miri_sharding.test.mjs | mjs-script |
 | tests/module_graph.test.mjs | mjs-script |
 | tests/r11_p3_small_sidecar_issue_oom | directory-fixture |
 | tests/r11_p3_small_sidecar_issue_oom/support.rs | support-module |
