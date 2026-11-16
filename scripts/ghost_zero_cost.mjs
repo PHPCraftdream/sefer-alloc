@@ -28,11 +28,12 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { REPO_ROOT } from './lib.mjs';
-import { changedLines, resolveBase, zeroCostSkip } from './ghost_diff.mjs';
+import { changedLines, cargoBuildGraphAdditions, extractionChangedLines, extractionPolicy, productionGhostTokens, resolveBase, zeroCostSkip, zeroCostVerdict } from './ghost_diff.mjs';
 import { declaredRuntimePrefix } from './ghost_runtime_prefix.mjs';
 import { runtimeHistory } from './ghost_runtime_history.mjs';
 import { checkRuntimeHistoryCases } from '../tests/ghost_runtime_history_fixtures.mjs';
 import { checkRuntimePrefixCases } from '../tests/ghost_runtime_prefix_fixtures.mjs';
+import { checkExtractionPolicyCases } from '../tests/ghost_extraction_policy_fixtures.mjs';
 
 const EXAMPLE = 'ghost_zero_cost_probe';
 const RUSTFLAGS = '-C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5';
@@ -344,6 +345,7 @@ for (const [name, e, want] of END_CASES) {
 }
 const prefixChecks = checkRuntimePrefixCases();
 console.log(`[ghost-zero-cost] landing-history self-test OK (${checkRuntimeHistoryCases()} cases)`);
+console.log(`[ghost-zero-cost] extraction-policy self-test OK (${checkExtractionPolicyCases()} cases)`);
 console.log(`[ghost-zero-cost] scope self-test OK (${SKIP_CASES.length} + ${END_CASES.length} cases + changedLines; ${prefixChecks} runtime-prefix checks)`);
 if (argv.includes('--self-test')) process.exit(0);
 
@@ -364,6 +366,7 @@ let baseSha = prBase;
 const endpoints = { recorded_base: recorded, pr_base: prBase, base: baseSha, checkout, head };
 if (baseSha !== recorded) console.log(`[ghost-zero-cost] base ${baseSha}: the merge ref's first parent (recorded base ${recorded})`);
 
+let proofPolicy = null;
 if (argv.includes('--allow-declared-runtime')) {
   const subjects = g(['log', '--no-merges', '--format=%s', `${baseSha}..${head}`]).split('\n').filter(Boolean);
   const paths = g(['diff', '--name-only', '-z', '--no-renames', baseSha, checkout]).split('\0').filter(Boolean);
@@ -376,34 +379,66 @@ if (argv.includes('--allow-declared-runtime')) {
     if (out) writeFileSync(out, JSON.stringify({ ...endpoints, skipped: true, reason, subjects, paths }, null, 2) + '\n');
     process.exit(0);
   }
-  // A runtime-changing prefix may already satisfy the original skip policy.
-  // Derive it from history, never from measured output or a caller-picked ref.
-  const sourceHistory = dirty.length ? { base: prBase, head } : runtimeHistory({ base: prBase, head }, g);
-  if (sourceHistory.bridge) endpoints.history_bridge = sourceHistory.bridge;
-  function* candidates() {
-    const history = g(['rev-list', '--first-parent', '--no-merges', sourceHistory.head, `^${sourceHistory.base}`]).trim().split('\n').filter(Boolean);
-    for (const sha of history) {
-      if (sha === sourceHistory.head) continue;
-      const prefixSubjects = g(['log', '--no-merges', '--format=%s', `${sourceHistory.base}..${sha}`]).split('\n').filter(Boolean);
-      const prefixPaths = g(['diff', '--name-only', '-z', '--no-renames', sourceHistory.base, sha]).split('\0').filter(Boolean);
-      const prefixChanged = new Map(prefixPaths.map((p) => [p, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', sourceHistory.base, sha, '--', p]))]));
-      yield { sha, subjects: prefixSubjects, changed: prefixChanged };
-    }
+  const messages = g(['log', '--no-merges', '--format=%B%x00', `${baseSha}..${head}`]).split('\0').map((message) => message.trim()).filter(Boolean);
+  let evidence = null;
+  try {
+    const statusLines = g(['diff', '--name-status', '-M50%', `${baseSha}..${head}`]).split(/\r?\n/).filter(Boolean);
+    const renames = statusLines.flatMap((line) => {
+      const [status, from, to] = line.split('\t');
+      return /^[RC]\d*$/.test(status ?? '') && from && to ? [{ status, from, to }] : [];
+    });
+    const baseManifest = g(['show', `${baseSha}:Cargo.toml`]);
+    const headManifest = g(['show', `${head}:Cargo.toml`]);
+    const manifestDiff = g(['diff', '-U0', '--no-color', '--no-ext-diff', `${baseSha}..${head}`, '--', 'Cargo.toml']);
+    const graph = cargoBuildGraphAdditions(manifestDiff, baseManifest, headManifest);
+    if (graph) evidence = { ...graph, renames };
+  } catch {
+    // Missing range inputs fail closed: an ordinary full proof remains required.
   }
-  const prefix = declaredRuntimePrefix(candidates(), { head: sourceHistory.head, dirty });
-  if (prefix) {
-    baseSha = prefix.head;
-    endpoints.base = baseSha;
-    endpoints.runtime_prefix = { base: sourceHistory.base, ...prefix };
-    endpoints.proof_scope = 'entire suffix after the policy-admitted runtime prefix; not whole-PR runtime identity';
-    console.log(`[ghost-zero-cost] runtime prefix ${sourceHistory.base}..${baseSha}: admitted by the unchanged declared-runtime policy`);
-    console.log(`[ghost-zero-cost] exact production text/Ir proof REQUIRED for suffix ${baseSha}..${head}`);
+  // A rename's `--no-renames` collection carries the whole moved file on both
+  // sides; the exemption judges only what the move itself edited, so each
+  // renamed pair contributes its rename-aware edit hunks (pure renames none).
+  let extractionChanged = changed;
+  if (evidence) {
+    const renameHunks = new Map(evidence.renames
+      .filter(({ status }) => status[0] === 'R')
+      .map(({ from, to }) => [to, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '-M50%', baseSha, checkout, '--', from, to]))]));
+    extractionChanged = extractionChangedLines(changed, evidence.renames, renameHunks) ?? changed;
+  }
+  proofPolicy = extractionPolicy(messages, extractionChanged, dirty, evidence);
+  if (proofPolicy) {
+    console.log(`[ghost-zero-cost] ${proofPolicy.reason}; bounded Ir + production ghost proof REQUIRED for ${baseSha}..${head}`);
   } else {
-    console.log('[ghost-zero-cost] exception does not apply: the original full-range zero-cost proof is required');
+    // A runtime-changing prefix may already satisfy the original skip policy.
+    // Derive it from history, never from measured output or a caller-picked ref.
+    const sourceHistory = dirty.length ? { base: prBase, head } : runtimeHistory({ base: prBase, head }, g);
+    if (sourceHistory.bridge) endpoints.history_bridge = sourceHistory.bridge;
+    function* candidates() {
+      const history = g(['rev-list', '--first-parent', '--no-merges', sourceHistory.head, `^${sourceHistory.base}`]).trim().split('\n').filter(Boolean);
+      for (const sha of history) {
+        if (sha === sourceHistory.head) continue;
+        const prefixSubjects = g(['log', '--no-merges', '--format=%s', `${sourceHistory.base}..${sha}`]).split('\n').filter(Boolean);
+        const prefixPaths = g(['diff', '--name-only', '-z', '--no-renames', sourceHistory.base, sha]).split('\0').filter(Boolean);
+        const prefixChanged = new Map(prefixPaths.map((p) => [p, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', sourceHistory.base, sha, '--', p]))]));
+        yield { sha, subjects: prefixSubjects, changed: prefixChanged };
+      }
+    }
+    const prefix = declaredRuntimePrefix(candidates(), { head: sourceHistory.head, dirty });
+    if (prefix) {
+      baseSha = prefix.head;
+      endpoints.base = baseSha;
+      endpoints.runtime_prefix = { base: sourceHistory.base, ...prefix };
+      endpoints.proof_scope = 'entire suffix after the policy-admitted runtime prefix; not whole-PR runtime identity';
+      console.log(`[ghost-zero-cost] runtime prefix ${sourceHistory.base}..${baseSha}: admitted by the unchanged declared-runtime policy`);
+      console.log(`[ghost-zero-cost] exact production text/Ir proof REQUIRED for suffix ${baseSha}..${head}`);
+    } else {
+      console.log('[ghost-zero-cost] exception does not apply: the original full-range zero-cost proof is required');
+    }
   }
   // Scope decision only: never build or execute a probe in this mode.
   if (argv.includes('--classify-only')) {
-    if (out) writeFileSync(out, JSON.stringify({ ...endpoints, skipped: false, proof_required: true }, null, 2) + '\n');
+    console.log(`[ghost-zero-cost] classification: proof_mode=${proofPolicy?.mode ?? 'exact'} proof_required=true skipped=false${proofPolicy ? ` ir_tolerance=${proofPolicy.irTolerance}` : ''}`);
+    if (out) writeFileSync(out, JSON.stringify({ ...endpoints, skipped: false, proof_required: true, proof_mode: proofPolicy?.mode ?? 'exact', ...(proofPolicy ? { ir_tolerance: proofPolicy.irTolerance } : {}) }, null, 2) + '\n');
     process.exit(0);
   }
 }
@@ -432,8 +467,14 @@ try {
   const textB = [...b].sort().map(([n, x]) => `${n}\n${x}`).join('\n');
   const irBase = irTotal(binBase, work, 'base');
   const irHead = irBase === null ? null : irTotal(binHead, work, 'head');
+  const ghostTokens = [...new Set([
+    ...productionGhostTokens(`${run('objdump', ['-t', '-C', binBase])}\n${readFileSync(binBase).toString('latin1')}`),
+    ...productionGhostTokens(`${run('objdump', ['-t', '-C', binHead])}\n${readFileSync(binHead).toString('latin1')}`),
+  ])];
   const summary = {
     ...endpoints, head_tree: headTree, example: EXAMPLE, features: 'production', rustflags: RUSTFLAGS,
+    proof_mode: proofPolicy?.mode ?? 'exact', ...(proofPolicy ? { ir_tolerance: proofPolicy.irTolerance } : {}),
+    tokens: ghostTokens,
     functions_base: a.size, functions_head: b.size,
     identical: [...names].length - differing.length - onlyBase.length - onlyHead.length,
     differing: differing.length, only_base: onlyBase.length, only_head: onlyHead.length,
@@ -471,12 +512,13 @@ try {
   if (out) writeFileSync(out, JSON.stringify(summary, null, 2) + '\n');
   const textSame = summary.differing === 0 && summary.only_base === 0 && summary.only_head === 0;
   assert.equal(textSame, summary.text_sha256_base === summary.text_sha256_head, 'per-function verdict agrees with the whole-text hash');
-  if (!textSame) { console.error('[ghost-zero-cost] RED: production .text differs'); process.exitCode = 1; }
-  if (irBase === null) {
-    console.log('[ghost-zero-cost] valgrind not found: Ir not measured');
-    if (requireIr) process.exitCode = 1;
-  } else if (summary.ir_delta !== 0) { console.error(`[ghost-zero-cost] RED: Ir delta ${summary.ir_delta}`); process.exitCode = 1; }
-  if (!process.exitCode) console.log(`[ghost-zero-cost] OK: ${summary.identical} functions identical, Ir delta ${summary.ir_delta}`);
+  const verdict = zeroCostVerdict({ policy: proofPolicy, textSame, irBase, irHead, requireIr, ghostTokens });
+  if (!verdict.ok) {
+    for (const error of verdict.errors) console.error(`[ghost-zero-cost] RED: ${error}`);
+    process.exitCode = 1;
+  } else {
+    console.log(`[ghost-zero-cost] OK: ${verdict.mode} proof; ${summary.identical} functions identical, Ir delta ${verdict.ir_delta}`);
+  }
 } finally {
   spawnSync('git', ['worktree', 'remove', '--force', join(work, 'base')], { cwd: REPO_ROOT });
   rmSync(work, { recursive: true, force: true });

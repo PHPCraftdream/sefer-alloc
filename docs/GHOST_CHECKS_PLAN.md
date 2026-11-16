@@ -303,7 +303,12 @@ scope `verification` / `ghost*` / `loom` / `miri` / `kani`; не изменен�
 доказательство отсутствия ghost-кода: оно опирается на линтер префиксов и на
 то, что ghost-макросы вне `cfg(any(loom, miri, kani, sefer_ghost))` пусты.
 
-### 2026-11-09 two-phase candidate for mixed runtime/verification ranges
+Этот исторический exact/runtime skip остаётся только для диапазонов, полностью
+удовлетворяющих перечисленным условиям; он не является общим пропуском гейта
+и не применяется к диапазонам извлечения (§6, Extraction ranges), где измерение
+обязательно.
+
+### 2026-11-09 two-phase candidate (historical; superseded below)
 
 Correctness item 260's previously recorded alternative to separate PRs is now
 implemented as a candidate, pending exact-source CI acceptance. The existing
@@ -317,13 +322,57 @@ Dirty trees cannot select a prefix; the head cannot exempt its own suffix.
 
 The report records the effective original PR base, derived prefix identity,
 policy reason/subjects/paths, checkout/head identities and actual measured proof
-endpoints. This is a policy-admitted runtime prefix plus a measured zero-cost
-verification suffix, **not** a whole-PR production-identity claim. No numeric
-tolerance, symbol exclusion, baseline selected from measurement results, new
-skip flag or reduction of the retained layout/iai/model obligations is allowed.
-The scope decision and its negative fixtures never build or execute the probe;
-the native comparison still runs in GitHub CI. Separate PRs remain the fallback
-when a valid partition cannot be established and the original proof fails.
+endpoints. This is a historical candidate, not the active extraction policy:
+its zero-Ir / exact-text requirements and its prohibition on numeric tolerance
+are retained here as historical context only. The current, narrowly bounded
+extraction policy is below; it never skips the measurement gate. Separate PRs
+remain the fallback when a valid extraction range cannot be established.
+
+<a id="extraction-ranges"></a>
+### Extraction ranges
+
+Extraction is a narrow, mandatory-measurement exception to ordinary production
+identity—not a skip. The range must be clean, and the actual Cargo build graph
+for the extracted `sefer-<crate>` must change between the measured base and
+head; a manifest edit or trailer alone is insufficient. The gate mechanically
+requires a newly-added workspace member and/or a new root path dependency on a
+workspace member, plus a detected rename/move from `src/**` into `crates/**`.
+Changed production build-input Rust code is also checked for forbidden ghost
+code: comments and doc comments (`//`, `///`, `//!`, including their tails on
+code lines) are prose, not code; renamed files contribute only their
+rename-aware edit hunks, not the whole moved file; and the checked tokens are
+the production ghost-code forms — the `ghost_assert!` / `ghost_event!`
+macros, `cfg(sefer_ghost)`, `cfg(any(loom, miri, kani, sefer_ghost))`, and
+any changed path under `src/ghost/` or `crates/primitives/sefer-ghost/src/`.
+A ghost token in a changed code line still keeps the full exact proof
+required. The extraction must be identified by either a leading commit subject
+of the form `build(workspace): extract ...` or a standalone commit trailer
+`Extraction: sefer-<crate>`. The range and its evidence are checked as part of
+the gate; no commit, prefix, or suffix may opt out of the proof.
+
+Ordinary ranges retain the exact normalized `.text` identity and exact Ir
+requirements above. For a qualifying extraction range only, normalized `.text`
+may drift. The same production probe/harness, feature set, flags, and toolchain
+must be measured on both base and head. Both Ir measurements must be present,
+finite, and greater than zero; otherwise the gate is red. Require
+`abs((Ir_head - Ir_base) / Ir_base) <= 0.001` (0.1%), so both improvements and
+regressions are bounded. This predecided bound is relocation tolerance, not a
+zero-cost proof, a performance GO, or a guarantee about the global allocator.
+The owner-provided historical context (−2231 Ir against a base of approximately
+10.2 million Ir) is not a measurement from this task and does not set or tune
+the threshold.
+
+The production ghost-runtime check must also pass: the production probe/binary
+must contain no ghost-specific runtime symbols or strings. Missing or failed
+measurements, nonfinite/zero/absent Ir, or any detected production ghost symbol
+or string are red. Changes to `rust-toolchain*`, any `build.rs`, or `.cargo/`
+remain forbidden; this exception does not relax those path restrictions.
+Counterfactual policy coverage is mandatory in
+`tests/ghost_extraction_policy.test.mjs`, and the runner self-test must cover
+the same acceptance and rejection boundaries. The gate remains mandatory in
+Linux CI for every PR; neither this extraction allowance nor the historical
+exact/runtime skip can disable it.
+
 
 ## 7. CI
 
