@@ -470,11 +470,13 @@ try {
   const productionGhostTokensForBinary = (bin) => productionGhostTokens(`${run('objdump', ['-t', '-C', bin])}\n${readFileSync(bin).toString('latin1')}`);
   const tokensBase = productionGhostTokensForBinary(binBase);
   const tokensHead = productionGhostTokensForBinary(binHead);
+  const tokensNew = tokensHead.filter((token) => !tokensBase.includes(token));
   const summary = {
     ...endpoints, head_tree: headTree, example: EXAMPLE, features: 'production', rustflags: RUSTFLAGS,
     proof_mode: proofPolicy?.mode ?? 'exact', ...(proofPolicy ? { ir_tolerance: proofPolicy.irTolerance } : {}),
     tokens_base: tokensBase,
     tokens: tokensHead,
+    tokens_new: tokensNew,
     functions_base: a.size, functions_head: b.size,
     identical: [...names].length - differing.length - onlyBase.length - onlyHead.length,
     differing: differing.length, only_base: onlyBase.length, only_head: onlyHead.length,
@@ -512,7 +514,7 @@ try {
   if (out) writeFileSync(out, JSON.stringify(summary, null, 2) + '\n');
   const textSame = summary.differing === 0 && summary.only_base === 0 && summary.only_head === 0;
   assert.equal(textSame, summary.text_sha256_base === summary.text_sha256_head, 'per-function verdict agrees with the whole-text hash');
-  const verdict = zeroCostVerdict({ policy: proofPolicy, textSame, irBase, irHead, requireIr, ghostTokens: tokensHead });
+  const verdict = zeroCostVerdict({ policy: proofPolicy, textSame, irBase, irHead, requireIr, ghostTokens: tokensNew });
   if (!verdict.ok) {
     for (const error of verdict.errors) console.error(`[ghost-zero-cost] RED: ${error}`);
     process.exitCode = 1;

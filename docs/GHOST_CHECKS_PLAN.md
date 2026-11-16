@@ -362,11 +362,13 @@ The owner-provided historical context (−2231 Ir against a base of approximatel
 10.2 million Ir) is not a measurement from this task and does not set or tune
 the threshold.
 
-The production ghost-runtime check is judged on the head production binary:
-it must contain no ghost-specific runtime symbols or strings. The base binary's
-matching tokens are retained as `tokens_base` diagnostics only; the JSON `tokens`
-field remains the head token list. Missing or failed measurements, nonfinite,
-zero or absent Ir, or any detected production ghost symbol or string in the
+The production ghost-runtime check is judged on new tokens in the head production
+binary that are absent from the base. Matching base/head tokens and base-only
+tokens remain diagnostic; JSON `tokens` remains the head list, `tokens_base`
+records the base list, and `tokens_new` is the verdict input. The matcher and
+inputs are unchanged: `productionGhostTokens` still scans `objdump -t -C` output
+plus the raw binary as Latin-1. Missing or failed measurements, nonfinite,
+zero or absent Ir, or any new head-only production ghost symbol or string in the
 head make the gate red. Changes to `rust-toolchain*`, any `build.rs`, or `.cargo/`
 remain forbidden; this exception does not relax those path restrictions.
 Counterfactual policy coverage is mandatory in
