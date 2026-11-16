@@ -34,7 +34,9 @@ runs:
     # claim must justify) AND the `stats()` aggregation that reads REMOTE
     # heaps' counters (the initialised-gate, #133) — the classic TSan target.
     # `tls_heap_teardown_ordering_stress` and
-    # `regression_percounter_perheap_aggregation` are the MT tests that drive
+    # `regression_percounter_perheap_aggregation` (now at
+    # tests/regression_merged/regression_percounter_perheap_aggregation.rs)
+    # are the MT tests that drive
     # the teardown/recycle handshake and the cross-heap counter read. Verified
     # locally via WSL: 0 data races reported.
     #
@@ -51,9 +53,13 @@ runs:
     # The realloc-to-remote-free regression also exercises Large terminal
     # publication and owner consumption under the production feature set.
     # `internals` added (R34-3/task #522):
-    # `regression_percounter_perheap_aggregation.rs` and
+    # tests/regression_merged/regression_percounter_perheap_aggregation.rs and
     # `regression_realloc_xthread_stamp.rs` reach
     # `sefer_alloc::registry::{bootstrap, HeapRegistry, ...}` directly.
+    # P0.2: the merged regression_percounter_perheap_aggregation target runs
+    # in a second, separate command (a single `cargo test` command must not
+    # mix `--test regression_merged` with other `--test` targets), chained
+    # with `&&` and a per-module positional filter.
     - name: Run production-config tests under ThreadSanitizer
       env:
         SEFER_STRESS_OPS: "600"
@@ -69,8 +75,13 @@ runs:
         --features "production internals bench-internals"
         --test global_alloc_mt
         --test tls_heap_teardown_ordering_stress
-        --test regression_percounter_perheap_aggregation
         --test regression_realloc_xthread_stamp
         --test stress_concurrent_boundaries
         --test nl3_safe_xthread_churn_integrity
         --test nl7_safe_large_realloc_integrity
+        && cargo +nightly test
+        -Zbuild-std
+        --target x86_64-unknown-linux-gnu
+        --features "production internals bench-internals"
+        --test regression_merged
+        regression_percounter_perheap_aggregation::

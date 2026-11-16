@@ -15,12 +15,14 @@ runs:
     # must span >= 6 real 4 MiB segments), so it cannot be
     # `cfg(miri)`-capped without voiding the test. Its decommit/recommit
     # UB surface is already covered by `decommit_miri_cycle` above.
-    - run: >-
-        cargo miri test --features alloc-core
-        --test regression_large_align_no_segment_exhaustion
-        --test regression_page_aligned_no_segment_exhaustion
-        --test regression_realloc_cross_class_shrink
-        --test stress_boundary_sweep
+    # P0.2 pilot: the regression_* group now lives in the `regression_merged`
+    # target (tests/regression_merged.rs); `--` name filters keep the executed
+    # test set identical to the pre-merge per-target run. The two commands are
+    # kept separate (a single command must not mix --test regression_merged
+    # with another --test target).
+    - run: |
+          cargo miri test --features alloc-core --test regression_merged -- regression_large_align_no_segment_exhaustion:: regression_page_aligned_no_segment_exhaustion:: regression_realloc_cross_class_shrink::
+          cargo miri test --features alloc-core --test stress_boundary_sweep
     # R6-T22 (R6-MS-1): foreign address sharing the 4 MiB key window under
     # `exact-span-large` must reject before `Node::deref`'s `add`. Separate
     # step/feature string (`internals` is needed for the span probe) so it
@@ -29,7 +31,7 @@ runs:
       shell: bash -e {0}
     - run: >-
         cargo miri test --features "exact-span-large internals"
-        --test regression_r6_t22_foreign_window_key_miri
+        --test regression_merged -- regression_r6_t22_foreign_window_key_miri::
 
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}

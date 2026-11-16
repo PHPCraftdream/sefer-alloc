@@ -24,18 +24,19 @@ runs:
       shell: bash -e {0}
       run: cargo test --features "production virgin-zero-skip alloc-stats bench-internals internals" --no-fail-fast
     # R12-11: PageMap diagnostic write sites. Additive over `alloc-core`;
-    # exercises the 4 test files whose class-mismatch oracles need the
-    # PageMap actually maintained to compare against.
+    # exercises the 3 flat targets whose class-mismatch oracles need the
+    # PageMap actually maintained to compare against, plus the merged
+    # regression target filtered to the carve-batch module.
     - name: test (--features "alloc-core page-map-diag")
       if: ${{ !cancelled() }}
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
-      run: >-
-        cargo test --features "alloc-core page-map-diag" --no-fail-fast
-        --test phase13_3_dealloc_layout_class
-        --test phase13_drain_reclaim_layout_class
-        --test regression_carve_batch
-        --test medium_classes_correctness
+      run: |
+        cargo test --features "alloc-core page-map-diag" --no-fail-fast \
+          --test phase13_3_dealloc_layout_class \
+          --test phase13_drain_reclaim_layout_class \
+          --test medium_classes_correctness
+        cargo test --features "alloc-core page-map-diag" --no-fail-fast --test regression_merged regression_carve_batch::
     # R13-3/#285 follow-up finding (task #285): `alloc-xthread`, `fastbin`,
     # `alloc-decommit` WITHOUT `alloc-segment-directory` — `production`
     # always turns both `alloc-segment-directory` and these three on

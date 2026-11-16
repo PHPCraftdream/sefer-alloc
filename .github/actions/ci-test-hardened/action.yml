@@ -6,7 +6,9 @@ runs:
     - uses: dtolnay/rust-toolchain@stable
     # H1 (#167): the opt-in `hardened` misuse-guard tier. Without this
     # step the interior-pointer guard and its counterfactual regression
-    # test (`regression_hardened_interior_ptr`, gated on the feature)
+    # test (`regression_hardened_interior_ptr` in
+    # tests/regression_merged/regression_hardened_interior_ptr.rs, gated on
+    # the feature)
     # would never RUN in CI — clippy's --all-features only compiles
     # it. Also covers the fastbin-without-decommit config with the
     # guard on.

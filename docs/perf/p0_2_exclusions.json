@@ -1,0 +1,434 @@
+[
+ {
+  "module": "regression_bootstrap_oom_sentinel_rollback",
+  "category": "G2",
+  "regex": "let last_chunk = bootstrap::dbg_num_chunks\\(\\) - 1",
+  "note": "last chunk index of the LIVE global registry"
+ },
+ {
+  "module": "regression_bootstrap_oom_sentinel_rollback",
+  "category": "G2",
+  "regex": "dbg_rollback_chunk_sentinel_reenterable\\(last_chunk\\)",
+  "note": "drives null->sentinel->rollback on the global registry last chunk"
+ },
+ {
+  "module": "regression_c3_unbounded_recycle",
+  "category": "G1",
+  "regex": "let reserved_before = AllocCore::dbg_segments_reserved_total",
+  "note": "exact delta of os-layer static reserved/released/reserve_failed totals"
+ },
+ {
+  "module": "regression_c3_unbounded_recycle",
+  "category": "G1",
+  "regex": "let decommit_before = AllocCore::dbg_decommit_count",
+  "note": "static decommit counter delta"
+ },
+ {
+  "module": "regression_c3_unbounded_recycle",
+  "category": "G1",
+  "regex": "dbg_segments_reserved_total\\(\\) - reserved_before",
+  "note": "exact reserved/released/failed delta assertions"
+ },
+ {
+  "module": "regression_claim_oom_initialised_gate",
+  "category": "G2",
+  "regex": "let idx = dbg_claim_then_simulate_oom\\(\\)",
+  "note": "simulated OOM claim on the global registry; slot-initialised oracle"
+ },
+ {
+  "module": "regression_claim_oom_initialised_gate",
+  "category": "G2",
+  "regex": "let freed_idx = dbg_claim_then_simulate_oom\\(\\)",
+  "note": "slot state / LIFO reuse of the freed slot"
+ },
+ {
+  "module": "regression_claim_oom_initialised_gate",
+  "category": "G2",
+  "regex": "let gen_before_reclaim = slot_generation",
+  "note": "exact slot generation on the global registry"
+ },
+ {
+  "module": "regression_counter_wrap",
+  "category": "G2",
+  "regex": "This is the ONLY test in this binary",
+  "note": "comment: sole registry user, relies on LIFO reuse"
+ },
+ {
+  "module": "regression_counter_wrap",
+  "category": "G2",
+  "regex": "let lease_a = HeapRegistry::dbg_claim_lease",
+  "note": "claims a slot of the global registry"
+ },
+ {
+  "module": "regression_counter_wrap",
+  "category": "G2",
+  "regex": "dbg_slot_preset_generation\\(id, preset\\)",
+  "note": "presets a slot generation in the global registry"
+ },
+ {
+  "module": "regression_counter_wrap",
+  "category": "G2",
+  "regex": "lease_c\\.slot_index\\(\\) as usize, id, \"still the same slot\"",
+  "note": "asserts LIFO slot reuse"
+ },
+ {
+  "module": "regression_dealloc_batch_promoted_large_free",
+  "category": "G1",
+  "regex": "let released_before = a\\.stats\\(\\)\\.segments_released_total",
+  "note": "static SEGMENTS_RELEASED_TOTAL == before + 1"
+ },
+ {
+  "module": "regression_fallback_init_unwind_guard",
+  "category": "G2",
+  "regex": "^\\s*FallbackInitState::Uninit as u8,",
+  "note": "static INIT_STATE asserted Uninit"
+ },
+ {
+  "module": "regression_fallback_init_unwind_guard",
+  "category": "G4",
+  "regex": "recv_timeout\\(Duration::from_secs\\(10\\)\\)",
+  "note": "10 s wall-clock timeout"
+ },
+ {
+  "module": "regression_fallback_init_unwind_guard",
+  "category": "G2",
+  "regex": "FallbackInitState::Ready as u8",
+  "note": "static INIT_STATE asserted Ready"
+ },
+ {
+  "module": "regression_fallback_panic_lock",
+  "category": "G2",
+  "regex": "dbg_panic_in_with_heap_releases_lock\\(\\)",
+  "note": "global fallback LOCK"
+ },
+ {
+  "module": "regression_fallback_panic_lock",
+  "category": "G4",
+  "regex": "recv_timeout\\(Duration::from_secs\\(10\\)\\)",
+  "note": "10 s wall-clock timeout"
+ },
+ {
+  "module": "regression_free_path_chunk_oom_graceful",
+  "category": "G2",
+  "regex": "^\\s*bootstrap::dbg_set_inject_chunk_oom\\(true\\);",
+  "note": "sets the static chunk-OOM injection knob"
+ },
+ {
+  "module": "regression_free_path_chunk_oom_graceful",
+  "category": "G2",
+  "regex": "bootstrap::dbg_slot_or_none\\(high_idx\\)",
+  "note": "materialises a chunk of the global registry under injection"
+ },
+ {
+  "module": "regression_free_path_chunk_oom_graceful",
+  "category": "G2",
+  "regex": "chunk must not be materialised after an OOM bailout",
+  "note": "global registry chunk state (unmaterialised after OOM bailout)"
+ },
+ {
+  "module": "regression_free_path_chunk_oom_graceful",
+  "category": "G2",
+  "regex": "chunk must be materialised after a successful",
+  "note": "global registry chunk state (materialised)"
+ },
+ {
+  "module": "regression_hardened_large_kind_own_free",
+  "category": "G1",
+  "regex": "let noop_before = HeapCore::dbg_hardened_large_noop_count",
+  "note": "static no-op counter, == before + 1"
+ },
+ {
+  "module": "regression_hardened_large_kind_own_free",
+  "category": "G1",
+  "regex": "branch \\(A\\)'s mismatched small-layout free",
+  "note": "static no-op counter, exact +1 (second test)"
+ },
+ {
+  "module": "regression_hardened_large_kind_own_free",
+  "category": "G1",
+  "regex": "unsafe \\{ heap\\.dealloc\\(promoted, wrong_align_layout\\) \\}",
+  "note": "static no-op counter, exact +1 (third test)"
+ },
+ {
+  "module": "regression_magazine_bump_guard",
+  "category": "G3",
+  "regex": "let mut lease = HeapRegistry::dbg_claim_lease",
+  "note": "assumes fresh anchor segment of a leased heap"
+ },
+ {
+  "module": "regression_magazine_bump_guard",
+  "category": "G3",
+  "regex": "bogus, anchor,",
+  "note": "assert_ne(bogus, anchor) relies on fresh segment"
+ },
+ {
+  "module": "regression_magazine_bump_guard",
+  "category": "G3",
+  "regex": "after, bogus,",
+  "note": "assert_ne(after, bogus) relies on fresh segment"
+ },
+ {
+  "module": "regression_magazine_free_bounds",
+  "category": "G3",
+  "regex": "while !issued\\.contains\\(&first\\)",
+  "note": "fresh-heap geometry"
+ },
+ {
+  "module": "regression_magazine_free_bounds",
+  "category": "G3",
+  "regex": "dbg_segment_base_of_ptr\\(p\\), base",
+  "note": "exact segment base on a leased heap"
+ },
+ {
+  "module": "regression_magazine_free_bounds",
+  "category": "G3",
+  "regex": "core::mem::forget\\(lease\\)",
+  "note": "forget(lease) leaks a registry slot"
+ },
+ {
+  "module": "regression_r1_01_magazine_free_budget",
+  "category": "G3",
+  "regex": "^\\s*mag_cnt, cap,",
+  "note": "exact dbg_tcache_count == cap"
+ },
+ {
+  "module": "regression_r1_01_magazine_free_budget",
+  "category": "G3",
+  "regex": "dbg_flush_all must empty class",
+  "note": "exact dbg_tcache_count == 0"
+ },
+ {
+  "module": "regression_r1_01_magazine_free_budget",
+  "category": "G3",
+  "regex": "^\\s*Some\\(0\\),",
+  "note": "dbg_live_count_for == Some(0)"
+ },
+ {
+  "module": "regression_r1_01_magazine_free_budget",
+  "category": "G3",
+  "regex": "after exactly TCACHE_CAP allocations off an empty magazine",
+  "note": "exact dbg_tcache_count on an empty magazine"
+ },
+ {
+  "module": "regression_r2_06_header_race_miri",
+  "category": "G3",
+  "regex": "let mut owner = HeapRegistry::dbg_claim_lease",
+  "note": "leased heap with exact counts"
+ },
+ {
+  "module": "regression_r2_06_header_race_miri",
+  "category": "G3",
+  "regex": "before\\.large_active\\.count, REMOTE_PER_KIND",
+  "note": "exact large_active count"
+ },
+ {
+  "module": "regression_r2_06_header_race_miri",
+  "category": "G3",
+  "regex": "assert_eq!\\(after\\.large_active\\.count, 0",
+  "note": "exact large_active count after drain"
+ },
+ {
+  "module": "regression_r2_06_header_race_miri",
+  "category": "G3",
+  "regex": "assert_eq!\\(after\\.unknown_count, 0",
+  "note": "exact unknown_count"
+ },
+ {
+  "module": "regression_r2_06_header_race_miri",
+  "category": "E",
+  "regex": "let mut owner = HeapRegistry::dbg_claim_lease",
+  "note": "cited by evidence row R4c-05 (--test regression_r2_06_header_race_miri)"
+ },
+ {
+  "module": "regression_r2_12_sidecar_leak",
+  "category": "G1",
+  "regex": "let before = dbg_sidecar_reservation_stats\\(\\)",
+  "note": "static DIRECTORY_SIDECAR_* counters"
+ },
+ {
+  "module": "regression_r2_12_sidecar_leak",
+  "category": "G1",
+  "regex": "after\\.directory_reservations - before\\.directory_reservations",
+  "note": "exact directory sidecar reservation delta"
+ },
+ {
+  "module": "regression_r2_12_sidecar_leak",
+  "category": "G1",
+  "regex": "after\\.large_cache_extension_reservations - before\\.large_cache_extension_reservations",
+  "note": "exact extension sidecar reservation delta"
+ },
+ {
+  "module": "regression_r4_3_teardown_trim",
+  "category": "G1",
+  "regex": "let before = a\\.stats\\(\\)\\.segments_released_total",
+  "note": "static segments_released_total baseline"
+ },
+ {
+  "module": "regression_r4_3_teardown_trim",
+  "category": "G1",
+  "regex": "let after = a\\.stats\\(\\)\\.segments_released_total",
+  "note": "static segments_released_total delta; TLS threads claim/recycle slots"
+ },
+ {
+  "module": "regression_realloc_xthread_stamp",
+  "category": "G3",
+  "regex": "reissued, grown,",
+  "note": "pointer-identity reuse on a leased heap"
+ },
+ {
+  "module": "regression_realloc_xthread_stamp",
+  "category": "G3",
+  "regex": "dbg_drain_sidecar_ingress\\(\\), 0",
+  "note": "exact sidecar ingress drain count"
+ },
+ {
+  "module": "regression_registry_chunking",
+  "category": "G2",
+  "regex": "let last_chunk = bootstrap::dbg_num_chunks\\(\\) - 1",
+  "note": "global REGISTRY last chunk"
+ },
+ {
+  "module": "regression_registry_chunking",
+  "category": "G2",
+  "regex": "^\\s*!reg\\.dbg_chunk_is_materialised\\(last_chunk\\)",
+  "note": "dbg_chunk_is_materialised on the global registry"
+ },
+ {
+  "module": "regression_registry_chunking",
+  "category": "G2",
+  "regex": "id_a, id_b,",
+  "note": "exact LIFO slot-id reuse"
+ },
+ {
+  "module": "regression_registry_chunking",
+  "category": "G2",
+  "regex": "addr_before, addr_after,",
+  "note": "slot address stability on the global registry"
+ },
+ {
+  "module": "regression_registry_chunking",
+  "category": "G2",
+  "regex": "assert_eq!\\(id_a, id_b, \"the spawned thread",
+  "note": "cross-thread LIFO slot-id reuse"
+ },
+ {
+  "module": "regression_registry_initialised_gate",
+  "category": "G3",
+  "regex": "claims a FRESH slot",
+  "note": "fresh bump_count slot; vacuous once other modules minted slots"
+ },
+ {
+  "module": "regression_segment_table_tombstone_rebuild",
+  "category": "G4",
+  "regex": "use std::time::Instant",
+  "note": "wall-clock measurement"
+ },
+ {
+  "module": "regression_segment_table_tombstone_rebuild",
+  "category": "G4",
+  "regex": "let dt = t0\\.elapsed",
+  "note": "elapsed-time threshold"
+ },
+ {
+  "module": "regression_segment_table_tombstone_rebuild",
+  "category": "G1",
+  "regex": "dbg_reset_hash_remove_max_scan_steps\\(\\)",
+  "note": "resets a static max-scan-steps counter"
+ },
+ {
+  "module": "regression_segment_table_tombstone_rebuild",
+  "category": "G1",
+  "regex": "let max_steps = AllocCore::dbg_hash_remove_max_scan_steps",
+  "note": "reads the static max-scan-steps counter"
+ },
+ {
+  "module": "regression_tcache_byte_budget",
+  "category": "G3",
+  "regex": "want, TCACHE_CAP,",
+  "note": "exact refill amount"
+ },
+ {
+  "module": "regression_tcache_byte_budget",
+  "category": "G3",
+  "regex": "mag_cnt as usize,",
+  "note": "exact dbg_tcache_count on a leased heap"
+ },
+ {
+  "module": "regression_tcache_byte_budget",
+  "category": "G3",
+  "regex": "let mag_cnt = heap\\.dbg_tcache_count\\(class_idx\\) as usize",
+  "note": "exact dbg_tcache_count assert_eq"
+ },
+ {
+  "module": "regression_xthread_large_free_no_leak",
+  "category": "G3",
+  "regex": "assert_eq!\\(second, first\\)",
+  "note": "pointer reuse on a leased heap"
+ },
+ {
+  "module": "regression_xthread_large_free_no_leak",
+  "category": "G3",
+  "regex": "dbg_drain_sidecar_ingress\\(\\), 0",
+  "note": "exact sidecar ingress drain count"
+ },
+ {
+  "module": "regression_xthread_small_ring_miri",
+  "category": "G2",
+  "regex": "is a process-global static and concurrent claim/recycle churn",
+  "note": "comment: sibling churn perturbs a process-global static"
+ },
+ {
+  "module": "regression_xthread_small_ring_miri",
+  "category": "G2",
+  "regex": "let _ = bootstrap::ensure\\(\\)",
+  "note": "bootstrap::ensure of the global registry"
+ },
+ {
+  "module": "regression_xthread_small_ring_miri",
+  "category": "G2",
+  "regex": "let mut lease = HeapRegistry::dbg_claim_lease",
+  "note": "claims a slot"
+ },
+ {
+  "module": "regression_xthread_small_ring_miri",
+  "category": "G2",
+  "regex": "producer A HeapRegistry::claim failed",
+  "note": "claims a slot (producer A)"
+ },
+ {
+  "module": "regression_xthread_small_ring_miri",
+  "category": "G2",
+  "regex": "producer B HeapRegistry::claim failed",
+  "note": "claims a slot (producer B)"
+ },
+ {
+  "module": "regression_xthread_small_ring_miri",
+  "category": "E",
+  "regex": "let _ = bootstrap::ensure\\(\\)",
+  "note": "cited by evidence row R4c-06 (--test regression_xthread_small_ring_miri)"
+ },
+ {
+  "module": "regression_xthread_thread_free_alias_miri",
+  "category": "E",
+  "regex": "is a process-global static and concurrent claim/recycle churn",
+  "note": "cited by evidence row R4c-07 (--test regression_xthread_thread_free_alias_miri)"
+ },
+ {
+  "module": "regression_xthread_thread_free_alias_miri",
+  "category": "E",
+  "regex": "let _ = bootstrap::ensure\\(\\)",
+  "note": "claims slots + bootstrap::ensure"
+ },
+ {
+  "module": "regression_xthread_thread_free_alias_miri",
+  "category": "E",
+  "regex": "let mut lease = HeapRegistry::dbg_claim_lease",
+  "note": "claims a slot"
+ },
+ {
+  "module": "regression_xthread_thread_free_alias_miri",
+  "category": "E",
+  "regex": "remote HeapRegistry::claim failed",
+  "note": "claims a slot (remote)"
+ }
+]

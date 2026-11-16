@@ -2,7 +2,7 @@
 
 Script: `scripts/classify-tests.mjs` (modules under `scripts/classify-tests/`).
 
-Sources: commit `7f788798dd62d2e94879b535da2b6437338ecfdd`, tree `17ac9da4367093e25beb6b2a5c4c34b989504723`; tracked inputs clean.
+Sources: commit `60a10848dcb94af7c5f6c187de2c7979e319de42`, tree `a19d03e0b7278019bd7e377cfe66c137eb5c2fe3`; tracked inputs clean.
 
 ## First-config-wins markers (derived from src/)
 
@@ -31,21 +31,21 @@ Dropped from the marker list: `publish_pending` (src/registry/segment_route/larg
 | --- | --- |
 | ci_action | 54 |
 | ci_workflow | 8 |
-| doc | 1372 |
+| doc | 1375 |
 | doc_json | 2 |
-| script | 275 |
+| script | 279 |
 
 Note: the classification suite's own output artifacts (`docs/perf/TEST_TARGET_CLASSIFICATION_*.md`, `docs/test_target_classification_*.csv`) are excluded from the doc pin surface: scanning the report's own echo would pin the targets it lists, making the classification non-idempotent (self-reference, not a pre-existing pin).
 
-Targets externally pinned by name: **503** of 540.
+Targets externally pinned by name: **475** of 509.
 
 ## Plan hypotheses (plan §1) vs naive grep vs measured
 
 | metric | plan (2026-11-15) | naive grep | measured | verdict |
 | --- | --- | --- | --- | --- |
-| tests/ .rs files | 562 | 540 | 540 | corrected |
-| file-level cfg | 514 | 493 | 493 | corrected |
-| global_allocator | 79 | 78 | 63 | corrected |
+| tests/ .rs files | 562 | 509 | 509 | corrected |
+| file-level cfg | 514 | 461 | 461 | corrected |
+| global_allocator | 79 | 76 | 63 | corrected |
 | first_config_wins | 111 | 24 | 81 | corrected |
 | process_spawn | 33 | 32 | 33 | confirmed |
 | loom_only (plan definition: loom mentions) | 21 | 45 | 32 | corrected |
@@ -82,7 +82,7 @@ Note: the plan's §1 numbers are grep approximations over overlapping sets — t
 
 ## Flag-set intersections (pairwise, over all targets)
 
-| set (size) \ in | global_allocator (63) | first_config_wins (81) | process_spawn (33) | loom_only (32) | miri_only (50) | kani_gated (0) | harness_false (13) | test_disabled (11) | required_features (26) | file_cfg (493) | externally_pinned (503) |
+| set (size) \ in | global_allocator (63) | first_config_wins (81) | process_spawn (33) | loom_only (32) | miri_only (50) | kani_gated (0) | harness_false (13) | test_disabled (11) | required_features (26) | file_cfg (461) | externally_pinned (475) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **global_allocator** (63) | 63 | 14 | 4 | 1 | 11 | 0 | 11 | 11 | 12 | 52 | 61 |
 | **first_config_wins** (81) | 14 | 81 | 3 | 3 | 26 | 0 | 0 | 0 | 2 | 81 | 77 |
@@ -93,12 +93,12 @@ Note: the plan's §1 numbers are grep approximations over overlapping sets — t
 | **harness_false** (13) | 11 | 0 | 1 | 0 | 0 | 0 | 13 | 11 | 13 | 0 | 13 |
 | **test_disabled** (11) | 11 | 0 | 0 | 0 | 0 | 0 | 11 | 11 | 11 | 0 | 11 |
 | **required_features** (26) | 12 | 2 | 2 | 0 | 4 | 0 | 13 | 11 | 26 | 12 | 26 |
-| **file_cfg** (493) | 52 | 81 | 25 | 30 | 50 | 0 | 0 | 0 | 12 | 493 | 457 |
-| **externally_pinned** (503) | 61 | 77 | 33 | 31 | 50 | 0 | 13 | 11 | 26 | 457 | 503 |
+| **file_cfg** (461) | 52 | 81 | 25 | 30 | 50 | 0 | 0 | 0 | 12 | 461 | 428 |
+| **externally_pinned** (475) | 61 | 77 | 33 | 31 | 50 | 0 | 13 | 11 | 26 | 428 | 475 |
 
-## Non-target inventory (1162 entries; 28 of them are top-level entries of tests/)
+## Non-target inventory (1198 entries; 32 of them are top-level entries of tests/)
 
-Top-level accounting: tests/ has **568** top-level entries; 540 are targets; the remaining **28** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
+Top-level accounting: tests/ has **541** top-level entries; 509 are targets; the remaining **32** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
 
 | path | kind |
 | --- | --- |
@@ -107,6 +107,7 @@ Top-level accounting: tests/ has **568** top-level entries; 540 are targets; the
 | tests/alloc_core_differential.proptest-regressions | proptest-regressions |
 | tests/ci_decomposition_contracts.mjs | mjs-script |
 | tests/ci_effective_workflow_fixtures.mjs | mjs-script |
+| tests/ci_job_durations.test.mjs | mjs-script |
 | tests/ci_ubuntu_apt_sources.mjs | mjs-script |
 | tests/classify_tests.test.mjs | mjs-script |
 | tests/compile_fail | directory-fixture |
@@ -150,6 +151,7 @@ Top-level accounting: tests/ has **568** top-level entries; 540 are targets; the
 | tests/g1_big_study_parser.mjs | mjs-script |
 | tests/g1_big_study_receipt.mjs | mjs-script |
 | tests/g1_big_study_runner.mjs | mjs-script |
+| tests/g1_widening_count.test.mjs | mjs-script |
 | tests/ghost_lint_fixtures | directory-fixture |
 | tests/ghost_lint_fixtures/nl3_owner_model_bind | directory-fixture |
 | tests/ghost_lint_fixtures/nl3_owner_model_bind/mutant_claim_ordering.rs | support-module |
@@ -1252,6 +1254,39 @@ Top-level accounting: tests/ has **568** top-level entries; 540 are targets; the
 | tests/r11_p3_small_sidecar_issue_oom/support.rs | support-module |
 | tests/r6_sidecar_bitmap | directory-fixture |
 | tests/r6_sidecar_bitmap/child_process.rs | support-module |
+| tests/regression_merged | directory-fixture |
+| tests/regression_merged/regression_alloc_zeroed_fresh.rs | support-module |
+| tests/regression_merged/regression_carve_batch.rs | support-module |
+| tests/regression_merged/regression_dealloc_metadata_region_guard.rs | support-module |
+| tests/regression_merged/regression_exact_256_class.rs | support-module |
+| tests/regression_merged/regression_fastbin_aligned_roundtrip.rs | support-module |
+| tests/regression_merged/regression_flush_class_unsafe_boundary.rs | support-module |
+| tests/regression_merged/regression_hardened_interior_ptr.rs | support-module |
+| tests/regression_merged/regression_inplace_large_realloc.rs | support-module |
+| tests/regression_merged/regression_large_align_no_segment_exhaustion.rs | support-module |
+| tests/regression_merged/regression_large_cache_multi_size_cycle.rs | support-module |
+| tests/regression_merged/regression_large_cache_span_usable_stable.rs | support-module |
+| tests/regression_merged/regression_magazine_oracles.rs | support-module |
+| tests/regression_merged/regression_magazine_scan_bounds.rs | support-module |
+| tests/regression_merged/regression_magic_at_atomic_load.rs | support-module |
+| tests/regression_merged/regression_page_aligned_no_segment_exhaustion.rs | support-module |
+| tests/regression_merged/regression_percounter_perheap_aggregation.rs | support-module |
+| tests/regression_merged/regression_r2_05_diag_provenance_miri.rs | support-module |
+| tests/regression_merged/regression_r2_05_diag_provenance.rs | support-module |
+| tests/regression_merged/regression_r2_3_dbg_accessors_membership_guard.rs | support-module |
+| tests/regression_merged/regression_r3a_stats_walk_compiled_out.rs | support-module |
+| tests/regression_merged/regression_r4_2_null_base_foreign_guard.rs | support-module |
+| tests/regression_merged/regression_r4_2_refill_return_clamp.rs | support-module |
+| tests/regression_merged/regression_r6_t22_foreign_window_key_miri.rs | support-module |
+| tests/regression_merged/regression_realloc_cross_class_shrink.rs | support-module |
+| tests/regression_merged/regression_realloc_foreign_pointer_null.rs | support-module |
+| tests/regression_merged/regression_realloc_heap_oob.rs | support-module |
+| tests/regression_merged/regression_realloc_inplace_global.rs | support-module |
+| tests/regression_merged/regression_realloc_oob_old_layout.rs | support-module |
+| tests/regression_merged/regression_resolver_branch_collapse.rs | support-module |
+| tests/regression_merged/regression_stamp_metadata_unsafe_boundary.rs | support-module |
+| tests/regression_merged/regression_virgin_bitmap_skip.rs | support-module |
+| tests/regression_merged/regression_w3_stats_aliasing_miri.rs | support-module |
 | tests/support | directory-fixture |
 | tests/support/alloc_core_differential_native_seeds.txt | other-file |
 | tests/support/j13b_cadence_math.rs | support-module |
@@ -1264,6 +1299,7 @@ Top-level accounting: tests/ has **568** top-level entries; 540 are targets; the
 | tests/support/r8_global_box_witness.rs | support-module |
 | tests/support/r8_native_os_mapping.rs | support-module |
 | tests/support/tagged_index_stack_compile_fail.rs | support-module |
+| tests/test_inventory.test.mjs | mjs-script |
 
 ## Groups (top 10 of 1 by saved links; total saved links 0)
 
@@ -1291,6 +1327,7 @@ By construction of the strict rule, no member is name-pinned externally. But ANY
 | docs/ARCHITECTURE.md | 509 | \| loom \| Bounded interleavings; snapshot execution pending \| **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs` \| | 27 |
 | docs/CI_TIERS.md | 180 | (a change of the segment-directory scan selects 369 of 484 tests), so the saving comes from peripheral and test-only | 369/484 |
 | docs/perf/b4_ablate/G1_K7_A6_VERDICT.md | 27 | (1606 files). Campaign driver output: `a6/campaign.log`. | 1606 |
+| docs/perf/G1_DECISION_CRITERION.md | 81 | \| Selected-test count for a representative peripheral change \| tests \| after P1.5 strictly fewer than the current all-target selection \| current data point: a segment-directory scan change selects 369 of 484 tests (`docs/CI_TIERS.md`, "Test selection" section; first map run: 374 of 484 mapped under `--all-features`) \| | 369/484 |
 | docs/perf/R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md | 352 | - `docs/perf/_raw_r14_6_*.log` (14 files): iai baseline/treatment, R12-4 | 14 |
 | docs/plans/2026-11-15-workspace-restructure-plan.md | 40 | a segment-directory scan change selects 369 of 484 tests) because one crate holds all of the | 369/484 |
 | docs/reviews/2026-07-09-maintainability-architecture-review.md | 235 | (103 files)», фактически 117. | 103 |
@@ -1325,10 +1362,10 @@ j13 hash pins: scripts/j13_limited_report.mjs, scripts/j13_report.mjs, scripts/j
 | rung | description | pilot-eligible | mergeable files | groups | total saved links |
 | --- | --- | --- | --- | --- | --- |
 | strict | strict rules (see report definitions) | no | 1 | 1 | 0 |
-| compat | uniform required-features + uniform file-level cfg in the group key; hard blockers apply; externally-pinned excluded | yes | 32 | 28 | 4 |
-| looser-features | additionally allow non-uniform required-features (still pinned-excluded) | no | 32 | 28 | 4 |
-| looser-cfg | additionally allow non-uniform file-level cfg | no | 32 | 12 | 20 |
-| allow-pinned | additionally allow externally-pinned names | no | 332 | 73 | 259 |
+| compat | uniform required-features + uniform file-level cfg in the group key; hard blockers apply; externally-pinned excluded | yes | 29 | 25 | 4 |
+| looser-features | additionally allow non-uniform required-features (still pinned-excluded) | no | 29 | 25 | 4 |
+| looser-cfg | additionally allow non-uniform file-level cfg | no | 29 | 11 | 18 |
+| allow-pinned | additionally allow externally-pinned names | no | 301 | 73 | 228 |
 
 ### Pilot eligibility per rung
 
@@ -1340,7 +1377,7 @@ Strict mergeable pool: **1** files in 1 groups (total saved links 0) — trivial
 | compat | yes | pilot-eligible: uniform required-features and uniform file-level cfg in the group key, hard blockers apply, externally-pinned names excluded | r20\|-\|all(feature = "alloc-global", feature = "internals") | 3 | 2 |
 | looser-features | no | not eligible unless group required-features become uniform: members may mix differing required-features | r20\|all(feature = "alloc-global", feature = "internals") | 3 | 2 |
 | looser-cfg | no | not eligible unless group file-level cfg becomes uniform: members may mix differing file-level cfgs | r10 | 7 | 6 |
-| allow-pinned | no | NOT pilot-eligible: members are externally name-pinned; listed for scale only | regression | 55 | 54 |
+| allow-pinned | no | NOT pilot-eligible: members are externally name-pinned; listed for scale only | r6 | 42 | 41 |
 
 `compat` rung pilot candidate (the pilot candidate of the classification):
 
@@ -1356,11 +1393,11 @@ Pilot eligibility per rung is derived from each rung's relaxation rules; no go/n
 
 Naive baseline patterns (fixed, over RAW text — intentionally naive, these are the greps plan §1 used): global_allocator `/#\[global_allocator\]/`; first_config_wins `\b(with_config|config_conflicts|thp_tuple)\b`; process_spawn `(process::Command|current_exe|CARGO_BIN_EXE_)`; loom `\bloom\b`; miri `\bmiri\b`; file_level_cfg lines matching `^\s*#!\[cfg`. Baseline-only reason codes: comment-only, string-literal, item-level-attr-only (matched code, but not before the first item), marker-list (matched word is not a derived marker). Measured-only reason codes: multi-line-attr, cfg_attr-form, bare-Command-import (true positive via `use std::process::{Command, ...}` + bare `Command::new`, outside the naive pattern).
 
-### global_allocator — naive 78 vs measured 63
+### global_allocator — naive 76 vs measured 63
 
 Pattern: `/\#\[global_allocator\]/ on raw text`
 
-In baseline but not measured (15):
+In baseline but not measured (13):
 
 | path | reason |
 | --- | --- |
@@ -1373,9 +1410,7 @@ In baseline but not measured (15):
 | tests/r11_ph3b_kind_aware_entries.rs | comment-only |
 | tests/r25_4_dealloc_batch_multi_flush_oracle.rs | comment-only |
 | tests/r6_t01_owner_stamp_removed_routing.rs | comment-only |
-| tests/regression_large_align_no_segment_exhaustion.rs | comment-only |
 | tests/regression_r2_08_globalalloc_no_unwind.rs | comment-only |
-| tests/regression_realloc_inplace_global.rs | comment-only |
 | tests/stats_reflects_activity.rs | comment-only |
 | tests/stress_concurrent_boundaries.rs | comment-only |
 | tests/tls_heap_teardown_torn_sentinel.rs | comment-only |
@@ -1501,11 +1536,11 @@ Measured but not in baseline (0):
 
 (none)
 
-### miri_tree — naive 129 vs measured 50
+### miri_tree — naive 119 vs measured 50
 
 Pattern: `\bmiri\b on raw text`
 
-In baseline but not measured (79):
+In baseline but not measured (69):
 
 | path | reason |
 | --- | --- |
@@ -1563,19 +1598,9 @@ In baseline but not measured (79):
 | tests/regression_batch_freelist_drain.rs | item-level-attr-only |
 | tests/regression_bump_direct_refill.rs | comment-only |
 | tests/regression_c3_unbounded_recycle.rs | item-level-attr-only |
-| tests/regression_dealloc_metadata_region_guard.rs | comment-only |
-| tests/regression_magazine_oracles.rs | comment-only |
-| tests/regression_magic_at_atomic_load.rs | comment-only |
-| tests/regression_r2_05_diag_provenance_miri.rs | comment-only |
-| tests/regression_r2_05_diag_provenance.rs | comment-only |
 | tests/regression_r2_15_virgin_mask_zeroed_and_bounded.rs | item-level-attr-only |
-| tests/regression_r4_2_null_base_foreign_guard.rs | comment-only |
-| tests/regression_realloc_foreign_pointer_null.rs | comment-only |
-| tests/regression_realloc_oob_old_layout.rs | comment-only |
 | tests/regression_registry_initialised_gate.rs | comment-only |
 | tests/regression_segment_table_tombstone_rebuild.rs | comment-only |
-| tests/regression_virgin_bitmap_skip.rs | comment-only |
-| tests/regression_w3_stats_aliasing_miri.rs | comment-only |
 | tests/regression_xthread_small_ring_miri.rs | comment-only |
 | tests/regression_xthread_thread_free_alias_miri.rs | comment-only |
 | tests/route_pin_last_ref_miri.rs | comment-only |
@@ -1593,7 +1618,7 @@ Measured but not in baseline (0):
 
 (none)
 
-### file_level_cfg — naive 493 vs measured 493
+### file_level_cfg — naive 461 vs measured 461
 
 Pattern: `lines matching ^\s*#!\[cfg on raw text (line-anchored)`
 

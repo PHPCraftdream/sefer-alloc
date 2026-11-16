@@ -71,9 +71,44 @@ const PROD_TESTS = [
 // pass only.
 const STRESS_ENV = ['SEFER_STRESS_OPS=600', 'SEFER_STRESS_MAX_THREADS=4'];
 
+// P0.2 pilot: this target was merged into the single `regression_merged`
+// target (tests/regression_merged.rs). It cannot share one `cargo test`
+// command with flat `--test` targets (test-name filters apply to ALL targets
+// in one command), so the pass emits a second invocation with
+// `--test regression_merged` + a per-module positional filter.
+const MERGED_TESTS = [
+  'regression_percounter_perheap_aggregation',
+];
+
+function cargoCmd(features, testList) {
+  const featureArgs = `--features '${features}'`;
+  const flat = testList.filter((t) => !MERGED_TESTS.includes(t));
+  const merged = testList.filter((t) => MERGED_TESTS.includes(t));
+  const cmds = [];
+  if (flat.length) {
+    cmds.push([
+      'cargo +nightly test -Zbuild-std --target x86_64-unknown-linux-gnu',
+      '--release',
+      featureArgs,
+      flat.map((t) => `--test ${t}`).join(' '),
+    ].join(' '));
+  }
+  if (merged.length) {
+    cmds.push([
+      'cargo +nightly test -Zbuild-std --target x86_64-unknown-linux-gnu',
+      '--release',
+      featureArgs,
+      '--test regression_merged',
+      merged.map((t) => `${t}::`).join(' '),
+    ].join(' '));
+  }
+  return cmds;
+}
+
 function bashCmd(features, testList, extraEnv = []) {
-  const testArgs = testList.map((t) => `--test ${t}`).join(' ');
-  // One bash -lc line so the env scrubbing + cargo invocation share a shell.
+  const cmds = cargoCmd(features, testList);
+  // One bash -lc line so the env scrubbing + cargo invocations share a shell;
+  // the flat-target and regression_merged invocations are chained with `&&`.
   return [
     `cd ${wslRoot}`,
     'unset RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER',
@@ -90,10 +125,7 @@ function bashCmd(features, testList, extraEnv = []) {
       "RUSTFLAGS='-Zsanitizer=thread'",
       "RUSTDOCFLAGS='-Zsanitizer=thread'",
       'CARGO_TARGET_DIR=/tmp/sefer-tsan',
-      'cargo +nightly test -Zbuild-std --target x86_64-unknown-linux-gnu',
-      '--release',
-      `--features '${features}'`,
-      testArgs,
+      cmds.join(' && '),
     ].join(' '),
   ].join(' && ');
 }
@@ -107,7 +139,9 @@ function bashCmd(features, testList, extraEnv = []) {
 // R34-5-followup (task #524): `internals` added to both default feature
 // strings — `regression_xthread_large_free_no_leak` (both passes),
 // `regression_realloc_xthread_stamp` and
-// `regression_percounter_perheap_aggregation` (production pass) all gate on
+// `regression_percounter_perheap_aggregation` (production pass; the latter
+// is merged: tests/regression_merged/regression_percounter_perheap_aggregation.rs)
+// all gate on
 // `#![cfg(..., feature = "internals")]` (added by R34-3/task #522), so
 // without it their `--test` binaries compiled with the whole module `#[cfg]`d
 // out — a silent "0 tests, PASS" that validated no TSan coverage for those

@@ -133,6 +133,19 @@ function closure(r) {
   }
   return set;
 }
+// Minimal YAML single-quote rule: a scalar wrapped in single quotes has
+// '' unescaped to '. Double-quoted content stays literal; block scalars
+// (|, >) start with those characters and are never quoted, so untouched.
+export function unquoteRunScalar(value) {
+  return value.length >= 2 && value.startsWith("'") && value.endsWith("'")
+    ? value.slice(1, -1).replace(/''/g, "'") : value;
+}
+// Pure extraction for tests: first `cargo … miri test …` command in a run
+// script, tokenized with the same shellTokens rules used by ciRows().
+export function extractMiriTestCommand(scriptText) {
+  const command = [...String(scriptText).matchAll(/cargo\s+(?:\+\S+\s+)?miri\s+test\s+([^\n]*?)(?=\s+2>&1|\s+\||\n|$)/g)][0];
+  return command ? shellTokens(command[1]) : null;
+}
 function shellTokens(s) {
   const re = /"([^"\n]*)"|'([^'\n]*)'|([^\s]+)/g;
   return [...s.matchAll(re)].map((m) => m[1] ?? m[2] ?? m[3]);
@@ -152,11 +165,11 @@ function ciRows() {
       const flags = step.match(/MIRIFLAGS:\s*"([^"]*)"/)?.[1] ?? inherited;
       const run = step.match(/^\s*(?:- )?run:\s*([^\n]*)\n?/m);
       if (!run) continue;
-      let script = run[1];
+      let script = unquoteRunScalar(run[1]);
       if (/^[|>][-+]?\s*$/.test(script)) script = step.slice(run.index + run[0].length).split('\n').filter((s) => /^          /.test(s)).join('\n');
       script = script.replace(/\\\s*\n/g, ' ');
       // Folded YAML commands have continuation --test lines, literal scripts do not.
-      if (run[1].startsWith('>')) script = script.replace(/\n/g, ' ');
+      if (unquoteRunScalar(run[1]).startsWith('>')) script = script.replace(/\n/g, ' ');
       for (const command of script.matchAll(/cargo\s+(?:\+\S+\s+)?miri\s+test\s+([^\n]*?)(?=\s+2>&1|\s+\||\n|$)/g)) {
         const argv = shellTokens(command[1]), tests = [], features = [];
         let pkg, args = [], noDefaultFeatures = false, allFeatures = false;
