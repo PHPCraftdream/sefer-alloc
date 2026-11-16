@@ -362,10 +362,12 @@ The owner-provided historical context (−2231 Ir against a base of approximatel
 10.2 million Ir) is not a measurement from this task and does not set or tune
 the threshold.
 
-The production ghost-runtime check must also pass: the production probe/binary
-must contain no ghost-specific runtime symbols or strings. Missing or failed
-measurements, nonfinite/zero/absent Ir, or any detected production ghost symbol
-or string are red. Changes to `rust-toolchain*`, any `build.rs`, or `.cargo/`
+The production ghost-runtime check is judged on the head production binary:
+it must contain no ghost-specific runtime symbols or strings. The base binary's
+matching tokens are retained as `tokens_base` diagnostics only; the JSON `tokens`
+field remains the head token list. Missing or failed measurements, nonfinite,
+zero or absent Ir, or any detected production ghost symbol or string in the
+head make the gate red. Changes to `rust-toolchain*`, any `build.rs`, or `.cargo/`
 remain forbidden; this exception does not relax those path restrictions.
 Counterfactual policy coverage is mandatory in
 `tests/ghost_extraction_policy.test.mjs`, and the runner self-test must cover

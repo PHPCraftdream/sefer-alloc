@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { checkExtractionPolicyCases } from './ghost_extraction_policy_fixtures.mjs';
 
@@ -18,6 +19,31 @@ const cargoPaths = (...paths) => new Map(paths.map((path) => [path, []]));
 const EVIDENCE = { membersAdded: ['crates/platform/sefer-platform'], pathDepsAdded: [], renames: [{ from: 'src/platform.rs', to: 'crates/platform/sefer-platform/src/lib.rs' }] };
 const BASE_IR = 1_000_000;
 const WITHIN_EXTRACTION = { policy: EXTRACTION_POLICY, textSame: false, irBase: BASE_IR, irHead: BASE_IR + 1_000 };
+const ZERO_COST_RUNNER = readFileSync(new URL('../scripts/ghost_zero_cost.mjs', import.meta.url), 'utf8');
+
+test('production ghost verdict uses head tokens while preserving base tokens as diagnostics', () => {
+  // Pin the runner's actual two-side extraction, JSON mapping and verdict input;
+  // direct verdict-only cases would not catch a runner rollback to base+head union.
+  assert.ok(ZERO_COST_RUNNER.includes("const productionGhostTokensForBinary = (bin) => productionGhostTokens(`${run('objdump', ['-t', '-C', bin])}\\n${readFileSync(bin).toString('latin1')}`);"));
+  assert.ok(ZERO_COST_RUNNER.includes('const tokensBase = productionGhostTokensForBinary(binBase);'));
+  assert.ok(ZERO_COST_RUNNER.includes('const tokensHead = productionGhostTokensForBinary(binHead);'));
+  assert.ok(ZERO_COST_RUNNER.includes('tokens_base: tokensBase,\n    tokens: tokensHead,'));
+  assert.ok(ZERO_COST_RUNNER.includes('ghostTokens: tokensHead'));
+
+  const baseOnlyToken = productionGhostTokens('base symbol: ghost_event');
+  const noHeadTokens = productionGhostTokens('head has no ghost symbols or strings');
+  assert.deepEqual(baseOnlyToken, ['ghost_event']);
+  assert.deepEqual(noHeadTokens, []);
+  const baseOnlyVerdict = zeroCostVerdict({ textSame: true, irBase: BASE_IR, irHead: BASE_IR, ghostTokens: noHeadTokens });
+  assert.equal(baseOnlyVerdict.ok, true, 'base-only token is diagnostic, not verdict input');
+  assert.deepEqual({ tokens_base: baseOnlyToken, tokens: noHeadTokens }, { tokens_base: ['ghost_event'], tokens: [] });
+
+  const headTokens = productionGhostTokens('head symbol: ghost_event');
+  assert.deepEqual(headTokens, ['ghost_event']);
+  const headVerdict = zeroCostVerdict({ textSame: true, irBase: BASE_IR, irHead: BASE_IR, ghostTokens: headTokens });
+  assert.equal(headVerdict.ok, false, 'any head token keeps the verdict red');
+  assert.ok(headVerdict.errors.includes('production ghost tokens detected'));
+});
 
 test('extraction build-graph counterfactual suite', () => {
   assert.equal(checkExtractionPolicyCases(), 9);
