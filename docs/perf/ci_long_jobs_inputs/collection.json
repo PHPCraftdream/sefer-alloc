@@ -1,0 +1,513 @@
+{
+  "generated_by": "external collector; raw stdout/stderr persisted outside repository",
+  "data_directory": "docs/perf/ci_long_jobs_inputs",
+  "run_list": {
+    "request": "gh api repos/PHPCraftdream/sefer-alloc/actions/workflows/ci.yml/runs?per_page=100",
+    "total_count": 1432,
+    "returned": 100,
+    "full_selected_saved_runs_newest_first": [
+      {
+        "id": 43886332211,
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-11-16T14:29:53Z",
+        "classification": "attempted full; weekly jobs failed; one cancelled no-runner job"
+      },
+      {
+        "id": 43851422289,
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-11-16T10:43:41Z",
+        "classification": "completed full nightly"
+      },
+      {
+        "id": 43781371392,
+        "event": "pull_request",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-11-16T00:36:29Z",
+        "classification": "standalone CI: full trailer; completed full PR"
+      },
+      {
+        "id": 43704208363,
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-11-15T10:28:04Z",
+        "classification": "completed full nightly"
+      },
+      {
+        "id": 43582569269,
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-11-14T09:52:11Z",
+        "classification": "attempted full; multiple job failures; censored observations"
+      },
+      {
+        "id": 43410623227,
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-11-13T10:38:25Z",
+        "classification": "attempted full; multiple job failures; censored observations"
+      }
+    ],
+    "ordinary_push_comparison": {
+      "id": 43831250776,
+      "event": "push",
+      "conclusion": "success",
+      "classification": "ordinary diff-selected push, not full"
+    }
+  },
+  "snapshots": [
+    {
+      "id": 43886332211,
+      "file": "43886332211.json.gz",
+      "total_count": 65,
+      "jobs": 65,
+      "full_selected": true,
+      "qualifies_successful_full": false,
+      "long_jobs_over_600s": 13,
+      "executed_long_jobs_over_600s": 12,
+      "excluded_from_executed_duration": "job 133365637356 cancelled, runner_id=0, no steps"
+    },
+    {
+      "id": 43851422289,
+      "file": "43851422289.json.gz",
+      "total_count": 65,
+      "jobs": 65,
+      "full_selected": true,
+      "qualifies_successful_full": true,
+      "long_jobs_over_600s": 12
+    },
+    {
+      "id": 43781371392,
+      "file": "43781371392.json.gz",
+      "total_count": 65,
+      "jobs": 65,
+      "full_selected": true,
+      "qualifies_successful_full": true,
+      "long_jobs_over_600s": 11
+    },
+    {
+      "id": 43704208363,
+      "file": "43704208363.json.gz",
+      "total_count": 63,
+      "jobs": 63,
+      "full_selected": true,
+      "qualifies_successful_full": true,
+      "long_jobs_over_600s": 11
+    },
+    {
+      "id": 43582569269,
+      "file": "43582569269.json.gz",
+      "total_count": 63,
+      "jobs": 63,
+      "full_selected": true,
+      "qualifies_successful_full": false,
+      "long_jobs_over_600s": 10,
+      "failed_jobs": 11
+    },
+    {
+      "id": 43410623227,
+      "file": "43410623227.json.gz",
+      "total_count": 63,
+      "jobs": 63,
+      "full_selected": true,
+      "qualifies_successful_full": false,
+      "long_jobs_over_600s": 8,
+      "failed_jobs": 11
+    },
+    {
+      "id": 43831250776,
+      "file": "43831250776.json.gz",
+      "total_count": 62,
+      "jobs": 62,
+      "full_selected": false,
+      "qualifies_successful_full": false,
+      "long_jobs_over_600s": 0
+    }
+  ],
+  "request_ledger": {
+    "previous_invocations": 15,
+    "new_invocations": 30,
+    "new_budget_limit": 30,
+    "new_requests": [
+      "GET /actions/workflows/ci.yml/runs?per_page=100",
+      "GET /actions/runs/43886332211/jobs?per_page=100",
+      "GET /actions/runs/43582569269/jobs?per_page=100",
+      "GET /actions/runs/43410623227/jobs?per_page=100",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/131835907208/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/131835906890/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/131835907176/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/131835907233/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/131835907334/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/131835907493/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/131835907570/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/131835907640/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132410259960/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132410260009/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132410260031/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132410260038/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132410260048/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132410260141/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132410260146/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132410260356/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132410260379/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132410260402/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132795418733/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132795418911/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132795418938/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132795418960/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132795419078/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132795419134/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132795418958/logs",
+      "GET /repos/PHPCraftdream/sefer-alloc/actions/jobs/132795418762/logs"
+    ],
+    "logs_requests": 26,
+    "annotation_requests": 0
+  },
+  "candidate_exclusions": {
+    "43886332211": {
+      "failed_jobs": [
+        "fuzz targets run (weekly, 10 min/target)",
+        "cargo-hack feature-powerset (depth 2, check-only, weekly)"
+      ],
+      "cancelled_no_runner": [
+        {
+          "id": 133365637356,
+          "name": "numa-shim real macOS kernel (unsupported-platform contract)",
+          "runner_id": 0,
+          "steps": 0,
+          "elapsed_seconds": 1013
+        }
+      ],
+      "other_skipped_no_runner": [
+        {
+          "id": 133365376138,
+          "name": "tagged-index-stack weak-memory wall-clock A/B gate (arm64)"
+        }
+      ],
+      "annotations_url_available": false
+    },
+    "43582569269": {
+      "failed_jobs": 11,
+      "skipped_without_runner": 4,
+      "explanation": "regular heavy jobs failed; later job/step outcomes retained as censored evidence; no annotation URLs in endpoint payload"
+    },
+    "43410623227": {
+      "failed_jobs": 11,
+      "skipped_without_runner": 4,
+      "explanation": "regular heavy jobs failed; later job/step outcomes retained as censored evidence; no annotation URLs in endpoint payload"
+    }
+  },
+  "byte_budget": {
+    "directory_total_bytes": 106932,
+    "maximum_bytes": 204800
+  },
+  "classification_note": "Six latest full-selected attempts are persisted, but only 3 are successful complete full runs. Three failed schedules are retained, not discarded or misrepresented; failed job times are censored. Do not infer a full six-success sample.",
+  "logs_feasibility": "Log stage consumed the remaining 25 calls: 23 successful responses, two timeouts with no HTTP status, plus the already fetched sample. Two failed request diagnostics and the explicit three-job coverage gap are recorded under log_collection; do not infer completeness for the omitted jobs.",
+  "runner_note": "New job snapshots preserve runner fields returned by the API. Older existing snapshots do not contain runner fields. Jobs endpoint responses supplied no annotations URLs.",
+  "raw_output_storage": "outside repository",
+  "log_collection": {
+    "runs": [
+      43410623227,
+      43582569269,
+      43704208363
+    ],
+    "requestedJobCount": 26,
+    "existingSample": {
+      "runId": 43410623227,
+      "jobId": 131835907208,
+      "ok": true,
+      "includedInDerived": true
+    },
+    "newRequests": [
+      {
+        "runId": 43410623227,
+        "jobId": 131835906890,
+        "jobName": "test (xthread progression)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 1458795,
+        "rawSha256": "e49649d1ffed2f3182e7c89e17d0f5074e4a876b197c6ef5d5847feec1a04dff"
+      },
+      {
+        "runId": 43410623227,
+        "jobId": 131835907176,
+        "jobName": "check-matrix (manifest-driven, non-clippy rows)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 2228297,
+        "rawSha256": "4f47e5d95309080ead6862d4549e454b2de7e42345cb1c08a9df677aad3a25a5"
+      },
+      {
+        "runId": 43410623227,
+        "jobId": 131835907233,
+        "jobName": "miri (core, pin cache TreeBorrows)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 56809,
+        "rawSha256": "e5586d82e970ae1a5f0793d6f0c343ea34c1add3fc760ed0cf547f394d169e96"
+      },
+      {
+        "runId": 43410623227,
+        "jobId": 131835907334,
+        "jobName": "miri (fastbin)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 52574,
+        "rawSha256": "bafe3680197869eba5242ebbf7fe97a3205c2f60d892517af8201ced9bd6702f"
+      },
+      {
+        "runId": 43410623227,
+        "jobId": 131835907493,
+        "jobName": "test (hardened tier)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 1328211,
+        "rawSha256": "d46d782c8e0194f499fe8d37900dd1f399b80c4da1f46eccdf82dcba60aca536"
+      },
+      {
+        "runId": 43410623227,
+        "jobId": 131835907570,
+        "jobName": "kani proofs",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 3590421,
+        "rawSha256": "27d1c9ec48a2e9a04ccace99c67a9f9096dd298ab8bf94d56319cd144b122436"
+      },
+      {
+        "runId": 43410623227,
+        "jobId": 131835907640,
+        "jobName": "miri-plain",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 79505,
+        "rawSha256": "b715c646a1ccec875ee366f351d1066756d3ed725bbf81031649461b6368577a"
+      },
+      {
+        "runId": 43582569269,
+        "jobId": 132410259960,
+        "jobName": "kani proofs",
+        "requested": true,
+        "httpStatus": null,
+        "ok": false,
+        "exitStatus": null,
+        "error": "spawnSync gh ETIMEDOUT",
+        "timeout": true
+      },
+      {
+        "runId": 43582569269,
+        "jobId": 132410260009,
+        "jobName": "test (xthread progression)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 1458794,
+        "rawSha256": "87cddc9c3389b3f8e2a16dcdbf64984ee66eccb406694f6066eadbd5b46efaf4"
+      },
+      {
+        "runId": 43582569269,
+        "jobId": 132410260031,
+        "jobName": "test (hardened tier)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 1328221,
+        "rawSha256": "dfde8e3cb1bf539357c20e7be5591052ff9f30dfa805c8009ca729884d22437a"
+      },
+      {
+        "runId": 43582569269,
+        "jobId": 132410260038,
+        "jobName": "miri (core)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 430020,
+        "rawSha256": "d97512bd9ac5ef248da6faf91ce5026a10fde97adc42fbe8db9eef0ac91a88f7"
+      },
+      {
+        "runId": 43582569269,
+        "jobId": 132410260048,
+        "jobName": "miri (core, pin cache TreeBorrows)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 55193,
+        "rawSha256": "319f5b9438ed2f0e64a7c66bdc96c138f6f422d94ffb532d9e94ebf776ce72da"
+      },
+      {
+        "runId": 43582569269,
+        "jobId": 132410260141,
+        "jobName": "miri (fastbin)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 52575,
+        "rawSha256": "538c991e4314222395e67f1bf702e61e080f6c73cdb6c819f3d243f77dbfcfb4"
+      },
+      {
+        "runId": 43582569269,
+        "jobId": 132410260146,
+        "jobName": "check-matrix (manifest-driven, non-clippy rows)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 2228295,
+        "rawSha256": "a6b9c70aa8ad3fd8351061449a64a23bec7326ff6acb200d381a4723d9298094"
+      },
+      {
+        "runId": 43582569269,
+        "jobId": 132410260356,
+        "jobName": "test (feature isolation)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 786880,
+        "rawSha256": "10e0e8c714b7e5caf53ff1e036cc232be6709427bddc28c3187b3518ca47868d"
+      },
+      {
+        "runId": 43582569269,
+        "jobId": 132410260379,
+        "jobName": "test (gated bodies + all-features)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 1090650,
+        "rawSha256": "c11b9d05f8ce20f91d69dcd0845954281b4a61e0ff7a49c05368e66f3f5c1614"
+      },
+      {
+        "runId": 43582569269,
+        "jobId": 132410260402,
+        "jobName": "miri-plain",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 79509,
+        "rawSha256": "98c0441edf74a951a715e071e4f72ff8071c117f3b83aea50ef9543c726b5c8b"
+      },
+      {
+        "runId": 43704208363,
+        "jobId": 132795418733,
+        "jobName": "miri (core)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 431857,
+        "rawSha256": "f0555451d0d14a6a7e1b73f6767968ee8fd29b5b14ad96fe3e8e75fc90a09516"
+      },
+      {
+        "runId": 43704208363,
+        "jobId": 132795418911,
+        "jobName": "miri (fastbin)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 52697,
+        "rawSha256": "38d04b23fbf8d7a95121ade1fd857f8ef47317ebcf5b8c2a0403658d0a49fb5a"
+      },
+      {
+        "runId": 43704208363,
+        "jobId": 132795418938,
+        "jobName": "check-matrix (manifest-driven, non-clippy rows)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 2578865,
+        "rawSha256": "3e66894edd81bb559014116e5c21b27fcaf4743b77a5b404a5d0a9682de2612f"
+      },
+      {
+        "runId": 43704208363,
+        "jobId": 132795418960,
+        "jobName": "miri (core, pin cache TreeBorrows)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 56928,
+        "rawSha256": "57efd7eb74c831d3e18d702526177a650829718584c61d4b95a995780f9bbf07"
+      },
+      {
+        "runId": 43704208363,
+        "jobId": 132795419078,
+        "jobName": "test windows (production)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 1293004,
+        "rawSha256": "c9b8b19445c35386d43ba8437e600bacd38d96d2c01041308c4d036469a5aea6"
+      },
+      {
+        "runId": 43704208363,
+        "jobId": 132795419134,
+        "jobName": "kani proofs",
+        "requested": true,
+        "httpStatus": null,
+        "ok": false,
+        "exitStatus": null,
+        "error": "spawnSync gh ETIMEDOUT",
+        "timeout": true
+      },
+      {
+        "runId": 43704208363,
+        "jobId": 132795418958,
+        "jobName": "test (aarch64-unknown-linux-gnu)",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 1315661,
+        "rawSha256": "14672d728d26f2ca96df6dfcf4e5c0d07f580d4fc1d6e32edd63cff21473db90"
+      },
+      {
+        "runId": 43704208363,
+        "jobId": 132795418762,
+        "jobName": "miri-plain",
+        "requested": true,
+        "httpStatus": 200,
+        "ok": true,
+        "rawBytes": 79706,
+        "rawSha256": "ddad7c62e890109106b35aa4e1c4a094a1c4ef82f26d4dc57351aba83485fa46"
+      }
+    ],
+    "coverageGap": [
+      {
+        "runId": 43704208363,
+        "unrequestedLongJobs": [
+          {
+            "jobId": 132795418746,
+            "jobName": "test (xthread progression)"
+          },
+          {
+            "jobId": 132795418785,
+            "jobName": "test (hardened tier)"
+          },
+          {
+            "jobId": 132795418889,
+            "jobName": "test (gated bodies + all-features)"
+          }
+        ],
+        "reason": "Only 25 additional gh calls were available; the existing sample used one of the 26 total target logs."
+      }
+    ],
+    "rawTempDirectory": "external temp; not tracked",
+    "derivedFile": "log-phases.json.gz",
+    "derivedJobs": 26,
+    "successfulNewLogs": 23,
+    "failedNewLogs": 2,
+    "newCallCount": 25,
+    "successfulRawBytes": 22113467,
+    "totalRawBytesIncludingSample": 22543487,
+    "rawTempLocation": "external temp; absolute path not tracked",
+    "derivedBytes": 37305
+  }
+}
