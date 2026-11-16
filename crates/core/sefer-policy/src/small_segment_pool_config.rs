@@ -71,7 +71,7 @@
 //! ## Wiring
 //!
 //! `SmallSegmentPoolConfig` is carried as a field of
-//! [`LargeCacheConfig`](crate::large_cache_config::LargeCacheConfig) — both are
+//! [`crate::large_cache_config::LargeCacheConfig`] — both are
 //! `alloc-decommit`-gated construction-time knobs threaded through the SAME
 //! single-config plumbing (`SeferAlloc::with_config` →
 //! `HeapRegistry::claim_lease_with_config` → `HeapCore::new_with_config` →

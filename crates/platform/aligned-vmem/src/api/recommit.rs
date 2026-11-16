@@ -59,6 +59,7 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 ///   <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
 ///   item 6 for the incident this class of bug produces on Windows).
 #[must_use]
+#[inline]
 pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
     // SAFETY: forwarded from the caller's contract.
     unsafe { try_recommit(base, start, end).is_ok() }

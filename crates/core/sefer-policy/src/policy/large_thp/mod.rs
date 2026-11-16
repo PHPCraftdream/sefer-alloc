@@ -4,23 +4,23 @@
 //!
 //! ## Family overview
 //!
-//! - [`LargeThpShare`](LargeThpShare): a Q31 fixed-point share in
+//! - [`LargeThpShare`]: a Q31 fixed-point share in
 //!   `[0, 1]` (`SCALE == 2^31` raw units == `1.0`, resolution `2^-31`),
 //!   clamped at construction — total for every input.
-//! - [`LargeThpCurve`](LargeThpCurve): one of exactly three closed-form
+//! - [`LargeThpCurve`]: one of exactly three closed-form
 //!   Q31 → Q31 shaping curves (floor-sqrt `Generous`, identity `Linear`,
 //!   floor-square `Strict`), each with a documented `<= 1 ulp` error bound.
-//! - [`LargeThpGradient`](LargeThpGradient): the normalized parameter set
+//! - [`LargeThpGradient`]: the normalized parameter set
 //!   (asymmetric EMA shifts capped at `MAX_SHIFT == 31`, anchor, floor,
 //!   exact rational gain, curve) with three presets
 //!   (`CAUTIOUS`, `EAGER`, `STEADY`) and a total, const-normalizing
 //!   `custom` constructor.
-//! - [`LargeThpEstimator`](LargeThpEstimator): the two-state (fast `e`,
+//! - [`LargeThpEstimator`]: the two-state (fast `e`,
 //!   slow mean `m`) asymmetric EMA starting at `1.0`, with UPDATE-THEN-
 //!   REPORT semantics on `observe`; per-step quantization error `<= 0.5`
 //!   ulp and accumulated EMA error bound `<= 2^(shift-32)` of full scale
 //!   (`<= 2^-26` for all three presets, whose max shift is `6`).
-//! - [`LargeThpRequestGroup`](LargeThpRequestGroup): the six MiB buckets
+//! - [`LargeThpRequestGroup`]: the six MiB buckets
 //!   (`[0,1)`, `[1,8)`, `[8,32)`, `[32,128)`, `[128,512)`, `[512,∞)` MiB)
 //!   request sizes classify into; the runtime will keep one estimator per
 //!   group.

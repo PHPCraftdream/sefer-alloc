@@ -25,7 +25,7 @@
 //!   `1.0`, so a gain of `1.25` would be unrepresentable — hence the exact
 //!   rational pair (`5/4`). Both are stored pre-normalized; `gain_den` is
 //!   never `0` after construction.
-//! - **`curve`** — the [`LargeThpCurve`](super::large_thp_curve::LargeThpCurve)
+//! - **`curve`** — the [`LargeThpCurve`]
 //!   shape applied to `est` before the gain.
 //!
 //! The reported share is `0` if `est < floor`, else

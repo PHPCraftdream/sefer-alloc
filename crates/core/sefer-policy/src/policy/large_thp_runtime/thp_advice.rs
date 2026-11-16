@@ -25,6 +25,7 @@ impl ThpAdvice {
     /// size is 0 or does not divide the granule. Never exceeds `span`, never
     /// rounds up.
     #[must_use]
+    #[inline]
     pub const fn extent(
         span: usize,
         share: LargeThpShare,
@@ -47,6 +48,7 @@ impl ThpAdvice {
     /// Whether a request is eligible: never under `Off`; otherwise the
     /// REQUESTED size (not the span) must reach `min_bytes`.
     #[must_use]
+    #[inline]
     pub const fn eligible(tuple_mode: LargeThpMode, min_bytes: usize, request_size: usize) -> bool {
         match tuple_mode {
             LargeThpMode::Off => false,
@@ -57,6 +59,7 @@ impl ThpAdvice {
     /// Pure mode baseline without estimator state: Off/Auto zero, Always one.
     /// The fresh Auto path instead reads its process-group learned share.
     #[must_use]
+    #[inline]
     pub fn share_for(tuple: &ThpTuple, request_size: usize) -> LargeThpShare {
         match tuple.mode {
             LargeThpMode::Always => LargeThpShare::ONE,
@@ -70,6 +73,7 @@ impl ThpAdvice {
     /// Zero fallback for pure geometry/model callers without process state.
     /// This is not the runtime learner; fresh Auto advice bypasses this helper.
     #[must_use]
+    #[inline]
     pub fn auto_share(group: LargeThpRequestGroup) -> LargeThpShare {
         let _ = group;
         LargeThpShare::ZERO
@@ -80,6 +84,7 @@ impl ThpAdvice {
     /// size) are assumed to have touched nothing; an error with an OS code
     /// may have applied partially.
     #[must_use]
+    #[inline]
     pub fn classify(r: Result<usize, aligned_vmem::VmemError>) -> ThpAdviceOutcome {
         match r {
             Ok(n) => ThpAdviceOutcome::Accepted(n),

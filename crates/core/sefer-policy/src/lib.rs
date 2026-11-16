@@ -10,7 +10,7 @@
 //!
 //! ## What lives here
 //!
-//! - [`large_cache_config`] — [`LargeCacheConfig`], the builder type every
+//! - [`large_cache_config`] — [`large_cache_config::LargeCacheConfig`], the builder type every
 //!   allocator entry point that takes a configuration consumes
 //!   (feature `alloc-decommit`).
 //! - [`large_cache_mode`] — [`LargeCacheMode`](large_cache_mode::LargeCacheMode),

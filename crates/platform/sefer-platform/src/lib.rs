@@ -1,7 +1,7 @@
 //! `sefer-platform` — the allocator's platform seam: the sanctioned process
 //! terminator (`fatal`), the Windows process-exit probe (`process_exit`), and
 //! the SEGMENT-aligned OS aperture ("backup" half of the former
-//! `alloc_core::platform::os` seam: [`Segment`], the `SEGMENTS_*` counters,
+//! `alloc_core::platform::os` seam: [`os::Segment`], the `SEGMENTS_*` counters,
 //! release/decommit/commit wrappers and the depot-overflow storage).
 //!
 //! Extracted from `sefer-alloc` by plan step P1.4

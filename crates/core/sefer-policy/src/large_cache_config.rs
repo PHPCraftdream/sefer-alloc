@@ -208,7 +208,7 @@ pub struct LargeCacheConfig {
     /// Empty-small-segment hysteresis pool config (Mechanism 2, task #51).
     /// Carried here because it is threaded through the SAME construction-time
     /// plumbing as the large-cache knobs; see
-    /// [`SmallSegmentPoolConfig`](crate::small_segment_pool_config::SmallSegmentPoolConfig)
+    /// [`SmallSegmentPoolConfig`]
     /// for the full rationale. Defaults to `SmallSegmentPoolConfig::DEFAULT`
     /// (pool ENABLED, 4 segments / 16 MiB) — so `production` gets pooling on by
     /// default with no explicit opt-in.
@@ -452,11 +452,11 @@ impl LargeCacheConfig {
         self
     }
 
-    /// Build a config from a [`Profile`](crate::policy::profile::Profile) — a small
+    /// Build a config from a [`crate::policy::Profile`] — a small
     /// builder over two independent, named, measured axes
-    /// ([`SmallPoolPolicy`](crate::policy::small_pool_policy::SmallPoolPolicy) for the
-    /// small-pool pair, [`LargeCachePolicy`](crate::policy::large_cache_policy::LargeCachePolicy)
-    /// for the large-cache `headroom_bytes`). See [`Profile`](crate::policy::profile::Profile)'s
+    /// ([`crate::policy::SmallPoolPolicy`] for the
+    /// small-pool pair, [`crate::policy::LargeCachePolicy`]
+    /// for the large-cache `headroom_bytes`). See [`crate::policy::Profile`]'s
     /// own docs for exactly what each axis sets and the measured gate reports
     /// (R27-3/R27-4/R30-6/R31-1/R31-2) each value is drawn from.
     ///
@@ -485,7 +485,7 @@ impl LargeCacheConfig {
     /// Set the empty-small-segment hysteresis pool config (Mechanism 2, task
     /// #51).
     ///
-    /// Default: [`SmallSegmentPoolConfig::DEFAULT`](crate::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT)
+    /// Default: [`SmallSegmentPoolConfig::DEFAULT`]
     /// (pool enabled, 4 segments / 16 MiB). Pass
     /// `SmallSegmentPoolConfig::new().pool_segments(0)` to disable pooling
     /// (immediate release of every empty small segment — the pre-Mechanism-2

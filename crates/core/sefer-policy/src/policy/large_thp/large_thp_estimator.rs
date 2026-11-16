@@ -1,6 +1,6 @@
 //! `LargeThpEstimator` — the two-state (fast `e`, slow mean `m`)
 //! asymmetric-EMA gradient estimator over Q31 shares, driven by a
-//! [`LargeThpGradient`](super::large_thp_gradient::LargeThpGradient)
+//! [`LargeThpGradient`]
 //! parameter set.
 //!
 //! Both state components start at `SCALE` (i.e. `1.0` — the estimator is

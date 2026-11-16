@@ -585,6 +585,9 @@ mod kani_proofs;
 // `sefer-ghost` crate (crates/primitives/sefer-ghost, plan step P1.1); this
 // re-export keeps every `crate::ghost::…` call site resolving unchanged.
 // `pub` + hidden only for the `internals` self-test.
+#[cfg(not(any(loom, miri, kani, sefer_ghost)))]
+#[no_link]
+extern crate sefer_ghost;
 #[cfg(all(feature = "internals", any(loom, miri, sefer_ghost)))]
 #[doc(hidden)]
 pub use sefer_ghost::ghost;

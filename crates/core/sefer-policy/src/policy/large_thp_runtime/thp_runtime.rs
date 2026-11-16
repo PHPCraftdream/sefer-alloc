@@ -136,6 +136,7 @@ pub struct ThpRuntime;
 impl ThpRuntime {
     /// Publish `t`; returns `true` when the process tuple equals `t`
     /// afterwards, otherwise counts one conflict and returns `false`.
+    #[inline]
     pub fn publish(t: &ThpTuple) -> bool {
         let same = TUPLE.publish(t);
         if !same {
@@ -145,6 +146,7 @@ impl ThpRuntime {
     }
 
     /// The tuple in force: the published one, else [`ThpTuple::DEFAULT`].
+    #[inline]
     pub fn current() -> ThpTuple {
         TUPLE.read()
     }

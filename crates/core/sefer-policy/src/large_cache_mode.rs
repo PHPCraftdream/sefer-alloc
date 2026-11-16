@@ -3,7 +3,7 @@
 //!
 //! Extracted verbatim from `alloc_core.rs` (task #27, one-export-per-file
 //! maintainability split). This is a self-contained data enum — no methods, no
-//! private helpers — referenced by [`LargeCacheConfig`](crate::large_cache_config::LargeCacheConfig)
+//! private helpers — referenced by [`crate::large_cache_config::LargeCacheConfig`]
 //! (its `mode` field/setter), by the `AllocCore` shard's `large_cache_mode`
 //! field, and by the `dbg_large_cache_mode` test seam. Re-exported at the crate
 //! root as `sefer_alloc::LargeCacheMode` via `alloc_core::mod.rs` and `lib.rs`.
