@@ -226,7 +226,7 @@ alloc-xthread = ["alloc-core"]
 # from a cross-thread `realloc` (an abort for a moved-then-grown `Vec`).
 # `src/lib.rs` carries a `compile_error!` guard for a stale manifest;
 # `production` already enabled both.
-alloc-global = ["alloc-core", "alloc-xthread", "sefer-policy?/alloc-global", "sefer-platform/alloc-global"]
+alloc-global = ["alloc-core", "alloc-xthread", "sefer-policy?/alloc-global", "sefer-platform?/alloc-global"]
 # Opt-in prototype (Ph1b): exact System object + out-of-object descriptor for
 # narrow requests. NOT part of `production`.
 exact-object-proto = ["alloc-global", "std"]
@@ -325,7 +325,7 @@ page-map-diag = ["alloc-core"]
 # decommit-safe WITHOUT crossbeam-epoch / M11 — see the safety argument at the
 # decommit point in `alloc_core` and `docs/PHASE35_DECOMMIT_DESIGN.md` §1.
 # Requires `alloc-core`. Default OFF.
-alloc-decommit = ["alloc-core", "sefer-policy?/alloc-decommit", "sefer-platform/alloc-decommit"]
+alloc-decommit = ["alloc-core", "sefer-policy?/alloc-decommit", "sefer-platform?/alloc-decommit"]
 # Convenience alias: the recommended feature set for long-running multi-thread
 # workloads (DBMS-style, async runtimes, anything that creates and frees many
 # segments over time). Without `alloc-decommit` the SegmentTable free-list
@@ -370,7 +370,7 @@ alloc-decommit = ["alloc-core", "sefer-policy?/alloc-decommit", "sefer-platform/
 # byte-for-byte identical to before (rounds up to a whole `SEGMENT`
 # multiple) — this feature adds a new path, it does not alter the default
 # one. Additive over `alloc-core`.
-exact-span-large = ["alloc-core", "sefer-policy?/exact-span-large", "sefer-platform/exact-span-large"]
+exact-span-large = ["alloc-core", "sefer-policy?/exact-span-large", "sefer-platform?/exact-span-large"]
 # R12-4 (P0-perf, EXPERIMENTAL Windows-gated-effect prototype): give a
 # GROWING Large `realloc` a cheap in-place path when `exact-span-large` has
 # shrunk the committed span so far that OPT-G (the existing Large->Large
@@ -419,7 +419,7 @@ exact-span-large = ["alloc-core", "sefer-policy?/exact-span-large", "sefer-platf
 # feature here). With this feature OFF, `alloc_large_slow` and the OPT-G
 # realloc fast path are BYTE-FOR-BYTE IDENTICAL to before — this feature
 # adds a new path, it does not alter the default one.
-large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit", "sefer-policy?/large-reserved-capacity", "sefer-platform/large-reserved-capacity"]
+large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit", "sefer-policy?/large-reserved-capacity", "sefer-platform?/large-reserved-capacity"]
 # R13-7 (P1-perf, EXPERIMENTAL, task #277): widens `AllocCore::large_cache`'s
 # fixed 8 base slots (`LARGE_CACHE_SLOTS`) via a lazily-materialised extension
 # sidecar of 32 additional slots (40 total) — see
@@ -451,7 +451,7 @@ large-cache-adaptive = ["large-cache-extended"]
 # structure — a genuine data race, not merely a missed optimisation.
 # `alloc-xthread` supplies owner identity and terminal publication; `fastbin`
 # must never build without that cross-thread ownership protocol.
-fastbin = ["alloc-global", "alloc-xthread", "sefer-platform/fastbin"]
+fastbin = ["alloc-global", "alloc-xthread", "sefer-platform?/fastbin"]
 # Six-feature production bundle (listed below), excluding diagnostic features
 # `alloc-stats`, `internals`, and `bench-internals`. The allocator uses
 # authoritative sidecar terminal bits and owner maintenance, not the retired
@@ -743,7 +743,7 @@ hardened = ["fastbin", "misuse-checks"]
 # Selects eager reservation for primordial and ordinary Small segments,
 # overriding both lazy-commit features. Excludes forced Small directory rescue;
 # NUMA Large reservations have no extra reserved-capacity growth headroom.
-numa-aware = ["alloc-core", "dep:numa-shim", "sefer-policy?/numa-aware", "sefer-platform/numa-aware"]
+numa-aware = ["alloc-core", "dep:numa-shim", "sefer-policy?/numa-aware", "sefer-platform?/numa-aware"]
 # R11-5 TEST-ONLY: marker/gate feature for the NUMA mock integration tests
 # (numa_cache_invalidation, numa_periodic_refresh, segment_directory_numa*, etc.).
 # Task #1288: no longer forwards to `numa-shim/mock` (that feature no longer
@@ -849,7 +849,7 @@ alloc-lazy-commit = ["primordial-lazy-commit", "small-segment-lazy-commit"]
 primordial-lazy-commit = [
     "alloc-core",
     "aligned-vmem/lazy-commit",
-    "sefer-platform/primordial-lazy-commit",
+    "sefer-platform?/primordial-lazy-commit",
 ]
 # R12-9 (task #260, P1): lazily commit ordinary (non-primordial) small
 # segments — `reserve_small_segment`'s `reserve_aligned_lazy` call, plus B3's
@@ -869,7 +869,7 @@ primordial-lazy-commit = [
 small-segment-lazy-commit = [
     "alloc-core",
     "aligned-vmem/lazy-commit",
-    "sefer-platform/small-segment-lazy-commit",
+    "sefer-platform?/small-segment-lazy-commit",
 ]
 # R2-19 (task #2021, docs/reviews/2026-09-22-120730-src-review-xa-round-2.md):
 # TEST-ONLY fixture package for the lazy-commit fault-injection hooks — the

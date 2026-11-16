@@ -506,7 +506,9 @@ steers each pinned thread's fresh segments to its node.
 
 ## 8. Verification stack
 
-File counts below cover root `tests/*.rs` targets; nested support and
+Flat root-level Rust inventories: **509 integration test files** (`tests/*.rs`),
+**107 example binaries** (`examples/*.rs`), **34 benches** (`benches/*.rs`),
+and **27 root Loom models** (`tests/loom_*.rs`). Nested support and
 compile-fail fixtures are not counted as integration targets.
 Older manual/CI verification rows retain historical evidence only; they
 do not certify the terminal-sidecar snapshot.

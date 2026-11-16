@@ -708,9 +708,9 @@ The deliberate inversion: all the intelligence lives in the safe Cartographer,
 so the Hand stays mechanical and small. Verification is over a total Membrane
 and an integer algorithm, not a tangle of pointer math.
 
-### Workspace: twelve independently-publishable companion crates
+### Workspace: fourteen independently-publishable companion crates
 
-The workspace extracted twelve building blocks. Each is a real crates.io crate
+The workspace extracted fourteen building blocks. Each is a real crates.io crate
 someone can `cargo add` on its own — they are not internal implementation
 details but independently useful libraries:
 
@@ -734,11 +734,12 @@ sefer-alloc
 
 `malloc-bench-rs`, `globalalloc-model`, `proc-memstat`, and `proc-probe` are
 not in sefer-alloc's runtime dependency tree — they are dev-only / example
-infra. The remaining eight are runtime or opt-in dependencies: five are pulled
+infra. The remaining nine are runtime or opt-in dependencies: six are pulled
 in under the feature gates noted above (`alloc-core`, `alloc-global`,
-`numa-aware`), `sefer-concurrent` under `experimental`/`pinning`,
-`sefer-ghost` unconditionally (it compiles to no code in production builds),
-and `tagged-index-stack` is verification-only (not a runtime dependency).
+`numa-aware`), `sefer-concurrent` under `experimental`/`pinning`, and
+`sefer-region` plus `sefer-ghost` unconditionally (`sefer-ghost` compiles to no
+code in production builds). `tagged-index-stack` is verification-only (not a
+runtime dependency).
 
 (A former crate, `ring-mpsc` — a standalone bounded MPSC index ring
 + DirtyRouter — was removed from the workspace: it had zero production
@@ -832,7 +833,7 @@ hard compile error in every configuration:
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
-+ primordial-lazy-commit`) the active tier-1 seam files are **fifteen**:
++ primordial-lazy-commit`) the active tier-1 seam files are **eighteen**:
 `alloc_core::platform::{os, node, sidecar}`,
 `alloc_core::alloc_core::mem::large_control::sample_owned_large_residency`
 (`alloc-decommit`, non-NUMA) and
@@ -901,14 +902,14 @@ item-scoped regions.
 | [`src/registry/heap_core_xthread/routing.rs`](src/registry/heap_core_xthread/routing.rs) | 3 | Unique-transfer foreign publication boundaries: `dealloc_routing`'s call-site block, `publish_foreign` (cached-pin fast path + uncached fallback), and `publish_foreign_uncached`. |
 | [`src/registry/heap_core_xthread/route_pin_cache.rs`](src/registry/heap_core_xthread/route_pin_cache.rs) | 1 | `publish_cached` — the per-thread cached-pin publication boundary: publishes through a still-linked cached pin without a directory lookup (the Release `linked = false` store on unlink under the shard lock is what makes the cached path sound). |
 | [`src/registry/heap_core_xthread/sidecar_drain.rs`](src/registry/heap_core_xthread/sidecar_drain.rs) | 2 | Test-only sidecar publication and synthetic detached-record reclaim boundaries. |
-| [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 10 | Exclusive current-heap trim and diagnostic delegation sites. |
+| [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 12 | Exclusive current-heap trim and diagnostic delegation sites. |
 | [`crates/primitives/tagged-index-stack/src/imp.rs`](crates/primitives/tagged-index-stack/src/imp.rs) | 10 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` trait and bridge make all three hooks `unsafe fn`; the bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. The shared `push_index_impl` and `pop_index_impl` are the caller-side proof regions, while `StackOps::push_index` and `ArrayIndexStack::push` carry the public unsafe boundaries; the direct `ArrayIndexStack` sealed-hook implementation is the ninth region. The tenth is `store_next_for_test`, a `--cfg loom`-only raw link-cell write forwarder used solely by the loom tiny-tag counterfactual (an `unsafe fn`, not a safe one, since misuse can double-issue an index). The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
 | [`crates/primitives/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/primitives/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/primitives/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/primitives/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **29** tier-1 module-level seams (23 in
-`src/`, 6 in `crates/`) plus **112** tier-2 item-scoped allows across **34**
+That's the full list (both tiers): **30** tier-1 module-level seams (21 in
+`src/`, 9 in `crates/`) plus **112** tier-2 item-scoped allows across **34**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.

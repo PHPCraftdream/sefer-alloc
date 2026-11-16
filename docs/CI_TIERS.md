@@ -277,7 +277,6 @@ the smoke row covers those scenarios.
 | `numa-real-kernel` | NUMA on real Linux kernel (numactl smoke + env-guarded tests) | weekly schedule or manual dispatch only |
 | `tis-weak-memory-wallclock-gate` | tagged-index-stack weak-memory wall-clock A/B gate (arm64) | manual dispatch only |
 <!-- ci-tiers:end -->
-<!-- ci-tiers:end -->
 
 `docs-consistency` re-generates the table and fails if it differs from `ci.yml`
 (`node scripts/ci-plan.mjs --check-doc`). Regenerate with `node scripts/ci-plan.mjs --jobs-table`.

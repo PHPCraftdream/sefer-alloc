@@ -99,10 +99,10 @@
 //!
 //! Runnable form: `tests/region_invariants.rs`.
 
-// ── Workspace: twelve independently-publishable companion crates ─────────────
+// ── Workspace: fourteen independently-publishable companion crates ────────────
 //
-// The workspace extracted twelve building blocks that can also be used
-// standalone. Seven are runtime dependencies, with allocator companions
+// The workspace extracted fourteen building blocks that can also be used
+// standalone. Nine are runtime dependencies, with allocator companions
 // selected by features; four are development infrastructure, and
 // `tagged-index-stack` is verification-only:
 //
