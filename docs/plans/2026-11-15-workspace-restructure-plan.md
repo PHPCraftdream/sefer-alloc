@@ -194,6 +194,8 @@ Decision: do P2, or stop at lint-enforced layering. The owner delegated it; the 
 written into the G1 report before the numbers are read, and the decision with its numbers is
 reported to the owner. Default when the numbers do not show a clear benefit: stop.
 
+**G1 — Decided 2026-11-16: STOP.** Inputs show no clear P2 benefit: stop at A1, whose lint remains the sole layer enforcement. P1.3, P1.4 and P1.6 are NOT MERGING; branch `p14-sefer-platform-20261115` remains a record only, with no PR. P1.5 potential is measured in [`docs/perf/P1_5_SELECTION_POTENTIAL.md`](../perf/P1_5_SELECTION_POTENTIAL.md), but it is not implemented, shows no savings, and the two-level selector will not proceed. See [`docs/perf/G1_DECISION_REPORT.md`](../perf/G1_DECISION_REPORT.md).
+
 ## 5. Steps
 
 ### A — foundations
@@ -241,18 +243,22 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
   stays in the root (not policy), 120 items became `pub`, `index()` mapping in the crate
   (facts 3). (The wording "`alloc_core/config` including ..." is replaced by revision 3 for
   `continuation_bounds.rs`.)
+  Status (2026-11-16): NOT MERGING; branch `p14-sefer-platform-20261115` remains a record only, with no PR.
 - **P1.4 `sefer-platform`** (or merge, decision G0.3): `os`, `node`, `fatal`, and the
   process-exit state that `segment_route` needs. (Replaced by revision 3: only `fatal`,
   `process_exit` and the root-independent part of `os` were extracted; `node.rs`, `numa.rs`,
   `sidecar*.rs`, `size_classes.rs` and the `os.rs` directory triple stay in the root until
   P2.0/P2.1; facts 4.)
+  Status (2026-11-16): NOT MERGING; branch `p14-sefer-platform-20261115` remains a record only, with no PR.
 - **P1.2–P1.4 landing** (revision 3): one integration PR of three commits after P1.1, derived
   data recomputed once at the tip, no-LTO IAI measured before merge (section 3).
 - **P1.5 Two-level selection** (next after the P1.1–P1.4 merge, together with the measurement
   of the G1 inputs, revision 3; facts 1): crate graph from `cargo metadata` first, the existing
   test-impact map inside the root crate second; miri, loom and kani run per changed crate.
+  Status (2026-11-16): Potential measured in [`docs/perf/P1_5_SELECTION_POTENTIAL.md`](../perf/P1_5_SELECTION_POTENTIAL.md); not implemented, no savings shown, and the two-level selector will not proceed under G1 STOP.
 - **P1.6 Inline audit**: hot-path functions on the new crate boundaries are `#[inline]`;
   the no-LTO IAI row shows delta 0 against the P1.0 baseline.
+  Status (2026-11-16): NOT MERGING under the G1 STOP decision.
 
 ### P2 — core split
 
@@ -268,6 +274,8 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
   to the crates that own the internals they need.
 - **P2.5 Close-out**: per-crate feature powerset, README "where unsafe lives", docs.rs
   feature rows per crate, CHANGELOG, round manifest, sprint-close `CI: full` run.
+
+Status (2026-11-16): P2.0–P2.5 not started; stop at G1.
 
 Expected benefit, stated honestly: P0 and P1 reduce cost for peripheral, policy, container
 and test-only changes. A change in `segment` or `small` will still reach most tests after
