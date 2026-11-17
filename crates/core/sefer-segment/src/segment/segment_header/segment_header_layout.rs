@@ -1,0 +1,267 @@
+// Several items here are consumed only by the root `sefer-alloc` crate
+// (cross-crate re-exports), so the in-crate dead-code lint is a false positive.
+#![allow(dead_code)]
+//! Segment layout / offset arithmetic for [`Layout`] (mechanical split of
+//! `segment_header.rs`, task R6-CQ-7c).
+
+use crate::alloc_core::os::{MAX_REALISTIC_PAGE_SIZE, PAGE};
+use crate::alloc_core::segment_header::{
+    align_up, align_up_const, BinTable, Layout, PageMap, SegmentHeader,
+};
+
+use core::mem::size_of;
+
+impl Layout {
+    /// Offset of the page map (page-aligned past the header).
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root header-diag readers. Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub const fn page_map_off() -> usize {
+        align_up_const(size_of::<SegmentHeader>(), PAGE)
+    }
+    /// Offset of the bin table (right after the page map).
+    pub(crate) const fn bin_table_off() -> usize {
+        Self::page_map_off() + PageMap::FOOTPRINT
+    }
+    /// B4 (variant в): per-granule STATE BYTE region after both bin-table
+    /// footprints (8-aligned) — the single authoritative small-segment state
+    /// record. This offset is the former `alloc_bitmap_off()`: the two dead
+    /// bitmaps (`AllocBitmap`/`MagazineBitmap`, removed with B4) are gone and
+    /// the state-byte footprint occupies their slot in the geometry.
+    pub(crate) const fn state_byte_off() -> usize {
+        align_up_const(Self::bin_table_off() + BinTable::FOOTPRINT * 2, 8)
+    }
+    /// End of mandatory owner-only small metadata. The per-granule STATE BYTE
+    /// region ends here (B4 variant (в)).
+    const fn owner_metadata_end() -> usize {
+        Self::state_byte_off()
+            + crate::alloc_core::segment::bitmap::state_byte::StateByte::FOOTPRINT
+    }
+    /// End of the small-segment metadata (page-aligned past the last metadata
+    /// region). Payload carving begins here.
+    ///
+    /// Owner metadata contains the header, page map, bins and the per-granule
+    /// state-byte region. Remote ingress is an independently allocated sidecar,
+    /// never in this window.
+    ///
+    /// R8-6 (task #219): this is the **TIGHT** payload/metadata boundary —
+    /// aligned only to `PAGE` (4 KiB), matching every other offset in this
+    /// file. It is the value bump initialization, the H-1 defense-in-depth
+    /// "is this offset in metadata" guard, the primordial registry/hash/
+    /// free-list placement, and the page-map re-marking loop all operate on.
+    /// The decommit/recommit-safe boundary is a SEPARATE runtime function,
+    /// [`small_decommit_start`]: a decommit-safe boundary needs REAL OS page
+    /// alignment (which only a runtime call to `aligned_vmem::page_size()` can
+    /// determine — exactly what blocked task #205's literal fix and is why #205
+    /// instead over-aligned THIS function to `MAX_REALISTIC_PAGE_SIZE` at
+    /// compile time). R8-6 keeps this function tight (recovering up to ~56–64
+    /// KiB of payload per 4 MiB segment on ordinary 4 KiB-page systems that
+    /// #205's over-alignment cost) and moves the real-page-safety requirement
+    /// to [`small_decommit_start`], called only by the actual
+    /// decommit/recommit syscall sites.
+    #[inline(always)]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root hardened free-path validation; geometry unchanged. Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub const fn small_meta_end() -> usize {
+        align_up_const(Self::small_meta_end_pre_runstack(), PAGE)
+    }
+    /// End of owner metadata before final page rounding.
+    const fn small_meta_end_pre_runstack() -> usize {
+        Self::owner_metadata_end()
+    }
+    /// Primordial owner registry begins after all small owner metadata.
+    pub(crate) const fn primordial_registry_off() -> usize {
+        Self::small_meta_end()
+    }
+    /// Offset of the open-addressing hash table in the primordial segment
+    /// (immediately after the registry array, 8-byte aligned).
+    pub(crate) const fn primordial_hash_off() -> usize {
+        align_up_const(
+            Self::primordial_registry_off() + crate::alloc_core::segment_table::REGISTRY_FOOTPRINT,
+            8,
+        )
+    }
+    /// Offset of the free-list index-stack array (task #135, Part 1) —
+    /// immediately after the hash table, 4-byte aligned (the array holds
+    /// `u32` indices).
+    pub(crate) const fn primordial_free_list_off() -> usize {
+        align_up_const(
+            Self::primordial_hash_off() + crate::alloc_core::segment_table::HASH_FOOTPRINT,
+            4,
+        )
+    }
+    /// Offset of the free-list top-of-stack counter (a single `u32`),
+    /// immediately after the free-list array.
+    pub(crate) const fn primordial_free_top_off() -> usize {
+        Self::primordial_free_list_off() + crate::alloc_core::segment_table::FREE_LIST_FOOTPRINT
+    }
+    /// Owner-only active-kind index, in the existing free-top metadata page.
+    pub(crate) const fn primordial_active_kind_off() -> usize {
+        align_up_const(Self::primordial_free_top_off() + size_of::<u32>(), 8)
+    }
+    pub(crate) const fn primordial_active_kind_end() -> usize {
+        Self::primordial_active_kind_off()
+            + crate::alloc_core::segment_table::ActiveKindIndex::FOOTPRINT
+    }
+    /// End of the primordial metadata (page-aligned past the active-kind index).
+    ///
+    /// R8-6 (task #219): like [`small_meta_end`], this is the **TIGHT**
+    /// metadata boundary — aligned only to `PAGE` (4 KiB). The primordial
+    /// registry/hash/free-list placement and bump initialization operate on
+    /// this value. The decommit/recommit-safe boundary is the SEPARATE runtime
+    /// function [`primordial_decommit_start`] (see [`small_meta_end`]'s doc for
+    /// the full R8-6 rationale: #205 over-aligned this function to
+    /// `MAX_REALISTIC_PAGE_SIZE`; R8-6 reverts to tight alignment and moves
+    /// real-page-safety to the runtime function). The primordial segment is
+    /// never decommitted in the current codebase
+    /// (`dec_live_and_maybe_decommit` guards on `SegmentKind::Small`), so
+    /// [`primordial_decommit_start`] has no live call site today — it exists
+    /// for symmetry, future-proofing, and the compile-time/runtime sanity
+    /// checks.
+    #[inline(always)]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root hardened free-path validation; geometry unchanged. Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub const fn primordial_meta_end() -> usize {
+        align_up_const(Self::primordial_active_kind_end(), PAGE)
+    }
+    /// R8-6 (task #219): the real, runtime-determined decommit/recommit safe
+    /// boundary for a small segment — [`small_meta_end`] rounded UP to the
+    /// ACTUAL OS page size (`aligned_vmem::page_size()`), not the compile-time
+    /// `PAGE` (4 KiB) constant [`small_meta_end`] itself uses.
+    /// `decommit_pages`/`recommit_pages` operate on real OS pages; on a 16 KiB-
+    /// or 64 KiB-page machine, decommitting starting at a 4 KiB-aligned-but-
+    /// not-real-page-aligned offset would land mid-real-page and the OS call
+    /// would silently round it, reclaiming (or leaving committed) the wrong
+    /// byte range — the exact bug `MAX_REALISTIC_PAGE_SIZE` (task #205) fixed
+    /// by OVER-aligning [`small_meta_end`] itself. R8-6 instead keeps
+    /// [`small_meta_end`] tight (recovering the payload #205's fix cost on
+    /// ordinary 4 KiB systems) and moves the real-page-safety requirement to
+    /// this SEPARATE function, called only by the actual decommit/recommit
+    /// syscall sites. Always `>= small_meta_end()`; on a 4 KiB-page system this
+    /// function returns EXACTLY [`small_meta_end`] (no waste at all); on a
+    /// 16/64 KiB-page system it returns the same value #205's over-alignment
+    /// used to force unconditionally.
+    ///
+    /// NOT a `const fn`: it calls `aligned_vmem::page_size()`, a runtime OS
+    /// query — this is exactly what blocked #205's literal fix and is why #205
+    /// used the `MAX_REALISTIC_PAGE_SIZE` compile-time superset bound instead;
+    /// this function is only ever called from genuinely-runtime
+    /// decommit/recommit code paths, so the const-fn constraint doesn't apply.
+    // R6-T16: called by the alloc-decommit decommit/recommit sites and the
+    // internals geometry forwarder only.
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "internals")),
+        allow(dead_code)
+    )]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn small_decommit_start() -> usize {
+        let real_page = aligned_vmem::page_size();
+        // Keep MAX_REALISTIC_PAGE_SIZE load-bearing: it documents and guards
+        // the invariant that 64 KiB is a superset of every real page size this
+        // crate runs on. If a future platform exposed a page size beyond 64
+        // KiB this would trip in debug builds — the `align_up` below is still
+        // correct (it uses the real queried size), but the constant's doc
+        // claim would have drifted.
+        debug_assert!(
+            real_page <= MAX_REALISTIC_PAGE_SIZE,
+            "real OS page size ({real_page}) exceeds MAX_REALISTIC_PAGE_SIZE ({MAX_REALISTIC_PAGE_SIZE}); \
+             the documented superset invariant no longer holds"
+        );
+        align_up(Self::small_meta_end(), real_page)
+    }
+    /// R8-6 (task #219): same rationale as [`small_decommit_start`], for the
+    /// primordial segment. Always `>= primordial_meta_end()`; on a 4 KiB-page
+    /// system returns EXACTLY [`primordial_meta_end`].
+    // R6-T16: no decommit-path caller — internals geometry forwarder/tests only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    pub(crate) fn primordial_decommit_start() -> usize {
+        let real_page = aligned_vmem::page_size();
+        debug_assert!(
+            real_page <= MAX_REALISTIC_PAGE_SIZE,
+            "real OS page size ({real_page}) exceeds MAX_REALISTIC_PAGE_SIZE ({MAX_REALISTIC_PAGE_SIZE}); \
+             the documented superset invariant no longer holds"
+        );
+        align_up(Self::primordial_meta_end(), real_page)
+    }
+    /// Task #1074: the `initial_commit` byte count every lazy-reservation
+    /// call site must pass to `aligned_vmem::reserve_aligned_lazy` for a
+    /// segment whose metadata ends at `meta_end` — the metadata region plus
+    /// [`LAZY_FIRST_CHUNK`](crate::alloc_core::alloc_core_small::LAZY_FIRST_CHUNK) of
+    /// first payload, rounded UP to a multiple of `page_size`.
+    ///
+    /// Why the round-up is mandatory (the macOS ARM64 16 KiB-page release
+    /// blocker, CI run 32083383999): the vmem contract (since commit
+    /// `dd6d027` / task #1037) requires `initial_commit` to be a multiple
+    /// of the RUNTIME page size, NOT the compile-time `PAGE` (4 KiB).
+    /// `meta_end` is a `const fn` and can only align to `PAGE` (see
+    /// [`small_decommit_start`]'s identical rationale), so the tight sum is
+    /// a 4 KiB multiple that a 16/64 KiB-page host REJECTS in
+    /// `validate_initial_commit` — `reserve_aligned_lazy` returns `None`
+    /// and `AllocCore::new()` fails wholesale. Because `LAZY_FIRST_CHUNK`
+    /// is a multiple of every supported page size,
+    /// `align_up(meta_end + LFC, ps) == align_up(meta_end, ps) + LFC`, so
+    /// this stays IDENTICAL to the B3 retain-decommit frontier reset
+    /// (`small_decommit_start() + LAZY_FIRST_CHUNK`) — pinned by
+    /// `tests/lazy_initial_commit_page_sizes.rs`.
+    ///
+    /// `page_size` is a PARAMETER (not a runtime query) so tests can
+    /// table-drive this across 4/16/64 KiB page sizes on ANY host — the
+    /// counterfactual a 4 KiB-only development host cannot produce by
+    /// running the real reservation path. Production call sites pass
+    /// `aligned_vmem::page_size()`.
+    // R6-T16: both lazy arms are bypassed under `numa-aware` (eager NUMA
+    // reservation), so the fn is live only there without it.
+    #[cfg_attr(
+        not(any(
+            all(feature = "primordial-lazy-commit", not(feature = "numa-aware")),
+            all(feature = "small-segment-lazy-commit", not(feature = "numa-aware"))
+        )),
+        allow(dead_code)
+    )]
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
+    pub(crate) fn lazy_initial_commit(meta_end: usize, page_size: usize) -> usize {
+        debug_assert!(page_size > 0 && page_size.is_power_of_two());
+        // Task #1081 (F10c): symmetric with `small_decommit_start` /
+        // `primordial_decommit_start` — the const-asserts task #1074 added
+        // (`alloc_core_small.rs` / `segment_header.rs`:
+        // `meta_end + LAZY_FIRST_CHUNK + MAX_REALISTIC_PAGE_SIZE <= SEGMENT`)
+        // bound this function's result by exactly this constant's rounding
+        // headroom, so the one function those asserts constrain is the one
+        // that must check the assumption. A `page_size` beyond 64 KiB is
+        // outside the supported set: the round-up could exceed the
+        // const-asserts' slack and the reservation would no longer fit one
+        // segment. (No supported target has pages > 64 KiB today; this is
+        // symmetry-hardening, not a live bug.)
+        debug_assert!(
+            page_size <= MAX_REALISTIC_PAGE_SIZE,
+            "page_size ({page_size}) exceeds MAX_REALISTIC_PAGE_SIZE ({MAX_REALISTIC_PAGE_SIZE}); \
+             the const-assert slack bound (meta_end + LAZY_FIRST_CHUNK + one \
+             MAX_REALISTIC_PAGE_SIZE <= SEGMENT) no longer covers the round-up"
+        );
+        align_up(meta_end + crate::LAZY_FIRST_CHUNK, page_size)
+    }
+    /// Number of metadata pages in a small segment.
+    ///
+    /// R12-11 (task #262): the ONLY consumer is `PageMap::init_in_place`'s
+    /// `meta_pages` argument (diagnostic-only bookkeeping — see `PageMap`'s
+    /// struct doc); gated behind `page-map-diag`.
+    #[cfg(feature = "page-map-diag")]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub const fn small_meta_pages() -> usize {
+        Self::small_meta_end() / PAGE
+    }
+    /// Number of metadata pages in the primordial segment.
+    ///
+    /// R12-11 (task #262): same rationale as [`small_meta_pages`], for the
+    /// primordial segment.
+    #[cfg(feature = "page-map-diag")]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub const fn primordial_meta_pages() -> usize {
+        Self::primordial_meta_end() / PAGE
+    }
+}

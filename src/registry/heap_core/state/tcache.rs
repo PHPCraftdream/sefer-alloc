@@ -11,7 +11,7 @@
 //! pop (`HeapCore::alloc`, `src/registry/heap_core/alloc/hot.rs`'s RAD-5 E4
 //! block) derives `os::segment_base_of_ptr(issued)` from the just-popped
 //! pointer, then does a per-granule state-byte read-modify-write
-//! (`SegmentMeta::new(base).state_byte().set_state(off, LIVE)`) at the
+//! (`crate::alloc_core::segment::header_facade::meta(base).state_byte().set_state(off, LIVE)`) at the
 //! derived offset (B4 (в); the former magazine-BITMAP RMW had the same
 //! shape) — a load, and a store, dependent on the popped pointer's
 //! value, on EVERY magazine hit under `production`. That RMW targets the

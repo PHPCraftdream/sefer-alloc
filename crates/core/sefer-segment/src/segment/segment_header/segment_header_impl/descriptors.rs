@@ -1,0 +1,361 @@
+// Several items here are consumed only by the root `sefer-alloc` crate
+// (cross-crate re-exports), so the in-crate dead-code lint is a false positive.
+#![allow(dead_code)]
+use core::mem::size_of;
+
+use crate::node::Node;
+use crate::size_classes::SMALL_CLASS_COUNT;
+
+#[cfg(feature = "page-map-diag")]
+use super::PageClass;
+use super::{SegmentHeader, PAGES_PER_SEGMENT};
+
+/// Round `n` up to the next multiple of `a`. Works for ANY `a > 0` (not just
+/// powers of two) — the size-class table uses 1.25× spacing (rounded to
+/// `MIN_BLOCK`), so most block sizes are NOT powers of two. Pure safe integer
+/// arithmetic; the `debug_assert` catches a zero/misuse.
+pub fn align_up(n: usize, a: usize) -> usize {
+    debug_assert!(a > 0, "align must be non-zero");
+    // Ceiling division: `ceil(n / a) * a`. Avoids overflow vs `n + a - 1`.
+    let q = n.div_ceil(a);
+    q * a
+}
+
+/// The per-segment page descriptor table. `PAGES_PER_SEGMENT` entries of one
+/// byte each, carved from the segment right after the header.
+///
+/// Each entry is a [`PageClass`] discriminant byte telling which size class
+/// owns the page (or `Free` / `Meta`).
+///
+/// NOTE (post-Phase 13.3): this table is **NOT load-bearing for class routing**;
+/// do NOT derive block classes from it. No production `dealloc` path derives a
+/// freed block's class from `PageMap` — the class is carried authoritatively by
+/// the caller's `Layout` (own-thread) or recovered by the owner from the route
+/// sidecar's owner-issued class map (cross-thread). Deriving a class here would reintroduce the mixed-class /
+/// stale-cursor drain-reclaim bug fixed in §13 of `RACE_DRAIN_RECLAIM.md`.
+///
+/// R12-11 (task #262): an inventory of every call site confirmed the note
+/// above — the ONLY reader is the doc-hidden test seam
+/// `AllocCore::dbg_page_map_class_for`, which several §13 counterfactual
+/// regression tests use as an ORACLE to prove the real dealloc/reclaim paths
+/// do NOT consult it (see `tests/phase13_3_dealloc_layout_class.rs`,
+/// `tests/phase13_drain_reclaim_layout_class.rs`). Maintaining the table is
+/// therefore diagnostic-only work: [`new`](Self::new), [`Self::init_in_place`],
+/// [`Self::set_class`], [`Self::set_free`], and [`Self::class_of`] are ALL gated behind the
+/// `page-map-diag` feature (see its `Cargo.toml` doc for the full rationale)
+/// and elided from the default/`production` build. Only `FOOTPRINT` stays
+/// UNCONDITIONAL: it only describes the fixed offset this table occupies in
+/// `Layout`, so the segment metadata byte layout is identical in every
+/// feature configuration — only the per-segment/per-carve WORK of
+/// maintaining/viewing the table's contents is elided, not its place in the
+/// layout.
+pub struct PageMap {
+    /// Absolute address of the first entry (we store the absolute `*mut u8`
+    /// so reads need no segment-base arithmetic).
+    #[cfg(feature = "page-map-diag")]
+    entries: *mut u8,
+}
+
+impl PageMap {
+    /// Number of bytes the page map occupies in a segment. Fixed and known at
+    /// compile time so the bootstrap can carve it deterministically.
+    pub(crate) const FOOTPRINT: usize = PAGES_PER_SEGMENT * size_of::<u8>();
+
+    /// Construct the view over an already-laid-down page map at `entries`.
+    /// The bootstrap calls this AFTER writing the entries via [`Self::init_in_place`].
+    #[cfg(feature = "page-map-diag")]
+    pub(crate) fn new(entries: *mut u8) -> Self {
+        Self { entries }
+    }
+
+    /// Initialise a fresh page map at `entries`, marking `meta_pages` low
+    /// pages `Meta` and the rest `Free`. Routes every byte write through
+    /// [`Node::write_u8`].
+    ///
+    /// `entries` MUST point to `Self::FOOTPRINT` writable bytes inside the
+    /// segment being initialised (caller's contract — the bootstrap).
+    ///
+    /// R12-11 (task #262, `page-map-diag`): diagnostic-only maintenance —
+    /// see the struct doc. Gated out of the default build.
+    ///
+    /// # Safety
+    ///
+    /// `entries` must point to `Self::FOOTPRINT` writable, exclusively
+    /// owned bytes inside a freshly carved (owner-initialized) segment,
+    /// per `Layout::page_map`'s footprint.
+    #[cfg(feature = "page-map-diag")]
+    #[doc(hidden)]
+    #[allow(unsafe_code)]
+    pub unsafe fn init_in_place(entries: *mut u8, meta_pages: usize) {
+        // SAFETY: caller contract — see `# Safety` above.
+        for p in 0..PAGES_PER_SEGMENT {
+            let byte = if p < meta_pages {
+                PageClass::Meta as u8
+            } else {
+                PageClass::Free as u8
+            };
+            Node::write_u8(Node::offset(entries, p), byte);
+        }
+    }
+
+    /// Read the class of page `p` (decoded). Panics (debug) if
+    /// `p >= PAGES_PER_SEGMENT`.
+    ///
+    /// R12-11 (task #262, `page-map-diag`): diagnostic-only — see the struct
+    /// doc. The only caller is `AllocCore::dbg_page_map_class_for`, itself
+    /// gated behind the same feature.
+    #[cfg(feature = "page-map-diag")]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn class_of(&self, p: usize) -> Option<usize> {
+        debug_assert!(p < PAGES_PER_SEGMENT, "page index out of range");
+        let byte = Node::read_u8(self.entries_at_const(p));
+        PageClass::decode(byte)
+    }
+
+    /// Mark page `p` as owned by size-class `class_idx`.
+    ///
+    /// R12-11 (task #262, `page-map-diag`): diagnostic-only — see the struct
+    /// doc. Gated out of the default build.
+    #[cfg(feature = "page-map-diag")]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn set_class(&mut self, p: usize, class_idx: usize) {
+        debug_assert!(p < PAGES_PER_SEGMENT, "page index out of range");
+        Node::write_u8(self.entries_at_const(p), PageClass::encode_class(class_idx));
+    }
+
+    /// Mark page `p` as `Free` (uncarved). Phase 35: used by the M6 decommit
+    /// reset to return an emptied segment's payload pages to the bump region.
+    ///
+    /// R12-11 (task #262, `page-map-diag`): diagnostic-only — see the struct
+    /// doc. Gated out of the default build (additionally to the pre-existing
+    /// `alloc-decommit` gate).
+    #[cfg(all(feature = "alloc-decommit", feature = "page-map-diag"))]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn set_free(&mut self, p: usize) {
+        debug_assert!(p < PAGES_PER_SEGMENT, "page index out of range");
+        Node::write_u8(self.entries_at_const(p), PageClass::Free as u8);
+    }
+
+    /// Pointer to entry `p`. Caller guarantees `p < PAGES_PER_SEGMENT`.
+    #[cfg(feature = "page-map-diag")]
+    fn entries_at_const(&self, p: usize) -> *mut u8 {
+        // Routed through the `node` seam (`add` is unsafe; the seam documents
+        // the in-bounds contract).
+        Node::offset(self.entries, p)
+    }
+}
+
+/// The per-segment per-class free-list head table. One `u32` OFFSET per small
+/// class — the segment-relative offset of the head free block of that class,
+/// or `FREE_LIST_NULL` if the class's free list is empty.
+///
+/// Storing offsets (not pointers) keeps the table compact (40 × 4 B = 160 B)
+/// and lets the Cartographer reason entirely in safe integers; the conversion
+/// to a pointer happens only at the `node` seam when popping.
+pub struct BinTable {
+    /// Absolute address of the first `u32` head. `SMALL_CLASS_COUNT` entries.
+    heads: *mut u32,
+}
+
+/// Sentinel value for "this class's free list is empty". A real offset is
+/// always `< SEGMENT`, so `u32::MAX` is unambiguous.
+pub const FREE_LIST_NULL: u32 = u32::MAX;
+
+impl BinTable {
+    /// Footprint of the bin table in a segment. Fixed so the bootstrap can
+    /// carve it deterministically.
+    pub(crate) const FOOTPRINT: usize = SMALL_CLASS_COUNT * size_of::<u32>();
+
+    /// Construct the view over an already-laid-down bin table at `heads`.
+    #[inline(always)]
+    pub(crate) fn new(heads: *mut u32) -> Self {
+        Self { heads }
+    }
+
+    /// Initialise a fresh empty bin table at `heads`. Every write routed
+    /// through [`Node::write_u32_unaligned`].
+    ///
+    /// # Safety
+    /// `heads` must be derived from a live allocation and point to at least
+    /// `Self::FOOTPRINT` writable bytes. The range must remain exclusively
+    /// writable for the duration of this call; no concurrent reader or writer
+    /// may access the table while it is initialized.
+    #[allow(unsafe_code)]
+    pub unsafe fn init_in_place(heads: *mut u32) {
+        for c in 0..SMALL_CLASS_COUNT {
+            Node::write_u32_unaligned(
+                Node::offset(heads as *mut u8, c * size_of::<u32>()) as *mut u32,
+                FREE_LIST_NULL,
+            );
+        }
+    }
+
+    /// The segment-relative offset of the head free block of class `c`, or
+    /// `FREE_LIST_NULL` if empty.
+    ///
+    /// R6-MS-3 (round5 memory_safety_review R5-MS-3): an out-of-range `c`
+    /// (`>= SMALL_CLASS_COUNT`) is a RELEASE-MODE no-op returning
+    /// `FREE_LIST_NULL`, NOT merely a `debug_assert!`. The previous guard
+    /// compiled out under the `production` profile, so a caller-controlled
+    /// `class_idx` (e.g. via `flush_class`/`dbg_freelist_head_for`) could raw-
+    /// read `heads + c * 4` out of bounds. The check lives here, inside the
+    /// lowest-level accessor, so EVERY caller (production `dealloc_small`/
+    /// `flush_run`, and the doc-hidden `dbg_*` seams) is protected uniformly;
+    /// the `debug_assert!` is retained as a debug-mode tripwire.
+    #[inline(always)]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root hardened free-path validation. Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn head(&self, c: usize) -> u32 {
+        debug_assert!(c < SMALL_CLASS_COUNT, "class index out of range");
+        if c >= SMALL_CLASS_COUNT {
+            return FREE_LIST_NULL;
+        }
+        Node::read_u32_unaligned(self.heads_at_const(c))
+    }
+
+    /// Set the head of class `c`'s free list to `off`.
+    ///
+    /// R6-MS-3: an out-of-range `c` (`>= SMALL_CLASS_COUNT`) is a RELEASE-MODE
+    /// no-op, NOT merely a `debug_assert!` (same rationale as [`head`](Self::head)).
+    #[inline(always)]
+    pub(crate) fn set_head(&mut self, c: usize, off: u32) {
+        debug_assert!(c < SMALL_CLASS_COUNT, "class index out of range");
+        if c >= SMALL_CLASS_COUNT {
+            return;
+        }
+        Node::write_u32_unaligned(self.heads_at_const(c), off);
+    }
+
+    #[inline(always)]
+    fn heads_at_const(&self, c: usize) -> *mut u32 {
+        Node::offset(self.heads as *mut u8, c * size_of::<u32>()) as *mut u32
+    }
+}
+
+/// The metadata footprint of a small segment: header + page map + bin table,
+/// each laid out at fixed offsets (see [`Layout::small_meta_end`]). This does NOT
+/// include the registry array (which lives only in the primordial segment).
+#[allow(dead_code)] // Compile-time sanity only; consumed by the `const _` asserts below.
+pub(crate) const SMALL_META_FOOTPRINT: usize = Layout::small_meta_end();
+
+/// The fixed layout of in-segment metadata: offsets of header / page map /
+/// bin table. Centralised so the bootstrap and `SegmentMeta` agree.
+pub struct Layout;
+
+/// Accessor triple for the in-segment metadata of a small/primordial segment.
+/// The bootstrap / `AllocCore` use this to obtain typed views over the header,
+/// page map, and bin table of a segment given its base pointer.
+pub struct SegmentMeta {
+    pub(crate) base: *mut u8,
+}
+
+impl SegmentMeta {
+    /// Construct the metadata view for a small/primordial segment whose base
+    /// is `base` and whose header / page map / bin table are laid down at
+    /// their [`Layout`] offsets.
+    ///
+    /// # Safety
+    /// `base` must be the aligned base of a live segment allocation containing
+    /// the initialized header and metadata regions accessed by this view. The
+    /// allocation must remain live and mapped for the view's full use, and all
+    /// reads/writes must obey the metadata's owner and synchronization rules.
+    #[inline(always)]
+    #[allow(unsafe_code)]
+    pub unsafe fn new(base: *mut u8) -> Self {
+        Self { base }
+    }
+
+    /// Read the segment header (a copy).
+    #[allow(unsafe_code)]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn header(&self) -> SegmentHeader {
+        // SAFETY: every SegmentMeta instance is created by its unsafe
+        // constructor, whose contract keeps this initialized header live.
+        unsafe { SegmentHeader::read_at(self.base) }
+    }
+
+    /// Write the segment header through the node seam.
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn write_header(&mut self, hdr: SegmentHeader) {
+        Node::write_struct(self.base as *mut SegmentHeader, hdr);
+    }
+
+    // Field-specific owner accesses avoid copying unaffected metadata.
+
+    /// Read the owner-only `bump` cursor (the next uncarved payload byte
+    /// offset). Owner-only: the owning thread is the sole reader/writer of
+    /// `bump`; a plain field read is race-free (no Remote ever reads it).
+    ///
+    /// # Safety
+    /// The view must have been constructed for a live, initialized segment and
+    /// its base must remain valid and mapped for this access. The caller must
+    /// also obey the owner-only synchronization discipline for `bump`.
+    #[inline(always)]
+    pub fn bump_of(&self) -> usize {
+        let off = core::mem::offset_of!(SegmentHeader, bump);
+        Node::read_usize(Node::offset(self.base, off) as *const usize)
+    }
+
+    /// Write the owner-only bump cursor without copying the whole header.
+    #[inline(always)]
+    pub(crate) fn set_bump(&mut self, value: usize) {
+        let off = core::mem::offset_of!(SegmentHeader, bump);
+        Node::write_usize(Node::offset(self.base, off) as *mut usize, value);
+    }
+
+    /// U31: owner-only packed sidecar-drain deferral window (0 = none).
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[inline(always)]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn sidecar_defer_window_of(&self) -> u32 {
+        let off = core::mem::offset_of!(SegmentHeader, sidecar_defer_window);
+        Node::read_u32(Node::offset(self.base, off) as *const u32)
+    }
+
+    /// U31: set the owner-only packed deferral window.
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[inline(always)]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn set_sidecar_defer_window(&mut self, value: u32) {
+        let off = core::mem::offset_of!(SegmentHeader, sidecar_defer_window);
+        Node::write_u32(Node::offset(self.base, off) as *mut u32, value);
+    }
+
+    /// The page-map view.
+    ///
+    /// R12-11 (task #262): diagnostic-only — see `PageMap`'s struct doc.
+    /// Gated behind `page-map-diag`.
+    #[cfg(feature = "page-map-diag")]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (all-features diag/heap surfaces). Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn page_map(&self) -> PageMap {
+        PageMap::new(Node::offset(self.base, Layout::page_map_off()))
+    }
+
+    /// The bin-table view.
+    #[inline(always)]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root hardened free-path validation. Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn bin_table(&self) -> BinTable {
+        BinTable::new(Node::offset(self.base, Layout::bin_table_off()) as *mut u32)
+    }
+
+    /// B4 variant (в): the per-granule STATE BYTE view over this segment's
+    /// metadata (one byte per `MIN_BLOCK`, carved at
+    /// [`Layout::state_byte_off`]). The authoritative state record — the
+    /// former `AllocBitmap`/`MagazineBitmap` pair was removed with B4; see
+    /// [`StateByte`](crate::alloc_core::segment::bitmap::state_byte::StateByte).
+    #[inline(always)]
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root hardened free-path validation. Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn state_byte(&self) -> crate::segment::bitmap::state_byte::StateByte {
+        crate::alloc_core::segment::bitmap::state_byte::StateByte::new(self.base)
+    }
+}

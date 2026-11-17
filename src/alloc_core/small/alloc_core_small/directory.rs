@@ -5,9 +5,11 @@
 //! Every item here is `alloc-segment-directory`-gated.
 
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment::header_facade::meta as seg_meta;
+use crate::alloc_core::segment_header::FREE_LIST_NULL;
 
 use crate::alloc_core::alloc_core::AllocCore;
+use sefer_segment::support::root_compat::traits::*;
 
 // ── R7-A1: directory sidecar materialisation ────────────────────────────────
 
@@ -25,7 +27,7 @@ fn directory_node_id_of(base: *mut u8) -> u32 {
         if base.is_null() {
             0
         } else {
-            SegmentMeta::new(base).node_id_of()
+            seg_meta(base).node_id_of()
         }
     }
     #[cfg(not(feature = "numa-aware"))]
@@ -90,7 +92,12 @@ impl AllocCore {
         // `Send` nor `Sync`) rules out a concurrent writer, and no other
         // reference to this sidecar is live across this call.
         let dir = unsafe { crate::alloc_core::sidecar::deref_mut(ptr, &*self) };
-        dir.rebuild_from_table(&self.table);
+        // SAFETY: `dir` is the freshly materialized owner directory and
+        // `&self.table` the live table (exclusive owner rebuild step).
+        #[allow(unsafe_code)]
+        unsafe {
+            dir.rebuild_from_table(&self.table)
+        };
 
         self.directory_sidecar = ptr;
         self.directory_sidecar_vm = Some(vm);
@@ -254,13 +261,13 @@ impl AllocCore {
         }
         if let Some(dir) = self.directory_mut() {
             let node_id = directory_node_id_of(base);
-            let meta = SegmentMeta::new(base);
-            let bt = meta.bin_table();
+            let meta = seg_meta(base);
+            let bt = meta.compat_bin_table();
             let mut bits = changed_classes;
             while bits != 0 {
                 let c = bits.trailing_zeros() as usize;
                 bits &= bits - 1; // clear lowest set bit
-                if bt.head(c) != FREE_LIST_NULL {
+                if bt.compat_head(c) != FREE_LIST_NULL {
                     dir.set_bit(node_id, c, slot_idx);
                 } else {
                     dir.clear_bit(node_id, c, slot_idx);

@@ -5,7 +5,8 @@
 use core::ptr::NonNull;
 
 use crate::alloc_core::node::Node;
-use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment::header_facade::{kind_at, meta as seg_meta};
+use crate::alloc_core::segment_header::FREE_LIST_NULL;
 // `SegmentHeader`: the payload-start bound (not run by a release build without `misuse-checks`) and the
 // directory publication.
 #[cfg(any(
@@ -13,6 +14,7 @@ use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
     debug_assertions,
     feature = "alloc-segment-directory"
 ))]
+#[cfg(feature = "alloc-segment-directory")]
 use crate::alloc_core::segment_header::SegmentHeader;
 #[cfg(any(feature = "misuse-checks", debug_assertions))]
 use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentKind};
@@ -23,6 +25,7 @@ use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentKind};
 use crate::alloc_core::size_classes::SizeClasses;
 
 use crate::alloc_core::alloc_core::AllocCore;
+use sefer_segment::support::root_compat::traits::*;
 
 impl AllocCore {
     /// Deallocate a small block: push it onto its owning segment's class free
@@ -43,8 +46,8 @@ impl AllocCore {
         ptr: *mut u8,
         class_idx: usize,
     ) {
-        let meta = SegmentMeta::new(base);
-        let mut bt = meta.bin_table();
+        let meta = seg_meta(base);
+        let mut bt = meta.compat_bin_table();
         let off = (ptr as usize - base as usize) as u32;
         // ── H1 (task #167): interior-pointer guard (HARDENED) ───────────────
         // The SAME guard as `HeapCore::dealloc_own_thread_with_base`'s magazine
@@ -81,14 +84,14 @@ impl AllocCore {
         // pointer the allocator never issued can fail them.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         {
-            let kind = SegmentHeader::kind_at(base);
+            let kind = kind_at(base);
             let payload_start = if kind == SegmentKind::Primordial {
-                SegLayout::primordial_meta_end()
+                SegLayout::compat_primordial_meta_end()
             } else {
-                SegLayout::small_meta_end()
+                SegLayout::compat_small_meta_end()
             };
             if (off as usize) < payload_start {
-                crate::alloc_core::state_byte::StateByte::shadow_reject(
+                crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                     b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small payload start)\n",
                 );
                 return;
@@ -111,7 +114,7 @@ impl AllocCore {
         // must not depend on the decommit feature; unconditional now.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if (off as usize) >= meta.bump_of() {
-            crate::alloc_core::state_byte::StateByte::shadow_reject(
+            crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                 b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small bump)\n",
             );
             return;
@@ -138,17 +141,17 @@ impl AllocCore {
         // wrong-class-LIVE operands; the exact compare is strictly stronger,
         // and the accept path is unchanged for every legitimate free.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
-        let byte = meta.state_byte().read(off);
+        let byte = meta.compat_state_byte().compat_read(off);
         let aligned = (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) == 0;
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if !aligned
             || byte
-                != crate::alloc_core::state_byte::StateByte::encode(
+                != crate::alloc_core::state_byte::StateByte::compat_encode(
                     class_idx,
                     crate::alloc_core::state_byte::StateByte::LIVE,
                 )
         {
-            crate::alloc_core::state_byte::StateByte::shadow_reject(
+            crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                 b"sefer-alloc: misuse check rejected a free in safe mode (dealloc_small)\n",
             );
             return; // Not the caller's issued block start: no-op.
@@ -164,27 +167,27 @@ impl AllocCore {
             Some(nn) => nn,
             None => return,
         };
-        let old_head = bt.head(class_idx);
+        let old_head = bt.compat_head(class_idx);
         let old_head_ptr = if old_head == FREE_LIST_NULL {
             core::ptr::null_mut()
         } else {
             Node::deref(base, old_head as usize)
         };
         Node::write_next(block_nn, old_head_ptr);
-        bt.set_head(class_idx, off);
+        bt.compat_set_head(class_idx, off);
         // B4 (в): commit LIVE → FREE in the state byte (was bitmap mark_free).
-        meta.state_byte().write(
+        meta.compat_state_byte().compat_write(
             off,
             class_idx,
             crate::alloc_core::state_byte::StateByte::FREE,
         );
-        SegmentMeta::new(base).dec_live();
+        seg_meta(base).compat_dec_live();
         // R7-A2: directory bitmap maintenance — the new head is always non-null
         // (we just pushed `off`), so the only transition is empty→non-empty
         // when old_head was FREE_LIST_NULL.
         #[cfg(feature = "alloc-segment-directory")]
         if old_head == FREE_LIST_NULL {
-            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            let slot_idx = SegmentHeader::compat_segment_id_at(base) as usize;
             self.publish_nonempty(base, class_idx, slot_idx);
         }
         // Phase 35 (M6): one fewer live block in this segment; if it just
@@ -200,5 +203,48 @@ impl AllocCore {
         if Self::dec_live_and_maybe_decommit(base, self.small_cur) {
             let _ = self.release_or_pool_empty_segment(base);
         }
+    }
+
+    // P2.1 structure-limits split: moved verbatim from `alloc_core_small_impl.rs`
+    // (which exceeded the 1000-line file limit); pure code movement.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_r11_scalar_carve_for_test(&mut self, class_idx: usize) -> Option<*mut u8> {
+        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
+            return None;
+        }
+        self.carve_block(
+            class_idx,
+            crate::alloc_core::size_classes::SizeClasses::block_size(class_idx),
+        )
+    }
+
+    /// Current owner state: bump, live credits, class head, commit frontier.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_r11_issue_state_for_test(
+        &self,
+        class_idx: usize,
+    ) -> Option<(usize, u32, u32, usize)> {
+        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
+            return None;
+        }
+        let meta = seg_meta(self.small_cur);
+        #[cfg(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        ))]
+        let frontier = meta.committed_payload_end_of();
+        #[cfg(not(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        )))]
+        let frontier = crate::alloc_core::os::SEGMENT;
+        Some((
+            meta.bump_of(),
+            meta.live_count_of(),
+            meta.bin_table().head(class_idx),
+            frontier,
+        ))
     }
 }

@@ -5,8 +5,8 @@
 
 use super::{AllocCore, LARGE_REMOTE_RETIREMENTS};
 use crate::alloc_core::fatal::fatal;
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
-use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
+use crate::alloc_core::segment_header::SegmentKind;
+use sefer_segment::support::root_compat::SIDECAR_WORD_BYTES;
 
 #[cfg(feature = "bench-internals")]
 pub(crate) static LARGE_SIDECAR_SLOT_INSPECTIONS: core::sync::atomic::AtomicU64 =
@@ -249,7 +249,7 @@ impl AllocCore {
         if base.is_null() {
             return 0;
         }
-        match SegmentHeader::kind_at(base) {
+        match crate::alloc_core::segment::header_facade::kind_at(base) {
             SegmentKind::Small | SegmentKind::Primordial => Self::sidecar_payload_start_word(base),
             _ => 0,
         }
@@ -293,7 +293,11 @@ impl AllocCore {
     /// `true`.
     #[inline]
     pub(crate) fn retire_large_route(&mut self, index: usize, base: *mut u8) -> bool {
-        if !self.table.claim_large_route(index, base) {
+        // SAFETY: `base` is the live routed large segment at `index` and this
+        // is the owner-only retire step (large_state_atomic contract).
+        #[allow(unsafe_code)]
+        let claimed = unsafe { self.table.claim_large_route(index, base) };
+        if !claimed {
             return false;
         }
         self.reclaim_large_segment(base);
@@ -314,10 +318,13 @@ impl AllocCore {
         word: usize,
         unavailable: &'static [u8],
     ) -> crate::alloc_core::segment_route::RouteScan<'_> {
-        let Some(scan) = self
-            .table
-            .scan_small_route_from(index, base, high_water, word)
-        else {
+        // SAFETY: routed table live, `base` the registered segment base and
+        // owner-only drain context; forwarded to the route scan constructor.
+        #[allow(unsafe_code)]
+        let Some(scan) = (unsafe {
+            self.table
+                .scan_small_route_from(index, base, high_water, word)
+        }) else {
             fatal(unavailable);
         };
         scan
@@ -407,9 +414,10 @@ impl AllocCore {
                 units += 1;
                 continue;
             }
-            match SegmentHeader::kind_at(base) {
+            match crate::alloc_core::segment::header_facade::kind_at(base) {
                 SegmentKind::Small | SegmentKind::Primordial => {
-                    let high_water = SegmentMeta::new(base).bump_of();
+                    let high_water =
+                        crate::alloc_core::segment::header_facade::meta(base).bump_of();
                     let end_word = high_water.div_ceil(SIDECAR_WORD_BYTES);
                     // Patch S: never scan below the payload's first word.
                     let start_word = Self::sidecar_payload_start_word(base);
@@ -492,9 +500,10 @@ impl AllocCore {
             if base.is_null() {
                 continue;
             }
-            match SegmentHeader::kind_at(base) {
+            match crate::alloc_core::segment::header_facade::kind_at(base) {
                 SegmentKind::Small | SegmentKind::Primordial => {
-                    let high_water = SegmentMeta::new(base).bump_of();
+                    let high_water =
+                        crate::alloc_core::segment::header_facade::meta(base).bump_of();
                     // Producer rejects class-0 metadata (sidecar_bitmap.rs:116-121); metadata is >=64 KiB, page aligned (segment_header_layout.rs:44-72, 126-127).
                     let end_word = high_water.div_ceil(SIDECAR_WORD_BYTES);
                     let start = Self::sidecar_payload_start_word(base).min(end_word);
@@ -556,7 +565,9 @@ impl AllocCore {
             // root (`claim_large_pending` aborts on `root != base`), so the
             // header kind re-read is only a debug check, not a release abort.
             debug_assert!(
-                !base.is_null() && SegmentHeader::kind_at(base) == SegmentKind::Large,
+                !base.is_null()
+                    && crate::alloc_core::segment::header_facade::kind_at(base)
+                        == SegmentKind::Large,
                 "active Large slot must hold a live Large segment root"
             );
             if self.retire_large_route(index, base) {
@@ -608,7 +619,9 @@ impl AllocCore {
             // root (`claim_large_pending` aborts on `root != base`), so the
             // header kind re-read is only a debug check, not a release abort.
             debug_assert!(
-                !base.is_null() && SegmentHeader::kind_at(base) == SegmentKind::Large,
+                !base.is_null()
+                    && crate::alloc_core::segment::header_facade::kind_at(base)
+                        == SegmentKind::Large,
                 "active Large slot must hold a live Large segment root"
             );
             if self.retire_large_route(index, base) {

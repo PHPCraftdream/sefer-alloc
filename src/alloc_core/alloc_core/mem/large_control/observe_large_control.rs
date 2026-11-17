@@ -8,6 +8,7 @@ use crate::alloc_core::config::policy::large_thp_observation::large_thp_residenc
 use crate::alloc_core::config::policy::large_thp_observation::large_thp_span_geometry::LargeThpSpanGeometry;
 use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
 use crate::alloc_core::segment_header::SegmentHeader;
+use sefer_segment::support::root_compat::traits::*;
 
 const MAX_WINDOWS: usize = 16;
 const OBSERVATION_SEED: u64 = 0x8a5c_1d37_e249_b60f;
@@ -17,15 +18,15 @@ const OBSERVATION_SEED: u64 = 0x8a5c_1d37_e249_b60f;
 /// retain exclusive ownership before cache deposit or unmapping; this must
 /// never be called for a foreign live mapping.
 pub(crate) fn observe_large_control(base: *mut u8) {
-    let token = SegmentHeader::thp_observation_at(base);
+    let token = SegmentHeader::compat_thp_observation_at(base);
     if token == 0 {
         return;
     }
     // Consume before any validation or possible sampling failure: errors are
     // terminal for this first-life observation, never retried.
-    SegmentHeader::set_thp_observation_at(base, 0);
+    SegmentHeader::compat_set_thp_observation_at(base, 0);
 
-    let header = SegmentHeader::read_at(base);
+    let header = crate::alloc_core::segment::header_facade::read_at(base);
     let request_size = header.large_size;
     let Ok(request_bytes) = u64::try_from(request_size) else {
         ThpRuntime::note_observation_error(request_size);

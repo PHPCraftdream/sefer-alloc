@@ -28,11 +28,8 @@ fn wave(n: usize) -> (u64, u64) {
     let mut routes = Vec::with_capacity(n);
     for &key in keys.iter().rev() {
         let root = core::ptr::without_provenance_mut::<u8>(key);
-        routes.push(
-            directory
-                .register(root, SEGMENT, root, 1, RouteKind::Large)
-                .unwrap(),
-        );
+        routes
+            .push(unsafe { directory.register(root, SEGMENT, root, 1, RouteKind::Large) }.unwrap());
     }
     let register_moves = directory.moved_pointer_cells_for_test();
     for &key in &keys {

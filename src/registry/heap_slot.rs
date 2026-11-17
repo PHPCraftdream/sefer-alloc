@@ -6,7 +6,7 @@
 //! `EMPTY → INITIALIZING → LIVE → FREE`, then `FREE → LIVE` or
 //! `FREE → MAINTENANCE → FREE`. Only a successful CAS grants mutation access.
 //! `generation` is NOT the M8/M9 coherence key: the segment-header owner
-//! stamp (`pack_owner`, `alloc_core/segment/segment_header/mod.rs`) packs the
+//! stamp (`pack_owner`, `crates/core/sefer-segment/src/segment/segment_header/mod.rs`) packs the
 //! slot's `id` with a generation field that is always 0 (the adoption
 //! substrate that once bumped it was removed — task #97 / R4-5). This
 //! slot's own `generation` is production-dead: it is written on every
@@ -196,7 +196,7 @@ pub struct HeapSlot {
     ///
     /// **Production-dead.** Despite the name overlap, this is NOT the M8/M9
     /// owner-stamp coherence key — that key is `pack_owner`'s segment-header
-    /// stamp (`alloc_core/segment/segment_header/mod.rs`), which packs the
+    /// stamp (`crates/core/sefer-segment/src/segment/segment_header/mod.rs`), which packs the
     /// slot's `id` with a generation field hardcoded to 0 (the adoption
     /// substrate that once bumped it was removed — task #97 / R4-5). This
     /// field is written on every `claim_lease`/`claim_lease_with_config` but read by

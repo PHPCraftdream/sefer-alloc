@@ -37,8 +37,7 @@ pub(crate) static B4_FOREIGN_PUBLISH_OK: core::sync::atomic::AtomicU64 =
 /// past base/sidecar validation). Denominator of the "holders == base"
 /// fraction.
 #[cfg(feature = "bench-internals")]
-pub(crate) static B4_U31_SCAN_SEGMENTS: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+pub(crate) use sefer_segment::support::counters_impl::B4_U31_SCAN_SEGMENTS;
 
 /// B4 U31 trigger observer: SECONDARY slice of [`B4_U31_SCAN_SEGMENTS`] —
 /// scans whose route `Entry.refs` equaled the base value 1 (owner reference
@@ -49,8 +48,7 @@ pub(crate) static B4_U31_SCAN_SEGMENTS: core::sync::atomic::AtomicU64 =
 /// U31 upper bound of skippable scans see
 /// [`B4_U31_SCAN_NO_PENDING`] / [`B4_U31_DISCOVERY_SCANS`].
 #[cfg(feature = "bench-internals")]
-pub(crate) static B4_U31_SCAN_HOLDERS_BASE: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+pub(crate) use sefer_segment::support::counters_impl::B4_U31_SCAN_HOLDERS_BASE;
 
 /// B4 U31 trigger observer: of [`B4_U31_SCAN_SEGMENTS`], discovery scans
 /// (`drain_segment_sidecar`) whose ENTIRE routed segment scan found no
@@ -87,20 +85,17 @@ pub(crate) static B4_U31_DEFERRED_SCANS: core::sync::atomic::AtomicU64 =
 /// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): route-directory
 /// lookups (`RouteDirectory::lookup`).
 #[cfg(feature = "bench-internals")]
-pub(crate) static B4_DIRECTORY_LOOKUPS: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+pub(crate) use sefer_segment::support::counters_impl::B4_DIRECTORY_LOOKUPS;
 
 /// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): shard-lock
 /// acquisitions that lost the first CAS (contended acquisitions).
 #[cfg(feature = "bench-internals")]
-pub(crate) static B4_SHARD_LOCK_SPINS: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+pub(crate) use sefer_segment::support::counters_impl::B4_SHARD_LOCK_SPINS;
 
 /// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): shard-lock
 /// `yield_now` rounds taken while waiting on a held lock.
 #[cfg(feature = "bench-internals")]
-pub(crate) static B4_SHARD_LOCK_YIELDS: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+pub(crate) use sefer_segment::support::counters_impl::B4_SHARD_LOCK_YIELDS;
 
 /// B4 §11 residual-discovery-storm fix: per-class discovery-cursor probes that
 /// SERVED at least one block (scalar pop or magazine batch drain) from the
@@ -182,8 +177,7 @@ pub(in crate::alloc_core) static FORCE_DECAY_CLOCK_READ: core::sync::atomic::Ato
 /// [`AllocCore::dbg_contains_base_tier1_hits`](crate::alloc_core::alloc_core::AllocCore::dbg_contains_base_tier1_hits).
 /// Diagnostic only (Relaxed, like `DECOMMIT_CALLS`).
 #[cfg(feature = "bench-internals")]
-pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_HITS: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+pub(crate) use sefer_segment::support::counters_impl::CONTAINS_BASE_TIER1_HITS;
 
 /// R32-10 (task #501, F2): the Tier-2-fallback complement of
 /// [`CONTAINS_BASE_TIER1_HITS`] — counts mutable canonical lookups whose Tier-1
@@ -195,8 +189,7 @@ pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_HITS: core::sync::atomic::A
 /// Same gating/ordering/read-accessor convention as
 /// [`CONTAINS_BASE_TIER1_HITS`].
 #[cfg(feature = "bench-internals")]
-pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_MISSES: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+pub(crate) use sefer_segment::support::counters_impl::CONTAINS_BASE_TIER1_MISSES;
 
 /// WILD-2: own-thread small frees accepted by the lane's second chance (memo
 /// miss, exact-base `own_cache` hit, same acceptance steps as the memo lane).
@@ -215,9 +208,11 @@ pub(in crate::alloc_core) static LANE_SECOND_CHANCE_HITS: core::sync::atomic::At
 /// every reader tolerates (each test serializes and reads its own delta).
 #[cfg(feature = "bench-internals")]
 #[inline(always)]
-pub(in crate::alloc_core) fn tier1_bump(counter: &core::sync::atomic::AtomicU64) {
-    use core::sync::atomic::Ordering::Relaxed;
-    counter.store(counter.load(Relaxed).wrapping_add(1), Relaxed);
+// P2.1: consumers moved behind cfg combinations that compile this out under
+// wider feature sets; the wrapper is retained verbatim for those cfgs.
+#[allow(dead_code)]
+pub(crate) fn tier1_bump(counter: &core::sync::atomic::AtomicU64) {
+    sefer_segment::support::counters_impl::tier1_bump(counter)
 }
 
 /// TEST-ONLY (R9-1, task #221 follow-up): process-wide count of EXPLICIT

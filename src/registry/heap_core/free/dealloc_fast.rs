@@ -3,22 +3,21 @@
 //! push, or writes nothing and tail-calls the unchanged chain
 //! (`dealloc_routing`), which re-derives everything and classifies the reject.
 
-use crate::alloc_core::live_tag::LiveTag;
-use crate::alloc_core::segment_header::{
-    Layout as SegmentLayout, SegmentHeader, SegmentKind, SegmentMeta,
-};
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use crate::alloc_core::size_classes::{MIN_BLOCK, MIN_BLOCK_SHIFT, SIZE2CLASS};
 use crate::registry::heap_core::state::tcache::{FREE_PARK_CAP, TCACHE_CAP};
 use crate::registry::heap_core::HeapCore;
 use core::alloc::Layout;
+use sefer_segment::support::root_compat::traits::*;
+use sefer_segment::support::root_compat::LiveTag;
 
 /// Payload start by kind byte; every kind but Primordial (0) and Small (1)
 /// maps to `usize::MAX`, so one compare rejects both the kind and an offset
 /// below the payload.
 static LANE_PS: [usize; 256] = {
     let mut t = [usize::MAX; 256];
-    t[SegmentKind::Primordial as usize] = SegmentLayout::primordial_meta_end();
-    t[SegmentKind::Small as usize] = SegmentLayout::small_meta_end();
+    t[SegmentKind::Primordial as usize] = sefer_segment::support::root_compat::PRIMORDIAL_META_END;
+    t[SegmentKind::Small as usize] = sefer_segment::support::root_compat::SMALL_META_END;
     t
 };
 
@@ -35,8 +34,8 @@ impl HeapCore {
             return lane_miss(ptr, layout, self);
         }
         // The tag's range bounds `c < SMALL_CLASS_COUNT`.
-        let tag = LiveTag::of_seed(seed);
-        let c = tag.class();
+        let tag = LiveTag::compat_of_seed(seed);
+        let c = tag.compat_class();
         let key = ptr.addr() & !(crate::alloc_core::os::SEGMENT - 1);
         let (memo_key, root) = self.core.tier1_memo();
         if memo_key != key {
@@ -48,22 +47,22 @@ impl HeapCore {
         let block = root.wrapping_add(off);
         // Large and Unknown kinds map to MAX: `off == MAX` passes here and
         // fails the granule bound below.
-        let kind = SegmentHeader::kind_byte_at(root) as usize;
+        let kind = SegmentHeader::compat_kind_byte_at(root) as usize;
         if off < LANE_PS[kind] {
             return lane_miss(block, layout, self);
         }
         // `g = off >> 4` when `off % 16 == 0`, else `g >= 2^60`. Both sides are
         // floored to granules: `g < bump >> 4` implies `off < bump`.
         let g = off.rotate_right(MIN_BLOCK_SHIFT);
-        let meta = SegmentMeta::new(root);
+        let meta = crate::alloc_core::segment::header_facade::meta(root);
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
             return lane_miss(block, layout, self);
         }
         let off = off as u32;
-        let bytes = meta.state_byte();
+        let bytes = meta.compat_state_byte();
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
-        if bytes.read_granule(g) != tag.byte() {
+        if bytes.compat_read_granule(g) != tag.compat_byte() {
             return lane_miss(block, layout, self);
         }
         // Refinement: the lane accepts only what the chain's guard accepts.
@@ -85,7 +84,7 @@ impl HeapCore {
         if cnt >= FREE_PARK_CAP[c] as usize {
             return self.free_magazine_full_fast(c, root, block);
         }
-        bytes.write_granule(g, tag.mag_byte());
+        bytes.compat_write_granule(g, tag.compat_mag_byte());
         // `cnt < FREE_PARK_CAP[c] <= TCACHE_CAP`, so `i == cnt`.
         let i = cnt & (TCACHE_CAP - 1);
         self.tcache.classes[c].slots[i] = block;
@@ -108,28 +107,28 @@ impl HeapCore {
 fn lane_second_chance(ptr: *mut u8, layout: Layout, heap: &mut HeapCore) {
     let seed = layout.size().wrapping_sub(1) >> MIN_BLOCK_SHIFT;
     debug_assert!(layout.align() <= MIN_BLOCK && seed < SIZE2CLASS.len() - 1);
-    let tag = LiveTag::of_seed(seed);
-    let c = tag.class();
+    let tag = LiveTag::compat_of_seed(seed);
+    let c = tag.compat_class();
     let key = ptr.addr() & !(crate::alloc_core::os::SEGMENT - 1);
     let Some(root) = heap.core.tier1_probe_arm(key) else {
         return lane_miss(ptr, layout, heap);
     };
     let off = ptr.addr().wrapping_sub(root.addr());
     let block = root.wrapping_add(off);
-    let kind = SegmentHeader::kind_byte_at(root) as usize;
+    let kind = SegmentHeader::compat_kind_byte_at(root) as usize;
     if off < LANE_PS[kind] {
         return lane_miss(block, layout, heap);
     }
     let g = off.rotate_right(MIN_BLOCK_SHIFT);
-    let meta = SegmentMeta::new(root);
+    let meta = crate::alloc_core::segment::header_facade::meta(root);
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
     if g >= meta.bump_of() >> MIN_BLOCK_SHIFT {
         return lane_miss(block, layout, heap);
     }
     let off = off as u32;
-    let bytes = meta.state_byte();
+    let bytes = meta.compat_state_byte();
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
-    if bytes.read_granule(g) != tag.byte() {
+    if bytes.compat_read_granule(g) != tag.compat_byte() {
         return lane_miss(block, layout, heap);
     }
     debug_assert_eq!(
@@ -153,7 +152,7 @@ fn lane_second_chance(ptr: *mut u8, layout: Layout, heap: &mut HeapCore) {
     if cnt >= FREE_PARK_CAP[c] as usize {
         return heap.free_magazine_full_fast(c, root, block);
     }
-    bytes.write_granule(g, tag.mag_byte());
+    bytes.compat_write_granule(g, tag.compat_mag_byte());
     let i = cnt & (TCACHE_CAP - 1);
     heap.tcache.classes[c].slots[i] = block;
     heap.tcache.classes[c].count = (i + 1) as u8;

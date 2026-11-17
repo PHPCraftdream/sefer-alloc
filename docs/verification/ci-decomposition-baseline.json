@@ -4,7 +4,7 @@
   "jobs": [
     {
       "id": "changes",
-      "metadata": "00fd8564279d15cf8823872dde4b3c2b8eda96e88af4ed7eb64c55ea6f79e942",
+      "metadata": "fd262382d2ed380d7a189499922d2aedceef4adc723491b007a558ac6d6f24fb",
       "steps": "1fe5589733f5bb700e49ab25de242b1626e691fd2ba507f210c3cd9d48c9cbd6"
     },
     {
@@ -25,7 +25,7 @@
     {
       "id": "ghost-guard",
       "metadata": "8b2ec8829d0c6313790165d9b067ad9f9bd8b127f1a90d6fd3d22ae844d82632",
-      "steps": "8ce051908a158e544746689cc6dfd254d60effd98b6b255d3f328e3824b3ba10"
+      "steps": "07c7343dd57fd107c3a02a8ed81e2b32202fb4042335ac022cddec0f014dfdf2"
     },
     {
       "id": "ghost-zero-cost",
@@ -41,6 +41,11 @@
       "id": "sefer-policy-gates",
       "metadata": "fe6ae12b6c1ae1f2d64e78f18b9c2e32283f590cb9bae2e6760a8c2adb93b205",
       "steps": "08f6680b41208c60b8b6525f1a8af2cfebe981533c60ea6627dc1a411040a869"
+    },
+    {
+      "id": "sefer-segment-gates",
+      "metadata": "702b64e8bdef203a98d8a81f45183ca6b0d3d3c05b2d0f90a997effbe0526a6c",
+      "steps": "cfd15e539b4c8e3ffcf1f48f8cff90c5db15dc0b9a7fb0d94cc64832dfb2361e"
     },
     {
       "id": "sefer-region-gates",
@@ -180,12 +185,12 @@
     {
       "id": "test-workspace",
       "metadata": "40acb2def9c00e7827fc537b4c072de5aeb03e833f296ff336f68eb1847f82eb",
-      "steps": "e322b1bbb4860dd463f1e4dc9ea697fe14488f03f177fe07929cd38d74e73d6f"
+      "steps": "b32f3a222e43a6065c7521039651f1ede9fec711abd4b17166402b6d12b9e182"
     },
     {
       "id": "msrv",
       "metadata": "82d6c581574793f7d7793be181f1c858dd5b4dd6c3643e0c5cf321fce9fb1934",
-      "steps": "660fada5ee90c0af2423cd021925243737042ab4cad8cebf8f372ba7c8e061f8"
+      "steps": "71279ec10ec3063aa72a2ce0b7f8a6eb639fcceedbde4ed0996b41f2b98802f9"
     },
     {
       "id": "msrv-runtime-windows",
@@ -245,7 +250,7 @@
     {
       "id": "kani",
       "metadata": "71d4b71216c99bccfe28ef34e2639d0a4201b4081d7d706673238bdd0678e7a9",
-      "steps": "e9f219f12dddc4a1425ec35b0c46b2d50db3c7fa97a8717e0ff2234ce71cd741"
+      "steps": "fa87c21b98f477c397dbcc154e5cdbe01c69b595c70877d57c8c48f2749047eb"
     },
     {
       "id": "loom-alloc-global",

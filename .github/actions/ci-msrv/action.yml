@@ -11,6 +11,16 @@ runs:
     # Members below declare their own 1.88 floor.
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+    - uses: dtolnay/rust-toolchain@1.93
+    - run: cargo +1.93 check -p sefer-segment --all-features
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo +1.93 check -p sefer-segment --no-default-features
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo +1.93 test -p sefer-segment --no-run --all-features
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
     - uses: dtolnay/rust-toolchain@1.88
       with:
         targets: thumbv7em-none-eabi

@@ -8,28 +8,28 @@
 //! re-exports loom atomics under the same names).
 //!
 //! # Production files included (verbatim, via `#[path]`)
-//! - `src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs` — `publish_cached`
+//! - `crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs` — `publish_cached`
 //!   (hot path: `linked()` Acquire → span check → `publish_small_borrowed`),
 //!   `cache_insert`, `cache_evict`, TLS `PinCache`.
-//! - `src/alloc_core/segment/segment_route/route_state/pin.rs` — `RoutePin` incl. `linked()`
+//! - `crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs` — `RoutePin` incl. `linked()`
 //!   (the Acquire gate) and `publish_small_borrowed` (the borrow structure
 //!   that holds the pin across the whole publication RMW; the model never
 //!   breaks it).
-//! - `src/alloc_core/segment/segment_route/directory/` (`route_directory.rs`, `blocks.rs`) — `RouteDirectory`
+//! - `crates/core/sefer-segment/src/segment/segment_route/directory/` (`route_directory.rs`, `blocks.rs`) — `RouteDirectory`
 //!   (`lookup`, `register_route`, `remove` with the unlink + `linked`
 //!   Release-clear under the shard lock), `Entry`/`EntryHandle` (counted
 //!   refs; final drop frees the sidecar; NO drain on owner-ref drop).
-//! - `src/alloc_core/segment/segment_route/route_state/registration.rs` — `RouteRegistration`
+//! - `crates/core/sefer-segment/src/segment/segment_route/route_state/registration.rs` — `RouteRegistration`
 //!   (`issue_small`, drop = production remove then owner-ref drop).
-//! - `src/alloc_core/segment/segment_route/route_state/small_sidecar.rs` — production
+//! - `crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs` — production
 //!   `SmallSidecar::publish` → `SidecarBitmap::publish` (the real
 //!   `fetch_or`), `initialize_at`.
-//! - `src/alloc_core/segment/remote_bitmap/{sidecar_bitmap,bitmap_scan,
+//! - `crates/core/sefer-segment/src/segment/remote_bitmap/{sidecar_bitmap,bitmap_scan,
 //!   bitmap_cut,bitmap_record}.rs` (+ their `leaf_classes.rs` child) — the
 //!   real scan/drain primitive (`BitmapScan::next_cut` = per-word
 //!   `swap(0, AcqRel)`), same include shape as the sidecar-bitmap model.
-//! - `src/alloc_core/segment/segment_route/route_protocol/` and
-//!   `src/alloc_core/large/reservation_state.rs` — the compile cascade of
+//! - `crates/core/sefer-segment/src/segment/segment_route/route_protocol/` and
+//!   `crates/core/sefer-segment/src/support/reservation_state.rs` — the compile cascade of
 //!   the files above. Both take their atomics from `super` (loom here); the
 //!   Large branch never executes (only Small routes are registered).
 //!
@@ -169,6 +169,15 @@
 //!   Large branch are out of scope (only Small registered; `routing.rs`
 //!   is not source-included).
 #![cfg(loom)]
+
+// Crate-path alias for the source-included canonical
+// `support/reservation_state.rs` (reads the codec through
+// `crate::segment::segment_header`).
+pub(crate) mod segment {
+    pub(crate) mod segment_header {
+        pub(crate) use crate::alloc_core::segment_header::*;
+    }
+}
 
 // Atomic seam: the `#[path]`-included production files resolve `super::`
 // atomics; these names ARE loom's.
@@ -393,23 +402,25 @@ mod shard_lock {
 // branch and the bench probes are never called), and a test crate lints
 // its crate-private items as a binary would.
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/remote_bitmap/bitmap_cut.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_cut.rs"]
 mod bitmap_cut;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/remote_bitmap/bitmap_record.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_record.rs"]
 mod bitmap_record;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/remote_bitmap/bitmap_scan.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs"]
 mod bitmap_scan;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/large/reservation_state.rs"]
+// CANONICAL implementation (not the root `src/alloc_core/large/` re-export
+// shim): resolves `super::{AtomicU64, Ordering}` — loom's, above.
+#[path = "../crates/core/sefer-segment/src/support/reservation_state.rs"]
 mod reservation_state;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs"]
 mod sidecar_bitmap;
 
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/directory/mod.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/directory/mod.rs"]
 mod directory;
 
 // Ghost checks in the included production files (docs/GHOST_CHECKS_PLAN.md):
@@ -417,34 +428,34 @@ mod directory;
 #[path = "../crates/primitives/sefer-ghost/src/ghost/mod.rs"]
 mod ghost;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/route_protocol/large_state.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_protocol/large_state.rs"]
 mod large_state;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/route_state/pin.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs"]
 mod pin;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/route_state/registration.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_state/registration.rs"]
 mod registration;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/route_protocol/route_cut.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_protocol/route_cut.rs"]
 mod route_cut;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/route_protocol/error.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_protocol/error.rs"]
 mod route_error;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/route_protocol/kind.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_protocol/kind.rs"]
 mod route_kind;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs"]
 mod route_pin_cache;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/route_protocol/route_record.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_protocol/route_record.rs"]
 mod route_record;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/route_protocol/route_scan.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_protocol/route_scan.rs"]
 mod route_scan;
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_route/route_state/small_sidecar.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs"]
 mod small_sidecar;
 
 // The included files resolve their SIBLINGS through `super` (they sit in

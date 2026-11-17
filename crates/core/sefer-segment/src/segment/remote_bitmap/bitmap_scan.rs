@@ -1,0 +1,142 @@
+use super::{sidecar_bitmap::ClassMap, AtomicU64, BitmapCut, Ordering};
+use crate::alloc_core::fatal::fatal;
+
+/// Positions of the [`SCAN_COUNTS`] benchmark array (`measure_scans`'s
+/// return shape, positional and pinned by tests — do not reorder).
+#[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+#[repr(usize)]
+enum ScanCount {
+    Cut = 0,
+    Empty = 1,
+    Exchanged = 2,
+    NonEmptyBits = 3,
+    Routed = 4,
+}
+
+#[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+std::thread_local! {
+    static SCAN_COUNTS: core::cell::Cell<Option<[u64; 5]>> = const { core::cell::Cell::new(None) };
+    static BASELINE_SCAN: core::cell::Cell<bool> = const { core::cell::Cell::new(true) };
+}
+
+// B4 production-branch RMW counter (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS):
+// counts the `swap(0, AcqRel)` executions of the production `next_cut`
+// branch, so an integration test can prove the B4 load-gate actually skips
+// the RMW on zero words. Lives OUTSIDE `r18_sidecar_scan_bench` because the
+// production branch does not exist under it; readers are source-included
+// integration tests (same pattern as r18 `SCAN_COUNTS`, read by the bench
+// harness), hence the point-wise `allow(dead_code)` below for lib builds
+// with `bench-internals` and no inside-crate reader.
+#[cfg(all(feature = "bench-internals", not(r18_sidecar_scan_bench)))]
+std::thread_local! {
+    static B4_PROD_SCAN_RMW: core::cell::Cell<Option<u64>> = const { core::cell::Cell::new(None) };
+}
+
+/// A fixed high-water scan. One cut is taken per word, including empty words.
+#[must_use = "finish the fixed scan or persist the remaining cursor"]
+/// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers (sefer-alloc queries/scan); semantics unchanged. Logged in .rush/p21-widening-p21.csv.
+#[doc(hidden)]
+pub struct BitmapScan<'a> {
+    pub(super) pending: core::slice::Iter<'a, AtomicU64>,
+    pub(super) classes: ClassMap<'a>,
+    pub(super) next_word: usize,
+    pub(super) end_word: usize,
+}
+
+impl<'a> BitmapScan<'a> {
+    #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+    #[doc(hidden)]
+    pub fn measure_scans(enable: bool, baseline: bool) -> [u64; 5] {
+        BASELINE_SCAN.with(|mode| mode.set(baseline));
+        SCAN_COUNTS.with(|counts| counts.replace(enable.then_some([0; 5])).unwrap_or([0; 5]))
+    }
+
+    /// Count only successful allocation-discovery route scan constructions.
+    #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+    #[doc(hidden)]
+    pub fn count_routed_scan() {
+        SCAN_COUNTS.with(|counts| {
+            if let Some(mut current) = counts.get() {
+                current[ScanCount::Routed as usize] += 1;
+                counts.set(Some(current));
+            }
+        });
+    }
+
+    /// B4: arm/disarm the production-branch RMW-swap counter ([`B4_PROD_SCAN_RMW`]).
+    /// Mirrors [`Self::measure_scans`]: returns the previous value, `Some(0)`
+    /// while armed, `None` (counter inert) when disarmed.
+    #[cfg(all(feature = "bench-internals", not(r18_sidecar_scan_bench)))]
+    #[cfg_attr(
+        all(feature = "bench-internals", not(r18_sidecar_scan_bench)),
+        allow(dead_code)
+    )]
+    // readers are source-included integration tests (same pattern as the r18
+    // SCAN_COUNTS, read by the bench harness), not lib-crate code.
+    pub(crate) fn measure_rmw_swaps(enable: bool) -> u64 {
+        B4_PROD_SCAN_RMW.with(|count| count.replace(enable.then_some(0)).unwrap_or(0))
+    }
+
+    pub(crate) fn next_cut(&mut self) -> Option<BitmapCut<'a>> {
+        if self.next_word == self.end_word {
+            return None;
+        }
+        let word = self.next_word;
+        self.next_word += 1;
+        let pending = self
+            .pending
+            .next()
+            .unwrap_or_else(|| fatal(b"bitmap_scan: sidecar scan iterator exhausted early\n"));
+        #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+        let baseline = BASELINE_SCAN.with(core::cell::Cell::get);
+        #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+        let (bits, empty, exchanged) = if baseline {
+            let bits = pending.swap(0, Ordering::AcqRel);
+            (bits, bits == 0, true)
+        } else if pending.load(Ordering::Acquire) == 0 {
+            (0, true, false)
+        } else {
+            (pending.swap(0, Ordering::AcqRel), false, true)
+        };
+        #[cfg(not(all(feature = "bench-internals", r18_sidecar_scan_bench)))]
+        // B4 (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): a zero word can never yield
+        // a record; read it plain and pay the RMW only when bits are present.
+        // The discovery scan is one-pass, so a bit published after this read
+        // was already outside this scan's reach under the unconditional swap —
+        // it stays pending for the next discovery scan or strict trim. Release
+        // is credit-gated (`dec_live_and_maybe_decommit`), so a skipped word is
+        // never lost.
+        let bits = if pending.load(Ordering::Acquire) == 0 {
+            0
+        } else {
+            #[cfg(all(feature = "bench-internals", not(r18_sidecar_scan_bench)))]
+            B4_PROD_SCAN_RMW.with(|count| {
+                if let Some(current) = count.get() {
+                    count.set(Some(current + 1));
+                }
+            });
+            pending.swap(0, Ordering::AcqRel)
+        };
+        // Ghost: the bits this cut consumed from the word (see `sidecar/published`).
+        crate::ghost::ghost_event!(
+            "sidecar/cut-bits",
+            core::ptr::from_ref(pending).addr(),
+            bits.count_ones()
+        );
+        #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+        SCAN_COUNTS.with(|counts| {
+            if let Some(mut current) = counts.get() {
+                current[ScanCount::Cut as usize] += 1;
+                current[ScanCount::Empty as usize] += u64::from(empty);
+                current[ScanCount::Exchanged as usize] += u64::from(exchanged);
+                current[ScanCount::NonEmptyBits as usize] += u64::from(bits != 0);
+                counts.set(Some(current));
+            }
+        });
+        Some(BitmapCut {
+            classes: self.classes,
+            word,
+            bits,
+        })
+    }
+}

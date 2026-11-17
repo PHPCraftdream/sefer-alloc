@@ -22,6 +22,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use crate::alloc_core::segment_header::PageMap;
 
 use crate::alloc_core::alloc_core::{base_add, AllocCore};
+use sefer_segment::support::root_compat::traits::*;
 
 /// TH-1: small-segment reservations of this process so far.
 #[cfg(not(feature = "numa-aware"))]
@@ -140,6 +141,7 @@ impl AllocCore {
     /// cursor-publishing wrapper above) — this function is not a drop-in
     /// replacement for them; skipping the cursor publish would leave a
     /// freshly reserved segment unreachable as a carve target.
+    #[allow(unsafe_code)] // P2.1 tier-2: SegmentMeta::new + targeted header writes.
     pub(in crate::alloc_core) fn reserve_small_segment_impl(&mut self) -> Option<*mut u8> {
         // Mechanism 2 (task #51): this path is reached only when NO registered
         // segment — including any POOLED empty segment — has a free block of the
@@ -302,7 +304,10 @@ impl AllocCore {
 
         // no-panic: register returns None if the segment table is full. We
         // must release the reservation we just made before returning None.
-        let id = match self.table.register(base, SEGMENT, SegmentKind::Small) {
+        // SAFETY: `base` is the freshly reserved, exclusively owned segment
+        // and the table is initialized (bootstrap-owned registration step).
+        #[allow(unsafe_code)]
+        let id = match unsafe { self.table.register(base, SEGMENT, SegmentKind::Small) } {
             Some(id) => id,
             None => {
                 // Release the reservation we just made (we own it now).
@@ -312,19 +317,19 @@ impl AllocCore {
         };
         // Lay down the small header + page map + bin table at the fixed
         // offsets. `bump` starts at the small-meta end (past the metadata).
-        let meta_end = SegLayout::small_meta_end();
+        let meta_end = SegLayout::compat_small_meta_end();
         // R12-11 (task #262): only feeds the diagnostic-only `PageMap::init_in_place`
         // below; unused without `page-map-diag`.
         #[cfg(feature = "page-map-diag")]
         let meta_pages = SegLayout::small_meta_pages();
-        let mut meta = SegmentMeta::new(base);
-        meta.write_header(SegmentHeader::small(
+        let mut meta = unsafe { SegmentMeta::new(base) };
+        meta.compat_write_header(SegmentHeader::compat_small(
             id,
             meta_end,
             reservation.as_ptr(),
             reservation_len,
         ));
-        meta.init_small_terminal();
+        meta.compat_init_small_terminal();
         // Phase C (numa-aware): stamp the NUMA node into the header NOW,
         // immediately after writing it. The header constructor set node_id to
         // NO_NODE_RAW; we overwrite it with the actual node. This must happen
@@ -439,15 +444,23 @@ impl AllocCore {
             // — the plain `Segment::reserve`), so the frontier must be
             // stamped `SEGMENT` unconditionally, on every platform.
             #[cfg(not(feature = "small-segment-lazy-commit"))]
-            meta.set_committed_payload_end(SEGMENT);
+            meta.compat_set_committed_payload_end(SEGMENT);
         }
 
         // R12-11 (task #262): diagnostic-only bookkeeping — see `PageMap`'s
         // struct doc. Gated behind `page-map-diag` and elided from the
         // default/production segment-reservation path.
         #[cfg(feature = "page-map-diag")]
-        PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages);
-        BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32);
+        #[allow(unsafe_code)] // R25-1: scoped unsafe block, fresh-segment contract.
+        // SAFETY: `base + page_map_off()` is the freshly carved page map of
+        // a segment this owner just reserved (exclusive access, still
+        // unregistered), with `Layout::page_map`'s footprint.
+        unsafe { PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages) };
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        unsafe {
+            BinTable::init_in_place(base_add(base, SegLayout::compat_bin_table_off()) as *mut u32)
+        };
         // B4 (в): the former `AllocBitmap`/`MagazineBitmap` inits
         // (PERF-PASS-2, G5/C1, task #50 virgin-skip) are gone with the bitmaps
         // themselves — the per-granule state byte replaced them. The same

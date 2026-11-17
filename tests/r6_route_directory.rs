@@ -23,24 +23,20 @@ fn duplicate_key_and_same_address_reuse_preserve_old_pin_identity() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let first = directory
-        .register(root, SEGMENT, root, 17, RouteKind::Small)
-        .unwrap();
+    let first = unsafe { directory.register(root, SEGMENT, root, 17, RouteKind::Small) }.unwrap();
     let first_id = first.incarnation();
     let old_sidecar_addr = core::ptr::from_ref(first.small_sidecar().unwrap()).addr();
     assert_eq!(first.root(), root);
     let old = directory.lookup(root).unwrap();
     assert_eq!(old.owner(), 17);
     assert!(matches!(
-        directory.register(root, SEGMENT, root, 18, RouteKind::Small),
+        unsafe { directory.register(root, SEGMENT, root, 18, RouteKind::Small) },
         Err(RouteError::Duplicate)
     ));
 
     drop(first);
     assert!(directory.lookup(root).is_none());
-    let second = directory
-        .register(root, SEGMENT, root, 19, RouteKind::Small)
-        .unwrap();
+    let second = unsafe { directory.register(root, SEGMENT, root, 19, RouteKind::Small) }.unwrap();
     let current = directory.lookup(root).unwrap();
     assert!(second.incarnation() > first_id);
     assert_eq!(current.owner(), 19);
@@ -59,9 +55,8 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let route = directory
-        .register(root, SEGMENT, root, 1, RouteKind::Primordial)
-        .unwrap();
+    let route =
+        unsafe { directory.register(root, SEGMENT, root, 1, RouteKind::Primordial) }.unwrap();
     assert!(route.issue_small(0, 0));
     let old_pin = directory.lookup(root).unwrap();
     let old_sidecar_addr = core::ptr::from_ref(route.small_sidecar().unwrap()).addr();
@@ -89,9 +84,8 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
             }
         );
         drop(route);
-        let replacement = directory
-            .register(root, SEGMENT, root, 2, RouteKind::Primordial)
-            .unwrap();
+        let replacement =
+            unsafe { directory.register(root, SEGMENT, root, 2, RouteKind::Primordial) }.unwrap();
         assert!(replacement.incarnation() > old_incarnation);
         assert_ne!(
             core::ptr::from_ref(replacement.small_sidecar().unwrap()).addr(),
@@ -110,9 +104,7 @@ fn published_pin_cleanup_survives_reservation_unmap() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let route = directory
-        .register(root, SEGMENT, root, 2, RouteKind::Small)
-        .unwrap();
+    let route = unsafe { directory.register(root, SEGMENT, root, 2, RouteKind::Small) }.unwrap();
     assert!(route.issue_small(0, 0));
     let pin = directory.lookup(root).unwrap();
     // SAFETY: the owned model block at offset zero is issued and transferred once.
@@ -135,9 +127,8 @@ fn large_route_key_and_invalid_span() {
     let reservation = aligned_vmem::reserve_aligned(2 * SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
     let later = root.with_addr(root.addr() + SEGMENT + 16);
-    let route = directory
-        .register(root, 2 * SEGMENT, later, 3, RouteKind::Large)
-        .unwrap();
+    let route =
+        unsafe { directory.register(root, 2 * SEGMENT, later, 3, RouteKind::Large) }.unwrap();
     assert!(directory.lookup(root).is_none());
     let pin = directory
         .lookup(core::ptr::without_provenance_mut(later.addr()))
@@ -165,7 +156,7 @@ fn large_route_key_and_invalid_span() {
     assert!(route.release_cached_large(second_generation));
     drop(route);
     assert!(matches!(
-        directory.register(root, 0, root, 3, RouteKind::Small),
+        unsafe { directory.register(root, 0, root, 3, RouteKind::Small) },
         Err(RouteError::InvalidSpan)
     ));
 }
@@ -175,13 +166,11 @@ fn incarnation_exhaustion_never_wraps() {
     let directory = RouteDirectory::with_initial_incarnation_for_test(u64::MAX - 1);
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let last = directory
-        .register(root, SEGMENT, root, 4, RouteKind::Small)
-        .unwrap();
+    let last = unsafe { directory.register(root, SEGMENT, root, 4, RouteKind::Small) }.unwrap();
     assert_eq!(last.incarnation(), u64::MAX);
     drop(last);
     assert!(matches!(
-        directory.register(root, SEGMENT, root, 4, RouteKind::Small),
+        unsafe { directory.register(root, SEGMENT, root, 4, RouteKind::Small) },
         Err(RouteError::IncarnationExhausted)
     ));
 }
@@ -201,7 +190,7 @@ fn more_than_4096_active_routes_and_same_shard_collision() {
     for i in 1..=5000_usize {
         let key = i * SEGMENT;
         let p = core::ptr::without_provenance_mut::<u8>(key);
-        routes.push(directory.register(p, 1, p, i, RouteKind::Large).unwrap());
+        routes.push(unsafe { directory.register(p, 1, p, i, RouteKind::Large) }.unwrap());
     }
     assert_eq!(
         directory
@@ -230,9 +219,8 @@ fn repeated_churn_reuses_pointer_array_capacity() {
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
     for _ in 0..512 {
-        let route = directory
-            .register(root, SEGMENT, root, 7, RouteKind::Large)
-            .unwrap();
+        let route =
+            unsafe { directory.register(root, SEGMENT, root, 7, RouteKind::Large) }.unwrap();
         let pin = directory.lookup(root).unwrap();
         drop(route);
         drop(pin);
@@ -248,7 +236,7 @@ fn sorted_shard_keeps_neighbors_after_middle_unlink() {
     let keys = [SEGMENT, 65 * SEGMENT, 129 * SEGMENT, 193 * SEGMENT];
     let mut routes = keys.map(|key| {
         let p = core::ptr::without_provenance_mut::<u8>(key);
-        Some(directory.register(p, 1, p, key, RouteKind::Large).unwrap())
+        Some(unsafe { directory.register(p, 1, p, key, RouteKind::Large) }.unwrap())
     });
     drop(routes[1].take());
     for (index, key) in keys.into_iter().enumerate() {
@@ -260,10 +248,7 @@ fn sorted_shard_keeps_neighbors_after_middle_unlink() {
         }
     }
     let middle = core::ptr::without_provenance_mut::<u8>(65 * SEGMENT);
-    routes[1] = Some(
-        directory
-            .register(middle, 1, middle, 65, RouteKind::Large)
-            .unwrap(),
-    );
+    routes[1] =
+        Some(unsafe { directory.register(middle, 1, middle, 65, RouteKind::Large) }.unwrap());
     assert_eq!(directory.lookup(middle).unwrap().owner(), 65);
 }

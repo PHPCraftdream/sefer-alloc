@@ -21,9 +21,7 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let route = directory
-        .register(root, SEGMENT, root, 9, RouteKind::Small)
-        .unwrap();
+    let route = unsafe { directory.register(root, SEGMENT, root, 9, RouteKind::Small) }.unwrap();
     let old_incarnation = route.incarnation();
     let sidecar = route.small_sidecar().unwrap();
     assert_eq!(directory.live_route_census_for_test(), (1, 0, 0));
@@ -86,9 +84,8 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
     let held = SmallSidecar::system_totals_for_test();
     assert_eq!(held.0 - before.0, size_of::<SmallSidecar>() + 3 * 256);
     assert_eq!(held.2 - before.2, 0);
-    let replacement = directory
-        .register(root, SEGMENT, root, 11, RouteKind::Small)
-        .unwrap();
+    let replacement =
+        unsafe { directory.register(root, SEGMENT, root, 11, RouteKind::Small) }.unwrap();
     assert!(replacement.incarnation() > old_incarnation);
     assert_eq!(
         replacement.small_sidecar().unwrap().mixed_leaves_for_test(),
@@ -115,9 +112,8 @@ fn adversarial_all_mixed_real_route_has_no_universal_small_budget() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let route = directory
-        .register(root, SEGMENT, root, 10, RouteKind::Primordial)
-        .unwrap();
+    let route =
+        unsafe { directory.register(root, SEGMENT, root, 10, RouteKind::Primordial) }.unwrap();
     let sidecar = route.small_sidecar().unwrap();
     assert_eq!(directory.live_route_census_for_test(), (0, 1, 0));
     for leaf in 0..LEAVES {

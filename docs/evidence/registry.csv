@@ -160,21 +160,21 @@ host: x86_64-unknown-linux-gnu
 release: 1.100.0
 LLVM version: 23.1.5",Loom (--cfg loom --release),6c07db472897054ed5525b1310aeada8ed1b198f,8ac7f66df2ffa6170c1eab2d676948b98ae0ac3f,—,targeted прогон loom_terminal_owner_drain,тест PASS (targeted),это НЕ мутант-результат lost-publication,false,docs/evidence/_raw_reverify_R5b-10.log,144c2f8849746544780c75fcb697771ded4329e760490a4016358c33efc39ada,shadow-model,PASS,E0 verified; preserve PASS,Ph5b,ph5b:C5-loom-targeted
 R5b-11,C5 lost-publication мутант: publish_foreign выходит до публикации,tests/r11_ph5b_c2_batch_reuse_after_join.rs,production batch-api internals,Windows x86_64,—,native debug,80db02af91cfa21d2fc6b47ea415e632a24ccf4d,diff sha256 6534cd8939468328b457b7692430e17a1fd613c8ec3d7be50ed44f0233fe6144 (дерево замера) + landing 80db02af91cfa21d2fc6b47ea415e632a24ccf4d,—,мутант применён; прогон batch-теста; откат (приёмка оркестратора),красный: owner did not reuse a freed block,мутант KILLED (нативный оракул потерянной публикации),true,docs/reviews/2026-10-05-ph5b-hardening-matrix.md,620cd76542430a967e8ec17599cef2d22268439cb6af61b133724925626ee0f4,low-level-api,PASS,закрывает lost-publication пробел нативным оракулом (loom это не красит),Ph5b,ph5b:C5-mut
-R5b-12,C5 ordering pin (source-pin трёх атомарных рёбер),ghost-lint check: catalog rules sidecar/publish-acqrel + sidecar/issue-release + sidecar/cut-acqrel + class-leaves/*-inventory + class-leaves/init-before-publish + class-leaves/publish-before-presence + small-sidecar/* over src/alloc_core/segment/remote_bitmap (catalog_holds),— (workspace tool crates/ghost-lint),linux x64,"rustc 1.99.1 (58cf8f9c3 2026-10-13)
+R5b-12,C5 ordering pin (source-pin трёх атомарных рёбер),ghost-lint check: catalog rules sidecar/publish-acqrel + sidecar/issue-release + sidecar/cut-acqrel + class-leaves/*-inventory + class-leaves/init-before-publish + class-leaves/publish-before-presence + small-sidecar/* over crates/core/sefer-segment/src/segment/remote_bitmap (catalog_holds),— (workspace tool crates/ghost-lint),linux x64,"rustc 1.99.1 (58cf8f9c3 2026-10-13)
 binary: rustc
 commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
 commit-date: 2026-10-13
 host: x86_64-unknown-linux-gnu
 release: 1.99.1
 LLVM version: 23.1.1",debug,186d39d28daa53d70edec67ae97010bc90b4d1e9,f4963810bba9ef023994632f3a18b75786d5f918,—,ghost-lint check на чистом коде: правила трёх атомарных рёбер sidecar и порядков ClassLeaves,"catalog_holds: check 0 violation(s), test result: ok. 1 passed",мутанты R5b-13/R5b-14 красные,false,docs/evidence/_raw_reverify_R5b-12.log,59776d166855331815a559fdfdb3d8948cd750fd62ae869453ac791f41fcc92b,crate-internal,PASS,E0 verified; preserve PASS,Ph5b,ph5b:C5-pin
-R5b-13,C5 мутант: SidecarBitmap::publish fetch_or AcqRel->Relaxed,ghost-lint check: catalog rule sidecar/publish-acqrel over src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs (catalog_holds),— (workspace tool crates/ghost-lint),linux x64,"rustc 1.99.1 (58cf8f9c3 2026-10-13)
+R5b-13,C5 мутант: SidecarBitmap::publish fetch_or AcqRel->Relaxed,ghost-lint check: catalog rule sidecar/publish-acqrel over crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs (catalog_holds),— (workspace tool crates/ghost-lint),linux x64,"rustc 1.99.1 (58cf8f9c3 2026-10-13)
 binary: rustc
 commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
 commit-date: 2026-10-13
 host: x86_64-unknown-linux-gnu
 release: 1.99.1
 LLVM version: 23.1.1",debug,186d39d28daa53d70edec67ae97010bc90b4d1e9,f4963810bba9ef023994632f3a18b75786d5f918,—,ghost-lint check на чистом коде; мутант publish fetch_or AcqRel->Relaxed красит правило sidecar/publish-acqrel,"catalog_holds: check 0 violation(s), test result: ok. 1 passed","мутант KILLED: ghost-lint [sidecar/publish-acqrel], catalog_holds FAILED",true,docs/evidence/_raw_reverify_R5b-13.log,243314bb06d734fc949eb17075b2c93fd1d745349f2f17b67a5a28a2870ed570,crate-internal,PASS,E0 verified; preserve PASS,Ph5b,ph5b:C5-mut-publish
-R5b-14,C5 мутант: bitmap_scan cut swap(0) AcqRel->Relaxed,ghost-lint check: catalog rule sidecar/cut-acqrel over src/alloc_core/segment/remote_bitmap/bitmap_scan.rs (catalog_holds),— (workspace tool crates/ghost-lint),linux x64,"rustc 1.99.1 (58cf8f9c3 2026-10-13)
+R5b-14,C5 мутант: bitmap_scan cut swap(0) AcqRel->Relaxed,ghost-lint check: catalog rule sidecar/cut-acqrel over crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs (catalog_holds),— (workspace tool crates/ghost-lint),linux x64,"rustc 1.99.1 (58cf8f9c3 2026-10-13)
 binary: rustc
 commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
 commit-date: 2026-10-13

@@ -110,3 +110,7 @@ mod state;
 
 mod alloc_core_impl;
 pub use alloc_core_impl::*;
+
+// P2.1: header facade compatibility path for the bootstrap/header seams
+// (the former `alloc_core::header_access` module moved into the facade).
+pub(crate) use crate::alloc_core::segment::header_facade as header_access;

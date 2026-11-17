@@ -1,191 +1,62 @@
-//! Per-reservation Large phase transitions; no predecessor links or payload access.
+//! Compatibility re-export for the canonical reservation-state implementation.
+#[doc(hidden)]
+pub use sefer_segment::support::reservation_state_impl::LargeReservationState;
+//
+// P2.1 structure-limits split: this compat module also hosts the R6-CR-3/9
+// Large debug-injection hooks and their statics, moved verbatim out of
+// `alloc_core_large.rs` (the `large/` directory was at its 7-entry limit, so
+// no new sibling file was possible). Pure code movement, no behavior change;
+// the statics stay `pub(crate)` so `alloc_core_large.rs` can load them.
 
-// Atomics through `super` so the actual-source loom model can bind loom ones.
-use super::{AtomicU64, Ordering};
+#[cfg(feature = "internals")]
+use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::alloc_core::segment_header::{
-    large_generation, large_phase, next_large_generation, pack_large_state, LargePhase,
-};
+use crate::alloc_core::alloc_core::AllocCore;
 
-/// Wrapper over ONE Large phase word, regardless of which storage backs
-/// it. The bound atomic is EITHER a physical reservation's terminal word
-/// (owner-only lifecycle transitions under the EXCLUSIVE owner's authority
-/// — a registry heap lease or a standalone core's `&mut`, including its
-/// Large cache's ownership of cached reservations; no access
-/// after OS release) OR an independent route-descriptor word
-/// (`LargeState`, System-backed), where the producer's terminal
-/// publication also runs. Domain obligations attach to the bound word,
-/// not to this type: the wrapper itself is neither a reservation credit
-/// nor a descriptor pin.
-pub struct LargeReservationState<'a> {
-    word: &'a AtomicU64,
-}
+// R6-CR-3 test hook: forces `alloc_large` to fail (null) without touching
+// allocator metadata, so a test can drive the realloc move-leg OOM path.
+#[cfg(feature = "internals")]
+pub(crate) static DBG_INJECT_LARGE_ALLOC_OOM: AtomicBool = AtomicBool::new(false);
+// R6-CR-9 test hook: forces the FIRST non-NUMA biased Large reserve attempt
+// to fail; the post-drain retry stays real.
+#[cfg(feature = "internals")]
+pub(crate) static DBG_INJECT_BIASED_RESERVE_FAIL: AtomicBool = AtomicBool::new(false);
 
-impl<'a> LargeReservationState<'a> {
-    #[inline(always)]
-    pub fn new(word: &'a AtomicU64) -> Self {
-        Self { word }
+// Forces the fresh-path `register_payload` failure branch (advice already reserved).
+#[cfg(feature = "internals")]
+pub(crate) static DBG_INJECT_LARGE_REGISTER_FAIL: AtomicBool = AtomicBool::new(false);
+
+impl AllocCore {
+    /// `#[doc(hidden)]` test hook (R6-CR-3) — not public API. Forces
+    /// `alloc_large` to return null while set. A test MUST clear it (Drop guard).
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_set_inject_large_alloc_oom(on: bool) {
+        DBG_INJECT_LARGE_ALLOC_OOM.store(on, Ordering::Relaxed);
     }
 
-    /// Terminal LIVE(g) → PENDING(g) CAS. Reached (today, only) through the
-    /// route-descriptor binding (`LargeState::publish_pending`). TWO
-    /// distinct roles back this call: the ROUTE PIN keeps the INDEPENDENT
-    /// descriptor word alive up to the CAS — a descriptor capability, not
-    /// physical credit — while the caller's UNIQUE ALLOCATION CREDIT keeps
-    /// the physical RESERVATION live until a successful CAS transfers that
-    /// obligation to the owner. The successful CAS is the producer's LAST
-    /// descriptor-state access and involves no reservation read; the caller
-    /// must not touch the allocation, the descriptor, or the word
-    /// afterwards.
-    // Producer/claim protocol: only registry::segment_route (alloc-global) calls it.
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    #[inline(always)]
-    pub fn publish_pending(&self, generation: u64) -> bool {
-        let published = self
-            .word
-            .compare_exchange(
-                pack_large_state(LargePhase::Live, generation),
-                pack_large_state(LargePhase::Pending, generation),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .is_ok();
-        crate::ghost::ghost_event!(
-            "large/pending",
-            core::ptr::from_ref(self.word).addr(),
-            i64::from(published)
-        );
-        published
+    /// `#[doc(hidden)]` test hook (R6-CR-9) — not public API. Forces the first
+    /// non-NUMA biased Large reserve attempt to return None while set.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_set_inject_biased_reserve_fail(on: bool) {
+        DBG_INJECT_BIASED_RESERVE_FAIL.store(on, Ordering::Relaxed);
     }
 
-    /// Only a table-scan owner with the heap lease may claim this obligation.
-    /// The caller derives the canonical base from the table, never a producer.
-    // Producer/claim protocol: only registry::segment_route (alloc-global) calls it.
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    #[inline(always)]
-    pub fn claim_pending(&self) -> Option<u64> {
-        let observed = self.word.load(Ordering::Acquire);
-        if large_phase(observed) != Some(LargePhase::Pending) {
-            return None;
-        }
-        let generation = large_generation(observed);
-        let claimed = self
-            .word
-            .compare_exchange(
-                observed,
-                pack_large_state(LargePhase::Consuming, generation),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .ok()
-            .map(|_| generation);
-        crate::ghost::ghost_event!(
-            "large/pending",
-            core::ptr::from_ref(self.word).addr(),
-            -i64::from(claimed.is_some())
-        );
-        claimed
+    /// `#[doc(hidden)]` test hook — not public API. Forces the fresh-path
+    /// Large registration to fail while set, after any advice was reserved.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_set_inject_large_register_fail(on: bool) {
+        DBG_INJECT_LARGE_REGISTER_FAIL.store(on, Ordering::Relaxed);
     }
 
-    /// Owner-only claim of a LIVE word — the PHYSICAL-reservation reading
-    /// of this method; every caller acts under the EXCLUSIVE owner's
-    /// authority — a registry heap lease or a standalone core's `&mut`
-    /// (issue-path adoption in `mem`, reclaim in `alloc_core_large`,
-    /// teardown in `lifecycle`; cached Large reservations held unregistered
-    /// by the running core are still owner-held). This constrains this
-    /// method's physical invocation
-    /// only: the same wrapper type is also bound to independent
-    /// route-descriptor words (`LargeState`), where the producer's terminal
-    /// PENDING CAS legitimately transitions that other word.
-    #[inline(always)]
-    pub fn claim_live(&self) -> Option<u64> {
-        let observed = self.word.load(Ordering::Acquire);
-        if large_phase(observed) != Some(LargePhase::Live) {
-            return None;
-        }
-        let generation = large_generation(observed);
-        self.word
-            .compare_exchange(
-                observed,
-                pack_large_state(LargePhase::Consuming, generation),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .ok()
-            .map(|_| generation)
-    }
-
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    #[inline(always)]
-    pub fn cache_consumed(&self, generation: u64) -> bool {
-        self.transition(generation, LargePhase::Consuming, LargePhase::Cached)
-    }
-
-    /// Must happen while mapped, after table removal and before OS release.
-    #[inline(always)]
-    pub fn release_consumed(&self, generation: u64) -> bool {
-        self.transition(generation, LargePhase::Consuming, LargePhase::Released)
-    }
-
-    /// Owner-only cache eviction, while still mapped and before OS release.
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    #[inline(always)]
-    pub fn release_cached(&self, generation: u64) -> bool {
-        self.transition(generation, LargePhase::Cached, LargePhase::Released)
-    }
-
-    /// Cache-hit rollback after CACHED -> INITIALIZING, before user issuance.
-    // R6-T16: the only production caller is the `alloc-decommit`-gated
-    // large-cache branch of `alloc_large`; kani/tests reach it under their
-    // own cfgs.
-    #[cfg_attr(
-        not(any(
-            feature = "alloc-decommit",
-            all(feature = "internals", feature = "alloc-global")
-        )),
-        allow(dead_code)
-    )]
-    #[inline(always)]
-    pub fn release_initializing(&self, generation: u64) -> bool {
-        self.transition(generation, LargePhase::Initializing, LargePhase::Released)
-    }
-
-    /// None leaves CACHED unchanged: the owner retires this reservation.
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    #[inline(always)]
-    pub fn begin_reuse(&self) -> Option<u64> {
-        let observed = self.word.load(Ordering::Acquire);
-        if large_phase(observed) != Some(LargePhase::Cached) {
-            return None;
-        }
-        let next = next_large_generation(large_generation(observed))?;
-        self.word
-            .compare_exchange(
-                observed,
-                pack_large_state(LargePhase::Initializing, next),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .ok()
-            .map(|_| next)
-    }
-
-    /// Caller completes layout/owner/table preparation before this release.
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    #[inline(always)]
-    pub fn finish_reuse(&self, generation: u64) -> bool {
-        self.transition(generation, LargePhase::Initializing, LargePhase::Live)
-    }
-
-    #[inline(always)]
-    fn transition(&self, generation: u64, from: LargePhase, to: LargePhase) -> bool {
-        self.word
-            .compare_exchange(
-                pack_large_state(from, generation),
-                pack_large_state(to, generation),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .is_ok()
+    /// `#[doc(hidden)]` test forwarder (R6-CR-4) — not public API. Reaches
+    /// `alloc_large` directly with a raw size a `Layout` cannot express
+    /// (`from_size_align` rejects sizes above `isize::MAX`).
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_alloc_large_for_test(&mut self, size: usize, align: usize) -> *mut u8 {
+        self.alloc_large(size, align).0
     }
 }

@@ -17,7 +17,7 @@ use crate::alloc_core::os;
 use crate::alloc_core::os::Segment;
 use crate::alloc_core::os::SEGMENT;
 #[cfg(any(feature = "alloc-xthread", feature = "numa-aware"))]
-use crate::alloc_core::segment_header::SegmentMeta;
+use crate::alloc_core::segment::header_facade::{kind_at, meta as seg_meta};
 use crate::alloc_core::segment_header::{align_up, SegmentHeader, SegmentKind};
 
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
@@ -33,7 +33,7 @@ use crate::alloc_core::alloc_core::LARGE_CACHE_SIZE_FACTOR;
 ))]
 use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
 #[cfg(feature = "internals")]
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::Ordering;
 // R1-08: `CachedLarge` is constructed only inside `reclaim_large_segment`,
 // which is itself `#[cfg(feature = "alloc-xthread")]` — narrower than the
 // `alloc-decommit` gate `LARGE_CACHE_SIZE_FACTOR` above needs, so it must
@@ -41,6 +41,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 // `alloc-xthread` warns `unused_imports`.
 #[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
 use crate::alloc_core::alloc_core::CachedLarge;
+use sefer_segment::support::root_compat::traits::*;
 
 /// R12-4 (EXPERIMENTAL, feature `large-reserved-capacity`): the upper bound
 /// on how large a Large segment's `reserved_capacity` may grow relative to
@@ -112,19 +113,6 @@ const LARGE_RESERVED_CAP_BYTES: usize = 16 * SEGMENT;
 #[cfg(all(feature = "large-reserved-capacity", not(feature = "numa-aware")))]
 const LARGE_RESERVED_CAP_GROWTH_FACTOR: usize = 4;
 
-// R6-CR-3 test hook: forces `alloc_large` to fail (null) without touching
-// allocator metadata, so a test can drive the realloc move-leg OOM path.
-#[cfg(feature = "internals")]
-static DBG_INJECT_LARGE_ALLOC_OOM: AtomicBool = AtomicBool::new(false);
-// R6-CR-9 test hook: forces the FIRST non-NUMA biased Large reserve attempt
-// to fail; the post-drain retry stays real.
-#[cfg(feature = "internals")]
-static DBG_INJECT_BIASED_RESERVE_FAIL: AtomicBool = AtomicBool::new(false);
-
-// Forces the fresh-path `register_payload` failure branch (advice already reserved).
-#[cfg(feature = "internals")]
-static DBG_INJECT_LARGE_REGISTER_FAIL: AtomicBool = AtomicBool::new(false);
-
 fn large_payload_offset(align: usize) -> usize {
     if align >= SEGMENT {
         align_up(
@@ -139,16 +127,24 @@ fn large_payload_offset(align: usize) -> usize {
     }
 }
 
+pub use sefer_segment::large_payload_address_matches;
+
 impl AllocCore {
     /// Pure address equality shared by owner metadata and foreign descriptors.
     /// No pointer is dereferenced; overflowing geometry cannot match.
-    #[inline]
+    // Sole callers are the misuse/diagnostic mismatch arms; dead in plain builds.
+    #[cfg_attr(
+        not(any(feature = "misuse-checks", debug_assertions)),
+        allow(dead_code)
+    )]
+    #[allow(dead_code)]
+    #[inline(always)]
     pub(crate) fn large_payload_address_matches(
         address: usize,
         base: usize,
         payload_offset: usize,
     ) -> bool {
-        base.checked_add(payload_offset) == Some(address)
+        sefer_segment::large_payload_address_matches(address, base, payload_offset)
     }
 
     /// `base` must be this owner's canonical live metadata root, including
@@ -157,14 +153,20 @@ impl AllocCore {
         not(any(feature = "misuse-checks", debug_assertions)),
         allow(dead_code)
     )]
+    #[allow(unsafe_code)] // P2.1 tier-2: header reads migrated to unsafe contract.
     #[inline]
     pub(crate) fn large_payload_mismatch(base: *mut u8, ptr: *mut u8) -> bool {
-        SegmentHeader::kind_at(base) == SegmentKind::Large
-            && !Self::large_payload_address_matches(
-                ptr.addr(),
-                base.addr(),
-                SegmentHeader::read_at(base).payload_offset,
-            )
+        // SAFETY: caller contract: `base` is this owner's canonical live
+        // metadata root with table membership already resolved; header reads
+        // stay within the live mapped header.
+        unsafe {
+            kind_at(base) == SegmentKind::Large
+                && !large_payload_address_matches(
+                    ptr.addr(),
+                    base.addr(),
+                    SegmentHeader::read_at(base).payload_offset,
+                )
+        }
     }
 
     /// Reject before any lifecycle credit or hardened small-layout guard.
@@ -217,7 +219,9 @@ impl AllocCore {
         // R6-CR-3: injected OOM — concede null without touching metadata so a
         // test can drive the realloc move-leg failure path.
         #[cfg(feature = "internals")]
-        if DBG_INJECT_LARGE_ALLOC_OOM.load(Ordering::Relaxed) {
+        if crate::alloc_core::large::reservation_state::DBG_INJECT_LARGE_ALLOC_OOM
+            .load(Ordering::Relaxed)
+        {
             return (core::ptr::null_mut(), true);
         }
         // Phase 2: lazy decay tick on every large allocation.
@@ -367,21 +371,22 @@ impl AllocCore {
             }
             if let Some(idx) = hit_idx {
                 let slot = self.large_cache_slot_take(idx);
-                let terminal_meta = crate::alloc_core::segment_header::SegmentMeta::new(slot.base);
-                let generation = match terminal_meta.begin_large_reuse() {
+                let terminal_meta = seg_meta(slot.base);
+                let generation = match terminal_meta.compat_begin_large_reuse() {
                     Some(generation) => generation,
                     None => {
                         self.large_cache_used_bytes =
                             self.large_cache_used_bytes.saturating_sub(slot.usable_size);
-                        let state = LargeReservationState::new(terminal_meta.large_state_atomic());
-                        let word = terminal_meta.terminal_snapshot().large_state;
+                        let state =
+                            LargeReservationState::new(terminal_meta.compat_large_state_atomic());
+                        let word = terminal_meta.compat_terminal_snapshot().large_state;
                         if !state.release_cached(
                             crate::alloc_core::segment_header::large_generation(word),
                         ) {
                             fatal(b"large: cached release failed\n");
                         }
                         release_large_mapping(
-                            SegmentHeader::thp_charge_at(slot.base),
+                            SegmentHeader::compat_thp_charge_at(slot.base),
                             slot.reservation,
                             slot.reservation_len,
                         );
@@ -410,7 +415,10 @@ impl AllocCore {
                 // Debug assertions verify geometry before targeted header writes.
                 #[cfg(debug_assertions)]
                 {
-                    let pre = SegmentHeader::read_at(slot.base);
+                    // SAFETY: `slot.base` is a live, table-registered large
+                    // segment owned by this AllocCore; debug read only.
+                    #[allow(unsafe_code)]
+                    let pre = unsafe { SegmentHeader::read_at(slot.base) };
                     debug_assert_eq!(
                         pre.span_usable, slot.usable_size,
                         "F12: large-cache slot's in-memory span_usable diverged from slot.usable_size"
@@ -429,18 +437,18 @@ impl AllocCore {
                     );
                 }
                 #[cfg(debug_assertions)]
-                let charge_before = SegmentHeader::thp_charge_at(slot.base);
+                let charge_before = SegmentHeader::compat_thp_charge_at(slot.base);
                 // The header is prepared before route registration. The
                 // legacy magic field uses an atomic owner-side store; the
                 // other targeted writes are owner-side initialization, not
                 // synchronization for hypothetical foreign header readers.
-                SegmentHeader::set_magic_at(
+                SegmentHeader::compat_set_magic_at(
                     slot.base,
                     crate::alloc_core::segment_header::SEGMENT_MAGIC,
                 );
-                SegmentHeader::set_large_size_at(slot.base, size);
-                SegmentHeader::set_large_align_at(slot.base, align);
-                SegmentHeader::set_bump_at(slot.base, bump);
+                SegmentHeader::compat_set_large_size_at(slot.base, size);
+                SegmentHeader::compat_set_large_align_at(slot.base, align);
+                SegmentHeader::compat_set_bump_at(slot.base, bump);
                 Node::write_usize(
                     Node::offset(
                         slot.base,
@@ -450,7 +458,7 @@ impl AllocCore {
                 );
                 #[cfg(debug_assertions)]
                 debug_assert_eq!(
-                    SegmentHeader::thp_charge_at(slot.base),
+                    SegmentHeader::compat_thp_charge_at(slot.base),
                     charge_before,
                     "F12: large-cache hit's targeted header writes must not change thp_charge"
                 );
@@ -462,21 +470,28 @@ impl AllocCore {
                 // are already written above (F12's targeted writes), but the
                 // slot never becomes visible
                 // in that failure branch, so there is nothing to unwind.
-                let id = match self.table.register_payload(
-                    slot.base,
-                    slot.reserved_capacity,
-                    SegmentKind::Large,
-                    Node::offset(slot.base, hdr_aligned),
-                ) {
+                // SAFETY: `slot.base` is the live allocator-owned large-segment
+                // reservation just recycled into this owner's table; registering
+                // it publishes the valid live base under the table's ownership
+                // protocol (pre-move safe call, contract unchanged).
+                #[allow(unsafe_code)]
+                let id = match unsafe {
+                    self.table.register_payload(
+                        slot.base,
+                        slot.reserved_capacity,
+                        SegmentKind::Large,
+                        Node::offset(slot.base, hdr_aligned),
+                    )
+                } {
                     Some(id) => id,
                     None => {
-                        if !LargeReservationState::new(terminal_meta.large_state_atomic())
+                        if !LargeReservationState::new(terminal_meta.compat_large_state_atomic())
                             .release_initializing(generation)
                         {
                             fatal(b"large: initializing release failed\n");
                         }
                         release_large_mapping(
-                            SegmentHeader::thp_charge_at(slot.base),
+                            SegmentHeader::compat_thp_charge_at(slot.base),
                             slot.reservation,
                             slot.reservation_len,
                         );
@@ -494,9 +509,9 @@ impl AllocCore {
                 #[cfg(feature = "numa-aware")]
                 {
                     let my_node = self.current_node_cached();
-                    SegmentMeta::new(slot.base).set_node_id(my_node);
+                    seg_meta(slot.base).set_node_id(my_node);
                 }
-                terminal_meta.finish_large_reuse(generation);
+                terminal_meta.compat_finish_large_reuse(generation);
                 // Diagnostic (task D1): count this as a cache hit.
                 // Э5 (task #145): load+store instead of `fetch_add` — no
                 // `lock xadd`. SOUND for the same single-writer reason as
@@ -677,16 +692,19 @@ impl AllocCore {
             if align >= SEGMENT {
                 #[cfg(feature = "internals")]
                 #[cfg_attr(not(feature = "alloc-decommit"), allow(unused_mut))]
-                let mut reserved = if DBG_INJECT_BIASED_RESERVE_FAIL.load(Ordering::Relaxed) {
-                    None
-                } else {
-                    os::Segment::reserve_biased(
-                        reserved_capacity_target,
-                        usable,
-                        align,
-                        hdr_aligned,
-                    )
-                };
+                let mut reserved =
+                    if crate::alloc_core::large::reservation_state::DBG_INJECT_BIASED_RESERVE_FAIL
+                        .load(Ordering::Relaxed)
+                    {
+                        None
+                    } else {
+                        os::Segment::reserve_biased(
+                            reserved_capacity_target,
+                            usable,
+                            align,
+                            hdr_aligned,
+                        )
+                    };
                 #[cfg(not(feature = "internals"))]
                 #[cfg_attr(not(feature = "alloc-decommit"), allow(unused_mut))]
                 let mut reserved = os::Segment::reserve_biased(
@@ -746,18 +764,25 @@ impl AllocCore {
         // live large allocations). We release the reservation and return null
         // (graceful OOM) rather than panicking.
         #[cfg(feature = "internals")]
-        let inject_register_fail = DBG_INJECT_LARGE_REGISTER_FAIL.load(Ordering::Relaxed);
+        let inject_register_fail =
+            crate::alloc_core::large::reservation_state::DBG_INJECT_LARGE_REGISTER_FAIL
+                .load(Ordering::Relaxed);
         #[cfg(not(feature = "internals"))]
         let inject_register_fail = false;
         let registered = if inject_register_fail {
             None
         } else {
-            self.table.register_payload(
-                base,
-                reserved_capacity,
-                SegmentKind::Large,
-                Node::offset(base, hdr_aligned),
-            )
+            // SAFETY: `base` is the freshly reserved large segment being
+            // registered into the live owner table (exclusive registration).
+            #[allow(unsafe_code)]
+            unsafe {
+                self.table.register_payload(
+                    base,
+                    reserved_capacity,
+                    SegmentKind::Large,
+                    Node::offset(base, hdr_aligned),
+                )
+            }
         };
         let id = match registered {
             Some(id) => id,
@@ -774,7 +799,7 @@ impl AllocCore {
         // later cache-hit reuse of this segment will carry forward verbatim.
         // R12-4: `reserved_capacity` is likewise the ORIGINAL reserved VA
         // span, carried forward the same way.
-        let hdr = SegmentHeader::large(
+        let hdr = SegmentHeader::compat_large(
             id,
             size,
             align,
@@ -785,55 +810,24 @@ impl AllocCore {
             reservation_len,
         );
         Node::write_struct(base as *mut SegmentHeader, hdr);
-        crate::alloc_core::segment_header::SegmentMeta::new(base).init_large_terminal();
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        seg_meta(base).compat_init_large_terminal();
         if thp_charge != 0 {
-            SegmentHeader::set_thp_charge_at(base, thp_charge);
+            SegmentHeader::compat_set_thp_charge_at(base, thp_charge);
         }
         #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-        SegmentHeader::set_thp_observation_at(base, _thp_observation);
+        SegmentHeader::compat_set_thp_observation_at(base, _thp_observation);
         // Phase C (numa-aware): stamp the NUMA node into the header after
         // writing it (the constructor sets node_id to NO_NODE_RAW).
         #[cfg(feature = "numa-aware")]
-        SegmentMeta::new(base).set_node_id(my_node);
+        seg_meta(base).set_node_id(my_node);
 
         // R9-1: fresh means OS-zeroed only on real OS backends; miri's
         // std::alloc fallback does not zero, so the freshness signal must be
         // withheld there (the caller then zeroes explicitly, restoring the
         // alloc_zeroed contract under miri).
         (Node::deref(base, hdr_aligned), cfg!(not(miri)))
-    }
-
-    /// `#[doc(hidden)]` test hook (R6-CR-3) — not public API. Forces
-    /// `alloc_large` to return null while set. A test MUST clear it (Drop guard).
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn dbg_set_inject_large_alloc_oom(on: bool) {
-        DBG_INJECT_LARGE_ALLOC_OOM.store(on, Ordering::Relaxed);
-    }
-
-    /// `#[doc(hidden)]` test hook (R6-CR-9) — not public API. Forces the first
-    /// non-NUMA biased Large reserve attempt to return None while set.
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn dbg_set_inject_biased_reserve_fail(on: bool) {
-        DBG_INJECT_BIASED_RESERVE_FAIL.store(on, Ordering::Relaxed);
-    }
-
-    /// `#[doc(hidden)]` test hook — not public API. Forces the fresh-path
-    /// Large registration to fail while set, after any advice was reserved.
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn dbg_set_inject_large_register_fail(on: bool) {
-        DBG_INJECT_LARGE_REGISTER_FAIL.store(on, Ordering::Relaxed);
-    }
-
-    /// `#[doc(hidden)]` test forwarder (R6-CR-4) — not public API. Reaches
-    /// `alloc_large` directly with a raw size a `Layout` cannot express
-    /// (`from_size_align` rejects sizes above `isize::MAX`).
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn dbg_alloc_large_for_test(&mut self, size: usize, align: usize) -> *mut u8 {
-        self.alloc_large(size, align).0
     }
 
     /// Reclaim a Large/huge segment that was freed by a REMOTE thread (0.3.0,
@@ -869,22 +863,27 @@ impl AllocCore {
         allow(dead_code)
     )]
     pub(crate) fn reclaim_large_segment(&mut self, base: *mut u8) {
-        let terminal_meta = SegmentMeta::new(base);
-        let state = LargeReservationState::new(terminal_meta.large_state_atomic());
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        let terminal_meta = seg_meta(base);
+        let state = LargeReservationState::new(terminal_meta.compat_large_state_atomic());
         // The sidecar has transferred one consume obligation. This physical
         // owner-only lifecycle credit is claimed once, never producer-mutated.
         let Some(generation) = state.claim_live() else {
             fatal(b"large: live claim credit missing\n");
         };
-        let hdr = SegmentHeader::read_at(base);
+        // SAFETY: `base` is the live registered large segment being reclaimed
+        // under this owner's exclusive lifecycle step; header read only.
+        #[allow(unsafe_code)]
+        let hdr = unsafe { SegmentHeader::read_at(base) };
         // A foreign realloc may have copied this mapping's payload without
         // updating its owner-only token. Consume remote controls conservatively;
         // only the owner-free path may sample a live token.
         #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
         {
-            let token = SegmentHeader::thp_observation_at(base);
+            let token = SegmentHeader::compat_thp_observation_at(base);
             if token != 0 {
-                SegmentHeader::set_thp_observation_at(base, 0);
+                SegmentHeader::compat_set_thp_observation_at(base, 0);
                 if matches!(token, 1..=6) {
                     ThpRuntime::note_invalidated_observation(hdr.large_size);
                 } else if matches!(token, 9..=14) {
@@ -897,7 +896,11 @@ impl AllocCore {
         // Remove from the table FIRST (frees the slot for reuse regardless of
         // which branch below runs) — mirrors the own-thread cache-deposit
         // ordering in `dealloc`'s Large branch.
-        self.table.unregister(base);
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        unsafe {
+            self.table.unregister(base)
+        };
 
         #[cfg(feature = "alloc-decommit")]
         {

@@ -15,7 +15,9 @@ use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::segment_header::large_generation;
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
+#[cfg(feature = "alloc-decommit")]
+use crate::alloc_core::segment_header::SegmentHeader;
+use crate::alloc_core::segment_header::SegmentKind;
 
 use super::bootstrap;
 #[cfg(feature = "alloc-decommit")]
@@ -30,6 +32,7 @@ use crate::alloc_core::numa;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::os::SEGMENT;
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
+use sefer_segment::support::root_compat::traits::*;
 
 /// R31-15 (task #486): process-wide monotonic source for
 /// [`AllocCore::dbg_reservation_owner_id`]. `bench-internals`-gated, same
@@ -66,14 +69,15 @@ fn release_cached_on_drop(cached: CachedLarge) {
     // The detached slot owns the reservation; a failed credit transition is
     // terminal, and must never be followed by an OS release.
     {
-        let meta = SegmentMeta::new(cached.base);
-        let generation = large_generation(meta.terminal_snapshot().large_state);
-        if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
+        let meta = crate::alloc_core::segment::header_facade::meta(cached.base);
+        let generation = large_generation(meta.compat_terminal_snapshot().large_state);
+        if !LargeReservationState::new(meta.compat_large_state_atomic()).release_cached(generation)
+        {
             fatal(b"lifecycle: cached release failed\n");
         }
     }
     release_large_mapping(
-        SegmentHeader::thp_charge_at(cached.base),
+        SegmentHeader::compat_thp_charge_at(cached.base),
         cached.reservation,
         cached.reservation_len,
     );
@@ -291,11 +295,16 @@ impl AllocCore {
         #[cfg(feature = "numa-aware")]
         {
             let my_node = numa::current_node();
-            SegmentMeta::new(primordial_base).set_node_id(my_node);
+            crate::alloc_core::segment::header_facade::meta(primordial_base).set_node_id(my_node);
         }
         #[cfg(feature = "alloc-global")]
         if let Some(owner) = owner {
-            prim.table.attach_owner(owner, primordial_base)?;
+            // SAFETY: primordial base is the live initialized table segment;
+            // owner id comes from the registry lease (single-threaded boot).
+            #[allow(unsafe_code)]
+            unsafe {
+                prim.table.attach_owner(owner, primordial_base)?
+            };
         }
         #[cfg(not(feature = "alloc-global"))]
         let _ = owner;
@@ -522,7 +531,7 @@ impl Drop for AllocCore {
         // reading `slots[i]` for every remaining `i` as the loop continues —
         // freeing that segment early would make those later reads
         // use-after-free. Every OTHER segment's memory is read only by
-        // `SegmentHeader::read_at(base)` right here, before it is released,
+        // `crate::alloc_core::segment::header_facade::read_at(base)` right here, before it is released,
         // so freeing it immediately (rather than after the whole walk) is
         // safe: nothing later in this loop depends on that segment (as
         // opposed to the primordial segment, which hosts the registry
@@ -541,7 +550,7 @@ impl Drop for AllocCore {
             // at register-time). We free them all — including large segments
             // whose magic was zeroed by `dealloc` (they are still mapped and
             // still carry the reservation info in their header).
-            let hdr = SegmentHeader::read_at(base);
+            let hdr = crate::alloc_core::segment::header_facade::read_at(base);
             if i == 0 {
                 primordial_reservation = Some((hdr.reservation, hdr.reservation_len));
                 continue;
@@ -550,8 +559,8 @@ impl Drop for AllocCore {
                 // A registered Large in a standalone core is still LIVE.
                 // Claim its credit before the terminal transition and unmap.
                 {
-                    let meta = SegmentMeta::new(base);
-                    let state = LargeReservationState::new(meta.large_state_atomic());
+                    let meta = crate::alloc_core::segment::header_facade::meta(base);
+                    let state = LargeReservationState::new(meta.compat_large_state_atomic());
                     let Some(generation) = state.claim_live() else {
                         fatal(b"lifecycle: live claim credit missing\n");
                     };

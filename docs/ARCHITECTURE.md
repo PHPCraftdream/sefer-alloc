@@ -140,8 +140,8 @@ sefer-alloc
  └── malloc-bench-rs (crates/bench/malloc-bench-rs) — portable GlobalAlloc bench harness (standalone)
 ```
 
-The workspace now has fourteen companion crates (P1.3 added `sefer-policy`, the extracted `src/alloc_core/config` policy layer; P1.4 added `sefer-platform`, the extracted fatal/process-exit/segment OS aperture); the complete current list is in
-[README §Workspace](../README.md#workspace-fourteen-independently-publishable-companion-crates).
+The workspace now has fifteen companion crates (P1.3 added `sefer-policy`, the extracted `src/alloc_core/config` policy layer; P1.4 added `sefer-platform`, the extracted fatal/process-exit/segment OS aperture; P21 added `sefer-segment`, the extracted segment/route substrate); the complete current list is in
+[README §Workspace](../README.md#workspace-fifteen-independently-publishable-companion-crates).
 Each original extraction is a real crates.io crate. The
 extraction **improved the audit story**: the two OS-unsafe sub-problems are now
 small, single-responsibility crates that can be audited in complete isolation.
@@ -157,13 +157,14 @@ small, single-responsibility crates that can be audited in complete isolation.
 | `numa-shim` | `crates/platform/numa-shim/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim; sole responsibility = mbind(2)/VirtualAllocExNuma. Small, audit in isolation. |
 | `malloc-bench-rs` | `crates/bench/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
 | `sefer-policy` | `crates/core/sefer-policy/` | `#![forbid(unsafe_code)]` — zero own unsafe, zero raw pointers; the former `src/alloc_core/config` policy layer (moved P1.3). |
+| `sefer-segment` | `crates/core/sefer-segment/` | `#![allow(unsafe_code)]` in 8 tier-1 seam files (route directory/blocks, shard lock, small sidecar, leaf classes, route slots, continuation bounds, node) — the former `src/alloc_core/segment` substrate (moved P21). |
 | `sefer-region` | `crates/containers/sefer-region/` | `#![forbid(unsafe_code)]` — zero own unsafe (shown for contrast; does **not** match the grep above); slotmap's core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/containers/sefer-region/README.md` "## Safety"). |
 
 **Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):
 
-The current tree has **30** tier-1 `#![allow(unsafe_code)]` files (21 in
-`src/`, 9 in `crates/`) and **112** item-scoped allows across **34** files.
-The ordinary `production` build activates 18 tier-1 seam files (16 in `src/`, 2 in `sefer-platform`);
+The current tree has **32** tier-1 `#![allow(unsafe_code)]` files (15 in
+`src/`, 17 in `crates/`) and **232** item-scoped allows across **56** files.
+The ordinary `production` build activates 20 tier-1 seam files (10 in `src/`, 8 in `sefer-segment`, 2 in `sefer-platform`);
 `--cfg loom` adds its bootstrap shim, while `batch-api`,
 `large-cache-extended` and `experimental` add optional seams. See
 [README §Where unsafe lives](../README.md#where-unsafe-lives-the-complete-list)

@@ -87,15 +87,18 @@ impl IncarnationProbe {
         Self { ptr, layout }
     }
     fn issue(&self) -> u64 {
-        let registration = RouteDirectory::global()
-            .register(
+        // SAFETY: address-only probe registration over the caller-owned
+        // System allocation; the route unlinks on drop.
+        let registration = unsafe {
+            RouteDirectory::global().register(
                 self.ptr,
                 self.layout.size(),
                 self.ptr,
                 usize::MAX,
                 RouteKind::Large,
             )
-            .expect("probe registration failed");
+        }
+        .expect("probe registration failed");
         let incarnation = registration.incarnation();
         drop(registration); // Must be absent before every census and tail cycle.
         incarnation

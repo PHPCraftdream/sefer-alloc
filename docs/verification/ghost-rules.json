@@ -207,11 +207,11 @@
       "id": "P5",
       "name": "route pin: lookup || unlink || last-pin release",
       "prod": [
-        "src/alloc_core/segment/segment_route/directory/route_directory.rs::pin_from_array",
-        "src/alloc_core/segment/segment_route/directory/route_directory.rs::drop",
-        "src/alloc_core/segment/segment_route/directory/route_directory.rs::remove",
-        "src/alloc_core/segment/segment_route/route_state/pin.rs::linked",
-        "src/alloc_core/segment/segment_route/route_state/shard_lock.rs"
+        "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs::pin_from_array",
+        "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs::drop",
+        "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs::remove",
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs::linked",
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/shard_lock.rs"
       ],
       "invariants": [
         "I1 a pin is taken only under the shard lock while the entry is indexed (refs fetch_update AcqRel)",
@@ -238,7 +238,7 @@
       "id": "P6",
       "name": "route pin cache fast path",
       "prod": [
-        "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs"
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs"
       ],
       "invariants": [
         "I1 a cached pin is reused only while it holds its own ref; eviction drops exactly one ref",
@@ -260,9 +260,9 @@
       "id": "P7",
       "name": "sidecar bitmap: publish / guarded cut / scan",
       "prod": [
-        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
-        "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs",
-        "src/alloc_core/segment/remote_bitmap/bitmap_cut.rs"
+        "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs",
+        "crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs",
+        "crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_cut.rs"
       ],
       "invariants": [
         "I1 every published offset is cut exactly once",
@@ -286,8 +286,8 @@
       "id": "P8",
       "name": "small sidecar: leaf pointer publication, pin lifetime",
       "prod": [
-        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
-        "src/alloc_core/segment/segment_route/route_state/small_sidecar.rs"
+        "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs"
       ],
       "invariants": [
         "I1 a leaf pointer is published (mixed store Release, present fetch_or Release) only after the leaf is fully initialised",
@@ -311,10 +311,10 @@
       "id": "P9",
       "name": "terminal Large: phase word",
       "prod": [
-        "src/alloc_core/large/reservation_state.rs",
-        "src/alloc_core/segment/segment_route/route_protocol/large_state.rs",
-        "src/alloc_core/segment/segment_header/terminal_words.rs",
-        "src/alloc_core/segment/segment_route/route_state/pin.rs::publish_large"
+        "crates/core/sefer-segment/src/support/reservation_state.rs",
+        "crates/core/sefer-segment/src/segment/segment_route/route_protocol/large_state.rs",
+        "crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs",
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs::publish_large"
       ],
       "invariants": [
         "I1 the phase word moves only along the transition relation (kani large_state_proofs)",
@@ -338,7 +338,7 @@
       "name": "terminal owner drain: owner credits || cut",
       "prod": [
         "src/alloc_core/alloc_core/sidecar_drain.rs",
-        "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs::next_cut"
+        "crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs::next_cut"
       ],
       "invariants": [
         "I1 credits are mutated only by the owner (plain fields, no atomics)",
@@ -363,8 +363,8 @@
       "id": "P11",
       "name": "active-kind index membership || terminal publication",
       "prod": [
-        "src/alloc_core/segment/segment_table/active_kind_index.rs",
-        "src/alloc_core/segment/segment_table/active_kind_ops.rs",
+        "crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_index.rs",
+        "crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_ops.rs",
         "src/alloc_core/alloc_core/sidecar_drain.rs"
       ],
       "invariants": [
@@ -515,8 +515,8 @@
         "crates/primitives/once-ptr-cell/src/imp.rs",
         "crates/primitives/tagged-index-stack/src/imp.rs",
         "crates/platform/aligned-vmem/src/mock.rs",
-        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
-        "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs"
+        "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs"
       ],
       "invariants": [
         "I1 each loom twin has the same normalized atomic sequence as its prod item; allowed differences are listed with a reason"
@@ -603,7 +603,7 @@
       "id": "P22",
       "name": "route ShardLock (spin lock over the directory shard)",
       "prod": [
-        "src/alloc_core/segment/segment_route/route_state/shard_lock.rs"
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/shard_lock.rs"
       ],
       "invariants": [
         "I1 CAS-weak Acquire/Relaxed on lock, Release store on ShardGuard drop",
@@ -624,9 +624,9 @@
       "id": "P23",
       "name": "remote-free ingress: producer notify || owner take/arm/full drain (SC-6 A-exact)",
       "prod": [
-        "src/alloc_core/segment/segment_route/directory/ingress.rs",
-        "src/alloc_core/segment/segment_route/route_state/pin.rs::publish_small_borrowed",
-        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs::publish",
+        "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs",
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs::publish_small_borrowed",
+        "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs::publish",
         "src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs::drain_notified_slot"
       ],
       "invariants": [
@@ -971,8 +971,8 @@
       "class": "protocol",
       "protocol": "P5",
       "files": [
-        "src/alloc_core/segment/segment_route/directory/route_directory.rs",
-        "src/alloc_core/segment/segment_route/directory/blocks.rs"
+        "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
+        "crates/core/sefer-segment/src/segment/segment_route/directory/blocks.rs"
       ],
       "receiver": "refs$|linked$",
       "reason": "pin refcount and linked flag"
@@ -982,8 +982,8 @@
       "class": "lock-local",
       "protocol": "P5",
       "files": [
-        "src/alloc_core/segment/segment_route/directory/route_directory.rs",
-        "src/alloc_core/segment/segment_route/directory/blocks.rs"
+        "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
+        "crates/core/sefer-segment/src/segment/segment_route/directory/blocks.rs"
       ],
       "receiver_not": "refs$|linked$|B4_DIRECTORY_LOOKUPS$|next_incarnation$",
       "orderings": [
@@ -996,7 +996,7 @@
       "class": "protocol",
       "protocol": "P23",
       "files": [
-        "src/alloc_core/segment/segment_route/directory/ingress.rs"
+        "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs"
       ],
       "reason": "per-route ingress state and per-heap notification cell (SC-6 A-exact)"
     },
@@ -1005,7 +1005,7 @@
       "class": "protocol",
       "protocol": "P5",
       "files": [
-        "src/alloc_core/segment/segment_route/route_state/pin.rs"
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs"
       ],
       "reason": "RoutePin::linked Acquire"
     },
@@ -1014,7 +1014,7 @@
       "class": "protocol",
       "protocol": "P22",
       "files": [
-        "src/alloc_core/segment/segment_route/route_state/shard_lock.rs"
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/shard_lock.rs"
       ],
       "receiver": "locked$",
       "reason": "spin lock"
@@ -1024,8 +1024,8 @@
       "class": "protocol",
       "protocol": "P7",
       "files": [
-        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
-        "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs"
+        "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs",
+        "crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs"
       ],
       "reason": "publish fetch_or / class store / cut swap"
     },
@@ -1034,7 +1034,7 @@
       "class": "protocol",
       "protocol": "P8",
       "files": [
-        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs"
+        "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs"
       ],
       "receiver_not": "^(ALLOC_BYTES|ZEROED_BYTES|FREE_BYTES|ALLOC_COUNT|FREE_COUNT|CHUNK_ALLOC_COUNT|CHUNK_FREE_COUNT)$",
       "fn_not": "^drop$",
@@ -1045,7 +1045,7 @@
       "class": "lock-local",
       "protocol": "P8",
       "files": [
-        "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs"
+        "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs"
       ],
       "fn": "^drop$",
       "reason": "Drop has &mut self: exclusive, Relaxed reads are sufficient"
@@ -1055,9 +1055,9 @@
       "class": "protocol",
       "protocol": "P9",
       "files": [
-        "src/alloc_core/large/reservation_state.rs",
-        "src/alloc_core/segment/segment_route/route_protocol/large_state.rs",
-        "src/alloc_core/segment/segment_header/terminal_words.rs"
+        "crates/core/sefer-segment/src/support/reservation_state.rs",
+        "crates/core/sefer-segment/src/segment/segment_route/route_protocol/large_state.rs",
+        "crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs"
       ],
       "reason": "phase word"
     },
@@ -1276,6 +1276,21 @@
       ]
     },
     {
+      "id": "counter/directory-stats",
+      "class": "counter",
+      "files": [
+        "src/alloc_core/small/**"
+      ],
+      "receiver": "^(.*::)?directory_stats::[a-z_]+\\(\\)$",
+      "ops": [
+        "fetch_add"
+      ],
+      "orderings": [
+        "Relaxed"
+      ],
+      "reason": "directory statistics counters accessed via root_compat::directory_stats const-fn accessors: Relaxed, no protocol reads them (P2.1 moved the statics behind accessors; same semantics as counter/statics)"
+    },
+    {
       "id": "counter/per-heap",
       "class": "counter",
       "files": [
@@ -1297,7 +1312,7 @@
       "id": "counter/pin-cache-macro",
       "class": "counter",
       "files": [
-        "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs"
+        "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs"
       ],
       "reason": "macro_rules! count bumps a static counter",
       "item": "^macro_rules! count$"
@@ -1306,7 +1321,7 @@
       "id": "counter/tier1-bump",
       "class": "counter",
       "files": [
-        "src/alloc_core/alloc_core/counters.rs"
+        "crates/core/sefer-segment/src/support/facade/counters.rs"
       ],
       "fn": "^tier1_bump$",
       "receiver": "^counter$",
@@ -1319,7 +1334,7 @@
       "id": "hook/terminal-gate",
       "class": "test-hook",
       "files": [
-        "src/alloc_core/segment/segment_route/route_protocol/terminal_publication_gate.rs"
+        "crates/core/sefer-segment/src/segment/segment_route/route_protocol/terminal_publication_gate.rs"
       ],
       "reason": "test gate that pauses a producer after publication"
     },
@@ -1327,7 +1342,7 @@
       "id": "node/atomic-read",
       "class": "lock-local",
       "files": [
-        "src/alloc_core/platform/node.rs"
+        "crates/core/sefer-segment/src/support/node.rs"
       ],
       "reason": "Node::read_struct_with_atomic_word: Relaxed read of a word whose ordering the caller establishes"
     },
@@ -2124,7 +2139,7 @@
       "id": "route-pin/drop-acqrel",
       "kind": "R1",
       "protocol": "P5",
-      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::drop",
       "site": {
         "name": "fetch_sub",
@@ -2149,7 +2164,7 @@
       "mutants": [
         {
           "id": "relaxed-decrement",
-          "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+          "file": "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
           "from": "let prev = entry.refs.fetch_sub(1, Ordering::AcqRel);",
           "to": "let prev = entry.refs.fetch_sub(1, Ordering::Relaxed);",
           "checker": {
@@ -2173,7 +2188,7 @@
       "id": "route-pin/pin-acqrel",
       "kind": "R1",
       "protocol": "P5",
-      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::pin_from_array",
       "site": {
         "name": "fetch_update",
@@ -2200,7 +2215,7 @@
       "id": "route-pin/unlink-release",
       "kind": "R1",
       "protocol": "P5",
-      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
       "fn": "RouteDirectory::remove",
       "site": {
         "name": "store",
@@ -2227,7 +2242,7 @@
       "id": "route-pin/last-ref-free",
       "kind": "R4",
       "protocol": "P5",
-      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::drop",
       "action": {
         "name": "free_sidecar"
@@ -2248,7 +2263,7 @@
       "mutants": [
         {
           "id": "free-before-count-check",
-          "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+          "file": "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
           "from": "        if prev != 1 {\n            return;\n        }\n",
           "to": "        let sidecar = entry.sidecar.load(Ordering::Relaxed);\n        Self::free_sidecar(entry.kind, sidecar);\n        if prev != 1 {\n            return;\n        }\n",
           "checker": {
@@ -2272,7 +2287,7 @@
       "id": "route-pin/decrement-before-free",
       "kind": "R3",
       "protocol": "P5",
-      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::drop",
       "before": {
         "name": "fetch_sub",
@@ -2298,7 +2313,7 @@
       "kind": "R5",
       "protocol": "P5",
       "files": [
-        "src/alloc_core/segment/segment_route/**"
+        "crates/core/sefer-segment/src/segment/segment_route/**"
       ],
       "target": {
         "name": "free_sidecar"
@@ -2323,7 +2338,7 @@
       "id": "route-pin/ghost-drop",
       "kind": "R6",
       "protocol": "P5",
-      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::drop",
       "ghost": "route-pin/refs-no-underflow",
       "terms": [
@@ -2342,7 +2357,7 @@
       "id": "route-pin/ghost-pin",
       "kind": "R6",
       "protocol": "P5",
-      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::pin_from_array",
       "ghost": "route-pin/no-resurrection",
       "terms": [
@@ -4058,7 +4073,7 @@
       "id": "sidecar/publish-acqrel",
       "kind": "R1",
       "protocol": "P7",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs",
       "fn": "SidecarBitmap::publish",
       "site": {
         "name": "fetch_or",
@@ -4085,7 +4100,7 @@
       "id": "sidecar/issue-release",
       "kind": "R1",
       "protocol": "P7",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs",
       "fn": "SidecarBitmap::issue",
       "site": {
         "name": "store"
@@ -4110,7 +4125,7 @@
       "id": "sidecar/cut-acqrel",
       "kind": "R1",
       "protocol": "P7",
-      "file": "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs",
       "fn": "BitmapScan::next_cut",
       "site": {
         "name": "swap",
@@ -4137,7 +4152,7 @@
       "id": "sidecar/ghost-published",
       "kind": "R6",
       "protocol": "P7",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs",
       "fn": "SidecarBitmap::publish",
       "ghost": "sidecar/published",
       "terms": [
@@ -4154,7 +4169,7 @@
       "mutants": [
         {
           "id": "publish-without-ghost-event",
-          "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+          "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs",
           "from": "        crate::ghost::ghost_event!(\n            \"sidecar/published\",\n            core::ptr::from_ref(&self.pending[granule / 64]).addr(),\n            1\n        );\n",
           "to": "",
           "checker": {
@@ -4180,7 +4195,7 @@
       "id": "sidecar/ghost-cut",
       "kind": "R6",
       "protocol": "P7",
-      "file": "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs",
       "fn": "BitmapScan::next_cut",
       "ghost": "sidecar/cut-bits",
       "terms": [
@@ -4199,7 +4214,7 @@
       "id": "class-leaves/prepared-inventory",
       "kind": "R2",
       "protocol": "P8",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
       "fn": "ClassLeaves::prepared",
       "sites": [
         {
@@ -4226,7 +4241,7 @@
       "id": "class-leaves/prepare-inventory",
       "kind": "R2",
       "protocol": "P8",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
       "fn": "ClassLeaves::prepare",
       "sites": [],
       "terms": [
@@ -4246,7 +4261,7 @@
       "id": "class-leaves/promote-inventory",
       "kind": "R2",
       "protocol": "P8",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
       "fn": "ClassLeaves::promote",
       "sites": [
         {
@@ -4277,7 +4292,7 @@
       "mutants": [
         {
           "id": "relaxed-leaf-publication",
-          "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+          "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
           "from": "        self.mixed[leaf].store(fresh, Ordering::Release);\n",
           "to": "        self.mixed[leaf].store(fresh, Ordering::Relaxed);\n",
           "checker": {
@@ -4303,7 +4318,7 @@
       "id": "class-leaves/issue-inventory",
       "kind": "R2",
       "protocol": "P8",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
       "fn": "ClassLeaves::issue",
       "sites": [
         {
@@ -4336,7 +4351,7 @@
       "id": "class-leaves/encoded-inventory",
       "kind": "R2",
       "protocol": "P8",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
       "fn": "ClassLeaves::encoded",
       "sites": [
         {
@@ -4369,7 +4384,7 @@
       "id": "class-leaves/drop-inventory",
       "kind": "R2",
       "protocol": "P8",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
       "fn": "ClassLeaves::drop",
       "sites": [
         {
@@ -4414,7 +4429,7 @@
       "id": "class-leaves/init-before-publish",
       "kind": "R3",
       "protocol": "P8",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
       "fn": "ClassLeaves::promote",
       "before": {
         "name": "write_bytes"
@@ -4441,7 +4456,7 @@
       "id": "class-leaves/publish-before-presence",
       "kind": "R3",
       "protocol": "P8",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
       "fn": "ClassLeaves::promote",
       "before": {
         "name": "store",
@@ -4468,7 +4483,7 @@
       "id": "class-leaves/drop-walks-presence",
       "kind": "R3",
       "protocol": "P8",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
       "fn": "ClassLeaves::drop",
       "before": {
         "name": "iter",
@@ -4545,7 +4560,7 @@
       "id": "pin-cache/ghost-sweep",
       "kind": "R6",
       "protocol": "P6",
-      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs",
       "fn": "PinCache::sweep_dead_slots",
       "ghost": "pin-cache/held",
       "count": 1,
@@ -4566,7 +4581,7 @@
       "id": "pin-cache/ghost-drop",
       "kind": "R6",
       "protocol": "P6",
-      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs",
       "fn": "PinCache::drop",
       "ghost": "pin-cache/held",
       "count": 1,
@@ -4584,7 +4599,7 @@
       "mutants": [
         {
           "id": "tls-drop-without-ghost-event",
-          "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
+          "file": "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs",
           "from": "            crate::ghost::ghost_event!(\"pin-cache/held\", slot.base, -i64::from(slot.pin.is_some()));\n",
           "to": "",
           "checker": {
@@ -4611,7 +4626,7 @@
       "id": "pin-cache/ghost-publish",
       "kind": "R6",
       "protocol": "P6",
-      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs",
       "fn": "publish_cached",
       "ghost": "pin-cache/held",
       "count": 2,
@@ -4629,7 +4644,7 @@
       "mutants": [
         {
           "id": "unlink-fallback-without-ghost-event",
-          "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
+          "file": "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs",
           "from": "                    count!(PIN_CACHE_UNLINK_FALLBACKS);\n                    slot.pin = None;\n                    crate::ghost::ghost_event!(\"pin-cache/held\", slot.base, -1);\n",
           "to": "                    count!(PIN_CACHE_UNLINK_FALLBACKS);\n                    slot.pin = None;\n",
           "checker": {
@@ -4656,7 +4671,7 @@
       "id": "pin-cache/ghost-insert",
       "kind": "R6",
       "protocol": "P6",
-      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs",
       "fn": "cache_insert",
       "ghost": "pin-cache/held",
       "count": 4,
@@ -4677,7 +4692,7 @@
       "id": "pin-cache/ghost-evict",
       "kind": "R6",
       "protocol": "P6",
-      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs",
       "fn": "cache_evict",
       "ghost": "pin-cache/held",
       "count": 1,
@@ -4698,7 +4713,7 @@
       "id": "pin-cache/tls-decl",
       "kind": "R10",
       "protocol": "P6",
-      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs",
       "decl": {
         "static": "CACHE",
         "thread_local": true,
@@ -4770,7 +4785,7 @@
       "id": "owner-drain/credit-plain",
       "kind": "R10",
       "protocol": "P10",
-      "file": "src/alloc_core/segment/segment_header/segment_header_impl.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/segment_header_impl.rs",
       "decl": {
         "owner": "SegmentHeader",
         "field": "live_count"
@@ -4953,7 +4968,7 @@
       "id": "active-kind/plain-small",
       "kind": "R10",
       "protocol": "P11",
-      "file": "src/alloc_core/segment/segment_table/active_kind_index.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_index.rs",
       "decl": {
         "owner": "ActiveKindIndex",
         "field": "small"
@@ -4975,7 +4990,7 @@
       "id": "active-kind/plain-large",
       "kind": "R10",
       "protocol": "P11",
-      "file": "src/alloc_core/segment/segment_table/active_kind_index.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_index.rs",
       "decl": {
         "owner": "ActiveKindIndex",
         "field": "large"
@@ -5186,7 +5201,7 @@
       "id": "large/publish-pending-inventory",
       "kind": "R2",
       "protocol": "P9",
-      "file": "src/alloc_core/large/reservation_state.rs",
+      "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
       "fn": "LargeReservationState::publish_pending",
       "sites": [
         {
@@ -5213,7 +5228,7 @@
       "id": "large/claim-pending-inventory",
       "kind": "R2",
       "protocol": "P9",
-      "file": "src/alloc_core/large/reservation_state.rs",
+      "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
       "fn": "LargeReservationState::claim_pending",
       "sites": [
         {
@@ -5246,7 +5261,7 @@
       "id": "large/claim-live-inventory",
       "kind": "R2",
       "protocol": "P9",
-      "file": "src/alloc_core/large/reservation_state.rs",
+      "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
       "fn": "LargeReservationState::claim_live",
       "sites": [
         {
@@ -5279,7 +5294,7 @@
       "id": "large/begin-reuse-inventory",
       "kind": "R2",
       "protocol": "P9",
-      "file": "src/alloc_core/large/reservation_state.rs",
+      "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
       "fn": "LargeReservationState::begin_reuse",
       "sites": [
         {
@@ -5312,7 +5327,7 @@
       "id": "large/transition-inventory",
       "kind": "R2",
       "protocol": "P9",
-      "file": "src/alloc_core/large/reservation_state.rs",
+      "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
       "fn": "LargeReservationState::transition",
       "sites": [
         {
@@ -5339,7 +5354,7 @@
       "id": "large/claim-pending-guard",
       "kind": "R4",
       "protocol": "P9",
-      "file": "src/alloc_core/large/reservation_state.rs",
+      "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
       "fn": "LargeReservationState::claim_pending",
       "action": {
         "name": "compare_exchange"
@@ -5358,7 +5373,7 @@
       "mutants": [
         {
           "id": "claim-without-pending-check",
-          "file": "src/alloc_core/large/reservation_state.rs",
+          "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
           "from": "        if large_phase(observed) != Some(LargePhase::Pending) {\n            return None;\n        }\n",
           "to": "",
           "checker": {
@@ -5385,7 +5400,7 @@
       "id": "large/claim-live-guard",
       "kind": "R4",
       "protocol": "P9",
-      "file": "src/alloc_core/large/reservation_state.rs",
+      "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
       "fn": "LargeReservationState::claim_live",
       "action": {
         "name": "compare_exchange"
@@ -5407,7 +5422,7 @@
       "id": "large/begin-reuse-guard",
       "kind": "R4",
       "protocol": "P9",
-      "file": "src/alloc_core/large/reservation_state.rs",
+      "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
       "fn": "LargeReservationState::begin_reuse",
       "action": {
         "name": "compare_exchange"
@@ -5429,7 +5444,7 @@
       "id": "large/ghost-publish",
       "kind": "R6",
       "protocol": "P9",
-      "file": "src/alloc_core/large/reservation_state.rs",
+      "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
       "fn": "LargeReservationState::publish_pending",
       "ghost": "large/pending",
       "count": 1,
@@ -5446,7 +5461,7 @@
       "mutants": [
         {
           "id": "publish-without-ghost-event",
-          "file": "src/alloc_core/large/reservation_state.rs",
+          "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
           "from": "        crate::ghost::ghost_event!(\n            \"large/pending\",\n            core::ptr::from_ref(self.word).addr(),\n            i64::from(published)\n        );\n",
           "to": "",
           "checker": {
@@ -5473,7 +5488,7 @@
       "id": "large/ghost-claim",
       "kind": "R6",
       "protocol": "P9",
-      "file": "src/alloc_core/large/reservation_state.rs",
+      "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
       "fn": "LargeReservationState::claim_pending",
       "ghost": "large/pending",
       "count": 1,
@@ -5490,7 +5505,7 @@
       "mutants": [
         {
           "id": "claim-without-ghost-event",
-          "file": "src/alloc_core/large/reservation_state.rs",
+          "file": "crates/core/sefer-segment/src/support/reservation_state.rs",
           "from": "        crate::ghost::ghost_event!(\n            \"large/pending\",\n            core::ptr::from_ref(self.word).addr(),\n            -i64::from(claimed.is_some())\n        );\n",
           "to": "",
           "checker": {
@@ -5517,7 +5532,7 @@
       "id": "sidecar/publish-requires-issue",
       "kind": "R4",
       "protocol": "P7",
-      "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+      "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs",
       "fn": "SidecarBitmap::publish",
       "action": {
         "name": "fetch_or"
@@ -5537,7 +5552,7 @@
       "mutants": [
         {
           "id": "publish-unissued",
-          "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+          "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs",
           "from": "        #[cfg(any(feature = \"misuse-checks\", debug_assertions))]\n        if self.classes.encoded(granule) == 0 {\n            crate::alloc_core::state_byte::StateByte::shadow_reject(\n                b\"sefer-alloc: misuse check rejected a foreign free of an unissued granule in safe mode\\n\",\n            );\n            return false;\n        }\n        self.pending",
           "to": "        self.pending",
           "checker": {
@@ -6941,7 +6956,7 @@
       "id": "ingress/check-seqcst",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs",
       "fn": "SegmentIngress::after_publish",
       "site": {
         "name": "load",
@@ -6968,7 +6983,7 @@
       "id": "ingress/notify-cas",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs",
       "fn": "SegmentIngress::notify",
       "site": {
         "name": "compare_exchange",
@@ -6996,7 +7011,7 @@
       "id": "ingress/arm-release",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs",
       "fn": "SegmentIngress::arm",
       "site": {
         "name": "store",
@@ -7023,7 +7038,7 @@
       "id": "ingress/arm-fence",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs",
       "fn": "SegmentIngress::arm",
       "site": {
         "name": "fence"
@@ -7049,7 +7064,7 @@
       "id": "ingress/summary-release",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs",
       "fn": "HeapIngress::notify",
       "site": {
         "name": "fetch_or",
@@ -7076,7 +7091,7 @@
       "id": "ingress/take-summary-acquire",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs",
       "fn": "HeapIngress::take",
       "site": {
         "name": "swap",
@@ -7103,7 +7118,7 @@
       "id": "ingress/take-mask-acquire",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs",
       "fn": "HeapIngress::take",
       "site": {
         "name": "swap",
@@ -7130,7 +7145,7 @@
       "id": "ingress/arm-then-fence",
       "kind": "R3",
       "protocol": "P23",
-      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs",
       "fn": "SegmentIngress::arm",
       "before": {
         "name": "store",
@@ -7156,7 +7171,7 @@
       "id": "ingress/mask-before-summary",
       "kind": "R3",
       "protocol": "P23",
-      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs",
       "fn": "HeapIngress::notify",
       "before": {
         "name": "fetch_or",
@@ -7183,7 +7198,7 @@
       "id": "ingress/rmw-before-check",
       "kind": "R3",
       "protocol": "P23",
-      "file": "src/alloc_core/segment/segment_route/route_state/pin.rs",
+      "file": "crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs",
       "fn": "RoutePin::publish_small_borrowed",
       "before": {
         "name": "publish"

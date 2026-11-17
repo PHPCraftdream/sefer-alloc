@@ -11,9 +11,15 @@ use crate::alloc_core::node::Node;
     feature = "alloc-xthread",
     any(feature = "misuse-checks", debug_assertions)
 ))]
+use crate::alloc_core::segment::header_facade::{kind_at, meta as seg_meta};
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    any(feature = "misuse-checks", debug_assertions)
+))]
 use crate::alloc_core::segment_header::Layout as SegLayout;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_header::{SegmentKind, FREE_LIST_NULL};
 #[cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
@@ -22,6 +28,12 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta,
 use crate::alloc_core::size_classes::SizeClasses;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use core::ptr::NonNull;
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    any(feature = "misuse-checks", debug_assertions)
+))]
+use sefer_segment::support::root_compat::traits::*;
 
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 impl AllocCore {
@@ -34,17 +46,17 @@ impl AllocCore {
         if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
             fatal(b"alloc_core_small_reclaim: small class index out of range\n");
         }
-        let kind = SegmentHeader::kind_at(base);
+        let kind = kind_at(base);
         if !matches!(kind, SegmentKind::Small | SegmentKind::Primordial) {
             fatal(b"alloc_core_small_reclaim: sidecar record kind is not small\n");
         }
-        let mut meta = SegmentMeta::new(base);
+        let mut meta = seg_meta(base);
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         let (payload_start, block_size) = (
             if kind == SegmentKind::Primordial {
-                SegLayout::primordial_meta_end()
+                SegLayout::compat_primordial_meta_end()
             } else {
-                SegLayout::small_meta_end()
+                SegLayout::compat_small_meta_end()
             },
             SizeClasses::block_size(class_idx),
         );
@@ -62,24 +74,24 @@ impl AllocCore {
         // class-agnostic like the old bitmap bits.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         {
-            let sb = meta.state_byte().read(offset);
+            let sb = meta.compat_state_byte().compat_read(offset);
             if (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
-                crate::alloc_core::state_byte::StateByte::shadow_reject(
+                crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                     b"sefer-alloc: misuse check rejected a remote free in safe mode (reclaim FREE)\n",
                 );
                 return false;
             }
             #[cfg(feature = "fastbin")]
             if (sb >> 6) == crate::alloc_core::state_byte::StateByte::MAG {
-                crate::alloc_core::state_byte::StateByte::shadow_reject(
+                crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                     b"sefer-alloc: misuse check rejected a remote free in safe mode (reclaim MAG)\n",
                 );
                 return false;
             }
         }
         let ptr = Node::deref(base, off);
-        let mut bins = meta.bin_table();
-        let old_head = bins.head(class_idx);
+        let mut bins = meta.compat_bin_table();
+        let old_head = bins.compat_head(class_idx);
         let next = if old_head == FREE_LIST_NULL {
             core::ptr::null_mut()
         } else {
@@ -89,14 +101,14 @@ impl AllocCore {
             fatal(b"alloc_core_small_reclaim: reclaimed record resolves to null\n")
         });
         Node::write_next(block, next);
-        bins.set_head(class_idx, offset);
+        bins.compat_set_head(class_idx, offset);
         // B4 (в): commit LIVE → FREE in the state byte.
-        meta.state_byte().write(
+        meta.compat_state_byte().compat_write(
             offset,
             class_idx,
             crate::alloc_core::state_byte::StateByte::FREE,
         );
-        meta.dec_live();
+        meta.compat_dec_live();
         true
     }
 }

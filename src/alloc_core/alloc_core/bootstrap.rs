@@ -8,8 +8,9 @@
 //! ## This file is pure safe composition
 
 use super::super::os::Segment;
-use super::super::segment_header::{Layout, SegmentHeader, SegmentKind, SegmentMeta};
+use super::super::segment_header::{Layout, SegmentHeader, SegmentKind};
 use super::super::segment_table::{self, SegmentTable};
+use sefer_segment::support::root_compat::traits::*;
 
 /// The bootstrap outcome: the primordial [`Segment`] (owned) and the
 /// [`SegmentTable`] view over the registry carved in its payload. The
@@ -29,6 +30,7 @@ pub(crate) struct Primordial {
 /// Returns `None` only if the OS refuses the primordial reservation (OOM at
 /// startup — unrecoverable for an allocator, but we propagate rather than
 /// abort so a caller may fall back).
+#[allow(unsafe_code)] // P2.1 tier-2: SegmentMeta::new via the header facade.
 pub(crate) fn primordial() -> Option<Primordial> {
     // 1. Reserve the primordial segment (SEGMENT-aligned, SEGMENT bytes). This
     //    is the ONLY OS allocation primitive on the bootstrap path; everything
@@ -93,8 +95,10 @@ pub(crate) fn primordial() -> Option<Primordial> {
         // the macOS ARM64 (16 KiB-page) release blocker that made
         // `AllocCore::new()` return `None` (CI run 32083383999, job `test
         // macos (production)`; B4 layout: 651264 % 16384 = 12288 ≠ 0).
-        let initial_commit =
-            Layout::lazy_initial_commit(Layout::primordial_meta_end(), aligned_vmem::page_size());
+        let initial_commit = Layout::compat_lazy_initial_commit(
+            Layout::compat_primordial_meta_end(),
+            aligned_vmem::page_size(),
+        );
         // Uphold `reserve_lazy`'s full documented contract (non-zero, RUNTIME
         // page-size multiple, `<= SEGMENT`) — all three hold by construction
         // (`lazy_initial_commit` rounds to the runtime page size, and the
@@ -105,7 +109,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
             initial_commit != 0
                 && initial_commit.is_multiple_of(aligned_vmem::page_size())
                 && initial_commit <= super::super::os::SEGMENT
-                && initial_commit >= Layout::primordial_active_kind_end()
+                && initial_commit >= Layout::compat_primordial_active_kind_end()
         );
         Segment::reserve_lazy(initial_commit)?
     };
@@ -117,13 +121,14 @@ pub(crate) fn primordial() -> Option<Primordial> {
 
     // 2. Lay down the small-segment header at offset 0 via the node seam. We
     //    write `bump = 0` here and fix it up after computing the metadata end.
-    let mut meta = SegmentMeta::new(base);
-    meta.write_header(SegmentHeader::small(
-        0,
-        0,
-        reservation.as_ptr(),
-        reservation_len,
-    ));
+    let mut meta = crate::alloc_core::segment::header_facade::meta(base);
+    // `base` is the freshly reserved, exclusively owned primordial segment and
+    // `&mut meta` views its offset-0 header; `write_header` only writes that
+    // header extent before the segment is published.
+    super::header_access::write_header(
+        &mut meta,
+        SegmentHeader::compat_small(0, 0, reservation.as_ptr(), reservation_len),
+    );
 
     // 3. Initialise the page map and bin table at their fixed offsets. The
     //    `Node::write_*` primitives (called from `init_in_place`) do the raw
@@ -134,9 +139,9 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // default/production bootstrap path.
     #[cfg(feature = "page-map-diag")]
     let pm_off = Layout::page_map_off();
-    let bt_off = Layout::bin_table_off();
-    let reg_off = Layout::primordial_registry_off();
-    let meta_end = Layout::primordial_meta_end();
+    let bt_off = Layout::compat_bin_table_off();
+    let reg_off = Layout::compat_primordial_registry_off();
+    let meta_end = Layout::compat_primordial_meta_end();
     #[cfg(feature = "page-map-diag")]
     let meta_pages = Layout::primordial_meta_pages();
 
@@ -146,8 +151,14 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // segment is exclusively owned (single-threaded bootstrap). Each
     // `init_in_place` call writes only its `FOOTPRINT` bytes via `Node`.
     #[cfg(feature = "page-map-diag")]
-    super::super::segment_header::PageMap::init_in_place(base_plus(base, pm_off), meta_pages);
-    super::super::segment_header::BinTable::init_in_place(base_plus(base, bt_off) as *mut u32);
+    #[allow(unsafe_code)] // R25-1: scoped unsafe block, bootstrap contract.
+    // SAFETY: `base + pm_off` is the freshly carved page map of the
+    // exclusively-owned bootstrap segment (single-threaded bootstrap; the
+    // compile-time layout check above), with `Layout::page_map`'s footprint.
+    unsafe {
+        super::super::segment_header::PageMap::init_in_place(base_plus(base, pm_off), meta_pages)
+    };
+    super::header_access::init_bins(base_plus(base, bt_off) as *mut u32);
     // B4 (в): the former `AllocBitmap`/`MagazineBitmap` inits (PERF-PASS-2,
     // G5/C1, task #50 virgin-skip) are gone with the bitmaps themselves — the
     // per-granule state byte replaced them as the authoritative state record.
@@ -165,7 +176,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
     //     table must start all-null. Then insert the primordial base
     //     (slot 0's value) so `contains_base` works from the very first
     //     allocation.
-    let hash_off = Layout::primordial_hash_off();
+    let hash_off = Layout::compat_primordial_hash_off();
     let hash_slots = base_plus(base, hash_off) as *mut *mut u8;
     // Zero-fill each slot to null_mut() (= "empty"). R17-3 (task #320):
     // under `cfg(not(miri))` this explicit zero-fill is SKIPPED. `base` is
@@ -221,8 +232,8 @@ pub(crate) fn primordial() -> Option<Primordial> {
     //     entry is first WRITTEN by a real recycle push before it is ever
     //     read, so the index array's initial contents are observationally
     //     irrelevant — the zero-fill below is purely defensive.
-    let free_list_off = Layout::primordial_free_list_off();
-    let free_top_off = Layout::primordial_free_top_off();
+    let free_list_off = Layout::compat_primordial_free_list_off();
+    let free_top_off = Layout::compat_primordial_free_top_off();
     let free_list_slots = base_plus(base, free_list_off) as *mut u32;
     // R17-3 (task #320): the defensive zero-fill is SKIPPED under
     // `cfg(not(miri))` by the same reasoning as the hash-table loop
@@ -248,18 +259,22 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // cfg(miri)-gated array fill above.
     let free_top_ptr = base_plus(base, free_top_off) as *mut u32;
     super::super::node::Node::write_u32(free_top_ptr, 0);
-    let active_kind_ptr = base_plus(base, Layout::primordial_active_kind_off())
+    let active_kind_ptr = base_plus(base, Layout::compat_primordial_active_kind_off())
         as *mut segment_table::ActiveKindIndex;
-    segment_table::ActiveKindIndex::init_in_place(active_kind_ptr);
+    // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+    #[allow(unsafe_code)]
+    unsafe {
+        segment_table::ActiveKindIndex::init_in_place(active_kind_ptr)
+    };
 
     // 5. Fix up the header: kind = Primordial, bump = meta_end (where payload
     //    carving begins). Mark the page map / bin table / registry pages Meta
     //    in the page map we just wrote.
-    let mut hdr = meta.header();
+    let mut hdr = meta.compat_header();
     hdr.kind = SegmentKind::Primordial;
     hdr.bump = meta_end;
-    meta.write_header(hdr);
-    meta.init_small_terminal();
+    meta.compat_write_header(hdr);
+    meta.compat_init_small_terminal();
 
     // B1 (R7 Workstream B) / R7-B6 (primordial lazy commit): stamp the
     // committed-payload frontier, mirroring `reserve_small_segment`'s
@@ -325,7 +340,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
             windows,
             not(miri)
         ))]
-        meta.set_committed_payload_end(Layout::lazy_initial_commit(
+        meta.compat_set_committed_payload_end(Layout::compat_lazy_initial_commit(
             meta_end,
             aligned_vmem::page_size(),
         ));
@@ -359,14 +374,18 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // 6. Construct the SegmentTable view. `from_primordial` is safe (it
     //    performs no memory operation — just wraps the pointer + count); the
     //    contract that slot 0 was written is the bootstrap's invariant.
-    let table = SegmentTable::from_primordial(
-        reg_slots,
-        1,
-        hash_slots,
-        free_list_slots,
-        free_top_ptr,
-        active_kind_ptr,
-    );
+    // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+    #[allow(unsafe_code)]
+    let table = unsafe {
+        SegmentTable::from_primordial(
+            reg_slots,
+            1,
+            hash_slots,
+            free_list_slots,
+            free_top_ptr,
+            active_kind_ptr,
+        )
+    };
 
     Some(Primordial { segment, table })
 }

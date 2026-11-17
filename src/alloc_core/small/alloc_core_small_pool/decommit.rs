@@ -5,15 +5,18 @@
 
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os::{self, SEGMENT};
+#[cfg(feature = "internals")]
+use crate::alloc_core::segment::header_facade::{kind_at, meta as seg_meta};
 use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentMeta, FREE_LIST_NULL};
 // `SegmentHeader`/`SegmentKind` are consulted here only by the
 // `internals`-gated `dbg_*_for`/`dbg_force_decommit_retain_for` test hooks —
 // the production decommit body consults neither — so gate the imports
 // identically.
 #[cfg(feature = "internals")]
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
+use crate::alloc_core::segment_header::SegmentKind;
 
 use crate::alloc_core::alloc_core::{AllocCore, DECOMMIT_CALLS};
+use sefer_segment::support::root_compat::traits::*;
 
 impl AllocCore {
     /// TEST-ONLY (Phase 35): whether `ptr`'s segment is currently decommitted, or
@@ -25,12 +28,14 @@ impl AllocCore {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(candidate)?;
         if !matches!(
-            SegmentHeader::kind_at(base),
+            // SAFETY: `base` is the live table-owned segment (diag read-only).
+            kind_at(base),
             SegmentKind::Small | SegmentKind::Primordial
         ) {
             return None;
         }
-        Some(SegmentMeta::new(base).is_decommitted())
+        // SAFETY: `base` is the live table-owned segment (diag read-only).
+        Some(seg_meta(base).compat_is_decommitted())
     }
 
     /// TEST-ONLY (R12-10, task #261, `virgin-zero-skip`): force the
@@ -112,10 +117,10 @@ impl AllocCore {
         if !self.table.contains_base_ro(base) {
             return false;
         }
-        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+        if !matches!(kind_at(base), SegmentKind::Small) {
             return false;
         }
-        let mut meta = SegmentMeta::new(base);
+        let mut meta = seg_meta(base);
         Self::decommit_empty_segment_impl(&mut meta, base, false);
         true
     }
@@ -141,12 +146,12 @@ impl AllocCore {
         // variants so the soak / regression tests (`dbg_decommit_count`) observe
         // the same number of decommit events as before this optimization.
         DECOMMIT_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        let payload_start = SegLayout::small_meta_end();
+        let payload_start = SegLayout::compat_small_meta_end();
         if release_follows {
             // Reset the bump cursor and flag before whole-reservation release;
             // no payload decommit or full metadata reset is needed.
-            meta.set_bump(payload_start);
-            meta.set_decommitted(true);
+            meta.compat_set_bump(payload_start);
+            meta.compat_set_decommitted(true);
             return;
         }
         // B3 (R7 Workstream B): lazy-commit-aware retain decommit.
@@ -197,7 +202,7 @@ impl AllocCore {
             // machine the tight value lands mid-real-page and the OS silently
             // rounds it, reclaiming (or leaving committed) the wrong byte
             // range.
-            os::decommit_pages(base, SegLayout::small_decommit_start(), SEGMENT);
+            os::decommit_pages(base, SegLayout::compat_small_decommit_start(), SEGMENT);
         }
         // 2a. Reset bump to the payload start. Before reuse, `dealloc_small`
         // rejects prior payload offsets with `off >= bump`, then checks current
@@ -210,15 +215,15 @@ impl AllocCore {
         // F7 (B4): read the bump BEFORE the reset — the pre-reset bump bound is
         // exactly the granule range that can carry non-zero state bytes.
         let bump_before_reset = meta.bump_of();
-        meta.set_bump(payload_start);
+        meta.compat_set_bump(payload_start);
         // U31: a threshold from the previous lifetime must not defer drains
         // after the bump restarts at the payload start.
         #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-        meta.set_sidecar_defer_window(0);
+        meta.compat_set_sidecar_defer_window(0);
         // 2b. Empty every class free list.
-        let mut bt = meta.bin_table();
+        let mut bt = meta.compat_bin_table();
         for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
-            bt.set_head(c, FREE_LIST_NULL);
+            bt.compat_set_head(c, FREE_LIST_NULL);
         }
         // 2c. Re-mark every payload page `Free` in the page map (metadata pages
         //     keep their `Meta` marking). Payload pages are `[meta_pages,
@@ -252,13 +257,13 @@ impl AllocCore {
             );
             if end_byte > start_byte {
                 Node::zero(
-                    Node::offset(base, SegLayout::state_byte_off() + start_byte),
+                    Node::offset(base, SegLayout::compat_state_byte_off() + start_byte),
                     end_byte - start_byte,
                 );
             }
         }
         // 3. Flag the segment decommitted so the next `carve_block` recommits.
-        meta.set_decommitted(true);
+        meta.compat_set_decommitted(true);
         // R12-10 (task #261, `virgin-zero-skip`): defensively clear the
         // payload-virgin bit. This is the ONLY path that can decommit a
         // small segment's payload while leaving it registered for a future

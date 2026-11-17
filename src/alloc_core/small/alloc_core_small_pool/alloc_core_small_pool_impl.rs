@@ -11,6 +11,7 @@ use crate::alloc_core::os::SEGMENT;
 // `SegmentHeader`/`SegmentKind` are consumed only inside this module's
 // `alloc-decommit`-gated methods (the module declaration itself is
 // `alloc-decommit`-gated), so they are always used whenever compiled.
+use crate::alloc_core::segment::header_facade::{kind_at, meta as seg_meta};
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 // `Layout as SegLayout` is consulted here only by
 // `dbg_segment_state_reconciliation`'s decommitted-retained byte accounting —
@@ -28,6 +29,7 @@ use crate::alloc_core::segment_header::Layout as SegLayout;
 // (the type itself is `bench-internals`-gated at its definition).
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 use super::segment_state_reconciliation::SegmentStateReconciliation;
+use sefer_segment::support::root_compat::traits::*;
 
 impl AllocCore {
     /// Phase 35 origin (M6): eligibility check used by `dealloc_small`,
@@ -58,13 +60,15 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[inline(always)]
     pub(crate) fn dec_live_and_maybe_decommit(base: *mut u8, small_cur: *mut u8) -> bool {
-        let meta = SegmentMeta::new(base);
-        let live = meta.live_count_of();
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        let meta = seg_meta(base);
+        let live = meta.compat_live_count_of();
         // Only an empty, non-current, not-already-decommitted segment is
         // eligible for release/pool. The current carve target stays committed
         // (we are about to bump-allocate into it); already-decommitted is
         // idempotent.
-        if live != 0 || base == small_cur || meta.is_decommitted() {
+        if live != 0 || base == small_cur || meta.compat_is_decommitted() {
             return false;
         }
         // NEVER decommit the PRIMORDIAL segment: its metadata extends to
@@ -76,7 +80,9 @@ impl AllocCore {
         // segments (whose payload genuinely starts at `small_meta_end()`) are
         // eligible. A field-specific `kind` read (disjoint from the owner's
         // `bump`/`live_count` writes; race-free like the other `kind_at` reads).
-        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        if !matches!(kind_at(base), SegmentKind::Small) {
             return false;
         }
         // Mechanism 2 (task #51): eligibility only; the owner caller applies
@@ -108,14 +114,18 @@ impl AllocCore {
         if k == 0 {
             return false;
         }
-        let meta = SegmentMeta::new(base);
-        let live = meta.live_count_of();
-        if live != 0 || base == small_cur || meta.is_decommitted() {
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        let meta = seg_meta(base);
+        let live = meta.compat_live_count_of();
+        if live != 0 || base == small_cur || meta.compat_is_decommitted() {
             return false;
         }
         // Same PRIMORDIAL exclusion as `dec_live_and_maybe_decommit`: only a
         // `Small` segment's payload genuinely starts at `small_meta_end()`.
-        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        if !matches!(kind_at(base), SegmentKind::Small) {
             return false;
         }
         // Mechanism 2 (task #51): as in `dec_live_and_maybe_decommit`, the reset
@@ -203,7 +213,9 @@ impl AllocCore {
         // `pool_unlink`'s removal-time reset — and can never equal
         // `pool_head`, since the head is by definition pooled).
         debug_assert!(
-            self.pool_head != base && SegmentMeta::new(base).pool_prev_of().is_null(),
+            self.pool_head != base
+                // SAFETY: `base` is the live owned segment (pool assertion).
+                && seg_meta(base).compat_pool_prev_of().is_null(),
             "double-pool of an already-pooled segment"
         );
         // Admit to the pool if enabled and there is room: push-front (this
@@ -232,15 +244,22 @@ impl AllocCore {
         // the OS reservation may be released).
         #[cfg(feature = "alloc-segment-directory")]
         {
-            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            let slot_idx = SegmentHeader::compat_segment_id_at(base) as usize;
             self.clear_segment_directory(slot_idx);
         }
-        Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+        // SAFETY: `base` is the live owned segment being released/pooled.
+        #[allow(unsafe_code)]
+        let mut meta = seg_meta(base);
+        Self::release_empty_segment_now(&mut meta, base);
         // B4 §11: the slot is about to be recycled — drop any class cursor
         // naming it (a released segment must never stay a discovery hint).
-        let cursor_slot = SegmentHeader::segment_id_at(base) as usize;
+        let cursor_slot = SegmentHeader::compat_segment_id_at(base) as usize;
         self.invalidate_class_cursor_for_slot(cursor_slot);
-        self.table.recycle(base);
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        unsafe {
+            self.table.recycle(base)
+        };
         false // released — base is gone/unmapped
     }
 
@@ -275,11 +294,15 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     pub(in crate::alloc_core) fn finalize_old_cursor_if_orphaned(&mut self, old_cur: *mut u8) {
-        let meta = SegmentMeta::new(old_cur);
-        if meta.live_count_of() != 0 || meta.is_decommitted() {
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        let meta = seg_meta(old_cur);
+        if meta.compat_live_count_of() != 0 || meta.compat_is_decommitted() {
             return;
         }
-        if !matches!(SegmentHeader::kind_at(old_cur), SegmentKind::Small) {
+        // SAFETY: `old_cur` is the live owned segment (eligibility check).
+        #[allow(unsafe_code)]
+        if !matches!(kind_at(old_cur), SegmentKind::Small) {
             return;
         }
         // Same pool-membership disjunction `finalize_orphaned_empty_segments`
@@ -287,7 +310,7 @@ impl AllocCore {
         // practice a segment can never be BOTH pooled and the cursor at the
         // same time (pool admission itself excludes `base == small_cur`), so
         // this is defence-in-depth, not a reachable case.
-        let is_pooled = self.pool_head == old_cur || !meta.pool_prev_of().is_null();
+        let is_pooled = self.pool_head == old_cur || !meta.compat_pool_prev_of().is_null();
         if is_pooled {
             return;
         }
@@ -304,15 +327,18 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     fn pool_push_front(head: &mut *mut u8, tail: &mut *mut u8, count: &mut u32, base: *mut u8) {
-        let mut meta = SegmentMeta::new(base);
-        meta.set_pool_prev(ptr::null_mut());
-        meta.set_pool_next(*head);
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        let mut meta = seg_meta(base);
+        meta.compat_set_pool_prev(ptr::null_mut());
+        meta.compat_set_pool_next(*head);
         if (*head).is_null() {
             // Pool was empty: `base` is both head and tail.
             *tail = base;
         } else {
             // Link the OLD head's `pool_prev` back to `base`.
-            SegmentMeta::new(*head).set_pool_prev(base);
+            // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+            seg_meta(*head).compat_set_pool_prev(base);
         }
         *head = base;
         *count += 1;
@@ -328,18 +354,22 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     fn pool_unlink(head: &mut *mut u8, tail: &mut *mut u8, count: &mut u32, base: *mut u8) {
-        let meta = SegmentMeta::new(base);
-        let prev = meta.pool_prev_of();
-        let next = meta.pool_next_of();
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        let meta = seg_meta(base);
+        let prev = meta.compat_pool_prev_of();
+        let next = meta.compat_pool_next_of();
         if prev.is_null() {
             *head = next;
         } else {
-            SegmentMeta::new(prev).set_pool_next(next);
+            // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+            seg_meta(prev).compat_set_pool_next(next);
         }
         if next.is_null() {
             *tail = prev;
         } else {
-            SegmentMeta::new(next).set_pool_prev(prev);
+            // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+            seg_meta(next).compat_set_pool_prev(prev);
         }
         // Clear the removed segment's own links (defence-in-depth: a stale
         // link left dangling here would corrupt a LATER re-admission if this
@@ -349,8 +379,10 @@ impl AllocCore {
         // keeps a not-currently-pooled segment's links at the same `null`
         // sentinel a freshly-constructed header carries, matching
         // `SegmentHeader::small`/`large`'s initial state).
-        SegmentMeta::new(base).set_pool_next(ptr::null_mut());
-        SegmentMeta::new(base).set_pool_prev(ptr::null_mut());
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        seg_meta(base).compat_set_pool_next(ptr::null_mut());
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        seg_meta(base).compat_set_pool_prev(ptr::null_mut());
         *count -= 1;
     }
 
@@ -418,7 +450,9 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     pub(in crate::alloc_core) fn unpool_if_present(&mut self, base: *mut u8) {
-        let is_pooled = self.pool_head == base || !SegmentMeta::new(base).pool_prev_of().is_null();
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        let is_pooled = self.pool_head == base || !seg_meta(base).compat_pool_prev_of().is_null();
         if is_pooled {
             Self::pool_unlink(
                 &mut self.pool_head,
@@ -488,15 +522,22 @@ impl AllocCore {
         // R7-A2: clear directory bits before the slot is recycled.
         #[cfg(feature = "alloc-segment-directory")]
         {
-            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            let slot_idx = SegmentHeader::compat_segment_id_at(base) as usize;
             self.clear_segment_directory(slot_idx);
         }
-        Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+        // SAFETY: `base` is the live owned segment being released/pooled.
+        #[allow(unsafe_code)]
+        let mut meta = seg_meta(base);
+        Self::release_empty_segment_now(&mut meta, base);
         // B4 §11: the slot is about to be recycled — drop any class cursor
         // naming it (a released segment must never stay a discovery hint).
-        let cursor_slot = SegmentHeader::segment_id_at(base) as usize;
+        let cursor_slot = SegmentHeader::compat_segment_id_at(base) as usize;
         self.invalidate_class_cursor_for_slot(cursor_slot);
-        self.table.recycle(base);
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        unsafe {
+            self.table.recycle(base)
+        };
     }
 
     /// Production stats accessor: the process-wide count of M6 decommit
@@ -590,15 +631,22 @@ impl AllocCore {
             // R7-A2: clear directory bits before the slot is recycled.
             #[cfg(feature = "alloc-segment-directory")]
             {
-                let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+                let slot_idx = SegmentHeader::compat_segment_id_at(base) as usize;
                 self.clear_segment_directory(slot_idx);
             }
-            Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+            // SAFETY: `base` is the pooled live owned segment being reset.
+            #[allow(unsafe_code)]
+            let mut meta = seg_meta(base);
+            Self::release_empty_segment_now(&mut meta, base);
             // B4 §11: the slot is about to be recycled — drop any class cursor
             // naming it (a released segment must never stay a discovery hint).
-            let cursor_slot = SegmentHeader::segment_id_at(base) as usize;
+            let cursor_slot = SegmentHeader::compat_segment_id_at(base) as usize;
             self.invalidate_class_cursor_for_slot(cursor_slot);
-            self.table.recycle(base);
+            // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+            #[allow(unsafe_code)]
+            unsafe {
+                self.table.recycle(base)
+            };
             drained += 1;
         }
         drained
@@ -610,31 +658,51 @@ impl AllocCore {
     #[cfg(all(feature = "alloc-decommit", feature = "alloc-global"))]
     pub(crate) fn release_empty_current_small_for_trim(&mut self) {
         let base = self.small_cur;
-        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+        // SAFETY: `base` is the live owned trim candidate (eligibility).
+        #[allow(unsafe_code)]
+        if !matches!(kind_at(base), SegmentKind::Small) {
             return;
         }
-        let meta = SegmentMeta::new(base);
-        if meta.live_count_of() != 0 || meta.is_decommitted() {
+        // SAFETY: live owned segment metadata (eligibility read).
+        #[allow(unsafe_code)]
+        let meta = seg_meta(base);
+        if meta.compat_live_count_of() != 0 || meta.compat_is_decommitted() {
             return;
         }
-        debug_assert!(self.pool_head != base && meta.pool_prev_of().is_null());
+        debug_assert!(self.pool_head != base && meta.compat_pool_prev_of().is_null());
         let primordial = self.table.base_at(0);
         debug_assert!(!primordial.is_null());
         debug_assert!(matches!(
-            SegmentHeader::kind_at(primordial),
+            // SAFETY: primordial base is the live registered primordial segment.
+            kind_at(primordial),
             SegmentKind::Primordial
         ));
         self.small_cur = primordial;
         #[cfg(feature = "alloc-segment-directory")]
-        self.clear_segment_directory(SegmentHeader::segment_id_at(base) as usize);
-        Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+        self.clear_segment_directory(SegmentHeader::compat_segment_id_at(base) as usize);
+        // SAFETY: `base` is the live owned segment being released/pooled.
+        #[allow(unsafe_code)]
+        let mut meta = seg_meta(base);
+        Self::release_empty_segment_now(&mut meta, base);
         // B4 §11: the slot is about to be recycled — drop any class cursor
         // naming it (a released segment must never stay a discovery hint).
-        let cursor_slot = SegmentHeader::segment_id_at(base) as usize;
+        let cursor_slot = SegmentHeader::compat_segment_id_at(base) as usize;
         self.invalidate_class_cursor_for_slot(cursor_slot);
-        self.table.recycle(base);
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        unsafe {
+            self.table.recycle(base)
+        };
     }
 
+    /// R29-4 (task #435) MEASUREMENT-ONLY: reconcile this heap's segment
+    /// state via a DUAL enumeration (R2-14): (1) every LIVE (non-NULL)
+    /// segment-table slot — `table.base_at(i)` for `i in
+    /// 0..table.count()`, skipping NULL recycled slots — is classified
+    /// into exactly ONE of seven mutually-exclusive states (see
+    /// [`SegmentStateReconciliation`]); (2) every OCCUPIED slot of the
+    /// per-heap combined large-cache array is enumerated separately into
+    /// `large_cached`, because cached Large segments are NOT in the table
     /// R29-4 (task #435) MEASUREMENT-ONLY: reconcile this heap's segment
     /// state via a DUAL enumeration (R2-14): (1) every LIVE (non-NULL)
     /// segment-table slot — `table.base_at(i)` for `i in
@@ -718,14 +786,14 @@ impl AllocCore {
                 feature = "primordial-lazy-commit",
                 feature = "small-segment-lazy-commit"
             ))]
-            let frontier_committed = SegmentMeta::new(base).committed_payload_end_of() as u64;
+            let frontier_committed = seg_meta(base).committed_payload_end_of() as u64;
             #[cfg(not(any(
                 feature = "primordial-lazy-commit",
                 feature = "small-segment-lazy-commit"
             )))]
             let frontier_committed = seg_bytes;
 
-            let kind = SegmentHeader::kind_at(base);
+            let kind = kind_at(base);
             match kind {
                 SegmentKind::Primordial => {
                     // Lazy-commit frontier (SEGMENT on eager backends — set
@@ -736,7 +804,7 @@ impl AllocCore {
                     rec.primordial.reserved_bytes += seg_bytes;
                 }
                 SegmentKind::Small => {
-                    let meta = SegmentMeta::new(base);
+                    let meta = seg_meta(base);
                     let live = meta.live_count_of();
                     let decommitted = meta.is_decommitted();
                     // Pool membership test (same disjunction `unpool_if_present`
@@ -808,7 +876,7 @@ impl AllocCore {
                     }
                 }
                 SegmentKind::Large => {
-                    let hdr = SegmentMeta::new(base).header();
+                    let hdr = seg_meta(base).header();
                     let span = hdr.span_usable as u64;
                     let res_len = hdr.reservation_len as u64;
                     // R2-14: every registered Large slot is ACTIVE. A

@@ -23,12 +23,8 @@ use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
 use crate::alloc_core::os;
 #[cfg(feature = "large-reserved-capacity")]
 use crate::alloc_core::segment_header::align_up;
-#[cfg(any(
-    feature = "primordial-lazy-commit",
-    feature = "small-segment-lazy-commit"
-))]
-use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
+use sefer_segment::support::root_compat::traits::*;
 
 impl AllocCore {
     /// R2-1 (soundness): the maximum number of bytes starting at `payload`
@@ -96,11 +92,12 @@ impl AllocCore {
     )]
     #[inline]
     pub(crate) fn safe_payload_read_span(base: *mut u8, payload: *mut u8) -> usize {
-        let seg_span = if SegmentHeader::kind_at(base) == SegmentKind::Large {
-            SegmentHeader::span_usable_at(base)
-        } else {
-            Self::small_committed_bound(base)
-        };
+        let seg_span =
+            if crate::alloc_core::segment::header_facade::kind_at(base) == SegmentKind::Large {
+                SegmentHeader::compat_span_usable_at(base)
+            } else {
+                Self::small_committed_bound(base)
+            };
         let off = (payload as usize).wrapping_sub(base as usize);
         seg_span.saturating_sub(off)
     }
@@ -120,7 +117,7 @@ impl AllocCore {
             feature = "small-segment-lazy-commit"
         ))]
         {
-            SegmentMeta::new(base).committed_payload_end_of()
+            crate::alloc_core::segment::header_facade::meta(base).compat_committed_payload_end_of()
         }
         #[cfg(not(any(
             feature = "primordial-lazy-commit",
@@ -169,7 +166,7 @@ impl AllocCore {
     /// this header field.
     ///
     /// Soundness:
-    ///   (a) `dealloc` routes Large frees by `SegmentHeader::kind_at(base)`,
+    ///   (a) `dealloc` routes Large frees by `crate::alloc_core::segment::header_facade::kind_at(base)`,
     ///       NOT by the passed layout. A grown-in-place block stays a Large
     ///       segment, so `dealloc(ptr, new_layout)` frees the whole segment
     ///       correctly regardless of `new_size`.
@@ -247,9 +244,9 @@ impl AllocCore {
         // large / biased Large) must reject without forming an out-of-bounds
         // witness pointer.
         let off = ptr.addr().wrapping_sub(base.addr());
-        let kind = SegmentHeader::kind_at(base);
+        let kind = crate::alloc_core::segment::header_facade::kind_at(base);
         let span = if kind == SegmentKind::Large {
-            SegmentHeader::span_usable_at(base)
+            SegmentHeader::compat_span_usable_at(base)
         } else {
             os::SEGMENT
         };
@@ -323,7 +320,7 @@ impl AllocCore {
                         crate::alloc_core::size_classes::SizeClasses::block_size(old_class);
                     let new_block_size =
                         crate::alloc_core::size_classes::SizeClasses::block_size(new_class);
-                    let meta = crate::alloc_core::segment_header::SegmentMeta::new(base);
+                    let meta = crate::alloc_core::segment::header_facade::meta(base);
 
                     // Precondition 3 (tail-adjacency): this block must be
                     // the segment's current bump tail — the most-recently
@@ -410,11 +407,12 @@ impl AllocCore {
             .max(crate::alloc_core::size_classes::MIN_BLOCK);
         let new_eff = new_size.max(crate::alloc_core::size_classes::MIN_BLOCK);
         if new_eff >= old_eff {
-            let payload_off = SegmentHeader::read_at(base).payload_offset;
+            let payload_off =
+                crate::alloc_core::segment::header_facade::read_at(base).payload_offset;
             if ptr.addr() != base.addr() + payload_off {
                 return None;
             }
-            let span_usable = SegmentHeader::span_usable_at(base);
+            let span_usable = SegmentHeader::compat_span_usable_at(base);
             if let Some(end) = payload_off.checked_add(new_eff) {
                 if end <= span_usable {
                     // A successful in-place grow invalidates the first-life
@@ -426,10 +424,11 @@ impl AllocCore {
                     // own request size; zero = never a control observation,
                     // nothing to sample.
                     #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-                    let token = SegmentHeader::thp_observation_at(base);
+                    let token = SegmentHeader::compat_thp_observation_at(base);
                     #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-                    let old_size = SegmentHeader::read_at(base).large_size;
-                    SegmentHeader::set_large_size_at(base, new_eff);
+                    let old_size =
+                        crate::alloc_core::segment::header_facade::read_at(base).large_size;
+                    SegmentHeader::compat_set_large_size_at(base, new_eff);
                     #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
                     if token != 0 {
                         ThpRuntime::note_realloc_invalidated_by_token(token, old_size);
@@ -461,9 +460,16 @@ impl AllocCore {
                     #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
                     let token = SegmentHeader::thp_observation_at(base);
                     #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-                    let old_size = SegmentHeader::read_at(base).large_size;
+                    let old_size =
+                        crate::alloc_core::segment::header_facade::read_at(base).large_size;
                     if self.try_grow_large_reserved_capacity(base, end) {
-                        SegmentHeader::set_large_size_at(base, new_eff);
+                        #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+                        // SAFETY: `base` is the aligned base of this owner's
+                        // live Large segment with an initialized header; the
+                        // owning `realloc` path is its single writer.
+                        unsafe {
+                            SegmentHeader::set_large_size_at(base, new_eff);
+                        }
                         #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
                         if token != 0 {
                             ThpRuntime::note_realloc_invalidated_by_token(token, old_size);
@@ -541,11 +547,17 @@ impl AllocCore {
     #[cfg(feature = "large-reserved-capacity")]
     #[inline]
     fn try_grow_large_reserved_capacity(&mut self, base: *mut u8, required_end: usize) -> bool {
-        let reserved_capacity = SegmentHeader::reserved_capacity_at(base);
+        #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+        // SAFETY: `base` is the aligned base of this owner's live segment
+        // with an initialized header; read-only, owner-held.
+        let reserved_capacity = unsafe { SegmentHeader::reserved_capacity_at(base) };
         if required_end > reserved_capacity {
             return false;
         }
-        let span_usable = SegmentHeader::span_usable_at(base);
+        #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+        // SAFETY: `base` is the aligned base of this owner's live segment
+        // with an initialized header; read-only, owner-held.
+        let span_usable = unsafe { SegmentHeader::span_usable_at(base) };
         // `required_end > span_usable` is guaranteed by the call site (this
         // is only reached after the committed-span check already failed),
         // so the commit range below is always non-empty.
@@ -566,7 +578,13 @@ impl AllocCore {
             // the caller fall through to the slow path.
             return false;
         }
-        SegmentHeader::set_span_usable_at(base, new_span_usable);
+        #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+        // SAFETY: `base` is the aligned base of this owner's live segment
+        // with an initialized header; the owning `realloc` path just
+        // committed exactly `[old span_usable, new_span_usable)` above.
+        unsafe {
+            SegmentHeader::set_span_usable_at(base, new_span_usable);
+        }
         true
     }
 

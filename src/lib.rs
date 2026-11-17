@@ -99,14 +99,15 @@
 //!
 //! Runnable form: `tests/region_invariants.rs`.
 
-// ── Workspace: fourteen independently-publishable companion crates ────────────
+// ── Workspace: fifteen independently-publishable companion crates ────────────
 //
-// The workspace extracted fourteen building blocks that can also be used
-// standalone. Nine are runtime dependencies, with allocator companions
+// The workspace extracted fifteen building blocks that can also be used
+// standalone. Ten are runtime dependencies, with allocator companions
 // selected by features; four are development infrastructure, and
 // `tagged-index-stack` is verification-only:
 //
 //   sefer-policy       (crates/core/sefer-policy)        — allocator policy layer: config types, Large-THP policy runtime (feature: alloc-core)
+//   sefer-segment      (crates/core/sefer-segment)    — segment/route substrate: SegmentTable/route directory/sidecar bitmap (feature: alloc-core)
 //   sefer-region       (crates/containers/sefer-region)             — typed handle store (this re-export; runtime, no feature gate)
 //   sefer-concurrent   (crates/containers/sefer-concurrent) — legacy/research concurrent tier (feature: experimental/pinning)
 //   aligned-vmem       (crates/platform/aligned-vmem)               — OS virtual-memory aperture          (feature: alloc-core)
@@ -279,27 +280,30 @@
 //                             (under `alloc-global`)
 //      * `registry::heap_registry::claim` — `*mut HeapCore` pointer handoff out
 //                             of a slot (the `FREE → LIVE` claim). (under `alloc-global`)
-//      * `alloc_core::segment::segment_route::directory::route_directory` — System-backed
+//
+//    The six tier-1 seams below moved to the `sefer-segment` crate (P21
+//    segment/route extraction) — same contracts, crate-owned file paths:
+//      * `crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs` — System-backed
 //                             route entry and sidecar allocation/reclamation;
 //                             numeric foreign lookup pins under the shard lock.
 //                             (under `alloc-global`)
-//      * `alloc_core::segment::segment_route::directory::blocks` — System-backed sorted
+//      * `crates/core/sefer-segment/src/segment/segment_route/directory/blocks.rs` — System-backed sorted
 //                             pointer-array blocks, block index and spares,
 //                             mutated only under the shard lock.
 //                             (under `alloc-global`)
-//      * `alloc_core::segment::segment_route::route_state::small_sidecar` — in-place construction of
+//      * `crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs` — in-place construction of
 //                             pending atomics and the owner class map.
 //                             (under `alloc-global`)
-//      * `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes` —
+//      * `crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs` —
 //                             genuine System mixed-leaf pointers, owner-only
 //                             presence bits, and exact deallocation after the
 //                             last route pin.
 //                             (under `alloc-core`; used by `alloc-global`)
-//      * `alloc_core::segment::segment_table::route_slots` — System-backed,
+//      * `crates/core/sefer-segment/src/segment/segment_table/impl_group/routing/route_slots.rs` — System-backed,
 //                             owner-only non-Copy registration storage;
 //                             routes close before reservation release.
 //                             (under `alloc-global`)
-//      * `alloc_core::segment::segment_route::route_state::shard_lock` — non-allocating spin lock
+//      * `crates/core/sefer-segment/src/segment/segment_route/route_state/shard_lock.rs` — non-allocating spin lock
 //                             for route-directory shards (std `Mutex` boxes
 //                             on first lock on some targets and would re-enter
 //                             the global allocator). (under `alloc-global`)

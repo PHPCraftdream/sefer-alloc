@@ -24,8 +24,9 @@ use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{BlockKind, SegmentHeader, SegmentKind, SegmentMeta};
+use crate::alloc_core::segment_header::{BlockKind, SegmentHeader, SegmentKind};
 use crate::alloc_core::size_classes::AllocKind;
+use sefer_segment::support::root_compat::traits::*;
 
 impl AllocCore {
     /// Address-only read-only identity resolution; no cache or metadata write.
@@ -58,12 +59,13 @@ impl AllocCore {
         // `root == candidate` and `ptr - root == ptr & (SEGMENT - 1)`.
         // That equality is what makes the mask exact (debug-asserted below);
         // `off < SEGMENT` keeps `block` inside `root`'s reservation.
-        let off = if SegmentHeader::kind_at(base) == SegmentKind::Large {
+        let off = if crate::alloc_core::segment::header_facade::kind_at(base) == SegmentKind::Large
+        {
             // R6-MS-1 (T22): bound the caller-derived offset BEFORE
             // `Node::deref`'s `add` — a foreign address sharing the 4 MiB key
             // window must reject without forming an out-of-bounds witness.
             let off = ptr.addr().wrapping_sub(base.addr());
-            if off >= SegmentHeader::span_usable_at(base) {
+            if off >= SegmentHeader::compat_span_usable_at(base) {
                 return None;
             }
             off
@@ -275,7 +277,7 @@ impl AllocCore {
     ///   - `segment_base_of_ptr(ptr)` — an address key, never dereferenced.
     ///   - `canonical_block_of(ptr)` — the foreign-pointer guard and
     ///     allocator-owned metadata root/block in one cache-filling lookup.
-    ///   - `SegmentHeader::kind_at(base)` — ONE byte field read (via
+    ///   - `crate::alloc_core::segment::header_facade::kind_at(base)` — ONE byte field read (via
     ///     `offset_of!`) to distinguish Large from Small/Primordial. This is
     ///     the minimum read necessary: Large blocks are freed by marking the
     ///     segment (no class free list), Small/Primordial go to the BinTable;
@@ -351,7 +353,7 @@ impl AllocCore {
     fn dealloc_large_at_base(&mut self, ptr: *mut u8, base: *mut u8) {
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if Self::reject_large_interior_free(base, ptr) {
-            crate::alloc_core::state_byte::StateByte::shadow_reject(
+            crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                 b"sefer-alloc: misuse check rejected a Large free of an interior pointer in safe mode\n",
             );
             // R6-T55: a local interior reject is caller misuse, not a routing
@@ -364,9 +366,9 @@ impl AllocCore {
         }
         // LIVE carries this instance's sole credit until the owner
         // claims it. A failed claim must not unregister or unmap it.
-        let terminal_meta = SegmentMeta::new(base);
+        let terminal_meta = crate::alloc_core::segment::header_facade::meta(base);
         let state = crate::alloc_core::large::reservation_state::LargeReservationState::new(
-            terminal_meta.large_state_atomic(),
+            terminal_meta.compat_large_state_atomic(),
         );
         let Some(generation) = state.claim_live() else {
             fatal(b"mem_impl: large live credit missing on free\n");
@@ -398,7 +400,7 @@ impl AllocCore {
             self.maybe_decay_small_pool();
         }
 
-        let stale = SegmentHeader::read_at(base);
+        let stale = crate::alloc_core::segment::header_facade::read_at(base);
 
         #[cfg(feature = "alloc-decommit")]
         {
@@ -515,7 +517,11 @@ impl AllocCore {
                 // NULL the table slot WITHOUT releasing the OS reservation.
                 // The cached entry owns the reservation; AllocCore::drop
                 // releases it explicitly from the large_cache array.
-                self.table.unregister(base);
+                // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+                #[allow(unsafe_code)]
+                unsafe {
+                    self.table.unregister(base)
+                };
                 // Zero the magic: the atomic store updates owner-side
                 // cached-header state. Foreign frees resolve route
                 // descriptors and sidecars, not reservation headers.
@@ -584,7 +590,11 @@ impl AllocCore {
             // the slot for reuse; mirrors `reclaim_large_segment`'s
             // ordering), THEN release — Drop's `table.bases()` walk
             // will no longer see `base`, so there is no double-free.
-            self.table.unregister(base);
+            // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+            #[allow(unsafe_code)]
+            unsafe {
+                self.table.unregister(base)
+            };
             if !state.release_consumed(generation) {
                 fatal(b"mem_impl: consumed release failed\n");
             }
@@ -597,7 +607,12 @@ impl AllocCore {
             // admission-reject branch above (task #125) — deferring
             // to `Drop` leaks the reservation AND the `SegmentTable`
             // slot for the remaining process lifetime.
-            self.table.unregister(base);
+            // SAFETY: base is the live, owner-exclusive Large segment being released
+            // through the terminal funnel; the caller proved it in this branch.
+            #[allow(unsafe_code)]
+            unsafe {
+                self.table.unregister(base)
+            };
             if !state.release_consumed(generation) {
                 fatal(b"mem_impl: consumed release failed\n");
             }
@@ -624,7 +639,7 @@ impl AllocCore {
         // Large (free = mark segment) from Small/Primordial (free = push to
         // BinTable). `kind` is immutable after init, so this byte read is
         // race-free against the owner's disjoint `bump` writes.
-        match SegmentHeader::kind_at(base) {
+        match crate::alloc_core::segment::header_facade::kind_at(base) {
             SegmentKind::Large => self.dealloc_large_at_base(ptr, base),
             SegmentKind::Small | SegmentKind::Primordial => {
                 // Derive the class from the caller's `Layout` (pure
@@ -646,7 +661,7 @@ impl AllocCore {
                 // Small/Primordial segment degrades to `Unknown` (the same
                 // no-op reject the former `classify`-based `AllocKind::Large`
                 // arm produced) instead of guessing.
-                match BlockKind::of(base, class) {
+                match BlockKind::compat_of(base, class) {
                     BlockKind::Small { class_idx } => self.dealloc_small(base, ptr, class_idx),
                     // Primordial carries no class of its own: the BinTable
                     // free that serves it is the Small segment's.
@@ -791,7 +806,7 @@ impl AllocCore {
         };
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if Self::large_payload_mismatch(base, block) {
-            crate::alloc_core::state_byte::StateByte::shadow_reject(
+            crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                 b"sefer-alloc: misuse check rejected a realloc of an interior pointer in safe mode\n",
             );
             return core::ptr::null_mut();
@@ -821,7 +836,7 @@ impl AllocCore {
         // (R2-02) — see `safe_payload_read_span`'s doc.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if old_layout.size() > AllocCore::safe_payload_read_span(base, block) {
-            crate::alloc_core::state_byte::StateByte::shadow_reject(
+            crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                 b"sefer-alloc: misuse check rejected a realloc with an oversized old layout in safe mode\n",
             );
             return core::ptr::null_mut();
@@ -843,13 +858,13 @@ impl AllocCore {
         // read BEFORE the clear so an unknown token's defensive error is
         // attributed to the reallocated mapping's own request size.
         #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-        if SegmentHeader::kind_at(base) == SegmentKind::Large {
-            let token = SegmentHeader::thp_observation_at(base);
+        if crate::alloc_core::segment::header_facade::kind_at(base) == SegmentKind::Large {
+            let token = SegmentHeader::compat_thp_observation_at(base);
             if token != 0 {
-                let size = SegmentHeader::read_at(base).large_size;
+                let size = crate::alloc_core::segment::header_facade::read_at(base).large_size;
                 ThpRuntime::note_realloc_invalidated_by_token(token, size);
             }
-            SegmentHeader::set_thp_observation_at(base, 0);
+            SegmentHeader::compat_set_thp_observation_at(base, 0);
         }
         let copy = old_layout.size().min(new_size);
         Node::copy_nonoverlapping(block, new_ptr, copy);

@@ -11,13 +11,15 @@ use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 #[cfg(feature = "internals")]
 use crate::alloc_core::large_cache_mode::LargeCacheMode;
-use crate::alloc_core::segment_header::{large_generation, SegmentHeader, SegmentMeta};
+use crate::alloc_core::segment::header_facade::meta as seg_meta;
+use crate::alloc_core::segment_header::{large_generation, SegmentHeader};
 
 use super::alloc_core_large_cache::CombinedSlot;
 // R6-T16: consumed only by the internals(+alloc-decommit)-gated decay-tick
 // test hooks below.
 #[cfg(all(feature = "internals", feature = "alloc-decommit"))]
 use super::alloc_core_large_cache::DECAY_CLOCK_CHECK_STRIDE;
+use sefer_segment::support::root_compat::traits::*;
 
 impl AllocCore {
     /// Test-only snapshot of the oldest cached Large reservation.
@@ -26,7 +28,7 @@ impl AllocCore {
     pub fn terminal_cached_large_state_for_test(&self) -> Option<u64> {
         let idx = self.oldest_occupied_slot()?;
         let slot = self.large_cache_slot_get(idx)?;
-        Some(SegmentMeta::new(slot.base).terminal_snapshot().large_state)
+        Some(seg_meta(slot.base).terminal_snapshot().large_state)
     }
     /// FIFO-evict cached spans until at least `min_bytes` of cache have been
     /// released to the OS, or the cache is empty. Each iteration evicts the
@@ -65,12 +67,14 @@ impl AllocCore {
             // Release the OS reservation. The slot was unregistered from the
             // table on deposit (same as `try_evict_to_fit`), so we release
             // directly without touching the table.
-            let meta = SegmentMeta::new(victim.base);
-            let generation = large_generation(meta.terminal_snapshot().large_state);
-            if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
+            let meta = seg_meta(victim.base);
+            let generation = large_generation(meta.compat_terminal_snapshot().large_state);
+            if !LargeReservationState::new(meta.compat_large_state_atomic())
+                .release_cached(generation)
+            {
                 fatal(b"large_cache_eviction: cached release failed\n");
             }
-            let charge = SegmentHeader::thp_charge_at(victim.base);
+            let charge = SegmentHeader::compat_thp_charge_at(victim.base);
             release_large_mapping(charge, victim.reservation, victim.reservation_len);
             released += victim.usable_size;
         }
@@ -297,12 +301,13 @@ impl AllocCore {
         self.large_cache_used_bytes = self
             .large_cache_used_bytes
             .saturating_sub(victim.usable_size);
-        let meta = SegmentMeta::new(victim.base);
-        let generation = large_generation(meta.terminal_snapshot().large_state);
-        if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
+        let meta = seg_meta(victim.base);
+        let generation = large_generation(meta.compat_terminal_snapshot().large_state);
+        if !LargeReservationState::new(meta.compat_large_state_atomic()).release_cached(generation)
+        {
             fatal(b"large_cache_eviction: cached release failed\n");
         }
-        let charge = SegmentHeader::thp_charge_at(victim.base);
+        let charge = SegmentHeader::compat_thp_charge_at(victim.base);
         release_large_mapping(charge, victim.reservation, victim.reservation_len);
         true
     }
