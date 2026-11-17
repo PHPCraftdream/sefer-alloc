@@ -34,7 +34,11 @@ import {
   assertGroupInvariants, buildGroups, groupKey, intersections, mergeability,
   pilotCandidate, relaxationLadder, themePrefix,
 } from '../scripts/classify-tests/groups.mjs';
-import { PLAN_HYPOTHESES, renderReport } from '../scripts/classify-tests/report.mjs';
+import { PLAN_HYPOTHESES, renderReport, renderSummary } from '../scripts/classify-tests/report.mjs';
+import {
+  createInventoryTrees, generateTree, runClassifier, mergeInputs, mergeFile,
+  REPORT_PATH, CSV_PATH, csvValue,
+} from './classify_report_fixture.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -711,10 +715,10 @@ function reportFixture({ manyMembers = false, emptySet = false } = {}) {
   };
 }
 
-test('renderReport: pure over data; hypotheses columns present', () => {
+test('renderSummary: pure over data; hypotheses columns present', () => {
   const data = reportFixture();
-  const out1 = renderReport(data);
-  const out2 = renderReport(data);
+  const out1 = renderSummary(data);
+  const out2 = renderSummary(data);
   assert.equal(out1, out2, 'renderer is pure (same data -> same text)');
   for (const col of ['metric', 'plan (2026-11-15)', 'naive grep', 'measured', 'verdict']) {
     assert.ok(out1.includes(col), `hypotheses header column missing: ${col}`);
@@ -723,15 +727,15 @@ test('renderReport: pure over data; hypotheses columns present', () => {
   assert.ok(out1.includes('confirmed') || out1.includes('corrected'));
 });
 
-test('renderReport: empty-set intersections render without NaN/undefined/Infinity', () => {
-  const out = renderReport(reportFixture({ emptySet: true }));
+test('renderSummary: empty-set intersections render without NaN/undefined/Infinity', () => {
+  const out = renderSummary(reportFixture({ emptySet: true }));
   assert.ok(!/NaN|undefined|Infinity|\[object Object\]/.test(out));
 });
 
-test('renderReport: long member lists truncate with "+N more"', () => {
-  const many = renderReport(reportFixture({ manyMembers: true }));
+test('renderSummary: long member lists truncate with "+N more"', () => {
+  const many = renderSummary(reportFixture({ manyMembers: true }));
   assert.ok(many.includes('+2 more'), '10 members -> first 8 + "+2 more"');
-  const few = renderReport(reportFixture());
+  const few = renderSummary(reportFixture());
   assert.ok(!few.includes(' more,'), 'short member list not truncated');
 });
 
@@ -791,8 +795,8 @@ test('CLI --csv: row count = targets+nonTargets+1, header has key columns', () =
   }
 });
 
-test('CLI --report: commit-independent input identity and hypotheses header', () => {
-  const r = runCli('--report');
+test('CLI --summary: legacy aggregate analysis and commit-independent identity remain', () => {
+  const r = runCli('--summary');
   assert.equal(r.status, 0, `exit 0 (stderr: ${r.stderr})`);
   assert.match(r.stdout, /^Sources: tracked inputs clean\.$/m);
   assert.ok(!/\b[0-9a-f]{40}\b/i.test(r.stdout), 'report contains no commit/tree SHA');
@@ -800,26 +804,109 @@ test('CLI --report: commit-independent input identity and hypotheses header', ()
   assert.ok(r.stdout.includes('derived inventory, not a measurement report'));
   assert.ok(r.stdout.includes('commit-free identity line avoids conflicts'));
   assert.ok(r.stdout.includes('| metric |'), 'hypotheses table header present');
-
-  const committed = readFileSync(join(repoRoot,
-    'docs/perf/TEST_TARGET_CLASSIFICATION_20261115.md'), 'utf8');
-  assert.match(committed, /^Sources: tracked inputs clean\.$/m);
-  assert.ok(!/\b[0-9a-f]{40}\b/i.test(committed),
-    'committed report contains no 40-hex commit/tree SHA');
-  assert.ok(!/\b[0-9a-f]{64}\b/i.test(committed),
-    'committed report contains no 64-hex SHA-256 hash');
+  assert.ok(r.stdout.includes('## Flag-set intersections'), 'aggregate intersections retained');
+  assert.ok(r.stdout.includes('## Grep reconciliation'), 'aggregate reconciliation retained');
+  assert.ok(r.stdout.includes('## Relaxation ladder'), 'aggregate ladder retained');
 });
 
+test('CLI --report: deterministic inventory schema and committed artifact format', () => {
+  const r = runCli('--report');
+  assert.equal(r.status, 0, `exit 0 (stderr: ${r.stderr})`);
+  assert.match(r.stdout, /^# Integration-test classification inventory/m);
+  assert.ok(r.stdout.includes('| path | kind | name | test_enabled |'));
+  assert.ok(r.stdout.includes('| external_pin_count | external_pin_surfaces | mergeable |'));
+  assert.ok(r.stdout.includes('aggregate analysis is available with `--summary`'));
+  assert.ok(!/\b[0-9a-f]{40}\b/i.test(r.stdout), 'inventory has no commit/tree SHA');
+  assert.ok(!/\b[0-9a-f]{64}\b/i.test(r.stdout), 'inventory has no SHA-256 hash');
+});
+
+test('renderReport: per-entry inventory is sorted and includes per-target pin counts', () => {
+  const rows = ['tests/z.rs', 'tests/a.rs'].map((path) => {
+    const name = path.split('/').pop().slice(0, -3);
+    return { target: cleanTarget(name, { path }), facts: cleanFacts(),
+      externalPins: { count: name === 'a' ? 2 : 0, hits: [] }, mergeable: true, reasons: [] };
+  });
+  const out = renderReport({ rows, nonTargets: [{ path: 'tests/fixtures', kind: 'directory-fixture' }] });
+  assert.match(out, /^# Integration-test classification inventory/m);
+  assert.ok(out.indexOf('tests/a.rs') < out.indexOf('tests/fixtures') &&
+    out.indexOf('tests/fixtures') < out.indexOf('tests/z.rs'), 'inventory paths sort globally');
+  assert.match(out, /tests\/a\.rs \| target \| a \| yes \| no \| no \|[^\n]*\| 2 \|/);
+  assert.ok(!out.includes('Plan hypotheses'), 'inventory is not aggregate summary text');
+});
+
+test('generated inventory merges cleanly for independent sorted additions; summary conflicts', () => {
+  const fixture = createInventoryTrees(repoRoot);
+  try {
+    const generated = Object.fromEntries(Object.entries(fixture.trees).map(([name, tree]) =>
+      [name, generateTree(tree)]));
+    for (const artifact of ['report', 'csv']) {
+      const versions = Object.fromEntries(['base', 'left', 'right'].map((name) =>
+        [name, generated[name][artifact].stdout]));
+      const paths = mergeInputs(fixture.scratch, `new-${artifact}`, versions);
+      const merged = mergeFile(paths.left, paths.base, paths.right);
+    assert.equal(merged.status, 0, `${artifact} should merge: ${merged.stdout}`);
+      assert.equal(merged.stdout, generated.union[artifact].stdout,
+        `${artifact} merge must byte-match fresh union generation`);
+      process.stdout.write(`merge evidence ${artifact}: exit ${merged.status}; bytes ${Buffer.byteLength(merged.stdout)}; equals union\n`);
+    }
+    const summaryPaths = mergeInputs(fixture.scratch, 'old-summary-counterfactual',
+      Object.fromEntries(['base', 'left', 'right'].map((name) =>
+        [name, generated[name].summary.stdout])));
+    const summaryMerge = mergeFile(summaryPaths.left, summaryPaths.base, summaryPaths.right);
+    assert.notEqual(summaryMerge.status, 0, `aggregate summary must conflict: ${summaryMerge.stdout.slice(0, 400)}`);
+    assert.ok(summaryMerge.status > 1, 'git merge-file reports multiple conflict hunks');
+    assert.match(summaryMerge.stdout, /^(<<<<<<<|=======|>>>>>>>)/m,
+      'old aggregate conflict must include merge markers');
+    assert.ok(generated.union.summary.stdout.includes('Plan hypotheses'));
+    process.stdout.write(`counterfactual summary: git merge-file exit ${summaryMerge.status}; conflict markers present\n`);
+
+    assert.equal(csvValue(generated.base.csv.stdout, 'tests/alpha_middle.rs', 'external_pin_count'), '1');
+    assert.equal(csvValue(generated.union.csv.stdout, 'tests/alpha_middle.rs', 'external_pin_count'), '1',
+      'adding unrelated test targets must not change alpha_middle per-target pin count');
+  } finally { fixture.cleanup(); }
+});
+
+test('CLI --check passes current baseline and rejects stale Markdown and CSV independently', () => {
+  const fixture = createInventoryTrees(repoRoot);
+  try {
+    const tree = fixture.trees.base;
+    const baseline = generateTree(tree);
+    const check = () => runClassifier(tree, '--check');
+    const clean = check();
+    assert.equal(clean.status, 0, `baseline check: ${clean.stderr}`);
+    assert.match(clean.stdout, /^--check ok: committed Markdown and CSV match fresh generation\n$/);
+
+    writeFileSync(join(tree, 'tests', 'new_late.rs'), '#[test]\nfn added_test() {}\n');
+    const bothStale = check();
+    assert.equal(bothStale.status, 1, 'new test without regeneration must fail check');
+    assert.match(bothStale.stderr, /stale: .*TEST_TARGET_CLASSIFICATION_20261115\.md/);
+    assert.match(bothStale.stderr, /stale: .*test_target_classification_20261115\.csv/);
+
+    const fresh = { report: runClassifier(tree, '--report').stdout, csv: runClassifier(tree, '--csv').stdout };
+    writeFileSync(join(tree, REPORT_PATH), fresh.report);
+    const staleCsvOnly = check();
+    assert.equal(staleCsvOnly.status, 1);
+    assert.doesNotMatch(staleCsvOnly.stderr, /TEST_TARGET_CLASSIFICATION_20261115\.md/);
+    assert.match(staleCsvOnly.stderr, /stale: .*test_target_classification_20261115\.csv/);
+
+    writeFileSync(join(tree, REPORT_PATH), baseline.report.stdout);
+    writeFileSync(join(tree, CSV_PATH), fresh.csv);
+    const staleMdOnly = check();
+    assert.equal(staleMdOnly.status, 1);
+    assert.match(staleMdOnly.stderr, /stale: .*TEST_TARGET_CLASSIFICATION_20261115\.md/);
+    assert.doesNotMatch(staleMdOnly.stderr, /test_target_classification_20261115\.csv/);
+  } finally { fixture.cleanup(); }
+});
 test('CLI --identity: prints commit/tree provenance and input hash on separate lines', () => {
   const r = runCli('--identity');
   assert.equal(r.status, 0, `exit 0 (stderr: ${r.stderr})`);
   assert.match(r.stdout, /^commit [0-9a-f]{40}\ntree [0-9a-f]{40}\ntracked inputs sha256 [0-9a-f]{64}\ntracked inputs clean: yes\n$/);
 });
 
-test('CLI --check: committed report exactly matches fresh generation', () => {
+test('CLI --check: committed Markdown and CSV exactly match fresh generation', () => {
   const r = runCli('--check');
   assert.equal(r.status, 0, `exit 0 (stderr: ${r.stderr})`);
-  assert.match(r.stdout, /^--check ok: committed report matches fresh generation\n$/);
+  assert.match(r.stdout, /^--check ok: committed Markdown and CSV match fresh generation\n$/);
 });
 
 // --------------------------------------------------------------- 8. determinism

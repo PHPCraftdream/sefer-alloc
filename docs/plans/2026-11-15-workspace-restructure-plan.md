@@ -146,8 +146,8 @@ dependency that relocation does not remove; the plan does not assume the split.
   tip, not per commit.
 - Local cargo-free checks before every push (revision 3): `cargo metadata --locked` for every
   fixture `Cargo.lock` (`tests/compile_fail/*/Cargo.lock`, `fuzz/Cargo.lock`);
-  `scripts/verify-evidence-registry.mjs --strict`; classifier vs CSV
-  (`scripts/classify-tests.mjs` against `docs/test_target_classification_20261115.csv`);
+  `scripts/verify-evidence-registry.mjs --strict`; classifier output check
+  (`scripts/classify-tests.mjs --check` against the committed per-file CSV and Markdown);
   `scripts/verify-structure-limits.mjs`; `scripts/verify-ci-decomposition.mjs`;
   `scripts/ci-plan.mjs --selftest` and `--check-doc`; `scripts/module-graph.mjs
   --check-backedges`; `scripts/ghost_inventory.mjs --check`;
@@ -218,7 +218,8 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
 
 - **P0.1. Classify the 562 test files**: process-global state (global allocator,
   first-config-wins, THP tuple, sidecar), process spawning, loom, `harness = false`,
-  `required-features`, file-level `cfg`; output a committed CSV and the mergeable groups.
+  `required-features`, file-level `cfg`; commit the per-file CSV. Mergeability groups,
+  relaxation rungs and pilot analysis are stdout-only (`node scripts/classify-tests.mjs --summary`).
 - **P0.2. Pilot** (pilot written, landing pending, revision 3: 35 of 78 `regression_*` targets merged, 20 + 23
   excluded, −34 binaries; verdict by the criterion in `docs/perf/P0_2_TEST_MERGE_PILOT.md`,
   facts 5): merge one pure group (candidates: `regression_*` without global state)
