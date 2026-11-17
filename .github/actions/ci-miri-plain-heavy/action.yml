@@ -1,0 +1,23 @@
+name: CI miri-plain-heavy
+description: miri-plain sharded by target — the two expected-heaviest retained concurrent regressions
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    # Retained concurrent allocator regressions, plus the b4-r1 cached-pin
+    # fast path (miss then same-base hit, TLS exit release). Full owner and
+    # sidecar-miss workloads stay native; the tiny owner-credit invariant
+    # runs separately.
+    # Sharding note: per-target wall times are not yet measured for the
+    # plain job (logs attribute only the header-race target). The large
+    # free/no-leak regression and the b4-r1 pin-cache cell are placed in
+    # this shard as the expected heaviest pair; CI will measure the real
+    # split after the merge (docs/perf/CI_LONG_JOBS.md).
+    - name: large free/no-leak regression and b4-r1 pin cache (plain provenance)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: |-
+        cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test regression_xthread_large_free_no_leak
+        cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test b4_r1_pin_cache_miri
