@@ -528,11 +528,11 @@ Static exact command rows only; no multiline/YAML inference. Key retains cargo/c
 - -p aligned-vmem --all-features (4 occurrences)
   - aligned-vmem-gates .github/actions/ci-aligned-vmem-gates/action.yml:64 [ubuntu-latest]
   - test-workspace .github/actions/ci-test-workspace/action.yml:9 [ubuntu-latest]
-  - test-workspace .github/actions/ci-test-workspace/action.yml:66 [ubuntu-latest]
+  - test-workspace .github/actions/ci-test-workspace/action.yml:68 [ubuntu-latest]
   - msrv .github/actions/ci-msrv/action.yml:53 [ubuntu-latest]
 - -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" 2>&1 | tee "$RUNNER_TEMP/vmem-mock-debug.log" (2 occurrences)
   - aligned-vmem-gates .github/actions/ci-aligned-vmem-gates/action.yml:108 [ubuntu-latest]
-  - test-workspace .github/actions/ci-test-workspace/action.yml:80 [ubuntu-latest]
+  - test-workspace .github/actions/ci-test-workspace/action.yml:82 [ubuntu-latest]
 - -p aligned-vmem --all-features (2 occurrences)
   - aligned-vmem-gates .github/actions/ci-aligned-vmem-gates/action.yml:210 [ubuntu-latest]
   - msrv .github/actions/ci-msrv/action.yml:50 [ubuntu-latest]
@@ -544,20 +544,20 @@ Static exact command rows only; no multiline/YAML inference. Key retains cargo/c
   - tagged-index-stack-gates .github/actions/ci-tagged-index-stack-gates/action.yml:71 [ubuntu-latest]
   - msrv .github/actions/ci-msrv/action.yml:7 [ubuntu-latest]
 - -p tagged-index-stack --no-fail-fast (2 occurrences)
-  - test-workspace .github/actions/ci-test-workspace/action.yml:16 [ubuntu-latest]
+  - test-workspace .github/actions/ci-test-workspace/action.yml:18 [ubuntu-latest]
   - msrv .github/actions/ci-msrv/action.yml:143 [ubuntu-latest]
 - -p size-classes --all-features --no-fail-fast (3 occurrences)
-  - test-workspace .github/actions/ci-test-workspace/action.yml:136 [ubuntu-latest]
-  - test-workspace .github/actions/ci-test-workspace/action.yml:168 [ubuntu-latest]
+  - test-workspace .github/actions/ci-test-workspace/action.yml:138 [ubuntu-latest]
+  - test-workspace .github/actions/ci-test-workspace/action.yml:170 [ubuntu-latest]
   - msrv .github/actions/ci-msrv/action.yml:106 [ubuntu-latest]
 - -p sefer-ghost --features internals --no-fail-fast (2 occurrences)
-  - test-workspace .github/actions/ci-test-workspace/action.yml:199 [ubuntu-latest]
+  - test-workspace .github/actions/ci-test-workspace/action.yml:201 [ubuntu-latest]
   - msrv .github/actions/ci-msrv/action.yml:131 [ubuntu-latest]
 - -p once-ptr-cell --no-fail-fast (2 occurrences)
-  - test-workspace .github/actions/ci-test-workspace/action.yml:220 [ubuntu-latest]
+  - test-workspace .github/actions/ci-test-workspace/action.yml:222 [ubuntu-latest]
   - msrv .github/actions/ci-msrv/action.yml:90 [ubuntu-latest]
 - -p globalalloc-model --all-features --no-fail-fast (2 occurrences)
-  - test-workspace .github/actions/ci-test-workspace/action.yml:276 [ubuntu-latest]
+  - test-workspace .github/actions/ci-test-workspace/action.yml:278 [ubuntu-latest]
   - msrv .github/actions/ci-msrv/action.yml:163 [ubuntu-latest]
 - -p numa-shim --no-run --all-features (4 occurrences)
   - msrv .github/actions/ci-msrv/action.yml:65 [ubuntu-latest]

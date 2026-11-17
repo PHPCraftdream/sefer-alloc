@@ -13,6 +13,8 @@ runs:
     # stack-unit invariants.
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+    - run: cargo clippy -p malloc-bench-rs --all-targets -- -D warnings
+      shell: bash -e {0}
     - run: cargo test -p tagged-index-stack --no-fail-fast
     # Keep a release-profile run separate from the default-profile suite;
     # assertions and optimized code paths must be exercised under the

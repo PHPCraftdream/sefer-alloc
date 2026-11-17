@@ -39,13 +39,15 @@ criterion (a) is checked by `scripts/test-inventory.mjs`.
 ## Pilot scope
 
 The group under test is the `regression_*` no-global-state pool from the P0.1
-classification (`docs/test_target_classification_20261115.csv`, "allow-pinned"
-relaxation rung; members are externally name-pinned, which is exactly what this
-pilot measures: how painful the pin updates are).
+classification (`docs/test_target_classification_20261115.csv`). The committed CSV
+is a per-file inventory; `external_pin_count` counts occurrences of that target
+name on external pin surfaces, not an aggregate total. Relaxation rungs and pilot
+candidates are aggregate analysis available from
+`node scripts/classify-tests.mjs --summary`, not the CSV contents.
 
-Note: P0.1 itself lists the `compat`-rung candidate (3 files / 2 saved links)
-as its own pilot candidate, but this pilot deliberately takes the larger
-regression pool to measure the pin-update cost at scale.
+The P0.1 allow-pinned rung and compat candidate referenced below are historical
+classification-time context. The P0.2 counts and tables preserve the pilot-time
+snapshot; they are not current aggregates derived from the committed CSV.
 
 Final membership (merged files and excluded files with reasons) is recorded in
 the "Merged group" section below.

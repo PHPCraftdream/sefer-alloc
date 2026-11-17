@@ -100,3 +100,104 @@ Ordered by created_at (ascending). `selected N/T; skipped K/T` reports selected 
 | 43816251511 | push | success | 2026-11-16T06:21:57Z | all | unmapped-changed-file | `tests/ci_job_durations.test.mjs is executed by no mapped test` | 498 | — | 229.0 | — |
 
 This report makes NO GO/NO-GO decision.
+
+## P1.5a first-blocker upper-bound model (2026-11-17)
+
+This dated addendum uses only each historical artifact's recorded first blocker; no current source tree is consulted for historical candidates. A candidate means that removing that one blocker could make the run a subset; it is NOT a replay or proof of a subset. The artifacts retain no original full diffs, maps, or unmapped-target sets, so additional changed files may still force `all`, and exact would-be-subset run count and seconds are not identifiable.
+
+- First-blocker candidates: 19 / 28.
+- Hypothetical-zero-selected-target proportional estimate for candidates: 4554.0 / 6669.0 s = 68.29%. This is an upper bound, not estimated realized savings.
+
+| historical class | first-blocker candidates | hypothetical-zero-selected test s |
+|---|---:|---:|
+| `full-run` | 0 | — |
+| `selector-no-data` | 0 | — |
+| `manifest-or-config` | 0 | — |
+| `unmapped-changed-file` | 14 | 3366.0 |
+| `unattributable` | 5 | 1188.0 |
+| `unknown` | 0 | — |
+| `subset` | 0 | — |
+
+Candidate runs (recorded first blocker only):
+- `43639040715` — `examples/_shared/j13b_adaptive_windows.rs` (`unattributable`); hypothetical-zero-selected estimate 272.0 s.
+- `43642694744` — `examples/_shared/j13b_adaptive_windows.rs` (`unattributable`); hypothetical-zero-selected estimate 238.0 s.
+- `43691863525` — `tests/classify_tests.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 237.0 s.
+- `43694231582` — `tests/classify_tests.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 235.0 s.
+- `43694903327` — `tests/module_graph.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 268.0 s.
+- `43698934642` — `tests/module_graph.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 242.0 s.
+- `43707240497` — `tests/iai_nolto_summary.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 269.0 s.
+- `43708132388` — `tests/classify_tests.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 261.0 s.
+- `43714854608` — `tests/iai_nolto_summary.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 217.0 s.
+- `43721485925` — `tests/iai_nolto_summary.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 223.0 s.
+- `43759839231` — `tests/g1_widening_count.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 245.0 s.
+- `43760252461` — `crates/containers/sefer-region/benches/region_bench.rs` (`unattributable`); hypothetical-zero-selected estimate 248.0 s.
+- `43763683224` — `tests/g1_widening_count.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 267.0 s.
+- `43771528526` — `crates/containers/sefer-region/benches/region_bench.rs` (`unattributable`); hypothetical-zero-selected estimate 216.0 s.
+- `43777538709` — `crates/containers/sefer-region/benches/region_bench.rs` (`unattributable`); hypothetical-zero-selected estimate 214.0 s.
+- `43793136615` — `tests/ci_selection_history.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 237.0 s.
+- `43795646256` — `tests/ci_selection_history.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 214.0 s.
+- `43812355480` — `tests/ci_job_durations.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 222.0 s.
+- `43816251511` — `tests/ci_job_durations.test.mjs` (`unmapped-changed-file`); hypothetical-zero-selected estimate 229.0 s.
+
+The hypothetical uses the existing proportionality rule at selected=0 (all `total` targets hypothetically skipped). It does not imply the selector would in fact produce zero targets, and the exact would-be-subset run count and seconds remain unidentifiable without the original full diffs, maps, and unmapped sets.
+
+## P1.5a reconstructed conditional-range evidence
+
+Separate optional range-evidence file: 82232 bytes (80.3 KiB); it is validated independently against a 200 KiB limit and is excluded from the historical compact-input byte/file totals above.
+
+The ranges below are reconstructed from saved Git graph evidence, not from retained webhook payloads: event-base SHAs were not retained. Saved first-parent history ref: `origin/main`. For a pushed two-parent main merge, parent 1 is an explicit assumption for the event base; for a PR, a head matching parent 2 of a merge on the saved ref is used only as conditional graph evidence and merge-base is recorded. Neither proves the original event base. Files are classified using the current exported `isDataFile` and `isAlwaysAll` selector rules. Real historical maps, reader sets, and unmapped-target sets are unavailable; therefore **no exact historical selected subset is claimed**.
+
+- Graph-reconstructed file ranges: 27 / 28; unresolved: 1 / 28.
+- Proven actual subsets: 0 / 28 certifiable without historical maps, reader sets, and unmapped-target sets.
+- Conditional-data candidates: 14 / 28 (all changed paths classify as data and none is ALWAYS_ALL; strict subset is conditional on the historical map/readers/unmapped targets not selecting ALL targets).
+- Recorded full runs: 8 / 28; reconstructed ranges containing a global ALWAYS_ALL path: 0 / 28; map-dependent: 5 / 28; unresolved: 1 / 28.
+- Conditional-data proportional ceiling: 3366.0 / 6669.0 test s = 50.47%. This applies the existing total-skipped-target proportionality model (selected=0) to each conditional-data run; it is an upper bound, not measured or realized savings.
+
+| run | base | head | graph method | changed files | class | conditional-data ceiling s |
+|---|---|---|---|---:|---|---:|
+| 43638984576 | `a66edc77906a98473b58bb4e10bdfbb6801b0e2a` | `140b9f8dff518803b15002ca90003d8cfe567829` | `push-merge-parent1` | 13 | map-dependent | — |
+| 43639040715 | `140b9f8dff518803b15002ca90003d8cfe567829` | `78eea7d69993116047c2a4e9cc5cb9464326f105` | `pr-merge-base` | 71 | map-dependent | — |
+| 43642694744 | `140b9f8dff518803b15002ca90003d8cfe567829` | `d093edd78f33edc5b0517e677c320c21b45c0220` | `push-merge-parent1` | 71 | map-dependent | — |
+| 43691863525 | `8a56a9b9b4e1dfd7d94140208a907556cb5fd18e` | `7df263b9083c6aa1854efb5bd0e681edd83a07d2` | `pr-merge-base` | 10 | conditional-data | 237.0 |
+| 43694231582 | `8a56a9b9b4e1dfd7d94140208a907556cb5fd18e` | `a012c8aa044d4ffefdb4b1c381c8504df9f02f28` | `push-merge-parent1` | 10 | conditional-data | 235.0 |
+| 43694903327 | `8a56a9b9b4e1dfd7d94140208a907556cb5fd18e` | `1f6215c50f2781eecde773e2e98410094d08f8f0` | `pr-merge-base` | 9 | conditional-data | 268.0 |
+| 43698934642 | `a012c8aa044d4ffefdb4b1c381c8504df9f02f28` | `62df2019f6853fb20528af5897e83ca180cea0c3` | `push-merge-parent1` | 9 | conditional-data | 242.0 |
+| 43699943390 | `8a56a9b9b4e1dfd7d94140208a907556cb5fd18e` | `5fdb54132c8a238e79e2a812d72e4b9c6f5d8bbf` | `pr-merge-base` | 343 | unchanged-full | — |
+| 43704041163 | `62df2019f6853fb20528af5897e83ca180cea0c3` | `0a03810645ed16fb0a37608a6af9f4990fc4da46` | `push-merge-parent1` | 343 | unchanged-full | — |
+| 43707240497 | `0a03810645ed16fb0a37608a6af9f4990fc4da46` | `b92ad549b2c6282c613fc7fcf75707d5deb808e0` | `pr-merge-base` | 4 | conditional-data | 269.0 |
+| 43708132388 | `0a03810645ed16fb0a37608a6af9f4990fc4da46` | `44e9a3b3cd8b45431cee1e22730b9b992ac5940e` | `pr-merge-base` | 12 | conditional-data | 261.0 |
+| 43714854608 | `90d8793a52a2cc4f5712b1259c13cb6ce1e41f48` | `ad3da344723bca8d9c87e8183544b53bda0a0ac8` | `pr-merge-base` | 5 | conditional-data | 217.0 |
+| 43721485925 | `90d8793a52a2cc4f5712b1259c13cb6ce1e41f48` | `023214be0309733755e5deeabf116ceeba6aff5f` | `push-merge-parent1` | 5 | conditional-data | 223.0 |
+| 43729237828 | `f729b85a0fe0ae94577495d8e9bb1ff676e6184f` | `366aab2a1e0dcb1a176143d6b70c90c3369ea69e` | `pr-merge-base` | 53 | unchanged-full | — |
+| 43737516212 | `b2bc0492676835d5d44ffb03b6fceb9fbba8b6e7` | `fdc5f0a846dddec9ec8bc32a313d5e5615f27cb2` | `push-merge-parent1` | 53 | unchanged-full | — |
+| 43759580924 | `fdc5f0a846dddec9ec8bc32a313d5e5615f27cb2` | `8e82339ab89041f218b270039b94d84a55574e32` | `pr-merge-base` | 75 | unchanged-full | — |
+| 43759839231 | `fdc5f0a846dddec9ec8bc32a313d5e5615f27cb2` | `9be31c2c8244512499dea985beb50a0d8bd6fd36` | `pr-merge-base` | 7 | conditional-data | 245.0 |
+| 43760252461 | `—` | `b81714b81387e38cc6c7e7d71bd031aeb75a167a` | `unresolved` | — | unresolved | — |
+| 43763683224 | `fdc5f0a846dddec9ec8bc32a313d5e5615f27cb2` | `5c6edc44052d6c04b26d48b6ece7f9a8e481f032` | `push-merge-parent1` | 7 | conditional-data | 267.0 |
+| 43768376047 | `5c6edc44052d6c04b26d48b6ece7f9a8e481f032` | `b5779b5f90576cc99a443ec6dcd5c29995078183` | `push-merge-parent1` | 75 | unchanged-full | — |
+| 43771528526 | `b5779b5f90576cc99a443ec6dcd5c29995078183` | `5a8a8d98c7f27e312f5bf14ab1534d3a8456d7ef` | `pr-merge-base` | 35 | map-dependent | — |
+| 43777538709 | `b5779b5f90576cc99a443ec6dcd5c29995078183` | `c6524f402c91c408b36f2e326ff785e0c1c466e8` | `push-merge-parent1` | 35 | map-dependent | — |
+| 43781371392 | `c6524f402c91c408b36f2e326ff785e0c1c466e8` | `5a8e0904db315398aa93809dd7091193673cc6e8` | `pr-merge-base` | 57 | unchanged-full | — |
+| 43785254102 | `c6524f402c91c408b36f2e326ff785e0c1c466e8` | `8013c80d859a7ffe41deb280463acd407b074f89` | `push-merge-parent1` | 57 | unchanged-full | — |
+| 43793136615 | `8013c80d859a7ffe41deb280463acd407b074f89` | `0047084be53a5b561d801914c25fe07d9ec34f18` | `pr-merge-base` | 9 | conditional-data | 237.0 |
+| 43795646256 | `8013c80d859a7ffe41deb280463acd407b074f89` | `ded4029003a9e3805b7ecba3e4f20dd9fb3c1d55` | `push-merge-parent1` | 9 | conditional-data | 214.0 |
+| 43812355480 | `8013c80d859a7ffe41deb280463acd407b074f89` | `6aacc851a92df9a92129e20685a3936e6e858476` | `pr-merge-base` | 3 | conditional-data | 222.0 |
+| 43816251511 | `ded4029003a9e3805b7ecba3e4f20dd9fb3c1d55` | `79796189f61fb68f0fd171cf8fc5e62d0e1b1b62` | `push-merge-parent1` | 3 | conditional-data | 229.0 |
+
+Counts above are derived from the saved 28 per-run records, not hardcoded. The empty-file case is accepted as a valid zero range; that alone does not establish a changed target subset.
+## P1.5b crate-graph selection shadow (2026-11-17)
+
+Recomputed with the chunk 1-2 crate-graph selection in force (shadow math only: no CI change, no job was affected). Generated by `node scripts/test-selection-impact.mjs --report` whenever `cargo metadata` yields the workspace graph (scripts/ci/crate-graph.mjs); `--check` recomputes it identically. Changed files come from the committed ranges.json graph reconstruction. select-tests semantics reuse the real exported rule predicates (isAlwaysAll, isDataFile, crateForPath, affectedCrates, rootAffected) in select() decision order; ci-plan semantics import scripts/ci-plan.mjs `plan` directly (crateGraph=null vs the real graph). No verdict: numbers only.
+
+Metric (plan §7, recomputed with the fixed graph): numerator = completed window runs whose committed file range is confined to non-root workspace crates that do NOT reach the root via declared Cargo dependencies or reference edges (select-tests returns a reader-tests-only root subset — file readers stay selected — and ci-plan drops seam/os and every non-affected crate_* group while keeping fast); denominator = completed window runs carrying a `test-selection` artifact.
+
+- Crate-only root-unaffected runs (numerator): 0 / 28 of the artifact window (0 / 28 = 0.00%); scoped to 27 graph-reconstructed ranges (1 unresolved range excluded). The select-tests numerator equals the ci-plan numerator: both are 0.
+- Skipped job groups over the window (Σ per-run groups on before minus on after, current gating): 0 groups over 27 scoped runs; 27 of 27 scoped runs are unchanged.
+- Hypothetical test-core ceiling for crate-only runs (same selected=0 proportionality rule as the P1.5a sections): 0.0 / 6669.0 s = 0.00%. Upper bound, not measured savings.
+- Current gating job counts used below (from `ci-plan.mjs` parseJobs over the CURRENT .github/workflows/ci.yml): always:9, crate_aligned_vmem:3, crate_globalalloc_model:1, crate_numa_shim:4, crate_once_ptr_cell:2, crate_proc:2, crate_sefer_concurrent:1, crate_sefer_ghost:1, crate_sefer_platform:1, crate_sefer_policy:1, crate_sefer_region:1, crate_size_classes:1, crate_tagged_index_stack:1, dispatch:1, fast:15, os:5, seam:16, weekly:3.
+
+- No scoped run changes under the new selection (no skipped group on any run); no per-run before/after table. Every scoped range either requests a full run (recorded `CI: full`) or contains a data-file / non-crate path the shadow cannot attribute without historical maps (shadow kind `map-dependent`); no range is confined to non-root crates.
+
+What the window data cannot show: the artifacts retain no historical maps, reader sets, or unmapped-target sets, so map-covered or data-file ranges (class `map-dependent` here) cannot be claimed as would-be subsets even under the new selection; the crate-only numerator is therefore a lower bound conditional on a map existing (all 28 runs had selector data). Under the fixed ci-plan semantics `fast` stays on for every crate change, so before/after differences can only be seam/os suppression (root unaffected by Cargo AND reference edges) or dropped non-affected crate_* groups. Job and group counts apply the CURRENT ci.yml gating and the CURRENT crate-graph job set to historical diffs — the window's actual ci.yml had neither `crate_*` groups nor graph narrowing, so the before/after columns are a counterfactual, not what ran. The 1 unresolved range has no reconstructed base and is excluded entirely. The proportional test-second ceiling scales the root-crate test-core job; per-crate `crate_*` job durations are not in the inputs, so crate-job savings are not priced.
+
+This section makes NO GO/NO-GO decision.

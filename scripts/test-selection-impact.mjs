@@ -23,15 +23,19 @@
 // classifyReason, computePerRun, computeAggregates, renderReport) are pure:
 // importing this module has zero side effects and writes nothing.
 
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { cargoTestStepSeconds, durationSeconds } from './ci-job-durations.mjs';
+import { isAlwaysAll, isDataFile } from './select-tests.mjs';
+import { loadCrateGraph, crateForPath, affectedCrates, rootAffected } from './ci/crate-graph.mjs';
+import { plan as ciPlan, parseJobs } from './ci-plan.mjs';
 
 const SCRIPT = 'scripts/test-selection-impact.mjs';
 const DEFAULT_REPORT = 'docs/perf/TEST_SELECTION_ENFORCE_IMPACT.md';
 const DEFAULT_INPUTS = 'docs/perf/test_selection_inputs';
+const RANGES_FILE = 'ranges.json';
 const CORE_JOB_NAME = 'test (core tiers)';
 const CARGO_TEST_STEP = /^test \(/;
 const GH_CALL_BUDGET = 45;
@@ -45,6 +49,156 @@ const REASON_SUFFIXES = [
   ['unattributable', ' is not attributable to a test'],
 ];
 export const CLASSES = ['full-run', 'selector-no-data', 'manifest-or-config', 'unmapped-changed-file', 'unattributable', 'unknown', 'subset'];
+
+const NODE_TEST_FILE = /^tests\/[^/]+\.test\.mjs$/;
+const PERIPHERAL_RUST_FILE = /^(?:benches|examples)\/.*\.rs$|^crates\/[^/]+\/[^/]+\/(?:benches|examples)\/.*\.rs$/;
+
+/** A saved first-blocker path is only a candidate, never proof of a run subset. */
+export function classifyCounterfactual(sel, sources = {}) {
+  if (sel.mode !== 'all') return 'all';
+  const m = /^(\S+) is (?:executed by no mapped test|not attributable to a test)$/.exec(sel.reason ?? '');
+  if (!m) return 'all';
+  const file = m[1];
+  if (!NODE_TEST_FILE.test(file) && !PERIPHERAL_RUST_FILE.test(file)) return 'all';
+  const texts = Object.values(sources).flat().filter((text) => typeof text === 'string');
+  const referenced = texts.some((text) => text.includes(file) || text.includes('../' + file));
+  return referenced ? 'all' : 'candidate';
+}
+
+const SHA = /^[0-9a-f]{40}$/;
+
+/** Validate the saved graph-only ranges; a missing per-run record is unresolved. */
+export function validateRanges(doc, runs) {
+  ok(doc && doc.schema === 1 && Array.isArray(doc.runs), 'ranges.json schema 1 and runs[]');
+  ok(typeof doc.note === 'string' && doc.note.includes('not exact event-base proofs'), 'ranges.json documents event-base limitation');
+  const byId = new Map(runs.map((run) => [String(run.id), run]));
+  assertEq(byId.size, runs.length, 'runs.json ids are unique');
+  assertEq(doc.runs.length, runs.length, 'ranges.json ids match runs.json runs[] exactly (id count)');
+  const ranges = new Map();
+  for (const range of doc.runs) {
+    ok(range && typeof range === 'object' && !Array.isArray(range), 'range entry is an object');
+    const id = String(range.id);
+    ok(byId.has(id), 'range ' + id + ' matches a recorded run');
+    ok(!ranges.has(id), 'range ids are unique (' + id + ')');
+    ok(SHA.test(range.head) && range.head === byId.get(id).head_sha, 'range ' + id + ' head is a full SHA matching runs.json');
+    ok(range.status === 'graph-reconstructed' || range.status === 'unresolved', 'range ' + id + ' has known status');
+    ok(Array.isArray(range.files), 'range ' + id + ' files is an array');
+    const files = range.files;
+    ok(files.every((f) => typeof f === 'string' && f.length > 0 && !f.startsWith('/') && !f.includes('\\')
+      && !f.split('/').includes('..') && !/[\r\n]/.test(f) && !/^[A-Za-z]:/.test(f)),
+    'range ' + id + ' files are repository-relative paths');
+    assertEq(new Set(files).size, files.length, 'range ' + id + ' files are unique');
+    assertEq([...files].sort().join('\n'), files.join('\n'), 'range ' + id + ' files are sorted');
+    if (range.status === 'graph-reconstructed') {
+      ok(SHA.test(range.base), 'range ' + id + ' base is a full SHA');
+      ok(typeof range.method === 'string' && range.evidence && typeof range.evidence === 'object', 'range ' + id + ' graph evidence is complete');
+      if (range.method === 'push-merge-parent1') {
+        ok(byId.get(id).event === 'push' && byId.get(id).head_branch === 'main', 'range ' + id + ' push method matches run metadata');
+        ok(Array.isArray(range.evidence.headParents) && range.evidence.headParents.length === 2
+          && range.evidence.headParents.every((parent) => SHA.test(parent)), 'range ' + id + ' push parent evidence has two full SHAs');
+        assertEq(range.evidence.headParents[0], range.base, 'range ' + id + ' push base is parent 1');
+      } else if (range.method === 'pr-merge-base') {
+        ok(byId.get(id).event === 'pull_request', 'range ' + id + ' PR method matches run metadata');
+        ok(SHA.test(range.evidence.merge) && Array.isArray(range.evidence.mergeParents)
+          && range.evidence.mergeParents.length === 2 && range.evidence.mergeParents.every((parent) => SHA.test(parent))
+          && SHA.test(range.evidence.mergeBase), 'range ' + id + ' merge evidence is complete with full parent SHAs');
+        assertEq(range.evidence.mergeParents[1], range.head, 'range ' + id + ' merge second parent is head');
+        assertEq(range.base, range.evidence.mergeBase, 'range ' + id + ' base matches recorded merge-base');
+      } else ok(false, 'range ' + id + ' method is recognized');
+    } else {
+      assertEq(range.base, null, 'range ' + id + ' unresolved base is null');
+      assertEq(range.method, null, 'range ' + id + ' unresolved method is null');
+      assertEq(range.evidence, null, 'range ' + id + ' unresolved evidence is null');
+      assertEq(files.length, 0, 'range ' + id + ' unresolved files are empty');
+    }
+    ranges.set(id, range);
+  }
+  assertEq([...ranges.keys()].sort().join(','), [...byId.keys()].sort().join(','), 'ranges.json ids match runs.json runs[] exactly');
+  return ranges;
+}
+
+/** Classification of saved conditional-range evidence, not proof of selectors. */
+export function classifyConditionalRange(range, selection) {
+  if (selection.reason === 'full run requested') return 'unchanged-full';
+  if (!range || range.status !== 'graph-reconstructed') return 'unresolved';
+  if (range.files.some(isAlwaysAll)) return 'unchanged-global';
+  if (range.files.every(isDataFile)) return 'conditional-data';
+  return 'map-dependent';
+}
+
+// ── P1.5b crate-graph shadow ────────────────────────────────────────────────────
+/**
+ * Ordered select-tests path-rule shadow for one saved file range. Reuses the real
+ * exported rule predicates (isAlwaysAll, isDataFile, crateForPath, affectedCrates,
+ * rootAffected) in select()'s decision order, but without maps/targets/sources:
+ * map-covered and data-file changes can only be reported as map-dependent, never
+ * claimed as subsets. `src/kani_proofs.rs` mirrors select-tests TOOL_ONLY (skipped).
+ */
+export function crateSelectShadow(files, graph) {
+  const crateOnly = [];
+  for (const f of files) {
+    if (isAlwaysAll(f)) return { kind: 'all-manifest' };
+    if (f === 'src/kani_proofs.rs') continue;
+    if (isDataFile(f)) return { kind: 'map-dependent' };
+    const c = crateForPath(f, graph);
+    if (c && c !== graph.root) { crateOnly.push(c); continue; }
+    return { kind: 'all-unmapped' };
+  }
+  if (crateOnly.length === 0) return { kind: 'empty' };
+  const changed = [...new Set(crateOnly)].sort();
+  const affected = affectedCrates(changed, graph);
+  if (rootAffected(affected, graph)) return { kind: 'all-root-affected', changed, affected };
+  return { kind: 'crate-only-subset', changed, affected };
+}
+
+/**
+ * Per-run crate-graph shadow over the committed ranges: select-tests outcome plus
+ * ci-plan groups before (crateGraph=null) vs after (real graph), with job counts
+ * from the current workflow text. Historical map contents and the historical
+ * ci.yml are unavailable; job counts apply the CURRENT gating to historical diffs.
+ */
+export function computeCrateGraphShadow(inputs, rows, graph, ciText) {
+  const jobsByGroup = new Map();
+  for (const j of parseJobs(ciText)) jobsByGroup.set(j.group, (jobsByGroup.get(j.group) ?? 0) + 1);
+  const perRun = [];
+  for (const r of rows) {
+    const range = (inputs.ranges ?? new Map()).get(r.id);
+    if (!range || range.status !== 'graph-reconstructed') {
+      perRun.push({ row: r, status: range?.status ?? 'missing' });
+      continue;
+    }
+    const sel = crateSelectShadow(range.files, graph);
+    const trailerFull = r.mode === 'all' && r.reason === 'full run requested';
+    const before = ciPlan({ files: range.files, event: r.event, trailerFull, crateGraph: null });
+    const after = ciPlan({ files: range.files, event: r.event, trailerFull, crateGraph: graph });
+    const on = (p) => Object.keys(p).filter((k) => p[k] && k !== 'full').sort();
+    const beforeGroups = on(before);
+    const afterGroups = on(after);
+    const skipped = beforeGroups.filter((g) => !after[g]);
+    const jobCount = (gs) => gs.reduce((n, g) => n + (jobsByGroup.get(g) ?? 0), 0);
+    perRun.push({
+      row: r, status: 'graph-reconstructed', sel, beforeGroups, afterGroups, skipped,
+      files: range.files.length,
+      jobsBefore: jobCount(beforeGroups), jobsAfter: jobCount(afterGroups),
+    });
+  }
+  const scoped = perRun.filter((x) => x.status === 'graph-reconstructed');
+  const unresolved = perRun.length - scoped.length;
+  const crateOnly = scoped.filter((x) => x.sel.kind === 'crate-only-subset');
+  const denominator = rows.length;
+  const numerator = crateOnly.length;
+  const skippedGroupTotal = scoped.reduce((n, x) => n + x.skipped.length, 0);
+  const unchangedCount = scoped.filter((x) => x.skipped.length === 0).length;
+  // Hypothetical selected=0 ceiling for crate-only runs (same proportionality rule
+  // as the P1.5a sections): the whole root-crate test-core cargo-test time.
+  const testSecondsSkipped = crateOnly.reduce((n, x) => n + x.row.testSeconds, 0);
+  assertEq(scoped.length + unresolved, rows.length, 'crate-graph shadow: scoped + unresolved == run count');
+  ok(numerator <= scoped.length, 'crate-graph numerator <= graph-reconstructed ranges');
+  assertEq(unchangedCount, scoped.length - scoped.filter((x) => x.skipped.length > 0).length,
+    'crate-graph shadow: unchanged count recomputed');
+  return { perRun, scoped, unresolved, denominator, numerator, skippedGroupTotal, unchangedCount, testSecondsSkipped, jobsByGroup };
+}
+
 
 // ── formatting (seconds 1 decimal, percentages 2 decimals, sizes KiB 1 decimal) ─
 const s1 = (x) => x.toFixed(1);
@@ -69,6 +223,7 @@ function assertEq(got, want, what) {
  *   jobs/<id>.json    { run_id, jobs: [<the single "test (core tiers)" job>] }
  * Hard-fails on any structural mismatch (key sets, job count, step count,
  * missing timestamps, provenance accounting).
+ * Optional ranges.json is saved graph evidence only; --report/--check never invokes Git.
  */
 export function loadInputs(inputsDir) {
   const selections = JSON.parse(readFileSync(join(inputsDir, 'selections.json'), 'utf8'));
@@ -125,12 +280,19 @@ export function loadInputs(inputsDir) {
   for (const a of order) ok(typeof a.conclusion === 'string' && a.conclusion.trim().length > 0,
     'download_attempt_order entry ' + a.id + ' has a non-empty string conclusion');
 
+  const rangePath = join(inputsDir, RANGES_FILE);
+  const hasRanges = existsSync(rangePath);
+  const rangesDoc = hasRanges ? JSON.parse(readFileSync(rangePath, 'utf8')) : null;
+  const ranges = hasRanges ? validateRanges(rangesDoc, runs) : new Map();
+  const rangeBytes = hasRanges ? statSync(rangePath).size : 0;
+  ok(rangeBytes <= 200 * 1024, 'ranges.json <= 200 KiB');
   const inputBytes = statSync(join(inputsDir, 'selections.json')).size
     + statSync(join(inputsDir, 'runs.json')).size
     + jobFiles.reduce((acc, f) => acc + statSync(join(jobsDir, f)).size, 0);
-  ok(inputBytes <= 200 * 1024, 'loaded input files total <= 200 KiB');
+  ok(inputBytes <= 200 * 1024, 'loaded historical input files total <= 200 KiB');
   return {
-    selections, runs, jobs, provenance: prov, ghCalls: calls, budgetExceeded, attemptOrder: order, noArtifact,
+    selections, runs, jobs, ranges, rangeBytes, rangeHistoryRef: rangesDoc?.historyRef ?? null,
+    provenance: prov, ghCalls: calls, budgetExceeded, attemptOrder: order, noArtifact,
     inputBytes, inputFiles: 2 + jobFiles.length, jobFileCount: jobFiles.length,
   };
 }
@@ -333,9 +495,20 @@ function classExamples(agg, cls) {
     .join('; ');
 }
 
-export function renderReport(inputs, rows, agg) {
+export function renderReport(inputs, rows, agg, crate = null) {
   assertReportNumbers(inputs, rows, agg);
   const calls = inputs.ghCalls;
+  const firstBlockerCandidates = rows.filter((r) =>
+    classifyCounterfactual(inputs.selections[r.id]) === 'candidate');
+  const candidateByClass = new Map(CLASSES.map((c) => [c, { count: 0, seconds: 0 }]));
+  for (const r of firstBlockerCandidates) {
+    const c = candidateByClass.get(r.cls);
+    c.count += 1;
+    c.seconds += r.testSeconds * (r.total - 0) / r.total;
+  }
+  const candidateCount = firstBlockerCandidates.length;
+  const candidateSeconds = firstBlockerCandidates.reduce((sum, r) => sum + r.testSeconds * (r.total - 0) / r.total, 0);
+  const L = [];
   const ev = (name) => agg.byEvent.get(name) ?? 0;
   const events = [...agg.byEvent.keys()].sort().map((k) => bt(k) + ' ' + agg.byEvent.get(k)).join(', ');
   const clsRow = (c) => {
@@ -363,7 +536,6 @@ export function renderReport(inputs, rows, agg) {
     .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
     .map(([conclusion, count]) => conclusion + ' ' + count).join(', ');
 
-  const L = [];
   L.push('# TEST_SELECTION=enforce impact (measurement input; no verdict)');
   L.push('');
   L.push('Generated by ' + bt(SCRIPT + ' --report') + ' from the compact CI inputs in '
@@ -504,7 +676,115 @@ export function renderReport(inputs, rows, agg) {
   }
   L.push('');
   L.push('This report makes NO GO/NO-GO decision.');
+  L.push('');
+  L.push('## P1.5a first-blocker upper-bound model (2026-11-17)');
+  L.push('');
+  L.push('This dated addendum uses only each historical artifact\'s recorded first blocker; no current source tree is consulted for historical candidates. A candidate means that removing that one blocker could make the run a subset; it is NOT a replay or proof of a subset. The artifacts retain no original full diffs, maps, or unmapped-target sets, so additional changed files may still force `all`, and exact would-be-subset run count and seconds are not identifiable.');
+  L.push('');
+  L.push('- First-blocker candidates: ' + candidateCount + ' / ' + agg.runCount + '.');
+  L.push('- Hypothetical-zero-selected-target proportional estimate for candidates: ' + s1(candidateSeconds) + ' / ' + s1(agg.denominator) + ' s = ' + (agg.denominator === 0 ? 'not estimable' : p2((candidateSeconds / agg.denominator) * 100) + '%') + '. This is an upper bound, not estimated realized savings.');
+  L.push('');
+  L.push('| historical class | first-blocker candidates | hypothetical-zero-selected test s |');
+  L.push('|---|---:|---:|');
+  for (const c of CLASSES) {
+    const x = candidateByClass.get(c);
+    L.push('| ' + bt(c) + ' | ' + x.count + ' | ' + (x.count ? s1(x.seconds) : '—') + ' |');
+  }
+  L.push('');
+  L.push('Candidate runs (recorded first blocker only):');
+  for (const r of firstBlockerCandidates) {
+    L.push('- ' + bt(r.id) + ' — ' + bt(r.file) + ' (' + bt(r.cls) + '); hypothetical-zero-selected estimate ' + s1(r.testSeconds * (r.total - 0) / r.total) + ' s.');
+  }
+  L.push('');
+  L.push('The hypothetical uses the existing proportionality rule at selected=0 (all `total` targets hypothetically skipped). It does not imply the selector would in fact produce zero targets, and the exact would-be-subset run count and seconds remain unidentifiable without the original full diffs, maps, and unmapped sets.');
+  L.push('');
+  const conditionalRows = rows.map((r) => {
+    const range = (inputs.ranges ?? new Map()).get(r.id);
+    const cls = classifyConditionalRange(range, inputs.selections[r.id]);
+    const seconds = cls === 'conditional-data' && r.total > 0 ? r.testSeconds * (r.total - 0) / r.total : 0;
+    return { row: r, range, cls, seconds };
+  });
+  const conditionalSeconds = conditionalRows.reduce((sum, x) => sum + x.seconds, 0);
+  const conditionalCount = conditionalRows.filter((x) => x.cls === 'conditional-data').length;
+  const countClass = (cls) => conditionalRows.filter((x) => x.cls === cls).length;
+  const graphCount = conditionalRows.filter((x) => x.range?.status === 'graph-reconstructed').length;
+  L.push('## P1.5a reconstructed conditional-range evidence');
+  L.push('');
+  L.push('Separate optional range-evidence file: ' + (inputs.rangeBytes ?? 0) + ' bytes (' + kib(inputs.rangeBytes ?? 0) + ' KiB); it is validated independently against a 200 KiB limit and is excluded from the historical compact-input byte/file totals above.');
+  L.push('');
+  const historyRef = inputs.rangeHistoryRef ? ' Saved first-parent history ref: `' + inputs.rangeHistoryRef + '`.' : '';
+  L.push('The ranges below are reconstructed from saved Git graph evidence, not from retained webhook payloads: event-base SHAs were not retained.' + historyRef + ' For a pushed two-parent main merge, parent 1 is an explicit assumption for the event base; for a PR, a head matching parent 2 of a merge on the saved ref is used only as conditional graph evidence and merge-base is recorded. Neither proves the original event base. Files are classified using the current exported `isDataFile` and `isAlwaysAll` selector rules. Real historical maps, reader sets, and unmapped-target sets are unavailable; therefore **no exact historical selected subset is claimed**.');
+  L.push('');
+  L.push('- Graph-reconstructed file ranges: ' + graphCount + ' / ' + agg.runCount + '; unresolved: ' + countClass('unresolved') + ' / ' + agg.runCount + '.');
+  L.push('- Proven actual subsets: 0 / ' + agg.runCount + ' certifiable without historical maps, reader sets, and unmapped-target sets.');
+  L.push('- Conditional-data candidates: ' + conditionalCount + ' / ' + agg.runCount + ' (all changed paths classify as data and none is ALWAYS_ALL; strict subset is conditional on the historical map/readers/unmapped targets not selecting ALL targets).');
+  L.push('- Recorded full runs: ' + countClass('unchanged-full') + ' / ' + agg.runCount + '; reconstructed ranges containing a global ALWAYS_ALL path: ' + countClass('unchanged-global') + ' / ' + agg.runCount + '; map-dependent: ' + countClass('map-dependent') + ' / ' + agg.runCount + '; unresolved: ' + countClass('unresolved') + ' / ' + agg.runCount + '.');
+  L.push('- Conditional-data proportional ceiling: ' + s1(conditionalSeconds) + ' / ' + s1(agg.denominator) + ' test s = ' + (agg.denominator === 0 ? 'not estimable' : p2(conditionalSeconds / agg.denominator * 100) + '%') + '. This applies the existing total-skipped-target proportionality model (selected=0) to each conditional-data run; it is an upper bound, not measured or realized savings.');
+  L.push('');
+  L.push('| run | base | head | graph method | changed files | class | conditional-data ceiling s |');
+  L.push('|---|---|---|---|---:|---|---:|');
+  for (const x of conditionalRows) {
+    const { row: r, range } = x;
+    L.push('| ' + r.id + ' | ' + bt(range?.base ?? '—') + ' | ' + bt(r.headSha) + ' | ' + bt(range?.method ?? 'unresolved')
+      + ' | ' + (range?.status === 'graph-reconstructed' ? range.files.length : '—') + ' | ' + x.cls + ' | '
+      + (x.cls === 'conditional-data' && r.total > 0 ? s1(x.seconds) : '—') + ' |');
+  }
+  L.push('');
+  L.push('Counts above are derived from the saved ' + conditionalRows.length + ' per-run records, not hardcoded. The empty-file case is accepted as a valid zero range; that alone does not establish a changed target subset.');
+  if (crate) L.push(...renderCrateGraphSection(crate, agg));
   return L.join('\n') + '\n';
+}
+
+/**
+ * P1.5b dated section: the §7 crate-graph shadow recomputed over the committed
+ * window. Rendered only when the real workspace graph is loadable (fixtures
+ * without a cargo project keep the pre-P1.5b output byte-identical).
+ */
+function renderCrateGraphSection(crate, agg) {
+  const L = [];
+  const p2b = (x) => x.toFixed(2);
+  const shareB = (n, d) => n + ' / ' + d + ' = ' + (d === 0 ? 'not estimable' : p2b((n / d) * 100) + '%');
+  const scoped = crate.scoped;
+  L.push('## P1.5b crate-graph selection shadow (2026-11-17)');
+  L.push('');
+  L.push('Recomputed with the chunk 1-2 crate-graph selection in force (shadow math only: no CI change, no job was affected). Generated by `node scripts/test-selection-impact.mjs --report` whenever `cargo metadata` yields the workspace graph (scripts/ci/crate-graph.mjs); `--check` recomputes it identically. Changed files come from the committed ranges.json graph reconstruction. select-tests semantics reuse the real exported rule predicates (isAlwaysAll, isDataFile, crateForPath, affectedCrates, rootAffected) in select() decision order; ci-plan semantics import scripts/ci-plan.mjs `plan` directly (crateGraph=null vs the real graph). No verdict: numbers only.');
+  L.push('');
+  L.push('Metric (plan §7, recomputed with the fixed graph): numerator = completed window runs whose committed file range is confined to non-root workspace crates that do NOT reach the root via declared Cargo dependencies or reference edges (select-tests returns a reader-tests-only root subset — file readers stay selected — and ci-plan drops seam/os and every non-affected crate_* group while keeping fast); denominator = completed window runs carrying a `test-selection` artifact.');
+  L.push('');
+  L.push('- Crate-only root-unaffected runs (numerator): ' + crate.numerator + ' / ' + crate.denominator
+    + ' of the artifact window (' + shareB(crate.numerator, crate.denominator) + '); scoped to '
+    + scoped.length + ' graph-reconstructed ranges (' + crate.unresolved + ' unresolved range'
+    + (crate.unresolved === 1 ? '' : 's') + ' excluded). The select-tests numerator equals the ci-plan numerator: both are ' + crate.numerator + '.');
+  L.push('- Skipped job groups over the window (Σ per-run groups on before minus on after, current gating): '
+    + crate.skippedGroupTotal + ' groups over ' + scoped.length + ' scoped runs; '
+    + crate.unchangedCount + ' of ' + scoped.length + ' scoped runs are unchanged.');
+  L.push('- Hypothetical test-core ceiling for crate-only runs (same selected=0 proportionality rule as the P1.5a sections): '
+    + s1(crate.testSecondsSkipped) + ' / ' + s1(agg.denominator) + ' s = '
+    + (agg.denominator === 0 ? 'not estimable' : p2b((crate.testSecondsSkipped / agg.denominator) * 100) + '%') + '. Upper bound, not measured savings.');
+  L.push('- Current gating job counts used below (from `ci-plan.mjs` parseJobs over the CURRENT .github/workflows/ci.yml): '
+    + [...crate.jobsByGroup.entries()].sort().map(([g, n]) => g + ':' + n).join(', ') + '.');
+  L.push('');
+  const changedRows = scoped.filter((x) => x.skipped.length > 0 || x.sel.kind === 'crate-only-subset');
+  if (!changedRows.length) {
+    L.push('- No scoped run changes under the new selection (no skipped group on any run); no per-run before/after table. Every scoped range either requests a full run (recorded `CI: full`) or contains a data-file / non-crate path the shadow cannot attribute without historical maps (shadow kind `map-dependent`); no range is confined to non-root crates.');
+  }
+  if (changedRows.length) {
+    L.push('| run | event | files | select shadow | skipped groups (before → after) | jobs before → after |');
+    L.push('|---|---|---:|---|---|---|');
+    for (const x of changedRows) {
+      const kind = x.sel.kind === 'crate-only-subset'
+        ? '`reader-tests-only subset` (crates: ' + x.sel.changed.join(', ') + ')'
+        : '`all` (' + x.sel.kind.replace(/^all-/, '') + ')';
+      L.push('| ' + x.row.id + ' | ' + x.row.event + ' | ' + x.files + ' | ' + kind + ' | '
+        + x.beforeGroups.join(',') + ' → ' + x.afterGroups.join(',') + ' | '
+        + x.jobsBefore + ' → ' + x.jobsAfter + ' |');
+    }
+  }
+  L.push('');
+  L.push('What the window data cannot show: the artifacts retain no historical maps, reader sets, or unmapped-target sets, so map-covered or data-file ranges (class `map-dependent` here) cannot be claimed as would-be subsets even under the new selection; the crate-only numerator is therefore a lower bound conditional on a map existing (all ' + agg.runCount + ' runs had selector data). Under the fixed ci-plan semantics `fast` stays on for every crate change, so before/after differences can only be seam/os suppression (root unaffected by Cargo AND reference edges) or dropped non-affected crate_* groups. Job and group counts apply the CURRENT ci.yml gating and the CURRENT crate-graph job set to historical diffs — the window\'s actual ci.yml had neither `crate_*` groups nor graph narrowing, so the before/after columns are a counterfactual, not what ran. The ' + crate.unresolved + ' unresolved range has no reconstructed base and is excluded entirely. The proportional test-second ceiling scales the root-crate test-core job; per-crate `crate_*` job durations are not in the inputs, so crate-job savings are not priced.');
+  L.push('');
+  L.push('This section makes NO GO/NO-GO decision.');
+  return L;
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────────
@@ -534,7 +814,16 @@ function main() {
     const inputs = loadInputs(inputsDir);
     const rows = computePerRun(inputs);
     const agg = computeAggregates(inputs, rows);
-    report = renderReport(inputs, rows, agg);
+    // P1.5b: render the crate-graph shadow section whenever the real workspace
+    // graph loads (cargo metadata). A fixture repo without a cargo project keeps
+    // the pre-P1.5b report byte-identical; a load failure degrades the same way.
+    let crate = null;
+    const graph = loadCrateGraph(repoRoot);
+    if (graph && inputs.ranges.size > 0) {
+      crate = computeCrateGraphShadow(inputs, rows, graph,
+        readFileSync(join(repoRoot, '.github/workflows/ci.yml'), 'utf8'));
+    }
+    report = renderReport(inputs, rows, agg, crate);
   } catch (e) {
     exitErr(2, e.message);
   }

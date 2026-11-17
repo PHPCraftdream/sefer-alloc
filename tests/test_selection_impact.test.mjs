@@ -12,11 +12,13 @@ import { test } from 'node:test';
 
 import { cargoTestStepSeconds } from '../scripts/ci-job-durations.mjs';
 import {
-  CLASSES, classifyReason, computeAggregates, computePerRun, loadInputs, renderReport,
+  CLASSES, classifyConditionalRange, classifyCounterfactual, classifyReason, computeAggregates, computePerRun, loadInputs, renderReport, validateRanges,
 } from '../scripts/test-selection-impact.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = join(repoRoot, 'scripts', 'test-selection-impact.mjs');
+
+const s1ForTest = (x) => x.toFixed(1);
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 // Deterministic constants only: no clock, no randomness, no machine paths.
@@ -125,6 +127,73 @@ function loaded(tmp) {
 }
 
 // ── 1. classification ───────────────────────────────────────────────────────
+test('first-blocker classifier labels candidates without claiming whole-run replay', () => {
+  assert.equal(classifyCounterfactual({ mode: 'all', reason: 'tests/foo.test.mjs is executed by no mapped test' }, { test: 'imports tests/foo.test.mjs' }), 'all');
+  assert.equal(classifyCounterfactual({ mode: 'all', reason: 'benches/x.rs is not attributable to a test' }), 'candidate');
+  assert.equal(classifyCounterfactual({ mode: 'all', reason: 'crates/theme/crate/examples/x.rs is not attributable to a test' }), 'candidate');
+  assert.equal(classifyCounterfactual({ mode: 'all', reason: 'examples/x.rs is not attributable to a test' }, { test: 'reads ../examples/x.rs' }), 'all');
+  assert.equal(classifyCounterfactual({ mode: 'all', reason: 'tests/nested/foo.test.mjs is executed by no mapped test' }), 'all');
+  assert.equal(classifyCounterfactual({ mode: 'all', reason: 'tests/foo.rs is executed by no mapped test' }), 'all');
+  assert.equal(classifyCounterfactual({ mode: 'all', reason: 'full run requested' }), 'all');
+  assert.equal(classifyCounterfactual({ mode: 'all', reason: 'no test-impact map available' }), 'all');
+  assert.equal(classifyCounterfactual({ mode: 'all', reason: 'unrecognized blocker' }), 'all');
+  assert.equal(classifyCounterfactual({ mode: 'subset', reason: 'every changed file is attributed' }), 'all');
+  assert.notEqual(classifyCounterfactual({ mode: 'all', reason: 'tests/foo.test.mjs is executed by no mapped test' }), 'subset',
+    'one first blocker cannot certify a whole-run subset');
+});
+
+test('conditional-range classifier separates data candidates, map dependence, global blockers, full runs, and unresolved ranges', () => {
+  const data = { status: 'graph-reconstructed', files: ['docs/a.md', 'tests/fixture.json'] };
+  const mixed = { status: 'graph-reconstructed', files: ['docs/a.md', 'src/a.rs'] };
+  const global = { status: 'graph-reconstructed', files: ['docs/a.md', 'Cargo.toml'] };
+  const zero = { status: 'graph-reconstructed', files: [] };
+  assert.equal(classifyConditionalRange(data, { reason: 'x' }), 'conditional-data');
+  assert.equal(classifyConditionalRange(mixed, { reason: 'x' }), 'map-dependent');
+  assert.equal(classifyConditionalRange(global, { reason: 'x' }), 'unchanged-global');
+  assert.equal(classifyConditionalRange(zero, { reason: 'x' }), 'conditional-data', 'empty zero-range is a valid all-data classification');
+  assert.equal(classifyConditionalRange(data, { reason: 'full run requested' }), 'unchanged-full');
+  assert.equal(classifyConditionalRange(null, { reason: 'x' }), 'unresolved');
+  assert.equal(classifyConditionalRange({ status: 'unresolved' }, { reason: 'x' }), 'unresolved');
+});
+
+test('range evidence validation rejects incomplete ids, mismatched heads, invalid paths, and malformed graph evidence', () => {
+  const { tmp, docs } = fixture();
+  const runs = docs.runsDoc.runs;
+  const entry = (id, overrides = {}) => ({ id, head: runs.find((r) => r.id === id).head_sha, status: 'unresolved', method: null, base: null, evidence: null, files: [], ...overrides });
+  const valid = { schema: 1, note: 'These are not exact event-base proofs', runs: runs.map((r) => entry(r.id)) };
+  assert.equal(validateRanges(valid, runs).size, runs.length);
+  const inputsDir = join(tmp, 'inputs');
+  const historical = loadInputs(inputsDir);
+  const rangeText = JSON.stringify(valid);
+  writeFileSync(join(inputsDir, 'ranges.json'), rangeText);
+  const withRanges = loadInputs(inputsDir);
+  assert.equal(withRanges.inputBytes, historical.inputBytes, 'optional ranges do not change historical input byte count');
+  assert.equal(withRanges.inputFiles, historical.inputFiles, 'optional ranges do not change historical input file count');
+  assert.equal(withRanges.rangeBytes, Buffer.byteLength(rangeText), 'range evidence reports its separate byte count');
+  writeFileSync(join(inputsDir, 'ranges.json'), rangeText + ' '.repeat(200 * 1024 + 1));
+  assert.throws(() => loadInputs(inputsDir), /ranges\.json <= 200 KiB/);
+  assert.throws(() => validateRanges({ ...valid, runs: valid.runs.slice(1) }, runs), /id count/);
+  const duplicateIds = [...valid.runs.slice(0, -1), { ...valid.runs[0] }];
+  assert.throws(() => validateRanges({ ...valid, runs: duplicateIds }, runs), /range ids are unique/);
+  assert.throws(() => validateRanges({ ...valid, runs: [entry(runs[0].id, { head: 'bad' }), ...valid.runs.slice(1)] }, runs), /full SHA matching/);
+  assert.throws(() => validateRanges({ ...valid, runs: [entry(runs[0].id, { files: ['../secret'] }), ...valid.runs.slice(1)] }, runs), /repository-relative/);
+  const pushRun = runs.find((r) => r.event === 'push');
+  const push = entry(pushRun.id, { status: 'graph-reconstructed', method: 'push-merge-parent1', base: SHA('a'), evidence: { headParents: [SHA('a'), SHA('b')] } });
+  const withPush = { ...valid, runs: valid.runs.map((r) => r.id === push.id ? push : r) };
+  assert.equal(validateRanges(withPush, runs).size, runs.length);
+  assert.throws(() => validateRanges({ ...withPush, runs: withPush.runs.map((r) => r.id === push.id ? { ...push, base: 'bad' } : r) }, runs), /base is a full SHA/);
+  assert.throws(() => validateRanges({ ...withPush, runs: withPush.runs.map((r) => r.id === push.id ? { ...push, evidence: null } : r) }, runs), /graph evidence is complete/);
+  assert.throws(() => validateRanges({ ...withPush, runs: withPush.runs.map((r) => r.id === push.id ? { ...push, evidence: { headParents: ['bad', SHA('b')] } } : r) }, runs), /two full SHAs/);
+  assert.throws(() => validateRanges({ ...withPush, runs: withPush.runs.map((r) => r.id === push.id ? { ...push, evidence: { headParents: [SHA('c'), SHA('b')] } } : r) }, runs), /base is parent 1/);
+  const prRun = runs.find((r) => r.event === 'pull_request');
+  const pr = entry(prRun.id, { status: 'graph-reconstructed', method: 'pr-merge-base', base: SHA('a'), evidence: { merge: SHA('c'), mergeParents: [SHA('b'), prRun.head_sha], mergeBase: SHA('a') } });
+  const withPr = { ...valid, runs: valid.runs.map((r) => r.id === pr.id ? pr : r) };
+  assert.equal(validateRanges(withPr, runs).size, runs.length);
+  assert.throws(() => validateRanges({ ...withPr, runs: withPr.runs.map((r) => r.id === pr.id ? { ...pr, evidence: { ...pr.evidence, mergeParents: ['bad', prRun.head_sha] } } : r) }, runs), /full parent SHAs/);
+  assert.throws(() => validateRanges({ ...withPr, runs: withPr.runs.map((r) => r.id === pr.id ? { ...pr, evidence: { ...pr.evidence, mergeBase: SHA('d') } } : r) }, runs), /base matches recorded merge-base/);
+  rmSync(tmp, { recursive: true, force: true });
+});
+
 test('classifyReason: fixture reasons land in their classes; suffix classes extract the file prefix; subset savedTargets = total - tests.length; unknown reasons are accepted as unknown and malformed shapes fail', () => {
   const { tmp, docs } = fixture();
   for (const s of RUN_SPECS) {
@@ -261,7 +330,25 @@ test('renderReport: subset fixture avoids false all/no-change/zero-numerator cla
   }
   assert.ok(report.includes('| r1 |') && report.includes('`full run requested`'), 'all-mode row carries recorded reason');
   assert.ok(report.includes('estimated saved s |'), 'table includes estimated seconds');
-
+  const candidates = rows.filter((r) => classifyCounterfactual(docs.selections[r.id]) === 'candidate');
+  const candidateSeconds = candidates.reduce((sum, r) => sum + r.testSeconds * (r.total - 0) / r.total, 0);
+  assert.equal(candidates.length, 2, 'fixture has a node test and a bench first-blocker candidate');
+  assert.ok(report.includes('## P1.5a first-blocker upper-bound model (2026-11-17)'));
+  const hypothetical = 'The hypothetical uses the existing proportionality rule at selected=0 (all `total` targets hypothetically skipped). It does not imply the selector would in fact produce zero targets, and the exact would-be-subset run count and seconds remain unidentifiable without the original full diffs, maps, and unmapped sets.';
+  assert.equal(report.split(hypothetical).length - 1, 1, 'upper-bound closing paragraph occurs once');
+  assert.ok(report.includes('- First-blocker candidates: ' + candidates.length + ' / ' + rows.length + '.'));
+  assert.ok(report.includes(s1ForTest(candidateSeconds) + ' / ' + s1ForTest(agg.denominator) + ' s = '),
+    'upper-bound section prints the proportional estimate computed from fixture rows');
+  assert.ok(report.includes('exact would-be-subset run count and seconds are not identifiable'),
+    'report states exact replay is not identifiable');
+  assert.ok(report.includes('## P1.5a reconstructed conditional-range evidence'));
+  assert.ok(report.includes('no exact historical selected subset is claimed'));
+  assert.ok(report.includes('Separate optional range-evidence file: 0 bytes'));
+  const withoutRanges = { ...inputs, ranges: undefined };
+  assert.ok(renderReport(withoutRanges, rows, agg).includes('## P1.5a reconstructed conditional-range evidence'),
+    'report rendering safely handles callers without optional range evidence');
+  assert.ok(report.includes('Counts above are derived from the saved 8 per-run records'),
+    'range count prose is derived from the fixture size, not a fixed historical count');
   const allTmp = mkdtempSync(join(tmpdir(), 'sel-impact-all-'));
   const allDocs = buildDocs();
   for (const s of RUN_SPECS.filter((x) => x.cls === 'subset')) {

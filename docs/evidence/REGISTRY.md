@@ -244,6 +244,9 @@ Raw logs переносите в `docs/evidence` по трем CLAUDE.md tiers: 
 Указывайте фактически протестированные пути в `source_scope.csv`; пустой `scope_base` привязывает scope к `source_sha`. Закрепите source и receipt hashes; нормализуйте receipt в LF и пересчитайте hash после финального хранения. Для усеченного receipt хэшируйте сохраненный текст; полный лог закрепите manifest hash.
 После слияния по ID перегенерируйте REGISTRY.md и проверьте `node scripts/generate-evidence-registry-md.mjs --check`; запустите строгий verifier, например `node scripts/verify-evidence-registry.mjs --strict --baseline origin/main`.
 В infrastructure PR `.github/evidence-reverify.json` намеренно отсутствует. Для dry-run используйте supplied config или `--rows`; отсутствующая recipe остается needs-manual с причиной.
+Для ручного EV-1 переноса сначала выполните `node scripts/r20_evidence_reverify_apply.mjs --dir <r20-gates-output> --dry-run` для просмотра плана; уберите `--dry-run`, чтобы применить его.
+Переносятся только PASS IDs: KNOWN-RED сохраняются. Принимаются только точные receipts с SHA-256 размером не более 200 KiB; любые receipts tier 2 (>200 KiB) переносите вручную.
+До любых записей apply откажет при любом non-PASS/лишнем ID, несовпадении hash/path, symlink или превышении размера. После переноса генератор обновляет этот MD, временные configs удаляются; следующая строгая проверка остается без изменений.
 
 ## Полная таблица строк
 

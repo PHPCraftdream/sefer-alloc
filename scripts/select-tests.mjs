@@ -13,13 +13,22 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { testTargets } from './test-impact-map.mjs';
+import { loadCrateGraph, crateForPath, affectedCrates, rootAffected } from './ci/crate-graph.mjs';
 
 /** Files that change what every test compiles or links against. */
 const ALWAYS_ALL = /^(Cargo\.(toml|lock)|build\.rs|rust-toolchain(\.toml)?|\.cargo\/.*|deny\.toml|clippy\.toml|rustfmt\.toml|\.rustfmt\.toml)$/;
+export function isAlwaysAll(path) { return ALWAYS_ALL.test(path); }
 /** Non-Rust inputs a test may read at run time: only the tests that read files are selected for them. */
 const DATA_FILE = /^(docs\/|scripts\/|\.github\/|[^/]+\.(md|csv|json|txt)$)/;
+/** Test inputs and standalone Rust examples/benchmarks are treated like other reader data files. */
+export function isDataFile(path) {
+  return DATA_FILE.test(path)
+    || /^tests\/(?!.*\.rs$).+$/.test(path)
+    || /^(?:benches|examples)\/.*\.rs$/.test(path)
+    || /^crates\/[^/]+\/[^/]+\/(?:benches|examples)\/.*\.rs$/.test(path);
+}
 /** A test (or a support file it executes) that touches the file system, the manifest dir or a child process. */
-const READS_FILES = /(CARGO_MANIFEST_DIR|include_str!|include_bytes!|read_to_string|fs::read|File::open|read_dir|Command::new)/;
+const READS_FILES = /(CARGO_MANIFEST_DIR|include_str!|include_bytes!|include\s*!\s*\(|read_to_string|fs::read|File::open|read_dir|Command::new|#\s*\[\s*path\s*=)/;
 /** Compiled only by tools that are not tests (kani); a change selects no test. */
 const TOOL_ONLY = new Set(['src/kani_proofs.rs']);
 const RUST_SRC = /^(src\/|crates\/[^/]+\/[^/]+\/src\/).*\.rs$/;
@@ -32,8 +41,10 @@ const all = reason => ({ mode: 'all', reason });
  * @param targets  [{ name, path, requiredFeatures }] test targets of the commit
  * @param sources  path -> text of every test target and every tests/ file a map lists (for the file-reader scan)
  * @param full     an explicit full run was requested
+ * @param crateGraph optional workspace crate graph (scripts/ci/crate-graph.mjs shape); null keeps the
+ *                   conservative legacy behavior for unmapped crates/** files
  */
-export function select({ files, maps, targets, sources, full }) {
+export function select({ files, maps, targets, sources, full, crateGraph = null }) {
   if (full) return all('full run requested');
   if (maps.length === 0) return all('no test-impact map available');
   if (!files) return all('changed files unknown');
@@ -64,15 +75,36 @@ export function select({ files, maps, targets, sources, full }) {
     }
     return readers;
   };
+  const crateOnlyFiles = []; // changed files attributable to a workspace crate and nothing else
   for (const raw of files) {
     const f = raw.replace(/\\/g, '/');
     if (ALWAYS_ALL.test(f)) return all(`${f} changes every build`);
     if (TOOL_ONLY.has(f)) continue;
     if (byPath.has(f)) { pick(f, 'changed itself'); continue; }
     if (covering.has(f)) { for (const t of covering.get(f)) pick(t, `executes ${f}`); continue; }
-    if (DATA_FILE.test(f)) { for (const t of fileReaders()) pick(t, `reads files (${f} changed)`); continue; }
+    if (isDataFile(f)) { for (const t of fileReaders()) pick(t, `reads files (${f} changed)`); continue; }
+    // Crate-graph narrowing: a change confined to a workspace crate the root does not (transitively)
+    // depend on cannot affect the ROOT crate's test targets — select no root tests for it. Anything
+    // ambiguous (no graph, unknown crate, root crate itself, root-affected crate) stays "all".
+    if (crateGraph && (RUST_SRC.test(f) || crateForPath(f, crateGraph) !== null)) {
+      const crate = crateForPath(f, crateGraph);
+      if (crate && crate !== crateGraph.root) { crateOnlyFiles.push(crate); continue; }
+    }
     if (RUST_SRC.test(f) || f.startsWith('tests/')) return all(`${f} is executed by no mapped test`);
     return all(`${f} is not attributable to a test`);
+  }
+  if (crateOnlyFiles.length) {
+    const changed = [...new Set(crateOnlyFiles)].sort();
+    const affected = affectedCrates(changed, crateGraph);
+    if (!rootAffected(affected, crateGraph)) {
+      const dependents = affected.size - changed.length;
+      // Readers still run: they may scan crates/** at runtime (same semantics
+      // as the DATA_FILE branch). The subset is empty only when no reader exists.
+      for (const t of fileReaders()) pick(t, 'reads files (crate-only change)');
+      return { mode: 'subset', reason: `crate-only change: ${changed.join(', ')} (+${dependents} dependents) does not affect the root crate`, tests: [...picked.keys()].sort(), why: Object.fromEntries(picked), crateOnly: { crates: [...affected].sort() } };
+    }
+    // The level-2 map cannot attribute inside a crate: root may be affected, run everything.
+    return all(`crate change (${changed.join(', ')}) reaches the root crate`);
   }
   return { mode: 'subset', reason: 'every changed file is attributed', tests: [...picked.keys()].sort(), why: Object.fromEntries(picked) };
 }
@@ -148,7 +180,7 @@ function selectCmd(args) {
   const need = new Set(targets.map(t => t.path));
   for (const m of maps) for (const fs of Object.values(m.tests)) for (const f of fs) if (f.startsWith('tests/')) need.add(f);
   for (const p of need) { try { sources[p] = readFileSync(p, 'utf8'); } catch { sources[p] = ''; } }
-  const sel = select({ files, maps, targets, sources, full: args.includes('--full') });
+  const sel = select({ files, maps, targets, sources, full: args.includes('--full'), crateGraph: loadCrateGraph(root) });
   sel.total = targets.length;
   sel.mapShas = maps.map(m => m.sha);
   writeFileSync(arg(args, '--out'), `${JSON.stringify(sel, null, 1)}\n`);
@@ -190,8 +222,30 @@ function selftest() {
   // data files select the file readers (d reads files)
   assert.equal(names(sel(['docs/perf/R.md'])), 'tests/d.rs,tests/e.rs');
   assert.equal(names(sel(['CHANGELOG.md', 'src/n.rs'])), 'tests/a.rs,tests/b.rs,tests/d.rs,tests/e.rs');
+  // Non-Rust files below tests/ and Rust examples/ files are reader inputs.
+  assert.equal(names(sel(['tests/x.test.mjs'])), 'tests/d.rs,tests/e.rs');
+  assert.equal(names(sel(['tests/fixtures/x.json'])), 'tests/d.rs,tests/e.rs');
+  assert.equal(names(sel(['tests/fixtures/x.txt'])), 'tests/d.rs,tests/e.rs');
+  assert.equal(names(sel(['examples/_shared/foo.rs'])), 'tests/d.rs,tests/e.rs');
+  const pathAttrReader = { ...sources, 'tests/a.rs': '#[path = "../examples/_shared/foo.rs"] mod foo;' };
+  assert.equal(names(select({ files: ['examples/_shared/foo.rs'], maps: [row1, row2], targets, sources: pathAttrReader, full: false })), 'tests/a.rs,tests/d.rs,tests/e.rs');
+  const spacedPathAttrReader = { ...sources, 'tests/a.rs': '# [ path = "../examples/_shared/foo.rs"] mod foo;' };
+  assert.equal(names(select({ files: ['examples/_shared/foo.rs'], maps: [row1, row2], targets, sources: spacedPathAttrReader, full: false })), 'tests/a.rs,tests/d.rs,tests/e.rs');
+  assert.equal(names(sel(['crates/core/pkg/benches/probe.rs'])), 'tests/d.rs,tests/e.rs');
+  assert.equal(names(sel(['crates/core/pkg/examples/helper.rs'])), 'tests/d.rs,tests/e.rs');
+  const noReaders = select({ files: ['tests/x.test.mjs'], maps: [{ tests: { 'tests/a.rs': ['src/a.rs'] }, unmapped: {} }], targets: [targets[0]], sources: {}, full: false });
+  assert.deepEqual(noReaders, { mode: 'subset', reason: 'every changed file is attributed', tests: [], why: {} });
+  assert.match(names(sel(['tests/x.rs'])), /^ALL:/);
+  assert.match(names(sel(['src/foo.rs'])), /^ALL:/);
+  // Existing map attribution wins over the reader fallback.
+  const coveringExamples = { ...row1, tests: { ...row1.tests, 'tests/a.rs': [...row1.tests['tests/a.rs'], 'examples/_shared/foo.rs'] } };
+  assert.equal(names(select({ files: ['examples/_shared/foo.rs'], maps: [coveringExamples, row2], targets, sources, full: false })), 'tests/a.rs,tests/e.rs');
+  const explicitReader = { ...sources, 'tests/a.rs': 'const X: &str = include_str!("fixtures/input.json");' };
+  assert.equal(names(select({ files: ['tests/fixtures/input.json'], maps: [row1, row2], targets, sources: explicitReader, full: false })), 'tests/a.rs,tests/d.rs,tests/e.rs');
+  const includedReader = { ...sources, 'tests/a.rs': 'include!("../examples/_shared/b4_interleave_core.rs");' };
+  assert.equal(names(select({ files: ['examples/_shared/b4_interleave_core.rs'], maps: [row1, row2], targets, sources: includedReader, full: false })), 'tests/a.rs,tests/d.rs,tests/e.rs');
   // everything else is "all"
-  for (const f of ['Cargo.toml', 'Cargo.lock', 'build.rs', '.cargo/config.toml', 'src/new_file.rs', 'tests/fixtures/x.in', 'crates/q/w/src/lib.rs', 'weird.bin']) {
+  for (const f of ['Cargo.toml', 'Cargo.lock', 'build.rs', '.cargo/config.toml', 'src/new_file.rs', 'tests/x.rs', 'crates/q/w/src/lib.rs', 'weird.bin']) {
     assert.match(names(sel(['src/n.rs', f])), /^ALL:/, f);
   }
   assert.equal(names(sel(['src/kani_proofs.rs'])), 'tests/e.rs'); // kani-only file: no test affected
@@ -212,6 +266,48 @@ function selftest() {
   assert.equal(rowArgs(subset, targets, new Set(['x'])), '--lib --test c --test e');
   assert.equal(rowArgs(all('x'), targets, new Set(['x'])), '');
   assert.equal(rowArgs({ mode: 'subset', tests: [] }, targets, new Set()), '--lib');
+  // Crate-graph narrowing (P1.5b): fixture graph over pure functions, no cargo call.
+  const mkGraph = entries => {
+    const g = { packages: new Map(), root: 'rootpkg' };
+    for (const [n, deps, dir] of entries) g.packages.set(n, { dir: dir ?? `crates/t/${n}`, deps: new Set(deps), dependents: new Set() });
+    for (const [n, p] of g.packages) for (const d of p.deps) g.packages.get(d)?.dependents.add(n);
+    return g;
+  };
+  const soloGraph = mkGraph([['rootpkg', ['dep']], ['dep', []], ['standalone', []]]);
+  const graphSel = (files, graph) => select({ files, maps: [row1, row2], targets, sources, full: false, crateGraph: graph });
+  // (a) crate-only src change, root does not depend on the crate: file readers
+  // stay selected (d reads files at runtime and may scan crates/**), e is
+  // unmapped in every row; the reader rule reddens if removed.
+  const crateSolo = graphSel(['crates/t/standalone/src/lib.rs'], soloGraph);
+  assert.deepEqual(crateSolo, { mode: 'subset', reason: 'crate-only change: standalone (+0 dependents) does not affect the root crate', tests: ['tests/d.rs', 'tests/e.rs'], why: { 'tests/d.rs': 'reads files (crate-only change)', 'tests/e.rs': 'unmapped in every row' }, crateOnly: { crates: ['standalone'] } });
+  // (b) root depends on the crate directly: unchanged conservative ALL
+  assert.match(names(graphSel(['crates/t/dep/src/lib.rs'], soloGraph)), /^ALL:/);
+  // (c) root -> dep -> standalone: affected set includes dep, root affected transitively
+  const chainGraph = mkGraph([['rootpkg', ['dep']], ['dep', ['standalone']], ['standalone', []]]);
+  assert.match(names(graphSel(['crates/t/standalone/src/other.rs'], chainGraph)), /^ALL:/);
+  // (d) crate-only change plus an unrelated root test file change: tests/ rule wins
+  assert.match(names(graphSel(['crates/t/standalone/src/lib.rs', 'tests/x.rs'], soloGraph)), /^ALL:/);
+  // (e) crate change covered by the impact map: map attribution wins over the graph
+  const mappedGraph = { ...soloGraph };
+  const mapCoveringCrate = { tests: { ...row1.tests, 'tests/a.rs': [...row1.tests['tests/a.rs'], 'crates/t/standalone/src/lib.rs'] }, unmapped: row1.unmapped };
+  assert.equal(names(select({ files: ['crates/t/standalone/src/lib.rs'], maps: [mapCoveringCrate, row2], targets, sources, full: false, crateGraph: mappedGraph })), 'tests/a.rs,tests/e.rs');
+  // (f) no graph / unknown crate: legacy ALL (counterfactual guard for the new rule)
+  assert.match(names(sel(['crates/q/w/src/lib.rs'])), /^ALL:/); // sel passes no crateGraph
+  assert.match(names(select({ files: ['crates/t/standalone/src/lib.rs'], maps: [row1, row2], targets, sources, full: false, crateGraph: null })), /^ALL:/);
+  const unknownGraph = mkGraph([['rootpkg', ['dep']], ['dep', []]]);
+  assert.match(names(graphSel(['crates/t/standalone/src/lib.rs'], unknownGraph)), /^ALL:/); // crate unknown in graph
+  // (g) crate's own Cargo.toml: crate-only, still picks the file readers;
+  // root Cargo.toml: ALWAYS_ALL
+  assert.deepEqual(graphSel(['crates/t/standalone/Cargo.toml'], soloGraph), { mode: 'subset', reason: 'crate-only change: standalone (+0 dependents) does not affect the root crate', tests: ['tests/d.rs', 'tests/e.rs'], why: { 'tests/d.rs': 'reads files (crate-only change)', 'tests/e.rs': 'unmapped in every row' }, crateOnly: { crates: ['standalone'] } });
+  assert.match(names(graphSel(['Cargo.toml'], soloGraph)), /^ALL:/);
+  // (j) allowed zero: a crate-only change with NO file readers and nothing
+  // unmapped yields the empty subset; removing the no-reader guarantee reddens.
+  const allMapped = { tests: { 'tests/a.rs': ['src/a.rs'], 'tests/e.rs': ['src/e.rs'] }, unmapped: {} };
+  const noReaderTargets = [targets[0], targets[4]];
+  const noReaderSources = { 'tests/a.rs': 'fn t(){}', 'tests/e.rs': 'fn t(){}' };
+  assert.deepEqual(select({ files: ['crates/t/standalone/src/lib.rs'], maps: [allMapped], targets: noReaderTargets, sources: noReaderSources, full: false, crateGraph: soloGraph }), { mode: 'subset', reason: 'crate-only change: standalone (+0 dependents) does not affect the root crate', tests: [], why: {}, crateOnly: { crates: ['standalone'] } });
+  // (h) dev-dependency edge: root test-only dep on the crate => root affected => ALL
+  assert.match(names(graphSel(['crates/t/dep/src/lib.rs'], soloGraph)), /^ALL:/);
   console.log('select-tests selftest: ok');
 }
 

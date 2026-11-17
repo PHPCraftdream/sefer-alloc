@@ -63,12 +63,17 @@ function esc(s) { return guard(s).replaceAll('|', '\\|'); }
 function table(header, rows) {
   const head = `| ${header.map(esc).join(' | ')} |`;
   const sep = `| ${header.map(() => '---').join(' | ')} |`;
-  const body = rows.map((r) => `| ${r.map(esc).join(' | ')} |`).join('\n');
+  const body = rows.map((r) => {
+    if (r.length !== header.length) {
+      throw new Error(`Markdown table row has ${r.length} columns; expected ${header.length}`);
+    }
+    return `| ${r.map(esc).join(' | ')} |`;
+  }).join('\n');
   return [head, sep, body].join('\n');
 }
 
-/** Render the full Markdown report from the data structure. */
-export function renderReport(data) {
+/** Render the legacy aggregate Markdown analysis for --summary. */
+export function renderSummary(data) {
   const L = [];
   L.push(`# Integration-test classification report (plan ${PLAN_DATE})`);
   L.push('');
@@ -268,9 +273,57 @@ export function renderReport(data) {
   L.push('node scripts/classify-tests.mjs --json');
   L.push('node scripts/classify-tests.mjs --csv');
   L.push('node scripts/classify-tests.mjs --report');
+  L.push('node scripts/classify-tests.mjs --summary');
   L.push('```');
   L.push('');
   L.push('The script writes nothing itself; all output goes to stdout. Deterministic: identical runs on an identical tree produce byte-identical output. Requires Node >= 24, zero npm dependencies, no cargo, no network.');
   L.push('');
+  return L.join('\n');
+}
+
+const yesno = (value) => value ? 'yes' : 'no';
+
+/** Render the deterministic per-entry inventory committed by --report. */
+export function renderReport(data) {
+  const entries = [
+    ...data.rows.map((r) => ({ path: r.target.path, kind: 'target', row: r })),
+    ...data.nonTargets.map((entry) => ({ path: entry.path, kind: entry.kind, row: null })),
+  ].sort((a, b) => a.path.localeCompare(b.path));
+  const header = ['path', 'kind', 'name', 'test_enabled', 'harness_false', 'declared_explicit',
+    'required_features', 'file_level_cfg', 'file_level_cfg_attr', 'cfg_features', 'cfg_keys',
+    'global_allocator', 'first_config_wins', 'process_spawn', 'abort', 'should_panic',
+    'catch_unwind', 'loom_only', 'loom_mentions', 'miri_only', 'kani_gated', 'main_fn',
+    'lines', 'external_pin_count', 'external_pin_surfaces', 'mergeable', 'unmergeable_reasons'];
+  const rows = entries.map(({ path, kind, row }) => {
+    if (!row) return [path, kind, path.split('/').pop(), ...Array(header.length - 3).fill('')];
+    const { target, facts, externalPins } = row;
+    return [path, kind, target.name, yesno(target.test_enabled), yesno(!target.harness),
+      yesno(target.declared_explicit), target.required_features.join(' '),
+      facts.file_level_cfg || '', facts.file_level_cfg_attr || '', facts.cfg_features.join(' '),
+      facts.cfg_keys.join(' '), yesno(facts.global_allocator), facts.first_config_wins.join(','),
+      yesno(facts.process_spawn), yesno(facts.abort_marker), yesno(facts.should_panic),
+      yesno(facts.catch_unwind), yesno(facts.loom_only), yesno(facts.loom_mentions),
+      yesno(facts.miri_only), yesno(facts.kani_gated), yesno(facts.main_fn), facts.lines,
+      externalPins.count,
+      externalPins.hits.map((hit) => `${hit.file}:${hit.kind}:${hit.count}`).join(';'),
+      yesno(row.mergeable), row.reasons.join(';')];
+  });
+  const L = [
+    `# Integration-test classification inventory (plan ${PLAN_DATE})`,
+    '',
+    'Source: deterministic per-entry facts derived by `scripts/classify-tests.mjs`.',
+    'This is a derived inventory, not a measurement report; it omits global commit/tree identity to avoid parallel-input conflicts.',
+    'Each row is one target or non-target entry under `tests/`; aggregate analysis is available with `--summary`.',
+    '',
+    '```sh',
+    'node scripts/classify-tests.mjs --report > test-target-classification.md',
+    'node scripts/classify-tests.mjs --csv > test-target-classification.csv',
+    'node scripts/classify-tests.mjs --summary # aggregate analysis',
+    '```',
+    'CI requires clean tracked inputs. For local regeneration only, `CLASSIFY_TESTS_ALLOW_DIRTY=1` accepts dirty inputs.',
+    '',
+    table(header, rows),
+    '',
+  ];
   return L.join('\n');
 }
