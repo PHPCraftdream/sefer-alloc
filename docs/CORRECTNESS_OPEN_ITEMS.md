@@ -655,6 +655,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 277 | `TRACKED_misc.md` |
 | 278 | `RESOLVED.md` |
 | 279 | `RESOLVED.md` |
+| 280 | `RESOLVED.md` |
 | 281 | `TRACKED_ci_gate_coverage.md` |
 | 282 | `TRACKED_ci_gate_coverage.md` |
 | 283 | `TRACKED_ci_gate_coverage.md` |
