@@ -2,7 +2,7 @@
 
 Script: `scripts/classify-tests.mjs` (modules under `scripts/classify-tests/`).
 
-Sources: commit `131c65968b909c034fbd75246c79907cfb0de05a`, tree `844fd790bf79db308ffd479a576cfd189f83105f`; tracked inputs clean.
+Sources: commit `813748edf36a9674335d9ae309ae8fd8db428d73`, tree `03c6cff5055477d7b98ad9fdaa790b65e2f2239d`; tracked inputs clean.
 
 ## First-config-wins markers (derived from src/)
 
@@ -26,7 +26,7 @@ Dropped from the marker list: `publish_pending` (src/registry/segment_route/larg
 
 | kind | files |
 | --- | --- |
-| ci_action | 59 |
+| ci_action | 60 |
 | ci_workflow | 8 |
 | doc | 1383 |
 | doc_json | 2 |

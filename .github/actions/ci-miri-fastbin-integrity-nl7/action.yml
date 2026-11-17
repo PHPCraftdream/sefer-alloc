@@ -1,0 +1,12 @@
+name: CI miri-fastbin-integrity-nl7
+description: miri-fastbin sharded by step — the NL-7 safe large-realloc integrity target (single target > 900s, own shard)
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    - name: NL-7 safe large-realloc integrity suite
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin internals" --test nl7_safe_large_realloc_integrity
