@@ -235,6 +235,7 @@ export function jobsTable(ciText) {
 
 /** True when the generated table between the markers of `docText` matches `ciText`. */
 export function docTableMatches(docText, ciText) {
+  if (docText.indexOf(TABLE_END) !== docText.lastIndexOf(TABLE_END)) return false; // duplicate end marker
   const a = docText.indexOf(TABLE_BEGIN), b = docText.indexOf(TABLE_END);
   if (a < 0 || b < a) return false;
   return docText.slice(a + TABLE_BEGIN.length, b).trim() === jobsTable(ciText).trim();
@@ -341,6 +342,7 @@ function selftest() {
   eq(docTableMatches(`x\n${TABLE_BEGIN}\n${t}\n${TABLE_END}\n`, fixture), true, 'doc matches');
   eq(docTableMatches(`x\n${TABLE_BEGIN}\n${t}\nextra\n${TABLE_END}\n`, fixture), false, 'doc drift detected');
   eq(docTableMatches('no markers', fixture), false, 'doc without markers');
+  eq(docTableMatches(`x\n${TABLE_BEGIN}\n${t}\n${TABLE_END}\n${TABLE_END}\n`, fixture), false, 'duplicate end marker rejected');
   // Windows-style separators classify like POSIX ones.
   eq(on(P(['src\\registry\\x.rs'])), 'always,fast,seam', 'backslashes');
   console.log(JSON.stringify({ version: 1, status: 'PASS', scope: 'ci-plan selftest', checks: n }));

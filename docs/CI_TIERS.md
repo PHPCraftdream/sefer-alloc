@@ -243,10 +243,13 @@ the smoke row covers those scenarios.
 | `loom-misc` | loom (misc) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `loom-xthread` | loom (alloc-core alloc-xthread) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `miri-alloc-core` | miri (alloc-core) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
-| `miri-core` | miri (core) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
+| `miri-core-pin-cache` | miri (core, pin cache) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
+| `miri-core-rest` | miri (core, rest) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `miri-core-tb` | miri (core, pin cache TreeBorrows) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
-| `miri-fastbin` | miri (fastbin) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
-| `miri-plain` | miri-plain | `seam`: source/crates/Cargo, loom/miri tests and manifests |
+| `miri-fastbin-integrity` | miri (fastbin, integrity) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
+| `miri-fastbin-oracles` | miri (fastbin, magazine oracles) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
+| `miri-plain-heavy` | miri-plain (heavy regressions) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
+| `miri-plain-rest` | miri-plain (rest) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `tsan` | thread-sanitizer | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `msrv` | MSRV 1.93 (cargo check + test --no-run) | `os`: Cargo/toolchain surface, platform code, platform crates |
 | `msrv-runtime-windows` | MSRV 1.93 runtime (global_alloc_installed + global_alloc_mt, windows) | `os`: Cargo/toolchain surface, platform code, platform crates |

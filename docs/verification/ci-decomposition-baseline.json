@@ -20,7 +20,7 @@
     {
       "id": "docs-consistency",
       "metadata": "bab66112fe14c287ea446fa3f5f9ca0e6c9e8c8d21a969249302650dce4fbe2d",
-      "steps": "a41ce2a24d01f757aacb486e7943926f5b6acc12f564733003d96c384b6d104c"
+      "steps": "bec9dee1e4de60516de8ac9d5db18c7d4410359132588e5246828ad317b1f538"
     },
     {
       "id": "ghost-guard",
@@ -198,9 +198,14 @@
       "steps": "b5cf1d06f4a2deab288789e014769d6a4c3f0b3fe0760b5d25336c0370d6ceaa"
     },
     {
-      "id": "miri-core",
-      "metadata": "d5a2b2aa6ec17581e843b939902a642406b03b621c21480bafdfdf1954b01439",
-      "steps": "258312b218fc41a4ff8f417d30e18b1ca9e96dc21c664a219146f94749eb86ba"
+      "id": "miri-core-pin-cache",
+      "metadata": "64a156deb754bbfee7588ab611de15cd98b8eab584d0e5684f24c2b811d920ad",
+      "steps": "15b7f62ce1850b5e8d550371b5a7a5f3fb17c78ecfdf82a57c4b5a33b7812dd5"
+    },
+    {
+      "id": "miri-core-rest",
+      "metadata": "105021fbdd1c46fa2c23c3405d05608dae2253a6ef4339851613b28808f7090e",
+      "steps": "2c415bbbb6992f34537519b091fd45640c80d97499f73137b5ccf44ed1ed119c"
     },
     {
       "id": "miri-core-tb",
@@ -213,14 +218,24 @@
       "steps": "2282923d00978542eddf6d07edbf23cfcffb39de6ba0d1239d6217fab322e3e2"
     },
     {
-      "id": "miri-fastbin",
-      "metadata": "98cfa723d190664459b8afcb538e77fef539ae7234fc2f86f372d44ca3e388ee",
-      "steps": "0e1f1048da018d1a12397b48e5d66b95a32df8d405cb2e843d1320edc65b6af6"
+      "id": "miri-fastbin-oracles",
+      "metadata": "b4719548069242288fdb5af59bba50588479db2e08f164c4d24eb6bf6f2f53b0",
+      "steps": "cf2aeaabe10cf421ec8c79368b4ae424a127f3ec5295224d1a8e37a7849e80d0"
     },
     {
-      "id": "miri-plain",
-      "metadata": "d3486fc6047f4cfa983cad90e19f0a16ed21021bf0b02ee560c5fb071358a16b",
-      "steps": "e33855e2bda6b8b2772f6fe12d43681298f4bcc7aa1d60cc9de9ee89b29183a0"
+      "id": "miri-fastbin-integrity",
+      "metadata": "b5a1e968b0282065293f9efa32167ec9df473c839653e0e8bb1b9441574f85fc",
+      "steps": "9e747d078e81b6d4bda1bf5f07885202bd9f472847f4c14957f192d3a07077a9"
+    },
+    {
+      "id": "miri-plain-heavy",
+      "metadata": "80c6dcbc5a244e915aeb319baf5db0c3f65c578d778e64515e019e7b283c4bb0",
+      "steps": "37cf87a468f3d7672ea065327cc0c4364507087051ef670d8f51f137c5e1115f"
+    },
+    {
+      "id": "miri-plain-rest",
+      "metadata": "cf710f20d326267e921ba4c79f66b0b3959c5015a35dbb6df9b0cbfc0326821f",
+      "steps": "02a623cc22a3fc5d5362634fc28a9ccd42a4ca847956a53a80a148202d62f707"
     },
     {
       "id": "kani",

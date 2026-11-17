@@ -1,0 +1,24 @@
+name: CI miri-core-pin-cache
+description: miri-core sharded by measured target wall time — the dominant b4-r1 pin-cache target alone
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    # b4-r1 round 2 (P2): pin-cache cell under narrow provenance. REAL Box
+    # ownership via a Send wrapper; activation oracle = PIN_CACHE_HITS
+    # delta >= 1 (reds a "publish_cached always returns Miss" mutant);
+    # gated pending-bit delivery via TerminalPublicationGate and TLS
+    # thread-exit release (PIN_CACHE_THREAD_RELEASES delta >= 2).
+    # Sharded into its own job: measured logs put this single explicit
+    # target at 807-1346 s of the old miri-core execution, so it alone
+    # bounds any shard's wall time (docs/perf/CI_LONG_JOBS.md).
+    - name: b4-r1 pin cache narrow provenance (miss, same-base hit, delivery, TLS release)
+      env:
+        MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+      run: |
+        set -o pipefail
+        cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
+        grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
+      shell: bash

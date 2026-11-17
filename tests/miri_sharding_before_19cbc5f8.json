@@ -1,0 +1,69 @@
+{
+  "schema": "miri-sharding-before/v1",
+  "ref": "19cbc5f8f93f59de4aa63f519b6005ff5f37ee00",
+  "source": [
+    ".github/workflows/ci.yml",
+    ".github/actions/ci-miri-core/action.yml",
+    ".github/actions/ci-miri-fastbin/action.yml",
+    ".github/actions/ci-miri-plain/action.yml"
+  ],
+  "regeneratedBy": "node scripts/verify-miri-sharding.mjs --snapshot 19cbc5f8 --out <fixture>",
+  "records": {
+    "miri-core": [
+      "{\"test\":\"advice_event_replay\",\"pkg\":\"aligned-vmem\",\"features\":[\"bench-internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"advice_event_stream\",\"pkg\":\"aligned-vmem\",\"features\":[\"bench-internals\",\"fault-injection\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"advice_lifetime_ledger\",\"pkg\":\"aligned-vmem\",\"features\":[\"bench-internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"advice_window\",\"pkg\":\"aligned-vmem\",\"features\":[\"bench-internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"b4_r1_pin_cache_miri\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"bench-internals\",\"internals\"],\"args\":[\"narrow\"],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"class_leaves_publication_miri\",\"pkg\":\"\",\"features\":[\"alloc-core\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":true}",
+      "{\"test\":\"decommit_miri_cycle\",\"pkg\":\"\",\"features\":[\"alloc-core\",\"alloc-decommit\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"ghost_infra\",\"pkg\":\"\",\"features\":[\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_adaptive_windows_native\",\"pkg\":\"\",\"features\":[\"bench-internals\",\"internals\",\"production\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_advice_capture_native\",\"pkg\":\"\",\"features\":[\"alloc-stats\",\"bench-internals\",\"internals\",\"lazy-commit-fault-injection\",\"production\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_advice_windows_native\",\"pkg\":\"\",\"features\":[\"alloc-stats\",\"bench-internals\",\"internals\",\"lazy-commit-fault-injection\",\"production\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_artifact_request\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_build_seal\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_native_identity\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_os_probe\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_owned_block\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_owned_block\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"tb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows\",\"locked\":false}",
+      "{\"test\":\"j13b_owner_training_native\",\"pkg\":\"\",\"features\":[\"bench-internals\",\"internals\",\"lazy-commit-fault-injection\",\"production\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_payload_actors\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_payload_actors\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"tb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows\",\"locked\":false}",
+      "{\"test\":\"j13b_window_kernel\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"j13b_window_kernel\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"tb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows\",\"locked\":false}",
+      "{\"test\":\"miri_depot_cycle\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"bench-internals\",\"fastbin\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"miri_depot_cycle\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"bench-internals\",\"fastbin\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"tb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"miri_global_box_acceptance\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"bench-internals\",\"internals\"],\"args\":[\"narrow\"],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"miri_global_box_acceptance\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"bench-internals\",\"internals\"],\"args\":[\"narrow\"],\"model\":\"strict\",\"borrows\":\"tb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"miri_global_box_acceptance\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"bench-internals\",\"internals\"],\"args\":[\"paused\"],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"miri_global_box_acceptance\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"bench-internals\",\"internals\"],\"args\":[\"paused\"],\"model\":\"strict\",\"borrows\":\"tb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"miri_global_box_acceptance\",\"pkg\":\"\",\"features\":[\"bench-internals\",\"internals\",\"production\"],\"args\":[\"paused\"],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"miri_global_box_acceptance\",\"pkg\":\"\",\"features\":[\"bench-internals\",\"internals\",\"production\"],\"args\":[\"paused\"],\"model\":\"strict\",\"borrows\":\"tb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"miri_r1_01_cap_frame\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"bench-internals\",\"fastbin\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"miri_r1_01_cap_frame\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"bench-internals\",\"fastbin\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"tb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000\",\"locked\":false}",
+      "{\"test\":\"narrow_domain_unchecked_storage\",\"pkg\":\"tagged-index-stack\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"r11_ph4a_lease_miri\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"alloc-xthread\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":true}",
+      "{\"test\":\"r11_ph4b_lease_miri\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"alloc-xthread\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":true}",
+      "{\"test\":\"region_invariants\",\"pkg\":\"\",\"features\":[],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"regression_merged\",\"pkg\":\"\",\"features\":[\"alloc-core\",\"internals\"],\"args\":[\"regression_r2_05_diag_provenance_miri::\"],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":true}",
+      "{\"test\":\"regression_merged\",\"pkg\":\"\",\"features\":[\"std\"],\"args\":[\"regression_w3_stats_aliasing_miri::\"],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":true}",
+      "{\"test\":\"route_pin_last_ref_miri\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"segment_directory_a5_miri\",\"pkg\":\"\",\"features\":[\"alloc-segment-directory\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}"
+    ],
+    "miri-fastbin": [
+      "{\"test\":\"nl3_safe_xthread_churn_integrity\",\"pkg\":\"\",\"features\":[\"alloc-decommit\",\"alloc-global\",\"alloc-xthread\",\"fastbin\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"nl7_safe_large_realloc_integrity\",\"pkg\":\"\",\"features\":[\"alloc-decommit\",\"alloc-global\",\"alloc-xthread\",\"fastbin\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"regression_bump_direct_refill\",\"pkg\":\"\",\"features\":[\"alloc-decommit\",\"alloc-global\",\"alloc-xthread\",\"fastbin\",\"internals\"],\"args\":[],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}",
+      "{\"test\":\"regression_merged\",\"pkg\":\"\",\"features\":[\"alloc-decommit\",\"alloc-global\",\"alloc-xthread\",\"fastbin\",\"internals\"],\"args\":[\"regression_magazine_oracles::\"],\"model\":\"strict\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-strict-provenance -Zmiri-disable-isolation\",\"locked\":false}"
+    ],
+    "miri-plain": [
+      "{\"test\":\"b4_r1_pin_cache_miri\",\"pkg\":\"\",\"features\":[\"alloc-decommit\",\"alloc-global\",\"alloc-xthread\",\"bench-internals\",\"internals\"],\"args\":[],\"model\":\"plain\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5\",\"locked\":false}",
+      "{\"test\":\"r6_terminal_owner_drain\",\"pkg\":\"\",\"features\":[\"alloc-global\",\"alloc-xthread\",\"bench-internals\",\"internals\"],\"args\":[\"--exact\",\"requested_sizes_one_through_seven_retire_once_and_reissue\"],\"model\":\"plain\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5\",\"locked\":false}",
+      "{\"test\":\"regression_r2_06_header_race_miri\",\"pkg\":\"\",\"features\":[\"alloc-decommit\",\"alloc-global\",\"alloc-xthread\",\"bench-internals\",\"internals\"],\"args\":[],\"model\":\"plain\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5\",\"locked\":true}",
+      "{\"test\":\"regression_xthread_large_free_no_leak\",\"pkg\":\"\",\"features\":[\"alloc-decommit\",\"alloc-global\",\"alloc-xthread\",\"bench-internals\",\"internals\"],\"args\":[],\"model\":\"plain\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5\",\"locked\":false}",
+      "{\"test\":\"regression_xthread_small_ring_miri\",\"pkg\":\"\",\"features\":[\"alloc-decommit\",\"alloc-global\",\"alloc-xthread\",\"bench-internals\",\"internals\"],\"args\":[],\"model\":\"plain\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5\",\"locked\":false}",
+      "{\"test\":\"regression_xthread_thread_free_alias_miri\",\"pkg\":\"\",\"features\":[\"alloc-decommit\",\"alloc-global\",\"alloc-xthread\",\"bench-internals\",\"internals\"],\"args\":[],\"model\":\"plain\",\"borrows\":\"sb\",\"flags\":\"-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5\",\"locked\":false}"
+    ]
+  }
+}

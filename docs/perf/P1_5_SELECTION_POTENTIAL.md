@@ -10,8 +10,8 @@ It makes NO GO/NO-GO decision; G1 decides against the criterion.
 ## Window
 
 - Commits analysed (N): 120 first-parent MERGE commits of `origin/main`.
-- Window base SHA (first parent of the OLDEST merge in the window): `37780bc7c80195d268641a06f0519cdb8878b71a`.
-- Head SHA (`origin/main` tip at generation time): `8013c80d859a7ffe41deb280463acd407b074f89`.
+- Window base SHA (first parent of the OLDEST merge in the window): `10635968fae2198a5e518a9191aa935e8ea80bb0`.
+- Head SHA (`origin/main` tip at generation time): `19cbc5f8f93f59de4aa63f519b6005ff5f37ee00`.
 - Per commit: files = `git diff --name-only <p1> <sha>` (p1 = first parent).
 
 ## Method (measurement model, verbatim)
@@ -64,32 +64,32 @@ It makes NO GO/NO-GO decision; G1 decides against the criterion.
 
 ### PR policy (event pull_request; seam/os included)
 
-- Eligible commits (denominator for the commit share): 12.
+- Eligible commits (denominator for the commit share): 13.
 - Window CI seconds today (sum over eligible commits of selected-job seconds, `always` excluded): 0 s.
 - Window CI seconds under the P1.5 model: 0 s.
 - Delta seconds (today − P1.5): 0 s.
-- Share of eligible commits with delta > 0 (numerator: commits with delta > 0; denominator: eligible commits): 0 / 12 = 0.00%.
+- Share of eligible commits with delta > 0 (numerator: commits with delta > 0; denominator: eligible commits): 0 / 13 = 0.00%.
 - Share of window CI seconds saved (numerator: delta seconds; denominator: window CI seconds today): 0 / 0 (no window CI seconds today; share defined as 0).
 
 ### push policy (event push; seam/os dropped)
 
-- Eligible commits (denominator for the commit share): 12.
+- Eligible commits (denominator for the commit share): 13.
 - Window CI seconds today (sum over eligible commits of selected-job seconds, `always` excluded): 0 s.
 - Window CI seconds under the P1.5 model: 0 s.
 - Delta seconds (today − P1.5): 0 s.
-- Share of eligible commits with delta > 0 (numerator: commits with delta > 0; denominator: eligible commits): 0 / 12 = 0.00%.
+- Share of eligible commits with delta > 0 (numerator: commits with delta > 0; denominator: eligible commits): 0 / 13 = 0.00%.
 - Share of window CI seconds saved (numerator: delta seconds; denominator: window CI seconds today): 0 / 0 (no window CI seconds today; share defined as 0).
 
 ### Per-affected-crate breakdown (both policies shown as PR / push)
 
 | crate | commits touched | seconds saved PR | seconds saved push |
 | --- | --- | --- | --- |
-| (docs-only) | 12 | 0 | 0 |
+| (docs-only) | 13 | 0 | 0 |
 
 ## Non-eligible commits (savings 0, model undefined)
 
-- `ineligible-paths`: 105 commit(s) — e.g. `8013c80d859a`, `c6524f402c91`, `b5779b5f9057`; sample path(s): `.github/actions/ci-docs-consistency/action.yml`, `.github/actions/ci-miri-alloc-core/action.yml`, `.github/actions/ci-miri-core/action.yml`.
-- `p15-not-subset`: 3 commit(s) — e.g. `b8cfa8c8e408`, `fdee1916f040`, `a9006619d4a2`; sample path(s): `crate_numa_shim`, `os`, `crate_aligned_vmem`, `crate_proc`.
+- `ineligible-paths`: 105 commit(s) — e.g. `19cbc5f8f93f`, `a966aa8f5e41`, `a3194012ab3a`; sample path(s): `.github/actions/ci-docs-consistency/action.yml`, `scripts/ci-job-durations.mjs`, `scripts/ci-long-jobs-log.mjs`.
+- `p15-not-subset`: 2 commit(s) — e.g. `b8cfa8c8e408`, `fdee1916f040`; sample path(s): `crate_numa_shim`, `os`, `crate_aligned_vmem`, `crate_sefer_platform`.
 
 ## Per-commit table (eligible commits only)
 
@@ -97,6 +97,7 @@ Groups are the cargo groups selected per policy (`always` excluded from both sid
 
 | commit | changed crates | manifest | today PR groups | P1.5 PR groups | s today PR | s P1.5 PR | s today push | s P1.5 push |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `b01ad11ee2a1` | (docs-only) | no | (none) | (none) | 0 | 0 | 0 | 0 |
 | `b2bc04926768` | (docs-only) | no | (none) | (none) | 0 | 0 | 0 | 0 |
 | `8a56a9b9b4e1` | (docs-only) | no | (none) | (none) | 0 | 0 | 0 | 0 |
 | `1f83afe0f40d` | (docs-only) | no | (none) | (none) | 0 | 0 | 0 | 0 |
@@ -112,11 +113,8 @@ Groups are the cargo groups selected per policy (`always` excluded from both sid
 
 ## Flags raised by the model (conservative paths)
 
-- P1.5 adds crate_aligned_vmem,crate_numa_shim,os — commit routed to the p15-not-subset bucket with savings 0 (1 commit(s)).
+- P1.5 adds crate_aligned_vmem,crate_numa_shim,crate_sefer_platform,crate_sefer_policy,os — commit routed to the p15-not-subset bucket with savings 0 (1 commit(s)).
 - P1.5 adds crate_numa_shim,os — commit routed to the p15-not-subset bucket with savings 0 (1 commit(s)).
-- P1.5 adds crate_proc,os — commit routed to the p15-not-subset bucket with savings 0 (1 commit(s)).
-- proc-memstat: [dev-dependencies] — not derivable from run lines; conservative ALL root groups (1 commit(s)).
-- proc-probe: [dev-dependencies] — not derivable from run lines; conservative ALL root groups (1 commit(s)).
 
 ## Honest limitations
 
