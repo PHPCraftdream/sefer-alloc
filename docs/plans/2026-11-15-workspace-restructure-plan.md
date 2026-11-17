@@ -1,6 +1,6 @@
 # sefer-alloc — workspace restructure plan (tests, thematic crate folders, core split)
 
-Date: 2026-11-15. Status (revision 4, 2026-11-16): P1.3/P1.4/P1.6 implementation is integrated in the landing stack; CI/perf are pending and this does not claim a merge to main. P1.5 is approved to proceed, implementation not started. G1 is DO by owner override; P2.0–P2.5 are approved to proceed, implementation not started. P0.2's ordinary-CI measurement remains pending. Revision 3's earlier STOP dispositions are historical and superseded as current authorization by the owner override below. Source tree measured at `main` `d093edd7`.
+Date: 2026-11-15. Status (revision 4, 2026-11-17): P1.3/P1.4/P1.6 are merged into `main` `a966aa8f` (PR #257, merged 2026-11-16). P2.0a–d is open as PR #259 (A1 back-edge ratchet 12 → 8), in CI at the time of this revision. P1.5 is approved to proceed, implementation not started; P2.1–P2.5 are approved to proceed, implementation not started. The repository variable `TEST_SELECTION` is not set, and the measured window shows 0 of 28 runs would have been subsets even with selection enabled (PR #258; section 7). The measurement PRs #258/#260/#261/#262 are merged. P0.2's ordinary-CI measurement remains pending. (Replaced by revision 4: the 2026-11-16 status text said P1.3/P1.4/P1.6 implementation was integrated in the landing stack with CI/perf pending and no merge to main claimed.) Revision 3's earlier STOP dispositions are historical and superseded as current authorization by the owner override below. Source tree measured at `main` `d093edd7`.
 Revision 2 (2026-11-15, self-review): added the visibility-widening cost, the test-inventory
 gate, the no-LTO baseline before P1, the explicit P2 decision gate G1, a narrower `CI: full`
 scope and a corrected order (G0 does not gate A0/A1/P0).
@@ -12,6 +12,8 @@ stack with one recompute pass and a fixed list of local cargo-free checks. Open 
 revision 3 are recorded in the open-items indexes (`docs/CORRECTNESS_OPEN_ITEMS.md`); list:
 sentinel floor, test-inventory `--ref`, process-global classifier, stale doc paths
 `crates/<name>`, `NonNull` warning in hardened (no numbers here).
+
+Revision 4 (2026-11-17, after the P1 landing and the measurement PRs): P1.3/P1.4/P1.6 are merged (PR #257, `main` `a966aa8f`); the no-LTO IAI row against the base series grew on 7 of 106 benches — maximum +0.46 % (`decomp_os_roundtrip_8x`) — and shrank on 69 (perf-gate run 43933405473). The owner-goal metric is stated honestly in section 7: 0 of 28 window runs would have been subsets even with selection enabled, and `TEST_SELECTION` is not set. The order of section 6 is replaced: process hygiene first, then P2.1 in parallel with P1.5a/b; P1.5 no longer waits for P2.2, and enforce enablement (P1.5c) comes only after P2.4. New process rules and the `TEST_SELECTION=enforce` enablement criterion are the revision-4 subsection of section 3. After the Miri sharding (PR #261, rebalanced by PR #262) the full-run wall-clock did not shrink — the critical path moved (final-run job times of PR #262's CI: test (aarch64) 1991 s, miri (core, TreeBorrows pin cache) 1888 s, check-matrix 1848 s, miri-plain (heavy) 1454 s, kani 1335 s); the next lever is check-matrix by rows and aarch64. Open items are filed in the indexes: CI critical path and Miri shard rebalance as items 155/156 of `docs/perf/OPEN_ITEMS.md`, enforce enablement as item 281 of `docs/CORRECTNESS_OPEN_ITEMS.md` (`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`).
 
 Goal: make a change pay only for the tests it can affect, and make the layering of the
 allocator explicit, without changing behavior or performance.
@@ -157,6 +159,14 @@ dependency that relocation does not remove; the plan does not assume the split.
 - No-LTO IAI before merge (revision 3): the no-LTO IAI row is measured on the integration
   branch against the P1.0 base (`docs/perf/IAI_NOLTO_BASELINE.md`) BEFORE the merge.
 
+### Process rules (revision 4)
+- Gate policy (ghost-zero-cost and similar) changes in a separate PR BEFORE the PR it judges. In this session the policy was changed three times inside the same PR it judged (extraction mode, `tokens_new`, layers mode); this is not done again. For P2.1–P2.4 the existing extraction mode is sufficient.
+- One P2 step = one PR, together with its derived data and an EV-1 reverify.
+- The local ban on builds and tests holds without exceptions; feedback is accelerated by the cargo-free checks in the always-on job and by watching CI with a stop on the first red job.
+- Side measurements and CI levers run only while the main path is waiting for CI.
+- While a P2 step's PR is in its final CI run, nothing is merged into `main` (otherwise a derived-file conflict cancels the run) — until the process-hygiene package lands.
+- `TEST_SELECTION=enforce` enablement criterion: a shadow measurement over a window of ≥ 30 ordinary runs (including red ones) shows "failed tests outside the selected subset = 0" and a subset-run share > 0; the safety net is the nightly full run of `main` and `CI: full` at sprint close.
+
 ## 4. Owner decisions (G0)
 
 1. Publication: extracted crates are published as internal crates with no stability
@@ -241,21 +251,25 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
   (facts 3). (The wording "`alloc_core/config` including ..." is replaced by revision 3 for
   `continuation_bounds.rs`.)
   Status (2026-11-16): owner approved merge; implementation integrated in the landing stack; CI/perf pending; not claimed merged to main.
+  Status (revision 4, 2026-11-17): merged into `main` `a966aa8f` via PR #257 (2026-11-16).
 - **P1.4 `sefer-platform`** (or merge, decision G0.3): `os`, `node`, `fatal`, and the
   process-exit state that `segment_route` needs. (Replaced by revision 3: only `fatal`,
   `process_exit` and the root-independent part of `os` were extracted; `node.rs`, `numa.rs`,
   `sidecar*.rs`, `size_classes.rs` and the `os.rs` directory triple stay in the root until
   P2.0/P2.1; facts 4.)
   Status (2026-11-16): owner approved merge; implementation integrated in the landing stack; CI/perf pending; not claimed merged to main.
+  Status (revision 4, 2026-11-17): merged into `main` `a966aa8f` via PR #257 (2026-11-16).
 - **P1.2–P1.4 landing** (revision 3): one integration PR of three commits after P1.1, derived
   data recomputed once at the tip, no-LTO IAI measured before merge (section 3).
 - **P1.5 Two-level selection** (next after the P1.1–P1.4 merge, together with the measurement
   of the G1 inputs, revision 3; facts 1): crate graph from `cargo metadata` first, the existing
   test-impact map inside the root crate second; miri, loom and kani run per changed crate.
   Status (2026-11-16): owner approved P1.5 to proceed; implementation not started; modeled history shows no selector savings, and actual CI/perf remain pending.
+  Status (revision 4, 2026-11-17): P1.5 is split — P1.5a (Node tests/benches/examples do not trigger the full Rust test run), P1.5b (selection by the crates graph), P1.5c (enforce enablement by the section 3 criterion); order in section 6. Modeled history (PR #258): 0 of 28 window runs would have been subsets, so enforce without P1.5a/b saves nothing.
 - **P1.6 Inline audit**: hot-path functions on the new crate boundaries are `#[inline]`;
   the no-LTO IAI row shows delta 0 against the P1.0 baseline.
   Status (2026-11-16): owner approved merge; implementation integrated in landing stack; CI/perf pending; not claimed merged to main.
+  Status (revision 4, 2026-11-17): merged into `main` `a966aa8f` via PR #257 (2026-11-16).
 
 ### P2 — core split
 
@@ -264,6 +278,7 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
   b. move process-exit state (`process_exit_in_progress`, `record_exit_lock_giveup`) to the platform layer;
   c. move or invert `route_pin_cache` (`segment_route -> heap_core_xthread`);
   d. replace `fallback::try_with_heap` in `heap_core_xthread/routing.rs` with a hook registered by the facade.
+  Status (revision 4, 2026-11-17): P2.0a–d is open as PR #259 (A1 back-edge ratchet 12 → 8), in CI at the time of this revision; not merged.
 - **P2.1 `sefer-segment` / `sefer-route`** (one or two crates per A0).
 - **P2.2 `sefer-alloc-core`**: `small`, `large`, the `AllocCore` hub and its diagnostics.
 - **P2.3 `sefer-registry`**: heap core, heap registry, bootstrap, xthread.
@@ -293,5 +308,14 @@ layering and smaller per-crate verification (miri, loom, kani, powerset), not te
    measurement of the G1 inputs) → `G1`. `P1.6` stays after `P1.5`. `P0.3`/`P0.4` only on GO of
    `P0.2` (criterion in `docs/perf/P0_2_TEST_MERGE_PILOT.md`). Stacking, one-pass derived data,
    local checks, EV-1 reverify and the pre-merge no-LTO IAI row: section 3.
-4. `G1` (owner decision on measured inputs) → `P2.0a–d` → `P2.1` → `P2.2` → `P2.3` → `P2.4`
-   → `P2.5`.
+4. (Replaced by revision 4, 2026-11-17: "`G1` (owner decision on measured inputs) → `P2.0a–d` → `P2.1` → `P2.2` → `P2.3` → `P2.4` → `P2.5`.") Revision 4 order: the process-hygiene package (derived files without merge conflicts, cargo-free inventories, the EV-1 transfer script) → `P2.1` in parallel with `P1.5a` (a Node test/bench/example change must not run all Rust tests) → `P1.5b` (selection by the crates graph) → `P2.2` → `P2.3` → `P2.4` → `P1.5c` (enforce enablement by the section 3 criterion) → `P2.5`. `P1.5` no longer waits for `P2.2`.
+
+## 7. Owner-goal metric (revision 4)
+
+The owner's goal (quoted in the G1 override above) is to split everything into crates so that a change touches fewer tests. Honest state: with selection implemented but enforce off, 0 of 28 window runs would have been subsets even with selection enabled (PR #258, `docs/perf/TEST_SELECTION_ENFORCE_IMPACT.md`); the repository variable `TEST_SELECTION` is not set (checked 2026-11-17). P2 delivers enforced layering and per-crate verification; test-count reduction is delivered by P1.5 plus the enforce enablement.
+
+Three numbers, recomputed by committed scripts, never hand-typed:
+1. Subset-run share: numerator = completed window runs where `select-tests` returned a strict subset; denominator = completed window runs carrying a `test-selection` artifact. Current window value: 0 / 28 (PR #258). Recompute: `node scripts/test-selection-impact.mjs --report`.
+2. Median test-core seconds per PR run: the median of the `test (core tiers)` cargo-test step seconds over `pull_request` runs in the window (per run, not the window sum). Current window value: 245 s over 15 pull_request runs (derived by the committed exports `loadInputs`/`computePerRun` of `node scripts/test-selection-impact.mjs` over the committed `docs/perf/test_selection_inputs`; no committed CLI prints this median directly; the window sum is 6669.0 s over 28 runs). Recompute the same way from `docs/perf/test_selection_inputs`.
+3. Critical path of the full run: the top job elapsed-times of a full-selected completed run. Current: `docs/perf/CI_LONG_JOBS.md` (check-matrix median 1728 s, range 1650–1843, n=6). Recompute: `node scripts/ci-long-jobs.mjs`. After the Miri sharding (PRs #261/#262) the full-run time did not shrink; the critical path moved — the next lever is check-matrix by rows and aarch64.
+

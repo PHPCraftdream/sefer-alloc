@@ -1,5 +1,7 @@
 # Correctness / CI-debt open items — cross-round tracking index
 
+**Miri sharding follow-up (2026-11-17).** Revision 4 of the workspace-restructure plan (`docs/plans/2026-11-15-workspace-restructure-plan.md`) files three new [T] CI-gate items 281–283 in `TRACKED_ci_gate_coverage.md`: enforce enablement by criterion, CI critical path, and Miri shard rebalance. Items 282–283 mirror perf items 155/156 in `docs/perf/OPEN_ITEMS.md`. Nothing was closed in the correctness index this session; unrelated items remain unchanged.
+
 **J13 #107 default package (2026-11-11).** The owner-approved supported-Linux Always default is implemented in this package; exact-source tests, the requested existing IAI base/candidate comparison and landing CI still gate delivery. Item 264 remains OPEN: the unchanged 144-byte layout is not an instruction-count proof. No other correctness/CI card is closed or rescheduled by this default change; unrelated items remain unchanged. No local native execution is claimed. Initial candidate CI exposed an overbroad codec-test feature gate; its original alloc-decommit boundary is restored and passed Clippy job130848024206 on `aba7cea2`. A separate synthetic legacy-runner metadata dependency is now isolated in the fixture, with actual CI acceptance pending. The actual ghost SKIP, IAI blocker and repair evidence are recorded in `docs/perf/J13_DEFAULT_ALWAYS_VERIFICATION.md`.
 
 **J13b current-state reconciliation (2026-11-10).** PR #226 VM foundation, #225 J13b runtime, #227 landing-history repair, and #228 closure are merged in HEAD `bad95849`; Auto learning is accepted on `6c2ba419`, CI `42512485612`. This docs-only round LEAVES all unrelated OPEN correctness/CI items unchanged and out of scope. Relevant THP limitations remain open below: item 263 records its actual-source Loom CI execution receipt, without claiming complete proof; item 264 records current 144-byte header layout and Ir UNKNOWN; 262, 265–267 and 272 remain limitations. No local/native execution or cost inference is claimed.
@@ -653,6 +655,9 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 277 | `TRACKED_misc.md` |
 | 278 | `RESOLVED.md` |
 | 279 | `RESOLVED.md` |
+| 281 | `TRACKED_ci_gate_coverage.md` |
+| 282 | `TRACKED_ci_gate_coverage.md` |
+| 283 | `TRACKED_ci_gate_coverage.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
