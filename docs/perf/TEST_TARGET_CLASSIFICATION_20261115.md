@@ -2,7 +2,7 @@
 
 Script: `scripts/classify-tests.mjs` (modules under `scripts/classify-tests/`).
 
-Sources: commit `7ba0a5d93d5864332d73c7fa0d40455d3558c48a`, tree `a7951c80755fb5bdb8d89c8af7761445723072ce`; tracked inputs clean.
+Sources: commit `6b83a476ac95421c3fb902a90461b5e4358c597e`, tree `b6831e723308935293cbfbf510a46b4b4929bf6e`; tracked inputs clean.
 
 ## First-config-wins markers (derived from src/)
 
