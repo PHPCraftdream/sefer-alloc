@@ -74,7 +74,9 @@ export function renderReport(data) {
   L.push('');
   L.push(`Script: \`scripts/classify-tests.mjs\` (modules under \`scripts/classify-tests/\`).`);
   L.push('');
-  L.push(`Sources: commit \`${data.identity.headSha}\`, tree \`${data.identity.treeSha}\`; tracked inputs ${data.identity.trackedInputsClean ? 'clean' : 'DIRTY (assertion failure)'}.`);
+  L.push(`Sources: tracked inputs ${data.identity.trackedInputsClean ? 'clean' : 'DIRTY (assertion failure)'}.`);
+  L.push('Justification: this is a derived inventory, not a measurement report; CLAUDE.md immutable-identity rules target measurement reports.');
+  L.push('Its commit-free identity line avoids conflicts when parallel PRs change inputs.');
   L.push('');
 
   // Marker table

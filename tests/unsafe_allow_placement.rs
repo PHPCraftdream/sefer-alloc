@@ -27,12 +27,10 @@
 //!     relying on an ancestor `mod.rs`'s blanket allow would otherwise
 //!     compile silently today and stop compiling the moment that ancestor's
 //!     allow is removed (exactly what happened to `loom_shim.rs` here) —
-//!     undetected by the existing doc-drift tests
-//!     (`readme_unsafe_inventory_counts_match_reality` /
-//!     `lib_rs_seam_inventory_matches_canonical_grep` in
-//!     `tests/no_stale_doc_references.rs`), which recompute their expected
-//!     sets FROM the grep of existing allows and so cannot notice a file
-//!     that has an `unsafe` token but NO allow at all.
+//!     undetected by the existing inventory checker in
+//!     `scripts/verify-doc-inventories.mjs`, which compares the documented
+//!     seam list to the grep of existing allows and cannot catch a file with
+//!     `unsafe` but no allow.
 //!
 //! ## Scanner limits (documented, not a soundness claim)
 //!

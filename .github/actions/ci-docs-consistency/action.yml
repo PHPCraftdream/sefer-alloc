@@ -17,36 +17,12 @@ runs:
     - run: node scripts/module-graph.mjs --check-backedges
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
-    # Cargo-free node suites of the module-graph/classify-tests scripts.
-    - run: node --test tests/module_graph.test.mjs tests/layering_lint.test.mjs
+    # The IAI summary test previously ran nowhere in CI.
+    # It is cargo-free, so include it in this suite.
+    - run: files=$(cd tests && ls -1 *.test.mjs | sort | sed 's|^|tests/|' | grep -Ev '^tests/j13b_(artifacts|schema|static_reference)\.test\.mjs$'); node --test $files
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
-    - run: node --test tests/classify_tests.test.mjs
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
-    # G1 widening-count suite (plan step G1 input; scripts/g1-widening-count.mjs).
-    - run: node --test tests/g1_widening_count.test.mjs
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
-    # P1.5 selection-potential suite (G1 Input 1; scripts/ci-selection-history.mjs).
-    - run: node --test tests/ci_selection_history.test.mjs
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
-    - run: node --test tests/test_inventory.test.mjs tests/ci_job_durations.test.mjs tests/ci_long_jobs.test.mjs
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
-    - run: node --test tests/ghost_extraction_policy.test.mjs
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
-    # TEST_SELECTION=enforce impact measurement (G1 follow-up; docs/perf/TEST_SELECTION_ENFORCE_IMPACT.md,
-    # scripts/test-selection-impact.mjs).
-    - run: node --test tests/test_selection_impact.test.mjs
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
-    - run: node --test tests/verify_miri_target_wiring_quoting.test.mjs
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
-    - run: node scripts/verify-ci-decomposition.mjs
+    - run: node scripts/verify-ci-node-tests.mjs
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-ci-sentinels.mjs
@@ -61,9 +37,6 @@ runs:
     # Miri sharding equivalence gate (2026-11-16): the shard unions of
     # miri-core/fastbin/plain must equal the pre-sharding command sets exactly.
     - run: node scripts/verify-miri-sharding.mjs
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
-    - run: node --test tests/miri_sharding.test.mjs
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/j13b_zero_cost_receipt.mjs --check
@@ -92,6 +65,11 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-b4-30-pin.mjs
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: node scripts/verify-doc-inventories.mjs
+      shell: bash -e {0}
+    - run: node scripts/verify-ci-decomposition.mjs
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/ci-plan.mjs --check-doc
