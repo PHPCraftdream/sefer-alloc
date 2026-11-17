@@ -897,6 +897,25 @@ test('CLI --check passes current baseline and rejects stale Markdown and CSV ind
     assert.doesNotMatch(staleMdOnly.stderr, /test_target_classification_20261115\.csv/);
   } finally { fixture.cleanup(); }
 });
+
+test('CLI --check accepts LF-normalized committed CSV but rejects a changed cell', () => {
+  const fixture = createInventoryTrees(repoRoot);
+  try {
+    const tree = fixture.trees.base;
+    const baseline = generateTree(tree);
+    writeFileSync(join(tree, CSV_PATH), baseline.csv.stdout.replaceAll('\r\n', '\n'));
+    writeFileSync(join(tree, REPORT_PATH), baseline.report.stdout);
+    const lfOk = runClassifier(tree, '--check');
+    assert.equal(lfOk.status, 0, `LF-normalized artifacts must pass check: ${lfOk.stderr}`);
+    const corrupted = baseline.csv.stdout.replaceAll('\r\n', '\n')
+      .replace('tests/alpha_middle.rs,alpha_middle,target,yes', 'tests/alpha_middle.rs,alpha_middle,target,no');
+    assert.notEqual(corrupted, baseline.csv.stdout.replaceAll('\r\n', '\n'), 'sanity: corruption must change the csv');
+    writeFileSync(join(tree, CSV_PATH), corrupted);
+    const changed = runClassifier(tree, '--check');
+    assert.equal(changed.status, 1, 'changed cell must fail check');
+    assert.match(changed.stderr, /stale: .*test_target_classification_20261115\.csv/);
+  } finally { fixture.cleanup(); }
+});
 test('CLI --identity: prints commit/tree provenance and input hash on separate lines', () => {
   const r = runCli('--identity');
   assert.equal(r.status, 0, `exit 0 (stderr: ${r.stderr})`);

@@ -490,6 +490,9 @@ const reportData = {
   if (mode === '--check') {
     const mdPath = join(repoRoot, 'docs', 'perf', `TEST_TARGET_CLASSIFICATION_${PLAN_DATE.replaceAll('-', '')}.md`);
     const csvPath = join(repoRoot, 'docs', `test_target_classification_${PLAN_DATE.replaceAll('-', '')}.csv`);
+    // Compare newline-normalized: git may store CSV CRLF as LF in blobs, so a
+    // Linux checkout yields LF while fresh generation emits CRLF (RFC-4180).
+    const normalize = (t) => t.replaceAll('\r\n', '\n');
     const expected = [[mdPath, renderReport(reportData)], [csvPath, renderCsv()]];
     const failures = [];
     for (const [path, fresh] of expected) {
@@ -498,7 +501,7 @@ const reportData = {
         failures.push(`missing: ${path}`);
         continue;
       }
-      if (committed !== fresh) failures.push(`stale: ${path}`);
+      if (normalize(committed) !== normalize(fresh)) failures.push(`stale: ${path}`);
     }
     if (failures.length > 0) {
       process.stderr.write(`--check FAILED: committed inventory differs from fresh generation:\n${failures.join('\n')}\n`);
