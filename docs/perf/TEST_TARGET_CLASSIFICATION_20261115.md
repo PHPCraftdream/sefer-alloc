@@ -32,7 +32,7 @@ Dropped from the marker list: `publish_pending` (src/alloc_core/segment/segment_
 | ci_workflow | 8 |
 | doc | 1383 |
 | doc_json | 2 |
-| script | 291 |
+| script | 292 |
 
 Note: the classification suite's own output artifacts (`docs/perf/TEST_TARGET_CLASSIFICATION_*.md`, `docs/test_target_classification_*.csv`) are excluded from the doc pin surface: scanning the report's own echo would pin the targets it lists, making the classification non-idempotent (self-reference, not a pre-existing pin).
 
@@ -95,9 +95,9 @@ Note: the plan's §1 numbers are grep approximations over overlapping sets — t
 | **file_cfg** (461) | 52 | 79 | 25 | 30 | 50 | 0 | 0 | 0 | 12 | 461 | 428 |
 | **externally_pinned** (475) | 61 | 75 | 33 | 31 | 50 | 0 | 13 | 11 | 26 | 428 | 475 |
 
-## Non-target inventory (1210 entries; 44 of them are top-level entries of tests/)
+## Non-target inventory (1211 entries; 45 of them are top-level entries of tests/)
 
-Top-level accounting: tests/ has **554** top-level entries; 510 are targets; the remaining **44** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
+Top-level accounting: tests/ has **555** top-level entries; 510 are targets; the remaining **45** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
 
 | path | kind |
 | --- | --- |
@@ -1294,6 +1294,7 @@ Top-level accounting: tests/ has **554** top-level entries; 510 are targets; the
 | tests/regression_merged/regression_stamp_metadata_unsafe_boundary.rs | support-module |
 | tests/regression_merged/regression_virgin_bitmap_skip.rs | support-module |
 | tests/regression_merged/regression_w3_stats_aliasing_miri.rs | support-module |
+| tests/select_tests_compile_coverage.test.mjs | mjs-script |
 | tests/support | directory-fixture |
 | tests/support/alloc_core_differential_native_seeds.txt | other-file |
 | tests/support/j13b_cadence_math.rs | support-module |
@@ -1338,7 +1339,6 @@ By construction of the strict rule, no member is name-pinned externally. But ANY
 | docs/ARCHITECTURE.md | 509 | Flat root-level Rust inventories: **510 integration test files** (`tests/*.rs`), | 510 |
 | docs/ARCHITECTURE.md | 518 | \| Unit / integration tests \| Construction, edge cases, invariants; snapshot acceptance pending \| `tests/*.rs` (510 files) \| | 510 |
 | docs/ARCHITECTURE.md | 521 | \| loom \| Bounded interleavings; snapshot execution pending \| **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs` \| | 27 |
-| docs/CI_TIERS.md | 180 | (a change of the segment-directory scan selects 369 of 484 tests), so the saving comes from peripheral and test-only | 369/484 |
 | docs/perf/b4_ablate/G1_K7_A6_VERDICT.md | 27 | (1606 files). Campaign driver output: `a6/campaign.log`. | 1606 |
 | docs/perf/G1_DECISION_CRITERION.md | 81 | \| Selected-test count for a representative peripheral change \| tests \| after P1.5 strictly fewer than the current all-target selection \| current data point: a segment-directory scan change selects 369 of 484 tests (`docs/CI_TIERS.md`, "Test selection" section; first map run: 374 of 484 mapped under `--all-features`) \| | 369/484 |
 | docs/perf/R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md | 352 | - `docs/perf/_raw_r14_6_*.log` (14 files): iai baseline/treatment, R12-4 | 14 |
