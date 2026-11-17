@@ -19,6 +19,8 @@ not on this crate.
 |--------|------|
 | `fatal` | `fatal(msg)` — writes a best-effort static diagnostic and terminates without unwinding. The one sanctioned terminator. |
 | `process_exit` | `process_exit_in_progress()` — the Windows loader-shutdown FFI probe (`kernel32`); constant `false` on other targets. |
+| `record_exit_lock_giveup` | `record_exit_lock_giveup()` — the `#[cold]`, `#[doc(hidden)]` counter increment for the sanctioned shard-lock give-up during process exit. |
+| `dbg_exit_lock_giveups` | `dbg_exit_lock_giveups()` — reads the give-up counter (`bench-internals` only; `#[doc(hidden)]`). |
 | `os` | The SEGMENT-aligned OS aperture: `Segment`, `SEGMENT` / `PAGE` / `MAX_REALISTIC_PAGE_SIZE`, the `SEGMENTS_*` reservation counters, release / commit / decommit / recommit wrappers and the depot-overflow storage. Built on `aligned-vmem`. |
 
 The code was moved verbatim from `sefer-alloc`'s `alloc_core::platform`
@@ -53,6 +55,9 @@ There are no default features.
 - `src/process_exit.rs` — `kernel32` FFI (`GetModuleHandleW`, `GetProcAddress`)
   and the call through the resolved function pointer.
 - `src/fatal.rs` — no `unsafe`.
+- `src/exit_lock_giveups.rs` / `src/record_exit_lock_giveup.rs` /
+  `src/dbg_exit_lock_giveups.rs` — no `unsafe` (relaxed RMWs on the
+  give-up counter).
 
 ## Non-goals
 

@@ -190,7 +190,7 @@ export function deriveFirstConfigWinMarkers(srcDir, candidates, grepFirstHit) {
  * config_conflicts       src/global/alloc_stats.rs:183 (AllocStats field)
  *
  * DROPPED marker: `publish_pending`
- *   src/registry/segment_route/large_state.rs:25 defines the Large-reservation
+ *   src/alloc_core/segment/segment_route/route_protocol/large_state.rs:25 defines the Large-reservation
  *   route sidecar publication CAS (LIVE(g)->PENDING(g)). It is NOT a
  *   first-config-wins API, so files calling it need not be unmergeable for
  *   config reasons. Removed from candidates and from MARKER_PROVENANCE.

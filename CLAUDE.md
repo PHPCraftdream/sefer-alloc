@@ -1149,7 +1149,12 @@ Core instructions, mandatory for all code in this repository. They
      (plan §5; linter `scripts/verify-invariant-trailers.mjs`).
   5. A ghost PR must keep production machine-identical: CI job
      `ghost-zero-cost` (normalized `.text` diff + callgrind Ir of
-     `examples/ghost_zero_cost_probe.rs` against the base) must be green. For declared crate-extraction ranges, the mandatory gate follows the bounded-Ir and production-ghost-exclusion policy in [Extraction ranges](docs/GHOST_CHECKS_PLAN.md#extraction-ranges).
+     `examples/ghost_zero_cost_probe.rs` against the base) must be green. For
+     declared crate-extraction ranges and explicitly authorized intra-crate
+     layer restructuring ranges, the mandatory gate follows the corresponding
+     bounded-Ir and production-ghost-exclusion policy in
+     [Extraction ranges](docs/GHOST_CHECKS_PLAN.md#extraction-ranges) and
+     [Intra-crate layer restructuring](docs/GHOST_CHECKS_PLAN.md#layer-restructuring).
 - Do not bump project or dependency versions without an explicit request.
 - Verification-first: every invariant (I1–I7) is covered by proptest and/or
   unit test; the core is run under miri.

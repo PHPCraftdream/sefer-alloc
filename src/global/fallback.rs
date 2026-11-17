@@ -57,6 +57,10 @@ use super::{spin_loop, yield_now, AtomicBool, AtomicU64, AtomicU8, Ordering};
 
 use crate::registry::HeapCore;
 
+fn fallback_hook_callback(f: &mut dyn FnMut(&mut HeapCore)) -> bool {
+    try_with_heap(|heap| f(heap)).is_some()
+}
+
 /// The fallback bootstrap state machine, typed. `#[repr(u8)]`: the
 /// discriminants ARE the values `INIT_STATE` has always carried (`pub` so
 /// the F-8 counterfactual test, `tests/regression_fallback_init_unwind_guard.rs`,
@@ -139,18 +143,10 @@ static DBG_INJECT_FALLBACK_OOM: AtomicBool = AtomicBool::new(false);
 /// cannot wrap this counter around and produce a false "unchanged" reading.
 static LOCK_ACQUISITIONS: AtomicU64 = AtomicU64::new(0);
 
-static EXIT_LOCK_GIVEUPS: AtomicU64 = AtomicU64::new(0);
-
-#[cold]
-pub(crate) fn record_exit_lock_giveup() {
-    EXIT_LOCK_GIVEUPS.fetch_add(1, Ordering::Relaxed);
-}
-
+pub(crate) use crate::alloc_core::record_exit_lock_giveup;
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn dbg_exit_lock_giveups() -> u64 {
-    EXIT_LOCK_GIVEUPS.load(Ordering::Relaxed)
-}
+pub use sefer_platform::dbg_exit_lock_giveups::dbg_exit_lock_giveups;
 
 /// The fallback-heap spinlock. Held while a thread is performing an
 /// alloc/dealloc/realloc on the fallback; ensures mutual exclusion so the
@@ -198,6 +194,9 @@ struct FallbackInitContext {
 }
 
 fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
+    // Register the safe router boundary before any path can publish READY.
+    let _ = crate::registry::fallback_hook::FallbackHook::global().register(fallback_hook_callback);
+
     loop {
         // Fast path: already READY. Acquire to see the init thread's writes.
         if INIT_STATE.load(Ordering::Acquire) == FallbackInitState::Ready as u8 {

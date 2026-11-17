@@ -79,7 +79,9 @@ impl ExactNarrow {
             // SAFETY: original pointer and layout.
             unsafe { System.dealloc(ptr, layout) };
             DEALLOCS.fetch_add(1, Ordering::Relaxed);
-            crate::registry::segment_route::TerminalPublicationGate::pause_after_publication(addr);
+            crate::alloc_core::segment_route::TerminalPublicationGate::pause_after_publication(
+                addr,
+            );
             ExactTable::take(addr);
             return true;
         }
@@ -94,7 +96,7 @@ impl ExactNarrow {
         // Test gate: keep the caller's dealloc frame alive after the terminal
         // accounting (free + unlink) is complete.
         #[cfg(all(miri, feature = "internals", feature = "bench-internals"))]
-        crate::registry::segment_route::TerminalPublicationGate::pause_after_publication(addr);
+        crate::alloc_core::segment_route::TerminalPublicationGate::pause_after_publication(addr);
         true
     }
 

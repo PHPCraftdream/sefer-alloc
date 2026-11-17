@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { checkExtractionPolicyCases } from './ghost_extraction_policy_fixtures.mjs';
+import { checkLayerRestructuringPolicyCases } from './ghost_layer_restructuring_policy_fixtures.mjs';
 
 import {
   extractionChangedLines,
   extractionPolicy,
+  hasLayerRestructuringAttempt,
+  layerRestructuringPolicy,
   productionGhostTokens,
   rustCodeLine,
   zeroCostSkip,
@@ -64,6 +67,18 @@ test('production ghost verdict rejects only head-only tokens and reports both si
 
 test('extraction build-graph counterfactual suite', () => {
   assert.equal(checkExtractionPolicyCases(), 9);
+});
+
+test('layer restructuring policy counterfactual suite', () => {
+  assert.equal(checkLayerRestructuringPolicyCases(), 13);
+});
+
+test('layer declaration cannot use runtime skip or prefix behavior', () => {
+  const message = 'perf(runtime): restructure\n\nRestructuring: layers';
+  assert.equal(hasLayerRestructuringAttempt(message), true);
+  assert.equal(layerRestructuringPolicy([message], new Map(), [], null), null);
+  assert.ok(ZERO_COST_RUNNER.includes('if (reason && !proofPolicy && !layerAttempt)'));
+  assert.ok(ZERO_COST_RUNNER.includes('const prefix = layerAttempt ? null : declaredRuntimePrefix'));
 });
 
 test('extraction changed-line scan reads Rust code, not comments or prose', () => {

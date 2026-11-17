@@ -207,11 +207,11 @@
       "id": "P5",
       "name": "route pin: lookup || unlink || last-pin release",
       "prod": [
-        "src/registry/segment_route/directory/route_directory.rs::pin_from_array",
-        "src/registry/segment_route/directory/route_directory.rs::drop",
-        "src/registry/segment_route/directory/route_directory.rs::remove",
-        "src/registry/segment_route/pin.rs::linked",
-        "src/registry/segment_route/shard_lock.rs"
+        "src/alloc_core/segment/segment_route/directory/route_directory.rs::pin_from_array",
+        "src/alloc_core/segment/segment_route/directory/route_directory.rs::drop",
+        "src/alloc_core/segment/segment_route/directory/route_directory.rs::remove",
+        "src/alloc_core/segment/segment_route/route_state/pin.rs::linked",
+        "src/alloc_core/segment/segment_route/route_state/shard_lock.rs"
       ],
       "invariants": [
         "I1 a pin is taken only under the shard lock while the entry is indexed (refs fetch_update AcqRel)",
@@ -238,7 +238,7 @@
       "id": "P6",
       "name": "route pin cache fast path",
       "prod": [
-        "src/registry/heap_core_xthread/route_pin_cache.rs"
+        "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs"
       ],
       "invariants": [
         "I1 a cached pin is reused only while it holds its own ref; eviction drops exactly one ref",
@@ -287,7 +287,7 @@
       "name": "small sidecar: leaf pointer publication, pin lifetime",
       "prod": [
         "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
-        "src/registry/segment_route/small_sidecar.rs"
+        "src/alloc_core/segment/segment_route/route_state/small_sidecar.rs"
       ],
       "invariants": [
         "I1 a leaf pointer is published (mixed store Release, present fetch_or Release) only after the leaf is fully initialised",
@@ -312,9 +312,9 @@
       "name": "terminal Large: phase word",
       "prod": [
         "src/alloc_core/large/reservation_state.rs",
-        "src/registry/segment_route/large_state.rs",
+        "src/alloc_core/segment/segment_route/route_protocol/large_state.rs",
         "src/alloc_core/segment/segment_header/terminal_words.rs",
-        "src/registry/segment_route/pin.rs::publish_large"
+        "src/alloc_core/segment/segment_route/route_state/pin.rs::publish_large"
       ],
       "invariants": [
         "I1 the phase word moves only along the transition relation (kani large_state_proofs)",
@@ -516,7 +516,7 @@
         "crates/primitives/tagged-index-stack/src/imp.rs",
         "crates/platform/aligned-vmem/src/mock.rs",
         "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
-        "src/registry/heap_core_xthread/route_pin_cache.rs"
+        "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs"
       ],
       "invariants": [
         "I1 each loom twin has the same normalized atomic sequence as its prod item; allowed differences are listed with a reason"
@@ -603,7 +603,7 @@
       "id": "P22",
       "name": "route ShardLock (spin lock over the directory shard)",
       "prod": [
-        "src/registry/segment_route/shard_lock.rs"
+        "src/alloc_core/segment/segment_route/route_state/shard_lock.rs"
       ],
       "invariants": [
         "I1 CAS-weak Acquire/Relaxed on lock, Release store on ShardGuard drop",
@@ -624,8 +624,8 @@
       "id": "P23",
       "name": "remote-free ingress: producer notify || owner take/arm/full drain (SC-6 A-exact)",
       "prod": [
-        "src/registry/segment_route/directory/ingress.rs",
-        "src/registry/segment_route/pin.rs::publish_small_borrowed",
+        "src/alloc_core/segment/segment_route/directory/ingress.rs",
+        "src/alloc_core/segment/segment_route/route_state/pin.rs::publish_small_borrowed",
         "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs::publish",
         "src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs::drain_notified_slot"
       ],
@@ -971,8 +971,8 @@
       "class": "protocol",
       "protocol": "P5",
       "files": [
-        "src/registry/segment_route/directory/route_directory.rs",
-        "src/registry/segment_route/directory/blocks.rs"
+        "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+        "src/alloc_core/segment/segment_route/directory/blocks.rs"
       ],
       "receiver": "refs$|linked$",
       "reason": "pin refcount and linked flag"
@@ -982,8 +982,8 @@
       "class": "lock-local",
       "protocol": "P5",
       "files": [
-        "src/registry/segment_route/directory/route_directory.rs",
-        "src/registry/segment_route/directory/blocks.rs"
+        "src/alloc_core/segment/segment_route/directory/route_directory.rs",
+        "src/alloc_core/segment/segment_route/directory/blocks.rs"
       ],
       "receiver_not": "refs$|linked$|B4_DIRECTORY_LOOKUPS$|next_incarnation$",
       "orderings": [
@@ -996,7 +996,7 @@
       "class": "protocol",
       "protocol": "P23",
       "files": [
-        "src/registry/segment_route/directory/ingress.rs"
+        "src/alloc_core/segment/segment_route/directory/ingress.rs"
       ],
       "reason": "per-route ingress state and per-heap notification cell (SC-6 A-exact)"
     },
@@ -1005,7 +1005,7 @@
       "class": "protocol",
       "protocol": "P5",
       "files": [
-        "src/registry/segment_route/pin.rs"
+        "src/alloc_core/segment/segment_route/route_state/pin.rs"
       ],
       "reason": "RoutePin::linked Acquire"
     },
@@ -1014,7 +1014,7 @@
       "class": "protocol",
       "protocol": "P22",
       "files": [
-        "src/registry/segment_route/shard_lock.rs"
+        "src/alloc_core/segment/segment_route/route_state/shard_lock.rs"
       ],
       "receiver": "locked$",
       "reason": "spin lock"
@@ -1056,7 +1056,7 @@
       "protocol": "P9",
       "files": [
         "src/alloc_core/large/reservation_state.rs",
-        "src/registry/segment_route/large_state.rs",
+        "src/alloc_core/segment/segment_route/route_protocol/large_state.rs",
         "src/alloc_core/segment/segment_header/terminal_words.rs"
       ],
       "reason": "phase word"
@@ -1297,7 +1297,7 @@
       "id": "counter/pin-cache-macro",
       "class": "counter",
       "files": [
-        "src/registry/heap_core_xthread/route_pin_cache.rs"
+        "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs"
       ],
       "reason": "macro_rules! count bumps a static counter",
       "item": "^macro_rules! count$"
@@ -1319,7 +1319,7 @@
       "id": "hook/terminal-gate",
       "class": "test-hook",
       "files": [
-        "src/registry/segment_route/terminal_publication_gate.rs"
+        "src/alloc_core/segment/segment_route/route_protocol/terminal_publication_gate.rs"
       ],
       "reason": "test gate that pauses a producer after publication"
     },
@@ -2124,7 +2124,7 @@
       "id": "route-pin/drop-acqrel",
       "kind": "R1",
       "protocol": "P5",
-      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::drop",
       "site": {
         "name": "fetch_sub",
@@ -2149,7 +2149,7 @@
       "mutants": [
         {
           "id": "relaxed-decrement",
-          "file": "src/registry/segment_route/directory/route_directory.rs",
+          "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
           "from": "let prev = entry.refs.fetch_sub(1, Ordering::AcqRel);",
           "to": "let prev = entry.refs.fetch_sub(1, Ordering::Relaxed);",
           "checker": {
@@ -2173,7 +2173,7 @@
       "id": "route-pin/pin-acqrel",
       "kind": "R1",
       "protocol": "P5",
-      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::pin_from_array",
       "site": {
         "name": "fetch_update",
@@ -2200,7 +2200,7 @@
       "id": "route-pin/unlink-release",
       "kind": "R1",
       "protocol": "P5",
-      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
       "fn": "RouteDirectory::remove",
       "site": {
         "name": "store",
@@ -2227,7 +2227,7 @@
       "id": "route-pin/last-ref-free",
       "kind": "R4",
       "protocol": "P5",
-      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::drop",
       "action": {
         "name": "free_sidecar"
@@ -2248,7 +2248,7 @@
       "mutants": [
         {
           "id": "free-before-count-check",
-          "file": "src/registry/segment_route/directory/route_directory.rs",
+          "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
           "from": "        if prev != 1 {\n            return;\n        }\n",
           "to": "        let sidecar = entry.sidecar.load(Ordering::Relaxed);\n        Self::free_sidecar(entry.kind, sidecar);\n        if prev != 1 {\n            return;\n        }\n",
           "checker": {
@@ -2272,7 +2272,7 @@
       "id": "route-pin/decrement-before-free",
       "kind": "R3",
       "protocol": "P5",
-      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::drop",
       "before": {
         "name": "fetch_sub",
@@ -2298,7 +2298,7 @@
       "kind": "R5",
       "protocol": "P5",
       "files": [
-        "src/registry/segment_route/**"
+        "src/alloc_core/segment/segment_route/**"
       ],
       "target": {
         "name": "free_sidecar"
@@ -2323,7 +2323,7 @@
       "id": "route-pin/ghost-drop",
       "kind": "R6",
       "protocol": "P5",
-      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::drop",
       "ghost": "route-pin/refs-no-underflow",
       "terms": [
@@ -2342,7 +2342,7 @@
       "id": "route-pin/ghost-pin",
       "kind": "R6",
       "protocol": "P5",
-      "file": "src/registry/segment_route/directory/route_directory.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/route_directory.rs",
       "fn": "EntryHandle::pin_from_array",
       "ghost": "route-pin/no-resurrection",
       "terms": [
@@ -4545,7 +4545,7 @@
       "id": "pin-cache/ghost-sweep",
       "kind": "R6",
       "protocol": "P6",
-      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
       "fn": "PinCache::sweep_dead_slots",
       "ghost": "pin-cache/held",
       "count": 1,
@@ -4566,7 +4566,7 @@
       "id": "pin-cache/ghost-drop",
       "kind": "R6",
       "protocol": "P6",
-      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
       "fn": "PinCache::drop",
       "ghost": "pin-cache/held",
       "count": 1,
@@ -4584,7 +4584,7 @@
       "mutants": [
         {
           "id": "tls-drop-without-ghost-event",
-          "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+          "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
           "from": "            crate::ghost::ghost_event!(\"pin-cache/held\", slot.base, -i64::from(slot.pin.is_some()));\n",
           "to": "",
           "checker": {
@@ -4611,7 +4611,7 @@
       "id": "pin-cache/ghost-publish",
       "kind": "R6",
       "protocol": "P6",
-      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
       "fn": "publish_cached",
       "ghost": "pin-cache/held",
       "count": 2,
@@ -4629,7 +4629,7 @@
       "mutants": [
         {
           "id": "unlink-fallback-without-ghost-event",
-          "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+          "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
           "from": "                    count!(PIN_CACHE_UNLINK_FALLBACKS);\n                    slot.pin = None;\n                    crate::ghost::ghost_event!(\"pin-cache/held\", slot.base, -1);\n",
           "to": "                    count!(PIN_CACHE_UNLINK_FALLBACKS);\n                    slot.pin = None;\n",
           "checker": {
@@ -4656,7 +4656,7 @@
       "id": "pin-cache/ghost-insert",
       "kind": "R6",
       "protocol": "P6",
-      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
       "fn": "cache_insert",
       "ghost": "pin-cache/held",
       "count": 4,
@@ -4677,7 +4677,7 @@
       "id": "pin-cache/ghost-evict",
       "kind": "R6",
       "protocol": "P6",
-      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
       "fn": "cache_evict",
       "ghost": "pin-cache/held",
       "count": 1,
@@ -4698,7 +4698,7 @@
       "id": "pin-cache/tls-decl",
       "kind": "R10",
       "protocol": "P6",
-      "file": "src/registry/heap_core_xthread/route_pin_cache.rs",
+      "file": "src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs",
       "decl": {
         "static": "CACHE",
         "thread_local": true,
@@ -6941,7 +6941,7 @@
       "id": "ingress/check-seqcst",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/registry/segment_route/directory/ingress.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
       "fn": "SegmentIngress::after_publish",
       "site": {
         "name": "load",
@@ -6968,7 +6968,7 @@
       "id": "ingress/notify-cas",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/registry/segment_route/directory/ingress.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
       "fn": "SegmentIngress::notify",
       "site": {
         "name": "compare_exchange",
@@ -6996,7 +6996,7 @@
       "id": "ingress/arm-release",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/registry/segment_route/directory/ingress.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
       "fn": "SegmentIngress::arm",
       "site": {
         "name": "store",
@@ -7023,7 +7023,7 @@
       "id": "ingress/arm-fence",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/registry/segment_route/directory/ingress.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
       "fn": "SegmentIngress::arm",
       "site": {
         "name": "fence"
@@ -7049,7 +7049,7 @@
       "id": "ingress/summary-release",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/registry/segment_route/directory/ingress.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
       "fn": "HeapIngress::notify",
       "site": {
         "name": "fetch_or",
@@ -7076,7 +7076,7 @@
       "id": "ingress/take-summary-acquire",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/registry/segment_route/directory/ingress.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
       "fn": "HeapIngress::take",
       "site": {
         "name": "swap",
@@ -7103,7 +7103,7 @@
       "id": "ingress/take-mask-acquire",
       "kind": "R1",
       "protocol": "P23",
-      "file": "src/registry/segment_route/directory/ingress.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
       "fn": "HeapIngress::take",
       "site": {
         "name": "swap",
@@ -7130,7 +7130,7 @@
       "id": "ingress/arm-then-fence",
       "kind": "R3",
       "protocol": "P23",
-      "file": "src/registry/segment_route/directory/ingress.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
       "fn": "SegmentIngress::arm",
       "before": {
         "name": "store",
@@ -7156,7 +7156,7 @@
       "id": "ingress/mask-before-summary",
       "kind": "R3",
       "protocol": "P23",
-      "file": "src/registry/segment_route/directory/ingress.rs",
+      "file": "src/alloc_core/segment/segment_route/directory/ingress.rs",
       "fn": "HeapIngress::notify",
       "before": {
         "name": "fetch_or",
@@ -7183,7 +7183,7 @@
       "id": "ingress/rmw-before-check",
       "kind": "R3",
       "protocol": "P23",
-      "file": "src/registry/segment_route/pin.rs",
+      "file": "src/alloc_core/segment/segment_route/route_state/pin.rs",
       "fn": "RoutePin::publish_small_borrowed",
       "before": {
         "name": "publish"

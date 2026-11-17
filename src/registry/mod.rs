@@ -36,6 +36,7 @@
 
 #[doc(hidden)]
 pub mod bootstrap;
+pub(crate) mod fallback_hook;
 #[doc(hidden)]
 pub mod heap_core;
 mod heap_core_xthread;
@@ -43,10 +44,10 @@ mod heap_core_xthread;
 pub mod heap_registry;
 #[doc(hidden)]
 pub mod heap_slot;
-// Production segment registration and foreign-free terminal routing;
-// external access uses the doc-hidden `internals` surface.
+#[cfg_attr(not(feature = "internals"), allow(unused_imports))] // tests reach registry::segment_route under internals
+#[cfg(feature = "alloc-global")]
 #[doc(hidden)]
-pub mod segment_route;
+pub use crate::alloc_core::segment_route;
 
 #[doc(hidden)]
 pub use heap_core::HeapCore;

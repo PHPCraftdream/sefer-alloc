@@ -372,11 +372,53 @@ zero or absent Ir, or any new head-only production ghost symbol or string in the
 head make the gate red. Changes to `rust-toolchain*`, any `build.rs`, or `.cargo/`
 remain forbidden; this exception does not relax those path restrictions.
 Counterfactual policy coverage is mandatory in
-`tests/ghost_extraction_policy.test.mjs`, and the runner self-test must cover
-the same acceptance and rejection boundaries. The gate remains mandatory in
+`tests/ghost_extraction_policy.test.mjs` (extraction and layer restructuring),
+and the runner self-test must cover the same acceptance and rejection
+boundaries. The gate remains mandatory in
 Linux CI for every PR; neither this extraction allowance nor the historical
 exact/runtime skip can disable it.
 
+<a id="layer-restructuring"></a>
+### Intra-crate layer restructuring
+
+This is a separate mandatory-measurement mode, never a skip. It is considered
+only for a clean base..head range carrying exactly one standalone
+`Restructuring: layers` trailer; a subject prefix alone is not authorization.
+The same range must modify `docs/layering_baseline.csv`, and valid base/head
+CSV baselines must show that both A1 metrics (back-edge rows and summed
+references) do not increase and at least one strictly decreases. Rows must be
+unique back-edges with positive safe-integer counts; a header-only zero-edge
+baseline is valid. Evidence comes from `git show <base/head>:docs/layering_baseline.csv`,
+not declared numbers in the commit message. At least one actual Git R record
+with positive similarity is required: distinct `src/**/*.rs` source/destination,
+source absent at head and destination present; copies do not qualify. Changed
+Rust files are checked with the extraction ghost-code guard: renamed files
+contribute only their rename-aware edit hunks, while every other changed
+`src/**/*.rs` file is judged on its full changed lines; non-renamed production
+changes alongside the renames are expected and allowed (they are exactly what
+the bounded-Ir tolerance covers). Changed `src/ghost/` paths or changed ghost
+code keep exact proof. Cargo manifests/lockfiles, build scripts, `.cargo/`,
+and toolchain changes are forbidden; no build-graph change is accepted. Only
+conflicting declaration trailers reject the mode, and they are recognized
+only as case-sensitive, content-bearing, column-0 trailer lines: an
+`Extraction: …` trailer, or a `Restructuring:` trailer that is not exactly
+`Restructuring: layers`. Wrapped prose that merely begins a line with the
+word `extraction:` does not affect admission; ordinary body prose and
+trailer-shaped lines do not affect admission. Any declaration that fails these
+conditions suppresses the runtime skip and prefix policies and stays exact.
+
+For an admitted range, the production probe remains mandatory at the same
+base/head endpoints, with the same harness, features, flags, and toolchain.
+Normalized `.text` may drift; both Ir counts must be positive safe integers and
+`abs((Ir_head - Ir_base) / Ir_base) <= 0.001` in either direction. The
+base-excluded `tokens_new` production ghost check remains red on any new token.
+This bound is relocation tolerance, not a zero-cost proof, performance GO, or
+a claim that a real production probe passed. Counterfactuals and injected
+read-only runner-evidence wiring are covered in
+`tests/ghost_layer_restructuring_policy_fixtures.mjs` (executed by
+`tests/ghost_extraction_policy.test.mjs`) and the runner self-test.
+The ghost-zero-cost gate remains mandatory; neither this mode nor extraction
+can disable it.
 
 ## 7. CI
 

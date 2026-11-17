@@ -322,7 +322,7 @@ impl HeapCore {
         // process-wide setting: the first config materialised wins and a
         // different later value is ignored.
         #[cfg(feature = "alloc-xthread")]
-        let _ = crate::registry::heap_core_xthread::route_pin_cache::publish_configured_slots(
+        let _ = crate::alloc_core::segment_route::route_pin_cache::publish_configured_slots(
             config.resolved_route_pin_cache_slots(),
         );
         let core = AllocCore::new_with_config_for_owner(config, id)?;

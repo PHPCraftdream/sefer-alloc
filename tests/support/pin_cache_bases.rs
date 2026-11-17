@@ -2,7 +2,12 @@
 //! allocator until a set of segment bases is covered.
 
 use std::alloc::{GlobalAlloc, Layout};
+use std::ptr::without_provenance_mut;
+use std::thread;
+use std::time::{Duration, Instant};
 
+use sefer_alloc::alloc_core::segment_header::OWNER_ID_FALLBACK;
+use sefer_alloc::registry::segment_route::RouteDirectory;
 use sefer_alloc::SeferAlloc;
 
 const SEGMENT: usize = 4 * 1024 * 1024;
@@ -15,14 +20,15 @@ fn base_of(addr: usize) -> usize {
 /// covered with `count` blocks each; returns the kept blocks grouped by base.
 /// With `slot_mod != 0` only bases with pairwise distinct
 /// `(base / SEGMENT) % slot_mod` are kept (congruent ones evict each other).
-/// Surplus blocks are freed on the owner thread before returning.
-pub fn allocate_across_bases_with(
+/// Returns the kept blocks grouped by base plus the surplus (both still
+/// live; the caller frees or keeps them).
+fn allocate_once(
     global: &SeferAlloc,
     layout: Layout,
     count: usize,
     bases: usize,
     slot_mod: usize,
-) -> Vec<(usize, Vec<usize>)> {
+) -> (Vec<(usize, Vec<usize>)>, Vec<usize>) {
     let slot_of = |base: usize| {
         if slot_mod == 0 {
             0
@@ -90,12 +96,89 @@ pub fn allocate_across_bases_with(
             .collect::<Vec<_>>(),
         surplus.len()
     );
-    // Free the surplus on the owner thread: own-thread frees, no pin-cache
-    // interaction.
-    for addr in surplus {
-        // SAFETY: live allocation issued above, exact original Layout, freed
-        // once on the owning thread.
-        unsafe { global.dealloc(core::ptr::with_exposed_provenance_mut::<u8>(addr), layout) };
+    // NOT freed here: the caller decides whether to keep or discard the
+    // attempt after the ownership check below.
+    (map, surplus)
+}
+
+/// Bounded wait before retrying after a fallback-owned attempt: preceding
+/// test threads still hold their registry slots (their TLS `Drop` runs at
+/// thread exit); without `alloc-decommit` slot recycle timing differs, so a
+/// retry may need to wait for those leases to release.
+const RETRY_DEADLINE: Duration = Duration::from_secs(60);
+const RETRY_SLEEP: Duration = Duration::from_millis(20);
+
+/// Allocate blocks of `layout` through `global` until `bases` segment bases
+/// are covered with `count` blocks each; returns the kept blocks grouped by
+/// base. With `slot_mod != 0` only bases with pairwise distinct
+/// `(base / SEGMENT) % slot_mod` are kept (congruent ones evict each other).
+/// Surplus blocks are freed on the owner thread before returning.
+///
+/// Determinism guard: every kept base is verified to be owned by a REGISTRY
+/// route (not the `OWNER_ID_FALLBACK` heap). A fallback-owned base makes the
+/// foreign-free path handle the free synchronously through the fallback hook
+/// (`routing.rs` `cacheable == false`) and never inserts a cached pin, which
+/// silently voids the refs oracles of the callers. If any kept base is
+/// fallback-owned, ALL blocks of the attempt are freed on this thread, the
+/// helper waits (bounded) for the preceding test threads' leases/slots to
+/// release, and the whole allocation is retried. Bounded retries do not
+/// weaken any oracle: the retry completes before any caller captures probes,
+/// counters or totals (the helper returns first), and the forget-drop mutant
+/// coverage is untouched — that mutant is detected AFTER the worker join,
+/// far downstream of this setup.
+pub fn allocate_across_bases_with(
+    global: &SeferAlloc,
+    layout: Layout,
+    count: usize,
+    bases: usize,
+    slot_mod: usize,
+) -> Vec<(usize, Vec<usize>)> {
+    let deadline = Instant::now() + RETRY_DEADLINE;
+    loop {
+        let (map, surplus) = allocate_once(global, layout, count, bases, slot_mod);
+        let fallback = map.iter().any(|(base, _)| {
+            // SAFETY: `lookup` reads only the address.
+            match RouteDirectory::global().lookup(without_provenance_mut::<u8>(*base)) {
+                Some(pin) => pin.owner() == OWNER_ID_FALLBACK as usize,
+                None => false,
+            }
+        });
+        if !fallback {
+            // Free the surplus on the owner thread: own-thread frees, no
+            // pin-cache interaction.
+            for addr in surplus {
+                // SAFETY: live allocation issued above, exact original
+                // Layout, freed once on the owning thread.
+                unsafe {
+                    global.dealloc(core::ptr::with_exposed_provenance_mut::<u8>(addr), layout)
+                };
+            }
+            return map;
+        }
+        // Fallback-owned bases: free EVERYTHING from this attempt on this
+        // thread (kept + surplus), then give the registry time to recycle
+        // slots before retrying.
+        for (_, kept) in &map {
+            for addr in kept {
+                // SAFETY: live allocation issued above, exact original
+                // Layout, freed once on the owning thread.
+                unsafe {
+                    global.dealloc(core::ptr::with_exposed_provenance_mut::<u8>(*addr), layout)
+                };
+            }
+        }
+        for addr in surplus {
+            // SAFETY: live allocation issued above, exact original Layout,
+            // freed once on the owning thread.
+            unsafe { global.dealloc(core::ptr::with_exposed_provenance_mut::<u8>(addr), layout) };
+        }
+        assert!(
+            Instant::now() < deadline,
+            "allocations landed on the OWNER_ID_FALLBACK heap: preceding test threads \
+             still hold their leased registry slots (without alloc-decommit slot \
+             recycle timing differs); the refs oracle requires registry-owned \
+             (cacheable) routes"
+        );
+        thread::sleep(RETRY_SLEEP);
     }
-    map
 }

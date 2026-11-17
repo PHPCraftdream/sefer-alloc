@@ -115,7 +115,23 @@ pub fn process_exit_in_progress() -> bool {
     false
 }
 
+static EXIT_LOCK_GIVEUPS: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn record_exit_lock_giveup() {
+    EXIT_LOCK_GIVEUPS.fetch_add(1, Ordering::Relaxed);
+}
+
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn dbg_exit_lock_giveups() -> u64 {
+    EXIT_LOCK_GIVEUPS.load(Ordering::Relaxed)
+}
+
 mod alloc_core {
+    #[cfg(feature = "bench-internals")]
+    pub(crate) use crate::dbg_exit_lock_giveups;
+    pub(crate) use crate::record_exit_lock_giveup;
+
     pub(crate) mod segment_header {
         pub const OWNER_ID_FALLBACK: u32 = 0x7FFF_FFFE;
     }
@@ -125,6 +141,10 @@ mod alloc_core {
 static INITS: StdUsize = StdUsize::new(0);
 
 mod registry {
+    pub(crate) mod fallback_hook {
+        include!("../src/registry/fallback_hook.rs");
+    }
+
     /// Stand-in heap: one loom cell every closure writes.
     pub struct HeapCore {
         cell: loom::cell::UnsafeCell<u32>,
@@ -240,8 +260,37 @@ fn fallback_init_and_lock_on_production_source() {
     // Warm-up: registers every static stand-in.
     loom::model(|| {
         epoch();
-        let _ = fallback::try_with_heap(|heap| heap.touch());
-        let _ = fallback::with_heap(|heap| heap.touch());
+        let before_init = INITS.load(StdOrdering::SeqCst);
+        let mut ran_before_init = false;
+        assert!(!registry::fallback_hook::FallbackHook::global()
+            .try_with_heap(&mut |_| ran_before_init = true));
+        assert!(
+            !ran_before_init,
+            "unregistered hook must not invoke closure"
+        );
+        let mut fallback_ran_before_init = false;
+        assert!(fallback::try_with_heap(|_| fallback_ran_before_init = true).is_none());
+        assert!(
+            !fallback_ran_before_init,
+            "pre-init fallback try must not invoke closure"
+        );
+        assert_eq!(INITS.load(StdOrdering::SeqCst), before_init);
+
+        let fallback_touched = fallback::with_heap(|heap| heap.touch()).expect("ready fallback");
+        let inits_after_ready = INITS.load(StdOrdering::SeqCst);
+        let mut hook_touched = None;
+        assert!(registry::fallback_hook::FallbackHook::global()
+            .try_with_heap(&mut |heap| hook_touched = Some(heap.touch())));
+        assert_eq!(
+            INITS.load(StdOrdering::SeqCst),
+            inits_after_ready,
+            "registered hook must use the already-ready fallback"
+        );
+        assert_eq!(
+            hook_touched,
+            Some(fallback_touched + 1),
+            "registered hook must access the same fallback heap as the direct witness"
+        );
         let _ = fallback::lock_acquisitions();
         fallback::record_exit_lock_giveup();
     });

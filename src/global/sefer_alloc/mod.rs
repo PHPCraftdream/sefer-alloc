@@ -45,7 +45,7 @@
 //! bookkeeping BEFORE any issue — the slot's `RouteSlots` handle array,
 //! each route entry, and its Small sidecar or Large descriptor word — via
 //! explicit `System` allocations (`segment_table/route_slots.rs`,
-//! `segment_route/directory/`) and OS-backed reservations, which bypass
+//! `alloc_core::segment_route/directory/`) and OS-backed reservations, which bypass
 //! the installed allocator by construction and therefore cannot recurse.
 //! There is no per-thread handle left to install at claim time (the
 //! former cross-thread free-stack plant is gone); the claim-time bind
@@ -55,7 +55,7 @@
 //! of the protocol: a foreign free resolves the block's route and
 //! performs one RMW/CAS into the already-materialised independent
 //! sidecar or descriptor word — lookup, removal, and pin release never
-//! allocate (`segment_route/mod.rs`). The `HeapCore` alloc/dealloc paths
+//! allocate (`alloc_core::segment_route/mod.rs`). The `HeapCore` alloc/dealloc paths
 //! use no `std` collections on top of these seams; nothing reachable
 //! from them touches the selected global allocator.
 //!

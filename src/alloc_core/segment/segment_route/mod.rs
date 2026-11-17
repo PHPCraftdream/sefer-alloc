@@ -11,28 +11,38 @@
 //! reclaimed on the last pin. Pins do not keep reservation memory alive: an independent
 //! owner ledger must do that until every unpublished free is accounted for.
 
-// Atomic seam for source-including Loom harnesses (see
-// tests/loom_b4_r1_pin_cache.rs, precedent
-// tests/loom_sidecar_bitmap_actual.rs): the protocol files below resolve
-// their atomics through `super` instead of `core::sync::atomic`, so a
-// harness re-exporting these names from its root module runs the REAL
-// production code on loom atomics.
+// Atomic seam for source-including Loom harnesses. The protocol files resolve
+// their atomics through `super`, so the harness can re-export loom atomics and
+// execute the same production sources.
 pub(crate) use core::sync::atomic::{
     fence, AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering,
 };
 
 mod directory;
+#[path = "route_protocol/error.rs"]
 mod error;
+#[path = "route_protocol/kind.rs"]
 mod kind;
+#[path = "route_protocol/large_state.rs"]
 mod large_state;
+#[path = "route_state/pin.rs"]
 mod pin;
+#[path = "route_state/registration.rs"]
 mod registration;
+#[path = "route_protocol/route_cut.rs"]
 mod route_cut;
+#[path = "route_state/route_pin_cache.rs"]
+pub(crate) mod route_pin_cache;
+#[path = "route_protocol/route_record.rs"]
 mod route_record;
+#[path = "route_protocol/route_scan.rs"]
 mod route_scan;
+#[path = "route_state/shard_lock.rs"]
 mod shard_lock;
+#[path = "route_state/small_sidecar.rs"]
 mod small_sidecar;
 #[cfg(all(miri, feature = "internals", feature = "bench-internals"))]
+#[path = "route_protocol/terminal_publication_gate.rs"]
 mod terminal_publication_gate;
 
 pub use directory::RouteDirectory;
