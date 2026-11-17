@@ -5,12 +5,13 @@
 // multiset of (target, package, features, MIRIFLAGS, post-`--` args,
 // provenance model, borrows) records — the union of their sharding
 // replacements (`miri-core-pin-cache`, `miri-core-rest`,
-// `miri-fastbin-oracles`, `miri-fastbin-integrity`, `miri-plain-heavy`,
+// `miri-fastbin-oracles`, `miri-fastbin-integrity-nl7`,
+// `miri-fastbin-integrity-rest`, `miri-plain-heavy`,
 // `miri-plain-rest`). Per old job, the union of its two shards must equal
 // that old job's own record set. Nothing may be dropped, added, re-flagged
 // or re-ordered semantically; splitting one multi-target cargo invocation
 // into several invocations with identical flags/features/args is allowed
-// (the normalized records are identical).
+// (the normalized records are identical). miri-fastbin now has three shards (oracles + integrity-nl7 + integrity-rest).
 //
 // (`--snapshot <git-ref>` regenerates the fixture; the checked-in copy lives
 // at tests/miri_sharding_before_19cbc5f8.json). No Cargo, no network on the
@@ -25,9 +26,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export const OLD_JOBS = ['miri-core', 'miri-fastbin', 'miri-plain'];
 export const NEW_JOBS = ['miri-core-pin-cache', 'miri-core-rest', 'miri-fastbin-oracles',
-  'miri-fastbin-integrity', 'miri-plain-heavy', 'miri-plain-rest'];
+  'miri-fastbin-integrity-nl7', 'miri-fastbin-integrity-rest', 'miri-plain-heavy', 'miri-plain-rest'];
 export const SHARD_GROUPS = { 'miri-core': ['miri-core-pin-cache', 'miri-core-rest'],
-  'miri-fastbin': ['miri-fastbin-oracles', 'miri-fastbin-integrity'],
+  'miri-fastbin': ['miri-fastbin-oracles', 'miri-fastbin-integrity-nl7', 'miri-fastbin-integrity-rest'],
   'miri-plain': ['miri-plain-heavy', 'miri-plain-rest'] };
 const MIRI_SHARD_ACTIONS = NEW_JOBS.map((id) => `.github/actions/ci-${id}/action.yml`);
 

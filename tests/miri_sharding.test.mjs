@@ -50,10 +50,10 @@ const beforeText = [
   ]),
 ].join('\n');
 
-test('structure constants: three old jobs, six shard jobs, two shards each', () => {
+test('structure constants: three old jobs, seven shard jobs', () => {
   assert.deepEqual(OLD_JOBS, ['miri-core', 'miri-fastbin', 'miri-plain']);
   assert.deepEqual(Object.keys(SHARD_GROUPS), OLD_JOBS);
-  for (const shards of Object.values(SHARD_GROUPS)) assert.equal(shards.length, 2);
+  for (const shards of Object.values(SHARD_GROUPS)) assert.ok(shards.length >= 2);
   assert.deepEqual(new Set(NEW_JOBS), new Set(Object.values(SHARD_GROUPS).flat()));
 });
 
@@ -80,7 +80,8 @@ test('green path: shard unions equal the old job unions', () => {
     stub('miri-core-pin-cache', STRICT, [step(TB, 'cargo miri test --features "alloc-global fastbin internals" --test miri_depot_cycle 2>&1 | tee "$RUNNER_TEMP/x.log"\ngrep -F "[x] COMPLETE" "$RUNNER_TEMP/x.log"')]),
     stub('miri-core-rest', STRICT, [step(null, 'cargo miri test --locked --features "alloc-core" --test class_leaves_publication_miri')]),
     stub('miri-fastbin-oracles', STRICT, [step(null, 'cargo miri test --features "alloc-global alloc-xthread fastbin internals" --test regression_merged -- regression_magazine_oracles::')]),
-    stub('miri-fastbin-integrity', STRICT, []),
+    stub('miri-fastbin-integrity-nl7', STRICT, []),
+    stub('miri-fastbin-integrity-rest', STRICT, []),
     stub('miri-plain-heavy', PLAIN, [step(null, 'cargo miri test --features "alloc-global alloc-xthread internals bench-internals" --test a')]),
     stub('miri-plain-rest', PLAIN, [step(null, 'cargo miri test --features "alloc-global alloc-xthread internals bench-internals" --test b')]),
   ].join('\n');
@@ -90,7 +91,7 @@ test('green path: shard unions equal the old job unions', () => {
 });
 
 test('RED: dropping one target from a shard is detected', () => {
-  // All six shards exist, but the miri-core pair "loses" the class-leaves target.
+  // All seven shards exist, but the miri-core pair "loses" the class-leaves target.
   const afterText = [
     'name: ci',
     'on: push',
@@ -98,7 +99,8 @@ test('RED: dropping one target from a shard is detected', () => {
     stub('miri-core-pin-cache', STRICT, [step(TB, 'cargo miri test --features "alloc-global fastbin internals" --test miri_depot_cycle')]),
     stub('miri-core-rest', STRICT, []),
     stub('miri-fastbin-oracles', STRICT, [step(null, 'cargo miri test --features "alloc-global alloc-xthread fastbin internals" --test regression_merged -- regression_magazine_oracles::')]),
-    stub('miri-fastbin-integrity', STRICT, []),
+    stub('miri-fastbin-integrity-nl7', STRICT, []),
+    stub('miri-fastbin-integrity-rest', STRICT, []),
     stub('miri-plain-heavy', PLAIN, [step(null, 'cargo miri test --features "alloc-global alloc-xthread internals bench-internals" --test a --test b')]),
     stub('miri-plain-rest', PLAIN, []),
   ].join('\n');
@@ -114,7 +116,7 @@ test('RED: flag drift (feature change or provenance flip) is detected', () => {
     .replaceAll('  miri-fastbin:', '  miri-fastbin-oracles:')
     .replaceAll('  miri-plain:', '  miri-plain-heavy:')
     .replace('--features "alloc-global fastbin internals"', '--features "alloc-global fastbin internals extra"')
-    + ['', '  miri-core-rest:', '    steps: []', '', '  miri-fastbin-integrity:', '    steps: []', '', '  miri-plain-rest:', '    steps: []'].join('\n');
+    + ['', '  miri-core-rest:', '    steps: []', '', '  miri-fastbin-integrity-nl7:', '    steps: []', '', '  miri-fastbin-integrity-rest:', '    steps: []', '', '  miri-plain-rest:', '    steps: []'].join('\n');
   const r = verifySharding(beforeRecords(), featureDrift);
   assert.equal(r.ok, false);
   assert.ok(r.failures.some((f) => f.includes('"extra"')), r.failures.join('\n'));
@@ -124,7 +126,7 @@ test('RED: flag drift (feature change or provenance flip) is detected', () => {
     .replaceAll('  miri-fastbin:', '  miri-fastbin-oracles:')
     .replaceAll('  miri-plain:', '  miri-plain-heavy:')
     .replace('MIRIFLAGS: "' + PLAIN + '"', 'MIRIFLAGS: "' + STRICT + '"')
-    + ['', '  miri-core-rest:', '    steps: []', '', '  miri-fastbin-integrity:', '    steps: []', '', '  miri-plain-rest:', '    steps: []'].join('\n');
+    + ['', '  miri-core-rest:', '    steps: []', '', '  miri-fastbin-integrity-nl7:', '    steps: []', '', '  miri-fastbin-integrity-rest:', '    steps: []', '', '  miri-plain-rest:', '    steps: []'].join('\n');
   const rp = verifySharding(beforeRecords(), provenanceDrift);
   assert.equal(rp.ok, false);
   assert.ok(rp.failures.some((f) => f.includes('miri-plain')), rp.failures.join('\n'));
@@ -162,7 +164,7 @@ test('fixture: schema, ref, sources and expected record counts (40/4/6)', () => 
 
 test('green: post-commit tree — old jobs absent, shards compared against fixture', () => {
   // The real current tree is the post-commit state: the expanded ci.yml has
-  // only the six shard jobs; the old miri-core/fastbin/plain jobs and their
+  // only the seven shard jobs; the old miri-core/fastbin/plain jobs and their
   // actions are gone from the working tree. The fixture supplies the "before".
   const expanded = effectiveWorkflow(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
   const present = jobRecords(expanded.text);
@@ -178,7 +180,8 @@ test('RED: fixture-based before — dropping one shard target is detected', () =
     stub('miri-core-pin-cache', STRICT, [step(TB, 'cargo miri test --locked --features "alloc-global fastbin internals" --test a')]),
     stub('miri-core-rest', STRICT, []), // target lost
     stub('miri-fastbin-oracles', STRICT, [step(null, 'cargo miri test --features "alloc-global alloc-xthread fastbin internals" --test c -- d')]),
-    stub('miri-fastbin-integrity', STRICT, [step(null, 'cargo miri test --features "fastbin internals" --test e --test f')]),
+    stub('miri-fastbin-integrity-nl7', STRICT, [step(null, 'cargo miri test --features "fastbin internals" --test e')]),
+    stub('miri-fastbin-integrity-rest', STRICT, [step(null, 'cargo miri test --features "fastbin internals" --test f')]),
     stub('miri-plain-heavy', PLAIN, [step(null, 'cargo miri test --features "internals" --test g --test h')]),
     stub('miri-plain-rest', PLAIN, [step(null, 'cargo miri test --features "alloc-xthread" --test i')]),
   ].join('\n');
@@ -193,7 +196,8 @@ test('RED: fixture-based before — feature drift in a shard is detected', () =>
     stub('miri-core-pin-cache', STRICT, [step(TB, 'cargo miri test --locked --features "alloc-global fastbin internals extra" --test a')]),
     stub('miri-core-rest', STRICT, [step(null, 'cargo miri test --locked --features "alloc-core" --test b')]),
     stub('miri-fastbin-oracles', STRICT, [step(null, 'cargo miri test --features "alloc-global alloc-xthread fastbin internals" --test c -- d')]),
-    stub('miri-fastbin-integrity', STRICT, [step(null, 'cargo miri test --features "fastbin internals" --test e --test f')]),
+    stub('miri-fastbin-integrity-nl7', STRICT, [step(null, 'cargo miri test --features "fastbin internals" --test e')]),
+    stub('miri-fastbin-integrity-rest', STRICT, [step(null, 'cargo miri test --features "fastbin internals" --test f')]),
     stub('miri-plain-heavy', PLAIN, [step(null, 'cargo miri test --features "internals" --test g --test h')]),
     stub('miri-plain-rest', PLAIN, [step(null, 'cargo miri test --features "alloc-xthread" --test i')]),
   ].join('\n');
