@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an existing test, oracle, or guard script actually RUNS under some gate (npm run check and/or a CI job) -- wiring, dead scripts, missing feature/profile rows, sentinel-guard scope -- as opposed to whether the underlying OS behavior is platform-verified or proof-verified (the two categories above).
 
-**Card count:** 32 numbered records (re-derived 2026-11-15 after closing item 275; items 107 and 175 are CLOSED and not current records here, and item 275 is now a CLOSED pointer retained for lookup — full closure records in `RESOLVED.md`).
+**Card count:** 35 numbered records (re-derived 2026-11-17 after filing items 281–283; items 107 and 175 are CLOSED and not current records here, and item 275 is now a CLOSED pointer retained for lookup — full closure records in `RESOLVED.md`).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -382,5 +382,26 @@ Item 107 is CLOSED (2026-10-13); it is not a current record here — its closure
     > - **Evidence:** `scripts/test-inventory.mjs` (lands in main with the P0.2 pilot PR), lines ~12–19, 85–97, 385–394 — approximate, from the pilot branch; `docs/plans/2026-11-15-workspace-restructure-plan.md` (P0.2).
 
 Item 260 is CLOSED (2026-11-09); the accepted two-phase proof and full history are in `RESOLVED.md` §260.
+
+281. **[T, filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`] `TEST_SELECTION=enforce` enablement by the revision-4 criterion.**
+
+    - **Status:** OPEN — do not enable the repository variable until the shadow-measurement criterion is met.
+    - **Current:** `TEST_SELECTION` is unset (verified 2026-11-17); the modeled window had zero subset runs in 28 runs (PR #258, `docs/perf/TEST_SELECTION_ENFORCE_IMPACT.md`). Require a shadow measurement over at least 30 ordinary runs, including red ones, with zero failed tests outside the selected subset and subset-run share greater than zero. Safety net: nightly full `main` run and `CI: full` at sprint close.
+    - **Next trigger:** P1.5a/b land (crates-graph selection; Node-only changes no longer run all Rust tests), then re-measure the shadow window.
+    - **Evidence:** PR #258 (`a3194012`); `scripts/test-selection-impact.mjs`; `.github/workflows/ci.yml:580-614`; `docs/perf/TEST_SELECTION_ENFORCE_IMPACT.md`.
+
+282. **[T, filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`] CI critical path — rebalance check-matrix by rows and aarch64 (perf item 155).**
+
+    - **Status:** OPEN — the full-run wall-clock did not shrink after Miri sharding; longest jobs are now the next lever.
+    - **Current:** the longest jobs include test (aarch64), miri (core, TreeBorrows pin cache), check-matrix, miri-plain (heavy), and kani. The pre-sharding check-matrix median was 1728 s across six full attempts; see perf item 155 in `docs/perf/OPEN_ITEMS.md`.
+    - **Next trigger:** as new full-run data accumulates, rebalance check-matrix by rows and aarch64; recompute with `node scripts/ci-long-jobs.mjs`.
+    - **Evidence:** perf item 155 in `docs/perf/OPEN_ITEMS.md`; `docs/perf/CI_LONG_JOBS.md`; PRs #260 (`19cbc5f8`), #261 (`cd316a3b`), #262 (`dcccdcf3`).
+
+283. **[T, filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`] Miri shard rebalance cadence (perf item 156).**
+
+    - **Status:** OPEN — periodic rebalance when measured target runtimes skew.
+    - **Current:** shards were equilibrated once by PR #262 (`dcccdcf3`) using measured target times; the union-equivalence gate is `node scripts/verify-miri-sharding.mjs`. See perf item 156 in `docs/perf/OPEN_ITEMS.md`.
+    - **Next trigger:** when newly accumulated shard runtimes skew again, rebalance by the PR #262 method and rerun the equivalence gate.
+    - **Evidence:** perf item 156 in `docs/perf/OPEN_ITEMS.md`; PR #262 (`dcccdcf3`); `scripts/verify-miri-sharding.mjs`; `.github/workflows`.
 
 Item 268 is CLOSED (2026-11-08); the exact-source Loom invocation and pipeline repair evidence is in `RESOLVED.md`.
