@@ -246,7 +246,8 @@ the smoke row covers those scenarios.
 | `miri-core-pin-cache` | miri (core, pin cache) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `miri-core-rest` | miri (core, rest) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `miri-core-tb` | miri (core, pin cache TreeBorrows) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
-| `miri-fastbin-integrity` | miri (fastbin, integrity) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
+| `miri-fastbin-integrity-nl7` | miri (fastbin, integrity nl7) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
+| `miri-fastbin-integrity-rest` | miri (fastbin, integrity rest) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `miri-fastbin-oracles` | miri (fastbin, magazine oracles) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `miri-plain-heavy` | miri-plain (heavy regressions) | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `miri-plain-rest` | miri-plain (rest) | `seam`: source/crates/Cargo, loom/miri tests and manifests |

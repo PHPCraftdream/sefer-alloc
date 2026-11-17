@@ -580,71 +580,76 @@ One target means zero target-splitting ceiling. For multiple targets, ideal 2-wa
 | 43410623227/131835907193 globalalloc-model under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43410623227/131835907208 miri (core) | 28 / 38 | 1818.0 | 1088.6 | 0–729.4 |
 | 43410623227/131835907233 miri (core, pin cache TreeBorrows) | 1 / 1 | 1753.6 | 1753.6 | 0–0.0 |
-| 43410623227/131835907334 miri (fastbin) | 4 / 2 | 1907.2 | 0.0 | 0–953.6 |
+| 43410623227/131835907334 miri (fastbin) | 4 / 3 | 1907.2 | 0.0 | 0–953.6 |
 | 43410623227/131835907372 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
 | 43410623227/131835907579 numa-shim macOS under miri (mod platform cfg regression guard) | default/unknown / 0 | no log | no log | unknown |
 | 43410623227/131835907616 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
-| 43410623227/131835907640 miri-plain | 6 / 5 | 1571.4 | 40.3 | 0–785.7 |
+| 43410623227/131835907640 miri-plain | 6 / 4 | 1571.4 | 40.3 | 0–785.7 |
 | 43582569269/132410259772 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
 | 43582569269/132410259958 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
 | 43582569269/132410260038 miri (core) | 28 / 38 | 2094.4 | 1345.6 | 0–748.8 |
 | 43582569269/132410260048 miri (core, pin cache TreeBorrows) | 1 / 1 | 1670.3 | 1670.3 | 0–0.0 |
 | 43582569269/132410260061 globalalloc-model under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43582569269/132410260082 once-ptr-cell under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
-| 43582569269/132410260141 miri (fastbin) | 4 / 2 | 1882.4 | 0.0 | 0–941.2 |
-| 43582569269/132410260402 miri-plain | 6 / 5 | 1643.4 | 41.4 | 0–821.7 |
+| 43582569269/132410260141 miri (fastbin) | 4 / 3 | 1882.4 | 0.0 | 0–941.2 |
+| 43582569269/132410260402 miri-plain | 6 / 4 | 1643.4 | 41.4 | 0–821.7 |
 | 43582569269/132410260407 numa-shim macOS under miri (mod platform cfg regression guard) | default/unknown / 0 | no log | no log | unknown |
 | 43704208363/132795418436 once-ptr-cell under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43704208363/132795418475 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
 | 43704208363/132795418733 miri (core) | 28 / 38 | 1271.0 | 807.3 | 0–463.7 |
-| 43704208363/132795418762 miri-plain | 6 / 5 | 1214.6 | 38.1 | 0–607.3 |
+| 43704208363/132795418762 miri-plain | 6 / 4 | 1214.6 | 38.1 | 0–607.3 |
 | 43704208363/132795418778 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
 | 43704208363/132795418894 globalalloc-model under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
-| 43704208363/132795418911 miri (fastbin) | 4 / 2 | 1979.3 | 0.0 | 0–989.7 |
+| 43704208363/132795418911 miri (fastbin) | 4 / 3 | 1979.3 | 0.0 | 0–989.7 |
 | 43704208363/132795418960 miri (core, pin cache TreeBorrows) | 1 / 1 | 2097.2 | 2097.2 | 0–0.0 |
 | 43704208363/132795418986 numa-shim macOS under miri (mod platform cfg regression guard) | default/unknown / 0 | no log | no log | unknown |
 | 43781371392/133019282353 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
 | 43781371392/133019282384 globalalloc-model under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43781371392/133019282620 once-ptr-cell under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
-| 43781371392/133019282675 miri (fastbin) | 4 / 2 | no log | no log | unknown |
+| 43781371392/133019282675 miri (fastbin) | 4 / 3 | no log | no log | unknown |
 | 43781371392/133019282678 numa-shim macOS under miri (mod platform cfg regression guard) | default/unknown / 0 | no log | no log | unknown |
 | 43781371392/133019282717 miri (core, pin cache TreeBorrows) | 1 / 1 | no log | no log | unknown |
 | 43781371392/133019282727 miri (core) | 28 / 38 | no log | no log | unknown |
 | 43781371392/133019282732 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
-| 43781371392/133019282758 miri-plain | 6 / 5 | no log | no log | unknown |
+| 43781371392/133019282758 miri-plain | 6 / 4 | no log | no log | unknown |
 | 43851422289/133244747145 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
 | 43851422289/133244747168 globalalloc-model under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43851422289/133244747299 miri (core) | 28 / 38 | no log | no log | unknown |
 | 43851422289/133244747615 miri (core, pin cache TreeBorrows) | 1 / 1 | no log | no log | unknown |
 | 43851422289/133244747625 once-ptr-cell under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43851422289/133244747693 numa-shim macOS under miri (mod platform cfg regression guard) | default/unknown / 0 | no log | no log | unknown |
-| 43851422289/133244747713 miri-plain | 6 / 5 | no log | no log | unknown |
-| 43851422289/133244747871 miri (fastbin) | 4 / 2 | no log | no log | unknown |
+| 43851422289/133244747713 miri-plain | 6 / 4 | no log | no log | unknown |
+| 43851422289/133244747871 miri (fastbin) | 4 / 3 | no log | no log | unknown |
 | 43851422289/133244747905 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
 | 43886332211/133365634550 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
 | 43886332211/133365635726 once-ptr-cell under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43886332211/133365636514 globalalloc-model under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
-| 43886332211/133365636628 miri (fastbin) | 4 / 2 | no log | no log | unknown |
+| 43886332211/133365636628 miri (fastbin) | 4 / 3 | no log | no log | unknown |
 | 43886332211/133365636722 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
 | 43886332211/133365636764 miri (core) | 28 / 38 | no log | no log | unknown |
-| 43886332211/133365636928 miri-plain | 6 / 5 | no log | no log | unknown |
+| 43886332211/133365636928 miri-plain | 6 / 4 | no log | no log | unknown |
 | 43886332211/133365636939 miri (core, pin cache TreeBorrows) | 1 / 1 | no log | no log | unknown |
 | 43886332211/133365637161 numa-shim macOS under miri (mod platform cfg regression guard) | default/unknown / 0 | no log | no log | unknown |
 
 Miri SB/TB execution remains semantically distinct even where compile artifacts might be shared; a single-target pass cannot be sharded by target. Kani setup/toolchain (~10s plus ~2.7s installer in the logs) is distinct from its proof execution.
 
-### Sharding plan (landed 2026-11-16; to be measured by CI after merge)
+### Sharding plan (landed 2026-11-16; rebalanced 2026-11-17 from measured CI wall times)
 
-The three divisible miri jobs are sharded by test target; `miri-core-tb` is a single target and stays whole. The union of each shard pair equals the old job's command set exactly (mechanical proof: `node scripts/verify-miri-sharding.mjs`; a normalized record = target/package/features/MIRIFLAGS/post-`--` args/provenance model/borrows). Expected savings are ESTIMATES derived from the attribution table above, minus shard setup/toolchain replication and balance overhead — no post-merge measurement exists yet.
+The three divisible miri jobs are sharded by test target; `miri-core-tb` is a single target and stays whole. The union of each shard set equals the old job's command set exactly (mechanical proof: `node scripts/verify-miri-sharding.mjs`; a normalized record = target/package/features/MIRIFLAGS/post-`--` args/provenance model/borrows). Shards were rebalanced against per-target durations measured in run 43984907030; expected savings are ESTIMATES derived from the attribution table above, minus shard setup/toolchain replication and balance overhead.
 
 | old job | shards | content | measured basis / expected old-execution split (estimate) |
 |---|---|---|---|
 | miri (core) | `miri-core-pin-cache` | the single dominant target `b4_r1_pin_cache_miri` (narrow, strict/SB) | 807.3–1345.6 s of 1271.0–2094.4 s execution — one target, so it alone bounds a shard; old execution is split ≈1346 s vs ≈690 s (unbalanced by construction, the floor is the target itself) |
 | miri (core) | `miri-core-rest` | the other 39 commands (J13b guards/advice, Box witnesses incl. 4 EXPECTED-RED pins, leases, merged regressions) | ≈690 s of the measured execution, dominated by `miri_global_box_acceptance` 146.4–157.2 s and `miri_depot_cycle` 131.2–140.4 s |
 | miri (fastbin) | `miri-fastbin-oracles` | `regression_merged -- regression_magazine_oracles::` | no per-target logs exist; split by the two action commands |
-| miri (fastbin) | `miri-fastbin-integrity` | bump-direct-refill + NL-3/NL-7 integrity suite | same |
-| miri-plain | `miri-plain-heavy` | `regression_xthread_large_free_no_leak` + `b4_r1_pin_cache_miri` (expected-heaviest plain targets) | per-target plain logs do not exist (only the header-race target 38.1–41.4 s is attributed); the 2/2 target split will be measured by CI |
-| miri-plain | `miri-plain-rest` | thread-free alias + small-ring regressions, header race, tiny terminal owner invariant | same |
+| miri (fastbin) | `miri-fastbin-integrity-nl7` | NL-7 safe large-realloc integrity suite only (`nl7_safe_large_realloc_integrity`, 2 #[test] fns) | measured 1329.55 s target (run 43984907030) — single target above 900 s gets its own shard; not further divisible without test-name filters (per-test durations unknown) |
+| miri (fastbin) | `miri-fastbin-integrity-rest` | bump-direct-refill + NL-3 integrity targets | measured 294.03 s (`nl3_safe_xthread_churn_integrity`) + 22.15 s (`regression_bump_direct_refill`), run 43984907030 |
+| miri-plain | `miri-plain-heavy` | `b4_r1_pin_cache_miri` only | measured ≈1041 s (00:20:45 → 00:38:06 marker span, run 43984907030) — single heaviest plain target, own shard; a single target cannot be split further |
+| miri-plain | `miri-plain-rest` | large free/no-leak + thread-free alias + small-ring regressions, header race, tiny terminal owner invariant | measured per-target, run 43984907030: alias 47.37 s + small ring 30.58 s + header race 27.50 s + terminal 11.31 s + large free 8.00 s |
+
+### Post-merge measurement of the shard wall times (runner job elapsed, s)
+
+Run 43977203668 (first landing of the sharding): integrity 1764, heavy 1285, plain-rest 204, oracles failed (9 s). Run 43984907030 (after the first rebalance): integrity 1771, heavy 1153, plain-rest 163, oracles 73, core pin cache 828/866, core rest 882/858, TreeBorrows 1379/1444. These wall times motivated the 2026-11-17 rebalance of the fastbin-integrity and miri-plain shards recorded above.
 
 ## Workflow/tier context
 

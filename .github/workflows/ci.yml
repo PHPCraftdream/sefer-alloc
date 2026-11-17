@@ -745,16 +745,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-miri-fastbin-oracles
-  miri-fastbin-integrity:
+  miri-fastbin-integrity-nl7:
     needs: changes
     if: needs.changes.outputs.seam == 'true'
-    name: miri (fastbin, integrity)
+    name: miri (fastbin, integrity nl7)
     runs-on: ubuntu-latest
     env:
       MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/ci-miri-fastbin-integrity
+      - uses: ./.github/actions/ci-miri-fastbin-integrity-nl7
+  miri-fastbin-integrity-rest:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
+    name: miri (fastbin, integrity rest)
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci-miri-fastbin-integrity-rest
   miri-plain-heavy:
     needs: changes
     if: needs.changes.outputs.seam == 'true'

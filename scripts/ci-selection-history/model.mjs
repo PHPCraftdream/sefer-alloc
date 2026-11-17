@@ -188,7 +188,7 @@ export function buildWeightsFromJobs(runJson, ciJobs) {
   // Historical run dumps predate the 2026-11-16 miri sharding; map each old job
   // name to a shard with the identical gating group (all six shards are `seam`),
   // so saved runs keep contributing their weights instead of landing unmapped.
-  const SHARD_ALIASES = { 'miri (core)': 'miri-core-rest', 'miri (fastbin)': 'miri-fastbin-integrity', 'miri-plain': 'miri-plain-rest' };
+  const SHARD_ALIASES = { 'miri (core)': 'miri-core-rest', 'miri (fastbin)': 'miri-fastbin-integrity-rest', 'miri-plain': 'miri-plain-rest' };
   const byId = new Map(ciJobs.map(j => [j.id, j]));
   const weights = new Map(ROOT_GROUPS.concat().map(g => [g, 0]));
   const unmapped = [], skipped = [], excluded = [];

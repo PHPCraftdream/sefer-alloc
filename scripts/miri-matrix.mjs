@@ -113,15 +113,18 @@ export const MIRI_TARGETS = [
   green('miri-fastbin-oracles', 'regression_merged', 'alloc-global alloc-xthread alloc-decommit fastbin internals', {
     args: ['--', 'regression_magazine_oracles::'],
   }),
-  ...['regression_bump_direct_refill', 'nl3_safe_xthread_churn_integrity',
-    'nl7_safe_large_realloc_integrity']
-    .map((test) => green('miri-fastbin-integrity', test, 'alloc-global alloc-xthread alloc-decommit fastbin internals')),
-  // Sharded by measured/expected target wall time (docs/perf/CI_LONG_JOBS.md):
-  // the large free/no-leak regression and the b4-r1 pin-cache cell are the
-  // expected-heaviest plain targets; the rest of the plain suite is the other shard.
-  green('miri-plain-heavy', 'regression_xthread_large_free_no_leak', plainFeatures, { model: 'plain' }),
+  ...['regression_bump_direct_refill', 'nl3_safe_xthread_churn_integrity']
+    .map((test) => green('miri-fastbin-integrity-rest', test, 'alloc-global alloc-xthread alloc-decommit fastbin internals')),
+  // NL-7 is a single measured ~1330s target (run 43984907030): too heavy to
+  // share a shard, but the file has exactly 2 #[test] fns with unknown
+  // per-test durations, so it is not further divisible without name filters.
+  green('miri-fastbin-integrity-nl7', 'nl7_safe_large_realloc_integrity', 'alloc-global alloc-xthread alloc-decommit fastbin internals'),
+  // Sharded by measured target wall time (docs/perf/CI_LONG_JOBS.md): the
+  // b4-r1 pin-cache cell (~1041s, run 43984907030) is the single heaviest
+  // plain target and gets its own shard; the rest of the plain suite
+  // (including the ~8s large free/no-leak regression) is the other shard.
   green('miri-plain-heavy', 'b4_r1_pin_cache_miri', plainFeatures, { model: 'plain' }),
-  ...['regression_xthread_thread_free_alias_miri', 'regression_xthread_small_ring_miri']
+  ...['regression_xthread_large_free_no_leak', 'regression_xthread_thread_free_alias_miri', 'regression_xthread_small_ring_miri']
     .map((test) => green('miri-plain-rest', test, plainFeatures, { model: 'plain' })),
   // b4-r1 round 2 (P2): the same cell under narrow provenance — REAL Box
   // ownership transported via a Send wrapper, cache-hit activation oracle

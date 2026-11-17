@@ -6,10 +6,10 @@ runs:
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: miri
-    - name: thread-free alias and small ring regressions
+    - name: large free/no-leak, thread-free alias and small ring regressions
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
-      run: cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test regression_xthread_thread_free_alias_miri --test regression_xthread_small_ring_miri
+      run: cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test regression_xthread_large_free_no_leak --test regression_xthread_thread_free_alias_miri --test regression_xthread_small_ring_miri
     - name: regression_r2_06_header_race_miri
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
