@@ -13,4 +13,5 @@ runs:
     - name: regression_merged magazine oracles
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
-      run: cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin internals" --test regression_merged -- regression_magazine_oracles::
+      run: |
+        cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin internals" --test regression_merged -- regression_magazine_oracles::
