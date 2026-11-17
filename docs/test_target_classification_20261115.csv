@@ -1702,6 +1702,7 @@ tests/regression_merged/regression_resolver_branch_collapse.rs,regression_resolv
 tests/regression_merged/regression_stamp_metadata_unsafe_boundary.rs,regression_stamp_metadata_unsafe_boundary.rs,support-module,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
 tests/regression_merged/regression_virgin_bitmap_skip.rs,regression_virgin_bitmap_skip.rs,support-module,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
 tests/regression_merged/regression_w3_stats_aliasing_miri.rs,regression_w3_stats_aliasing_miri.rs,support-module,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
+tests/select_tests_compile_coverage.test.mjs,select_tests_compile_coverage.test.mjs,mjs-script,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
 tests/support,support,directory-fixture,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
 tests/support/alloc_core_differential_native_seeds.txt,alloc_core_differential_native_seeds.txt,other-file,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
 tests/support/j13b_cadence_math.rs,j13b_cadence_math.rs,support-module,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,

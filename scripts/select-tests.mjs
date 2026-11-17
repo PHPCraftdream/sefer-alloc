@@ -16,10 +16,18 @@ import { testTargets } from './test-impact-map.mjs';
 
 /** Files that change what every test compiles or links against. */
 const ALWAYS_ALL = /^(Cargo\.(toml|lock)|build\.rs|rust-toolchain(\.toml)?|\.cargo\/.*|deny\.toml|clippy\.toml|rustfmt\.toml|\.rustfmt\.toml)$/;
+export function isAlwaysAll(path) { return ALWAYS_ALL.test(path); }
 /** Non-Rust inputs a test may read at run time: only the tests that read files are selected for them. */
 const DATA_FILE = /^(docs\/|scripts\/|\.github\/|[^/]+\.(md|csv|json|txt)$)/;
+/** Test inputs and standalone Rust examples/benchmarks are treated like other reader data files. */
+export function isDataFile(path) {
+  return DATA_FILE.test(path)
+    || /^tests\/(?!.*\.rs$).+$/.test(path)
+    || /^(?:benches|examples)\/.*\.rs$/.test(path)
+    || /^crates\/[^/]+\/[^/]+\/(?:benches|examples)\/.*\.rs$/.test(path);
+}
 /** A test (or a support file it executes) that touches the file system, the manifest dir or a child process. */
-const READS_FILES = /(CARGO_MANIFEST_DIR|include_str!|include_bytes!|read_to_string|fs::read|File::open|read_dir|Command::new)/;
+const READS_FILES = /(CARGO_MANIFEST_DIR|include_str!|include_bytes!|include\s*!\s*\(|read_to_string|fs::read|File::open|read_dir|Command::new|#\s*\[\s*path\s*=)/;
 /** Compiled only by tools that are not tests (kani); a change selects no test. */
 const TOOL_ONLY = new Set(['src/kani_proofs.rs']);
 const RUST_SRC = /^(src\/|crates\/[^/]+\/[^/]+\/src\/).*\.rs$/;
@@ -70,7 +78,7 @@ export function select({ files, maps, targets, sources, full }) {
     if (TOOL_ONLY.has(f)) continue;
     if (byPath.has(f)) { pick(f, 'changed itself'); continue; }
     if (covering.has(f)) { for (const t of covering.get(f)) pick(t, `executes ${f}`); continue; }
-    if (DATA_FILE.test(f)) { for (const t of fileReaders()) pick(t, `reads files (${f} changed)`); continue; }
+    if (isDataFile(f)) { for (const t of fileReaders()) pick(t, `reads files (${f} changed)`); continue; }
     if (RUST_SRC.test(f) || f.startsWith('tests/')) return all(`${f} is executed by no mapped test`);
     return all(`${f} is not attributable to a test`);
   }
@@ -190,8 +198,30 @@ function selftest() {
   // data files select the file readers (d reads files)
   assert.equal(names(sel(['docs/perf/R.md'])), 'tests/d.rs,tests/e.rs');
   assert.equal(names(sel(['CHANGELOG.md', 'src/n.rs'])), 'tests/a.rs,tests/b.rs,tests/d.rs,tests/e.rs');
+  // Non-Rust files below tests/ and Rust examples/ files are reader inputs.
+  assert.equal(names(sel(['tests/x.test.mjs'])), 'tests/d.rs,tests/e.rs');
+  assert.equal(names(sel(['tests/fixtures/x.json'])), 'tests/d.rs,tests/e.rs');
+  assert.equal(names(sel(['tests/fixtures/x.txt'])), 'tests/d.rs,tests/e.rs');
+  assert.equal(names(sel(['examples/_shared/foo.rs'])), 'tests/d.rs,tests/e.rs');
+  const pathAttrReader = { ...sources, 'tests/a.rs': '#[path = "../examples/_shared/foo.rs"] mod foo;' };
+  assert.equal(names(select({ files: ['examples/_shared/foo.rs'], maps: [row1, row2], targets, sources: pathAttrReader, full: false })), 'tests/a.rs,tests/d.rs,tests/e.rs');
+  const spacedPathAttrReader = { ...sources, 'tests/a.rs': '# [ path = "../examples/_shared/foo.rs"] mod foo;' };
+  assert.equal(names(select({ files: ['examples/_shared/foo.rs'], maps: [row1, row2], targets, sources: spacedPathAttrReader, full: false })), 'tests/a.rs,tests/d.rs,tests/e.rs');
+  assert.equal(names(sel(['crates/core/pkg/benches/probe.rs'])), 'tests/d.rs,tests/e.rs');
+  assert.equal(names(sel(['crates/core/pkg/examples/helper.rs'])), 'tests/d.rs,tests/e.rs');
+  const noReaders = select({ files: ['tests/x.test.mjs'], maps: [{ tests: { 'tests/a.rs': ['src/a.rs'] }, unmapped: {} }], targets: [targets[0]], sources: {}, full: false });
+  assert.deepEqual(noReaders, { mode: 'subset', reason: 'every changed file is attributed', tests: [], why: {} });
+  assert.match(names(sel(['tests/x.rs'])), /^ALL:/);
+  assert.match(names(sel(['src/foo.rs'])), /^ALL:/);
+  // Existing map attribution wins over the reader fallback.
+  const coveringExamples = { ...row1, tests: { ...row1.tests, 'tests/a.rs': [...row1.tests['tests/a.rs'], 'examples/_shared/foo.rs'] } };
+  assert.equal(names(select({ files: ['examples/_shared/foo.rs'], maps: [coveringExamples, row2], targets, sources, full: false })), 'tests/a.rs,tests/e.rs');
+  const explicitReader = { ...sources, 'tests/a.rs': 'const X: &str = include_str!("fixtures/input.json");' };
+  assert.equal(names(select({ files: ['tests/fixtures/input.json'], maps: [row1, row2], targets, sources: explicitReader, full: false })), 'tests/a.rs,tests/d.rs,tests/e.rs');
+  const includedReader = { ...sources, 'tests/a.rs': 'include!("../examples/_shared/b4_interleave_core.rs");' };
+  assert.equal(names(select({ files: ['examples/_shared/b4_interleave_core.rs'], maps: [row1, row2], targets, sources: includedReader, full: false })), 'tests/a.rs,tests/d.rs,tests/e.rs');
   // everything else is "all"
-  for (const f of ['Cargo.toml', 'Cargo.lock', 'build.rs', '.cargo/config.toml', 'src/new_file.rs', 'tests/fixtures/x.in', 'crates/q/w/src/lib.rs', 'weird.bin']) {
+  for (const f of ['Cargo.toml', 'Cargo.lock', 'build.rs', '.cargo/config.toml', 'src/new_file.rs', 'tests/x.rs', 'crates/q/w/src/lib.rs', 'weird.bin']) {
     assert.match(names(sel(['src/n.rs', f])), /^ALL:/, f);
   }
   assert.equal(names(sel(['src/kani_proofs.rs'])), 'tests/e.rs'); // kani-only file: no test affected
