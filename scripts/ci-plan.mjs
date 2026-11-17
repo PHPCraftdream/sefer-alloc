@@ -26,6 +26,7 @@ import assert from 'node:assert/strict';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { effectiveWorkflow } from './ci/effective-workflow.mjs';
+import { affectedCrates, crateForPath, loadCrateGraph, rootAffected } from './ci/crate-graph.mjs';
 
 export const CRATE_GROUPS = {
   'aligned-vmem': 'crate_aligned_vmem',
@@ -117,12 +118,51 @@ export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false
 }
 
 /** @returns {Record<string, boolean>} one boolean per group plus `full`. */
-export function plan({ files, event, trailerFull = false, seamTests = new Set(), cargoBenchOnly = false }) {
+export function plan({ files, event, trailerFull = false, seamTests = new Set(), cargoBenchOnly = false, crateGraph = null, crateGroups = CRATE_GROUPS }) {
   const out = Object.fromEntries([...GROUPS, 'full'].map(g => [g, false]));
   out.always = true;
   const forceFull = event === 'schedule' || event === 'workflow_dispatch' || trailerFull;
+  // Groups wanted ONLY by crate-file rules. With a graph, `fast` always stays
+  // on for a crate change: the root test jobs inside it are narrowed by
+  // select-tests and enforce is off, so fast runs everything anyway. `seam`/`os`
+  // are the real heavy root-crate groups: they are suppressed only when the
+  // root is unaffected by both Cargo edges and reference edges (rootAffected).
+  // Without a graph the old conservative behavior (crate files always select
+  // fast/seam) is kept.
+  const crateOnly = { fast: false, seam: false, os: false, groups: new Set() };
+  const changedCrates = new Set();
   for (const f of files) {
-    for (const g of classifyPath(f, seamTests, cargoBenchOnly)) out[g] = true;
+    const p = f.replace(/\\/g, '/');
+    const crate = crateForPath(p, crateGraph);
+    if (crateGraph && crate) {
+      changedCrates.add(crate);
+      if (OS_CRATES.has(crate)) crateOnly.os = true;
+      crateOnly.fast = true;
+      crateOnly.seam = true;
+      const g = crateGroups[crate];
+      if (g) crateOnly.groups.add(g);
+    } else {
+      // null graph, or a crates/** path the graph cannot resolve: old rules.
+      for (const g of classifyPath(f, seamTests, cargoBenchOnly)) out[g] = true;
+    }
+  }
+  if (!crateGraph) {
+    // Regression guard for the pre-graph behavior: nothing else to do, all
+    // crate-originated fast/seam/os above already went straight into `out`.
+  } else {
+    const affected = affectedCrates(changedCrates, crateGraph);
+    for (const name of affected) {
+      const g = crateGroups[name];
+      if (g) out[g] = true;
+    }
+    // Root crate affected (directly or via a dependent chain, Cargo or
+    // reference edges) => its heavy seam/os surface must run.
+    if (rootAffected(affected, crateGraph)) {
+      out.seam ||= crateOnly.seam;
+      out.os ||= crateOnly.os;
+    }
+    // fast applies regardless: root-side selection is handled by select-tests.
+    out.fast ||= crateOnly.fast;
   }
   if (out.full || forceFull) {
     for (const g of Object.keys(out)) out[g] = true;
@@ -245,6 +285,24 @@ function selftest() {
   const seam = new Set(['class_leaves_publication_miri', 'j13b_adaptive_windows_native']);
   const P = (files, event = 'pull_request', trailerFull = false) => plan({ files, event, trailerFull, seamTests: seam });
   const on = r => Object.keys(r).filter(k => r[k]).sort().join(',');
+  // Fixture graph mirroring the workspace shape: root -> mid -> leaf chain, a
+  // standalone leaf, and a dev-dep edge. Names kept abstract on purpose.
+  const fx = () => {
+    const g = {
+      packages: new Map([
+        ['sefer-alloc', { dir: '.', deps: new Set(['mid']), dependents: new Set() }],
+        ['mid', { dir: 'crates/x/mid', deps: new Set(['leaf', 'devdep']), dependents: new Set(['sefer-alloc']) }],
+        ['leaf', { dir: 'crates/x/leaf', deps: new Set(), dependents: new Set(['mid']) }],
+        ['standalone', { dir: 'crates/x/standalone', deps: new Set(), dependents: new Set() }],
+        ['devdep', { dir: 'crates/x/devdep', deps: new Set(), dependents: new Set(['mid']) }],
+      ]),
+      root: 'sefer-alloc',
+    };
+    return g;
+  };
+  const CRATE_GROUPS_FIX = { mid: 'crate_mid', leaf: 'crate_leaf', standalone: 'crate_standalone', devdep: 'crate_devdep' };
+  const PG = (files, graph, event = 'pull_request', groups = CRATE_GROUPS_FIX) =>
+    plan({ files, event, seamTests: seam, crateGraph: graph, crateGroups: groups });
   const heavy = ['seam', 'os'];
   let n = 0;
   const eq = (got, want, msg) => { assert.equal(got, want, msg); n++; };
@@ -345,6 +403,40 @@ function selftest() {
   eq(docTableMatches(`x\n${TABLE_BEGIN}\n${t}\n${TABLE_END}\n${TABLE_END}\n`, fixture), false, 'duplicate end marker rejected');
   // Windows-style separators classify like POSIX ones.
   eq(on(P(['src\\registry\\x.rs'])), 'always,fast,seam', 'backslashes');
+  // --- crate-graph narrowing (fixture graph injected via plan({crateGraph})) ---
+  // Every "don't run" assertion below has a counterfactual: the same files with
+  // crateGraph=null keep fast/seam (see the crates/** assertions above), so a
+  // regression that silently re-enables the blanket selection goes red here.
+  const G = fx();
+  // (a) standalone leaf, root does not depend on it: fast stays on (root test
+  // jobs inside it are narrowed by select-tests), seam/os are suppressed.
+  eq(on(plan({ files: ['crates/x/standalone/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: G, crateGroups: CRATE_GROUPS_FIX })), 'always,crate_standalone,fast', 'standalone crate keeps fast, drops seam/os');
+  // (b) crate the root depends on: root affected => fast/seam stay on.  eq(on(plan({ files: ['crates/x/mid/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: G, crateGroups: CRATE_GROUPS_FIX })), 'always,crate_mid,fast,seam', 'root-dependent crate keeps fast/seam');
+  // (c) leaf changed, only mid depends on it, root depends on mid: both groups + fast/seam.
+  eq(on(plan({ files: ['crates/x/leaf/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: G, crateGroups: CRATE_GROUPS_FIX })), 'always,crate_leaf,crate_mid,fast,seam', 'dependent chain narrows upward');
+  // (d) dev-dependency edge: devdep changed pulls mid's group.
+  eq(on(plan({ files: ['crates/x/devdep/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: G, crateGroups: CRATE_GROUPS_FIX })), 'always,crate_devdep,crate_mid,fast,seam', 'dev-dep edge triggers dependent');
+  // (e) unknown crate dir with a graph: old conservative fast+seam.
+  eq(on(plan({ files: ['crates/brand-new/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: G, crateGroups: CRATE_GROUPS_FIX })), 'always,fast,seam', 'unknown crate dir with graph');
+  // (f) regression guard: null graph + crates path = old behavior exactly.
+  eq(on(P(['crates/containers/sefer-region/src/lib.rs'])), 'always,crate_sefer_region,fast,seam', 'null graph old behavior');
+  // (g) mixed change: crate file + src file => fast/seam regardless of root.
+  eq(on(plan({ files: ['crates/x/standalone/src/lib.rs', 'src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: G, crateGroups: CRATE_GROUPS_FIX })), 'always,crate_standalone,fast,seam', 'mixed change keeps fast/seam');
+  // (h) root Cargo.lock still the full fast+seam+os surface with a graph present.
+  eq(on(plan({ files: ['Cargo.lock'], event: 'pull_request', seamTests: seam, crateGraph: G, crateGroups: CRATE_GROUPS_FIX })), 'always,fast,os,seam', 'Cargo.lock with graph');
+  // (i) push event still drops seam/os after narrowing.
+  eq(on(plan({ files: ['crates/x/mid/src/lib.rs'], event: 'push', seamTests: seam, crateGraph: G, crateGroups: CRATE_GROUPS_FIX })), 'always,crate_mid,fast', 'push drops seam/os after narrowing');
+  // crate manifest (Cargo.toml inside the crate dir) affects that crate like its src.
+  eq(on(plan({ files: ['crates/x/standalone/Cargo.toml'], event: 'pull_request', seamTests: seam, crateGraph: G, crateGroups: CRATE_GROUPS_FIX })), 'always,crate_standalone,fast', 'crate manifest keeps fast');
+  // counterfactual for (a): without narrowing the same file WOULD select fast+seam.
+  eq(on(plan({ files: ['crates/x/standalone/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: null, crateGroups: CRATE_GROUPS_FIX })), 'always,fast,seam', 'counterfactual: no graph => fast/seam');
+  // (j) HOLE-2 regression guard: a reference edge (#[path]/include!) from the
+  // root alone keeps seam/os on even with no declared Cargo path. The fixture
+  // root mirrors the post-mergeRefEdges state (ref edge merged into deps).
+  const GR = fx();
+  GR.packages.set('sefer-alloc', { dir: '.', deps: new Set(['mid', 'standalone']), dependents: new Set(), refDeps: new Set(['standalone']) });
+  GR.packages.get('standalone').dependents.add('sefer-alloc');
+  eq(on(plan({ files: ['crates/x/standalone/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: GR, crateGroups: CRATE_GROUPS_FIX })), 'always,crate_standalone,fast,seam', 'reference edge alone keeps seam/os on');
   console.log(JSON.stringify({ version: 1, status: 'PASS', scope: 'ci-plan selftest', checks: n }));
 }
 
@@ -396,7 +488,17 @@ function main() {
       try { trailerFull = hasFullTrailer(git(['log', '--format=%B', `${arg('--base')}..${arg('--head') ?? 'HEAD'}`])); } catch { trailerFull = false; }
     }
     if (trailerFull) console.log('ci-plan: `CI: full` trailer found in the commit range; running the full set');
-    result = plan({ files: files ?? [], event, trailerFull, seamTests: seamTestNames(), cargoBenchOnly: benchOnly });
+    // Graph load failure (cargo unavailable etc.) returns null: old behavior.
+    const crateGraph = loadCrateGraph(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+    result = plan({ files: files ?? [], event, trailerFull, seamTests: seamTestNames(), cargoBenchOnly: benchOnly, crateGraph });
+    if (crateGraph) {
+      const changed = new Set();
+      for (const f of files ?? []) {
+        const c = crateForPath(f, crateGraph);
+        if (c) changed.add(c);
+      }
+      if (changed.size) console.log(`ci-plan: affected crates: ${[...affectedCrates(changed, crateGraph)].sort().join(', ')}`);
+    }
   }
   console.log(summary(result, files, event));
   const outPath = process.env.GITHUB_OUTPUT;

@@ -113,6 +113,37 @@ select `always` only. An unrecognised path selects `fast` (conservative), never 
 (`push`) runs the diff-selected groups without `seam` and `os`: the heavy groups already ran for its pull
 request and the nightly run re-runs them on `main`.
 
+## Crate-graph narrowing (P1.5b, level 1)
+
+`scripts/ci-plan.mjs` narrows the coarse path rules with a workspace dependency
+graph built from `cargo metadata --no-deps` (workspace members; all declared
+manifest-level edges to path dependencies — normal, dev and build, including
+optional and target-specific ones; `meta.resolve` is deliberately NOT read —
+plus reference edges from a text scan of `#[path]`/`include!`/`include_str!`/
+`include_bytes!`, built fresh in `scripts/ci/crate-graph.mjs`). For a diff
+whose changed files lie under `crates/**`, the affected set is the changed
+crates plus their transitive reverse dependents (workspace consumers).
+
+- Per-crate `crate_*` groups run only when that crate is affected (not merely
+  under `crates/**`).
+- `fast` stays on for any crate change, unconditionally: the root test jobs
+  inside it are narrowed by the test selector, and selection is shadow/enforce-off
+  right now, so `fast` runs everything anyway.
+- The heavy `seam`/`os` groups run only when the root crate `sefer-alloc` is
+  affected — it is affected iff any of its direct workspace dependencies is
+  affected, by declared Cargo edges or by reference edges (`#[path]`/
+  `include!`/`include_str!`/`include_bytes!`)
+  — or when a non-crate rule (source, tests, manifests, unknown paths) selected
+  them.
+- Fails closed: an unresolvable dependency path, an unresolvable `#[path]`/
+  `include*!` reference, or a `cargo metadata` failure
+  yields exactly the previous conservative behavior (crate change selects
+  dependents' `fast`+`seam`, etc.). Root `Cargo.toml`, `Cargo.lock`, `build.rs`
+  and `rust-toolchain` are unchanged by this rule and still select everything
+  they always did.
+- Scope unchanged: push-to-`main` still drops `seam`/`os`; `schedule`,
+  `workflow_dispatch` and a `CI: full` trailer still force the full set.
+
 ## When the full set runs
 
 - **Nightly** (`0 3 * * *`) on `main`: everything except the three weekly-only jobs.
@@ -180,6 +211,15 @@ summary and to the artifact `test-selection`. Rules are conservative for paths t
 - Other uncovered paths select all. A Node/test-data-only change is not guaranteed to produce an empty selection:
   file readers and targets unmapped in every row remain selected. A recognized reader-data-only diff yields
   subset `[]` when there are no file readers and no targets unmapped in every row.
+- Level-1 crate-only rule (P1.5b): when every changed file maps to workspace
+  crates (via the same `cargo metadata` graph as `ci-plan.mjs`) and none of
+  them reaches the root crate `sefer-alloc` as a transitive reverse dependency,
+  the selector returns a subset with a `crateOnly` field in its JSON output
+  instead of falling through to reader data or `all`. That subset keeps the
+  file-reader tests (readers may scan `crates/**` at runtime) and is empty only
+  when no reader exists. If the root crate
+  is affected, or any changed path is unmapped (or the graph cannot be built),
+  the previous behavior applies unchanged.
 
 `test-core` consumes the selection only when the repository variable `TEST_SELECTION` is `enforce` (default:
 shadow mode reports the selection without changing the run). Its three `cargo test` steps then run `--lib` plus
