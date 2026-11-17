@@ -225,10 +225,13 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
   facts 5): merge one pure group (candidates: `regression_*` without global state)
   into one target with per-module `cfg`; measure link count and job time on CI against the
   base; decide go/no-go from the numbers.
+  - Status (2026-11-17): verdict **NO-GO** (criterion (b) DOES NOT HOLD: thread-sanitizer median 96 → 122 s = +27.08 %; miri families insufficient-runs, n_after=1<3); see `docs/perf/P0_2_TEST_MERGE_PILOT.md` § Verdict (2026-11-17).
 - **P0.3. Selection granularity** (only on GO of P0.2, revision 3): `select-tests` and the test-impact map address modules
   inside a merged target (test-name filters), so merging does not coarsen selection.
+  - Status (2026-11-17): CLOSED — blocked by the P0.2 NO-GO; reopen trigger: a P0.2 pilot attempt passing all three criterion conditions of `docs/perf/P0_2_TEST_MERGE_PILOT.md`.
 - **P0.4. Roll-out** (only on GO of P0.2, revision 3) group by group (`r6`/`r11`, `segment`, `large`, `heap`, ...), updating
   name pins: check-matrix rows, CI greps, J13 file hashes, published counts.
+  - Status (2026-11-17): CLOSED — blocked by the P0.2 NO-GO; reopen trigger: a P0.2 pilot attempt passing all three criterion conditions of `docs/perf/P0_2_TEST_MERGE_PILOT.md` (the tsan growth is structural — see the Verdict's next steps; any criterion revision is an owner decision made FIRST).
 
 ### T — thematic folders for the existing crates (pure move)
 

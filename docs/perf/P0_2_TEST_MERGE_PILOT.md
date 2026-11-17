@@ -221,10 +221,70 @@ Derivation: `git diff --stat` / `git status --porcelain` on the pin files, node 
 - Local verification: cargo was not run in this task. cargo check rows: to be reported by the parent run — (1) union of the merged modules' features, (2) default features (all modules cfg'd out), (3) `--no-default-features --features alloc-decommit` (feature-powerset row).
 - Cargo.lock / manifests: this task did not touch Cargo.toml, fuzz/ or tests/compile_fail/.
 
-## Measurements (to be filled from CI runs)
+## Measurements
 
-This section stays EMPTY until the parent collects real CI data. Nothing here
-is invented.
+Filled 2026-11-17 from committed CI run dumps. Nothing here is invented; every
+number below is script output or copied from a committed dump.
+
+- Raw dumps: `docs/perf/p0_2_ci_runs/before/` and `docs/perf/p0_2_ci_runs/after/`,
+  one `.json` per run id (`<run-id>.json`), copied from pre-collected artifacts
+  outside the repo (collection recipe above, steps 1–2).
+- Summary CSV: `docs/perf/P0_2_TEST_MERGE_PILOT_summary.csv`, written by
+  `scripts/ci-job-durations.mjs` (recipe step 3).
+
+Run-status table (run id, sha, event, conclusion, side, note):
+
+| run id | sha | event | conclusion | side | note |
+|---|---|---|---|---|---|
+| 43745289068 | dc87bea8 | pull_request | failure | before | |
+| 43749733378 | 676a51b8 | pull_request | failure | before | |
+| 43759580924 | 8e82339a | pull_request | success | before | |
+| 43768376047 | b5779b5f | push main | success | before | |
+| 43777538709 | c6524f40 | push main | success | before | |
+| 43785254102 | 8013c80d | push main | success | after | unsharded |
+| 43851422289 | b01ad11e | schedule main | success | after | unsharded |
+| 44074883752 | 0c1029d7 | schedule main | success | after | sharded |
+| 44085753908 | | schedule | success | after | DIFFERENT workflow (`collect` shard workflow, no affected jobs); stored for provenance, not usable |
+
+Duration table, pasted verbatim from scripts/ci-job-durations.mjs output,
+reproduction command:
+`node scripts/ci-job-durations.mjs --before docs/perf/p0_2_ci_runs/before --after docs/perf/p0_2_ci_runs/after --csv docs/perf/P0_2_TEST_MERGE_PILOT_summary.csv --jobs "test (feature isolation),test (hardened tier),thread-sanitizer" --family "miri core=^miri \\(core\\)$=>^miri \\(core, (pin cache|rest)\\)$" --family "miri fastbin=^miri \\(fastbin\\)$=>^miri \\(fastbin, " --family "miri plain=^miri-plain$=>^miri-plain \\(" --family "miri alloc-core=^miri \\(alloc-core\\)$=>^miri \\(alloc-core\\)$"`
+(script exits rc=1 by design on insufficient samples). Columns = job, metric,
+n_before, median_before_s, n_after, median_after_s, delta_pct, verdict:
+
+| job | metric | n_before | median_before_s | n_after | median_after_s | delta_pct | verdict |
+|---|---|---|---|---|---|---|---|
+| test (feature isolation) | job | 5 | 608.00 | 3 | 560.00 | -7.89 | fell |
+| test (hardened tier) | job | 5 | 924.00 | 3 | 923.00 | -0.11 | flat |
+| thread-sanitizer | job | 5 | 96.00 | 3 | 122.00 | +27.08 | grew |
+| miri core | job | 4 | 1564.50 | 1 | 1773.00 | - | insufficient-runs |
+| miri core (critical path) | job | 4 | 1564.50 | 1 | 1277.00 | - | insufficient-runs |
+| miri fastbin | job | 4 | 2004.00 | 1 | 1937.00 | - | insufficient-runs |
+| miri fastbin (critical path) | job | 4 | 2004.00 | 1 | 1465.00 | - | insufficient-runs |
+| miri plain | job | 4 | 1322.00 | 1 | 1092.00 | - | insufficient-runs |
+| miri plain (critical path) | job | 4 | 1322.00 | 1 | 835.00 | - | insufficient-runs |
+| miri alloc-core | job | 4 | 380.50 | 3 | 353.00 | -7.23 | fell |
+| miri alloc-core (critical path) | job | 4 | 380.50 | 3 | 353.00 | -7.23 | fell |
+
+summary: 3 fell, 1 flat, 1 grew (11 jobs); criterion line: DOES NOT HOLD — grew: thread-sanitizer.
+
+Notes:
+
+- Metric = `job` everywhere: NO dump contains a separate `cargo test` step
+  (affected jobs use composite actions — one opaque step), so the script's
+  documented whole-job fallback applies.
+- The script skipped 31 job records (jobs outside the `--jobs`/`--family`
+  selection, incl. `docs consistency (always)`, which has no cargo test step at
+  all and is context-only: before median 78 s (n=5), after median 90 s (n=3),
+  +15.38 % — 90/78 medians).
+- Miri sharding (PRs #261/#262) is accounted for by comparing FAMILIES:
+  before = the single unsharded job; after = (i) sum of family shards' job
+  durations and (ii) critical path = max shard (both shown above; sum rows are
+  named plain, critical-path rows are named "(critical path)"). Only run
+  44074883752 among the available after runs is sharded, so miri families have
+  n_after = 1 → `insufficient-runs` (the criterion requires ≥ 3). The earlier
+  preliminary estimate "miri (core) +31 %" is not reproduced at family level
+  (sum +13.3 %, critical path -38.2 %), but n_after = 1 is undecidable.
 
 Collection recipe (for the parent):
 
@@ -249,4 +309,76 @@ Collection recipe (for the parent):
    contains no valid job records (e.g. an empty `jobs` array or all records
    missing/invalid timestamps).
 
-> PENDING: no CI duration data collected yet — this section is filled only from scripts/ci-job-durations.mjs output over committed run JSONs.
+## Verdict (2026-11-17)
+
+All three conditions were evaluated against the Measurements above. The
+criterion text above was fixed before any number was read and is not
+reinterpreted here.
+
+- **(a) PASS** for the pilot itself (pilot-scoped). `node scripts/test-inventory.mjs
+  --before-dir .rush/tmp/old-tree` (snapshot of pre-pilot commit `b375a0e1`) on
+  current main prints: `moved stems: 32 | unchanged stems: 497 | merged dir files: 32`
+  and `inventory: 1515 tests before, 1510 tests after, 5 lost, 0 added, 0 dup,
+  0 cfg-mismatch, 0 orphans, 1 unexpected new targets` — then FAIL on the
+  absolute inventory. The absolute deltas are attributed BY COMMIT to unrelated
+  post-pilot commits (`55658271`, `d6f129d0`, `58cadda2`), not the merge:
+  - 5 lost tests: the `no_stale_doc_references::*` doc-count tests (replaced by
+    `scripts/verify-doc-inventories.mjs`);
+  - 1 new target: the flat `tests/registry_fallback_hook.rs`.
+  All 32 moved stems are OK with per-stem counts identical; binary count
+  32 → 1 (saved 31) holds. `node scripts/classify-tests.mjs --check` exit 0.
+- **(b) DOES NOT HOLD**, on two independent grounds:
+  1. thread-sanitizer grew: median (whole-job, n_before=5, n_after=3)
+     96 s → 122 s = +27.08 % (delta 26 s over the 96 s before median), above the
+     criterion's bar ("in no affected job did it grow"); the criterion's ±10 %
+     runner-noise note does not cover +27 %. Mechanism (context, not a
+     re-interpretation): the pilot added a second `&&`-chained cargo invocation
+     for `regression_percounter_perheap_aggregation::`.
+  2. All four miri families are `insufficient-runs`: n_after = 1 (only run
+     44074883752 is sharded) < the required 3 — undecidable, not a pass.
+  What was compared for sharding: the family union (before = the single
+  unsharded job, after = all family shards), with BOTH readings shown in the
+  table — sum of shards' job durations (primary, conservative) and critical
+  path = max shard (wall-clock view).
+- **(c) PASS with one recorded gap.** All mechanical pins LANDED-CONSISTENT on
+  main: `node scripts/p0_2_global_state_scan.mjs --filters` → 18 tokens, 81
+  tests, 0 violations; `scripts/verify-ci-decomposition.mjs` rc=0 ("68 jobs
+  unchanged"); ci-plan `--check-doc` rc=0; verify-structure-limits OK;
+  verify-doc-inventories OK; classify pins 510/461 consistent after later
+  regenerations; evidence-registry INCOMPLETE(strict) unchanged (unpublished
+  spike rows only, no evidence-test-missing). GAP: the doc's claim (Pin updates
+  section above) that the README path mentions now name
+  `tests/regression_merged/regression_magazine_oracles.rs` never landed —
+  README.md:1394 and README.md:1582 still name
+  `tests/regression_magazine_oracles.rs` (a nonexistent path); the landed pilot
+  commit `b0304d97` contains no README/ARCHITECTURE changes ("follow in the
+  next commit" never came as described). The criterion wording — pins "fit
+  inside the pilot PR without manual hacks" — is therefore not fully met;
+  recorded as a gap, not a criterion rewrite.
+
+## FINAL VERDICT: **NO-GO**
+
+P0.3/P0.4 (further group merges) stay CLOSED. What did not pass and next steps:
+
+1. Criterion (b) needs ≥ 2 more scheduled main runs on the sharded CI workflow
+   before the miri families are decidable (items 155/156 in
+   `docs/perf/OPEN_ITEMS.md` track sharding health).
+2. The tsan growth is structural (the pilot's extra chained invocation): if a
+   future attempt wants GO, the criterion as written — no growth in ANY
+   affected job — cannot be met by construction unless the second invocation is
+   folded back into one command or the criterion is formally revised by the
+   owner FIRST.
+3. Fix the README `regression_magazine_oracles` path pin (README.md:1394,
+   README.md:1582) — filed as item 284 in `docs/CORRECTNESS_OPEN_ITEMS.md`.
+
+Honest limitations:
+
+- n_after = 3 for non-miri jobs and n_after = 1 for miri families; the latter
+  is below this doc's own ≥ 3 bar.
+- Runner noise is ±10 % per the criterion text, so the -0.11 % "flat" row
+  (test (hardened tier), medians 924 s → 923 s) and every single-run miri delta
+  are undecidable, not evidence of no-effect.
+- The before side includes 2 failing PR runs (43745289068, 43749733378); their
+  affected-job records were still valid, and the script prints skipped counts.
+- The metric is whole-job duration, not a cargo-test step, because the dumps
+  contain no separate step (composite actions).

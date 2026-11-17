@@ -12,6 +12,15 @@
 // Usage:
 //   node scripts/ci-job-durations.mjs --before <dir> --after <dir> [--csv <out.csv>]
 //       [--step-pattern <regex>] [--jobs <n1,n2,...>] [--min-runs 3]
+//       [--family "<label>=<before-job-regex>=><after-shard-regex>"] ...
+//
+// --family (repeatable) aggregates an unsharded before job (before-job-regex) with its
+// sharded after jobs (after-shard-regex, matches >=1 shard per run). For each run the
+// family value is (i) the SUM of the shards' per-job cargo-test/whole-job durations and
+// (ii) the MAX over shards (critical path); both are reported as separate table rows
+// (metrics "family-sum" / "family-crit"). With any --family/--jobs given, the script
+// EXITS 1 when an affected row has fewer than --min-runs samples on either side.
+// A summary line prints the criterion-(b) verdict (all fell >= 5% AND none grew).
 //
 // Exit code is 0 on success even if verdicts are "grew" — this script reports, it does not
 // decide GO/NO-GO. Exit 1 on corrupt input JSON or input files with no valid job records
@@ -79,6 +88,7 @@ export function normalizeJob(job) {
  */
 export function collectRuns(dir, pattern) {
   const perJob = new Map(); // job name -> array of per-run records
+  const perRun = []; // one entry per file: { file, records: Map(job name -> rec) }
   let skipped = 0;
   const files = readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
   for (const file of files) {
@@ -92,6 +102,7 @@ export function collectRuns(dir, pattern) {
     if (!Array.isArray(doc?.jobs)) throw new Error(`${path}: missing "jobs" array`);
     if (doc.jobs.length === 0) throw new Error(`${path}: empty "jobs" array`);
     let valid = 0;
+    const runRecords = new Map();
     for (const raw of doc.jobs) {
       const job = normalizeJob(raw);
       const name = String(job.name ?? '');
@@ -108,11 +119,12 @@ export function collectRuns(dir, pattern) {
       }
       if (rec) perJob.get(name).push(rec);
       else skipped += 1;
-      if (rec) valid += 1;
+      if (rec) { valid += 1; runRecords.set(name, rec); }
     }
     if (valid === 0) throw new Error(`${path}: no valid job record(s) — all ${doc.jobs.length} record(s) skipped (missing/invalid timestamps)`);
+    perRun.push({ file, records: runRecords });
   }
-  return { perJob, skipped, files: files.length };
+  return { perJob, perRun, skipped, files: files.length, fileNames: files };
 }
 
 /** Verdict for one delta value: fell <= -5, grew > 0, flat otherwise. */
@@ -228,6 +240,94 @@ export function renderCsv(rows) {
   return lines.join('\n') + '\n';
 }
 
+/**
+ * Parse --family entries: "<label>=<before-job-regex>=><after-shard-regex>".
+ * Returns [{ label, beforeRe, afterRe }]; throws on a malformed entry.
+ */
+export function parseFamilies(entries) {
+  return entries.map((e) => {
+    const m = /^(.+?)=([^=]+)=>(.+)$/.exec(e);
+    if (!m) throw new Error(`bad --family entry (want "label=beforeRe=>afterRe"): ${e}`);
+    return { label: m[1], beforeRe: new RegExp(m[2]), afterRe: new RegExp(m[3]) };
+  });
+}
+
+/**
+ * Aggregate one side's perRun records for a family regex. For every run file, all jobs
+ * whose name matches `re` contribute their per-job cargo-test/whole-job duration; a run
+ * with zero matching jobs is omitted (job/family absent in that run). Returns an array of
+ * per-run records { seconds, metric, jobSeconds } plus the contributing shard names.
+ */
+export function familySideRecords(side, re) {
+  const sums = [];
+  const crits = [];
+  for (const run of side.perRun) {
+    const matches = [...run.records].filter(([name]) => re.test(name));
+    if (matches.length === 0) continue;
+    const secs = matches.map(([, rec]) => rec.seconds);
+    const metric = matches.every(([, rec]) => rec.metric === 'job') ? 'job' : 'steps';
+    const shards = matches.map(([name]) => name).sort();
+    sums.push({ seconds: secs.reduce((x, y) => x + y, 0), metric, shards });
+    crits.push({ seconds: Math.max(...secs), metric, shards });
+  }
+  return { sums, crits };
+}
+
+/**
+ * Build collectRuns-shaped synthetic perJob maps for the family rows so the ordinary
+ * computeRows/assertRows/render pipeline can be reused unchanged. Every family yields two
+ * affected rows: "<label>" (metric family-sum: median of per-run shard SUMS) and
+ * "<label> (critical path)" (metric family-crit: median of per-run shard MAXES).
+ */
+export function computeFamilyRows({ before, after, families, minRuns }) {
+  const bPerJob = new Map();
+  const aPerJob = new Map();
+  const detail = []; // { label, bSumRuns, aSumRuns, bCritRuns, aCritRuns }
+  for (const fam of families) {
+    const b = familySideRecords(before, fam.beforeRe);
+    const a = familySideRecords(after, fam.afterRe);
+    const mk = (recs) => recs.map((r) => ({ seconds: r.seconds, metric: r.metric, raws: null, jobSeconds: r.seconds }));
+    bPerJob.set(fam.label, mk(b.sums));
+    bPerJob.set(`${fam.label} (critical path)`, mk(b.crits));
+    aPerJob.set(fam.label, mk(a.sums));
+    aPerJob.set(`${fam.label} (critical path)`, mk(a.crits));
+    detail.push({ label: fam.label, beforeRe: fam.beforeRe, afterRe: fam.afterRe, bSumRuns: b.sums, aSumRuns: a.sums, bCritRuns: b.crits, aCritRuns: a.crits });
+  }
+  const bf = { perJob: bPerJob };
+  const af = { perJob: aPerJob };
+  const names = families.flatMap((f) => [f.label, `${f.label} (critical path)`]);
+  const rows = computeRows({ before: bf, after: af, jobs: names, minRuns });
+  assertRows(rows, { before: bf, after: af });
+  assertFamilies(detail, { before, after });
+  return { rows, detail };
+}
+
+/** Independent re-aggregation: recompute every family sum/max straight from perRun records. */
+export function assertFamilies(detail, { before, after }) {
+  for (const d of detail) {
+    for (const [side, sideData, sums, crits] of [
+      ['before', before, d.bSumRuns, d.bCritRuns],
+      ['after', after, d.aSumRuns, d.aCritRuns],
+    ]) {
+      const matchedSums = [];
+      const matchedCrits = [];
+      for (const run of sideData.perRun) {
+        const secs = [...run.records].filter(([name]) => (side === 'before' ? d.beforeRe : d.afterRe).test(name)).map(([, rec]) => rec.seconds);
+        if (secs.length === 0) continue;
+        matchedSums.push(secs.reduce((x, y) => x + y, 0));
+        matchedCrits.push(Math.max(...secs));
+      }
+      assertEqual(sums.length, matchedSums.length, `${d.label} ${side} run count`);
+      assertEqual(sums.map((r) => r.seconds).join(','), matchedSums.join(','), `${d.label} ${side} per-run sums`);
+      assertEqual(crits.map((r) => r.seconds).join(','), matchedCrits.join(','), `${d.label} ${side} per-run critical paths`);
+      // each sum must exceed or equal its critical path, and exceed it for >1 shard
+      for (const [s, c] of sums.map((s, i) => [s.seconds, crits[i].seconds])) {
+        if (!(s >= c)) throw new Error(`assertion failed: ${d.label} ${side} sum ${s} < crit ${c}`);
+      }
+    }
+  }
+}
+
 function arg(args, name) {
   const i = args.indexOf(name);
   return i < 0 ? undefined : args[i + 1];
@@ -237,22 +337,54 @@ function main(argv) {
   const beforeDir = arg(argv, '--before');
   const afterDir = arg(argv, '--after');
   if (!beforeDir || !afterDir) {
-    console.error('usage: ci-job-durations.mjs --before <dir> --after <dir> [--csv out.csv] [--step-pattern re] [--jobs n1,n2] [--min-runs 3]');
+    console.error('usage: ci-job-durations.mjs --before <dir> --after <dir> [--csv out.csv] [--step-pattern re] [--jobs n1,n2] [--family "label=beforeRe=>afterRe"]... [--min-runs 3]');
     process.exit(2);
   }
   const pattern = new RegExp(arg(argv, '--step-pattern') ?? 'cargo test');
   const jobs = (arg(argv, '--jobs') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const familyEntries = [];
+  for (let i = 0; i < argv.length; i++) if (argv[i] === '--family') familyEntries.push(argv[i + 1]);
+  const families = parseFamilies(familyEntries);
   const minRuns = Number(arg(argv, '--min-runs') ?? 3);
   const before = collectRuns(beforeDir, pattern);
   const after = collectRuns(afterDir, pattern);
   const rows = computeRows({ before, after, jobs, minRuns });
   assertRows(rows, { before, after }); // everything asserted BEFORE printing
+  let famDetail = null;
+  if (families.length > 0) {
+    const fam = computeFamilyRows({ before, after, families, minRuns });
+    famDetail = fam.detail;
+    rows.push(...fam.rows);
+  }
+  // contributing run ids (dump file names) per side, for every reported row
+  for (const r of rows) {
+    const ids = (side) => (side === 'before' ? before.fileNames : after.fileNames).join(', ');
+    console.log(`runs ${r.job} | before: ${ids('before')} | after: ${ids('after')}`);
+  }
+  if (famDetail) {
+    for (const d of famDetail) {
+      console.log(`family ${d.label} shards (after, per run): ${d.aSumRuns.map((r) => `[${r.shards.join(' + ')}]`).join(' ')}`);
+    }
+  }
   if (before.skipped + after.skipped > 0) {
     console.log(`skipped (missing/invalid timestamps): ${before.skipped + after.skipped} job record(s)`);
   }
   console.log(renderMd(rows));
+  if (jobs.length > 0 || families.length > 0) {
+    const decisive = rows.filter((r) => r.verdict in { fell: 1, flat: 1, grew: 1 });
+    const grew = decisive.filter((r) => r.verdict === 'grew');
+    const holds = grew.length === 0 && decisive.every((r) => r.delta <= -5);
+    console.log(`criterion (b) (all fell >= 5% AND none grew): ${holds ? 'HOLDS' : 'DOES NOT HOLD'} — grew: ${grew.map((r) => r.job).join(', ') || 'none'}`);
+  }
   const csvPath = arg(argv, '--csv');
   if (csvPath) writeFileSync(csvPath, renderCsv(rows));
+  if (jobs.length > 0 || families.length > 0) {
+    const insufficient = rows.filter((r) => r.insufficient);
+    if (insufficient.length > 0) {
+      console.error(`insufficient samples (< ${minRuns} on a side): ${insufficient.map((r) => r.job).join(', ')}`);
+      process.exit(1);
+    }
+  }
 }
 
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('scripts/ci-job-durations.mjs')) {
