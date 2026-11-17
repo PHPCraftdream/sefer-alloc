@@ -32,7 +32,7 @@ Dropped from the marker list: `publish_pending` (src/alloc_core/segment/segment_
 | ci_workflow | 8 |
 | doc | 1383 |
 | doc_json | 2 |
-| script | 290 |
+| script | 291 |
 
 Note: the classification suite's own output artifacts (`docs/perf/TEST_TARGET_CLASSIFICATION_*.md`, `docs/test_target_classification_*.csv`) are excluded from the doc pin surface: scanning the report's own echo would pin the targets it lists, making the classification non-idempotent (self-reference, not a pre-existing pin).
 
@@ -95,9 +95,9 @@ Note: the plan's §1 numbers are grep approximations over overlapping sets — t
 | **file_cfg** (461) | 52 | 79 | 25 | 30 | 50 | 0 | 0 | 0 | 12 | 461 | 428 |
 | **externally_pinned** (475) | 61 | 75 | 33 | 31 | 50 | 0 | 13 | 11 | 26 | 428 | 475 |
 
-## Non-target inventory (1209 entries; 43 of them are top-level entries of tests/)
+## Non-target inventory (1210 entries; 44 of them are top-level entries of tests/)
 
-Top-level accounting: tests/ has **553** top-level entries; 510 are targets; the remaining **43** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
+Top-level accounting: tests/ has **554** top-level entries; 510 are targets; the remaining **44** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
 
 | path | kind |
 | --- | --- |
@@ -1258,6 +1258,7 @@ Top-level accounting: tests/ has **553** top-level entries; 510 are targets; the
 | tests/module_graph.test.mjs | mjs-script |
 | tests/r11_p3_small_sidecar_issue_oom | directory-fixture |
 | tests/r11_p3_small_sidecar_issue_oom/support.rs | support-module |
+| tests/r20_evidence_reverify_apply.test.mjs | mjs-script |
 | tests/r6_sidecar_bitmap | directory-fixture |
 | tests/r6_sidecar_bitmap/child_process.rs | support-module |
 | tests/regression_merged | directory-fixture |
