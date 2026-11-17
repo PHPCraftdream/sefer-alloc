@@ -104,7 +104,7 @@ impl HeapCore {
     /// substrate, no adoption hook — a heap owns its segments exclusively and
     /// never pulls in segments from other heaps). Under `alloc-xthread`,
     /// cross-thread frees that targeted this heap's segments sit in each
-    /// segment's [`SmallSidecar`](crate::registry::segment_route::SmallSidecar).
+    /// segment's [`SmallSidecar`](crate::alloc_core::segment_route::SmallSidecar).
     /// Small free-list misses discover terminal bitmap publications through
     /// canonical table roots and reclaim using the issued sidecar class.
     /// Large requests consume Large descriptor obligations before consulting

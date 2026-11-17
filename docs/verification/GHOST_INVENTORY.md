@@ -8,7 +8,7 @@ blanked, braces give the item path); G1's `crates/verify/ghost-lint` on `syn` re
 ## 1. Ordering sites
 
 769 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 99 files of `src/**` and
+`HeapSlot::cas_state` whose arguments name an ordering) in 101 files of `src/**` and
 `crates/**/src/**`; each is claimed by exactly one of 60 scopes.
 
 | class | sites | of all sites |
@@ -165,7 +165,7 @@ Decision: **translate(free_slot_hint, saturation) + keep+R8(stack scans)** — G
 
 ### P5 — route pin: lookup || unlink || last-pin release
 
-Prod: `src/registry/segment_route/directory/route_directory.rs::pin_from_array`, `src/registry/segment_route/directory/route_directory.rs::drop`, `src/registry/segment_route/directory/route_directory.rs::remove`, `src/registry/segment_route/pin.rs::linked`, `src/registry/segment_route/shard_lock.rs`.
+Prod: `src/alloc_core/segment/segment_route/directory/route_directory.rs::pin_from_array`, `src/alloc_core/segment/segment_route/directory/route_directory.rs::drop`, `src/alloc_core/segment/segment_route/directory/route_directory.rs::remove`, `src/alloc_core/segment/segment_route/route_state/pin.rs::linked`, `src/alloc_core/segment/segment_route/route_state/shard_lock.rs`.
 
 - I1 a pin is taken only under the shard lock while the entry is indexed (refs fetch_update AcqRel)
 - I2 the sidecar is freed only by the thread whose fetch_sub(AcqRel) returns 1
@@ -177,7 +177,7 @@ Decision: **translate (done in G2: real directory under loom via loom_b4_r1_pin_
 
 ### P6 — route pin cache fast path
 
-Prod: `src/registry/heap_core_xthread/route_pin_cache.rs`.
+Prod: `src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs`.
 
 - I1 a cached pin is reused only while it holds its own ref; eviction drops exactly one ref
 - I2 the cache is thread-local; no cross-thread access
@@ -198,7 +198,7 @@ Decision: **ghost** — G6a: ghost events sidecar/published (publish) and sideca
 
 ### P8 — small sidecar: leaf pointer publication, pin lifetime
 
-Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `src/registry/segment_route/small_sidecar.rs`.
+Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `src/alloc_core/segment/segment_route/route_state/small_sidecar.rs`.
 
 - I1 a leaf pointer is published (mixed store Release, present fetch_or Release) only after the leaf is fully initialised
 - I2 a reader resolves a leaf only with Acquire and only while holding a route pin
@@ -208,7 +208,7 @@ Decision: **translate** — G6a: ClassLeaves ordered-op inventory per fn (R2 x6)
 
 ### P9 — terminal Large: phase word
 
-Prod: `src/alloc_core/large/reservation_state.rs`, `src/registry/segment_route/large_state.rs`, `src/alloc_core/segment/segment_header/terminal_words.rs`, `src/registry/segment_route/pin.rs::publish_large`.
+Prod: `src/alloc_core/large/reservation_state.rs`, `src/alloc_core/segment/segment_route/route_protocol/large_state.rs`, `src/alloc_core/segment/segment_header/terminal_words.rs`, `src/alloc_core/segment/segment_route/route_state/pin.rs::publish_large`.
 
 - I1 the phase word moves only along the transition relation (kani large_state_proofs)
 - I2 every transition CAS is AcqRel/Acquire; a terminal publication is the producer's last reservation access
@@ -295,7 +295,7 @@ Decision: **R7** — G7: R7 twins pin the bootstrap loom stand-in to crates/prim
 
 ### P18 — cfg(loom) twins in crates and leaf init
 
-Prod: `crates/primitives/once-ptr-cell/src/imp.rs`, `crates/primitives/tagged-index-stack/src/imp.rs`, `crates/platform/aligned-vmem/src/mock.rs`, `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `src/registry/heap_core_xthread/route_pin_cache.rs`.
+Prod: `crates/primitives/once-ptr-cell/src/imp.rs`, `crates/primitives/tagged-index-stack/src/imp.rs`, `crates/platform/aligned-vmem/src/mock.rs`, `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs`.
 
 - I1 each loom twin has the same normalized atomic sequence as its prod item; allowed differences are listed with a reason
 - loom: `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`
@@ -333,7 +333,7 @@ Decision: **ghost** — G6d: new actual-source loom model; the UnsafeCell stand-
 
 ### P22 — route ShardLock (spin lock over the directory shard)
 
-Prod: `src/registry/segment_route/shard_lock.rs`.
+Prod: `src/alloc_core/segment/segment_route/route_state/shard_lock.rs`.
 
 - I1 CAS-weak Acquire/Relaxed on lock, Release store on ShardGuard drop
 - I2 lock_unless_exiting never spins forever during process exit
@@ -343,7 +343,7 @@ Decision: **translate (with P5)** — loom_route_pin_unlink models it as loom::s
 
 ### P23 — remote-free ingress: producer notify || owner take/arm/full drain (SC-6 A-exact)
 
-Prod: `src/registry/segment_route/directory/ingress.rs`, `src/registry/segment_route/pin.rs::publish_small_borrowed`, `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs::publish`, `src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs::drain_notified_slot`.
+Prod: `src/alloc_core/segment/segment_route/directory/ingress.rs`, `src/alloc_core/segment/segment_route/route_state/pin.rs::publish_small_borrowed`, `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs::publish`, `src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs::drain_notified_slot`.
 
 - I1 NOTIFIED => the slot bit is set in the heap mask, or its notifier is between the CAS and the summary RMW, or the owner took the bit and has not finished arm -> fence -> full drain
 - I2 store-buffering: producer pending fetch_or(SeqCst) then state load(SeqCst); owner state store(ARMED, Release), fence(SeqCst), then a full drain: the drain sees the bit or the producer sees ARMED and notifies

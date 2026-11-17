@@ -15,12 +15,17 @@
 // ref, its first parent replaces BASE (`resolveBase`): the recorded
 // `pull_request.base.sha` goes stale once the base branch moves. Any other
 // checkout is red.
-// `--allow-declared-runtime`: pass without building only when the entire range
-// satisfies scripts/ghost_diff.mjs (`zeroCostSkip`). For a mixed range, derive
-// the newest first-parent prefix admitted by that unchanged policy and require
-// exact production text/Ir identity for the entire remaining suffix. Report
-// both the original PR base and the derived prefix; never claim whole-PR
-// runtime identity from a suffix proof. Dirty trees retain the full proof.
+// `--allow-declared-runtime`: classification without building is allowed ONLY
+// when an explicit policy admits the entire range — a declared crate extraction
+// (docs/GHOST_CHECKS_PLAN.md, "Extraction ranges") or a declared intra-crate
+// layer restructuring (its own "Intra-crate layer restructuring" section).
+// Otherwise the mandatory exact/bounded proof runs at the resolved base.
+// Runtime-prefix/suffix behavior is unchanged: the newest first-parent prefix
+// admitted by the unchanged declared-runtime skip policy is classified without
+// building, and the entire remaining suffix still owes the exact text/Ir
+// proof — a suffix verdict never claims whole-PR identity; a dirty tree keeps
+// the full proof. A `Restructuring: layers` declaration suppresses both the
+// skip and the prefix policy: it is a mandatory-measurement mode, never a skip.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -28,12 +33,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { REPO_ROOT } from './lib.mjs';
-import { changedLines, cargoBuildGraphAdditions, extractionChangedLines, extractionPolicy, productionGhostTokens, resolveBase, zeroCostSkip, zeroCostVerdict } from './ghost_diff.mjs';
+import { changedLines, cargoBuildGraphAdditions, deriveLayerRestructuringEvidence, extractionChangedLines, extractionPolicy, hasLayerRestructuringAttempt, layerRestructuringPolicy, productionGhostTokens, resolveBase, zeroCostSkip, zeroCostVerdict } from './ghost_diff.mjs';
 import { declaredRuntimePrefix } from './ghost_runtime_prefix.mjs';
 import { runtimeHistory } from './ghost_runtime_history.mjs';
 import { checkRuntimeHistoryCases } from '../tests/ghost_runtime_history_fixtures.mjs';
 import { checkRuntimePrefixCases } from '../tests/ghost_runtime_prefix_fixtures.mjs';
 import { checkExtractionPolicyCases } from '../tests/ghost_extraction_policy_fixtures.mjs';
+import { checkLayerRestructuringPolicyCases } from '../tests/ghost_layer_restructuring_policy_fixtures.mjs';
 
 const EXAMPLE = 'ghost_zero_cost_probe';
 const RUSTFLAGS = '-C llvm-args=-align-all-functions=6 -C llvm-args=-align-all-nofallthru-blocks=5';
@@ -346,6 +352,7 @@ for (const [name, e, want] of END_CASES) {
 const prefixChecks = checkRuntimePrefixCases();
 console.log(`[ghost-zero-cost] landing-history self-test OK (${checkRuntimeHistoryCases()} cases)`);
 console.log(`[ghost-zero-cost] extraction-policy self-test OK (${checkExtractionPolicyCases()} cases)`);
+console.log(`[ghost-zero-cost] layer-restructuring-policy self-test OK (${checkLayerRestructuringPolicyCases()} cases)`);
 console.log(`[ghost-zero-cost] scope self-test OK (${SKIP_CASES.length} + ${END_CASES.length} cases + changedLines; ${prefixChecks} runtime-prefix checks)`);
 if (argv.includes('--self-test')) process.exit(0);
 
@@ -373,12 +380,22 @@ if (argv.includes('--allow-declared-runtime')) {
   const changed = new Map(paths.map((p) => [p, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', baseSha, checkout, '--', p]))]));
   const dirty = g(['status', '--porcelain', '--untracked-files=all']).split('\n').filter(Boolean);
   const reason = zeroCostSkip(subjects, changed, dirty);
+  const layerMessages = g(['log', '--no-merges', '--format=%B%x00', `${baseSha}..${head}`]).split('\0').map((message) => message.trim()).filter(Boolean);
+  const layerAttempt = hasLayerRestructuringAttempt(layerMessages);
+  let layerChanged = new Map();
+  try {
+    const layerPaths = g(['diff', '--name-only', '-z', '--no-renames', baseSha, head]).split('\0').filter(Boolean);
+    layerChanged = new Map(layerPaths.map((path) => [path, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', baseSha, head, '--', path]))]));
+  } catch { /* Missing endpoint evidence leaves exact mode. */ }
+  const layerEvidence = deriveLayerRestructuringEvidence({ base: baseSha, head, git: g });
+  proofPolicy = layerRestructuringPolicy(layerMessages, layerChanged, dirty, layerEvidence);
   if (dirty.length) console.log(`[ghost-zero-cost] exception not applicable: uncommitted changes in the checkout: ${dirty.slice(0, 5).join(', ')}`);
-  if (reason) {
+  if (reason && !proofPolicy && !layerAttempt) {
     console.log(`[ghost-zero-cost] SKIP: ${reason}`);
     if (out) writeFileSync(out, JSON.stringify({ ...endpoints, skipped: true, reason, subjects, paths }, null, 2) + '\n');
     process.exit(0);
   }
+  if (!layerAttempt) {
   const messages = g(['log', '--no-merges', '--format=%B%x00', `${baseSha}..${head}`]).split('\0').map((message) => message.trim()).filter(Boolean);
   let evidence = null;
   try {
@@ -405,13 +422,15 @@ if (argv.includes('--allow-declared-runtime')) {
       .map(({ from, to }) => [to, changedLines(g(['diff', '-U0', '--no-color', '--no-ext-diff', '-M50%', baseSha, checkout, '--', from, to]))]));
     extractionChanged = extractionChangedLines(changed, evidence.renames, renameHunks) ?? changed;
   }
-  proofPolicy = extractionPolicy(messages, extractionChanged, dirty, evidence);
+  const extractionCandidate = extractionPolicy(messages, extractionChanged, dirty, evidence);
+  if (!proofPolicy) proofPolicy = extractionCandidate;
+  }
   if (proofPolicy) {
     console.log(`[ghost-zero-cost] ${proofPolicy.reason}; bounded Ir + production ghost proof REQUIRED for ${baseSha}..${head}`);
   } else {
     // A runtime-changing prefix may already satisfy the original skip policy.
-    // Derive it from history, never from measured output or a caller-picked ref.
-    const sourceHistory = dirty.length ? { base: prBase, head } : runtimeHistory({ base: prBase, head }, g);
+    // Layer declarations are a fail-closed proof-mode attempt, never an escape hatch.
+    const sourceHistory = dirty.length || layerAttempt ? { base: prBase, head } : runtimeHistory({ base: prBase, head }, g);
     if (sourceHistory.bridge) endpoints.history_bridge = sourceHistory.bridge;
     function* candidates() {
       const history = g(['rev-list', '--first-parent', '--no-merges', sourceHistory.head, `^${sourceHistory.base}`]).trim().split('\n').filter(Boolean);
@@ -423,7 +442,7 @@ if (argv.includes('--allow-declared-runtime')) {
         yield { sha, subjects: prefixSubjects, changed: prefixChanged };
       }
     }
-    const prefix = declaredRuntimePrefix(candidates(), { head: sourceHistory.head, dirty });
+  const prefix = layerAttempt ? null : declaredRuntimePrefix(candidates(), { head: sourceHistory.head, dirty });
     if (prefix) {
       baseSha = prefix.head;
       endpoints.base = baseSha;

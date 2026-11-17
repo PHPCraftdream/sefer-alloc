@@ -23,9 +23,9 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 #[cfg(any(feature = "misuse-checks", debug_assertions))]
 use crate::alloc_core::AllocCore;
 
-use crate::registry::heap_core::HeapCore;
 #[cfg(any(feature = "misuse-checks", debug_assertions))]
-use crate::registry::segment_route::RouteKind;
+use crate::alloc_core::segment_route::RouteKind;
+use crate::registry::heap_core::HeapCore;
 
 // `MEDIUM_REALLOC_PROMOTION_THRESHOLD` moved to the sibling `dealloc`
 // module with the rest of the former file head; the
@@ -486,7 +486,9 @@ impl HeapCore {
                 not(any(feature = "misuse-checks", debug_assertions)),
                 allow(unused_variables)
             )]
-            let Some(route) = crate::registry::segment_route::RouteDirectory::global().lookup(ptr) else {
+            let Some(route) =
+                crate::alloc_core::segment_route::RouteDirectory::global().lookup(ptr)
+            else {
                 return core::ptr::null_mut();
             };
             #[cfg(any(feature = "misuse-checks", debug_assertions))]

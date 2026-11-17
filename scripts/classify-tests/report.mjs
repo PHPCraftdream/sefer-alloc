@@ -87,7 +87,7 @@ export function renderReport(data) {
     data.markerList.map((m) => [m.marker, m.src_hit, m.provenance || '-']),
   ));
   L.push('');
-  L.push('Dropped from the marker list: `publish_pending` (src/registry/segment_route/large_state.rs:25) — the Large-reservation route sidecar publication CAS (LIVE(g)->PENDING(g)), not a first-config-wins API. `claim_with_config` auto-dropped (no src/ hit).');
+  L.push('Dropped from the marker list: `publish_pending` (src/alloc_core/segment/segment_route/route_protocol/large_state.rs:25) — the Large-reservation route sidecar publication CAS (LIVE(g)->PENDING(g)), not a first-config-wins API. `claim_with_config` auto-dropped (no src/ hit).');
   L.push('');
 
   // Pin surfaces

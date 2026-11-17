@@ -279,15 +279,15 @@
 //                             (under `alloc-global`)
 //      * `registry::heap_registry::claim` — `*mut HeapCore` pointer handoff out
 //                             of a slot (the `FREE → LIVE` claim). (under `alloc-global`)
-//      * `registry::segment_route::directory::route_directory` — System-backed
+//      * `alloc_core::segment::segment_route::directory::route_directory` — System-backed
 //                             route entry and sidecar allocation/reclamation;
 //                             numeric foreign lookup pins under the shard lock.
 //                             (under `alloc-global`)
-//      * `registry::segment_route::directory::blocks` — System-backed sorted
+//      * `alloc_core::segment::segment_route::directory::blocks` — System-backed sorted
 //                             pointer-array blocks, block index and spares,
 //                             mutated only under the shard lock.
 //                             (under `alloc-global`)
-//      * `registry::segment_route::small_sidecar` — in-place construction of
+//      * `alloc_core::segment::segment_route::route_state::small_sidecar` — in-place construction of
 //                             pending atomics and the owner class map.
 //                             (under `alloc-global`)
 //      * `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes` —
@@ -299,7 +299,7 @@
 //                             owner-only non-Copy registration storage;
 //                             routes close before reservation release.
 //                             (under `alloc-global`)
-//      * `registry::segment_route::shard_lock` — non-allocating spin lock
+//      * `alloc_core::segment::segment_route::route_state::shard_lock` — non-allocating spin lock
 //                             for route-directory shards (std `Mutex` boxes
 //                             on first lock on some targets and would re-enter
 //                             the global allocator). (under `alloc-global`)

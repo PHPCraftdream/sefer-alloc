@@ -27,7 +27,7 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta,
     feature = "alloc-xthread",
     not(feature = "numa-aware")
 ))]
-use crate::registry::segment_route::{HeapIngress, INGRESS_CELLS, INGRESS_WORDS};
+use crate::alloc_core::segment_route::{HeapIngress, INGRESS_CELLS, INGRESS_WORDS};
 
 // The ingress cell geometry matches the table and the registry it serves.
 #[cfg(all(

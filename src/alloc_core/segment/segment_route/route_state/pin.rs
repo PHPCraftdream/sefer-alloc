@@ -128,14 +128,14 @@ impl RoutePin {
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[doc(hidden)]
     pub fn dbg_route_pin_cache_totals() -> (u64, u64, u64, u64, u64, u64, u64) {
-        crate::registry::heap_core_xthread::route_pin_cache::dbg_totals()
+        crate::alloc_core::segment_route::route_pin_cache::dbg_totals()
     }
     /// Slot count of the calling thread's route pin cache (the count it will
     /// adopt if nothing was inserted yet). Read-only.
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[doc(hidden)]
     pub fn dbg_route_pin_cache_slots() -> usize {
-        crate::registry::heap_core_xthread::route_pin_cache::dbg_slots()
+        crate::alloc_core::segment_route::route_pin_cache::dbg_slots()
     }
     /// Test-only seam that inserts a caller-looked-up pin into the per-thread
     /// route pin cache through the production insert path, so tests can
@@ -146,7 +146,7 @@ impl RoutePin {
     pub fn dbg_cache_insert_for_test(self) {
         let base = self.entry.key();
         let incarnation = self.incarnation();
-        crate::registry::heap_core_xthread::route_pin_cache::cache_insert(self, base, incarnation);
+        crate::alloc_core::segment_route::route_pin_cache::cache_insert(self, base, incarnation);
     }
     /// Test-only entry into the production cached fast path. The input is
     /// address-only (no provenance); unlike the read-only
@@ -167,12 +167,12 @@ impl RoutePin {
     #[doc(hidden)]
     #[allow(unsafe_code)]
     pub unsafe fn dbg_publish_cached_for_test(address: usize) -> bool {
-        use crate::registry::heap_core_xthread::route_pin_cache::CachedPublication;
+        use crate::alloc_core::segment_route::route_pin_cache::CachedPublication;
         let ptr = core::ptr::without_provenance_mut::<u8>(address);
         // SAFETY: this hook's `# Safety` contract supplies the unique
         // ownership of the current issued instance; forwarded verbatim to
         // `publish_cached`.
-        match unsafe { crate::registry::heap_core_xthread::route_pin_cache::publish_cached(ptr) } {
+        match unsafe { crate::alloc_core::segment_route::route_pin_cache::publish_cached(ptr) } {
             CachedPublication::Published(published) => published,
             CachedPublication::Miss => false,
         }

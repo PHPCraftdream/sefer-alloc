@@ -12,7 +12,7 @@
 //! `tests/compile_fail/shard_guard_send_only_payload_not_sync/` and is
 //! asserted by `send_only_payload_guard_shared_between_threads_must_not_compile`.
 
-#[path = "../src/registry/segment_route/shard_lock.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_state/shard_lock.rs"]
 mod shard_lock;
 
 use core::cell::Cell;

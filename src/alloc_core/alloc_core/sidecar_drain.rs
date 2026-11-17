@@ -313,7 +313,7 @@ impl AllocCore {
         high_water: usize,
         word: usize,
         unavailable: &'static [u8],
-    ) -> crate::registry::segment_route::RouteScan<'_> {
+    ) -> crate::alloc_core::segment_route::RouteScan<'_> {
         let Some(scan) = self
             .table
             .scan_small_route_from(index, base, high_water, word)
@@ -333,7 +333,7 @@ impl AllocCore {
     #[inline]
     pub(crate) fn consume_small_cuts<O: SmallCutObserver>(
         base: *mut u8,
-        scan: crate::registry::segment_route::RouteScan<'_>,
+        scan: crate::alloc_core::segment_route::RouteScan<'_>,
         observer: O,
     ) -> (u64, usize) {
         Self::consume_small_cuts_impl(base, scan, observer, false)
@@ -345,7 +345,7 @@ impl AllocCore {
     #[inline]
     pub(crate) fn consume_one_small_cut<O: SmallCutObserver>(
         base: *mut u8,
-        scan: crate::registry::segment_route::RouteScan<'_>,
+        scan: crate::alloc_core::segment_route::RouteScan<'_>,
         observer: O,
     ) -> (u64, usize) {
         Self::consume_small_cuts_impl(base, scan, observer, true)
@@ -353,7 +353,7 @@ impl AllocCore {
 
     fn consume_small_cuts_impl<O: SmallCutObserver>(
         base: *mut u8,
-        mut scan: crate::registry::segment_route::RouteScan<'_>,
+        mut scan: crate::alloc_core::segment_route::RouteScan<'_>,
         mut observer: O,
         exactly_one_cut: bool,
     ) -> (u64, usize) {

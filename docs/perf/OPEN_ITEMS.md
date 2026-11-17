@@ -155,6 +155,22 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** complete #107 exact-source tests, the owner-specified existing IAI base/candidate verification and actual landing CI. PR #229 evidence and PR #230 infrastructure/encoding recovery are merged and their landing is green; the owner's default decision is already affirmative. Read `docs/perf/j13_limited_20261111/J13_LIMITED_ALWAYS_OFF.md`, including sparse-edge and CACHE costs. Do not repeat the completed960-child study. Full-builder identity, adapters, and admission remain requirements only for the later full J13b campaign, not shipping or the narrow study.
    > - **Evidence:** `docs/perf/J13B_BOUNDED_THP_PREREG.md`; `docs/perf/round-manifests/J13B_BUDGET_MANIFEST.md`; `docs/perf/J13B_JUDGE_README.md`; `tests/j13b_thp_*.rs`; correctness items 262–267, 272; immutable historical decision `7ae557aa:docs/perf/J13_OWNER_DECISION.md`. Historical J13 measurements are not J13b results.
 
+155. **[A] CI critical path after the Miri sharding — the full-run wall-clock did not shrink; check-matrix rows and aarch64 are the next lever.** (Filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`.)
+
+   > **Current state**
+   > - **Status:** OPEN — Miri sharding and target-time rebalance landed; full-run wall-clock did not shrink.
+   > - **Current:** Miri jobs were sharded by target (PR #261, `cd316a3b`) and rebalanced by measured target times (PR #262, `dcccdcf3`), but the full-run time did not shrink. The critical path moved to the longest jobs: test (aarch64), miri (core, TreeBorrows pin cache), check-matrix, miri-plain (heavy), and kani. PR #262 CI final-run job times identify these longest jobs; before sharding, the six-full-attempt medians in `docs/perf/CI_LONG_JOBS.md` include check-matrix at 1728 s.
+   > - **Next trigger:** as new full-run data accumulates, rebalance check-matrix by rows and the aarch64 job; recompute with `node scripts/ci-long-jobs.mjs`.
+   > - **Evidence:** `docs/perf/CI_LONG_JOBS.md`; PR #260 (`19cbc5f8`), #261 (`cd316a3b`), and #262 (`dcccdcf3`).
+
+156. **[A] Miri shard rebalance by measured target times — periodic, as data accumulates.** (Filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`.)
+
+   > **Current state**
+   > - **Status:** OPEN — rebalanced once; revisit when accumulated runtimes skew again.
+   > - **Current:** Miri shards were equilibrated once by PR #262 (`dcccdcf3`) using measured target times. The shard-union equivalence gate is `node scripts/verify-miri-sharding.mjs`.
+   > - **Next trigger:** when newly accumulated shard runtimes skew again, rebalance by the PR #262 method and rerun the equivalence gate.
+   > - **Evidence:** PR #262 (`dcccdcf3`); `scripts/verify-miri-sharding.mjs`; `.github/workflows`.
+
 152. **[L] G1-GR1 — cheaper discovery miss (lower directory threshold): NULL, below the magnitude rule.** (Filed 2026-11-02, `docs/perf/gr1/`.)
 
    > **Current state**
@@ -3501,6 +3517,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Evidence:** docs/perf/G1_IDEAS.md §9, docs/perf/g1_pmu/p0/ (prereg, patch, manifests, vs-null table and CSV, vs-mimalloc generator output, PMU and callgrind raws).
 
 ## Recently resolved (closure trail — do not re-list as open)
+
+- 2026-11-17 — CI measurement/sharding work of the P1 landing session closed: PR #258 (`a3194012`, TEST_SELECTION=enforce impact report `docs/perf/TEST_SELECTION_ENFORCE_IMPACT.md`), PR #260 (`19cbc5f8`, long-job measurements `docs/perf/CI_LONG_JOBS.md`), PR #261 (`cd316a3b`, miri target sharding), PR #262 (`dcccdcf3`, shard rebalance) — all merged; follow-ups filed as items 155/156. (Not previously indexed as open items; recorded here as the session closure trail.)
 
 - **Item 153 — G1-AO1 magazine refill issued in ascending address order: shipped `perf(runtime)` on the owner's rule "merge only a clear win", closed 2026-11-02** (PR #153; v2b wall-clock campaign 3 on `main` `eb95709d`: grow64 Windows 0.750 (0.710–0.793), Linux 0.695 (0.628–0.769), grow1k Windows 0.770 (0.740–0.802), A/A clean, no cell killed; judge gate by the preregistration still reads HOLD for interval width. `bench:table`, three paired sets: sefer-time gm −0.4 % / −0.3 % / −0.0 %, 0 new LOSS cells; one repeatable cost — direct 256 B about +2.6 % of sefer time (five of six pairs above zero), set 1 largest agreed loss +3.4 % vs the +3 % line.) Report `docs/perf/AO1_ASCENDING_ISSUE.md`; the pre-merge card is archived at `docs/perf/OPEN_ITEMS_ARCHIVE.md` § "153 — G1-AO1".
 - **Item 136 — WB-3 C1 depot fast lanes (park_simple / reload_simple): reopened by the owner on 2026-11-01 and shipped `perf(runtime)` on top of R123, closed 2026-11-01** (PR #149; paired bench:table GO in both ABBA sets under the magnitude rule, sefer time gm −1.8 % / −2.1 %, 0 losing cells, direct 64 B −13.9 % / −7.8 %; callgrind bulk 16/64 B −4.8 %, mstress T=1 −1.7 %). Report `docs/perf/G1_C1R_DEPOT_FAST_LANE.md`; the 2026-10-29 NO-GO card is archived at `docs/perf/OPEN_ITEMS_ARCHIVE.md` § "136 — WB-3 C1".
