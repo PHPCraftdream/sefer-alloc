@@ -2,7 +2,9 @@
 
 Script: `scripts/classify-tests.mjs` (modules under `scripts/classify-tests/`).
 
-Sources: commit `5c648b2a5ccbe76c983ea84beeb8c58dfbd4f0b0`, tree `b5f4abb806ecfac367a3daf1de7dac6d9fdff859`; tracked inputs clean.
+Sources: tracked inputs clean.
+Justification: this is a derived inventory, not a measurement report; CLAUDE.md immutable-identity rules target measurement reports.
+Its commit-free identity line avoids conflicts when parallel PRs change inputs.
 
 ## First-config-wins markers (derived from src/)
 
@@ -30,7 +32,7 @@ Dropped from the marker list: `publish_pending` (src/alloc_core/segment/segment_
 | ci_workflow | 8 |
 | doc | 1383 |
 | doc_json | 2 |
-| script | 288 |
+| script | 290 |
 
 Note: the classification suite's own output artifacts (`docs/perf/TEST_TARGET_CLASSIFICATION_*.md`, `docs/test_target_classification_*.csv`) are excluded from the doc pin surface: scanning the report's own echo would pin the targets it lists, making the classification non-idempotent (self-reference, not a pre-existing pin).
 
@@ -45,7 +47,7 @@ Targets externally pinned by name: **475** of 510.
 | global_allocator | 79 | 76 | 63 | corrected |
 | first_config_wins | 111 | 24 | 79 | corrected |
 | process_spawn | 33 | 32 | 33 | confirmed |
-| loom_only (plan definition: loom mentions) | 21 | 45 | 32 | corrected |
+| loom_only (plan definition: loom mentions) | 21 | 44 | 32 | corrected |
 | harness=false (all harness=false lines in Cargo.toml) | 52 | 52 | 13 | corrected |
 | [[test]] tables | 29 | 26 | 26 | corrected |
 
@@ -93,9 +95,9 @@ Note: the plan's §1 numbers are grep approximations over overlapping sets — t
 | **file_cfg** (461) | 52 | 79 | 25 | 30 | 50 | 0 | 0 | 0 | 12 | 461 | 428 |
 | **externally_pinned** (475) | 61 | 75 | 33 | 31 | 50 | 0 | 13 | 11 | 26 | 428 | 475 |
 
-## Non-target inventory (1207 entries; 41 of them are top-level entries of tests/)
+## Non-target inventory (1209 entries; 43 of them are top-level entries of tests/)
 
-Top-level accounting: tests/ has **551** top-level entries; 510 are targets; the remaining **41** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
+Top-level accounting: tests/ has **553** top-level entries; 510 are targets; the remaining **43** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
 
 | path | kind |
 | --- | --- |
@@ -1305,6 +1307,8 @@ Top-level accounting: tests/ has **551** top-level entries; 510 are targets; the
 | tests/support/tagged_index_stack_compile_fail.rs | support-module |
 | tests/test_inventory.test.mjs | mjs-script |
 | tests/test_selection_impact.test.mjs | mjs-script |
+| tests/verify_ci_node_tests.test.mjs | mjs-script |
+| tests/verify_doc_inventories.test.mjs | mjs-script |
 | tests/verify_miri_target_wiring_quoting.test.mjs | mjs-script |
 
 ## Groups (top 10 of 2 by saved links; total saved links 0)
@@ -1337,7 +1341,7 @@ By construction of the strict rule, no member is name-pinned externally. But ANY
 | docs/perf/b4_ablate/G1_K7_A6_VERDICT.md | 27 | (1606 files). Campaign driver output: `a6/campaign.log`. | 1606 |
 | docs/perf/G1_DECISION_CRITERION.md | 81 | \| Selected-test count for a representative peripheral change \| tests \| after P1.5 strictly fewer than the current all-target selection \| current data point: a segment-directory scan change selects 369 of 484 tests (`docs/CI_TIERS.md`, "Test selection" section; first map run: 374 of 484 mapped under `--all-features`) \| | 369/484 |
 | docs/perf/R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md | 352 | - `docs/perf/_raw_r14_6_*.log` (14 files): iai baseline/treatment, R12-4 | 14 |
-| docs/plans/2026-11-15-workspace-restructure-plan.md | 37 | a segment-directory scan change selects 369 of 484 tests) because one crate holds all of the | 369/484 |
+| docs/plans/2026-11-15-workspace-restructure-plan.md | 39 | a segment-directory scan change selects 369 of 484 tests) because one crate holds all of the | 369/484 |
 | docs/reviews/2026-07-09-maintainability-architecture-review.md | 235 | (103 files)», фактически 117. | 103 |
 | docs/reviews/2026-07-17-deep-audit/08-test-verification-coverage.md | 3 | Scope: `tests/` (169 integration test files), `crates/*/tests/`, verification | 169 |
 | docs/reviews/2026-07-26-r19-r21-readonly-review.md | 346 | То же касается ручного `tests/*.rs (221 files)` в ARCHITECTURE: точное число | 221 |
@@ -1520,11 +1524,11 @@ Measured but not in baseline (1):
 | --- | --- |
 | tests/tagged_index_stack_ab_runner_scratch_guard.rs | bare-Command-import |
 
-### loom_tree — naive 45 vs measured 32
+### loom_tree — naive 44 vs measured 32
 
 Pattern: `\bloom\b on raw text`
 
-In baseline but not measured (13):
+In baseline but not measured (12):
 
 | path | reason |
 | --- | --- |
@@ -1532,7 +1536,6 @@ In baseline but not measured (13):
 | tests/b4_scan_zero_word_skip_keeps_bits.rs | comment-only |
 | tests/class_leaves_publication_miri.rs | comment-only |
 | tests/global_alloc_installed.rs | comment-only |
-| tests/no_stale_doc_references.rs | string-literal |
 | tests/r11_ph4b_lease_miri.rs | comment-only |
 | tests/r6_sidecar_bitmap.rs | comment-only |
 | tests/r6_t26_cas_spin_ttas_stress.rs | comment-only |

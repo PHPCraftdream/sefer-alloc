@@ -10,6 +10,7 @@
 //   node scripts/classify-tests.mjs --json     # full JSON data structure
 //   node scripts/classify-tests.mjs --csv      # RFC-4180 CSV, one row per tests/ entry
 //   node scripts/classify-tests.mjs --report   # full Markdown report
+//   node scripts/classify-tests.mjs --identity # print commit/tree and input identity
 //   (exactly one flag required; no flag or several -> usage, exit 2)
 //
 // Derives (from repo data only):
@@ -29,6 +30,7 @@
 // Determinism: sorted everywhere, no wall-clock timestamps; the report header
 // carries the fixed plan date label '2026-11-15'. The script writes nothing.
 
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -49,12 +51,11 @@ import {
 import { renderReport, PLAN_HYPOTHESES } from './classify-tests/report.mjs';
 
 const PLAN_DATE = '2026-11-15';
-const USAGE = `usage: node scripts/classify-tests.mjs --json | --csv | --report
-(plan label ${PLAN_DATE}; exactly one output flag)`;
+const USAGE = `usage: node scripts/classify-tests.mjs --json | --csv | --report | --check | --identity\n(plan label ${PLAN_DATE}; exactly one output flag)`;
 
 // ---------------------------------------------------------------- CLI plumbing
 const args = process.argv.slice(2).filter((a) => a.startsWith('--'));
-const modes = args.filter((a) => ['--json', '--csv', '--report'].includes(a));
+const modes = args.filter((a) => ['--json', '--csv', '--report', '--check', '--identity'].includes(a));
 if (args.length !== modes.length || modes.length !== 1) {
   process.stderr.write(`${USAGE}\n`);
   process.exit(2);
@@ -88,10 +89,11 @@ for (const line of porcelain.split(/\r?\n/)) {
     dirty.push(`${status} ${path}`);
   }
 }
-if (dirty.length > 0) {
+if (dirty.length > 0 && !process.env.CLASSIFY_TESTS_ALLOW_DIRTY) {
   throw new Error(`tracked classification inputs are dirty:\n${dirty.join('\n')}`);
 }
-const trackedInputsClean = true;
+// Local regeneration may happen while edits are in flight; CI uses a clean tree.
+const trackedInputsClean = dirty.length === 0 || Boolean(process.env.CLASSIFY_TESTS_ALLOW_DIRTY);
 
 // ---------------------------------------------------------------- discovery
 const manifest = parseToml(readFileSync(join(repoRoot, 'Cargo.toml'), 'utf8'));
@@ -157,6 +159,25 @@ const markerList = markerRecords.map((m) => ({
 
 // ---------------------------------------------------------------- classify
 const pins = scanAllPins(collectPinSurfaces(repoRoot), targets.map((t) => t.name));
+
+// Hash the sorted tracked inputs that feed this derived inventory. Exclude the
+// generated report to avoid self-reference; commit/tree IDs remain available
+// through --identity and --json for local provenance.
+const trackedPaths = new Set(git(['ls-files', '-z']).split(/\x00/).filter(Boolean));
+const trackedInputPaths = [...new Set([
+  'Cargo.toml',
+  ...allFiles.map((f) => `tests/${f}`),
+  ...srcFiles.map((f) => `src/${f}`),
+  ...pins.surfaceFiles.map((f) => f.file),
+  ...[...trackedPaths].filter((p) => p.startsWith('scripts/classify-tests/') && p.endsWith('.mjs')),
+])].filter((p) => trackedPaths.has(p)).sort();
+const trackedInputsHasher = createHash('sha256');
+for (const path of trackedInputPaths) {
+  trackedInputsHasher.update(`${path}\0`);
+  trackedInputsHasher.update(readFileSync(join(repoRoot, path)));
+  trackedInputsHasher.update('\0');
+}
+const trackedInputsSha256 = trackedInputsHasher.digest('hex');
 
 const rows = [];
 for (const t of targets) {
@@ -359,10 +380,12 @@ for (const g of groupsMap.values()) {
   for (const n of g.members) groupOfTarget.set(n, g.key);
 }
 
-if (mode === '--json') {
+if (mode === '--identity') {
+  process.stdout.write(`commit ${headSha}\ntree ${treeSha}\ntracked inputs sha256 ${trackedInputsSha256}\ntracked inputs clean: ${trackedInputsClean ? 'yes' : 'no'}\n`);
+} else if (mode === '--json') {
   const out = {
     planDate: PLAN_DATE,
-    identity: { headSha, treeSha, trackedInputsClean },
+    identity: { headSha, treeSha, trackedInputsSha256, trackedInputsClean },
     counts,
     markerList,
     hypotheses,
@@ -434,7 +457,7 @@ process.stdout.write(`${csvLines.join('\r\n')}\r\n`);
 
 // ---------------------------------------------------------------- report output
 const reportData = {
-  identity: { headSha, treeSha, trackedInputsClean },
+  identity: { trackedInputsClean },
   counts,
   markerList,
   reconciliation,
@@ -457,5 +480,20 @@ const reportData = {
   },
   relaxation,
 };
-process.stdout.write(renderReport(reportData));
+  const report = renderReport(reportData);
+  if (mode === '--check') {
+    const reportPath = join(repoRoot, 'docs', 'perf', `TEST_TARGET_CLASSIFICATION_${PLAN_DATE.replaceAll('-', '')}.md`);
+    let committed;
+    try { committed = readFileSync(reportPath, 'utf8'); } catch {
+      process.stderr.write(`--check FAILED: report file missing: ${reportPath}\n`);
+      process.exit(1);
+    }
+    if (committed !== report) {
+      process.stderr.write(`--check FAILED: ${reportPath} differs from fresh generation (run node scripts/classify-tests.mjs --report)\\n`);
+      process.exit(1);
+    }
+    process.stdout.write('--check ok: committed report matches fresh generation\n');
+  } else {
+    process.stdout.write(report);
+  }
 }

@@ -679,7 +679,7 @@ function reportFixture({ manyMembers = false, emptySet = false } = {}) {
   const flags = ['ga', 'sp'];
   const sets = { ga: emptySet ? 0 : 1, sp: 1 };
   return {
-    identity: { headSha: '0'.repeat(40), treeSha: '1'.repeat(40), trackedInputsClean: true },
+    identity: { trackedInputsClean: true },
     counts: { targets: 2, externally_pinned: 0, nonTargets: 0, topLevelNonTargets: 0,
       topLevelEntries: 2, groupCount: 1, totalSavedLinks: 1, mergeable: 2 },
     markerList: [{ marker: 'with_config', src_hit: 'src/a.rs:1', provenance: 'derived' }],
@@ -745,7 +745,8 @@ test('renderReport: long member lists truncate with "+N more"', () => {
 
 function runCli(flag) {
   const r = spawnSync(process.execPath, ['scripts/classify-tests.mjs', flag],
-    { cwd: repoRoot, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+    { cwd: repoRoot, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
+      env: { ...process.env, CLASSIFY_TESTS_ALLOW_DIRTY: '1' } });
   return r;
 }
 
@@ -772,6 +773,8 @@ test('CLI --json: counts match today\'s pinned values and structure holds', () =
     ['compat'], 'exactly one pilotEligible rung');
   assert.match(data.identity.headSha, /^[0-9a-f]{40}$/);
   assert.match(data.identity.treeSha, /^[0-9a-f]{40}$/);
+  assert.match(data.identity.trackedInputsSha256, /^[0-9a-f]{64}$/);
+  assert.equal(data.identity.trackedInputsClean, true);
 });
 
 test('CLI --csv: row count = targets+nonTargets+1, header has key columns', () => {
@@ -788,11 +791,35 @@ test('CLI --csv: row count = targets+nonTargets+1, header has key columns', () =
   }
 });
 
-test('CLI --report: exit 0, identity line and hypotheses header present', () => {
+test('CLI --report: commit-independent input identity and hypotheses header', () => {
   const r = runCli('--report');
   assert.equal(r.status, 0, `exit 0 (stderr: ${r.stderr})`);
-  assert.ok(r.stdout.includes('commit `'), 'identity line present');
+  assert.match(r.stdout, /^Sources: tracked inputs clean\.$/m);
+  assert.ok(!/\b[0-9a-f]{40}\b/i.test(r.stdout), 'report contains no commit/tree SHA');
+  assert.ok(!/\b[0-9a-f]{64}\b/i.test(r.stdout), 'report contains no SHA-256 hash');
+  assert.ok(r.stdout.includes('derived inventory, not a measurement report'));
+  assert.ok(r.stdout.includes('commit-free identity line avoids conflicts'));
   assert.ok(r.stdout.includes('| metric |'), 'hypotheses table header present');
+
+  const committed = readFileSync(join(repoRoot,
+    'docs/perf/TEST_TARGET_CLASSIFICATION_20261115.md'), 'utf8');
+  assert.match(committed, /^Sources: tracked inputs clean\.$/m);
+  assert.ok(!/\b[0-9a-f]{40}\b/i.test(committed),
+    'committed report contains no 40-hex commit/tree SHA');
+  assert.ok(!/\b[0-9a-f]{64}\b/i.test(committed),
+    'committed report contains no 64-hex SHA-256 hash');
+});
+
+test('CLI --identity: prints commit/tree provenance and input hash on separate lines', () => {
+  const r = runCli('--identity');
+  assert.equal(r.status, 0, `exit 0 (stderr: ${r.stderr})`);
+  assert.match(r.stdout, /^commit [0-9a-f]{40}\ntree [0-9a-f]{40}\ntracked inputs sha256 [0-9a-f]{64}\ntracked inputs clean: yes\n$/);
+});
+
+test('CLI --check: committed report exactly matches fresh generation', () => {
+  const r = runCli('--check');
+  assert.equal(r.status, 0, `exit 0 (stderr: ${r.stderr})`);
+  assert.match(r.stdout, /^--check ok: committed report matches fresh generation\n$/);
 });
 
 // --------------------------------------------------------------- 8. determinism

@@ -24,7 +24,7 @@ file,scripts/verify-evidence-registry.mjs,1160,grandfathered when the structure 
 file,scripts/verify-gate-report.mjs,1485,grandfathered when the structure limits landed (2026-10-12)
 file,scripts/verify-vmem-page-constant-call-sites.mjs,1465,grandfathered when the structure limits landed (2026-10-12)
 file,tests/lazy_commit_b4_matrix.rs,1486,grandfathered when the structure limits landed (2026-10-12)
-file,tests/no_stale_doc_references.rs,2922,grandfathered when the structure limits landed (2026-10-12)
+file,tests/no_stale_doc_references.rs,2397,grandfathered when the structure limits landed (2026-10-12)
 file,tests/r11_ph3b_kind_aware_entries.rs,1097,grandfathered when the structure limits landed (2026-10-12)
 file,tests/tagged_index_stack_ab_runner_scratch_guard.rs,1221,grandfathered when the structure limits landed (2026-10-12)
 folder,crates/platform/aligned-vmem/src,20,grandfathered when the structure limits landed (2026-10-12)
