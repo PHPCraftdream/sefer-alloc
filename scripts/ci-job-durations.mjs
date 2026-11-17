@@ -61,7 +61,7 @@ export function cargoTestStepSeconds(job, pattern) {
   return sum === null ? null : { seconds: sum, raws };
 }
 
-function normalizeJob(job) {
+export function normalizeJob(job) {
   const out = { ...job, started_at: job.started_at ?? job.startedAt, completed_at: job.completed_at ?? job.completedAt };
   if (Array.isArray(job.steps)) {
     out.steps = job.steps.map((s) => ({ ...s, started_at: s.started_at ?? s.startedAt, completed_at: s.completed_at ?? s.completedAt }));
