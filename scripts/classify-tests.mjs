@@ -3,13 +3,13 @@
 //
 // Purpose: derive, WITHOUT cargo/network, the full target/non-target
 // inventory of tests/, per-file classification flags, external pin surfaces,
-// mergeability (strict rules), merge groups, the pilot candidate and the
-// relaxation ladder — as three deterministic stdout outputs.
+// mergeability, and aggregate analysis — as deterministic stdout outputs.
 //
 // Usage:
 //   node scripts/classify-tests.mjs --json     # full JSON data structure
 //   node scripts/classify-tests.mjs --csv      # RFC-4180 CSV, one row per tests/ entry
-//   node scripts/classify-tests.mjs --report   # full Markdown report
+//   node scripts/classify-tests.mjs --report   # per-file Markdown inventory
+//   node scripts/classify-tests.mjs --summary  # aggregate Markdown analysis
 //   node scripts/classify-tests.mjs --identity # print commit/tree and input identity
 //   (exactly one flag required; no flag or several -> usage, exit 2)
 //
@@ -48,14 +48,14 @@ import {
   mergeability, themePrefix, groupKey, buildGroups, pilotCandidate,
   relaxationLadder, assertGroupInvariants, intersections,
 } from './classify-tests/groups.mjs';
-import { renderReport, PLAN_HYPOTHESES } from './classify-tests/report.mjs';
+import { renderReport, renderSummary, PLAN_HYPOTHESES } from './classify-tests/report.mjs';
 
 const PLAN_DATE = '2026-11-15';
-const USAGE = `usage: node scripts/classify-tests.mjs --json | --csv | --report | --check | --identity\n(plan label ${PLAN_DATE}; exactly one output flag)`;
+const USAGE = `usage: node scripts/classify-tests.mjs --json | --csv | --report | --summary | --check | --identity\n(plan label ${PLAN_DATE}; exactly one output flag)`;
 
 // ---------------------------------------------------------------- CLI plumbing
 const args = process.argv.slice(2).filter((a) => a.startsWith('--'));
-const modes = args.filter((a) => ['--json', '--csv', '--report', '--check', '--identity'].includes(a));
+const modes = args.filter((a) => ['--json', '--csv', '--report', '--summary', '--check', '--identity'].includes(a));
 if (args.length !== modes.length || modes.length !== 1) {
   process.stderr.write(`${USAGE}\n`);
   process.exit(2);
@@ -380,6 +380,48 @@ for (const g of groupsMap.values()) {
   for (const n of g.members) groupOfTarget.set(n, g.key);
 }
 
+function renderCsv() {
+  const yesno = (b) => (b ? 'yes' : 'no');
+  const csvField = (v) => {
+    const s = String(v ?? '');
+    return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+  };
+  const header = ['path', 'name', 'kind', 'test_enabled', 'harness_false', 'declared_explicit',
+    'required_features', 'file_level_cfg', 'cfg_features', 'cfg_keys', 'global_allocator',
+    'first_config_wins', 'process_spawn', 'abort', 'should_panic', 'catch_unwind',
+    'loom_only', 'miri_only', 'kani_gated', 'main_fn', 'lines', 'external_pin_count',
+    'external_pin_surfaces', 'mergeable', 'unmergeable_reasons', 'group'];
+  const lines = [header.join(',')];
+  const pushRow = (fields) => {
+    if (fields.length !== header.length) throw new Error(`CSV row has ${fields.length} columns; expected ${header.length}`);
+    lines.push(fields.map(csvField).join(','));
+  };
+  const entries = [
+    ...rows.map((row) => ({ path: row.target.path, target: row })),
+    ...nonTargets.map((entry) => ({ path: entry.path, nonTarget: entry })),
+  ].sort((a, b) => a.path.localeCompare(b.path));
+  for (const entry of entries) {
+    if (entry.target) {
+      const r = entry.target;
+      const t = r.target;
+      const f = r.facts;
+      const surfaces = r.externalPins.hits.map((h) => `${h.file}:${h.kind}`);
+      pushRow([t.path, t.name, 'target', yesno(t.test_enabled), yesno(!t.harness),
+        yesno(t.declared_explicit), t.required_features.join(' '), f.file_level_cfg || '',
+        f.cfg_features.join(' '), f.cfg_keys.join(' '), yesno(f.global_allocator),
+        f.first_config_wins.join(','), yesno(f.process_spawn), yesno(f.abort_marker),
+        yesno(f.should_panic), yesno(f.catch_unwind), yesno(f.loom_only), yesno(f.miri_only),
+        yesno(f.kani_gated), yesno(f.main_fn), f.lines, r.externalPins.count, surfaces.join(';'),
+        yesno(r.mergeable), r.reasons.join(';'), groupOfTarget.get(t.name) || '']);
+    } else {
+      const n = entry.nonTarget;
+      pushRow([n.path, n.path.split('/').pop(), n.kind, '', '', '', '', '', '', '', 'no', '',
+        'no', 'no', 'no', 'no', 'no', 'no', 'no', 'no', '', 0, '', 'no', '', '']);
+    }
+  }
+  return `${lines.join('\r\n')}\r\n`;
+}
+
 if (mode === '--identity') {
   process.stdout.write(`commit ${headSha}\ntree ${treeSha}\ntracked inputs sha256 ${trackedInputsSha256}\ntracked inputs clean: ${trackedInputsClean ? 'yes' : 'no'}\n`);
 } else if (mode === '--json') {
@@ -415,44 +457,7 @@ if (mode === '--identity') {
   };
   process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
 } else if (mode === '--csv') {
-// ---------------------------------------------------------------- CSV output
-const yesno = (b) => (b ? 'yes' : 'no');
-function csvField(v) {
-  const s = String(v ?? '');
-  return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
-}
-
-const CSV_HEADER = ['path', 'name', 'kind', 'test_enabled', 'harness_false', 'declared_explicit',
-  'required_features', 'file_level_cfg', 'cfg_features', 'cfg_keys', 'global_allocator',
-  'first_config_wins', 'process_spawn', 'abort', 'should_panic', 'catch_unwind',
-  'loom_only', 'miri_only', 'kani_gated', 'main_fn', 'lines', 'external_pin_count',
-  'external_pin_surfaces', 'mergeable', 'unmergeable_reasons', 'group'];
-
-const csvLines = [CSV_HEADER.join(',')];
-const pushRow = (fields) => csvLines.push(fields.map(csvField).join(','));
-
-for (const r of rows) {
-  const t = r.target;
-  const f = r.facts;
-  const surfaces = r.externalPins.hits.map((h) => `${h.file}:${h.kind}`);
-  pushRow([
-    t.path, t.name, 'target',
-    yesno(t.test_enabled), yesno(!t.harness), yesno(t.declared_explicit),
-    t.required_features.join(' '),
-    f.file_level_cfg || '', f.cfg_features.join(' '), f.cfg_keys.join(' '),
-    yesno(f.global_allocator), f.first_config_wins.join(','), yesno(f.process_spawn),
-    yesno(f.abort_marker), yesno(f.should_panic), yesno(f.catch_unwind),
-    yesno(f.loom_only), yesno(f.miri_only), yesno(f.kani_gated), yesno(f.main_fn),
-    f.lines, r.externalPins.count, surfaces.join(';'),
-    yesno(r.mergeable), r.reasons.join(';'), groupOfTarget.get(t.name) || '',
-  ]);
-}
-for (const n of nonTargets) {
-  pushRow([n.path, n.path.split('/').pop(), n.kind,
-    '', '', '', '', '', '', '', 'no', '', 'no', 'no', 'no', 'no', 'no', 'no', 'no', 'no',
-    '', 0, '', 'no', '', '']);
-}
-process.stdout.write(`${csvLines.join('\r\n')}\r\n`);
+  process.stdout.write(renderCsv());
 } else {
 
 // ---------------------------------------------------------------- report output
@@ -474,25 +479,35 @@ const reportData = {
   intersectionFlags: INTERSECTION_FLAGS,
   intersections: inter,
   nonTargets,
+  rows,
   groups: groupsSorted,
   pilot: pilot && {
     key: pilot.key, members: pilot.members, savedLinks: pilot.savedLinks,
   },
   relaxation,
 };
-  const report = renderReport(reportData);
+  const report = mode === '--summary' ? renderSummary(reportData) : renderReport(reportData);
   if (mode === '--check') {
-    const reportPath = join(repoRoot, 'docs', 'perf', `TEST_TARGET_CLASSIFICATION_${PLAN_DATE.replaceAll('-', '')}.md`);
-    let committed;
-    try { committed = readFileSync(reportPath, 'utf8'); } catch {
-      process.stderr.write(`--check FAILED: report file missing: ${reportPath}\n`);
+    const mdPath = join(repoRoot, 'docs', 'perf', `TEST_TARGET_CLASSIFICATION_${PLAN_DATE.replaceAll('-', '')}.md`);
+    const csvPath = join(repoRoot, 'docs', `test_target_classification_${PLAN_DATE.replaceAll('-', '')}.csv`);
+    // Compare newline-normalized: git may store CSV CRLF as LF in blobs, so a
+    // Linux checkout yields LF while fresh generation emits CRLF (RFC-4180).
+    const normalize = (t) => t.replaceAll('\r\n', '\n');
+    const expected = [[mdPath, renderReport(reportData)], [csvPath, renderCsv()]];
+    const failures = [];
+    for (const [path, fresh] of expected) {
+      let committed;
+      try { committed = readFileSync(path, 'utf8'); } catch {
+        failures.push(`missing: ${path}`);
+        continue;
+      }
+      if (normalize(committed) !== normalize(fresh)) failures.push(`stale: ${path}`);
+    }
+    if (failures.length > 0) {
+      process.stderr.write(`--check FAILED: committed inventory differs from fresh generation:\n${failures.join('\n')}\n`);
       process.exit(1);
     }
-    if (committed !== report) {
-      process.stderr.write(`--check FAILED: ${reportPath} differs from fresh generation (run node scripts/classify-tests.mjs --report)\\n`);
-      process.exit(1);
-    }
-    process.stdout.write('--check ok: committed report matches fresh generation\n');
+    process.stdout.write('--check ok: committed Markdown and CSV match fresh generation\n');
   } else {
     process.stdout.write(report);
   }
