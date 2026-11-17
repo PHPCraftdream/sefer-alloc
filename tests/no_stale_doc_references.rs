@@ -2914,7 +2914,7 @@ fn r9_current_stats_and_unsafe_inventory_docs_use_live_routes() {
     assert!(core.contains("registry's pinned `segment_route` sidecars"));
     assert!(!lifecycle.contains("PerClassDirty"));
     assert!(!hot.contains("crate::alloc_core::remote_free_ring"));
-    assert!(hot.contains("crate::registry::segment_route::SmallSidecar"));
+    assert!(hot.contains("crate::alloc_core::segment_route::SmallSidecar"));
     assert!(!face.contains("dealloc_foreign_routing"));
     assert!(face.contains("HeapCore::publish_foreign"));
     assert!(stats.contains("This is **not** a ring-overflow count"));

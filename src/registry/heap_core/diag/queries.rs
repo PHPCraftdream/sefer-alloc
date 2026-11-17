@@ -28,7 +28,7 @@ impl HeapCore {
     #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
     #[must_use]
     pub fn dbg_prf01_small_sidecar_size() -> usize {
-        core::mem::size_of::<crate::registry::segment_route::SmallSidecar>()
+        core::mem::size_of::<crate::alloc_core::segment_route::SmallSidecar>()
     }
 
     /// Read-only process-wide discovery totals: pending words visited,

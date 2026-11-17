@@ -1,8 +1,8 @@
 //! Address-only dispatch. Foreign producers touch only independently pinned sidecars.
-use super::route_pin_cache::{self, CachedPublication};
 use crate::alloc_core::os;
+use crate::alloc_core::segment_route::route_pin_cache::{self, CachedPublication};
+use crate::alloc_core::segment_route::{RouteDirectory, RouteKind};
 use crate::registry::heap_core::HeapCore;
-use crate::registry::segment_route::{RouteDirectory, RouteKind};
 use core::alloc::Layout;
 
 impl HeapCore {
@@ -66,7 +66,7 @@ impl HeapCore {
         if published {
             // Only the independent, pre-initialized static test gate is touched.
             // The actual Box Drop and GlobalAlloc dealloc frames stay active.
-            crate::registry::segment_route::TerminalPublicationGate::pause_after_publication(
+            crate::alloc_core::segment_route::TerminalPublicationGate::pause_after_publication(
                 ptr.addr(),
             );
         }
@@ -88,13 +88,13 @@ impl HeapCore {
         // Lookup has released its shard lock. A ready, idle fallback can
         // reclaim synchronously without service startup or a future allocation.
         // The independent pin remains valid even if this free releases its root.
+        let mut dealloc = |heap: &mut HeapCore| {
+            // SAFETY: caller transfers the current allocation once, and
+            // the registered hook grants exclusive fallback owner mutation.
+            unsafe { heap.dealloc(ptr, layout) };
+        };
         if pin.owner() == crate::alloc_core::segment_header::OWNER_ID_FALLBACK as usize
-            && crate::global::fallback::try_with_heap(|heap| {
-                // SAFETY: caller transfers the current allocation once, and
-                // try_with_heap grants exclusive fallback owner mutation.
-                unsafe { heap.dealloc(ptr, layout) };
-            })
-            .is_some()
+            && crate::registry::fallback_hook::FallbackHook::global().try_with_heap(&mut dealloc)
         {
             // The free was handled synchronously; no unroutable-free bump.
             return true;

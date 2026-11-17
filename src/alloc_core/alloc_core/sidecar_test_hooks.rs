@@ -33,7 +33,8 @@ impl AllocCore {
         let Some((base, _)) = self.canonical_block_of(ptr) else {
             return false;
         };
-        let Some(pin) = crate::registry::segment_route::RouteDirectory::global().lookup(ptr) else {
+        let Some(pin) = crate::alloc_core::segment_route::RouteDirectory::global().lookup(ptr)
+        else {
             return false;
         };
         let offset = (ptr.addr() - base.addr()) as u32;

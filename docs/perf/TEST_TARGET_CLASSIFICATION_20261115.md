@@ -2,7 +2,7 @@
 
 Script: `scripts/classify-tests.mjs` (modules under `scripts/classify-tests/`).
 
-Sources: commit `813748edf36a9674335d9ae309ae8fd8db428d73`, tree `03c6cff5055477d7b98ad9fdaa790b65e2f2239d`; tracked inputs clean.
+Sources: commit `5c648b2a5ccbe76c983ea84beeb8c58dfbd4f0b0`, tree `b5f4abb806ecfac367a3daf1de7dac6d9fdff859`; tracked inputs clean.
 
 ## First-config-wins markers (derived from src/)
 
@@ -14,13 +14,13 @@ Sources: commit `813748edf36a9674335d9ae309ae8fd8db428d73`, tree `03c6cff5055477
 | current_for_alloc_with_config | src/global/sefer_alloc/core.rs:4 | src/global/tls_heap.rs:411 |
 | bind_slow_tagged_with_config | src/global/sefer_alloc/core.rs:339 | src/global/tls_heap.rs:491 |
 | new_with_config | src/alloc_core/alloc_core/alloc_core_impl.rs:159 | src/registry/heap_core/core.rs:316 (+ claim.rs) |
-| heap_ptr_with_config | src/global/fallback.rs:188 | src/global/fallback.rs:188 |
-| config_conflicts_total | src/global/fallback.rs:430 | src/registry/heap_registry/counters.rs:99 |
+| heap_ptr_with_config | src/global/fallback.rs:184 | src/global/fallback.rs:188 |
+| config_conflicts_total | src/global/fallback.rs:429 | src/registry/heap_registry/counters.rs:99 |
 | config_conflicts | src/global/alloc_stats.rs:183 | src/global/alloc_stats.rs:183 (AllocStats field) |
 | fallback_config_conflicts | src/global/sefer_alloc/core.rs:244 | src/global/sefer_alloc/core.rs:372 |
 | thp_tuple_conflicts | src/global/alloc_stats.rs:193 | src/global/sefer_alloc/diag.rs (alloc_stats.rs:193 field family) |
 
-Dropped from the marker list: `publish_pending` (src/registry/segment_route/large_state.rs:25) — the Large-reservation route sidecar publication CAS (LIVE(g)->PENDING(g)), not a first-config-wins API. `claim_with_config` auto-dropped (no src/ hit).
+Dropped from the marker list: `publish_pending` (src/alloc_core/segment/segment_route/route_protocol/large_state.rs:25) — the Large-reservation route sidecar publication CAS (LIVE(g)->PENDING(g)), not a first-config-wins API. `claim_with_config` auto-dropped (no src/ hit).
 
 ## Pin surfaces scanned
 
@@ -34,13 +34,13 @@ Dropped from the marker list: `publish_pending` (src/registry/segment_route/larg
 
 Note: the classification suite's own output artifacts (`docs/perf/TEST_TARGET_CLASSIFICATION_*.md`, `docs/test_target_classification_*.csv`) are excluded from the doc pin surface: scanning the report's own echo would pin the targets it lists, making the classification non-idempotent (self-reference, not a pre-existing pin).
 
-Targets externally pinned by name: **475** of 509.
+Targets externally pinned by name: **475** of 510.
 
 ## Plan hypotheses (plan §1) vs naive grep vs measured
 
 | metric | plan (2026-11-15) | naive grep | measured | verdict |
 | --- | --- | --- | --- | --- |
-| tests/ .rs files | 562 | 509 | 509 | corrected |
+| tests/ .rs files | 562 | 510 | 510 | corrected |
 | file-level cfg | 514 | 461 | 461 | corrected |
 | global_allocator | 79 | 76 | 63 | corrected |
 | first_config_wins | 111 | 24 | 79 | corrected |
@@ -93,9 +93,9 @@ Note: the plan's §1 numbers are grep approximations over overlapping sets — t
 | **file_cfg** (461) | 52 | 79 | 25 | 30 | 50 | 0 | 0 | 0 | 12 | 461 | 428 |
 | **externally_pinned** (475) | 61 | 75 | 33 | 31 | 50 | 0 | 13 | 11 | 26 | 428 | 475 |
 
-## Non-target inventory (1206 entries; 40 of them are top-level entries of tests/)
+## Non-target inventory (1207 entries; 41 of them are top-level entries of tests/)
 
-Top-level accounting: tests/ has **549** top-level entries; 509 are targets; the remaining **40** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
+Top-level accounting: tests/ has **551** top-level entries; 510 are targets; the remaining **41** are non-targets. Fixture directories additionally contribute deeper files to the inventory below (kind `directory-fixture` / `support-module` / `other-file`).
 
 | path | kind |
 | --- | --- |
@@ -153,6 +153,7 @@ Top-level accounting: tests/ has **549** top-level entries; 509 are targets; the
 | tests/g1_widening_count.test.mjs | mjs-script |
 | tests/ghost_extraction_policy_fixtures.mjs | mjs-script |
 | tests/ghost_extraction_policy.test.mjs | mjs-script |
+| tests/ghost_layer_restructuring_policy_fixtures.mjs | mjs-script |
 | tests/ghost_lint_fixtures | directory-fixture |
 | tests/ghost_lint_fixtures/nl3_owner_model_bind | directory-fixture |
 | tests/ghost_lint_fixtures/nl3_owner_model_bind/mutant_claim_ordering.rs | support-module |
@@ -1306,11 +1307,12 @@ Top-level accounting: tests/ has **549** top-level entries; 509 are targets; the
 | tests/test_selection_impact.test.mjs | mjs-script |
 | tests/verify_miri_target_wiring_quoting.test.mjs | mjs-script |
 
-## Groups (top 10 of 1 by saved links; total saved links 0)
+## Groups (top 10 of 2 by saved links; total saved links 0)
 
 | group key | members | saved links | member names |
 | --- | --- | --- | --- |
 | j13b\|-\|- | 1 | 0 | j13b_observation_residency_plan |
+| registry\|-\|- | 1 | 0 | registry_fallback_hook |
 
 Full member lists: see the `--csv` output (column `group`).
 
@@ -1328,8 +1330,8 @@ By construction of the strict rule, no member is name-pinned externally. But ANY
 
 | file | line | text | numbers |
 | --- | --- | --- | --- |
-| docs/ARCHITECTURE.md | 509 | Flat root-level Rust inventories: **509 integration test files** (`tests/*.rs`), | 509 |
-| docs/ARCHITECTURE.md | 518 | \| Unit / integration tests \| Construction, edge cases, invariants; snapshot acceptance pending \| `tests/*.rs` (509 files) \| | 509 |
+| docs/ARCHITECTURE.md | 509 | Flat root-level Rust inventories: **510 integration test files** (`tests/*.rs`), | 510 |
+| docs/ARCHITECTURE.md | 518 | \| Unit / integration tests \| Construction, edge cases, invariants; snapshot acceptance pending \| `tests/*.rs` (510 files) \| | 510 |
 | docs/ARCHITECTURE.md | 521 | \| loom \| Bounded interleavings; snapshot execution pending \| **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs` \| | 27 |
 | docs/CI_TIERS.md | 180 | (a change of the segment-directory scan selects 369 of 484 tests), so the saving comes from peripheral and test-only | 369/484 |
 | docs/perf/b4_ablate/G1_K7_A6_VERDICT.md | 27 | (1606 files). Campaign driver output: `a6/campaign.log`. | 1606 |
@@ -1348,11 +1350,11 @@ By construction of the strict rule, no member is name-pinned externally. But ANY
 | docs/reviews/2026-10-05-ph4a-heap-lease-receipt.md | 90 | - README.md:1383 `tests/*.rs (330 files)` → `tests/*.rs (331 files)` | 330/331 |
 | docs/reviews/2026-10-05-ph4a-heap-lease-receipt.md | 91 | - docs/ARCHITECTURE.md:489 `tests/*.rs (330 files)` → `tests/*.rs (331 files)` | 330/331 |
 | docs/reviews/2026-10-08-src-review-oxx-round-17-code-quality.md | 487 | doc(hidden)  : grep -rnE '#\[doc\(hidden\)\]' src/ \| wc -l                     -> 455 (67 files) | 67 |
-| README.md | 1625 | needs its acceptance run. The present tree contains **509 integration test files**, | 509 |
-| README.md | 1635 | \| Unit / integration tests \| Construction, edge cases, end-to-end behaviour \| `tests/*.rs` (509 files) \| | 509 |
-| README.md | 1636 | \| Examples \| Executable soak, burn-in, RSS, and macro verification harnesses \| `examples/*.rs` (107 files) \| | 107 |
-| README.md | 1637 | \| Benches \| Reproducible performance and gate harnesses \| `benches/*.rs` (34 files) \| | 34 |
-| README.md | 1639 | \| `loom` \| Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations \| **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs` \| | 27 |
+| README.md | 1626 | needs its acceptance run. The present tree contains **510 integration test files**, | 510 |
+| README.md | 1636 | \| Unit / integration tests \| Construction, edge cases, end-to-end behaviour \| `tests/*.rs` (510 files) \| | 510 |
+| README.md | 1637 | \| Examples \| Executable soak, burn-in, RSS, and macro verification harnesses \| `examples/*.rs` (107 files) \| | 107 |
+| README.md | 1638 | \| Benches \| Reproducible performance and gate harnesses \| `benches/*.rs` (34 files) \| | 34 |
+| README.md | 1640 | \| `loom` \| Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations \| **Root (27 files):** `tests/loom_active_kind_index.rs`, `tests/loom_depot_recycle_handoff.rs`, `tests/loom_b4_r1_pin_cache.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_exact_shard_actual.rs`, `tests/loom_fallback_actual.rs`, `tests/loom_g1_ingress_exact.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r6_selector_model.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_registry_hints_actual.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_route_pin_unlink.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`, `tests/loom_thp_ledger.rs`, `tests/loom_thp_learning_cell.rs`, `tests/loom_thp_cadence_cell.rs`, `tests/loom_thp_tuple_cell.rs`, `tests/loom_nl3_remote_reclaim.rs`, `tests/loom_nl3_owner_teardown.rs`; **member suites:** `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`, `crates/containers/sefer-concurrent/tests/loom_epoch.rs`, `crates/containers/sefer-concurrent/tests/loom_sharded.rs`, `crates/containers/sefer-concurrent/tests/loom_r11_epoch_false_full.rs` \| | 27 |
 
 j13 hash pins: scripts/j13_limited_report.mjs, scripts/j13_report.mjs, scripts/j13b_artifacts.mjs, scripts/j13b_static_reference.mjs, scripts/j13b_zero_cost_receipt.mjs hash src/ files; tests/ files hash-pinned: **none (expected)**.
 
@@ -1367,15 +1369,15 @@ j13 hash pins: scripts/j13_limited_report.mjs, scripts/j13_report.mjs, scripts/j
 
 | rung | description | pilot-eligible | mergeable files | groups | total saved links |
 | --- | --- | --- | --- | --- | --- |
-| strict | strict rules (see report definitions) | no | 1 | 1 | 0 |
-| compat | uniform required-features + uniform file-level cfg in the group key; hard blockers apply; externally-pinned excluded | yes | 29 | 25 | 4 |
-| looser-features | additionally allow non-uniform required-features (still pinned-excluded) | no | 29 | 25 | 4 |
-| looser-cfg | additionally allow non-uniform file-level cfg | no | 29 | 11 | 18 |
-| allow-pinned | additionally allow externally-pinned names | no | 301 | 73 | 228 |
+| strict | strict rules (see report definitions) | no | 2 | 2 | 0 |
+| compat | uniform required-features + uniform file-level cfg in the group key; hard blockers apply; externally-pinned excluded | yes | 30 | 26 | 4 |
+| looser-features | additionally allow non-uniform required-features (still pinned-excluded) | no | 30 | 26 | 4 |
+| looser-cfg | additionally allow non-uniform file-level cfg | no | 30 | 12 | 18 |
+| allow-pinned | additionally allow externally-pinned names | no | 302 | 73 | 229 |
 
 ### Pilot eligibility per rung
 
-Strict mergeable pool: **1** files in 1 groups (total saved links 0) — trivial pool (<= 1 file).
+Strict mergeable pool: **2** files in 2 groups (total saved links 0).
 
 | rung | pilot-eligible | why | pilot key | pilot members | pilot saved links |
 | --- | --- | --- | --- | --- | --- |

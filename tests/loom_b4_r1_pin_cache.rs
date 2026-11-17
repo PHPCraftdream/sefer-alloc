@@ -8,28 +8,27 @@
 //! re-exports loom atomics under the same names).
 //!
 //! # Production files included (verbatim, via `#[path]`)
-//! - `src/registry/heap_core_xthread/route_pin_cache.rs` — `publish_cached`
+//! - `src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs` — `publish_cached`
 //!   (hot path: `linked()` Acquire → span check → `publish_small_borrowed`),
 //!   `cache_insert`, `cache_evict`, TLS `PinCache`.
-//! - `src/registry/segment_route/pin.rs` — `RoutePin` incl. `linked()`
+//! - `src/alloc_core/segment/segment_route/route_state/pin.rs` — `RoutePin` incl. `linked()`
 //!   (the Acquire gate) and `publish_small_borrowed` (the borrow structure
 //!   that holds the pin across the whole publication RMW; the model never
 //!   breaks it).
-//! - `src/registry/segment_route/directory/` (`route_directory.rs`, `blocks.rs`) — `RouteDirectory`
+//! - `src/alloc_core/segment/segment_route/directory/` (`route_directory.rs`, `blocks.rs`) — `RouteDirectory`
 //!   (`lookup`, `register_route`, `remove` with the unlink + `linked`
 //!   Release-clear under the shard lock), `Entry`/`EntryHandle` (counted
 //!   refs; final drop frees the sidecar; NO drain on owner-ref drop).
-//! - `src/registry/segment_route/registration.rs` — `RouteRegistration`
+//! - `src/alloc_core/segment/segment_route/route_state/registration.rs` — `RouteRegistration`
 //!   (`issue_small`, drop = production remove then owner-ref drop).
-//! - `src/registry/segment_route/small_sidecar.rs` — production
+//! - `src/alloc_core/segment/segment_route/route_state/small_sidecar.rs` — production
 //!   `SmallSidecar::publish` → `SidecarBitmap::publish` (the real
 //!   `fetch_or`), `initialize_at`.
 //! - `src/alloc_core/segment/remote_bitmap/{sidecar_bitmap,bitmap_scan,
 //!   bitmap_cut,bitmap_record}.rs` (+ their `leaf_classes.rs` child) — the
 //!   real scan/drain primitive (`BitmapScan::next_cut` = per-word
 //!   `swap(0, AcqRel)`), same include shape as the sidecar-bitmap model.
-//! - `src/registry/segment_route/{error,kind,route_record,route_scan,
-//!   route_cut,large_state}.rs` and
+//! - `src/alloc_core/segment/segment_route/route_protocol/` and
 //!   `src/alloc_core/large/reservation_state.rs` — the compile cascade of
 //!   the files above. Both take their atomics from `super` (loom here); the
 //!   Large branch never executes (only Small routes are registered).
@@ -62,9 +61,6 @@
 //!   shim for the Large-span membership check; the model registers only
 //!   Small routes, so the check is never called (see `pin.rs::
 //!   span_contains_addr`'s Large branch and `lookup`'s Large branch).
-//! - `global::process_exit_in_progress` / `global::fallback::
-//!   record_exit_lock_giveup` — `const false` / no-op: the model never
-//!   exits.
 //! - `shard_lock::ShardLock` — model-provided const-constructible spin-lock
 //!   wrapper with the production API (`lock`, `lock_unless_exiting`); every
 //!   retry yields via `loom::thread::yield_now()` so the cooperative
@@ -181,6 +177,10 @@ pub(crate) use loom::sync::atomic::{
 };
 
 mod alloc_core {
+    pub(crate) fn process_exit_in_progress() -> bool {
+        false
+    }
+    pub(crate) fn record_exit_lock_giveup() {}
     // Mirrors `alloc_core::state_byte::StateByte::shadow_reject` for the source-included
     // `SidecarBitmap::publish` (a debug-build abort for a rejected misuse; loom models do not take it).
     #[allow(dead_code)]
@@ -265,6 +265,11 @@ mod alloc_core {
             }
         }
     }
+    // The source-included route pin cache resolves RoutePin through the
+    // production compatibility path; re-export the harness's included type.
+    pub(crate) mod segment_route {
+        pub(crate) use crate::pin::RoutePin;
+    }
     // COMPILE-ONLY shim for the Large-span membership check; the model
     // registers only Small routes, so no call reaches it (header).
     pub(crate) struct AllocCore;
@@ -276,16 +281,6 @@ mod alloc_core {
         ) -> bool {
             false
         }
-    }
-}
-
-// The model never exits; the production exit hooks degrade to constants.
-mod global {
-    pub fn process_exit_in_progress() -> bool {
-        false
-    }
-    pub(crate) mod fallback {
-        pub fn record_exit_lock_giveup() {}
     }
 }
 
@@ -414,7 +409,7 @@ mod reservation_state;
 mod sidecar_bitmap;
 
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/directory/mod.rs"]
+#[path = "../src/alloc_core/segment/segment_route/directory/mod.rs"]
 mod directory;
 
 // Ghost checks in the included production files (docs/GHOST_CHECKS_PLAN.md):
@@ -422,34 +417,34 @@ mod directory;
 #[path = "../crates/primitives/sefer-ghost/src/ghost/mod.rs"]
 mod ghost;
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/large_state.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_protocol/large_state.rs"]
 mod large_state;
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/pin.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_state/pin.rs"]
 mod pin;
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/registration.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_state/registration.rs"]
 mod registration;
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/route_cut.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_protocol/route_cut.rs"]
 mod route_cut;
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/error.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_protocol/error.rs"]
 mod route_error;
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/kind.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_protocol/kind.rs"]
 mod route_kind;
 #[allow(dead_code)]
-#[path = "../src/registry/heap_core_xthread/route_pin_cache.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs"]
 mod route_pin_cache;
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/route_record.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_protocol/route_record.rs"]
 mod route_record;
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/route_scan.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_protocol/route_scan.rs"]
 mod route_scan;
 #[allow(dead_code)]
-#[path = "../src/registry/segment_route/small_sidecar.rs"]
+#[path = "../src/alloc_core/segment/segment_route/route_state/small_sidecar.rs"]
 mod small_sidecar;
 
 // The included files resolve their SIBLINGS through `super` (they sit in
@@ -467,14 +462,6 @@ use route_kind::RouteKind;
 use route_record::RouteRecord;
 use route_scan::RouteScan;
 use small_sidecar::SmallSidecar;
-
-// `route_pin_cache.rs` resolves `RoutePin` through its production crate
-// path; re-export the source-included type under it.
-mod registry {
-    pub(crate) mod segment_route {
-        pub(crate) use crate::pin::RoutePin;
-    }
-}
 
 // Included production surfaces used by the harness. `allow(dead_code)` is
 // scoped to the model: the production files carry targeted cfg_attr allows

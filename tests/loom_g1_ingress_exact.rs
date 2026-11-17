@@ -1,5 +1,5 @@
 //! SC-6 A-exact (P23) actual-source Loom model: the REAL
-//! `src/registry/segment_route/directory/ingress.rs` (per-route ARMED /
+//! `src/alloc_core/segment/segment_route/directory/ingress.rs` (per-route ARMED /
 //! NOTIFIED state and the per-heap notification cell) compiled on loom
 //! atomics. A segment's pending word is one loom `AtomicU64`; the producer
 //! publishes into it with the production terminal ordering (`fetch_or`
@@ -28,7 +28,7 @@ pub(crate) use loom::sync::atomic::{fence, AtomicU64, AtomicU8, Ordering};
 
 #[path = "../crates/primitives/sefer-ghost/src/ghost/mod.rs"]
 mod ghost;
-#[path = "../src/registry/segment_route/directory/ingress.rs"]
+#[path = "../src/alloc_core/segment/segment_route/directory/ingress.rs"]
 mod ingress;
 
 use ingress::{HeapIngress, SegmentIngress};

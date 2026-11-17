@@ -4,7 +4,7 @@
 //! one E0277 while the `PhantomData<&'a mut T>` marker in shard_lock.rs
 //! stands.
 
-#[path = "../../../../src/registry/segment_route/shard_lock.rs"]
+#[path = "../../../../src/alloc_core/segment/segment_route/route_state/shard_lock.rs"]
 mod shard_lock;
 
 use core::cell::Cell;

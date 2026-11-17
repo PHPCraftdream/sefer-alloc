@@ -24,6 +24,8 @@
 // macros compile to nothing outside cfg(any(loom, miri, kani, sefer_ghost)) and
 // their definitions are under src/ghost/ and crates/primitives/sefer-ghost/src/ (rule 3).
 
+import { parseBaselineText } from './module-graph/layering.mjs';
+
 const RUNTIME = /^(?:perf\((?:runtime|opt-in)\)|fix\(perf\))!?:/;
 const CONVENTIONAL = /^[a-z]+(?:\([^()]*\))?!?: \S/;
 const VERIFICATION_SCOPE = /^[a-z]+\((?:[^()]*[,/ ])?(?:verification|ghost[^()]*|loom|miri|kani)(?:[,/ ][^()]*)?\)/;
@@ -268,6 +270,132 @@ export function extractionPolicy(messages, changed, dirty, evidence) {
   };
 }
 
+export function layerRestructuringPolicy(messages, changed, dirty, evidence) {
+  if (!Array.isArray(dirty) || dirty.length || !(changed instanceof Map) || !evidence) return null;
+  const commits = Array.isArray(messages) ? messages : [messages];
+  let declarations = 0;
+  for (const message of commits) {
+    if (typeof message !== 'string') return null;
+    const lines = message.split(/\r?\n/);
+    let inBody = false;
+    for (const line of lines.slice(1)) {
+      if (line === '') { inBody = true; continue; }
+      if (/^Extraction:\s*\S/.test(line) || (/^Restructuring:/.test(line) && line !== 'Restructuring: layers')) return null;
+      if (!/^\s*Restructuring\s*:/i.test(line)) continue;
+      if (!inBody || line !== 'Restructuring: layers') return null;
+      declarations++;
+    }
+  }
+  if (declarations !== 1) return null;
+
+  const paths = [...changed.keys()];
+  const baselineEdits = changed.get('docs/layering_baseline.csv');
+  if (!Array.isArray(baselineEdits) || baselineEdits.length === 0
+    || evidence.baseBaselineText === evidence.headBaselineText) return null;
+  if (paths.some((path) => typeof path !== 'string' || LAYER_FORBIDDEN_PATH.test(path))) return null;
+  if (paths.some((path) => GHOST_SOURCE_PATH.test(path))) return null;
+
+  const renames = evidence.renames;
+  if (!Array.isArray(renames) || renames.length === 0
+    || !renames.every((rename) => rename && /^[RC]\d{1,3}$/.test(rename.status)
+      && Number(rename.status.slice(1)) >= 1 && Number(rename.status.slice(1)) <= 100
+      && typeof rename.from === 'string' && typeof rename.to === 'string')) return null;
+  const validRenames = renames.filter((rename) => rename.status[0] === 'R'
+    && rename.from !== rename.to
+    && LAYER_SOURCE_PATH.test(rename.from) && LAYER_SOURCE_PATH.test(rename.to)
+    && rename.sourceAbsent === true && rename.destinationPresent === true);
+  if (validRenames.length === 0 || new Set(validRenames.map(({ from, to }) => `${from}\0${to}`)).size !== validRenames.length) return null;
+
+  const scoped = extractionChangedLines(changed, validRenames, evidence.renameHunks);
+  if (!(scoped instanceof Map)) return null;
+  for (const [path, lines] of scoped) {
+    if (!RUST_SOURCE_PATH.test(path)) continue;
+    if (!Array.isArray(lines) || lines.some(ghostCodeLeak)) return null;
+  }
+
+  let baseRows, headRows;
+  try {
+    baseRows = validateLayerBaseline(evidence.baseBaselineText, parseBaselineText(evidence.baseBaselineText, 'base docs/layering_baseline.csv'));
+    headRows = validateLayerBaseline(evidence.headBaselineText, parseBaselineText(evidence.headBaselineText, 'head docs/layering_baseline.csv'));
+  } catch {
+    return null;
+  }
+  const base = baselineMetrics(baseRows), head = baselineMetrics(headRows);
+  if (head.edges > base.edges || head.total > base.total || (head.edges === base.edges && head.total === base.total)) return null;
+  return {
+    mode: 'layers',
+    irTolerance: 0.001,
+    reason: 'declared intra-crate layer restructuring with a strictly non-increasing, improving A1 baseline',
+  };
+}
+
+const LAYER_SOURCE_PATH = /^src\/.+\.rs$/;
+const LAYER_FORBIDDEN_PATH = /(?:^|\/)(?:Cargo\.(?:toml|lock)|build\.rs|\.cargo(?:\/.*)?|rust-toolchain[^/]*)$/;
+
+function validateLayerBaseline(text, rows) {
+  const header = typeof text === 'string'
+    ? text.replace(/\r/g, '').split('\n').find((line) => line !== '' && !line.startsWith('#'))
+    : null;
+  if (header !== 'kind,path,count,reason' || !Array.isArray(rows)) throw new Error('baseline header or rows are malformed');
+  const seen = new Set();
+  let total = 0;
+  for (const row of rows) {
+    if (!row || row.kind !== 'backedge' || typeof row.edge !== 'string' || seen.has(row.edge)
+      || !Number.isSafeInteger(row.count) || row.count <= 0 || !/^[^\s,]+->[^\s,]+$/.test(row.edge)) throw new Error('baseline row is malformed or duplicated');
+    seen.add(row.edge);
+    total += row.count;
+    if (!Number.isSafeInteger(total)) throw new Error('baseline total is unsafe');
+  }
+  return rows;
+}
+
+function baselineMetrics(rows) {
+  return { edges: rows.length, total: rows.reduce((sum, row) => sum + row.count, 0) };
+}
+
+// Git adapter boundary for range-derived evidence. The runner supplies only
+// read-only git commands; tests inject an adapter to prove endpoint wiring.
+export function deriveLayerRestructuringEvidence({ base, head, git }) {
+  if (typeof base !== 'string' || typeof head !== 'string' || typeof git !== 'function') return null;
+  try {
+    const records = git(['diff', '--name-status', '--find-renames=50%', base, head]).split(/\r?\n/).filter(Boolean);
+    const renames = [];
+    for (const record of records) {
+      const fields = record.split('\t');
+      if (/^R\d{1,3}$/.test(fields[0] ?? '') && Number(fields[0].slice(1)) >= 1 && Number(fields[0].slice(1)) <= 100) {
+        if (fields.length !== 3) return null;
+        const [status, from, to] = fields;
+        let sourceAbsent = false, destinationPresent = false;
+        try { git(['cat-file', '-e', `${head}:${from}`]); } catch { sourceAbsent = true; }
+        try { git(['cat-file', '-e', `${head}:${to}`]); destinationPresent = true; } catch { /* absent */ }
+        renames.push({ status, from, to, sourceAbsent, destinationPresent });
+      }
+    }
+    if (!renames.length) return null;
+    const renameHunks = new Map();
+    for (const rename of renames) {
+      if (rename.status[0] !== 'R') continue;
+      renameHunks.set(rename.to, changedLines(git([
+        'diff', '-U0', '--no-color', '--no-ext-diff', '--find-renames=50%', base, head, '--', rename.from, rename.to,
+      ])));
+    }
+    return {
+      renames,
+      renameHunks,
+      baseBaselineText: git(['show', `${base}:docs/layering_baseline.csv`]),
+      headBaselineText: git(['show', `${head}:docs/layering_baseline.csv`]),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function hasLayerRestructuringAttempt(messages) {
+  const commits = Array.isArray(messages) ? messages : [messages];
+  return commits.some((message) => typeof message === 'string'
+    && message.split(/\r?\n/).slice(1).some((line) => /^\s*Restructuring\s*:/i.test(line)));
+}
+
 export function productionGhostTokens(text) {
   return [...new Set(text.match(/sefer_ghost|ghost_assert|ghost_event|ghost check|ghost::shadow|shadow::(?:record|count|reset|overflowed)/gi) ?? [])];
 }
@@ -276,12 +404,15 @@ export function zeroCostVerdict({ policy = null, textSame, irBase, irHead, requi
   const errors = [];
   if (ghostTokens.length) errors.push('production ghost tokens detected');
 
-  const extraction = policy?.mode === 'extraction';
-  const irBaseValid = Number.isSafeInteger(irBase) && (extraction ? irBase > 0 : irBase >= 0);
-  const irHeadValid = Number.isSafeInteger(irHead) && (extraction ? irHead > 0 : irHead >= 0);
+  const bounded = policy?.mode === 'extraction' || policy?.mode === 'layers';
+  const irBaseValid = Number.isSafeInteger(irBase) && (bounded ? irBase > 0 : irBase >= 0);
+  const irHeadValid = Number.isSafeInteger(irHead) && (bounded ? irHead > 0 : irHead >= 0);
   const validIr = irBaseValid && irHeadValid;
 
-  if (extraction) {
+  if (policy?.mode === 'layers') {
+    if (!irBaseValid || !irHeadValid) errors.push('layer restructuring requires positive safe-integer IR counts');
+    else if (Math.abs(irHead - irBase) * 1000 > irBase) errors.push('IR delta exceeds layer-restructuring tolerance');
+  } else if (policy?.mode === 'extraction') {
     if (!irBaseValid || !irHeadValid) errors.push('extraction requires positive safe-integer IR counts');
     else if (Math.abs(irHead - irBase) * 1000 > irBase) errors.push('IR delta exceeds extraction tolerance');
   } else {
@@ -296,7 +427,7 @@ export function zeroCostVerdict({ policy = null, textSame, irBase, irHead, requi
   return {
     ok: errors.length === 0,
     errors,
-    mode: policy ? 'extraction' : 'exact',
+    mode: policy?.mode ?? 'exact',
     ir_delta: validIr ? irHead - irBase : null,
   };
 }
