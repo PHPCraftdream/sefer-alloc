@@ -659,6 +659,9 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 281 | `TRACKED_ci_gate_coverage.md` |
 | 282 | `TRACKED_ci_gate_coverage.md` |
 | 283 | `TRACKED_ci_gate_coverage.md` |
+| 284 | `TRACKED_ci_gate_coverage.md` |
+
+**P0.2 verdict round (2026-11-17).** The P0.2 test-merge pilot verdict is NO-GO (`docs/perf/P0_2_TEST_MERGE_PILOT.md` § Verdict (2026-11-17); perf item 157). The criterion-(c) README stale-path pin is filed here as item 284 (`TRACKED_ci_gate_coverage.md`), mirroring the 281–283 placement. Nothing was closed this session; unrelated items remain unchanged.
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
