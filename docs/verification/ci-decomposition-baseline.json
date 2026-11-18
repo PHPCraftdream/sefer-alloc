@@ -4,7 +4,7 @@
   "jobs": [
     {
       "id": "changes",
-      "metadata": "fd262382d2ed380d7a189499922d2aedceef4adc723491b007a558ac6d6f24fb",
+      "metadata": "fb1a059131ce4e19f4872511bf84418f3975a96a3cb62bae31b2bb598e312829",
       "steps": "1fe5589733f5bb700e49ab25de242b1626e691fd2ba507f210c3cd9d48c9cbd6"
     },
     {
@@ -44,8 +44,13 @@
     },
     {
       "id": "sefer-segment-gates",
-      "metadata": "702b64e8bdef203a98d8a81f45183ca6b0d3d3c05b2d0f90a997effbe0526a6c",
+      "metadata": "c706f86f2775d2827bf94d0e4754228185d993ed943edb84ba4c6505c65e6cb8",
       "steps": "fa93c72ff671f84d8cc0d3815f2e5780d6fbd556f926e0f92045d4671e0296de"
+    },
+    {
+      "id": "sefer-alloc-core-gates",
+      "metadata": "2295c771e061ec7a47b2f7cafe399726102e3cece3fe9e1f0fd4d9df6db1668c",
+      "steps": "78296e0449131382579f48cfbb9969225f7146dc84c6b1d689d08213978060dc"
     },
     {
       "id": "sefer-region-gates",
@@ -129,8 +134,8 @@
     },
     {
       "id": "check-matrix",
-      "metadata": "1cc513406c3461396ab7a79fb19e8cdf618beb409da1b02fdbf39cd8e2a7cbf2",
-      "steps": "5276f9ae5c213732c385ff3004fa3abd597b5b8ac17ad4072d503ecebcdae4e3"
+      "metadata": "bb40c10d8f7fd951d9649692a9bff40b9aba9add38ce00b62ddbb0f8d0996361",
+      "steps": "2ef8a218b363c2918f3bce8279ef029a9d8e1923e1735614ba90e87d73968d04"
     },
     {
       "id": "commit-prefix-lint",

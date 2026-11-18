@@ -16,10 +16,10 @@ The extraction reduced the working workflow from 5,437 to 954 lines without chan
 its 60 job definitions. This is a maintainability change, not a faster allocator or
 an authorization to run additional campaigns.
 
-Nine jobs intentionally remain inline: `changes`, `select-tests`, `clippy`, `test-core`,
-`licenses`, `multi-arch`, `aligned-vmem-hugetlb-real`, `globalalloc-model-miri`, and `docs`. They own cross-job/output,
-matrix, license-cache or direct Rust source-inspection contracts. Similar commands
-are not automatically interchangeable.
+Seven jobs intentionally remain fully inline: `changes`, `select-tests`, `clippy`, `test-core`,
+`licenses`, `multi-arch`, and `docs`; they own cross-job/output, matrix, license-cache or direct Rust
+source-inspection contracts. `aligned-vmem-hugetlb-real` and `globalalloc-model-miri` keep their checkout
+and test runs inline while their setup moved to composite actions; similar commands are not automatically interchangeable.
 
 `node scripts/verify-ci-decomposition.mjs` expands only actions actually called by
 this workflow, verifies the pre-extraction digest receipt in
@@ -273,8 +273,7 @@ the smoke row covers those scenarios.
 | `ghost-guard` | ghost-guard (semantic lint + ghost self-test) | every change |
 | `j13b-judge-preparation` | J13b judge preparation (schema + workload contract) | every change |
 | `licenses` | license compatibility (only when dependencies changed) | every change |
-| `sefer-segment-gates` | sefer-segment package gates | every change |
-| `check-matrix` | check-matrix (manifest-driven, non-clippy rows) | `fast`: source, tests, benches, examples, fuzz, build scripts |
+| `check-matrix` | check-matrix (shard ${{ matrix.shard }}/${{ strategy.job-total }}) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `clippy` | clippy | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `docs` | rustdoc | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `fuzz-build` | fuzz targets build (nightly) | `fast`: source, tests, benches, examples, fuzz, build scripts |
@@ -322,11 +321,13 @@ the smoke row covers those scenarios.
 | `once-ptr-cell-miri` | once-ptr-cell under miri (interpreter, strict-provenance included) | `crate_once_ptr_cell`: changes under its crate |
 | `proc-memstat-gates` | proc-memstat gates (${{ matrix.os }}) | `crate_proc`: changes under its crate |
 | `proc-probe-gates` | proc-probe gates | `crate_proc`: changes under its crate |
+| `sefer-alloc-core-gates` | sefer-alloc-core package gates | `crate_sefer_alloc_core`: changes under its crate |
 | `sefer-concurrent-gates` | sefer-concurrent-gates | `crate_sefer_concurrent`: changes under its crate |
 | `sefer-ghost-gates` | sefer-ghost package gates | `crate_sefer_ghost`: changes under its crate |
 | `sefer-platform-gates` | sefer-platform package gates | `crate_sefer_platform`: changes under its crate |
 | `sefer-policy-gates` | sefer-policy package gates | `crate_sefer_policy`: changes under its crate |
 | `sefer-region-gates` | sefer-region package gates | `crate_sefer_region`: changes under its crate |
+| `sefer-segment-gates` | sefer-segment package gates | `crate_sefer_segment`: changes under its crate |
 | `size-classes-gates` | size-classes package gates | `crate_size_classes`: changes under its crate |
 | `tagged-index-stack-gates` | tagged-index-stack package gates | `crate_tagged_index_stack`: changes under its crate |
 | `feature-powerset` | cargo-hack feature-powerset (depth 2, check-only, weekly) | weekly schedule or manual dispatch only |

@@ -251,7 +251,7 @@ function cacheAndLevers(runs,longNames,logs,sources) {
   lines.push('','| lever / job | build measured median (range; n), s | execution median (range; n), s | scope / cost bound |','|---|---:|---:|---|');
   for(const name of longNames){const rows=logRows.filter(row=>sources && runs.some(run=>run.id===row.runId&&run.jobs.some(job=>job.name===name&&String(job.raw.id)===row.jobId))&&row.phases);if(!rows.length)continue;
     let note='Only measured build-phase seconds are potentially compilation-sensitive; extra setup, execution and work replication remain.';
-    if(name.startsWith('check-matrix'))note='scripts/run-check-matrix.mjs:51-54,83-98 frees test executables/incremental between rows (relink/disk tradeoff); measured build is an upper bound, not total 20+ min job.';
+    if(name.startsWith('check-matrix'))note='scripts/run-check-matrix.mjs frees test executables/incremental between rows (relink/disk tradeoff); measured build is an upper bound, not total 20+ min job. The row-group sharding design is documented in [CI_CHECK_MATRIX_SHARDING.md](CI_CHECK_MATRIX_SHARDING.md); these measurements and display names are from the unsharded job.';
     if(/miri/i.test(name))note='Sharding moves verification work; compile/setup replication costs remain; one-target pass cannot split by targets.';
     lines.push(`| ${esc(name)} | ${summary(rows.map(r=>r.phases.build))} | ${summary(rows.map(r=>r.phases.execution))} | ${note} |`);
   }

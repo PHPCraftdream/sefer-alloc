@@ -11,8 +11,9 @@
 import { REPO_ROOT, run, verdict } from './lib.mjs';
 
 // Per-test feature sets — MUST mirror the ci.yml `loom` matrix. When editing,
-// diff against ci.yml:2636 (`loom-misc` job) for the exact feature string —
-// this file drifted out of sync with that line once already (fixed by
+// diff against the `loom-misc` job's composite action,
+// .github/actions/ci-loom-misc/action.yml, for the exact feature string —
+// this file drifted out of sync with that job once already (fixed by
 // 8027d9a) because there was no pointer to the exact line to check.
 // Running every model with one blanket `alloc-global,alloc-xthread` set silently compiled the
 // experimental-tier models (`loom_sharded`, `loom_epoch`) with ZERO tests (their

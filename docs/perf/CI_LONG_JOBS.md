@@ -503,7 +503,7 @@ No Cargo cache action is reachable from the sampled long-job composites; `.githu
 
 | lever / job | build measured median (range; n), s | execution median (range; n), s | scope / cost bound |
 |---|---:|---:|---|
-| check-matrix (manifest-driven, non-clippy rows) | 298.0 (251.9–314.0; n=3) | 1381.6 (1373.7–1476.5; n=3) | scripts/run-check-matrix.mjs:51-54,83-98 frees test executables/incremental between rows (relink/disk tradeoff); measured build is an upper bound, not total 20+ min job. |
+| check-matrix (manifest-driven, non-clippy rows) | 298.0 (251.9–314.0; n=3) | 1381.6 (1373.7–1476.5; n=3) | scripts/run-check-matrix.mjs frees test executables/incremental between rows (relink/disk tradeoff); measured build is an upper bound, not total 20+ min job. The row-group sharding design is documented in [CI_CHECK_MATRIX_SHARDING.md](CI_CHECK_MATRIX_SHARDING.md); these measurements and display names are from the unsharded job. |
 | kani proofs | 3.5 (3.5–3.5; n=1) | 1200.8 (1200.8–1200.8; n=1) | Only measured build-phase seconds are potentially compilation-sensitive; extra setup, execution and work replication remain. |
 | miri (core) | 39.1 (28.7–44.3; n=3) | 1818.0 (1271.0–2094.4; n=3) | Sharding moves verification work; compile/setup replication costs remain; one-target pass cannot split by targets. |
 | miri (core, pin cache TreeBorrows) | 21.9 (16.5–24.1; n=3) | 1753.6 (1670.3–2097.2; n=3) | Sharding moves verification work; compile/setup replication costs remain; one-target pass cannot split by targets. |
@@ -522,6 +522,11 @@ Tier context: ordinary main push suppresses heavy seam/OS work; weekly-only jobs
 
 Static exact command rows only; no multiline/YAML inference. Key retains cargo/cross, verb, package, features, explicit target scope, profile, toolchain, runner OS. This conservative inventory can miss continuations; a match is not proof of artifact/cache reuse.
 
+- -p sefer-alloc-core --all-targets -- -D warnings (4 occurrences)
+  - sefer-alloc-core-gates .github/actions/ci-sefer-alloc-core-gates/action.yml:9 [ubuntu-latest]
+  - sefer-alloc-core-gates .github/actions/ci-sefer-alloc-core-gates/action.yml:12 [ubuntu-latest]
+  - sefer-alloc-core-gates .github/actions/ci-sefer-alloc-core-gates/action.yml:15 [ubuntu-latest]
+  - test-workspace .github/actions/ci-test-workspace/action.yml:440 [ubuntu-latest]
 - -p sefer-region --no-default-features (2 occurrences)
   - sefer-region-gates .github/actions/ci-sefer-region-gates/action.yml:20 [ubuntu-latest]
   - msrv .github/actions/ci-msrv/action.yml:46 [ubuntu-latest]
