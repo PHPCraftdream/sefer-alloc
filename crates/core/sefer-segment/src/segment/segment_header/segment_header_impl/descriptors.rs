@@ -242,7 +242,7 @@ impl BinTable {
 /// The metadata footprint of a small segment: header + page map + bin table,
 /// each laid out at fixed offsets (see [`Layout::small_meta_end`]). This does NOT
 /// include the registry array (which lives only in the primordial segment).
-#[allow(dead_code)] // Compile-time sanity only; consumed by the `const _` asserts below.
+// Compile-time sanity only; consumed by the `const _` asserts below.
 pub(crate) const SMALL_META_FOOTPRINT: usize = Layout::small_meta_end();
 
 /// The fixed layout of in-segment metadata: offsets of header / page map /

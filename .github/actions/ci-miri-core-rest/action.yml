@@ -247,9 +247,17 @@ runs:
         test "$status" -ne 0
         log="$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
         grep -E "Undefined Behavior: not granting access to tag .* weakly protected" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
-        bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
-        if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
-          echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+        bt=$(grep -A6 -E "^[[:space:]]+0: sefer_segment::support::node_impl::Node::write_next$" "$log" || true)
+        ok=1
+        [ -n "$bt" ] || ok=0
+        echo "$bt" | sed -n '2p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '3p' | grep -Eq "^[[:space:]]+1: sefer_segment::support::node_impl::RootNode::write_next$" || ok=0
+        echo "$bt" | sed -n '4p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc::alloc_core::platform::node::Node::write_next$" || ok=0
+        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '7p' | grep -Eq "^[[:space:]]+3: .*::(reclaim_sidecar_record|flush_run|dealloc_small)$" || ok=0
+        if [ "$ok" -ne 1 ]; then
+          echo "::error::red in an unexpected place: new defect (UB not in the pinned write_next frame chain called from reclaim_sidecar_record/flush_run/dealloc_small)"
           exit 1
         fi
       shell: bash
@@ -274,9 +282,17 @@ runs:
         test "$status" -ne 0
         log="$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
         grep -E "Undefined Behavior: write access through .* is forbidden" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
-        bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
-        if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
-          echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+        bt=$(grep -A6 -E "^[[:space:]]+0: sefer_segment::support::node_impl::Node::write_next$" "$log" || true)
+        ok=1
+        [ -n "$bt" ] || ok=0
+        echo "$bt" | sed -n '2p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '3p' | grep -Eq "^[[:space:]]+1: sefer_segment::support::node_impl::RootNode::write_next$" || ok=0
+        echo "$bt" | sed -n '4p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc::alloc_core::platform::node::Node::write_next$" || ok=0
+        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '7p' | grep -Eq "^[[:space:]]+3: .*::(reclaim_sidecar_record|flush_run|dealloc_small)$" || ok=0
+        if [ "$ok" -ne 1 ]; then
+          echo "::error::red in an unexpected place: new defect (UB not in the pinned write_next frame chain called from reclaim_sidecar_record/flush_run/dealloc_small)"
           exit 1
         fi
       shell: bash
@@ -302,9 +318,17 @@ runs:
         test "$status" -ne 0
         log="$RUNNER_TEMP/miri-installed-box-terminal-pause-prod.log"
         grep -E "Undefined Behavior: not granting access to tag .* weakly protected" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
-        bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
-        if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
-          echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+        bt=$(grep -A6 -E "^[[:space:]]+0: sefer_segment::support::node_impl::Node::write_next$" "$log" || true)
+        ok=1
+        [ -n "$bt" ] || ok=0
+        echo "$bt" | sed -n '2p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '3p' | grep -Eq "^[[:space:]]+1: sefer_segment::support::node_impl::RootNode::write_next$" || ok=0
+        echo "$bt" | sed -n '4p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc::alloc_core::platform::node::Node::write_next$" || ok=0
+        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '7p' | grep -Eq "^[[:space:]]+3: .*::(reclaim_sidecar_record|flush_run|dealloc_small)$" || ok=0
+        if [ "$ok" -ne 1 ]; then
+          echo "::error::red in an unexpected place: new defect (UB not in the pinned write_next frame chain called from reclaim_sidecar_record/flush_run/dealloc_small)"
           exit 1
         fi
       shell: bash
@@ -330,9 +354,17 @@ runs:
         test "$status" -ne 0
         log="$RUNNER_TEMP/miri-installed-box-terminal-pause-prod-tree.log"
         grep -E "Undefined Behavior: write access through .* is forbidden" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
-        bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
-        if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
-          echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+        bt=$(grep -A6 -E "^[[:space:]]+0: sefer_segment::support::node_impl::Node::write_next$" "$log" || true)
+        ok=1
+        [ -n "$bt" ] || ok=0
+        echo "$bt" | sed -n '2p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '3p' | grep -Eq "^[[:space:]]+1: sefer_segment::support::node_impl::RootNode::write_next$" || ok=0
+        echo "$bt" | sed -n '4p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc::alloc_core::platform::node::Node::write_next$" || ok=0
+        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '7p' | grep -Eq "^[[:space:]]+3: .*::(reclaim_sidecar_record|flush_run|dealloc_small)$" || ok=0
+        if [ "$ok" -ne 1 ]; then
+          echo "::error::red in an unexpected place: new defect (UB not in the pinned write_next frame chain called from reclaim_sidecar_record/flush_run/dealloc_small)"
           exit 1
         fi
       shell: bash

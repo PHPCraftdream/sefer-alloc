@@ -241,8 +241,11 @@ try {
       if (expectation === 'expected-red') {
         // Use uncommented executable step text: another step or a YAML comment
         // cannot satisfy the manifest's literal pin.
-        const literals = [r.marker, r.redMessage, r.redSite?.frame0, r.redSite?.file, r.redSite?.caller];
-        if (!r.card || literals.some((s) => typeof s !== 'string' || !s)) fail(`${label(r)}: EXPECTED-RED requires card/marker/message/frame0/file/caller`);
+        const siteKeys = ['frame0', 'file0', 'frame1', 'file1', 'frame2', 'file2', 'caller'];
+        const literals = [r.marker, r.redMessage, ...siteKeys.map((k) => r.redSite?.[k])];
+        if (!r.card || siteKeys.some((k) => typeof r.redSite?.[k] !== 'string' || !r.redSite[k])
+          || Object.keys(r.redSite).length !== siteKeys.length
+          || literals.some((s) => typeof s !== 'string' || !s)) fail(`${label(r)}: EXPECTED-RED requires card/marker/message and all 7 redSite pins (frame0/file0/frame1/file1/frame2/file2/caller)`);
         for (const s of literals.filter(Boolean)) if (!c.script.includes(s)) fail(`${label(r)}: expected-red literal absent in same CI step: ${s}`);
         if (!/test\s+"\$status"\s+-ne\s+0/.test(c.script) || !/if grep -F/.test(c.script) || !/exit 1/.test(c.script)) fail(`${label(r)}: expected-red exit/green-rejection guard absent`);
       } else if (/test\s+"\$status"\s+-ne\s+0/.test(c.script)) fail(`${label(r)}: GREEN locally but EXPECTED-RED in CI (card 164)`);

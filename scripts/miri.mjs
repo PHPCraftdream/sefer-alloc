@@ -34,12 +34,13 @@ function expectedRed(r, code, out) {
   if (out.includes(r.marker) || code === 0) return { ok: false, verdict: `FAIL: close card ${r.card} (witness green)` };
   if (!Number.isInteger(code) || code < 0) return { ok: false, verdict: 'FAIL: new defect (process did not exit normally)' };
   if (!ere(r.redMessage).test(out)) return { ok: false, verdict: 'FAIL: new defect (unexpected UB message)' };
-  // grep -A2 frame0 + sed 2p/3p: site and caller must be the two
-  // immediately following lines, never unrelated matches elsewhere in log.
+  // grep -A6 frame0: the pinned chain (frame0 site, frame1 site, frame2 site,
+  // numbered caller frame) must be the six immediately following lines,
+  // contiguous, never unrelated matches elsewhere in the log.
   const lines = out.split(/\r?\n/);
   const frame = lines.findIndex((s) => ere(r.redSite.frame0).test(s));
-  if (frame < 0 || !ere(r.redSite.file).test(lines[frame + 1] ?? '')
-    || !ere(r.redSite.caller).test(lines[frame + 2] ?? '')) {
+  const chain = [r.redSite.file0, r.redSite.frame1, r.redSite.file1, r.redSite.frame2, r.redSite.file2, r.redSite.caller];
+  if (frame < 0 || !chain.every((pattern, i) => ere(pattern).test(lines[frame + 1 + i] ?? ''))) {
     return { ok: false, verdict: 'FAIL: new defect (unexpected UB site/caller)' };
   }
   return { ok: true, verdict: 'EXPECTED-RED-OK' };
@@ -76,10 +77,14 @@ function selfTest() {
     const message = r.borrows === 'sb'
       ? 'Undefined Behavior: not granting access to tag <123> weakly protected'
       : 'Undefined Behavior: write access through <123> is forbidden';
-    const frame = '    0: sefer_alloc::alloc_core::platform::node::Node::write_next';
-    const site = '       at src/alloc_core/platform/node.rs:42:5';
-    const caller = '    1: sefer_alloc::reclaim_sidecar_record';
-    const good = `${message}\n${frame}\n${site}\n${caller}\n`;
+    const frame = '    0: sefer_segment::support::node_impl::Node::write_next';
+    const site = '       at crates/core/sefer-segment/src/support/node.rs:153:18: 153:43';
+    const mid = '    1: sefer_segment::support::node_impl::RootNode::write_next';
+    const midSite = '       at crates/core/sefer-segment/src/support/node.rs:620:9: 620:38';
+    const base = '    2: sefer_alloc::alloc_core::platform::node::Node::write_next';
+    const baseSite = '       at src/alloc_core/platform/node.rs:40:18: 40:56';
+    const caller = '    3: sefer_alloc::alloc_core_small_reclaim::reclaim_sidecar_record';
+    const good = `${message}\n${frame}\n${site}\n${mid}\n${midSite}\n${base}\n${baseSite}\n${caller}\n`;
     const cases = [
       ['expected', 1, good, true, 'EXPECTED-RED-OK'],
       ['green', 0, r.marker, false, `close card ${r.card}`],
@@ -88,8 +93,12 @@ function selfTest() {
       ['wrong UB', 1, good.replace(message, 'Undefined Behavior: unrelated UB'), false, 'new defect'],
       ['wrong frame', 1, good.replace(frame, '    0: unrelated_function'), false, 'new defect'],
       ['wrong file', 1, good.replace(site, '       at other.rs:1'), false, 'new defect'],
-      ['wrong caller', 1, good.replace(caller, '    1: unrelated_function'), false, 'new defect'],
-      ['site elsewhere', 1, `${message}\n${frame}\nwrong\nwrong\n${site}\n${caller}`, false, 'new defect'],
+      ['wrong caller', 1, good.replace(caller, '    3: unrelated_module::unrelated_function'), false, 'new defect'],
+      ['wrong frame1', 1, good.replace(mid, '    1: unrelated_function'), false, 'new defect'],
+      ['wrong base frame', 1, good.replace(base, '    2: unrelated_function'), false, 'new defect'],
+      ['wrong base site', 1, good.replace(baseSite, '       at other.rs:1'), false, 'new defect'],
+      ['missing wrapper frame', 1, good.replace(`\n${caller}`, ''), false, 'new defect'],
+      ['site elsewhere', 1, `${message}\n${frame}\nwrong\nwrong\n${site}\n${mid}\n${midSite}\n${base}\n${baseSite}\n${caller}`, false, 'new defect'],
       ['signal', null, good, false, 'new defect'],
       ['empty', 1, '', false, 'new defect'],
     ];
@@ -100,7 +109,7 @@ function selfTest() {
     }
     // Both pinned allowed caller alternatives must also work.
     for (const alternative of ['flush_run', 'dealloc_small']) {
-      assert.ok(expectedRed(r, 1, good.replace('reclaim_sidecar_record', alternative)).ok); count++;
+      assert.ok(expectedRed(r, 1, good.replace('alloc_core_small_reclaim::reclaim_sidecar_record', `other_mod::${alternative}`)).ok); count++;
     }
   }
   assert.equal(green({ test: 'ordinary', args: [] }, 0, 'running 0 tests\ntest result: ok').ok, false); count++;

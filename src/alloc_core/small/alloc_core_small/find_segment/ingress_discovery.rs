@@ -131,9 +131,9 @@ impl AllocCore {
         feature = "alloc-xthread",
         not(feature = "numa-aware")
     ))]
+    // Only the kind and bin head reads need unsafe: the table owns the
+    // registered segment root and keeps its header mapped for both reads.
     #[allow(unsafe_code)]
-    // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
-    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     fn drain_notified_slot(&mut self, i: usize, class_idx: usize) -> Option<*mut u8> {
         if i >= self.table.count() as usize {
             return None;
