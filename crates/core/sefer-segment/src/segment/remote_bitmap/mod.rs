@@ -18,6 +18,15 @@ mod sidecar_bitmap;
 // `leaf_classes` consumes them one module down, through `sidecar_bitmap`.
 pub(crate) use bitmap_cut::BitmapCut;
 pub(crate) use bitmap_record::BitmapRecord;
+// Measurement seam (R18 sidecar scan bench): the routed-scan counters are
+// reached from `sefer-alloc-core` (`find_segment/scan.rs`) and the root
+// crate (`heap_core::diag::queries`) only under the measurement cfg, so the
+// export is public — and `doc(hidden)` — exactly in that cfg, `pub(crate)`
+// otherwise (mirrors the `Prf01SidecarOracle` row above).
+#[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+#[doc(hidden)]
+pub use bitmap_scan::BitmapScan;
+#[cfg(not(all(feature = "bench-internals", r18_sidecar_scan_bench)))]
 pub(crate) use bitmap_scan::BitmapScan;
 pub(crate) use core::sync::atomic::{AtomicPtr, AtomicU64, AtomicU8, Ordering};
 #[cfg_attr(not(feature = "alloc-global"), allow(unused_imports))]

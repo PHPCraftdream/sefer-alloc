@@ -11,7 +11,8 @@ use std::path::PathBuf;
 
 fn src_path(rel: &str) -> PathBuf {
     // Entries under `crates/` are crate paths relative to the manifest root
-    // (P2.1 move); everything else resolves under the root `src/` shim tree.
+    // (P2.1/P2.2 moves); everything else resolves under the root `src/` shim
+    // tree (src/alloc_core/mod.rs is now a re-export-only facade).
     let base = if rel.starts_with("crates/") {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
     } else {
@@ -38,7 +39,8 @@ fn four_invariant_tripwires_pinned_by_message() {
     // Former site 1 resolves the payload-derived key to the stored root.
     // Reject an inconsistent supplied base before reconstructing the block;
     // a Large resize also requires the exact header payload offset.
-    let core = read_src("alloc_core/alloc_core/mem/realloc_fastpath.rs");
+    let core =
+        read_src("crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/realloc_fastpath.rs");
     let squashed: String = core.split_whitespace().collect::<Vec<_>>().join(" ");
     let known_base = squashed
         .split_once("pub(super) fn realloc_inplace_fast_path_known_base(")
@@ -83,7 +85,8 @@ fn four_invariant_tripwires_pinned_by_message() {
     // helpers (alloc-decommit-gated, in `production`; gated out of some
     // configs, but the source text is feature-independent so this guard
     // still applies).
-    let cache = read_src("alloc_core/large/alloc_core_large_cache.rs");
+    let cache =
+        read_src("crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs");
     assert_count(
         &cache,
         "large_cache_slot_take: empty base slot",
@@ -193,14 +196,14 @@ const RELEASE_SCAN_FILES: &[&str] = &[
     "registry/heap_core/state/tcache_flush.rs",
     "registry/heap_core/state/ownership.rs",
     "registry/heap_core/alloc/hot.rs",
-    "alloc_core/large/alloc_core_large_cache.rs",
-    "alloc_core/alloc_core/mem/realloc_fastpath.rs",
+    "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs",
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/realloc_fastpath.rs",
     // Fresh reservation initialization and alloc-decommit Large lifecycle.
     "crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs",
     // Global alloc_zeroed -> virgin magazine refill (opt-in virgin-zero-skip).
-    "alloc_core/small/alloc_core_small_magazine.rs",
+    "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs",
     // Small/Large reservation branches (opt-in numa-aware).
-    "alloc_core/platform/numa.rs",
+    "crates/core/sefer-alloc-core/src/alloc_core/platform/numa.rs",
     // Global narrow alloc -> register -> shard rehash (exact-object-proto).
     "global/exact_object/exact_shard.rs",
 ];

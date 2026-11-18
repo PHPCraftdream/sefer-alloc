@@ -46,7 +46,7 @@ dedicated-segment path) and random power-of-two alignments (`1 .. 2 MiB`, i.e.
 route to `alloc_large`, exercising the #130-hardened over-reserve/trim large-align
 arithmetic, while `align >= SEGMENT` is the rejected corridor covered by unit
 tests) against
-[`sefer_alloc::AllocCore`](../src/alloc_core/alloc_core/mod.rs) — the single-threaded
+[`sefer_alloc::AllocCore`](../crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mod.rs) — the single-threaded
 segment substrate the `SeferAlloc` / `GlobalAlloc` face is built on. It checks
 the **M-invariants** from [`docs/INVARIANTS.md`](../docs/INVARIANTS.md):
 
@@ -137,11 +137,11 @@ both ends match the bare and qualified renderings; `ensure_capacity` is unique
 to this call site in the tree. The actual addr2line frame remains evidence:
 `<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::ensure_capacity`.
 
-Lifecycle: [`RouteSlots::ensure_capacity` and `Drop`](../src/alloc_core/segment/segment_table/route_slots.rs)
+Lifecycle: [`RouteSlots::ensure_capacity` and `Drop`](../crates/core/sefer-segment/src/segment/segment_table/impl_group/routing/route_slots.rs)
 allocate the array through `System`, free the previous array on growth, and free
-the final array on drop. [`SegmentTable::attach_owner`](../src/alloc_core/segment/segment_table/segment_table_impl.rs)
+the final array on drop. [`SegmentTable::attach_owner`](../crates/core/sefer-segment/src/segment/segment_table/impl_group/segment_table_impl.rs)
 retains an existing routes array rather than replacing it on reattachment.
-[`AllocCore`'s lifecycle documentation](../src/alloc_core/alloc_core/lifecycle.rs)
+[`AllocCore`'s lifecycle documentation](../crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/lifecycle.rs)
 explains that registry heaps retain their cores for process lifetime;
 [`registry bootstrap`](../src/registry/bootstrap/mod.rs) uses mmap-backed chunks
 on Unix. The working explanation is that LSan cannot see the retained array's

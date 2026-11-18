@@ -253,8 +253,8 @@ runs:
         echo "$bt" | sed -n '2p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
         echo "$bt" | sed -n '3p' | grep -Eq "^[[:space:]]+1: sefer_segment::support::node_impl::RootNode::write_next$" || ok=0
         echo "$bt" | sed -n '4p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
-        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc::alloc_core::platform::node::Node::write_next$" || ok=0
-        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc_core::alloc_core::platform::node::Node::write_next$" || ok=0
+        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at crates/core/sefer-alloc-core/src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
         echo "$bt" | sed -n '7p' | grep -Eq "^[[:space:]]+3: .*::(reclaim_sidecar_record|flush_run|dealloc_small)$" || ok=0
         if [ "$ok" -ne 1 ]; then
           echo "::error::red in an unexpected place: new defect (UB not in the pinned write_next frame chain called from reclaim_sidecar_record/flush_run/dealloc_small)"
@@ -288,8 +288,8 @@ runs:
         echo "$bt" | sed -n '2p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
         echo "$bt" | sed -n '3p' | grep -Eq "^[[:space:]]+1: sefer_segment::support::node_impl::RootNode::write_next$" || ok=0
         echo "$bt" | sed -n '4p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
-        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc::alloc_core::platform::node::Node::write_next$" || ok=0
-        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc_core::alloc_core::platform::node::Node::write_next$" || ok=0
+        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at crates/core/sefer-alloc-core/src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
         echo "$bt" | sed -n '7p' | grep -Eq "^[[:space:]]+3: .*::(reclaim_sidecar_record|flush_run|dealloc_small)$" || ok=0
         if [ "$ok" -ne 1 ]; then
           echo "::error::red in an unexpected place: new defect (UB not in the pinned write_next frame chain called from reclaim_sidecar_record/flush_run/dealloc_small)"
@@ -324,8 +324,8 @@ runs:
         echo "$bt" | sed -n '2p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
         echo "$bt" | sed -n '3p' | grep -Eq "^[[:space:]]+1: sefer_segment::support::node_impl::RootNode::write_next$" || ok=0
         echo "$bt" | sed -n '4p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
-        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc::alloc_core::platform::node::Node::write_next$" || ok=0
-        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc_core::alloc_core::platform::node::Node::write_next$" || ok=0
+        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at crates/core/sefer-alloc-core/src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
         echo "$bt" | sed -n '7p' | grep -Eq "^[[:space:]]+3: .*::(reclaim_sidecar_record|flush_run|dealloc_small)$" || ok=0
         if [ "$ok" -ne 1 ]; then
           echo "::error::red in an unexpected place: new defect (UB not in the pinned write_next frame chain called from reclaim_sidecar_record/flush_run/dealloc_small)"
@@ -360,8 +360,8 @@ runs:
         echo "$bt" | sed -n '2p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
         echo "$bt" | sed -n '3p' | grep -Eq "^[[:space:]]+1: sefer_segment::support::node_impl::RootNode::write_next$" || ok=0
         echo "$bt" | sed -n '4p' | grep -Eq "^[[:space:]]+at crates/core/sefer-segment/src/support/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
-        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc::alloc_core::platform::node::Node::write_next$" || ok=0
-        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
+        echo "$bt" | sed -n '5p' | grep -Eq "^[[:space:]]+2: sefer_alloc_core::alloc_core::platform::node::Node::write_next$" || ok=0
+        echo "$bt" | sed -n '6p' | grep -Eq "^[[:space:]]+at crates/core/sefer-alloc-core/src/alloc_core/platform/node\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$" || ok=0
         echo "$bt" | sed -n '7p' | grep -Eq "^[[:space:]]+3: .*::(reclaim_sidecar_record|flush_run|dealloc_small)$" || ok=0
         if [ "$ok" -ne 1 ]; then
           echo "::error::red in an unexpected place: new defect (UB not in the pinned write_next frame chain called from reclaim_sidecar_record/flush_run/dealloc_small)"
@@ -379,7 +379,7 @@ runs:
       run: cargo miri test -p tagged-index-stack --test narrow_domain_unchecked_storage
     # Phase 8 core invariants under miri: the M6 decommit/recommit cycle
     # (zero-crossing of payload pages) over the segment substrate.
-    # `internals` added (R34-3/task #522): reaches `sefer_alloc::alloc_core::AllocCore` directly.
+    # `internals` added (R34-3/task #522): reaches `sefer_alloc_core::alloc_core::AllocCore` directly.
     - name: decommit_miri_cycle
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}

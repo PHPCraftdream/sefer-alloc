@@ -168,6 +168,7 @@ version = "0.3.0"
 dependencies = [
  "aligned-vmem",
  "once-ptr-cell",
+ "sefer-alloc-core",
  "sefer-ghost",
  "sefer-platform",
  "sefer-policy",
@@ -175,6 +176,16 @@ dependencies = [
  "sefer-segment",
  "size-classes",
  "tagged-index-stack",
+]
+
+[[package]]
+name = "sefer-alloc-core"
+version = "0.1.0"
+dependencies = [
+ "aligned-vmem",
+ "sefer-platform",
+ "sefer-policy",
+ "sefer-segment",
 ]
 
 [[package]]

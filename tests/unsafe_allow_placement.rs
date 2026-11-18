@@ -14,7 +14,8 @@
 //! link the crate, so this test runs in every feature configuration):
 //!
 //! (a) [`no_mod_rs_carries_module_level_allow`] — no `mod.rs` under `src/`
-//!     may carry a module-level `#![allow(unsafe_code)]`. `mod.rs` is
+//!     or the P2.2 `crates/core/sefer-alloc-core/src/` tree may carry a
+//!     module-level `#![allow(unsafe_code)]`. `mod.rs` is
 //!     reexports-only by this project's own convention (`CLAUDE.md`'s
 //!     "mod.rs — reexports only, no code"), so it never legitimately needs
 //!     to lift the crate-level `#![deny(unsafe_code)]` itself; the seam
@@ -75,6 +76,14 @@ fn src_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
 }
 
+/// P2.2: the AllocCore implementation moved to the sefer-alloc-core crate
+/// (same facade/impl split as the P2.1 sefer-segment extraction — the root
+/// `src/` facade stays scanned by [`src_dir`], the implementation tree is
+/// scanned in its own crate).
+fn alloc_core_crate_src_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-alloc-core/src")
+}
+
 /// Strip `//` line comments (naive — see module doc "Scanner limits").
 fn strip_line_comments(text: &str) -> String {
     text.lines()
@@ -115,9 +124,14 @@ fn has_tier2_allow(text: &str) -> bool {
 
 #[test]
 fn no_mod_rs_carries_module_level_allow() {
-    let src = src_dir();
     let mut files = Vec::new();
-    rs_files(&src, &mut files);
+    rs_files(&src_dir(), &mut files);
+    let before = files.len();
+    rs_files(&alloc_core_crate_src_dir(), &mut files);
+    assert!(
+        files.len() > before,
+        "no source files found under crates/core/sefer-alloc-core/src/ — P2.2 crate layout changed?"
+    );
     assert!(!files.is_empty(), "no source files found under src/");
 
     let offenders: Vec<PathBuf> = files
@@ -141,9 +155,14 @@ fn no_mod_rs_carries_module_level_allow() {
 
 #[test]
 fn every_file_with_unsafe_carries_its_own_allow() {
-    let src = src_dir();
     let mut files = Vec::new();
-    rs_files(&src, &mut files);
+    rs_files(&src_dir(), &mut files);
+    let before = files.len();
+    rs_files(&alloc_core_crate_src_dir(), &mut files);
+    assert!(
+        files.len() > before,
+        "no source files found under crates/core/sefer-alloc-core/src/ — P2.2 crate layout changed?"
+    );
     assert!(!files.is_empty(), "no source files found under src/");
 
     let mut offenders = Vec::new();

@@ -27,21 +27,21 @@ export { REVIEWED_SURFACE };
 // Caller-owned unsafe boundaries, exhaustively accounted for.
 const CURRENT_RESERVATION_HOOK = "src/global/sefer_alloc/diag.rs::dbg_current_reservation_for_test";
 const UNSAFE_HOOKS = [
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_stamp_segment_id",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_stamp_kind_byte",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_stamp_segment_id",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_stamp_kind_byte",
   "src/registry/heap_core/diag/queries.rs::dbg_stamp_kind_byte",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_unregister",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_recycle",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_drain_freelist_batch",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_state_bytes_for",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_corrupt_freelist_head_next",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_payload_start_for",
-  "src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_decommit_payload",
-  "src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_recommit_payload",
-  "src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_release",
-  "src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_win_commit_only",
-  "src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_win_release_only",
-  "src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_force_decommit_retain_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_unregister",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_recycle",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_drain_freelist_batch",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_state_bytes_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_corrupt_freelist_head_next",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_payload_start_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_decommit_payload",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_recommit_payload",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_release",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_win_commit_only",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_win_release_only",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_force_decommit_retain_for",
   "src/global/sefer_alloc/global_alloc.rs::dbg_dealloc_while_fallback_lock_held",
   "src/global/tls_heap.rs::dbg_restore_local_for_test",
   "src/registry/bootstrap/registry.rs::dbg_slot_preset_generation",
@@ -53,7 +53,7 @@ const UNSAFE_HOOKS = [
   "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_release",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_win_commit_only",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_win_release_only",
-  "src/alloc_core/alloc_core/sidecar_test_hooks.rs::dbg_publish_small_sidecar_free",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/sidecar_test_hooks.rs::dbg_publish_small_sidecar_free",
   "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_publish_small_sidecar_free",
   "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_reclaim_sidecar_record_for_test",
   CURRENT_RESERVATION_HOOK
@@ -67,10 +67,10 @@ BENCH_UNSAFE_HOOKS.add(CURRENT_RESERVATION_HOOK);
 // below carries the bench-gate requirement.
 BENCH_UNSAFE_HOOKS.add("crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs::dbg_publish_cached_for_test");
 const ROOT_FORWARDERS = [
-  'src/alloc_core/small/alloc_core_small_magazine.rs::refill_class',
-  'src/alloc_core/small/alloc_core_small_magazine.rs::refill_class_bump',
-  'src/alloc_core/small/alloc_core_small_magazine.rs::refill_class_bump_virgin',
-  'src/alloc_core/small/alloc_core_small_magazine.rs::flush_class',
+  'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs::refill_class',
+  'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs::refill_class_bump',
+  'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs::refill_class_bump_virgin',
+  'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs::flush_class',
   'crates/core/sefer-segment/src/segment/support/segment_directory/segment_layout.rs::small_decommit_start',
   'crates/core/sefer-segment/src/segment/support/segment_directory/segment_layout.rs::primordial_decommit_start',
   'crates/core/sefer-segment/src/segment/support/segment_directory/segment_layout.rs::small_lazy_initial_commit',
@@ -327,7 +327,7 @@ function handAuthoredCheck() {
   check(probes, 'impl HeapCore { #[cfg(feature = "internals")] pub const fn dbg_promotion_compiled() -> bool { false } }', [['dbg_promotion_compiled', 'HeapCore', false]]);
   assert(verifyHooks(new Map([[probes, scanFile(probes, 'impl HeapCore { pub const fn dbg_promotion_compiled() -> bool { false } }')]])).errors.includes(`reviewed hook missing internals gate: ${probes}::dbg_promotion_compiled`));
 
-  const magazine = 'src/alloc_core/small/alloc_core_small_magazine.rs';
+  const magazine = 'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs';
   const magazineSource = `#[cfg(feature = "internals")]
   impl AllocCore {
     pub fn refill_class(&mut self, class_idx: usize, want: usize, out: &mut [*mut u8]) -> usize { 0 }

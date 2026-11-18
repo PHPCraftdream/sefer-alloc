@@ -96,7 +96,7 @@ impl HeapCore {
 
     /// TEST-ONLY (R12-6): the decoded `SegmentKind` of `ptr`'s segment, as a
     /// small tag (`0` = Primordial, `1` = Small, `2` = Large, `3` = Unknown)
-    /// — thin delegation to [`AllocCore::dbg_kind_at_tag`]. Exposed at the
+    /// — thin delegation to [`AllocCore::dbg_kind_at_tag`](crate::AllocCore::dbg_kind_at_tag). Exposed at the
     /// `HeapCore` level (mirroring `dbg_live_count_for`'s
     /// existing delegation pattern in this file) so a `tests/` integration
     /// test can distinguish the PRIMORDIAL segment from an ordinary `Small`
@@ -108,7 +108,7 @@ impl HeapCore {
     /// order.
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_kind_at_tag`] moved behind `internals` (see that
+    /// [`AllocCore::dbg_kind_at_tag`](crate::AllocCore::dbg_kind_at_tag) moved behind `internals` (see that
     /// method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-global", feature = "internals"))]
@@ -119,7 +119,7 @@ impl HeapCore {
 
     /// TEST-ONLY (R6-T33): read the RAW `kind` discriminant byte of `ptr`'s
     /// segment (no decode) — thin delegation to
-    /// [`AllocCore::dbg_kind_byte_of`], exposed at the `HeapCore` level behind
+    /// [`AllocCore::dbg_kind_byte_of`](crate::AllocCore::dbg_kind_byte_of), exposed at the `HeapCore` level behind
     /// the same `alloc-global` + `internals` gate as [`Self::dbg_kind_at_tag`]
     /// so a test can capture the legitimate byte before corrupting it and
     /// restore it afterwards.
@@ -132,13 +132,13 @@ impl HeapCore {
 
     /// TEST-ONLY (R6-T33): overwrite the RAW `kind` discriminant byte of
     /// `ptr`'s segment — thin delegation to
-    /// [`AllocCore::dbg_stamp_kind_byte`], which owns the full `# Safety`
+    /// [`AllocCore::dbg_stamp_kind_byte`](crate::AllocCore::dbg_stamp_kind_byte), which owns the full `# Safety`
     /// contract and the corrupted-kind scenario rationale. Exposed at the
     /// `HeapCore` level so the R6-T33 regression test can stamp through the
     /// lease without reaching into crate-internal modules.
     ///
     /// # Safety
-    /// Same contract as [`AllocCore::dbg_stamp_kind_byte`]: `ptr` must
+    /// Same contract as [`AllocCore::dbg_stamp_kind_byte`](crate::AllocCore::dbg_stamp_kind_byte): `ptr` must
     /// identify a live, mapped segment owned by this heap, with exclusive
     /// access to its header for the stamp; capture the true byte with
     /// [`Self::dbg_kind_byte_of`] first and restore it before teardown,
@@ -166,7 +166,7 @@ impl HeapCore {
     }
 
     /// R32-9 (task #500) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_table_count`] — exposed at the `HeapCore` level
+    /// [`AllocCore::dbg_table_count`](crate::AllocCore::dbg_table_count) — exposed at the `HeapCore` level
     /// (mirroring `dbg_kind_at_tag`'s existing
     /// delegation pattern in this file) so the new `≥64-live-segment`
     /// macro-bench harness (`benches/macro_multiseg_steady_state.rs`,
@@ -183,11 +183,11 @@ impl HeapCore {
     /// category as `dbg_kind_at_tag`), so a plain safe `fn` is correct, not
     /// `unsafe fn`. Gated on `alloc-global` only (matching this file's
     /// other ungated-beyond-`alloc-global` accessors), because
-    /// `AllocCore::dbg_table_count` itself carries no additional feature
+    /// [`AllocCore::dbg_table_count`](crate::AllocCore::dbg_table_count) itself carries no additional feature
     /// gate.
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_table_count`] moved behind `internals` (see that
+    /// [`AllocCore::dbg_table_count`](crate::AllocCore::dbg_table_count) moved behind `internals` (see that
     /// method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-global", feature = "internals"))]
@@ -403,12 +403,12 @@ impl HeapCore {
     /// TEST-ONLY (task D3): resolve the size class index for `layout`, the
     /// same classification `alloc` uses to index `tcache.classes[c].slots`/
     /// `.count`.
-    /// Delegates to [`AllocCore::dbg_layout_class_for`]; exposed at the
+    /// Delegates to [`AllocCore::dbg_layout_class_for`](crate::AllocCore::dbg_layout_class_for); exposed at the
     /// `HeapCore` level because `core` is `pub(crate)` and external
     /// integration tests only see `HeapCore`/`HeapRegistry`.
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_layout_class_for`] moved behind `internals` (see
+    /// [`AllocCore::dbg_layout_class_for`](crate::AllocCore::dbg_layout_class_for) moved behind `internals` (see
     /// that method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
@@ -445,7 +445,7 @@ impl HeapCore {
 
     /// TEST-ONLY (Mechanism 2, task #51): force-drain this heap's
     /// empty-small-segment hysteresis pool (release + recycle every pooled
-    /// segment). Forwards to `AllocCore::drain_small_pool` — the production
+    /// segment). Forwards to [`AllocCore::drain_small_pool`](crate::AllocCore::drain_small_pool) — the production
     /// teardown-trim primitive (see [`trim_for_recycle`](Self::trim_for_recycle)).
     /// Used by decommit tests that run through the `SeferAlloc`/`HeapRegistry` face
     /// (where `claim_lease_with_config` cannot reliably disable the pool on a reused
@@ -464,13 +464,13 @@ impl HeapCore {
     /// Returns `None` if the directory is not materialised or `ptr` is foreign
     /// (a foreign `ptr`'s segment-aligned base is not owned by this `AllocCore`,
     /// so the containment guard below returns `None` before any header read).
-    /// Thin delegation to `AllocCore::dbg_directory_get_bit` — exposed at the
+    /// Thin delegation to [`AllocCore::dbg_directory_get_bit`](crate::AllocCore::dbg_directory_get_bit) — exposed at the
     /// `HeapCore` level so integration tests driving cross-thread frees through
     /// `HeapCore::dealloc` can observe whether owner-side sidecar reclamation
     /// synchronized the directory.
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_directory_get_bit`] moved behind `internals` (see
+    /// [`AllocCore::dbg_directory_get_bit`](crate::AllocCore::dbg_directory_get_bit) moved behind `internals` (see
     /// that method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-segment-directory", feature = "internals"))]
@@ -503,13 +503,13 @@ impl HeapCore {
 
     /// TEST-ONLY (R11-2): the number of empty small segments currently
     /// retained in this heap's hysteresis pool. Thin delegation to
-    /// `AllocCore::dbg_pooled_count` — exposed at the `HeapCore` level so
+    /// [`AllocCore::dbg_pooled_count`](crate::AllocCore::dbg_pooled_count) — exposed at the `HeapCore` level so
     /// integration tests can assert that a segment emptied by sidecar
     /// reclamation was actually pooled (not left as an ordinary registered
     /// segment by the pre-R11-2 bug that dropped the pool/release signal).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_pooled_count`] moved behind `internals`
+    /// [`AllocCore::dbg_pooled_count`](crate::AllocCore::dbg_pooled_count) moved behind `internals`
     /// (`alloc_core_small_pool.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "internals"))]
@@ -519,7 +519,7 @@ impl HeapCore {
     }
 
     /// TEST-ONLY (R26-1, task #410): the resolved runtime pool cap for this
-    /// heap — thin delegation to `AllocCore::dbg_pool_cap`, exposed at the
+    /// heap — thin delegation to [`AllocCore::dbg_pool_cap`](crate::AllocCore::dbg_pool_cap), exposed at the
     /// `HeapCore` level (mirroring `dbg_pooled_count`'s existing delegation
     /// pattern in this file) so the R26-1 subprocess-per-arm RSS probe can
     /// self-verify each claimed heap actually resolved to the requested
@@ -532,7 +532,7 @@ impl HeapCore {
     /// sub-rule 2).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_pool_cap`] moved behind `internals`
+    /// [`AllocCore::dbg_pool_cap`](crate::AllocCore::dbg_pool_cap) moved behind `internals`
     /// (`alloc_core_small_pool.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -546,11 +546,11 @@ impl HeapCore {
     }
 
     /// R29-4 (task #435) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_segment_state_reconciliation`] — exposed at the
+    /// [`AllocCore::dbg_segment_state_reconciliation`](crate::AllocCore::dbg_segment_state_reconciliation) — exposed at the
     /// `HeapCore` level (mirroring `dbg_pooled_count`'s / `dbg_pool_cap`'s
     /// existing delegation pattern in this file) so the R29-4 probe can
     /// snapshot the per-state segment accounting from a claimed heap.
-    /// Returns a [`SegmentStateReconciliation`] built from a DUAL
+    /// Returns a [`SegmentStateReconciliation`](crate::alloc_core::SegmentStateReconciliation) built from a DUAL
     /// enumeration: every registered segment is classified into exactly
     /// one state, and the heap's occupied large-cache slots are enumerated
     /// separately into `large_cached` (a cache deposit unregisters the
@@ -561,7 +561,7 @@ impl HeapCore {
     /// `bench-internals`-gated (no production caller → R25-10 sub-rule 2).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_segment_state_reconciliation`] moved behind
+    /// [`AllocCore::dbg_segment_state_reconciliation`](crate::AllocCore::dbg_segment_state_reconciliation) moved behind
     /// `internals` (`alloc_core_small_pool.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -577,7 +577,7 @@ impl HeapCore {
     }
 
     /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_large_cache_used`] — exposed at the `HeapCore` level
+    /// [`AllocCore::dbg_large_cache_used`](crate::AllocCore::dbg_large_cache_used) — exposed at the `HeapCore` level
     /// (mirroring `dbg_pooled_count`'s/`dbg_pool_cap`'s existing delegation
     /// pattern in this file) so the R29-13 large-cache retention probe can
     /// read the current running sum of cached large-span bytes for a claimed
@@ -585,7 +585,7 @@ impl HeapCore {
     /// `bench-internals`-gated (no production caller → R25-10 sub-rule 2).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_large_cache_used`] moved behind `internals`
+    /// [`AllocCore::dbg_large_cache_used`](crate::AllocCore::dbg_large_cache_used) moved behind `internals`
     /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -599,7 +599,7 @@ impl HeapCore {
     }
 
     /// R31-3 (task #466) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_large_cache_budget`] — exposed at the `HeapCore`
+    /// [`AllocCore::dbg_large_cache_budget`](crate::AllocCore::dbg_large_cache_budget) — exposed at the `HeapCore`
     /// level (same delegation pattern as `dbg_large_cache_used` above) so
     /// the R31-3 multi-heap RSS gate can self-verify each claimed heap's
     /// resolved large-cache byte budget (`None` = unbounded, base cache;
@@ -611,7 +611,7 @@ impl HeapCore {
     /// R25-10 sub-rule 2).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_large_cache_budget`] moved behind `internals`
+    /// [`AllocCore::dbg_large_cache_budget`](crate::AllocCore::dbg_large_cache_budget) moved behind `internals`
     /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -625,7 +625,7 @@ impl HeapCore {
     }
 
     /// R30-6 (task #455) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_large_cache_hits`] — exposed at the `HeapCore` level
+    /// [`AllocCore::dbg_large_cache_hits`](crate::AllocCore::dbg_large_cache_hits) — exposed at the `HeapCore` level
     /// (same delegation pattern as `dbg_large_cache_used` immediately above)
     /// so the R30-6 large-cache headroom BENEFIT-side A/B probe can read this
     /// heap's own large-cache hit counter directly (without going through the
@@ -644,7 +644,7 @@ impl HeapCore {
     /// with no production caller MUST default to `bench-internals`-gating")
     /// applies, the same rule those four siblings already cite. Previously
     /// gated `alloc-decommit` alone (justified at the time as "matching
-    /// `AllocCore::dbg_large_cache_hits`'s own gate exactly") — that
+    /// [`AllocCore::dbg_large_cache_hits`](crate::AllocCore::dbg_large_cache_hits)'s own gate exactly") — that
     /// justification was the wrong comparison: the DELEGATED method's
     /// pre-existing gate is not the rule for a NEW `HeapCore`-level hook.
     /// This widened this hook's presence in every plain `production` build
@@ -655,7 +655,7 @@ impl HeapCore {
     /// (`Cargo.toml`), so this tightening breaks neither.
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_large_cache_hits`] moved behind `internals`
+    /// [`AllocCore::dbg_large_cache_hits`](crate::AllocCore::dbg_large_cache_hits) moved behind `internals`
     /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -669,7 +669,7 @@ impl HeapCore {
     }
 
     /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_large_cache_slot_sizes`] — exposed at the `HeapCore`
+    /// [`AllocCore::dbg_large_cache_slot_sizes`](crate::AllocCore::dbg_large_cache_slot_sizes) — exposed at the `HeapCore`
     /// level (same pattern as `dbg_large_cache_used` above) so the R29-13
     /// probe can count how many of the 8 base large-cache slots are
     /// currently occupied for a claimed heap. Read-only `&self`; does NOT
@@ -679,11 +679,11 @@ impl HeapCore {
     /// Return-array length is `8` — the base large-cache slot count
     /// (`LARGE_CACHE_SLOTS`, `pub(super)` inside `alloc_core` and therefore
     /// not nameable from `registry`); hardcoded here rather than re-exported,
-    /// matching [`AllocCore::dbg_large_cache_slot_sizes`]'s own public
+    /// matching [`AllocCore::dbg_large_cache_slot_sizes`](crate::AllocCore::dbg_large_cache_slot_sizes)'s own public
     /// signature verbatim.
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_large_cache_slot_sizes`] moved behind `internals`
+    /// [`AllocCore::dbg_large_cache_slot_sizes`](crate::AllocCore::dbg_large_cache_slot_sizes) moved behind `internals`
     /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -697,7 +697,7 @@ impl HeapCore {
     }
 
     /// R31-3 (task #466) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_large_cache_extended_slot_sizes`] — exposed at the
+    /// [`AllocCore::dbg_large_cache_extended_slot_sizes`](crate::AllocCore::dbg_large_cache_extended_slot_sizes) — exposed at the
     /// `HeapCore` level (same pattern as `dbg_large_cache_slot_sizes` above)
     /// so the R31-3 multi-heap RSS gate can count how many of the 32
     /// extension-sidecar slots are currently occupied for a claimed heap.
@@ -709,11 +709,11 @@ impl HeapCore {
     /// Return-array length is `32` — `LARGE_CACHE_EXTENDED_SLOTS`,
     /// `pub(crate)` inside `alloc_core` and therefore not nameable from
     /// `registry`; hardcoded here rather than re-exported, matching
-    /// [`AllocCore::dbg_large_cache_extended_slot_sizes`]'s own public
+    /// [`AllocCore::dbg_large_cache_extended_slot_sizes`](crate::AllocCore::dbg_large_cache_extended_slot_sizes)'s own public
     /// signature verbatim.
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_large_cache_extended_slot_sizes`] moved behind
+    /// [`AllocCore::dbg_large_cache_extended_slot_sizes`](crate::AllocCore::dbg_large_cache_extended_slot_sizes) moved behind
     /// `internals` (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -728,7 +728,7 @@ impl HeapCore {
     }
 
     /// R31-3 (task #466) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_large_cache_extension_materialised`] — exposed at the
+    /// [`AllocCore::dbg_large_cache_extension_materialised`](crate::AllocCore::dbg_large_cache_extension_materialised) — exposed at the
     /// `HeapCore` level (same pattern as `dbg_large_cache_slot_sizes` above)
     /// so the R31-3 multi-heap RSS gate can confirm, per claimed heap,
     /// whether the extension sidecar actually materialised (the
@@ -740,7 +740,7 @@ impl HeapCore {
     /// own gate).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_large_cache_extension_materialised`] moved behind
+    /// [`AllocCore::dbg_large_cache_extension_materialised`](crate::AllocCore::dbg_large_cache_extension_materialised) moved behind
     /// `internals` (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -755,7 +755,7 @@ impl HeapCore {
     }
 
     /// R31-4 (task #487) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_large_cache_total_slots`] — exposed at the `HeapCore`
+    /// [`AllocCore::dbg_large_cache_total_slots`](crate::AllocCore::dbg_large_cache_total_slots) — exposed at the `HeapCore`
     /// level (same delegation pattern as `dbg_large_cache_used` above) so a
     /// gate driving the real `#[global_allocator]` (which only ever has a
     /// `HeapCore`, never a bare `AllocCore`, in hand) can read back the
@@ -770,10 +770,10 @@ impl HeapCore {
     /// delegates a method that is available under plain `alloc-decommit`
     /// (it reads 8 when the extension feature/sidecar is absent), so it is
     /// NOT additionally gated on `large-cache-extended` — matching
-    /// [`AllocCore::dbg_large_cache_total_slots`]'s own gate exactly.
+    /// [`AllocCore::dbg_large_cache_total_slots`](crate::AllocCore::dbg_large_cache_total_slots)'s own gate exactly.
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_large_cache_total_slots`] moved behind `internals`
+    /// [`AllocCore::dbg_large_cache_total_slots`](crate::AllocCore::dbg_large_cache_total_slots) moved behind `internals`
     /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -787,7 +787,7 @@ impl HeapCore {
     }
 
     /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_decay_config`] — exposed at the `HeapCore` level (same
+    /// [`AllocCore::dbg_decay_config`](crate::AllocCore::dbg_decay_config) — exposed at the `HeapCore` level (same
     /// pattern as `dbg_large_cache_used` above) so the R29-13 probe can read
     /// back the RESOLVED `(decay_rate_bp, decay_interval_ms, headroom_bytes)`
     /// large-cache decay config for a claimed heap — the self-verification
@@ -798,7 +798,7 @@ impl HeapCore {
     /// R25-10 sub-rule 2).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_decay_config`] moved behind `internals`
+    /// [`AllocCore::dbg_decay_config`](crate::AllocCore::dbg_decay_config) moved behind `internals`
     /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -812,7 +812,7 @@ impl HeapCore {
     }
 
     /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to
-    /// [`AllocCore::dbg_force_decay_tick`] — exposed at the `HeapCore` level
+    /// [`AllocCore::dbg_force_decay_tick`](crate::AllocCore::dbg_force_decay_tick) — exposed at the `HeapCore` level
     /// (same pattern as `dbg_large_cache_used` above) so the R29-13 probe can
     /// force a large-cache decay tick (bypassing the wall-clock interval)
     /// without waiting, to demonstrate the retained cache is reclaimable via
@@ -822,7 +822,7 @@ impl HeapCore {
     /// R25-10 sub-rule 2).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_force_decay_tick`] moved behind `internals`
+    /// [`AllocCore::dbg_force_decay_tick`](crate::AllocCore::dbg_force_decay_tick) moved behind `internals`
     /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -851,13 +851,13 @@ impl HeapCore {
 
     /// TEST-ONLY (R11-2): the owner-only `live_count` of `ptr`'s segment, or
     /// `None` if `ptr` is foreign / not small/primordial. Thin delegation to
-    /// `AllocCore::dbg_live_count_for` — exposed at the `HeapCore` level so an
+    /// [`AllocCore::dbg_live_count_for`](crate::AllocCore::dbg_live_count_for) — exposed at the `HeapCore` level so an
     /// integration test can drive a segment down to EXACTLY zero live blocks
     /// (reading the exact remaining count at each step) without guessing how
     /// many blocks a given segment holds.
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_live_count_for`] moved behind `internals`
+    /// [`AllocCore::dbg_live_count_for`](crate::AllocCore::dbg_live_count_for) moved behind `internals`
     /// (`alloc_core_small_pool.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "internals"))]
@@ -873,7 +873,7 @@ impl HeapCore {
     /// (handed out, or magazine-resident — a magazine-resident block counts
     /// as live/allocated from the bitmap's perspective, since the magazine
     /// push does not call `dec_live`). Thin delegation to
-    /// [`AllocCore::dbg_is_free_for`] — exposed at the `HeapCore` level
+    /// [`AllocCore::dbg_is_free_for`](crate::AllocCore::dbg_is_free_for) — exposed at the `HeapCore` level
     /// (mirroring `dbg_live_count_for`'s / `dbg_kind_at_tag`'s existing
     /// delegation pattern in this file) so a `tests/` integration test can
     /// inspect the FINAL per-block allocation state of individual blocks
@@ -887,7 +887,7 @@ impl HeapCore {
     /// sub-rule 2).
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_is_free_for`] moved behind `internals` (see that
+    /// [`AllocCore::dbg_is_free_for`](crate::AllocCore::dbg_is_free_for) moved behind `internals` (see that
     /// method's file, `alloc_core_small_diag.rs`, module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -902,7 +902,7 @@ impl HeapCore {
 
     /// B4 (в) F11: the raw STATE nibble (`byte >> 6`: 0 = LIVE, 1 = MAG,
     /// 2 = FREE) of `ptr`'s block's state byte, read through the delegated
-    /// [`AllocCore::dbg_state_byte_state_for`] — a read-only safe observer
+    /// [`AllocCore::dbg_state_byte_state_for`](crate::AllocCore::dbg_state_byte_state_for) — a read-only safe observer
     /// in the [`Self::dbg_is_free_for`] mold (canonical-root resolution,
     /// one `Node::read_u8` read, no mutation). `None` for foreign or
     /// non-Small/Primordial pointers. `internals`-gated like its delegate.

@@ -151,7 +151,7 @@ impl SeferAlloc {
 
     /// M-C oracle (Ph4c, receipt open question M-C): process-wide
     /// `(full_ingress_drain_calls, ingress_records_consumed)` counters of the
-    /// strict trim-path drain ([`AllocCore::drain_sidecar_ingress`] — the
+    /// strict trim-path drain ([`crate::AllocCore::drain_sidecar_ingress`] — the
     /// `trim_for_recycle` / re-claim pass; the bounded worker step and the
     /// Large hot/rescue scans are NOT counted). `trim_for_recycle` performs
     /// EXACTLY ONE full drain pass per trim, so:

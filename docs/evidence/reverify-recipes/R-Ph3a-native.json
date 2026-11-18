@@ -33,7 +33,7 @@
     }
   ],
   "mutant": {
-    "file": "src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs",
+    "file": "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs",
     "find": "meta.add_live(n as u32);",
     "replace": "meta.add_live(n as u32 + 1);",
     "steps": [

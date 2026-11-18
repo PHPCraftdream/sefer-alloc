@@ -129,7 +129,7 @@ impl HeapCore {
     }
 
     /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to
-    /// `AllocCore::dbg_hash_contains_only`, exposed at the `HeapCore` level so
+    /// [`AllocCore::dbg_hash_contains_only`](crate::AllocCore::dbg_hash_contains_only), exposed at the `HeapCore` level so
     /// `benches/perf_gate_iai.rs` can measure Tier-2's (the 8192-slot
     /// open-addressing probe) instruction cost IN ISOLATION, unconditionally
     /// skipping the Tier-1 `OWN_CACHE_SIZE`-entry `own_cache` check that `dbg_contains_base`
@@ -150,7 +150,7 @@ impl HeapCore {
     /// not an alternate/bypass implementation.
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_hash_contains_only`] moved behind `internals` (see
+    /// [`AllocCore::dbg_hash_contains_only`](crate::AllocCore::dbg_hash_contains_only) moved behind `internals` (see
     /// that method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -164,7 +164,7 @@ impl HeapCore {
     }
 
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): thin delegation to
-    /// [`AllocCore::dbg_contains_base_tier1_hits`] — exposed at the
+    /// [`AllocCore::dbg_contains_base_tier1_hits`](crate::AllocCore::dbg_contains_base_tier1_hits) — exposed at the
     /// `HeapCore` level (mirroring `dbg_hash_contains_only`'s existing
     /// delegation pattern in this file) so a macro-bench workload driven
     /// through the real `HeapCore`/`#[global_allocator]` entry point can read
@@ -175,7 +175,7 @@ impl HeapCore {
     /// Reads 0 unless `bench-internals` is on.
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_contains_base_tier1_hits`] moved behind `internals`
+    /// [`AllocCore::dbg_contains_base_tier1_hits`](crate::AllocCore::dbg_contains_base_tier1_hits) moved behind `internals`
     /// (see that method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
     #[cfg(all(
@@ -190,10 +190,10 @@ impl HeapCore {
 
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): the Tier-2-fallback
     /// complement of [`HeapCore::dbg_contains_base_tier1_hits`]. See
-    /// [`AllocCore::dbg_contains_base_tier1_misses`].
+    /// [`AllocCore::dbg_contains_base_tier1_misses`](crate::AllocCore::dbg_contains_base_tier1_misses).
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_contains_base_tier1_misses`] moved behind
+    /// [`AllocCore::dbg_contains_base_tier1_misses`](crate::AllocCore::dbg_contains_base_tier1_misses) moved behind
     /// `internals` (see that method's file, `alloc_core_core_diag.rs`,
     /// module doc).
     #[doc(hidden)]
@@ -208,11 +208,11 @@ impl HeapCore {
     }
 
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): thin delegation to
-    /// [`AllocCore::dbg_reset_contains_base_tier1_counters`], exposed at the
+    /// [`AllocCore::dbg_reset_contains_base_tier1_counters`](crate::AllocCore::dbg_reset_contains_base_tier1_counters), exposed at the
     /// `HeapCore` level for the same reason as the two accessors above.
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_reset_contains_base_tier1_counters`] moved behind
+    /// [`AllocCore::dbg_reset_contains_base_tier1_counters`](crate::AllocCore::dbg_reset_contains_base_tier1_counters) moved behind
     /// `internals` (see that method's file, `alloc_core_core_diag.rs`,
     /// module doc).
     #[doc(hidden)]
@@ -230,7 +230,7 @@ impl HeapCore {
     // --- macro-bench/test workloads driven through `HeapCore` can read them
     // --- (same pattern as `dbg_contains_base_tier1_hits` above).
 
-    /// MEASUREMENT-ONLY (B4-M P1-2): see [`AllocCore::dbg_s1_refill_events`].
+    /// MEASUREMENT-ONLY (B4-M P1-2): see [`AllocCore::dbg_s1_refill_events`](crate::AllocCore::dbg_s1_refill_events).
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-global",
@@ -242,7 +242,7 @@ impl HeapCore {
         crate::alloc_core::AllocCore::dbg_s1_refill_events()
     }
 
-    /// MEASUREMENT-ONLY (B4-M P1-2): see [`AllocCore::dbg_s1_mag_byte_writes`].
+    /// MEASUREMENT-ONLY (B4-M P1-2): see [`AllocCore::dbg_s1_mag_byte_writes`](crate::AllocCore::dbg_s1_mag_byte_writes).
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-global",
@@ -255,7 +255,7 @@ impl HeapCore {
     }
 
     /// MEASUREMENT-ONLY (B4-M P1-2): see
-    /// [`AllocCore::dbg_xnull_null_tail_guard`].
+    /// [`AllocCore::dbg_xnull_null_tail_guard`](crate::AllocCore::dbg_xnull_null_tail_guard).
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-global",
@@ -343,7 +343,7 @@ impl HeapCore {
     /// `docs/perf/R28_1_FLUSH_CLASS_ISOLATION_GATE.md` for the full
     /// decomposition and the isolation arithmetic.
     ///
-    /// Delegates to [`AllocCore::flush_class_internal`] verbatim — production's exact
+    /// Delegates to [`AllocCore::flush_class_internal`](crate::AllocCore::flush_class_internal) verbatim — production's exact
     /// overflow-arm call (`free/dealloc_own_base.rs`'s magazine-overflow branch of
     /// `dealloc_own_thread_with_base`), not an alternate/bypass
     /// implementation. `class_idx`/`blocks` carry the identical contract as
@@ -365,7 +365,7 @@ impl HeapCore {
     ///
     /// # Safety
     ///
-    /// The caller must uphold [`AllocCore::flush_class_internal`]'s `# Safety`
+    /// The caller must uphold [`AllocCore::flush_class_internal`](crate::AllocCore::flush_class_internal)'s `# Safety`
     /// contract verbatim for `class_idx`/`blocks`: every non-null entry is
     /// the exact start pointer of a currently-LIVE small-class allocation of
     /// size class `class_idx` owned by this heap's substrate, not an interior
@@ -474,7 +474,7 @@ impl HeapCore {
     // `#[doc(hidden)]` surface (the established pattern — same visibility
     // discipline as every other `dbg_*` in this file).
 
-    /// R29-3 delegation — see [`AllocCore::dbg_decomp_full_cycle`].
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_full_cycle`](crate::AllocCore::dbg_decomp_full_cycle).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
@@ -489,7 +489,7 @@ impl HeapCore {
         self.core.dbg_decomp_full_cycle()
     }
 
-    /// R29-3 delegation — see [`AllocCore::dbg_decomp_os_roundtrip`].
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_os_roundtrip`](crate::AllocCore::dbg_decomp_os_roundtrip).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
@@ -504,7 +504,7 @@ impl HeapCore {
         crate::alloc_core::AllocCore::dbg_decomp_os_roundtrip()
     }
 
-    /// R29-3 delegation — see [`AllocCore::dbg_decomp_reserve_and_keep`].
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_reserve_and_keep`](crate::AllocCore::dbg_decomp_reserve_and_keep).
     ///
     /// R31-4 (task #467): forwards [`crate::alloc_core::ReservedSmallSegment`]
     /// instead of a bare `*mut u8` — see that type's module doc.
@@ -524,9 +524,9 @@ impl HeapCore {
         self.core.dbg_decomp_reserve_and_keep()
     }
 
-    /// R29-3 delegation — see [`AllocCore::dbg_decomp_release`].
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_release`](crate::AllocCore::dbg_decomp_release).
     ///
-    /// R31-15 (task #486): [`AllocCore::dbg_decomp_release`] is `unsafe fn`
+    /// R31-15 (task #486): [`AllocCore::dbg_decomp_release`](crate::AllocCore::dbg_decomp_release) is `unsafe fn`
     /// again (R31-4's move-consuming signature closed double-release but
     /// not owner-binding — a cross-`AllocCore` release was still safe-
     /// reachable UB; see that function's doc comment for the full
@@ -535,7 +535,7 @@ impl HeapCore {
     ///
     /// # Safety
     ///
-    /// Same contract as [`AllocCore::dbg_decomp_release`]: `handle` must
+    /// Same contract as [`AllocCore::dbg_decomp_release`](crate::AllocCore::dbg_decomp_release): `handle` must
     /// have been produced by a paired `dbg_decomp_reserve_and_keep` call on
     /// THIS SAME `HeapCore`'s underlying `AllocCore`, and the segment must
     /// still be live/unreleased.
@@ -555,11 +555,11 @@ impl HeapCore {
         unsafe { self.core.dbg_decomp_release(handle) };
     }
 
-    /// R29-3 delegation — see [`AllocCore::dbg_decomp_decommit_payload`].
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_decommit_payload`](crate::AllocCore::dbg_decomp_decommit_payload).
     ///
     /// # Safety
     ///
-    /// Same contract as [`AllocCore::dbg_decomp_decommit_payload`].
+    /// Same contract as [`AllocCore::dbg_decomp_decommit_payload`](crate::AllocCore::dbg_decomp_decommit_payload).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
@@ -576,11 +576,11 @@ impl HeapCore {
         unsafe { crate::alloc_core::AllocCore::dbg_decomp_decommit_payload(base) };
     }
 
-    /// R31-6 (task #469) delegation — see [`AllocCore::dbg_decomp_recommit_payload`].
+    /// R31-6 (task #469) delegation — see [`AllocCore::dbg_decomp_recommit_payload`](crate::AllocCore::dbg_decomp_recommit_payload).
     ///
     /// # Safety
     ///
-    /// Same contract as [`AllocCore::dbg_decomp_recommit_payload`].
+    /// Same contract as [`AllocCore::dbg_decomp_recommit_payload`](crate::AllocCore::dbg_decomp_recommit_payload).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
@@ -597,7 +597,7 @@ impl HeapCore {
         unsafe { crate::alloc_core::AllocCore::dbg_decomp_recommit_payload(base) }
     }
 
-    /// R29-3 delegation — see [`AllocCore::dbg_decomp_payload_range`].
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_payload_range`](crate::AllocCore::dbg_decomp_payload_range).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
@@ -612,7 +612,7 @@ impl HeapCore {
         crate::alloc_core::AllocCore::dbg_decomp_payload_range()
     }
 
-    /// R29-3 delegation — see [`AllocCore::dbg_decomp_page_size`].
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_page_size`](crate::AllocCore::dbg_decomp_page_size).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
@@ -636,7 +636,7 @@ impl HeapCore {
     // (unlike the decomp cluster) — these counters observe every ordinary
     // segment reservation, not just the decommit/recommit cycle.
 
-    /// task #504 delegation — see [`AllocCore::dbg_unix_exact_reserve_attempts`].
+    /// task #504 delegation — see [`AllocCore::dbg_unix_exact_reserve_attempts`](crate::AllocCore::dbg_unix_exact_reserve_attempts).
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_core_diag.rs`'s module
@@ -647,7 +647,7 @@ impl HeapCore {
         crate::alloc_core::AllocCore::dbg_unix_exact_reserve_attempts()
     }
 
-    /// task #504 delegation — see [`AllocCore::dbg_unix_exact_reserve_hits`].
+    /// task #504 delegation — see [`AllocCore::dbg_unix_exact_reserve_hits`](crate::AllocCore::dbg_unix_exact_reserve_hits).
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_core_diag.rs`'s module
@@ -658,7 +658,7 @@ impl HeapCore {
         crate::alloc_core::AllocCore::dbg_unix_exact_reserve_hits()
     }
 
-    /// task #504 delegation — see [`AllocCore::dbg_windows_reserve_commit_calls`].
+    /// task #504 delegation — see [`AllocCore::dbg_windows_reserve_commit_calls`](crate::AllocCore::dbg_windows_reserve_commit_calls).
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_core_diag.rs`'s module
@@ -669,7 +669,7 @@ impl HeapCore {
         crate::alloc_core::AllocCore::dbg_windows_reserve_commit_calls()
     }
 
-    /// task #504 delegation — see [`AllocCore::dbg_reset_vmem_bench_internals_counters`].
+    /// task #504 delegation — see [`AllocCore::dbg_reset_vmem_bench_internals_counters`](crate::AllocCore::dbg_reset_vmem_bench_internals_counters).
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_core_diag.rs`'s module
@@ -682,7 +682,7 @@ impl HeapCore {
 
     // ── task #504 (F11 step 2) — Windows reserve-vs-commit split delegation ─
 
-    /// task #504 delegation — see [`AllocCore::dbg_decomp_win_reserve_only`].
+    /// task #504 delegation — see [`AllocCore::dbg_decomp_win_reserve_only`](crate::AllocCore::dbg_decomp_win_reserve_only).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
@@ -697,11 +697,11 @@ impl HeapCore {
         crate::alloc_core::AllocCore::dbg_decomp_win_reserve_only()
     }
 
-    /// task #504 delegation — see [`AllocCore::dbg_decomp_win_commit_only`].
+    /// task #504 delegation — see [`AllocCore::dbg_decomp_win_commit_only`](crate::AllocCore::dbg_decomp_win_commit_only).
     ///
     /// # Safety
     ///
-    /// Same contract as [`AllocCore::dbg_decomp_win_commit_only`].
+    /// Same contract as [`AllocCore::dbg_decomp_win_commit_only`](crate::AllocCore::dbg_decomp_win_commit_only).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
@@ -719,11 +719,11 @@ impl HeapCore {
         unsafe { crate::alloc_core::AllocCore::dbg_decomp_win_commit_only(base) }
     }
 
-    /// task #504 delegation — see [`AllocCore::dbg_decomp_win_release_only`].
+    /// task #504 delegation — see [`AllocCore::dbg_decomp_win_release_only`](crate::AllocCore::dbg_decomp_win_release_only).
     ///
     /// # Safety
     ///
-    /// Same contract as [`AllocCore::dbg_decomp_win_release_only`].
+    /// Same contract as [`AllocCore::dbg_decomp_win_release_only`](crate::AllocCore::dbg_decomp_win_release_only).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module

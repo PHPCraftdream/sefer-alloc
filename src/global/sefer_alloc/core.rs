@@ -146,11 +146,15 @@ impl SeferAlloc {
     /// claimed on first use (not here), so this can be used in `static`
     /// initialisers without any allocation or OS calls.
     ///
-    /// Equivalent to `SeferAlloc::with_config(LargeCacheConfig::DEFAULT)`.
+    /// With alloc-decommit, equivalent to
+    /// `SeferAlloc::with_config(LargeCacheConfig::DEFAULT)`.
     ///
-    /// # Memory policy — read before deploying
+    /// # Memory policy — read before deploying (alloc-decommit)
     ///
-    /// The default large-object cache headroom is 256 MiB **per
+    /// Everything below applies only under `alloc-decommit`; without that
+    /// feature no large cache exists.
+    ///
+    /// With alloc-decommit, the default large-object cache headroom is 256 MiB **per
     /// materialized heap/shard**, not 256 MiB process-wide — a thread-per-
     /// core server with many concurrently active heaps multiplies this
     /// figure by however many of them have touched a large allocation.
@@ -174,17 +178,14 @@ impl SeferAlloc {
     /// Measured in full — including the exact post-drain floor and the
     /// 2-second, zero-byte-reclaimed idle-window result — in
     /// `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md`. If a smaller
-    /// per-heap floor fits your deployment better, see
-    /// [`with_profile`](Self::with_profile) with
-    /// [`LargeCachePolicy::Trimmed64MiB`](crate::alloc_core::LargeCachePolicy::Trimmed64MiB)
-    /// or
-    /// [`LargeCachePolicy::LowHeadroom`](crate::alloc_core::LargeCachePolicy::LowHeadroom)
-    /// for a shipped, one-line alternative — note that policy is a decay
-    /// FLOOR, not an RSS cap; see [`LargeCachePolicy`](crate::alloc_core::LargeCachePolicy)'s
-    /// doc — or [`with_config`](Self::with_config) to set an exact
-    /// [`LargeCacheConfig::headroom_bytes`](crate::alloc_core::LargeCacheConfig::headroom_bytes)
-    /// / [`LargeCacheConfig::budget_bytes`](crate::alloc_core::LargeCacheConfig::budget_bytes)
-    /// (the actual admission ceiling) directly.
+    /// per-heap floor fits your deployment better, with alloc-decommit see
+    /// `with_profile` with `LargeCachePolicy::Trimmed64MiB` or
+    /// `LargeCachePolicy::LowHeadroom` for a shipped, one-line alternative —
+    /// note that policy is a decay FLOOR, not an RSS cap; see
+    /// `LargeCachePolicy`'s doc — or `with_config` to set an exact
+    /// `LargeCacheConfig::headroom_bytes` /
+    /// `LargeCacheConfig::budget_bytes` (the actual admission ceiling)
+    /// directly.
     #[must_use]
     pub const fn new() -> Self {
         #[cfg(feature = "alloc-decommit")]

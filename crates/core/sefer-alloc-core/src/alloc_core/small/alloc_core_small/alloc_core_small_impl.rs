@@ -1,0 +1,1000 @@
+use core::ptr::NonNull;
+
+use crate::alloc_core::node::{Node, NODE_SIZE};
+#[cfg(any(
+    feature = "alloc-decommit",
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
+use crate::alloc_core::os;
+use crate::alloc_core::os::SEGMENT;
+#[cfg(all(feature = "alloc-decommit", not(feature = "small-segment-lazy-commit")))]
+use crate::alloc_core::segment_header::Layout as SegLayout;
+use crate::alloc_core::segment_header::{align_up, FREE_LIST_NULL};
+use crate::alloc_core::size_classes::SizeClasses;
+#[cfg(all(
+    feature = "alloc-stats",
+    feature = "alloc-segment-directory",
+    not(feature = "numa-aware")
+))]
+use sefer_segment::support::directory_counters as directory_stats;
+
+use crate::alloc_core::alloc_core::AllocCore;
+use crate::alloc_core::state_byte::StateByte;
+
+/// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
+/// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
+/// `any(primordial-lazy-commit, small-segment-lazy-commit)` (R12-9, task
+/// #260: the split siblings of the former single `alloc-lazy-commit`, which
+/// is now a pure alias for "both together"). Tests observe this to verify
+/// that `carve_batch` does ONE commit per batch (not per block) and that
+/// chunk boundary crossings trigger the expected number of commits.
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
+pub(crate) static GROW_COMMIT_COUNT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
+pub(crate) use sefer_segment::support::geometry::LAZY_FIRST_CHUNK;
+
+/// B2 (R7 Workstream B): the chunk size used when GROWING the commit frontier
+/// past its initial value during bump-carve. When a `carve_block` or
+/// `carve_batch` would write past `committed_payload_end`, the grow logic
+/// commits `[frontier, round_up(carve_end, GROW_CHUNK))` (clamped to
+/// `SEGMENT`) and advances the frontier.
+///
+/// Set equal to `LAZY_FIRST_CHUNK` (256 KiB): both are B5-swept constants
+/// (64/128/256/512 KiB); using the same value for initial and grow chunks
+/// keeps the model simple and the sweep surface small. A separate value is
+/// a trivial constant rename if B5 data motivates it.
+///
+/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
+pub(crate) const GROW_CHUNK: usize = LAZY_FIRST_CHUNK;
+
+// B1/B2: compile-time sanity — the initial commit (metadata + first chunk) must
+// fit within one segment, and both chunk constants must be page-aligned and
+// non-zero.
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
+const _: () = {
+    assert!(
+        LAZY_FIRST_CHUNK > 0 && LAZY_FIRST_CHUNK.is_multiple_of(crate::alloc_core::os::PAGE),
+        "LAZY_FIRST_CHUNK must be a non-zero multiple of PAGE"
+    );
+    // Task #1074: the page-rounded `lazy_initial_commit` adds at most one
+    // MAX_REALISTIC_PAGE_SIZE (64 KiB) of rounding, so the slack is part of
+    // the bound: the ROUNDED initial commit stays within one SEGMENT.
+    assert!(
+        crate::alloc_core::segment_header::Layout::small_meta_end()
+            + LAZY_FIRST_CHUNK
+            + crate::alloc_core::os::MAX_REALISTIC_PAGE_SIZE
+            <= crate::alloc_core::os::SEGMENT,
+        "metadata + LAZY_FIRST_CHUNK + one MAX_REALISTIC_PAGE_SIZE of page-rounding \
+         slack must fit within one SEGMENT"
+    );
+    assert!(
+        GROW_CHUNK > 0 && GROW_CHUNK.is_multiple_of(crate::alloc_core::os::PAGE),
+        "GROW_CHUNK must be a non-zero multiple of PAGE"
+    );
+};
+impl AllocCore {
+    /// Allocate a small block of the given class. Routes through the current
+    /// small segment's free list (pop); on a miss, scans ALL owned segments for
+    /// one with a non-empty class free list (Phase 12.1: free state lives in
+    /// per-segment `BinTable`s — a freed block in a non-current segment must
+    /// stay reusable); only then carves a fresh block / reserves a fresh
+    /// segment, plus a refill batch (Phase 9 amortisation) pushed into each
+    /// block's OWN segment's `BinTable` via `segment_base_of` (defect A fix:
+    /// never a captured "current" pointer).
+    ///
+    /// Phase 12.5 (shard model): a heap owns its segments exclusively — no
+    /// adoption hook; carves/reserves from its OWN segments only. Foreign
+    /// frees publish to pinned route sidecars; discovery/reclamation run on
+    /// allocation miss paths.
+    #[inline(always)]
+    pub(in crate::alloc_core) fn alloc_small(&mut self, class_idx: usize) -> *mut u8 {
+        let block_size = SizeClasses::block_size(class_idx);
+        debug_assert!(block_size >= NODE_SIZE);
+        // 1. Try the free list of the current small segment.
+        match self.pop_free(self.small_cur, class_idx) {
+            Ok(Some(ptr)) => return ptr,
+            Err(()) => return core::ptr::null_mut(),
+            Ok(None) => {}
+        }
+        // 2. Current segment's class free list is empty: probe the per-class
+        //    discovery cursor, then scan the OTHER owned segments for one
+        //    with a non-empty class free list (B4 §11: scan starts after the
+        //    cursor's slot, wraps; see docs/perf/B4_MT_COLLAPSE_DIAGNOSIS.md
+        //    §11; shared metadata guards — terminal consumption cannot
+        //    double-link a block).
+        match self.alloc_small_via_discovery(class_idx) {
+            Err(()) => return core::ptr::null_mut(),
+            Ok(Some(ptr)) => return ptr,
+            Ok(None) => {}
+        }
+        // 3. No free block anywhere: carve a FRESH block. On the cold carve
+        //    path we also carve a refill batch (Phase 9 amortisation) so the
+        //    next allocs pop from the free list instead of carving one-by-one.
+        //    Each refilled block is pushed into its OWN segment's BinTable
+        //    (via `segment_base_of(ptr)`), never a captured "current"
+        //    pointer (defect A fix: `small_cur` may shift mid-batch).
+        if !self.prepare_current_carve(class_idx, block_size) {
+            return core::ptr::null_mut();
+        }
+        if let Some(ptr) = self.carve_block_with_refill(class_idx, block_size) {
+            return ptr;
+        }
+        // 4. Current segment is full: reserve a new small segment and retry.
+        match self.reserve_small_segment() {
+            Some(_) => {
+                // Retry once on the fresh segment. Recurse-free: a single
+                // direct retry (not a loop that could grow unboundedly).
+                match self.pop_free(self.small_cur, class_idx) {
+                    Ok(Some(ptr)) => return ptr,
+                    Err(()) => return core::ptr::null_mut(),
+                    Ok(None) => {}
+                }
+                // no-panic: a fresh small segment is guaranteed by construction
+                // to have room for at least one block of every small class
+                // (compile-time sanity: `small_meta_end() + PAGE <= SEGMENT`,
+                // and every class block fits in a page). If carve_block returns
+                // None here it indicates metadata corruption; we return null
+                // (graceful OOM) rather than panicking — the GlobalAlloc face
+                // (Phase 11) must never abort.
+                self.carve_block_with_refill(class_idx, block_size)
+                    .unwrap_or(core::ptr::null_mut())
+            }
+            None => {
+                // R9-8 (task #230): rescue scan before surfacing OOM. The
+                // directory-trust fast path (R8-2) may have wrongly cleared a
+                // bit for `class_idx`, hiding a real free block and leading us
+                // here to a spurious carve that just OOM'd (table full or OS
+                // reservation failure). Run ONE forced O(S) scan ignoring the
+                // directory-trust: if it finds a segment the directory missed,
+                // self-heal the bit (inside the scan) and serve that block
+                // instead of OOMing. Gated on the directory feature + a
+                // materialised sidecar (otherwise there was no directory-trust
+                // hazard to begin with — the normal path already scanned).
+                #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
+                if !self.directory_sidecar.is_null() || self.ingress_armed() {
+                    if let Some(seg) = self.find_segment_with_free_forced(class_idx) {
+                        #[cfg(feature = "alloc-stats")]
+                        directory_stats::directory_rescue_oom_avoided()
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        match self.pop_free(seg, class_idx) {
+                            Ok(Some(ptr)) => return ptr,
+                            Err(()) => return core::ptr::null_mut(),
+                            Ok(None) => {}
+                        }
+                    }
+                }
+                core::ptr::null_mut()
+            }
+        }
+    }
+
+    /// R12-10 (task #261, `virgin-zero-skip`): virgin-aware sibling of
+    /// [`alloc_small`](Self::alloc_small), consumed ONLY by
+    /// [`AllocCore::alloc_zeroed`]'s small arm and (the production win)
+    /// `HeapCore::alloc_zeroed`'s small arm. A separate function (not a
+    /// changed `alloc_small` signature) per the design docs' Stage-1
+    /// recommendation (`docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11) --
+    /// `alloc_small` has call sites that must stay `*mut u8`-only (the plain
+    /// `alloc` contract must never observe the virgin bit).
+    ///
+    /// Returns `(ptr, is_virgin)`. `is_virgin` is `true` **only** when `ptr`
+    /// was served by a bump-cursor CARVE (`carve_block`/`carve_batch`, via
+    /// `carve_block_with_refill`) on a segment whose `payload_virgin` bit
+    /// reads `true`, AND `cfg!(not(miri))`. Every free-list-pop dispatch
+    /// yields `false` unconditionally — a popped block was carved and issued
+    /// strictly earlier, so it can never be virgin ("dispatch conjunct",
+    /// design docs §2 in both).
+    ///
+    /// The bit is read from `self.small_cur` (or the freshly reserved
+    /// segment) BEFORE the carve — safe because a carve never WRITEs the bit
+    /// (`SegmentHeader::payload_virgin` field doc's reset table), so reading
+    /// before or after a successful carve on the SAME segment is equivalent.
+    #[cfg(feature = "virgin-zero-skip")]
+    #[inline]
+    #[allow(unsafe_code)]
+    // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+    #[doc(hidden)]
+    pub fn alloc_small_with_virgin(&mut self, class_idx: usize) -> (*mut u8, bool) {
+        let block_size = SizeClasses::block_size(class_idx);
+        debug_assert!(block_size >= NODE_SIZE);
+        // 1. Current segment's free list — never virgin (dispatch conjunct).
+        match self.pop_free(self.small_cur, class_idx) {
+            Ok(Some(ptr)) => return (ptr, false),
+            Err(()) => return (core::ptr::null_mut(), false),
+            Ok(None) => {}
+        }
+        // 2. Other owned segments' free lists — never virgin (a popped block
+        //    was carved and issued earlier). Same cursor-aware discovery step
+        //    as `alloc_small` (B4 §11).
+        match self.alloc_small_via_discovery(class_idx) {
+            Err(()) => return (core::ptr::null_mut(), false),
+            Ok(Some(ptr)) => return (ptr, false),
+            Ok(None) => {}
+        }
+        // 3. No free block anywhere: carve a FRESH block from the CURRENT
+        //    segment. Read the lifetime-virginity bit before carving — the
+        //    carve itself never mutates the bit (see this fn's doc).
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let cur_virgin =
+            unsafe { crate::alloc_core::segment_header::SegmentMeta::new(self.small_cur) }
+                .payload_virgin_of();
+        if !self.prepare_current_carve(class_idx, block_size) {
+            return (core::ptr::null_mut(), false);
+        }
+        if let Some(ptr) = self.carve_block_with_refill(class_idx, block_size) {
+            return (ptr, cur_virgin && cfg!(not(miri)));
+        }
+        // 4. Current segment is full: reserve a new small segment and retry.
+        match self.reserve_small_segment() {
+            Some(_) => {
+                // A freshly reserved segment's free lists are always empty
+                // (nothing has ever been freed on it) — this pop exists only
+                // to mirror `alloc_small`'s identical retry shape; it never
+                // actually hits in practice, but if it somehow did, a
+                // free-list-served block is never virgin regardless.
+                match self.pop_free(self.small_cur, class_idx) {
+                    Ok(Some(ptr)) => return (ptr, false),
+                    Err(()) => return (core::ptr::null_mut(), false),
+                    Ok(None) => {}
+                }
+                // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+                let fresh_virgin =
+                    unsafe { crate::alloc_core::segment_header::SegmentMeta::new(self.small_cur) }
+                        .payload_virgin_of();
+                match self.carve_block_with_refill(class_idx, block_size) {
+                    Some(ptr) => (ptr, fresh_virgin && cfg!(not(miri))),
+                    None => (core::ptr::null_mut(), false),
+                }
+            }
+            None => {
+                // R9-8 rescue scan (mirrors `alloc_small`'s identical arm):
+                // any block served here comes from a free-list pop — never
+                // virgin.
+                #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
+                if !self.directory_sidecar.is_null() || self.ingress_armed() {
+                    if let Some(seg) = self.find_segment_with_free_forced(class_idx) {
+                        #[cfg(feature = "alloc-stats")]
+                        directory_stats::directory_rescue_oom_avoided()
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        match self.pop_free(seg, class_idx) {
+                            Ok(Some(ptr)) => return (ptr, false),
+                            Err(()) => return (core::ptr::null_mut(), false),
+                            Ok(None) => {}
+                        }
+                    }
+                }
+                (core::ptr::null_mut(), false)
+            }
+        }
+    }
+
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+    fn prepare_current_carve(&self, class_idx: usize, block_size: usize) -> bool {
+        // `small_cur` is the live exclusively-owned current small segment;
+        // metadata read only (owner discipline, no `Send`).
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let bump = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(self.small_cur) }
+            .bump_of();
+        let aligned = align_up(bump, block_size);
+        aligned + block_size > SEGMENT || {
+            // SAFETY: live owned segment base and initialized table;
+            // prepare only probes routes (owner-exclusive).
+            #[allow(unsafe_code)]
+            unsafe {
+                self.table
+                    .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
+            }
+            .is_some()
+        }
+    }
+
+    #[cfg(feature = "hardened")]
+    #[inline(always)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+    fn valid_free_node(segment: *mut u8, off: u32, class_idx: usize) -> bool {
+        let offset = off as usize;
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(segment) };
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let start =
+            match unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(segment) } {
+                crate::alloc_core::segment_header::SegmentKind::Primordial => {
+                    crate::alloc_core::segment_header::Layout::primordial_meta_end()
+                }
+                crate::alloc_core::segment_header::SegmentKind::Small => {
+                    crate::alloc_core::segment_header::Layout::small_meta_end()
+                }
+                _ => return false,
+            };
+        let size = SizeClasses::block_size(class_idx);
+        offset >= start
+            && offset < SEGMENT
+            && offset.is_multiple_of(size)
+            && offset
+                .checked_add(size)
+                .is_some_and(|end| end <= meta.bump_of() && end <= SEGMENT)
+            // SAFETY: The guards bound off in the live, owner-held segment.
+            && unsafe { meta.state_byte().read(off) } == StateByte::encode(class_idx, StateByte::FREE)
+    }
+
+    #[cfg(feature = "hardened")]
+    #[cold]
+    #[inline(never)]
+    fn free_list_corrupted() -> ! {
+        // Corrupt allocator-owned state cannot be recovered as an OOM. Abort
+        // deliberately skips unwinding, destructors, and the panic hook.
+        crate::alloc_core::fatal::fatal(
+            b"sefer-alloc: hardened: Small free-list corruption detected; aborting\n",
+        )
+    }
+    #[cfg(feature = "hardened")]
+    #[inline(always)]
+    fn free_continuation(segment: *mut u8, off: u32, class_idx: usize, next: *mut u8) -> u32 {
+        if next.is_null() {
+            return FREE_LIST_NULL;
+        }
+        let next_off =
+            Node::continuation_offset(segment, next).unwrap_or_else(|| Self::free_list_corrupted());
+        if next_off == off || !Self::valid_free_node(segment, next_off, class_idx) {
+            Self::free_list_corrupted();
+        }
+        next_off
+    }
+
+    /// Pop a free block; `Err` is an uncommitted class-spill OOM, leaving
+    /// the class head and bitmap unchanged. Hardened corruption aborts.
+    #[inline(always)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+    pub(in crate::alloc_core) fn pop_free(
+        &mut self,
+        segment: *mut u8,
+        class_idx: usize,
+    ) -> Result<Option<*mut u8>, ()> {
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(segment) };
+        let mut bt = meta.bin_table();
+        let head_off = bt.head(class_idx);
+        if head_off == FREE_LIST_NULL {
+            return Ok(None);
+        }
+        #[cfg(feature = "hardened")]
+        if !Self::valid_free_node(segment, head_off, class_idx) {
+            Self::free_list_corrupted();
+        }
+        let block_ptr = Node::deref(segment, head_off as usize);
+        let Some(block_nn) = NonNull::new(block_ptr) else {
+            return Ok(None);
+        };
+        let next = Node::read_next(block_nn);
+        #[cfg(feature = "hardened")]
+        let new_head = Self::free_continuation(segment, head_off, class_idx, next);
+        #[cfg(not(feature = "hardened"))]
+        let new_head = if next.is_null() {
+            FREE_LIST_NULL
+        } else {
+            let bounds =
+                crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
+            Node::continuation_offset_or_fatal(segment, next, bounds)
+        };
+        // SAFETY: `segment` is a live table-registered segment owned by this
+        // allocator (pop_free operates on its own owner table base) — the
+        // pre-move safe call, contract unchanged.
+        #[allow(unsafe_code)]
+        let issued = unsafe { self.table.prepare_small_issue(segment, head_off, class_idx) };
+        let Some(tx) = issued else {
+            return Err(());
+        };
+        bt.set_head(class_idx, new_head);
+        // R7-A2: directory bitmap maintenance — the old head was non-null
+        // (we passed the FREE_LIST_NULL guard above), so the only transition
+        // is non-empty→empty when new_head is FREE_LIST_NULL.
+        #[cfg(feature = "alloc-segment-directory")]
+        if new_head == FREE_LIST_NULL {
+            // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the caller holds the owner's read permission for the write-once `segment_id` field.
+            let slot_idx =
+                unsafe { crate::alloc_core::segment_header::SegmentHeader::segment_id_at(segment) }
+                    as usize;
+            self.publish_empty(segment, class_idx, slot_idx);
+        }
+        // B4 (в) F3-fix: assert the byte's PRIOR value BEFORE the issue
+        // commits LIVE.
+        debug_assert_eq!(
+            // SAFETY: The owner bin contains initialized, in-segment block
+            // starts; hardened builds additionally validate the head above.
+            unsafe { meta.state_byte().read(head_off) },
+            StateByte::encode(class_idx, StateByte::FREE),
+            "pop_free: free-list head must carry its exact class FREE byte",
+        );
+        // B4 (в): issue = commit FREE → LIVE in the state byte.
+        // SAFETY: The owner bin head is an in-segment start of this class.
+        unsafe {
+            meta.state_byte()
+                .write(head_off, class_idx, StateByte::LIVE)
+        };
+        // Phase 35 (M6): a block left the free list → one more live block.
+        // A popped block always comes from a COMMITTED payload (a decommitted
+        // segment's free list is empty), so no recommit is needed here — only
+        // `carve_block` writes fresh payload and thus recommits.
+        meta.inc_live();
+        tx.commit(&self.table);
+        Ok(Some(block_ptr))
+    }
+
+    /// Э7 (task #161) — **batch freelist drain**. Pop up to `out.len()` free
+    /// blocks of class `class_idx` from `segment`'s `BinTable[class_idx]` in ONE
+    /// walk, writing them into `out[..k]` and returning `k` (the number popped,
+    /// `0` if the free list was empty). Byte-identical end-state to calling
+    /// [`pop_free`](Self::pop_free) `k` times, but with the per-block round-trip HOISTED:
+    ///
+    ///   - `head` is read ONCE (not re-read from the `BinTable` per block).
+    ///   - `set_head` is written ONCE at the end, to the first UN-popped node
+    ///     (or `FREE_LIST_NULL` if the chain was exhausted before `out` filled).
+    ///   - `inc_live` is applied ONCE by `k` (under `alloc-decommit`), exactly
+    ///     equalling `k` individual `inc_live`s.
+    ///
+    /// The two per-block costs that MUST stay per-block are kept per-block:
+    ///
+    ///   - `read_next(block)` — the dependent load that walks the intrusive
+    ///     chain. mimalloc pays this too; there is no way to hoist it (each
+    ///     `next` lives in the previous block's body). We never WRITE the block
+    ///     body on this path (pop doesn't), so reading `next` before advancing
+    ///     is hazard-free: nothing overwrites a block between our read of its
+    ///     `next` and our recording it.
+    ///   - `mark_alloc(off)` — cleared per-block. **Decision: per-block, NOT
+    ///     merged.** A freelist is a LIFO push chain, so consecutive popped
+    ///     offsets are in general SCATTERED across the bitmap (they do not share
+    ///     a byte the way a flush batch of consecutive carves would). Merging
+    ///     the RMWs across blocks would only be byte-identical for offsets that
+    ///     share a bitmap byte, which is not guaranteed here — so we keep the
+    ///     per-block `mark_alloc`, which is trivially identical to `pop_free`'s.
+    ///     The batch win is the hoisted `set_head` / `head`-read / `inc_live`,
+    ///     NOT the bitmap RMW (which was never the expensive part).
+    ///
+    /// ## D1 / M2 / set_head correctness
+    ///
+    ///   - **D1:** exactly `k` blocks leave the free list and are handed out, so
+    ///     `inc_live` by `k` == `k` per-block `inc_live`s. No double, no
+    ///     under-count.
+    ///   - **M2:** every recorded block ends bitmap-ALLOCATED (bit cleared) via
+    ///     its own `mark_alloc`, exactly as `pop_free` leaves it. A later
+    ///     double-free still hits `is_free` correctly.
+    ///   - **set_head:** after the walk, `head` holds either the offset of the
+    ///     first un-popped node (chain longer than `out`) or `FREE_LIST_NULL`
+    ///     (chain exhausted). We `set_head` to that once. A subsequent
+    ///     `pop_free`/drain therefore yields exactly the remaining blocks in the
+    ///     same order.
+    ///
+    /// R7-A2: `&mut self` (upgraded from `&self`) so the directory bitmap can
+    /// be maintained at the single choke point. Touches only `segment` metadata
+    /// via `SegmentMeta` for the freelist walk, then calls `publish_empty` on
+    /// the directory sidecar (if materialised) when the drain empties the list.
+    #[inline]
+    #[cfg(feature = "internals")]
+    pub(in crate::alloc_core) fn drain_freelist_batch(
+        &mut self,
+        segment: *mut u8,
+        class_idx: usize,
+        out: &mut [*mut u8],
+    ) -> usize {
+        self.try_drain_freelist_batch(segment, class_idx, out, StateByte::LIVE)
+            .unwrap_or(0)
+    }
+    /// `Err` is only a class-spill OOM on the FIRST block (nothing changed);
+    /// a spill OOM on a later block returns the committed prefix as a short
+    /// drain with the refused block left as the head. Hardened validation
+    /// failures abort rather than being converted to an empty drain.
+    /// S1: `issue_state` = state byte committed per popped block — LIVE for
+    /// batch paths, MAG for the magazine refill (parks n−1 blocks; see
+    /// `finish_magazine_refill`). Same as `alloc_batch`'s deferred-clear.
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+    pub(in crate::alloc_core) fn try_drain_freelist_batch(
+        &mut self,
+        segment: *mut u8,
+        class_idx: usize,
+        out: &mut [*mut u8],
+        issue_state: u8,
+    ) -> Result<usize, ()> {
+        if out.is_empty() {
+            return Ok(0);
+        }
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(segment) };
+        let mut bt = meta.bin_table();
+        // Run-level protocol (B4-R3): fatal route guards run once in
+        // `prepare_small_issue_run`; drain stores no class code (G1-K1).
+
+        {
+            // Read the head ONCE.
+            let mut head_off = bt.head(class_idx);
+            if head_off == FREE_LIST_NULL {
+                return Ok(0);
+            }
+            // G1-K1: the run is built for its once-per-batch route guards only.
+            // A bin-`c` block was issued as class `c` before it was freed, so
+            // its start granule already holds class code `c + 1`; drain does
+            // not re-store it (carve, the first issue, does).
+            // SAFETY: `segment` is a live table-registered segment owned by
+            // this allocator (drain operates on its own owner table base).
+            #[allow(unsafe_code)]
+            let run = unsafe { self.table.prepare_small_issue_run(segment, class_idx) };
+            // B2-R1: one pass. Each link is validated (fatal on corruption, as
+            // before) before its block is committed. G1-K1: no leaf is
+            // prepared, so drain no longer fails on a spill OOM.
+            #[cfg(not(feature = "hardened"))]
+            let bounds =
+                crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
+            #[cfg(feature = "hardened")]
+            let mut slow = head_off;
+            let mut k = 0usize;
+            while k < out.len() && head_off != FREE_LIST_NULL {
+                #[cfg(feature = "hardened")]
+                if !Self::valid_free_node(segment, head_off, class_idx) {
+                    Self::free_list_corrupted();
+                }
+                let block_ptr = Node::deref(segment, head_off as usize);
+                let Some(block_nn) = NonNull::new(block_ptr) else {
+                    break;
+                };
+                #[cfg(debug_assertions)]
+                debug_assert!(
+                    run.code_present(head_off),
+                    "bin block at offset {head_off} lacks class code {class_idx}"
+                );
+                // Dependent load: block bodies are never written on the pop path.
+                let next = Node::read_next(block_nn);
+                #[cfg(feature = "hardened")]
+                let next_off = {
+                    let next_off = Self::free_continuation(segment, head_off, class_idx, next);
+                    if next_off == bt.head(class_idx) {
+                        Self::free_list_corrupted();
+                    }
+                    // `slow` trails the head over links the head already
+                    // validated and committed (no longer FREE), so it follows
+                    // the raw continuation; a revisit of a committed block is
+                    // also caught by `valid_free_node`'s FREE check above.
+                    if k % 2 == 1 {
+                        let slow_block = NonNull::new(Node::deref(segment, slow as usize))
+                            .unwrap_or_else(|| Self::free_list_corrupted());
+                        let slow_next = Node::read_next(slow_block);
+                        slow = if slow_next.is_null() {
+                            FREE_LIST_NULL
+                        } else {
+                            Node::continuation_offset(segment, slow_next)
+                                .unwrap_or_else(|| Self::free_list_corrupted())
+                        };
+                    }
+                    if next_off != FREE_LIST_NULL && next_off == slow {
+                        Self::free_list_corrupted();
+                    }
+                    next_off
+                };
+                #[cfg(not(feature = "hardened"))]
+                let next_off = if next.is_null() {
+                    FREE_LIST_NULL
+                } else {
+                    Node::continuation_offset_or_fatal(segment, next, bounds)
+                };
+                // B4 (в)/S1: issue = commit `issue_state` (LIVE, or MAG when
+                // the caller parks the batch in a magazine).
+                // SAFETY: The owner bin supplies an in-segment start of this
+                // class. The caller selects LIVE for issue or MAG for refill.
+                unsafe { meta.state_byte().write(head_off, class_idx, issue_state) };
+                out[k] = block_ptr;
+                k += 1;
+                head_off = next_off;
+            }
+            // Write the new head ONCE: the first un-popped node, or NULL.
+            bt.set_head(class_idx, head_off);
+            // B4-M (P1-2): MAG state-byte writes of this drain, one add per batch.
+            #[cfg(feature = "bench-internals")]
+            if issue_state == StateByte::MAG {
+                crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
+                    .fetch_add(k as u64, core::sync::atomic::Ordering::Relaxed);
+            }
+            // R7-A2: directory bitmap maintenance — the old head was non-null
+            // (early return above), so the only transition is non-empty→empty
+            // when the drain exhausted the chain (head_off == FREE_LIST_NULL);
+            // `let _ = run` ends its borrow before the `&mut self` publish.
+            let _ = run;
+            #[cfg(feature = "alloc-segment-directory")]
+            if head_off == FREE_LIST_NULL {
+                // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the caller holds the owner's read permission for the write-once `segment_id` field.
+                let slot_idx = unsafe {
+                    crate::alloc_core::segment_header::SegmentHeader::segment_id_at(segment)
+                } as usize;
+                self.publish_empty(segment, class_idx, slot_idx);
+            }
+            // `inc_live` ONCE by `k` (D1): exactly `k` blocks handed out; a
+            // popped block always comes from a COMMITTED payload (a decommitted
+            // segment's freelist is empty), so no recommit is needed here.
+            // Batch `add_live(k)` ≡ `k` per-block `inc_live`s (D1 note there).
+            meta.add_live(k as u32);
+            Ok(k)
+        }
+    }
+
+    /// Carve a fresh `block_size`-aligned block from the current small
+    /// segment's bump cursor. Returns None if the segment is full.
+    ///
+    /// On a page boundary crossing, marks the freshly entered page as owned by
+    /// `class_idx` in the page map (the page-dedication rule).
+    ///
+    /// R12-11 (task #262): `class_idx` is used ONLY for that diagnostic-only
+    /// page-map marking (see `PageMap`'s struct doc) — it is genuinely unused
+    /// without `page-map-diag`.
+    #[cfg_attr(not(feature = "page-map-diag"), allow(unused_variables))]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+    pub(in crate::alloc_core::small) fn carve_block(
+        &mut self,
+        class_idx: usize,
+        block_size: usize,
+    ) -> Option<*mut u8> {
+        let segment = self.small_cur;
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(segment) };
+        // Read/write only the owner-only `bump` field, never the whole header.
+        // Terminal foreign frees use route descriptors and independent sidecars;
+        // they do not read this bump cursor.
+        let bump = meta.bump_of();
+        let aligned_bump = align_up(bump, block_size);
+        if aligned_bump + block_size > SEGMENT {
+            return None;
+        }
+        // Fallible prepare before any mutation: `?` is the `return None` the
+        // old inline guard performed — "segment full" so the caller reserves.
+        // SAFETY: `segment` is a live table-registered segment owned by this
+        // allocator (carve operates on its own owner table base).
+        #[allow(unsafe_code)]
+        let tx = unsafe {
+            self.table
+                .prepare_small_issue(segment, aligned_bump as u32, class_idx)?
+        };
+        // Phase 35 (M6 recommit): if this segment's payload was decommitted (it
+        // emptied and we returned its pages to the OS), we are about to write
+        // into the payload — recommit and clear the flag BEFORE the bump cursor
+        // advances / the page-map / the block is touched.
+        #[cfg(feature = "alloc-decommit")]
+        if meta.is_decommitted() {
+            // B3 (R7 Workstream B): lazy-commit-aware recommit on reuse.
+            //
+            // Under `small-segment-lazy-commit` (R12-9, task #260: only THIS
+            // sub-feature — the decommit/pool lifecycle a decommitted
+            // segment came from is structurally `Small`-only, never
+            // `Primordial`, see `dec_live_and_maybe_decommit`), the
+            // retain-decommit (B3) only decommitted
+            // `[meta_end + LAZY_FIRST_CHUNK, SEGMENT)` and kept the initial
+            // chunk `[meta_end, meta_end + LAZY_FIRST_CHUNK)` committed. The
+            // frontier was already reset to `meta_end + LAZY_FIRST_CHUNK` by
+            // the decommit path. So we do NOT need a recommit syscall here —
+            // the first chunk is already committed and ready for carving.
+            // Just clear the `decommitted` flag and let B2's grow-on-carve
+            // logic recommit additional chunks incrementally as the bump
+            // cursor advances past the frontier. This is the lazy savings:
+            // reuse never touches the upper payload until it is actually
+            // needed.
+            //
+            // On the eager path (feature-OFF), the full-payload recommit is
+            // kept: the decommit decommitted the WHOLE payload
+            // `[meta_end, SEGMENT)`, so recommit must bring it all back.
+            #[cfg(feature = "small-segment-lazy-commit")]
+            {
+                // The initial chunk is already committed. The frontier was
+                // reset by the decommit path. Just clear the flag.
+                meta.set_decommitted(false);
+            }
+            #[cfg(not(feature = "small-segment-lazy-commit"))]
+            {
+                if !os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT) {
+                    // Honest OOM: the OS refused to re-commit the payload
+                    // (commit-charge exhaustion). Do NOT clear `decommitted`
+                    // and do NOT advance the bump — writing into the
+                    // still-reserved page would fault, and clearing the flag
+                    // would poison the segment (future carves would skip
+                    // recommit and hit the same uncommitted page). Report
+                    // "segment full" so the caller falls back (fresh segment
+                    // / null), matching the reserve path.
+                    return None;
+                }
+                meta.set_decommitted(false);
+            }
+        }
+        // B2 (R7 Workstream B): incremental grow-on-carve. If this carve
+        // would write past the committed frontier, commit the rounded chunk
+        // range `[frontier, round_up(carve_end, GROW_CHUNK))` clamped to
+        // SEGMENT. Only AFTER a successful commit do we advance the bump
+        // cursor, live_count, page map, and hand out the pointer. On failure
+        // everything stays unchanged and we return None ("segment full").
+        //
+        // No-op on the eager path (committed_payload_end == SEGMENT, so the
+        // condition is never true) and on Unix/miri (the eager fallback
+        // already committed everything). Fires only on the Windows lazy
+        // path when carving past the current frontier. R12-9 (task #260):
+        // shared between the split sub-features — `segment` here can be
+        // EITHER the primordial segment (reused as the first small-carve
+        // target, `AllocCore::new_inner`'s `small_cur = primordial_base`) or
+        // an ordinary small segment, and both read/write the same
+        // `committed_payload_end` field generically.
+        #[cfg(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        ))]
+        {
+            let frontier = meta.committed_payload_end_of();
+            let carve_end = aligned_bump + block_size;
+            if carve_end > frontier {
+                // `frontier == SEGMENT` means fully committed (eager path or
+                // already grown to the end) — the condition above is always
+                // false in that case, so we never reach here on the eager path.
+                // Round the carve end UP to the next GROW_CHUNK boundary,
+                // clamped to SEGMENT (never commit past the segment end).
+                let new_frontier = align_up(carve_end, GROW_CHUNK).min(SEGMENT);
+                if !os::commit_pages(segment, frontier, new_frontier) {
+                    // Commit-charge exhaustion: cannot grow the frontier.
+                    // Report "segment full" so the caller falls back (fresh
+                    // segment / null), matching the reserve path. Everything
+                    // unchanged: bump not moved, committed_payload_end not
+                    // moved, live_count unchanged, page map unwritten.
+                    return None;
+                }
+                GROW_COMMIT_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                meta.set_committed_payload_end(new_frontier);
+            }
+        }
+        // Update ONLY the bump cursor.
+        meta.set_bump(aligned_bump + block_size);
+        // Phase 35: this carved block is now live (handed to the caller, or — on
+        // the refill path — immediately pushed to the free list, which calls
+        // `dealloc_small` → `dec_live`, netting zero for refill blocks; the
+        // caller's block keeps the +1). Owner-only counter, plain field bump.
+        meta.inc_live();
+        // Mark the page containing `aligned_bump` as owned by `class_idx`.
+        // R12-11 (task #262): diagnostic-only bookkeeping (`PageMap` is NOT
+        // load-bearing for class routing — see its struct doc); gated behind
+        // `page-map-diag` and elided from the default/production carve path.
+        #[cfg(feature = "page-map-diag")]
+        {
+            let mut pm = meta.page_map();
+            let page = aligned_bump / crate::alloc_core::os::PAGE;
+            if pm.class_of(page).is_none() {
+                // Page was Free or Meta; dedicate it to this class.
+                pm.set_class(page, class_idx);
+            }
+        }
+        let ptr = Node::deref(segment, aligned_bump);
+        tx.commit(&self.table);
+        // B4 (в): a freshly carved block is issued LIVE at first touch.
+        // SAFETY: The owner just committed this in-segment class start.
+        unsafe {
+            meta.state_byte()
+                .write(aligned_bump as u32, class_idx, StateByte::LIVE)
+        };
+        Some(ptr)
+    }
+
+    /// E1 (task W4) — **batched bump-carve**. Carve a RUN of up to `out.len()`
+    /// `block_size`-strided blocks from the current small segment's bump cursor
+    /// in ONE shot, writing them into `out[..n]` and returning `n` (0 if the
+    /// segment cannot fit even one block — the caller reserves a fresh segment,
+    /// exactly as it does on `carve_block` → `None`).
+    ///
+    /// ## Byte-identical to `n` sequential `carve_block`s — what is HOISTED
+    ///
+    /// A run of `carve_block(class_idx, block_size)` calls, after the FIRST,
+    /// always finds `bump` already `block_size`-aligned (the previous carve left
+    /// `bump = aligned_prev + block_size`, and every class `block_size` is a
+    /// multiple of `MIN_BLOCK`), so `align_up(bump, block_size)` is a TAUTOLOGY
+    /// from the second block on. We therefore align ONCE (`aligned_start`), then
+    /// stride by `block_size`. The following are hoisted across the run because
+    /// none of them can change mid-run (a carve run touches only owner-only
+    /// bump/live/page-map state, and no free/decommit runs between carves):
+    ///   - `SegmentMeta::new` + `bump_of()` LOAD — once (bump only advances by
+    ///     our own writes; we track it locally).
+    ///   - `align_up` div — once (tautological after block 0).
+    ///   - `set_bump` STORE — once, to `aligned_start + n*block_size` (identical
+    ///     to the last sequential carve's final bump).
+    ///   - `live += n` — one batched saturating add (D1: exactly `n` handed out,
+    ///     byte-identical to `n` `inc_live`s; owner-only counter, intermediate
+    ///     states unobservable — same argument as `drain_freelist_batch`).
+    ///   - `is_decommitted()` check + recommit — once at run start (the flag is
+    ///     set only in the decommit path, which cannot run mid-carve).
+    ///
+    /// ## What STAYS per-block (NOT tautologies)
+    ///   - The page-map `class_of`/`set_class` "first class wins" marking is
+    ///     applied per DISTINCT payload page: we compute the page of each block
+    ///     and call `set_class` only when the page index CHANGES from the prior
+    ///     block (byte-identical to `carve_block`'s per-block "mark only if
+    ///     `class_of(page).is_none()`", since within a run the first block to
+    ///     enter a page is the one that dedicates it, and later same-page blocks
+    ///     find it already `Some` → no-op). For `block_size > PAGE` every block
+    ///     lands on a fresh page, so this degrades to per-block correctly.
+    ///
+    /// ## M2 / D1 / boundary — preserved EXACTLY
+    ///   - M2: carve NEVER touches the alloc bitmap (a bump-carved block is
+    ///     already bit0=allocated, the M2 convention) — identical to `carve_block`.
+    ///   - D1: `+n` for the `n` blocks handed out.
+    ///   - Boundary: `n = min(out.len(), room)` where
+    ///     `room = (SEGMENT - aligned_start) / block_size`, so
+    ///     `aligned_start + n*block_size <= SEGMENT` — the same
+    ///     `aligned + block_size > SEGMENT` per-block check, batched.
+    // R12-11 (task #262): `class_idx` is used ONLY for the diagnostic-only
+    // page-map marking below (see `PageMap`'s struct doc) — it is genuinely
+    // unused without `page-map-diag`.
+    #[cfg_attr(not(feature = "page-map-diag"), allow(unused_variables))]
+    #[cfg(feature = "internals")]
+    pub(in crate::alloc_core) fn carve_batch(
+        &mut self,
+        class_idx: usize,
+        block_size: usize,
+        out: &mut [*mut u8],
+    ) -> usize {
+        self.try_carve_batch(class_idx, block_size, out, StateByte::LIVE)
+            .unwrap_or(0)
+    }
+
+    /// S1: `issue_state` — LIVE (batch paths) or MAG (magazine refill);
+    /// see `try_drain_freelist_batch`.
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+    pub(in crate::alloc_core) fn try_carve_batch(
+        &mut self,
+        class_idx: usize,
+        block_size: usize,
+        out: &mut [*mut u8],
+        issue_state: u8,
+    ) -> Result<usize, ()> {
+        if out.is_empty() {
+            return Ok(0);
+        }
+        let segment = self.small_cur;
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(segment) };
+        let bump = meta.bump_of();
+        let aligned_start = align_up(bump, block_size);
+        if aligned_start + block_size > SEGMENT {
+            return Ok(0); // not room for even one block
+        }
+        let room = (SEGMENT - aligned_start) / block_size;
+        let n = out.len().min(room);
+        // Run-level protocol (B4-R3): guards once per run, per-block
+        // `prepare_for` promotes only on a leaf CHANGE, `run.commit` is one
+        // Release store (see `IssueRun`). A successful promotion is retained
+        // even if later OS commit fails; no class code or issue credit
+        // changes until the carve commits.
+        // SAFETY: `segment` is a live table-registered segment owned by this
+        // allocator (batch carve operates on its own owner table base).
+        #[allow(unsafe_code)]
+        let mut run = unsafe { self.table.prepare_small_issue_run(segment, class_idx) };
+        for i in 0..n {
+            let off = aligned_start + i * block_size;
+            if !run.prepare_for(off as u32) {
+                return Err(());
+            }
+        }
+        // Recommit ONCE at run start if the segment's payload was decommitted
+        // (identical to `carve_block`'s per-block check — the flag cannot change
+        // mid-run, so one check covers the whole run).
+        #[cfg(feature = "alloc-decommit")]
+        if meta.is_decommitted() {
+            // B3: lazy-commit-aware recommit on reuse (see `carve_block`'s
+            // identical block for the full rationale). R12-9 (task #260):
+            // `small-segment-lazy-commit` specifically — decommit only ever
+            // happens to `Small` segments, never `Primordial`.
+            #[cfg(feature = "small-segment-lazy-commit")]
+            {
+                meta.set_decommitted(false);
+            }
+            #[cfg(not(feature = "small-segment-lazy-commit"))]
+            {
+                if !os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT) {
+                    // Honest OOM (see `carve_block`): leave the segment marked
+                    // decommitted, do not advance the bump, and carve nothing
+                    // so the caller falls back (fresh segment / null) instead
+                    // of writing into a still-reserved page.
+                    return Ok(0);
+                }
+                meta.set_decommitted(false);
+            }
+        }
+        // B2 (R7 Workstream B): incremental grow-on-carve for the batched
+        // path. ONE commit covers the WHOLE batch — not a syscall per block.
+        // Compute the batch's final end, commit once up to the rounded chunk
+        // boundary that covers it, then carve the batch. On commit failure
+        // everything stays unchanged and we return 0.
+        //
+        // No-op on the eager path (committed_payload_end == SEGMENT — the
+        // condition is always false). Fires only on the Windows lazy path.
+        // R12-9 (task #260): shared between the split sub-features, same as
+        // `carve_block`'s identical block.
+        // How many blocks fit from `aligned_start` to the segment end,
+        // capped by the caller's slice. Computed ONCE (#1994: previously
+        // recomputed a second time, identically, inside the lazy-commit
+        // growth check below) — shared by that check's `batch_end` and the
+        // final carve's bump advance.
+        #[cfg(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        ))]
+        {
+            let frontier = meta.committed_payload_end_of();
+            let batch_end = aligned_start + n * block_size;
+            if batch_end > frontier {
+                // Round the batch end UP to the next GROW_CHUNK boundary,
+                // clamped to SEGMENT (never commit past the segment end).
+                let new_frontier = align_up(batch_end, GROW_CHUNK).min(SEGMENT);
+                if !os::commit_pages(segment, frontier, new_frontier) {
+                    // Commit-charge exhaustion: cannot grow the frontier;
+                    // everything unchanged (bump, live_count, page map).
+                    return Ok(0);
+                }
+                GROW_COMMIT_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                meta.set_committed_payload_end(new_frontier);
+            }
+        }
+        // Advance the bump cursor ONCE to just past the last carved block —
+        // byte-identical to the final `set_bump` of the n-th sequential carve.
+        meta.set_bump(aligned_start + n * block_size);
+        // Batched live increment (D1): exactly `n` blocks handed out.
+        meta.add_live(n as u32);
+        // Page-map "first class wins", applied once per DISTINCT page entered by
+        // this run. `carve_block` marks a page iff it was not already owned; the
+        // first block to land on a page is the one that dedicates it, so calling
+        // `set_class` on each page-index CHANGE reproduces that exactly.
+        //
+        // R12-11 (task #262): diagnostic-only bookkeeping (`PageMap` is NOT
+        // load-bearing for class routing — see its struct doc); gated behind
+        // `page-map-diag` and elided from the default/production carve path.
+        #[cfg(feature = "page-map-diag")]
+        let mut pm = meta.page_map();
+        #[cfg(feature = "page-map-diag")]
+        let mut prev_page = usize::MAX;
+        // AO-1: a magazine refill (MAG) fills its slots top-down (block `i` to
+        // slot `n - 1 - i`; `commit` order stays ascending), so the top-first
+        // pops issue the run in ascending addresses; LIVE batches stay ascending.
+        let mut carve_one = |i: usize, slot: &mut *mut u8| {
+            let off = aligned_start + i * block_size;
+            #[cfg(feature = "page-map-diag")]
+            {
+                let page = off / crate::alloc_core::os::PAGE;
+                if page != prev_page {
+                    if pm.class_of(page).is_none() {
+                        pm.set_class(page, class_idx);
+                    }
+                    prev_page = page;
+                }
+            }
+            *slot = Node::deref(segment, off);
+            run.commit(off as u32);
+            // B4 (в)/S1: freshly carved blocks commit `issue_state` (see doc).
+            // SAFETY: The owner’s room check bounds each class start in SEGMENT.
+            unsafe { meta.state_byte().write(off as u32, class_idx, issue_state) };
+        };
+        let slots = out[..n].iter_mut();
+        if issue_state == StateByte::MAG {
+            slots.rev().enumerate().for_each(|(i, s)| carve_one(i, s));
+        } else {
+            slots.enumerate().for_each(|(i, s)| carve_one(i, s));
+        }
+        // B4-M (P1-2): MAG state-byte writes of this carve, one add per batch.
+        #[cfg(feature = "bench-internals")]
+        if issue_state == StateByte::MAG {
+            crate::alloc_core::alloc_core::S1_MAG_BYTE_WRITES
+                .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
+        }
+        Ok(n)
+    }
+}

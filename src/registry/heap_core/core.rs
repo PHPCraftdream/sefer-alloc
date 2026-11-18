@@ -274,8 +274,14 @@ impl HeapCore {
     /// when it transitions a slot `FREE → LIVE` and needs to materialise the
     /// heap value in the slot's `UnsafeCell`.
     #[must_use]
+    #[allow(unsafe_code)] // P2.2: scoped to this method; restricted constructor's caller-lease contract below.
     pub(crate) fn new(id: u32) -> Option<Self> {
-        let core = AllocCore::new_with_owner(id)?;
+        // SAFETY: `id` names a lease-held registry slot (won exclusively via
+        // the FREE→LIVE CAS in `HeapRegistry::claim_impl`) or the non-slot
+        // `OWNER_ID_FALLBACK` sentinel; the core is installed in that same
+        // slot/static before any allocation is issued, per
+        // `AllocCore::new_with_owner`'s contract.
+        let core = unsafe { AllocCore::new_with_owner(id) }?;
         Some(Self {
             id,
             core,
@@ -325,7 +331,13 @@ impl HeapCore {
         // different later value is ignored.
         #[cfg(feature = "alloc-xthread")]
         let _ = publish_configured_slots(config.resolved_route_pin_cache_slots());
-        let core = AllocCore::new_with_config_for_owner(config, id)?;
+        // SAFETY: same owner-id protocol as [`Self::new`]: `id` names a
+        // lease-held slot (exclusive CAS in `claim_lease_with_config` →
+        // `claim_impl`) or the non-slot `OWNER_ID_FALLBACK` sentinel; the
+        // core is installed in that same slot/static before any allocation
+        // is issued, per `new_with_config_for_owner`'s `# Safety` contract.
+        #[allow(unsafe_code)] // P2.2: scoped to this unsafe block; contract above.
+        let core = unsafe { AllocCore::new_with_config_for_owner(config, id) }?;
         Some(Self {
             id,
             core,

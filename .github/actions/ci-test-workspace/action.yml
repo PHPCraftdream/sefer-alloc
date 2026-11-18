@@ -424,6 +424,25 @@ runs:
     - run: cargo test -p sefer-segment --all-features --no-fail-fast
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+    # sefer-alloc-core (P2.2 extraction): exercise the member's plain and full
+    # feature test configurations independently of root-package tests.
+    - run: cargo test -p sefer-alloc-core --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p sefer-alloc-core --all-features --no-fail-fast
+    # P1.2 sefer-concurrent precedent: the workspace lane also lints the
+    # extracted member's all-features/all-targets surface. The default- and
+    # no-default-features clippy rows live in the crate's own composite
+    # (.github/actions/ci-sefer-alloc-core-gates); this row is the redundant
+    # in-lane check for the full configuration, matching sefer-concurrent.
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p sefer-alloc-core --all-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test --locked --test regression_r2_17_64bit_target_gate
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
     - run: cargo clippy -p sefer-concurrent --all-features --all-targets -- -D warnings
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}

@@ -52,7 +52,8 @@ impl HeapCore {
     ///    task (Large frees are already segment-granularity; there is no
     ///    batching win available at the bitmap level for them).
     /// 2. Small-classified under `fastbin`: partition `blocks` into
-    ///    "this-heap-owned" (passes [`AllocCore::contains_base`], the SAME
+    ///    "this-heap-owned" (passes
+    ///    [`AllocCore::contains_base`](crate::alloc_core::AllocCore::contains_base), the SAME
     ///    O(1) ownership test [`dealloc_routing`](Self::dealloc_routing)
     ///    uses) vs. everything else (foreign, cross-thread-owned, null).
     ///    Owned blocks go through the batched fast path below; everything
@@ -81,7 +82,8 @@ impl HeapCore {
     /// no-op (double-free / interior-pointer / Large-in-small-layout /
     /// stale-free all degrade safely), matching the scalar contract exactly.
     /// F7 and H1 matter here specifically because this method's ownership
-    /// gate is [`AllocCore::contains_base`], which does NOT distinguish
+    /// gate is
+    /// [`AllocCore::contains_base`](crate::alloc_core::AllocCore::contains_base), which does NOT distinguish
     /// Small vs. Large segments (both are "this heap's registered
     /// segments") — without F7/H1 a caller-contract-violating Large-via-
     /// small-layout free or an interior-pointer free would fall through to
@@ -102,7 +104,7 @@ impl HeapCore {
     /// [`FREE_PARK_CAP`] free-side byte-budget cap, for large small-classes);
     /// any further accepted blocks — the batch's overflow past magazine
     /// capacity — are routed straight to
-    /// [`AllocCore::flush_class_internal`] in ONE call (which internally groups them
+    /// [`AllocCore::flush_class_internal`](crate::alloc_core::AllocCore::flush_class_internal) in ONE call (which internally groups them
     /// into same-segment runs and does the batched bitmap/BinTable RMW — see
     /// that method's doc comment), instead of the scalar path's dribble of
     /// `FLUSH_N`(8)-block half-flushes interleaved with individual pushes.
@@ -220,7 +222,8 @@ impl HeapCore {
     /// The Small-classified batched fast path (R11-4). Partitions `blocks`
     /// into this-heap-owned vs. everything else, magazine-first-fills the
     /// owned subset up to `TCACHE_CAP`, and routes any overflow past that
-    /// capacity to ONE [`AllocCore::flush_class_internal`] call. See
+    /// capacity to ONE
+    /// [`AllocCore::flush_class_internal`](crate::alloc_core::AllocCore::flush_class_internal) call. See
     /// [`dealloc_batch`](Self::dealloc_batch)'s doc comment for the full
     /// mechanism and trade-off.
     ///

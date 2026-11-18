@@ -596,7 +596,7 @@ function negativeContext(blanked, nameStart, closeParen) {
 // `mode` is 'strict' (reserve arg 3) or 'pagefree' (every other position).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PROD_PREFIX = 'src/';
+const isProdPath = (rel) => rel.startsWith('src/') || rel.startsWith('crates/core/sefer-alloc-core/src/'); // P2.2: prod = root src/ + crate src/
 const PROD_DEPTH_BUDGET = 4;
 const RE_LAZY_INITIAL_COMMIT = /^(?:[A-Za-z_][A-Za-z0-9_]*::)*lazy_initial_commit\s*\(/;
 const RE_PAGE_SIZE_CALL = /^(?:[A-Za-z_][A-Za-z0-9_]*::)*page_size\s*\(\s*\)$/;
@@ -800,7 +800,7 @@ function scanSource(path, source, prodCtx) {
 
   // Production provenance rule (task #1080): `src/` files only. The scanned
   // file must be able to see itself in the index (same-file wrapper callers).
-  const isProd = path.startsWith(PROD_PREFIX);
+  const isProd = isProdPath(path);
   let selfCtx = null;
   if (isProd) {
     const files = prodCtx ? prodCtx.files.slice() : [];
@@ -1371,7 +1371,7 @@ function main() {
   const { tracked, untracked, union } = scanSetRsFiles();
   const prodCtx = {
     files: union
-      .filter((rel) => rel.startsWith('src/') && !['alloc_bitmap.rs', 'magazine_bitmap.rs', 'segment_bitmap.rs'].includes(rel.split('/').pop()))
+      .filter((rel) => isProdPath(rel) && !['alloc_bitmap.rs', 'magazine_bitmap.rs', 'segment_bitmap.rs'].includes(rel.split('/').pop()))
       .map((rel) => {
         const blanked = blankRust(readFileSync(join(REPO_ROOT, rel), 'utf8'));
         return { rel, blanked, defs: collectDefs(blanked) };
@@ -1391,7 +1391,7 @@ function main() {
       continue;
     }
     scanned++;
-    const r = scanSource(rel, source, rel.startsWith('src/') ? prodCtx : undefined);
+    const r = scanSource(rel, source, isProdPath(rel) ? prodCtx : undefined);
     findings.push(...r.findings);
     prodFindings.push(...r.prodFindings);
     for (const k of Object.keys(totals)) totals[k] += r.stats[k];

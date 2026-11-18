@@ -14,8 +14,8 @@ const paused = (features, borrows) => green('miri-core-rest', 'miri_global_box_a
     file0: '^[[:space:]]+at crates/core/sefer-segment/src/support/node\\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$',
     frame1: '^[[:space:]]+1: sefer_segment::support::node_impl::RootNode::write_next$',
     file1: '^[[:space:]]+at crates/core/sefer-segment/src/support/node\\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$',
-    frame2: '^[[:space:]]+2: sefer_alloc::alloc_core::platform::node::Node::write_next$',
-    file2: '^[[:space:]]+at src/alloc_core/platform/node\\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$',
+    frame2: '^[[:space:]]+2: sefer_alloc_core::alloc_core::platform::node::Node::write_next$',
+    file2: '^[[:space:]]+at crates/core/sefer-alloc-core/src/alloc_core/platform/node\\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$',
     caller: '^[[:space:]]+3: .*::(reclaim_sidecar_record|flush_run|dealloc_small)$',
   },
 });

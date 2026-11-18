@@ -4,10 +4,10 @@
   "root_module": "root",
   "layers": [
     { "order": 1, "name": "primitives-verify", "crates": ["sefer-ghost", "sefer-concurrent"], "modules": ["ghost", "concurrent"] },
-    { "order": 2, "name": "platform", "crates": ["sefer-platform"], "modules": ["alloc_core.platform"] },
-    { "order": 3, "name": "policy", "crates": ["sefer-policy"], "modules": ["alloc_core.config"] },
+    { "order": 2, "name": "platform", "crates": ["sefer-platform"], "modules": [] },
+    { "order": 3, "name": "policy", "crates": ["sefer-policy"], "modules": [] },
     { "order": 4, "name": "segment_route", "crates": ["sefer-segment", "sefer-route"], "modules": [] },
-    { "order": 6, "name": "alloc-core", "crates": ["sefer-alloc-core"], "modules": ["alloc_core.alloc_core", "alloc_core.small", "alloc_core.large"] },
+    { "order": 6, "name": "alloc-core", "crates": ["sefer-alloc-core"], "modules": [] },
     { "order": 7, "name": "registry", "crates": ["sefer-registry"], "modules": ["registry.bootstrap", "registry.heap_core", "registry.heap_core_xthread", "registry.heap_registry", "registry.heap_slot", "registry.fallback_hook"] },
     { "order": 8, "name": "facade", "crates": ["sefer-alloc"], "modules": ["global", "root", "kani_proofs"] }
   ],
@@ -18,9 +18,6 @@
   "boundaries": [
     { "crate": "sefer-ghost", "prefixes": ["ghost"] },
     { "crate": "sefer-concurrent", "prefixes": ["concurrent"] },
-    { "crate": "sefer-platform", "prefixes": ["alloc_core.platform"] },
-    { "crate": "sefer-policy", "prefixes": ["alloc_core.config"] },
-    { "crate": "sefer-alloc-core", "prefixes": ["alloc_core.alloc_core", "alloc_core.small", "alloc_core.large"] },
     { "crate": "sefer-registry", "prefixes": ["registry.bootstrap", "registry.heap_core", "registry.heap_core_xthread", "registry.heap_registry", "registry.heap_slot"] },
     { "crate": "sefer-alloc", "prefixes": ["global", "root", "kani_proofs"] }
   ],

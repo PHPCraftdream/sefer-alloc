@@ -10,12 +10,15 @@ use ::core::alloc::Layout;
 #[cfg(all(feature = "alloc-stats", feature = "alloc-global", feature = "fastbin"))]
 use ::core::sync::atomic::Ordering;
 
-use crate::alloc_core::node::Node;
+// P2.2: the crate-private facade `alloc_core::node::Node` is no longer
+// re-exported to the root; bind the canonical `sefer-segment` node seam
+// (`pub unsafe` `RootNode` forms) directly, under its documented contracts.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::os;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 use crate::registry::heap_core::HeapCore;
+use sefer_segment::support::node_impl::RootNode as Node;
 impl HeapCore {
     // Allocation entry points delegate to the substrate; foreign frees are
     // published through pinned route descriptors and reclaimed by the owner.
@@ -113,7 +116,8 @@ impl HeapCore {
     /// non-null `*mut u8` on success, or null on OOM. Memory is
     /// **uninitialised** (matching `GlobalAlloc::alloc`).
     ///
-    /// Own-thread path: delegates to [`AllocCore::alloc`] (the single-thread
+    /// Own-thread path: delegates to
+    /// [`AllocCore::alloc`](crate::alloc_core::AllocCore::alloc) (the single-thread
     /// substrate, no adoption hook — a heap owns its segments exclusively and
     /// never pulls in segments from other heaps). Under `alloc-xthread`,
     /// cross-thread frees that targeted this heap's segments sit in each
@@ -186,6 +190,7 @@ impl HeapCore {
     /// call boundary on the hottest path in the allocator.
     #[must_use]
     #[inline(always)]
+    #[allow(unsafe_code)] // P2.2: unsafe `AllocCore::alloc_with_class` call under its derived-class contract.
     fn alloc_with_class(
         &mut self,
         layout: Layout,
@@ -385,7 +390,15 @@ impl HeapCore {
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         return self.alloc_large_without_magazine(layout, class);
         #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
-        return self.core.alloc_with_class(layout, class);
+        {
+            // SAFETY (`AllocCore::alloc_with_class` # Safety): `class` was
+            // derived above as
+            // `SizeClasses::class_for(size.max(MIN_BLOCK), align)` for this
+            // exact `layout`, so a `Some` class matches the class-for-layout
+            // contract, and `None` occurs only for Large-classified requests
+            // (which `class_for` reports as `None`).
+            unsafe { self.core.alloc_with_class(layout, class) }
+        }
     }
 
     #[cfg(feature = "alloc-xthread")]
@@ -484,7 +497,7 @@ impl HeapCore {
     /// [`alloc_small_zeroed_via_magazine`](Self::alloc_small_zeroed_via_magazine).
     /// Identical drain/refill/issue shape (see that function's doc for
     /// the bounded Large-only probe) plus: calls
-    /// [`AllocCore::refill_class_bump_virgin_internal`] instead of the ordinary refill,
+    /// `AllocCore::refill_class_bump_virgin_state_internal` instead of the ordinary refill,
     /// stores the resulting per-slot virgin mask into
     /// `PerClass::virgin_mask` for the `n-1` blocks retained in the magazine,
     /// and reports the ONE block popped to the caller's own virgin bit
@@ -533,12 +546,25 @@ impl HeapCore {
         let mut virgin_mask: u16 = 0;
         let n = self.refill_with_large_rescue(|heap| {
             let cur = &mut heap.tcache.classes[c];
-            heap.core.refill_class_bump_virgin_state_internal(
-                c,
-                &mut cur.slots[0..want],
-                &mut virgin_mask,
-                crate::alloc_core::state_byte::StateByte::MAG,
-            )
+            // SAFETY (P2.2): the MAG arm of
+            // `refill_class_bump_virgin_state_internal`'s contract is upheld
+            // exactly: `issue_state` is `StateByte::MAG`; every filled slot
+            // stays parked in THIS heap's own tcache magazine (`cur.slots`),
+            // `finish_magazine_refill` (called below with the same `n`) flips
+            // the single issued block MAG → LIVE before it reaches any user,
+            // and no MAG block is ever handed out unsafely (reclaim rejects
+            // MAG under deferred-clear). `c` is a valid class index from the
+            // caller's class table and `cur.slots[0..want]` are fresh,
+            // unwritten magazine slots (empty-magazine refill invariant).
+            #[allow(unsafe_code)]
+            unsafe {
+                heap.core.refill_class_bump_virgin_state_internal(
+                    c,
+                    &mut cur.slots[0..want],
+                    &mut virgin_mask,
+                    crate::alloc_core::state_byte::StateByte::MAG,
+                )
+            }
         });
         if n == 0 {
             return (::core::ptr::null_mut(), false);
@@ -571,7 +597,7 @@ impl HeapCore {
     /// # Fresh-reservation skip (task #221 / R8-8)
     ///
     /// For a Large-classified request this mirrors the freshness-skip logic in
-    /// [`AllocCore::alloc_zeroed`]: a genuinely fresh OS reservation is already
+    /// [`AllocCore::alloc_zeroed`](crate::alloc_core::AllocCore::alloc_zeroed): a genuinely fresh OS reservation is already
     /// zero-filled by the OS, so `Node::zero` is SKIPPED; a `large_cache` HIT
     /// (a reused segment that may hold the prior occupant's bytes) is zeroed
     /// explicitly. Small-classified requests delegate to `self.alloc` +
@@ -594,6 +620,8 @@ impl HeapCore {
     /// room to carry) is never lost. This is an additive restructuring of
     /// THIS method's own dispatch only; `HeapCore::alloc`'s body (the plain
     /// `alloc`/`GlobalAlloc::alloc` magazine fast path) is untouched.
+    #[allow(unsafe_code)]
+    // P2.2: canonical `pub unsafe` RootNode forms (sefer-segment support/node.rs), scoped to this method.
     #[must_use]
     #[inline]
     pub fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
@@ -612,7 +640,15 @@ impl HeapCore {
                 #[cfg(feature = "alloc-stats")]
                 crate::alloc_core::SMALL_ZERO_PASS_CALLS
                     .fetch_add(1, ::core::sync::atomic::Ordering::Relaxed);
-                Node::zero(ptr, size);
+                // SAFETY: `ptr` is a freshly issued magazine block start (null
+                // was excluded above) of a block sized for class `class_idx`,
+                // so the requested `size` bytes are in-bounds; the block is
+                // still exclusively owned by this allocator thread (the pop
+                // above removed it from the magazine and it has not yet been
+                // handed to the caller), and the zero fill is the sole access
+                // to these bytes here (single-writer: no cross-thread producer
+                // ever writes block bytes).
+                unsafe { Node::zero(ptr, size) };
             }
             return ptr;
         }
@@ -628,7 +664,14 @@ impl HeapCore {
                     #[cfg(feature = "alloc-stats")]
                     crate::alloc_core::SMALL_ZERO_PASS_CALLS
                         .fetch_add(1, ::core::sync::atomic::Ordering::Relaxed);
-                    Node::zero(ptr, size);
+                    // SAFETY: `ptr` is a freshly issued small block start from
+                    // the substrate's own `alloc_small_with_virgin` (null was
+                    // excluded above) of a block sized for class `class_idx`,
+                    // so `size` bytes are in-bounds; the block is exclusively
+                    // owned by this allocator thread and has not yet been
+                    // handed to the caller, so `[ptr, ptr+size)` is valid for
+                    // this sole zeroing write (single-writer invariant).
+                    unsafe { Node::zero(ptr, size) };
                 }
             }
             return ptr;
@@ -653,7 +696,13 @@ impl HeapCore {
             ))]
             let ptr = self.alloc_with_class(layout, class);
             if !ptr.is_null() {
-                Node::zero(ptr, size);
+                // SAFETY: `ptr` is a freshly allocated block start from
+                // `alloc_with_class` (null was excluded above) whose block is
+                // sized for this class, so the requested `size` bytes are
+                // in-bounds; the block is exclusively owned by this allocator
+                // thread and has not yet been handed to the caller, so this
+                // zero fill is a valid, unaliased sole write.
+                unsafe { Node::zero(ptr, size) };
             }
             return ptr;
         }
@@ -668,7 +717,15 @@ impl HeapCore {
             self.drain_large_sidecar_ingress();
         }
 
-        let (ptr, is_fresh) = self.core.alloc_large(size, align);
+        // SAFETY (`AllocCore::alloc_large` # Safety): `align` is
+        // `layout.align()` from the caller's canonical `Layout` — a power of
+        // two — and the (`size`, `align`) pair (with `size` the
+        // small-clamp-adapted value the Safety text explicitly permits) is
+        // one for which `Layout::from_size_align` succeeds, since the caller
+        // passed a well-formed `Layout` to this safe `alloc_zeroed` entry
+        // point.
+        #[allow(unsafe_code)] // P2.2: item-scoped; `alloc_large` contract above.
+        let (ptr, is_fresh) = unsafe { self.core.alloc_large(size, align) };
         if !ptr.is_null() && !is_fresh {
             // Reused (cache-hit) segment — or ANY allocation under miri
             // (R9-1: miri's System.alloc fallback does not zero, so
@@ -679,7 +736,14 @@ impl HeapCore {
             #[cfg(feature = "alloc-stats")]
             crate::alloc_core::LARGE_ZERO_PASS_CALLS
                 .fetch_add(1, ::core::sync::atomic::Ordering::Relaxed);
-            Node::zero(ptr, size);
+            // SAFETY: `ptr` is a freshly reserved Large segment's block start
+            // from `alloc_large` (null was excluded above) sized for this
+            // request, so `size` bytes are in-bounds; the segment is exclusively
+            // owned by this heap and the block has not yet been handed to the
+            // caller (`is_fresh == false` means a cache-hit REUSE, so the prior
+            // occupant's bytes must be zeroed here — the owner is the sole
+            // writer of these bytes at this point).
+            unsafe { Node::zero(ptr, size) };
         }
         ptr
     }
@@ -771,11 +835,24 @@ impl HeapCore {
         // belong to the owner retirement primitive, not a caller closure.
         let n = self.refill_with_large_rescue(|heap| {
             let cur = &mut heap.tcache.classes[c];
-            heap.core.refill_class_bump_state_internal(
-                c,
-                &mut cur.slots[0..want],
-                crate::alloc_core::state_byte::StateByte::MAG,
-            )
+            // SAFETY (P2.2): the MAG arm of
+            // `refill_class_bump_state_internal`'s contract is upheld exactly:
+            // `issue_state` is `StateByte::MAG`; every filled slot stays
+            // parked in THIS heap's own tcache magazine (`cur.slots`),
+            // `finish_magazine_refill` (called below with the same `n`) flips
+            // the single issued block MAG → LIVE before it reaches any user,
+            // and no MAG block is ever handed out unsafely (reclaim rejects
+            // MAG under deferred-clear). `c` is a valid class index from the
+            // caller's class table and `cur.slots[0..want]` are fresh,
+            // unwritten magazine slots (empty-magazine refill invariant).
+            #[allow(unsafe_code)]
+            unsafe {
+                heap.core.refill_class_bump_state_internal(
+                    c,
+                    &mut cur.slots[0..want],
+                    crate::alloc_core::state_byte::StateByte::MAG,
+                )
+            }
         });
         if n == 0 {
             return ::core::ptr::null_mut();

@@ -7,7 +7,8 @@
 //! `SEGMENTS_RESERVED_TOTAL`, OS refusal into `SEGMENTS_RESERVE_FAILED_TOTAL`.
 //!
 //! Before the fix, `reserve_small_segment_impl`
-//! (`src/alloc_core/small/alloc_core_small/reserve.rs`) called
+//! (`crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/reserve.rs`,
+//! `src/alloc_core/small/alloc_core_small/reserve.rs` before P2.2) called
 //! `aligned_vmem::reserve_aligned_lazy(...)` directly (twice: the initial
 //! reserve and the pool-drain-and-retry arm) under `small-segment-lazy-commit`
 //! without `numa-aware`, incrementing only `SEGMENTS_RESERVED_TOTAL` via
@@ -28,8 +29,10 @@
 //! / `tests/no_stale_doc_references.rs`: there is no reservation-failure
 //! fault injector for this call (only commit-failure injection exists), so a
 //! behavioral test cannot exercise the `None` arm directly. Instead this
-//! scans `src/**/*.rs` plus `crates/platform/sefer-platform/src/**/*.rs` and
-//! `crates/core/sefer-policy/src/**/*.rs` (the moved caller crates); the other
+//! scans `src/**/*.rs` plus `crates/platform/sefer-platform/src/**/*.rs`,
+//! `crates/core/sefer-policy/src/**/*.rs` and — since P2.2 moved the
+//! alloc-core implementation there — `crates/core/sefer-alloc-core/src/**/*.rs`
+//! (the moved caller crates); the other
 //! `crates/` trees remain unscanned, including `aligned-vmem` itself — the
 //! primitive being called, not a caller. It finds every raw
 //! `reserve_aligned(`/`reserve_aligned_lazy(` call and requires each one to
@@ -107,13 +110,13 @@ const ALLOWLIST: &[Allow] = &[
         note: "Segment::reserve_lazy_for_measurement (bench-internals) — accounts both outcomes",
     },
     Allow {
-        file: "src/alloc_core/platform/numa.rs",
+        file: "crates/core/sefer-alloc-core/src/alloc_core/platform/numa.rs",
         func: "reserve_aligned_on_node",
         requires_failed_counter: true,
         note: "numa::reserve_aligned_on_node — both fallback-to-plain-reservation arms account",
     },
     Allow {
-        file: "src/alloc_core/platform/sidecar.rs",
+        file: "crates/core/sefer-alloc-core/src/alloc_core/platform/sidecar.rs",
         func: "reserve",
         requires_failed_counter: false,
         note: "AccountedSidecar::reserve is NOT a segment reservation (SegmentDirectory/large-cache \
@@ -225,6 +228,12 @@ fn no_unaccounted_reserve_aligned_calls() {
     if policy_src.is_dir() {
         collect_rs(&policy_src, &mut files);
     }
+    // P2.2: the alloc-core implementation moved into its own crate; its two
+    // NUMA-routed call sites (plus the sidecar exemption) must stay scanned.
+    let alloc_core_src = root.join("crates/core/sefer-alloc-core/src");
+    if alloc_core_src.is_dir() {
+        collect_rs(&alloc_core_src, &mut files);
+    }
     assert!(
         files.len() > 100,
         "scanner found only {} files — src/ layout changed?",
@@ -233,6 +242,16 @@ fn no_unaccounted_reserve_aligned_calls() {
 
     let mut offenders: Vec<String> = Vec::new();
     let mut total_call_sites = 0usize;
+    // P1-4 follow-up: explicit per-function tripwire for the NUMA seam. The
+    // global floor below only fails when BOTH numa call sites vanish AND the
+    // tree had no other growth; dropping just the NUMA routing (e.g. collapsing
+    // `reserve_aligned_on_node` to a single plain reservation) shrinks the
+    // total from 11 to 10 and would pass the floor silently. Count the sites
+    // the NUMA allowlist row is expected to cover and pin the exact number.
+    const NUMA_FILE: &str = "alloc_core/platform/numa.rs";
+    const NUMA_FUNC: &str = "reserve_aligned_on_node";
+    const EXPECTED_NUMA_CALL_SITES: usize = 2;
+    let mut numa_call_sites = 0usize;
 
     for file in &files {
         let text = fs::read_to_string(file).expect("read source");
@@ -255,6 +274,9 @@ fn no_unaccounted_reserve_aligned_calls() {
             total_call_sites += 1;
 
             let func = fn_at_line[i].as_deref();
+            if rel.ends_with(NUMA_FILE) && func == Some(NUMA_FUNC) {
+                numa_call_sites += 1;
+            }
             let allow = func.and_then(|f| {
                 ALLOWLIST
                     .iter()
@@ -315,9 +337,18 @@ fn no_unaccounted_reserve_aligned_calls() {
     }
 
     assert!(
-        total_call_sites >= 8,
+        numa_call_sites == EXPECTED_NUMA_CALL_SITES,
+        "NUMA tripwire: expected exactly {EXPECTED_NUMA_CALL_SITES} raw \
+         reserve_aligned( call sites inside {NUMA_FILE}'s `{NUMA_FUNC}` (the \
+         NO_NODE plain arm + the shim-fallback arm, both accounted), found \
+         {numa_call_sites} — the NUMA-routed reservation path was dropped or \
+         restructured; restore it or update this tripwire deliberately"
+    );
+
+    assert!(
+        total_call_sites >= 10,
         "scanner found only {total_call_sites} reserve_aligned{{,_lazy}} call sites in src/ + moved crates/ — \
-         scan logic likely broken (expected at least sefer-platform os.rs's 6 + numa.rs's 2)"
+         scan logic likely broken (expected at least sefer-platform os.rs's 6 + numa.rs's 2 + sidecar.rs's 1)"
     );
 
     assert!(
