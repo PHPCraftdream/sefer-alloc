@@ -74,7 +74,7 @@ const ABORT_RE = /std::process::abort|process\s*::\s*abort/g;
 
 const PANIC_SCAN_FILES = [
   'src/alloc_core/large/alloc_core_large_cache.rs',
-  'src/alloc_core/segment/segment_header/terminal_words.rs',
+  'crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs',
   'src/alloc_core/small/alloc_core_small_magazine.rs',
   'src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs',
   'src/registry/bootstrap/registry.rs',

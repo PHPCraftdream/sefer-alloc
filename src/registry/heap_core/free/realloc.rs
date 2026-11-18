@@ -35,6 +35,7 @@ use crate::registry::heap_core::HeapCore;
 // themselves); the const is used only inside the gated promotion call-site
 // block, so its import carries the SAME promotion-reachable predicate.
 use crate::alloc_core::medium_promotion_reachable;
+use sefer_segment::support::root_compat::traits::*;
 medium_promotion_reachable! {
     use super::dealloc::MEDIUM_REALLOC_PROMOTION_THRESHOLD;
 }
@@ -147,7 +148,7 @@ impl HeapCore {
                 let (base, block) = (owned.root(), owned.block());
                 #[cfg(any(feature = "misuse-checks", debug_assertions))]
                 if AllocCore::large_payload_mismatch(base, block) {
-                    crate::alloc_core::state_byte::StateByte::shadow_reject(
+                    crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                         b"sefer-alloc: misuse check rejected a realloc of an interior pointer in safe mode\n",
                     );
                     return core::ptr::null_mut();
@@ -297,15 +298,20 @@ impl HeapCore {
                 if new_size > old_layout.size()
                     && new_size >= MEDIUM_REALLOC_PROMOTION_THRESHOLD
                     && matches!(
-                        BlockKind::of(
-                            base,
-                            crate::alloc_core::size_classes::SizeClasses::class_for(
-                                old_layout
-                                    .size()
-                                    .max(crate::alloc_core::size_classes::MIN_BLOCK),
-                                old_layout.align(),
-                            ),
-                        ),
+                        // SAFETY: `base` is the aligned base of this owner's
+                        // live segment with an initialized header (validated
+                        // by the caller's `realloc` ownership check).
+                        unsafe {
+                            BlockKind::of(
+                                base,
+                                crate::alloc_core::size_classes::SizeClasses::class_for(
+                                    old_layout
+                                        .size()
+                                        .max(crate::alloc_core::size_classes::MIN_BLOCK),
+                                    old_layout.align(),
+                                ),
+                            )
+                        },
                         BlockKind::Small { .. } | BlockKind::Primordial
                     )
                 {
@@ -345,7 +351,7 @@ impl HeapCore {
                 //       `safe_payload_read_span`'s doc.
                 #[cfg(any(feature = "misuse-checks", debug_assertions))]
                 if old_layout.size() > AllocCore::safe_payload_read_span(base, block) {
-                    crate::alloc_core::state_byte::StateByte::shadow_reject(
+                    crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                         b"sefer-alloc: misuse check rejected a realloc with an oversized old layout in safe mode\n",
                     );
                     return core::ptr::null_mut();
@@ -367,8 +373,9 @@ impl HeapCore {
                         .size()
                         .max(crate::alloc_core::size_classes::MIN_BLOCK);
                     let new_eff = new_size.max(crate::alloc_core::size_classes::MIN_BLOCK);
-                    let large_shrink =
-                        new_eff < old_eff && SegmentHeader::kind_at(base) == SegmentKind::Large;
+                    let large_shrink = new_eff < old_eff
+                        && crate::alloc_core::segment::header_facade::kind_at(base)
+                            == SegmentKind::Large;
                     if large_shrink {
                         // The successful fallback keeps the block in place,
                         // so a pending first-life control observation must be
@@ -377,7 +384,7 @@ impl HeapCore {
                         // (same capture-before-clear contract as the grow
                         // paths). The truly failed legs above returned before
                         // any header write and preserve the token untouched.
-                        let hdr = SegmentHeader::read_at(base);
+                        let hdr = crate::alloc_core::segment::header_facade::read_at(base);
                         if ptr.addr() == base.addr() + hdr.payload_offset {
                             #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
                             if hdr.thp_observation != 0 {
@@ -386,7 +393,7 @@ impl HeapCore {
                                     hdr.large_size,
                                 );
                             }
-                            SegmentHeader::set_large_size_at(base, new_eff);
+                            SegmentHeader::compat_set_large_size_at(base, new_eff);
                             return ptr;
                         }
                     }
@@ -406,13 +413,21 @@ impl HeapCore {
                 // unknown token's defensive error is attributed to the
                 // reallocated mapping's own request size.
                 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-                if SegmentHeader::kind_at(base) == SegmentKind::Large {
-                    let token = SegmentHeader::thp_observation_at(base);
+                if crate::alloc_core::segment::header_facade::kind_at(base) == SegmentKind::Large {
+                    #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+                    // SAFETY: `base` is the aligned base of this owner's live
+                    // Large segment with an initialized header; the
+                    // observation field is plain and owner-only.
+                    let token = unsafe { SegmentHeader::compat_thp_observation_at(base) };
                     if token != 0 {
-                        let size = SegmentHeader::read_at(base).large_size;
+                        let size =
+                            crate::alloc_core::segment::header_facade::read_at(base).large_size;
                         ThpRuntime::note_realloc_invalidated_by_token(token, size);
                     }
-                    SegmentHeader::set_thp_observation_at(base, 0);
+                    #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+                    // SAFETY: same exclusive owner-realloc access as the read
+                    // above; the observation field is plain, owner-written only.
+                    let () = unsafe { SegmentHeader::compat_set_thp_observation_at(base, 0) };
                 }
                 crate::alloc_core::node::Node::copy_nonoverlapping(block, new_ptr, copy);
                 // F6 (task #494): `base` is already in hand from the
@@ -493,7 +508,7 @@ impl HeapCore {
             };
             #[cfg(any(feature = "misuse-checks", debug_assertions))]
             if !route.contains_payload(ptr, old_layout.size()) {
-                crate::alloc_core::state_byte::StateByte::shadow_reject(
+                crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                     b"sefer-alloc: misuse check rejected a foreign realloc outside the payload in safe mode
 ",
                 );
@@ -537,8 +552,9 @@ impl HeapCore {
                 let root = route.root();
                 let frontier_ok = match route.kind() {
                     RouteKind::Large => {
-                        let committed_end =
-                            root.addr().checked_add(SegmentHeader::span_usable_at(root));
+                        let committed_end = root
+                            .addr()
+                            .checked_add(SegmentHeader::compat_span_usable_at(root));
                         match ptr.addr().checked_add(old_layout.size()) {
                             Some(read_end) => committed_end.is_some_and(|end| read_end <= end),
                             None => false,
@@ -547,16 +563,15 @@ impl HeapCore {
                     RouteKind::Small => {
                         ptr.addr()
                             >= root.addr()
-                                + crate::alloc_core::segment_header::Layout::small_meta_end()
+                                + crate::alloc_core::segment_header::Layout::compat_small_meta_end()
                     }
-                    RouteKind::Primordial => {
-                        ptr.addr()
-                            >= root.addr()
-                                + crate::alloc_core::segment_header::Layout::primordial_meta_end()
-                    }
+                    RouteKind::Primordial => ptr.addr()
+                        >= root.addr()
+                            + crate::alloc_core::segment_header::Layout::compat_primordial_meta_end(
+                            ),
                 };
                 if !frontier_ok {
-                    crate::alloc_core::state_byte::StateByte::shadow_reject(
+                    crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                         b"sefer-alloc: misuse check rejected a foreign realloc past the commit frontier in safe mode
 ",
                     );
@@ -608,11 +623,11 @@ impl HeapCore {
     ///
     /// A promoted block is not a hybrid — it becomes a GENUINE, ordinary
     /// Large-segment allocation the moment `AllocCore::alloc_large` returns
-    /// it. `SegmentHeader::kind_at(base)` (the SAME mechanism every other Large
+    /// it. `crate::alloc_core::segment::header_facade::kind_at(base)` (the SAME mechanism every other Large
     /// block's `dealloc`/shrink-realloc already uses to decide routing) reads
     /// `Large` for this segment exactly as it would for any other Large
     /// allocation — `dealloc` and `realloc` route purely off
-    /// `SegmentHeader::kind_at(base)`, never off the caller-supplied
+    /// `crate::alloc_core::segment::header_facade::kind_at(base)`, never off the caller-supplied
     /// `Layout`'s size (see the OPT-G doc comment on
     /// `AllocCore::try_realloc_inplace_known_base` in `alloc_core.rs`). So a
     /// LATER shrink back below the medium range takes the ordinary
@@ -685,6 +700,7 @@ impl HeapCore {
     /// `medium_promotion_reachable!` macro defined in `free/dealloc.rs`,
     /// not hand-written.
     #[cfg_attr(not(any(feature = "misuse-checks", debug_assertions)), allow(unused_variables))]
+    #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
     fn try_promote_to_large(
         &mut self,
         owned: crate::alloc_core::OwnedBlock,

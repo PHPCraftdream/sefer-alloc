@@ -5,7 +5,7 @@
 // prints the Markdown tables.
 //
 // Remote-reception path = files that run only to publish, scan and reclaim
-// remote frees: src/alloc_core/segment/remote_bitmap/** (incl. the producer's
+// remote frees: crates/core/sefer-segment/src/segment/remote_bitmap/** (incl. the producer's
 // sidecar_bitmap.rs and leaf_classes.rs), both sidecar_drain.rs,
 // find_segment/** and alloc_core_small_reclaim.rs (the bin push of a
 // reclaimed record). Its Ir at T threads per thread, minus the same at T=1,

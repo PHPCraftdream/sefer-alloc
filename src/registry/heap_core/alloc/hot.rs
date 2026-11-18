@@ -14,11 +14,10 @@ use crate::alloc_core::node::Node;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::os;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-use crate::alloc_core::segment_header::SegmentMeta;
-
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 use crate::registry::heap_core::HeapCore;
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+use sefer_segment::support::root_compat::traits::*;
 
 impl HeapCore {
     // Allocation entry points delegate to the substrate; foreign frees are
@@ -42,9 +41,9 @@ impl HeapCore {
         let off = issued.addr() - base.addr();
         // B4 (в): flip the state byte MAG → LIVE at issue, preserving the
         // class field (written by the block's own MAG/FREE store).
-        SegmentMeta::new(base)
-            .state_byte()
-            .set_state(off as u32, crate::alloc_core::state_byte::StateByte::LIVE);
+        crate::alloc_core::segment::header_facade::meta(base)
+            .compat_state_byte()
+            .compat_set_state(off as u32, crate::alloc_core::state_byte::StateByte::LIVE);
     }
 
     /// Task #2002: the shared tail of [`refill_magazine_slow`](Self::refill_magazine_slow)
@@ -86,13 +85,16 @@ impl HeapCore {
         let base = os::segment_base_of_ptr(issued);
         let off = (issued as usize - base as usize) as u32;
         debug_assert_eq!(
-            SegmentMeta::new(base).state_byte().read(off) >> 6,
+            crate::alloc_core::segment::header_facade::meta(base)
+                .compat_state_byte()
+                .compat_read(off)
+                >> 6,
             crate::alloc_core::state_byte::StateByte::MAG,
             "refill-issued block must arrive MAG from the parameterized drain/carve"
         );
-        SegmentMeta::new(base)
-            .state_byte()
-            .set_state(off, crate::alloc_core::state_byte::StateByte::LIVE);
+        crate::alloc_core::segment::header_facade::meta(base)
+            .compat_state_byte()
+            .compat_set_state(off, crate::alloc_core::state_byte::StateByte::LIVE);
         issued
     }
 

@@ -49,7 +49,7 @@
     }
   ],
   "mutant": {
-    "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
+    "file": "crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs",
     "find": "        self.mixed[leaf].store(fresh, Ordering::Release);\n",
     "replace": "        self.mixed[leaf].store(fresh, Ordering::Relaxed);\n",
     "steps": [

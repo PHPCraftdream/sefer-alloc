@@ -10,9 +10,8 @@ fn publication_after_word_cut_waits_for_next_bounded_scan() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let route = directory
-        .register(root, SEGMENT, root, 1, RouteKind::Primordial)
-        .unwrap();
+    let route =
+        unsafe { directory.register(root, SEGMENT, root, 1, RouteKind::Primordial) }.unwrap();
     let sidecar = route.small_sidecar().unwrap();
     assert!(route.issue_small(0, 0));
     assert!(route.issue_small(16, 0));

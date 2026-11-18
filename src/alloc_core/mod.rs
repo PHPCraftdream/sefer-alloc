@@ -26,13 +26,32 @@ mod config;
 mod large;
 /// Group module: OS & platform shims (os, numa, size_classes) plus the confined raw-memory unsafe seams (node, sidecar).
 mod platform;
-/// Group module: the segment substrate — the per-segment metadata header
-/// family (`segment_header/`), the self-hosted `SegmentTable` registry, the
-/// per-class `segment_directory` + its `directory_stats` counters, the
-/// route slots (`segment_table/route_slots.rs`), the `segment_layout`
-/// geometry, and the per-segment bitmap family (`bitmap/`). Production
-/// foreign-free ingress uses the registry's pinned `segment_route` sidecars.
-mod segment;
+// P2.1: canonical segment/route definitions live in `sefer-segment`.
+// Keep crate-internal compatibility paths as reexports only; do not compile
+// the former implementation tree alongside the new crate.
+pub(crate) mod segment {
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) use sefer_segment::segment::bitmap;
+    pub(crate) mod header_facade;
+}
+pub(crate) use sefer_segment::segment::bitmap::state_byte;
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub(crate) use sefer_segment::segment::remote_bitmap;
+#[cfg(feature = "alloc-segment-directory")]
+pub(crate) use sefer_segment::segment::segment_directory;
+#[doc(hidden)]
+pub use sefer_segment::segment::segment_header;
+#[cfg(feature = "alloc-core")]
+pub(crate) use sefer_segment::segment::segment_layout;
+#[cfg(feature = "alloc-global")]
+#[doc(hidden)]
+pub use sefer_segment::segment::segment_route;
+pub(crate) use sefer_segment::segment::segment_table;
+#[cfg(feature = "alloc-core")]
+#[cfg(all(feature = "alloc-global", feature = "internals"))]
+#[doc(hidden)]
+pub use sefer_segment::support::reservation_state_impl::LargeReservationState;
 /// Group module: the small/medium allocation path — the small
 /// alloc/dealloc/carve hot cluster, directory-accelerated segment lookup,
 /// small-segment reserve, the magazine (tcache) batch ops, cross-thread
@@ -53,39 +72,6 @@ pub(crate) use config::medium_promotion::medium_promotion_reachable;
 pub(crate) use config::medium_promotion::medium_promotion_unreachable;
 #[cfg(all(feature = "alloc-global", feature = "internals"))]
 pub(crate) use config::medium_promotion::MEDIUM_PROMOTION_REACHABLE;
-#[cfg(feature = "alloc-global")]
-pub(crate) use large::reservation_state;
-#[cfg(all(feature = "alloc-global", feature = "internals"))]
-#[doc(hidden)]
-pub use large::reservation_state::LargeReservationState;
-#[cfg(feature = "alloc-global")]
-pub(crate) use segment::remote_bitmap;
-// The former flat segment-substrate child modules now live in the `segment/`
-// group module and are re-exported here (at their original
-// visibility/cfg/doc-hidden parity) so every one stays reachable at its
-// existing `alloc_core::<name>` module path.
-pub(crate) use segment::bitmap::live_tag;
-pub(crate) use segment::bitmap::state_byte;
-#[cfg_attr(
-    not(any(feature = "alloc-stats", feature = "internals")),
-    allow(unused_imports)
-)]
-pub(crate) use segment::directory_stats;
-#[cfg(feature = "alloc-segment-directory")]
-pub(crate) use segment::segment_directory;
-#[doc(hidden)]
-pub use segment::segment_header;
-// `allow(unused_imports)`: same discipline — these three siblings' ITEMS are
-// consumed via `alloc_core::segment_header::...` paths, never via these
-// module names; the re-exports exist purely to keep the old
-// `alloc_core::segment_header_layout` / `_meta_fields` / `_views` module
-// paths valid (module-path parity with the pre-reorg `mod` declarations).
-pub(crate) use segment::segment_layout;
-#[cfg(feature = "alloc-global")]
-#[path = "segment/segment_route/mod.rs"]
-#[doc(hidden)]
-pub mod segment_route;
-pub(crate) use segment::segment_table;
 // The ten former flat child modules now live in two group modules — the
 // `platform/` shims+seams and `config/` configuration types — and are
 // re-exported here (at their original visibility/cfg/doc-hidden parity) so
@@ -113,8 +99,6 @@ pub use platform::sidecar_stats::{dbg_sidecar_reservation_stats, SidecarReservat
 #[allow(unused_imports)]
 pub(crate) use platform::sidecar;
 pub(crate) use platform::size_classes;
-#[cfg(feature = "alloc-global")]
-pub(crate) use sefer_platform::process_exit::process_exit_in_progress;
 #[cfg(feature = "alloc-global")]
 pub(crate) use sefer_platform::record_exit_lock_giveup::record_exit_lock_giveup;
 // The former flat small-path child modules now live in the `small/` group

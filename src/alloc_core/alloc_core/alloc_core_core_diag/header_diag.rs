@@ -9,6 +9,7 @@ use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
 #[cfg(any(feature = "virgin-zero-skip", feature = "bench-internals"))]
+#[allow(unused_imports)] // P2.1: kept for cfg combinations where the consumer is compiled out
 use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(feature = "bench-internals")]
 use crate::alloc_core::segment_header::{
@@ -29,7 +30,7 @@ impl AllocCore {
         ptr: *mut u8,
     ) -> Option<(usize, usize, usize, usize, usize)> {
         let base = self.table.canonical_base_of(os::segment_base_of_ptr(ptr))?;
-        let header = SegmentHeader::read_at(base);
+        let header = crate::alloc_core::segment::header_facade::read_at(base);
         if header.kind != SegmentKind::Large {
             return None;
         }
@@ -60,7 +61,7 @@ impl AllocCore {
     pub fn terminal_header_snapshot_for_test(&self, ptr: *mut u8) -> Option<(u32, u64)> {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(candidate)?;
-        let snapshot = SegmentMeta::new(base).terminal_snapshot();
+        let snapshot = crate::alloc_core::segment::header_facade::meta(base).terminal_snapshot();
         Some((snapshot.remote_head, snapshot.large_state))
     }
 
@@ -72,7 +73,7 @@ impl AllocCore {
         if base.is_null() {
             return None;
         }
-        let snapshot = SegmentMeta::new(base).terminal_snapshot();
+        let snapshot = crate::alloc_core::segment::header_facade::meta(base).terminal_snapshot();
         Some((snapshot.remote_head, snapshot.large_state))
     }
 
@@ -91,10 +92,17 @@ impl AllocCore {
     #[doc(hidden)]
     pub fn large_thp_charge_for_test(&self, ptr: *mut u8) -> Option<usize> {
         let base = self.table.canonical_base_of(os::segment_base_of_ptr(ptr))?;
-        if SegmentHeader::kind_at(base) != SegmentKind::Large {
+        if crate::alloc_core::segment::header_facade::kind_at(base) != SegmentKind::Large {
             return None;
         }
-        Some(SegmentHeader::thp_charge_at(base))
+        #[allow(unsafe_code)] // R25-1: scoped unsafe block behind membership + kind guards.
+        {
+            // SAFETY: `base` is the aligned base of a live owned segment
+            // with an initialized header (`canonical_base_of` membership
+            // guard plus the `kind_at(base) == Large` check above); the read
+            // follows the owner-only `thp_charge` field discipline.
+            Some(unsafe { SegmentHeader::thp_charge_at(base) })
+        }
     }
 
     /// TEST-ONLY (L-5, UBFIX-11): read the RAW `kind` discriminant byte of
@@ -198,7 +206,7 @@ impl AllocCore {
             .table
             .canonical_base_of(candidate)
             .expect("dbg_kind_at_tag: ptr's segment is not owned by this AllocCore");
-        match SegmentHeader::kind_at(base) {
+        match crate::alloc_core::segment::header_facade::kind_at(base) {
             SegmentKind::Primordial => 0,
             SegmentKind::Small => 1,
             SegmentKind::Large => 2,
@@ -346,11 +354,11 @@ impl AllocCore {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(candidate)?;
         if !matches!(
-            SegmentHeader::kind_at(base),
+            crate::alloc_core::segment::header_facade::kind_at(base),
             SegmentKind::Small | SegmentKind::Primordial
         ) {
             return None;
         }
-        Some(SegmentMeta::new(base).payload_virgin_of())
+        Some(crate::alloc_core::segment::header_facade::meta(base).payload_virgin_of())
     }
 }

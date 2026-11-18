@@ -106,7 +106,8 @@ fn build_cluster(start: usize, len: usize) -> (SegmentHashHarness, Vec<(usize, *
     for k in 0..len {
         let idx = (start + k) % cap;
         let base = SegmentHashHarness::base_for_index(idx);
-        h.insert(base);
+        // SAFETY: synthetic base value; harness contract — stored/compared, never dereferenced.
+        unsafe { h.insert(base) };
         members.push((idx, base));
     }
     (h, members)

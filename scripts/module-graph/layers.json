@@ -6,7 +6,7 @@
     { "order": 1, "name": "primitives-verify", "crates": ["sefer-ghost", "sefer-concurrent"], "modules": ["ghost", "concurrent"] },
     { "order": 2, "name": "platform", "crates": ["sefer-platform"], "modules": ["alloc_core.platform"] },
     { "order": 3, "name": "policy", "crates": ["sefer-policy"], "modules": ["alloc_core.config"] },
-    { "order": 4, "name": "segment_route", "crates": ["sefer-segment", "sefer-route"], "modules": ["alloc_core.segment", "alloc_core.segment_route"] },
+    { "order": 4, "name": "segment_route", "crates": ["sefer-segment", "sefer-route"], "modules": [] },
     { "order": 6, "name": "alloc-core", "crates": ["sefer-alloc-core"], "modules": ["alloc_core.alloc_core", "alloc_core.small", "alloc_core.large"] },
     { "order": 7, "name": "registry", "crates": ["sefer-registry"], "modules": ["registry.bootstrap", "registry.heap_core", "registry.heap_core_xthread", "registry.heap_registry", "registry.heap_slot", "registry.fallback_hook"] },
     { "order": 8, "name": "facade", "crates": ["sefer-alloc"], "modules": ["global", "root", "kani_proofs"] }
@@ -14,13 +14,12 @@
   "conduits": [
     { "modules": ["alloc_core", "registry"], "status": "conduit", "note": "group-wiring mod.rs files that only re-export across several future-crate boundaries (A0 report, Unmapped-layer modules). A1: the conduit's own re-export edges are never back-edges; references THROUGH it resolve to the defining module in the graph, so they are counted against the defining module's layer, not the conduit's." }
   ],
+  "$p21-extraction-note": "P2.1: the segment/route implementation tree (former src/alloc_core/segment/**) was extracted into the crates sefer-segment/sefer-route; the src graph no longer contains alloc_core.segment* modules (only crate-internal reexports through the alloc_core conduit, which DEVIATION 11 resolves to the defining module — i.e. outside the src graph). Layer 4 therefore keeps its crates but no src module prefixes; the sefer-segment/sefer-route boundary rows and the claim-1/claim-4 alloc_core.segment* prefix checks are correspondingly vacuous (claims report not-found) and were removed from boundaries.",
   "boundaries": [
     { "crate": "sefer-ghost", "prefixes": ["ghost"] },
     { "crate": "sefer-concurrent", "prefixes": ["concurrent"] },
     { "crate": "sefer-platform", "prefixes": ["alloc_core.platform"] },
     { "crate": "sefer-policy", "prefixes": ["alloc_core.config"] },
-    { "crate": "sefer-segment", "prefixes": ["alloc_core.segment"] },
-    { "crate": "sefer-route", "prefixes": ["alloc_core.segment_route"] },
     { "crate": "sefer-alloc-core", "prefixes": ["alloc_core.alloc_core", "alloc_core.small", "alloc_core.large"] },
     { "crate": "sefer-registry", "prefixes": ["registry.bootstrap", "registry.heap_core", "registry.heap_core_xthread", "registry.heap_registry", "registry.heap_slot"] },
     { "crate": "sefer-alloc", "prefixes": ["global", "root", "kani_proofs"] }

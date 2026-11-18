@@ -1,0 +1,53 @@
+[package]
+name = "sefer-segment"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.93"
+license = "MIT OR Apache-2.0"
+description = "The sefer allocator segment, routing, metadata, and reservation-state substrate."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/core/sefer-segment"
+documentation = "https://docs.rs/sefer-segment"
+keywords = ["allocator", "segment", "routing", "memory"]
+categories = ["memory-management", "data-structures"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+alloc-core = ["aligned-vmem/lazy-commit"]
+alloc-decommit = ["aligned-vmem/lazy-commit", "sefer-policy/alloc-decommit", "sefer-platform/alloc-decommit"]
+alloc-global = ["alloc-core", "alloc-xthread", "sefer-platform/alloc-global"]
+alloc-segment-directory = ["alloc-core"]
+alloc-stats = []
+alloc-xthread = []
+exact-span-large = ["sefer-policy/exact-span-large", "sefer-platform/exact-span-large"]
+bench-internals = ["alloc-core", "sefer-policy/bench-internals", "sefer-platform/bench-internals"]
+fastbin = ["alloc-global", "alloc-xthread", "sefer-platform/fastbin"]
+hardened = ["fastbin", "misuse-checks"]
+internals = ["sefer-policy/internals", "sefer-platform/internals", "sefer-ghost/internals"]
+large-cache-extended = ["sefer-policy/large-cache-extended"]
+large-cache-adaptive = ["large-cache-extended"]
+large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit", "sefer-policy/large-reserved-capacity", "sefer-platform/large-reserved-capacity"]
+medium-classes = ["sefer-policy/medium-classes"]
+medium-classes-wide = ["medium-classes"]
+misuse-checks = []
+numa-aware = ["sefer-policy/numa-aware", "sefer-platform/numa-aware"]
+page-map-diag = ["alloc-core"]
+primordial-lazy-commit = ["alloc-core", "aligned-vmem/lazy-commit", "sefer-platform/primordial-lazy-commit"]
+small-segment-lazy-commit = ["alloc-core", "aligned-vmem/lazy-commit", "sefer-platform/small-segment-lazy-commit"]
+virgin-zero-skip = ["alloc-decommit"]
+
+[dependencies]
+aligned-vmem = { path = "../../platform/aligned-vmem", version = "0.2", default-features = false, features = ["lazy-commit"] }
+sefer-platform = { path = "../../platform/sefer-platform", version = "0.1" }
+size-classes = { path = "../../primitives/size-classes", version = "0.1" }
+sefer-ghost = { path = "../../primitives/sefer-ghost", version = "0.1" }
+sefer-policy = { path = "../sefer-policy", version = "0.1", default-features = false }
+
+[lints.rust]
+unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(sefer_ghost)', 'cfg(miri)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)'] }

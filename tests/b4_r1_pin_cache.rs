@@ -389,9 +389,8 @@ fn unlinked_cached_pin_never_publishes_and_releases() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let registration = directory
-        .register(root, SEGMENT, root, 17, RouteKind::Small)
-        .unwrap();
+    let registration =
+        unsafe { directory.register(root, SEGMENT, root, 17, RouteKind::Small) }.unwrap();
     // Make the granule at offset 0 LIVE before unlinking: the
     // `dbg_publish_cached_for_test` hook's `# Safety` contract requires the
     // CURRENT issued Small instance at the address, so the fixture must issue
@@ -454,9 +453,7 @@ fn re_registered_route_is_served_after_cache_fallback() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let first = directory
-        .register(root, SEGMENT, root, 17, RouteKind::Small)
-        .unwrap();
+    let first = unsafe { directory.register(root, SEGMENT, root, 17, RouteKind::Small) }.unwrap();
     let first_incarnation = first.incarnation();
     // The cached-publication hook requires a currently issued instance.
     assert!(first.issue_small(0, 0));
@@ -477,9 +474,7 @@ fn re_registered_route_is_served_after_cache_fallback() {
     );
 
     // The old route is unlinked; re-registration gets a fresh incarnation.
-    let second = directory
-        .register(root, SEGMENT, root, 18, RouteKind::Small)
-        .unwrap();
+    let second = unsafe { directory.register(root, SEGMENT, root, 18, RouteKind::Small) }.unwrap();
     assert!(second.incarnation() > first_incarnation);
     // Make the granule at offset 0 LIVE on the new route so the sidecar
     // accepts the cached publication.
@@ -641,8 +636,7 @@ fn thread_exit_releases_cached_pins_and_balances() {
                     .iter()
                     .map(|reservation| {
                         let root = reservation.as_ptr();
-                        directory
-                            .register(root, SEGMENT, root, 9, RouteKind::Small)
+                        unsafe { directory.register(root, SEGMENT, root, 9, RouteKind::Small) }
                             .unwrap()
                     })
                     .collect();
@@ -850,9 +844,8 @@ fn sweep_reclaims_unlinked_cached_pin_after_next_miss() {
     // Route A: the one whose pin gets cached and then unlinked.
     let reservation_a = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root_a = reservation_a.as_ptr();
-    let registration_a = directory
-        .register(root_a, SEGMENT, root_a, 21, RouteKind::Small)
-        .unwrap();
+    let registration_a =
+        unsafe { directory.register(root_a, SEGMENT, root_a, 21, RouteKind::Small) }.unwrap();
     // SAFETY: `lookup` reads only the address.
     let probe_a = directory.lookup(root_a).unwrap();
 
@@ -862,9 +855,8 @@ fn sweep_reclaims_unlinked_cached_pin_after_next_miss() {
     // `cache_insert` whose own sweep would mask the counterfactual.
     let reservation_b = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root_b = reservation_b.as_ptr();
-    let registration_b = directory
-        .register(root_b, SEGMENT, root_b, 22, RouteKind::Small)
-        .unwrap();
+    let registration_b =
+        unsafe { directory.register(root_b, SEGMENT, root_b, 22, RouteKind::Small) }.unwrap();
     // Make the hook's contract hold: the CURRENT issued Small instance at the
     // address. Publication misses (no cached slot for B's base), so ownership
     // is NOT consumed; the granule stays fixture-owned, like the zombie tests.

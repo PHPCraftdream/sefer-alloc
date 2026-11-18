@@ -1,7 +1,7 @@
 //! Actual-source loom model of the Large phase word: the production
-//! `LargeReservationState` (`src/alloc_core/large/reservation_state.rs`) and
-//! the production phase codec (`src/alloc_core/segment/segment_header/
-//! terminal_words.rs`) compiled onto loom atomics. Replaces the earlier shadow
+//! `LargeReservationState` (`crates/core/sefer-segment/src/support/reservation_state.rs`) and
+//! the production phase codec (`crates/core/sefer-segment/src/segment/segment_header/
+//! segment_header_impl/terminal_words.rs`) compiled onto loom atomics. Replaces the earlier shadow
 //! model, so a mutant in either production file reddens this test.
 //! Run with `RUSTFLAGS="--cfg loom" cargo test --release --features
 //! "alloc-core alloc-xthread tagged-index-stack/loom" --test loom_terminal_large`.
@@ -43,6 +43,12 @@ mod alloc_core {
     pub(crate) mod fatal {
         pub fn fatal(msg: &'static [u8]) -> ! {
             panic!("fatal: {}", String::from_utf8_lossy(msg))
+        }
+    }
+    // P2.1 path of the moved `terminal_words.rs` (`alloc_core::platform::fatal`).
+    pub(crate) mod platform {
+        pub(crate) mod fatal {
+            pub(crate) use crate::alloc_core::fatal::fatal;
         }
     }
 
@@ -92,12 +98,25 @@ pub(crate) const fn align_up_const(n: usize, a: usize) -> usize {
 }
 
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/segment_header/terminal_words.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs"]
 mod terminal_words;
 
-// `reservation_state.rs` resolves `super::{AtomicU64, Ordering}`: loom's, above.
-#[path = "../src/alloc_core/large/reservation_state.rs"]
+// CANONICAL implementation (not the root `src/alloc_core/large/` re-export
+// shim): `reservation_state.rs` resolves `super::{AtomicU64, Ordering}` —
+// loom's, above. The moved file reads the codec through the crate path
+// `crate::segment::segment_header`; alias it to the harness shim below.
+#[path = "../crates/core/sefer-segment/src/support/reservation_state.rs"]
 mod reservation_state;
+
+// Crate-path aliases for the source-included P2.1-moved files.
+pub(crate) mod segment {
+    pub(crate) mod segment_header {
+        pub(crate) use crate::alloc_core::segment_header::*;
+    }
+}
+pub(crate) mod node {
+    pub(crate) use crate::alloc_core::node::*;
+}
 
 use alloc_core::segment_header::{pack_large_state, LargePhase};
 use reservation_state::LargeReservationState;

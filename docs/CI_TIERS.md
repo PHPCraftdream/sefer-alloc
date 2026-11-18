@@ -273,6 +273,7 @@ the smoke row covers those scenarios.
 | `ghost-guard` | ghost-guard (semantic lint + ghost self-test) | every change |
 | `j13b-judge-preparation` | J13b judge preparation (schema + workload contract) | every change |
 | `licenses` | license compatibility (only when dependencies changed) | every change |
+| `sefer-segment-gates` | sefer-segment package gates | every change |
 | `check-matrix` | check-matrix (manifest-driven, non-clippy rows) | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `clippy` | clippy | `fast`: source, tests, benches, examples, fuzz, build scripts |
 | `docs` | rustdoc | `fast`: source, tests, benches, examples, fuzz, build scripts |

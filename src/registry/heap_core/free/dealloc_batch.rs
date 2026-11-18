@@ -11,6 +11,7 @@
 use core::alloc::Layout;
 
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
+#[allow(unused_imports)] // P2.1: kept for cfg combinations where the consumer is compiled out
 use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
@@ -67,7 +68,7 @@ impl HeapCore {
     /// SAME order,
     /// [`dealloc_own_thread_with_base`](Self::dealloc_own_thread_with_base)
     /// applies per block — (1) the F7 Large-segment-kind guard (a physical
-    /// `BlockKind`/`SegmentHeader::kind_at(base) == SegmentKind::Large`
+    /// `BlockKind`/`crate::alloc_core::segment::header_facade::kind_at(base) == SegmentKind::Large`
     /// check, plus its `hardened` layout-consistency defence), (2)
     /// [`hardened`] H1 interior-pointer guard (`off % block_size(c) != 0`),
     /// (3) state-byte state/zero check, (4) [under `alloc-decommit`]
@@ -309,7 +310,9 @@ impl HeapCore {
             // anyway. Handing it to `AllocCore` directly keeps the batch and
             // scalar outcomes byte-identical and one hop shorter.
             let (off, meta) = match small_free_guard(base, p, c, layout) {
-                SmallFreeGuard::Accept { off } => (off, SegmentMeta::new(base)),
+                SmallFreeGuard::Accept { off } => {
+                    (off, crate::alloc_core::segment::header_facade::meta(base))
+                }
                 SmallFreeGuard::RejectNoOp => {
                     // R6-T55: same single increment per rejected free as the
                     // scalar consumer — internal counter, not the public stat.

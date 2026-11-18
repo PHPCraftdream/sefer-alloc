@@ -17,10 +17,16 @@ use core::alloc::Layout;
 use crate::alloc_core::os;
 
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[allow(unused_imports)] // P2.1: kept for cfg combinations where the consumer is compiled out
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
-#[cfg(all(feature = "bench-internals", feature = "internals"))]
-use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
 use crate::registry::heap_core::HeapCore;
+#[cfg(any(
+    all(feature = "alloc-segment-directory", feature = "internals"),
+    feature = "bench-internals"
+))]
+use sefer_segment::support::root_compat::traits::*;
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+use sefer_segment::support::root_compat::SIDECAR_WORD_BYTES;
 
 impl HeapCore {
     /// Actual logical SmallSidecar layout in this oracle binary; not RSS.
@@ -52,13 +58,15 @@ impl HeapCore {
         let mut start_sum = 0u64;
         for base in self.segment_bases() {
             if matches!(
-                SegmentHeader::kind_at(base),
+                crate::alloc_core::segment::header_facade::kind_at(base),
                 SegmentKind::Small | SegmentKind::Primordial
             ) {
-                let end = SegmentMeta::new(base)
+                let end = crate::alloc_core::segment::header_facade::meta(base)
                     .bump_of()
                     .div_ceil(SIDECAR_WORD_BYTES);
-                let start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
+                let start = if crate::alloc_core::segment::header_facade::kind_at(base)
+                    == SegmentKind::Primordial
+                {
                     crate::alloc_core::segment_header::Layout::primordial_meta_end()
                         / SIDECAR_WORD_BYTES
                 } else {
@@ -482,7 +490,7 @@ impl HeapCore {
         // survives past the membership check. See
         // `SegmentTable::canonical_base_of`'s doc for the full rationale.
         let base = self.core.segment_bases().find(|&b| b == candidate)?;
-        let sid = SegmentHeader::segment_id_at(base) as usize;
+        let sid = SegmentHeader::compat_segment_id_at(base) as usize;
         self.core.dbg_directory_get_bit(class_idx, sid)
     }
 

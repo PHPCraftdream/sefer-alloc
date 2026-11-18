@@ -82,9 +82,17 @@ fn unlink_without_release_negative_control() {
     let root = reservation.as_ptr();
     let address = root.addr();
     let token = reservation.reservation_ptr().addr();
-    let route = RouteDirectory::global()
-        .register(root, reservation.len(), root, usize::MAX, RouteKind::Large)
-        .expect("synthetic route registration");
+    // SAFETY: address-only registration over the caller-owned live reservation (root/token never dereferenced here).
+    let route = unsafe {
+        RouteDirectory::global().register(
+            root,
+            reservation.len(),
+            root,
+            usize::MAX,
+            RouteKind::Large,
+        )
+    }
+    .expect("synthetic route registration");
     assert_eq!(route_at(address), Some(RouteKind::Large));
     assert_eq!(mapping_at(token), Mapping::Mapped);
     drop(route); // Unlink only; reservation remains owned and mapped.

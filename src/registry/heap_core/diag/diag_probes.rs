@@ -26,7 +26,7 @@ use crate::registry::heap_core::HeapCore;
 // Task #2000: `os` / `SegmentMeta` (the OTHER former consumers of this same
 // gate) were removed — `dbg_clear_magazine_on_hit` now calls the shared
 // `HeapCore::clear_magazine_on_issue` instead of inlining its own
-// `os::segment_base_of_ptr` + `SegmentMeta::new(..).state_byte()` copy.
+// `os::segment_base_of_ptr` + `crate::alloc_core::segment::header_facade::meta(..).state_byte()` copy.
 #[cfg(all(
     feature = "alloc-global",
     feature = "fastbin",
@@ -404,7 +404,7 @@ impl HeapCore {
     /// state-byte MAG → LIVE `set_state` flip that runs on EVERY magazine
     /// hit under `production`) standalone on `issued`, so
     /// `benches/perf_gate_iai.rs` can isolate its combined Ir cost
-    /// (`segment_base_of_ptr(issued)` + `SegmentMeta::new(base).state_byte
+    /// (`segment_base_of_ptr(issued)` + `crate::alloc_core::segment::header_facade::meta(base).state_byte
     /// ().set_state(off, LIVE)`) — the ALLOC-side sub-mechanism R3's
     /// honest-reject (`docs/perf/IAI_BASELINE.md`) flagged as "never isolated"
     /// (R3 rejected DEFERRING the clear for correctness reasons but admitted "no

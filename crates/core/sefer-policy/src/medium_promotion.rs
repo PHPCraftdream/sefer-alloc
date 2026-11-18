@@ -137,6 +137,17 @@ macro_rules! medium_promotion_reachable {
         ))]
         $vis fn $($rest)*
     };
+    ($(#[$m:meta])* $vis:vis unsafe fn $($rest:tt)*) => {
+        $(#[$m])*
+        #[cfg(all(
+            feature = "medium-classes",
+            any(
+                not(feature = "exact-span-large"),
+                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+            )
+        ))]
+        $vis unsafe fn $($rest)*
+    };
     ($(#[$m:meta])* $vis:vis use $($rest:tt)*) => {
         $(#[$m])*
         #[cfg(all(

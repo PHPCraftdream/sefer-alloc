@@ -9,15 +9,15 @@ use core::ptr::NonNull;
 
 use crate::alloc_core::node::{Node, NODE_SIZE};
 use crate::alloc_core::os;
-#[cfg(any(
-    feature = "misuse-checks",
-    debug_assertions,
-    feature = "alloc-segment-directory"
-))]
+// Pass 9.1: unconditional import — `flush_run`/`flush_class` use `seg_meta`
+// in every feature row (e.g. loom alloc-core+alloc-xthread w/o misuse-checks).
+#[allow(unused_imports)]
+use crate::alloc_core::segment::header_facade::{kind_at, meta as seg_meta};
+#[cfg(feature = "alloc-segment-directory")]
 use crate::alloc_core::segment_header::SegmentHeader;
+use crate::alloc_core::segment_header::FREE_LIST_NULL;
 #[cfg(any(feature = "misuse-checks", debug_assertions))]
 use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentKind};
-use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
 use crate::alloc_core::size_classes::SizeClasses;
 use crate::alloc_core::state_byte::StateByte;
 
@@ -28,6 +28,7 @@ use crate::alloc_core::alloc_core::AllocCore;
     feature = "virgin-zero-skip"
 ))]
 use crate::alloc_core::fatal::fatal;
+use sefer_segment::support::root_compat::traits::*;
 
 impl AllocCore {
     // -----------------------------------------------------------------------
@@ -365,7 +366,7 @@ impl AllocCore {
             #[cfg(feature = "virgin-zero-skip")]
             let cur_virgin = virgin_out
                 .is_some()
-                .then(|| SegmentMeta::new(self.small_cur).payload_virgin_of());
+                .then(|| seg_meta(self.small_cur).payload_virgin_of());
             let n = match self.try_carve_batch(
                 class_idx,
                 block_size,
@@ -393,7 +394,7 @@ impl AllocCore {
                     #[cfg(feature = "virgin-zero-skip")]
                     let fresh_virgin = virgin_out
                         .is_some()
-                        .then(|| SegmentMeta::new(self.small_cur).payload_virgin_of());
+                        .then(|| seg_meta(self.small_cur).payload_virgin_of());
                     let n = match self.try_carve_batch(
                         class_idx,
                         block_size,
@@ -433,7 +434,7 @@ impl AllocCore {
                         let seg = self.find_segment_with_free_forced(class_idx);
                         if let Some(seg) = seg {
                             #[cfg(feature = "alloc-stats")]
-                            crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                            sefer_segment::support::root_compat::directory_stats::directory_rescue_oom_avoided()
                                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                             let n = match self.try_drain_freelist_batch(
                                 seg,
@@ -682,8 +683,8 @@ impl AllocCore {
         blocks: &[*mut u8],
         start: usize,
     ) -> (usize, bool) {
-        let meta = SegmentMeta::new(base);
-        let mut bt = meta.bin_table();
+        let meta = seg_meta(base);
+        let mut bt = meta.compat_bin_table();
         // B4 (в): the alloc-bitmap hoist is gone — flush_run now guards and
         // commits via the per-granule state byte.
         // Hoist the `bump` LOAD once (the COMPARE stays per-block). A flush
@@ -697,10 +698,10 @@ impl AllocCore {
         // bin table / …) instead of the payload; see `dealloc_small`'s
         // identical guard for the full rationale.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
-        let payload_start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
-            SegLayout::primordial_meta_end()
+        let payload_start = if kind_at(base) == SegmentKind::Primordial {
+            SegLayout::compat_primordial_meta_end()
         } else {
-            SegLayout::small_meta_end()
+            SegLayout::compat_small_meta_end()
         };
         // N3-c (split-n8c): hoist the accepted-offset range out of the loop as
         // ONE saturating span. `span = bump.saturating_sub(payload_start)`;
@@ -712,7 +713,7 @@ impl AllocCore {
         // Capture the segment's CURRENT freelist head ONCE — the first accepted
         // block links to this (matching the first sequential `dealloc_small`,
         // whose `old_head` is exactly this value).
-        let old_head = bt.head(class_idx);
+        let old_head = bt.compat_head(class_idx);
         // N3-b (split-n8b): thread the PREVIOUS block's pointer through the
         // pass instead of re-deriving it per block from `prev_off`. The
         // linked value and provenance are byte-identical: the hoisted
@@ -756,9 +757,9 @@ impl AllocCore {
             // class, and an already-FREE block are all rejected/skipped).
             #[cfg(any(feature = "misuse-checks", debug_assertions))]
             {
-                let sb = meta.state_byte().read(off);
+                let sb = meta.compat_state_byte().compat_read(off);
                 if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
-                    crate::alloc_core::state_byte::StateByte::shadow_reject(
+                    crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                         b"sefer-alloc: misuse check rejected a free in safe mode (magazine flush)\n",
                     );
                     rejected += 1;
@@ -780,7 +781,7 @@ impl AllocCore {
             // sequential `dealloc_small` performs.
             Node::write_next(block_nn, prev_ptr);
             // B4 (в): commit the accepted block (LIVE or MAG) to FREE.
-            meta.state_byte().write(
+            meta.compat_state_byte().compat_write(
                 off,
                 class_idx,
                 crate::alloc_core::state_byte::StateByte::FREE,
@@ -795,20 +796,20 @@ impl AllocCore {
             // `prev_ptr` is the last accepted block, `Node::deref(base, off)`,
             // so this is exactly its `off`.
             let last_off = (prev_ptr.addr() - base.addr()) as u32;
-            bt.set_head(class_idx, last_off);
+            bt.compat_set_head(class_idx, last_off);
             // R7-A2: directory bitmap maintenance — the new head is always
             // non-null (`last_off`), so the only transition is empty→non-empty
             // when old_head was FREE_LIST_NULL.
             #[cfg(feature = "alloc-segment-directory")]
             if old_head == FREE_LIST_NULL {
-                let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+                let slot_idx = SegmentHeader::compat_segment_id_at(base) as usize;
                 self.publish_nonempty(base, class_idx, slot_idx);
             }
         }
 
         // E3 (task W4): retire accepted credits once, after `set_head`.
         // The following eligibility check only selects pool/release policy.
-        SegmentMeta::new(base).sub_live(accepted_count as u32);
+        seg_meta(base).sub_live(accepted_count as u32);
         #[cfg(feature = "alloc-decommit")]
         {
             let small_cur = self.small_cur;

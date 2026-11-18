@@ -1,6 +1,11 @@
 //! Shadow model of the owner-only active-kind membership bit versus a terminal
 //! publication. The `ghost-bind` lines carry the production publish and cut
 //! orderings (R8).
+//! P2.1: the production spans this model mirrors (the active-kind index
+//! protocol behind the active-kind/* rules) now live in the extracted crate at
+//! crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_index.rs;
+//! the rule paths in docs/verification/ghost-rules.json were retargeted to it
+//! in the same change.
 #![cfg(loom)]
 
 use loom::sync::atomic::{AtomicBool, Ordering};

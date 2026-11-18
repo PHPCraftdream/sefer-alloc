@@ -12,9 +12,12 @@ use crate::alloc_core::os::SEGMENT;
 // `alloc-segment-directory`-gated directory-bitmap maintenance arms of
 // `pop_free`/`drain_freelist_batch` and by the `hardened` freelist
 // validation, so the import is gated on exactly those features.
-#[cfg(any(feature = "hardened", feature = "alloc-segment-directory"))]
+#[cfg(feature = "hardened")]
+use crate::alloc_core::segment::header_facade::kind_at;
+use crate::alloc_core::segment::header_facade::meta as seg_meta;
+#[cfg(feature = "alloc-segment-directory")]
 use crate::alloc_core::segment_header::SegmentHeader;
-use crate::alloc_core::segment_header::{align_up, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_header::{align_up, FREE_LIST_NULL};
 // `Layout as SegLayout` is consulted here only by the `alloc-decommit`-gated
 // decommit-recommit arms of `carve_block`/`carve_batch` (and only on their
 // eager `not(small-segment-lazy-commit)` leg) — gate the import identically
@@ -25,6 +28,11 @@ use crate::alloc_core::size_classes::SizeClasses;
 
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::state_byte::StateByte;
+use sefer_segment::support::root_compat::traits::*;
+
+// P2.1 structure-limits split: the R11 debug test hooks moved verbatim to
+// `dealloc.rs` (the sibling directory was at the 7-entry limit); pure code
+// movement, no behavior change.
 
 /// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
 /// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
@@ -40,28 +48,11 @@ use crate::alloc_core::state_byte::StateByte;
 pub(crate) static GROW_COMMIT_COUNT: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
-/// B1 (R7 Workstream B): the size of the FIRST committed payload chunk when a
-/// small segment is lazily reserved under `small-segment-lazy-commit`, or
-/// the primordial segment under `primordial-lazy-commit` (R12-9, task #260 —
-/// this constant is SHARED verbatim by both split policies; see
-/// `bootstrap::primordial`'s identical `LAZY_FIRST_CHUNK` use). Only the
-/// metadata region `[0, small_meta_end)` plus this chunk are committed at
-/// reservation time; the rest of the 4 MiB segment stays reserved-but-
-/// uncommitted. B2's grow-on-carve logic commits additional chunks
-/// (sized by [`GROW_CHUNK`]) as the bump cursor advances past the frontier.
-///
-/// 256 KiB is large enough to hold many initial carve batches without faulting
-/// (the refill batch is 31 blocks; even at the largest small class of ~8 KiB
-/// that is ~248 KiB, comfortably within one chunk). B5 will sweep this value
-/// (64/128/256/512 KiB) against the first-heap commit judge; 256 KiB is the
-/// conservative default.
-///
-/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
 #[cfg(any(
     feature = "primordial-lazy-commit",
     feature = "small-segment-lazy-commit"
 ))]
-pub(crate) const LAZY_FIRST_CHUNK: usize = 256 * 1024;
+pub(crate) use sefer_segment::support::geometry::LAZY_FIRST_CHUNK;
 
 /// B2 (R7 Workstream B): the chunk size used when GROWING the commit frontier
 /// past its initial value during bump-carve. When a `carve_block` or
@@ -97,7 +88,7 @@ const _: () = {
     // MAX_REALISTIC_PAGE_SIZE (64 KiB) of rounding, so the slack is part of
     // the bound: the ROUNDED initial commit stays within one SEGMENT.
     assert!(
-        crate::alloc_core::segment_header::Layout::small_meta_end()
+        sefer_segment::support::root_compat::SMALL_META_END
             + LAZY_FIRST_CHUNK
             + crate::alloc_core::os::MAX_REALISTIC_PAGE_SIZE
             <= crate::alloc_core::os::SEGMENT,
@@ -111,44 +102,6 @@ const _: () = {
 };
 
 impl AllocCore {
-    #[cfg(all(feature = "internals", feature = "bench-internals"))]
-    #[doc(hidden)]
-    pub fn dbg_r11_scalar_carve_for_test(&mut self, class_idx: usize) -> Option<*mut u8> {
-        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
-            return None;
-        }
-        self.carve_block(class_idx, SizeClasses::block_size(class_idx))
-    }
-
-    /// Current owner state: bump, live credits, class head, commit frontier.
-    #[cfg(all(feature = "internals", feature = "bench-internals"))]
-    #[doc(hidden)]
-    pub fn dbg_r11_issue_state_for_test(
-        &self,
-        class_idx: usize,
-    ) -> Option<(usize, u32, u32, usize)> {
-        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
-            return None;
-        }
-        let meta = SegmentMeta::new(self.small_cur);
-        #[cfg(any(
-            feature = "primordial-lazy-commit",
-            feature = "small-segment-lazy-commit"
-        ))]
-        let frontier = meta.committed_payload_end_of();
-        #[cfg(not(any(
-            feature = "primordial-lazy-commit",
-            feature = "small-segment-lazy-commit"
-        )))]
-        let frontier = SEGMENT;
-        Some((
-            meta.bump_of(),
-            meta.live_count_of(),
-            meta.bin_table().head(class_idx),
-            frontier,
-        ))
-    }
-
     /// Allocate a small block of the given class. Routes through the current
     /// small segment's free list (pop); on a miss, scans ALL owned segments for
     /// one with a non-empty class free list (Phase 12.1: free state lives in
@@ -230,7 +183,7 @@ impl AllocCore {
                 if !self.directory_sidecar.is_null() || self.ingress_armed() {
                     if let Some(seg) = self.find_segment_with_free_forced(class_idx) {
                         #[cfg(feature = "alloc-stats")]
-                        crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                        sefer_segment::support::root_compat::directory_stats::directory_rescue_oom_avoided()
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         match self.pop_free(seg, class_idx) {
                             Ok(Some(ptr)) => return ptr,
@@ -287,7 +240,7 @@ impl AllocCore {
         // 3. No free block anywhere: carve a FRESH block from the CURRENT
         //    segment. Read the lifetime-virginity bit before carving — the
         //    carve itself never mutates the bit (see this fn's doc).
-        let cur_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
+        let cur_virgin = seg_meta(self.small_cur).payload_virgin_of();
         if !self.prepare_current_carve(class_idx, block_size) {
             return (core::ptr::null_mut(), false);
         }
@@ -307,7 +260,7 @@ impl AllocCore {
                     Err(()) => return (core::ptr::null_mut(), false),
                     Ok(None) => {}
                 }
-                let fresh_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
+                let fresh_virgin = seg_meta(self.small_cur).payload_virgin_of();
                 match self.carve_block_with_refill(class_idx, block_size) {
                     Some(ptr) => (ptr, fresh_virgin && cfg!(not(miri))),
                     None => (core::ptr::null_mut(), false),
@@ -321,7 +274,7 @@ impl AllocCore {
                 if !self.directory_sidecar.is_null() || self.ingress_armed() {
                     if let Some(seg) = self.find_segment_with_free_forced(class_idx) {
                         #[cfg(feature = "alloc-stats")]
-                        crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                        sefer_segment::support::root_compat::directory_stats::directory_rescue_oom_avoided()
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         match self.pop_free(seg, class_idx) {
                             Ok(Some(ptr)) => return (ptr, false),
@@ -336,21 +289,28 @@ impl AllocCore {
     }
 
     fn prepare_current_carve(&self, class_idx: usize, block_size: usize) -> bool {
-        let bump = SegmentMeta::new(self.small_cur).bump_of();
+        // `small_cur` is the live exclusively-owned current small segment;
+        // metadata read only (owner discipline, no `Send`).
+        let bump = seg_meta(self.small_cur).bump_of();
         let aligned = align_up(bump, block_size);
-        aligned + block_size > SEGMENT
-            || self
-                .table
-                .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
-                .is_some()
+        aligned + block_size > SEGMENT || {
+            // SAFETY: live owned segment base and initialized table;
+            // prepare only probes routes (owner-exclusive).
+            #[allow(unsafe_code)]
+            unsafe {
+                self.table
+                    .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
+            }
+            .is_some()
+        }
     }
 
     #[cfg(feature = "hardened")]
     #[inline(always)]
     fn valid_free_node(segment: *mut u8, off: u32, class_idx: usize) -> bool {
         let offset = off as usize;
-        let meta = SegmentMeta::new(segment);
-        let start = match SegmentHeader::kind_at(segment) {
+        let meta = seg_meta(segment);
+        let start = match kind_at(segment) {
             crate::alloc_core::segment_header::SegmentKind::Primordial => {
                 crate::alloc_core::segment_header::Layout::primordial_meta_end()
             }
@@ -401,9 +361,9 @@ impl AllocCore {
         segment: *mut u8,
         class_idx: usize,
     ) -> Result<Option<*mut u8>, ()> {
-        let mut meta = SegmentMeta::new(segment);
-        let mut bt = meta.bin_table();
-        let head_off = bt.head(class_idx);
+        let mut meta = seg_meta(segment);
+        let mut bt = meta.compat_bin_table();
+        let head_off = bt.compat_head(class_idx);
         if head_off == FREE_LIST_NULL {
             return Ok(None);
         }
@@ -426,28 +386,33 @@ impl AllocCore {
                 crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
             Node::continuation_offset_or_fatal(segment, next, bounds)
         };
-        let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
+        // SAFETY: `segment` is a live table-registered segment owned by this
+        // allocator (pop_free operates on its own owner table base) — the
+        // pre-move safe call, contract unchanged.
+        #[allow(unsafe_code)]
+        let issued = unsafe { self.table.prepare_small_issue(segment, head_off, class_idx) };
+        let Some(tx) = issued else {
             return Err(());
         };
-        bt.set_head(class_idx, new_head);
+        bt.compat_set_head(class_idx, new_head);
         // R7-A2: directory bitmap maintenance — the old head was non-null
         // (we passed the FREE_LIST_NULL guard above), so the only transition
         // is non-empty→empty when new_head is FREE_LIST_NULL.
         #[cfg(feature = "alloc-segment-directory")]
         if new_head == FREE_LIST_NULL {
-            let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+            let slot_idx = SegmentHeader::compat_segment_id_at(segment) as usize;
             self.publish_empty(segment, class_idx, slot_idx);
         }
         // B4 (в) F3-fix: assert the byte's PRIOR value BEFORE the issue
         // commits LIVE.
         debug_assert_eq!(
-            meta.state_byte().read(head_off),
-            StateByte::encode(class_idx, StateByte::FREE),
+            meta.compat_state_byte().compat_read(head_off),
+            StateByte::compat_encode(class_idx, StateByte::FREE),
             "pop_free: free-list head must carry its exact class FREE byte",
         );
         // B4 (в): issue = commit FREE → LIVE in the state byte.
-        meta.state_byte()
-            .write(head_off, class_idx, StateByte::LIVE);
+        meta.compat_state_byte()
+            .compat_write(head_off, class_idx, StateByte::LIVE);
         // Phase 35 (M6): a block left the free list → one more live block.
         // A popped block always comes from a COMMITTED payload (a decommitted
         // segment's free list is empty), so no recommit is needed here — only
@@ -534,14 +499,14 @@ impl AllocCore {
         if out.is_empty() {
             return Ok(0);
         }
-        let mut meta = SegmentMeta::new(segment);
-        let mut bt = meta.bin_table();
+        let mut meta = seg_meta(segment);
+        let mut bt = meta.compat_bin_table();
         // Run-level protocol (B4-R3): fatal route guards run once in
         // `prepare_small_issue_run`; drain stores no class code (G1-K1).
 
         {
             // Read the head ONCE.
-            let mut head_off = bt.head(class_idx);
+            let mut head_off = bt.compat_head(class_idx);
             if head_off == FREE_LIST_NULL {
                 return Ok(0);
             }
@@ -549,7 +514,10 @@ impl AllocCore {
             // A bin-`c` block was issued as class `c` before it was freed, so
             // its start granule already holds class code `c + 1`; drain does
             // not re-store it (carve, the first issue, does).
-            let run = self.table.prepare_small_issue_run(segment, class_idx);
+            // SAFETY: `segment` is a live table-registered segment owned by
+            // this allocator (drain operates on its own owner table base).
+            #[allow(unsafe_code)]
+            let run = unsafe { self.table.prepare_small_issue_run(segment, class_idx) };
             // B2-R1: one pass. Each link is validated (fatal on corruption, as
             // before) before its block is committed. G1-K1: no leaf is
             // prepared, so drain no longer fails on a spill OOM.
@@ -609,13 +577,14 @@ impl AllocCore {
                 };
                 // B4 (в)/S1: issue = commit `issue_state` (LIVE, or MAG when
                 // the caller parks the batch in a magazine).
-                meta.state_byte().write(head_off, class_idx, issue_state);
+                meta.compat_state_byte()
+                    .compat_write(head_off, class_idx, issue_state);
                 out[k] = block_ptr;
                 k += 1;
                 head_off = next_off;
             }
             // Write the new head ONCE: the first un-popped node, or NULL.
-            bt.set_head(class_idx, head_off);
+            bt.compat_set_head(class_idx, head_off);
             // B4-M (P1-2): MAG state-byte writes of this drain, one add per batch.
             #[cfg(feature = "bench-internals")]
             if issue_state == StateByte::MAG {
@@ -629,7 +598,7 @@ impl AllocCore {
             let _ = run;
             #[cfg(feature = "alloc-segment-directory")]
             if head_off == FREE_LIST_NULL {
-                let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+                let slot_idx = SegmentHeader::compat_segment_id_at(segment) as usize;
                 self.publish_empty(segment, class_idx, slot_idx);
             }
             // `inc_live` ONCE by `k` (D1): exactly `k` blocks handed out; a
@@ -657,7 +626,7 @@ impl AllocCore {
         block_size: usize,
     ) -> Option<*mut u8> {
         let segment = self.small_cur;
-        let mut meta = SegmentMeta::new(segment);
+        let mut meta = seg_meta(segment);
         // Read/write only the owner-only `bump` field, never the whole header.
         // Terminal foreign frees use route descriptors and independent sidecars;
         // they do not read this bump cursor.
@@ -668,15 +637,19 @@ impl AllocCore {
         }
         // Fallible prepare before any mutation: `?` is the `return None` the
         // old inline guard performed — "segment full" so the caller reserves.
-        let tx = self
-            .table
-            .prepare_small_issue(segment, aligned_bump as u32, class_idx)?;
+        // SAFETY: `segment` is a live table-registered segment owned by this
+        // allocator (carve operates on its own owner table base).
+        #[allow(unsafe_code)]
+        let tx = unsafe {
+            self.table
+                .prepare_small_issue(segment, aligned_bump as u32, class_idx)?
+        };
         // Phase 35 (M6 recommit): if this segment's payload was decommitted (it
         // emptied and we returned its pages to the OS), we are about to write
         // into the payload — recommit and clear the flag BEFORE the bump cursor
         // advances / the page-map / the block is touched.
         #[cfg(feature = "alloc-decommit")]
-        if meta.is_decommitted() {
+        if meta.compat_is_decommitted() {
             // B3 (R7 Workstream B): lazy-commit-aware recommit on reuse.
             //
             // Under `small-segment-lazy-commit` (R12-9, task #260: only THIS
@@ -706,7 +679,7 @@ impl AllocCore {
             }
             #[cfg(not(feature = "small-segment-lazy-commit"))]
             {
-                if !os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT) {
+                if !os::recommit_pages(segment, SegLayout::compat_small_decommit_start(), SEGMENT) {
                     // Honest OOM: the OS refused to re-commit the payload
                     // (commit-charge exhaustion). Do NOT clear `decommitted`
                     // and do NOT advance the bump — writing into the
@@ -717,7 +690,7 @@ impl AllocCore {
                     // / null), matching the reserve path.
                     return None;
                 }
-                meta.set_decommitted(false);
+                meta.compat_set_decommitted(false);
             }
         }
         // B2 (R7 Workstream B): incremental grow-on-carve. If this carve
@@ -741,7 +714,7 @@ impl AllocCore {
             feature = "small-segment-lazy-commit"
         ))]
         {
-            let frontier = meta.committed_payload_end_of();
+            let frontier = meta.compat_committed_payload_end_of();
             let carve_end = aligned_bump + block_size;
             if carve_end > frontier {
                 // `frontier == SEGMENT` means fully committed (eager path or
@@ -759,11 +732,11 @@ impl AllocCore {
                     return None;
                 }
                 GROW_COMMIT_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                meta.set_committed_payload_end(new_frontier);
+                meta.compat_set_committed_payload_end(new_frontier);
             }
         }
         // Update ONLY the bump cursor.
-        meta.set_bump(aligned_bump + block_size);
+        meta.compat_set_bump(aligned_bump + block_size);
         // Phase 35: this carved block is now live (handed to the caller, or — on
         // the refill path — immediately pushed to the free list, which calls
         // `dealloc_small` → `dec_live`, netting zero for refill blocks; the
@@ -785,8 +758,8 @@ impl AllocCore {
         let ptr = Node::deref(segment, aligned_bump);
         tx.commit(&self.table);
         // B4 (в): a freshly carved block is issued LIVE at first touch.
-        meta.state_byte()
-            .write(aligned_bump as u32, class_idx, StateByte::LIVE);
+        meta.compat_state_byte()
+            .compat_write(aligned_bump as u32, class_idx, StateByte::LIVE);
         Some(ptr)
     }
 
@@ -863,7 +836,7 @@ impl AllocCore {
             return Ok(0);
         }
         let segment = self.small_cur;
-        let mut meta = SegmentMeta::new(segment);
+        let mut meta = seg_meta(segment);
         let bump = meta.bump_of();
         let aligned_start = align_up(bump, block_size);
         if aligned_start + block_size > SEGMENT {
@@ -876,7 +849,10 @@ impl AllocCore {
         // Release store (see `IssueRun`). A successful promotion is retained
         // even if later OS commit fails; no class code or issue credit
         // changes until the carve commits.
-        let mut run = self.table.prepare_small_issue_run(segment, class_idx);
+        // SAFETY: `segment` is a live table-registered segment owned by this
+        // allocator (batch carve operates on its own owner table base).
+        #[allow(unsafe_code)]
+        let mut run = unsafe { self.table.prepare_small_issue_run(segment, class_idx) };
         for i in 0..n {
             let off = aligned_start + i * block_size;
             if !run.prepare_for(off as u32) {
@@ -887,7 +863,7 @@ impl AllocCore {
         // (identical to `carve_block`'s per-block check — the flag cannot change
         // mid-run, so one check covers the whole run).
         #[cfg(feature = "alloc-decommit")]
-        if meta.is_decommitted() {
+        if meta.compat_is_decommitted() {
             // B3: lazy-commit-aware recommit on reuse (see `carve_block`'s
             // identical block for the full rationale). R12-9 (task #260):
             // `small-segment-lazy-commit` specifically — decommit only ever
@@ -898,14 +874,14 @@ impl AllocCore {
             }
             #[cfg(not(feature = "small-segment-lazy-commit"))]
             {
-                if !os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT) {
+                if !os::recommit_pages(segment, SegLayout::compat_small_decommit_start(), SEGMENT) {
                     // Honest OOM (see `carve_block`): leave the segment marked
                     // decommitted, do not advance the bump, and carve nothing
                     // so the caller falls back (fresh segment / null) instead
                     // of writing into a still-reserved page.
                     return Ok(0);
                 }
-                meta.set_decommitted(false);
+                meta.compat_set_decommitted(false);
             }
         }
         // B2 (R7 Workstream B): incremental grow-on-carve for the batched
@@ -928,7 +904,7 @@ impl AllocCore {
             feature = "small-segment-lazy-commit"
         ))]
         {
-            let frontier = meta.committed_payload_end_of();
+            let frontier = meta.compat_committed_payload_end_of();
             let batch_end = aligned_start + n * block_size;
             if batch_end > frontier {
                 // Round the batch end UP to the next GROW_CHUNK boundary,
@@ -940,12 +916,12 @@ impl AllocCore {
                     return Ok(0);
                 }
                 GROW_COMMIT_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                meta.set_committed_payload_end(new_frontier);
+                meta.compat_set_committed_payload_end(new_frontier);
             }
         }
         // Advance the bump cursor ONCE to just past the last carved block —
         // byte-identical to the final `set_bump` of the n-th sequential carve.
-        meta.set_bump(aligned_start + n * block_size);
+        meta.compat_set_bump(aligned_start + n * block_size);
         // Batched live increment (D1): exactly `n` blocks handed out.
         meta.add_live(n as u32);
         // Page-map "first class wins", applied once per DISTINCT page entered by
@@ -978,7 +954,8 @@ impl AllocCore {
             *slot = Node::deref(segment, off);
             run.commit(off as u32);
             // B4 (в)/S1: freshly carved blocks commit `issue_state` (see doc).
-            meta.state_byte().write(off as u32, class_idx, issue_state);
+            meta.compat_state_byte()
+                .compat_write(off as u32, class_idx, issue_state);
         };
         let slots = out[..n].iter_mut();
         if issue_state == StateByte::MAG {

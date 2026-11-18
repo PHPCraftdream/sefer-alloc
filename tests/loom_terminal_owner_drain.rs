@@ -2,6 +2,12 @@
 //! Credits are atomic only so the negative control can model the forbidden
 //! producer mutation; the positive protocol has exactly one owner mutator.
 //! The `ghost-bind` lines carry the production publish and cut orderings (R8).
+//! P2.1: the production spans this model mirrors (the SegmentHeader::live_count
+//! credit protocol behind the owner-drain/credit-* rules) now live in the
+//! extracted crate at
+//! crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/segment_header_impl.rs;
+//! the rule paths in docs/verification/ghost-rules.json were retargeted to it
+//! in the same change.
 #![cfg(loom)]
 
 use loom::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};

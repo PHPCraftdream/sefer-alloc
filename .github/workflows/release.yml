@@ -87,6 +87,7 @@ on:
     tags:
       - 'aligned-vmem-v*'
       - 'sefer-region-v*'
+      - 'sefer-segment-v*'
       - 'sefer-platform-v*'
       - 'malloc-bench-rs-v*'
       - 'numa-shim-v*'
@@ -107,6 +108,7 @@ on:
           - aligned-vmem
           - sefer-region
           - sefer-platform
+          - sefer-segment
           - malloc-bench-rs
           - numa-shim
           - once-ptr-cell

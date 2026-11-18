@@ -52,6 +52,7 @@ medium_promotion_reachable! {
     };
 }
 #[cfg(feature = "bench-internals")]
+#[allow(unused_imports)] // P2.1: kept for cfg combinations where the consumer is compiled out
 pub(in crate::alloc_core) use counters::{
     tier1_bump, CONTAINS_BASE_TIER1_HITS, CONTAINS_BASE_TIER1_MISSES,
 };

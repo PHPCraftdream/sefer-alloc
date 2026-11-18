@@ -10,7 +10,6 @@ use crate::alloc_core::OwnedBlock;
 use core::alloc::Layout;
 
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-use crate::alloc_core::segment_header::SegmentMeta;
 // Ph3b: the physical-kind witness is needed in EVERY configuration — the
 // Large pre-route below is what gives plain `production` the same routing
 // the `medium-classes` promotion builds always had — so this import carries
@@ -204,6 +203,9 @@ pub(super) enum SmallFreeGuard {
 /// `RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md` §8.4 for that design history.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[inline(always)]
+// R25-1: holds one scoped `unsafe` block (the hardened Large-layout header
+// reads below) behind the own-base classification guard.
+#[allow(unsafe_code)]
 pub(super) fn small_free_guard(
     base: *mut u8,
     ptr: *mut u8,
@@ -220,7 +222,7 @@ pub(super) fn small_free_guard(
         let _ = layout;
     }
 
-    let kind = BlockKind::of(base, Some(c));
+    let kind = BlockKind::compat_of(base, Some(c));
 
     // ── Ph3b: physical-Large routing when the F7 branches do not ─────────
     // The segment header's `kind` byte — not the caller's layout, and not a
@@ -247,7 +249,7 @@ pub(super) fn small_free_guard(
             // SEC-03: only this already-selected Large arm reads payload geometry.
             #[cfg(any(feature = "misuse-checks", debug_assertions))]
             if crate::alloc_core::AllocCore::reject_large_interior_free(base, ptr) {
-                crate::alloc_core::state_byte::StateByte::shadow_reject(
+                crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                     b"sefer-alloc: misuse check rejected a Large free of an interior pointer in safe mode\n",
                 );
                 return SmallFreeGuard::RejectNoOp;
@@ -263,8 +265,16 @@ pub(super) fn small_free_guard(
     {
         if matches!(&kind, BlockKind::Large) {
             if !cfg!(feature = "hardened")
-                || (SegmentHeader::large_size_at(base) == layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK)
-                    && SegmentHeader::large_align_at(base) == layout.align())
+                || ({
+                    // SAFETY: `base` is the aligned base of this owner's live
+                    // Large segment with an initialized header (own-base
+                    // dealloc path, post `BlockKind::Large` classification).
+                    unsafe {
+                        SegmentHeader::large_size_at(base)
+                            == layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK)
+                            && SegmentHeader::large_align_at(base) == layout.align()
+                    }
+                })
             {
                 // Preserve hardened layout rejection below: only a layout
                 // accepted for Large routing reaches the address rejection.
@@ -329,16 +339,16 @@ pub(super) fn small_free_guard(
     // Without `misuse-checks` (release) the payload-start and `bump` bounds below, like the state byte,
     // only reject a pointer the allocator never issued.
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
-    let meta = SegmentMeta::new(base);
+    let meta = crate::alloc_core::segment::header_facade::meta(base);
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
     {
         let payload_start = if matches!(&kind, BlockKind::Primordial) {
-            SegmentLayout::primordial_meta_end()
+            SegmentLayout::compat_primordial_meta_end()
         } else {
-            SegmentLayout::small_meta_end()
+            SegmentLayout::compat_small_meta_end()
         };
         if (off as usize) < payload_start {
-            crate::alloc_core::state_byte::StateByte::shadow_reject(
+            crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
                 b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard payload start)\n",
             );
             return SmallFreeGuard::RejectNoOp;
@@ -371,9 +381,9 @@ pub(super) fn small_free_guard(
     // `RejectNoOpSilent` (callers treat it identically minus the counter).
     // Without `misuse-checks` (release) the byte is neither written nor read.
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
-    let byte = meta.state_byte().read(off);
+    let byte = meta.compat_state_byte().compat_read(off);
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
-    let expected = crate::alloc_core::state_byte::StateByte::encode(
+    let expected = crate::alloc_core::state_byte::StateByte::compat_encode(
         c,
         crate::alloc_core::state_byte::StateByte::LIVE,
     );
@@ -382,7 +392,7 @@ pub(super) fn small_free_guard(
     }
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
     if byte != expected {
-        crate::alloc_core::state_byte::StateByte::shadow_reject(
+        crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
             b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard)\n",
         );
         if byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::LIVE {
@@ -398,7 +408,7 @@ pub(super) fn small_free_guard(
     }
     #[cfg(any(feature = "misuse-checks", debug_assertions))]
     if (off as usize) >= meta.bump_of() {
-        crate::alloc_core::state_byte::StateByte::shadow_reject(
+        crate::alloc_core::state_byte::StateByte::compat_shadow_reject(
             b"sefer-alloc: misuse check rejected a free in safe mode (small_free_guard bump)\n",
         );
         return SmallFreeGuard::RejectNoOp;
@@ -420,6 +430,7 @@ pub(super) fn small_free_guard(
 // the two sets' union is exactly the original `any(hardened, promotion)`
 // term.
 use crate::alloc_core::{medium_promotion_reachable, medium_promotion_unreachable};
+use sefer_segment::support::root_compat::traits::*;
 medium_promotion_reachable! {
     #[cfg(feature = "alloc-stats")]
     use super::dealloc::HARDENED_LARGE_NOOP_COUNT;
@@ -500,7 +511,7 @@ impl HeapCore {
                             // requires an exact LIVE match on (class, state) —
                             // the former `small_class_matches`/`divides`
                             // class-identity re-check is subsumed.
-                            (off, SegmentMeta::new(root))
+                            (off, crate::alloc_core::segment::header_facade::meta(root))
                         }
                         SmallFreeGuard::RejectNoOp => {
                             // R6-T55: local no-op reject — internal counter,
@@ -533,7 +544,7 @@ impl HeapCore {
                         //
                         // B4 variant (в): mark this block MAG in the state
                         // byte (was RAD-5's magazine-bitmap set).
-                        meta.state_byte().write(
+                        meta.compat_state_byte().compat_write(
                             off,
                             c,
                             crate::alloc_core::state_byte::StateByte::MAG,
@@ -641,11 +652,9 @@ impl HeapCore {
                     }
                     class.slots[0] = block;
                     class.count = 1;
-                    SegmentMeta::new(root).state_byte().write(
-                        off,
-                        c,
-                        crate::alloc_core::state_byte::StateByte::MAG,
-                    );
+                    crate::alloc_core::segment::header_facade::meta(root)
+                        .compat_state_byte()
+                        .compat_write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
                     return;
                 }
             }
@@ -680,7 +689,7 @@ impl HeapCore {
     ) {
         use crate::registry::heap_core::state::tcache::{FLUSH_N, FREE_PARK_CAP, TCACHE_CAP};
         let cap = FREE_PARK_CAP[c] as usize;
-        let meta = SegmentMeta::new(root);
+        let meta = crate::alloc_core::segment::header_facade::meta(root);
         // B4 depot (DP-3): park the full magazine whole (cold),
         // then `block` starts the next one. `block` itself is not
         // parked into a body-write path: only `slots` pointers move.
@@ -689,8 +698,11 @@ impl HeapCore {
         // overflow park counts its decay event inside the cold helper, after
         // the ring owns the magazine; it touches only older records.
         if cnt == TCACHE_CAP && self.depot_may_park(c) && self.depot_park(c) {
-            meta.state_byte()
-                .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
+            meta.compat_state_byte().compat_write(
+                off,
+                c,
+                crate::alloc_core::state_byte::StateByte::MAG,
+            );
             self.tcache.classes[c].slots[0] = block;
             self.tcache.classes[c].count = 1;
             // `depot_park` cleared the mask; `block` is not virgin.
@@ -745,8 +757,11 @@ impl HeapCore {
             // commit LIVE → MAG (as on the push path above;
             // `meta`/`off` come from the guard). Metadata only:
             // the block body is not touched (R1-01).
-            meta.state_byte()
-                .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
+            meta.compat_state_byte().compat_write(
+                off,
+                c,
+                crate::alloc_core::state_byte::StateByte::MAG,
+            );
             // R13-3 analogue: like the push path above, both the
             // current block (being FREED right now) and the
             // evicted block (previously issued from the
@@ -809,8 +824,11 @@ impl HeapCore {
         // double-free is caught even when the magazine is full.
         // RAD-5: mark the newly-pushed block magazine-resident.
         // B4 (в): MAG in the state byte.
-        meta.state_byte()
-            .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
+        meta.compat_state_byte().compat_write(
+            off,
+            c,
+            crate::alloc_core::state_byte::StateByte::MAG,
+        );
         self.tcache.classes[c].slots[remaining] = block;
         self.tcache.classes[c].count = (remaining + 1) as u8;
         // R13-3: the newly-pushed block is a freed (previously

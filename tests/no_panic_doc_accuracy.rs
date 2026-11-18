@@ -10,9 +10,14 @@ use std::fs;
 use std::path::PathBuf;
 
 fn src_path(rel: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("src")
-        .join(rel)
+    // Entries under `crates/` are crate paths relative to the manifest root
+    // (P2.1 move); everything else resolves under the root `src/` shim tree.
+    let base = if rel.starts_with("crates/") {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
+    };
+    base.join(rel)
 }
 
 fn read_src(rel: &str) -> String {
@@ -187,7 +192,7 @@ const RELEASE_SCAN_FILES: &[&str] = &[
     "alloc_core/large/alloc_core_large_cache.rs",
     "alloc_core/alloc_core/mem/realloc_fastpath.rs",
     // Fresh reservation initialization and alloc-decommit Large lifecycle.
-    "alloc_core/segment/segment_header/terminal_words.rs",
+    "crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs",
     // Global alloc_zeroed -> virgin magazine refill (opt-in virgin-zero-skip).
     "alloc_core/small/alloc_core_small_magazine.rs",
     // Small/Large reservation branches (opt-in numa-aware).

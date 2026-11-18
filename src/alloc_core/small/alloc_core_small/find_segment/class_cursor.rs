@@ -2,9 +2,11 @@
 //! §11): remember the segment the last discovery served each class from,
 //! probe it before the next scan, and start that scan after it.
 
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment::header_facade::{kind_at, meta as seg_meta};
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, FREE_LIST_NULL};
 
 use crate::alloc_core::alloc_core::{AllocCore, CLASS_CURSOR_NONE};
+use sefer_segment::support::root_compat::traits::*;
 
 impl AllocCore {
     /// Is `base` a non-null small/primordial segment whose header slot id is
@@ -13,12 +15,13 @@ impl AllocCore {
     fn live_small_slot_at(base: *mut u8, slot: usize) -> bool {
         !base.is_null()
             && matches!(
-                SegmentHeader::kind_at(base),
+                // SAFETY: `base` is the live owned segment being validated
+                // (owner scan context); header kind-byte read only.
+                kind_at(base),
                 SegmentKind::Small | SegmentKind::Primordial
             )
-            && SegmentHeader::segment_id_at(base) as usize == slot
+            && SegmentHeader::compat_segment_id_at(base) as usize == slot
     }
-
     /// B4 §11: next scan start = cursor slot + 1, or `None` (scan from 0)
     /// when no cursor is recorded or the slot is past the high-water mark.
     #[inline]
@@ -40,7 +43,7 @@ impl AllocCore {
         }
         // Slot ids are < MAX_SEGMENTS (4096), so they always fit `u16` and
         // never collide with the `u16::MAX` sentinel.
-        let slot = SegmentHeader::segment_id_at(base) as usize;
+        let slot = SegmentHeader::compat_segment_id_at(base) as usize;
         debug_assert!(slot < usize::from(CLASS_CURSOR_NONE));
         if let Ok(slot) = u16::try_from(slot) {
             self.small_class_cursor[class_idx] = slot;
@@ -108,7 +111,7 @@ impl AllocCore {
             self.cursor_miss();
             return None;
         }
-        if SegmentMeta::new(base).bin_table().head(class_idx) == FREE_LIST_NULL {
+        if seg_meta(base).compat_bin_table().compat_head(class_idx) == FREE_LIST_NULL {
             // Valid segment, drained bin: keep the cursor (it still anchors the
             // scan start); the caller runs discovery.
             #[cfg(feature = "bench-internals")]
@@ -119,7 +122,7 @@ impl AllocCore {
         // bypass discovery's local-node preference.
         #[cfg(feature = "numa-aware")]
         {
-            let seg_node = SegmentMeta::new(base).node_id_of();
+            let seg_node = seg_meta(base).node_id_of();
             if seg_node != self.current_node_cached()
                 && seg_node != crate::alloc_core::segment_header::NO_NODE_RAW
             {

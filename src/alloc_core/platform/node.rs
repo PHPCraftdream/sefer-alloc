@@ -1,604 +1,105 @@
-//! [`Node`] — the **intrusive free-list node seam**: the second confined
-//! `unsafe` module of the Phase 8 substrate.
-//!
-//! This generalizes the `concurrent::epoch::hand` discipline to raw byte spans. A
-//! freed block stores its free-list `next` pointer **inside itself** (the
-//! first word of the freed block), so the allocator's free list needs zero
-//! out-of-band metadata — the free block IS the node. This is exactly how
-//! mimalloc / jemalloc / dlmalloc implement their free lists; the cost is one
-//! irreducible pointer write/read that lives here, behind a safe membrane.
-//!
-//! ## What this module IS and is NOT
-//!
-//! - IS: a safe-to-use membrane over the two operations a free list needs:
-//!   [`Node::write_next`] (store a `*mut u8` into the first word of a free
-//!   block) and [`Node::read_next`] (load it back), plus [`Node::deref`] (the
-//!   `(segment, offset) → *mut u8` handoff — turning an integer offset into
-//!   the writable pointer the caller receives). Every `unsafe` block carries a
-//!   `// SAFETY:` proof.
-//! - IS NOT: a way to read or write the *payload* of a live allocation. Live
-//!   blocks are owned by the caller; we touch memory only at free-list node
-//!   time (when the block is in the free list) and at the handoff (handing the
-//!   freshly-allocated pointer to the caller, who then owns it).
-//!
-//! ## Why a SEPARATE seam (and not folded into `os`)
-//!
-//! The two seams have different proof obligations: `os` proves OS-allocation
-//! soundness (the span was reserved by the kernel and is owned by us); `node`
-//! proves bounds + alignment soundness (the offset is within a live segment and
-//! the write does not escape the block). Keeping them separate keeps each proof
-//! small and auditable, and matches §6 of `ALLOC_PLAN.md` which names exactly
-//! these two seams.
-
-// The crate is `#![deny(unsafe_code)]` with `alloc-core` on; this is one of the
-// TWO documented `unsafe` seams of the Phase 8 substrate (the other is
-// [`crate::alloc_core::os`]). `allow` lifts the crate-level `deny` for this file only —
-// `unsafe` anywhere else in the crate is a hard error.
+//! Compatibility wrapper over the canonical `sefer-segment` node seam.
+//! NOTE: compat wrapper — the wrapper surface is retained verbatim for
+//! historical call sites; individual wrappers are unused under narrower
+//! feature sets, so dead_code is allowed crate-file-wide.
 #![allow(unsafe_code)]
+#![allow(dead_code)]
 
-use core::mem::size_of;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(not(feature = "hardened"))]
-use super::fatal::fatal;
+use crate::alloc_core::config::continuation_bounds::ContinuationBounds;
+use sefer_segment::support::node_impl::RootNode as CanonicalNode;
 
-/// A free-list node: the first word of a freed block stores the `*mut u8` of
-/// the NEXT free block (or null for the tail). This constant is the number of
-/// bytes at the start of a free block that the allocator owns for the node —
-/// the minimum block size MUST be `>=` this (enforced by the size-class table).
-///
-/// We store a full pointer rather than an offset so the read path needs no
-/// segment-relative arithmetic (faster) and the write path is one store.
-pub(crate) const NODE_SIZE: usize = size_of::<*mut u8>();
+pub(crate) const NODE_SIZE: usize = sefer_segment::support::node_impl::NODE_SIZE;
 
-/// The intrusive free-list node membrane.
-///
-/// All functions are pure transforms on `*mut u8` and `NonNull<u8>` — they take
-/// the address of a block (already known to be valid for at least
-/// [`NODE_SIZE`] bytes by the caller) and read or write its first word. The
-/// proofs rest on the caller's bounds guarantee; this module never decides
-/// WHICH block is free — that is the safe Cartographer's job.
 pub(crate) struct Node;
 
 impl Node {
     #[cfg(feature = "hardened")]
     #[inline(always)]
     pub(crate) fn continuation_offset(base: *mut u8, next: *mut u8) -> Option<u32> {
-        let off = next.addr().checked_sub(base.addr())?;
-        if off >= crate::alloc_core::os::SEGMENT {
-            return None;
-        }
-        u32::try_from(off).ok()
+        // SAFETY: this numeric-only check dereferences neither pointer; trusted caller uses a same-segment continuation.
+        unsafe { CanonicalNode::continuation_offset(base, next) }
     }
 
-    /// Checked + validated free-list continuation offset for the pop paths
-    /// that do not run hardened's `valid_free_node` oracle (R6-T06 / review
-    /// R6-SEC-3): a corrupted `next` — below `base`, inside the header/
-    /// metadata region, at or past the segment's `bump` cursor, at/after
-    /// `SEGMENT` (the former silent `as u32` truncation for pointers ≥ 4 GiB
-    /// past the base), or not `MIN_BLOCK`-aligned — is
-    /// allocator-metadata corruption and terminates via `fatal`, never an
-    /// arithmetic-overflow panic, never a truncated or out-of-range offset
-    /// handed back as a free-list head.
     #[cfg(not(feature = "hardened"))]
     #[inline(always)]
     pub(crate) fn continuation_offset_or_fatal(
         base: *mut u8,
         next: *mut u8,
-        bounds: crate::alloc_core::config::continuation_bounds::ContinuationBounds,
+        bounds: ContinuationBounds,
     ) -> u32 {
-        // A `next` below `base` wraps to a huge offset, which the range check
-        // rejects; the cold path tells the two cases apart for the diagnostic.
-        let off = (next as usize).wrapping_sub(base as usize);
-        if !bounds.contains_aligned(off) {
-            Self::continuation_fatal(base, next)
-        }
-        off as u32
+        // SAFETY: private caller snapshots bounds from this segment under owner-exclusive access.
+        unsafe { CanonicalNode::continuation_offset_or_fatal(base, next, bounds.0) }
     }
 
-    #[cfg(not(feature = "hardened"))]
-    #[cold]
-    #[inline(never)]
-    fn continuation_fatal(base: *mut u8, next: *mut u8) -> ! {
-        if (next as usize) < (base as usize) {
-            fatal(b"node: free-list continuation precedes segment base\n")
-        }
-        fatal(b"node: free-list continuation out of range or misaligned\n")
-    }
-
-    /// Store `next` into the first word of the free block at `block`.
-    ///
-    /// After this, [`read_next`](Self::read_next)`(block)` returns `next`.
-    ///
-    /// # Safety contract for callers (this fn is safe; the contract is the
-    /// caller's invariant)
-    ///
-    /// `block` MUST point to the start of a free block of size `>=`
-    /// [`NODE_SIZE`] that the caller exclusively owns (it is in a free list,
-    /// not handed to the user). The block MUST lie within a segment owned by
-    /// this allocator. `next` is either null (tail) or another such free
-    /// block's address.
     #[inline(always)]
     pub(crate) fn write_next(block: NonNull<u8>, next: *mut u8) {
-        let ptr = block.as_ptr() as *mut *mut u8;
-        // SAFETY: `block` is non-null (from `NonNull`), aligned to at least the
-        // smallest size-class alignment (>= `NODE_SIZE`, which equals the word
-        // size — see the size-class table), and the caller guarantees it is
-        // exclusively owned (free, not user-visible). Casting to `*mut *mut u8`
-        // and writing one word is in-bounds: the block is `>= NODE_SIZE` bytes,
-        // and we write exactly `size_of::<*mut u8>()` bytes at offset 0. The
-        // write does not alias any other live reference under the SINGLE-WRITER
-        // invariant: a free-list node is touched only by the block's owning
-        // allocator thread. A legal cross-thread free transfers ownership
-        // WITHOUT writing the block: the producer resolves the address in the
-        // route directory and publishes terminally into the independent,
-        // System-backed route sidecar (a pending-bit RMW for Small/Primordial,
-        // a LIVE(g) → PENDING(g) CAS on the descriptor's own Large state word
-        // for Large) — its last access to the allocation. The block's bytes
-        // re-enter allocator control only when the owner consumes that
-        // publication during a bounded cut/reclaim pass, so while `block` is
-        // in this free list no other thread can write it: this write is
-        // exclusively the owner's. Thread-level exclusivity is the whole
-        // argument — it is NOT an aliasing-model proof: free-list links live
-        // inside freed small blocks, and a block freed through a by-value
-        // `Box` whose receiving frame is still live intersects that frame's
-        // protector under Miri's Stacked/Tree Borrows. That is the ACCEPTED
-        // P1-box limitation (`docs/CORRECTNESS_OPEN_ITEMS.md` item 164);
-        // nothing here claims the intrusive owner path is Miri-clean.
-        unsafe { ptr.write_unaligned(next) };
+        // SAFETY: private callers own a live free block with at least NODE_SIZE writable bytes.
+        unsafe { CanonicalNode::write_next(block, next) }
     }
-
-    /// Load the `next` pointer stored in the first word of the free block at
-    /// `block`.
-    ///
-    /// Returns the address previously stored by [`write_next`](Self::write_next),
-    /// or null if none. The block MUST currently be a free-list node (caller's
-    /// invariant).
     #[inline(always)]
     pub(crate) fn read_next(block: NonNull<u8>) -> *mut u8 {
-        let ptr = block.as_ptr() as *mut *mut u8;
-        // SAFETY: same bounds/alignment/exclusivity proof as `write_next`. The
-        // load is unaligned-tolerant (`read_unaligned`) so a block whose base
-        // is only `NODE_SIZE`-aligned (not `align_of::<*mut u8>()`-aligned on
-        // platforms where those differ) is still sound. We read exactly one
-        // word; the block is `>= NODE_SIZE` bytes.
-        unsafe { ptr.read_unaligned() }
+        // SAFETY: private callers pass a live free-list node with at least NODE_SIZE readable bytes.
+        unsafe { CanonicalNode::read_next(block) }
     }
-
-    /// The `(segment_base, offset) → *mut u8` handoff: turn a resolved offset
-    /// within a known-live segment into the writable pointer the caller
-    /// receives.
-    ///
-    /// `segment_base` MUST be the SEGMENT-aligned base of a segment owned by
-    /// this allocator (returned by [`crate::alloc_core::os::Segment::as_ptr`]); `offset`
-    /// MUST be `< segment_len` (the caller — the safe Cartographer — guarantees
-    /// this by construction). The resulting pointer is valid for whatever block
-    /// size the Cartographer carved at that offset.
     #[inline(always)]
-    pub(crate) fn deref(segment_base: *mut u8, offset: usize) -> *mut u8 {
-        // SAFETY: `segment_base` is the start of an OS-reserved span owned by
-        // this allocator (the `Segment` is alive — the safe Cartographer holds
-        // a borrow of the segment table that owns it). `offset < segment_len`
-        // by the caller's contract, so `segment_base + offset` lies strictly
-        // within that same allocated object — the load-bearing precondition
-        // `add` requires (per its std contract: both the start and resulting
-        // pointer must stay in bounds of the same allocation; `wrapping_add`
-        // is the variant that would need no such precondition). The resulting
-        // pointer is dereferenced later only by the user, who owns the block
-        // by then. The offset bound is the CALLER's obligation: it MUST be
-        // checked against the segment's actual usable length before this call
-        // (R6-MS-1: the address-key window can be wider than the reservation —
-        // `exact-span-large`/biased Large — so build witness addresses with
-        // `wrapping_add`/`with_addr` until the bound is proven).
-        unsafe { segment_base.add(offset) }
+    pub(crate) fn deref(base: *mut u8, offset: usize) -> *mut u8 {
+        // SAFETY: private callers prove this offset is inside their live allocation before the pointer handoff.
+        unsafe { CanonicalNode::deref(base, offset) }
     }
-
-    /// Zero `len` bytes starting at `ptr`. Used by `alloc_zeroed`.
-    ///
-    /// `ptr` MUST be valid for `len` bytes (caller's contract — typically a
-    /// freshly-allocated block whose full size is `>= len`).
+    #[inline(always)]
     pub(crate) fn zero(ptr: *mut u8, len: usize) {
-        // SAFETY: caller guarantees `[ptr, ptr+len)` is a valid writable range
-        // (a freshly-reserved or free block). `write_bytes(0)` fills it with
-        // zeroes; the range does not overlap any other live reference under the
-        // single-writer invariant: this freshly allocated block has not yet
-        // been handed to the caller. Under the terminal sidecar protocol no
-        // cross-thread producer ever writes block bytes — publication touches
-        // only the independent route sidecar — so no remote write into this
-        // range exists before or after handoff.
-        unsafe { core::ptr::write_bytes(ptr, 0, len) };
+        // SAFETY: private callers own a writable range of `len` bytes.
+        unsafe { CanonicalNode::zero(ptr, len) }
     }
-
-    /// Copy `count` non-overlapping bytes from `src` to `dst` (the realloc
-    /// move). Both ranges MUST be valid for `count` bytes and not overlap.
+    #[inline(always)]
     pub(crate) fn copy_nonoverlapping(src: *const u8, dst: *mut u8, count: usize) {
-        // SAFETY: caller guarantees both ranges are valid for `count` bytes and
-        // do not overlap (they are distinct allocations: `src` is the old
-        // block, `dst` is the freshly-allocated new block). `copy_nonoverlapping`
-        // is a memmove-free byte copy; UB only if the validity or non-overlap
-        // contract is violated, which the caller upholds.
-        unsafe { core::ptr::copy_nonoverlapping(src, dst, count) };
+        // SAFETY: private callers supply distinct live ranges of `count` bytes.
+        unsafe { CanonicalNode::copy_nonoverlapping(src, dst, count) }
     }
-
-    /// Write a typed value `value` at `dst`. The generalised hand-discipline
-    /// primitive for laying down metadata structures (segment headers, page
-    /// maps, bin tables) in segment memory.
-    ///
-    /// # Safety contract for callers (this fn is safe; the contract is the
-    /// caller's invariant)
-    ///
-    /// `dst` MUST point to `size_of::<T>()` writable bytes inside a segment
-    /// owned by this allocator, properly aligned for `T`. The caller must
-    /// exclusively own the target range (single-threaded Phase 8 guarantees
-    /// this for any metadata write). `T: Copy` so the write is a pure bit
-    /// pattern (no drop glue to mis-handle).
     #[inline(always)]
     pub(crate) fn write_struct<T: Copy>(dst: *mut T, value: T) {
-        // SAFETY: caller guarantees `dst` is valid for `size_of::<T>()` bytes,
-        // properly aligned, and exclusively owned. `T: Copy` means the write
-        // is a plain bit copy (no destructor surprise). The write does not
-        // alias any other live reference under the single-writer invariant: a
-        // metadata field is written only by its owning thread. Cross-thread
-        // free publication never writes segment bytes — it targets the
-        // independent route sidecar or the descriptor's independent state
-        // word — so nothing races this write from another thread. Metadata
-        // fields read cross-thread remain owner-only or atomic.
-        unsafe { dst.write(value) };
+        // SAFETY: private callers provide aligned, exclusively writable storage for T.
+        unsafe { CanonicalNode::write_struct(dst, value) }
     }
-
-    /// Write a single byte `value` at `dst`. Used by the page map init.
-    ///
-    /// `dst` MUST be a valid writable byte inside a segment owned by us.
-    // Only the per-block state byte writes through it; without `misuse-checks` (release) it has no caller.
-    #[cfg_attr(
-        not(any(feature = "misuse-checks", debug_assertions)),
-        allow(dead_code)
-    )]
     #[inline(always)]
     pub(crate) fn write_u8(dst: *mut u8, value: u8) {
-        // SAFETY: caller guarantees `dst` is a valid, exclusively-owned byte.
-        // One-byte write, no alignment requirement.
-        unsafe { dst.write(value) };
+        // SAFETY: private callers provide an exclusively writable byte.
+        unsafe { CanonicalNode::write_u8(dst, value) }
     }
-
-    /// Write a single `u32` `value` at `dst` (unaligned-tolerant). Used by the
-    /// bin table init.
-    #[inline(always)]
-    pub(crate) fn write_u32_unaligned(dst: *mut u32, value: u32) {
-        // SAFETY: caller guarantees `dst` is valid for 4 bytes and exclusively
-        // owned. `write_unaligned` tolerates any address; one 4-byte write.
-        unsafe { dst.write_unaligned(value) };
-    }
-
-    /// Read a single byte from `src`. Used by the page map lookup.
     #[inline(always)]
     pub(crate) fn read_u8(src: *const u8) -> u8 {
-        // SAFETY: caller guarantees `src` is a valid readable byte in a live
-        // segment. Single-threaded → no racing write.
-        unsafe { src.read() }
+        // SAFETY: private callers provide a readable byte in live memory.
+        unsafe { CanonicalNode::read_u8(src) }
     }
-
-    /// Read a single `u32` from `src` (unaligned-tolerant). Used by the bin
-    /// table head lookup.
-    #[inline(always)]
-    pub(crate) fn read_u32_unaligned(src: *const u32) -> u32 {
-        // SAFETY: caller guarantees `src` is valid for 4 bytes in a live
-        // segment. `read_unaligned` tolerates any address.
-        unsafe { src.read_unaligned() }
-    }
-
-    /// Read a typed value `*src`. The generalised hand-discipline primitive
-    /// for reading metadata from segment memory.
-    #[inline(always)]
-    pub(crate) fn read_struct<T: Copy>(src: *const T) -> T {
-        // SAFETY: caller guarantees `src` is valid for `size_of::<T>()` bytes,
-        // properly aligned, in a live segment. `T: Copy` → plain bit copy.
-        unsafe { src.read() }
-    }
-
-    /// Like [`read_struct`](Self::read_struct), but for a type `T` with ONE
-    /// `u64`-sized field that a concurrent thread may genuinely mutate via a
-    /// real atomic RMW/store — the field at byte offset `atomic_word_off`.
-    /// R2-06 (independent src review round 2, task #2008).
-    ///
-    /// A plain `read_struct::<T>` performs ONE non-atomic load over `T`'s
-    /// WHOLE byte range, including that field's bytes. Under Rust's memory
-    /// model this is a data race — and therefore undefined behavior —
-    /// against a concurrent atomic write to those SAME bytes, regardless of
-    /// whether the caller later discards or overwrites the torn value: the
-    /// race is in the non-atomic READ touching memory a concurrent atomic
-    /// operation touches, not in what happens to the result afterward
-    /// (overwriting a racily-read value does not retroactively make the read
-    /// itself sound).
-    ///
-    /// This avoids that hazard structurally: it copies the bytes BEFORE and
-    /// the bytes AFTER the atomic word via two plain (non-overlapping,
-    /// non-racing) byte copies, then fills the word itself via a REAL atomic
-    /// load (`Relaxed` — this is a snapshot read with no synchronization
-    /// obligation of its own; a caller needing to ACT on the word's value
-    /// under a synchronization protocol must use that protocol's own atomic
-    /// view, not this generic snapshot helper), so the non-atomic copies
-    /// never touch the word's bytes at all.
-    ///
-    /// `src` MUST be valid for `size_of::<T>()` bytes, properly aligned for
-    /// `T`, in a live segment. `atomic_word_off + size_of::<u64>() <=
-    /// size_of::<T>()`, and the 8 bytes at that offset MUST be `u64`-aligned
-    /// within `T`'s layout (true for every `#[repr(C)]` header field this
-    /// crate reads this way — the crate never packs a `u64` field at a
-    /// sub-8-byte alignment).
-    #[inline]
-    pub(crate) fn read_struct_with_atomic_word<T: Copy>(
-        src: *const T,
-        atomic_word_off: usize,
-    ) -> T {
-        use core::mem::MaybeUninit;
-
-        let total = size_of::<T>();
-        let word_size = size_of::<u64>();
-        debug_assert!(
-            atomic_word_off + word_size <= total,
-            "read_struct_with_atomic_word: atomic word out of range"
-        );
-        // SAFETY: caller guarantees `src` is valid+aligned for `size_of::<T>()`
-        // bytes in a live segment, and that `atomic_word_off` names a
-        // `u64`-aligned 8-byte field within that range. We split the copy
-        // into the byte ranges strictly BEFORE and strictly AFTER the atomic
-        // word (disjoint from it and from each other, so `copy_nonoverlapping`
-        // applies), leaving exactly those 8 bytes of `out` uninitialised until
-        // the atomic load below fills them — the non-atomic copies below
-        // never read the atomic word's bytes.
-        unsafe {
-            let mut out = MaybeUninit::<T>::uninit();
-            let out_ptr = out.as_mut_ptr().cast::<u8>();
-            let src_ptr = src.cast::<u8>();
-            let word_end = atomic_word_off + word_size;
-            if atomic_word_off > 0 {
-                core::ptr::copy_nonoverlapping(src_ptr, out_ptr, atomic_word_off);
-            }
-            if word_end < total {
-                core::ptr::copy_nonoverlapping(
-                    src_ptr.add(word_end),
-                    out_ptr.add(word_end),
-                    total - word_end,
-                );
-            }
-            // Real atomic load of the word, at the same offset a writer's
-            // `&AtomicU64` view (e.g. the `owner_state` word
-            // `SegmentHeader::read_at` snapshots)
-            // targets — this is the ONLY access to those 8 bytes here, so it
-            // cannot race the writer's own atomic RMW/store.
-            let atomic_ptr = src_ptr.add(atomic_word_off).cast::<AtomicU64>();
-            let word = (*atomic_ptr).load(Ordering::Relaxed);
-            core::ptr::write_unaligned(out_ptr.add(atomic_word_off).cast::<u64>(), word);
-            out.assume_init()
-        }
-    }
-
-    /// Read a single `usize` from `src` (aligned). Used by the field-specific
-    /// segment-header accessors (e.g. reading the owner-only `bump` cursor).
-    /// A field read is a single word load — it does NOT race with a concurrent
-    /// field write of a DIFFERENT field (the struct-read/struct-write RMW of
-    /// `read_struct`/`write_struct` would, because it touches every field).
-    ///
-    /// `src` MUST be valid for `size_of::<usize>()` bytes, properly aligned for
-    /// `usize`, in a live segment.
     #[inline(always)]
     pub(crate) fn read_usize(src: *const usize) -> usize {
-        // SAFETY: caller guarantees `src` is valid, aligned, in a live segment.
-        // One word load.
-        unsafe { src.read() }
+        // SAFETY: private callers provide an aligned readable usize in live memory.
+        unsafe { CanonicalNode::read_usize(src) }
     }
-
-    /// Write a single `usize` `value` at `dst` (aligned). Used by the
-    /// field-specific segment-header accessor for the owner-only `bump` cursor
-    /// (written on every `carve_block`); writing only this field avoids the
-    /// full-struct RMW that raced with cross-thread field reads.
-    ///
-    /// `dst` MUST be valid for `size_of::<usize>()` bytes, properly aligned for
-    /// `usize`, and (for fields read cross-thread under the single-writer
-    /// discipline) the field must be owner-only or atomic.
     #[inline(always)]
     pub(crate) fn write_usize(dst: *mut usize, value: usize) {
-        // SAFETY: caller guarantees `dst` is valid, aligned, exclusively owned
-        // (single-writer: the owning thread is the sole writer of its segments'
-        // bump cursors). One word store.
-        unsafe { dst.write(value) };
+        // SAFETY: private callers provide aligned, exclusively writable usize storage.
+        unsafe { CanonicalNode::write_usize(dst, value) }
     }
-
-    /// Read a single `u32` from `src` (aligned). Used by the field-specific
-    /// segment-header accessors for `segment_id` and `live_count` (single-word
-    /// owner-only / once-written fields — a field read does not race the
-    /// owner's `bump` field writes because they touch disjoint bytes). NOT used
-    /// for `magic`: that word is managed with an atomic Release store when a
-    /// deposited Large segment's magic is zeroed — see [`atomic_u32_at`].
-    ///
-    /// `src` MUST be valid for 4 bytes, 4-byte aligned, in a live segment.
-    // Used by the alloc-xthread cross-thread path; under `alloc-core` alone
-    // (no xthread) the call sites are gated out and these helpers look dead.
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub(crate) fn read_u32(src: *const u32) -> u32 {
-        // SAFETY: caller guarantees `src` is valid, 4-byte aligned, in a live
-        // segment. One 4-byte load.
-        unsafe { src.read() }
-    }
-
-    /// Read a `*mut T` pointer from `src` (aligned, word-sized). RAD-3 (E2,
-    /// task #56): used by the field-specific segment-header accessors for the
-    /// empty-small-segment pool's intrusive `pool_next`/`pool_prev` links,
-    /// which are OWNER-ONLY (mutated on every pool admit/remove) `*mut u8`
-    /// fields, not `*const u8`.
-    ///
-    /// `src` MUST be valid for `size_of::<*mut T>()` bytes, properly aligned
-    /// for a pointer, in a live segment.
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub(crate) fn read_ptr_mut<T>(src: *const *mut T) -> *mut T {
-        // SAFETY: caller guarantees `src` is valid, pointer-aligned, in a live
-        // segment. One word load.
-        unsafe { src.read() }
-    }
-
-    /// Write a `*mut T` pointer `value` at `dst` (aligned, word-sized). RAD-3
-    /// (E2, task #56); see [`read_ptr_mut`] for why the pool's link fields
-    /// need this variant rather than a `*const T` one.
-    ///
-    /// `dst` MUST be valid for `size_of::<*mut T>()` bytes, properly aligned
-    /// for a pointer, and exclusively owned (owner-only: only the segment's
-    /// owning thread's pool bookkeeping ever writes `pool_next`/`pool_prev`).
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub(crate) fn write_ptr_mut<T>(dst: *mut *mut T, value: *mut T) {
-        // SAFETY: caller guarantees `dst` is valid, pointer-aligned, and
-        // exclusively owned by the calling (owner) thread.
-        unsafe { dst.write(value) };
-    }
-
-    /// Compute `base + off` as a `*mut u8`. Callers use this for segment
-    /// metadata, bitmap/table subregions, and biased Large reservation roots
-    /// (whose offset may exceed `SEGMENT`).
-    ///
-    /// # Caller's contract
-    ///
-    /// `base` must carry provenance into one live allocation. `off` must be
-    /// `<= isize::MAX`, and `base + off` must not wrap and must remain within
-    /// that same allocation or point one-past-the-end. The caller proves this
-    /// against its actual allocation extent, not merely a segment-size bound.
     #[inline(always)]
     pub(crate) fn offset(base: *mut u8, off: usize) -> *mut u8 {
-        // SAFETY: the caller supplies a live allocation-derived `base`, an
-        // `off <= isize::MAX`, and a non-wrapping result in that allocation or
-        // one-past. `add` does not dereference the result.
-        unsafe { base.add(off) }
+        // SAFETY: private callers prove provenance, in-allocation bounds and non-wrapping arithmetic.
+        unsafe { CanonicalNode::offset(base, off) }
     }
-
-    /// Return a `&'static AtomicU32` view over the 4 aligned bytes at
-    /// `base + off`. Used for the owner's atomic Release-store zeroing of
-    /// the header `magic` when a freed Large segment is deposited into the
-    /// large cache (`alloc_core_large.rs`, `mem_impl.rs`) and for the
-    /// terminal `remote_head` word (`terminal_words.rs`). Mirrors
-    /// [`atomic_u64_at`]; see that fn's contract — the same
-    /// segment-lifetime + alignment-by-construction reasoning applies, only
-    /// the field width is 4 bytes and the alignment requirement is 4 (not 8).
-    #[cfg_attr(
-        not(any(feature = "alloc-decommit", feature = "bench-internals")),
-        allow(dead_code)
-    )]
     #[inline(always)]
     pub(crate) fn atomic_u32_at(
         base: *mut u8,
         off: usize,
     ) -> &'static core::sync::atomic::AtomicU32 {
-        let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU32;
-        // SAFETY: caller guarantees `base` is a live segment base and `off` is
-        // the offset of a properly 4-byte-aligned `AtomicU32` field within a
-        // `#[repr(C)]` (or hand-laid-out) metadata region at `base`, with
-        // `off + 4` in-bounds. LIFETIME (see the `'static` note on
-        // [`atomic_u64_at`] for the full argument): the `'static` is NOT "mapped
-        // for the whole process" — Large segments are released mid-process
-        // (`AllocCore::reclaim_large_segment` / large-cache eviction →
-        // `os::release_segment`). The backing must stay live, MAPPED, and
-        // owner-held (lease, standalone
-        // `&mut`, or the owner's unregistered cached Large reservation) for the
-        // access, and the reference must not be retained or used after
-        // `os::release_segment` (for remote frees, the
-        // producer's exactly-once claim is the terminal LIVE(g) → PENDING(g)
-        // CAS on the route descriptor's INDEPENDENT `LargeState` word —
-        // never a write into this reservation). `AtomicU32` is `Sync`, so
-        // shared atomic access from any thread is race-free.
-        unsafe { &*ptr }
+        // SAFETY: callers hold live mapped storage and do not retain this view beyond release.
+        unsafe { CanonicalNode::atomic_u32_at(base, off) }
     }
-
-    /// Construct an atomic word in exclusively owned, aligned segment metadata.
-    /// Call only on a fresh reservation, before any view or publication exists.
-    pub(crate) fn init_atomic_u32_at(base: *mut u8, off: usize, value: u32) {
-        let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU32;
-        // SAFETY: the fresh reservation owns the aligned four-byte slot, and no
-        // reference to it exists before this initialization.
-        unsafe { ptr.write(core::sync::atomic::AtomicU32::new(value)) };
-    }
-
-    /// Construct an atomic word in exclusively owned, aligned segment metadata.
-    /// Call only on a fresh reservation, before any view or publication exists.
-    pub(crate) fn init_atomic_u64_at(base: *mut u8, off: usize, value: u64) {
-        let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU64;
-        // SAFETY: the fresh reservation owns the aligned eight-byte slot, and no
-        // reference to it exists before this initialization.
-        unsafe { ptr.write(core::sync::atomic::AtomicU64::new(value)) };
-    }
-
-    /// Write a single `u32` `value` at `dst` (aligned). Same contract as
-    /// [`write_u32_unaligned`] but requires 4-byte alignment (every call site
-    /// writes an aligned header/table field: bootstrap table init and the
-    /// `magic`/`segment_id`/`node_id` field accessors).
-    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
-    pub(crate) fn write_u32(dst: *mut u32, value: u32) {
-        // SAFETY: caller guarantees `dst` is valid for 4 bytes, 4-byte aligned,
-        // and exclusively owned (bootstrap-time init). One 4-byte write.
-        unsafe { dst.write(value) };
-    }
-
-    /// Return a `&'static AtomicU64` view over the 8 aligned bytes at
-    /// `base + off`. Used to obtain a race-free atomic view over an
-    /// 8-byte-aligned `u64` field in a segment header (e.g. `owner_state`,
-    /// Release-stored by the owning heap's stamp path and read by its
-    /// fast-path/diagnostic probes, or the per-segment Large reservation
-    /// state word via `SegmentMeta::large_state_atomic`); a plain struct-field
-    /// read would race a concurrent
-    /// atomic store.
-    ///
-    /// # Caller's contract
-    ///
-    /// - `base` MUST be a live, MAPPED reservation held by its exclusive
-    ///   owner — a registry heap lease, a standalone core's `&mut`, or the
-    ///   owner's Large cache holding an unregistered cached reservation
-    ///   (the cache-hit reuse and decay/eviction/trim paths in
-    ///   `alloc_core_large.rs` and `alloc_core_large_cache_eviction.rs`) —
-    ///   or an exclusively-owned test buffer. Table registration is NOT
-    ///   required: cached reservations are legitimate.
-    /// - `base + off` MUST address an initialized, 8-byte-aligned atomic
-    ///   word within the mapped backing (an exclusively-owned test buffer
-    ///   included).
-    ///   Header callers derive this with `offset_of!` or the fixed
-    ///   terminal-words carve offsets (`terminal_words.rs`).
-    ///   `off + 8` MUST remain within the allocation.
-    /// - Pins protect route descriptors only; producers never touch these
-    ///   physical words.
-    ///
-    /// ## LIFETIME — why `'static`, and what actually backs it
-    ///
-    /// The `'static` is a SEAM convenience (it lets `registry::heap_core`,
-    /// which is `#![deny(unsafe_code)]`, hold an `&AtomicU64` into segment
-    /// metadata without its own pointer seam), NOT a whole-process mapping
-    /// claim: Large reservations — including cached ones — are released
-    /// mid-process via `os::release_segment`. The view is sound ONLY while
-    /// the mapped backing is held by its exclusive owner (heap lease,
-    /// standalone `&mut`, or the owner's Large cache for an unregistered
-    /// cached reservation), the word was initialized before any view
-    /// existed, alignment/in-bounds hold, and the reference is not retained
-    /// or used after `os::release_segment`. The producer terminal path
-    /// never reads or writes these physical words: its exactly-once claim
-    /// is the terminal LIVE(g) → PENDING(g) CAS on the route descriptor's
-    /// INDEPENDENT `LargeState` word — a System allocation kept alive by
-    /// the route pin's pin/cut rules, which is descriptor capability, not
-    /// reservation credit.
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
-    pub(crate) fn atomic_u64_at(
-        base: *mut u8,
-        off: usize,
-    ) -> &'static core::sync::atomic::AtomicU64 {
-        let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU64;
-        // SAFETY: caller guarantees `base` is a live segment base and `off` is
-        // the offset of a properly-aligned, initialized atomic word within
-        // a header or terminal-words carve at `base`, with `off + 8` in-bounds. The `'static`
-        // is sound only while the mapped backing stays owner-held and live
-        // (registered segment OR unregistered cached reservation OR owned
-        // test buffer); the caller carries the liveness argument (see
-        // the LIFETIME note in this fn's doc — segments ARE released mid-process,
-        // so this is not a whole-process mapping guarantee). `AtomicU64` is
-        // `Sync`, so shared atomic access from any thread is race-free.
-        unsafe { &*ptr }
+    pub(crate) fn write_u32(dst: *mut u32, value: u32) {
+        // SAFETY: private callers provide aligned, exclusively writable u32 storage.
+        unsafe { CanonicalNode::write_u32(dst, value) }
     }
 }

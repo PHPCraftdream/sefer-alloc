@@ -22,9 +22,7 @@ fn fresh_route_backing_reads_all_zero() {
     // garbage instead of page-luck zeros (counterfactual sensitivity).
     let poison = vec![0xA5_u8; size_of::<SmallSidecar>()];
     drop(poison);
-    let route = directory
-        .register(root, SEGMENT, root, 9, RouteKind::Small)
-        .unwrap();
+    let route = unsafe { directory.register(root, SEGMENT, root, 9, RouteKind::Small) }.unwrap();
     let sidecar = route.small_sidecar().unwrap();
     assert_eq!(sidecar.mixed_leaves_for_test(), 0);
     let pin = directory.lookup(root).unwrap();

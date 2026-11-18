@@ -21,13 +21,25 @@ use crate::alloc_core::alloc_core::AllocCore;
     feature = "alloc-xthread",
     not(feature = "numa-aware")
 ))]
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment::header_facade::{kind_at, meta as seg_meta};
 #[cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
     not(feature = "numa-aware")
 ))]
-use crate::alloc_core::segment_route::{HeapIngress, INGRESS_CELLS, INGRESS_WORDS};
+use crate::alloc_core::segment_header::{SegmentKind, FREE_LIST_NULL};
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    not(feature = "numa-aware")
+))]
+use sefer_segment::support::root_compat::traits::*;
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    not(feature = "numa-aware")
+))]
+use sefer_segment::support::root_compat::{HeapIngress, INGRESS_CELLS, INGRESS_WORDS};
 
 // The ingress cell geometry matches the table and the registry it serves.
 #[cfg(all(
@@ -49,7 +61,7 @@ impl AllocCore {
     ))]
     #[inline]
     pub(super) fn ingress(&self) -> Option<&'static HeapIngress> {
-        self.table.route_owner().and_then(HeapIngress::of)
+        self.table.route_owner().and_then(HeapIngress::compat_of)
     }
 
     /// SC-6: whether a negative discovery answer is trusted (armed heap), so
@@ -94,7 +106,7 @@ impl AllocCore {
         ingress: &'static HeapIngress,
     ) -> Option<*mut u8> {
         let mut hit = None;
-        ingress.take(|i| {
+        ingress.compat_take(|i| {
             if let Some(base) = self.drain_notified_slot(i, class_idx) {
                 hit.get_or_insert(base);
             }
@@ -126,11 +138,7 @@ impl AllocCore {
             return None;
         }
         let base = self.table.base_at(i);
-        if base.is_null()
-            || !matches!(
-                SegmentHeader::kind_at(base),
-                SegmentKind::Small | SegmentKind::Primordial
-            )
+        if base.is_null() || !matches!(kind_at(base), SegmentKind::Small | SegmentKind::Primordial)
         {
             return None;
         }
@@ -143,6 +151,6 @@ impl AllocCore {
             SidecarDrainOutcome::Decommitted { pooled: false } => return None,
             _ => {}
         }
-        (SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL).then_some(base)
+        (seg_meta(base).compat_bin_table().compat_head(class_idx) != FREE_LIST_NULL).then_some(base)
     }
 }

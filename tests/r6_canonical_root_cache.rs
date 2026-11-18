@@ -27,7 +27,9 @@ fn cache_fill_hit_evict_and_reuse_keep_stored_provenance() {
     let key_addr = SegmentHashHarness::base_for_index(7).addr();
     assert_ne!(key_addr, root.addr());
     let narrow = (&mut bytes[0] as *mut u8).with_addr(key_addr);
-    table.insert_root_for_key(narrow, root);
+    // SAFETY: synthetic segment-aligned key value; the root is a live heap allocation
+    // owned for the test's duration (harness contract: roots are returned, never dereferenced here).
+    unsafe { table.insert_root_for_key(narrow, root) };
 
     #[cfg(feature = "bench-internals")]
     let before = (
@@ -56,7 +58,9 @@ fn cache_fill_hit_evict_and_reuse_keep_stored_provenance() {
 
     let mut replacement = Box::new([0x56_u8, 0x78]);
     let replacement_root = replacement.as_mut_ptr();
-    table.insert_root_for_key(narrow, replacement_root);
+    // SAFETY: synthetic segment-aligned key value; the root is a live heap allocation
+    // owned for the test's duration (harness contract: roots are returned, never dereferenced here).
+    unsafe { table.insert_root_for_key(narrow, replacement_root) };
     let address_only = core::ptr::without_provenance_mut::<u8>(key_addr);
     assert!(table.contains_cached(address_only));
     let canonical = table.canonical(address_only).expect("re-registered entry");
@@ -72,7 +76,9 @@ fn hash_identity_without_a_stored_root_is_not_a_live_member() {
     let root = bytes.as_mut_ptr();
     let key = SegmentHashHarness::base_for_index(13);
     let mut table = SegmentHashHarness::new();
-    table.insert_root_for_key(key, root);
+    // SAFETY: synthetic segment-aligned key value; the root is a live heap allocation
+    // owned for the test's duration (harness contract: roots are returned, never dereferenced here).
+    unsafe { table.insert_root_for_key(key, root) };
     table.hide_root_for_test(root);
 
     assert!(!table.contains_cached(key));

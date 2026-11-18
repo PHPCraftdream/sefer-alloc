@@ -27,14 +27,16 @@ use crate::alloc_core::node::Node;
 #[cfg(feature = "internals")]
 use crate::alloc_core::os;
 #[cfg(feature = "internals")]
-use crate::alloc_core::segment_header::{
-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
-};
+use crate::alloc_core::segment::header_facade::{kind_at, meta as seg_meta};
+#[cfg(feature = "internals")]
+use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentKind, FREE_LIST_NULL};
 #[cfg(feature = "internals")]
 use crate::alloc_core::size_classes::{SizeClasses, SMALL_CLASS_COUNT};
 
 #[cfg(feature = "internals")]
 use crate::alloc_core::alloc_core::AllocCore;
+#[cfg(feature = "internals")]
+use sefer_segment::support::root_compat::traits::*;
 
 #[cfg(feature = "internals")]
 impl AllocCore {
@@ -45,12 +47,14 @@ impl AllocCore {
         let key = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(key)?;
         if !matches!(
-            SegmentHeader::kind_at(base),
+            // SAFETY: `base` is the live table-owned segment (diag read-only).
+            kind_at(base),
             SegmentKind::Small | SegmentKind::Primordial
         ) {
             return None;
         }
-        Some(SegmentMeta::new(base).live_count_of())
+        // SAFETY: `base` is the live table-owned segment (diag read-only).
+        Some(seg_meta(base).compat_live_count_of())
     }
     /// TEST-ONLY (E1, task W4): drive [`carve_batch`](Self::carve_batch)
     /// directly (it is a private internal), so the equivalence regression test
@@ -88,13 +92,10 @@ impl AllocCore {
         if class_idx >= SMALL_CLASS_COUNT {
             return FREE_LIST_NULL;
         }
-        if !matches!(
-            SegmentHeader::kind_at(base),
-            SegmentKind::Small | SegmentKind::Primordial
-        ) {
+        if !matches!(kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
             return FREE_LIST_NULL;
         }
-        SegmentMeta::new(base).bin_table().head(class_idx)
+        seg_meta(base).compat_bin_table().compat_head(class_idx)
     }
 
     /// TEST-ONLY (Э7, task #161): whether `ptr`'s block's state byte is in
@@ -115,17 +116,14 @@ impl AllocCore {
         let Some(base) = self.table.canonical_base_of(candidate) else {
             return false;
         };
-        if !matches!(
-            SegmentHeader::kind_at(base),
-            SegmentKind::Small | SegmentKind::Primordial
-        ) {
+        if !matches!(kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
             return false;
         }
         let off = (ptr as usize - base as usize) as u32;
         // B4 (в): decode the state byte by STATE only (`byte != 0 &&
         // byte >> 6 == FREE`); class-field mismatches are not this probe's
         // concern.
-        let byte = SegmentMeta::new(base).state_byte().read(off);
+        let byte = seg_meta(base).compat_state_byte().compat_read(off);
         byte != 0 && (byte >> 6) == crate::alloc_core::state_byte::StateByte::FREE
     }
 
@@ -174,7 +172,7 @@ impl AllocCore {
         next_raw: *mut u8,
     ) -> bool {
         let base = os::segment_base_of_ptr(ptr);
-        let head_off = SegmentMeta::new(base).bin_table().head(class_idx);
+        let head_off = seg_meta(base).bin_table().head(class_idx);
         if head_off == FREE_LIST_NULL {
             return false;
         }
@@ -247,7 +245,7 @@ impl AllocCore {
             "dbg_state_bytes_for: out.len() exceeds StateByte::FOOTPRINT"
         );
         let base = os::segment_base_of_ptr(ptr);
-        let state_base = Node::offset(base, SegLayout::state_byte_off());
+        let state_base = Node::offset(base, SegLayout::compat_state_byte_off());
         for (i, byte) in out.iter_mut().enumerate() {
             *byte = Node::read_u8(Node::offset(state_base, i));
         }
@@ -274,12 +272,14 @@ impl AllocCore {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(candidate)?;
         if !matches!(
-            SegmentHeader::kind_at(base),
+            // SAFETY: `base` is the live table-owned segment (diag read-only).
+            kind_at(base),
             SegmentKind::Small | SegmentKind::Primordial
         ) {
             return None;
         }
-        Some(SegmentMeta::new(base).committed_payload_end_of())
+        // SAFETY: `base` is the live table-owned segment (diag read-only).
+        Some(seg_meta(base).compat_committed_payload_end_of())
     }
 
     /// TEST-ONLY (B2, R7 Workstream B): snapshot of the process-wide
@@ -388,10 +388,10 @@ impl AllocCore {
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
     pub unsafe fn dbg_payload_start_for(&self, ptr: *mut u8) -> usize {
         let base = os::segment_base_of_ptr(ptr);
-        if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
-            SegLayout::primordial_meta_end()
+        if kind_at(base) == SegmentKind::Primordial {
+            SegLayout::compat_primordial_meta_end()
         } else {
-            SegLayout::small_meta_end()
+            SegLayout::compat_small_meta_end()
         }
     }
 
@@ -408,14 +408,11 @@ impl AllocCore {
     pub fn dbg_state_byte_state_for(&self, ptr: *mut u8) -> Option<u8> {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(candidate)?;
-        if !matches!(
-            SegmentHeader::kind_at(base),
-            SegmentKind::Small | SegmentKind::Primordial
-        ) {
+        if !matches!(kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
             return None;
         }
         let off = (ptr as usize - base as usize) as u32;
-        let byte = SegmentMeta::new(base).state_byte().read(off);
+        let byte = seg_meta(base).compat_state_byte().compat_read(off);
         Some(byte >> 6)
     }
 }

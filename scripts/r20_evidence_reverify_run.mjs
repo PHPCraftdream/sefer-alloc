@@ -84,7 +84,7 @@ function mutantPreflight(mutant, root = ROOT) {
   const path = resolve(root, mutant.file);
   const relativePath = relative(root, path);
   if (isAbsolute(mutant.file) || path === root || isAbsolute(relativePath) || relativePath === '..' ||
-      relativePath.startsWith(`..${sep}`) || !/^(?:src\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.rs|tests\/loom_[A-Za-z0-9_.-]+\.rs)$/.test(mutant.file) ||
+      relativePath.startsWith(`..${sep}`) || !/^(?:src\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.rs|crates\/(?:[A-Za-z0-9_.-]+\/)*src\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.rs|tests\/loom_[A-Za-z0-9_.-]+\.rs)$/.test(mutant.file) ||
       mutant.file.split('/').some((part) => part === '.' || part === '..')) throw Error('mutant path escape');
   if (!path.startsWith(root + sep)) throw Error('mutant path escape');
   let current = root;
