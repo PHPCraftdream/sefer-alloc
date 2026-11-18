@@ -297,15 +297,20 @@ impl HeapCore {
                 if new_size > old_layout.size()
                     && new_size >= MEDIUM_REALLOC_PROMOTION_THRESHOLD
                     && matches!(
-                        BlockKind::of(
-                            base,
-                            crate::alloc_core::size_classes::SizeClasses::class_for(
-                                old_layout
-                                    .size()
-                                    .max(crate::alloc_core::size_classes::MIN_BLOCK),
-                                old_layout.align(),
-                            ),
-                        ),
+                        // SAFETY: `base` is the aligned base of this owner's
+                        // live segment with an initialized header (validated
+                        // by the caller's `realloc` ownership check).
+                        unsafe {
+                            BlockKind::of(
+                                base,
+                                crate::alloc_core::size_classes::SizeClasses::class_for(
+                                    old_layout
+                                        .size()
+                                        .max(crate::alloc_core::size_classes::MIN_BLOCK),
+                                    old_layout.align(),
+                                ),
+                            )
+                        },
                         BlockKind::Small { .. } | BlockKind::Primordial
                     )
                 {
@@ -367,8 +372,10 @@ impl HeapCore {
                         .size()
                         .max(crate::alloc_core::size_classes::MIN_BLOCK);
                     let new_eff = new_size.max(crate::alloc_core::size_classes::MIN_BLOCK);
-                    let large_shrink =
-                        new_eff < old_eff && SegmentHeader::kind_at(base) == SegmentKind::Large;
+                    let large_shrink = new_eff < old_eff
+                        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+                        && unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }
+                            == SegmentKind::Large;
                     if large_shrink {
                         // The successful fallback keeps the block in place,
                         // so a pending first-life control observation must be
@@ -377,7 +384,10 @@ impl HeapCore {
                         // (same capture-before-clear contract as the grow
                         // paths). The truly failed legs above returned before
                         // any header write and preserve the token untouched.
-                        let hdr = SegmentHeader::read_at(base);
+                        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
+                        let hdr = unsafe {
+                            crate::alloc_core::segment_header::SegmentHeader::read_at(base)
+                        };
                         if ptr.addr() == base.addr() + hdr.payload_offset {
                             #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
                             if hdr.thp_observation != 0 {
@@ -406,13 +416,25 @@ impl HeapCore {
                 // unknown token's defensive error is attributed to the
                 // reallocated mapping's own request size.
                 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-                if SegmentHeader::kind_at(base) == SegmentKind::Large {
-                    let token = SegmentHeader::thp_observation_at(base);
+                // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+                if unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }
+                    == SegmentKind::Large
+                {
+                    #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+                    // SAFETY: `base` is the aligned base of this owner's live
+                    // Large segment with an initialized header; the
+                    // observation field is plain and owner-only.
+                    let token = unsafe { SegmentHeader::thp_observation_at(base) };
                     if token != 0 {
-                        let size = SegmentHeader::read_at(base).large_size;
+                        let size =
+                            // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
+                            unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(base) }.large_size;
                         ThpRuntime::note_realloc_invalidated_by_token(token, size);
                     }
-                    SegmentHeader::set_thp_observation_at(base, 0);
+                    #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+                    // SAFETY: same exclusive owner-realloc access as the read
+                    // above; the observation field is plain, owner-written only.
+                    let () = unsafe { SegmentHeader::set_thp_observation_at(base, 0) };
                 }
                 crate::alloc_core::node::Node::copy_nonoverlapping(block, new_ptr, copy);
                 // F6 (task #494): `base` is already in hand from the
@@ -537,8 +559,14 @@ impl HeapCore {
                 let root = route.root();
                 let frontier_ok = match route.kind() {
                     RouteKind::Large => {
-                        let committed_end =
-                            root.addr().checked_add(SegmentHeader::span_usable_at(root));
+                        let committed_end = root
+                            .addr()
+                            // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the read follows the header's `span_usable` field discipline.
+                            .checked_add(unsafe {
+                                crate::alloc_core::segment_header::SegmentHeader::span_usable_at(
+                                    root,
+                                )
+                            });
                         match ptr.addr().checked_add(old_layout.size()) {
                             Some(read_end) => committed_end.is_some_and(|end| read_end <= end),
                             None => false,
@@ -608,11 +636,13 @@ impl HeapCore {
     ///
     /// A promoted block is not a hybrid — it becomes a GENUINE, ordinary
     /// Large-segment allocation the moment `AllocCore::alloc_large` returns
-    /// it. `SegmentHeader::kind_at(base)` (the SAME mechanism every other Large
+    // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+    /// it. `unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }` (the SAME mechanism every other Large
     /// block's `dealloc`/shrink-realloc already uses to decide routing) reads
     /// `Large` for this segment exactly as it would for any other Large
     /// allocation — `dealloc` and `realloc` route purely off
-    /// `SegmentHeader::kind_at(base)`, never off the caller-supplied
+    // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+    /// `unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }`, never off the caller-supplied
     /// `Layout`'s size (see the OPT-G doc comment on
     /// `AllocCore::try_realloc_inplace_known_base` in `alloc_core.rs`). So a
     /// LATER shrink back below the medium range takes the ordinary
@@ -685,6 +715,7 @@ impl HeapCore {
     /// `medium_promotion_reachable!` macro defined in `free/dealloc.rs`,
     /// not hand-written.
     #[cfg_attr(not(any(feature = "misuse-checks", debug_assertions)), allow(unused_variables))]
+    #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
     fn try_promote_to_large(
         &mut self,
         owned: crate::alloc_core::OwnedBlock,

@@ -5,7 +5,7 @@
 //! Every item here is `alloc-segment-directory`-gated.
 
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_header::FREE_LIST_NULL;
 
 use crate::alloc_core::alloc_core::AllocCore;
 
@@ -19,13 +19,15 @@ use crate::alloc_core::alloc_core::AllocCore;
 /// `clear_bit_all_nodes`).
 #[cfg(feature = "alloc-segment-directory")]
 #[inline]
+#[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
 fn directory_node_id_of(base: *mut u8) -> u32 {
     #[cfg(feature = "numa-aware")]
     {
         if base.is_null() {
             0
         } else {
-            SegmentMeta::new(base).node_id_of()
+            // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+            unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }.node_id_of()
         }
     }
     #[cfg(not(feature = "numa-aware"))]
@@ -90,7 +92,12 @@ impl AllocCore {
         // `Send` nor `Sync`) rules out a concurrent writer, and no other
         // reference to this sidecar is live across this call.
         let dir = unsafe { crate::alloc_core::sidecar::deref_mut(ptr, &*self) };
-        dir.rebuild_from_table(&self.table);
+        // SAFETY: `dir` is the freshly materialized owner directory and
+        // `&self.table` the live table (exclusive owner rebuild step).
+        #[allow(unsafe_code)]
+        unsafe {
+            dir.rebuild_from_table(&self.table)
+        };
 
         self.directory_sidecar = ptr;
         self.directory_sidecar_vm = Some(vm);
@@ -243,6 +250,7 @@ impl AllocCore {
     /// the correct per-node bucket.
     ///
     /// No-op if the directory is not materialised or `changed_classes == 0`.
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(crate) fn sync_directory_for_segment_classes(
         &mut self,
         base: *mut u8,
@@ -254,7 +262,8 @@ impl AllocCore {
         }
         if let Some(dir) = self.directory_mut() {
             let node_id = directory_node_id_of(base);
-            let meta = SegmentMeta::new(base);
+            // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+            let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
             let bt = meta.bin_table();
             let mut bits = changed_classes;
             while bits != 0 {

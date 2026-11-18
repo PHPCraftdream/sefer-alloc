@@ -27,9 +27,7 @@ fn drop_frees_exactly_the_promoted_leaves() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let route = directory
-        .register(root, SEGMENT, root, 21, RouteKind::Small)
-        .unwrap();
+    let route = unsafe { directory.register(root, SEGMENT, root, 21, RouteKind::Small) }.unwrap();
     let sidecar = route.small_sidecar().unwrap();
     // Leaves spanning three presence words (0/1/63 -> word 0, 64 -> word 1,
     // 1023 -> word 15 bit 63).
@@ -76,9 +74,7 @@ fn leaves_share_system_chunks_and_drop_frees_every_chunk() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let route = directory
-        .register(root, SEGMENT, root, 21, RouteKind::Small)
-        .unwrap();
+    let route = unsafe { directory.register(root, SEGMENT, root, 21, RouteKind::Small) }.unwrap();
     let sidecar = route.small_sidecar().unwrap();
     // 7 is coprime with 1024, so `i * 7 % 1024` visits 33 distinct leaves.
     for i in 0..33usize {

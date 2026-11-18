@@ -21,13 +21,23 @@ use crate::alloc_core::alloc_core::AllocCore;
     feature = "alloc-xthread",
     not(feature = "numa-aware")
 ))]
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
 #[cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
     not(feature = "numa-aware")
 ))]
-use crate::alloc_core::segment_route::{HeapIngress, INGRESS_CELLS, INGRESS_WORDS};
+use crate::alloc_core::segment_header::{SegmentKind, FREE_LIST_NULL};
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    not(feature = "numa-aware")
+))]
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    not(feature = "numa-aware")
+))]
+use sefer_segment::segment_route::{HeapIngress, INGRESS_CELLS, INGRESS_WORDS};
 
 // The ingress cell geometry matches the table and the registry it serves.
 #[cfg(all(
@@ -121,14 +131,18 @@ impl AllocCore {
         feature = "alloc-xthread",
         not(feature = "numa-aware")
     ))]
+    #[allow(unsafe_code)]
+    // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     fn drain_notified_slot(&mut self, i: usize, class_idx: usize) -> Option<*mut u8> {
         if i >= self.table.count() as usize {
             return None;
         }
         let base = self.table.base_at(i);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
         if base.is_null()
             || !matches!(
-                SegmentHeader::kind_at(base),
+                unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) },
                 SegmentKind::Small | SegmentKind::Primordial
             )
         {
@@ -143,6 +157,11 @@ impl AllocCore {
             SidecarDrainOutcome::Decommitted { pooled: false } => return None,
             _ => {}
         }
-        (SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL).then_some(base)
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        (unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }
+            .bin_table()
+            .head(class_idx)
+            != FREE_LIST_NULL)
+            .then_some(base)
     }
 }

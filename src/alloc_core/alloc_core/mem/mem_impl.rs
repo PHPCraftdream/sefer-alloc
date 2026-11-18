@@ -24,7 +24,9 @@ use crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime;
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{BlockKind, SegmentHeader, SegmentKind, SegmentMeta};
+#[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
+use crate::alloc_core::segment_header::SegmentHeader;
+use crate::alloc_core::segment_header::{BlockKind, SegmentKind};
 use crate::alloc_core::size_classes::AllocKind;
 
 impl AllocCore {
@@ -44,6 +46,7 @@ impl AllocCore {
     /// The returned block is dereferenceable only to the extent established
     /// by the allocation/layout contract; membership alone is not enough.
     #[inline]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(crate) fn canonical_block_of(&mut self, ptr: *mut u8) -> Option<(*mut u8, *mut u8)> {
         // X-null: no hot null check. Null's key is 0; the memo stores only
         // real bases or `LAST_EMPTY_KEY` and the table only segment bases
@@ -58,12 +61,18 @@ impl AllocCore {
         // `root == candidate` and `ptr - root == ptr & (SEGMENT - 1)`.
         // That equality is what makes the mask exact (debug-asserted below);
         // `off < SEGMENT` keeps `block` inside `root`'s reservation.
-        let off = if SegmentHeader::kind_at(base) == SegmentKind::Large {
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let off = if unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }
+            == SegmentKind::Large
+        {
             // R6-MS-1 (T22): bound the caller-derived offset BEFORE
             // `Node::deref`'s `add` — a foreign address sharing the 4 MiB key
             // window must reject without forming an out-of-bounds witness.
             let off = ptr.addr().wrapping_sub(base.addr());
-            if off >= SegmentHeader::span_usable_at(base) {
+            // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the read follows the header's `span_usable` field discipline.
+            if off
+                >= unsafe { crate::alloc_core::segment_header::SegmentHeader::span_usable_at(base) }
+            {
                 return None;
             }
             off
@@ -275,7 +284,8 @@ impl AllocCore {
     ///   - `segment_base_of_ptr(ptr)` — an address key, never dereferenced.
     ///   - `canonical_block_of(ptr)` — the foreign-pointer guard and
     ///     allocator-owned metadata root/block in one cache-filling lookup.
-    ///   - `SegmentHeader::kind_at(base)` — ONE byte field read (via
+    // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+    ///   - `unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }` — ONE byte field read (via
     ///     `offset_of!`) to distinguish Large from Small/Primordial. This is
     ///     the minimum read necessary: Large blocks are freed by marking the
     ///     segment (no class free list), Small/Primordial go to the BinTable;
@@ -348,6 +358,7 @@ impl AllocCore {
         not(any(feature = "misuse-checks", debug_assertions)),
         allow(unused_variables)
     )]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     fn dealloc_large_at_base(&mut self, ptr: *mut u8, base: *mut u8) {
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if Self::reject_large_interior_free(base, ptr) {
@@ -364,7 +375,8 @@ impl AllocCore {
         }
         // LIVE carries this instance's sole credit until the owner
         // claims it. A failed claim must not unregister or unmap it.
-        let terminal_meta = SegmentMeta::new(base);
+        // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+        let terminal_meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
         let state = crate::alloc_core::large::reservation_state::LargeReservationState::new(
             terminal_meta.large_state_atomic(),
         );
@@ -398,7 +410,8 @@ impl AllocCore {
             self.maybe_decay_small_pool();
         }
 
-        let stale = SegmentHeader::read_at(base);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
+        let stale = unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(base) };
 
         #[cfg(feature = "alloc-decommit")]
         {
@@ -515,7 +528,11 @@ impl AllocCore {
                 // NULL the table slot WITHOUT releasing the OS reservation.
                 // The cached entry owns the reservation; AllocCore::drop
                 // releases it explicitly from the large_cache array.
-                self.table.unregister(base);
+                // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+                #[allow(unsafe_code)]
+                unsafe {
+                    self.table.unregister(base)
+                };
                 // Zero the magic: the atomic store updates owner-side
                 // cached-header state. Foreign frees resolve route
                 // descriptors and sidecars, not reservation headers.
@@ -532,7 +549,8 @@ impl AllocCore {
                 // could observe a live header concurrently with this owner
                 // write under a stale/duplicate remote free — misuse of
                 // the `GlobalAlloc` contract the defensive reads exist to
-                // survive without UB). `stale` is a fresh `read_at(base)`
+                // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
+                // survive without UB). `stale` is a fresh `unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(base) }`
                 // taken just above, so every OTHER field of `hdr_zero`
                 // is byte-identical to what is already in memory — the
                 // full-struct write's only REAL effect was zeroing
@@ -546,7 +564,8 @@ impl AllocCore {
                 // read never races a torn/non-atomic store — those other
                 // three fields are untouched here, so no write to them is
                 // needed at all.
-                let magic_off = core::mem::offset_of!(SegmentHeader, magic);
+                let magic_off =
+                    core::mem::offset_of!(crate::alloc_core::segment_header::SegmentHeader, magic);
                 Node::atomic_u32_at(base, magic_off)
                     .store(0, core::sync::atomic::Ordering::Release);
                 if !state.cache_consumed(generation) {
@@ -584,7 +603,11 @@ impl AllocCore {
             // the slot for reuse; mirrors `reclaim_large_segment`'s
             // ordering), THEN release — Drop's `table.bases()` walk
             // will no longer see `base`, so there is no double-free.
-            self.table.unregister(base);
+            // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+            #[allow(unsafe_code)]
+            unsafe {
+                self.table.unregister(base)
+            };
             if !state.release_consumed(generation) {
                 fatal(b"mem_impl: consumed release failed\n");
             }
@@ -597,7 +620,12 @@ impl AllocCore {
             // admission-reject branch above (task #125) — deferring
             // to `Drop` leaks the reservation AND the `SegmentTable`
             // slot for the remaining process lifetime.
-            self.table.unregister(base);
+            // SAFETY: base is the live, owner-exclusive Large segment being released
+            // through the terminal funnel; the caller proved it in this branch.
+            #[allow(unsafe_code)]
+            unsafe {
+                self.table.unregister(base)
+            };
             if !state.release_consumed(generation) {
                 fatal(b"mem_impl: consumed release failed\n");
             }
@@ -624,7 +652,8 @@ impl AllocCore {
         // Large (free = mark segment) from Small/Primordial (free = push to
         // BinTable). `kind` is immutable after init, so this byte read is
         // race-free against the owner's disjoint `bump` writes.
-        match SegmentHeader::kind_at(base) {
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        match unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) } {
             SegmentKind::Large => self.dealloc_large_at_base(ptr, base),
             SegmentKind::Small | SegmentKind::Primordial => {
                 // Derive the class from the caller's `Layout` (pure
@@ -646,7 +675,8 @@ impl AllocCore {
                 // Small/Primordial segment degrades to `Unknown` (the same
                 // no-op reject the former `classify`-based `AllocKind::Large`
                 // arm produced) instead of guessing.
-                match BlockKind::of(base, class) {
+                // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+                match unsafe { crate::alloc_core::segment_header::BlockKind::of(base, class) } {
                     BlockKind::Small { class_idx } => self.dealloc_small(base, ptr, class_idx),
                     // Primordial carries no class of its own: the BinTable
                     // free that serves it is the Small segment's.
@@ -843,13 +873,25 @@ impl AllocCore {
         // read BEFORE the clear so an unknown token's defensive error is
         // attributed to the reallocated mapping's own request size.
         #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-        if SegmentHeader::kind_at(base) == SegmentKind::Large {
-            let token = SegmentHeader::thp_observation_at(base);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        if unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }
+            == SegmentKind::Large
+        {
+            #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+            // SAFETY: `base` is the aligned base of this owner's live segment
+            // with an initialized header; the field is plain and owner-only.
+            let token = unsafe { SegmentHeader::thp_observation_at(base) };
             if token != 0 {
-                let size = SegmentHeader::read_at(base).large_size;
+                // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
+                let size =
+                    unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(base) }
+                        .large_size;
                 ThpRuntime::note_realloc_invalidated_by_token(token, size);
             }
-            SegmentHeader::set_thp_observation_at(base, 0);
+            #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+            // SAFETY: `base` is the aligned base of this owner's live segment
+            // with an initialized header; the field is plain, owner-written only.
+            let () = unsafe { SegmentHeader::set_thp_observation_at(base, 0) };
         }
         let copy = old_layout.size().min(new_size);
         Node::copy_nonoverlapping(block, new_ptr, copy);

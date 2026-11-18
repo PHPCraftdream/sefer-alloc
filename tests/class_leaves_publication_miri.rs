@@ -37,7 +37,7 @@ mod alloc_core {
 
 // Only ClassLeaves is exercised; the included scanner/bitmap siblings are unused.
 #[allow(dead_code)]
-#[path = "../src/alloc_core/segment/remote_bitmap/mod.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/remote_bitmap/mod.rs"]
 mod remote_bitmap;
 
 // Ghost checks in the included production files (docs/GHOST_CHECKS_PLAN.md):

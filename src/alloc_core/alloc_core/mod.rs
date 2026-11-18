@@ -110,3 +110,5 @@ mod state;
 
 mod alloc_core_impl;
 pub use alloc_core_impl::*;
+
+// P2.1: header facade compatibility path for the bootstrap/header seams

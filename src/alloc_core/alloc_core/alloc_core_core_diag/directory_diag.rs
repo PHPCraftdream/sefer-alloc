@@ -4,9 +4,9 @@
 //! `alloc_core_core_diag.rs`; pure code movement, no behavior changed).
 
 use crate::alloc_core::alloc_core::AllocCore;
-use crate::alloc_core::directory_stats;
 #[cfg(feature = "alloc-segment-directory")]
-use crate::alloc_core::segment_layout::word_bit;
+use sefer_segment::segment::segment_layout::word_bit;
+use sefer_segment::support::directory_counters as directory_stats;
 
 /// Sol-F1 (task #563): `internals`-gated — every other `dbg_*` diagnostic
 /// hook in this file. See this file's module doc for the full rationale.
@@ -20,7 +20,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_rescue_oom_avoided() -> u64 {
-        directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED.load(core::sync::atomic::Ordering::Relaxed)
+        directory_stats::directory_rescue_oom_avoided().load(core::sync::atomic::Ordering::Relaxed)
     }
 
     // ── R7-A1: directory sidecar introspection ────────────────────────────
@@ -233,7 +233,7 @@ impl AllocCore {
             let seg = self.find_segment_with_free_forced(class_idx);
             if seg.is_some() {
                 #[cfg(feature = "alloc-stats")]
-                crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                directory_stats::directory_rescue_oom_avoided()
                     .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             }
             seg
@@ -466,7 +466,12 @@ impl AllocCore {
             // the production self-heal call sites
             // (`publish_empty`/`sync_directory_for_segment_classes`) already
             // do (they never touch `node_ids` either).
-            dir.rebuild_from_table(&self.table);
+            // SAFETY: `dir` is the owner-initialized directory sidecar and
+            // `&self.table` the live registered table (owner-exclusive diag).
+            #[allow(unsafe_code)]
+            unsafe {
+                dir.rebuild_from_table(&self.table)
+            };
             true
         }
         #[cfg(not(feature = "alloc-segment-directory"))]

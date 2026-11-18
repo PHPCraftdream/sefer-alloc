@@ -86,7 +86,7 @@ miri/kani). Если краснеет только один из двух, пр�
 | P4 | реестр: claim/selector, free-set, spill, saturation | `claim.rs`, `src/registry/bootstrap/{free_slot_hint,saturation,registry}.rs` | `loom_r11_registry_claim.rs`, `loom_r6_selector_model.rs`, `loom_r19_registry_free_set.rs`, `loom_r20_heap_reuse_spill.rs`, `loom_registry_free_slots.rs` (реальный `tagged_index_stack`) | S | R4c-02 |
 | P5 | pin маршрута: lookup ‖ unlink ‖ last-pin release | `src/registry/segment_route/directory.rs` (`EntryHandle`), `pin.rs` | `loom_route_pin_unlink.rs` | S | — (correctness item 186) |
 | P6 | кэш pin маршрута, быстрый путь | `src/registry/heap_core_xthread/route_pin_cache.rs` | `loom_b4_r1_pin_cache.rs` | A | — |
-| P7 | sidecar bitmap: publish / guarded cut / scan | `src/alloc_core/segment/remote_bitmap/*` | `loom_sidecar_bitmap_actual.rs`, `loom_b4_scan_skip_empty_publish.rs` (A); `loom_sidecar_bitmap.rs` (S); пин `r11_ph5b_c5_sidecar_ordering_pinned.rs` | A+S | R0-21 |
+| P7 | sidecar bitmap: publish / guarded cut / scan | `crates/core/sefer-segment/src/segment/remote_bitmap/*` | `loom_sidecar_bitmap_actual.rs`, `loom_b4_scan_skip_empty_publish.rs` (A); `loom_sidecar_bitmap.rs` (S); пин `r11_ph5b_c5_sidecar_ordering_pinned.rs` | A+S | R0-21 |
 | P8 | small sidecar: публикация указателя листа, время жизни pin | `src/registry/segment_route/small_sidecar.rs`, `leaf_classes.rs` | `loom_r11_small_sidecar.rs` | S | R0-22 |
 | P9 | terminal Large: phase word | `src/registry/segment_route/pin.rs` (`publish_large`) и состояние Large-резервации | `loom_terminal_large.rs` | S | R0-21 |
 | P10 | terminal owner drain: кредиты владельца ‖ cut | `src/alloc_core/alloc_core/sidecar_drain.rs` | `loom_terminal_owner_drain.rs` | S | R0-21, R5b-10 |

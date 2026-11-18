@@ -24,7 +24,7 @@
     }
   ],
   "mutant": {
-    "file": "src/alloc_core/platform/node.rs",
+    "file": "crates/core/sefer-segment/src/support/node.rs",
     "find": "        unsafe { ptr.write_unaligned(next) };\n",
     "replace": "        unsafe { ptr.write_unaligned(next.wrapping_add(1)) };\n",
     "steps": [

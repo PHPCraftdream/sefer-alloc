@@ -47,7 +47,8 @@ fn unregistered_segment_aligned_key_misses() {
     let mut harness = SegmentHashHarness::new();
     let other = SegmentHashHarness::base_for_index(7);
     let inserted_base = SegmentHashHarness::base_for_index(2);
-    harness.insert(inserted_base);
+    // SAFETY: synthetic base value; harness contract — stored/compared, never dereferenced.
+    unsafe { harness.insert(inserted_base) };
 
     // The never-registered key misses through both lookup paths...
     assert!(harness.canonical(other).is_none());
@@ -76,7 +77,8 @@ fn cache_hit_returns_registered_root() {
     let mut harness = SegmentHashHarness::new();
     let key = SegmentHashHarness::base_for_index(3);
     let root = SegmentHashHarness::base_for_index(4);
-    harness.insert_root_for_key(key, root);
+    // SAFETY: synthetic key value; root is the harness's own synthetic base_for_index value, never dereferenced.
+    unsafe { harness.insert_root_for_key(key, root) };
 
     // Hash path, then fill, then cache hit.
     assert_eq!(harness.canonical(key), Some(root));

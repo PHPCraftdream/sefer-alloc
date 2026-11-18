@@ -11,6 +11,7 @@
 use core::alloc::Layout;
 
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
+#[allow(unused_imports)] // P2.1: kept for cfg combinations where the consumer is compiled out
 use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
@@ -67,7 +68,8 @@ impl HeapCore {
     /// SAME order,
     /// [`dealloc_own_thread_with_base`](Self::dealloc_own_thread_with_base)
     /// applies per block — (1) the F7 Large-segment-kind guard (a physical
-    /// `BlockKind`/`SegmentHeader::kind_at(base) == SegmentKind::Large`
+    // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+    /// `BlockKind`/`unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) } == SegmentKind::Large`
     /// check, plus its `hardened` layout-consistency defence), (2)
     /// [`hardened`] H1 interior-pointer guard (`off % block_size(c) != 0`),
     /// (3) state-byte state/zero check, (4) [under `alloc-decommit`]
@@ -309,7 +311,12 @@ impl HeapCore {
             // anyway. Handing it to `AllocCore` directly keeps the batch and
             // scalar outcomes byte-identical and one hop shorter.
             let (off, meta) = match small_free_guard(base, p, c, layout) {
-                SmallFreeGuard::Accept { off } => (off, SegmentMeta::new(base)),
+                SmallFreeGuard::Accept { off } => {
+                    // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+                    (off, unsafe {
+                        crate::alloc_core::segment_header::SegmentMeta::new(base)
+                    })
+                }
                 SmallFreeGuard::RejectNoOp => {
                     // R6-T55: same single increment per rejected free as the
                     // scalar consumer — internal counter, not the public stat.
@@ -349,8 +356,12 @@ impl HeapCore {
             let cap = FREE_PARK_CAP[c] as usize;
             if cnt < cap {
                 // B4 (в): MAG in the state byte (was RAD-5 bitmap set).
-                meta.state_byte()
-                    .write(off, c, crate::alloc_core::state_byte::StateByte::MAG);
+                // SAFETY: The owner lookup and small_free_guard accepted this in-segment
+                // aligned LIVE start and its class. This push commits LIVE -> MAG.
+                unsafe {
+                    meta.state_byte()
+                        .write(off, c, crate::alloc_core::state_byte::StateByte::MAG)
+                };
                 self.tcache.classes[c].slots[cnt] = block;
                 self.tcache.classes[c].count = (cnt + 1) as u8;
                 // R13-3 (task #273): a batched-freed block is, like the

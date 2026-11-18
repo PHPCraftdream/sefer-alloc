@@ -6,6 +6,9 @@ use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::fatal::fatal;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::node::Node;
+// Pass 9.1: `kind_at`/`seg_meta` are used in `reclaim_sidecar_record` in every
+// alloc-global row (e.g. loom without misuse-checks) — import unconditionally.
+#[allow(unused_imports)]
 #[cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
@@ -13,7 +16,7 @@ use crate::alloc_core::node::Node;
 ))]
 use crate::alloc_core::segment_header::Layout as SegLayout;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_header::{SegmentKind, FREE_LIST_NULL};
 #[cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
@@ -22,23 +25,27 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta,
 use crate::alloc_core::size_classes::SizeClasses;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use core::ptr::NonNull;
-
+// Pass 9.1: trait methods (`*`) are used unconditionally inside the
+// impl, not only under misuse-checks/debug_assertions.
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 impl AllocCore {
     /// The owner retains the scan while retiring records and drops it before
     /// reservation finalization. A duplicate or magazine-resident record never
     /// mutates the free list or retires a second credit.
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(crate) fn reclaim_sidecar_record(base: *mut u8, offset: u32, class: u8) -> bool {
         let off = offset as usize;
         let class_idx = usize::from(class);
         if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
             fatal(b"alloc_core_small_reclaim: small class index out of range\n");
         }
-        let kind = SegmentHeader::kind_at(base);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let kind = unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) };
         if !matches!(kind, SegmentKind::Small | SegmentKind::Primordial) {
             fatal(b"alloc_core_small_reclaim: sidecar record kind is not small\n");
         }
-        let mut meta = SegmentMeta::new(base);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         let (payload_start, block_size) = (
             if kind == SegmentKind::Primordial {
@@ -62,7 +69,9 @@ impl AllocCore {
         // class-agnostic like the old bitmap bits.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         {
-            let sb = meta.state_byte().read(offset);
+            // SAFETY: The record geometry above bounds the offset below the owner bump
+            // (which never exceeds SEGMENT); the owner scan protects initialized metadata.
+            let sb = unsafe { meta.state_byte().read(offset) };
             if (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
                 crate::alloc_core::state_byte::StateByte::shadow_reject(
                     b"sefer-alloc: misuse check rejected a remote free in safe mode (reclaim FREE)\n",
@@ -91,11 +100,16 @@ impl AllocCore {
         Node::write_next(block, next);
         bins.set_head(class_idx, offset);
         // B4 (в): commit LIVE → FREE in the state byte.
-        meta.state_byte().write(
-            offset,
-            class_idx,
-            crate::alloc_core::state_byte::StateByte::FREE,
-        );
+        // SAFETY: The owner scan supplies a mapped block start and its routed class;
+        // the geometry and class bounds above protect the access. Retiring
+        // the record commits LIVE -> FREE.
+        unsafe {
+            meta.state_byte().write(
+                offset,
+                class_idx,
+                crate::alloc_core::state_byte::StateByte::FREE,
+            )
+        };
         meta.dec_live();
         true
     }

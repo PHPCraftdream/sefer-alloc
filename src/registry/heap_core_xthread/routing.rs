@@ -1,9 +1,11 @@
 //! Address-only dispatch. Foreign producers touch only independently pinned sidecars.
 use crate::alloc_core::os;
-use crate::alloc_core::segment_route::route_pin_cache::{self, CachedPublication};
 use crate::alloc_core::segment_route::{RouteDirectory, RouteKind};
 use crate::registry::heap_core::HeapCore;
 use core::alloc::Layout;
+use sefer_segment::segment_route::route_pin_cache::{
+    cache_evict, cache_insert, publish_cached, CachedPublication,
+};
 
 impl HeapCore {
     #[inline(always)]
@@ -46,7 +48,7 @@ impl HeapCore {
         // path frees a block the caller does not own — the transfer-once
         // contract is what authorizes it (same contract as the slow
         // publication below).
-        let published = match unsafe { route_pin_cache::publish_cached(ptr) } {
+        let published = match unsafe { publish_cached(ptr) } {
             CachedPublication::Published(published) => published,
             CachedPublication::Miss => {
                 // SAFETY: caller transfers the current allocation once.
@@ -82,7 +84,7 @@ impl HeapCore {
         let Some(pin) = RouteDirectory::global().lookup(ptr) else {
             // The shared tail in `publish_foreign` counts this miss exactly
             // once via `published == false`.
-            route_pin_cache::cache_evict(ptr.addr() & !(os::SEGMENT - 1));
+            cache_evict(ptr.addr() & !(os::SEGMENT - 1));
             return false;
         };
         // Lookup has released its shard lock. A ready, idle fallback can
@@ -125,7 +127,12 @@ impl HeapCore {
                     // Retaining the pin (refs +1) until eviction or thread
                     // exit is the design: the descriptor and sidecar survive
                     // the segment reservation's release.
-                    route_pin_cache::cache_insert(pin, key, incarnation);
+                    // SAFETY: the production global lookup found the route for
+                    // the caller's current issued allocation by its canonical
+                    // segment key. This arm guarantees Small/Primordial,
+                    // `cacheable` excludes fallback, and `incarnation` is the
+                    // immutable incarnation read from this same pin.
+                    unsafe { cache_insert(pin, key, incarnation) };
                 }
                 published
             }

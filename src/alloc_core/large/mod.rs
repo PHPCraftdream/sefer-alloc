@@ -28,6 +28,6 @@ pub(crate) mod large_cache_adaptive;
 /// `OncePtrCell` needed).
 #[cfg(feature = "large-cache-extended")]
 pub(crate) mod large_cache_extended;
-pub(crate) mod reservation_state;
+#[path = "reservation_hooks.rs"]
+pub mod reservation_state;
 // `reservation_state` takes its atomics from here (a loom model binds loom ones).
-pub(crate) use core::sync::atomic::{AtomicU64, Ordering};

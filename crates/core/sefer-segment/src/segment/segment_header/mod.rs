@@ -1,0 +1,65 @@
+//! `SegmentHeader` — the per-segment metadata block that lives at offset 0
+//! of every segment, and `PageMap` / `BinTable` — the per-segment page
+//! descriptors and per-size-class free bins, all carved from segment memory.
+//!
+//! These structures are the **self-hosted metadata** of the Phase 8 substrate
+//! (§3 / §5 P8 of `ALLOC_PLAN.md`): they live INSIDE the segments they
+//! describe, not in a `Vec`/`HashSet` on the global allocator. This is the
+//! Membrane Inversion — the safe slot-table discipline governs OS memory
+//! instead of consuming `std` collections.
+//!
+//! ## Layout and access discipline
+//!
+//! `SegmentHeader` and its accessors are defined in
+//! `segment_header_impl.rs`; descriptor layouts are
+//! defined in `descriptors.rs`, with compile-time checks in
+//! `layout_asserts.rs`. Raw memory access is routed through the
+//! `node` seam. This module wires those pieces
+//! together and preserves their `segment_header::` paths.
+//!
+//! ## Layout of a small segment
+//!
+//! ```text
+//!   SEGMENT-aligned base
+//!   ┌─────────────────────────────────────────────────────────────┐
+//!   │ SegmentHeader (fixed-size, page-0)                          │
+//!   │  • magic, kind, segment_id                                  │
+//!   │  • bump cursor (next uncarved page offset, in bytes)        │
+//!   │  • BinTable:  per-class free-list head OFFSETS (u32 each)   │
+//!   │  • PageMap:    per-page descriptor (which class, or free)   │
+//!   ├─────────────────────────────────────────────────────────────┤
+//!   │ payload pages (carved bump-allocated into class runs)       │
+//!   └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! `segment_of(ptr)` masks the low bits of `ptr` to find the segment base in
+//! O(1); the header at offset 0 then tells the Cartographer everything about
+//! that segment. Large/huge segments carry only `(size, align)` of their
+//! single allocation — no page map (one allocation per segment).
+
+// Items carved into the `descriptors` / `layout_asserts` siblings are
+// re-flattened here so every one keeps its exact `segment_header::` path
+// (the original single-file module scope).
+#[path = "segment_header_impl/descriptors.rs"]
+mod descriptors;
+#[path = "segment_header_impl/layout_asserts.rs"]
+mod layout_asserts;
+#[path = "segment_header_impl/segment_header_impl.rs"]
+mod segment_header_impl;
+#[doc(hidden)]
+pub use segment_header_impl::*;
+#[path = "segment_header_impl/block_kind.rs"]
+mod block_kind;
+#[doc(hidden)]
+pub use block_kind::BlockKind;
+#[path = "segment_header_impl/terminal_words.rs"]
+mod terminal_words;
+#[cfg(feature = "alloc-core")]
+pub use crate::support::geometry::LAZY_FIRST_CHUNK;
+#[doc(hidden)]
+pub use terminal_words::*;
+#[cfg(feature = "internals")]
+pub use terminal_words::{
+    large_generation, large_phase, next_large_generation, next_large_generation_bounded,
+    pack_large_state, LargePhase, MAX_LARGE_GENERATION,
+};

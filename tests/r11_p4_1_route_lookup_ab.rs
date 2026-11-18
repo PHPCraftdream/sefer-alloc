@@ -32,9 +32,7 @@ fn lookup_cost_one_shard() {
             .iter()
             .map(|&k| {
                 let p = core::ptr::without_provenance_mut::<u8>(k);
-                directory
-                    .register(p, SEGMENT, p, 1, RouteKind::Large)
-                    .unwrap()
+                unsafe { directory.register(p, SEGMENT, p, 1, RouteKind::Large) }.unwrap()
             })
             .collect();
         let mut samples = Vec::new();

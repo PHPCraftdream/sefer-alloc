@@ -17,10 +17,15 @@ use core::alloc::Layout;
 use crate::alloc_core::os;
 
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[allow(unused_imports)] // P2.1: kept for cfg combinations where the consumer is compiled out
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
-#[cfg(all(feature = "bench-internals", feature = "internals"))]
-use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
 use crate::registry::heap_core::HeapCore;
+#[cfg(any(
+    all(feature = "alloc-segment-directory", feature = "internals"),
+    feature = "bench-internals"
+))]
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+use sefer_segment::segment::segment_layout::SIDECAR_WORD_BYTES;
 
 impl HeapCore {
     /// Actual logical SmallSidecar layout in this oracle binary; not RSS.
@@ -45,6 +50,7 @@ impl HeapCore {
 
     #[doc(hidden)]
     #[cfg(all(feature = "bench-internals", feature = "internals"))]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn dbg_prf01_strict_words_visited(&self) -> (u64, u64, u64, u64) {
         let (actual, records) =
             crate::alloc_core::remote_bitmap::Prf01SidecarOracle::strict_snapshot();
@@ -52,18 +58,25 @@ impl HeapCore {
         let mut start_sum = 0u64;
         for base in self.segment_bases() {
             if matches!(
-                SegmentHeader::kind_at(base),
+                // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+                unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) },
                 SegmentKind::Small | SegmentKind::Primordial
             ) {
-                let end = SegmentMeta::new(base)
+                // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+                let end = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }
                     .bump_of()
                     .div_ceil(SIDECAR_WORD_BYTES);
-                let start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
-                    crate::alloc_core::segment_header::Layout::primordial_meta_end()
-                        / SIDECAR_WORD_BYTES
-                } else {
-                    crate::alloc_core::segment_header::Layout::small_meta_end() / SIDECAR_WORD_BYTES
-                };
+                // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+                let start =
+                    if unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }
+                        == SegmentKind::Primordial
+                    {
+                        crate::alloc_core::segment_header::Layout::primordial_meta_end()
+                            / SIDECAR_WORD_BYTES
+                    } else {
+                        crate::alloc_core::segment_header::Layout::small_meta_end()
+                            / SIDECAR_WORD_BYTES
+                    };
                 let start = start.min(end);
                 end_sum += end as u64;
                 start_sum += start as u64;
@@ -462,8 +475,8 @@ impl HeapCore {
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-segment-directory", feature = "internals"))]
     #[must_use]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn dbg_directory_bit_for_ptr(&self, ptr: *mut u8, class_idx: usize) -> Option<bool> {
-        use crate::alloc_core::segment_header::SegmentHeader;
         let candidate = os::segment_base_of_ptr(ptr);
         // R29-17 (task #448): containment guard BEFORE the segment_id_at read.
         // segment_id_at dereferences the segment header (`Node::read_u32`), so
@@ -482,7 +495,9 @@ impl HeapCore {
         // survives past the membership check. See
         // `SegmentTable::canonical_base_of`'s doc for the full rationale.
         let base = self.core.segment_bases().find(|&b| b == candidate)?;
-        let sid = SegmentHeader::segment_id_at(base) as usize;
+        // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the caller holds the owner's read permission for the write-once `segment_id` field.
+        let sid = unsafe { crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) }
+            as usize;
         self.core.dbg_directory_get_bit(class_idx, sid)
     }
 

@@ -11,7 +11,7 @@ use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 #[cfg(feature = "internals")]
 use crate::alloc_core::large_cache_mode::LargeCacheMode;
-use crate::alloc_core::segment_header::{large_generation, SegmentHeader, SegmentMeta};
+use crate::alloc_core::segment_header::large_generation;
 
 use super::alloc_core_large_cache::CombinedSlot;
 // R6-T16: consumed only by the internals(+alloc-decommit)-gated decay-tick
@@ -23,10 +23,16 @@ impl AllocCore {
     /// Test-only snapshot of the oldest cached Large reservation.
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[doc(hidden)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn terminal_cached_large_state_for_test(&self) -> Option<u64> {
         let idx = self.oldest_occupied_slot()?;
         let slot = self.large_cache_slot_get(idx)?;
-        Some(SegmentMeta::new(slot.base).terminal_snapshot().large_state)
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        Some(
+            unsafe { crate::alloc_core::segment_header::SegmentMeta::new(slot.base) }
+                .terminal_snapshot()
+                .large_state,
+        )
     }
     /// FIFO-evict cached spans until at least `min_bytes` of cache have been
     /// released to the OS, or the cache is empty. Each iteration evicts the
@@ -51,6 +57,7 @@ impl AllocCore {
     }
 
     #[cfg(feature = "alloc-decommit")]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(super) fn evict_at_least(&mut self, min_bytes: usize) {
         let mut released = 0usize;
         while released < min_bytes {
@@ -65,12 +72,16 @@ impl AllocCore {
             // Release the OS reservation. The slot was unregistered from the
             // table on deposit (same as `try_evict_to_fit`), so we release
             // directly without touching the table.
-            let meta = SegmentMeta::new(victim.base);
+            // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+            let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(victim.base) };
             let generation = large_generation(meta.terminal_snapshot().large_state);
             if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
                 fatal(b"large_cache_eviction: cached release failed\n");
             }
-            let charge = SegmentHeader::thp_charge_at(victim.base);
+            // SAFETY: `base` is the aligned base of a live segment with an initialized header; the read follows the owner-only `thp_charge` field discipline.
+            let charge = unsafe {
+                crate::alloc_core::segment_header::SegmentHeader::thp_charge_at(victim.base)
+            };
             release_large_mapping(charge, victim.reservation, victim.reservation_len);
             released += victim.usable_size;
         }
@@ -289,6 +300,7 @@ impl AllocCore {
     /// deposit, so this function only releases the OS reservation and
     /// updates the byte-budget counter.
     #[cfg(feature = "alloc-decommit")]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(in crate::alloc_core) fn evict_one_oldest(&mut self) -> bool {
         let Some(victim_idx) = self.oldest_occupied_slot() else {
             return false;
@@ -297,12 +309,15 @@ impl AllocCore {
         self.large_cache_used_bytes = self
             .large_cache_used_bytes
             .saturating_sub(victim.usable_size);
-        let meta = SegmentMeta::new(victim.base);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(victim.base) };
         let generation = large_generation(meta.terminal_snapshot().large_state);
         if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
             fatal(b"large_cache_eviction: cached release failed\n");
         }
-        let charge = SegmentHeader::thp_charge_at(victim.base);
+        // SAFETY: `base` is the aligned base of a live segment with an initialized header; the read follows the owner-only `thp_charge` field discipline.
+        let charge =
+            unsafe { crate::alloc_core::segment_header::SegmentHeader::thp_charge_at(victim.base) };
         release_large_mapping(charge, victim.reservation, victim.reservation_len);
         true
     }

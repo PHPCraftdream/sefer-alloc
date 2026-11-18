@@ -82,10 +82,11 @@ export function readRegistry(text) {
   return map;
 }
 
-// Admitted mutant targets: crate sources and Loom shadow models only.
+// Admitted mutant targets: crate sources (root src/ and crates/**/src/) and
+// Loom shadow models only.
 export function assertMutantPath(file) {
   if (typeof file !== 'string' ||
-      !/^(?:src\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.rs|tests\/loom_[A-Za-z0-9_.-]+\.rs)$/.test(file) ||
+      !/^(?:src\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.rs|crates\/(?:[A-Za-z0-9_.-]+\/)*src\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.rs|tests\/loom_[A-Za-z0-9_.-]+\.rs)$/.test(file) ||
       file.split('/').includes('..') || file.split('/').includes('.')) {
     throw Error('unsafe mutant path');
   }

@@ -6,11 +6,14 @@
 
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::SegmentHeader;
 #[cfg(feature = "page-map-diag")]
 use crate::alloc_core::segment_header::SegmentKind;
 #[cfg(any(feature = "numa-aware", feature = "page-map-diag"))]
+#[cfg(feature = "page-map-diag")]
+#[allow(unused_imports)] // P2.1: kept for cfg combinations where the consumer is compiled out
 use crate::alloc_core::segment_header::SegmentMeta;
+#[cfg(feature = "internals")]
+use sefer_segment::segment::segment_header::SegmentHeader;
 
 /// Sol-F1 (task #563): `internals`-gated — every other `dbg_*` diagnostic
 /// hook in this file. See this file's module doc for the full rationale.
@@ -29,10 +32,12 @@ impl AllocCore {
     /// address — see `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     #[cfg(feature = "numa-aware")]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn dbg_node_id_for(&self, ptr: *mut u8) -> Option<u32> {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(candidate)?;
-        Some(SegmentMeta::new(base).node_id_of())
+        // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+        Some(unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }.node_id_of())
     }
 
     /// TEST-ONLY (Phase 13.3): reveal the size class `page_map` would assign
@@ -58,16 +63,19 @@ impl AllocCore {
     /// segment.
     #[doc(hidden)]
     #[cfg(feature = "page-map-diag")]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn dbg_page_map_class_for(&self, ptr: *mut u8) -> Option<usize> {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(candidate)?;
         if !matches!(
-            SegmentHeader::kind_at(base),
+            // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+            unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) },
             SegmentKind::Small | SegmentKind::Primordial
         ) {
             return None;
         }
-        let meta = SegmentMeta::new(base);
+        // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+        let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
         let page_idx = (ptr as usize - base as usize) / crate::alloc_core::os::PAGE;
         meta.page_map().class_of(page_idx)
     }
@@ -111,7 +119,9 @@ impl AllocCore {
     /// convention of the other `dbg_*_for` accessors in this file.
     #[doc(hidden)]
     pub fn dbg_contains_base(&self, ptr: *mut u8) -> bool {
-        self.table.contains_base_ro(os::segment_base_of_ptr(ptr))
+        self.table
+            .canonical_base_of(os::segment_base_of_ptr(ptr))
+            .is_some()
     }
 
     /// R23-6 (task #375) DIAGNOSTIC ONLY: process-wide high-water mark of
@@ -136,7 +146,10 @@ impl AllocCore {
     /// start clean instead of accumulating across the whole process.
     #[doc(hidden)]
     pub fn dbg_reset_hash_remove_max_scan_steps() {
-        crate::alloc_core::segment_table::reset_hash_remove_max_scan_steps();
+        // Same operation as the crate's `reset_hash_remove_max_scan_steps`
+        // (which is not reexported): reset the shared high-water atomic.
+        crate::alloc_core::segment_table::HASH_REMOVE_MAX_SCAN_STEPS
+            .store(0, core::sync::atomic::Ordering::Relaxed);
     }
 
     /// oxx R2-06 (independent src review round 2): relaxed snapshot of
@@ -295,7 +308,14 @@ impl AllocCore {
             .table
             .canonical_base_of(candidate)
             .expect("dbg_segment_id_of: ptr's segment is not owned by this AllocCore");
-        SegmentHeader::segment_id_at(base)
+        #[allow(unsafe_code)] // R25-1: scoped unsafe block behind the R2-3 runtime guard.
+        {
+            // SAFETY: `base` is the aligned base of a live segment owned by
+            // this `AllocCore` (the `canonical_base_of` membership guard
+            // above) with an initialized header; the read follows the
+            // write-once `segment_id` field discipline.
+            unsafe { SegmentHeader::segment_id_at(base) }
+        }
     }
 
     /// TEST-ONLY (task #135): overwrite the stamped `segment_id` field of
@@ -320,7 +340,8 @@ impl AllocCore {
     /// CRITICAL). The `contains_base_ro` assert below only proves the segment
     /// BELONGS to this `AllocCore`; it does NOT preserve the field's invariant.
     ///
-    /// The caller must guarantee that, between this stamp and the field being
+    /// The caller must hold exclusive access to the segment header.
+    /// The caller must also guarantee that, between this stamp and the field being
     /// restored to the segment's true `segment_id`, NO safe
     /// `alloc` / `dealloc` / `realloc` / `Drop` call routes the segment on the
     /// stamped value — i.e. one of:
@@ -340,7 +361,10 @@ impl AllocCore {
             .table
             .canonical_base_of(os::segment_base_of_ptr(ptr))
             .expect("dbg_stamp_segment_id: pointer names an owned segment");
-        SegmentHeader::set_segment_id_at(base, id);
+        // SAFETY: `base` is the aligned base of a live owned segment with an
+        // initialized header; the test-only stamp contract (see `# Safety`)
+        // governs the field's temporary corruption window.
+        unsafe { SegmentHeader::set_segment_id_at(base, id) };
     }
 
     /// TEST-ONLY (task #135): directly invoke `SegmentTable::unregister` for
@@ -410,12 +434,16 @@ impl AllocCore {
         // R7-A2: clear directory bits before the slot is recycled.
         #[cfg(feature = "alloc-segment-directory")]
         {
-            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            // SAFETY: `base` is the aligned base of a live owned segment
+            // with an initialized header (table member pre-recycle).
+            let slot_idx = unsafe { SegmentHeader::segment_id_at(base) } as usize;
             self.clear_segment_directory(slot_idx);
         }
         // B4 §11: the slot is about to be recycled — drop any class cursor
         // naming it (a released segment must never stay a discovery hint).
-        let cursor_slot = SegmentHeader::segment_id_at(base) as usize;
+        // SAFETY: `base` is the aligned base of a live owned segment with an
+        // initialized header (table member pre-recycle).
+        let cursor_slot = unsafe { SegmentHeader::segment_id_at(base) } as usize;
         self.invalidate_class_cursor_for_slot(cursor_slot);
         self.table.recycle(base);
     }

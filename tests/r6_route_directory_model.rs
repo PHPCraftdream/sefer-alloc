@@ -35,9 +35,7 @@ fn cached_instance_cannot_be_claimed_before_owner_reset() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let route = directory
-        .register(root, 1, root, 1, RouteKind::Large)
-        .unwrap();
+    let route = unsafe { directory.register(root, 1, root, 1, RouteKind::Large) }.unwrap();
     // SAFETY: the test owns this live standalone instance and transfers it once.
     assert!(unsafe { directory.lookup(root).unwrap().publish_large() });
     let generation = route.claim_large_pending().unwrap();
@@ -66,11 +64,8 @@ fn all_owner_and_two_pin_release_orders_reclaim_slot() {
         let directory = RouteDirectory::new();
         let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
         let root = reservation.as_ptr();
-        let mut owner = Some(
-            directory
-                .register(root, SEGMENT, root, 8, RouteKind::Small)
-                .unwrap(),
-        );
+        let mut owner =
+            Some(unsafe { directory.register(root, SEGMENT, root, 8, RouteKind::Small) }.unwrap());
         let mut pins = [directory.lookup(root), directory.lookup(root)];
         for action in order {
             match action {
@@ -84,9 +79,8 @@ fn all_owner_and_two_pin_release_orders_reclaim_slot() {
             }
         }
         assert!(directory.lookup(root).is_none());
-        let reused = directory
-            .register(root, SEGMENT, root, 9, RouteKind::Small)
-            .unwrap();
+        let reused =
+            unsafe { directory.register(root, SEGMENT, root, 9, RouteKind::Small) }.unwrap();
         assert_eq!(directory.lookup(root).unwrap().owner(), 9);
         drop(reused);
     }

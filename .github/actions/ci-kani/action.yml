@@ -23,3 +23,9 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo kani -p sefer-concurrent
+    # P2.1 moves segment proof harnesses with their crate; root harnesses do
+    # not cover package-scoped proofs after the extraction.
+    - name: cargo kani (sefer-segment harnesses)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo kani -p sefer-segment --all-features

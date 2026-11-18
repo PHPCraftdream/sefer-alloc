@@ -1,9 +1,2 @@
 kind,path,count,reason
-backedge,alloc_core.config->alloc_core.segment,5,continuation_bounds reads segment layout
 backedge,alloc_core.platform->alloc_core.config,1,node.rs reads policy config
-backedge,alloc_core.platform->alloc_core.segment,10,platform os.rs reaches segment header/bitmap helpers; P2.0 relocation candidate
-backedge,alloc_core.segment_route->alloc_core.alloc_core,6,P2.0a identity-only migration from registry.segment_route; unchanged count
-backedge,alloc_core.segment_route->alloc_core.large,1,large_state.rs reaches large; P2.0a identity-only migration from registry.segment_route
-backedge,alloc_core.segment->alloc_core.alloc_core,8,segment_table route_slots/impl reach AllocCore; P2.0 remaining
-backedge,alloc_core.segment->alloc_core.large,1,terminal_words reach large
-backedge,alloc_core.segment->alloc_core.small,2,segment_header layout asserts reach small

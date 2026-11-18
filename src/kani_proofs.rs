@@ -18,7 +18,10 @@
 #[cfg(all(kani, feature = "alloc-core"))]
 mod node_proofs {
     use crate::alloc_core::node::Node;
+    // P2.1 pass 11: the unaligned/struct word primitives moved to the canonical
+    // crate node (`RootNode`, `pub unsafe` forms); the proof binds them directly.
     use core::ptr::NonNull;
+    use sefer_segment::support::node_impl::RootNode as CanonicalNode;
 
     // ── 1. write_next / read_next round-trip ─────────────────────────────
 
@@ -93,13 +96,17 @@ mod node_proofs {
     // ── 7. write_u32_unaligned / read_u32_unaligned round-trip ───────────
 
     #[kani::proof]
+    #[allow(unsafe_code)] // P2.1 pass 11: canonical pub unsafe Node forms (crate support/node.rs).
     fn write_read_u32_roundtrip() {
         let mut buf = [0u8; 4];
         let val: u32 = kani::any();
         let ptr = buf.as_mut_ptr() as *mut u32;
-        Node::write_u32_unaligned(ptr, val);
-        let got = Node::read_u32_unaligned(ptr as *const u32);
-        assert_eq!(got, val);
+        // SAFETY: `ptr` addresses the local `[u8; 4]` buffer (4 writable/readable bytes).
+        unsafe {
+            CanonicalNode::write_u32_unaligned(ptr, val);
+            let got = CanonicalNode::read_u32_unaligned(ptr as *const u32);
+            assert_eq!(got, val);
+        }
     }
 
     // ── 8. write_struct / read_struct round-trip ─────────────────────────
@@ -112,6 +119,7 @@ mod node_proofs {
     }
 
     #[kani::proof]
+    #[allow(unsafe_code)]
     fn write_read_struct_roundtrip() {
         let a: u16 = kani::any();
         let b: u32 = kani::any();
@@ -121,7 +129,9 @@ mod node_proofs {
         let mut storage = core::mem::MaybeUninit::<Small>::uninit();
         let ptr = storage.as_mut_ptr();
         Node::write_struct(ptr, val);
-        let got = Node::read_struct(ptr as *const Small);
+        // SAFETY: `ptr` points to live, aligned `Small` storage initialized by
+        // `Node::write_struct` above.
+        let got = unsafe { CanonicalNode::read_struct(ptr as *const Small) };
         assert_eq!(got, val);
     }
 
@@ -138,21 +148,6 @@ mod node_proofs {
     }
 }
 
-#[cfg(all(
-    kani,
-    feature = "alloc-core",
-    not(all(feature = "alloc-global", feature = "internals"))
-))]
-#[path = "alloc_core/large/reservation_state.rs"]
-mod proof_reservation_state;
-// `proof_reservation_state` takes its atomics from `super`.
-#[cfg(all(
-    kani,
-    feature = "alloc-core",
-    not(all(feature = "alloc-global", feature = "internals"))
-))]
-use core::sync::atomic::{AtomicU64, Ordering};
-
 #[cfg(all(kani, feature = "alloc-core"))]
 mod large_state_proofs {
     use crate::alloc_core::segment_header::{
@@ -161,10 +156,9 @@ mod large_state_proofs {
     };
     #[cfg(all(feature = "alloc-global", feature = "internals"))]
     use crate::alloc_core::LargeReservationState;
-    // Compile the real production source when its public reexport is absent.
-    #[cfg(not(all(feature = "alloc-global", feature = "internals")))]
-    use super::proof_reservation_state::LargeReservationState;
     use core::sync::atomic::{AtomicU64, Ordering};
+    #[cfg(not(all(feature = "alloc-global", feature = "internals")))]
+    use sefer_segment::support::reservation_state_impl::LargeReservationState;
 
     #[kani::proof]
     fn large_codec_roundtrip_and_canonical() {

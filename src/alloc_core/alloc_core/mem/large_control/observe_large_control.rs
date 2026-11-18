@@ -16,16 +16,24 @@ const OBSERVATION_SEED: u64 = 0x8a5c_1d37_e249_b60f;
 /// mapping. The caller must have consumed the owner's lifetime credit and
 /// retain exclusive ownership before cache deposit or unmapping; this must
 /// never be called for a foreign live mapping.
+#[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
 pub(crate) fn observe_large_control(base: *mut u8) {
-    let token = SegmentHeader::thp_observation_at(base);
+    #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-observation contract.
+    // SAFETY: `base` is a live Large segment under this owner's exclusive
+    // access; the observation field is plain and owner-only.
+    let token = unsafe { SegmentHeader::thp_observation_at(base) };
     if token == 0 {
         return;
     }
     // Consume before any validation or possible sampling failure: errors are
     // terminal for this first-life observation, never retried.
-    SegmentHeader::set_thp_observation_at(base, 0);
+    #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-observation contract.
+    // SAFETY: `base` is a live Large segment under this owner's exclusive
+    // access; the observation field is plain and owner-written only.
+    let () = unsafe { SegmentHeader::set_thp_observation_at(base, 0) };
 
-    let header = SegmentHeader::read_at(base);
+    // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
+    let header = unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(base) };
     let request_size = header.large_size;
     let Ok(request_bytes) = u64::try_from(request_size) else {
         ThpRuntime::note_observation_error(request_size);

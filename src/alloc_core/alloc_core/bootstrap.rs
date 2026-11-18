@@ -8,7 +8,7 @@
 //! ## This file is pure safe composition
 
 use super::super::os::Segment;
-use super::super::segment_header::{Layout, SegmentHeader, SegmentKind, SegmentMeta};
+use super::super::segment_header::{Layout, SegmentHeader, SegmentKind};
 use super::super::segment_table::{self, SegmentTable};
 
 /// The bootstrap outcome: the primordial [`Segment`] (owned) and the
@@ -29,6 +29,7 @@ pub(crate) struct Primordial {
 /// Returns `None` only if the OS refuses the primordial reservation (OOM at
 /// startup — unrecoverable for an allocator, but we propagate rather than
 /// abort so a caller may fall back).
+#[allow(unsafe_code)] // P2.1 tier-2: SegmentMeta::new via the header facade.
 pub(crate) fn primordial() -> Option<Primordial> {
     // 1. Reserve the primordial segment (SEGMENT-aligned, SEGMENT bytes). This
     //    is the ONLY OS allocation primitive on the bootstrap path; everything
@@ -117,7 +118,11 @@ pub(crate) fn primordial() -> Option<Primordial> {
 
     // 2. Lay down the small-segment header at offset 0 via the node seam. We
     //    write `bump = 0` here and fix it up after computing the metadata end.
-    let mut meta = SegmentMeta::new(base);
+    // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+    let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
+    // `base` is the freshly reserved, exclusively owned primordial segment and
+    // `&mut meta` views its offset-0 header; `write_header` only writes that
+    // header extent before the segment is published.
     meta.write_header(SegmentHeader::small(
         0,
         0,
@@ -146,15 +151,34 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // segment is exclusively owned (single-threaded bootstrap). Each
     // `init_in_place` call writes only its `FOOTPRINT` bytes via `Node`.
     #[cfg(feature = "page-map-diag")]
-    super::super::segment_header::PageMap::init_in_place(base_plus(base, pm_off), meta_pages);
-    super::super::segment_header::BinTable::init_in_place(base_plus(base, bt_off) as *mut u32);
+    #[allow(unsafe_code)] // R25-1: scoped unsafe block, bootstrap contract.
+    // SAFETY: `base + pm_off` is the freshly carved page map of the
+    // exclusively-owned bootstrap segment (single-threaded bootstrap; the
+    // compile-time layout check above), with `Layout::page_map`'s footprint.
+    unsafe {
+        super::super::segment_header::PageMap::init_in_place(base_plus(base, pm_off), meta_pages)
+    };
+    // SAFETY: `base + bt_off` lies within the freshly reserved, exclusively owned (single-threaded bootstrap) segment and spans the full `BinTable` footprint (`BinTable::init_in_place` contract).
+    unsafe {
+        crate::alloc_core::segment_header::BinTable::init_in_place(
+            base_plus(base, bt_off) as *mut u32
+        )
+    };
     // B4 (в): the former `AllocBitmap`/`MagazineBitmap` inits (PERF-PASS-2,
     // G5/C1, task #50 virgin-skip) are gone with the bitmaps themselves — the
     // per-granule state byte replaced them as the authoritative state record.
     // Same virgin-skip discipline for the state-byte region — the
     // "never issued" encoding IS zero, so fresh OS zero pages need no init.
     #[cfg(miri)]
-    crate::alloc_core::state_byte::StateByte::new(base).init_in_place();
+    #[allow(unsafe_code)] // R25-1 pass 10: scoped unsafe block, bootstrap contract.
+    // SAFETY: `base` is the freshly-reserved bootstrap segment (exclusively
+    // owned, single-threaded bootstrap; same contract as the `PageMap`
+    // `init_in_place` above). Under `miri` the state bytes are initialized
+    // immediately after by `init_in_place`; the byte region stays mapped for
+    // the segment's lifetime.
+    unsafe {
+        crate::alloc_core::state_byte::StateByte::new(base).init_in_place()
+    };
     // 4. Lay down the registry array at `reg_off`. Slot 0 is the primordial
     //    segment's own base (self-reference). The write goes through `Node`.
     let reg_slots = base_plus(base, reg_off) as *mut *mut u8;
@@ -250,7 +274,11 @@ pub(crate) fn primordial() -> Option<Primordial> {
     super::super::node::Node::write_u32(free_top_ptr, 0);
     let active_kind_ptr = base_plus(base, Layout::primordial_active_kind_off())
         as *mut segment_table::ActiveKindIndex;
-    segment_table::ActiveKindIndex::init_in_place(active_kind_ptr);
+    // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+    #[allow(unsafe_code)]
+    unsafe {
+        segment_table::ActiveKindIndex::init_in_place(active_kind_ptr)
+    };
 
     // 5. Fix up the header: kind = Primordial, bump = meta_end (where payload
     //    carving begins). Mark the page map / bin table / registry pages Meta
@@ -259,7 +287,9 @@ pub(crate) fn primordial() -> Option<Primordial> {
     hdr.kind = SegmentKind::Primordial;
     hdr.bump = meta_end;
     meta.write_header(hdr);
-    meta.init_small_terminal();
+    // SAFETY: the fresh Primordial mapping has aligned, exclusively writable
+    // terminal storage with no loans or readers; it has not been published.
+    unsafe { meta.init_small_terminal() };
 
     // B1 (R7 Workstream B) / R7-B6 (primordial lazy commit): stamp the
     // committed-payload frontier, mirroring `reserve_small_segment`'s
@@ -359,14 +389,18 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // 6. Construct the SegmentTable view. `from_primordial` is safe (it
     //    performs no memory operation — just wraps the pointer + count); the
     //    contract that slot 0 was written is the bootstrap's invariant.
-    let table = SegmentTable::from_primordial(
-        reg_slots,
-        1,
-        hash_slots,
-        free_list_slots,
-        free_top_ptr,
-        active_kind_ptr,
-    );
+    // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+    #[allow(unsafe_code)]
+    let table = unsafe {
+        SegmentTable::from_primordial(
+            reg_slots,
+            1,
+            hash_slots,
+            free_list_slots,
+            free_top_ptr,
+            active_kind_ptr,
+        )
+    };
 
     Some(Primordial { segment, table })
 }
