@@ -891,7 +891,7 @@ item-scoped regions.
 | [`src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs`](src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs) | 12 | Small allocation metadata and state-array access during freelist and bump issue. |
 | [`src/alloc_core/small/alloc_core_small/dealloc.rs`](src/alloc_core/small/alloc_core_small/dealloc.rs) | 2 | Small free state transition and test-only issue-state probe. |
 | [`src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs`](src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs) | 3 | Mapped Small header reads for class cursor validation and recording. |
-| [`src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs`](src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs) | 2 | Mapped metadata and owner-side notified route drain. |
+| [`src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs`](src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs) | 1 | Mapped metadata and owner-side notified route drain. |
 | [`src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs`](src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs) | 26 | Small pool and reclaim metadata, including exclusive link repair and mapped neighbor access. |
 | [`src/alloc_core/small/alloc_core_small_reclaim.rs`](src/alloc_core/small/alloc_core_small_reclaim.rs) | 1 | Owner-side reclaim of a detached Small sidecar record. |
 | [`src/kani_proofs.rs`](src/kani_proofs.rs) | 1 | Node word round-trip verification harness. |
@@ -933,7 +933,7 @@ item-scoped regions.
 | [`crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 The full source inventory (both tiers) has **32** tier-1 module-level seams (15 in
-`src/`, 17 in `crates/`) plus **324** tier-2 item-scoped allows across **66**
+`src/`, 17 in `crates/`) plus **323** tier-2 item-scoped allows across **66**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
