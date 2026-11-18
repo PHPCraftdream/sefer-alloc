@@ -215,12 +215,21 @@ impl SegmentHeader {
     ///
     /// Remote free never accesses this field. Read it only from code holding
     /// the mapping's owner-only access contract.
+    ///
+    /// # Safety
+    ///
+    /// `base` must be the aligned base of a live segment with an initialized
+    /// header; the caller must hold the owner's exclusive access to the
+    /// mapping. The field is plain, not atomic; remote free/publication never
+    /// reads or writes it.
     #[cfg_attr(
         not(all(feature = "alloc-decommit", not(feature = "numa-aware"))),
         allow(dead_code)
     )]
     #[inline(always)]
-    pub(crate) fn thp_observation_at(base: *mut u8) -> u64 {
+    #[allow(unsafe_code)]
+    pub unsafe fn thp_observation_at(base: *mut u8) -> u64 {
+        // SAFETY: caller contract — see `# Safety` above.
         let off = core::mem::offset_of!(SegmentHeader, thp_observation);
         Node::read_usize(Node::offset(base, off) as *const usize) as u64
     }
@@ -232,8 +241,16 @@ impl SegmentHeader {
     /// Safety discipline: the caller must be the owning thread with exclusive
     /// owner access to a live mapping. The field is plain, not atomic; remote
     /// free/publication never reads or writes it.
+    ///
+    /// # Safety
+    ///
+    /// `base` must be the aligned base of a live segment with an initialized
+    /// header; the caller must hold the owner's exclusive access to the
+    /// mapping (the sole writer). The field is plain, not atomic.
     #[inline(always)]
-    pub(crate) fn set_thp_observation_at(base: *mut u8, token: u64) {
+    #[allow(unsafe_code)]
+    pub(crate) unsafe fn set_thp_observation_at(base: *mut u8, token: u64) {
+        // SAFETY: caller contract — see `# Safety` above.
         let off = core::mem::offset_of!(SegmentHeader, thp_observation);
         Node::write_usize(Node::offset(base, off) as *mut usize, token as usize);
     }

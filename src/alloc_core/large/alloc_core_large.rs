@@ -16,7 +16,9 @@ use crate::alloc_core::os;
 #[cfg(not(feature = "numa-aware"))]
 use crate::alloc_core::os::Segment;
 use crate::alloc_core::os::SEGMENT;
-#[cfg(any(feature = "alloc-xthread", feature = "numa-aware"))]
+// No cfg: uses are unconditional (`large_payload_mismatch`'s `kind_at`,
+// `alloc_large_slow`'s `seg_meta`) plus `alloc-decommit`/`numa-aware`/`alloc-xthread`
+// arms, so a gated import breaks the alloc-core+internals row (E0425).
 use crate::alloc_core::segment::header_facade::{kind_at, meta as seg_meta};
 use crate::alloc_core::segment_header::{align_up, SegmentHeader, SegmentKind};
 
@@ -562,6 +564,7 @@ impl AllocCore {
     /// `std::alloc` fallback does NOT — R9-1). Null/OOM returns carry `true`
     /// by the null-convention noted there (unobservable: the caller only
     /// consults the bool for non-null).
+    #[allow(unsafe_code)] // R25-1: item-scoped; owner-constructed fresh-segment unsafe blocks below.
     fn alloc_large_slow(
         &mut self,
         size: usize,
@@ -811,15 +814,14 @@ impl AllocCore {
         );
         Node::write_struct(base as *mut SegmentHeader, hdr);
         // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
-        #[allow(unsafe_code)]
         seg_meta(base).compat_init_large_terminal();
         if thp_charge != 0 {
             SegmentHeader::compat_set_thp_charge_at(base, thp_charge);
         }
         #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-        SegmentHeader::compat_set_thp_observation_at(base, _thp_observation);
-        // Phase C (numa-aware): stamp the NUMA node into the header after
-        // writing it (the constructor sets node_id to NO_NODE_RAW).
+        // SAFETY: freshly constructed live segment under this owner's exclusive access; plain field.
+        let () = unsafe { SegmentHeader::compat_set_thp_observation_at(base, _thp_observation) };
+        // Phase C (numa-aware): stamp NUMA node post-write (constructor set NO_NODE_RAW).
         #[cfg(feature = "numa-aware")]
         seg_meta(base).set_node_id(my_node);
 
@@ -856,12 +858,13 @@ impl AllocCore {
     /// (`drain_large_sidecar_ingress`) on the owner's
     /// `alloc_large` slow-path, once per queued base.
     #[cfg(feature = "alloc-xthread")]
-    // Sole caller (`retire_large_route`) lives in `alloc_core/sidecar_drain.rs`,
-    // compiled only under `all(feature = "alloc-global", feature = "alloc-xthread")`.
+    // Sole caller (`retire_large_route`, alloc_core/sidecar_drain.rs), live only
+    // under all(feature = "alloc-global", feature = "alloc-xthread").
     #[cfg_attr(
         not(all(feature = "alloc-global", feature = "alloc-xthread")),
         allow(dead_code)
     )]
+    #[allow(unsafe_code)] // R25-1: item-scoped; owner-reclaim unsafe blocks below.
     pub(crate) fn reclaim_large_segment(&mut self, base: *mut u8) {
         // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
         #[allow(unsafe_code)]
@@ -874,16 +877,16 @@ impl AllocCore {
         };
         // SAFETY: `base` is the live registered large segment being reclaimed
         // under this owner's exclusive lifecycle step; header read only.
-        #[allow(unsafe_code)]
         let hdr = unsafe { SegmentHeader::read_at(base) };
         // A foreign realloc may have copied this mapping's payload without
         // updating its owner-only token. Consume remote controls conservatively;
         // only the owner-free path may sample a live token.
         #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
         {
-            let token = SegmentHeader::compat_thp_observation_at(base);
+            // SAFETY (both blocks): live Large segment reclaimed under exclusive owner lifecycle.
+            let token = unsafe { SegmentHeader::compat_thp_observation_at(base) };
             if token != 0 {
-                SegmentHeader::compat_set_thp_observation_at(base, 0);
+                let () = unsafe { SegmentHeader::compat_set_thp_observation_at(base, 0) };
                 if matches!(token, 1..=6) {
                     ThpRuntime::note_invalidated_observation(hdr.large_size);
                 } else if matches!(token, 9..=14) {

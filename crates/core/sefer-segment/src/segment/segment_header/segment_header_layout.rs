@@ -222,7 +222,11 @@ impl Layout {
         feature = "primordial-lazy-commit",
         feature = "small-segment-lazy-commit"
     ))]
-    pub(crate) fn lazy_initial_commit(meta_end: usize, page_size: usize) -> usize {
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root
+    /// small-reserve lazy-commit callers (`alloc_core_small/reserve.rs`);
+    /// geometry unchanged. Logged in .rush/p21-widening-final.csv.
+    #[doc(hidden)]
+    pub fn lazy_initial_commit(meta_end: usize, page_size: usize) -> usize {
         debug_assert!(page_size > 0 && page_size.is_power_of_two());
         // Task #1081 (F10c): symmetric with `small_decommit_start` /
         // `primordial_decommit_start` — the const-asserts task #1074 added

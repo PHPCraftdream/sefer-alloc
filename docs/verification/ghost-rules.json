@@ -4535,7 +4535,8 @@
       "kind": "R5",
       "protocol": "P8",
       "files": [
-        "src/**"
+        "src/**",
+        "crates/core/sefer-segment/src/**"
       ],
       "target": {
         "name": "from_leaves",
@@ -4808,7 +4809,8 @@
       "kind": "R5",
       "protocol": "P10",
       "files": [
-        "src/**"
+        "src/**",
+        "crates/core/sefer-segment/src/**"
       ],
       "target": {
         "name": "set_live_count",
@@ -4836,7 +4838,8 @@
       "kind": "R5",
       "protocol": "P10",
       "files": [
-        "src/**"
+        "src/**",
+        "crates/core/sefer-segment/src/**"
       ],
       "target": {
         "name": "add_live",
@@ -4864,7 +4867,8 @@
       "kind": "R5",
       "protocol": "P10",
       "files": [
-        "src/**"
+        "src/**",
+        "crates/core/sefer-segment/src/**"
       ],
       "target": {
         "name": "inc_live",
@@ -4891,7 +4895,8 @@
       "kind": "R5",
       "protocol": "P10",
       "files": [
-        "src/**"
+        "src/**",
+        "crates/core/sefer-segment/src/**"
       ],
       "target": {
         "name": "sub_live",
@@ -4918,7 +4923,8 @@
       "kind": "R5",
       "protocol": "P10",
       "files": [
-        "src/**"
+        "src/**",
+        "crates/core/sefer-segment/src/**"
       ],
       "target": {
         "name": "dec_live",
@@ -5013,7 +5019,8 @@
       "kind": "R5",
       "protocol": "P11",
       "files": [
-        "src/**"
+        "src/**",
+        "crates/core/sefer-segment/src/**"
       ],
       "target": {
         "name": "set",
@@ -5041,7 +5048,8 @@
       "kind": "R5",
       "protocol": "P11",
       "files": [
-        "src/**"
+        "src/**",
+        "crates/core/sefer-segment/src/**"
       ],
       "target": {
         "name": "clear",

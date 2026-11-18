@@ -108,7 +108,7 @@ impl AllocCore {
             class_idx,
             crate::alloc_core::state_byte::StateByte::FREE,
         );
-        meta.compat_dec_live();
+        meta.dec_live();
         true
     }
 }

@@ -181,7 +181,7 @@ impl AllocCore {
             class_idx,
             crate::alloc_core::state_byte::StateByte::FREE,
         );
-        seg_meta(base).compat_dec_live();
+        seg_meta(base).dec_live();
         // R7-A2: directory bitmap maintenance — the new head is always non-null
         // (we just pushed `off`), so the only transition is empty→non-empty
         // when old_head was FREE_LIST_NULL.

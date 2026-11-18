@@ -18,13 +18,19 @@ const OBSERVATION_SEED: u64 = 0x8a5c_1d37_e249_b60f;
 /// retain exclusive ownership before cache deposit or unmapping; this must
 /// never be called for a foreign live mapping.
 pub(crate) fn observe_large_control(base: *mut u8) {
-    let token = SegmentHeader::compat_thp_observation_at(base);
+    #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-observation contract.
+    // SAFETY: `base` is a live Large segment under this owner's exclusive
+    // access; the observation field is plain and owner-only.
+    let token = unsafe { SegmentHeader::compat_thp_observation_at(base) };
     if token == 0 {
         return;
     }
     // Consume before any validation or possible sampling failure: errors are
     // terminal for this first-life observation, never retried.
-    SegmentHeader::compat_set_thp_observation_at(base, 0);
+    #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-observation contract.
+    // SAFETY: `base` is a live Large segment under this owner's exclusive
+    // access; the observation field is plain and owner-written only.
+    let () = unsafe { SegmentHeader::compat_set_thp_observation_at(base, 0) };
 
     let header = crate::alloc_core::segment::header_facade::read_at(base);
     let request_size = header.large_size;

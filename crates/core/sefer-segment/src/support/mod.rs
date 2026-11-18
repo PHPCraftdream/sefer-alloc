@@ -265,10 +265,6 @@ pub mod traits {
         fn compat_begin_large_reuse(&self) -> Option<u64>;
         #[cfg(feature = "alloc-decommit")]
         fn compat_finish_large_reuse(&self, generation: u64);
-        fn compat_add_live(&mut self, n: u32);
-        fn compat_inc_live(&mut self);
-        fn compat_dec_live(&mut self) -> u32;
-        fn compat_sub_live(&mut self, n: u32) -> u32;
         #[cfg(any(feature = "alloc-decommit", feature = "bench-internals"))]
         fn compat_terminal_snapshot(&self) -> crate::segment::segment_header::TerminalSnapshot;
     }
@@ -354,18 +350,6 @@ pub mod traits {
         fn compat_finish_large_reuse(&self, generation: u64) {
             SegmentMeta::finish_large_reuse(self, generation)
         }
-        fn compat_add_live(&mut self, n: u32) {
-            SegmentMeta::add_live(self, n)
-        }
-        fn compat_inc_live(&mut self) {
-            SegmentMeta::inc_live(self)
-        }
-        fn compat_dec_live(&mut self) -> u32 {
-            SegmentMeta::dec_live(self)
-        }
-        fn compat_sub_live(&mut self, n: u32) -> u32 {
-            SegmentMeta::sub_live(self, n)
-        }
         #[cfg(any(feature = "alloc-decommit", feature = "bench-internals"))]
         fn compat_terminal_snapshot(&self) -> crate::segment::segment_header::TerminalSnapshot {
             SegmentMeta::terminal_snapshot(self)
@@ -401,8 +385,22 @@ pub mod traits {
         fn compat_span_usable_at(base: *mut u8) -> usize;
         fn compat_thp_charge_at(base: *mut u8) -> usize;
         fn compat_set_thp_charge_at(base: *mut u8, charge: usize);
-        fn compat_thp_observation_at(base: *mut u8) -> u64;
-        fn compat_set_thp_observation_at(base: *mut u8, token: u64);
+        /// # Safety
+        ///
+        /// Same contract as [`SegmentHeader::thp_observation_at`]: `base` is
+        /// the aligned base of a live segment with an initialized header, the
+        /// caller holds exclusive owner access; the field is plain (not
+        /// atomic) and remote free never touches it.
+        #[allow(unsafe_code)]
+        unsafe fn compat_thp_observation_at(base: *mut u8) -> u64;
+        /// # Safety
+        ///
+        /// Same contract as [`SegmentHeader::set_thp_observation_at`]: `base`
+        /// is the aligned base of a live segment with an initialized header,
+        /// the caller holds exclusive owner access (sole writer); the field is
+        /// plain (not atomic).
+        #[allow(unsafe_code)]
+        unsafe fn compat_set_thp_observation_at(base: *mut u8, token: u64);
         fn compat_set_large_size_at(base: *mut u8, size: usize);
         fn compat_set_large_align_at(base: *mut u8, align: usize);
         fn compat_set_bump_at(base: *mut u8, bump: usize);
@@ -484,11 +482,33 @@ pub mod traits {
         fn compat_set_thp_charge_at(base: *mut u8, charge: usize) {
             SegmentHeader::set_thp_charge_at(base, charge)
         }
-        fn compat_thp_observation_at(base: *mut u8) -> u64 {
-            SegmentHeader::thp_observation_at(base)
+        /// Field-specific header `thp_observation` read (root compat seam).
+        ///
+        /// # Safety
+        ///
+        /// Same contract as [`SegmentHeader::thp_observation_at`]: `base` is
+        /// the aligned base of a live segment with an initialized header, the
+        /// caller holds exclusive owner access; the field is plain (not
+        /// atomic) and remote free never touches it.
+        #[allow(unsafe_code)]
+        unsafe fn compat_thp_observation_at(base: *mut u8) -> u64 {
+            // SAFETY: caller contract — see `# Safety` above; expose/reattach
+            // preserves provenance; obligation is the header accessor's.
+            unsafe { SegmentHeader::thp_observation_at(rt(base)) }
         }
-        fn compat_set_thp_observation_at(base: *mut u8, token: u64) {
-            SegmentHeader::set_thp_observation_at(base, token)
+        /// Field-specific header `thp_observation` write (root compat seam).
+        ///
+        /// # Safety
+        ///
+        /// Same contract as [`SegmentHeader::set_thp_observation_at`]: `base`
+        /// is the aligned base of a live segment with an initialized header,
+        /// the caller holds exclusive owner access (sole writer); the field is
+        /// plain (not atomic).
+        #[allow(unsafe_code)]
+        unsafe fn compat_set_thp_observation_at(base: *mut u8, token: u64) {
+            // SAFETY: caller contract — see `# Safety` above; expose/reattach
+            // preserves provenance; obligation is the header accessor's.
+            unsafe { SegmentHeader::set_thp_observation_at(rt(base), token) }
         }
         #[allow(unsafe_code)]
         fn compat_set_large_size_at(base: *mut u8, size: usize) {

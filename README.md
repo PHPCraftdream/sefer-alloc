@@ -912,7 +912,7 @@ item-scoped regions.
 | [`crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/primitives/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **32** tier-1 module-level seams (15 in
-`src/`, 17 in `crates/`) plus **232** tier-2 item-scoped allows across **56**
+`src/`, 17 in `crates/`) plus **246** tier-2 item-scoped allows across **57**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.

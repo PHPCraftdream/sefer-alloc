@@ -859,12 +859,18 @@ impl AllocCore {
         // attributed to the reallocated mapping's own request size.
         #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
         if crate::alloc_core::segment::header_facade::kind_at(base) == SegmentKind::Large {
-            let token = SegmentHeader::compat_thp_observation_at(base);
+            #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+            // SAFETY: `base` is the aligned base of this owner's live segment
+            // with an initialized header; the field is plain and owner-only.
+            let token = unsafe { SegmentHeader::compat_thp_observation_at(base) };
             if token != 0 {
                 let size = crate::alloc_core::segment::header_facade::read_at(base).large_size;
                 ThpRuntime::note_realloc_invalidated_by_token(token, size);
             }
-            SegmentHeader::compat_set_thp_observation_at(base, 0);
+            #[allow(unsafe_code)] // R25-1: scoped unsafe block, owner-realloc contract.
+            // SAFETY: `base` is the aligned base of this owner's live segment
+            // with an initialized header; the field is plain, owner-written only.
+            let () = unsafe { SegmentHeader::compat_set_thp_observation_at(base, 0) };
         }
         let copy = old_layout.size().min(new_size);
         Node::copy_nonoverlapping(block, new_ptr, copy);

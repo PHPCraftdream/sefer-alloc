@@ -417,7 +417,7 @@ impl AllocCore {
         // A popped block always comes from a COMMITTED payload (a decommitted
         // segment's free list is empty), so no recommit is needed here — only
         // `carve_block` writes fresh payload and thus recommits.
-        meta.compat_inc_live();
+        meta.inc_live();
         tx.commit(&self.table);
         Ok(Some(block_ptr))
     }
@@ -605,7 +605,7 @@ impl AllocCore {
             // popped block always comes from a COMMITTED payload (a decommitted
             // segment's freelist is empty), so no recommit is needed here.
             // Batch `add_live(k)` ≡ `k` per-block `inc_live`s (D1 note there).
-            meta.compat_add_live(k as u32);
+            meta.add_live(k as u32);
             Ok(k)
         }
     }
@@ -741,7 +741,7 @@ impl AllocCore {
         // the refill path — immediately pushed to the free list, which calls
         // `dealloc_small` → `dec_live`, netting zero for refill blocks; the
         // caller's block keeps the +1). Owner-only counter, plain field bump.
-        meta.compat_inc_live();
+        meta.inc_live();
         // Mark the page containing `aligned_bump` as owned by `class_idx`.
         // R12-11 (task #262): diagnostic-only bookkeeping (`PageMap` is NOT
         // load-bearing for class routing — see its struct doc); gated behind
@@ -923,7 +923,7 @@ impl AllocCore {
         // byte-identical to the final `set_bump` of the n-th sequential carve.
         meta.compat_set_bump(aligned_start + n * block_size);
         // Batched live increment (D1): exactly `n` blocks handed out.
-        meta.compat_add_live(n as u32);
+        meta.add_live(n as u32);
         // Page-map "first class wins", applied once per DISTINCT page entered by
         // this run. `carve_block` marks a page iff it was not already owned; the
         // first block to land on a page is the one that dedicates it, so calling

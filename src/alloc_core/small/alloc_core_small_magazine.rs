@@ -811,7 +811,7 @@ impl AllocCore {
 
         // E3 (task W4): retire accepted credits once, after `set_head`.
         // The following eligibility check only selects pool/release policy.
-        seg_meta(base).compat_sub_live(accepted_count as u32);
+        seg_meta(base).sub_live(accepted_count as u32);
         #[cfg(feature = "alloc-decommit")]
         {
             let small_cur = self.small_cur;

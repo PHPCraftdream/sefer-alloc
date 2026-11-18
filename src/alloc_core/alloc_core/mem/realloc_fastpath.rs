@@ -424,7 +424,12 @@ impl AllocCore {
                     // own request size; zero = never a control observation,
                     // nothing to sample.
                     #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-                    let token = SegmentHeader::compat_thp_observation_at(base);
+                    #[allow(unsafe_code)]
+                    // SAFETY (R25-1, scoped unsafe block, owner-realloc contract): `base` is
+                    // the aligned base of this owner's live
+                    // Large segment with an initialized header; the
+                    // observation field is plain and owner-only.
+                    let token = unsafe { SegmentHeader::compat_thp_observation_at(base) };
                     #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
                     let old_size =
                         crate::alloc_core::segment::header_facade::read_at(base).large_size;
@@ -458,7 +463,12 @@ impl AllocCore {
                     // and the fall-through moving leg consumes it exactly
                     // once — no double count.
                     #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
-                    let token = SegmentHeader::thp_observation_at(base);
+                    #[allow(unsafe_code)]
+                    // SAFETY (R25-1, scoped unsafe block, owner-realloc contract): `base` is
+                    // the aligned base of this owner's live
+                    // Large segment with an initialized header; the
+                    // observation field is plain and owner-only.
+                    let token = unsafe { SegmentHeader::thp_observation_at(base) };
                     #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
                     let old_size =
                         crate::alloc_core::segment::header_facade::read_at(base).large_size;

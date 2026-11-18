@@ -455,7 +455,9 @@ impl AllocCore {
         // SAFETY: `base + page_map_off()` is the freshly carved page map of
         // a segment this owner just reserved (exclusive access, still
         // unregistered), with `Layout::page_map`'s footprint.
-        unsafe { PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages) };
+        unsafe {
+            PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages)
+        };
         // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
         #[allow(unsafe_code)]
         unsafe {

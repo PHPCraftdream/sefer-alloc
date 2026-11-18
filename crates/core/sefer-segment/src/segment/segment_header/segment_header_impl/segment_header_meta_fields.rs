@@ -44,7 +44,9 @@ impl SegmentMeta {
 
     /// Issue one credit. A segment contains at most `SEGMENT / MIN_BLOCK` blocks.
     #[inline(always)]
-    pub(crate) fn inc_live(&mut self) {
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers. Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn inc_live(&mut self) {
         self.add_live(1);
     }
 
@@ -52,7 +54,9 @@ impl SegmentMeta {
     /// Equivalent to `n` sequential [`inc_live`](Self::inc_live) calls: the
     /// counter is owner-only, so intermediate values are unobservable.
     #[inline(always)]
-    pub(crate) fn add_live(&mut self, n: u32) {
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers. Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn add_live(&mut self, n: u32) {
         let v = self.live_count_of();
         let limit =
             (crate::alloc_core::platform::os::SEGMENT / crate::size_classes::MIN_BLOCK) as u32;
@@ -65,7 +69,9 @@ impl SegmentMeta {
     /// Decrement `live_count` (a block was freed) and return the NEW value.
     /// Underflow is terminal: a valid owner-side retirement has a credit.
     #[inline(always)]
-    pub(crate) fn dec_live(&mut self) -> u32 {
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers. Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn dec_live(&mut self) -> u32 {
         self.sub_live(1)
     }
 
@@ -74,7 +80,9 @@ impl SegmentMeta {
     /// [`dec_live`](Self::dec_live) calls: the counter is owner-only, so the
     /// intermediate per-block values are unobservable.
     #[inline(always)]
-    pub(crate) fn sub_live(&mut self, n: u32) -> u32 {
+    /// P2.1 boundary: widened from pub(crate) to doc-hidden pub for the root allocator callers. Logged in .rush/p21-widening-p21.csv.
+    #[doc(hidden)]
+    pub fn sub_live(&mut self, n: u32) -> u32 {
         let v = self.live_count_of();
         let Some(new) = v.checked_sub(n) else {
             fatal(b"segment_header_meta_fields: sub_live live_count underflow\n");
