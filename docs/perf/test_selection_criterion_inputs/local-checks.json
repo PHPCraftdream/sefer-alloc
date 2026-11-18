@@ -1,0 +1,114 @@
+[
+  {
+    "command": "node scripts/verify-structure-limits.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/module-graph.mjs --check-backedges",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-ci-node-tests.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-ci-sentinels.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-loom-target-wiring.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-miri-target-wiring.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-miri-sharding.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/j13b_zero_cost_receipt.mjs --check",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-root-package-list.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-no-bare-abort.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/ghost_inventory.mjs --check --report docs/verification/GHOST_INVENTORY.md",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/ghost_inventory_mutants.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-b4-30-pin.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-doc-inventories.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-ci-decomposition.mjs",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/ci-plan.mjs --check-doc",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/verify-sprint-close.mjs --selftest",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/test-impact-map.mjs --selftest",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/select-tests.mjs --selftest",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/r20-gate-config.mjs --selftest",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/r20_r6_ab_iai_run.mjs --selftest",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/test-selection-impact.mjs --check (Cargo intentionally absent from PATH; cargo metadata unavailable)",
+    "exitCode": 1
+  },
+  {
+    "command": "git diff --check",
+    "exitCode": 0
+  },
+  {
+    "command": "node scripts/classify-tests.mjs --check (Cargo intentionally absent from PATH; both generated docs stale)",
+    "exitCode": 1
+  },
+  {
+    "command": "git diff --exit-code -- docs/verification/ (intentional CI decomposition baseline difference)",
+    "exitCode": 1
+  },
+  {
+    "command": "node --test tests/test_selection_criterion.test.mjs (26/26 passed, including subtests)",
+    "exitCode": 0
+  },
+  {
+    "command": "docs-consistency Node suite (Cargo intentionally absent from PATH; 258/260 passed; classification and old impact failed)",
+    "exitCode": 1
+  },
+  {
+    "command": "node scripts/collect-test-selection-criterion.mjs (pass 3 live: 22 gh calls at the default cap; 6 runs, all stable at attempt 1)",
+    "exitCode": 0
+  }
+]
