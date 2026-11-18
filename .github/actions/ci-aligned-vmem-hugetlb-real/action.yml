@@ -1,0 +1,22 @@
+name: CI aligned-vmem-hugetlb-real
+description: Original aligned-vmem-hugetlb-real job steps (stable Rust setup and real hugetlb pool configuration)
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Configure a real hugetlb pool (hard-asserted, never skipped)
+      run: |
+        set -euo pipefail
+        uname -r
+        grep -i Hugepagesize /proc/meminfo
+        echo 64 | sudo tee /proc/sys/vm/nr_hugepages > /dev/null
+        GOT=$(cat /proc/sys/vm/nr_hugepages)
+        echo "nr_hugepages = $GOT"
+        if [ "$GOT" -lt 8 ]; then
+          echo "::error::could not reserve a hugetlb pool (nr_hugepages=$GOT)." \
+               "This job exists to execute the real MAP_HUGETLB path; skipping" \
+               "would make it pass while proving nothing. Fix the runner or" \
+               "delete the job — do not make it conditional."
+          exit 1
+        fi
+      shell: bash

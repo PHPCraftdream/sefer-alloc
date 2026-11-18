@@ -40,6 +40,7 @@ export const CRATE_GROUPS = {
   'sefer-platform': 'crate_sefer_platform',
   'sefer-policy': 'crate_sefer_policy',
   'sefer-region': 'crate_sefer_region',
+  'sefer-segment': 'crate_sefer_segment',
   'size-classes': 'crate_size_classes',
   'tagged-index-stack': 'crate_tagged_index_stack',
 };
@@ -341,6 +342,7 @@ function selftest() {
   eq(on(P(['crates/platform/aligned-vmem/src/lib.rs'])), 'always,crate_aligned_vmem,fast,os,seam', 'platform crate');
   eq(on(P(['crates/platform/sefer-platform/src/os.rs'])), 'always,crate_sefer_platform,fast,os,seam', 'sefer-platform crate');
   eq(on(P(['crates/platform/proc-probe/src/lib.rs', 'crates/platform/proc-memstat/src/lib.rs'])), 'always,crate_proc,fast,os,seam', 'proc');
+  eq(on(P(['crates/core/sefer-segment/src/lib.rs'])), 'always,crate_sefer_segment,fast,seam', 'sefer-segment crate');
   eq(on(P(['crates/brand-new/src/lib.rs'])), 'always,fast,seam', 'unknown crate is conservative');
   // scripts: matrix/manifest scripts feed fast/seam; other scripts are `always`.
   eq(on(P(['scripts/check-matrix.mjs'])), 'always,fast', 'check-matrix');
@@ -437,6 +439,22 @@ function selftest() {
   GR.packages.set('sefer-alloc', { dir: '.', deps: new Set(['mid', 'standalone']), dependents: new Set(), refDeps: new Set(['standalone']) });
   GR.packages.get('standalone').dependents.add('sefer-alloc');
   eq(on(plan({ files: ['crates/x/standalone/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: GR, crateGroups: CRATE_GROUPS_FIX })), 'always,crate_standalone,fast,seam', 'reference edge alone keeps seam/os on');
+  // (k) An aligned-vmem change reaches sefer-segment via sefer-platform
+  // and selects its gate through the default crate mapping.
+  const G2 = {
+    packages: new Map([
+      ['sefer-alloc', { dir: '.', deps: new Set(['sefer-segment']), dependents: new Set(), refDeps: new Set() }],
+      ['aligned-vmem', { dir: 'crates/platform/aligned-vmem', deps: new Set(), dependents: new Set(['sefer-platform']), refDeps: new Set() }],
+      ['sefer-platform', { dir: 'crates/platform/sefer-platform', deps: new Set(['aligned-vmem']), dependents: new Set(['sefer-segment']), refDeps: new Set() }],
+      ['sefer-segment', { dir: 'crates/core/sefer-segment', deps: new Set(['sefer-platform']), dependents: new Set(['sefer-alloc']), refDeps: new Set() }],
+      ['unrelated', { dir: 'crates/x/unrelated', deps: new Set(), dependents: new Set(), refDeps: new Set() }],
+    ]),
+    root: 'sefer-alloc',
+  };
+  eq(plan({ files: ['crates/platform/aligned-vmem/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: G2 }).crate_sefer_segment, true, 'real chain: aligned-vmem change pulls sefer-segment via default mapping');
+  // (l) unrelated crate in the same graph: only itself, root unaffected, no
+  // group (no entry in the default mapping), seam/os suppressed.
+  eq(plan({ files: ['crates/x/unrelated/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: G2 }).crate_sefer_segment, false, 'real chain: unrelated crate stays narrow');
   console.log(JSON.stringify({ version: 1, status: 'PASS', scope: 'ci-plan selftest', checks: n }));
 }
 
