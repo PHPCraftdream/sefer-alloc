@@ -26,7 +26,7 @@ function cli(argv) {
   const options = { stages: [], outDir: join(ROOT, '.rush/r20-evidence-reverify') };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--selftest') options.selftest = true;
+    if (arg === '--selftest' || arg === '--self-test') options.selftest = true;
     else if (arg === '--dry-run') options.dry = true;
     else if (['--prepare', '--build', '--oracle', '--measure'].includes(arg)) {
       options.stages.push(arg.slice(2));
@@ -252,10 +252,38 @@ function rustc(nightly) {
 
 const metadata = (path, value) => appendFileSync(path, `E0_METADATA ${JSON.stringify(value)}\n`);
 
+// Projection of the proposal mutant_rejected cell: pin 'true' only when the
+// mutant was killed on a PASS registry row that carries a real mutant.
+function proposedMutantRejected(row, killed) {
+  return killed === true && row.status === 'PASS' && row.mutant.trim() !== '' ?
+    'true' : row.mutant_rejected;
+}
+
 function verify(out, chosen, ident, registry, recipeRoot = RECIPE_ROOT) {
+  // Read the raw summary snapshot exactly once; the shared verifier receives
+  // the same bytes through its readFileSync seam.
+  const summaryBytes = readFileSync(join(out, 'summary.json'), 'utf8');
+  const outcomes = new Map(JSON.parse(summaryBytes).rows.map((row) => [row.id, row]));
+  const seamReadFileSync = (path, ...rest) =>
+    path === join(out, 'summary.json') ? summaryBytes : readFileSync(path, ...rest);
+  const parseProposalCsv = (text) => {
+    const rows = parseCsv(text);
+    for (const cells of rows.slice(1)) {
+      if (cells.length !== HEADER.length) continue; // shared verifier rejects malformed rows
+      const result = outcomes.get(cells[0]);
+      const registryRow = registry.get(cells[0]);
+      if (!result || !registryRow) continue; // shared verifier self-rejects
+      if (cells[13] !== proposedMutantRejected(registryRow, result.mutant_rejected === true)) {
+        throw Error(`proposal pins mismatch ${cells[0]}`);
+      }
+      cells[13] = result.mutant_rejected ? 'true' : registryRow.mutant_rejected;
+    }
+    return rows;
+  };
   return verifyArtifacts({
-    out, chosen, ident, registry, recipeRoot, hash, existsSync, readFileSync,
-    join, load, recipePath, lf, SHA, STAGES, HEADER, parseCsv, verifyPerformed,
+    out, chosen, ident, registry, recipeRoot, hash, existsSync,
+    readFileSync: seamReadFileSync, join, load, recipePath, lf, SHA, STAGES,
+    HEADER, parseCsv: parseProposalCsv, verifyPerformed,
   });
 }
 
@@ -454,7 +482,7 @@ async function main() {
       profile: plan.profile,
       source_sha: identity.head,
       source_tree: identity.tree,
-      mutant_rejected: plan.mutantRejected ? 'true' : plan.row.mutant_rejected,
+      mutant_rejected: proposedMutantRejected(plan.row, plan.mutantRejected),
       receipt: plan.receipt,
       receipt_sha256: plan.receiptHash,
       status_reason: `E0 verified; preserve ${plan.row.status}`,
@@ -936,7 +964,31 @@ async function runSelftestChecks(root) {
   writeFileSync(join(artifactRoot, 'verdict.txt'), 'E0 PASS\n');
   verify(artifactRoot, ['STABLE', 'NIGHTLY'], identity, mixedRegistry, mixedRoot);
 
-  console.log('PASS E0 selftest: streaming; real-receipt e2e; R0 witnesses; mixed toolchains; independent artifact tampering');
+  for (const [status, expected] of [['CONDITIONAL', 'false'], ['PASS', 'true']]) {
+    const id = `MUTANT-${status}`;
+    const { registry, row } = createSelftestRegistry(id, status);
+    const negative = makeSelftestStep('mutant', steps[0].argv, {}, ['mutant-marker'], 1);
+    const { name, argv, env, expect } = negative;
+    const recipe = { id, registryActivationHash: hash(Buffer.from(row.activation)), steps: recipeData.steps,
+      mutant: { ...mutant, steps: [{ name, argv, env, expect }],
+        expect: { exitNonZero: true, stdoutRegex: ['mutant-marker'] } } };
+    const file = recipePath(id, recipeRoot);
+    writeFileSync(file, JSON.stringify(recipe));
+    const { buffer, ranges } = buildFixtureReceipt([...steps, negative], [...baselineOutputs, 'mutant-marker\n']);
+    const controls = steps.map((step, i) => ({ ...step, ...ranges[i] }));
+    const result = { ...makeSyntheticResult(id, row, identity, file, recipe, hash(buffer), 'fixture', controls),
+      mutant_rejected: true, mutant_steps: [{ ...negative, ...ranges.at(-1) }], restored_steps: controls,
+      mutant_matches: negative.matches, mutant_original_sha256: hash('original'), mutant_restored_sha256: hash('original') };
+    writeFileSync(join(artifactRoot, `_raw_reverify_${id}.log`), buffer);
+    writeFileSync(join(artifactRoot, 'summary.json'), JSON.stringify({ identity, selectedIds: [id],
+      stages: ['oracle'], toolchains: { [id]: result.toolchain }, rows: [result] }));
+    const proposal = { ...row, ...result, mutant_rejected: proposedMutantRejected(row, true) };
+    if (proposal.mutant_rejected !== expected) throw Error(`mutant proposal mismatch ${id}`);
+    writeFileSync(join(artifactRoot, 'proposed_rows.csv'), encode([HEADER, HEADER.map((key) => proposal[key] ?? '')]));
+    verify(artifactRoot, [id], identity, registry, recipeRoot);
+  }
+
+  console.log('PASS E0 selftest: streaming; real-receipt e2e; R0 witnesses; mixed toolchains; independent artifact tampering; mutant-cell adapter');
 }
 
 try {
