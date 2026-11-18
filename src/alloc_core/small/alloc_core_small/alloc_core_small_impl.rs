@@ -8,20 +8,16 @@ use crate::alloc_core::node::{Node, NODE_SIZE};
 ))]
 use crate::alloc_core::os;
 use crate::alloc_core::os::SEGMENT;
-// R7-A2: `SegmentHeader::segment_id_at` is consulted here by the
-// `alloc-segment-directory`-gated directory-bitmap maintenance arms of
-// `pop_free`/`drain_freelist_batch` and by the `hardened` freelist
-// validation, so the import is gated on exactly those features.
-#[cfg(any(feature = "hardened", feature = "alloc-segment-directory"))]
-use crate::alloc_core::segment_header::SegmentHeader;
-use crate::alloc_core::segment_header::{align_up, SegmentMeta, FREE_LIST_NULL};
-// `Layout as SegLayout` is consulted here only by the `alloc-decommit`-gated
-// decommit-recommit arms of `carve_block`/`carve_batch` (and only on their
-// eager `not(small-segment-lazy-commit)` leg) — gate the import identically
-// so non-decommit builds stay warning-clean.
 #[cfg(all(feature = "alloc-decommit", not(feature = "small-segment-lazy-commit")))]
 use crate::alloc_core::segment_header::Layout as SegLayout;
+use crate::alloc_core::segment_header::{align_up, FREE_LIST_NULL};
 use crate::alloc_core::size_classes::SizeClasses;
+#[cfg(all(
+    feature = "alloc-stats",
+    feature = "alloc-segment-directory",
+    not(feature = "numa-aware")
+))]
+use sefer_segment::support::directory_counters as directory_stats;
 
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::state_byte::StateByte;
@@ -40,28 +36,11 @@ use crate::alloc_core::state_byte::StateByte;
 pub(crate) static GROW_COMMIT_COUNT: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
-/// B1 (R7 Workstream B): the size of the FIRST committed payload chunk when a
-/// small segment is lazily reserved under `small-segment-lazy-commit`, or
-/// the primordial segment under `primordial-lazy-commit` (R12-9, task #260 —
-/// this constant is SHARED verbatim by both split policies; see
-/// `bootstrap::primordial`'s identical `LAZY_FIRST_CHUNK` use). Only the
-/// metadata region `[0, small_meta_end)` plus this chunk are committed at
-/// reservation time; the rest of the 4 MiB segment stays reserved-but-
-/// uncommitted. B2's grow-on-carve logic commits additional chunks
-/// (sized by [`GROW_CHUNK`]) as the bump cursor advances past the frontier.
-///
-/// 256 KiB is large enough to hold many initial carve batches without faulting
-/// (the refill batch is 31 blocks; even at the largest small class of ~8 KiB
-/// that is ~248 KiB, comfortably within one chunk). B5 will sweep this value
-/// (64/128/256/512 KiB) against the first-heap commit judge; 256 KiB is the
-/// conservative default.
-///
-/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
 #[cfg(any(
     feature = "primordial-lazy-commit",
     feature = "small-segment-lazy-commit"
 ))]
-pub(crate) const LAZY_FIRST_CHUNK: usize = 256 * 1024;
+pub(crate) use sefer_segment::support::geometry::LAZY_FIRST_CHUNK;
 
 /// B2 (R7 Workstream B): the chunk size used when GROWING the commit frontier
 /// past its initial value during bump-carve. When a `carve_block` or
@@ -111,44 +90,6 @@ const _: () = {
 };
 
 impl AllocCore {
-    #[cfg(all(feature = "internals", feature = "bench-internals"))]
-    #[doc(hidden)]
-    pub fn dbg_r11_scalar_carve_for_test(&mut self, class_idx: usize) -> Option<*mut u8> {
-        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
-            return None;
-        }
-        self.carve_block(class_idx, SizeClasses::block_size(class_idx))
-    }
-
-    /// Current owner state: bump, live credits, class head, commit frontier.
-    #[cfg(all(feature = "internals", feature = "bench-internals"))]
-    #[doc(hidden)]
-    pub fn dbg_r11_issue_state_for_test(
-        &self,
-        class_idx: usize,
-    ) -> Option<(usize, u32, u32, usize)> {
-        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
-            return None;
-        }
-        let meta = SegmentMeta::new(self.small_cur);
-        #[cfg(any(
-            feature = "primordial-lazy-commit",
-            feature = "small-segment-lazy-commit"
-        ))]
-        let frontier = meta.committed_payload_end_of();
-        #[cfg(not(any(
-            feature = "primordial-lazy-commit",
-            feature = "small-segment-lazy-commit"
-        )))]
-        let frontier = SEGMENT;
-        Some((
-            meta.bump_of(),
-            meta.live_count_of(),
-            meta.bin_table().head(class_idx),
-            frontier,
-        ))
-    }
-
     /// Allocate a small block of the given class. Routes through the current
     /// small segment's free list (pop); on a miss, scans ALL owned segments for
     /// one with a non-empty class free list (Phase 12.1: free state lives in
@@ -230,7 +171,7 @@ impl AllocCore {
                 if !self.directory_sidecar.is_null() || self.ingress_armed() {
                     if let Some(seg) = self.find_segment_with_free_forced(class_idx) {
                         #[cfg(feature = "alloc-stats")]
-                        crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                        directory_stats::directory_rescue_oom_avoided()
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         match self.pop_free(seg, class_idx) {
                             Ok(Some(ptr)) => return ptr,
@@ -267,6 +208,7 @@ impl AllocCore {
     /// before or after a successful carve on the SAME segment is equivalent.
     #[cfg(feature = "virgin-zero-skip")]
     #[inline]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(crate) fn alloc_small_with_virgin(&mut self, class_idx: usize) -> (*mut u8, bool) {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
@@ -287,7 +229,10 @@ impl AllocCore {
         // 3. No free block anywhere: carve a FRESH block from the CURRENT
         //    segment. Read the lifetime-virginity bit before carving — the
         //    carve itself never mutates the bit (see this fn's doc).
-        let cur_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let cur_virgin =
+            unsafe { crate::alloc_core::segment_header::SegmentMeta::new(self.small_cur) }
+                .payload_virgin_of();
         if !self.prepare_current_carve(class_idx, block_size) {
             return (core::ptr::null_mut(), false);
         }
@@ -307,7 +252,10 @@ impl AllocCore {
                     Err(()) => return (core::ptr::null_mut(), false),
                     Ok(None) => {}
                 }
-                let fresh_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
+                // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+                let fresh_virgin =
+                    unsafe { crate::alloc_core::segment_header::SegmentMeta::new(self.small_cur) }
+                        .payload_virgin_of();
                 match self.carve_block_with_refill(class_idx, block_size) {
                     Some(ptr) => (ptr, fresh_virgin && cfg!(not(miri))),
                     None => (core::ptr::null_mut(), false),
@@ -321,7 +269,7 @@ impl AllocCore {
                 if !self.directory_sidecar.is_null() || self.ingress_armed() {
                     if let Some(seg) = self.find_segment_with_free_forced(class_idx) {
                         #[cfg(feature = "alloc-stats")]
-                        crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                        directory_stats::directory_rescue_oom_avoided()
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         match self.pop_free(seg, class_idx) {
                             Ok(Some(ptr)) => return (ptr, false),
@@ -335,30 +283,44 @@ impl AllocCore {
         }
     }
 
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     fn prepare_current_carve(&self, class_idx: usize, block_size: usize) -> bool {
-        let bump = SegmentMeta::new(self.small_cur).bump_of();
+        // `small_cur` is the live exclusively-owned current small segment;
+        // metadata read only (owner discipline, no `Send`).
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let bump = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(self.small_cur) }
+            .bump_of();
         let aligned = align_up(bump, block_size);
-        aligned + block_size > SEGMENT
-            || self
-                .table
-                .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
-                .is_some()
+        aligned + block_size > SEGMENT || {
+            // SAFETY: live owned segment base and initialized table;
+            // prepare only probes routes (owner-exclusive).
+            #[allow(unsafe_code)]
+            unsafe {
+                self.table
+                    .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
+            }
+            .is_some()
+        }
     }
 
     #[cfg(feature = "hardened")]
     #[inline(always)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     fn valid_free_node(segment: *mut u8, off: u32, class_idx: usize) -> bool {
         let offset = off as usize;
-        let meta = SegmentMeta::new(segment);
-        let start = match SegmentHeader::kind_at(segment) {
-            crate::alloc_core::segment_header::SegmentKind::Primordial => {
-                crate::alloc_core::segment_header::Layout::primordial_meta_end()
-            }
-            crate::alloc_core::segment_header::SegmentKind::Small => {
-                crate::alloc_core::segment_header::Layout::small_meta_end()
-            }
-            _ => return false,
-        };
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(segment) };
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let start =
+            match unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(segment) } {
+                crate::alloc_core::segment_header::SegmentKind::Primordial => {
+                    crate::alloc_core::segment_header::Layout::primordial_meta_end()
+                }
+                crate::alloc_core::segment_header::SegmentKind::Small => {
+                    crate::alloc_core::segment_header::Layout::small_meta_end()
+                }
+                _ => return false,
+            };
         let size = SizeClasses::block_size(class_idx);
         offset >= start
             && offset < SEGMENT
@@ -366,7 +328,8 @@ impl AllocCore {
             && offset
                 .checked_add(size)
                 .is_some_and(|end| end <= meta.bump_of() && end <= SEGMENT)
-            && meta.state_byte().read(off) == StateByte::encode(class_idx, StateByte::FREE)
+            // SAFETY: The guards bound off in the live, owner-held segment.
+            && unsafe { meta.state_byte().read(off) } == StateByte::encode(class_idx, StateByte::FREE)
     }
 
     #[cfg(feature = "hardened")]
@@ -396,12 +359,14 @@ impl AllocCore {
     /// Pop a free block; `Err` is an uncommitted class-spill OOM, leaving
     /// the class head and bitmap unchanged. Hardened corruption aborts.
     #[inline(always)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(in crate::alloc_core) fn pop_free(
         &mut self,
         segment: *mut u8,
         class_idx: usize,
     ) -> Result<Option<*mut u8>, ()> {
-        let mut meta = SegmentMeta::new(segment);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(segment) };
         let mut bt = meta.bin_table();
         let head_off = bt.head(class_idx);
         if head_off == FREE_LIST_NULL {
@@ -426,7 +391,12 @@ impl AllocCore {
                 crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
             Node::continuation_offset_or_fatal(segment, next, bounds)
         };
-        let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
+        // SAFETY: `segment` is a live table-registered segment owned by this
+        // allocator (pop_free operates on its own owner table base) — the
+        // pre-move safe call, contract unchanged.
+        #[allow(unsafe_code)]
+        let issued = unsafe { self.table.prepare_small_issue(segment, head_off, class_idx) };
+        let Some(tx) = issued else {
             return Err(());
         };
         bt.set_head(class_idx, new_head);
@@ -435,19 +405,27 @@ impl AllocCore {
         // is non-empty→empty when new_head is FREE_LIST_NULL.
         #[cfg(feature = "alloc-segment-directory")]
         if new_head == FREE_LIST_NULL {
-            let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+            // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the caller holds the owner's read permission for the write-once `segment_id` field.
+            let slot_idx =
+                unsafe { crate::alloc_core::segment_header::SegmentHeader::segment_id_at(segment) }
+                    as usize;
             self.publish_empty(segment, class_idx, slot_idx);
         }
         // B4 (в) F3-fix: assert the byte's PRIOR value BEFORE the issue
         // commits LIVE.
         debug_assert_eq!(
-            meta.state_byte().read(head_off),
+            // SAFETY: The owner bin contains initialized, in-segment block
+            // starts; hardened builds additionally validate the head above.
+            unsafe { meta.state_byte().read(head_off) },
             StateByte::encode(class_idx, StateByte::FREE),
             "pop_free: free-list head must carry its exact class FREE byte",
         );
         // B4 (в): issue = commit FREE → LIVE in the state byte.
-        meta.state_byte()
-            .write(head_off, class_idx, StateByte::LIVE);
+        // SAFETY: The owner bin head is an in-segment start of this class.
+        unsafe {
+            meta.state_byte()
+                .write(head_off, class_idx, StateByte::LIVE)
+        };
         // Phase 35 (M6): a block left the free list → one more live block.
         // A popped block always comes from a COMMITTED payload (a decommitted
         // segment's free list is empty), so no recommit is needed here — only
@@ -524,6 +502,7 @@ impl AllocCore {
     /// S1: `issue_state` = state byte committed per popped block — LIVE for
     /// batch paths, MAG for the magazine refill (parks n−1 blocks; see
     /// `finish_magazine_refill`). Same as `alloc_batch`'s deferred-clear.
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(in crate::alloc_core) fn try_drain_freelist_batch(
         &mut self,
         segment: *mut u8,
@@ -534,7 +513,8 @@ impl AllocCore {
         if out.is_empty() {
             return Ok(0);
         }
-        let mut meta = SegmentMeta::new(segment);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(segment) };
         let mut bt = meta.bin_table();
         // Run-level protocol (B4-R3): fatal route guards run once in
         // `prepare_small_issue_run`; drain stores no class code (G1-K1).
@@ -549,7 +529,10 @@ impl AllocCore {
             // A bin-`c` block was issued as class `c` before it was freed, so
             // its start granule already holds class code `c + 1`; drain does
             // not re-store it (carve, the first issue, does).
-            let run = self.table.prepare_small_issue_run(segment, class_idx);
+            // SAFETY: `segment` is a live table-registered segment owned by
+            // this allocator (drain operates on its own owner table base).
+            #[allow(unsafe_code)]
+            let run = unsafe { self.table.prepare_small_issue_run(segment, class_idx) };
             // B2-R1: one pass. Each link is validated (fatal on corruption, as
             // before) before its block is committed. G1-K1: no leaf is
             // prepared, so drain no longer fails on a spill OOM.
@@ -609,7 +592,9 @@ impl AllocCore {
                 };
                 // B4 (в)/S1: issue = commit `issue_state` (LIVE, or MAG when
                 // the caller parks the batch in a magazine).
-                meta.state_byte().write(head_off, class_idx, issue_state);
+                // SAFETY: The owner bin supplies an in-segment start of this
+                // class. The caller selects LIVE for issue or MAG for refill.
+                unsafe { meta.state_byte().write(head_off, class_idx, issue_state) };
                 out[k] = block_ptr;
                 k += 1;
                 head_off = next_off;
@@ -629,7 +614,10 @@ impl AllocCore {
             let _ = run;
             #[cfg(feature = "alloc-segment-directory")]
             if head_off == FREE_LIST_NULL {
-                let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+                // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the caller holds the owner's read permission for the write-once `segment_id` field.
+                let slot_idx = unsafe {
+                    crate::alloc_core::segment_header::SegmentHeader::segment_id_at(segment)
+                } as usize;
                 self.publish_empty(segment, class_idx, slot_idx);
             }
             // `inc_live` ONCE by `k` (D1): exactly `k` blocks handed out; a
@@ -651,13 +639,15 @@ impl AllocCore {
     /// page-map marking (see `PageMap`'s struct doc) — it is genuinely unused
     /// without `page-map-diag`.
     #[cfg_attr(not(feature = "page-map-diag"), allow(unused_variables))]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(in crate::alloc_core::small) fn carve_block(
         &mut self,
         class_idx: usize,
         block_size: usize,
     ) -> Option<*mut u8> {
         let segment = self.small_cur;
-        let mut meta = SegmentMeta::new(segment);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(segment) };
         // Read/write only the owner-only `bump` field, never the whole header.
         // Terminal foreign frees use route descriptors and independent sidecars;
         // they do not read this bump cursor.
@@ -668,9 +658,13 @@ impl AllocCore {
         }
         // Fallible prepare before any mutation: `?` is the `return None` the
         // old inline guard performed — "segment full" so the caller reserves.
-        let tx = self
-            .table
-            .prepare_small_issue(segment, aligned_bump as u32, class_idx)?;
+        // SAFETY: `segment` is a live table-registered segment owned by this
+        // allocator (carve operates on its own owner table base).
+        #[allow(unsafe_code)]
+        let tx = unsafe {
+            self.table
+                .prepare_small_issue(segment, aligned_bump as u32, class_idx)?
+        };
         // Phase 35 (M6 recommit): if this segment's payload was decommitted (it
         // emptied and we returned its pages to the OS), we are about to write
         // into the payload — recommit and clear the flag BEFORE the bump cursor
@@ -785,8 +779,11 @@ impl AllocCore {
         let ptr = Node::deref(segment, aligned_bump);
         tx.commit(&self.table);
         // B4 (в): a freshly carved block is issued LIVE at first touch.
-        meta.state_byte()
-            .write(aligned_bump as u32, class_idx, StateByte::LIVE);
+        // SAFETY: The owner just committed this in-segment class start.
+        unsafe {
+            meta.state_byte()
+                .write(aligned_bump as u32, class_idx, StateByte::LIVE)
+        };
         Some(ptr)
     }
 
@@ -852,6 +849,7 @@ impl AllocCore {
 
     /// S1: `issue_state` — LIVE (batch paths) or MAG (magazine refill);
     /// see `try_drain_freelist_batch`.
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(in crate::alloc_core) fn try_carve_batch(
         &mut self,
         class_idx: usize,
@@ -863,7 +861,8 @@ impl AllocCore {
             return Ok(0);
         }
         let segment = self.small_cur;
-        let mut meta = SegmentMeta::new(segment);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(segment) };
         let bump = meta.bump_of();
         let aligned_start = align_up(bump, block_size);
         if aligned_start + block_size > SEGMENT {
@@ -876,7 +875,10 @@ impl AllocCore {
         // Release store (see `IssueRun`). A successful promotion is retained
         // even if later OS commit fails; no class code or issue credit
         // changes until the carve commits.
-        let mut run = self.table.prepare_small_issue_run(segment, class_idx);
+        // SAFETY: `segment` is a live table-registered segment owned by this
+        // allocator (batch carve operates on its own owner table base).
+        #[allow(unsafe_code)]
+        let mut run = unsafe { self.table.prepare_small_issue_run(segment, class_idx) };
         for i in 0..n {
             let off = aligned_start + i * block_size;
             if !run.prepare_for(off as u32) {
@@ -978,7 +980,8 @@ impl AllocCore {
             *slot = Node::deref(segment, off);
             run.commit(off as u32);
             // B4 (в)/S1: freshly carved blocks commit `issue_state` (see doc).
-            meta.state_byte().write(off as u32, class_idx, issue_state);
+            // SAFETY: The owner’s room check bounds each class start in SEGMENT.
+            unsafe { meta.state_byte().write(off as u32, class_idx, issue_state) };
         };
         let slots = out[..n].iter_mut();
         if issue_state == StateByte::MAG {

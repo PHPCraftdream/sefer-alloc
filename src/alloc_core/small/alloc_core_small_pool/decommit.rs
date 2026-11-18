@@ -11,7 +11,7 @@ use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentMeta, FREE_L
 // the production decommit body consults neither — so gate the imports
 // identically.
 #[cfg(feature = "internals")]
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
+use crate::alloc_core::segment_header::SegmentKind;
 
 use crate::alloc_core::alloc_core::{AllocCore, DECOMMIT_CALLS};
 
@@ -21,16 +21,19 @@ impl AllocCore {
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn dbg_is_decommitted_for(&self, ptr: *mut u8) -> Option<bool> {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(candidate)?;
         if !matches!(
-            SegmentHeader::kind_at(base),
+            // SAFETY: `base` is the live table-owned segment (diag read-only).
+            unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) },
             SegmentKind::Small | SegmentKind::Primordial
         ) {
             return None;
         }
-        Some(SegmentMeta::new(base).is_decommitted())
+        // SAFETY: `base` is the live table-owned segment (diag read-only).
+        Some(unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }.is_decommitted())
     }
 
     /// TEST-ONLY (R12-10, task #261, `virgin-zero-skip`): force the
@@ -112,10 +115,15 @@ impl AllocCore {
         if !self.table.contains_base_ro(base) {
             return false;
         }
-        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        if !matches!(
+            unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) },
+            SegmentKind::Small
+        ) {
             return false;
         }
-        let mut meta = SegmentMeta::new(base);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let mut meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
         Self::decommit_empty_segment_impl(&mut meta, base, false);
         true
     }

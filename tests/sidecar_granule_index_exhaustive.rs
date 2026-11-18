@@ -34,7 +34,7 @@ mod alloc_core {
 }
 
 #[allow(dead_code)] // Dense test-only constructor is deliberately not exercised.
-#[path = "../src/alloc_core/segment/remote_bitmap/mod.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/remote_bitmap/mod.rs"]
 mod remote_bitmap;
 
 // Ghost checks in the included production files (docs/GHOST_CHECKS_PLAN.md):

@@ -1329,7 +1329,8 @@ function scanSetRsFiles() {
   // `crates/platform/aligned-vmem/src/page.rs` made this script print
   // `scanned 560 file(s) (560 tracked + 0 untracked)` and ALL GREEN, with two
   // phantom entries and the conflicted file examined three times.
-  const tracked = [...new Set(run(['ls-files', '--cached', '--', '*.rs']))];
+  const deleted = new Set(run(['ls-files', '--deleted', '--', '*.rs']));
+  const tracked = [...new Set(run(['ls-files', '--cached', '--', '*.rs']))].filter((rel) => !deleted.has(rel));
   const untracked = [...new Set(run(['ls-files', '--others', '--exclude-standard', '--', '*.rs']))];
   // --cached and --others are disjoint by git's semantics ("others" = NOT in
   // the index); assert it so the printed tracked/untracked split can never
@@ -1378,9 +1379,8 @@ function main() {
   };
   // Count of files actually read+scanned. In a clean tree this equals
   // tracked.length + untracked.length (on a clean CHECKOUT the untracked
-  // query returns nothing, so it equals `git ls-files -- '*.rs' | wc -l`);
-  // a file missing from the working tree (deleted without `git rm`) is
-  // skipped loudly below and excluded from the count.
+  // query returns nothing, so it equals `git ls-files -- '*.rs' | wc -l`).
+  // A file that goes missing after the scan set is built is skipped loudly below if it reaches this loop.
   let scanned = 0;
   for (const rel of union.filter((r) => !['alloc_bitmap.rs', 'magazine_bitmap.rs', 'segment_bitmap.rs'].includes(r.split('/').pop()))) {
     let source;

@@ -1,0 +1,89 @@
+item,legacy visibility,extracted visibility,reason and safety disposition
+segment_header module,alloc_core parent-private,public under sefer_segment::segment,crate path required by root reexports
+SegmentHeader,crate-private,public,required named header return and field-reading type; raw reads moved to unsafe read_at
+SegmentHeader::bump,field pub on crate-private type,public field,root uses returned header field; value-only field access
+SegmentHeader::owner_state,field pub on crate-private type,public field,public header layout/value field; not accessed through mutable mapped storage
+SegmentHeader::magic,field pub on crate-private type,public field,root diagnostics/header snapshots
+SegmentHeader::live_count,field pub on crate-private type,public field,public header value field; root metadata reads use SegmentMeta
+SegmentHeader::decommitted,field pub on crate-private type,public field,public header value field
+SegmentHeader::kind,field pub on crate-private type,public field,root reads returned header kind
+SegmentHeader::large_size,field pub on crate-private type,public field,root reads returned large header size
+SegmentHeader::large_align,field pub on crate-private type,public field,root reads returned large header alignment
+SegmentHeader::payload_offset,field pub on crate-private type,public field,root address/layout calculations
+SegmentHeader::span_usable,field pub on crate-private type,public field,root large-span accounting
+SegmentHeader::reservation,field pub on crate-private type,public field,root OS reservation release/diagnostics
+SegmentHeader::reservation_len,field pub on crate-private type,public field,root OS reservation release/diagnostics
+SegmentHeader::pool_next,field pub on crate-private type,public field,pointer value only; metadata mutations use SegmentMeta methods
+SegmentHeader::pool_prev,field pub on crate-private type,public field,pointer value only; metadata mutations use SegmentMeta methods
+SegmentHeader::committed_payload_end,field pub on crate-private type,public field,root metadata reads use SegmentMeta
+SegmentHeader::reserved_capacity,field pub on crate-private type,public field,root large-span accounting
+SegmentHeader::thp_charge,field pub on crate-private type,public field,root accounting/diagnostics
+SegmentHeader::thp_observation,field pub on crate-private type,public field,value-only observation token
+SegmentHeader::segment_id,field pub on crate-private type,public field,root table recycling
+SegmentHeader::node_id,field pub on crate-private type,public field,root metadata reads use SegmentMeta
+SegmentHeader::payload_virgin,field pub on crate-private type,public field,root metadata reads use SegmentMeta
+SegmentHeader::sidecar_defer_window,field pub on crate-private type,public field,root metadata reads use SegmentMeta
+SegmentKind,crate-private,public,root dispatch matches enum; no raw pointer in API
+SegmentHeader::kind_at,crate-private,safe pub initially then unsafe pub,now unsafe with # Safety: valid live aligned segment/header and owner read permission
+SegmentHeader::read_at,crate-private,safe pub initially then unsafe pub,now unsafe with # Safety: live initialized aligned mapped header and owner read permission
+PageMap,crate-private,public,required type name at root path; raw-pointer constructor/init remain crate-private
+BinTable,crate-private,public,required root bin-table initialization; see separate init and set_head rows
+BinTable::init_in_place,crate-private,safe pub initially then unsafe pub,now unsafe with # Safety: writable in-bounds footprint and exclusive access
+Layout,crate-private,public,required root offset calculations and geometry helpers
+SegmentMeta,crate-private,public,required root metadata-view type name; base field changed to crate-private
+SegmentMeta::base,public field on crate-private type,crate-private,prevents direct external raw-pointer escape
+SegmentMeta::new,crate-private,safe pub initially then unsafe pub,now unsafe with # Safety: live initialized segment layout, mapping lifetime, synchronization rules
+SegmentMeta::bump_of,crate-private,safe pub initially then safe pub,retains safe read after unsafe SegmentMeta construction; unsafe precondition is documented on constructor
+align_up,crate-private,pub,root allocator alignment helper; integer-only
+align_up_const,crate-private,pub,layout const calculations; integer-only
+FREE_LIST_NULL,crate-private,pub,root free-list sentinel; integer-only
+SEGMENT_MAGIC,crate-private,pub,header constant
+OWNER_STATE_LIVE,crate-private,pub,header packing constant
+OWNER_ID_NONE,crate-private,pub,header packing constant
+OWNER_ID_FALLBACK,crate-private,pub,root fallback owner identity
+MAX_HEAPS,crate-private,pub,root registry capacity constant
+pack_owner/unpack_owner_id,crate-private,pub,integer-only packing helpers
+PAGES_PER_SEGMENT,crate-private,pub,required exported geometry constant
+NO_NODE_RAW,crate-private,pub,root node metadata sentinel
+BlockKind,crate-private,public,public header-family type reexported with header module
+LargePhase,private-child public,reexported public,large terminal-state type
+MAX_LARGE_GENERATION,private-child public,reexported public,large terminal-state bound
+pack_large_state/large_generation/large_phase,next_large_generation,next_large_generation_bounded,private-child public,reexported public,integer-only terminal-state functions
+LAZY_FIRST_CHUNK,support-module public,reexported from header module,root lazy-commit geometry use
+SegmentTerminalWords/TerminalSnapshot/terminal offsets,unchanged,unchanged,no Pass 11 widening; see SegmentMeta terminal methods
+Other SegmentMeta field/mutation methods,unchanged,unchanged,no additional Pass 11 widening
+SegmentMeta::pool_prev_of,crate-private -> public safe,address-key/storage only: reads the self.base header word through the node seam and returns the stored pointer value; no dereference of the returned pointer inside the accessor,alloc-decommit pool linkage readers,yes,word read unchanged
+SegmentHeader views/block_kind/descriptors conversions (kind_at, read_at, large_size_at, large_align_at, span_usable_at, thp_charge_at, reserved_capacity_at, set_large_size_at, set_span_usable_at, block_kind::of, PageMap/BinTable init_in_place),crate-private -> public/pub(crate) unsafe fn,unsafe fn + # Safety: live aligned owner header / writable in-bounds footprint; dereference via node seam,root callers and bootstrap,yes,read/write sequence unchanged
+SegmentHeader::thp_observation_at,crate-private -> doc-hidden pub (pass 5.3),unsafe fn + # Safety (pass 6),aligned base of a live segment with an initialized header; exclusive owner access; plain field; remote free never touches it,yes,word read unchanged
+SegmentMeta::inc_live,pub(crate) (crate),doc-hidden pub,counter mutator (issue one credit); u32-live_count only, no pointer; owner-only sole-mutator contract in accessor doc (segment_header_meta_fields.rs),yes,checked add of 1 via add_live
+SegmentMeta::add_live,pub(crate) (crate),doc-hidden pub,counter mutator (batched issue); u32 parameters only, no pointer; owner-only contract in accessor doc; overflow checked (fatal),yes,one load+store unchanged
+SegmentMeta::dec_live,pub(crate) (crate),doc-hidden pub,counter mutator (retire one credit); returns u32, no pointer; owner-only contract in accessor doc; underflow terminal,yes,sub_live(1) unchanged
+SegmentMeta::sub_live,pub(crate) (crate),doc-hidden pub,counter mutator (batched retire); u32 parameters only, no pointer; owner-only contract in accessor doc; underflow terminal,yes,one load+store unchanged
+SegmentHeader::small,pub(crate) const,doc-hidden pub const,Stores reservation unchanged in a header value without accessing the mapping; installation must preserve reservation and layout invariants
+SegmentHeader::large,pub(crate) const,doc-hidden pub const,Stores reservation unchanged in a header value without accessing the mapping; installation must preserve reservation and layout invariants
+SegmentMeta::set_pool_prev,pub(crate) safe,doc-hidden pub unsafe,Stores a link followed by pool_unlink; exclusive owner update and null or canonical live Small neighbor in the same pool; repair links/endpoints before traversal and unlink before release
+SegmentMeta::set_pool_next,pub(crate) safe,doc-hidden pub unsafe,Stores a link followed by pool_unlink; exclusive owner update and null or canonical live Small neighbor in the same pool; repair links/endpoints before traversal and unlink before release
+SegmentMeta::pool_next_of,pub(crate) safe,doc-hidden pub safe,Reads the mapped header through self.base under SegmentMeta construction contract; returns the stored link without following it
+SegmentMeta::set_bump,pub(crate) safe,doc-hidden pub safe,Writes the mapped header via self.base under SegmentMeta mapping and owner contract; value is the owner bump cursor
+BinTable::set_head,pub(crate) safe,doc-hidden pub safe,"Writes a numeric offset into the mapped bin table; class bounds guard the slot, not the validity of the free-list offset"
+SegmentHeader::kind_byte_at,pub(crate) safe,doc-hidden pub unsafe,"Raw byte load requires live aligned base, initialized readable byte and owner permission excluding conflicting writes"
+SegmentHeader::segment_id_at,pub(crate) unsafe,doc-hidden pub unsafe,Loads the initialized registered segment ID through base; requires live aligned mapped header and no conflicting write; this accessor lacks a dedicated # Safety section
+SegmentHeader::set_thp_charge_at,pub(crate) safe,doc-hidden pub unsafe,Writes the charge word in an initialized live aligned Large header; exclusive owner field access
+SegmentHeader::set_thp_observation_at,pub(crate) unsafe,doc-hidden pub unsafe,Writes a plain observation word in a live aligned initialized header under exclusive owner access
+SegmentHeader::set_large_align_at,pub(crate) safe,doc-hidden pub unsafe,Writes alignment in a live aligned initialized Large header while exclusively owned and unregistered
+SegmentHeader::set_bump_at,pub(crate) safe,doc-hidden pub unsafe,Writes bump in a live aligned initialized Large header while exclusively owned and unregistered; distinct from SegmentMeta::set_bump
+SegmentHeader::set_magic_at,pub(crate) safe,doc-hidden pub unsafe,Writes magic in a live aligned initialized Large header while exclusively owned and unregistered; excludes concurrent atomic and plain accesses
+SegmentMeta::init_small_terminal,pub(crate) safe,doc-hidden pub unsafe,Requires fresh aligned exclusively writable Small/Primordial terminal storage with no readers or loans and no exposure until initialized
+SegmentMeta::init_large_terminal,pub(crate) safe,doc-hidden pub unsafe,Requires fresh aligned exclusively writable Large terminal storage with no readers or loans and no exposure until initialized
+SegmentMeta::large_state_atomic,pub(crate) safe,doc-hidden pub safe,Borrows the initialized atomic word in a live mapped reservation; returned reference must not outlive mapping
+SegmentMeta::begin_large_reuse,pub(crate) safe,doc-hidden pub safe,Owner-only cache-hit preparation; checks Cached phase and retires exhausted generations
+SegmentMeta::finish_large_reuse,pub(crate) safe,doc-hidden pub safe,Resets remote head and finishes the prepared generation after metadata/table setup and before issue
+Layout::bin_table_off,pub(crate) const,doc-hidden pub const,Const metadata geometry; computes a byte offset without accessing the mapping
+Layout::state_byte_off,pub(crate) const,doc-hidden pub const,Const metadata geometry; computes a byte offset without accessing the mapping
+Layout::primordial_registry_off,pub(crate) const,doc-hidden pub const,Const metadata geometry; computes a byte offset without accessing the mapping
+Layout::primordial_hash_off,pub(crate) const,doc-hidden pub const,Const metadata geometry; computes a byte offset without accessing the mapping
+Layout::primordial_free_list_off,pub(crate) const,doc-hidden pub const,Const metadata geometry; computes a byte offset without accessing the mapping
+Layout::primordial_free_top_off,pub(crate) const,doc-hidden pub const,Const metadata geometry; computes a byte offset without accessing the mapping
+Layout::primordial_active_kind_off,pub(crate) const,doc-hidden pub const,Const metadata geometry; computes a byte offset without accessing the mapping
+Layout::primordial_active_kind_end,pub(crate) const,doc-hidden pub const,Const metadata geometry; computes a byte offset without accessing the mapping
+SegmentHeader::set_segment_id_at,pub(crate) unsafe,doc-hidden pub unsafe (internals),Raw u32 store needs live aligned initialized header and exclusive access; test-only hook

@@ -97,7 +97,8 @@ proptest! {
                     // never double-insert; the oracle's `HashSet::insert` is
                     // idempotent regardless.
                     if !model.contains(&member) {
-                        h.insert(base);
+                        // SAFETY: synthetic base value; harness contract — stored/compared, never dereferenced.
+                        unsafe { h.insert(base) };
                     }
                     model.insert(member);
                 }
@@ -160,7 +161,8 @@ fn backshift_dense_cluster_mid_removal() {
     let mut h = SegmentHashHarness::new();
     let members: Vec<usize> = (0..16).collect();
     for &m in &members {
-        h.insert(SegmentHashHarness::base_for_index(m));
+        // SAFETY: synthetic base value; harness contract — stored/compared, never dereferenced.
+        unsafe { h.insert(SegmentHashHarness::base_for_index(m)) };
     }
     // Remove a middle entry — forces a multi-entry backward shift.
     h.remove(SegmentHashHarness::base_for_index(5));
@@ -191,7 +193,8 @@ fn backshift_wraparound_cluster_removal() {
     // Cluster straddling the wrap boundary: ..., cap-3, cap-2, cap-1, 0, 1, 2.
     let members: Vec<usize> = vec![cap - 3, cap - 2, cap - 1, 0, 1, 2];
     for &m in &members {
-        h.insert(SegmentHashHarness::base_for_index(m));
+        // SAFETY: synthetic base value; harness contract — stored/compared, never dereferenced.
+        unsafe { h.insert(SegmentHashHarness::base_for_index(m)) };
     }
     // Remove the entry at the boundary itself (cap-1).
     h.remove(SegmentHashHarness::base_for_index(cap - 1));
@@ -235,7 +238,8 @@ fn backshift_churn_fixed_universe_all_orders() {
     // 64 contiguous indices — a dense cluster, well under the 50% load factor.
     let members: Vec<usize> = (0..64).collect();
     for &m in &members {
-        h.insert(SegmentHashHarness::base_for_index(m));
+        // SAFETY: synthetic base value; harness contract — stored/compared, never dereferenced.
+        unsafe { h.insert(SegmentHashHarness::base_for_index(m)) };
     }
     // Remove every member one at a time; after each removal every SURVIVOR must
     // remain present and every removed one absent.
@@ -268,7 +272,8 @@ fn backshift_churn_fixed_universe_all_orders() {
     // Re-insert everything (exercises re-population after a fully-shifted-out
     // cluster) and verify all present.
     for &m in &members {
-        h.insert(SegmentHashHarness::base_for_index(m));
+        // SAFETY: synthetic base value; harness contract — stored/compared, never dereferenced.
+        unsafe { h.insert(SegmentHashHarness::base_for_index(m)) };
     }
     for &m in &members {
         assert!(h.contains(SegmentHashHarness::base_for_index(m)));
@@ -280,8 +285,10 @@ fn backshift_churn_fixed_universe_all_orders() {
 #[test]
 fn backshift_remove_absent_is_noop() {
     let mut h = SegmentHashHarness::new();
-    h.insert(SegmentHashHarness::base_for_index(3));
-    h.insert(SegmentHashHarness::base_for_index(4));
+    // SAFETY: synthetic base value; harness contract — stored/compared, never dereferenced.
+    unsafe { h.insert(SegmentHashHarness::base_for_index(3)) };
+    // SAFETY: synthetic base value; harness contract — stored/compared, never dereferenced.
+    unsafe { h.insert(SegmentHashHarness::base_for_index(4)) };
     // Remove something never inserted.
     h.remove(SegmentHashHarness::base_for_index(10));
     assert!(h.contains(SegmentHashHarness::base_for_index(3)));

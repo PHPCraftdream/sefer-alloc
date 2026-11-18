@@ -4,12 +4,14 @@
 //! `alloc_core_small.rs`; pure code movement, no behavior changed).
 
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_header::{SegmentKind, FREE_LIST_NULL};
 // Consumed only by the sidecar payload-start helpers below (patch S).
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::segment_header::Layout as SegLayout;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
+use sefer_segment::segment::segment_layout::SIDECAR_WORD_BYTES;
+#[cfg(feature = "alloc-stats")]
+use sefer_segment::support::directory_counters as directory_stats;
 
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::fatal::fatal;
@@ -147,11 +149,16 @@ impl AllocCore {
     /// `payload_start`.
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     pub(crate) fn sidecar_payload_start_word(base: *mut u8) -> usize {
-        let payload_start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
-            SegLayout::primordial_meta_end()
-        } else {
-            SegLayout::small_meta_end()
-        };
+        // SAFETY: the owner may read this live segment's initialized, mapped header.
+        #[allow(unsafe_code)]
+        let payload_start =
+            if unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }
+                == SegmentKind::Primordial
+            {
+                SegLayout::primordial_meta_end()
+            } else {
+                SegLayout::small_meta_end()
+            };
         payload_start / SIDECAR_WORD_BYTES
     }
 
@@ -160,12 +167,18 @@ impl AllocCore {
     /// on actual free-list/refill misses, never on a magazine hit.
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     #[inline]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(in super::super) fn drain_segment_sidecar(&mut self, base: *mut u8) -> SidecarDrainOutcome {
         if !self.table.is_routed() {
             return SidecarDrainOutcome::Skipped;
         }
-        let index = SegmentHeader::segment_id_at(base) as usize;
-        let high_water = SegmentMeta::new(base).bump_of();
+        // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the caller holds the owner's read permission for the write-once `segment_id` field.
+        let index = unsafe { crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) }
+            as usize;
+        #[allow(unsafe_code)]
+        // SAFETY: the owner reads the initialized bump field before any drain can unmap `base`.
+        let high_water =
+            unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }.bump_of();
         // Patch S: start at the payload's first word, not word 0.
         let end_word = high_water.div_ceil(SIDECAR_WORD_BYTES);
         let start_word = Self::sidecar_payload_start_word(base).min(end_word);
@@ -335,7 +348,7 @@ impl AllocCore {
                 #[cfg(feature = "alloc-stats")]
                 if !_context.rescue {
                     routed_miss_scan = true;
-                    crate::alloc_core::directory_stats::ROUTED_MISS_SCANS
+                    directory_stats::routed_miss_scans()
                         .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 }
             } else if !_context.rescue {
@@ -345,7 +358,7 @@ impl AllocCore {
                     < crate::alloc_core::segment_directory::DIRECTORY_MISS_FULL_SCAN_PERIOD
                 {
                     #[cfg(feature = "alloc-stats")]
-                    crate::alloc_core::directory_stats::DIRECTORY_AUTHORITATIVE_MISS
+                    directory_stats::directory_authoritative_miss()
                         .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     return None;
                 }
@@ -354,7 +367,7 @@ impl AllocCore {
             }
             #[cfg(feature = "alloc-stats")]
             if !_context.rescue {
-                crate::alloc_core::directory_stats::DIRECTORY_FALLBACK_SCANS
+                directory_stats::directory_fallback_scans()
                     .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             }
         }
@@ -394,17 +407,7 @@ impl AllocCore {
     }
 
     #[cfg(feature = "alloc-segment-directory")]
-    #[allow(unsafe_code)] // R17-2 (task #319): calls the `unsafe fn`s
-                          // `os::read_directory_node_bucket` and
-                          // `os::read_directory_class_words`. Sound: both call
-                          // sites are guarded by the
-                          // `!self.directory_sidecar.is_null()` check (the
-                          // pointer is produced only by
-                          // `reserve_directory_sidecar`, which fully initialises
-                          // it), and `AllocCore`'s owner-only discipline (neither
-                          // `Send` nor `Sync`) rules out a concurrent writer. The
-                          // reads are by-value; no reference to the sidecar
-                          // escapes either call.
+    #[allow(unsafe_code)] // Guarded, owner-only directory reads; both copy by value.
     fn scan_directory_candidates(
         &mut self,
         class_idx: usize,
@@ -544,7 +547,7 @@ impl AllocCore {
                     if chunk.iter().fold(0u64, |acc, &x| acc | x) == 0 {
                         // R7-A0 / R13-01: eight words examined and skipped.
                         #[cfg(feature = "alloc-stats")]
-                        crate::alloc_core::directory_stats::DIRECTORY_WORDS_EXAMINED.fetch_add(
+                        directory_stats::directory_words_examined().fetch_add(
                             DIRECTORY_SCAN_CHUNK as u64,
                             core::sync::atomic::Ordering::Relaxed,
                         );
@@ -556,7 +559,7 @@ impl AllocCore {
                         // R7-A0 / R13-01: count each word examined — including
                         // all-zero words — before the zero-word skip below.
                         #[cfg(feature = "alloc-stats")]
-                        crate::alloc_core::directory_stats::DIRECTORY_WORDS_EXAMINED
+                        directory_stats::directory_words_examined()
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         if bits == 0 {
                             continue;
@@ -584,6 +587,7 @@ impl AllocCore {
         None
     }
 
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     fn linear_scan(
         &mut self,
         class_idx: usize,
@@ -652,14 +656,12 @@ impl AllocCore {
                 // Advance before a sidecar drain can recycle this candidate.
                 from = i + 1;
                 #[cfg(feature = "alloc-stats")]
-                crate::alloc_core::directory_stats::FULL_SCAN_SLOTS_EXAMINED
+                directory_stats::full_scan_slots_examined()
                     .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 let base = self.table.base_at(i);
                 if base.is_null()
-                    || !matches!(
-                        SegmentHeader::kind_at(base),
-                        SegmentKind::Small | SegmentKind::Primordial
-                    )
+                    // SAFETY: canonical owner-resolved live root; header mapped (`SegmentHeader::kind_at` # Safety).
+                    || !matches!(unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }, SegmentKind::Small | SegmentKind::Primordial)
                 {
                     // Invariant violation in the active-Small table: a linear-scan
                     // entry must name a live small segment. Abort rather than
@@ -685,19 +687,18 @@ impl AllocCore {
                     all(feature = "alloc-global", feature = "alloc-xthread")
                 ))]
                 let pre_nonempty =
-                    SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
+                    // SAFETY: canonical owner-resolved live root; mapping stays live (`SegmentMeta::new` # Safety).
+                    unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }.bin_table().head(class_idx) != FREE_LIST_NULL;
                 #[cfg(feature = "alloc-stats")]
                 let was_nonempty = routed_miss_scan && pre_nonempty;
                 // Consume only this canonical candidate before inspecting its bins.
                 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
                 if !pre_nonempty && !defer_drains {
-                    // Scanned payload range, read before the drain can release
-                    // the reservation.
-                    drained_bytes = drained_bytes.saturating_add(
-                        SegmentMeta::new(base).bump_of().saturating_sub(
+                    drained_bytes =
+                        // SAFETY: the owner reads the initialized bump field before the drain can unmap `base`.
+                        drained_bytes.saturating_add(unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }.bump_of().saturating_sub(
                             Self::sidecar_payload_start_word(base) * SIDECAR_WORD_BYTES,
-                        ),
-                    );
+                        ));
                     let outcome = self.drain_segment_sidecar(base);
                     // U31: a reclaiming drain resets small_cur's empty-scan streak.
                     if !reclaimed && !matches!(outcome, SidecarDrainOutcome::Skipped) {
@@ -716,7 +717,8 @@ impl AllocCore {
                         _ => {}
                     }
                 }
-                let meta = SegmentMeta::new(base);
+                // SAFETY: canonical owner-resolved live root; mapping stays live (`SegmentMeta::new` # Safety).
+                let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
                 let bt = meta.bin_table();
                 if bt.head(class_idx) != FREE_LIST_NULL {
                     // Phase C (numa-aware): NO_NODE_RAW segments count as local,
@@ -782,14 +784,13 @@ impl AllocCore {
             let fallback = fallback.and_then(|slot| {
                 let base = self.table.base_at(slot);
                 if base.is_null()
-                    || !matches!(
-                        SegmentHeader::kind_at(base),
-                        SegmentKind::Small | SegmentKind::Primordial
-                    )
+                    // SAFETY: canonical owner-resolved live root; header mapped (`SegmentHeader::kind_at` # Safety).
+                    || !matches!(unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }, SegmentKind::Small | SegmentKind::Primordial)
                 {
                     return None;
                 }
-                let meta = SegmentMeta::new(base);
+                // SAFETY: canonical owner-resolved live root; mapping stays live (`SegmentMeta::new` # Safety).
+                let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
                 let node = meta.node_id_of();
                 (meta.bin_table().head(class_idx) != FREE_LIST_NULL
                     && node != my_node
@@ -812,7 +813,7 @@ impl AllocCore {
             } else {
                 #[cfg(feature = "alloc-stats")]
                 if routed_miss_scan {
-                    crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_NOTHING
+                    directory_stats::routed_miss_scan_nothing()
                         .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 }
                 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
@@ -826,7 +827,7 @@ impl AllocCore {
         {
             #[cfg(feature = "alloc-stats")]
             if routed_miss_scan {
-                crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_NOTHING
+                directory_stats::routed_miss_scan_nothing()
                     .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             }
             #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
@@ -845,6 +846,7 @@ impl AllocCore {
     /// directory MISS if this scan reached `base` via the periodic
     /// re-validation or rescue path (R8-2, task #215 / R9-8, task #230).
     #[inline]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(super) fn finalize_hit(
         &mut self,
         base: *mut u8,
@@ -861,9 +863,9 @@ impl AllocCore {
         // Round 12 O-4 (data only): exactly one outcome per routed miss scan.
         #[cfg(feature = "alloc-stats")]
         match _context.routed_scan_was_nonempty {
-            Some(true) => crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_BIN_ALREADY_NONEMPTY
+            Some(true) => directory_stats::routed_miss_scan_bin_already_nonempty()
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed),
-            Some(false) => crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_DRAIN_CREATED_FREE
+            Some(false) => directory_stats::routed_miss_scan_drain_created_free()
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed),
             None => 0,
         };
@@ -882,7 +884,10 @@ impl AllocCore {
         // and bump the canary counter.
         #[cfg(feature = "alloc-segment-directory")]
         if _context.periodic_revalidation_active || _context.rescue {
-            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the caller holds the owner's read permission for the write-once `segment_id` field.
+            let slot_idx =
+                unsafe { crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) }
+                    as usize;
             self.publish_nonempty(base, class_idx, slot_idx);
             // R9-8: only the PERIODIC re-validation path bumps the
             // `DIRECTORY_MISS_SELF_HEAL` canary; the rescue path is counted
@@ -890,7 +895,7 @@ impl AllocCore {
             // the two drift signals stay distinguishable in diagnostics.
             #[cfg(feature = "alloc-stats")]
             if _context.periodic_revalidation_active {
-                crate::alloc_core::directory_stats::DIRECTORY_MISS_SELF_HEAL
+                directory_stats::directory_miss_self_heal()
                     .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             }
         }
@@ -906,6 +911,7 @@ impl AllocCore {
     /// stale/empty/decommitted, so the caller continues to the next candidate.
     #[cfg(feature = "alloc-segment-directory")]
     #[inline]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     fn validate_directory_candidate(
         &mut self,
         class_idx: usize,
@@ -921,20 +927,21 @@ impl AllocCore {
             // null base clears across ALL node buckets).
             self.publish_empty(base, class_idx, slot_idx);
             #[cfg(feature = "alloc-stats")]
-            crate::alloc_core::directory_stats::DIRECTORY_STALE_HITS
+            directory_stats::directory_stale_hits()
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return None;
         }
 
         // Validation step 2: must be Small/Primordial.
+        // SAFETY: canonical owner-resolved live root; header mapped (`SegmentHeader::kind_at` # Safety).
         if !matches!(
-            SegmentHeader::kind_at(base),
+            unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) },
             SegmentKind::Small | SegmentKind::Primordial
         ) {
             // A large segment somehow had a stale bit — clear.
             self.publish_empty(base, class_idx, slot_idx);
             #[cfg(feature = "alloc-stats")]
-            crate::alloc_core::directory_stats::DIRECTORY_STALE_HITS
+            directory_stats::directory_stale_hits()
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return None;
         }
@@ -961,14 +968,15 @@ impl AllocCore {
         }
 
         // Validation step 3: BinTable head STILL non-null?
-        let meta = SegmentMeta::new(base);
+        // SAFETY: canonical owner-resolved live root; mapping stays live (`SegmentMeta::new` # Safety).
+        let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
         let bt = meta.bin_table();
         if bt.head(class_idx) == FREE_LIST_NULL {
             // Stale positive: drain may have emptied the class, or a concurrent
             // transition cleared it. Clear the bit and try the next candidate.
             self.publish_empty(base, class_idx, slot_idx);
             #[cfg(feature = "alloc-stats")]
-            crate::alloc_core::directory_stats::DIRECTORY_STALE_HITS
+            directory_stats::directory_stale_hits()
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return None;
         }
@@ -979,8 +987,7 @@ impl AllocCore {
         self.unpool_if_present(base);
 
         #[cfg(feature = "alloc-stats")]
-        crate::alloc_core::directory_stats::DIRECTORY_HITS
-            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        directory_stats::directory_hits().fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 
         Some(base)
     }

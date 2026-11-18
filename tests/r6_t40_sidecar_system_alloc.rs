@@ -14,9 +14,7 @@ fn small_sidecar_uses_unzeroed_system_storage_then_initializes_all_state() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
-    let route = directory
-        .register(root, SEGMENT, root, 9, RouteKind::Small)
-        .unwrap();
+    let route = unsafe { directory.register(root, SEGMENT, root, 9, RouteKind::Small) }.unwrap();
     let after = SmallSidecar::system_totals_for_test();
     let size = core::mem::size_of::<SmallSidecar>();
     assert_eq!(after.0 - before.0, size);

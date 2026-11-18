@@ -1,0 +1,21 @@
+item,legacy visibility,extracted visibility,reason and safety disposition
+node module and NODE_SIZE,crate-private,sefer_segment::support::node_impl doc-hidden public module and constant,root NODE_SIZE forwards canonical pointer width value; docs hide unstable support surface
+Node methods,many pub(crate),internal node methods remain pub(crate); only doc-hidden RootNode gateway is public,raw-pointer and memory touching methods are unsafe with per-method Safety contracts; numeric continuation helper safety states same-segment snapshot requirement
+size-class constants and SizeClasses,crate-private,doc-hidden public support module and item exports,root wrapper reexports exact canonical symbols and AllocKind type identity; value-only pure classification APIs
+AllocKind,crate-private enum,doc-hidden public enum,shared identity for root AllocCore state/mem dispatch; variants unchanged
+ContinuationBounds,crate-private bounds type/constructor,support module/type public doc-hidden; raw-base constructor unsafe,root keeps private wrapper; new() safety contract requires live mapped initialized segment and owner-exclusion; numeric contains predicate safe
+Lazy geometry LAZY_FIRST_CHUNK,reexported static/pure constant,existing support::geometry export unchanged,shared canonical const through existing root module reexport; no widening here
+Tier1 diagnostic counter statics + tier1_bump,feature-gated public counters in support module,doc-hidden support module and items; tier1_bump retains inline(always),same AtomicU64 static identities reexported from root counters; cfg bench-internals and relaxed load/store semantics retained
+large_payload_address_matches,root AllocCore method with checked_add body,sefer-segment free pure helper; root AllocCore method delegates,checked_add address-only predicate; root method visibility and callers preserved
+TerminalPublicationGate::pause_after_publication,pub(crate),doc-hidden pub,root miri routing shim calls it cross-crate; takes a plain usize address and touches only its own static gate state; no raw pointer so doc-hidden pub safe fn is correct
+StateByte::new,doc-hidden pub unsafe,doc-hidden pub unsafe,Stores derived state-region pointer; needs live aligned Small/Primordial base with provenance for full region; every access through any copy has its own contract
+StateByte::read,doc-hidden pub safe,doc-hidden pub unsafe,"Reads via stored pointer; live exclusive owner access, off < SEGMENT and initialized readable byte; unaligned off selects its containing granule"
+StateByte::write,doc-hidden pub safe,doc-hidden pub unsafe,"With misuse-checks or debug assertions: exclusive live writable array, in-range aligned block start, valid small class and state matching transition; otherwise no write"
+StateByte::read_granule,pub(crate) safe,doc-hidden pub unsafe,"Exclusive live owner access, index below FOOTPRINT and initialized readable byte"
+StateByte::write_granule,pub(crate) safe,doc-hidden pub unsafe,"With misuse-checks or debug assertions: exclusive live writable array, index below FOOTPRINT at block start and byte encoding actual class and transition; otherwise no write"
+StateByte::set_state,pub(crate) safe,doc-hidden pub unsafe,With misuse-checks or debug assertions: exclusive live access to initialized readable/writable byte at in-range aligned block start; preserves class bits and requires valid transition; otherwise no write
+StateByte::init_in_place,doc-hidden pub safe cfg(miri),doc-hidden pub unsafe cfg(miri),"Zeros entire stored array, which must be live, exclusively writable and virgin; no block state may need preserving"
+LiveTag::of_seed,pub(crate) const,doc-hidden pub const,Indexes tag table; caller bounds seed; invalid index can panic
+LiveTag::class,pub(crate) const,doc-hidden pub const,Computes class from typed tag discriminant
+LiveTag::byte,pub(crate) const,doc-hidden pub const,Returns live encoding from tag discriminant
+LiveTag::mag_byte,pub(crate) const,doc-hidden pub const,Sets magazine bits in typed tag encoding

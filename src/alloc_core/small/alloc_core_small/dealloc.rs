@@ -5,7 +5,10 @@
 use core::ptr::NonNull;
 
 use crate::alloc_core::node::Node;
-use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
+// Pass 9.1: `kind_at` is row-dependent (misuse-checks arms); keep the import
+// shared and silence the per-row unused half instead of splitting cfgs.
+#[allow(unused_imports)]
+use crate::alloc_core::segment_header::FREE_LIST_NULL;
 // `SegmentHeader`: the payload-start bound (not run by a release build without `misuse-checks`) and the
 // directory publication.
 #[cfg(any(
@@ -13,8 +16,6 @@ use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
     debug_assertions,
     feature = "alloc-segment-directory"
 ))]
-use crate::alloc_core::segment_header::SegmentHeader;
-#[cfg(any(feature = "misuse-checks", debug_assertions))]
 use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentKind};
 // H1 (task #167): `SizeClasses::block_size` is consulted only by the
 // `hardened`-gated interior-pointer guard below — gate the import
@@ -37,13 +38,15 @@ impl AllocCore {
     /// under churn, #41 — are gone; the byte is the single-writer owner-
     /// private record, so the read/compare needs no atomics).
     #[inline(always)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(in crate::alloc_core) fn dealloc_small(
         &mut self,
         base: *mut u8,
         ptr: *mut u8,
         class_idx: usize,
     ) {
-        let meta = SegmentMeta::new(base);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
         let mut bt = meta.bin_table();
         let off = (ptr as usize - base as usize) as u32;
         // ── H1 (task #167): interior-pointer guard (HARDENED) ───────────────
@@ -81,7 +84,8 @@ impl AllocCore {
         // pointer the allocator never issued can fail them.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         {
-            let kind = SegmentHeader::kind_at(base);
+            // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+            let kind = unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) };
             let payload_start = if kind == SegmentKind::Primordial {
                 SegLayout::primordial_meta_end()
             } else {
@@ -138,7 +142,9 @@ impl AllocCore {
         // wrong-class-LIVE operands; the exact compare is strictly stronger,
         // and the accept path is unchanged for every legitimate free.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
-        let byte = meta.state_byte().read(off);
+        // SAFETY: The existing payload and bump guards bound off inside this live
+        // owner segment (bump <= SEGMENT); the state array is initialized.
+        let byte = unsafe { meta.state_byte().read(off) };
         let aligned = (off & (crate::alloc_core::size_classes::MIN_BLOCK as u32 - 1)) == 0;
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
         if !aligned
@@ -173,18 +179,26 @@ impl AllocCore {
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off);
         // B4 (в): commit LIVE → FREE in the state byte (was bitmap mark_free).
-        meta.state_byte().write(
-            off,
-            class_idx,
-            crate::alloc_core::state_byte::StateByte::FREE,
-        );
-        SegmentMeta::new(base).dec_live();
+        // SAFETY: The bounded aligned start and exact LIVE byte above identify the
+        // block and class. Linking it on the owner bin commits LIVE -> FREE.
+        unsafe {
+            meta.state_byte().write(
+                off,
+                class_idx,
+                crate::alloc_core::state_byte::StateByte::FREE,
+            )
+        };
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }.dec_live();
         // R7-A2: directory bitmap maintenance — the new head is always non-null
         // (we just pushed `off`), so the only transition is empty→non-empty
         // when old_head was FREE_LIST_NULL.
         #[cfg(feature = "alloc-segment-directory")]
         if old_head == FREE_LIST_NULL {
-            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the caller holds the owner's read permission for the write-once `segment_id` field.
+            let slot_idx =
+                unsafe { crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base) }
+                    as usize;
             self.publish_nonempty(base, class_idx, slot_idx);
         }
         // Phase 35 (M6): one fewer live block in this segment; if it just
@@ -200,5 +214,50 @@ impl AllocCore {
         if Self::dec_live_and_maybe_decommit(base, self.small_cur) {
             let _ = self.release_or_pool_empty_segment(base);
         }
+    }
+
+    // P2.1 structure-limits split: moved verbatim from `alloc_core_small_impl.rs`
+    // (which exceeded the 1000-line file limit); pure code movement.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_r11_scalar_carve_for_test(&mut self, class_idx: usize) -> Option<*mut u8> {
+        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
+            return None;
+        }
+        self.carve_block(
+            class_idx,
+            crate::alloc_core::size_classes::SizeClasses::block_size(class_idx),
+        )
+    }
+
+    /// Current owner state: bump, live credits, class head, commit frontier.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+    pub fn dbg_r11_issue_state_for_test(
+        &self,
+        class_idx: usize,
+    ) -> Option<(usize, u32, u32, usize)> {
+        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
+            return None;
+        }
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(self.small_cur) };
+        #[cfg(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        ))]
+        let frontier = meta.committed_payload_end_of();
+        #[cfg(not(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        )))]
+        let frontier = crate::alloc_core::os::SEGMENT;
+        Some((
+            meta.bump_of(),
+            meta.live_count_of(),
+            meta.bin_table().head(class_idx),
+            frontier,
+        ))
     }
 }

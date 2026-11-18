@@ -5,7 +5,7 @@
 //! changed).
 
 use crate::alloc_core::alloc_core::AllocCore;
-use crate::alloc_core::directory_stats;
+use sefer_segment::support::directory_counters as directory_stats;
 
 /// Sol-F1 (task #563): `internals`-gated — every other `dbg_*` diagnostic
 /// hook in this file. See this file's module doc for the full rationale.
@@ -23,7 +23,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_hits() -> u64 {
-        directory_stats::DIRECTORY_HITS.load(core::sync::atomic::Ordering::Relaxed)
+        directory_stats::directory_hits().load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// R7-A0: process-wide stale directory hits. Reads 0 unless the
@@ -31,7 +31,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_stale_hits() -> u64 {
-        directory_stats::DIRECTORY_STALE_HITS.load(core::sync::atomic::Ordering::Relaxed)
+        directory_stats::directory_stale_hits().load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// R7-A0: process-wide directory fallback scans. Reads 0 unless the
@@ -39,7 +39,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_fallback_scans() -> u64 {
-        directory_stats::DIRECTORY_FALLBACK_SCANS.load(core::sync::atomic::Ordering::Relaxed)
+        directory_stats::directory_fallback_scans().load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// R7-A0: process-wide count of directory bitmap words examined — every
@@ -50,7 +50,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_words_examined() -> u64 {
-        directory_stats::DIRECTORY_WORDS_EXAMINED.load(core::sync::atomic::Ordering::Relaxed)
+        directory_stats::directory_words_examined().load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// STAGE-1 DIAGNOSTIC ONLY (R21-2, task #351): process-wide count of
@@ -204,7 +204,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_full_scan_slots_examined() -> u64 {
-        directory_stats::FULL_SCAN_SLOTS_EXAMINED.load(core::sync::atomic::Ordering::Relaxed)
+        directory_stats::full_scan_slots_examined().load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// R8-2 (task #215): trusted negative directory results that skip fallback
@@ -213,7 +213,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_authoritative_miss() -> u64 {
-        directory_stats::DIRECTORY_AUTHORITATIVE_MISS.load(core::sync::atomic::Ordering::Relaxed)
+        directory_stats::directory_authoritative_miss().load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// Count of genuine directory misses where a full scan found a segment
@@ -225,7 +225,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_miss_self_heal() -> u64 {
-        directory_stats::DIRECTORY_MISS_SELF_HEAL.load(core::sync::atomic::Ordering::Relaxed)
+        directory_stats::directory_miss_self_heal().load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// Round 12 O-4: routed negative-directory scans entered (one per lookup).
@@ -234,7 +234,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_routed_miss_scans() -> u64 {
-        directory_stats::ROUTED_MISS_SCANS.load(core::sync::atomic::Ordering::Relaxed)
+        directory_stats::routed_miss_scans().load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// Round 12 O-4: routed miss scans whose hit segment's class bin was empty
@@ -242,7 +242,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_routed_miss_scan_drain_created_free() -> u64 {
-        directory_stats::ROUTED_MISS_SCAN_DRAIN_CREATED_FREE
+        directory_stats::routed_miss_scan_drain_created_free()
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 
@@ -251,7 +251,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_routed_miss_scan_bin_already_nonempty() -> u64 {
-        directory_stats::ROUTED_MISS_SCAN_BIN_ALREADY_NONEMPTY
+        directory_stats::routed_miss_scan_bin_already_nonempty()
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 
@@ -259,6 +259,6 @@ impl AllocCore {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_routed_miss_scan_nothing() -> u64 {
-        directory_stats::ROUTED_MISS_SCAN_NOTHING.load(core::sync::atomic::Ordering::Relaxed)
+        directory_stats::routed_miss_scan_nothing().load(core::sync::atomic::Ordering::Relaxed)
     }
 }

@@ -120,7 +120,7 @@ function selfCheck() {
 
   // The AllocCore-only boundary deliberately excludes SegmentLayout; the
   // safety scanner separately enforces its internals policy.
-  const layout = 'src/alloc_core/segment/segment_layout.rs';
+  const layout = 'crates/core/sefer-segment/src/segment/support/segment_directory/segment_layout.rs';
   const geometry = new Map([[layout, scanFile(layout, 'impl SegmentLayout { pub fn small_decommit_start() -> usize { 0 } }')]]);
   assert.equal(verify(geometry, []).total, 0);
   assert.deepEqual(verify(geometry, [], select).errors, [`hidden API missing internals gate: ${layout}::small_decommit_start`]);

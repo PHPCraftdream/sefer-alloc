@@ -31,9 +31,10 @@ fn last_reference_free_happens_after_every_pin_drop() {
     let directory = RouteDirectory::new();
     for round in 0..ROUNDS {
         let root = core::ptr::without_provenance_mut::<u8>(SEGMENT * (16 + round));
-        let registration = directory
-            .register(root, SEGMENT, root, round + 1, RouteKind::Small)
-            .expect("register a Small route");
+        // SAFETY: address-only synthetic registration; the route unlinks on drop.
+        let registration =
+            unsafe { directory.register(root, SEGMENT, root, round + 1, RouteKind::Small) }
+                .expect("register a Small route");
         let key = root.addr();
         let dir = &directory;
         let pinned = AtomicBool::new(false);

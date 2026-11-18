@@ -55,7 +55,9 @@ impl AllocCore {
     /// carve that advances the bump.
     #[inline]
     pub(super) fn sidecar_drains_deferred(&self, block_size: usize) -> bool {
-        let meta = SegmentMeta::new(self.small_cur);
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        let meta = unsafe { SegmentMeta::new(self.small_cur) };
         let (start, end, _) = unpack(meta.sidecar_defer_window_of());
         let bump = meta.bump_of();
         start < bump && bump < end && align_up(bump, block_size) + block_size <= SEGMENT
@@ -67,7 +69,9 @@ impl AllocCore {
     /// down, so rounding only narrows the window.
     #[inline]
     pub(super) fn note_empty_sidecar_scan(&mut self, drained_bytes: usize) {
-        let mut meta = SegmentMeta::new(self.small_cur);
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        let mut meta = unsafe { SegmentMeta::new(self.small_cur) };
         let (_, _, streak) = unpack(meta.sidecar_defer_window_of());
         let streak = (streak + 1).min(3);
         let mut window = streak << STREAK_SHIFT;
@@ -89,7 +93,9 @@ impl AllocCore {
     /// A drain reclaimed something: reset the streak and close the window.
     #[inline]
     pub(super) fn reset_sidecar_defer_streak(&mut self) {
-        let mut meta = SegmentMeta::new(self.small_cur);
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        let mut meta = unsafe { SegmentMeta::new(self.small_cur) };
         if meta.sidecar_defer_window_of() != 0 {
             meta.set_sidecar_defer_window(0);
         }
@@ -101,7 +107,10 @@ impl AllocCore {
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[doc(hidden)]
     pub fn dbg_sidecar_defer_window(&self) -> (usize, usize, usize, u32) {
-        let meta = SegmentMeta::new(self.small_cur);
+        // SAFETY: small_cur is the owner's live, initialized Small/Primordial
+        // segment base (same contract as every other header access here).
+        #[allow(unsafe_code)]
+        let meta = unsafe { SegmentMeta::new(self.small_cur) };
         let (start, end, streak) = unpack(meta.sidecar_defer_window_of());
         (meta.bump_of(), start, end, streak)
     }
@@ -111,6 +120,8 @@ impl AllocCore {
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[doc(hidden)]
     pub fn dbg_close_sidecar_defer_window(&mut self) {
-        SegmentMeta::new(self.small_cur).set_sidecar_defer_window(0);
+        // SAFETY: small_cur is the owner's live, initialized segment base.
+        #[allow(unsafe_code)]
+        unsafe { SegmentMeta::new(self.small_cur) }.set_sidecar_defer_window(0);
     }
 }

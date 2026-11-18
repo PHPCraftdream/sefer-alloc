@@ -140,7 +140,8 @@ impl SeferAlloc {
         // allocation; only its canonical table root accesses reservation bytes.
         let core = unsafe { &(*heap).core };
         let root = core.canonical_root_for(ptr)?;
-        let header = crate::alloc_core::segment_header::SegmentHeader::read_at(root);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
+        let header = unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(root) };
         Some((
             header.reservation.addr(),
             header.reservation_len,

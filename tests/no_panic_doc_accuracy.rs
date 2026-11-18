@@ -10,9 +10,14 @@ use std::fs;
 use std::path::PathBuf;
 
 fn src_path(rel: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("src")
-        .join(rel)
+    // Entries under `crates/` are crate paths relative to the manifest root
+    // (P2.1 move); everything else resolves under the root `src/` shim tree.
+    let base = if rel.starts_with("crates/") {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
+    };
+    base.join(rel)
 }
 
 fn read_src(rel: &str) -> String {
@@ -48,12 +53,16 @@ fn four_invariant_tripwires_pinned_by_message() {
         "if base.addr() != canonical.addr() && base.addr() != key.addr() { return None; }",
         "let base = canonical;",
         "let off = ptr.addr().wrapping_sub(base.addr());",
-        "let kind = SegmentHeader::kind_at(base);",
+        "let kind = unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) };",
         "if off >= span { return None; }",
         "let ptr = crate::alloc_core::node::Node::deref(base, off);",
-        "let payload_off = SegmentHeader::read_at(base).payload_offset;",
+        concat!(
+            "let payload_off = ",
+            "// SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety). ",
+            "unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(base) }.payload_offset;",
+        ),
         "if ptr.addr() != base.addr() + payload_off { return None; }",
-        "let span_usable = SegmentHeader::span_usable_at(base);",
+        "let span_usable = unsafe { crate::alloc_core::segment_header::SegmentHeader::span_usable_at(base) };",
     ];
     let mut remainder = known_base;
     for guard in guards {
@@ -187,7 +196,7 @@ const RELEASE_SCAN_FILES: &[&str] = &[
     "alloc_core/large/alloc_core_large_cache.rs",
     "alloc_core/alloc_core/mem/realloc_fastpath.rs",
     // Fresh reservation initialization and alloc-decommit Large lifecycle.
-    "alloc_core/segment/segment_header/terminal_words.rs",
+    "crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs",
     // Global alloc_zeroed -> virgin magazine refill (opt-in virgin-zero-skip).
     "alloc_core/small/alloc_core_small_magazine.rs",
     // Small/Large reservation branches (opt-in numa-aware).

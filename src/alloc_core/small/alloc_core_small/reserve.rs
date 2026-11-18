@@ -140,6 +140,7 @@ impl AllocCore {
     /// cursor-publishing wrapper above) — this function is not a drop-in
     /// replacement for them; skipping the cursor publish would leave a
     /// freshly reserved segment unreachable as a carve target.
+    #[allow(unsafe_code)] // P2.1 tier-2: SegmentMeta::new + targeted header writes.
     pub(in crate::alloc_core) fn reserve_small_segment_impl(&mut self) -> Option<*mut u8> {
         // Mechanism 2 (task #51): this path is reached only when NO registered
         // segment — including any POOLED empty segment — has a free block of the
@@ -302,7 +303,10 @@ impl AllocCore {
 
         // no-panic: register returns None if the segment table is full. We
         // must release the reservation we just made before returning None.
-        let id = match self.table.register(base, SEGMENT, SegmentKind::Small) {
+        // SAFETY: `base` is the freshly reserved, exclusively owned segment
+        // and the table is initialized (bootstrap-owned registration step).
+        #[allow(unsafe_code)]
+        let id = match unsafe { self.table.register(base, SEGMENT, SegmentKind::Small) } {
             Some(id) => id,
             None => {
                 // Release the reservation we just made (we own it now).
@@ -317,14 +321,17 @@ impl AllocCore {
         // below; unused without `page-map-diag`.
         #[cfg(feature = "page-map-diag")]
         let meta_pages = SegLayout::small_meta_pages();
-        let mut meta = SegmentMeta::new(base);
+        let mut meta = unsafe { SegmentMeta::new(base) };
         meta.write_header(SegmentHeader::small(
             id,
             meta_end,
             reservation.as_ptr(),
             reservation_len,
         ));
-        meta.init_small_terminal();
+        // SAFETY: the fresh Small mapping has aligned, exclusively writable terminal
+        // storage. Registration exposes routing data, but no block has been issued
+        // and the owner has not exposed, read, or borrowed either terminal word.
+        unsafe { meta.init_small_terminal() };
         // Phase C (numa-aware): stamp the NUMA node into the header NOW,
         // immediately after writing it. The header constructor set node_id to
         // NO_NODE_RAW; we overwrite it with the actual node. This must happen
@@ -446,8 +453,18 @@ impl AllocCore {
         // struct doc. Gated behind `page-map-diag` and elided from the
         // default/production segment-reservation path.
         #[cfg(feature = "page-map-diag")]
-        PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages);
-        BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32);
+        #[allow(unsafe_code)] // R25-1: scoped unsafe block, fresh-segment contract.
+        // SAFETY: `base + page_map_off()` is the freshly carved page map of
+        // a segment this owner just reserved (exclusive access, still
+        // unregistered), with `Layout::page_map`'s footprint.
+        unsafe {
+            PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages)
+        };
+        // SAFETY: forwarded owner-exclusive live-segment/table contract (P2.1 facade).
+        #[allow(unsafe_code)]
+        unsafe {
+            BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32)
+        };
         // B4 (в): the former `AllocBitmap`/`MagazineBitmap` inits
         // (PERF-PASS-2, G5/C1, task #50 virgin-skip) are gone with the bitmaps
         // themselves — the per-granule state byte replaced them. The same
@@ -497,7 +514,16 @@ impl AllocCore {
         //       re-entering as Small segments (Small memory always enters via
         //       path (a)/(b)/(c)/(d)).
         #[cfg(miri)]
-        crate::alloc_core::state_byte::StateByte::new(base).init_in_place();
+        #[allow(unsafe_code)]
+        // R25-1 pass 10: scoped unsafe block, fresh-segment contract.
+        // SAFETY: `base` is a segment JUST reserved fresh from the OS (see the
+        // F7 audit above): exclusively owned by this thread, never carved, and
+        // its state-byte region is explicitly zero-initialized by
+        // `init_in_place` immediately after; the region stays mapped for the
+        // segment's lifetime.
+        unsafe {
+            crate::alloc_core::state_byte::StateByte::new(base).init_in_place()
+        };
         // R7-A1: check whether the segment count has crossed the directory
         // materialisation threshold. If so, materialize the sidecar and do
         // the one-time rebuild. This is a lazy, one-shot operation: once the

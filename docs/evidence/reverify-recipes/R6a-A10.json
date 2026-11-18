@@ -1,0 +1,26 @@
+{
+  "id": "R6a-A10",
+  "registryActivationHash": "8781e12bcf525c4acf67573125dbd6b38cd79fff6a7060a2231ef289636abbf5",
+  "steps": [
+    {
+      "name": "Full NUMA mock all-features suite on hosted Linux (A10 Windows counterpart)",
+      "env": {
+        "RUSTFLAGS": "--cfg numa_shim_mock"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--quiet",
+        "--all-features"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test result: ok\\. [1-9][0-9]* passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

@@ -24,6 +24,8 @@
 //! successor that supersedes it entirely.)
 
 use crate::alloc_core::AllocCore;
+#[cfg(all(feature = "alloc-xthread", feature = "alloc-decommit"))]
+use sefer_segment::segment_route::route_pin_cache::publish_configured_slots;
 
 // TEST-ONLY (0.3.0, task C1 → 0.4.x task #133): magazine (tcache) HIT
 // counter. Originally a single process-wide `static AtomicU64`, bumped by
@@ -322,9 +324,7 @@ impl HeapCore {
         // process-wide setting: the first config materialised wins and a
         // different later value is ignored.
         #[cfg(feature = "alloc-xthread")]
-        let _ = crate::alloc_core::segment_route::route_pin_cache::publish_configured_slots(
-            config.resolved_route_pin_cache_slots(),
-        );
+        let _ = publish_configured_slots(config.resolved_route_pin_cache_slots());
         let core = AllocCore::new_with_config_for_owner(config, id)?;
         Some(Self {
             id,

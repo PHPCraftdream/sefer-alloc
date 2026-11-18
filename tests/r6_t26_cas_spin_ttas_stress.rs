@@ -25,7 +25,7 @@
     feature = "bench-internals"
 ))]
 
-#[path = "../src/alloc_core/segment/segment_route/route_state/shard_lock.rs"]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_state/shard_lock.rs"]
 mod shard_lock;
 
 use core::cell::Cell;

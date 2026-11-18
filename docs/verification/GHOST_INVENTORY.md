@@ -7,26 +7,26 @@ blanked, braces give the item path); G1's `crates/verify/ghost-lint` on `syn` re
 
 ## 1. Ordering sites
 
-769 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 101 files of `src/**` and
-`crates/**/src/**`; each is claimed by exactly one of 60 scopes.
+770 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+`HeapSlot::cas_state` whose arguments name an ordering) in 103 files of `src/**` and
+`crates/**/src/**`; each is claimed by exactly one of 61 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| S | 13 | 13/769 |
-| cache | 6 | 6/769 |
-| counter | 285 | 285/769 |
-| ghost | 10 | 10/769 |
-| id | 9 | 9/769 |
-| kani | 1 | 1/769 |
-| lock-local | 40 | 40/769 |
-| non-atomic | 3 | 3/769 |
-| protocol | 213 | 213/769 |
-| test-hook | 182 | 182/769 |
-| twin | 7 | 7/769 |
-| **claimed** | **769** | 769/769 |
-| unclaimed | 0 | 0/769 |
-| claimed twice | 0 | 0/769 |
+| S | 13 | 13/770 |
+| cache | 6 | 6/770 |
+| counter | 285 | 285/770 |
+| ghost | 10 | 10/770 |
+| id | 9 | 9/770 |
+| kani | 1 | 1/770 |
+| lock-local | 40 | 40/770 |
+| non-atomic | 3 | 3/770 |
+| protocol | 213 | 213/770 |
+| test-hook | 183 | 183/770 |
+| twin | 7 | 7/770 |
+| **claimed** | **770** | 770/770 |
+| unclaimed | 0 | 0/770 |
+| claimed twice | 0 | 0/770 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -165,7 +165,7 @@ Decision: **translate(free_slot_hint, saturation) + keep+R8(stack scans)** — G
 
 ### P5 — route pin: lookup || unlink || last-pin release
 
-Prod: `src/alloc_core/segment/segment_route/directory/route_directory.rs::pin_from_array`, `src/alloc_core/segment/segment_route/directory/route_directory.rs::drop`, `src/alloc_core/segment/segment_route/directory/route_directory.rs::remove`, `src/alloc_core/segment/segment_route/route_state/pin.rs::linked`, `src/alloc_core/segment/segment_route/route_state/shard_lock.rs`.
+Prod: `crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs::pin_from_array`, `crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs::drop`, `crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs::remove`, `crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs::linked`, `crates/core/sefer-segment/src/segment/segment_route/route_state/shard_lock.rs`.
 
 - I1 a pin is taken only under the shard lock while the entry is indexed (refs fetch_update AcqRel)
 - I2 the sidecar is freed only by the thread whose fetch_sub(AcqRel) returns 1
@@ -177,7 +177,7 @@ Decision: **translate (done in G2: real directory under loom via loom_b4_r1_pin_
 
 ### P6 — route pin cache fast path
 
-Prod: `src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs`.
+Prod: `crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs`.
 
 - I1 a cached pin is reused only while it holds its own ref; eviction drops exactly one ref
 - I2 the cache is thread-local; no cross-thread access
@@ -188,7 +188,7 @@ Decision: **ghost** — G6b: the real cache records ghost event pin-cache/held (
 
 ### P7 — sidecar bitmap: publish / guarded cut / scan
 
-Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`, `src/alloc_core/segment/remote_bitmap/bitmap_scan.rs`, `src/alloc_core/segment/remote_bitmap/bitmap_cut.rs`.
+Prod: `crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs`, `crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs`, `crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_cut.rs`.
 
 - I1 every published offset is cut exactly once
 - I2 publish is fetch_or SeqCst (P23 I2) after the class store Release; cut is swap AcqRel
@@ -198,7 +198,7 @@ Decision: **ghost** — G6a: ghost events sidecar/published (publish) and sideca
 
 ### P8 — small sidecar: leaf pointer publication, pin lifetime
 
-Prod: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `src/alloc_core/segment/segment_route/route_state/small_sidecar.rs`.
+Prod: `crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs`.
 
 - I1 a leaf pointer is published (mixed store Release, present fetch_or Release) only after the leaf is fully initialised
 - I2 a reader resolves a leaf only with Acquire and only while holding a route pin
@@ -208,7 +208,7 @@ Decision: **translate** — G6a: ClassLeaves ordered-op inventory per fn (R2 x6)
 
 ### P9 — terminal Large: phase word
 
-Prod: `src/alloc_core/large/reservation_state.rs`, `src/alloc_core/segment/segment_route/route_protocol/large_state.rs`, `src/alloc_core/segment/segment_header/terminal_words.rs`, `src/alloc_core/segment/segment_route/route_state/pin.rs::publish_large`.
+Prod: `crates/core/sefer-segment/src/support/reservation_state.rs`, `crates/core/sefer-segment/src/segment/segment_route/route_protocol/large_state.rs`, `crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs`, `crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs::publish_large`.
 
 - I1 the phase word moves only along the transition relation (kani large_state_proofs)
 - I2 every transition CAS is AcqRel/Acquire; a terminal publication is the producer's last reservation access
@@ -218,7 +218,7 @@ Decision: **translate** — G6c: tests/loom_terminal_large.rs now runs the produ
 
 ### P10 — terminal owner drain: owner credits || cut
 
-Prod: `src/alloc_core/alloc_core/sidecar_drain.rs`, `src/alloc_core/segment/remote_bitmap/bitmap_scan.rs::next_cut`.
+Prod: `src/alloc_core/alloc_core/sidecar_drain.rs`, `crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs::next_cut`.
 
 - I1 credits are mutated only by the owner (plain fields, no atomics)
 - I2 a terminal cut consumes each pending bit once
@@ -229,7 +229,7 @@ Decision: **keep+R5** — G6b: credits stay a plain owner-only u32 (R10 on Segme
 
 ### P11 — active-kind index membership || terminal publication
 
-Prod: `src/alloc_core/segment/segment_table/active_kind_index.rs`, `src/alloc_core/segment/segment_table/active_kind_ops.rs`, `src/alloc_core/alloc_core/sidecar_drain.rs`.
+Prod: `crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_index.rs`, `crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_ops.rs`, `src/alloc_core/alloc_core/sidecar_drain.rs`.
 
 - I1 the owner alone owns the membership bit (plain)
 - I2 a segment is removed from the active-kind index only after its pending credit is consumed or it is reservation-dead
@@ -295,7 +295,7 @@ Decision: **R7** — G7: R7 twins pin the bootstrap loom stand-in to crates/prim
 
 ### P18 — cfg(loom) twins in crates and leaf init
 
-Prod: `crates/primitives/once-ptr-cell/src/imp.rs`, `crates/primitives/tagged-index-stack/src/imp.rs`, `crates/platform/aligned-vmem/src/mock.rs`, `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `src/alloc_core/segment/segment_route/route_state/route_pin_cache.rs`.
+Prod: `crates/primitives/once-ptr-cell/src/imp.rs`, `crates/primitives/tagged-index-stack/src/imp.rs`, `crates/platform/aligned-vmem/src/mock.rs`, `crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`, `crates/core/sefer-segment/src/segment/segment_route/route_state/route_pin_cache.rs`.
 
 - I1 each loom twin has the same normalized atomic sequence as its prod item; allowed differences are listed with a reason
 - loom: `crates/primitives/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/primitives/tagged-index-stack/tests/loom_aba.rs`
@@ -333,7 +333,7 @@ Decision: **ghost** — G6d: new actual-source loom model; the UnsafeCell stand-
 
 ### P22 — route ShardLock (spin lock over the directory shard)
 
-Prod: `src/alloc_core/segment/segment_route/route_state/shard_lock.rs`.
+Prod: `crates/core/sefer-segment/src/segment/segment_route/route_state/shard_lock.rs`.
 
 - I1 CAS-weak Acquire/Relaxed on lock, Release store on ShardGuard drop
 - I2 lock_unless_exiting never spins forever during process exit
@@ -343,7 +343,7 @@ Decision: **translate (with P5)** — loom_route_pin_unlink models it as loom::s
 
 ### P23 — remote-free ingress: producer notify || owner take/arm/full drain (SC-6 A-exact)
 
-Prod: `src/alloc_core/segment/segment_route/directory/ingress.rs`, `src/alloc_core/segment/segment_route/route_state/pin.rs::publish_small_borrowed`, `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs::publish`, `src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs::drain_notified_slot`.
+Prod: `crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs`, `crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs::publish_small_borrowed`, `crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs::publish`, `src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs::drain_notified_slot`.
 
 - I1 NOTIFIED => the slot bit is set in the heap mask, or its notifier is between the CAS and the summary RMW, or the owner took the bit and has not finished arm -> fence -> full drain
 - I2 store-buffering: producer pending fetch_or(SeqCst) then state load(SeqCst); owner state store(ARMED, Release), fence(SeqCst), then a full drain: the drain sees the bit or the producer sees ARMED and notifies
@@ -436,12 +436,13 @@ Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed o
 | `P20/maintenance-service` | protocol | P20 | 6 | service state + pass counter used as a wait condition |
 | `P21/exact-shard` | protocol | P21 | 7 | shard lock + live hint |
 | `hook/maintenance-service` | test-hook | — | 7 | fault/pause injection and test observers (FAIL_START swap is armed only by fail_next_start_for_test) |
-| `hook/test-fns` | test-hook | — | 155 | dbg_*/for_test/internals-only hooks |
+| `hook/test-fns` | test-hook | — | 156 | dbg_*/for_test/internals-only hooks |
 | `hook/inject-flags` | test-hook | — | 16 | fault-injection / test-control flags |
 | `cache/page-size` | cache | — | 4 | idempotent cache of a process constant; Relaxed: every writer stores the same value |
 | `cache/process-exit` | cache | — | 2 | resolved function pointer cache (windows); Relaxed: idempotent |
 | `id/generators` | id | — | 7 | unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed |
-| `counter/statics` | counter | — | 236 | statistics / diagnostic counters: Relaxed, no protocol reads them |
+| `counter/statics` | counter | — | 218 | statistics / diagnostic counters: Relaxed, no protocol reads them |
+| `counter/directory-stats` | counter | — | 18 | directory statistics counters accessed via root_compat::directory_stats const-fn accessors: Relaxed, no protocol reads them (P2.1 moved the statics behind accessors; same semantics as counter/statics) |
 | `counter/per-heap` | counter | — | 13 | per-heap hit counters published Relaxed (owner-written, read by stats) |
 | `counter/pin-cache-macro` | counter | — | 1 | macro_rules! count bumps a static counter |
 | `counter/tier1-bump` | counter | — | 2 | unlocked Relaxed load+store bump of a bench-internals Tier-1 counter (DZ-2): no protocol reads it |

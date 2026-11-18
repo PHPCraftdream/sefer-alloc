@@ -1,0 +1,26 @@
+name: CI sefer-segment-gates
+description: sefer-segment package gates
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - run: cargo clippy -p sefer-segment --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p sefer-segment --no-default-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p sefer-segment --all-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo check -p sefer-segment --all-features --all-targets
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p sefer-segment --all-features --no-deps
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    # Packaging verification is deferred until the path dependencies
+    # (sefer-ghost, sefer-platform, size-classes, sefer-policy, aligned-vmem)
+    # are published, as with ci-sefer-platform-gates.

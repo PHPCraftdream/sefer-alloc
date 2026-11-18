@@ -436,10 +436,10 @@ fn allocator_64bit_gate_docs_match_live_metadata_bounds() {
         );
     }
 
-    let layout = fs::read_to_string(
-        manifest.join("src/alloc_core/segment/segment_header/layout_asserts.rs"),
-    )
-    .expect("read layout_asserts.rs");
+    // P2.1 path (single line + rustfmt::skip: keeps the ratchet baseline).
+    #[rustfmt::skip]
+    let layout = fs::read_to_string(manifest.join("crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/layout_asserts.rs"))
+        .expect("read layout_asserts.rs");
     assert!(layout.contains("assert!(size_of::<SegmentHeader>() <= PAGE)"));
     for (place, text) in [
         ("gate", gate),

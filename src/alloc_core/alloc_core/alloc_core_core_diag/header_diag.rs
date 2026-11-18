@@ -9,6 +9,7 @@ use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
 #[cfg(any(feature = "virgin-zero-skip", feature = "bench-internals"))]
+#[allow(unused_imports)] // P2.1: kept for cfg combinations where the consumer is compiled out
 use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(feature = "bench-internals")]
 use crate::alloc_core::segment_header::{
@@ -24,12 +25,14 @@ use crate::alloc_core::size_classes::{AllocKind, SizeClasses};
 impl AllocCore {
     /// Numeric geometry only, resolved from the owner table's canonical root.
     #[doc(hidden)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn large_geometry_for_test(
         &self,
         ptr: *mut u8,
     ) -> Option<(usize, usize, usize, usize, usize)> {
         let base = self.table.canonical_base_of(os::segment_base_of_ptr(ptr))?;
-        let header = SegmentHeader::read_at(base);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
+        let header = unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(base) };
         if header.kind != SegmentKind::Large {
             return None;
         }
@@ -57,22 +60,28 @@ impl AllocCore {
     /// Test-only atomic snapshot of an owned, registered reservation.
     #[cfg(feature = "bench-internals")]
     #[doc(hidden)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn terminal_header_snapshot_for_test(&self, ptr: *mut u8) -> Option<(u32, u64)> {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(candidate)?;
-        let snapshot = SegmentMeta::new(base).terminal_snapshot();
+        // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+        let snapshot = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }
+            .terminal_snapshot();
         Some((snapshot.remote_head, snapshot.large_state))
     }
 
     /// Test-only snapshot through the table's canonical Primordial base.
     #[cfg(feature = "bench-internals")]
     #[doc(hidden)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn terminal_primordial_snapshot_for_test(&self) -> Option<(u32, u64)> {
         let base = self.table.base_at(0);
         if base.is_null() {
             return None;
         }
-        let snapshot = SegmentMeta::new(base).terminal_snapshot();
+        // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+        let snapshot = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }
+            .terminal_snapshot();
         Some((snapshot.remote_head, snapshot.large_state))
     }
 
@@ -89,12 +98,25 @@ impl AllocCore {
     /// pointer.
     #[cfg(feature = "bench-internals")]
     #[doc(hidden)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn large_thp_charge_for_test(&self, ptr: *mut u8) -> Option<usize> {
         let base = self.table.canonical_base_of(os::segment_base_of_ptr(ptr))?;
-        if SegmentHeader::kind_at(base) != SegmentKind::Large {
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        if unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }
+            != SegmentKind::Large
+        {
             return None;
         }
-        Some(SegmentHeader::thp_charge_at(base))
+        #[allow(unsafe_code)] // R25-1: scoped unsafe block behind membership + kind guards.
+        {
+            // SAFETY: `base` is the aligned base of a live owned segment
+            // with an initialized header (`canonical_base_of` membership
+            // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+            // guard plus the `unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) } == Large` check above); the read
+            // follows the owner-only `thp_charge` field discipline.
+            // SAFETY: `base` is the aligned base of a live segment with an initialized header; the read follows the owner-only `thp_charge` field discipline.
+            Some(unsafe { crate::alloc_core::segment_header::SegmentHeader::thp_charge_at(base) })
+        }
     }
 
     /// TEST-ONLY (L-5, UBFIX-11): read the RAW `kind` discriminant byte of
@@ -192,13 +214,15 @@ impl AllocCore {
     /// address — see `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     #[must_use]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn dbg_kind_at_tag(&self, ptr: *mut u8) -> u8 {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self
             .table
             .canonical_base_of(candidate)
             .expect("dbg_kind_at_tag: ptr's segment is not owned by this AllocCore");
-        match SegmentHeader::kind_at(base) {
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        match unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) } {
             SegmentKind::Primordial => 0,
             SegmentKind::Small => 1,
             SegmentKind::Large => 2,
@@ -342,15 +366,21 @@ impl AllocCore {
     #[doc(hidden)]
     #[cfg(feature = "virgin-zero-skip")]
     #[must_use]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub fn dbg_payload_virgin_for(&self, ptr: *mut u8) -> Option<bool> {
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of(candidate)?;
         if !matches!(
-            SegmentHeader::kind_at(base),
+            // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+            unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) },
             SegmentKind::Small | SegmentKind::Primordial
         ) {
             return None;
         }
-        Some(SegmentMeta::new(base).payload_virgin_of())
+        // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+        Some(
+            unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }
+                .payload_virgin_of(),
+        )
     }
 }

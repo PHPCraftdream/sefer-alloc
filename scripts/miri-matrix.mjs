@@ -10,9 +10,13 @@ const paused = (features, borrows) => green('miri-core-rest', 'miri_global_box_a
     ? 'Undefined Behavior: not granting access to tag .* weakly protected'
     : 'Undefined Behavior: write access through .* is forbidden',
   redSite: {
-    frame0: '^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next',
-    file: 'at .*node\\.rs:',
-    caller: 'reclaim_sidecar_record|flush_run|dealloc_small',
+    frame0: '^[[:space:]]+0: sefer_segment::support::node_impl::Node::write_next$',
+    file0: '^[[:space:]]+at crates/core/sefer-segment/src/support/node\\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$',
+    frame1: '^[[:space:]]+1: sefer_segment::support::node_impl::RootNode::write_next$',
+    file1: '^[[:space:]]+at crates/core/sefer-segment/src/support/node\\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$',
+    frame2: '^[[:space:]]+2: sefer_alloc::alloc_core::platform::node::Node::write_next$',
+    file2: '^[[:space:]]+at src/alloc_core/platform/node\\.rs:[0-9]+:[0-9]+(: [0-9]+:[0-9]+)?$',
+    caller: '^[[:space:]]+3: .*::(reclaim_sidecar_record|flush_run|dealloc_small)$',
   },
 });
 const narrow = (borrows) => green('miri-core-rest', 'miri_global_box_acceptance', 'alloc-global internals bench-internals', {

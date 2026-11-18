@@ -14,12 +14,8 @@ use crate::alloc_core::node::Node;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::os;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-use crate::alloc_core::segment_header::SegmentMeta;
-
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 use crate::registry::heap_core::HeapCore;
-
 impl HeapCore {
     // Allocation entry points delegate to the substrate; foreign frees are
     // published through pinned route descriptors and reclaimed by the owner.
@@ -32,6 +28,7 @@ impl HeapCore {
     /// Resolves the stored segment root and clears its residency bit.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[inline(always)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(in crate::registry::heap_core) fn clear_magazine_on_issue(&self, issued: *mut u8) {
         let base = os::segment_base_of_ptr(issued);
         debug_assert_eq!(
@@ -42,9 +39,14 @@ impl HeapCore {
         let off = issued.addr() - base.addr();
         // B4 (в): flip the state byte MAG → LIVE at issue, preserving the
         // class field (written by the block's own MAG/FREE store).
-        SegmentMeta::new(base)
-            .state_byte()
-            .set_state(off as u32, crate::alloc_core::state_byte::StateByte::LIVE);
+        // SAFETY: The popped magazine slot (or unsafe diagnostic caller)
+        // supplies an aligned, initialized block start in this owner segment.
+        // Rounding its address down to the segment base gives off < SEGMENT.
+        unsafe {
+            crate::alloc_core::segment_header::SegmentMeta::new(base)
+                .state_byte()
+                .set_state(off as u32, crate::alloc_core::state_byte::StateByte::LIVE)
+        };
     }
 
     /// Task #2002: the shared tail of [`refill_magazine_slow`](Self::refill_magazine_slow)
@@ -65,6 +67,7 @@ impl HeapCore {
     /// into `tcache.classes[c].slots[0..n]`.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[inline(always)]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     fn finish_magazine_refill(&mut self, c: usize, n: usize) -> *mut u8 {
         debug_assert!(
             n >= 1,
@@ -86,13 +89,23 @@ impl HeapCore {
         let base = os::segment_base_of_ptr(issued);
         let off = (issued as usize - base as usize) as u32;
         debug_assert_eq!(
-            SegmentMeta::new(base).state_byte().read(off) >> 6,
+            // SAFETY: This is an initialized block start from the owner refill;
+            // rounding its address down to the segment base gives off < SEGMENT.
+            unsafe {
+                crate::alloc_core::segment_header::SegmentMeta::new(base)
+                    .state_byte()
+                    .read(off)
+            } >> 6,
             crate::alloc_core::state_byte::StateByte::MAG,
             "refill-issued block must arrive MAG from the parameterized drain/carve"
         );
-        SegmentMeta::new(base)
-            .state_byte()
-            .set_state(off, crate::alloc_core::state_byte::StateByte::LIVE);
+        // SAFETY: The refill just committed this in-segment block as MAG;
+        // popping its slot commits LIVE under the same owner access.
+        unsafe {
+            crate::alloc_core::segment_header::SegmentMeta::new(base)
+                .state_byte()
+                .set_state(off, crate::alloc_core::state_byte::StateByte::LIVE)
+        };
         issued
     }
 

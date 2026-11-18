@@ -9,17 +9,21 @@ use core::ptr::NonNull;
 
 use crate::alloc_core::node::{Node, NODE_SIZE};
 use crate::alloc_core::os;
-#[cfg(any(
-    feature = "misuse-checks",
-    debug_assertions,
-    feature = "alloc-segment-directory"
-))]
+// Pass 9.1: unconditional import — `flush_run`/`flush_class` use `seg_meta`
+// in every feature row (e.g. loom alloc-core+alloc-xthread w/o misuse-checks).
+#[allow(unused_imports)]
+#[cfg(feature = "alloc-segment-directory")]
 use crate::alloc_core::segment_header::SegmentHeader;
-#[cfg(any(feature = "misuse-checks", debug_assertions))]
+use crate::alloc_core::segment_header::FREE_LIST_NULL;
 use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentKind};
-use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
 use crate::alloc_core::size_classes::SizeClasses;
 use crate::alloc_core::state_byte::StateByte;
+#[cfg(all(
+    feature = "alloc-stats",
+    feature = "alloc-segment-directory",
+    not(feature = "numa-aware")
+))]
+use sefer_segment::support::directory_counters as directory_stats;
 
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(all(
@@ -233,6 +237,7 @@ impl AllocCore {
     // probes reach these directly.
     #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     fn refill_class_bump_impl(
         &mut self,
         class_idx: usize,
@@ -365,7 +370,11 @@ impl AllocCore {
             #[cfg(feature = "virgin-zero-skip")]
             let cur_virgin = virgin_out
                 .is_some()
-                .then(|| SegmentMeta::new(self.small_cur).payload_virgin_of());
+                // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+                .then(|| {
+                    unsafe { crate::alloc_core::segment_header::SegmentMeta::new(self.small_cur) }
+                        .payload_virgin_of()
+                });
             let n = match self.try_carve_batch(
                 class_idx,
                 block_size,
@@ -393,7 +402,13 @@ impl AllocCore {
                     #[cfg(feature = "virgin-zero-skip")]
                     let fresh_virgin = virgin_out
                         .is_some()
-                        .then(|| SegmentMeta::new(self.small_cur).payload_virgin_of());
+                        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+                        .then(|| {
+                            unsafe {
+                                crate::alloc_core::segment_header::SegmentMeta::new(self.small_cur)
+                            }
+                            .payload_virgin_of()
+                        });
                     let n = match self.try_carve_batch(
                         class_idx,
                         block_size,
@@ -433,7 +448,7 @@ impl AllocCore {
                         let seg = self.find_segment_with_free_forced(class_idx);
                         if let Some(seg) = seg {
                             #[cfg(feature = "alloc-stats")]
-                            crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                            directory_stats::directory_rescue_oom_avoided()
                                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                             let n = match self.try_drain_freelist_batch(
                                 seg,
@@ -587,7 +602,8 @@ impl AllocCore {
         // table slot; `base` is then an UNMAPPED address. The SECOND run for
         // the same `base` would still call `flush_run`, which unconditionally
         // reads/writes that segment's metadata (`SegmentMeta::new(base)`,
-        // `bin_table()`, `state_byte()`, `bump_of()`, `kind_at(base)`) —
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        // `bin_table()`, `state_byte()`, `bump_of()`, `unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }`) —
         // metadata-level use-after-free.
         //
         // Even on the POOL leg (no OS release), the segment's `bump`/
@@ -674,6 +690,7 @@ impl AllocCore {
     #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline]
     #[must_use]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     fn flush_run(
         &mut self,
         class_idx: usize,
@@ -682,7 +699,8 @@ impl AllocCore {
         blocks: &[*mut u8],
         start: usize,
     ) -> (usize, bool) {
-        let meta = SegmentMeta::new(base);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
         let mut bt = meta.bin_table();
         // B4 (в): the alloc-bitmap hoist is gone — flush_run now guards and
         // commits via the per-granule state byte.
@@ -697,11 +715,15 @@ impl AllocCore {
         // bin table / …) instead of the payload; see `dealloc_small`'s
         // identical guard for the full rationale.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
-        let payload_start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
-            SegLayout::primordial_meta_end()
-        } else {
-            SegLayout::small_meta_end()
-        };
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        let payload_start =
+            if unsafe { crate::alloc_core::segment_header::SegmentHeader::kind_at(base) }
+                == SegmentKind::Primordial
+            {
+                SegLayout::primordial_meta_end()
+            } else {
+                SegLayout::small_meta_end()
+            };
         // N3-c (split-n8c): hoist the accepted-offset range out of the loop as
         // ONE saturating span. `span = bump.saturating_sub(payload_start)`;
         // a block is accepted iff `(off - payload_start) mod 2^64 < span`.
@@ -756,7 +778,9 @@ impl AllocCore {
             // class, and an already-FREE block are all rejected/skipped).
             #[cfg(any(feature = "misuse-checks", debug_assertions))]
             {
-                let sb = meta.state_byte().read(off);
+                // SAFETY: The run contains only pointers in the canonical segment window,
+                // and the owner owns the initialized state array.
+                let sb = unsafe { meta.state_byte().read(off) };
                 if sb & 0x3F != tag || (sb >> 6) == crate::alloc_core::state_byte::StateByte::FREE {
                     crate::alloc_core::state_byte::StateByte::shadow_reject(
                         b"sefer-alloc: misuse check rejected a free in safe mode (magazine flush)\n",
@@ -780,11 +804,15 @@ impl AllocCore {
             // sequential `dealloc_small` performs.
             Node::write_next(block_nn, prev_ptr);
             // B4 (в): commit the accepted block (LIVE or MAG) to FREE.
-            meta.state_byte().write(
-                off,
-                class_idx,
-                crate::alloc_core::state_byte::StateByte::FREE,
-            );
+            // SAFETY: The flush caller supplies exact mapped starts of this class and
+            // exclusive owner access. The link commits LIVE/MAG -> FREE.
+            unsafe {
+                meta.state_byte().write(
+                    off,
+                    class_idx,
+                    crate::alloc_core::state_byte::StateByte::FREE,
+                )
+            };
             prev_ptr = block_nn.as_ptr();
         }
         let accepted_count = end - start - rejected;
@@ -801,14 +829,19 @@ impl AllocCore {
             // when old_head was FREE_LIST_NULL.
             #[cfg(feature = "alloc-segment-directory")]
             if old_head == FREE_LIST_NULL {
-                let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+                // SAFETY: `base` is the aligned base of a live registered segment with an initialized header; the caller holds the owner's read permission for the write-once `segment_id` field.
+                let slot_idx = unsafe {
+                    crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base)
+                } as usize;
                 self.publish_nonempty(base, class_idx, slot_idx);
             }
         }
 
         // E3 (task W4): retire accepted credits once, after `set_head`.
         // The following eligibility check only selects pool/release policy.
-        SegmentMeta::new(base).sub_live(accepted_count as u32);
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the header stays mapped and live for this read (`SegmentHeader::kind_at` # Safety).
+        unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }
+            .sub_live(accepted_count as u32);
         #[cfg(feature = "alloc-decommit")]
         {
             let small_cur = self.small_cur;
