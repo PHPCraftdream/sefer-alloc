@@ -257,6 +257,7 @@ impl StateByte {
     /// range instead — see `decommit_empty_segment_impl`). Under
     /// `cfg(not(miri))` no caller remains (the virgin-reserve sites rely on
     /// the OS zero-page guarantee), so the method is cfg-gated out.
+    /// Bulk `Node::zero` avoids interpreted per-byte writes.
     ///
     /// # Safety
     /// The full live state array must be exclusively writable by the owner;
@@ -267,10 +268,7 @@ impl StateByte {
     #[doc(hidden)]
     #[allow(unsafe_code)]
     pub unsafe fn init_in_place(&self) {
-        let mut i = 0;
-        while i < Self::FOOTPRINT {
-            Node::write_u8(Node::offset(self.bytes, i), 0);
-            i += 1;
-        }
+        // SAFETY: the caller guarantees exclusive write access to the full live state array.
+        Node::zero(self.bytes, Self::FOOTPRINT);
     }
 }
