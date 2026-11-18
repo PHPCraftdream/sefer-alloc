@@ -10,27 +10,32 @@ runs:
     # The reviewed hook-security contract survives protocol/test retirement
     # as executable repository tooling with stale allowlist checks.
     - run: node scripts/verify-dbg-hook-safety.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
     # R6-T38: the parser/table self-test (synthetic negative fixtures) is
     # not exercised by the plain main-mode run above.
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-dbg-hook-safety.mjs --self-test
+      if: env.CHECK_MATRIX_SHARD == '1'
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-loom-target-wiring.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-miri-target-wiring.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
     # CLAUDE.md structure limits: at most 7 entries per src directory and 1000
     # lines per code file; existing debt is ratcheted by docs/structure_limits_baseline.csv.
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-structure-limits.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
     # The test rows link the whole tests/ tree once per feature set; without freeing the
     # executables between rows the job loses its worker with "No space left on device".
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
-    - run: node scripts/run-check-matrix.mjs --keep-going --free-between-rows --kind check --kind test
+    - run: node scripts/run-check-matrix.mjs --keep-going --free-between-rows --kind check --kind test --shard "$CHECK_MATRIX_SHARD/$CHECK_MATRIX_SHARDS"
     # R30-5: the generated "feature ABSENT" compile-check enumeration for
     # every conditionally-registered iai arm in benches/perf_gate_iai.rs —
     # the mechanical, automatic form of the stub rule R29-16 violated by
@@ -41,6 +46,7 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-perf-gate-stubs.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
     # R31-5a (task #480): structural checks over every docs/perf/R*_*.md
     # gate report — companion summary CSV cited actually exists, its
     # commit/SHA field(s) are a real 40-hex SHA and not a prose
@@ -52,6 +58,7 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-gate-report.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
     # Task #1131: the Linux/Android doc-drift pairing guard (created in
     # the M1/task-#1105 wave; sibling of the vmem-doc-drift-guard step in
     # scripts/check-all.mjs, which runs it locally). Pure text scan (no
@@ -74,6 +81,7 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/vmem-linux-android-pairing-guard.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
     # Task #1135 (MEDIUM): the #1131 row above closed the pairing
     # guard's own gap but left it the ONLY vmem text guard with a CI
     # row. The census this task ran was scoped to guard-shaped
@@ -149,6 +157,7 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
     # R6/task #871: vmem doc-drift guard — the 5x-recurred
     # unconditional "over-reserve"/"trim" sentence class in
     # crates/platform/aligned-vmem rustdoc / Cargo.toml / README.md. This is
@@ -159,6 +168,7 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/vmem-doc-drift-guard.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
     # Task #1067/F7: exhaustive completeness check that every
     # `pub fn ...() -> u64` counter accessor in
     # crates/platform/aligned-vmem/src/bench_internals/ is CALLED by
@@ -169,6 +179,7 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
     # Tasks #1076 + #1080: static guard against the compile-time PAGE
     # constant flowing into page_size()-validated argument positions —
     # the class that escaped three times (#1067 mock.rs, #1074
@@ -183,6 +194,7 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-vmem-page-constant-call-sites.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
     # Task #1150: static guard over every `grep -F "test <NAME> ... ok"`
     # postcondition in THIS file — the sentinel string must stay
     # byte-identical to what libtest actually prints for the named `fn`,
@@ -204,9 +216,11 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-ci-sentinels.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: node scripts/verify-root-package-list.mjs
+      if: env.CHECK_MATRIX_SHARD == '1'
 
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}

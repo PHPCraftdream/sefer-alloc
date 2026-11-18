@@ -463,3 +463,282 @@ export function rowLabel(row) {
     : '';
   return `${row.kind}${target} ${feat}${env}`;
 }
+
+// --- Shard distribution inputs ---
+//
+// Measured wall-clock seconds (including cleanup) for the NON-clippy
+// PER_PR_ROWS, in manifest order, from CI job 135087709698 (run
+// 44385142496), in ms. Clippy rows are hand-run named CI steps (R31-11) and
+// are never sharded, so they carry no entry. Looked up via Object.hasOwn /
+// Map only — no ordering constraints on this map.
+export const ROW_COST_MS = {
+  'check-perf-gate-iai-default': 37861,
+  'test-internals-boundary-no-internals': 10920,
+  'test-alloc-global-minimal-r5-01': 1496,
+  'check-alloc-core-decommit-internals-warnings': 704,
+  'test-r8-minimal-global': 220549,
+  'test-r8-fastbin-no-decommit': 215629,
+  'test-r8-production': 256037,
+  'test-production-misuse-checks': 260200,
+  'test-r8-hardened-numa-directory': 228098,
+  'test-r8-large-geometry-policies': 255478,
+  'test-r6-t40-sidecar-system-alloc': 175,
+  'test-r8-large-commit-failure': 849,
+  'test-j13b-thp-injected-pre-syscall': 1694,
+  'test-j13b-thp-release-failure-retention': 192,
+  'test-j13b-control-premise-recovery': 215,
+  'test-j13b-control-sampler-recovery': 200,
+  'test-j13b-control-concurrent-ordinal': 225,
+  'test-j13b-control-reserved-capacity-invalidation': 304,
+  'test-j13b-control-oom-shrink-invalidation': 227,
+  'test-j13b-control-ticket-log-capture-bounds': 214,
+  'test-j13b-learning-cell-native': 221,
+  'test-j13b-learning-contention-bound': 162,
+  'test-j13b-learning-runtime': 239,
+  'test-j13b-cadence-pure': 280,
+  'test-j13b-cadence-cell-native': 256,
+  'test-j13b-cadence-contention-bound': 180,
+  'test-j13b-cadence-native': 271,
+};
+export const MIN_SHARDS = 1;
+export const MAX_SHARDS = 6;
+// Shard 1's CI job also runs the one-time guard scripts, so its greedy
+// placement starts with this preloaded cost.
+export const SEED_SHARD_1_MS = 4000;
+// Conservative fallbacks for rows added after this table was measured: an
+// untargeted `test` row compiles and runs the whole `tests/` tree for its
+// feature set (minutes); everything else is assumed small. Both positive.
+export const UNMEASURED_UNTARGETED_TEST_COST_MS = 260000;
+export const UNMEASURED_SMALL_COST_MS = 5000;
+
+const ROW_COST = new Map(Object.entries(ROW_COST_MS));
+
+/** Rows eligible for sharding: exactly the check- and test-kind rows. */
+export function shardableRows() {
+  return PER_PR_ROWS.filter((r) => r.kind === 'check' || r.kind === 'test');
+}
+
+/** Highest admissible shard count for the current manifest. */
+export function maxShardCount() {
+  return Math.min(MAX_SHARDS, shardableRows().length);
+}
+
+/** Measured cost of a row, or its documented positive fallback. */
+export function rowCostMs(row) {
+  const measured = ROW_COST.get(row.id);
+  if (measured !== undefined) {
+    if (!Number.isSafeInteger(measured) || measured <= 0) {
+      throw new Error(`shard weights: non-positive weight for ${row.id}`);
+    }
+    return measured;
+  }
+  return row.kind === 'test' && !row.target
+    ? UNMEASURED_UNTARGETED_TEST_COST_MS
+    : UNMEASURED_SMALL_COST_MS;
+}
+
+/**
+ * Deterministic LPT (largest-cost-first) distribution: rows are placed in
+ * decreasing cost (ties by manifest order) into the bin with the lowest
+ * estimated load (ties by lowest shard index). One safeguard for a future
+ * all-tiny row set: an empty bin is forced exactly when the unassigned
+ * entries equal the number of still-empty bins, so no shard can end up
+ * empty. Each shard's rows are returned in manifest order.
+ */
+export function distributeShards(rows, n) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error('shard input: row set is empty');
+  }
+  const seen = new Set();
+  for (const row of rows) {
+    if (typeof row?.id !== 'string' || !row.id) {
+      throw new Error('shard input: row without a string id');
+    }
+    if (seen.has(row.id)) {
+      throw new Error(`shard input: duplicate row id: ${row.id}`);
+    }
+    seen.add(row.id);
+  }
+  const maxN = Math.min(MAX_SHARDS, rows.length);
+  if (!Number.isInteger(n) || n < MIN_SHARDS || n > maxN) {
+    throw new Error(`shard count ${n} out of range 1..${maxN}`);
+  }
+  const order = rows
+    .map((row, i) => ({ i, cost: rowCostMs(row) }))
+    .sort((a, b) => b.cost - a.cost || a.i - b.i);
+  const bins = Array.from({ length: n }, () => ({ load: 0, idx: [] }));
+  bins[0].load = SEED_SHARD_1_MS;
+  let unassigned = order.length;
+  for (const e of order) {
+    const emptyBins = bins.filter((b) => b.idx.length === 0);
+    let best;
+    if (emptyBins.length > 0 && unassigned === emptyBins.length) {
+      // Only-empty-left safeguard: every remaining entry must seed a bin.
+      best = bins.indexOf(emptyBins[0]);
+    } else {
+      best = 0;
+      for (let s = 1; s < n; s++) {
+        if (bins[s].load < bins[best].load) best = s;
+      }
+    }
+    bins[best].idx.push(e.i);
+    bins[best].load += e.cost;
+    unassigned--;
+  }
+  return bins.map((b) => b.idx.sort((a, z) => a - z).map((i) => rows[i]));
+}
+
+/** Distribute the real manifest's shardable rows into n shards. */
+export function selectShards(n) {
+  return distributeShards(shardableRows(), n);
+}
+
+/**
+ * Strict canonical `i/n` shard spec: 1-based, digits without leading
+ * zeros, range-validated against the admissible shard count.
+ */
+export function parseShardSpec(spec) {
+  const match = /^([1-9][0-9]*)\/([1-9][0-9]*)$/.exec(spec ?? '');
+  if (!match) {
+    throw new Error(`--shard must be <index>/<total> (1-based), got: ${spec}`);
+  }
+  const index = Number(match[1]);
+  const total = Number(match[2]);
+  const max = maxShardCount();
+  if (total < MIN_SHARDS || total > max) {
+    throw new Error(`--shard total ${total} out of range 1..${max}`);
+  }
+  if (index < 1 || index > total) {
+    throw new Error(`--shard index ${index} out of range for total ${total}`);
+  }
+  return { index, total };
+}
+
+/** Select one shard's rows from the real manifest. Throws on bad input. */
+export function selectShardRows(spec) {
+  const { index, total } = parseShardSpec(spec);
+  return selectShards(total)[index - 1];
+}
+
+/**
+ * Single-sourced cargo argv (WITHOUT the leading 'cargo') for a row. The
+ * runner's execution path and every --list surface build their args here
+ * and only here, so a dry-run list can never drift from what is spawned.
+ * `keepGoing` prepends --no-fail-fast to test rows.
+ */
+export function cargoArgv(row, { keepGoing = false } = {}) {
+  const args = rowToCargoArgs(row);
+  if (keepGoing && row.kind === 'test') args.splice(1, 0, '--no-fail-fast');
+  return args;
+}
+
+/** Safe list entry for one row: id, cargo argv, env (always an object). */
+export function rowListEntry(row) {
+  return { id: row.id, argv: cargoArgv(row), env: row.env ?? {} };
+}
+
+// --- Manifest selftest and read-only CLI (--selftest / --list). This module
+// is imported by the runner and check-all.mjs, so nothing here runs at
+// import time; only when this file is the entry point. Never invokes cargo.
+import { ok, deepStrictEqual, throws } from 'node:assert/strict';
+import { resolve as pathResolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+function isMain() {
+  return (
+    Boolean(process.argv[1]) &&
+    import.meta.url === pathToFileURL(pathResolve(process.argv[1])).href
+  );
+}
+
+function runSelftest() {
+  const rows = shardableRows();
+  const max = maxShardCount();
+  ok(max >= MIN_SHARDS && max <= MAX_SHARDS, `admissible count ${max}`);
+  const known = new Set(rows.map((r) => r.id));
+  ok(known.size === rows.length, 'unique shardable row ids');
+  for (const [id, v] of Object.entries(ROW_COST_MS)) {
+    ok(known.has(id), `weight key is a real row: ${id}`);
+    ok(Number.isSafeInteger(v) && v > 0, `positive integer weight: ${id}`);
+  }
+  for (let n = 1; n <= max; n++) {
+    const a = selectShards(n);
+    deepStrictEqual(a, selectShards(n), `n=${n} stable across calls`);
+    ok(a.length === n, `n=${n} returned exactly ${n} shards`);
+    ok(a.every((s) => s.length > 0), `n=${n} no empty shard`);
+    const pos = new Map(rows.map((r, i) => [r.id, i]));
+    for (const shard of a) {
+      for (let i = 1; i < shard.length; i++) {
+        ok(
+          pos.get(shard[i - 1].id) < pos.get(shard[i].id),
+          `n=${n} shard rows follow manifest order`,
+        );
+      }
+    }
+    const flat = a.flat().map((r) => r.id);
+    deepStrictEqual(
+      [...flat].sort(),
+      rows.map((r) => r.id).sort(),
+      `n=${n} exact partition (set equality, disjoint)`,
+    );
+    // The shared runner path: same selection, reached via the spec string.
+    deepStrictEqual(
+      selectShardRows(`${n}/${n}`),
+      a[n - 1],
+      `n=${n} selectShardRows agrees with selectShards`,
+    );
+  }
+  throws(() => distributeShards([], 1), 'empty row set');
+  throws(() => distributeShards([...rows, rows[0]], 1), 'duplicate row id');
+  throws(() => distributeShards(rows, 0), 'n below range');
+  throws(() => distributeShards(rows, rows.length + 1), 'n above rows');
+  throws(() => distributeShards(rows, MAX_SHARDS + 1), 'n above max');
+  throws(() => distributeShards(rows, 1.5), 'non-integer n');
+  ok(rowCostMs({ id: 'zz', kind: 'test' }) === UNMEASURED_UNTARGETED_TEST_COST_MS, 'untargeted test fallback');
+  ok(rowCostMs({ id: 'zz', kind: 'test', target: { flag: '--test', name: 'x' } }) === UNMEASURED_SMALL_COST_MS, 'targeted test fallback');
+  ok(rowCostMs({ id: 'zz', kind: 'check' }) === UNMEASURED_SMALL_COST_MS, 'check fallback');
+  const bad = ['0/3', '4/3', '2', '01/3', '2/03', '2/0', 'a/b', '2/3/4', '', '2/9'];
+  for (const spec of bad) throws(() => parseShardSpec(spec), `malformed spec ${JSON.stringify(spec)}`);
+  throws(() => parseShardSpec(`${max + 1}/${max + 1}`), 'total above range');
+  deepStrictEqual(parseShardSpec('2/3'), { index: 2, total: 3 }, 'canonical spec parses');
+  console.log(`[check-matrix] selftest OK — shard counts 1..${max} (${rows.length} shardable rows)`);
+}
+
+function main(argvRest) {
+  // Exact accepted shapes — anything else is a usage error (exit 2):
+  //   [--selftest]
+  //   [--list]
+  //   --list --shard <i>/<n>
+  if (argvRest.length === 1 && argvRest[0] === '--selftest') {
+    return runSelftest();
+  }
+  if (
+    argvRest.length === 1 &&
+    argvRest[0] === '--list'
+  ) {
+    console.log(JSON.stringify(shardableRows().map(rowListEntry), null, 2));
+    return;
+  }
+  if (
+    argvRest.length === 3 &&
+    argvRest[0] === '--list' &&
+    argvRest[1] === '--shard'
+  ) {
+    const rows = selectShardRows(argvRest[2]);
+    console.log(JSON.stringify(rows.map(rowListEntry), null, 2));
+    return;
+  }
+  console.error(
+    'usage: node scripts/check-matrix.mjs [--selftest] | [--list [--shard i/n]]',
+  );
+  process.exit(2);
+}
+
+if (isMain()) {
+  try {
+    main(process.argv.slice(2));
+  } catch (err) {
+    console.error(`[check-matrix] ${err.message}`);
+    process.exit(2);
+  }
+}

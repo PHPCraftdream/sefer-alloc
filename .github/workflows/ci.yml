@@ -439,8 +439,15 @@ jobs:
   check-matrix:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
-    name: check-matrix (manifest-driven, non-clippy rows)
+    name: check-matrix (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      CHECK_MATRIX_SHARD: ${{ matrix.shard }}
+      CHECK_MATRIX_SHARDS: ${{ strategy.job-total }}
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-check-matrix
