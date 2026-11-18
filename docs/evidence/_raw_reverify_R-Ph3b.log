@@ -1,68 +1,283 @@
-E0_METADATA {"id":"R-Ph3b","head":"f0586cce79213cc74bbcca50d14a902b691cd89e","tree":"45852f47c8e5c3690f5646ae96ebe6cc7686645d","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (708c94ef0 2026-11-03)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-11-04 for version 1.101.0-nightly (708c94ef0 2026-11-03)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R-Ph3b","head":"f0586cce79213cc74bbcca50d14a902b691cd89e","tree":"45852f47c8e5c3690f5646ae96ebe6cc7686645d","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R-Ph3b.json","recipe_sha256":"578c84978f9b2474ba34f90c0c2ce80b49de3dd29a9c1d594005c91f60e5aa06","registry_activation_hash":"4f9d7ab9e0110b8c82f4b4e52cc5138060e4a9369ce090586743e6a1ebff98ad"}
+E0_METADATA {"id":"R-Ph3b","head":"a08afb30a99952c2c01bde9b0c0b1884a2da9c05","tree":"52e61d23ebe0d389a33fe156d8c2ca7dd7a389ea","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.102.0-nightly (59cbdee2e 2026-11-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-11-18 for version 1.102.0-nightly (59cbdee2e 2026-11-17)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R-Ph3b","head":"a08afb30a99952c2c01bde9b0c0b1884a2da9c05","tree":"52e61d23ebe0d389a33fe156d8c2ca7dd7a389ea","os":"linux x64","toolchain":"rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: x86_64-unknown-linux-gnu\nrelease: 1.100.0\nLLVM version: 23.1.5","profile":"debug","recipe":"docs/evidence/reverify-recipes/R-Ph3b.json","recipe_sha256":"578c84978f9b2474ba34f90c0c2ce80b49de3dd29a9c1d594005c91f60e5aa06","registry_activation_hash":"4f9d7ab9e0110b8c82f4b4e52cc5138060e4a9369ce090586743e6a1ebff98ad"}
 
 E0_STEP {"id":"R-Ph3b","kind":"baseline","name":"kind-aware entries baseline under medium-classes","argv":["cargo","test","--locked","--features","production internals bench-internals medium-classes","--test","r11_ph3b_kind_aware_entries"],"env":{},"expect":{"exit":0,"stdoutRegex":["test result: ok. [0-9]+ passed; 0 failed"]}}
-[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/platform/proc-probe/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+[1m[94m29[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-probe` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/bench/malloc-bench-rs/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+[1m[94m22[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `malloc-bench-rs` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: `package.homepage` is redundant with `package.repository`[0m
+  [1m[94m--> [0mCargo.toml:13:12
+   [1m[94m|[0m
+[1m[94m12[0m [1m[94m|[0m repository = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m              [1m[94m----------------------------------------------[0m
+[1m[94m13[0m [1m[94m|[0m homepage = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m            [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `cargo::redundant_homepage` is set to `warn` by default
+[1m[96mhelp[0m: consider removing `package.homepage`
+[1m[33mwarning[0m: `sefer-alloc` (manifest) generated 1 warning
+[1m[33mwarning[0m: crates/primitives/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/verify/globalalloc-model/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+[1m[94m75[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `globalalloc-model` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/platform/proc-memstat/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+[1m[94m26[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-memstat` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-policy v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/core/sefer-policy)
+[1m[92m   Compiling[0m sefer-segment v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/core/sefer-segment)
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 3.22s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 3.42s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph3b_kind_aware_entries.rs (target/debug/deps/r11_ph3b_kind_aware_entries-2d32f860a4263605)
+[1m[92m     Running[0m tests/r11_ph3b_kind_aware_entries.rs (target/debug/build/sefer-alloc/cac73d3397635f4c/out/r11_ph3b_kind_aware_entries-cac73d3397635f4c)
 
 running 6 tests
 test alloc_alloc_zeroed_and_own_dealloc_agree_on_one_kind_per_size ... ok
+test promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout ... ok
+test matching_layout_free_keeps_the_small_route_across_a_same_class_realloc ... ok
 test fallback_served_blocks_freed_by_another_thread_keep_their_kind ... ok
 test realloc_crosses_the_boundary_in_step_with_the_header_kind ... ok
-test matching_layout_free_keeps_the_small_route_across_a_same_class_realloc ... ok
 test realloc_oom_returns_null_and_leaves_the_old_block_intact ... ok
-test promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
-E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDMuMjJzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGgzYl9raW5kX2F3YXJlX2VudHJpZXMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL3IxMV9waDNiX2tpbmRfYXdhcmVfZW50cmllcy0yZDMyZjg2MGE0MjYzNjA1KQoKcnVubmluZyA2IHRlc3RzCnRlc3QgYWxsb2NfYWxsb2NfemVyb2VkX2FuZF9vd25fZGVhbGxvY19hZ3JlZV9vbl9vbmVfa2luZF9wZXJfc2l6ZSAuLi4gb2sKdGVzdCBmYWxsYmFja19zZXJ2ZWRfYmxvY2tzX2ZyZWVkX2J5X2Fub3RoZXJfdGhyZWFkX2tlZXBfdGhlaXJfa2luZCAuLi4gb2sKdGVzdCByZWFsbG9jX2Nyb3NzZXNfdGhlX2JvdW5kYXJ5X2luX3N0ZXBfd2l0aF90aGVfaGVhZGVyX2tpbmQgLi4uIG9rCnRlc3QgbWF0Y2hpbmdfbGF5b3V0X2ZyZWVfa2VlcHNfdGhlX3NtYWxsX3JvdXRlX2Fjcm9zc19hX3NhbWVfY2xhc3NfcmVhbGxvYyAuLi4gb2sKdGVzdCByZWFsbG9jX29vbV9yZXR1cm5zX251bGxfYW5kX2xlYXZlc190aGVfb2xkX2Jsb2NrX2ludGFjdCAuLi4gb2sKdGVzdCBwcm9tb3RlZF90aGVuX2dyb3duX2xhcmdlX2Jsb2NrX3JvdXRlc19pdHNfZnJlZV9ieV9raW5kX25vdF9ieV9sYXlvdXQgLi4uIG9rCgp0ZXN0IHJlc3VsdDogb2suIDYgcGFzc2VkOyAwIGZhaWxlZDsgMCBpZ25vcmVkOyAwIG1lYXN1cmVkOyAwIGZpbHRlcmVkIG91dDsgZmluaXNoZWQgaW4gMC4wNnMKCg==
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBtaXNzaW5nIGBbbGludHNdYCB0byBpbmhlcml0IGBbd29ya3NwYWNlLmxpbnRzXWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1jcmF0ZXMvcGxhdGZvcm0vcHJvYy1wcm9iZS9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNxtbMG0gG1s5Mm1+IBtbMG1wcm9jLW1lbXN0YXQgPSB7IHBhdGggPSAiLi4vcHJvYy1tZW1zdGF0IiwgdmVyc2lvbiA9ICIwLjEiLCBvcHRpb25hbCA9IHRydWUgfQobWzFtG1s5NG0yOBtbMG0gG1s5Mm0rIFtsaW50c10bWzBtChtbMW0bWzk0bTI5G1swbSAbWzkybSsgd29ya3NwYWNlID0gdHJ1ZRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTZtaGVscBtbMG06IHRvIGNsYXJpZnkgeW91ciBpbnRlbnQgdG8gbm90IGluaGVyaXQsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjcbWzBtIBtbOTJtfiAbWzBtcHJvYy1tZW1zdGF0ID0geyBwYXRoID0gIi4uL3Byb2MtbWVtc3RhdCIsIHZlcnNpb24gPSAiMC4xIiwgb3B0aW9uYWwgPSB0cnVlIH0KG1sxbRtbOTRtMjgbWzBtIBtbOTJtKyBbbGludHNdG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1szM213YXJuaW5nG1swbTogYHByb2MtcHJvYmVgIChtYW5pZmVzdCkgZ2VuZXJhdGVkIDEgd2FybmluZwobWzFtG1szM213YXJuaW5nG1swbRtbMW06IG1pc3NpbmcgYFtsaW50c11gIHRvIGluaGVyaXQgYFt3b3Jrc3BhY2UubGludHNdYBtbMG0KICAbWzFtG1s5NG0tLT4gG1swbWNyYXRlcy9iZW5jaC9tYWxsb2MtYmVuY2gtcnMvQ2FyZ28udG9tbAogICAbWzFtG1s5NG09IBtbMG0bWzFtbm90ZRtbMG06IGBjYXJnbzo6bWlzc2luZ19saW50c19pbmhlcml0YW5jZWAgaXMgc2V0IHRvIGB3YXJuYCBieSBkZWZhdWx0ChtbMW0bWzk2bWhlbHAbWzBtOiB0byBpbmhlcml0IGB3b3Jrc3BhY2UubGludHMsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjAbWzBtIBtbOTJtfiAbWzBtbWltYWxsb2MgPSAiMC4xIgobWzFtG1s5NG0yMRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtChtbMW0bWzk0bTIyG1swbSAbWzkybSsgd29ya3NwYWNlID0gdHJ1ZRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTZtaGVscBtbMG06IHRvIGNsYXJpZnkgeW91ciBpbnRlbnQgdG8gbm90IGluaGVyaXQsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjAbWzBtIBtbOTJtfiAbWzBtbWltYWxsb2MgPSAiMC4xIgobWzFtG1s5NG0yMRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgbWFsbG9jLWJlbmNoLXJzYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBgcGFja2FnZS5ob21lcGFnZWAgaXMgcmVkdW5kYW50IHdpdGggYHBhY2thZ2UucmVwb3NpdG9yeWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1DYXJnby50b21sOjEzOjEyCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTEyG1swbSAbWzFtG1s5NG18G1swbSByZXBvc2l0b3J5ID0gImh0dHBzOi8vZ2l0aHViLmNvbS9QSFBDcmFmdGRyZWFtL3NlZmVyLWFsbG9jIgogICAbWzFtG1s5NG18G1swbSAgICAgICAgICAgICAgG1sxbRtbOTRtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLRtbMG0KG1sxbRtbOTRtMTMbWzBtIBtbMW0bWzk0bXwbWzBtIGhvbWVwYWdlID0gImh0dHBzOi8vZ2l0aHViLmNvbS9QSFBDcmFmdGRyZWFtL3NlZmVyLWFsbG9jIgogICAbWzFtG1s5NG18G1swbSAgICAgICAgICAgIBtbMW0bWzMzbV5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl4bWzBtCiAgIBtbMW0bWzk0bXwbWzBtCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjpyZWR1bmRhbnRfaG9tZXBhZ2VgIGlzIHNldCB0byBgd2FybmAgYnkgZGVmYXVsdAobWzFtG1s5Nm1oZWxwG1swbTogY29uc2lkZXIgcmVtb3ZpbmcgYHBhY2thZ2UuaG9tZXBhZ2VgChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgc2VmZXItYWxsb2NgIChtYW5pZmVzdCkgZ2VuZXJhdGVkIDEgd2FybmluZwobWzFtG1szM213YXJuaW5nG1swbTogY3JhdGVzL3ByaW1pdGl2ZXMvdGFnZ2VkLWluZGV4LXN0YWNrL0NhcmdvLnRvbWw6IGBsaW50cy5jbGlwcHkuaW5jb21wYXRpYmxlLW1zcnZgIGlzIGRlcHJlY2F0ZWQgaW4gZmF2b3Igb2YgYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGVfbXNydmAgYW5kIHdpbGwgbm90IHdvcmsgaW4gYSBmdXR1cmUgZWRpdGlvbgobWzFtG1szM213YXJuaW5nG1swbTogYHRhZ2dlZC1pbmRleC1zdGFja2AgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3ZlcmlmeS9nbG9iYWxhbGxvYy1tb2RlbC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KG1sxbRtbOTRtNzUbWzBtIBtbOTJtKyB3b3Jrc3BhY2UgPSB0cnVlG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1s5Nm1oZWxwG1swbTogdG8gY2xhcmlmeSB5b3VyIGludGVudCB0byBub3QgaW5oZXJpdCwgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbMzNtd2FybmluZxtbMG06IGBnbG9iYWxhbGxvYy1tb2RlbGAgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3BsYXRmb3JtL3Byb2MtbWVtc3RhdC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNBtbMG0gG1s5Mm1+IBtbMG1oYXJuZXNzID0gZmFsc2UKG1sxbRtbOTRtMjUbWzBtIBtbOTJtKyBbbGludHNdG1swbQobWzFtG1s5NG0yNhtbMG0gG1s5Mm0rIHdvcmtzcGFjZSA9IHRydWUbWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk2bWhlbHAbWzBtOiB0byBjbGFyaWZ5IHlvdXIgaW50ZW50IHRvIG5vdCBpbmhlcml0LCBhZGQ6CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTI0G1swbSAbWzkybX4gG1swbWhhcm5lc3MgPSBmYWxzZQobWzFtG1s5NG0yNRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgcHJvYy1tZW1zdGF0YCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1wb2xpY3kgdjAuMS4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvY29yZS9zZWZlci1wb2xpY3kpChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VmZXItc2VnbWVudCB2MC4xLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jL2NyYXRlcy9jb3JlL3NlZmVyLXNlZ21lbnQpChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VmZXItYWxsb2MgdjAuMy4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYykKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAzLjQycwobWzFtG1szM213YXJuaW5nG1swbTogdGhlIGZvbGxvd2luZyBwYWNrYWdlcyBjb250YWluIGNvZGUgdGhhdCB3aWxsIGJlIHJlamVjdGVkIGJ5IGEgZnV0dXJlIHZlcnNpb24gb2YgUnVzdDogcHJvYy1tYWNyby1lcnJvcjIgdjIuMC4xChtbMW0bWzkybW5vdGUbWzBtOiB0byBzZWUgd2hhdCB0aGUgcHJvYmxlbXMgd2VyZSwgdXNlIHRoZSBvcHRpb24gYC0tZnV0dXJlLWluY29tcGF0LXJlcG9ydGAsIG9yIHJ1biBgY2FyZ28gcmVwb3J0IGZ1dHVyZS1pbmNvbXBhdGliaWxpdGllcyAtLWlkIDFgChtbMW0bWzkybSAgICAgUnVubmluZxtbMG0gdGVzdHMvcjExX3BoM2Jfa2luZF9hd2FyZV9lbnRyaWVzLnJzICh0YXJnZXQvZGVidWcvYnVpbGQvc2VmZXItYWxsb2MvY2FjNzNkMzM5NzYzNWY0Yy9vdXQvcjExX3BoM2Jfa2luZF9hd2FyZV9lbnRyaWVzLWNhYzczZDMzOTc2MzVmNGMpCgpydW5uaW5nIDYgdGVzdHMKdGVzdCBhbGxvY19hbGxvY196ZXJvZWRfYW5kX293bl9kZWFsbG9jX2FncmVlX29uX29uZV9raW5kX3Blcl9zaXplIC4uLiBvawp0ZXN0IHByb21vdGVkX3RoZW5fZ3Jvd25fbGFyZ2VfYmxvY2tfcm91dGVzX2l0c19mcmVlX2J5X2tpbmRfbm90X2J5X2xheW91dCAuLi4gb2sKdGVzdCBtYXRjaGluZ19sYXlvdXRfZnJlZV9rZWVwc190aGVfc21hbGxfcm91dGVfYWNyb3NzX2Ffc2FtZV9jbGFzc19yZWFsbG9jIC4uLiBvawp0ZXN0IGZhbGxiYWNrX3NlcnZlZF9ibG9ja3NfZnJlZWRfYnlfYW5vdGhlcl90aHJlYWRfa2VlcF90aGVpcl9raW5kIC4uLiBvawp0ZXN0IHJlYWxsb2NfY3Jvc3Nlc190aGVfYm91bmRhcnlfaW5fc3RlcF93aXRoX3RoZV9oZWFkZXJfa2luZCAuLi4gb2sKdGVzdCByZWFsbG9jX29vbV9yZXR1cm5zX251bGxfYW5kX2xlYXZlc190aGVfb2xkX2Jsb2NrX2ludGFjdCAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gNiBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjA2cwoK
 
 E0_STEP {"id":"R-Ph3b","kind":"mutant","name":"promoted-Large branch ignores BlockKind mutant (F7-A)","argv":["cargo","test","--locked","--features","production internals bench-internals medium-classes","--test","r11_ph3b_kind_aware_entries","promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout","--","--exact"],"env":{},"expect":{"exit":101,"stdoutRegex":["process didn't exit successfully: .*r11_ph3b_kind_aware_entries"]}}
-[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/platform/proc-probe/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+[1m[94m29[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-probe` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/bench/malloc-bench-rs/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+[1m[94m22[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `malloc-bench-rs` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: `package.homepage` is redundant with `package.repository`[0m
+  [1m[94m--> [0mCargo.toml:13:12
+   [1m[94m|[0m
+[1m[94m12[0m [1m[94m|[0m repository = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m              [1m[94m----------------------------------------------[0m
+[1m[94m13[0m [1m[94m|[0m homepage = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m            [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `cargo::redundant_homepage` is set to `warn` by default
+[1m[96mhelp[0m: consider removing `package.homepage`
+[1m[33mwarning[0m: `sefer-alloc` (manifest) generated 1 warning
+[1m[33mwarning[0m: crates/primitives/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/verify/globalalloc-model/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+[1m[94m75[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `globalalloc-model` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/platform/proc-memstat/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+[1m[94m26[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-memstat` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 3.21s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.09s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph3b_kind_aware_entries.rs (target/debug/deps/r11_ph3b_kind_aware_entries-2d32f860a4263605)
+[1m[92m     Running[0m tests/r11_ph3b_kind_aware_entries.rs (target/debug/build/sefer-alloc/cac73d3397635f4c/out/r11_ph3b_kind_aware_entries-cac73d3397635f4c)
 
 running 1 test
 sefer-alloc: misuse check rejected a free in safe mode (small_free_guard payload start)
 [1m[91merror[0m: test failed, to rerun pass `--test r11_ph3b_kind_aware_entries`
 
 Caused by:
-  process didn't exit successfully: `/home/runner/work/sefer-alloc/sefer-alloc/target/debug/deps/r11_ph3b_kind_aware_entries-2d32f860a4263605 promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout --exact` (signal: 6, SIGABRT: process abort signal)
+  process didn't exit successfully: `/home/runner/work/sefer-alloc/sefer-alloc/target/debug/build/sefer-alloc/cac73d3397635f4c/out/r11_ph3b_kind_aware_entries-cac73d3397635f4c promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout --exact` (signal: 6, SIGABRT: process abort signal)
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDMuMjFzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGgzYl9raW5kX2F3YXJlX2VudHJpZXMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL3IxMV9waDNiX2tpbmRfYXdhcmVfZW50cmllcy0yZDMyZjg2MGE0MjYzNjA1KQoKcnVubmluZyAxIHRlc3QKc2VmZXItYWxsb2M6IG1pc3VzZSBjaGVjayByZWplY3RlZCBhIGZyZWUgaW4gc2FmZSBtb2RlIChzbWFsbF9mcmVlX2d1YXJkIHBheWxvYWQgc3RhcnQpChtbMW0bWzkxbWVycm9yG1swbTogdGVzdCBmYWlsZWQsIHRvIHJlcnVuIHBhc3MgYC0tdGVzdCByMTFfcGgzYl9raW5kX2F3YXJlX2VudHJpZXNgCgpDYXVzZWQgYnk6CiAgcHJvY2VzcyBkaWRuJ3QgZXhpdCBzdWNjZXNzZnVsbHk6IGAvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy90YXJnZXQvZGVidWcvZGVwcy9yMTFfcGgzYl9raW5kX2F3YXJlX2VudHJpZXMtMmQzMmY4NjBhNDI2MzYwNSBwcm9tb3RlZF90aGVuX2dyb3duX2xhcmdlX2Jsb2NrX3JvdXRlc19pdHNfZnJlZV9ieV9raW5kX25vdF9ieV9sYXlvdXQgLS1leGFjdGAgKHNpZ25hbDogNiwgU0lHQUJSVDogcHJvY2VzcyBhYm9ydCBzaWduYWwpCg==
-E0_METADATA {"id":"R-Ph3b","kind":"restored","sha256":"d8d5bed0d28a059b235af5fa3944a73a361f181706a84885cf628b941ad07343"}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBtaXNzaW5nIGBbbGludHNdYCB0byBpbmhlcml0IGBbd29ya3NwYWNlLmxpbnRzXWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1jcmF0ZXMvcGxhdGZvcm0vcHJvYy1wcm9iZS9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNxtbMG0gG1s5Mm1+IBtbMG1wcm9jLW1lbXN0YXQgPSB7IHBhdGggPSAiLi4vcHJvYy1tZW1zdGF0IiwgdmVyc2lvbiA9ICIwLjEiLCBvcHRpb25hbCA9IHRydWUgfQobWzFtG1s5NG0yOBtbMG0gG1s5Mm0rIFtsaW50c10bWzBtChtbMW0bWzk0bTI5G1swbSAbWzkybSsgd29ya3NwYWNlID0gdHJ1ZRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTZtaGVscBtbMG06IHRvIGNsYXJpZnkgeW91ciBpbnRlbnQgdG8gbm90IGluaGVyaXQsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjcbWzBtIBtbOTJtfiAbWzBtcHJvYy1tZW1zdGF0ID0geyBwYXRoID0gIi4uL3Byb2MtbWVtc3RhdCIsIHZlcnNpb24gPSAiMC4xIiwgb3B0aW9uYWwgPSB0cnVlIH0KG1sxbRtbOTRtMjgbWzBtIBtbOTJtKyBbbGludHNdG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1szM213YXJuaW5nG1swbTogYHByb2MtcHJvYmVgIChtYW5pZmVzdCkgZ2VuZXJhdGVkIDEgd2FybmluZwobWzFtG1szM213YXJuaW5nG1swbRtbMW06IG1pc3NpbmcgYFtsaW50c11gIHRvIGluaGVyaXQgYFt3b3Jrc3BhY2UubGludHNdYBtbMG0KICAbWzFtG1s5NG0tLT4gG1swbWNyYXRlcy9iZW5jaC9tYWxsb2MtYmVuY2gtcnMvQ2FyZ28udG9tbAogICAbWzFtG1s5NG09IBtbMG0bWzFtbm90ZRtbMG06IGBjYXJnbzo6bWlzc2luZ19saW50c19pbmhlcml0YW5jZWAgaXMgc2V0IHRvIGB3YXJuYCBieSBkZWZhdWx0ChtbMW0bWzk2bWhlbHAbWzBtOiB0byBpbmhlcml0IGB3b3Jrc3BhY2UubGludHMsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjAbWzBtIBtbOTJtfiAbWzBtbWltYWxsb2MgPSAiMC4xIgobWzFtG1s5NG0yMRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtChtbMW0bWzk0bTIyG1swbSAbWzkybSsgd29ya3NwYWNlID0gdHJ1ZRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTZtaGVscBtbMG06IHRvIGNsYXJpZnkgeW91ciBpbnRlbnQgdG8gbm90IGluaGVyaXQsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjAbWzBtIBtbOTJtfiAbWzBtbWltYWxsb2MgPSAiMC4xIgobWzFtG1s5NG0yMRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgbWFsbG9jLWJlbmNoLXJzYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBgcGFja2FnZS5ob21lcGFnZWAgaXMgcmVkdW5kYW50IHdpdGggYHBhY2thZ2UucmVwb3NpdG9yeWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1DYXJnby50b21sOjEzOjEyCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTEyG1swbSAbWzFtG1s5NG18G1swbSByZXBvc2l0b3J5ID0gImh0dHBzOi8vZ2l0aHViLmNvbS9QSFBDcmFmdGRyZWFtL3NlZmVyLWFsbG9jIgogICAbWzFtG1s5NG18G1swbSAgICAgICAgICAgICAgG1sxbRtbOTRtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLRtbMG0KG1sxbRtbOTRtMTMbWzBtIBtbMW0bWzk0bXwbWzBtIGhvbWVwYWdlID0gImh0dHBzOi8vZ2l0aHViLmNvbS9QSFBDcmFmdGRyZWFtL3NlZmVyLWFsbG9jIgogICAbWzFtG1s5NG18G1swbSAgICAgICAgICAgIBtbMW0bWzMzbV5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl4bWzBtCiAgIBtbMW0bWzk0bXwbWzBtCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjpyZWR1bmRhbnRfaG9tZXBhZ2VgIGlzIHNldCB0byBgd2FybmAgYnkgZGVmYXVsdAobWzFtG1s5Nm1oZWxwG1swbTogY29uc2lkZXIgcmVtb3ZpbmcgYHBhY2thZ2UuaG9tZXBhZ2VgChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgc2VmZXItYWxsb2NgIChtYW5pZmVzdCkgZ2VuZXJhdGVkIDEgd2FybmluZwobWzFtG1szM213YXJuaW5nG1swbTogY3JhdGVzL3ByaW1pdGl2ZXMvdGFnZ2VkLWluZGV4LXN0YWNrL0NhcmdvLnRvbWw6IGBsaW50cy5jbGlwcHkuaW5jb21wYXRpYmxlLW1zcnZgIGlzIGRlcHJlY2F0ZWQgaW4gZmF2b3Igb2YgYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGVfbXNydmAgYW5kIHdpbGwgbm90IHdvcmsgaW4gYSBmdXR1cmUgZWRpdGlvbgobWzFtG1szM213YXJuaW5nG1swbTogYHRhZ2dlZC1pbmRleC1zdGFja2AgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3ZlcmlmeS9nbG9iYWxhbGxvYy1tb2RlbC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KG1sxbRtbOTRtNzUbWzBtIBtbOTJtKyB3b3Jrc3BhY2UgPSB0cnVlG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1s5Nm1oZWxwG1swbTogdG8gY2xhcmlmeSB5b3VyIGludGVudCB0byBub3QgaW5oZXJpdCwgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbMzNtd2FybmluZxtbMG06IGBnbG9iYWxhbGxvYy1tb2RlbGAgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3BsYXRmb3JtL3Byb2MtbWVtc3RhdC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNBtbMG0gG1s5Mm1+IBtbMG1oYXJuZXNzID0gZmFsc2UKG1sxbRtbOTRtMjUbWzBtIBtbOTJtKyBbbGludHNdG1swbQobWzFtG1s5NG0yNhtbMG0gG1s5Mm0rIHdvcmtzcGFjZSA9IHRydWUbWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk2bWhlbHAbWzBtOiB0byBjbGFyaWZ5IHlvdXIgaW50ZW50IHRvIG5vdCBpbmhlcml0LCBhZGQ6CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTI0G1swbSAbWzkybX4gG1swbWhhcm5lc3MgPSBmYWxzZQobWzFtG1s5NG0yNRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgcHJvYy1tZW1zdGF0YCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDEuMDlzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGgzYl9raW5kX2F3YXJlX2VudHJpZXMucnMgKHRhcmdldC9kZWJ1Zy9idWlsZC9zZWZlci1hbGxvYy9jYWM3M2QzMzk3NjM1ZjRjL291dC9yMTFfcGgzYl9raW5kX2F3YXJlX2VudHJpZXMtY2FjNzNkMzM5NzYzNWY0YykKCnJ1bm5pbmcgMSB0ZXN0CnNlZmVyLWFsbG9jOiBtaXN1c2UgY2hlY2sgcmVqZWN0ZWQgYSBmcmVlIGluIHNhZmUgbW9kZSAoc21hbGxfZnJlZV9ndWFyZCBwYXlsb2FkIHN0YXJ0KQobWzFtG1s5MW1lcnJvchtbMG06IHRlc3QgZmFpbGVkLCB0byByZXJ1biBwYXNzIGAtLXRlc3QgcjExX3BoM2Jfa2luZF9hd2FyZV9lbnRyaWVzYAoKQ2F1c2VkIGJ5OgogIHByb2Nlc3MgZGlkbid0IGV4aXQgc3VjY2Vzc2Z1bGx5OiBgL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvdGFyZ2V0L2RlYnVnL2J1aWxkL3NlZmVyLWFsbG9jL2NhYzczZDMzOTc2MzVmNGMvb3V0L3IxMV9waDNiX2tpbmRfYXdhcmVfZW50cmllcy1jYWM3M2QzMzk3NjM1ZjRjIHByb21vdGVkX3RoZW5fZ3Jvd25fbGFyZ2VfYmxvY2tfcm91dGVzX2l0c19mcmVlX2J5X2tpbmRfbm90X2J5X2xheW91dCAtLWV4YWN0YCAoc2lnbmFsOiA2LCBTSUdBQlJUOiBwcm9jZXNzIGFib3J0IHNpZ25hbCkK
+E0_METADATA {"id":"R-Ph3b","kind":"restored","sha256":"a4ce62d8a88caf2f768b096a35da55db429edc97826785e5152a624642ee3198"}
 
 E0_STEP {"id":"R-Ph3b","kind":"restored-baseline","name":"kind-aware entries baseline under medium-classes","argv":["cargo","test","--locked","--features","production internals bench-internals medium-classes","--test","r11_ph3b_kind_aware_entries"],"env":{},"expect":{"exit":0,"stdoutRegex":["test result: ok. [0-9]+ passed; 0 failed"]}}
-[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/platform/proc-probe/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+[1m[94m29[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-probe` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/bench/malloc-bench-rs/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+[1m[94m22[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `malloc-bench-rs` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: `package.homepage` is redundant with `package.repository`[0m
+  [1m[94m--> [0mCargo.toml:13:12
+   [1m[94m|[0m
+[1m[94m12[0m [1m[94m|[0m repository = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m              [1m[94m----------------------------------------------[0m
+[1m[94m13[0m [1m[94m|[0m homepage = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m            [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `cargo::redundant_homepage` is set to `warn` by default
+[1m[96mhelp[0m: consider removing `package.homepage`
+[1m[33mwarning[0m: `sefer-alloc` (manifest) generated 1 warning
+[1m[33mwarning[0m: crates/primitives/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/verify/globalalloc-model/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+[1m[94m75[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `globalalloc-model` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/platform/proc-memstat/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+[1m[94m26[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-memstat` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 3.24s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.12s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r11_ph3b_kind_aware_entries.rs (target/debug/deps/r11_ph3b_kind_aware_entries-2d32f860a4263605)
+[1m[92m     Running[0m tests/r11_ph3b_kind_aware_entries.rs (target/debug/build/sefer-alloc/cac73d3397635f4c/out/r11_ph3b_kind_aware_entries-cac73d3397635f4c)
 
 running 6 tests
 test alloc_alloc_zeroed_and_own_dealloc_agree_on_one_kind_per_size ... ok
-test promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout ... ok
 test matching_layout_free_keeps_the_small_route_across_a_same_class_realloc ... ok
+test promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout ... ok
 test fallback_served_blocks_freed_by_another_thread_keep_their_kind ... ok
-test realloc_oom_returns_null_and_leaves_the_old_block_intact ... ok
 test realloc_crosses_the_boundary_in_step_with_the_header_kind ... ok
+test realloc_oom_returns_null_and_leaves_the_old_block_intact ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
-E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDMuMjRzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGgzYl9raW5kX2F3YXJlX2VudHJpZXMucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL3IxMV9waDNiX2tpbmRfYXdhcmVfZW50cmllcy0yZDMyZjg2MGE0MjYzNjA1KQoKcnVubmluZyA2IHRlc3RzCnRlc3QgYWxsb2NfYWxsb2NfemVyb2VkX2FuZF9vd25fZGVhbGxvY19hZ3JlZV9vbl9vbmVfa2luZF9wZXJfc2l6ZSAuLi4gb2sKdGVzdCBwcm9tb3RlZF90aGVuX2dyb3duX2xhcmdlX2Jsb2NrX3JvdXRlc19pdHNfZnJlZV9ieV9raW5kX25vdF9ieV9sYXlvdXQgLi4uIG9rCnRlc3QgbWF0Y2hpbmdfbGF5b3V0X2ZyZWVfa2VlcHNfdGhlX3NtYWxsX3JvdXRlX2Fjcm9zc19hX3NhbWVfY2xhc3NfcmVhbGxvYyAuLi4gb2sKdGVzdCBmYWxsYmFja19zZXJ2ZWRfYmxvY2tzX2ZyZWVkX2J5X2Fub3RoZXJfdGhyZWFkX2tlZXBfdGhlaXJfa2luZCAuLi4gb2sKdGVzdCByZWFsbG9jX29vbV9yZXR1cm5zX251bGxfYW5kX2xlYXZlc190aGVfb2xkX2Jsb2NrX2ludGFjdCAuLi4gb2sKdGVzdCByZWFsbG9jX2Nyb3NzZXNfdGhlX2JvdW5kYXJ5X2luX3N0ZXBfd2l0aF90aGVfaGVhZGVyX2tpbmQgLi4uIG9rCgp0ZXN0IHJlc3VsdDogb2suIDYgcGFzc2VkOyAwIGZhaWxlZDsgMCBpZ25vcmVkOyAwIG1lYXN1cmVkOyAwIGZpbHRlcmVkIG91dDsgZmluaXNoZWQgaW4gMC4wNnMKCg==
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBtaXNzaW5nIGBbbGludHNdYCB0byBpbmhlcml0IGBbd29ya3NwYWNlLmxpbnRzXWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1jcmF0ZXMvcGxhdGZvcm0vcHJvYy1wcm9iZS9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNxtbMG0gG1s5Mm1+IBtbMG1wcm9jLW1lbXN0YXQgPSB7IHBhdGggPSAiLi4vcHJvYy1tZW1zdGF0IiwgdmVyc2lvbiA9ICIwLjEiLCBvcHRpb25hbCA9IHRydWUgfQobWzFtG1s5NG0yOBtbMG0gG1s5Mm0rIFtsaW50c10bWzBtChtbMW0bWzk0bTI5G1swbSAbWzkybSsgd29ya3NwYWNlID0gdHJ1ZRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTZtaGVscBtbMG06IHRvIGNsYXJpZnkgeW91ciBpbnRlbnQgdG8gbm90IGluaGVyaXQsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjcbWzBtIBtbOTJtfiAbWzBtcHJvYy1tZW1zdGF0ID0geyBwYXRoID0gIi4uL3Byb2MtbWVtc3RhdCIsIHZlcnNpb24gPSAiMC4xIiwgb3B0aW9uYWwgPSB0cnVlIH0KG1sxbRtbOTRtMjgbWzBtIBtbOTJtKyBbbGludHNdG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1szM213YXJuaW5nG1swbTogYHByb2MtcHJvYmVgIChtYW5pZmVzdCkgZ2VuZXJhdGVkIDEgd2FybmluZwobWzFtG1szM213YXJuaW5nG1swbRtbMW06IG1pc3NpbmcgYFtsaW50c11gIHRvIGluaGVyaXQgYFt3b3Jrc3BhY2UubGludHNdYBtbMG0KICAbWzFtG1s5NG0tLT4gG1swbWNyYXRlcy9iZW5jaC9tYWxsb2MtYmVuY2gtcnMvQ2FyZ28udG9tbAogICAbWzFtG1s5NG09IBtbMG0bWzFtbm90ZRtbMG06IGBjYXJnbzo6bWlzc2luZ19saW50c19pbmhlcml0YW5jZWAgaXMgc2V0IHRvIGB3YXJuYCBieSBkZWZhdWx0ChtbMW0bWzk2bWhlbHAbWzBtOiB0byBpbmhlcml0IGB3b3Jrc3BhY2UubGludHMsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjAbWzBtIBtbOTJtfiAbWzBtbWltYWxsb2MgPSAiMC4xIgobWzFtG1s5NG0yMRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtChtbMW0bWzk0bTIyG1swbSAbWzkybSsgd29ya3NwYWNlID0gdHJ1ZRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTZtaGVscBtbMG06IHRvIGNsYXJpZnkgeW91ciBpbnRlbnQgdG8gbm90IGluaGVyaXQsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjAbWzBtIBtbOTJtfiAbWzBtbWltYWxsb2MgPSAiMC4xIgobWzFtG1s5NG0yMRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgbWFsbG9jLWJlbmNoLXJzYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBgcGFja2FnZS5ob21lcGFnZWAgaXMgcmVkdW5kYW50IHdpdGggYHBhY2thZ2UucmVwb3NpdG9yeWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1DYXJnby50b21sOjEzOjEyCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTEyG1swbSAbWzFtG1s5NG18G1swbSByZXBvc2l0b3J5ID0gImh0dHBzOi8vZ2l0aHViLmNvbS9QSFBDcmFmdGRyZWFtL3NlZmVyLWFsbG9jIgogICAbWzFtG1s5NG18G1swbSAgICAgICAgICAgICAgG1sxbRtbOTRtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLRtbMG0KG1sxbRtbOTRtMTMbWzBtIBtbMW0bWzk0bXwbWzBtIGhvbWVwYWdlID0gImh0dHBzOi8vZ2l0aHViLmNvbS9QSFBDcmFmdGRyZWFtL3NlZmVyLWFsbG9jIgogICAbWzFtG1s5NG18G1swbSAgICAgICAgICAgIBtbMW0bWzMzbV5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl4bWzBtCiAgIBtbMW0bWzk0bXwbWzBtCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjpyZWR1bmRhbnRfaG9tZXBhZ2VgIGlzIHNldCB0byBgd2FybmAgYnkgZGVmYXVsdAobWzFtG1s5Nm1oZWxwG1swbTogY29uc2lkZXIgcmVtb3ZpbmcgYHBhY2thZ2UuaG9tZXBhZ2VgChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgc2VmZXItYWxsb2NgIChtYW5pZmVzdCkgZ2VuZXJhdGVkIDEgd2FybmluZwobWzFtG1szM213YXJuaW5nG1swbTogY3JhdGVzL3ByaW1pdGl2ZXMvdGFnZ2VkLWluZGV4LXN0YWNrL0NhcmdvLnRvbWw6IGBsaW50cy5jbGlwcHkuaW5jb21wYXRpYmxlLW1zcnZgIGlzIGRlcHJlY2F0ZWQgaW4gZmF2b3Igb2YgYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGVfbXNydmAgYW5kIHdpbGwgbm90IHdvcmsgaW4gYSBmdXR1cmUgZWRpdGlvbgobWzFtG1szM213YXJuaW5nG1swbTogYHRhZ2dlZC1pbmRleC1zdGFja2AgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3ZlcmlmeS9nbG9iYWxhbGxvYy1tb2RlbC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KG1sxbRtbOTRtNzUbWzBtIBtbOTJtKyB3b3Jrc3BhY2UgPSB0cnVlG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1s5Nm1oZWxwG1swbTogdG8gY2xhcmlmeSB5b3VyIGludGVudCB0byBub3QgaW5oZXJpdCwgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbMzNtd2FybmluZxtbMG06IGBnbG9iYWxhbGxvYy1tb2RlbGAgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3BsYXRmb3JtL3Byb2MtbWVtc3RhdC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNBtbMG0gG1s5Mm1+IBtbMG1oYXJuZXNzID0gZmFsc2UKG1sxbRtbOTRtMjUbWzBtIBtbOTJtKyBbbGludHNdG1swbQobWzFtG1s5NG0yNhtbMG0gG1s5Mm0rIHdvcmtzcGFjZSA9IHRydWUbWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk2bWhlbHAbWzBtOiB0byBjbGFyaWZ5IHlvdXIgaW50ZW50IHRvIG5vdCBpbmhlcml0LCBhZGQ6CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTI0G1swbSAbWzkybX4gG1swbWhhcm5lc3MgPSBmYWxzZQobWzFtG1s5NG0yNRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgcHJvYy1tZW1zdGF0YCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDEuMTJzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGgzYl9raW5kX2F3YXJlX2VudHJpZXMucnMgKHRhcmdldC9kZWJ1Zy9idWlsZC9zZWZlci1hbGxvYy9jYWM3M2QzMzk3NjM1ZjRjL291dC9yMTFfcGgzYl9raW5kX2F3YXJlX2VudHJpZXMtY2FjNzNkMzM5NzYzNWY0YykKCnJ1bm5pbmcgNiB0ZXN0cwp0ZXN0IGFsbG9jX2FsbG9jX3plcm9lZF9hbmRfb3duX2RlYWxsb2NfYWdyZWVfb25fb25lX2tpbmRfcGVyX3NpemUgLi4uIG9rCnRlc3QgbWF0Y2hpbmdfbGF5b3V0X2ZyZWVfa2VlcHNfdGhlX3NtYWxsX3JvdXRlX2Fjcm9zc19hX3NhbWVfY2xhc3NfcmVhbGxvYyAuLi4gb2sKdGVzdCBwcm9tb3RlZF90aGVuX2dyb3duX2xhcmdlX2Jsb2NrX3JvdXRlc19pdHNfZnJlZV9ieV9raW5kX25vdF9ieV9sYXlvdXQgLi4uIG9rCnRlc3QgZmFsbGJhY2tfc2VydmVkX2Jsb2Nrc19mcmVlZF9ieV9hbm90aGVyX3RocmVhZF9rZWVwX3RoZWlyX2tpbmQgLi4uIG9rCnRlc3QgcmVhbGxvY19jcm9zc2VzX3RoZV9ib3VuZGFyeV9pbl9zdGVwX3dpdGhfdGhlX2hlYWRlcl9raW5kIC4uLiBvawp0ZXN0IHJlYWxsb2Nfb29tX3JldHVybnNfbnVsbF9hbmRfbGVhdmVzX3RoZV9vbGRfYmxvY2tfaW50YWN0IC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiA2IHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDZzCgo=

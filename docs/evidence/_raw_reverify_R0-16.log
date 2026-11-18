@@ -1,7 +1,22 @@
-E0_METADATA {"id":"R0-16","head":"6c07db472897054ed5525b1310aeada8ed1b198f","tree":"8ac7f66df2ffa6170c1eab2d676948b98ae0ac3f","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.102.0-nightly (5f4effd57 2026-11-13)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-11-16 for version 1.102.0-nightly (5f4effd57 2026-11-13)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R0-16","head":"6c07db472897054ed5525b1310aeada8ed1b198f","tree":"8ac7f66df2ffa6170c1eab2d676948b98ae0ac3f","os":"linux x64","toolchain":"rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: x86_64-unknown-linux-gnu\nrelease: 1.100.0\nLLVM version: 23.1.5","profile":"debug","recipe":"docs/evidence/reverify-recipes/R0-16.json","recipe_sha256":"a5850ac74fd61158473048fb83d708621e972c8fbd95de3ca95a1149a0f7f16a","registry_activation_hash":"104481cf2f42d11139287887d7e31018e29dfb431b6cc8e42542be0486299814"}
+E0_METADATA {"id":"R0-16","head":"a08afb30a99952c2c01bde9b0c0b1884a2da9c05","tree":"52e61d23ebe0d389a33fe156d8c2ca7dd7a389ea","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.102.0-nightly (59cbdee2e 2026-11-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-11-18 for version 1.102.0-nightly (59cbdee2e 2026-11-17)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R0-16","head":"a08afb30a99952c2c01bde9b0c0b1884a2da9c05","tree":"52e61d23ebe0d389a33fe156d8c2ca7dd7a389ea","os":"linux x64","toolchain":"rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: x86_64-unknown-linux-gnu\nrelease: 1.100.0\nLLVM version: 23.1.5","profile":"debug","recipe":"docs/evidence/reverify-recipes/R0-16.json","recipe_sha256":"a5850ac74fd61158473048fb83d708621e972c8fbd95de3ca95a1149a0f7f16a","registry_activation_hash":"104481cf2f42d11139287887d7e31018e29dfb431b6cc8e42542be0486299814"}
 
 E0_STEP {"id":"R0-16","kind":"baseline","name":"terminal drain, owner sidecar miss and terminal global (production)","argv":["cargo","test","--locked","--features","production batch-api internals bench-internals","--test","r6_terminal_owner_drain","--test","r8_owner_sidecar_miss","--test","r8_terminal_global","--","--skip","fallback_direct_free_before_service_and_busy_terminal_publication"],"env":{},"expect":{"exit":0,"stdoutRegex":["test result: ok\\. [0-9]+ passed; 0 failed","test requested_sizes_one_through_seven_retire_once_and_reissue \\.\\.\\. ok","test globalalloc_foreign_terminal_free_is_visible_to_strict_trim \\.\\.\\. ok"]}}
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/platform/proc-probe/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+[1m[94m29[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-probe` (manifest) generated 1 warning
 [1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
   [1m[94m--> [0mcrates/bench/malloc-bench-rs/Cargo.toml
    [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
@@ -28,21 +43,6 @@ E0_STEP {"id":"R0-16","kind":"baseline","name":"terminal drain, owner sidecar mi
    [1m[94m= [0m[1mnote[0m: `cargo::redundant_homepage` is set to `warn` by default
 [1m[96mhelp[0m: consider removing `package.homepage`
 [1m[33mwarning[0m: `sefer-alloc` (manifest) generated 1 warning
-[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
-  [1m[94m--> [0mcrates/platform/proc-probe/Cargo.toml
-   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
-[1m[96mhelp[0m: to inherit `workspace.lints, add:
-   [1m[94m|[0m
-[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
-[1m[94m28[0m [92m+ [lints][0m
-[1m[94m29[0m [92m+ workspace = true[0m
-   [1m[94m|[0m
-[1m[96mhelp[0m: to clarify your intent to not inherit, add:
-   [1m[94m|[0m
-[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
-[1m[94m28[0m [92m+ [lints][0m
-   [1m[94m|[0m
-[1m[33mwarning[0m: `proc-probe` (manifest) generated 1 warning
 [1m[33mwarning[0m: crates/primitives/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
@@ -75,203 +75,19 @@ E0_STEP {"id":"R0-16","kind":"baseline","name":"terminal drain, owner sidecar mi
 [1m[94m25[0m [92m+ [lints][0m
    [1m[94m|[0m
 [1m[33mwarning[0m: `proc-memstat` (manifest) generated 1 warning
-[1m[92m    Updating[0m crates.io index
-[1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m bit-vec v0.8.0
-[1m[92m  Downloaded[0m ciborium-ll v0.2.2
-[1m[92m  Downloaded[0m criterion-plot v0.5.0
-[1m[92m  Downloaded[0m quote v1.0.46
-[1m[92m  Downloaded[0m tinytemplate v1.2.1
-[1m[92m  Downloaded[0m anstyle v1.0.14
-[1m[92m  Downloaded[0m bit-set v0.8.0
-[1m[92m  Downloaded[0m anes v0.1.6
-[1m[92m  Downloaded[0m oorandom v11.1.5
-[1m[92m  Downloaded[0m bitflags v2.13.0
-[1m[92m  Downloaded[0m ciborium v0.2.2
-[1m[92m  Downloaded[0m getrandom v0.4.3
-[1m[92m  Downloaded[0m unicode-ident v1.0.24
-[1m[92m  Downloaded[0m aho-corasick v1.1.4
-[1m[92m  Downloaded[0m arc-swap v1.9.1
-[1m[92m  Downloaded[0m cast v0.3.0
-[1m[92m  Downloaded[0m plotters v0.3.7
-[1m[92m  Downloaded[0m syn v2.0.118
-[1m[92m  Downloaded[0m libmimalloc-sys v0.1.49
-[1m[92m  Downloaded[0m ciborium-io v0.2.2
-[1m[92m  Downloaded[0m semver v1.0.28
-[1m[92m  Downloaded[0m crossbeam-epoch v0.9.20
-[1m[92m  Downloaded[0m mimalloc v0.1.52
-[1m[92m  Downloaded[0m is-terminal v0.4.17
-[1m[92m  Downloaded[0m clap v4.6.1
-[1m[92m  Downloaded[0m rustc_version v0.4.1
-[1m[92m  Downloaded[0m clap_builder v4.6.0
-[1m[92m  Downloaded[0m rand_core v0.9.5
-[1m[92m  Downloaded[0m unarray v0.1.4
-[1m[92m  Downloaded[0m num-traits v0.2.19
-[1m[92m  Downloaded[0m serde v1.0.228
-[1m[92m  Downloaded[0m clap_lex v1.1.0
-[1m[92m  Downloaded[0m rand_xorshift v0.4.0
-[1m[92m  Downloaded[0m iai-callgrind-macros v0.5.1
-[1m[92m  Downloaded[0m either v1.16.0
-[1m[92m  Downloaded[0m find-msvc-tools v0.1.9
-[1m[92m  Downloaded[0m rusty-fork v0.3.1
-[1m[92m  Downloaded[0m shlex v2.0.1
-[1m[92m  Downloaded[0m zmij v1.0.21
-[1m[92m  Downloaded[0m ppv-lite86 v0.2.21
-[1m[92m  Downloaded[0m rustversion v1.0.22
-[1m[92m  Downloaded[0m wait-timeout v0.2.1
-[1m[92m  Downloaded[0m fnv v1.0.7
-[1m[92m  Downloaded[0m proc-macro-error2 v2.0.1
-[1m[92m  Downloaded[0m pin-project-lite v0.2.17
-[1m[92m  Downloaded[0m getrandom v0.3.4
-[1m[92m  Downloaded[0m rand v0.9.4
-[1m[92m  Downloaded[0m serde_json v1.0.150
-[1m[92m  Downloaded[0m derive_more v2.1.1
-[1m[92m  Downloaded[0m memchr v2.8.2
-[1m[92m  Downloaded[0m itertools v0.10.5
-[1m[92m  Downloaded[0m libm v0.2.16
-[1m[92m  Downloaded[0m fastrand v2.4.1
-[1m[92m  Downloaded[0m iai-callgrind v0.14.2
-[1m[92m  Downloaded[0m quick-error v1.2.3
-[1m[92m  Downloaded[0m proc-macro2 v1.0.106
-[1m[92m  Downloaded[0m zerocopy v0.8.52
-[1m[92m  Downloaded[0m derive_more-impl v2.1.1
-[1m[92m  Downloaded[0m regex v1.12.4
-[1m[92m  Downloaded[0m regex-syntax v0.8.11
-[1m[92m  Downloaded[0m rustix v1.1.4
-[1m[92m  Downloaded[0m regex-automata v0.4.14
-[1m[92m  Downloaded[0m tokio v1.54.1
-[1m[92m  Downloaded[0m libc v0.2.186
-[1m[92m  Downloaded[0m cfg-if v1.0.4
-[1m[92m  Downloaded[0m itoa v1.0.18
-[1m[92m  Downloaded[0m errno v0.3.14
-[1m[92m  Downloaded[0m autocfg v1.5.1
-[1m[92m  Downloaded[0m proc-macro-error-attr2 v2.0.0
-[1m[92m  Downloaded[0m half v2.7.1
-[1m[92m  Downloaded[0m serde_derive v1.0.228
-[1m[92m  Downloaded[0m plotters-svg v0.3.7
-[1m[92m  Downloaded[0m rayon-core v1.13.0
-[1m[92m  Downloaded[0m plotters-backend v0.3.7
-[1m[92m  Downloaded[0m proptest v1.11.0
-[1m[92m  Downloaded[0m linux-raw-sys v0.12.1
-[1m[92m  Downloaded[0m cc v1.2.65
-[1m[92m  Downloaded[0m rand_chacha v0.9.0
-[1m[92m  Downloaded[0m serde_core v1.0.228
-[1m[92m  Downloaded[0m walkdir v2.5.0
-[1m[92m  Downloaded[0m slotmap v1.1.1
-[1m[92m  Downloaded[0m crossbeam-deque v0.8.6
-[1m[92m  Downloaded[0m same-file v1.0.6
-[1m[92m  Downloaded[0m criterion v0.5.1
-[1m[92m  Downloaded[0m tokio-macros v2.7.0
-[1m[92m  Downloaded[0m tempfile v3.27.0
-[1m[92m  Downloaded[0m rayon v1.12.0
-[1m[92m  Downloaded[0m zerocopy-derive v0.8.52
-[1m[92m  Downloaded[0m once_cell v1.21.4
-[1m[92m   Compiling[0m proc-macro2 v1.0.106
-[1m[92m   Compiling[0m quote v1.0.46
-[1m[92m   Compiling[0m unicode-ident v1.0.24
-[1m[92m   Compiling[0m libc v0.2.186
-[1m[92m   Compiling[0m cfg-if v1.0.4
-[1m[92m   Compiling[0m serde_core v1.0.228
-[1m[92m   Compiling[0m zerocopy v0.8.52
-[1m[92m   Compiling[0m crossbeam-utils v0.8.21
-[1m[92m   Compiling[0m zmij v1.0.21
 [1m[92m   Compiling[0m crossbeam-epoch v0.9.20
-[1m[92m   Compiling[0m getrandom v0.3.4
-[1m[92m   Compiling[0m syn v2.0.118
-[1m[92m   Compiling[0m serde v1.0.228
-[1m[92m   Compiling[0m autocfg v1.5.1
-[1m[92m   Compiling[0m libm v0.2.16
-[1m[92m   Compiling[0m serde_json v1.0.150
-[1m[92m   Compiling[0m num-traits v0.2.19
-[1m[92m   Compiling[0m memchr v2.8.2
-[1m[92m   Compiling[0m itoa v1.0.18
-[1m[92m   Compiling[0m rustix v1.1.4
-[1m[92m   Compiling[0m getrandom v0.4.3
-[1m[92m   Compiling[0m rand_core v0.9.5
 [1m[92m   Compiling[0m rustversion v1.0.22
-[1m[92m   Compiling[0m once_cell v1.21.4
-[1m[92m   Compiling[0m bitflags v2.13.0
-[1m[92m   Compiling[0m linux-raw-sys v0.12.1
-[1m[92m   Compiling[0m find-msvc-tools v0.1.9
-[1m[92m   Compiling[0m version_check v0.9.5
-[1m[92m   Compiling[0m regex-syntax v0.8.11
-[1m[92m   Compiling[0m shlex v2.0.1
-[1m[92m   Compiling[0m cc v1.2.65
-[1m[92m   Compiling[0m slotmap v1.1.1
-[1m[92m   Compiling[0m serde_derive v1.0.228
-[1m[92m   Compiling[0m zerocopy-derive v0.8.52
-[1m[92m   Compiling[0m derive_more-impl v2.1.1
-[1m[92m   Compiling[0m rayon-core v1.13.0
-[1m[92m   Compiling[0m either v1.16.0
-[1m[92m   Compiling[0m fastrand v2.4.1
-[1m[92m   Compiling[0m tempfile v3.27.0
-[1m[92m   Compiling[0m libmimalloc-sys v0.1.49
 [1m[92m   Compiling[0m crossbeam-deque v0.8.6
-[1m[92m   Compiling[0m wait-timeout v0.2.1
-[1m[92m   Compiling[0m proc-macro-error-attr2 v2.0.0
-[1m[92m   Compiling[0m ciborium-io v0.2.2
-[1m[92m   Compiling[0m anstyle v1.0.14
-[1m[92m   Compiling[0m aligned-vmem v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/platform/aligned-vmem)
-[1m[92m   Compiling[0m bit-vec v0.8.0
-[1m[92m   Compiling[0m fnv v1.0.7
-[1m[92m   Compiling[0m iai-callgrind-runner v0.14.2
-[1m[92m   Compiling[0m clap_lex v1.1.0
-[1m[92m   Compiling[0m plotters-backend v0.3.7
-[1m[92m   Compiling[0m quick-error v1.2.3
-[1m[92m   Compiling[0m rusty-fork v0.3.1
-[1m[92m   Compiling[0m plotters-svg v0.3.7
-[1m[92m   Compiling[0m clap_builder v4.6.0
-[1m[92m   Compiling[0m bit-set v0.8.0
-[1m[92m   Compiling[0m proc-macro-error2 v2.0.1
+[1m[92m   Compiling[0m rayon-core v1.13.0
 [1m[92m   Compiling[0m arc-swap v1.9.1
-[1m[92m   Compiling[0m derive_more v2.1.1
-[1m[92m   Compiling[0m itertools v0.10.5
-[1m[92m   Compiling[0m half v2.7.1
-[1m[92m   Compiling[0m ppv-lite86 v0.2.21
-[1m[92m   Compiling[0m ciborium-ll v0.2.2
-[1m[92m   Compiling[0m regex-automata v0.4.14
-[1m[92m   Compiling[0m rand_chacha v0.9.0
-[1m[92m   Compiling[0m rand_xorshift v0.4.0
-[1m[92m   Compiling[0m rand v0.9.4
-[1m[92m   Compiling[0m same-file v1.0.6
-[1m[92m   Compiling[0m iai-callgrind v0.14.2
-[1m[92m   Compiling[0m unarray v0.1.4
-[1m[92m   Compiling[0m cast v0.3.0
-[1m[92m   Compiling[0m iai-callgrind-macros v0.5.1
-[1m[92m   Compiling[0m regex v1.12.4
-[1m[92m   Compiling[0m tinytemplate v1.2.1
-[1m[92m   Compiling[0m criterion-plot v0.5.0
-[1m[92m   Compiling[0m proptest v1.11.0
-[1m[92m   Compiling[0m walkdir v2.5.0
-[1m[92m   Compiling[0m ciborium v0.2.2
-[1m[92m   Compiling[0m sefer-region v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/containers/sefer-region)
-[1m[92m   Compiling[0m clap v4.6.1
 [1m[92m   Compiling[0m sefer-concurrent v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/containers/sefer-concurrent)
 [1m[92m   Compiling[0m rayon v1.12.0
-[1m[92m   Compiling[0m plotters v0.3.7
-[1m[92m   Compiling[0m sefer-platform v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/platform/sefer-platform)
-[1m[92m   Compiling[0m sefer-policy v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/core/sefer-policy)
-[1m[92m   Compiling[0m bincode v1.3.3
-[1m[92m   Compiling[0m tokio-macros v2.7.0
-[1m[92m   Compiling[0m is-terminal v0.4.17
-[1m[92m   Compiling[0m anes v0.1.6
-[1m[92m   Compiling[0m once-ptr-cell v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/primitives/once-ptr-cell)
-[1m[92m   Compiling[0m oorandom v11.1.5
-[1m[92m   Compiling[0m sefer-ghost v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/primitives/sefer-ghost)
-[1m[92m   Compiling[0m proc-memstat v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/platform/proc-memstat)
-[1m[92m   Compiling[0m pin-project-lite v0.2.17
-[1m[92m   Compiling[0m size-classes v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/primitives/size-classes)
-[1m[92m   Compiling[0m tokio v1.54.1
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m   Compiling[0m proc-probe v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/platform/proc-probe)
 [1m[92m   Compiling[0m criterion v0.5.1
-[1m[92m   Compiling[0m globalalloc-model v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/verify/globalalloc-model)
-[1m[92m   Compiling[0m mimalloc v0.1.52
-[1m[92m   Compiling[0m malloc-bench-rs v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/bench/malloc-bench-rs)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 17.93s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 5.17s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m tests/r6_terminal_owner_drain.rs (target/debug/build/sefer-alloc/4113dba33edfc3d0/out/r6_terminal_owner_drain-4113dba33edfc3d0)
+[1m[92m     Running[0m tests/r6_terminal_owner_drain.rs (target/debug/build/sefer-alloc/b4c25084bbacaefa/out/r6_terminal_owner_drain-b4c25084bbacaefa)
 
 running 6 tests
 test large_pending_claim_reclaims_and_cache_reissues ... ok
@@ -283,7 +99,7 @@ test tls_exit_runs_the_owner_sweep_before_recycle ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-[1m[92m     Running[0m tests/r8_owner_sidecar_miss.rs (target/debug/build/sefer-alloc/a4fa9552c271f118/out/r8_owner_sidecar_miss-a4fa9552c271f118)
+[1m[92m     Running[0m tests/r8_owner_sidecar_miss.rs (target/debug/build/sefer-alloc/8c744c647aaab2d9/out/r8_owner_sidecar_miss-8c744c647aaab2d9)
 
 running 4 tests
 test magazine_hit_does_not_sweep_sidecar_words ... ok
@@ -293,17 +109,17 @@ test zeroed_large_cold_path_consumes_terminal_obligation_before_cache_reuse ... 
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-[1m[92m     Running[0m tests/r8_terminal_global.rs (target/debug/build/sefer-alloc/4341d9ce1975b606/out/r8_terminal_global-4341d9ce1975b606)
+[1m[92m     Running[0m tests/r8_terminal_global.rs (target/debug/build/sefer-alloc/dc0556dbb1d8df99/out/r8_terminal_global-dc0556dbb1d8df99)
 
 running 5 tests
 test overalign_registration_failure_rolls_back_without_consuming_source ... ok
 test foreign_overaligned_realloc_preserves_prefix_and_failure_source ... ok
-test foreign_batch_terminal_free_uses_actual_payload_routes ... ok
 test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok
 test paused_foreign_producer_does_not_block_strict_trim ... ok
+test foreign_batch_terminal_free_uses_actual_payload_routes ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
-E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBtaXNzaW5nIGBbbGludHNdYCB0byBpbmhlcml0IGBbd29ya3NwYWNlLmxpbnRzXWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1jcmF0ZXMvYmVuY2gvbWFsbG9jLWJlbmNoLXJzL0NhcmdvLnRvbWwKICAgG1sxbRtbOTRtPSAbWzBtG1sxbW5vdGUbWzBtOiBgY2FyZ286Om1pc3NpbmdfbGludHNfaW5oZXJpdGFuY2VgIGlzIHNldCB0byBgd2FybmAgYnkgZGVmYXVsdAobWzFtG1s5Nm1oZWxwG1swbTogdG8gaW5oZXJpdCBgd29ya3NwYWNlLmxpbnRzLCBhZGQ6CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTIwG1swbSAbWzkybX4gG1swbW1pbWFsbG9jID0gIjAuMSIKG1sxbRtbOTRtMjEbWzBtIBtbOTJtKyBbbGludHNdG1swbQobWzFtG1s5NG0yMhtbMG0gG1s5Mm0rIHdvcmtzcGFjZSA9IHRydWUbWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk2bWhlbHAbWzBtOiB0byBjbGFyaWZ5IHlvdXIgaW50ZW50IHRvIG5vdCBpbmhlcml0LCBhZGQ6CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTIwG1swbSAbWzkybX4gG1swbW1pbWFsbG9jID0gIjAuMSIKG1sxbRtbOTRtMjEbWzBtIBtbOTJtKyBbbGludHNdG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1szM213YXJuaW5nG1swbTogYG1hbGxvYy1iZW5jaC1yc2AgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogYHBhY2thZ2UuaG9tZXBhZ2VgIGlzIHJlZHVuZGFudCB3aXRoIGBwYWNrYWdlLnJlcG9zaXRvcnlgG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtQ2FyZ28udG9tbDoxMzoxMgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0xMhtbMG0gG1sxbRtbOTRtfBtbMG0gcmVwb3NpdG9yeSA9ICJodHRwczovL2dpdGh1Yi5jb20vUEhQQ3JhZnRkcmVhbS9zZWZlci1hbGxvYyIKICAgG1sxbRtbOTRtfBtbMG0gICAgICAgICAgICAgIBtbMW0bWzk0bS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0bWzBtChtbMW0bWzk0bTEzG1swbSAbWzFtG1s5NG18G1swbSBob21lcGFnZSA9ICJodHRwczovL2dpdGh1Yi5jb20vUEhQQ3JhZnRkcmVhbS9zZWZlci1hbGxvYyIKICAgG1sxbRtbOTRtfBtbMG0gICAgICAgICAgICAbWzFtG1szM21eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eG1swbQogICAbWzFtG1s5NG18G1swbQogICAbWzFtG1s5NG09IBtbMG0bWzFtbm90ZRtbMG06IGBjYXJnbzo6cmVkdW5kYW50X2hvbWVwYWdlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IGNvbnNpZGVyIHJlbW92aW5nIGBwYWNrYWdlLmhvbWVwYWdlYAobWzFtG1szM213YXJuaW5nG1swbTogYHNlZmVyLWFsbG9jYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBtaXNzaW5nIGBbbGludHNdYCB0byBpbmhlcml0IGBbd29ya3NwYWNlLmxpbnRzXWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1jcmF0ZXMvcGxhdGZvcm0vcHJvYy1wcm9iZS9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNxtbMG0gG1s5Mm1+IBtbMG1wcm9jLW1lbXN0YXQgPSB7IHBhdGggPSAiLi4vcHJvYy1tZW1zdGF0IiwgdmVyc2lvbiA9ICIwLjEiLCBvcHRpb25hbCA9IHRydWUgfQobWzFtG1s5NG0yOBtbMG0gG1s5Mm0rIFtsaW50c10bWzBtChtbMW0bWzk0bTI5G1swbSAbWzkybSsgd29ya3NwYWNlID0gdHJ1ZRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTZtaGVscBtbMG06IHRvIGNsYXJpZnkgeW91ciBpbnRlbnQgdG8gbm90IGluaGVyaXQsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjcbWzBtIBtbOTJtfiAbWzBtcHJvYy1tZW1zdGF0ID0geyBwYXRoID0gIi4uL3Byb2MtbWVtc3RhdCIsIHZlcnNpb24gPSAiMC4xIiwgb3B0aW9uYWwgPSB0cnVlIH0KG1sxbRtbOTRtMjgbWzBtIBtbOTJtKyBbbGludHNdG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1szM213YXJuaW5nG1swbTogYHByb2MtcHJvYmVgIChtYW5pZmVzdCkgZ2VuZXJhdGVkIDEgd2FybmluZwobWzFtG1szM213YXJuaW5nG1swbTogY3JhdGVzL3ByaW1pdGl2ZXMvdGFnZ2VkLWluZGV4LXN0YWNrL0NhcmdvLnRvbWw6IGBsaW50cy5jbGlwcHkuaW5jb21wYXRpYmxlLW1zcnZgIGlzIGRlcHJlY2F0ZWQgaW4gZmF2b3Igb2YgYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGVfbXNydmAgYW5kIHdpbGwgbm90IHdvcmsgaW4gYSBmdXR1cmUgZWRpdGlvbgobWzFtG1szM213YXJuaW5nG1swbTogYHRhZ2dlZC1pbmRleC1zdGFja2AgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3ZlcmlmeS9nbG9iYWxhbGxvYy1tb2RlbC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KG1sxbRtbOTRtNzUbWzBtIBtbOTJtKyB3b3Jrc3BhY2UgPSB0cnVlG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1s5Nm1oZWxwG1swbTogdG8gY2xhcmlmeSB5b3VyIGludGVudCB0byBub3QgaW5oZXJpdCwgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbMzNtd2FybmluZxtbMG06IGBnbG9iYWxhbGxvYy1tb2RlbGAgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3BsYXRmb3JtL3Byb2MtbWVtc3RhdC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNBtbMG0gG1s5Mm1+IBtbMG1oYXJuZXNzID0gZmFsc2UKG1sxbRtbOTRtMjUbWzBtIBtbOTJtKyBbbGludHNdG1swbQobWzFtG1s5NG0yNhtbMG0gG1s5Mm0rIHdvcmtzcGFjZSA9IHRydWUbWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk2bWhlbHAbWzBtOiB0byBjbGFyaWZ5IHlvdXIgaW50ZW50IHRvIG5vdCBpbmhlcml0LCBhZGQ6CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTI0G1swbSAbWzkybX4gG1swbWhhcm5lc3MgPSBmYWxzZQobWzFtG1s5NG0yNRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgcHJvYy1tZW1zdGF0YCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgIFVwZGF0aW5nG1swbSBjcmF0ZXMuaW8gaW5kZXgKG1sxbRtbOTJtIERvd25sb2FkaW5nG1swbSBjcmF0ZXMgLi4uChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gYml0LXZlYyB2MC44LjAKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBjaWJvcml1bS1sbCB2MC4yLjIKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBjcml0ZXJpb24tcGxvdCB2MC41LjAKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBxdW90ZSB2MS4wLjQ2ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gdGlueXRlbXBsYXRlIHYxLjIuMQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGFuc3R5bGUgdjEuMC4xNAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGJpdC1zZXQgdjAuOC4wChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gYW5lcyB2MC4xLjYKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBvb3JhbmRvbSB2MTEuMS41ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gYml0ZmxhZ3MgdjIuMTMuMAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGNpYm9yaXVtIHYwLjIuMgobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGdldHJhbmRvbSB2MC40LjMKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSB1bmljb2RlLWlkZW50IHYxLjAuMjQKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBhaG8tY29yYXNpY2sgdjEuMS40ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gYXJjLXN3YXAgdjEuOS4xChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gY2FzdCB2MC4zLjAKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBwbG90dGVycyB2MC4zLjcKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBzeW4gdjIuMC4xMTgKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBsaWJtaW1hbGxvYy1zeXMgdjAuMS40OQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGNpYm9yaXVtLWlvIHYwLjIuMgobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHNlbXZlciB2MS4wLjI4ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gY3Jvc3NiZWFtLWVwb2NoIHYwLjkuMjAKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBtaW1hbGxvYyB2MC4xLjUyChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gaXMtdGVybWluYWwgdjAuNC4xNwobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGNsYXAgdjQuNi4xChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcnVzdGNfdmVyc2lvbiB2MC40LjEKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBjbGFwX2J1aWxkZXIgdjQuNi4wChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcmFuZF9jb3JlIHYwLjkuNQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHVuYXJyYXkgdjAuMS40ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gbnVtLXRyYWl0cyB2MC4yLjE5ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gc2VyZGUgdjEuMC4yMjgKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBjbGFwX2xleCB2MS4xLjAKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSByYW5kX3hvcnNoaWZ0IHYwLjQuMAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGlhaS1jYWxsZ3JpbmQtbWFjcm9zIHYwLjUuMQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGVpdGhlciB2MS4xNi4wChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gZmluZC1tc3ZjLXRvb2xzIHYwLjEuOQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHJ1c3R5LWZvcmsgdjAuMy4xChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gc2hsZXggdjIuMC4xChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gem1paiB2MS4wLjIxChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcHB2LWxpdGU4NiB2MC4yLjIxChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcnVzdHZlcnNpb24gdjEuMC4yMgobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHdhaXQtdGltZW91dCB2MC4yLjEKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBmbnYgdjEuMC43ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcHJvYy1tYWNyby1lcnJvcjIgdjIuMC4xChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcGluLXByb2plY3QtbGl0ZSB2MC4yLjE3ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gZ2V0cmFuZG9tIHYwLjMuNAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHJhbmQgdjAuOS40ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gc2VyZGVfanNvbiB2MS4wLjE1MAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGRlcml2ZV9tb3JlIHYyLjEuMQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIG1lbWNociB2Mi44LjIKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBpdGVydG9vbHMgdjAuMTAuNQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGxpYm0gdjAuMi4xNgobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGZhc3RyYW5kIHYyLjQuMQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGlhaS1jYWxsZ3JpbmQgdjAuMTQuMgobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHF1aWNrLWVycm9yIHYxLjIuMwobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHByb2MtbWFjcm8yIHYxLjAuMTA2ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gemVyb2NvcHkgdjAuOC41MgobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGRlcml2ZV9tb3JlLWltcGwgdjIuMS4xChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcmVnZXggdjEuMTIuNAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHJlZ2V4LXN5bnRheCB2MC44LjExChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcnVzdGl4IHYxLjEuNAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHJlZ2V4LWF1dG9tYXRhIHYwLjQuMTQKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSB0b2tpbyB2MS41NC4xChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gbGliYyB2MC4yLjE4NgobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGNmZy1pZiB2MS4wLjQKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBpdG9hIHYxLjAuMTgKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBlcnJubyB2MC4zLjE0ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gYXV0b2NmZyB2MS41LjEKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBwcm9jLW1hY3JvLWVycm9yLWF0dHIyIHYyLjAuMAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGhhbGYgdjIuNy4xChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gc2VyZGVfZGVyaXZlIHYxLjAuMjI4ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcGxvdHRlcnMtc3ZnIHYwLjMuNwobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHJheW9uLWNvcmUgdjEuMTMuMAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHBsb3R0ZXJzLWJhY2tlbmQgdjAuMy43ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcHJvcHRlc3QgdjEuMTEuMAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGxpbnV4LXJhdy1zeXMgdjAuMTIuMQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGNjIHYxLjIuNjUKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSByYW5kX2NoYWNoYSB2MC45LjAKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBzZXJkZV9jb3JlIHYxLjAuMjI4ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gd2Fsa2RpciB2Mi41LjAKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBzbG90bWFwIHYxLjEuMQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIGNyb3NzYmVhbS1kZXF1ZSB2MC44LjYKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSBzYW1lLWZpbGUgdjEuMC42ChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gY3JpdGVyaW9uIHYwLjUuMQobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHRva2lvLW1hY3JvcyB2Mi43LjAKG1sxbRtbOTJtICBEb3dubG9hZGVkG1swbSB0ZW1wZmlsZSB2My4yNy4wChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gcmF5b24gdjEuMTIuMAobWzFtG1s5Mm0gIERvd25sb2FkZWQbWzBtIHplcm9jb3B5LWRlcml2ZSB2MC44LjUyChtbMW0bWzkybSAgRG93bmxvYWRlZBtbMG0gb25jZV9jZWxsIHYxLjIxLjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBwcm9jLW1hY3JvMiB2MS4wLjEwNgobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHF1b3RlIHYxLjAuNDYKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB1bmljb2RlLWlkZW50IHYxLjAuMjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBsaWJjIHYwLjIuMTg2ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY2ZnLWlmIHYxLjAuNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlcmRlX2NvcmUgdjEuMC4yMjgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB6ZXJvY29weSB2MC44LjUyChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY3Jvc3NiZWFtLXV0aWxzIHYwLjguMjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB6bWlqIHYxLjAuMjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjcm9zc2JlYW0tZXBvY2ggdjAuOS4yMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGdldHJhbmRvbSB2MC4zLjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzeW4gdjIuMC4xMTgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZXJkZSB2MS4wLjIyOAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGF1dG9jZmcgdjEuNS4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gbGlibSB2MC4yLjE2ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VyZGVfanNvbiB2MS4wLjE1MAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIG51bS10cmFpdHMgdjAuMi4xOQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIG1lbWNociB2Mi44LjIKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBpdG9hIHYxLjAuMTgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBydXN0aXggdjEuMS40ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gZ2V0cmFuZG9tIHYwLjQuMwobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJhbmRfY29yZSB2MC45LjUKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBydXN0dmVyc2lvbiB2MS4wLjIyChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gb25jZV9jZWxsIHYxLjIxLjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBiaXRmbGFncyB2Mi4xMy4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gbGludXgtcmF3LXN5cyB2MC4xMi4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gZmluZC1tc3ZjLXRvb2xzIHYwLjEuOQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHZlcnNpb25fY2hlY2sgdjAuOS41ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmVnZXgtc3ludGF4IHYwLjguMTEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzaGxleCB2Mi4wLjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjYyB2MS4yLjY1ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2xvdG1hcCB2MS4xLjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZXJkZV9kZXJpdmUgdjEuMC4yMjgKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB6ZXJvY29weS1kZXJpdmUgdjAuOC41MgobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGRlcml2ZV9tb3JlLWltcGwgdjIuMS4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmF5b24tY29yZSB2MS4xMy4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gZWl0aGVyIHYxLjE2LjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBmYXN0cmFuZCB2Mi40LjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB0ZW1wZmlsZSB2My4yNy4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gbGlibWltYWxsb2Mtc3lzIHYwLjEuNDkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjcm9zc2JlYW0tZGVxdWUgdjAuOC42ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gd2FpdC10aW1lb3V0IHYwLjIuMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHByb2MtbWFjcm8tZXJyb3ItYXR0cjIgdjIuMC4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY2lib3JpdW0taW8gdjAuMi4yChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gYW5zdHlsZSB2MS4wLjE0ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gYWxpZ25lZC12bWVtIHYwLjIuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvY3JhdGVzL3BsYXRmb3JtL2FsaWduZWQtdm1lbSkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBiaXQtdmVjIHYwLjguMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGZudiB2MS4wLjcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBpYWktY2FsbGdyaW5kLXJ1bm5lciB2MC4xNC4yChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY2xhcF9sZXggdjEuMS4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcGxvdHRlcnMtYmFja2VuZCB2MC4zLjcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBxdWljay1lcnJvciB2MS4yLjMKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBydXN0eS1mb3JrIHYwLjMuMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHBsb3R0ZXJzLXN2ZyB2MC4zLjcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjbGFwX2J1aWxkZXIgdjQuNi4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gYml0LXNldCB2MC44LjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBhcmMtc3dhcCB2MS45LjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBkZXJpdmVfbW9yZSB2Mi4xLjEKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBpdGVydG9vbHMgdjAuMTAuNQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGhhbGYgdjIuNy4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcHB2LWxpdGU4NiB2MC4yLjIxChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY2lib3JpdW0tbGwgdjAuMi4yChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmVnZXgtYXV0b21hdGEgdjAuNC4xNAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJhbmRfY2hhY2hhIHYwLjkuMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJhbmRfeG9yc2hpZnQgdjAuNC4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmFuZCB2MC45LjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzYW1lLWZpbGUgdjEuMC42ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gaWFpLWNhbGxncmluZCB2MC4xNC4yChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gdW5hcnJheSB2MC4xLjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjYXN0IHYwLjMuMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGlhaS1jYWxsZ3JpbmQtbWFjcm9zIHYwLjUuMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJlZ2V4IHYxLjEyLjQKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB0aW55dGVtcGxhdGUgdjEuMi4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY3JpdGVyaW9uLXBsb3QgdjAuNS4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcHJvcHRlc3QgdjEuMTEuMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHdhbGtkaXIgdjIuNS4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY2lib3JpdW0gdjAuMi4yChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VmZXItcmVnaW9uIHYwLjIuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvY3JhdGVzL2NvbnRhaW5lcnMvc2VmZXItcmVnaW9uKQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGNsYXAgdjQuNi4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VmZXItY29uY3VycmVudCB2MC4xLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jL2NyYXRlcy9jb250YWluZXJzL3NlZmVyLWNvbmN1cnJlbnQpChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmF5b24gdjEuMTIuMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHBsb3R0ZXJzIHYwLjMuNwobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlZmVyLXBsYXRmb3JtIHYwLjEuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvY3JhdGVzL3BsYXRmb3JtL3NlZmVyLXBsYXRmb3JtKQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlZmVyLXBvbGljeSB2MC4xLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jL2NyYXRlcy9jb3JlL3NlZmVyLXBvbGljeSkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBiaW5jb2RlIHYxLjMuMwobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHRva2lvLW1hY3JvcyB2Mi43LjAKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBpcy10ZXJtaW5hbCB2MC40LjE3ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gYW5lcyB2MC4xLjYKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBvbmNlLXB0ci1jZWxsIHYwLjEuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvY3JhdGVzL3ByaW1pdGl2ZXMvb25jZS1wdHItY2VsbCkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBvb3JhbmRvbSB2MTEuMS41ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VmZXItZ2hvc3QgdjAuMS4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvcHJpbWl0aXZlcy9zZWZlci1naG9zdCkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBwcm9jLW1lbXN0YXQgdjAuMS4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYy9jcmF0ZXMvcGxhdGZvcm0vcHJvYy1tZW1zdGF0KQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHBpbi1wcm9qZWN0LWxpdGUgdjAuMi4xNwobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNpemUtY2xhc3NlcyB2MC4xLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jL2NyYXRlcy9wcmltaXRpdmVzL3NpemUtY2xhc3NlcykKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSB0b2tpbyB2MS41NC4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VmZXItYWxsb2MgdjAuMy4wICgvaG9tZS9ydW5uZXIvd29yay9zZWZlci1hbGxvYy9zZWZlci1hbGxvYykKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBwcm9jLXByb2JlIHYwLjEuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvY3JhdGVzL3BsYXRmb3JtL3Byb2MtcHJvYmUpChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY3JpdGVyaW9uIHYwLjUuMQobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIGdsb2JhbGFsbG9jLW1vZGVsIHYwLjEuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvY3JhdGVzL3ZlcmlmeS9nbG9iYWxhbGxvYy1tb2RlbCkKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBtaW1hbGxvYyB2MC4xLjUyChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gbWFsbG9jLWJlbmNoLXJzIHYwLjEuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MvY3JhdGVzL2JlbmNoL21hbGxvYy1iZW5jaC1ycykKG1sxbRtbOTJtICAgIEZpbmlzaGVkG1swbSBgdGVzdGAgcHJvZmlsZSBbdW5vcHRpbWl6ZWQgKyBkZWJ1Z2luZm9dIHRhcmdldChzKSBpbiAxNy45M3MKG1sxbRtbMzNtd2FybmluZxtbMG06IHRoZSBmb2xsb3dpbmcgcGFja2FnZXMgY29udGFpbiBjb2RlIHRoYXQgd2lsbCBiZSByZWplY3RlZCBieSBhIGZ1dHVyZSB2ZXJzaW9uIG9mIFJ1c3Q6IHByb2MtbWFjcm8tZXJyb3IyIHYyLjAuMQobWzFtG1s5Mm1ub3RlG1swbTogdG8gc2VlIHdoYXQgdGhlIHByb2JsZW1zIHdlcmUsIHVzZSB0aGUgb3B0aW9uIGAtLWZ1dHVyZS1pbmNvbXBhdC1yZXBvcnRgLCBvciBydW4gYGNhcmdvIHJlcG9ydCBmdXR1cmUtaW5jb21wYXRpYmlsaXRpZXMgLS1pZCAxYAobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL3I2X3Rlcm1pbmFsX293bmVyX2RyYWluLnJzICh0YXJnZXQvZGVidWcvYnVpbGQvc2VmZXItYWxsb2MvNDExM2RiYTMzZWRmYzNkMC9vdXQvcjZfdGVybWluYWxfb3duZXJfZHJhaW4tNDExM2RiYTMzZWRmYzNkMCkKCnJ1bm5pbmcgNiB0ZXN0cwp0ZXN0IGxhcmdlX3BlbmRpbmdfY2xhaW1fcmVjbGFpbXNfYW5kX2NhY2hlX3JlaXNzdWVzIC4uLiBvawp0ZXN0IGxhc3Rfc21hbGxfbm9kZV9maW5hbGl6ZXNfYWZ0ZXJfcm91dGVfc2NhbiAuLi4gb2sKdGVzdCBtaXhlZF9jbGFzc19hbmRfbW9yZV90aGFuX3JpbmdfY2FwYWNpdHkgLi4uIG9rCnRlc3QgcHVibGljX3RyaW1fY29uc3VtZXNfc21hbGxfYW5kX2xhcmdlX3Rlcm1pbmFsX3B1YmxpY2F0aW9ucyAuLi4gb2sKdGVzdCByZXF1ZXN0ZWRfc2l6ZXNfb25lX3Rocm91Z2hfc2V2ZW5fcmV0aXJlX29uY2VfYW5kX3JlaXNzdWUgLi4uIG9rCnRlc3QgdGxzX2V4aXRfcnVuc190aGVfb3duZXJfc3dlZXBfYmVmb3JlX3JlY3ljbGUgLi4uIG9rCgp0ZXN0IHJlc3VsdDogb2suIDYgcGFzc2VkOyAwIGZhaWxlZDsgMCBpZ25vcmVkOyAwIG1lYXN1cmVkOyAwIGZpbHRlcmVkIG91dDsgZmluaXNoZWQgaW4gMC4wMHMKChtbMW0bWzkybSAgICAgUnVubmluZxtbMG0gdGVzdHMvcjhfb3duZXJfc2lkZWNhcl9taXNzLnJzICh0YXJnZXQvZGVidWcvYnVpbGQvc2VmZXItYWxsb2MvYTRmYTk1NTJjMjcxZjExOC9vdXQvcjhfb3duZXJfc2lkZWNhcl9taXNzLWE0ZmE5NTUyYzI3MWYxMTgpCgpydW5uaW5nIDQgdGVzdHMKdGVzdCBtYWdhemluZV9oaXRfZG9lc19ub3Rfc3dlZXBfc2lkZWNhcl93b3JkcyAuLi4gb2sKdGVzdCBtYWdhemluZV9yZWZpbGxfbWlzc19jb25zdW1lc190ZXJtaW5hbF9zbWFsbF9vbmNlIC4uLiBvawp0ZXN0IHNtYWxsX2ZyZWVfbGlzdF9taXNzX2NvbnN1bWVzX3Rlcm1pbmFsX3B1YmxpY2F0aW9uX3dpdGhvdXRfZXhwbGljaXRfc3dlZXAgLi4uIG9rCnRlc3QgemVyb2VkX2xhcmdlX2NvbGRfcGF0aF9jb25zdW1lc190ZXJtaW5hbF9vYmxpZ2F0aW9uX2JlZm9yZV9jYWNoZV9yZXVzZSAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gNCBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjAwcwoKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yOF90ZXJtaW5hbF9nbG9iYWwucnMgKHRhcmdldC9kZWJ1Zy9idWlsZC9zZWZlci1hbGxvYy80MzQxZDljZTE5NzViNjA2L291dC9yOF90ZXJtaW5hbF9nbG9iYWwtNDM0MWQ5Y2UxOTc1YjYwNikKCnJ1bm5pbmcgNSB0ZXN0cwp0ZXN0IG92ZXJhbGlnbl9yZWdpc3RyYXRpb25fZmFpbHVyZV9yb2xsc19iYWNrX3dpdGhvdXRfY29uc3VtaW5nX3NvdXJjZSAuLi4gb2sKdGVzdCBmb3JlaWduX292ZXJhbGlnbmVkX3JlYWxsb2NfcHJlc2VydmVzX3ByZWZpeF9hbmRfZmFpbHVyZV9zb3VyY2UgLi4uIG9rCnRlc3QgZm9yZWlnbl9iYXRjaF90ZXJtaW5hbF9mcmVlX3VzZXNfYWN0dWFsX3BheWxvYWRfcm91dGVzIC4uLiBvawp0ZXN0IGdsb2JhbGFsbG9jX2ZvcmVpZ25fdGVybWluYWxfZnJlZV9pc192aXNpYmxlX3RvX3N0cmljdF90cmltIC4uLiBvawp0ZXN0IHBhdXNlZF9mb3JlaWduX3Byb2R1Y2VyX2RvZXNfbm90X2Jsb2NrX3N0cmljdF90cmltIC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiA1IHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMSBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDBzCgo=
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBtaXNzaW5nIGBbbGludHNdYCB0byBpbmhlcml0IGBbd29ya3NwYWNlLmxpbnRzXWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1jcmF0ZXMvcGxhdGZvcm0vcHJvYy1wcm9iZS9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNxtbMG0gG1s5Mm1+IBtbMG1wcm9jLW1lbXN0YXQgPSB7IHBhdGggPSAiLi4vcHJvYy1tZW1zdGF0IiwgdmVyc2lvbiA9ICIwLjEiLCBvcHRpb25hbCA9IHRydWUgfQobWzFtG1s5NG0yOBtbMG0gG1s5Mm0rIFtsaW50c10bWzBtChtbMW0bWzk0bTI5G1swbSAbWzkybSsgd29ya3NwYWNlID0gdHJ1ZRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTZtaGVscBtbMG06IHRvIGNsYXJpZnkgeW91ciBpbnRlbnQgdG8gbm90IGluaGVyaXQsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjcbWzBtIBtbOTJtfiAbWzBtcHJvYy1tZW1zdGF0ID0geyBwYXRoID0gIi4uL3Byb2MtbWVtc3RhdCIsIHZlcnNpb24gPSAiMC4xIiwgb3B0aW9uYWwgPSB0cnVlIH0KG1sxbRtbOTRtMjgbWzBtIBtbOTJtKyBbbGludHNdG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1szM213YXJuaW5nG1swbTogYHByb2MtcHJvYmVgIChtYW5pZmVzdCkgZ2VuZXJhdGVkIDEgd2FybmluZwobWzFtG1szM213YXJuaW5nG1swbRtbMW06IG1pc3NpbmcgYFtsaW50c11gIHRvIGluaGVyaXQgYFt3b3Jrc3BhY2UubGludHNdYBtbMG0KICAbWzFtG1s5NG0tLT4gG1swbWNyYXRlcy9iZW5jaC9tYWxsb2MtYmVuY2gtcnMvQ2FyZ28udG9tbAogICAbWzFtG1s5NG09IBtbMG0bWzFtbm90ZRtbMG06IGBjYXJnbzo6bWlzc2luZ19saW50c19pbmhlcml0YW5jZWAgaXMgc2V0IHRvIGB3YXJuYCBieSBkZWZhdWx0ChtbMW0bWzk2bWhlbHAbWzBtOiB0byBpbmhlcml0IGB3b3Jrc3BhY2UubGludHMsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjAbWzBtIBtbOTJtfiAbWzBtbWltYWxsb2MgPSAiMC4xIgobWzFtG1s5NG0yMRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtChtbMW0bWzk0bTIyG1swbSAbWzkybSsgd29ya3NwYWNlID0gdHJ1ZRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTZtaGVscBtbMG06IHRvIGNsYXJpZnkgeW91ciBpbnRlbnQgdG8gbm90IGluaGVyaXQsIGFkZDoKICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbOTRtMjAbWzBtIBtbOTJtfiAbWzBtbWltYWxsb2MgPSAiMC4xIgobWzFtG1s5NG0yMRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgbWFsbG9jLWJlbmNoLXJzYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbMzNtd2FybmluZxtbMG0bWzFtOiBgcGFja2FnZS5ob21lcGFnZWAgaXMgcmVkdW5kYW50IHdpdGggYHBhY2thZ2UucmVwb3NpdG9yeWAbWzBtCiAgG1sxbRtbOTRtLS0+IBtbMG1DYXJnby50b21sOjEzOjEyCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTEyG1swbSAbWzFtG1s5NG18G1swbSByZXBvc2l0b3J5ID0gImh0dHBzOi8vZ2l0aHViLmNvbS9QSFBDcmFmdGRyZWFtL3NlZmVyLWFsbG9jIgogICAbWzFtG1s5NG18G1swbSAgICAgICAgICAgICAgG1sxbRtbOTRtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLRtbMG0KG1sxbRtbOTRtMTMbWzBtIBtbMW0bWzk0bXwbWzBtIGhvbWVwYWdlID0gImh0dHBzOi8vZ2l0aHViLmNvbS9QSFBDcmFmdGRyZWFtL3NlZmVyLWFsbG9jIgogICAbWzFtG1s5NG18G1swbSAgICAgICAgICAgIBtbMW0bWzMzbV5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl4bWzBtCiAgIBtbMW0bWzk0bXwbWzBtCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjpyZWR1bmRhbnRfaG9tZXBhZ2VgIGlzIHNldCB0byBgd2FybmAgYnkgZGVmYXVsdAobWzFtG1s5Nm1oZWxwG1swbTogY29uc2lkZXIgcmVtb3ZpbmcgYHBhY2thZ2UuaG9tZXBhZ2VgChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgc2VmZXItYWxsb2NgIChtYW5pZmVzdCkgZ2VuZXJhdGVkIDEgd2FybmluZwobWzFtG1szM213YXJuaW5nG1swbTogY3JhdGVzL3ByaW1pdGl2ZXMvdGFnZ2VkLWluZGV4LXN0YWNrL0NhcmdvLnRvbWw6IGBsaW50cy5jbGlwcHkuaW5jb21wYXRpYmxlLW1zcnZgIGlzIGRlcHJlY2F0ZWQgaW4gZmF2b3Igb2YgYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGVfbXNydmAgYW5kIHdpbGwgbm90IHdvcmsgaW4gYSBmdXR1cmUgZWRpdGlvbgobWzFtG1szM213YXJuaW5nG1swbTogYHRhZ2dlZC1pbmRleC1zdGFja2AgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3ZlcmlmeS9nbG9iYWxhbGxvYy1tb2RlbC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KG1sxbRtbOTRtNzUbWzBtIBtbOTJtKyB3b3Jrc3BhY2UgPSB0cnVlG1swbQogICAbWzFtG1s5NG18G1swbQobWzFtG1s5Nm1oZWxwG1swbTogdG8gY2xhcmlmeSB5b3VyIGludGVudCB0byBub3QgaW5oZXJpdCwgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MxtbMG0gG1s5Mm1+IBtbMG1wcm9wdGVzdCA9IHsgdmVyc2lvbiA9ICIxIiB9ChtbMW0bWzk0bTc0G1swbSAbWzkybSsgW2xpbnRzXRtbMG0KICAgG1sxbRtbOTRtfBtbMG0KG1sxbRtbMzNtd2FybmluZxtbMG06IGBnbG9iYWxhbGxvYy1tb2RlbGAgKG1hbmlmZXN0KSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzMzbXdhcm5pbmcbWzBtG1sxbTogbWlzc2luZyBgW2xpbnRzXWAgdG8gaW5oZXJpdCBgW3dvcmtzcGFjZS5saW50c11gG1swbQogIBtbMW0bWzk0bS0tPiAbWzBtY3JhdGVzL3BsYXRmb3JtL3Byb2MtbWVtc3RhdC9DYXJnby50b21sCiAgIBtbMW0bWzk0bT0gG1swbRtbMW1ub3RlG1swbTogYGNhcmdvOjptaXNzaW5nX2xpbnRzX2luaGVyaXRhbmNlYCBpcyBzZXQgdG8gYHdhcm5gIGJ5IGRlZmF1bHQKG1sxbRtbOTZtaGVscBtbMG06IHRvIGluaGVyaXQgYHdvcmtzcGFjZS5saW50cywgYWRkOgogICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG0yNBtbMG0gG1s5Mm1+IBtbMG1oYXJuZXNzID0gZmFsc2UKG1sxbRtbOTRtMjUbWzBtIBtbOTJtKyBbbGludHNdG1swbQobWzFtG1s5NG0yNhtbMG0gG1s5Mm0rIHdvcmtzcGFjZSA9IHRydWUbWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk2bWhlbHAbWzBtOiB0byBjbGFyaWZ5IHlvdXIgaW50ZW50IHRvIG5vdCBpbmhlcml0LCBhZGQ6CiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzk0bTI0G1swbSAbWzkybX4gG1swbWhhcm5lc3MgPSBmYWxzZQobWzFtG1s5NG0yNRtbMG0gG1s5Mm0rIFtsaW50c10bWzBtCiAgIBtbMW0bWzk0bXwbWzBtChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgcHJvYy1tZW1zdGF0YCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjcm9zc2JlYW0tZXBvY2ggdjAuOS4yMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHJ1c3R2ZXJzaW9uIHYxLjAuMjIKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBjcm9zc2JlYW0tZGVxdWUgdjAuOC42ChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmF5b24tY29yZSB2MS4xMy4wChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gYXJjLXN3YXAgdjEuOS4xChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gc2VmZXItY29uY3VycmVudCB2MC4xLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jL2NyYXRlcy9jb250YWluZXJzL3NlZmVyLWNvbmN1cnJlbnQpChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gcmF5b24gdjEuMTIuMAobWzFtG1s5Mm0gICBDb21waWxpbmcbWzBtIHNlZmVyLWFsbG9jIHYwLjMuMCAoL2hvbWUvcnVubmVyL3dvcmsvc2VmZXItYWxsb2Mvc2VmZXItYWxsb2MpChtbMW0bWzkybSAgIENvbXBpbGluZxtbMG0gY3JpdGVyaW9uIHYwLjUuMQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDUuMTdzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yNl90ZXJtaW5hbF9vd25lcl9kcmFpbi5ycyAodGFyZ2V0L2RlYnVnL2J1aWxkL3NlZmVyLWFsbG9jL2I0YzI1MDg0YmJhY2FlZmEvb3V0L3I2X3Rlcm1pbmFsX293bmVyX2RyYWluLWI0YzI1MDg0YmJhY2FlZmEpCgpydW5uaW5nIDYgdGVzdHMKdGVzdCBsYXJnZV9wZW5kaW5nX2NsYWltX3JlY2xhaW1zX2FuZF9jYWNoZV9yZWlzc3VlcyAuLi4gb2sKdGVzdCBsYXN0X3NtYWxsX25vZGVfZmluYWxpemVzX2FmdGVyX3JvdXRlX3NjYW4gLi4uIG9rCnRlc3QgbWl4ZWRfY2xhc3NfYW5kX21vcmVfdGhhbl9yaW5nX2NhcGFjaXR5IC4uLiBvawp0ZXN0IHB1YmxpY190cmltX2NvbnN1bWVzX3NtYWxsX2FuZF9sYXJnZV90ZXJtaW5hbF9wdWJsaWNhdGlvbnMgLi4uIG9rCnRlc3QgcmVxdWVzdGVkX3NpemVzX29uZV90aHJvdWdoX3NldmVuX3JldGlyZV9vbmNlX2FuZF9yZWlzc3VlIC4uLiBvawp0ZXN0IHRsc19leGl0X3J1bnNfdGhlX293bmVyX3N3ZWVwX2JlZm9yZV9yZWN5Y2xlIC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiA2IHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDBzCgobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL3I4X293bmVyX3NpZGVjYXJfbWlzcy5ycyAodGFyZ2V0L2RlYnVnL2J1aWxkL3NlZmVyLWFsbG9jLzhjNzQ0YzY0N2FhYWIyZDkvb3V0L3I4X293bmVyX3NpZGVjYXJfbWlzcy04Yzc0NGM2NDdhYWFiMmQ5KQoKcnVubmluZyA0IHRlc3RzCnRlc3QgbWFnYXppbmVfaGl0X2RvZXNfbm90X3N3ZWVwX3NpZGVjYXJfd29yZHMgLi4uIG9rCnRlc3QgbWFnYXppbmVfcmVmaWxsX21pc3NfY29uc3VtZXNfdGVybWluYWxfc21hbGxfb25jZSAuLi4gb2sKdGVzdCBzbWFsbF9mcmVlX2xpc3RfbWlzc19jb25zdW1lc190ZXJtaW5hbF9wdWJsaWNhdGlvbl93aXRob3V0X2V4cGxpY2l0X3N3ZWVwIC4uLiBvawp0ZXN0IHplcm9lZF9sYXJnZV9jb2xkX3BhdGhfY29uc3VtZXNfdGVybWluYWxfb2JsaWdhdGlvbl9iZWZvcmVfY2FjaGVfcmV1c2UgLi4uIG9rCgp0ZXN0IHJlc3VsdDogb2suIDQgcGFzc2VkOyAwIGZhaWxlZDsgMCBpZ25vcmVkOyAwIG1lYXN1cmVkOyAwIGZpbHRlcmVkIG91dDsgZmluaXNoZWQgaW4gMC4wMHMKChtbMW0bWzkybSAgICAgUnVubmluZxtbMG0gdGVzdHMvcjhfdGVybWluYWxfZ2xvYmFsLnJzICh0YXJnZXQvZGVidWcvYnVpbGQvc2VmZXItYWxsb2MvZGMwNTU2ZGJiMWQ4ZGY5OS9vdXQvcjhfdGVybWluYWxfZ2xvYmFsLWRjMDU1NmRiYjFkOGRmOTkpCgpydW5uaW5nIDUgdGVzdHMKdGVzdCBvdmVyYWxpZ25fcmVnaXN0cmF0aW9uX2ZhaWx1cmVfcm9sbHNfYmFja193aXRob3V0X2NvbnN1bWluZ19zb3VyY2UgLi4uIG9rCnRlc3QgZm9yZWlnbl9vdmVyYWxpZ25lZF9yZWFsbG9jX3ByZXNlcnZlc19wcmVmaXhfYW5kX2ZhaWx1cmVfc291cmNlIC4uLiBvawp0ZXN0IGdsb2JhbGFsbG9jX2ZvcmVpZ25fdGVybWluYWxfZnJlZV9pc192aXNpYmxlX3RvX3N0cmljdF90cmltIC4uLiBvawp0ZXN0IHBhdXNlZF9mb3JlaWduX3Byb2R1Y2VyX2RvZXNfbm90X2Jsb2NrX3N0cmljdF90cmltIC4uLiBvawp0ZXN0IGZvcmVpZ25fYmF0Y2hfdGVybWluYWxfZnJlZV91c2VzX2FjdHVhbF9wYXlsb2FkX3JvdXRlcyAuLi4gb2sKCnRlc3QgcmVzdWx0OiBvay4gNSBwYXNzZWQ7IDAgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDEgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjAwcwoK
