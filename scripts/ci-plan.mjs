@@ -6,6 +6,7 @@
 // Groups (see docs/CI_TIERS.md):
 //   always  fmt, commit-prefix-lint, evidence-registry, deny, licenses, docs-consistency
 //   fast    clippy, check-matrix, test-*, no_std, docs, fuzz-build
+//           (.github/actions/ci-check-matrix/action.yml follows its owning job's `fast` group)
 //   seam    unsafe-seam proofs: miri-*, loom-*, kani, tsan, asan
 //   os      cross-OS / cross-arch / MSRV
 //   crate_* the gates of one workspace crate
@@ -346,6 +347,7 @@ function selftest() {
   eq(on(P(['crates/brand-new/src/lib.rs'])), 'always,fast,seam', 'unknown crate is conservative');
   // scripts: matrix/manifest scripts feed fast/seam; other scripts are `always`.
   eq(on(P(['scripts/check-matrix.mjs'])), 'always,fast', 'check-matrix');
+  eq(on(P(['.github/actions/ci-check-matrix/action.yml'])), 'always,fast', 'check-matrix composite selects its owning job group fast');
   eq(on(P(['scripts/loom.mjs'])), 'always,fast,seam', 'loom script');
   eq(on(P(['scripts/verify-structure-limits.mjs'])), 'always', 'verify script');
   eq(on(P(['scripts/module-graph/graph.mjs'])), 'always', 'module-graph package');
