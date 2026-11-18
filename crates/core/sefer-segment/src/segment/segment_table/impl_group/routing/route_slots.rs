@@ -217,9 +217,14 @@ impl RouteSlots {
         prepared.then_some(IssueTransaction::prepared(index, base, offset, class))
     }
 
+    // `#[inline]` keeps this setup caller-local for `AllocCore::try_carve_batch`.
+    // Without the tuned set after crate extraction, LLVM emitted ~2 more
+    // instructions per block in the issue loop. CI ghost-zero-cost probe Ir
+    // selected this set; remeasure before changing it.
     /// Run-level twin of [`Self::prepare_small_issue`]: the fatal guards (live
     /// slot, matching root, Small sidecar) run ONCE per refill batch; the
     /// per-block OOM moves to `RoutedIssueRun::prepare_for` (leaf changes).
+    #[inline]
     pub(super) fn prepare_small_issue_run(&self, base: *mut u8, class: u8) -> RoutedIssueRun<'_> {
         // SAFETY: `base` is the aligned base of a live registered segment
         // with an initialized header (owner-side issue path).
@@ -323,8 +328,13 @@ pub(super) struct RoutedIssueRun<'a> {
 }
 
 impl RoutedIssueRun<'_> {
+    // These `#[inline]` hints give `AllocCore::try_carve_batch` caller-local
+    // copies for block issue. Without the tuned set after crate extraction,
+    // LLVM emitted ~2 more instructions per block. CI ghost-zero-cost probe
+    // Ir selected these methods, not the whole impl; remeasure before changes.
     /// Fallible per-block half: promote the block's leaf if the run has not
     /// seen it yet (OOM-shaped `false`, same as the per-block prepare).
+    #[inline]
     pub(super) fn prepare_for(&mut self, offset: u32) -> bool {
         let off = offset as usize;
         let granule = off / MIN_BLOCK;
@@ -363,6 +373,7 @@ impl RoutedIssueRun<'_> {
     /// (non-monotonic freelist offsets, or a skipped prepare) the leaf is
     /// re-resolved first, and a never-promoted leaf fatals — a skipped
     /// prepare cannot silently store.
+    #[inline]
     pub(super) fn commit(&mut self, offset: u32) {
         let off = offset as usize;
         debug_assert!(off < SEGMENT, "batch issue commit offset out of segment");
