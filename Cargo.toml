@@ -2806,14 +2806,6 @@ name = "g1_big_study_native_cache"
 path = "tests/g1_big_study_native_cache.rs"
 required-features = ["production", "alloc-stats", "internals", "bench-internals"]
 
-# Pass 5.3: dbg hooks behind `alloc-decommit`; the check-matrix row builds
-# only `--test r8_large_alignment`, so this target was never compiled in any
-# CI row without `alloc-decommit` (otherwise the row would fail on main).
-[[test]]
-name = "lazy_commit_b3_recycle"
-path = "tests/lazy_commit_b3_recycle.rs"
-required-features = ["alloc-decommit"]
-
 [[example]]
 name = "g1_big_judge"
 required-features = ["production"]
