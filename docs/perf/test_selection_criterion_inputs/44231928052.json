@@ -1,0 +1,92 @@
+{
+  "id": "44231928052",
+  "createdAt": "2026-11-18T03:39:16Z",
+  "event": "pull_request",
+  "headBranch": "p21-sefer-segment-20261118",
+  "headSha": "aee54befce3ad9526c12947d54ec90f67ff8c0a1",
+  "status": "completed",
+  "conclusion": "failure",
+  "selection": {
+    "mode": "all",
+    "reason": "full run requested",
+    "total": 499,
+    "mapShas": [
+      "0c1029d740c266caaf96a8dcad066e89a607bfcc",
+      "0c1029d740c266caaf96a8dcad066e89a607bfcc"
+    ],
+    "integrity": {
+      "sourceSha256": "1d960247115e984c1553d8a93c61d527203c7264e22353c4987a943e9c9686be",
+      "compactSha256": "f54cbf38c7d95313129ae2248a6de1b8f94b23c7f3eee71719ffe8a5eef4436f",
+      "testCount": 0
+    }
+  },
+  "core": {
+    "id": "134559519559",
+    "conclusion": "failure",
+    "shadow": true,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": "failure",
+        "evidence": {
+          "status": "test-failures",
+          "failures": [
+            {
+              "kind": "integration",
+              "name": "no_panic_doc_accuracy",
+              "path": "tests/no_panic_doc_accuracy.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "no_stale_doc_references",
+              "path": "tests/no_stale_doc_references.rs"
+            }
+          ]
+        }
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": "failure",
+        "evidence": {
+          "status": "test-failures",
+          "failures": [
+            {
+              "kind": "integration",
+              "name": "no_panic_doc_accuracy",
+              "path": "tests/no_panic_doc_accuracy.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "no_stale_doc_references",
+              "path": "tests/no_stale_doc_references.rs"
+            }
+          ]
+        }
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": "failure",
+        "evidence": {
+          "status": "test-failures",
+          "failures": [
+            {
+              "kind": "integration",
+              "name": "no_panic_doc_accuracy",
+              "path": "tests/no_panic_doc_accuracy.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "no_stale_doc_references",
+              "path": "tests/no_stale_doc_references.rs"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [],
+  "attempt": 1,
+  "collectionCheck": "stable",
+  "evidenceAttempt": 1
+}
