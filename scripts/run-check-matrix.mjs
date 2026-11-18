@@ -1,33 +1,11 @@
-// Runs every row in `scripts/check-matrix.mjs`'s `PER_PR_ROWS`, in order,
-// fail-fast. This is the ONE runner shared by both consumers of that
-// manifest:
-//   - scripts/check-all.mjs (local `npm run check` pre-push gate) invokes
-//     this as one of its steps.
-//   - `.github/workflows/ci.yml`'s `check-matrix` job invokes this script
-//     directly as its single step.
-//
-// Why a script-invoked-in-a-loop, not YAML-generated matrix rows (R30-5,
-// task #454): `PER_PR_ROWS` mixes three different `cargo` subcommands
-// (clippy / check / test) and a `--bench`-scoped row alongside whole-crate
-// rows — encoding that shape as a GitHub Actions `strategy: matrix:` would
-// need either a same-shaped JSON `include:` list (itself hand-maintained
-// again, defeating the point) or a `fromJSON()` step that reads this file's
-// exports at workflow-parse time (Actions cannot `import` an ES module
-// directly; it would need a separate "dump the manifest to JSON" step run
-// BEFORE the matrix is evaluated, adding a job-dependency layer for four
-// small rows). A single job whose one step is `node
-// scripts/run-check-matrix.mjs` is simpler, keeps the fail-fast `npm run
-// check` semantics identical between local and CI, and the manifest module is
-// still the single source of truth either way — this is the "OR add a CI
-// step that runs a script which reads the manifest and executes each check
-// in a loop" option the task brief names explicitly.
-//
-// Usage:
-//   node scripts/run-check-matrix.mjs
-//   node scripts/run-check-matrix.mjs --kind check --kind test   # filter to
-//                                                                 # one or
-//                                                                 # more kinds
-//   npm run check:matrix
+// Runs rows from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` manifest, shared
+// by both consumers: `scripts/check-all.mjs` (local `npm run check` gate) and
+// `.github/workflows/ci.yml`'s `check-matrix` job, whose composite action
+// invokes this runner once per shard with `--shard <i>/<n>`. With no shard
+// flags, all rows still run. `--list` is a dry-run listing rows (used in
+// tests only — never by production CI). `--keep-going` aggregates failures
+// and implies `--no-fail-fast` for test rows; `--free-between-rows` deletes
+// per-row artifacts between rows to free disk while preserving reusable rlibs.
 //
 // `--kind <clippy|check|test>` (repeatable) restricts the run to rows of the
 // named kind(s); with no `--kind` flag, every row in `PER_PR_ROWS` runs. This
@@ -41,23 +19,29 @@
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT, run } from './lib.mjs';
-import { PER_PR_ROWS, rowToCargoArgs, rowLabel } from './check-matrix.mjs';
+import { PER_PR_ROWS, cargoArgv, parseShardSpec, rowLabel, selectShardRows } from './check-matrix.mjs';
 
 const rawArgs = process.argv.slice(2);
 const kindFilter = new Set();
-// `--keep-going`: run every row and (for test rows) every test binary, then report all
-// failures at once instead of stopping at the first. One CI pass names every red row.
 let keepGoing = false;
-// `--free-between-rows`: after each row, delete the debug test/example executables and the incremental
-// cache. Every test row links the whole tests/ tree for another feature set; their executables together
-// outgrow a hosted runner's disk ("No space left on device", seen as a lost job). Dependency rlibs stay,
-// so later rows still reuse them; an executable that is missing is simply relinked.
 let freeBetweenRows = false;
+let listOnly = false;
+let shardSpec = null;
 for (let i = 0; i < rawArgs.length; i++) {
   if (rawArgs[i] === '--keep-going') {
     keepGoing = true;
   } else if (rawArgs[i] === '--free-between-rows') {
     freeBetweenRows = true;
+  } else if (rawArgs[i] === '--list') {
+    listOnly = true;
+  } else if (rawArgs[i] === '--shard') {
+    const val = rawArgs[i + 1];
+    if (!val) {
+      console.error('[check-matrix] --shard requires a value (<index>/<total>, 1-based)');
+      process.exit(2);
+    }
+    shardSpec = val;
+    i++;
   } else if (rawArgs[i] === '--kind') {
     const val = rawArgs[i + 1];
     if (!val) {
@@ -71,9 +55,31 @@ for (let i = 0; i < rawArgs.length; i++) {
     process.exit(2);
   }
 }
-const rows = kindFilter.size
-  ? PER_PR_ROWS.filter((r) => kindFilter.has(r.kind))
-  : PER_PR_ROWS;
+// `--shard` distributes the shardable (check/test) rows with the manifest's
+// deterministic LPT; because a shard is a horizontal slice of ALL non-clippy
+// rows, it must not be combined with a partial `--kind` view (and clippy rows
+// are never sharded at all — R31-11). Unsharded `--kind` filters (including
+// `--kind clippy`) keep their original pre-shard semantics untouched.
+if (shardSpec && kindFilter.size > 0) {
+  const ok = kindFilter.size === 2 && kindFilter.has('check') && kindFilter.has('test');
+  if (!ok) {
+    console.error('[check-matrix] --shard requires no --kind filters or exactly --kind check --kind test');
+    process.exit(2);
+  }
+}
+if (shardSpec) {
+  try {
+    parseShardSpec(shardSpec);
+  } catch (err) {
+    console.error(`[check-matrix] ${err.message}`);
+    process.exit(2);
+  }
+}
+const rows = shardSpec
+  ? selectShardRows(shardSpec)
+  : kindFilter.size
+    ? PER_PR_ROWS.filter((r) => kindFilter.has(r.kind))
+    : PER_PR_ROWS;
 
 /**
  * Delete the extension-less files (the executables) under target/debug/{deps,examples} and the incremental
@@ -98,7 +104,28 @@ function freeBuildArtefacts() {
   console.log(`[check-matrix] freed build artefacts: ${files} executable(s) and the incremental cache`);
 }
 
+if (listOnly) {
+  // CI contract: stdout is a single JSON array of {id, argv, env} — argv
+  // WITHOUT the leading 'cargo', env always an object ({} when the row has
+  // none). No banners, on stdout OR stderr: a test worker parses stdout.
+  console.log(
+    JSON.stringify(
+      rows.map((row) => ({
+        id: row.id,
+        argv: cargoArgv(row, { keepGoing }),
+        env: row.env ?? {},
+      })),
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
 console.log(`[check-matrix] repo: ${REPO_ROOT}`);
+if (shardSpec) {
+  const { index, total } = parseShardSpec(shardSpec);
+  console.log(`[check-matrix] shard ${index}/${total}`);
+}
 if (kindFilter.size) {
   console.log(`[check-matrix] kind filter: ${[...kindFilter].join(', ')}`);
 }
@@ -109,8 +136,7 @@ console.log(
 let allOk = true;
 const failedRows = [];
 for (const row of rows) {
-  const args = rowToCargoArgs(row);
-  if (keepGoing && args[0] === 'test') args.splice(1, 0, '--no-fail-fast');
+  const args = cargoArgv(row, { keepGoing });
   console.log(`\n============================================================`);
   console.log(`  [${row.id}] ${rowLabel(row)}`);
   console.log(`  ${row.note}`);
