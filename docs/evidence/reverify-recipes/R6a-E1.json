@@ -1,0 +1,16 @@
+{
+  "id": "R6a-E1",
+  "registryActivationHash": "738c3cc2839cdea53d8f4a35f56ec3c2a95c524c14aa35c9a04eba45ba068173",
+  "steps": [
+    {
+      "name": "Current hosted Linux production internals full suite (not a replay of the Ph6a WSL run with EX2)",
+      "env": {},
+      "argv": ["cargo", "test", "--locked", "--quiet", "--features", "production internals"],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": ["test result: ok\\. [1-9][0-9]* passed; 0 failed"]
+      }
+    }
+  ],
+  "mutant": null
+}

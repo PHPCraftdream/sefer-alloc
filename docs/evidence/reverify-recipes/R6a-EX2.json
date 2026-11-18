@@ -1,0 +1,16 @@
+{
+  "id": "R6a-EX2",
+  "registryActivationHash": "69ccd7d4e2069e3ac717e5990569b549e3b2c4f97298dc8d55ca037c7a69cd50",
+  "steps": [
+    {
+      "name": "r6_route_directory_model: current hosted Linux only; does not attest the historical WSL offline-smallvec red",
+      "env": {},
+      "argv": ["cargo", "test", "--locked", "--quiet", "--features", "production internals", "--test", "r6_route_directory_model"],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": ["test result: ok\\. [1-9][0-9]* passed; 0 failed"]
+      }
+    }
+  ],
+  "mutant": null
+}

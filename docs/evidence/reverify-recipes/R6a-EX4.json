@@ -1,0 +1,127 @@
+{
+  "id": "R6a-EX4",
+  "registryActivationHash": "790c8d18cf6e8af81fa1991cfca32f6225973c12c6032929bad2dc01a93314e9",
+  "steps": [
+    {
+      "name": "Run 01/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 02/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 03/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 04/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 05/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 06/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 07/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 08/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 09/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 10/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 11/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 12/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 13/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 14/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 15/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 16/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 17/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 18/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 19/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    },
+    {
+      "name": "Run 20/20: recorded platform is current hosted Linux only; does not attest historical Windows or WSL",
+      "env": {"RUSTFLAGS":"--cfg numa_shim_mock"},
+      "argv": ["cargo","test","--locked","--quiet","--all-features","--test","segment_directory_numa_high_node_ids"],
+      "expect": {"exit":0,"stdoutRegex":["test result: ok\\. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]}
+    }
+  ],
+  "mutant": null
+}

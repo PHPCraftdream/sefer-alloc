@@ -1,0 +1,18 @@
+{
+  "id": "R6a-E3",
+  "registryActivationHash": "0ff9f93693b019b526dcca96a145c3cc609d62579889ebfb6e2761dd4c07e3e7",
+  "steps": [
+    {
+      "name": "Current hosted Linux NUMA mock all-features full suite (not a replay of Ph6a WSL with EX1/EX2/EX3/EX5)",
+      "env": {
+        "RUSTFLAGS": "--cfg numa_shim_mock"
+      },
+      "argv": ["cargo", "test", "--locked", "--quiet", "--all-features"],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": ["test result: ok\\. [1-9][0-9]* passed; 0 failed"]
+      }
+    }
+  ],
+  "mutant": null
+}

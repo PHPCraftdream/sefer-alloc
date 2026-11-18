@@ -1,0 +1,25 @@
+{
+  "id": "R4b-01",
+  "registryActivationHash": "f8bbe565775ed174c51d5910c6d1d256503ba1f539e79b8bd641afd8d5057904",
+  "steps": [
+    {
+      "name": "Full production internals suite on hosted Linux (Ph4b Windows counterpart)",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--quiet",
+        "--features",
+        "production internals"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test result: ok\\. [1-9][0-9]* passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

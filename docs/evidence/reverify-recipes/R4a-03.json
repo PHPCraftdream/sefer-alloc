@@ -1,0 +1,25 @@
+{
+  "id": "R4a-03",
+  "registryActivationHash": "b6e52b591d9dab885152d8888459cb0e1d7ff7fdb32a0645eaaf55f6bf777f9b",
+  "steps": [
+    {
+      "name": "Full production internals suite on hosted Linux (Ph4a Windows counterpart)",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--quiet",
+        "--features",
+        "production internals"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test result: ok\\. [1-9][0-9]* passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}
