@@ -5,6 +5,20 @@
 #![deny(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+// R2-17 rationale: mirrors the pointer-width gate in the root `src/lib.rs` —
+// the segment substrate relies on the same 64-bit-only layout premise.
+#[cfg(all(feature = "alloc-core", not(target_pointer_width = "64")))]
+compile_error!(
+    "sefer-alloc: allocator features require a 64-bit target (R2-17 support \
+     decision): `alloc-core` and every feature built on it (`alloc-global`, \
+     `production`, ...) require metadata/magazine layout bounds, AtomicU64 and \
+     pointer-provenance rules that have NOT been audited on 32-bit pointer \
+     widths. Rebuild for a \
+     64-bit target, or drop the allocator features (the region-only \
+     `Region<T>` surface still works on 32-bit). See README.md \
+     \"Target support\"."
+);
+
 #[path = "support/alloc_core.rs"]
 pub(crate) mod alloc_core;
 #[doc(hidden)]

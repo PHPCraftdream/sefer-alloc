@@ -33,17 +33,19 @@
 //!
 //! ## Observed reality (recorded, not asserted)
 //!
-//! On `i686-pc-windows-msvc` the gated child currently emits the gate's
-//! `compile_error!` AND the two pre-existing E0080 layout pins together
-//! (the gate fires at crate root without short-circuiting the rest of the
-//! crate's const-eval diagnostics). That is fine and expected — the pins are
-//! deliberately unconditional (see the R2-17 notes in
-//! `crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/layout_asserts.rs` and
-//! `src/registry/heap_core/state/tcache.rs`), so if the crate-root gate is
-//! ever removed they keep failing loudly. Test 1 therefore asserts that the
-//! build fails AND that the gate message is present, and deliberately does
-//! NOT assert error-exclusivity (a stricter "only the gate fired" oracle
-//! would be one edit away from breaking by design).
+//! On `i686-pc-windows-msvc` with `production`, the observed output is: an
+//! identical R2-17 diagnostic emitted from the `sefer-segment` dependency
+//! before Cargo reaches this root crate (the root crate's own `tcache` is
+//! not compiled at all), plus the existing `thp_observation` E0080 from the
+//! dependency's segment layout_asserts. The E0080 pins live in the
+//! dependency (see
+//! `crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/layout_asserts.rs`)
+//! and are deliberately unconditional, so if the dependency's crate-root
+//! gate is ever removed they keep failing loudly. The lint oracle is
+//! unchanged: Test 1 asserts that the build fails AND that the gate
+//! message is present, and
+//! deliberately does NOT assert error-exclusivity (a stricter "only the
+//! gate fired" oracle would be one edit away from breaking by design).
 //!
 //! ## Manual verification (machines without a 32-bit std target installed)
 //!
