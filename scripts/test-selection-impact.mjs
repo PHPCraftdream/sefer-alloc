@@ -642,11 +642,11 @@ export function renderReport(inputs, rows, agg, crate = null) {
   L.push('- A changed Rust or ' + bt('tests/') + ' file absent from mapped sets selects ' + bt('all')
     + ' (scripts/select-tests.mjs:18-25, 67-77); this rule does not establish that maps can never cover particular files.');
   L.push('- The selector chooses the tests whose maps cover changed files and returns args as ' + bt('--lib') + ' plus enabled selected targets (scripts/select-tests.mjs:36-77, 98-103; docs/CI_TIERS.md:167-181).');
-  L.push('- The selector uses the latest successful ' + bt('main') + ' map (ci.yml:154-188); the map is valid only for its recorded SHA and rows (docs/CI_TIERS.md:134-156). A missing map (no successful map run found), failed map download, or selector error writes an all-mode fallback (.github/workflows/ci.yml:178-183); there is no freshness guarantee, so scheduled maps can be stale beyond the nightly cadence.');
+  L.push('- The selector uses the latest successful ' + bt('main') + ' map (the ' + bt('Select') + ' step of the ' + bt('select-tests') + ' job in ' + bt('.github/workflows/ci.yml') + '); the map is valid only for its recorded SHA and rows (docs/CI_TIERS.md:134-156). A missing map (no successful map run found), failed map download, or selector error writes an all-mode fallback (the ' + bt('fallback') + ' function of the ' + bt('Select') + ' step in the ' + bt('select-tests') + ' job of ' + bt('.github/workflows/ci.yml') + '); there is no freshness guarantee, so scheduled maps can be stale beyond the nightly cadence.');
   L.push('- File-reader attribution uses source-text patterns (' + bt('READS_FILES')
     + ' in scripts/select-tests.mjs:18-25, 56-77). A test reading changed data through an unrecognized mechanism could be missed by attribution; unmapped tests remain selected.');
-  L.push('- In ' + bt('test-core') + ', artifact download and selection-args steps use ' + bt('continue-on-error')
-    + ', and the three cargo-test commands consume their outputs (ci.yml:579-614). A plain test command results when the selector arg output is empty; this does not establish atomic fallback for partial outputs or rule out unrelated upload/runner failures.');
+  L.push('- In the ' + bt('test-core') + ' job of ' + bt('.github/workflows/ci.yml') + ', artifact download and selection-args steps use ' + bt('continue-on-error')
+    + ', and the three cargo-test commands consume their outputs. A plain test command results when the selector arg output is empty; this does not establish atomic fallback for partial outputs or rule out unrelated upload/runner failures.');
   L.push('- Nightly full runs on ' + bt('main') + ', an explicit ' + bt('CI: full') + ' trailer, and ' + bt('workflow_dispatch') + ' select all (selector ' + bt('--full') + '; docs/CI_TIERS.md:116-127); weekly runs add weekly-only jobs.');
   L.push('');
   L.push('## Map currency');
