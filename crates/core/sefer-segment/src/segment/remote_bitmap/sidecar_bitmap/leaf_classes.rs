@@ -41,12 +41,18 @@ pub(crate) struct LeafCursor {
 }
 
 impl LeafCursor {
+    // `#[inline]` keeps caller-local copies for `AllocCore::try_carve_batch`.
+    // Without them after crate extraction, LLVM emitted ~2 more instructions
+    // per block in the issue loop. CI ghost-zero-cost probe Ir selected this
+    // set; remeasure before changing it.
     /// Leaf index this cursor's backing pointer belongs to.
+    #[inline]
     pub(crate) fn leaf_idx(&self) -> usize {
         self.leaf_idx
     }
 
     /// Leaf index of a granule (one leaf covers `LEAF_GRANULES` granules).
+    #[inline]
     pub(crate) fn leaf_index(granule: usize) -> usize {
         granule / LEAF_GRANULES
     }
@@ -222,10 +228,15 @@ impl ClassLeaves {
         true
     }
 
+    // `AllocCore::try_carve_batch` uses these caller-local `#[inline]` copies for
+    // block issue. Without the tuned set, extraction cost ~2 instructions/block.
+    // CI ghost-zero-cost probe Ir: `promote` stays unmarked; adding `prepared`
+    // overshot the lower Ir bound. Remeasure before changing the set.
     /// Batch twin of `Self::prepare`: same guard order and fault-injection
     /// hook placement, but returns the promoted leaf's cursor so a whole
     /// refill run can issue into it without re-resolving per block. `None` is
     /// the identical spill OOM (`prepare` returning false).
+    #[inline]
     pub(crate) fn prepare_leaf(&self, granule: usize, class: u8) -> Option<LeafCursor> {
         if granule >= LEAVES * LEAF_GRANULES || usize::from(class) >= SMALL_CLASS_COUNT {
             return None;
@@ -260,6 +271,7 @@ impl ClassLeaves {
     /// Re-resolve a leaf's cursor without promoting; `None` if the leaf was
     /// never promoted (the batch commit trap: commit never blindly stores
     /// through a stale or absent backing).
+    #[inline]
     pub(crate) fn resolve_leaf(&self, granule: usize) -> Option<LeafCursor> {
         if granule >= LEAVES * LEAF_GRANULES {
             return None;
@@ -271,6 +283,7 @@ impl ClassLeaves {
 
     /// Per-block batch issue: one Release store, no promotion and no prepared
     /// re-check (that is the point of the run hoist).
+    #[inline]
     pub(crate) fn issue_in(&self, cursor: &LeafCursor, granule: usize, class: u8) {
         debug_assert_eq!(cursor.leaf_idx(), LeafCursor::leaf_index(granule));
         debug_assert!(usize::from(class) < SMALL_CLASS_COUNT);
