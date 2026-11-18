@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an existing test, oracle, or guard script actually RUNS under some gate (npm run check and/or a CI job) -- wiring, dead scripts, missing feature/profile rows, sentinel-guard scope -- as opposed to whether the underlying OS behavior is platform-verified or proof-verified (the two categories above).
 
-**Card count:** 35 numbered records (re-derived 2026-11-17 after filing items 281–283; items 107 and 175 are CLOSED and not current records here, and item 275 is now a CLOSED pointer retained for lookup — full closure records in `RESOLVED.md`).
+**Card count:** 35 numbered records (re-derived 2026-11-17 after filing items 281–283; items 107 and 175 are CLOSED and not current records here, and item 275 is now a CLOSED pointer retained for lookup — full closure records in `RESOLVED.md`). 36 numbered records after item 284 was filed 2026-11-17 (P0.2 verdict round; nothing closed).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -403,5 +403,12 @@ Item 260 is CLOSED (2026-11-09); the accepted two-phase proof and full history a
     - **Current:** shards were equilibrated once by PR #262 (`dcccdcf3`) using measured target times; the union-equivalence gate is `node scripts/verify-miri-sharding.mjs`. See perf item 156 in `docs/perf/OPEN_ITEMS.md`.
     - **Next trigger:** when newly accumulated shard runtimes skew again, rebalance by the PR #262 method and rerun the equivalence gate.
     - **Evidence:** perf item 156 in `docs/perf/OPEN_ITEMS.md`; PR #262 (`dcccdcf3`); `scripts/verify-miri-sharding.mjs`; `.github/workflows`.
+
+284. **[T, filed 2026-11-17] README stale path pin: `tests/regression_magazine_oracles.rs` (the P0.2 criterion-(c) gap).**
+
+    - **Status:** OPEN — docs-inventory debt from the P0.2 test-merge pilot verdict (NO-GO, 2026-11-17); nothing closed.
+    - **Current:** README.md:1394 and README.md:1582 still name `tests/regression_magazine_oracles.rs`, a nonexistent path — the module now lives at `tests/regression_merged/regression_magazine_oracles.rs` after the P0.2 merge (commit `b0304d97`). The pilot report's Pin updates section claimed the README mentions were renamed ("follow in the next commit"); that commit never came as described — `b0304d97` contains no README/ARCHITECTURE changes. This was recorded as the single gap in criterion (c) ("pins fit inside the pilot PR without manual hacks"), which otherwise PASSED (all mechanical pins landed-consistent on main).
+    - **Next trigger:** any docs/README touch touching those lines, or the next pilot attempt — rename the two path mentions to `tests/regression_merged/regression_magazine_oracles.rs` (or re-verify the current tree state first; parallel renames may have moved it again).
+    - **Evidence:** README.md:1394, README.md:1582; pilot commit `b0304d97` (no README/ARCHITECTURE diff); `docs/perf/P0_2_TEST_MERGE_PILOT.md` § Verdict (2026-11-17) criterion (c); perf item 157 in `docs/perf/OPEN_ITEMS.md`.
 
 Item 268 is CLOSED (2026-11-08); the exact-source Loom invocation and pipeline repair evidence is in `RESOLVED.md`.

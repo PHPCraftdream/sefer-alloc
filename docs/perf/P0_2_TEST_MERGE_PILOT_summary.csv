@@ -1,0 +1,12 @@
+job,metric,n_before,median_before_s,n_after,median_after_s,delta_pct,verdict
+"test (feature isolation)",job,5,608.00,3,560.00,-7.89,fell
+"test (hardened tier)",job,5,924.00,3,923.00,-0.11,flat
+"thread-sanitizer",job,5,96.00,3,122.00,27.08,grew
+"miri core",job,4,1564.50,1,1773.00,,insufficient-runs
+"miri core (critical path)",job,4,1564.50,1,1277.00,,insufficient-runs
+"miri fastbin",job,4,2004.00,1,1937.00,,insufficient-runs
+"miri fastbin (critical path)",job,4,2004.00,1,1465.00,,insufficient-runs
+"miri plain",job,4,1322.00,1,1092.00,,insufficient-runs
+"miri plain (critical path)",job,4,1322.00,1,835.00,,insufficient-runs
+"miri alloc-core",job,4,380.50,3,353.00,-7.23,fell
+"miri alloc-core (critical path)",job,4,380.50,3,353.00,-7.23,fell
