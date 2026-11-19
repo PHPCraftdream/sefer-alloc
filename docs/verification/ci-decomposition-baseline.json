@@ -284,8 +284,8 @@
     },
     {
       "id": "multi-arch",
-      "metadata": "1cfff8db0d27c7a0ddd533ca4c60f67a1b3b29f200e7449d60414201f5cb4f7a",
-      "steps": "fbc519ca5ffbbbcfd33ab90d2b79c78e4ecf7eb13d554cd2bcb33e1ad547e754"
+      "metadata": "5bcf5b20c479422c30b54a7ed43e64fafb462fbe08b00ea626fcb6adc54c168b",
+      "steps": "fd0137474b0879b93a31689c3786762337b72c1261df559cde6b7bebab242f8b"
     },
     {
       "id": "tis-weak-memory-wallclock-gate",

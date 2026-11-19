@@ -253,6 +253,7 @@ function cacheAndLevers(runs,longNames,logs,sources) {
     let note='Only measured build-phase seconds are potentially compilation-sensitive; extra setup, execution and work replication remain.';
     if(name.startsWith('check-matrix'))note='scripts/run-check-matrix.mjs frees test executables/incremental between rows (relink/disk tradeoff); measured build is an upper bound, not total 20+ min job. The row-group sharding design is documented in [CI_CHECK_MATRIX_SHARDING.md](CI_CHECK_MATRIX_SHARDING.md); these measurements and display names are from the unsharded job.';
     if(/miri/i.test(name))note='Sharding moves verification work; compile/setup replication costs remain; one-target pass cannot split by targets.';
+    if(name==='test (aarch64-unknown-linux-gnu)')note='These job/display names and measurements are from the pre-sharding single aarch64 job; the current `multi-arch` workflow runs four parallel aarch64 legs by feature set (experimental / cross-thread / cross-thread-decommit / production) plus an unchanged native x86_64 leg, so per-job names no longer match the current workflow layout.';
     lines.push(`| ${esc(name)} | ${summary(rows.map(r=>r.phases.build))} | ${summary(rows.map(r=>r.phases.execution))} | ${note} |`);
   }
   lines.push('','Tier context: ordinary main push suppresses heavy seam/OS work; weekly-only jobs already run weekly, so moving cadence shifts PR latency rather than deleting CPU. Any per-job median is a measured wall-time bound, not a recommendation.');
