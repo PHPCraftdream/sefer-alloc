@@ -7,7 +7,7 @@
 //! `crate::heap::Heap::...` (task #17 cleaned them up). This test fails if any
 //! such stale reference is reintroduced.
 //!
-//! Two independent checks over `src/**/*.rs`:
+//! Two independent checks over `src/**/*.rs` and `crates/core/sefer-alloc-core/src/**/*.rs`:
 //!
 //!   1. NO `crate::heap::` path anywhere — the `heap` module no longer exists,
 //!      so any such intra-doc link is broken. Zero exceptions.
@@ -153,6 +153,7 @@ fn no_crate_heap_module_path() {
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
     assert!(!files.is_empty(), "no source files found");
+    rs_files(&alloc_core_crate_src_dir(), &mut files);
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -174,12 +175,12 @@ fn no_crate_heap_module_path() {
 
 #[test]
 fn no_removed_heap_type_doc_mentions() {
-    // The ONLY file allowed to mention the removed `Heap` type — its module
-    // doc records the removal in the past tense.
+    // The ONLY file allowed to mention the removed `Heap` type (past-tense module doc).
     let allowed = src_dir().join("registry").join("heap_core").join("core.rs");
 
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
+    rs_files(&alloc_core_crate_src_dir(), &mut files);
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -188,9 +189,8 @@ fn no_removed_heap_type_doc_mentions() {
         }
         let text = fs::read_to_string(file).expect("read source");
         for (i, line) in text.lines().enumerate() {
-            // Backtick-quoted `Heap` doc mention of the removed TYPE. This does
-            // NOT match `HeapCore`, `HeapSlot`, `HeapRegistry`, `with_heap`,
-            // etc. — the trailing "`" requires an exact `` `Heap` `` token.
+            // Backtick-quoted `Heap` doc mention of the removed TYPE. Does NOT match
+            // `HeapCore`, `with_heap`, etc. — the trailing "`" requires an exact token.
             if line.contains("`Heap`") {
                 offenders.push(format!("{}:{}: {}", file.display(), i + 1, line.trim()));
             }
@@ -231,9 +231,8 @@ fn no_removed_heap_type_doc_mentions() {
 /// every feature configuration.
 #[test]
 fn no_stale_abandon_adopt_substrate_references() {
-    // Exact identifiers from the removed API surface (commit 65d441a's
-    // message enumerates the full removed list); none collide with any live
-    // identifier or generic "adopt"/"abandon" prose.
+    // Exact identifiers from the removed API surface (commit 65d441a's message
+    // enumerates the full removed list); none collide with any live identifier.
     let forbidden_tokens: &[&str] = &[
         "try_adopt",
         "abandon_segments",
@@ -255,6 +254,7 @@ fn no_stale_abandon_adopt_substrate_references() {
 
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
+    rs_files(&alloc_core_crate_src_dir(), &mut files);
 
     let mut offenders = Vec::new();
     for file in &files {

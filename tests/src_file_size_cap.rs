@@ -2,9 +2,10 @@
 //! `docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md`): the repo's
 //! 1000-line file-size cap (cited by `src/registry/heap_core_xthread/overflow.rs`
 //! and `stall.rs`) had no check, and `src/registry/heap_overflow.rs` grew to
-//! 1367 lines unnoticed. Root-crate `src/` only: the cap is this crate's
-//! convention, not the published `crates/*/*/` seams'. Source-text only, so
-//! it runs in every feature configuration.
+//! 1367 lines unnoticed. Root-crate `src/` plus the P2.2-moved implementation
+//! in `crates/core/sefer-alloc-core/src` only — no other seam is scanned. The
+//! cap is this crate's convention, not the published `crates/*/*/` seams'.
+//! Source-text only, so it runs in every feature configuration.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,6 +28,7 @@ fn no_source_file_exceeds_the_line_cap() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     collect_rs(&root.join("src"), &mut files);
+    collect_rs(&root.join("crates/core/sefer-alloc-core/src"), &mut files);
     assert!(
         files.len() > 100,
         "scanner found only {} files",
