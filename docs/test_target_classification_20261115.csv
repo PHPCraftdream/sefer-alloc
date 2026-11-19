@@ -40,6 +40,7 @@ tests/ci_effective_workflow_fixtures.mjs,ci_effective_workflow_fixtures.mjs,mjs-
 tests/ci_job_durations_families.test.mjs,ci_job_durations_families.test.mjs,mjs-script,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
 tests/ci_job_durations.test.mjs,ci_job_durations.test.mjs,mjs-script,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
 tests/ci_long_jobs.test.mjs,ci_long_jobs.test.mjs,mjs-script,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
+tests/ci_multi_arch_matrix.test.mjs,ci_multi_arch_matrix.test.mjs,mjs-script,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
 tests/ci_selection_history.test.mjs,ci_selection_history.test.mjs,mjs-script,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
 tests/ci_ubuntu_apt_sources.mjs,ci_ubuntu_apt_sources.mjs,mjs-script,,,,,,,,no,,no,no,no,no,no,no,no,no,,0,,no,,
 tests/class_for_small_align_equivalence.rs,class_for_small_align_equivalence,target,yes,no,no,,"all(feature = ""alloc-core"", feature = ""internals"")",alloc-core internals,all feature,no,,no,no,no,no,no,no,no,no,135,2,docs/perf/B4_HOT2_OWN_THREAD.md:doc,no,externally_pinned:doc@docs/perf/B4_HOT2_OWN_THREAD.md;file_cfg,

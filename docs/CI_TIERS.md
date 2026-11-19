@@ -306,7 +306,7 @@ the smoke row covers those scenarios.
 | `tsan` | thread-sanitizer | `seam`: source/crates/Cargo, loom/miri tests and manifests |
 | `msrv` | MSRV 1.93 (cargo check + test --no-run) | `os`: Cargo/toolchain surface, platform code, platform crates |
 | `msrv-runtime-windows` | MSRV 1.93 runtime (global_alloc_installed + global_alloc_mt, windows) | `os`: Cargo/toolchain surface, platform code, platform crates |
-| `multi-arch` | test (${{ matrix.target }}) | `os`: Cargo/toolchain surface, platform code, platform crates |
+| `multi-arch` | test (${{ matrix.label }}) | `os`: Cargo/toolchain surface, platform code, platform crates |
 | `test-macos` | test macos (production) | `os`: Cargo/toolchain surface, platform code, platform crates |
 | `test-windows` | test windows (production) | `os`: Cargo/toolchain surface, platform code, platform crates |
 | `aligned-vmem-gates` | aligned-vmem package gates | `crate_aligned_vmem`: changes under its crate |

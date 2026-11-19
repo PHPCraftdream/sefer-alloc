@@ -54,6 +54,7 @@ CI requires clean tracked inputs. For local regeneration only, `CLASSIFY_TESTS_A
 | tests/ci_job_durations_families.test.mjs | mjs-script | ci_job_durations_families.test.mjs |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | tests/ci_job_durations.test.mjs | mjs-script | ci_job_durations.test.mjs |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | tests/ci_long_jobs.test.mjs | mjs-script | ci_long_jobs.test.mjs |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| tests/ci_multi_arch_matrix.test.mjs | mjs-script | ci_multi_arch_matrix.test.mjs |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | tests/ci_selection_history.test.mjs | mjs-script | ci_selection_history.test.mjs |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | tests/ci_ubuntu_apt_sources.mjs | mjs-script | ci_ubuntu_apt_sources.mjs |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | tests/class_for_small_align_equivalence.rs | target | class_for_small_align_equivalence | yes | no | no |  | all(feature = "alloc-core", feature = "internals") |  | alloc-core internals | all feature | no |  | no | no | no | no | no | no | no | no | no | 135 | 2 | docs/perf/B4_HOT2_OWN_THREAD.md:doc:2 | no | externally_pinned:doc@docs/perf/B4_HOT2_OWN_THREAD.md;file_cfg |
