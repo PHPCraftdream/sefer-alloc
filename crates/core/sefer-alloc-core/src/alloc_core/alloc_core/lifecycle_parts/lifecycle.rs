@@ -191,6 +191,7 @@ impl AllocCore {
         Self::new_with_config_and_owner(config, None)
     }
 
+    #[inline]
     #[cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
     #[doc(hidden)]
     #[allow(unsafe_code)]
@@ -280,6 +281,7 @@ impl AllocCore {
     /// compiles only under `alloc-global` — add that gate alongside
     /// `alloc-decommit` so `alloc-core alloc-decommit` (no `alloc-global`)
     /// does not warn this dead.
+    #[inline]
     #[cfg(all(feature = "alloc-decommit", feature = "alloc-global"))]
     #[doc(hidden)] // P2.2 cross-crate boundary: called by the root crate's HeapCore/claim_lease_with_config
     pub fn live_config_matches(

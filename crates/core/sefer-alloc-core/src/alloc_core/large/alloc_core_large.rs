@@ -240,6 +240,7 @@ impl AllocCore {
     /// `align`) pair must be one for which `Layout::from_size_align`
     /// succeeds" — over-stated the size obligation: representability is NOT
     /// required for soundness here, only for a non-null result.
+    #[inline]
     #[doc(hidden)] // P2.2: widened from `pub(crate)` so root heap_core callers compile (E0624).
     pub unsafe fn alloc_large(&mut self, size: usize, align: usize) -> (*mut u8, bool) {
         // R6-CR-3: injected OOM — concede null without touching metadata so a

@@ -502,6 +502,7 @@ impl AllocCore {
     /// S1: `issue_state` = state byte committed per popped block — LIVE for
     /// batch paths, MAG for the magazine refill (parks n−1 blocks; see
     /// `finish_magazine_refill`). Same as `alloc_batch`'s deferred-clear.
+    #[inline]
     #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(in crate::alloc_core) fn try_drain_freelist_batch(
         &mut self,
@@ -756,7 +757,6 @@ impl AllocCore {
                 meta.set_committed_payload_end(new_frontier);
             }
         }
-        // Update ONLY the bump cursor.
         meta.set_bump(aligned_bump + block_size);
         // Phase 35: this carved block is now live (handed to the caller, or — on
         // the refill path — immediately pushed to the free list, which calls
@@ -772,7 +772,6 @@ impl AllocCore {
             let mut pm = meta.page_map();
             let page = aligned_bump / crate::alloc_core::os::PAGE;
             if pm.class_of(page).is_none() {
-                // Page was Free or Meta; dedicate it to this class.
                 pm.set_class(page, class_idx);
             }
         }
@@ -849,6 +848,7 @@ impl AllocCore {
 
     /// S1: `issue_state` — LIVE (batch paths) or MAG (magazine refill);
     /// see `try_drain_freelist_batch`.
+    #[inline]
     #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     pub(in crate::alloc_core) fn try_carve_batch(
         &mut self,

@@ -564,6 +564,7 @@ impl AllocCore {
     /// Large-only hot scan: the route descriptor must surrender its terminal
     /// obligation before physical retirement. Before publication its instance
     /// credit pins the reservation; afterward a pin retains only the descriptor.
+    #[inline]
     #[allow(unsafe_code)]
     // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
     #[doc(hidden)] // P2.2 cross-crate boundary: called by the root crate's heap_core_xthread Large ingress drain wrappers.
@@ -667,6 +668,7 @@ impl AllocCore {
     }
 
     /// Full cold retry after a Small refill yielded no block.
+    #[inline]
     #[cfg(feature = "fastbin")]
     #[doc(hidden)] // P2.2 cross-crate boundary: called by the root crate's heap_core_xthread Large ingress drain wrappers.
     pub fn drain_large_sidecar_ingress_rescue(&mut self) -> usize {

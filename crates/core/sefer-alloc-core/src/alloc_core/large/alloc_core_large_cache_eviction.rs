@@ -401,6 +401,7 @@ impl AllocCore {
     ///
     /// Only reachable through an active registry lease (`alloc-global`);
     /// unused in an `alloc-decommit`-without-`alloc-global` build.
+    #[inline]
     #[cfg(feature = "alloc-decommit")]
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[doc(hidden)]
