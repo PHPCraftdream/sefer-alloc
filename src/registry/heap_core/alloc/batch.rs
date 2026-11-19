@@ -179,6 +179,7 @@ impl HeapCore {
     #[cfg(feature = "batch-api")]
     #[doc(hidden)]
     #[must_use]
+    #[allow(unsafe_code)] // P2.2: unsafe `AllocCore::alloc_with_class` call under its derived-class contract.
     pub fn alloc_batch(&mut self, layout: Layout, out: &mut [*mut u8]) -> usize {
         use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
 
@@ -205,7 +206,13 @@ impl HeapCore {
             // re-derive it from the same `layout`. `alloc_with_class` is the
             // twin the scalar non-`fastbin` `alloc` uses for exactly this
             // purpose (`alloc/hot.rs`).
-            let p = self.core.alloc_with_class(layout, class);
+            //
+            // SAFETY (`AllocCore::alloc_with_class` # Safety): `class` was
+            // derived above as `SizeClasses::class_for(size, align)` for this
+            // exact `layout` (`size` already `.max(MIN_BLOCK)`), so the
+            // class-for-layout contract holds; `None` cannot reach this loop
+            // — Large-classified batches returned via `alloc_batch_large`.
+            let p = unsafe { self.core.alloc_with_class(layout, class) };
             if p.is_null() {
                 break;
             }

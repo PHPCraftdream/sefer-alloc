@@ -60,7 +60,7 @@ split the same day.)
    own confidence/severity, for a future round to check and either action or
    dismiss:
    - **[P2 → CONFIRMED P1, 2026-07-30] `AllocCore::dbg_decomp_full_cycle`**
-     (`src/alloc_core/small/alloc_core_small_pool/mod.rs:1014`, R29-3/task #434) is a
+     (`crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`, R29-3/task #434) is a
      SAFE `pub fn` that calls `reserve_small_segment` then
      `release_or_pool_empty_segment` on the freshly-reserved base.
      **My original text here (below, struck) was FACTUALLY WRONG and is
@@ -309,7 +309,7 @@ split the same day.)
      under `hardened`) cannot substitute for `live_count`, because without
      `alloc-decommit` the small-segment release/pool machinery itself
      (`dec_live_and_maybe_decommit` / `dec_live_batch_and_maybe_decommit`,
-     `src/alloc_core/small/alloc_core_small_pool/mod.rs`) is entirely
+     `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs`) is entirely
      `#[cfg(feature = "alloc-decommit")]` — small/medium segments are never
      released or live-count-tracked at all under that combo, so
      `dbg_contains_base` would read `true` forever regardless of whether a

@@ -36,6 +36,7 @@ export const CRATE_GROUPS = {
   'once-ptr-cell': 'crate_once_ptr_cell',
   'proc-memstat': 'crate_proc',
   'proc-probe': 'crate_proc',
+  'sefer-alloc-core': 'crate_sefer_alloc_core',
   'sefer-concurrent': 'crate_sefer_concurrent',
   'sefer-ghost': 'crate_sefer_ghost',
   'sefer-platform': 'crate_sefer_platform',
@@ -48,6 +49,11 @@ export const CRATE_GROUPS = {
 export const GROUPS = ['always', 'fast', 'seam', 'os', ...new Set(Object.values(CRATE_GROUPS))];
 // Crates whose code is platform-specific: a change also exercises the cross-OS jobs.
 const OS_CRATES = new Set(['aligned-vmem', 'numa-shim', 'proc-memstat', 'proc-probe', 'sefer-platform']);
+// P2.2 moved alloc-core's platform subtree into the sefer-alloc-core crate. The
+// moved files keep the cross-OS trigger; the rest of the crate does NOT (do not
+// broaden `os` to the whole alloc-core crate). The pre-move `src/alloc_core/
+// platform/**` rule below stays as the deletion trigger of the same move.
+const ALLOC_CORE_PLATFORM_RE = /^crates\/core\/sefer-alloc-core\/src\/alloc_core\/platform\//;
 
 // Edits of the workflow and of this planner run the build/test group (and the planner self-test);
 // the full set needs an explicit `CI: full` trailer, a manual dispatch or the schedule.
@@ -80,7 +86,7 @@ export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false
   if (m) {
     const g = new Set(['fast', 'seam']); // the root crate depends on every workspace crate
     if (CRATE_GROUPS[m[2]]) g.add(CRATE_GROUPS[m[2]]);
-    if (OS_CRATES.has(m[2])) g.add('os');
+    if (OS_CRATES.has(m[2]) || ALLOC_CORE_PLATFORM_RE.test(p)) g.add('os');
     return g;
   }
   if (/^src\/alloc_core\/platform\//.test(p)) return new Set(['fast', 'seam', 'os']);
@@ -138,7 +144,7 @@ export function plan({ files, event, trailerFull = false, seamTests = new Set(),
     const crate = crateForPath(p, crateGraph);
     if (crateGraph && crate) {
       changedCrates.add(crate);
-      if (OS_CRATES.has(crate)) crateOnly.os = true;
+      if (OS_CRATES.has(crate) || ALLOC_CORE_PLATFORM_RE.test(p)) crateOnly.os = true;
       crateOnly.fast = true;
       crateOnly.seam = true;
       const g = crateGroups[crate];
@@ -332,7 +338,8 @@ function selftest() {
   eq(on(P(['tests/numa_seam.rs'])), 'always,fast,os', 'numa test');
   // root src: fast + seam; platform dir adds os.
   eq(on(P(['src/registry/heap_registry/claim.rs'])), 'always,fast,seam', 'src');
-  eq(on(P(['src/alloc_core/platform/x.rs'])), 'always,fast,os,seam', 'platform src');
+  eq(on(P(['src/alloc_core/platform/x.rs'])), 'always,fast,os,seam', 'platform src (old path kept as the deletion trigger)');
+  eq(on(P(['crates/core/sefer-alloc-core/src/alloc_core/platform/os.rs'])), 'always,crate_sefer_alloc_core,fast,os,seam', 'platform src (P2.2 moved path keeps os, crate-local)');
   // dependency / toolchain surface: fast+seam+os (MSRV, cross-OS).
   eq(on(P(['Cargo.lock'])), 'always,fast,os,seam', 'lock');
   // workspace crates: own gates + root dependents (+os for platform crates).
@@ -344,6 +351,7 @@ function selftest() {
   eq(on(P(['crates/platform/sefer-platform/src/os.rs'])), 'always,crate_sefer_platform,fast,os,seam', 'sefer-platform crate');
   eq(on(P(['crates/platform/proc-probe/src/lib.rs', 'crates/platform/proc-memstat/src/lib.rs'])), 'always,crate_proc,fast,os,seam', 'proc');
   eq(on(P(['crates/core/sefer-segment/src/lib.rs'])), 'always,crate_sefer_segment,fast,seam', 'sefer-segment crate');
+  eq(on(P(['crates/core/sefer-alloc-core/src/lib.rs'])), 'always,crate_sefer_alloc_core,fast,seam', 'crate');
   eq(on(P(['crates/brand-new/src/lib.rs'])), 'always,fast,seam', 'unknown crate is conservative');
   // scripts: matrix/manifest scripts feed fast/seam; other scripts are `always`.
   eq(on(P(['scripts/check-matrix.mjs'])), 'always,fast', 'check-matrix');
@@ -457,6 +465,14 @@ function selftest() {
   // (l) unrelated crate in the same graph: only itself, root unaffected, no
   // group (no entry in the default mapping), seam/os suppressed.
   eq(plan({ files: ['crates/x/unrelated/src/lib.rs'], event: 'pull_request', seamTests: seam, crateGraph: G2 }).crate_sefer_segment, false, 'real chain: unrelated crate stays narrow');
+  // (m) P2.2 moved platform subtree: with a real-shaped graph, the moved path
+  // keeps `os` while a non-platform file of the same crate does not add it.
+  const GA = fx();
+  GA.packages.set('sefer-alloc-core', { dir: 'crates/core/sefer-alloc-core', deps: new Set(), dependents: new Set(['sefer-alloc']) });
+  GA.packages.get('sefer-alloc').deps.add('sefer-alloc-core');
+  const GA_GROUPS = { ...CRATE_GROUPS_FIX, 'sefer-alloc-core': 'crate_sefer_alloc_core' };
+  eq(on(PG(['crates/core/sefer-alloc-core/src/alloc_core/platform/os.rs'], GA, 'pull_request', GA_GROUPS)), 'always,crate_sefer_alloc_core,fast,os,seam', 'moved platform src keeps os with graph');
+  eq(on(PG(['crates/core/sefer-alloc-core/src/alloc_core/mod.rs'], GA, 'pull_request', GA_GROUPS)), 'always,crate_sefer_alloc_core,fast,seam', 'non-platform alloc-core file does not add os with graph');
   console.log(JSON.stringify({ version: 1, status: 'PASS', scope: 'ci-plan selftest', checks: n }));
 }
 

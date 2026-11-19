@@ -7,7 +7,7 @@
 //! BARE `AllocCore` (`AllocCore::new()`, its line 278) and calls
 //! `core.alloc_zeroed(layout)` directly. That path is the magazine-BYPASS
 //! substrate: a bump-carve goes through `carve_block_with_refill`
-//! (`src/alloc_core/alloc_core_small.rs:346`), which carves the caller's block
+//! (`crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:76`), which carves the caller's block
 //! AND proactively refills `REFILL_BATCH = 31` more blocks onto the FREE LIST.
 //! Every subsequent same-class `alloc_zeroed` then pops a free-list block, and
 //! a free-list pop is `is_virgin = false` by `alloc_small_with_virgin`'s

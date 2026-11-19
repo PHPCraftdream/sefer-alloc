@@ -4,7 +4,7 @@
 //!
 //! ## Why this harness exists — the cliff it makes visible
 //!
-//! `SMALL_MAX` (`src/alloc_core/size_classes.rs`, currently **258,752 B**,
+//! `SMALL_MAX` (`crates/core/sefer-segment/src/support/size_classes.rs`, currently **258,752 B**,
 //! confirmed at harness-authoring time by binary-searching
 //! `AllocCore::dbg_layout_class_for`) is the boundary between two completely
 //! different allocation strategies:

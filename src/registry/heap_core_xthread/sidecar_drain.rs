@@ -101,6 +101,9 @@ impl HeapCore {
                 fatal(b"sidecar_drain: segment base not found for sidecar record\n")
             });
         let offset = (address - base.addr()) as u32;
-        crate::alloc_core::AllocCore::reclaim_sidecar_record(base, offset, class)
+        // SAFETY: `base` above is the mapped Small/Primordial segment root found in
+        // this heap's own segment table and stays live for the call; `offset`/`class`
+        // describe the synthetic probe record derived from that root (`reclaim_sidecar_record` # Safety).
+        unsafe { crate::alloc_core::AllocCore::reclaim_sidecar_record(base, offset, class) }
     }
 }

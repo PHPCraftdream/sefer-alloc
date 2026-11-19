@@ -31,7 +31,7 @@ const W3_ITERS: u64 = 10_000_000;
 const ALIGN: usize = 16;
 
 // Small size classes, copied literally from the compile-time-built
-// `SIZE_CLASS_TABLE` (`src/alloc_core/platform/size_classes.rs`: MIN_BLOCK=16,
+// `SIZE_CLASS_TABLE` (`crates/core/sefer-segment/src/support/size_classes.rs`: MIN_BLOCK=16,
 // growth 5/4 rounded up to a multiple of 16, plus the `EXTRAS` block 256..16384;
 // the table is `pub(crate)`, hence the literal copy). W1 = classes in [16,128],
 // W2 = classes in [16,2048], W3 adds classes up to 4096.

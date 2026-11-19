@@ -1087,6 +1087,7 @@ dependencies = [
  "proc-memstat",
  "proc-probe",
  "proptest",
+ "sefer-alloc-core",
  "sefer-concurrent",
  "sefer-ghost",
  "sefer-platform",
@@ -1098,6 +1099,17 @@ dependencies = [
  "slotmap",
  "tagged-index-stack",
  "tokio",
+]
+
+[[package]]
+name = "sefer-alloc-core"
+version = "0.1.0"
+dependencies = [
+ "aligned-vmem",
+ "numa-shim",
+ "sefer-platform",
+ "sefer-policy",
+ "sefer-segment",
 ]
 
 [[package]]

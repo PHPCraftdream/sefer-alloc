@@ -13,7 +13,7 @@
 // originally (a) hardcoded `2 * 1024 * 1024usize` as a stand-in for
 // `SegmentLayout::SEGMENT` with a comment claiming the two were equal and
 // that a real import was being avoided — both false: `SegmentLayout::SEGMENT`
-// is `4 MiB` (`src/alloc_core/os.rs`'s `SEGMENT` constant), not 2 MiB, and it
+// is `4 MiB` (`crates/platform/sefer-platform/src/os.rs`'s `SEGMENT` constant), not 2 MiB, and it
 // was always `pub` and importable (`src/alloc_core/segment_layout.rs`); and
 // (b) had NO in-run materialisation oracle — the only asserts in this file
 // were an alloc-succeeded null check and a length check on `materialize_sizes`
@@ -43,7 +43,7 @@
 // MiB (`DEFAULT_EXTENDED_BUDGET_BYTES`, R17-9), but
 // `large_cache_deposit_budget_infeasible` rejects a deposit whose OWN
 // `usable_size` exceeds the budget — a per-deposit check, not a running-total
-// check (`src/alloc_core/alloc_core_large_cache.rs:164-166`). With the
+// check (`crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs:261`). With the
 // corrected (real) 4 MiB `SEGMENT` constant, `materialize_sizes(9)`'s
 // geometric-doubling ladder produces sizes up to ~2 GiB by the 9th entry —
 // individually far above 256 MiB — so under the DEFAULT config the base
@@ -52,7 +52,7 @@
 // materialise at all. The ON arm below therefore explicitly overrides the
 // budget to `usize::MAX` (documented, established "recover unbounded"
 // idiom — `LargeCacheConfig`'s own `budget_bytes` doc,
-// `src/alloc_core/large_cache_config.rs:130-136` — the same technique
+// `crates/core/sefer-policy/src/large_cache_config.rs:132-138` — the same technique
 // `examples/r14_5_large_cache_extended_rss_measure.rs`'s "unbounded" mode
 // already uses one layer down) so the materialisation burst can actually
 // succeed; the new in-run oracle below is what makes this reasoning
@@ -216,7 +216,7 @@ fn batch_cycle(sizes: &[usize]) {
 /// `SeferAlloc::new()`):** `materialize_sizes(MATERIALIZE_N)`'s last three
 /// entries individually exceed the default 256 MiB `large-cache-extended`
 /// budget, and `large_cache_deposit_budget_infeasible`
-/// (`src/alloc_core/alloc_core_large_cache.rs:164-166`) rejects a deposit
+/// (`crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs:261`) rejects a deposit
 /// whose OWN `usable_size` exceeds the budget — a per-deposit check, so those
 /// three sizes would never even reach the free-slot scan that could trigger
 /// materialisation. Under the plain default config the base cache would only
@@ -227,7 +227,7 @@ fn batch_cycle(sizes: &[usize]) {
 /// MUST therefore be built with
 /// `SeferAlloc::with_config(LargeCacheConfig::new().budget_bytes(usize::MAX))`
 /// (the documented "recover unbounded" idiom —
-/// `src/alloc_core/large_cache_config.rs:130-136`), not `SeferAlloc::new()`.
+/// `crates/core/sefer-policy/src/large_cache_config.rs:132-138`), not `SeferAlloc::new()`.
 /// The in-run oracle below hard-asserts this actually happened (resolved
 /// budget is `Some(usize::MAX)` -- under `large-cache-extended`,
 /// `resolved_budget_bytes()` always returns `Some(...)`, never `None`, so
@@ -307,7 +307,7 @@ pub fn run_narrow_ab_workload(global: &'static sefer_alloc::SeferAlloc, n: usize
         // NOTE: under `large-cache-extended`, `resolved_budget_bytes()`
         // ALWAYS returns `Some(...)` -- an unset `budget_bytes` still
         // resolves to `Some(DEFAULT_EXTENDED_BUDGET_BYTES)`
-        // (`src/alloc_core/large_cache_config.rs:402-409`); there is no
+        // (`crates/core/sefer-policy/src/large_cache_config.rs:797-816`); there is no
         // resolved `None` state under this feature. The "recover unbounded"
         // idiom is therefore an explicit `Some(usize::MAX)`, not `None` --
         // confirmed empirically the first time this assertion ran (it

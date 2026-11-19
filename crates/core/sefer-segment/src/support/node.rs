@@ -613,8 +613,16 @@ pub struct RootNode;
 
 impl RootNode {
     /// # Safety
-    /// `block` is an exclusively owned free block of at least `NODE_SIZE` bytes;
-    /// `next` is null or another live free block in the same allocator.
+    /// `block` is an exclusively owned free block of at least `NODE_SIZE` bytes.
+    ///
+    /// `next` is stored as an opaque word of bits only: memory safety of this
+    /// operation does not require `next` to point at anything valid, and
+    /// callers may pass arbitrary bit patterns. The caller must establish a
+    /// valid free-block continuation before *following* a link produced by
+    /// [`read_next`](Self::read_next). The production free-list invariant —
+    /// `next` is null (tail) or another live free block in the same allocator
+    /// — is a separate logical invariant maintained by free-list callers, not
+    /// a safety precondition of this function.
     #[inline(always)]
     pub unsafe fn write_next(block: NonNull<u8>, next: *mut u8) {
         Node::write_next(block, next)

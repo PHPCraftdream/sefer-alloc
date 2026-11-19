@@ -2,7 +2,7 @@
 // works on Windows without Valgrind) isolation microjudge for the
 // FREE-SLOT-SEARCH scan specifically: `large_cache_find_free_slot`'s old
 // `self.large_cache.iter().position(|s| s.is_none())` linear walk
-// (`src/alloc_core/alloc_core_large_cache.rs`), which runs on EVERY
+// (`crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs`), which runs on EVERY
 // large-dealloc admission attempt — a different call site than R31-8's
 // microjudge (`examples/_shared/r31_8_large_cache_scan_isolation_workload.rs`),
 // which isolates the BEST-FIT lookup (`alloc_large`'s scan reading

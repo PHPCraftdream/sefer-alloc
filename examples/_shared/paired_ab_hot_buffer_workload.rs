@@ -100,7 +100,7 @@ fn commit_kib() -> u64 {
 
 const KIB: usize = 1024;
 
-/// The six exact medium-class sizes (`src/alloc_core/size_classes.rs` EXTRAS
+/// The six exact medium-class sizes (`crates/core/sefer-segment/src/support/size_classes.rs` EXTRAS
 /// block, `medium-classes` arm) — 256 / 320 / 384 / 512 / 768 KiB / 1 MiB.
 /// Confirmed against that file directly (R21-1). The ladder-walk order below
 /// grows through every rung in ascending order, exactly mirroring

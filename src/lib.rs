@@ -22,7 +22,7 @@
 //! remove, and 32-bit generation wrap after ~2^31 cycles; this crate adds the typed
 //! boundary and instance isolation while staying `#![forbid(unsafe_code)]`.
 //!
-//! [`Region`], [`Handle`], and [`SyncRegion`] now live in the `sefer-region`
+//! [`Region`], [`Handle`], and `SyncRegion` (std-only) now live in the `sefer-region`
 //! crate alongside `aligned-vmem` / `numa-shim` / `malloc-bench-rs`. They are
 //! re-exported here for backward compatibility.
 //!
@@ -225,22 +225,15 @@
 //  error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //
 //    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit):
-//      * `alloc_core::platform::os`   — unsafe now lives in `sefer-platform::os`; the root
-//                             keeps this seam: the directory-sidecar trio
-//                             (`reserve_directory_sidecar` / `read_directory_class_words` /
-//                             `read_directory_node_bucket`) plus 7 safe wrappers over
-//                             the crate's `pub unsafe fn`s. (under `alloc-core`)
-//      * `alloc_core::alloc_core::mem::large_control::sample_owned_large_residency`
-//                             — temporary owning VM adoption for owner-terminal
-//                             sampling, with release suppressed; `alloc-decommit`,
-//                             non-NUMA only. The validated caller retains ownership.
-//      * `alloc_core::platform::node` — intrusive free-list node r/w through raw pointers;
-//                             the generalized `hand` discipline. (under `alloc-core`)
-//      * `alloc_core::platform::sidecar` — the owner-only lazily-materialised sidecar
-//                             primitive (`reserve`/`deref`/`deref_mut`) shared
-//                             by `os`'s SegmentDirectory reservation and
-//                             `large_cache_extended`'s LargeCacheExtension
-//                             reservation. (under `alloc-core`)
+//      * (P2.2) the former root seams of the `alloc_core` tree —
+//        the directory-sidecar OS aperture (`os`), intrusive free-list node
+//        r/w (`node`), the owner-only sidecar primitive (`sidecar`), and
+//        owning VM adoption for owner-terminal sampling
+//        (`large_control::sample_owned_large_residency`) — moved into the
+//        `sefer-alloc-core` crate with the rest of the tree; their
+//        crate-owned file paths are inventoried in the moved-seam list below.
+//        (under `alloc-core`; `sample_owned_large_residency` also under
+//        `alloc-decommit`, non-NUMA only)
 //      * `global::sefer_alloc::global_alloc` — the `unsafe impl GlobalAlloc`
 //                             alloc-face seam (trait obligation + pointer handoff).
 //                             (under `alloc-global`)
@@ -308,16 +301,40 @@
 //                             on first lock on some targets and would re-enter
 //                             the global allocator). (under `alloc-global`)
 //
+//    The four tier-1 seams below moved to the `sefer-alloc-core` crate (P22
+//    alloc-core extraction) — same contracts, crate-owned file paths:
+//      * `crates/core/sefer-alloc-core/src/alloc_core/platform/os.rs` — the directory-sidecar
+//                             trio (`reserve_directory_sidecar` /
+//                             `read_directory_class_words` /
+//                             `read_directory_node_bucket`) plus 7 safe
+//                             wrappers over `sefer-platform`'s
+//                             `pub unsafe fn`s. (under `alloc-core`)
+//      * `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/large_control/sample_owned_large_residency.rs` —
+//                             temporary owning VM adoption for owner-terminal
+//                             sampling, with release suppressed; the validated
+//                             caller retains ownership. (under `alloc-decommit`,
+//                             non-NUMA only)
+//      * `crates/core/sefer-alloc-core/src/alloc_core/platform/node.rs` — intrusive free-list node
+//                             r/w through raw pointers; the generalized `hand`
+//                             discipline. (under `alloc-core`)
+//      * `crates/core/sefer-alloc-core/src/alloc_core/platform/sidecar.rs` — the owner-only
+//                             lazily-materialised sidecar primitive
+//                             (`reserve`/`deref`/`deref_mut`) shared by `os`'s
+//                             SegmentDirectory reservation and
+//                             `large_cache_extended`'s LargeCacheExtension
+//                             reservation. (under `alloc-core`)
+//
 //    Optional `numa-aware` path: no new unsafe seams — `alloc_core::platform::numa`
 //    is pure safe delegation to numa-shim (its test-only `bind_segment`
 //    unsafe seam was removed in task #1306, together with numa-shim's
 //    `bind_range`). (under `numa-aware`)
 //
 //    Optional `large-cache-extended` path (R13-6):
-//      * `alloc_core::large::large_cache_extended` — the lazily-materialised
-//                             large-cache extension sidecar (owner-only, no
-//                             `OncePtrCell`); reserves via `sidecar::reserve`,
-//                             dereferences via `sidecar::deref[_mut]`.
+//      * `crates/core/sefer-alloc-core/src/alloc_core/large/large_cache_extended.rs` — the
+//                             lazily-materialised large-cache extension sidecar
+//                             (owner-only, no `OncePtrCell`); reserves via
+//                             `sidecar::reserve`, dereferences via
+//                             `sidecar::deref[_mut]`.
 //                             (under `large-cache-extended`)
 //
 //  So "the `unsafe` lives in named modules" is enforced by the compiler in
@@ -341,7 +358,8 @@
 //  that contract from safe code is UB even though no `unsafe` keyword appears
 //  at the violation site. Concrete membranes to audit as part of the trusted
 //  computing base:
-//    * `alloc_core::platform::node::{write_usize, write_struct, offset, zero, ...}` — safe
+//    * the `sefer-alloc-core` crate's `alloc_core::platform::node` — its safe
+//      `pub(crate)` fns (`write_usize`, `write_struct`, `offset`, `zero`, ...) —
 //      `pub(crate)` fns whose whole body is a raw r/w; soundness rests on the
 //      caller's bounds/exclusivity/`'static` invariants stated in prose.
 //    * `os::release_segment` — a safe fn; a double call (double-release) from

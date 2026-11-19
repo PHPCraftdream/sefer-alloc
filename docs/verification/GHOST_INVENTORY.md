@@ -105,7 +105,7 @@ Decision: **benchmark-only bounded capture with fail-closed evidence** — Task7
 
 ### P27 — large-THP coherent bounded estimator pair
 
-Prod: `crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs`, `crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs`, `src/alloc_core/alloc_core/mem/advise_fresh_large.rs`.
+Prod: `crates/core/sefer-policy/src/policy/large_thp_runtime/state/thp_learning_cell.rs`, `crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs`, `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/advise_fresh_large.rs`.
 
 - I1 one AtomicU64 contains both Q31 estimator components; snapshot is one indivisible load
 - I2 a successful CAS applies exactly one accepted pure-estimator update from its expected packed pair
@@ -218,7 +218,7 @@ Decision: **translate** — G6c: tests/loom_terminal_large.rs now runs the produ
 
 ### P10 — terminal owner drain: owner credits || cut
 
-Prod: `src/alloc_core/alloc_core/sidecar_drain.rs`, `crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs::next_cut`.
+Prod: `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/sidecar_drain.rs`, `crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs::next_cut`.
 
 - I1 credits are mutated only by the owner (plain fields, no atomics)
 - I2 a terminal cut consumes each pending bit once
@@ -229,7 +229,7 @@ Decision: **keep+R5** — G6b: credits stay a plain owner-only u32 (R10 on Segme
 
 ### P11 — active-kind index membership || terminal publication
 
-Prod: `crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_index.rs`, `crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_ops.rs`, `src/alloc_core/alloc_core/sidecar_drain.rs`.
+Prod: `crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_index.rs`, `crates/core/sefer-segment/src/segment/segment_table/impl_group/active_kind/active_kind_impl/active_kind_ops.rs`, `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/sidecar_drain.rs`.
 
 - I1 the owner alone owns the membership bit (plain)
 - I2 a segment is removed from the active-kind index only after its pending credit is consumed or it is reservation-dead
@@ -343,7 +343,7 @@ Decision: **translate (with P5)** — loom_route_pin_unlink models it as loom::s
 
 ### P23 — remote-free ingress: producer notify || owner take/arm/full drain (SC-6 A-exact)
 
-Prod: `crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs`, `crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs::publish_small_borrowed`, `crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs::publish`, `src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs::drain_notified_slot`.
+Prod: `crates/core/sefer-segment/src/segment/segment_route/directory/ingress.rs`, `crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs::publish_small_borrowed`, `crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs::publish`, `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/find_segment/ingress_discovery.rs::drain_notified_slot`.
 
 - I1 NOTIFIED => the slot bit is set in the heap mask, or its notifier is between the CAS and the summary RMW, or the owner took the bit and has not finished arm -> fence -> full drain
 - I2 store-buffering: producer pending fetch_or(SeqCst) then state load(SeqCst); owner state store(ARMED, Release), fence(SeqCst), then a full drain: the drain sees the bit or the producer sees ARMED and notifies
@@ -369,7 +369,7 @@ Decision: **rules + actual-source model + integration tests** — J13b #47: R1 p
 
 ### P25 — large-THP budget ledger (advised bytes, bounded CAS reserve)
 
-Prod: `crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs`, `src/alloc_core/alloc_core/mem/release_large_mapping.rs::release_large_mapping`.
+Prod: `crates/core/sefer-policy/src/policy/large_thp_runtime/thp_budget_ledger.rs`, `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/release_large_mapping.rs::release_large_mapping`.
 
 - I1 used never exceeds the budget of a successful reservation: a reservation is one compare_exchange_weak from the observed value
 - I2 try_reserve loops at most MAX_ATTEMPTS times and returns 0 (no advice) when it keeps losing

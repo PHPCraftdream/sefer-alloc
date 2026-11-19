@@ -50,7 +50,7 @@
 //
 // ## Working set: why `WS_LEN = 16` (> `LARGE_CACHE_SLOTS = 8`)
 //
-// `src/alloc_core/alloc_core.rs:81` defines `LARGE_CACHE_SLOTS = 8` — the
+// `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_impl.rs:118` defines `LARGE_CACHE_SLOTS = 8` — the
 // Large-segment free-cache holds up to 8 recently-freed dedicated 4 MiB spans
 // to amortise the OS `VirtualFree`/`VirtualAlloc` round-trip on the Large
 // alloc/free path. If the working set were ≤ 8 objects, the baseline
@@ -102,7 +102,7 @@ const KIB: usize = 1024;
 /// Deliberately 2× `LARGE_CACHE_SLOTS` (8) — see module doc.
 const WS_LEN: usize = 16;
 
-/// The six exact medium-class sizes (`src/alloc_core/size_classes.rs` EXTRAS
+/// The six exact medium-class sizes (`crates/core/sefer-segment/src/support/size_classes.rs` EXTRAS
 /// block) — 256 KiB / 320 KiB / 384 KiB / 512 KiB / 768 KiB / 1 MiB. The
 /// alloc phase cycles through these so both arms see the same size mix. Every
 /// one of these exceeds the OLD ~253 KiB `SMALL_MAX` (so the baseline routes

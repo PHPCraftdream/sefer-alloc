@@ -274,8 +274,14 @@ impl HeapCore {
     /// when it transitions a slot `FREE → LIVE` and needs to materialise the
     /// heap value in the slot's `UnsafeCell`.
     #[must_use]
+    #[allow(unsafe_code)] // P2.2: scoped to this method; restricted constructor's caller-lease contract below.
     pub(crate) fn new(id: u32) -> Option<Self> {
-        let core = AllocCore::new_with_owner(id)?;
+        // SAFETY: `id` names a lease-held registry slot (won exclusively via
+        // the FREE→LIVE CAS in `HeapRegistry::claim_impl`) or the non-slot
+        // `OWNER_ID_FALLBACK` sentinel; the core is installed in that same
+        // slot/static before any allocation is issued, per
+        // `AllocCore::new_with_owner`'s contract.
+        let core = unsafe { AllocCore::new_with_owner(id) }?;
         Some(Self {
             id,
             core,
@@ -325,7 +331,13 @@ impl HeapCore {
         // different later value is ignored.
         #[cfg(feature = "alloc-xthread")]
         let _ = publish_configured_slots(config.resolved_route_pin_cache_slots());
-        let core = AllocCore::new_with_config_for_owner(config, id)?;
+        // SAFETY: same owner-id protocol as [`Self::new`]: `id` names a
+        // lease-held slot (exclusive CAS in `claim_lease_with_config` →
+        // `claim_impl`) or the non-slot `OWNER_ID_FALLBACK` sentinel; the
+        // core is installed in that same slot/static before any allocation
+        // is issued, per `new_with_config_for_owner`'s `# Safety` contract.
+        #[allow(unsafe_code)] // P2.2: scoped to this unsafe block; contract above.
+        let core = unsafe { AllocCore::new_with_config_for_owner(config, id) }?;
         Some(Self {
             id,
             core,
@@ -363,18 +375,15 @@ impl HeapCore {
     /// Iterate over the segment bases this heap owns (read-only). Delegates to
     /// the substrate's segment-table iterator.
     ///
-    /// `#[doc(hidden)] pub` so integration tests can obtain a real segment
-    /// base (the test-only pub surface of the registry, documented in
-    /// `mod.rs`).
+    /// R6-T38: `internals`-gated. Without `internals`, `AllocCore::segment_bases`
+    /// is `pub(crate)` there, so external probes fail with E0624 (privacy)
+    /// when naming `AllocCore`'s method, not E0599 (no method).
     ///
     /// R2-01 (task #2003): `+ '_` threads the same lifetime bind through
     /// this re-export — see `AllocCore::segment_bases`'s doc comment for the
     /// full UAF rationale this closes.
     // R6-T16: its readers are the bench-internals/internals diag paths only.
-    #[cfg_attr(
-        not(any(feature = "internals", feature = "bench-internals")),
-        allow(dead_code)
-    )]
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
         self.core.segment_bases()

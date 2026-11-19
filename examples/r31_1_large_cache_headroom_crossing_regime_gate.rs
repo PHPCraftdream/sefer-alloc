@@ -4,8 +4,8 @@
 //! methodology, same config-identity/path-activation oracle machinery) —
 //! this file exists ONLY because R30-6's own 48 MiB/burst-labelled workload
 //! (`8 * 6 MiB`) actually rounds, per `AllocCore::alloc_large`'s
-//! whole-`SEGMENT` rounding (`src/alloc_core/alloc_core_large.rs:188-192`,
-//! `SEGMENT = 4 MiB`, `src/alloc_core/os.rs:65`), to an **8 MiB usable span
+//! whole-`SEGMENT` rounding (`crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs:294-301`,
+//! `SEGMENT = 4 MiB`, `crates/platform/sefer-platform/src/os.rs:80`), to an **8 MiB usable span
 //! per object** (6 MiB + header exceeds 1 segment, so it rounds UP to 2
 //! segments = 8 MiB) — i.e. a real **64 MiB** working set, sitting EXACTLY
 //! on the 64-vs-256 MiB boundary. R30-6's own committed CSV already proves
@@ -99,7 +99,7 @@ const REPETITIONS: usize = 3;
 
 /// Per-object large-allocation sizes, each labelled with what it rounds to.
 /// All values verified against `alloc_large`'s whole-`SEGMENT` rounding
-/// (`SEGMENT = 4 MiB`, `src/alloc_core/alloc_core_large.rs:188-192`) — see
+/// (`SEGMENT = 4 MiB`, `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs:294-301`) — see
 /// the module doc for the exact arithmetic.
 const BURST_ARMS: &[(&str, usize)] = &[
     ("AT_BOUNDARY_6MiB", 6 * 1024 * 1024), // rounds to 8 MiB/obj -> 64 MiB/burst (R30-6's original size)

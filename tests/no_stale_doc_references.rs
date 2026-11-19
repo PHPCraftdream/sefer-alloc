@@ -7,7 +7,7 @@
 //! `crate::heap::Heap::...` (task #17 cleaned them up). This test fails if any
 //! such stale reference is reintroduced.
 //!
-//! Two independent checks over `src/**/*.rs`:
+//! Two independent checks over `src/**/*.rs` and `crates/core/sefer-alloc-core/src/**/*.rs`:
 //!
 //!   1. NO `crate::heap::` path anywhere — the `heap` module no longer exists,
 //!      so any such intra-doc link is broken. Zero exceptions.
@@ -42,6 +42,10 @@ fn src_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
 }
 
+// P2.2: alloc-core implementation moved to the sefer-alloc-core crate (root mod.rs facade stays in src/).
+fn alloc_core_crate_src_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-alloc-core/src")
+}
 #[test]
 fn root_rustdoc_ci_covers_all_and_docs_rs_features_with_strict_warnings() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -103,8 +107,8 @@ fn root_rustdoc_ci_covers_all_and_docs_rs_features_with_strict_warnings() {
     );
 }
 
-/// Every full Rust source path in manifest comments must resolve to a file.
-/// The filesystem is the oracle; adding a fictitious path makes this fail.
+/// Every `src/...` or `crates/.../src/...` path in manifest comments must
+/// resolve to a file; the filesystem is the oracle.
 #[test]
 fn cargo_toml_comment_source_paths_exist() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -112,20 +116,20 @@ fn cargo_toml_comment_source_paths_exist() {
     let mut checked = 0usize;
     let mut offenders = Vec::new();
     for (line_number, line) in cargo.lines().enumerate() {
+        // Maximal ASCII path tokens; a full `crates/.../src/...` token is one
+        // path, never a bare `src/` suffix relative to the repo root.
         let Some(comment) = line.trim_start().strip_prefix('#') else {
             continue;
         };
-        for (start, _) in comment.match_indices("src/") {
-            // Match the manifest's ASCII path spelling, stopping before prose
-            // punctuation or a line-number suffix. Byte offsets stay UTF-8 safe.
-            let rest = &comment[start..];
-            let end = rest
-                .bytes()
-                .position(|b| {
-                    !(b.is_ascii_alphanumeric() || matches!(b, b'_' | b'/' | b'.' | b'-'))
-                })
-                .unwrap_or(rest.len());
-            let token = &rest[..end];
+        for token in comment
+            .split(|c: char| !c.is_ascii_alphanumeric() && !matches!(c, '_' | '/' | '.' | '-'))
+        {
+            let relevant = token.starts_with("src/")
+                || (token.starts_with("crates/") && token.contains("/src/"));
+            if !relevant {
+                continue;
+            }
+            // Token ends at prose punctuation; first `.rs` wins over suffixes.
             let Some(rs_end) = token.find(".rs") else {
                 continue;
             };
@@ -149,6 +153,7 @@ fn no_crate_heap_module_path() {
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
     assert!(!files.is_empty(), "no source files found");
+    rs_files(&alloc_core_crate_src_dir(), &mut files);
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -170,12 +175,12 @@ fn no_crate_heap_module_path() {
 
 #[test]
 fn no_removed_heap_type_doc_mentions() {
-    // The ONLY file allowed to mention the removed `Heap` type — its module
-    // doc records the removal in the past tense.
+    // The ONLY file allowed to mention the removed `Heap` type (past-tense module doc).
     let allowed = src_dir().join("registry").join("heap_core").join("core.rs");
 
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
+    rs_files(&alloc_core_crate_src_dir(), &mut files);
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -184,9 +189,8 @@ fn no_removed_heap_type_doc_mentions() {
         }
         let text = fs::read_to_string(file).expect("read source");
         for (i, line) in text.lines().enumerate() {
-            // Backtick-quoted `Heap` doc mention of the removed TYPE. This does
-            // NOT match `HeapCore`, `HeapSlot`, `HeapRegistry`, `with_heap`,
-            // etc. — the trailing "`" requires an exact `` `Heap` `` token.
+            // Backtick-quoted `Heap` doc mention of the removed TYPE. Does NOT match
+            // `HeapCore`, `with_heap`, etc. — the trailing "`" requires an exact token.
             if line.contains("`Heap`") {
                 offenders.push(format!("{}:{}: {}", file.display(), i + 1, line.trim()));
             }
@@ -227,9 +231,8 @@ fn no_removed_heap_type_doc_mentions() {
 /// every feature configuration.
 #[test]
 fn no_stale_abandon_adopt_substrate_references() {
-    // Exact identifiers from the removed API surface (commit 65d441a's
-    // message enumerates the full removed list); none collide with any live
-    // identifier or generic "adopt"/"abandon" prose.
+    // Exact identifiers from the removed API surface (commit 65d441a's message
+    // enumerates the full removed list); none collide with any live identifier.
     let forbidden_tokens: &[&str] = &[
         "try_adopt",
         "abandon_segments",
@@ -251,6 +254,7 @@ fn no_stale_abandon_adopt_substrate_references() {
 
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
+    rs_files(&alloc_core_crate_src_dir(), &mut files);
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -2146,9 +2150,18 @@ fn large_cache_config_doc_matches_budget_and_headroom_behavior() {
 /// every feature configuration.
 #[test]
 fn no_owned_sidecar_references_anywhere() {
+    // Both source trees are scanned with each traversal's nonemptiness asserted independently.
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
-    assert!(!files.is_empty(), "no source files found");
+    assert!(!files.is_empty(), "no source files found under root src/");
+    let mut member_files = Vec::new();
+    rs_files(&alloc_core_crate_src_dir(), &mut member_files);
+    assert!(
+        !member_files.is_empty(),
+        "no source files found under crates/core/sefer-alloc-core/src — the new-member \
+         walk is broken and the negative coverage would be vacuous"
+    );
+    files.extend(member_files);
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -2169,10 +2182,7 @@ fn no_owned_sidecar_references_anywhere() {
         offenders.join("\n"),
     );
 
-    let path = src_dir()
-        .join("alloc_core")
-        .join("platform")
-        .join("sidecar.rs");
+    let path = alloc_core_crate_src_dir().join("alloc_core/platform/sidecar.rs");
     let flat = doc_prose(&path);
     for name in &[
         "[`reserve`]",
@@ -2182,7 +2192,7 @@ fn no_owned_sidecar_references_anywhere() {
     ] {
         assert!(
             flat.contains(name),
-            "src/alloc_core/platform/sidecar.rs: the module doc must name the \
+            "crates/core/sefer-alloc-core/src/alloc_core/platform/sidecar.rs: the module doc must name the \
              free function {name} it exposes over `*mut T` (R2-23) — that \
              surface is exactly why there is no `OwnedSidecar` handle type to \
              guard.",
@@ -2202,10 +2212,10 @@ fn no_owned_sidecar_references_anywhere() {
 #[test]
 fn oxx_r2_07_alloc_core_is_not_send_in_doc() {
     for rel in &[
-        ["alloc_core", "alloc_core", "mod.rs"],
-        ["alloc_core", "alloc_core", "alloc_core_impl.rs"],
+        "alloc_core/alloc_core/mod.rs",
+        "alloc_core/alloc_core/alloc_core_impl.rs",
     ] {
-        let path = src_dir().join(rel[0]).join(rel[1]).join(rel[2]);
+        let path = alloc_core_crate_src_dir().join(*rel);
         let flat = doc_prose(&path);
         assert!(
             !flat.contains("`AllocCore` is `Send`") && !flat.contains("An `AllocCore` is `Send`"),
@@ -2217,25 +2227,18 @@ fn oxx_r2_07_alloc_core_is_not_send_in_doc() {
         );
     }
 
-    let mod_path = src_dir()
-        .join("alloc_core")
-        .join("alloc_core")
-        .join("mod.rs");
-    let mod_flat = doc_prose(&mod_path);
+    let mod_flat = doc_prose(&alloc_core_crate_src_dir().join("alloc_core/alloc_core/mod.rs"));
     assert!(
         mod_flat.contains("deliberately NEITHER `Send` NOR `Sync`"),
-        "src/alloc_core/alloc_core/mod.rs must state `AllocCore` is neither \
+        "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mod.rs must state `AllocCore` is neither \
          `Send` nor `Sync` (oxx R2-07)",
     );
 
-    let impl_path = src_dir()
-        .join("alloc_core")
-        .join("alloc_core")
-        .join("alloc_core_impl.rs");
+    let impl_path = alloc_core_crate_src_dir().join("alloc_core/alloc_core/alloc_core_impl.rs");
     let impl_flat = doc_prose(&impl_path);
     assert!(
         impl_flat.contains("`AllocCore` has neither, oxx R2-07"),
-        "src/alloc_core/alloc_core/alloc_core_impl.rs's `dbg_reservation_owner_id` \
+        "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_impl.rs's `dbg_reservation_owner_id` \
          doc must not lean on a `Send` claim for its address-instability \
          argument (oxx R2-07)",
     );
@@ -2243,14 +2246,11 @@ fn oxx_r2_07_alloc_core_is_not_send_in_doc() {
 
 #[test]
 fn oxx_r2_07_large_cache_extended_thread_boundary_claim_is_accurate() {
-    let path = src_dir()
-        .join("alloc_core")
-        .join("large")
-        .join("large_cache_extended.rs");
+    let path = alloc_core_crate_src_dir().join("alloc_core/large/large_cache_extended.rs");
     let flat = doc_prose(&path);
     assert!(
         !flat.contains("an `AllocCore` value never crosses a thread boundary in the first place"),
-        "src/alloc_core/large/large_cache_extended.rs: stale oxx R2-07 claim \
+        "crates/core/sefer-alloc-core/src/alloc_core/large/large_cache_extended.rs: stale oxx R2-07 claim \
          reintroduced — in `production` an `AllocCore` embedded in a \
          registry `HeapSlot` DOES change owning thread when the slot is \
          recycled and re-claimed (`HeapLease::drop`/`HeapRegistry::claim_lease`); the \
@@ -2261,7 +2261,7 @@ fn oxx_r2_07_large_cache_extended_thread_boundary_claim_is_accurate() {
         flat.contains("ordered hand-off between those owners")
             && flat.contains("claim_lease")
             && flat.contains("LockGuard"),
-        "src/alloc_core/large/large_cache_extended.rs must ground its \
+        "crates/core/sefer-alloc-core/src/alloc_core/large/large_cache_extended.rs must ground its \
          plain-`*mut`-sidecar soundness argument in the actual mechanism — \
          the slot's ordered CAS hand-off (recycle Release / claim AcqRel) \
          and the fallback heap's spinlock — not an absence-of-movement claim \
@@ -2277,20 +2277,11 @@ fn oxx_r2_07_forbid_unsafe_code_claims_are_accurate() {
     // alloc-core))`). A bare `#![forbid(unsafe_code)]` claim in one of these
     // files' doc/comment prose is therefore always stale.
     for rel in &[
-        ["alloc_core", "alloc_core", "alloc_core_impl.rs"],
-        ["alloc_core", "alloc_core", "counters.rs"],
-        [
-            "alloc_core",
-            "alloc_core",
-            "alloc_core_core_diag/table_diag.rs",
-        ],
+        "alloc_core/alloc_core/alloc_core_impl.rs",
+        "alloc_core/alloc_core/counters.rs",
+        "alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs",
     ] {
-        let mut path = src_dir();
-        for part in rel {
-            for comp in part.split('/') {
-                path = path.join(comp);
-            }
-        }
+        let path = alloc_core_crate_src_dir().join(*rel);
         let flat = doc_prose(&path);
         assert!(
             !flat.contains("this module is `#![forbid(unsafe_code)]`")
@@ -2311,23 +2302,24 @@ fn oxx_r2_07_forbid_unsafe_code_claims_are_accurate() {
 
 #[test]
 fn oxx_r2_07_alloc_core_mod_seam_inventory_is_accurate() {
-    let path = src_dir().join("alloc_core").join("mod.rs");
-    let flat = doc_prose(&path);
+    let flat = doc_prose(&alloc_core_crate_src_dir().join("alloc_core/mod.rs"));
     assert!(
-        !flat.contains("The confined-`unsafe` seams are `os` and `node`; every other file is pure"),
-        "src/alloc_core/mod.rs: stale oxx R2-07 claim reintroduced — `os` and \
-         `node` are not the complete tier-1 seam inventory under \
-         `src/alloc_core/`; several \
-         otherwise-safe files carry individually-documented tier-2 \
-         `#[allow(unsafe_code)]` items",
+        !flat.contains("The confined-`unsafe` seams are `os` and `node`; every other file is pure")
+            && flat.contains("grep -rnE")
+            && flat.contains("oxx R2-07"),
+        "crates/core/sefer-alloc-core/src/alloc_core/mod.rs: stale oxx R2-07 claim reintroduced or the self-verifying grep inventory command was dropped",
     );
-    assert!(
-        flat.contains("grep -rnE") && flat.contains("oxx R2-07"),
-        "src/alloc_core/mod.rs must point at the CLAUDE.md self-verifying \
-         `grep -rnE '^\\s*#!?\\[allow\\(unsafe_code\\)\\]' ...` command \
-         instead of hand-listing (or hand-counting) the unsafe seams (oxx \
-         R2-07)",
+    // doc_prose() flattens whitespace: pin the EXACT backtick-quoted inventory command (both targets exist on disk).
+    const NEW_TREE: &str = "crates/core/sefer-alloc-core/src/alloc_core";
+    let found = flat.split('`').find(|s| s.starts_with("grep -rnE "));
+    assert_eq!(
+        found.unwrap_or("inventory grep command MISSING"),
+        r"grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/alloc_core crates/core/sefer-alloc-core/src/alloc_core",
     );
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for rel in ["src/alloc_core", NEW_TREE] {
+        assert!(manifest.join(rel).is_dir(), "`{rel}` missing");
+    }
 }
 
 #[test]
@@ -2374,19 +2366,26 @@ fn oxx_r2_07_realloc_unsafe_fn_claims_are_accurate() {
 #[test]
 fn r9_current_stats_and_unsafe_inventory_docs_use_live_routes() {
     let core = include_str!("../src/alloc_core/mod.rs");
+    let core_impl = include_str!("../crates/core/sefer-alloc-core/src/alloc_core/mod.rs");
     let stats = include_str!("../src/global/alloc_stats.rs");
     let face = include_str!("../src/global/sefer_alloc/mod.rs");
-    let lifecycle = include_str!("../src/alloc_core/alloc_core/lifecycle.rs");
+    let lifecycle = include_str!(
+        "../crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/lifecycle.rs"
+    );
     let hot = include_str!("../src/registry/heap_core/alloc/hot.rs");
 
     for stale in ["dirty_by_class", "remote_free_ring"] {
         assert!(
             !core.contains(stale),
-            "active alloc_core inventory names {stale}"
+            "active alloc_core inventory (root facade) names {stale}"
+        );
+        assert!(
+            !core_impl.contains(stale),
+            "active alloc_core inventory (crates/core/sefer-alloc-core member) names {stale}"
         );
     }
-    assert!(core.contains("segment::segment_table::route_slots"));
-    assert!(core.contains("registry's pinned `segment_route` sidecars"));
+    assert!(core_impl.contains("segment::segment_table::route_slots"));
+    assert!(core_impl.contains("registry's pinned `segment_route` sidecars"));
     assert!(!lifecycle.contains("PerClassDirty"));
     assert!(!hot.contains("crate::alloc_core::remote_free_ring"));
     assert!(hot.contains("crate::alloc_core::segment_route::SmallSidecar"));

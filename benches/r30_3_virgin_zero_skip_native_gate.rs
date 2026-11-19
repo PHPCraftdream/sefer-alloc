@@ -8,7 +8,7 @@
 //! batch of blocks, then freed the WHOLE batch inside the SAME `b.iter()`
 //! closure. Criterion calls that closure thousands of times per sample; from
 //! the 2nd call onward, `alloc_small_with_virgin`'s dispatch
-//! (`src/alloc_core/alloc_core_small.rs:274-297`) found a populated free list
+//! (`crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:216-229`) found a populated free list
 //! (step 1, `self.pop_free(...)`) and never reached the bump-carve path (step
 //! 3) where `virgin-zero-skip` actually fires. The "virgin" and "recycled"
 //! arms ended up measuring nearly the same code path. This was documented
@@ -67,7 +67,7 @@
 //!    times and pushes every pointer into a `Vec` that is freed AFTER
 //!    `Instant::elapsed()` is read.
 //! 4. **Path-activation oracle.** `AllocCore::dbg_small_zero_pass_count()`
-//!    (`src/alloc_core/alloc_core_core_diag.rs:516`, requires `alloc-stats`)
+//!    (`crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs:351`, requires `alloc-stats`)
 //!    already counts, process-wide, every Small `alloc_zeroed` call that took
 //!    the explicit-zero (non-virgin) path -- it is bumped in EXACTLY the
 //!    branch `virgin-zero-skip` bypasses (`alloc_core.rs:1310-1319`,
@@ -135,7 +135,7 @@ use sefer_alloc::AllocCore;
 /// comfortably Small-classified (`SegmentLayout::SMALL_MAX` is ~253 KiB under
 /// plain `production`; 128 KiB is still well under that ceiling), so every
 /// arm exercises the SAME `virgin-zero-skip`-gated Small `alloc_zeroed` path
-/// (`src/alloc_core/alloc_core.rs:1305-1338`), not the separately-gated Large
+/// (`crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs:264`), not the separately-gated Large
 /// freshness skip.
 const SIZES: &[(&str, usize)] = &[
     ("4k", 4096),
@@ -152,9 +152,9 @@ const RECYCLED_BATCH: usize = 16;
 /// Blocks per timed "batch" for the VIRGIN scenario -- **forced to 1 by a
 /// real structural property of the allocator discovered while building this
 /// judge's oracle, not a bench-design choice.** `alloc_small_with_virgin`'s
-/// bump-carve path (step 3, `src/alloc_core/alloc_core_small.rs:294-297`)
+/// bump-carve path (step 3, `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:230-242`)
 /// calls `carve_block_with_refill`
-/// (`src/alloc_core/alloc_core_small.rs:346-376`), which carves the caller's
+/// (`crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/find_segment/scan.rs:71-95`), which carves the caller's
 /// block AND ALSO proactively carves `REFILL_BATCH = 31` more blocks of the
 /// SAME class and pushes every one of them onto the free list (Phase 9
 /// amortisation, unconditional, not gated on `virgin-zero-skip`). Those 31
@@ -163,7 +163,7 @@ const RECYCLED_BATCH: usize = 16;
 /// off the free list at `alloc_small_with_virgin` step 1 -- and ANY
 /// free-list pop is `is_virgin = false` by the dispatch conjunct
 /// (`alloc_small_with_virgin`'s own doc,
-/// `src/alloc_core/alloc_core_small.rs:255-263`), regardless of whether the
+/// `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:196-202`), regardless of whether the
 /// popped block was ever actually dirtied. A first measurement at
 /// `BATCH = 16` (this file's original design) confirmed this empirically:
 /// virgin-path activation measured 6.25% = 1/16 -- exactly "only the first

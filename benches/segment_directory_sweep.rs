@@ -5,7 +5,7 @@
 //! ## Why this harness exists — the O(S) curve no existing judge can show
 //!
 //! `AllocCore::find_segment_with_free_impl`
-//! (`src/alloc_core/alloc_core_small.rs`) is, by its own doc comment, an
+//! (`crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/find_segment/scan.rs`) is, by its own doc comment, an
 //! O(segments) scan: on a free-list miss it walks every registered segment
 //! `[0, count)` looking for one whose `BinTable[class_idx]` is non-empty.
 //! Three prior tasks (X5, T10, R5-R1) tried to optimise this scan and each
@@ -206,7 +206,7 @@
 //! - `S = 1023`, not the task brief's literal `1024`, throughout this
 //!   harness (both the main matrix and the remote-density matrix below):
 //!   `construct_s_segments` carves `S + 1` registered segments total, and
-//!   `MAX_SEGMENTS` (`src/alloc_core/segment_table.rs`) hard-caps the
+//!   `MAX_SEGMENTS` (`crates/core/sefer-segment/src/segment/segment_table/impl_group/table_constants.rs`) hard-caps the
 //!   `SegmentTable` at 1024 slots — `S = 1024` would need 1025. `1023` sits
 //!   comfortably inside that ceiling and is functionally indistinguishable
 //!   from `1024` for showing the O(S) divergence at the ceiling.
@@ -234,7 +234,7 @@ use sefer_alloc::{AllocCore, SegmentLayout};
 /// registered segments total (the `S` SCANNABLE ones this parameter
 /// controls, plus one extra always-full "current" segment — see that
 /// function's doc comment for why the extra segment is structurally
-/// required), and `MAX_SEGMENTS` (`src/alloc_core/segment_table.rs`) hard-caps
+/// required), and `MAX_SEGMENTS` (`crates/core/sefer-segment/src/segment/segment_table/impl_group/table_constants.rs`) hard-caps
 /// the `SegmentTable` at 1024 registered slots — `S = 1024` would need 1025,
 /// exceeding it. `S = 1023` is the largest value this harness can honestly
 /// reach while still sitting comfortably inside the table's capacity, and it
@@ -420,7 +420,7 @@ struct Constructed {
 ///
 /// **Secondary correctness note (also found during development): the
 /// refill-batch residual.** The carve path (`carve_block_with_refill`,
-/// `src/alloc_core/alloc_core_small.rs`) does not just carve the ONE block a
+/// `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/find_segment/scan.rs`) does not just carve the ONE block a
 /// caller asked for — on every fresh carve it ALSO carves a refill batch of
 /// up to 31 EXTRA blocks (capped by however many more fit in that segment)
 /// and pushes them onto the SAME segment's own `BinTable`. A naive "stop the

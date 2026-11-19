@@ -14,11 +14,18 @@
 // Asserts pin the key relationships the P1.4 decision rests on.
 //
 // Usage: node scripts/p14_extraction_inventory.mjs   (exit 1 on any assert)
+import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '..');
-const read = (p) => readFileSync(join(ROOT, p), 'utf8');
+// P2.2 moved `src/alloc_core/**` wholesale into `crates/core/sefer-alloc-core`, and derived data
+// (classification CSV, layers.json, ghost-rules.json) has since moved on. This P1.4 inventory is the
+// recorded P1.4 acceptance derivation, so ALL of its repo reads are pinned to the P1.4 acceptance commit
+// — the script stays reproducible instead of silently breaking on later moves.
+const P1_4_SHA = 'b8d86949';
+const read = (p) =>
+  execFileSync('git', ['show', `${P1_4_SHA}:${p}`], { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 26 }).replace(/\r\n/g, '\n');
 const lines = (p) => read(p).split(/\r?\n/);
 
 // ── derived decisions (documented reasons from the P1.4 code read) ──
@@ -115,7 +122,7 @@ for (const f of FILES) {
 console.log('\n== 5. tests/ referencing extracted surface ==');
 const { execSync } = await import('node:child_process');
 const cls = read('docs/test_target_classification_20261115.csv');
-const testFiles = execSync('git ls-files tests', { cwd: ROOT, encoding: 'utf8' }).split(/\r?\n/).filter((p) => p.endsWith('.rs'));
+const testFiles = execSync(`git ls-tree -r --name-only ${P1_4_SHA} tests/`, { cwd: ROOT, encoding: 'utf8' }).split(/\r?\n/).filter((p) => p.endsWith('.rs'));
 for (const tf of testFiles) {
   const t = read(tf);
   const hits = [];

@@ -136,8 +136,8 @@ const COLD_BATCH: usize = 256;
 // `CHURN_OPS_2N` doubles `CHURN_OPS` (64 -> 128); `COLD_BATCH_2N` doubles
 // `COLD_BATCH` (256 -> 512). Both stay well inside the primordial segment's
 // single 4 MiB payload region (512 x 64 B = 32,768 B, a small fraction of one
-// `SEGMENT`; see `src/alloc_core/os.rs::SEGMENT = 1 << 22` and
-// `src/alloc_core/segment_header.rs`'s `primordial_meta_end()`/
+// `SEGMENT`; see `crates/platform/sefer-platform/src/os.rs::SEGMENT = 1 << 22` and
+// `crates/core/sefer-segment/src/segment/segment_header/segment_header_layout.rs`'s `primordial_meta_end()`/
 // `small_meta_end()` asserts), so doubling does NOT cross a segment-capacity
 // boundary the N-sized workload didn't already cross — the correctness
 // caveat the task brief flagged does not apply to these two op counts (see
@@ -206,7 +206,7 @@ fn small_churn_16b_2n() {
 // of a free's total Ir the `contains_base` own-thread ownership probe
 // (`HeapCore::dealloc_routing` -> `AllocCore::contains_base` ->
 // `SegmentTable::contains_base`, see `src/registry/heap_core_xthread/routing.rs` and
-// `src/alloc_core/segment_table.rs`) accounts for.
+// `crates/core/sefer-segment/src/segment/segment_table/impl_group/segment_table_impl.rs`) accounts for.
 //
 // `small_churn_16b` above measures alloc+dealloc TOGETHER; these arms isolate
 // JUST the free half. IMPORTANT CORRECTION vs an earlier draft of this note:
@@ -738,7 +738,7 @@ fn alloc_zeroed_magazine_hit_only_16b() {
 // isolation. R22-17/R23-1's `contains_base` isolation measures Tier-1's
 // cache-HIT cost (this crate's benched workloads never span more than
 // `OWN_CACHE_SIZE` (4) concurrently-hot segments, so Tier-2 never fires
-// there). `dbg_hash_contains_only` (`src/alloc_core/segment_table.rs`,
+// there). `dbg_hash_contains_only` (`crates/core/sefer-segment/src/segment/segment_table/impl_group/hash.rs`,
 // exposed via `HeapCore::dbg_hash_contains_only`) calls the SAME production
 // `hash_contains` routine directly, unconditionally skipping the Tier-1
 // `own_cache` check -- deterministically isolating Tier-2's cost regardless
@@ -1331,7 +1331,7 @@ fn alloc_clear_magazine_only_16b() {
 //
 // Size choice: 64 KiB (`65536`). Verified against this project's own
 // geometry (not assumed): `os::SEGMENT` is `1 << 22` = 4 MiB
-// (`src/alloc_core/os.rs:65`), and under plain `production` (no
+// (`crates/platform/sefer-platform/src/os.rs:80`), and under plain `production` (no
 // `medium-classes`) `SegmentLayout::SMALL_MAX` is `258752` bytes (~253 KiB,
 // the 40th geometric-progression small-class entry -- confirmed by direct
 // build, not from the stale-looking `EXTRAS`-array top of `16384`, which is
@@ -1340,7 +1340,7 @@ fn alloc_clear_magazine_only_16b() {
 // Small range (class index 42 of 49; confirmed via `dbg_layout_class_for`),
 // so the virgin-vs-recycled distinction under test here is the SMALL-path
 // one `virgin-zero-skip` actually gates -- NOT the Large-path freshness skip,
-// which is a SEPARATE, ALREADY-unconditional mechanism in `alloc_core.rs`'s
+// which is a SEPARATE, ALREADY-unconditional mechanism in `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs`'s
 // `alloc_zeroed` (R8-8/task #221, no feature gate at all) that this task does
 // NOT touch. 64 KiB is also comfortably larger than R13-3's own 8 KiB
 // `TARGET_CLASS`, and per the design docs' analytical memset-bandwidth table
@@ -1812,7 +1812,7 @@ fn oscillating_live_set_16b() {
 }
 
 // R23-3 -- cold CARVE isolation: `AllocCore::carve_batch`
-// (`src/alloc_core/alloc_core_small.rs`), the batched sibling of
+// (`crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:840::carve_batch`), the batched sibling of
 // `carve_block` that `carve_block_with_refill`'s refill loop calls
 // one-block-at-a-time. `dbg_carve_batch` (pre-existing test hook, task W4)
 // drives it DIRECTLY against a bare `AllocCore` -- no magazine, no

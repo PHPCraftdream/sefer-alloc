@@ -4,13 +4,13 @@
   "jobs": [
     {
       "id": "changes",
-      "metadata": "fd262382d2ed380d7a189499922d2aedceef4adc723491b007a558ac6d6f24fb",
+      "metadata": "fb1a059131ce4e19f4872511bf84418f3975a96a3cb62bae31b2bb598e312829",
       "steps": "1fe5589733f5bb700e49ab25de242b1626e691fd2ba507f210c3cd9d48c9cbd6"
     },
     {
       "id": "j13b-judge-preparation",
       "metadata": "12d71f089526cbe2378fed9277d7308920358924748ce4a3b8b08b4657f3f755",
-      "steps": "37407357cc2877bddbcdb91c2c3a8217d6d3578c333da4723ba7a981f5fd6685"
+      "steps": "e2112e020477cadb9b102c2d182c241d43de48a1fb365bc99de4074d9dad8312"
     },
     {
       "id": "select-tests",
@@ -25,7 +25,7 @@
     {
       "id": "ghost-guard",
       "metadata": "8b2ec8829d0c6313790165d9b067ad9f9bd8b127f1a90d6fd3d22ae844d82632",
-      "steps": "07c7343dd57fd107c3a02a8ed81e2b32202fb4042335ac022cddec0f014dfdf2"
+      "steps": "7483c71b319c597da192998f4c6f933eb7053c8ae08ae6d20e12b4e6d78cd1aa"
     },
     {
       "id": "ghost-zero-cost",
@@ -46,6 +46,11 @@
       "id": "sefer-segment-gates",
       "metadata": "c706f86f2775d2827bf94d0e4754228185d993ed943edb84ba4c6505c65e6cb8",
       "steps": "fa93c72ff671f84d8cc0d3815f2e5780d6fbd556f926e0f92045d4671e0296de"
+    },
+    {
+      "id": "sefer-alloc-core-gates",
+      "metadata": "2295c771e061ec7a47b2f7cafe399726102e3cece3fe9e1f0fd4d9df6db1668c",
+      "steps": "78296e0449131382579f48cfbb9969225f7146dc84c6b1d689d08213978060dc"
     },
     {
       "id": "sefer-region-gates",
@@ -185,12 +190,12 @@
     {
       "id": "test-workspace",
       "metadata": "40acb2def9c00e7827fc537b4c072de5aeb03e833f296ff336f68eb1847f82eb",
-      "steps": "8c0ec5977178414a19d76fddedde1c2f6caefa7b5c445ad3dbd4033d9cf72d56"
+      "steps": "71dda282622795f4ea165b1274e2c96b090846beb5d42c86a6585b63ea5d5c11"
     },
     {
       "id": "msrv",
       "metadata": "82d6c581574793f7d7793be181f1c858dd5b4dd6c3643e0c5cf321fce9fb1934",
-      "steps": "71279ec10ec3063aa72a2ce0b7f8a6eb639fcceedbde4ed0996b41f2b98802f9"
+      "steps": "ddcf49d57b404b55128d177bd5443ea808165ab072964c4af36a19d8ed27b215"
     },
     {
       "id": "msrv-runtime-windows",
@@ -210,7 +215,7 @@
     {
       "id": "miri-core-rest",
       "metadata": "105021fbdd1c46fa2c23c3405d05608dae2253a6ef4339851613b28808f7090e",
-      "steps": "6509f48f46775f13b2d938b3dec5303fbc4a9ddbe73c0bc1b2921505a32fef91"
+      "steps": "ec0376d7d60c1be226cd65fe60113f8899ac835ceb6276a3eec83dda390e9acb"
     },
     {
       "id": "miri-core-tb",
@@ -250,7 +255,7 @@
     {
       "id": "kani",
       "metadata": "71d4b71216c99bccfe28ef34e2639d0a4201b4081d7d706673238bdd0678e7a9",
-      "steps": "fa87c21b98f477c397dbcc154e5cdbe01c69b595c70877d57c8c48f2749047eb"
+      "steps": "891f25b566b082fd9ff24c16545fca1211381ce13ba25514e169ef283a01d114"
     },
     {
       "id": "loom-alloc-global",

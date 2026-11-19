@@ -145,7 +145,7 @@ const PROD_CLASSES: usize = 49;
 // geometric classes (16 B, 1.25x growth rounded up to the 16 B block stride,
 // the real table's `GEO_COUNT`) merged with the 9 exact device/page-friendly
 // classes of its `EXTRAS` (256 … 16384), strictly increasing — the same
-// construction `src/alloc_core/platform/size_classes.rs` uses, so the top of
+// construction `crates/core/sefer-segment/src/support/size_classes.rs` uses, so the top of
 // the table sits at the real `SMALL_MAX` (~253 KiB) instead of running off to
 // segment-sized blocks. The prototype stays isolated from the crate, so the
 // table is rebuilt from the constants above.

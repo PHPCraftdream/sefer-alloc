@@ -1,0 +1,631 @@
+//! Object lifecycle of [`AllocCore`] (mechanical split of the former flat
+//! `alloc_core.rs`, here merged from the former `ctor.rs` + `drop.rs` pair).
+//!
+//! Construction: the `impl AllocCore { .. }` block for `new`,
+//! `new_with_config`, `live_config_matches`, and `new_inner`, the
+//! `LargeCacheDecayConfig::from_config` constructor, and the
+//! `bench-internals`-gated `DBG_RESERVATION_OWNER_ID_COUNTER` source.
+//! Teardown: the `Drop` implementation that releases every OS reservation (including the owner-only sidecar spans via their `*_vm` reservation tokens, R2-12),
+//! plus the `base_add` node-seam offset helper.
+
+use crate::alloc_core::alloc_core::{release_large_mapping, AllocCore};
+use crate::alloc_core::fatal::fatal;
+use crate::alloc_core::large::reservation_state::LargeReservationState;
+use crate::alloc_core::node::Node;
+use crate::alloc_core::os;
+#[cfg(feature = "alloc-decommit")]
+use crate::alloc_core::segment_header::large_generation;
+use crate::alloc_core::segment_header::SegmentKind;
+
+use super::bootstrap;
+#[cfg(feature = "alloc-decommit")]
+use super::counters::LargeCacheHitCounter;
+use super::CLASS_CURSOR_NONE;
+#[cfg(feature = "alloc-decommit")]
+use super::{CachedLarge, LargeCacheDecayConfig, LARGE_CACHE_SLOTS};
+#[cfg(feature = "alloc-decommit")]
+use crate::alloc_core::large_cache_mode::LargeCacheMode;
+#[cfg(feature = "numa-aware")]
+use crate::alloc_core::numa;
+#[cfg(feature = "alloc-decommit")]
+use crate::alloc_core::os::SEGMENT;
+use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
+
+/// R31-15 (task #486): process-wide monotonic source for
+/// [`AllocCore::dbg_reservation_owner_id`]. `bench-internals`-gated, same
+/// discipline as the field it populates — this static does not exist at all
+/// in a `production` build.
+#[cfg(all(
+    feature = "bench-internals",
+    feature = "internals",
+    feature = "alloc-decommit"
+))]
+static DBG_RESERVATION_OWNER_ID_COUNTER: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+#[cfg(feature = "alloc-decommit")]
+impl LargeCacheDecayConfig {
+    /// Build the decay config from a resolved [`LargeCacheConfig`].
+    ///
+    /// [`LargeCacheConfig`]: crate::alloc_core::config::large_cache_config::LargeCacheConfig
+    fn from_config(cfg: &crate::alloc_core::large_cache_config::LargeCacheConfig) -> Self {
+        Self {
+            decay_rate_bp: cfg.resolved_decay_rate_bp(),
+            decay_interval: cfg.resolved_decay_interval(),
+            headroom_bytes: cfg.resolved_headroom_bytes(),
+            #[cfg(feature = "large-cache-adaptive")]
+            adaptive: true,
+            #[cfg(feature = "large-cache-adaptive")]
+            adaptive_budget: cfg.budget_bytes.is_none(),
+        }
+    }
+}
+
+#[cfg(feature = "alloc-decommit")]
+#[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+fn release_cached_on_drop(cached: CachedLarge) {
+    // The detached slot owns the reservation; a failed credit transition is
+    // terminal, and must never be followed by an OS release.
+    {
+        // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+        let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(cached.base) };
+        let generation = large_generation(meta.terminal_snapshot().large_state);
+        if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
+            fatal(b"lifecycle: cached release failed\n");
+        }
+    }
+    release_large_mapping(
+        // SAFETY: `base` is the aligned base of a live segment with an initialized header; the read follows the owner-only `thp_charge` field discipline.
+        unsafe { crate::alloc_core::segment_header::SegmentHeader::thp_charge_at(cached.base) },
+        cached.reservation,
+        cached.reservation_len,
+    );
+}
+
+/// Task #1998: resolve the empty-small-segment pool cap (`min(by_segments,
+/// by_bytes)`) into `AllocCore::pool_cap`'s storage width, `u32`. Shared by
+/// [`AllocCore::new_with_config`], [`AllocCore::live_config_matches`], and
+/// `new_inner`'s direct-default construction so the three sites (which MUST
+/// agree — see `live_config_matches`'s own "drift hazard" doc comment) share
+/// one clamp instead of three independently-typed copies. `unwrap_or(u32::MAX)`
+/// is the clamp: a resolved value above `u32::MAX` segments means the caller
+/// configured `>= 16 EiB` of pooled segments (`u32::MAX * SEGMENT` at
+/// `SEGMENT` = 4 MiB) — not a real configuration this crate needs to support
+/// exactly, just one that must not silently wrap.
+#[cfg(feature = "alloc-decommit")]
+fn resolve_pool_cap_u32(by_segments: usize, by_bytes: usize) -> u32 {
+    u32::try_from(by_segments.min(by_bytes)).unwrap_or(u32::MAX)
+}
+
+impl AllocCore {
+    /// Bootstrap the allocator using default large-cache configuration.
+    ///
+    /// Equivalent to `AllocCore::new_with_config(LargeCacheConfig::DEFAULT)`.
+    /// Returns `None` only if the OS refuses the primordial reservation (OOM at
+    /// startup).
+    ///
+    /// `AllocCore` intentionally does **not** implement `Default` (R3-C). Both
+    /// `new()` and `new_with_config()` return `Option<Self>` because the very
+    /// first thing construction does is a real multi-MiB OS memory reservation
+    /// for the primordial segment, which can fail under memory pressure /
+    /// OOM / `rlimit`. A `Default` impl would have to hide that fallibility
+    /// behind an `.expect(...)` panic, but generic code across the ecosystem
+    /// treats `T::default()` / `T: Default` as a conventionally-cheap,
+    /// infallible operation (e.g. `Option::<T>::unwrap_or_default()`,
+    /// `#[derive(Default)]`, `mem::take`, `resize_with(Default::default)`) —
+    /// none of those call sites expect a multi-MiB syscall plus a latent
+    /// panic. Keeping the construction fallibility explicit (callers write
+    /// `AllocCore::new().expect("...")` themselves) is the deliberate design,
+    /// not an oversight; do not re-add a `Default` impl.
+    #[must_use]
+    #[inline]
+    pub fn new() -> Option<Self> {
+        #[cfg(feature = "alloc-decommit")]
+        return Self::new_with_config(
+            crate::alloc_core::large_cache_config::LargeCacheConfig::DEFAULT,
+        );
+        #[cfg(not(feature = "alloc-decommit"))]
+        return Self::new_inner(None);
+    }
+
+    #[cfg(feature = "alloc-global")]
+    #[doc(hidden)]
+    #[allow(unsafe_code)]
+    /// # Safety
+    /// `owner` names a heap slot held by an exclusive registry lease; the core
+    /// must be installed in that same slot before any allocation can be routed
+    /// through the registered base. Slot/route/lifetime protocol must be obeyed.
+    ///
+    /// Observed accepted cases:
+    /// - `owner` names a slot with a live exclusive registry lease and the core
+    ///   is installed there before any routes are used.
+    /// - `owner` is the `segment_header::OWNER_ID_FALLBACK` single
+    ///   process-global initializer; the core is published after install.
+    ///
+    /// Alternatively, `owner` may be the literal
+    /// `segment_header::OWNER_ID_NONE` sentinel: it is outside the registry
+    /// slot space, so `RouteSlots` registers the core's segments in the route
+    /// directory under that id, but `HeapIngress::of` finds no ingress cell
+    /// for it and no registry slot exists — the result is the documented
+    /// standalone descriptor-backed mode. The caller must keep the core
+    /// single-threaded (`AllocCore` is `!Send`/`!Sync`) and drain its own
+    /// sidecar ingress before drop.
+    pub unsafe fn new_with_owner(owner: u32) -> Option<Self> {
+        #[cfg(feature = "alloc-decommit")]
+        return Self::new_with_config_and_owner(
+            crate::alloc_core::large_cache_config::LargeCacheConfig::DEFAULT,
+            Some(owner),
+        );
+        #[cfg(not(feature = "alloc-decommit"))]
+        return Self::new_inner(Some(owner));
+    }
+
+    /// Bootstrap the allocator with a user-supplied large-cache configuration.
+    ///
+    /// All `LargeCacheConfig` fields use their documented defaults when `None`.
+    /// Returns `None` only if the OS refuses the primordial reservation (OOM at
+    /// startup).
+    ///
+    /// Use this when you want to set the cache knobs at compile time without
+    /// environment variables (runnable form in `tests/large_cache_config_knobs.rs`):
+    ///
+    /// ```text
+    /// use sefer_alloc::{AllocCore, LargeCacheConfig, LargeCacheMode};
+    ///
+    /// let cfg = LargeCacheConfig::new()
+    ///     .budget_bytes(512 * 1024 * 1024)
+    ///     .headroom_bytes(64 * 1024 * 1024)
+    ///     .decay_interval_ms(200)
+    ///     .decay_rate_percent(25)
+    ///     .mode(LargeCacheMode::Lazy);
+    ///
+    /// let ac = AllocCore::new_with_config(cfg).expect("primordial");
+    /// drop(ac);
+    /// ```
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    #[inline]
+    pub fn new_with_config(
+        config: crate::alloc_core::large_cache_config::LargeCacheConfig,
+    ) -> Option<Self> {
+        Self::new_with_config_and_owner(config, None)
+    }
+
+    #[inline]
+    #[cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
+    #[doc(hidden)]
+    #[allow(unsafe_code)]
+    /// # Safety
+    /// The caller must satisfy the owner and publication contract of [`Self::new_with_owner`].
+    pub unsafe fn new_with_config_for_owner(
+        config: crate::alloc_core::large_cache_config::LargeCacheConfig,
+        owner: u32,
+    ) -> Option<Self> {
+        Self::new_with_config_and_owner(config, Some(owner))
+    }
+
+    #[cfg(feature = "alloc-decommit")]
+    fn new_with_config_and_owner(
+        config: crate::alloc_core::large_cache_config::LargeCacheConfig,
+        owner: Option<u32>,
+    ) -> Option<Self> {
+        let mut core = Self::new_inner(owner)?;
+        // TH-1 follow-up: the small-segment counter is process-wide, so the
+        // huge-page threshold is too: the first config to be materialised wins.
+        #[cfg(not(feature = "numa-aware"))]
+        let _ = crate::alloc_core::small::alloc_core_small::publish_huge_page_after(
+            config.resolved_huge_page_after_segments(),
+        );
+        // J13b: only a config that sets a THP knob publishes the process tuple (first wins).
+        #[cfg(not(feature = "numa-aware"))]
+        if config.has_explicit_thp_knob() {
+            crate::alloc_core::config::policy::large_thp_runtime::ThpRuntime::publish(
+                &config.resolved_thp_tuple(),
+            );
+        }
+        core.large_cache_budget_bytes = config.resolved_budget_bytes();
+        core.decay_config = LargeCacheDecayConfig::from_config(&config);
+        // R3-B (round3, решение №2): `LargeCacheMode` now carries only the
+        // `Lazy` variant — the unimplemented `Background`/`Both` variants were
+        // removed from the enum entirely ("make invalid states
+        // unrepresentable"). The old T5 panic-match that rejected them is gone
+        // with the variants: that match was itself reachable lazily through
+        // `GlobalAlloc::alloc` (first-bind materialises the heap) and so
+        // conflicted with the never-panics entry-point guarantee. With only
+        // `Lazy` representable there is nothing left to validate or branch on
+        // here — just store the resolved mode. See
+        // `docs/reviews/2026-07-12-round3-remediation-plan.md`.
+        core.large_cache_mode = config.resolved_mode();
+        // Mechanism 2 (task #51); RAD-3 (E2, task #56): resolve the
+        // empty-small-segment pool cap. The effective cap is the tighter of
+        // the two bounds the user actually controls:
+        //   - the configured segment count,
+        //   - the byte ceiling expressed in whole segments (each is `SEGMENT`).
+        // A `0` in EITHER config knob disables the pool (min → 0), matching the
+        // `SmallSegmentPoolConfig` contract. NO third `.min(POOL_MAX_SLOTS)`
+        // term — the old compile-time array bound is gone (the pool's storage
+        // is now the intrusive `SegmentHeader::pool_next`/`pool_prev` list,
+        // which has no fixed capacity), so a caller who asks for
+        // `.pool_segments(64)` genuinely GETS a cap of 64 (subject only to the
+        // byte budget), not a silent clamp to 4.
+        let pool_cfg = config.resolved_pool();
+        let by_segments = pool_cfg.resolved_pool_segments();
+        let by_bytes = pool_cfg.resolved_pool_byte_cap() / SEGMENT;
+        core.pool_cap = resolve_pool_cap_u32(by_segments, by_bytes);
+        Some(core)
+    }
+
+    /// Compare this heap's live (resolved) cache/pool policy against a
+    /// requested
+    /// [`LargeCacheConfig`](crate::alloc_core::config::large_cache_config::LargeCacheConfig).
+    /// Returns `true` when the resolved
+    /// values match what [`new_with_config`](Self::new_with_config) would
+    /// apply from `requested`.
+    ///
+    /// Used by `HeapRegistry::claim_lease_with_config` (task #95 / N2) to detect
+    /// that a recycled slot's pre-existing policy silently overrides a
+    /// different config passed by a later claimant. Comparing **resolved**
+    /// values (not the raw `Option` fields of `LargeCacheConfig`) means two
+    /// configs that resolve identically — e.g. `budget_bytes(None)` vs
+    /// `LargeCacheConfig::DEFAULT` — are correctly treated as a match, so
+    /// this only flags genuine policy differences, not stylistic builder
+    /// variation.
+    ///
+    /// **Drift hazard:** the comparisons here MUST stay in sync with the
+    /// fields [`new_with_config`](Self::new_with_config) sets. If a future
+    /// change adds a new config-derived field to `AllocCore`, add the
+    /// matching comparison here.
+    ///
+    /// R1-08: this method's only callers (`HeapCore::live_config_matches`,
+    /// `HeapRegistry::claim_lease_with_config`) live in `registry`, which itself
+    /// compiles only under `alloc-global` — add that gate alongside
+    /// `alloc-decommit` so `alloc-core alloc-decommit` (no `alloc-global`)
+    /// does not warn this dead.
+    #[inline]
+    #[cfg(all(feature = "alloc-decommit", feature = "alloc-global"))]
+    #[doc(hidden)] // P2.2 cross-crate boundary: called by the root crate's HeapCore/claim_lease_with_config
+    pub fn live_config_matches(
+        &self,
+        requested: &crate::alloc_core::large_cache_config::LargeCacheConfig,
+    ) -> bool {
+        if self.large_cache_budget_bytes != requested.resolved_budget_bytes() {
+            return false;
+        }
+        if self.decay_config != LargeCacheDecayConfig::from_config(requested) {
+            return false;
+        }
+        if self.large_cache_mode != requested.resolved_mode() {
+            return false;
+        }
+        let pool_cfg = requested.resolved_pool();
+        let by_segments = pool_cfg.resolved_pool_segments();
+        let by_bytes = pool_cfg.resolved_pool_byte_cap() / SEGMENT;
+        self.pool_cap == resolve_pool_cap_u32(by_segments, by_bytes)
+    }
+
+    /// Inner bootstrap: reserve the primordial segment and hand-carve its
+    /// self-hosted metadata. All feature-gated fields are set to their
+    /// defaults here; `new_with_config` then overwrites the decommit knobs.
+    #[inline]
+    #[allow(unsafe_code)] // P2.1 pass 11: facade removal — direct crate unsafe accessors under documented owner-root contracts.
+    fn new_inner(owner: Option<u32>) -> Option<Self> {
+        #[cfg_attr(not(feature = "alloc-global"), allow(unused_mut))]
+        let mut prim = bootstrap::primordial()?;
+        let primordial_base = prim.segment.as_ptr();
+        // The primordial segment hosts the registry AND serves as the first
+        // small segment (its remaining payload is free for small allocs).
+        let small_cur = primordial_base;
+        // Phase C (numa-aware): the primordial segment was reserved by
+        // `bootstrap::primordial()` via the plain OS path (it predates NUMA
+        // awareness). Stamp the current thread's NUMA node into its header NOW
+        // so that `find_segment_with_free` can treat it as a local segment.
+        // On platforms without NUMA `current_node()` returns `NO_NODE`; the
+        // field already holds `NO_NODE_RAW` (same value), so this is a no-op
+        // in terms of visible effect — but it makes the invariant explicit.
+        #[cfg(feature = "numa-aware")]
+        {
+            let my_node = numa::current_node();
+            // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+            unsafe { crate::alloc_core::segment_header::SegmentMeta::new(primordial_base) }
+                .set_node_id(my_node);
+        }
+        #[cfg(feature = "alloc-global")]
+        if let Some(owner) = owner {
+            // SAFETY: primordial base is the live initialized table segment;
+            // owner id comes from the registry lease (single-threaded boot).
+            #[allow(unsafe_code)]
+            unsafe {
+                prim.table.attach_owner(owner, primordial_base)?
+            };
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        let _ = owner;
+        // Keep the owning Segment alive through every fallible/panic-capable
+        // bootstrap step. The table now owns release at AllocCore::drop.
+        core::mem::forget(prim.segment);
+        Some(Self {
+            table: prim.table,
+            small_cur,
+            // B4 §11: no discovery has run yet on this fresh core; every class
+            // starts cursor-less (scan from slot 0 exactly as before).
+            small_class_cursor: [CLASS_CURSOR_NONE; SMALL_CLASS_COUNT],
+            // R11-5: cache starts empty; first call to `current_node_cached`
+            // populates it. `HeapRegistry::claim_lease` resets it to `None` on
+            // every (re-)claim of a registry slot so a recycled slot never
+            // hands a stale node to a new owning thread. Standalone
+            // `AllocCore`s (tests) never claim/recycle, so the first-query
+            // value persists for their lifetime — correct, since they are
+            // single-threaded by construction. See `PHASE_NUMA_DESIGN.md` §4.1.
+            #[cfg(feature = "numa-aware")]
+            cached_numa_node: None,
+            // R12-5: no hits served yet; the first `current_node_cached` call
+            // is a miss regardless (cache is `None`), which itself resets
+            // this counter to 0 on populate.
+            #[cfg(feature = "numa-aware")]
+            numa_node_hits_since_refresh: 0,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache: [const { None }; LARGE_CACHE_SLOTS],
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_occupied: 0,
+            #[cfg(feature = "large-cache-extended")]
+            large_cache_extension: core::ptr::null_mut(),
+            #[cfg(feature = "large-cache-extended")]
+            large_cache_extension_vm: None,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_budget_bytes: None,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_used_bytes: 0,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_seq: 0,
+            #[cfg(feature = "alloc-decommit")]
+            decay_config: LargeCacheDecayConfig {
+                decay_rate_bp: crate::alloc_core::large_cache_config::DEFAULT_DECAY_RATE_PERCENT * 100,
+                decay_interval: core::time::Duration::from_millis(
+                    crate::alloc_core::large_cache_config::DEFAULT_DECAY_INTERVAL_MS,
+                ),
+                headroom_bytes: crate::alloc_core::large_cache_config::DEFAULT_HEADROOM_BYTES,
+                #[cfg(feature = "large-cache-adaptive")]
+                adaptive: true,
+                #[cfg(feature = "large-cache-adaptive")]
+                adaptive_budget: true,
+            },
+            #[cfg(feature = "alloc-decommit")]
+            last_decay_tick: None,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_decay_op_count: 0,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_mode: LargeCacheMode::Lazy,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_hits: LargeCacheHitCounter::new(0),
+            // W3: unbound by default; `HeapRegistry::claim_lease` redirects this to
+            // the owning slot's counter for a registry-bound heap. Standalone
+            // `AllocCore`s (tests) stay `None` and count into the owned field
+            // above.
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_hits_sink: None,
+            // Mechanism 2 (task #51); RAD-3 (E2, task #56): empty pool.
+            // `pool_cap` defaults to the production default here (as if
+            // `SmallSegmentPoolConfig::DEFAULT`); `new_with_config` overwrites
+            // it from the resolved config. The `new_inner`-only path (a
+            // `not(alloc-decommit)`-style direct bootstrap) never reaches
+            // this arm — every `alloc-decommit` build funnels construction
+            // through `new_with_config`. `pool_head`/`pool_tail` start
+            // `null` (empty list) — no fixed-size array to zero-init.
+            #[cfg(feature = "alloc-decommit")]
+            pool_head: core::ptr::null_mut(),
+            #[cfg(feature = "alloc-decommit")]
+            pool_tail: core::ptr::null_mut(),
+            #[cfg(feature = "alloc-decommit")]
+            pooled_count: 0,
+            #[cfg(feature = "alloc-decommit")]
+            pool_cap: resolve_pool_cap_u32(
+                crate::alloc_core::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_SEGMENTS,
+                crate::alloc_core::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_BYTE_CAP
+                    / SEGMENT,
+            ),
+            #[cfg(feature = "alloc-decommit")]
+            last_pool_decay_tick: None,
+            #[cfg(feature = "alloc-segment-directory")]
+            directory_sidecar: core::ptr::null_mut(),
+            #[cfg(feature = "alloc-segment-directory")]
+            directory_sidecar_vm: None,
+            #[cfg(feature = "alloc-segment-directory")]
+            directory_miss_streak: [0; SMALL_CLASS_COUNT],
+            // R31-15 (task #486): stamp a fresh, process-wide-unique identity
+            // for this AllocCore. See the field's own doc comment for why
+            // this must be a monotonic counter rather than `&self`'s address.
+            #[cfg(all(feature = "bench-internals", feature = "internals", feature = "alloc-decommit"))]
+            dbg_reservation_owner_id: DBG_RESERVATION_OWNER_ID_COUNTER
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed),
+        })
+    }
+}
+
+/// # ⚠️ Quiescence pin (UBFIX-12 / L-8, 0.3.0) — read before adding any
+/// `Sync`/cross-thread capability to `AllocCore`, or before making registry
+/// heaps droppable
+///
+/// This `drop` walks every segment in `self.table` and releases its OS
+/// reservation (`os::release_segment`) unconditionally. It performs no
+/// handshake against concurrent foreign-free producers, and no
+/// quiescence argument is claimed here. What it orders is ADMISSION:
+/// `close_routes()` — the first statement — unlinks this table's routes
+/// while every reservation is still mapped, so new address lookups stop
+/// returning them. A pin taken before unlink keeps only its
+/// independently allocated descriptor/sidecar alive until the last pin
+/// release (the directory reclaims unlinked entries and sidecars at
+/// that point); a pin is a descriptor capability, NOT a reservation
+/// credit — it does not keep the segment, this core, or any user
+/// allocation alive. Outstanding allocation pointers become invalid as
+/// the walk releases their segments; the terminal protocol supplies no
+/// lifetime proof for a free published against an address whose segment
+/// or core is already gone.
+///
+/// **Today the unconditional release is additionally guarded twice over**,
+/// for two independent reasons, EITHER of which is already sufficient on
+/// its own:
+///
+/// 1. **Registry heaps never reach this `drop`.** The `HeapRegistry`/
+///    `HeapCore` substrate that `SeferAlloc`/TLS actually use lives for the
+///    entire process (`HeapCore::new`'s `AllocCore` is retained in its slot
+///    for reuse when a lease ends). So the ONLY way
+///    to reach `AllocCore::drop` today is constructing a STANDALONE
+///    `AllocCore` directly (`AllocCore::new`, bypassing the
+///    registry entirely) and letting it go out of scope.
+/// 2. **A standalone `AllocCore` has no routed segments at all.** Route
+///    descriptors are attached only when construction is given an owner id
+///    (`new_with_owner` → `new_inner(Some(owner))` → `table.attach_owner`);
+///    a standalone core is built with `owner == None`, so `routes` stays
+///    `None` and nothing about its segments is reachable from the route
+///    directory. On top of that, `AllocCore` is `!Send`/`!Sync` (raw
+///    pointers, no manual impls) and its public free requires `&mut self`,
+///    so no other thread can drive the core itself. Any outstanding
+///    allocation pointer becomes invalid when the core is dropped.
+///
+/// Either of these changes can re-open a real race window:
+/// (a) some future change makes registry heaps droppable (e.g. a
+/// decommit-when-empty or heap-teardown policy that actually frees a
+/// `HeapCore`'s `AllocCore`, not just recycles the slot) — then the drop
+/// must account for producers still holding route pins, and for any future
+/// protocol that lets a producer touch reservation words again — OR (b)
+/// some future change adds `unsafe impl Sync for AllocCore` (or otherwise
+/// exposes a standalone `AllocCore` for cross-thread sharing outside the
+/// registry). If EITHER lands, this `drop` needs a quiescence argument —
+/// e.g. proving that no producer can still hold a pin capable of
+/// publishing after the last reservation is released, or draining and
+/// consuming every published record under a happens-before edge that
+/// rules out late publication — before it is safe to release segments
+/// unconditionally as it does now. This note is the load-bearing reminder
+/// to add that argument at that time; do not remove or weaken it while
+/// working on (a) or (b) above.
+impl Drop for AllocCore {
+    #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension_mut`
+                          // boundary when `large-cache-extended` is on, right after
+                          // `self.large_cache_extension` is proven non-null. Sound: the pointer
+                          // was produced only by `reserve_large_cache_extension`
+                          // (typed-initialised), `AllocCore`'s owner-only discipline (neither
+                          // `Send` nor `Sync`) rules out a concurrent reader/writer, and no other
+                          // reference to the sidecar is live across this call (this IS the
+                          // teardown path — no other method runs concurrently with `drop`).
+    fn drop(&mut self) {
+        // Close directory admission while every reservation is still mapped.
+        self.table.close_routes();
+        // OPT-E (alloc-decommit): release any large segments held in the
+        // free-cache BEFORE walking the segment table. The cached entries are
+        // NOT in the table (they were unregistered on deposit), so the normal
+        // `table.bases()` walk below won't see them. We must release them
+        // explicitly here or they would leak.
+        #[cfg(feature = "alloc-decommit")]
+        for slot in &mut self.large_cache {
+            if let Some(cached) = slot.take() {
+                release_cached_on_drop(cached);
+            }
+        }
+        // R13-7 (task #277): the lazily-materialised extension sidecar holds
+        // large-cache entries the SAME way the base array does (unregistered
+        // from `self.table`, so the `table.bases()` walk below never sees
+        // them) — its reservations must be released here too, or they leak
+        // on drop. R2-12: the sidecar's OWN VM span is released too — via
+        // the `large_cache_extension_vm` reservation token, whose `Drop`
+        // runs immediately after this body (struct fields drop after
+        // `Drop::drop` returns), so the span cannot be released while the
+        // cached entries above are still being read through it. (Before
+        // R2-12 the span was leaked for the process lifetime — defensible
+        // for registry heaps, an unbounded leak under standalone core
+        // churn; the directory sidecar's token gets the same treatment.)
+        #[cfg(feature = "large-cache-extended")]
+        if !self.large_cache_extension.is_null() {
+            // SAFETY: see the `#[allow(unsafe_code)]` justification on
+            // `Drop::drop` above.
+            let ext = unsafe {
+                crate::alloc_core::large_cache_extended::deref_large_cache_extension_mut(
+                    self.large_cache_extension,
+                    &*self,
+                )
+            };
+            for slot in &mut ext.slots {
+                if let Some(cached) = slot.take() {
+                    release_cached_on_drop(cached);
+                }
+            }
+        }
+
+        // Free each live segment's OS reservation AS we walk the registry,
+        // instead of buffering every `(reservation, reservation_len)` pair
+        // into a fixed-size stack array first (R1-04: the old buffer was
+        // `[(*mut u8, usize); MAX_SEGMENTS]`, 65 536 B — enough on its own to
+        // overflow a thread with a small stack, e.g. 64 KiB, across
+        // `AllocCore::new()` + `drop`).
+        //
+        // We must NOT free the primordial segment mid-walk: the registry
+        // (`self.table`'s `slots`/`hash_slots`/`free_list`/`free_top` arrays)
+        // lives IN the primordial segment's payload, and `bases()` keeps
+        // reading `slots[i]` for every remaining `i` as the loop continues —
+        // freeing that segment early would make those later reads
+        // use-after-free. Every OTHER segment's memory is read only by
+        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
+        // `unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(base) }` right here, before it is released,
+        // so freeing it immediately (rather than after the whole walk) is
+        // safe: nothing later in this loop depends on that segment (as
+        // opposed to the primordial segment, which hosts the registry
+        // itself) staying mapped.
+        //
+        // `self.table.bases()` already filters NULL (recycled) slots — those
+        // segments were released by `recycle()` during their decommit cycle
+        // and must NOT be freed again. Slot 0 is always the primordial base
+        // and is never recycled (see `SegmentTable`'s `count` field doc
+        // comment), so it is always the FIRST base this iterator yields —
+        // `enumerate()`'s index 0 reliably identifies it without needing a
+        // separately stored primordial-base pointer.
+        let mut primordial_reservation: Option<(*mut u8, usize)> = None;
+        for (i, base) in self.table.bases().enumerate() {
+            // Every registered segment has a valid reservation recorded (set
+            // at register-time). We free them all — including large segments
+            // whose magic was zeroed by `dealloc` (they are still mapped and
+            // still carry the reservation info in their header).
+            // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
+            let hdr = unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(base) };
+            if i == 0 {
+                primordial_reservation = Some((hdr.reservation, hdr.reservation_len));
+                continue;
+            }
+            if hdr.kind == SegmentKind::Large {
+                // A registered Large in a standalone core is still LIVE.
+                // Claim its credit before the terminal transition and unmap.
+                {
+                    // SAFETY: `base` is a canonical registered root obtained under the allocator's table/route ownership protocol; the caller keeps the mapping live for every use of the returned metadata view (`SegmentMeta::new` # Safety).
+                    let meta = unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) };
+                    let state = LargeReservationState::new(meta.large_state_atomic());
+                    let Some(generation) = state.claim_live() else {
+                        fatal(b"lifecycle: live claim credit missing\n");
+                    };
+                    if !state.release_consumed(generation) {
+                        fatal(b"lifecycle: consumed release failed\n");
+                    }
+                }
+            }
+            let charge = if hdr.kind == SegmentKind::Large {
+                hdr.thp_charge
+            } else {
+                0
+            };
+            release_large_mapping(charge, hdr.reservation, hdr.reservation_len);
+        }
+        // Free the primordial segment LAST — only after the walk (and every
+        // read of the registry it hosts) has finished.
+        if let Some((reservation, reservation_len)) = primordial_reservation {
+            os::release_segment(reservation, reservation_len);
+        }
+    }
+}
+
+// NOTE: `AllocCore` is intentionally NOT `Send` nor `Sync`. The registry
+// keeps it in place while lease ownership transfers between claimants; the
+// ordered slot protocol, not an `AllocCore: Send` bound, provides handoff.
+
+/// `base + off` as `*mut u8`, routed through the `node` seam. The Cartographer
+/// only ever passes offsets derived from the fixed [`SegmentLayout`](crate::alloc_core::segment_layout::SegmentLayout) or the bump
+/// cursor (both bounded by `SEGMENT`).
+pub(in crate::alloc_core) fn base_add(base: *mut u8, off: usize) -> *mut u8 {
+    Node::offset(base, off)
+}

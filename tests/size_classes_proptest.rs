@@ -25,8 +25,8 @@
 //!    workload repeating such an allocation more than `MAX_SEGMENTS` (1024)
 //!    times — is the exact `SegmentTable`-exhaustion abort #114 fixed for a
 //!    different alignment range. This assertion is the property that would
-//!    fail if `PAGE_ALIGNED_EXTRA` were reverted to empty (see
-//!    `src/alloc_core/platform/size_classes.rs` and
+//!    fail if `EXTRAS` were reverted to empty (see
+//!    `crates/core/sefer-segment/src/support/size_classes.rs` and
 //!    `tests/regression_page_aligned_no_segment_exhaustion.rs` for the
 //!    execution-level counterfactual).
 

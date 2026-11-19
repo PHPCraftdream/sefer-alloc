@@ -135,7 +135,7 @@ runs:
     # without `mock`), but that covers only the shim IN ISOLATION — not
     # whether `sefer-alloc` built with `numa-aware` and WITHOUT
     # `numa-aware-mock` still compiles/links against it (the actual
-    # integration surface: `src/alloc_core/platform/numa.rs`'s thin wrapper calling
+    # integration surface: `crates/core/sefer-alloc-core/src/alloc_core/platform/numa.rs`'s thin wrapper calling
     # into the shim's real functions). The only job that builds this
     # combination is `numa-real-kernel` below, gated to `schedule`/
     # `workflow_dispatch` (weekly) — a signature drift in e.g.

@@ -1,0 +1,26 @@
+name: CI sefer-alloc-core-gates
+description: sefer-alloc-core package gates (P2.2 extraction)
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - run: cargo clippy -p sefer-alloc-core --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p sefer-alloc-core --no-default-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p sefer-alloc-core --all-features --all-targets -- -D warnings
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo check -p sefer-alloc-core --all-features --all-targets
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: RUSTDOCFLAGS="-D warnings" cargo doc -p sefer-alloc-core --all-features --no-deps
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    # Packaging verification is deferred until the crate's path dependencies
+    # are published, as with ci-sefer-segment-gates and ci-sefer-platform-gates
+    # (P2.1 fixed the same premature `cargo publish --dry-run` in be789c5a).

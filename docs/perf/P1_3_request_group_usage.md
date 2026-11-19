@@ -2,29 +2,23 @@
 
 # P1.3 `LargeThpRequestGroup` usage report
 
-`#[non_exhaustive]` on the enum definition: asserted PRESENT. Root `src/**` matches on the enum: asserted 0. sefer-policy matches on the enum: asserted exactly one (the exhaustive `index` match in the enum file).
+`#[non_exhaustive]` on the enum definition: asserted PRESENT. Root `src/**` matches on the enum: asserted 0. `sefer-alloc-core` matches on the enum: asserted 0. sefer-policy matches on the enum: asserted exactly one (the exhaustive `index` match in the enum file).
 
 Variants (asserted equal to the enum definition in `crates/core/sefer-policy/src/policy/large_thp/large_thp_request_group.rs`): `Under1MiB`, `MiB1To8`, `MiB8To32`, `MiB32To128`, `MiB128To512`, `Over512MiB` (6).
 
 ## 1. Root crate `src/**` (cross-crate vs `sefer-policy`: a `#[non_exhaustive]` enum would force wildcards here)
 
-Files scanned: 174; files with a use: 4; rows: 8 = match arm 0 + of_bytes call 2 + index call 2 + type mention 0 + variant construction 0 + import-reexport 4 + other 0.
+Files scanned: 62; files with a use: 2; rows: 2 = match arm 0 + of_bytes call 0 + index call 0 + type mention 0 + variant construction 0 + import-reexport 2 + other 0.
 Matches on the enum: 0 (exhaustive without wildcard: 0; with an existing wildcard: 0; guarded variant arms ignored for coverage: 0).
 
 | file:line | kind | match | note |
 |---|---|---|---|
-| src/alloc_core/alloc_core/mem/advise_fresh_large.rs:4 | import-reexport | — | use (import) |
-| src/alloc_core/alloc_core/mem/advise_fresh_large.rs:81 | index call | — | `.index()` on the `of_bytes` result |
-| src/alloc_core/alloc_core/mem/advise_fresh_large.rs:81 | of_bytes call | — | `LargeThpRequestGroup::of_bytes` |
-| src/alloc_core/alloc_core/mem/large_control/observe_large_control.rs:6 | import-reexport | — | use (import) |
-| src/alloc_core/alloc_core/mem/large_control/observe_large_control.rs:34 | index call | — | `.index()` on the `of_bytes` result |
-| src/alloc_core/alloc_core/mem/large_control/observe_large_control.rs:34 | of_bytes call | — | `LargeThpRequestGroup::of_bytes` |
-| src/alloc_core/mod.rs:284 | import-reexport | — | pub use (re-export) |
-| src/lib.rs:550 | import-reexport | — | pub use (re-export) |
+| src/alloc_core/mod.rs:41 | import-reexport | — | pub use (re-export) |
+| src/lib.rs:588 | import-reexport | — | pub use (re-export) |
 
 ## 2. Integration tests `tests/**` (each test file is its own crate: would also have needed wildcards)
 
-Files scanned: 1159; files with a use: 2; rows: 37 = match arm 0 + of_bytes call 12 + index call 0 + type mention 0 + variant construction 12 + import-reexport 2 + other 11.
+Files scanned: 1161; files with a use: 2; rows: 37 = match arm 0 + of_bytes call 12 + index call 0 + type mention 0 + variant construction 12 + import-reexport 2 + other 11.
 Matches on the enum: 0 (exhaustive without wildcard: 0; with an existing wildcard: 0; guarded variant arms ignored for coverage: 0).
 
 | file:line | kind | match | note |
@@ -67,9 +61,24 @@ Matches on the enum: 0 (exhaustive without wildcard: 0; with an existing wildcar
 | tests/j13b_gradient_core.rs:91 | variant construction | — | `LargeThpRequestGroup::Over512MiB` |
 | tests/loom_thp_ledger.rs:68 | import-reexport | — | pub use (re-export) |
 
-## 3. Crate `crates/core/sefer-policy/src/**` (same crate as the enum: never needs a wildcard)
+## 3. Crate `crates/core/sefer-alloc-core/src/**` (cross-crate vs `sefer-policy`: must use `of_bytes(..).index()`)
 
-Files scanned: 33; files with a use: 4; rows: 25 = match arm 6 + of_bytes call 2 + index call 1 + type mention 3 + variant construction 6 + import-reexport 3 + other 4.
+Files scanned: 64; files with a use: 3; rows: 7 = match arm 0 + of_bytes call 2 + index call 2 + type mention 0 + variant construction 0 + import-reexport 3 + other 0.
+Matches on the enum: 0 (exhaustive without wildcard: 0; with an existing wildcard: 0; guarded variant arms ignored for coverage: 0).
+
+| file:line | kind | match | note |
+|---|---|---|---|
+| crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/advise_fresh_large.rs:4 | import-reexport | — | use (import) |
+| crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/advise_fresh_large.rs:81 | index call | — | `.index()` on the `of_bytes` result |
+| crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/advise_fresh_large.rs:81 | of_bytes call | — | `LargeThpRequestGroup::of_bytes` |
+| crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/large_control/observe_large_control.rs:6 | import-reexport | — | use (import) |
+| crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/large_control/observe_large_control.rs:42 | index call | — | `.index()` on the `of_bytes` result |
+| crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/large_control/observe_large_control.rs:42 | of_bytes call | — | `LargeThpRequestGroup::of_bytes` |
+| crates/core/sefer-alloc-core/src/alloc_core/mod.rs:319 | import-reexport | — | pub use (re-export) |
+
+## 4. Crate `crates/core/sefer-policy/src/**` (same crate as the enum: never needs a wildcard)
+
+Files scanned: 33; files with a use: 4; rows: 24 = match arm 6 + of_bytes call 2 + index call 1 + type mention 3 + variant construction 6 + import-reexport 3 + other 3.
 Matches on the enum: 1 (exhaustive without wildcard: 1; with an existing wildcard: 0; guarded variant arms ignored for coverage: 0).
 
 | file:line | kind | match | note |
@@ -90,11 +99,10 @@ Matches on the enum: 1 (exhaustive without wildcard: 1; with an existing wildcar
 | crates/core/sefer-policy/src/policy/large_thp/large_thp_request_group.rs:76 | match arm | match@71 | `Self::MiB128To512` |
 | crates/core/sefer-policy/src/policy/large_thp/large_thp_request_group.rs:77 | match arm | match@71 | `Self::Over512MiB` |
 | crates/core/sefer-policy/src/policy/large_thp/mod.rs:23 | other | — | comment/doc mention |
-| crates/core/sefer-policy/src/policy/large_thp/mod.rs:23 | other | — | comment/doc mention |
 | crates/core/sefer-policy/src/policy/large_thp/mod.rs:54 | import-reexport | — | pub use (re-export) |
 | crates/core/sefer-policy/src/policy/large_thp_runtime/thp_advice.rs:4 | import-reexport | — | use (import) |
-| crates/core/sefer-policy/src/policy/large_thp_runtime/thp_advice.rs:64 | of_bytes call | — | `LargeThpRequestGroup::of_bytes` |
-| crates/core/sefer-policy/src/policy/large_thp_runtime/thp_advice.rs:73 | type mention | — | `LargeThpRequestGroup` |
+| crates/core/sefer-policy/src/policy/large_thp_runtime/thp_advice.rs:67 | of_bytes call | — | `LargeThpRequestGroup::of_bytes` |
+| crates/core/sefer-policy/src/policy/large_thp_runtime/thp_advice.rs:77 | type mention | — | `LargeThpRequestGroup` |
 | crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs:4 | import-reexport | — | use (import) |
 | crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs:52 | other | — | comment/doc mention |
 | crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs:537 | index call | — | `.index()` on the `of_bytes` result |
@@ -108,21 +116,23 @@ Matches on the enum:
 
 Counters: exhaustive matches without wildcard = 1; wildcard needed = 0 (same crate).
 
-## 4. Public reachability of `LargeThpRequestGroup` from the root crate
+## 5. Public reachability of `LargeThpRequestGroup` from the root crate
 
 | hop | file:line | statement | attributes directly above |
 |---|---|---|---|
-| crate root re-export | src/lib.rs:549 | `pub use alloc_core::{ LargeThpCurve, LargeThpEstimator, LargeThpGradient, LargeThpMode, LargeThpRequestGroup, LargeThpShare, };` | `#[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]` |
-| `alloc_core` group re-export | src/alloc_core/mod.rs:283 | `pub use policy::large_thp::{ LargeThpCurve, LargeThpEstimator, LargeThpGradient, LargeThpMode, LargeThpRequestGroup, LargeThpShare, };` | `#[cfg(feature = "alloc-decommit")]` |
-| `alloc_core::policy` module alias | src/alloc_core/mod.rs:155 | `pub use config::policy;` | `#[cfg(feature = "alloc-decommit")]` |
-| `alloc_core::config` forwarding to sefer-policy | src/alloc_core/config/mod.rs:29 | `pub use sefer_policy::{large_cache_config, large_cache_mode, policy, small_segment_pool_config};` | `#[cfg(feature = "alloc-decommit")]` |
-| `mod alloc_core` declarations in lib.rs (decides external visibility of the `alloc_core::` path) | src/lib.rs:472 | `pub mod alloc_core;` | `#[cfg(all(feature = "alloc-core", feature = "internals"))]` `#[doc(hidden)]` `#[allow(missing_docs)]` |
-| `mod alloc_core` declarations in lib.rs (decides external visibility of the `alloc_core::` path) | src/lib.rs:482 | `pub(crate) mod alloc_core;` | `#[cfg(all(feature = "alloc-core", not(feature = "internals")))]` |
+| crate root re-export | src/lib.rs:587 | `pub use alloc_core::{ LargeThpCurve, LargeThpEstimator, LargeThpGradient, LargeThpMode, LargeThpRequestGroup, LargeThpShare, };` | `#[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]` |
+| `alloc_core` group re-export (root facade over sefer-alloc-core) | src/alloc_core/mod.rs:40 | `pub use sefer_alloc_core::alloc_core::policy::large_thp::{ LargeThpCurve, LargeThpEstimator, LargeThpGradient, LargeThpMode, LargeThpRequestGroup, LargeThpShare, };` | `#[cfg(feature = "alloc-core")]` `#[cfg(feature = "alloc-decommit")]` |
+| `alloc_core::policy` conduit re-export (root facade over sefer-alloc-core) | src/alloc_core/mod.rs:37 | `pub use sefer_alloc_core::alloc_core::policy;` | `#[cfg(feature = "alloc-core")]` `#[cfg(feature = "alloc-decommit")]` |
+| `alloc_core::policy` intermediate alias (new crate: `pub use config::policy;`) | crates/core/sefer-alloc-core/src/alloc_core/mod.rs:173 | `pub use config::policy;` | `#[cfg(feature = "alloc-decommit")]` |
+| `alloc_core::config` forwarding to sefer-policy (new crate) | crates/core/sefer-alloc-core/src/alloc_core/config/mod.rs:30 | `pub use sefer_policy::{large_cache_config, large_cache_mode, policy, small_segment_pool_config};` | `#[cfg(feature = "alloc-decommit")]` |
+| sefer-policy `policy` module (canonical definition site of the `large_thp` tree) | crates/core/sefer-policy/src/lib.rs:77 | `pub mod policy;` | `#[cfg(feature = "alloc-decommit")]` |
+| `mod alloc_core` declarations in lib.rs (decides external visibility of the `alloc_core::` path) | src/lib.rs:510 | `pub mod alloc_core;` | `#[cfg(all(feature = "alloc-core", feature = "internals"))]` `#[doc(hidden)]` `#[allow(missing_docs)]` |
+| `mod alloc_core` declarations in lib.rs (decides external visibility of the `alloc_core::` path) | src/lib.rs:520 | `pub(crate) mod alloc_core;` | `#[cfg(all(feature = "alloc-core", not(feature = "internals")))]` |
 
-Public path: `sefer_alloc::LargeThpRequestGroup` via src/lib.rs:549.
+Public path: `sefer_alloc::LargeThpRequestGroup` via src/lib.rs:587.
 - `#[doc(hidden)]` on that re-export: no.
 - Feature gate on that re-export: `alloc-core` + `alloc-decommit`; `internals`-style gate: no.
 - Verdict: part of the stable public API surface (when `alloc-core` + `alloc-decommit` enabled).
-- The `alloc_core::` path itself is pub + doc-hidden at src/lib.rs:472 / crate-private at src/lib.rs:482 (see the table); the root re-export above is what makes the type nameable without `internals`.
-- Enum attribute at `HEAD` (old root location): `#[non_exhaustive]` present; in the working tree (`crates/core/sefer-policy/src/policy/large_thp/large_thp_request_group.rs`): `#[non_exhaustive]` present.
+- The `alloc_core::` path itself is pub + doc-hidden at src/lib.rs:510 / crate-private at src/lib.rs:520 (see the table); the root re-export above is what makes the type nameable without `internals`.
+- Enum attribute at `HEAD` (old root location): unavailable (git show failed); in the working tree (`crates/core/sefer-policy/src/policy/large_thp/large_thp_request_group.rs`): `#[non_exhaustive]` present.
 

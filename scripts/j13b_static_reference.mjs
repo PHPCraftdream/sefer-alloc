@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-const FRESH = 'src/alloc_core/alloc_core/mem/advise_fresh_large.rs';
+// P2.2: file moved wholesale to the sefer-alloc-core crate; content (and the
+// pinned whole-file hash below) is unchanged.
+const FRESH = 'crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/advise_fresh_large.rs';
 const RUNTIME = 'crates/core/sefer-policy/src/policy/large_thp_runtime/thp_runtime.rs';
 const ADMISSION = `        let prior = LEARNERS[group].try_observe_with_prior(&Self::current().gradient, observation);
         match prior {

@@ -22,9 +22,14 @@ fn alloc_large_overflow_returns_null() {
     // so the request reaches the SEGMENT rounding — where
     // `div_ceil(SEGMENT) * SEGMENT` overflows and must yield null.
     let near_max = usize::MAX - 2 * 1024 * 1024;
-    let p = ac.dbg_alloc_large_for_test(near_max, 8);
+    // SAFETY (`dbg_alloc_large_for_test` # Safety): `align` is 8, a non-zero
+    // power of two; `size` may be any `usize` (checked arithmetic in
+    // `alloc_large` concedes null on overflow).
+    let p = unsafe { ac.dbg_alloc_large_for_test(near_max, 8) };
     assert!(p.is_null(), "SEGMENT-rounding overflow must return null");
     // Extreme case: the very first `checked_add` overflow step.
-    let p = ac.dbg_alloc_large_for_test(usize::MAX - 4096, 8);
+    // SAFETY (`dbg_alloc_large_for_test` # Safety): `align` is 8, a non-zero
+    // power of two; `size` may be any `usize`.
+    let p = unsafe { ac.dbg_alloc_large_for_test(usize::MAX - 4096, 8) };
     assert!(p.is_null(), "usize::MAX-scale request must return null");
 }

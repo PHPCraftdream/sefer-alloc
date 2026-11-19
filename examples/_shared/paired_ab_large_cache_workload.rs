@@ -34,7 +34,7 @@
 // is ACTIVE: a warm Large-cache HIT recycles a recently-freed dedicated span
 // via cheap in-process bookkeeping (header rewrite + table re-register —
 // pages stay committed, NO recommit, NO syscall; see
-// `src/alloc_core/alloc_core_large.rs` lines 158-166), NOT the full
+// `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs` lines 378-430), NOT the full
 // `VirtualFree`+`VirtualAlloc` round-trip. So R9-4's ~90 µs number is the
 // Large-cache MISS cost, not the typical WARM-cache recycle cost most
 // steady-state programs actually see.
@@ -64,7 +64,7 @@
 // is live; the driver (`scripts/r10_5_large_cache_gate.mjs`) passes
 // `--features "production alloc-stats"` / `"production medium-classes-wide
 // alloc-stats"`. The per-hit increment is a single Relaxed load+store (NOT a
-// `lock xadd`; see `alloc_core_large.rs` lines 129-157) on the owning thread —
+// `lock xadd`; see `alloc_core_large.rs` lines 513-530) on the owning thread —
 // negligible against the µs-scale Large-path work and asymmetric only in that
 // the baseline arm pays it (the treatment arm's small path does not increment
 // it, because it does not hit the Large cache).

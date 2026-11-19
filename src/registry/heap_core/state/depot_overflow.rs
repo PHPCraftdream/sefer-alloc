@@ -387,7 +387,18 @@ impl DepotOverflow {
             .next_multiple_of(page)
             .min((self.cap[c] as usize * REC).next_multiple_of(page));
         let off = self.off[c] as usize;
-        if !crate::alloc_core::os::commit_depot_overflow(self.base, off + have, off + end) {
+        // SAFETY: `self.base` is a live span returned by
+        // `sefer_platform::os::reserve_depot_overflow` (never released; the
+        // reservation lives for the heap's lifetime). `off + have` and
+        // `off + end` are page-aligned offsets inside that span: `off` and
+        // every committed watermark (`have`, `end`) are page multiples
+        // (`next_multiple_of(page)` above; the first page counts once the
+        // reservation exists), `have < end` because `need > have`, and `end`
+        // is capped at class `c`'s region end (`cap[c] * REC` rounded to a
+        // page), so both lie inside the reservation. Only the owner reaches
+        // this control.
+        #[allow(unsafe_code)]
+        if !unsafe { sefer_platform::os::commit_depot_overflow(self.base, off + have, off + end) } {
             return false;
         }
         self.committed[c] = end as u32;
@@ -688,7 +699,19 @@ impl DepotOverflow {
             let have = self.committed[c] as usize;
             if have != 0 {
                 let off = self.off[c] as usize;
-                crate::alloc_core::os::decommit_depot_overflow(self.base, off, off + have);
+                // SAFETY: as in `ensure_committed` — `self.base` is a live
+                // span from `sefer_platform::os::reserve_depot_overflow`
+                // (never released) and `off` / `off + have` are page-aligned
+                // offsets inside it (each region and commit watermark is a
+                // page multiple). The overflow is drained (`bytes == 0`,
+                // debug-asserted above), so no live record exists in the
+                // range, the contents are never read after this, and the
+                // next park re-commits through `ensure_committed` before any
+                // write.
+                #[allow(unsafe_code)]
+                unsafe {
+                    sefer_platform::os::decommit_depot_overflow(self.base, off, off + have)
+                };
                 self.stats.decommits += 1;
             }
             c += 1;

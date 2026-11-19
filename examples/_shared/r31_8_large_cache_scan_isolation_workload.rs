@@ -14,7 +14,7 @@
 // not the scan bound in isolation — a real result, but not a DECOMPOSED one.
 // This microjudge isolates JUST the best-fit scan
 // (`AllocCore::alloc_large`'s `for i in 0..self.large_cache_scan_bound()`
-// loop, `src/alloc_core/alloc_core_large.rs:217-227`) at a FIXED, WORST-CASE
+// loop, `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs:331-377`) at a FIXED, WORST-CASE
 // relative target position, so a genuine O(8)-vs-O(40) scan-bound cost (if
 // one exists) cannot hide behind — or be confused with — any setup-state
 // asymmetry the real-process gate's matched-state proof already closed.
@@ -35,7 +35,7 @@
 // not prove.
 //
 // WORST-CASE SCAN POSITION DESIGN. `alloc_large`'s best-fit loop
-// (`src/alloc_core/alloc_core_large.rs:215-227`) cannot short-circuit on the
+// (`crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs:331-377`) cannot short-circuit on the
 // first fitting slot — it must scan every occupied slot up to
 // `large_cache_scan_bound()` to find the SMALLEST fitting entry (best-fit,
 // not first-fit). To force the FULL scan bound to be walked on every timed

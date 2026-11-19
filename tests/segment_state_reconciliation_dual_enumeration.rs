@@ -1,6 +1,6 @@
 //! R2-14 runtime oracle: the DUAL-ENUMERATION fix in
 //! `AllocCore::dbg_segment_state_reconciliation`
-//! (`src/alloc_core/small/alloc_core_small_pool/mod.rs`, the
+//! (`crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/mod.rs`, the
 //! `bench-internals` + `internals` method inside the `alloc-decommit`-gated
 //! module).
 //!

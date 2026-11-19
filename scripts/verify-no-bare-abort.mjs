@@ -72,13 +72,15 @@ const ABORT_RE = /std::process::abort|process\s*::\s*abort/g;
 // Rule 2 configuration
 // ---------------------------------------------------------------------------
 
+// P2.2: the alloc-core implementation moved to the sefer-alloc-core crate;
+// these owners moved with it (paths updated, subjects unchanged).
 const PANIC_SCAN_FILES = [
-  'src/alloc_core/large/alloc_core_large_cache.rs',
+  'crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs',
   'crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs',
-  'src/alloc_core/small/alloc_core_small_magazine.rs',
-  'src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs',
+  'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs',
+  'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs',
   'src/registry/bootstrap/registry.rs',
-  'src/alloc_core/platform/numa.rs',
+  'crates/core/sefer-alloc-core/src/alloc_core/platform/numa.rs',
   'src/global/exact_object/exact_shard.rs',
 ];
 
@@ -289,28 +291,28 @@ const FIXTURES = [
     why: '.expect( in a selected file must be flagged',
   },
   {
-    path: 'src/alloc_core/large/alloc_core_large_cache.rs',
+    path: 'crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs',
     kind: 'panic',
     content: 'fn f(x: bool) {\n    assert!(x);\n}\n',
     expect: 'flag',
     why: 'assert!( in a selected file must be flagged',
   },
   {
-    path: 'src/alloc_core/platform/numa.rs',
+    path: 'crates/core/sefer-alloc-core/src/alloc_core/platform/numa.rs',
     kind: 'panic',
     content: 'fn f() {\n    unreachable!("x");\n}\n',
     expect: 'flag',
     why: 'unreachable!( in a selected file must be flagged',
   },
   {
-    path: 'src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs',
+    path: 'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs',
     kind: 'panic',
     content: 'const _: () = {\n    assert!(1 == 1);\n};\n',
     expect: 'pass',
     why: 'compile-time const _: () assert blocks are skipped (cannot panic at runtime)',
   },
   {
-    path: 'src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs',
+    path: 'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs',
     kind: 'panic',
     content: 'fn f(x: bool) {\n    assert!(x);\n}\n',
     expect: 'flag',
@@ -332,14 +334,14 @@ const FIXTURES = [
     why: 'fatal.rs is the sanctioned abort site (exempt, printed ALLOWED)',
   },
   {
-    path: 'src/alloc_core/alloc_core/sidecar_drain.rs',
+    path: 'crates/core/sefer-alloc-core/src/alloc_core/alloc_core/sidecar_drain.rs',
     kind: 'abort',
     content: 'fn f() {\n    std::process::abort();\n}\n',
     expect: 'flag',
     why: 'former open-PR allowlisted path must now flag (allowlist is empty)',
   },
   {
-    path: 'src/alloc_core/small/alloc_core_small_magazine.rs',
+    path: 'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs',
     kind: 'panic',
     content: 'fn f(cond: bool) {\n    debug_assert!(cond);\n}\n',
     expect: 'pass',
@@ -403,8 +405,13 @@ function runSelfTest() {
 function realScan() {
   let violations = 0;
   let allowed = 0;
-  const srcDir = join(REPO_ROOT, 'src');
-  for (const full of walkRs(srcDir)) {
+  // P2.2: scan both the root src/ tree and the sefer-alloc-core crate's src/
+  // tree — the crate's production code must stay under this gate after the move.
+  const scanRoots = [
+    join(REPO_ROOT, 'src'),
+    join(REPO_ROOT, 'crates/core/sefer-alloc-core/src'),
+  ];
+  for (const full of scanRoots.flatMap((dir) => [...walkRs(dir)])) {
     const rel = toRepoRel(full).split(sep).join('/');
     const content = readFileSync(full, 'utf8');
     for (const hit of abortHits(rel, content)) {

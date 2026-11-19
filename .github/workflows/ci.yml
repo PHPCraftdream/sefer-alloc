@@ -39,6 +39,7 @@ jobs:
       crate_numa_shim: ${{ steps.plan.outputs.crate_numa_shim }}
       crate_once_ptr_cell: ${{ steps.plan.outputs.crate_once_ptr_cell }}
       crate_proc: ${{ steps.plan.outputs.crate_proc }}
+      crate_sefer_alloc_core: ${{ steps.plan.outputs.crate_sefer_alloc_core }}
       crate_sefer_concurrent: ${{ steps.plan.outputs.crate_sefer_concurrent }}
       crate_sefer_ghost: ${{ steps.plan.outputs.crate_sefer_ghost }}
       crate_sefer_platform: ${{ steps.plan.outputs.crate_sefer_platform }}
@@ -227,6 +228,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-sefer-segment-gates
+  sefer-alloc-core-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_sefer_alloc_core == 'true'
+    name: sefer-alloc-core package gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci-sefer-alloc-core-gates
   sefer-region-gates:
     needs: changes
     if: needs.changes.outputs.crate_sefer_region == 'true'

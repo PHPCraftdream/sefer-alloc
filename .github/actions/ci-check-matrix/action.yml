@@ -152,7 +152,8 @@ runs:
     # explicitly allowlisted — the many-method complement to the
     # one-method compile-fail oracle (verify-internals-negative-
     # boundary, local-only per the exclusion note above). Pure text
-    # scan of src/alloc_core/**/*.rs + tests/*.rs, ~0.8 s measured —
+    # scan of src/alloc_core/**/*.rs and crates/core/sefer-alloc-core/src/alloc_core/**/*.rs
+    # (both prefixes since the P2.2 crate move) + tests/*.rs, ~0.8 s measured —
     # folded in next to the text scans above for the same reason.
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}

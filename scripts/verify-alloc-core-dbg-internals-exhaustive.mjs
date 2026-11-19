@@ -2,16 +2,38 @@
 // inventory parser and inherited module gates, not textual cfg mentions.
 // Parent-only acceptance: --self-test retains structural cases plus literal fixtures.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, relative } from 'node:path';
 import { REPO_ROOT } from './lib.mjs';
 import { scanFile, listRust, idFor, rustMask, attributesRequire, effectiveFileGates, REVIEWED_SURFACE } from './verify-dbg-hook-safety.mjs';
 
 // Arrays deliberately retain duplicate rows for validation before Map creation.
-const ALLOWLIST = [];
+//
+// Exact allowlist of doc(hidden) AllocCore hidden APIs that are deliberately
+// NOT internals-gated: each is a forwarding/internal seam with ACTUAL
+// production or diagnostics consumption across the P2.2 crate boundary (the
+// root `sefer-alloc` facade crate reaches these through the
+// `sefer_alloc_core::alloc_core::AllocCore` re-export), so an `internals`
+// cfg here would gate real production/diagnostics API and break consumers.
+// Each row names its exact consumer sites, traced on this tree.
+const ALLOWLIST = [
+  ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs::canonical_root_for',
+    'facade seam: called by root src/global/sefer_alloc/diag.rs, src/registry/heap_core/alloc/hot.rs, src/registry/heap_core/free/dealloc_own_base.rs (debug asserts), src/registry/heap_core/diag/queries.rs — production + diagnostics consumption'],
+  ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs::canonical_block_of',
+    'facade seam: called by root src/registry/heap_core/free/dealloc_batch.rs (dealloc_batch_small foreign-pointer guard) plus in-crate dealloc/realloc/sidecar test hooks — production consumption'],
+  ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs::owned_block_of',
+    'facade seam: called by root src/registry/heap_core_xthread/routing.rs, src/registry/heap_core/free/realloc.rs, src/registry/heap_core/diag/diag_probes.rs — production + diagnostics consumption'],
+  ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/sidecar_drain.rs::dbg_large_sidecar_full_rescues',
+    'diag counter seam: forwarded by root src/registry/heap_core_xthread/sidecar_drain.rs dbg_large_sidecar_full_rescues() — diagnostics (bench-internals) consumption'],
+  ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/sidecar_drain.rs::dbg_large_hot_budget',
+    'diag counter seam: forwarded by root src/registry/heap_core_xthread/sidecar_drain.rs dbg_large_hot_budget() — diagnostics (bench-internals) consumption'],
+  ['crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs::refill_class_bump_internal',
+    'internal forwarding seam: called cross-crate by root src/registry/heap_core/alloc/batch.rs batch refill — production hot-path consumption'],
+];
 // Mirror the hook scanner's surface: named hooks + safe raw-pointer fns are the hidden-API surface;
 // unsafe raw-pointer fns outside the gates are the documented unsafe API (gated ones like flush_class are named anyway).
-function verify(files, allowlist = ALLOWLIST, include = hook => hook.file.startsWith('src/alloc_core/') && hook.owner === 'AllocCore' && (hook.named || (hook.pointerParams && !hook.unsafe))) {
+function verify(files, allowlist = ALLOWLIST, include = hook => (hook.file.startsWith('src/alloc_core/') || hook.file.startsWith('crates/core/sefer-alloc-core/src/alloc_core/')) && hook.owner === 'AllocCore' && (hook.named || (hook.pointerParams && !hook.unsafe))) {
   const errors = [], exceptions = new Map(), found = new Set(), gatedNames = new Set();
   for (const [id, reason] of allowlist) {
     if (exceptions.has(id)) errors.push(`duplicate internals allowlist row: ${id}`);
@@ -58,6 +80,32 @@ function testFiles(sources, manifest) {
   }
   return { files, roots };
 }
+// P2.2: the AllocCore implementation now lives in the sefer-alloc-core crate;
+// the real walk covers BOTH src roots (facade + crate) exactly like main().
+const WALK_ROOTS = root => [join(root, 'src'), join(root, 'crates/core/sefer-alloc-core/src')];
+const WALK_ROOT_PREFIXES = ['src/', 'crates/core/sefer-alloc-core/src/'];
+function walkSources(root = REPO_ROOT) {
+  return new Map(WALK_ROOTS(root).flatMap((dir, i) => existsSync(dir) ? listRust(dir).map(path => {
+    // Root-relative id (NOT idFor): the temp-fixture self-test root lies
+    // outside the repo, where idFor's REPO_ROOT-relative id would leak an
+    // absolute path and silently drop the fixture from the boundary.
+    const id = WALK_ROOT_PREFIXES[i] + relative(dir, path).split('\\').join('/');
+    return [id, scanFile(id, readFileSync(path, 'utf8'))];
+  }) : []));
+}
+function walkTests(root = REPO_ROOT) {
+  const testsDir = join(root, 'tests'), manifest = join(root, 'Cargo.toml');
+  return testFiles(new Map(existsSync(testsDir) ? listRust(testsDir).map(path => [`tests/${relative(testsDir, path).split('\\').join('/')}`, readFileSync(path, 'utf8')]) : []), existsSync(manifest) ? readFileSync(manifest, 'utf8') : '');
+}
+// Shared production path: exactly the same walk + verify + caller scan for
+// the real repo and for the self-test fixture (no env override, no subprocess).
+function run(root, allowlist) {
+  const files = walkSources(root);
+  const result = verify(files, allowlist);
+  const tests = walkTests(root);
+  result.errors.push(...testCallers(tests.files, result.gatedNames, tests.roots));
+  return result;
+}
 function selfCheck() {
   const fixture = text => new Map([['fixture.rs', scanFile('fixture.rs', text)]]);
   const select = () => true;
@@ -81,8 +129,11 @@ function selfCheck() {
   assert(verify(fixture(''), [['fixture.rs::dbg_retired', 'stats']], select).errors.includes('stale internals allowlist row: fixture.rs::dbg_retired'));
   assert.equal(verify(fixture('const X: &str = "pub fn dbg_fake() {}"; /* impl AllocCore { pub fn dbg_fake() {} } */'), [], select).total, 0);
   // Structural row coverage, not an independent oracle: names/gates come
-  // from the same reviewed policy. Literal fixtures below do not use rows.
-  for (const row of REVIEWED_SURFACE.filter(row => row.gates.includes('internals'))) {
+  // from the same reviewed policy. Only this gate's own surface (alloc-core
+  // files, the same set `select` accepts) participates; literal fixtures
+  // below do not use rows.
+  const rowScope = (id) => id.startsWith('src/alloc_core/') || id.startsWith('crates/core/sefer-alloc-core/src/alloc_core/');
+  for (const row of REVIEWED_SURFACE.filter(row => row.gates.includes('internals') && rowScope(row.id))) {
     const split = row.id.lastIndexOf('::'), file = row.id.slice(0, split), name = row.id.slice(split + 2);
     const declaration = `${row.kind === 'unsafe' ? '/// # Safety\n/// Caller owns the allocation.\n' : ''}pub ${row.kind === 'unsafe' ? 'unsafe ' : ''}fn ${name}() {}`;
     const files = new Map([[file, scanFile(file, `impl AllocCore {\n${declaration}\n}`)]]);
@@ -92,7 +143,7 @@ function selfCheck() {
   }
   // Hand-authored actual AllocCore forwarders: default owner selection must
   // inventory these non-dbg names, including unsafe flush, without row loops.
-  const magazine = 'src/alloc_core/small/alloc_core_small_magazine.rs';
+  const magazine = 'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs';
   const source = `impl AllocCore {
     pub fn refill_class(&mut self, class_idx: usize, want: usize, out: &mut [*mut u8]) -> usize { 0 }
     pub fn refill_class_bump(&mut self, class_idx: usize, out: &mut [*mut u8]) -> usize { 0 }
@@ -112,7 +163,7 @@ function selfCheck() {
   actual.set(magazine, scanFile(magazine, `#[cfg(feature = "internals")]\n${source}`));
   assert.deepEqual(verify(actual, []).errors, []);
   actual.set(magazine, scanFile(magazine, source));
-  const parent = 'src/alloc_core/small/mod.rs';
+  const parent = 'crates/core/sefer-alloc-core/src/alloc_core/small/mod.rs';
   actual.set(parent, scanFile(parent, '#[cfg(feature = "internals")] mod alloc_core_small_magazine;'));
   assert.deepEqual(verify(actual, []).errors, []);
   actual.set(parent, scanFile(parent, '#[cfg(any(feature = "internals", feature = "production"))] mod alloc_core_small_magazine;'));
@@ -168,17 +219,42 @@ function selfCheck() {
     ['tests/nested/mod.rs', 'mod helper;'],
     ['tests/nested/helper.rs', 'fn check() { core.dbg_probe(); }'],
   ])), []);
+  // Production traversal via the SAME run() path as main(): a temp fixture
+  // tree (never the shared one) with an empty allowlist. Negative mutant
+  // first: an ungated AllocCore hidden API under crates/core/sefer-alloc-core
+  // must be DISCOVERED by the walk and reported; then the same fixture gated
+  // `internals` must go green with the hook counted. Omission counterfactual:
+  // deleting the fixture file must drop the count to 0, proving the count
+  // comes from the walked tree and not from the allowlist.
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'alloc-core-dbg-walk-'));
+  const fixtureDir = join(fixtureRoot, 'crates/core/sefer-alloc-core/src/alloc_core');
+  mkdirSync(fixtureDir, { recursive: true });
+  mkdirSync(join(fixtureRoot, 'tests'), { recursive: true });
+  writeFileSync(join(fixtureRoot, 'Cargo.toml'), '');
+  const fixturePath = join(fixtureDir, 'dbg_walk_fixture.rs');
+  const fixtureId = 'crates/core/sefer-alloc-core/src/alloc_core/dbg_walk_fixture.rs';
+  try {
+    writeFileSync(fixturePath, 'impl AllocCore { pub fn dbg_walk_probe() {} }\n');
+    const mutant = run(fixtureRoot, []);
+    assert.deepEqual(mutant.errors, [`hidden API missing internals gate: ${fixtureId}::dbg_walk_probe`]);
+    writeFileSync(fixturePath, '#[cfg(feature = "internals")]\nimpl AllocCore { pub fn dbg_walk_probe() {} }\n');
+    const gated = run(fixtureRoot, []);
+    assert.deepEqual(gated.errors, []);
+    assert.equal(gated.total, 1);
+    rmSync(fixturePath);
+    const omitted = run(fixtureRoot, []);
+    assert.deepEqual(omitted.errors, []);
+    assert.equal(omitted.total, 0);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+  console.log('[verify-alloc-core-dbg-internals-exhaustive] production-walk mutant check PASS: ungated crate fixture killed in-process, gated fixture green, omission counterfactual counts 0');
 }
 if (process.argv.includes('--self-test')) {
   selfCheck();
   console.log('[verify-alloc-core-dbg-internals-exhaustive] parser and API boundary self-checks PASS');
 } else {
-  const files = new Map(listRust(join(REPO_ROOT, 'src')).map(path => { const id = idFor(path); return [id, scanFile(id, readFileSync(path, 'utf8'))]; }));
-  const result = verify(files);
-  // Resolve all declarations across the test tree; only actual Cargo roots
-  // require their own gate. Helpers inherit only if every incoming route gates.
-  const tests = testFiles(new Map(listRust(join(REPO_ROOT, 'tests')).map(path => [idFor(path), readFileSync(path, 'utf8')])), readFileSync(join(REPO_ROOT, 'Cargo.toml'), 'utf8'));
-  result.errors.push(...testCallers(tests.files, result.gatedNames, tests.roots));
+  const result = run(REPO_ROOT, ALLOWLIST);
   if (result.errors.length) { console.error(`[verify-alloc-core-dbg-internals-exhaustive] FAIL\n${result.errors.join('\n')}`); process.exitCode = 1; }
   else console.log(`[verify-alloc-core-dbg-internals-exhaustive] ALL GREEN: ${result.total} hidden AllocCore APIs`);
 }

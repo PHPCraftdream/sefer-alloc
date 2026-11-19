@@ -81,9 +81,9 @@ function selfTest() {
     const site = '       at crates/core/sefer-segment/src/support/node.rs:153:18: 153:43';
     const mid = '    1: sefer_segment::support::node_impl::RootNode::write_next';
     const midSite = '       at crates/core/sefer-segment/src/support/node.rs:620:9: 620:38';
-    const base = '    2: sefer_alloc::alloc_core::platform::node::Node::write_next';
-    const baseSite = '       at src/alloc_core/platform/node.rs:40:18: 40:56';
-    const caller = '    3: sefer_alloc::alloc_core_small_reclaim::reclaim_sidecar_record';
+    const base = '    2: sefer_alloc_core::alloc_core::platform::node::Node::write_next';
+    const baseSite = '       at crates/core/sefer-alloc-core/src/alloc_core/platform/node.rs:40:18: 40:56';
+    const caller = '    3: sefer_alloc_core::alloc_core_small_reclaim::reclaim_sidecar_record';
     const good = `${message}\n${frame}\n${site}\n${mid}\n${midSite}\n${base}\n${baseSite}\n${caller}\n`;
     const cases = [
       ['expected', 1, good, true, 'EXPECTED-RED-OK'],

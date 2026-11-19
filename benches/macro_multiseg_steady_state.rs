@@ -26,7 +26,7 @@
 //!   threshold (25% margin) so the path-activation oracle's `>= 64` check
 //!   has room to fail loudly if segment accounting regresses, rather than
 //!   sitting exactly on the boundary. At `SEGMENT = 4 MiB`
-//!   (`src/alloc_core/os.rs`), 80 segments is a ~320 MiB working set —
+//!   (`crates/platform/sefer-platform/src/os.rs`), 80 segments is a ~320 MiB working set —
 //!   genuinely too large to fit in a typical L2 (usually 0.25-2 MiB) or even
 //!   many L3 caches (commonly 8-32 MiB) in full, though this bench does NOT
 //!   assume any specific cache size: `iai-callgrind`'s cache SIMULATION model
@@ -46,7 +46,7 @@
 //!   dedicated-segment object (same `LARGE_OBJ_BYTES` size as the floor, so
 //!   it exercises the SAME size class/cache-slot machinery the floor
 //!   occupies) — this rotates through the large-cache's 8 base slots
-//!   (`LARGE_CACHE_SLOTS`, `src/alloc_core/alloc_core.rs`) without ever
+//!   (`LARGE_CACHE_SLOTS`, `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_impl.rs`) without ever
 //!   touching the 80-segment floor itself.
 //! - **Multi-thread variant.** `multiseg_steady_state_mt4` runs the SAME
 //!   per-thread workload (floor + churn) on 4 threads simultaneously, each

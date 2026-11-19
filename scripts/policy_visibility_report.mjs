@@ -4,12 +4,12 @@
 // boundary when `src/alloc_core/config` moved to `crates/core/sefer-policy`
 // (plan step P1.3, docs/plans/2026-11-15-workspace-restructure-plan.md).
 //
-// Derivation (script-owned numbers, never typed): for every file now under
-// crates/core/sefer-policy/src/ that also exists at HEAD (at its old
-// src/alloc_core/config path), HEAD's content is diffed line-by-line against
-// the working tree under the exact, invertible move rewrites (crate-path
-// prefixes). A line HEAD spells `pub(crate)`/`pub(super)` and the working
-// tree spells `pub` — with the rest of the trimmed line identical — is a
+// Derivation (script-owned numbers, never typed): for every file in the
+// sefer-policy/src tree at the pinned P1.3 commit (P1_3_SHA) that also exists
+// in the parent commit (at its old src/alloc_core/config path), the parent's
+// content is diffed line-by-line against the pinned commit's content under the exact, invertible move rewrites (crate-path
+// prefixes). A line the parent commit spells `pub(crate)`/`pub(super)` and the pinned
+// commit spells `pub` — with the rest of the trimmed line identical — is a
 // widening; EVERY other line must pair 1:1 or the script FAILS, so silent
 // drift is impossible. (The move's other edits are strictly additive or in
 // different files: `#[macro_export]` insertions inside medium_promotion.rs
@@ -25,20 +25,19 @@
 //
 // Usage: node scripts/policy_visibility_report.mjs [--json]
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
 
-// Walk the working tree (the new files are untracked until the parent commit).
-function walk(dir, out = []) {
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) walk(p, out);
-    else if (e.name.endsWith('.rs')) out.push(p.replace(/\\/g, '/'));
-  }
-  return out;
-}
-const files = walk('crates/core/sefer-policy/src');
 const git = (args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+// P1.4/P2.x rounds have since moved on (aligned-vmem renames, the P2.2 alloc-core extraction). This
+// script is the P1.3 acceptance derivation, so BOTH sides of its pairing are pinned to the P1.3
+// acceptance commit: 'now' = the sefer-policy tree at P1_3_SHA, 'before' (the old root paths) = P1_3_SHA^.
+// The recorded P1.3 verification stays reproducible instead of silently breaking on later moves.
+const P1_3_SHA = 'b43f25ea';
+const atSha = (spec) => git(['show', spec]);
+
+// Enumerate the exact pinned snapshot file set (readdir of the live worktree
+// would omit deleted historical files and fail on later additions).
+const files = git(['ls-tree', '-r', '--name-only', P1_3_SHA, '--', 'crates/core/sefer-policy/src'])
+  .split('\n').filter((p) => p.endsWith('.rs'));
 
 // Invert the move's crate-path rewrite (new crate root -> old root path).
 // Longest prefix first: `crate::policy::` must become
@@ -50,7 +49,7 @@ function oldLine(line) {
 }
 
 function fail(file, why, line) {
-  console.error(`[policy-visibility-report] PAIRING FAILURE ${file}: ${why}; working-tree line: ${JSON.stringify(line)}`);
+  console.error(`[policy-visibility-report] PAIRING FAILURE ${file}: ${why}; pinned-snapshot line: ${JSON.stringify(line)}`);
   process.exit(1);
 }
 
@@ -61,11 +60,11 @@ let docEdits = 0;
 for (const f of files) {
   let head;
   try {
-    head = git(['show', `HEAD:${f.replace(/^crates\/core\/sefer-policy\/src\//, 'src/alloc_core/config/')}`]);
+    head = atSha(`${P1_3_SHA}^:${f.replace(/^crates\/core\/sefer-policy\/src\//, 'src/alloc_core/config/')}`);
   } catch {
     continue; // genuinely new file (lib.rs) — no old visibility to compare
   }
-  const now = readFileSync(f, 'utf8').split('\n');
+  const now = atSha(`${P1_3_SHA}:${f.replace(/\\/g, '/')}`).split('\n');
   const before = head.split('\n');
   // Trim HEAD's trailing EOF-newline artifact for pairing purposes.
   while (before.length && before[before.length - 1] === '' && (now.length === 0 || now[now.length - 1] === '')) before.pop();
@@ -175,7 +174,7 @@ if (widenings.length === 0) fail(`(total; files=${files.length}, paired=${paired
 if (process.argv.includes('--json')) {
   console.log(JSON.stringify({ schema: 'policy.visibility-widening.v1', additive_total: additive.length, additive, files_scanned: files.length, lines_paired: paired, widened_total: widenings.length, categories, raw_pointer_items: rawPointerLines, widenings }, null, 1));
 } else {
-  console.log(`files scanned: ${files.length}; HEAD<->worktree lines paired: ${paired} (of which doc-comment-only edits: ${docEdits})`);
+  console.log(`files scanned: ${files.length}; P1_3_SHA<->P1_3_SHA^ lines paired: ${paired} (of which doc-comment-only edits: ${docEdits})`);
   console.log(`widened to pub: ${widenings.length}  (pub(crate)=${widenings.filter((w) => w.kind === 'pub(crate)').length}, pub(super)=${widenings.filter((w) => w.kind === 'pub(super)').length})`);
   console.log(`by category: ${Object.entries(categories).map(([k, v]) => `${k}=${v}`).join(', ')}`);
   console.log(`additive (non-widening) items: ${additive.length}`);

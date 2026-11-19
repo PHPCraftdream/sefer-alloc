@@ -1,0 +1,65 @@
+[package]
+name = "sefer-alloc-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.93"
+license = "MIT OR Apache-2.0"
+description = "The sefer allocator core: small/medium and large/huge allocation paths, the AllocCore hub and its diagnostics."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/core/sefer-alloc-core"
+documentation = "https://docs.rs/sefer-alloc-core"
+keywords = ["allocator", "memory", "small", "large"]
+categories = ["memory-management", "no-std"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+# Mirrors the root manifest's allocator-feature set 1:1 (the moved modules'
+# `#[cfg(feature = ...)]` gates reference the same feature names; the root
+# manifest forwards each feature weakly via `sefer-alloc-core?/<feature>`).
+alloc-core = ["dep:aligned-vmem", "aligned-vmem/lazy-commit", "sefer-segment/alloc-core"]
+alloc-decommit = ["alloc-core", "sefer-policy/alloc-decommit", "sefer-platform/alloc-decommit", "sefer-segment/alloc-decommit"]
+alloc-global = ["alloc-core", "alloc-xthread", "sefer-policy/alloc-global", "sefer-platform/alloc-global", "sefer-segment/alloc-global"]
+alloc-segment-directory = ["alloc-core", "sefer-segment/alloc-segment-directory"]
+alloc-stats = ["alloc-core", "sefer-segment/alloc-stats"]
+alloc-xthread = ["alloc-core", "sefer-segment/alloc-xthread"]
+# R10-7/R12-12 parity: the tcache-aware batch-allocation substrate surface
+# (`dec_live_batch_and_maybe_decommit`'s caller path); the root manifest
+# forwards `batch-api` weakly (`sefer-alloc-core?/batch-api`). Root-only
+# gating semantics (`experimental`) stay at the root.
+batch-api = ["alloc-core"]
+bench-internals = ["dep:aligned-vmem", "aligned-vmem/bench-internals", "aligned-vmem/lazy-commit", "sefer-policy/bench-internals", "sefer-platform/bench-internals", "sefer-segment/bench-internals"]
+exact-span-large = ["alloc-core", "sefer-policy/exact-span-large", "sefer-platform/exact-span-large", "sefer-segment/exact-span-large"]
+fastbin = ["alloc-global", "alloc-xthread", "sefer-platform/fastbin", "sefer-segment/fastbin"]
+hardened = ["fastbin", "misuse-checks", "sefer-segment/hardened"]
+internals = ["sefer-policy/internals", "sefer-platform/internals", "sefer-segment/internals"]
+large-cache-adaptive = ["large-cache-extended", "sefer-segment/large-cache-adaptive"]
+large-cache-extended = ["alloc-decommit", "sefer-policy/large-cache-extended", "sefer-segment/large-cache-extended"]
+large-reserved-capacity = ["exact-span-large", "dep:aligned-vmem", "aligned-vmem/lazy-commit", "sefer-policy/large-reserved-capacity", "sefer-platform/large-reserved-capacity", "sefer-segment/large-reserved-capacity"]
+lazy-commit-fault-injection = ["alloc-lazy-commit", "aligned-vmem/fault-injection"]
+medium-classes = ["alloc-core", "sefer-policy/medium-classes", "sefer-segment/medium-classes"]
+medium-classes-wide = ["medium-classes", "sefer-segment/medium-classes-wide"]
+misuse-checks = ["sefer-segment/misuse-checks"]
+numa-aware = ["alloc-core", "dep:numa-shim", "sefer-policy/numa-aware", "sefer-platform/numa-aware", "sefer-segment/numa-aware"]
+page-map-diag = ["alloc-core", "sefer-segment/page-map-diag"]
+primordial-lazy-commit = ["alloc-core", "aligned-vmem/lazy-commit", "sefer-platform/primordial-lazy-commit", "sefer-segment/primordial-lazy-commit"]
+small-segment-lazy-commit = ["alloc-core", "aligned-vmem/lazy-commit", "sefer-platform/small-segment-lazy-commit", "sefer-segment/small-segment-lazy-commit"]
+virgin-zero-skip = ["alloc-decommit", "sefer-segment/virgin-zero-skip"]
+# Convenience alias over the two lazy-commit policies (mirrors the root
+# manifest's `alloc-lazy-commit`); not forwarded by any bundle.
+alloc-lazy-commit = ["primordial-lazy-commit", "small-segment-lazy-commit"]
+
+[dependencies]
+aligned-vmem = { path = "../../platform/aligned-vmem", version = "0.2", optional = true, default-features = false }
+numa-shim = { path = "../../platform/numa-shim", version = "0.2", features = ["vmem-integration"], optional = true }
+sefer-platform = { path = "../../platform/sefer-platform", version = "0.1" }
+sefer-policy = { path = "../sefer-policy", version = "0.1", default-features = false }
+sefer-segment = { path = "../sefer-segment", version = "0.1", default-features = false }
+
+[lints.rust]
+unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(sefer_ghost)', 'cfg(miri)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)'] }

@@ -1,6 +1,6 @@
 //! Wave B4: exhaustive equivalence test for the constant-folded
 //! `align <= MIN_BLOCK` fast path in
-//! `src/alloc_core/platform/size_classes.rs` (`SizeClasses::class_for_small_align`,
+//! `crates/core/sefer-segment/src/support/size_classes.rs` (`SizeClasses::class_for_small_align`,
 //! reached through the public `SegmentLayout::class_for` forwarder).
 //!
 //! Reference model: the crate's documented `class_for` algorithm

@@ -1081,9 +1081,9 @@ is initialised to `NO_NODE` and never read without `numa-aware`).
 
 | Location | Change |
 |---|---|
-| `src/alloc_core/platform/numa.rs` | Confined-`unsafe` OS seam: `current_node()`, `bind_segment()`, `reserve_aligned_on_node()` |
-| `src/alloc_core/segment/segment_header/mod.rs` | `node_id: u32` field (+4 bytes; still ≪ PAGE) |
-| `src/alloc_core/alloc_core/mod.rs` | `reserve_small_segment` stamps `node_id`; `find_segment_with_free` prefers same-node segments; `alloc_large` steers large segments |
+| `crates/core/sefer-alloc-core/src/alloc_core/platform/numa.rs` | Confined-`unsafe` OS seam: `current_node()`, `bind_segment()`, `reserve_aligned_on_node()` |
+| `crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/segment_header_impl.rs:565` (accessors in `segment_header_impl/segment_header_meta_fields.rs`) | `node_id: u32` field (+4 bytes; still ≪ PAGE) |
+| `crates/core/sefer-alloc-core/src/alloc_core` (`small/alloc_core_small/reserve.rs:81`, `small/alloc_core_small/find_segment/scan.rs:114`, `large/alloc_core_large.rs:244`) | `reserve_small_segment` stamps `node_id`; `find_segment_with_free` prefers same-node segments; `alloc_large` steers large segments |
 
 ### What is verified
 

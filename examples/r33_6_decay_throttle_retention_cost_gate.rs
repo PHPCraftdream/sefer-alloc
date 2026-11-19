@@ -1,6 +1,6 @@
 //! R33-6 (task #511) — the large-cache decay-clock-throttle RETENTION COST
 //! gate: measures whether `DECAY_CLOCK_CHECK_STRIDE = 64`
-//! (`src/alloc_core/alloc_core_large_cache.rs`, shipped by R32-8 / commit
+//! (`crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs`, shipped by R32-8 / commit
 //! `74345b8`) causes measurable extra retained RSS in the LOW-throughput
 //! regime the original report only argued about qualitatively.
 //!
@@ -108,7 +108,7 @@ struct ProfileSpec {
 }
 
 /// The two shipped non-default profiles R32-8's fix targets, per
-/// `src/alloc_core/profile.rs`.
+/// `crates/core/sefer-policy/src/policy/profile.rs`.
 const PROFILES: &[ProfileSpec] = &[
     ProfileSpec {
         name: "LowHeadroom",

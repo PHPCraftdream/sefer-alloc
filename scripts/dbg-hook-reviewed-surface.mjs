@@ -16,7 +16,7 @@ export const PURE_OBSERVERS = [
   // B4 §11 test-only: read-only cursor slot of the current thread's heap; no pointer/mutation.
   "src/global/sefer_alloc/diag.rs::dbg_class_cursor_slot_for_current_thread",
   // B4 §11 test-only: read-only cursor slot of this AllocCore.
-  "src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs::dbg_class_cursor_slot",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs::dbg_class_cursor_slot",
   // B4 §11 test-only: read-only cursor slot of this heap's AllocCore.
   "src/registry/heap_core/core.rs::dbg_class_cursor_slot",
   // PRF01: actual type layout only, no allocator instance or pointer access.
@@ -46,91 +46,91 @@ export const PURE_OBSERVERS = [
   "crates/platform/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
   "crates/platform/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
   "crates/primitives/once-ptr-cell/src/imp.rs::dbg_is_ready",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_foreign_or_unroutable_frees",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_local_reject_frees",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_reserved_total",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_released_total",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_segments_reserve_failed_total",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_node_id_for",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_page_map_class_for",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_table_count",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_contains_base",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_hash_remove_max_scan_steps",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_recycle_unverified_base_total",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_hash_contains_only",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_segment_id_of",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_kind_byte_of",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_kind_at_tag",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_large_size_of",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_span_usable_of",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_reserved_capacity_of",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_block_size",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_small_class_count",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_layout_class_for",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_large_zero_pass_count",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_small_zero_pass_count",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_payload_virgin_for",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_hits",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_stale_hits",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_fallback_scans",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_words_examined",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_opt_h_attempts",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_opt_h_hits",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_reloc_inplace_large_count",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_reloc_inplace_small_count",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_reloc_fastpath_decline_count",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_promotion_count",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_promotion_bytes_sum",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_promotion_bytes_min",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_promotion_bytes_max",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_promotion_bytes_hist",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_full_scan_slots_examined",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_authoritative_miss",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_miss_self_heal",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_routed_miss_scans",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_routed_miss_scan_drain_created_free",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_routed_miss_scan_bin_already_nonempty",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_routed_miss_scan_nothing",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_rescue_oom_avoided",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_is_materialised",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_get_bit",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_get_bit_for_node",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_node_bitmaps",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_node_bucket_for",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_active_bits_for_bucket",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_get_bit_bucket",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_materialize_threshold",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_max_segments",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_words_per_class",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_miss_streak_for_class",
-  "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_miss_full_scan_period",
-  "src/alloc_core/large/alloc_core_large_cache.rs::dbg_large_cache_extended_slot_sizes",
-  "src/alloc_core/large/alloc_core_large_cache.rs::dbg_large_cache_extension_materialised",
-  "src/alloc_core/large/alloc_core_large_cache.rs::dbg_large_cache_total_slots",
-  "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_decay_config",
-  "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_used",
-  "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_hits",
-  "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_slot_sizes",
-  "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_occupied_bits",
-  "src/alloc_core/large/large_cache_adaptive.rs::dbg_large_cache_adaptive",
-  "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_budget",
-  "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_mode",
-  "src/alloc_core/platform/sidecar_stats.rs::dbg_sidecar_reservation_stats",
-  "src/alloc_core/alloc_core/state.rs::dbg_cached_numa_node",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_freelist_head_for",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_is_free_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_foreign_or_unroutable_frees",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_local_reject_frees",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_reserved_total",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_released_total",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_segments_reserve_failed_total",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_node_id_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_page_map_class_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_table_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_contains_base",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_hash_remove_max_scan_steps",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_recycle_unverified_base_total",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_hash_contains_only",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_segment_id_of",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_kind_byte_of",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_kind_at_tag",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_large_size_of",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_span_usable_of",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_reserved_capacity_of",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_block_size",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_small_class_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_layout_class_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_large_zero_pass_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_small_zero_pass_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_payload_virgin_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_hits",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_stale_hits",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_fallback_scans",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_words_examined",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_opt_h_attempts",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_opt_h_hits",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_reloc_inplace_large_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_reloc_inplace_small_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_reloc_fastpath_decline_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_promotion_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_promotion_bytes_sum",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_promotion_bytes_min",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_promotion_bytes_max",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_promotion_bytes_hist",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_full_scan_slots_examined",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_authoritative_miss",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_directory_miss_self_heal",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_routed_miss_scans",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_routed_miss_scan_drain_created_free",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_routed_miss_scan_bin_already_nonempty",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs::dbg_routed_miss_scan_nothing",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_rescue_oom_avoided",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_is_materialised",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_get_bit",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_get_bit_for_node",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_node_bitmaps",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_node_bucket_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_active_bits_for_bucket",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_get_bit_bucket",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_materialize_threshold",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_max_segments",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_words_per_class",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_miss_streak_for_class",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_miss_full_scan_period",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs::dbg_large_cache_extended_slot_sizes",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs::dbg_large_cache_extension_materialised",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs::dbg_large_cache_total_slots",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_decay_config",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_used",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_hits",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_slot_sizes",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_occupied_bits",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/large_cache_adaptive.rs::dbg_large_cache_adaptive",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_budget",
+  "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_large_cache_mode",
+  "crates/core/sefer-alloc-core/src/alloc_core/platform/sidecar_stats.rs::dbg_sidecar_reservation_stats",
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/state.rs::dbg_cached_numa_node",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_freelist_head_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_is_free_for",
   // B4 (в) F11: read-only state-nibble of one granule via the canonical table root; no mutation.
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_state_byte_state_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_state_byte_state_for",
   "src/registry/heap_core/diag/queries.rs::dbg_state_byte_state_for",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_committed_payload_end_for",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_grow_commit_count",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_grow_chunk",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_lazy_first_chunk",
-  "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_decommit_count",
-  "src/alloc_core/small/alloc_core_small_diag.rs::dbg_live_count_for",
-  "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pooled_count",
-  "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pool_cap",
-  "src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_is_decommitted_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_committed_payload_end_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_grow_commit_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_grow_chunk",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_lazy_first_chunk",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_decommit_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_live_count_for",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pooled_count",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pool_cap",
+  "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_is_decommitted_for",
   "src/global/fallback.rs::dbg_fallback_lock_acquisitions",
   // Pure production-helper transition on a by-value u32; no shared state,
   // allocator metadata, pointers or scheduler action; internals + bench-internals gated.
@@ -174,11 +174,31 @@ export const PURE_OBSERVERS = [
   // Non-panicking SegmentTable membership probe (canonical_root_for); read-only.
   "src/registry/heap_core/diag/queries.rs::dbg_segment_registered_for",
   "src/registry/heap_core/diag/queries.rs::dbg_table_count",
-  "src/registry/bootstrap/ensure.rs::dbg_slot_or_none"
+  "src/registry/bootstrap/ensure.rs::dbg_slot_or_none",
+  // P2.2: address-only canonical identity resolution (segment_base_of_ptr key
+  // plus table-held canonical_base_of); pointer arg never dereferenced, no
+  // cache or metadata write.
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs::canonical_root_for",
+  // P2.2: read-only membership probe forwarded to SegmentTable::contains_base;
+  // the pointer arg is a numeric key only, never dereferenced.
+  "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/state.rs::contains_base"
 ];
 
 // Safe mutators: each retained reviewed invariant justification is authoritative.
 export const SAFE_MUTATORS = [
+  // P2.2: canonical resolution uses checked table-held provenance only —
+  // `canonical_base_of_mut` on a numeric SEGMENT key; the caller pointer is
+  // address arithmetic and the kind/span header reads happen at the
+  // table-verified registered root under the documented SegmentHeader
+  // contracts; the memo stores only roots proven present.
+  [
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs::canonical_block_of",
+    "returns the table-verified canonical root plus a root-derived block pointer bounded to the reservation (X-span); caller pointer is never dereferenced; sole writes are the memo/table-held provenance cache of verified roots; alloc-global gated production deallocation witness"
+  ],
+  [
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs::owned_block_of",
+    "pure wrapper mapping canonical_block_of's verified (root, block) witness into OwnedBlock; no additional pointer use or state beyond the delegated canonical resolution; alloc-global gated"
+  ],
   [
     "src/registry/heap_core/diag/diag_probes.rs::dbg_arm_depot_overflow_faults",
     "G1-K7 test fault: stores Relaxed fail-next counts consulted only before a depot-overflow reservation and (aligned-vmem's existing hook, as dbg_arm_commit_fail) before a real page commit; both take existing OS-refusal paths; no pointer, no metadata write; compiled only with the test-only lazy-commit-fault-injection feature"
@@ -223,75 +243,75 @@ export const SAFE_MUTATORS = [
     "test-only forwarder to the real region_id-minting CAS logic (task #813), but it takes an explicit `&AtomicUsize` parameter and never touches the real `NEXT_REGION_ID` process-wide static -- the only thing it mutates is whatever local counter the caller constructed and owns (integration tests use a fresh stack-local AtomicUsize per test), so there is no shared/allocator state and no soundness relevance"
   ],
   [
-    "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_reset_hash_remove_max_scan_steps",
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_reset_hash_remove_max_scan_steps",
     "resets a diagnostic high-water counter only; no allocator metadata, no soundness relevance"
   ],
   [
-    "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_find_segment_with_free",
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_find_segment_with_free",
     "calls the real production find_segment_with_free lookup directly; same invariant envelope as its normal caller"
   ],
   [
-    "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_force_clear_bit",
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_force_clear_bit",
     "directory bits are a soft self-healing cache with an always-available O(S) fallback scan; a stale-clear bit costs a slower scan, never UB or a wrong pointer"
   ],
   [
-    "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_rescue_scan",
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_rescue_scan",
     "invokes the real OOM-rescue scan production code path directly; not a bypass"
   ],
   [
-    "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_reset_miss_streak",
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_reset_miss_streak",
     "zeroes a heuristic miss-streak counter; wrong value only changes re-validation cadence, never correctness"
   ],
   [
-    "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_set_miss_streak_for_class",
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_directory_set_miss_streak_for_class",
     "sets a heuristic miss-streak counter; wrong value only changes re-validation cadence, never correctness"
   ],
   [
-    "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_rebuild_directory",
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_rebuild_directory",
     "re-derives the directory bitmap from the authoritative SegmentTable/BinTable state, not an arbitrary write"
   ],
   [
-    "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_force_decay_tick",
+    "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_force_decay_tick",
     "rewinds the decay timer then calls the real maybe_decay_large_cache production path; eviction logic itself unchanged"
   ],
   [
-    "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_backdate_decay_timer",
+    "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_backdate_decay_timer",
     "changes only inert timer/stride bookkeeping; checked subtraction cannot access pointers or allocator metadata, so arbitrary durations cannot cause UB"
   ],
   [
-    "src/alloc_core/large/large_cache_adaptive.rs::dbg_set_large_cache_adaptive",
+    "crates/core/sefer-alloc-core/src/alloc_core/large/large_cache_adaptive.rs::dbg_set_large_cache_adaptive",
     "switches the learned retention policy flag only; the cache then behaves as the fixed-capacity extension, never touching pointers or metadata"
   ],
   [
-    "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_set_decay_config",
+    "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_set_decay_config",
     "overwrites decay-heuristic tuning knobs only; no allocator-metadata/pointer correctness implication"
   ],
   [
-    "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_set_large_cache_budget",
+    "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_set_large_cache_budget",
     "overwrites a byte-budget policy field; wrong value changes eviction aggressiveness, never soundness"
   ],
   [
-    "src/alloc_core/alloc_core/state.rs::dbg_current_node_cached",
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/state.rs::dbg_current_node_cached",
     "calls the real production current_node_cached NUMA-cache-populate path directly; not a bypass"
   ],
   [
-    "src/alloc_core/alloc_core/state.rs::dbg_invalidate_numa_node_cache",
+    "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/state.rs::dbg_invalidate_numa_node_cache",
     "calls the real production invalidate_numa_node_cache; NUMA cache is a soft hint, not correctness metadata"
   ],
   [
-    "src/alloc_core/small/alloc_core_small_diag.rs::dbg_carve_batch",
+    "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_carve_batch",
     "calls the real production carve_batch path; identical bump/bitmap mutation to an ordinary alloc_small carve"
   ],
   [
-    "src/alloc_core/small/alloc_core_small_diag.rs::dbg_arm_commit_fail",
+    "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_arm_commit_fail",
     "arms a process-global fault injector for future OS commit_pages calls; simulates an already-handled production error path"
   ],
   [
-    "src/alloc_core/small/alloc_core_small_diag.rs::dbg_arm_commit_fail_at",
+    "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_arm_commit_fail_at",
     "arms the Nth-call fault injector; same justification as dbg_arm_commit_fail"
   ],
   [
-    "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_drain_small_pool",
+    "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_drain_small_pool",
     "calls the real production drain_small_pool teardown-trim primitive directly (also called from trim_for_recycle)"
   ],
   [
@@ -351,20 +371,16 @@ export const SAFE_MUTATORS = [
     "sets a plain AtomicBool test-injection flag only; no allocator metadata, no raw pointers, no soundness relevance — the flag makes claim_impl's materialise call return None early, simulating an already-handled production OOM path (R6-T03)"
   ],
   [
-    "src/alloc_core/large/reservation_hooks.rs::dbg_set_inject_large_alloc_oom",
+    "crates/core/sefer-alloc-core/src/alloc_core/large/reservation_hooks.rs::dbg_set_inject_large_alloc_oom",
     "sets a plain AtomicBool test-injection flag only; alloc_large then returns null before touching metadata, the already-handled production OOM result (R6-T29)"
   ],
   [
-    "src/alloc_core/large/reservation_hooks.rs::dbg_set_inject_biased_reserve_fail",
+    "crates/core/sefer-alloc-core/src/alloc_core/large/reservation_hooks.rs::dbg_set_inject_biased_reserve_fail",
     "sets a plain AtomicBool test-injection flag only; the first non-NUMA biased reserve reports None, the already-handled production reserve-failure result; the retry stays real (R6-T34)"
   ],
   [
-    "src/alloc_core/large/reservation_hooks.rs::dbg_set_inject_large_register_fail",
+    "crates/core/sefer-alloc-core/src/alloc_core/large/reservation_hooks.rs::dbg_set_inject_large_register_fail",
     "sets a plain AtomicBool test-injection flag only; the fresh-path Large registration reports failure, the already-handled production table-full result; the reservation is released through the terminal funnel (J13b)"
-  ],
-  [
-    "src/alloc_core/large/reservation_hooks.rs::dbg_alloc_large_for_test",
-    "delegates to the real production AllocCore::alloc_large with a caller size and alignment; takes no pointer, returns a fresh allocation or null; overflow guards are the code under test (R6-T30)"
   ]
 ];
 
@@ -381,11 +397,17 @@ export const REVIEWED_SURFACE = [
   // address arithmetic, no dereference) is a safe observer row; the gated
   // measurement twin is an unsafe row.
   { id: 'crates/platform/sefer-platform/src/os.rs::segment_base_of_ptr', kind: 'observer', reason: 'SEGMENT-aligned base-of-pointer arithmetic over an allocator-owned segment (Cartographer invariant documented at the definition); no dereference, no OS access', gates: [] },
+  // P2-5: doc-hidden R6-CR-4 test forwarder is `pub unsafe fn` with the same
+  // caller contract as `AllocCore::alloc_large` itself: `align` must be a
+  // non-zero power of two (no runtime guard on the hot path); `size` may be
+  // ANY `usize` — every arithmetic step there is checked, so overflow-inducing
+  // sizes return null, which is what the r6_t30 test drives (R6-T30).
+  { id: 'crates/core/sefer-alloc-core/src/alloc_core/large/reservation_hooks.rs::dbg_alloc_large_for_test', kind: 'unsafe', reason: 'test-only forwarder into the real unsafe AllocCore::alloc_large with its identical caller contract (# Safety at the definition): align a non-zero power of two, size any usize (checked arithmetic returns null); takes no pointer argument, returns a fresh allocation or null', gates: ['internals'] },
   { id: 'crates/platform/sefer-platform/src/os.rs::commit_pages_for_measurement', kind: 'unsafe', reason: 'measurement-side twin of commit_pages: same caller contract (# Safety at the definition) over an allocator-owned segment reservation; bench-internals+internals gated', gates: ['bench-internals', 'internals', 'alloc-decommit'] },
   { id: 'src/registry/heap_core/diag/queries.rs::dbg_sidecar_scan_measurement', kind: 'mutator', reason: 'thread-local optional diagnostic counts and original-versus-prefilter scan mode only; no pointers or allocator metadata access', gates: ['bench-internals', 'r18_sidecar_scan_bench'] },
   ...[
     ['crates/core/sefer-segment/src/segment/support/segment_directory/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],
-    ['src/alloc_core/small/alloc_core_small_magazine.rs', ['refill_class', 'refill_class_bump', 'refill_class_bump_virgin'], 'mutator', 'delegates to allocation substrate; exclusive mutable core borrow'],
+    ['crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs', ['refill_class', 'refill_class_bump', 'refill_class_bump_virgin'], 'mutator', 'delegates to allocation substrate; exclusive mutable core borrow'],
     ['crates/containers/sefer-concurrent/src/epoch/epoch_region.rs', ['_remote_free_queue_buffer_identity_for_tests'], 'observer', 'locked buffer identity only; no dereference permission'],
     ['crates/containers/sefer-concurrent/src/epoch/epoch_region.rs', ['_set_slot_generation_for_tests'], 'mutator', 'vacant-slot generation boundary; mutable region borrow'],
     ['crates/containers/sefer-concurrent/src/sharded/sharded_region.rs', ['_reset_my_shard_binding_for_tests'], 'mutator', 'clears TLS routing cache, not occupied tokens; may consume additional claims'],
@@ -401,8 +423,8 @@ export const REVIEWED_SURFACE = [
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/registration.rs', ['class_at_global_address_for_test'], 'observer', 'lookup pins independent sidecar before class read'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_protocol/large_state.rs', ['word_for_test'], 'observer', 'atomic terminal state snapshot'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs', ['pending_for_test'], 'observer', 'pinned sidecar pending state'],
-    ['src/alloc_core/platform/numa.rs', ['biased_root_offset_for_test'], 'observer', 'pure checked geometry'],
-    ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['large_geometry_for_test'], 'observer', 'validated owned header geometry'],
+    ['crates/core/sefer-alloc-core/src/alloc_core/platform/numa.rs', ['biased_root_offset_for_test'], 'observer', 'pure checked geometry'],
+    ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['large_geometry_for_test'], 'observer', 'validated owned header geometry'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['internals'] }))),
   ...[
     ['crates/core/sefer-segment/src/segment/segment_table/impl_group/harness.rs', ['attach_routes_for_test', 'register_route_for_test'], 'mutator', 'exclusive owned fixture delegates to real attachment/registration; synthetic address keys never dereferenced and descriptors unlinked on drop'],
@@ -411,9 +433,9 @@ export const REVIEWED_SURFACE = [
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['fail_spill_after_for_test', 'fail_next_spills_for_test', 'fail_prepare_after_for_test'], 'mutator', 'atomic fallible preparation/spill fault injection'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['spill_failures_remaining_for_test'], 'observer', 'atomic injection countdown'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['owner_state_for_test'], 'unsafe', 'caller owns mapped reservation; raw metadata snapshot'],
-    ['src/alloc_core/large/alloc_core_large_cache_eviction.rs', ['terminal_cached_large_state_for_test'], 'observer', 'owner cache terminal snapshot'],
-    ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['terminal_header_layout_for_test', 'terminal_header_snapshot_for_test', 'terminal_primordial_snapshot_for_test', 'terminal_next_generation_for_test'], 'observer', 'checked header layout/state and generation geometry'],
-    ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['large_thp_charge_for_test'], 'observer', 'owned Large header field read; kind-checked, no pointer dereference beyond the owned header'],
+    ['crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs', ['terminal_cached_large_state_for_test'], 'observer', 'owner cache terminal snapshot'],
+    ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['terminal_header_layout_for_test', 'terminal_header_snapshot_for_test', 'terminal_primordial_snapshot_for_test', 'terminal_next_generation_for_test'], 'observer', 'checked header layout/state and generation geometry'],
+    ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['large_thp_charge_for_test'], 'observer', 'owned Large header field read; kind-checked, no pointer dereference beyond the owned header'],
     ['crates/containers/sefer-concurrent/src/sharded/sharded_region.rs', ['_set_remote_free_hint_for_tests'], 'mutator', 'advisory hint only; real queue remains authoritative'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs', ['dbg_publish_cached_for_test'], 'unsafe', 'entry into the production cached fast path; the address must be the caller’s CURRENT issued Small/Primordial allocation — publication consumes ownership once, and a bare address never establishes it (publishing a foreign live address forces the owner to reclaim a live instance: UAF by construction)'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs', ['dbg_cache_insert_for_test'], 'unsafe', 'cache admission requires a fresh lookup of the correct current Small/Primordial non-fallback registration; private test directories may route only fixture-owned storage and must never shadow production allocations'],
@@ -456,7 +478,8 @@ export const REVIEWED_SURFACE = [
 
   { id: 'crates/platform/aligned-vmem/src/reservation_parts.rs::new', kind: 'observer', reason: 'pure constructor storing the caller-owned reservation pointer and length into a parts struct; no dereference', gates: [] },
   { id: 'crates/platform/aligned-vmem/src/reservation_full_parts.rs::new', kind: 'observer', reason: 'pure field-by-field reconstruction of reservation parts; caller-owned pointers stored, never dereferenced', gates: [] },
-  { id: 'src/alloc_core/small/alloc_core_small_magazine.rs::flush_class', kind: 'unsafe', reason: 'exclusive caller-owned live blocks, exactly once; delegates to flush substrate', gates: ['internals'] },
+  { id: 'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs::flush_class', kind: 'unsafe', reason: 'exclusive caller-owned live blocks, exactly once; delegates to flush substrate', gates: ['internals'] },
+  { id: 'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs::refill_class_bump_internal', kind: 'mutator', reason: 'production batch-API refill wrapper; takes NO issue_state argument and hardcodes the safe StateByte::LIVE arm of the refill contract (every filled slot is handed straight to the caller); exclusive mutable core borrow; delegates to refill_class_bump_state_internal, whose class_idx contract is release-checked in SizeClasses::block_size', gates: [] },
   { id: 'src/registry/bootstrap/ensure.rs::count_for_test', kind: 'mutator', reason: 'ensure may initialize registry; then monotonic count load', gates: [] },
   { id: 'src/registry/heap_registry/maintenance.rs::maintenance_pass_for_test', kind: 'mutator', reason: 'production CAS-owned bounded maintenance pass', gates: ['internals'] },
   ...[

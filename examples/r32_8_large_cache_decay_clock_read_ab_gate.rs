@@ -4,7 +4,7 @@
 //! note) a real, reproducible cost once the guard's "used > headroom"
 //! fast-exit fails, as it structurally does for the whole intended use case
 //! of the shipped `LargeCachePolicy::LowHeadroom` / `::Trimmed64MiB` profiles
-//! (`src/alloc_core/profile.rs`)?
+//! (`crates/core/sefer-policy/src/policy/profile.rs`)?
 //!
 //! ## Why a naive headroom sweep is confounded (read before trusting any A/B here)
 //!
@@ -25,7 +25,7 @@
 //! REAL guard naturally takes its fast-exit — see the workload note). The
 //! ONLY thing that differs between arms is the process-wide
 //! `bench-internals`-gated `FORCE_DECAY_CLOCK_READ` override
-//! (`AllocCore::dbg_set_force_decay_clock_read`, `src/alloc_core/alloc_core.rs`'s
+//! (`AllocCore::dbg_set_force_decay_clock_read`, `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs`'s
 //! own doc explains exactly what it does): with it OFF, the guard behaves
 //! exactly as shipped; with it ON, `maybe_decay_large_cache` unconditionally
 //! skips its fast-exit and reaches `Instant::now()` on every call, WITHOUT

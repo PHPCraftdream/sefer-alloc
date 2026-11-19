@@ -1,0 +1,243 @@
+//! `ReservedSmallSegment` — a typed, non-forgeable, move-consumed handle
+//! standing in place of a bare `*mut u8` for exactly one measurement-only
+//! hook pair: `AllocCore::dbg_decomp_reserve_and_keep` /
+//! `AllocCore::dbg_decomp_release` (the current pool implementation).
+//!
+//! ## Owner-binding (R31-15, task #486)
+//!
+//! R31-4 (below) closed unforgeability and double-release, but NOT
+//! owner-binding: nothing stopped a caller from reserving a handle on one
+//! `AllocCore` and releasing it on a DIFFERENT `AllocCore` — both safe API
+//! calls, compiling cleanly:
+//!
+//! ```text
+//! let mut core_a = AllocCore::new().unwrap();
+//! let mut core_b = AllocCore::new().unwrap();
+//! let h = core_a.dbg_decomp_reserve_and_keep().unwrap();
+//! core_b.dbg_decomp_release(h);   // handle belongs to core_a, not core_b
+//! ```
+//!
+//! `dbg_decomp_release` would then pass `core_a`'s foreign base into
+//! `core_b.release_or_pool_empty_segment(base)`, mutating `core_b`'s
+//! pool/directory/`SegmentTable` state for a segment `core_b` never
+//! registered — while `core_a`'s own registration of that same base goes
+//! stale (a later lookup/drop/reuse on `core_a` could read unmapped or
+//! reused memory). This is the same bug class CLAUDE.md's benchmark-hook
+//! safety rule targets ("a safe `pub fn` that accepts a raw pointer and
+//! touches allocator metadata is a soundness hole by construction"), one
+//! level of indirection removed (the pointer is inside a typed handle
+//! instead of bare).
+//!
+//! Fixed two ways, layered:
+//!
+//! 1. **Structural owner token.** `ReservedSmallSegment::owner_id` stores
+//!    the minting `AllocCore`'s stable, process-wide-unique identity
+//!    (`AllocCore::dbg_reservation_owner_id`, a monotonic counter — NOT the
+//!    `&self` address, which can be reused by a different logical
+//!    `AllocCore` after a move; see that field's doc comment in
+//!    `alloc_core.rs`). `AllocCore::dbg_decomp_release` compares this
+//!    against ITS OWN `dbg_reservation_owner_id` and rejects a mismatch with
+//!    a release-build (non-`debug_assert!`) panic — not compiled out in
+//!    `--release`, unlike the pre-existing `small_cur` check.
+//! 2. **`unsafe fn` + documented precondition.** Even with the owner-id
+//!    check, `AllocCore::dbg_decomp_release` is `unsafe fn`: the owner-id
+//!    check is defence-in-depth against a wrong-core call, not a substitute
+//!    for the caller upholding "this handle is still live/unreleased" (the
+//!    owner-id check cannot detect e.g. a handle released once already via
+//!    some future safe-looking bypass, or a segment externally unregistered
+//!    through another `dbg_*` hook). Matches the established pattern for
+//!    this hook shape elsewhere in the crate (`HeapCore::
+//!    dbg_dealloc_own_thread_with_base` / `dbg_overflow_bitmap_clear_pass`,
+//!    `src/registry/heap_core_diag.rs`).
+//!
+//! ## Hook implementation
+//!
+//! `docs/design/R30_10_MEASUREMENT_HOOK_ISOLATION_DESIGN.md` §5 surveyed
+//! every `dbg_*` hook in the crate and found this ONE pair is the only
+//! current hook that both (a) mints a NEW raw pointer via a `dbg_*` call
+//! (not merely accepting a pointer that already existed) and (b) requires
+//! the caller to hold that exact value and hand it back later — the
+//! mint-then-redeem shape a typed handle exists to make safe. Before this
+//! type, `dbg_decomp_reserve_and_keep` returned a bare `Option<*mut u8>`
+//! and `dbg_decomp_release` was an `unsafe fn(&mut self, base: *mut u8)`
+//! guarded only by a `debug_assert!` (compiled out in `--release`) checking
+//! `base != self.small_cur` — nothing stopped a caller from forging an
+//! arbitrary pointer, and nothing stopped a caller from releasing the same
+//! base twice.
+//!
+//! This type closes both gaps structurally:
+//!
+//! - **Unforgeable.** The only constructor is
+//!   `ReservedSmallSegment::new_from_reservation`,
+//!   `pub(super)` — since `reserved_small_segment` is a direct child module
+//!   of `alloc_core` (`src/alloc_core/mod.rs`), `pub(super)` here resolves
+//!   to `pub(in crate::alloc_core)`: reachable from anywhere inside
+//!   `alloc_core`, not only the pool module — Rust has no
+//!   sibling-module-only visibility, so this is the tightest expressible
+//!   bound. In practice it is called from exactly one call site,
+//!   `AllocCore::dbg_decomp_reserve_and_keep` in the current pool module,
+//!   immediately after a genuine `reserve_small_segment_impl()` call
+//!   succeeds. The `base` field is
+//!   private, so external code cannot construct a SECOND handle from a
+//!   pointer it read out via `ReservedSmallSegment::dbg_base` (that method
+//!   only reads the value; it is not a constructor) — the unforgeability guarantee is
+//!   about minting handles, not about the pointer value being opaque.
+//! - **Double-release is a compile error, not a runtime hazard.**
+//!   `AllocCore::dbg_decomp_release` takes the handle BY VALUE and consumes
+//!   it. The only way to obtain a `ReservedSmallSegment` is
+//!   `dbg_decomp_reserve_and_keep`; the only way to consume one is
+//!   `dbg_decomp_release` (or letting it drop — see the `Drop` impl below).
+//!   Calling `dbg_decomp_release(handle)` a second time with the same
+//!   variable does not compile: the first call MOVES `handle`, so a second
+//!   call has no value left to move (rustc E0382, "use of moved value").
+//!   This is verified externally by `tests/r31_4_reserved_small_segment_handle.rs`,
+//!   whose module doc explains exactly why a second call cannot be written
+//!   as a runtime test (see that file for the full argument).
+//!
+//! The existing `debug_assert!(base != self.small_cur, ...)` in
+//! `dbg_decomp_release` stays as defence-in-depth (R30-1's own hazard
+//! class — a reservation that somehow WAS published as the live cursor —
+//! is still worth a cheap local check), but it is no longer the PRIMARY
+//! guarantee against double-release; the type system is.
+
+/// Opaque handle to a small segment reserved via
+/// `AllocCore::dbg_decomp_reserve_and_keep`. See the module doc for the full
+/// rationale. `#[doc(hidden)]`: not stable public API, same status as every
+/// other `dbg_*` measurement type in this crate (e.g.
+/// `SegmentStateReconciliation`).
+#[doc(hidden)]
+#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+#[derive(Debug)]
+#[must_use = "a ReservedSmallSegment must be passed to AllocCore::dbg_decomp_release (or \
+              consumed via into_base) — dropping it without releasing fires a debug-only \
+              leak assertion at runtime instead of a compile-time warning"]
+pub struct ReservedSmallSegment {
+    /// Private FIELD: no external code can move/replace the field, or
+    /// construct a `ReservedSmallSegment` via struct-literal syntax from an
+    /// arbitrary pointer — the only way to CONSTRUCT one is
+    /// [`Self::new_from_reservation`] (`pub(super)`). Reading the current
+    /// value out (without constructing a new handle) is intentionally
+    /// still possible via [`Self::dbg_base`] for measurement callers that need
+    /// the address — see that method's doc for why this does not weaken
+    /// the unforgeability or double-release guarantees.
+    base: *mut u8,
+    /// R31-15 (task #486): the minting `AllocCore`'s stable
+    /// `dbg_reservation_owner_id`. Private for the same reason `base` is —
+    /// only [`Self::new_from_reservation`] sets it, and only
+    /// [`Self::owner_id`]/[`Self::into_base`] read it back. See the module
+    /// doc's "Owner-binding" section for the full rationale.
+    owner_id: u64,
+}
+
+#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+impl ReservedSmallSegment {
+    /// Mint a handle around a freshly reserved segment base, stamped with
+    /// the minting `AllocCore`'s `owner_id` (R31-15, task #486 — see the
+    /// module doc's "Owner-binding" section). `pub(super)` — reachable from
+    /// anywhere inside `alloc_core` (Rust has no sibling-module-only
+    /// visibility, so this is the tightest expressible bound); in practice
+    /// called from exactly one call site
+    /// (`AllocCore::dbg_decomp_reserve_and_keep`, current pool module,
+    /// immediately after a real `reserve_small_segment_impl()` success). No
+    /// module OUTSIDE `alloc_core` — no test, no bench, no example — can
+    /// construct a `ReservedSmallSegment` around an address (or owner id) it
+    /// merely computed or received from elsewhere.
+    pub(super) fn new_from_reservation(base: *mut u8, owner_id: u64) -> Self {
+        Self { base, owner_id }
+    }
+
+    /// Read the owner id WITHOUT consuming the handle — so
+    /// `AllocCore::dbg_decomp_release` can capture it (alongside
+    /// [`Self::into_base`]'s pointer) BEFORE the owner-id `assert_eq!`
+    /// panics, on the mismatch path (R31-15, task #486): the handle's
+    /// leak-detecting `Drop` impl must be disarmed by consuming it via
+    /// `into_base` FIRST, so a panic during the ensuing assert does not
+    /// unwind through a still-armed `Drop` and fire a second, unrelated
+    /// panic (see `dbg_decomp_release`'s "Ordering note" for the full
+    /// double-panic-abort argument this ordering avoids). `pub(super)`,
+    /// same visibility bound as every other accessor here.
+    pub(super) fn owner_id(&self) -> u64 {
+        self.owner_id
+    }
+
+    /// Read the wrapped base WITHOUT consuming the handle — `#[doc(hidden)]
+    /// pub`, the established "test-only export pattern" (see
+    /// `src/lib.rs`'s and this module's own crate-doc notes), so a
+    /// measurement harness in `examples/`/`tests/` can touch the reserved
+    /// segment's payload pages (e.g. `write_volatile` for a first-touch
+    /// page-fault measurement) between reserving and releasing, without
+    /// being able to construct a SECOND handle from the returned address:
+    /// this only reads the pointer, it does not mint a new
+    /// `ReservedSmallSegment`. The double-release guarantee is unaffected —
+    /// that guarantee comes from `Self::into_base` consuming `self` by
+    /// value, not from hiding the pointer value itself.
+    ///
+    /// Named `dbg_base` (R31-14b, task #484, closing P2-12 filed in
+    /// `docs/CORRECTNESS_OPEN_ITEMS.md` item 9), not the bare `base` this
+    /// method was originally named: `tests/dbg_hook_safety_tripwire.rs`'s
+    /// `scan_file` only matches `pub fn dbg_*` / `pub unsafe fn dbg_*` by
+    /// name prefix, so a raw-pointer-returning method named without the
+    /// `dbg_` prefix was invisible to that tripwire even though it returns
+    /// exactly the shape (a raw pointer out of a measurement-only type) the
+    /// tripwire existed to enumerate. The R31-4 retrofit that moved this
+    /// pointer-return off `dbg_decomp_reserve_and_keep` (which the tripwire
+    /// DID scan) onto this method silently narrowed the tripwire's
+    /// coverage; the `dbg_` prefix restored it without widening the
+    /// scanner itself. The repeated `#[cfg(...)]` immediately below
+    /// (redundant with the enclosing `impl` block's own gate, kept anyway)
+    /// was required by that Rust tripwire: its `scan_file` read the attribute
+    /// block immediately preceding each `pub fn dbg_*` line, not the
+    /// enclosing `impl`'s attributes. The rename surfaced that gap until the
+    /// per-method gate was added. The Rust test was later removed at the
+    /// terminal cutover (commit a4245965), but the live successor
+    /// `scripts/verify-dbg-hook-safety.mjs` retains prefix-based enumeration
+    /// and recognizes enclosing scope/module gates. The repeated gate is
+    /// retained, not required by that successor's attribute handling.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_base(&self) -> *mut u8 {
+        self.base
+    }
+
+    /// Consume the handle, yielding the wrapped base for
+    /// `dbg_decomp_release` to pass through to
+    /// `release_or_pool_empty_segment`, and disarm the `Drop` leak-detector
+    /// below (this IS the release path, not a leak). `pub(super)` —
+    /// reachable from anywhere inside `alloc_core`, same bound as
+    /// [`Self::new_from_reservation`] above (Rust has no
+    /// sibling-module-only visibility); not exposed OUTSIDE `alloc_core`, so
+    /// The only caller is `AllocCore::dbg_decomp_release` in the pool module.
+    pub(super) fn into_base(self) -> *mut u8 {
+        let base = self.base;
+        // Disarm Drop's leak-detector: this consumption IS the release,
+        // not an accidental drop. `mem::forget` skips `Drop::drop` entirely
+        // (no unsafe needed — `ReservedSmallSegment` holds no owned
+        // resource `Drop` would otherwise need to release; the raw pointer
+        // itself is not freed here, `release_or_pool_empty_segment` does
+        // that separately in the caller).
+        core::mem::forget(self);
+        base
+    }
+}
+
+/// Defence-in-depth: reaching `drop` without having gone through
+/// `AllocCore::dbg_decomp_release` (i.e. without going through
+/// `ReservedSmallSegment::into_base`, which forgets `self` first) means
+/// the handle was leaked by its caller (a measurement-harness bug — forgot
+/// to release), not a soundness hazard by itself (the segment stays
+/// correctly registered in the allocator's own table; nothing is
+/// corrupted). Loud in debug builds only — a diagnostic tool aborting a
+/// benchmark process over its own leak would be a worse failure mode than a
+/// silent (but debug-visible) leak.
+#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+impl Drop for ReservedSmallSegment {
+    fn drop(&mut self) {
+        debug_assert!(
+            false,
+            "ReservedSmallSegment dropped without going through \
+             AllocCore::dbg_decomp_release — measurement-harness bug (reservation leaked, \
+             not an allocator-soundness issue: the segment stays correctly registered)"
+        );
+    }
+}

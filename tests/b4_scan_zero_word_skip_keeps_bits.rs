@@ -19,7 +19,7 @@ mod alloc_core {
             pub fn shadow_reject(_site: &'static [u8]) {}
         }
     }
-    // Mirrors `alloc_core::fatal` (`src/alloc_core/platform/fatal.rs`).
+    // Mirrors `sefer_platform::fatal` (`crates/platform/sefer-platform/src/fatal.rs`).
     pub mod fatal {
         pub fn fatal(msg: &'static [u8]) -> ! {
             use std::io::Write;

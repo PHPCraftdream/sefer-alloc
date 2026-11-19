@@ -249,7 +249,11 @@ pub(super) fn small_free_guard(
         if matches!(&kind, BlockKind::Large) {
             // SEC-03: only this already-selected Large arm reads payload geometry.
             #[cfg(any(feature = "misuse-checks", debug_assertions))]
-            if crate::alloc_core::AllocCore::reject_large_interior_free(base, ptr) {
+            // SAFETY: `base` is the aligned base of this owner's live Large
+            // segment with an initialized header (own-base dealloc path,
+            // post `BlockKind::Large` classification; header read stays
+            // within the live mapped header; `ptr` is never dereferenced).
+            if unsafe { crate::alloc_core::AllocCore::reject_large_interior_free(base, ptr) } {
                 crate::alloc_core::state_byte::StateByte::shadow_reject(
                     b"sefer-alloc: misuse check rejected a Large free of an interior pointer in safe mode\n",
                 );
@@ -280,7 +284,12 @@ pub(super) fn small_free_guard(
                 // Preserve hardened layout rejection below: only a layout
                 // accepted for Large routing reaches the address rejection.
                 #[cfg(any(feature = "misuse-checks", debug_assertions))]
-                if crate::alloc_core::AllocCore::reject_large_interior_free(base, ptr) {
+                // SAFETY: `base` is the aligned base of this owner's live
+                // Large segment with an initialized header (own-base
+                // dealloc path, post `BlockKind::Large` classification and
+                // hardened layout acceptance; header read stays within the
+                // live mapped header; `ptr` is never dereferenced).
+                if unsafe { crate::alloc_core::AllocCore::reject_large_interior_free(base, ptr) } {
                     crate::alloc_core::state_byte::StateByte::shadow_reject(
                         b"sefer-alloc: misuse check rejected a Large free of an interior pointer in safe mode\n",
                     );

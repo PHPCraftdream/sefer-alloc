@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // P1.4 visibility/extraction report generator (cargo-free; derived, not typed).
-// Compares the moved sources at `origin/main` (git show) with the current tree
+// Compares the moved sources at the pinned pre-P1.4 snapshot (`P1_4_SHA^`, git show) with the P1.4 tree
 // and prints markdown tables:
 //   (a) visibility widening (pub(crate)/private -> pub) per moved symbol, with
 //       the R25-1 class flag (safe fn taking a raw-pointer parameter),
@@ -30,9 +30,16 @@ const REPORT = 'docs/perf/P1_4_SEFER_PLATFORM_EXTRACTION.md';
 const BEGIN = '<!-- BEGIN generated -->';
 const END = '<!-- END generated -->';
 
-const readWork = (p) => readFileSync(join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
+// P2.2 moved `src/alloc_core/platform/*` wholesale into `crates/core/sefer-alloc-core`, and later rounds
+// (aligned-vmem) evolved the sefer-platform wrappers. This script is the P1.4 acceptance check, so BOTH
+// sides of its "pre-P1.4 snapshot -> work-tree at P1.4" comparison are now pinned: `readWork` reads the P1.4
+// acceptance commit instead of the live tree, keeping the recorded P1.4 verification reproducible instead
+// of silently breaking on later moves/renames.
+const P1_4_SHA = 'b8d86949';
+const readWork = (p) =>
+  execFileSync('git', ['show', `${P1_4_SHA}:${p}`], { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 26 }).replace(/\r\n/g, '\n');
 const readOrigin = (p) =>
-  execFileSync('git', ['show', `origin/main:${p}`], { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 26 }).replace(/\r\n/g, '\n');
+  execFileSync('git', ['show', `${P1_4_SHA}^:${p}`], { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 26 }).replace(/\r\n/g, '\n');
 const esc = (s) => String(s).replace(/\|/g, '\\|');
 const norm = (s) => s.replace(/\s+/g, ' ').trim();
 
@@ -251,9 +258,9 @@ const safetyNote = (it) => {
   return `was already pub: no; takes raw ptr: yes; \`# Safety\`: ${doc ? 'yes' : 'no'}; allow(clippy::not_unsafe_ptr_arg_deref): ${allow ? 'yes' : 'no'}`;
 };
 
-emit('### (a) Visibility widening (origin/main `pub(crate)`/private -> `pub` in sefer-platform)');
+emit('### (a) Visibility widening (pre-P1.4 snapshot `pub(crate)`/private -> `pub` in sefer-platform)');
 emit();
-emit('| source @ origin/main | new file | symbol | origin vis | class | raw-ptr / safety note |');
+emit('| source @ pre-P1.4 snapshot | new file | symbol | origin vis | class | raw-ptr / safety note |');
 emit('|---|---|---|---|---|---|');
 for (const w of widened) {
   emit(`| \`${w.file.from}\` | \`${w.file.to}\` | \`${w.now.key}\` | \`${w.prev.vis}\` | ${classify(w.now)} | ${esc(safetyNote(w.now))} |`);
@@ -286,7 +293,7 @@ assert.equal(movedOs, osFile.now.filter(isPub).length, 'os pub count == moved os
 
 emit('### (b) Symbol counts (visible = `pub`/`pub(crate)` items)');
 emit();
-emit('| source @ origin/main | visible at origin | moved to sefer-platform | stayed in root |');
+emit('| source @ pre-P1.4 snapshot | visible at origin | moved to sefer-platform | stayed in root |');
 emit('|---|---|---|---|');
 for (const f of files) {
   const tot = visOld(f).length;
@@ -297,7 +304,7 @@ emit(`| **total** | **${files.reduce((s, f) => s + visOld(f).length, 0)}** | **$
 emit();
 emit(`Stayed in root os.rs (directory trio, asserted equal to the inventory's OS_STAY): ${OS_STAY.map((s) => `\`${s}\``).join(', ')}.`);
 emit();
-emit(`Root os.rs additionally keeps real \`pub(crate)\` safe wrappers with the pre-extraction signatures for the moved raw-pointer functions now \`pub unsafe fn\` in sefer-platform (asserted: signature, cfg gate and attrs equal to origin/main; body forwards to \`sefer_platform::os\`): ${WRAPPED.map((s) => `\`${s}\``).join(', ')}.`);
+emit(`Root os.rs additionally keeps real \`pub(crate)\` safe wrappers with the pre-extraction signatures for the moved raw-pointer functions now \`pub unsafe fn\` in sefer-platform (asserted: signature, cfg gate and attrs equal to the pre-P1.4 snapshot; body forwards to \`sefer_platform::os\`): ${WRAPPED.map((s) => `\`${s}\``).join(', ')}.`);
 emit();
 
 // decisions table from inventory + root deps at origin
@@ -318,13 +325,13 @@ const rootDeps = (path) => {
 const moveSet = new Set(MOVES.map((m) => m.from));
 for (const f of invFiles) {
   if (f.decision === 'STAY') {
-    assert.equal(readOrigin(f.path), readWork(f.path), `${f.path}: STAY file changed`);
+    assert.equal(readOrigin(f.path), readWork(f.path), `${f.path}: STAY file changed (pinned to the P1.4 acceptance SHA)`);
   } else assert(moveSet.has(f.path), `${f.path}: ${f.decision} but not in MOVES`);
 }
 assert.deepEqual(invFiles.filter((f) => f.decision !== 'STAY').map((f) => f.path).sort(), [...moveSet].sort(), 'inventory EXTRACT/SPLIT set == MOVES');
 emit('### (b2) File decisions and root dependencies (from `scripts/p14_extraction_inventory.mjs`)');
 emit();
-emit('| file | decision | root `crate::` deps (origin/main) | reason |');
+emit('| file | decision | root `crate::` deps (pre-P1.4 snapshot) | reason |');
 emit('|---|---|---|---|');
 for (const f of invFiles) {
   const d = rootDeps(f.path);
@@ -338,7 +345,7 @@ assert.deepEqual(rootDeps('src/global/process_exit.rs'), [], 'process_exit.rs: n
 assert.deepEqual(rootDeps('src/alloc_core/platform/fatal.rs'), [], 'fatal.rs: leaf');
 
 // ── (c) cfg gates ──
-emit('### (c) cfg gates of moved symbols (identical at origin/main and in sefer-platform: asserted)');
+emit('### (c) cfg gates of moved symbols (identical in the pre-P1.4 snapshot and in sefer-platform: asserted)');
 emit();
 emit('| symbol | new file:line | gate |');
 emit('|---|---|---|');
@@ -365,7 +372,7 @@ for (const f of files) for (const it of f.now) {
 // ── (d) inline / cold ──
 emit('### (d) `#[inline]` / `#[inline(always)]` / `#[cold]` on moved symbols');
 emit();
-emit('| symbol | origin/main | sefer-platform | change |');
+emit('| symbol | pre-P1.4 snapshot | sefer-platform | change |');
 emit('|---|---|---|---|');
 const changes = [];
 for (const f of files) {
@@ -383,7 +390,7 @@ assert.equal(changes.length, 1, `exactly one inline/cold change expected, got ${
 assert.equal(changes[0].key, 'segment_base_of');
 assert.deepEqual(changes[0].added, ['#[inline]']);
 assert.deepEqual(changes[0].removed, []);
-emit(`Changes relative to origin/main: ${changes.length} (\`${changes[0].key}\`: added ${changes[0].added.map((a) => `\`${a}\``).join(', ')}).`);
+emit(`Changes relative to the pre-P1.4 snapshot: ${changes.length} (\`${changes[0].key}\`: added ${changes[0].added.map((a) => `\`${a}\``).join(', ')}).`);
 emit();
 
 // ── (e) feature forwarding ──
@@ -422,7 +429,7 @@ emit();
 // ── output ──
 const md = out.join('\n').trimEnd() + '\n';
 if (process.argv.includes('--write')) {
-  const cur = readWork(REPORT);
+  const cur = readFileSync(join(ROOT, REPORT), 'utf8'); // live REPORT: patch only the generated region, never rewrite current prose with the pinned snapshot
   const a = cur.indexOf(BEGIN), b = cur.indexOf(END);
   assert(a >= 0 && b > a, `${REPORT}: markers missing`);
   const next = `${cur.slice(0, a + BEGIN.length)}\n\n${md}\n${cur.slice(b)}`;

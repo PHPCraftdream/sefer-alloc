@@ -16,12 +16,15 @@
 
 use core::alloc::Layout;
 
-use crate::alloc_core::node::Node;
+// P2.2: the crate-private facade `alloc_core::node::Node` is no longer
+// re-exported to the root; bind the canonical `sefer-segment` node seam
+// (`pub unsafe` `RootNode` forms) directly, under its documented contracts.
 #[cfg(all(feature = "alloc-decommit", not(feature = "numa-aware")))]
 use crate::alloc_core::policy::large_thp_runtime::ThpRuntime;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 #[cfg(any(feature = "misuse-checks", debug_assertions))]
 use crate::alloc_core::AllocCore;
+use sefer_segment::support::node_impl::RootNode as Node;
 
 #[cfg(any(feature = "misuse-checks", debug_assertions))]
 use crate::alloc_core::segment_route::RouteKind;
@@ -146,7 +149,13 @@ impl HeapCore {
             if let Some(owned) = own_block {
                 let (base, block) = (owned.root(), owned.block());
                 #[cfg(any(feature = "misuse-checks", debug_assertions))]
-                if AllocCore::large_payload_mismatch(base, block) {
+                // SAFETY (`large_payload_mismatch` # Safety): `base` is the
+                // canonical live metadata root of THIS heap's segment — the
+                // `owned_block_of` lookup above returned exactly this
+                // `(root, block)` pair after resolving table membership for a
+                // live allocation — so the header reads inside stay within the
+                // live mapped header; `block` is never dereferenced.
+                if unsafe { AllocCore::large_payload_mismatch(base, block) } {
                     crate::alloc_core::state_byte::StateByte::shadow_reject(
                         b"sefer-alloc: misuse check rejected a realloc of an interior pointer in safe mode\n",
                     );
@@ -201,10 +210,22 @@ impl HeapCore {
                 //       leg, which routes through `HeapCore::alloc`
                 //       (magazine-aware, checked drain) — NOT through
                 //       `AllocCore::realloc`'s blind alloc→alloc_small path.
-                if let Some(p) = self
-                    .core
-                    .try_realloc_inplace_known_base(base, block, old_layout, new_size)
-                {
+                //
+                // SAFETY (`try_realloc_inplace_known_base` # Safety): `base`
+                // is the canonical registered root of the segment containing
+                // `block` — the `owned_block_of` lookup above returned exactly
+                // this `(root, block)` pair for a live allocation of THIS
+                // heap. `block` is therefore the exact start of a currently
+                // live allocation, and `old_layout` matches it per this fn's
+                // `# Safety` contract (the caller's `GlobalAlloc::realloc`
+                // obligation). The `&mut self` receiver gives exclusive
+                // access, so no other reference to the block's bytes is live
+                // across the call.
+                let inplace = unsafe {
+                    self.core
+                        .try_realloc_inplace_known_base(base, block, old_layout, new_size)
+                };
+                if let Some(p) = inplace {
                     // `try_realloc_inplace_known_base` mutates the block's header in
                     // place and always returns the SAME pointer on success
                     // (it never moves the block). The segment was already
@@ -348,8 +369,14 @@ impl HeapCore {
                 //       segments, so this is a same-thread read of the
                 //       owner-only commit frontier (R2-02) — see
                 //       `safe_payload_read_span`'s doc.
+                //
+                // SAFETY (`safe_payload_read_span` # Safety): the
+                // `owned_block_of` lookup above proved `base` is a live,
+                // mapped segment owned by this heap/thread (the R2-02
+                // ownership proof), so the header fields read at `base` are
+                // sound to access here.
                 #[cfg(any(feature = "misuse-checks", debug_assertions))]
-                if old_layout.size() > AllocCore::safe_payload_read_span(base, block) {
+                if old_layout.size() > unsafe { AllocCore::safe_payload_read_span(base, block) } {
                     crate::alloc_core::state_byte::StateByte::shadow_reject(
                         b"sefer-alloc: misuse check rejected a realloc with an oversized old layout in safe mode\n",
                     );
@@ -436,7 +463,25 @@ impl HeapCore {
                     // above; the observation field is plain, owner-written only.
                     let () = unsafe { SegmentHeader::set_thp_observation_at(base, 0) };
                 }
-                crate::alloc_core::node::Node::copy_nonoverlapping(block, new_ptr, copy);
+                // SAFETY (canonical `pub unsafe` RootNode contract):
+                // - VALIDITY/SIZE: `block` is the start of the OLD live own
+                //   allocation (the `owned_block_of` lookup above proved this
+                //   heap owns its segment and the block is live; the caller's
+                //   `realloc` contract guarantees `old_layout` matches it), so
+                //   it is readable for `copy` = `min(old_layout.size(),
+                //   new_size)` bytes; `new_ptr` is a fresh allocation from
+                //   `self.alloc` above (null was excluded), writable for
+                //   `new_size` >= `copy` bytes.
+                // - LIVENESS: the old block is not freed until the
+                //   `dealloc_own_thread*` call below, so it stays live and
+                //   mapped through this copy; `new_ptr`'s block is live by
+                //   construction.
+                // - NON-OVERLAP: `src` and `dst` are start addresses of two
+                //   DISTINCT live allocations (the new block was freshly
+                //   carved by `self.alloc`; the allocator never hands out a
+                //   range overlapping an existing live allocation), so the
+                //   ranges cannot overlap.
+                unsafe { Node::copy_nonoverlapping(block, new_ptr, copy) };
                 // F6 (task #494): `base` is already in hand from the
                 // `contains_base(base)` check above — hand it directly to the
                 // own-thread free body instead of routing back through
@@ -600,7 +645,23 @@ impl HeapCore {
                 return core::ptr::null_mut();
             }
             let copy = old_layout.size().min(new_size);
-            Node::copy_nonoverlapping(ptr, new_ptr, copy);
+            // SAFETY (canonical `pub unsafe` RootNode contract):
+            // - VALIDITY/SIZE: the caller's `realloc` contract (see this fn's
+            //   `# Safety`) makes `ptr` the start of a LIVE allocation matching
+            //   `old_layout`, readable for `copy` = `min(old_layout.size(),
+            //   new_size)` bytes; `new_ptr` is a fresh allocation from
+            //   `self.alloc` (null was excluded), writable for `new_size` >=
+            //   `copy` bytes.
+            // - LIVENESS: the foreign segment backing `ptr` stays mapped while
+            //   the caller's block is live (every unregister path requires the
+            //   empty-segment transition; the route descriptor lookup above
+            //   resolved it), and it is not freed until the `self.dealloc`
+            //   below.
+            // - NON-OVERLAP: `ptr` and `new_ptr` are starts of two DISTINCT
+            //   allocations (the new block was freshly carved by `self.alloc`
+            //   and cannot overlap any live allocation, including the foreign
+            //   one).
+            unsafe { Node::copy_nonoverlapping(ptr, new_ptr, copy) };
             // SAFETY: the current source remains uniquely owned through the
             // copy; only successful destination allocation transfers its free.
             unsafe { self.dealloc(ptr, old_layout) };
@@ -727,10 +788,14 @@ impl HeapCore {
         // block's actual committed span, not the caller-supplied
         // `old_layout.size()` — a bogus layout must not drive an OOB read.
         // `base` was already proven live by the caller's `contains_base`
-        // check, which is also an ownership proof (R2-02) — see
-        // `safe_payload_read_span`'s doc.
+        // check, which is also an ownership proof (R2-02).
+        //
+        // SAFETY (`safe_payload_read_span` # Safety): the caller's
+        // `contains_base` check proved `base` is a live, mapped segment
+        // owned by this heap/thread (see `safe_payload_read_span`'s doc),
+        // so the header fields read at `base` are sound to access here.
         #[cfg(any(feature = "misuse-checks", debug_assertions))]
-        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+        if old_layout.size() > unsafe { AllocCore::safe_payload_read_span(base, ptr) } {
             crate::alloc_core::state_byte::StateByte::shadow_reject(
                 b"sefer-alloc: misuse check rejected a realloc promotion with an oversized old layout in safe mode\n",
             );
@@ -761,14 +826,35 @@ impl HeapCore {
         {
             self.drain_large_sidecar_ingress();
         }
-        let (new_ptr, _is_fresh) = self.core.alloc_large(new_size, old_layout.align());
+        // SAFETY (`AllocCore::alloc_large` # Safety): `old_layout.align()` is
+        // a power of two (canonical `Layout`) and is preserved unchanged as
+        // the promoted block's alignment obligation; the (`new_size`,
+        // `old_layout.align()`) pair is one for which `Layout::from_size_align`
+        // succeeds under this function's `Layout`-shaped `realloc` contract
+        // (a bogus/oversized old layout is rejected by the misuse-check bound
+        // above).
+        #[allow(unsafe_code)] // P2.2: item-scoped; `alloc_large` contract above.
+        let (new_ptr, _is_fresh) = unsafe { self.core.alloc_large(new_size, old_layout.align()) };
         if new_ptr.is_null() {
             return None;
         }
         // Copy the FULL old buffer — same `old_layout.size()` span the
         // existing move leg copies on a grow (`copy = min(old, new)`, which
         // for a grow is always `old`).
-        Node::copy_nonoverlapping(ptr, new_ptr, old_layout.size());
+        // SAFETY (canonical `pub unsafe` RootNode contract):
+        // - VALIDITY/SIZE: `ptr` is the start of the OLD live own block (the
+        //   caller's `contains_base`-proven ownership plus the caller's
+        //   `realloc` contract make it readable for `old_layout.size()` bytes;
+        //   the misuse-check span bound above additionally bounds it), and
+        //   `new_ptr` is a fresh Large allocation from `alloc_large` (null was
+        //   excluded) writable for `new_size` >= `old_layout.size()` bytes.
+        // - LIVENESS: the old block's segment is not freed until the
+        //   `dealloc_own_thread*` call below (the live-block argument in the
+        //   comment above), so it stays live and mapped through this copy.
+        // - NON-OVERLAP: `ptr` (old Small/medium segment) and `new_ptr` (fresh
+        //   Large segment) are starts of two DISTINCT live allocations, so the
+        //   copied ranges cannot overlap.
+        unsafe { Node::copy_nonoverlapping(ptr, new_ptr, old_layout.size()) };
         // R29-5 (task #436): record this promotion event for the
         // promotion-frequency / copied-byte-distribution gate
         // (`docs/perf/R29_5_PROMOTION_FREQUENCY_GATE.md`). Observation ONLY —
