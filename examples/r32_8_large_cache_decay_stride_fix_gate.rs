@@ -3,7 +3,7 @@
 //! `large_cache_used_bytes` genuinely and persistently stays ABOVE
 //! `headroom_bytes` (the shipped `LargeCachePolicy::LowHeadroom` /
 //! `::Trimmed64MiB` profiles' whole intended use case per
-//! `src/alloc_core/profile.rs`), unlike the sibling
+//! `crates/core/sefer-policy/src/policy/profile.rs`), unlike the sibling
 //! `examples/r32_8_large_cache_decay_clock_read_ab_gate.rs`, whose workload
 //! is deliberately BELOW headroom (that gate isolates the raw per-call
 //! clock-read cost; this one validates the fix that reduces how often that
@@ -13,7 +13,7 @@
 //! old-shape/new-shape switch
 //!
 //! `AllocCore::maybe_decay_large_cache`'s stride throttle
-//! (`DECAY_CLOCK_CHECK_STRIDE`, `src/alloc_core/alloc_core_large_cache.rs`)
+//! (`DECAY_CLOCK_CHECK_STRIDE`, `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs`)
 //! is bypassed whenever `FORCE_DECAY_CLOCK_READ` is set — by construction,
 //! that makes the "forced" arm read the clock on EVERY call once past
 //! headroom, i.e. byte-for-byte the OLD (pre-R32-8) unconditional-past-

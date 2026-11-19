@@ -20,7 +20,7 @@
 //!
 //! ## Structural note (complementary to the runtime check)
 //!
-//! A grep over `src/alloc_core/` confirms: no `Vec`, `Box`, `HashSet`,
+//! A grep over `crates/core/sefer-alloc-core/src/alloc_core/` confirms: no `Vec`, `Box`, `HashSet`,
 //! `format!`, `String`, or `std::alloc` appears anywhere on the alloc path
 //! (`alloc_core.rs`, `bootstrap.rs`, `segment_header.rs`, `segment_table.rs`,
 //! `size_classes.rs`). The only `unsafe` modules are `os` (the OS syscalls,

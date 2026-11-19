@@ -30,10 +30,10 @@
 //!   compile — `AllocCore::dbg_carve_batch` must not resolve.
 //! - The SAME command PLUS `internals` MUST SUCCEED — proving the failure
 //!   above is caused specifically by the `internals` gate (Sol-F1's fix in
-//!   `src/alloc_core/alloc_core_small_diag.rs`), not by some unrelated
+//!   `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs`), not by some unrelated
 //!   breakage in this file.
 //!
-//! `AllocCore::dbg_carve_batch` (`src/alloc_core/alloc_core_small_diag.rs`)
+//! `AllocCore::dbg_carve_batch` (`crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs`)
 //! is used as the representative probe method: it is a plain safe `pub fn`
 //! (no `unsafe`, no extra feature gate beyond the file's own `internals`
 //! gate), so a failure here is unambiguously about the `internals` boundary

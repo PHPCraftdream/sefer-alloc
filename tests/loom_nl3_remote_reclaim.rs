@@ -1,7 +1,7 @@
 //! NL3 reduced owner-reclaim model. Included sidecar/bitmap source exercises publish/cut
 //! identity conservation, followed by modeled owner insertion and reuse. No lease claim
 //! protocol is modeled. This does NOT include or prove the full path in
-//! `src/alloc_core/small/alloc_core_small_reclaim.rs`, whose production raw-pointer
+//! `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_reclaim.rs`, whose production raw-pointer
 //! reclaim still reads the state byte. Identity/free-list and credit fields are bookkeeping.
 #![cfg(all(loom, feature = "alloc-global", feature = "alloc-xthread"))]
 mod alloc_core {

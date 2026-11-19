@@ -1,5 +1,5 @@
 //! R34-10 (task #529) — the sparse-decay accumulation gate: measures whether
-//! `DECAY_CLOCK_CHECK_STRIDE = 64` (`src/alloc_core/alloc_core_large_cache.rs`,
+//! `DECAY_CLOCK_CHECK_STRIDE = 64` (`crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs`,
 //! shipped by R32-8 / commit `74345b8`) causes the large-cache RETENTION GAP
 //! between the throttled and unthrottled arms to ACCUMULATE beyond one segment
 //! over many CONSECUTIVE sparse decay intervals — the regime R33-6
@@ -118,7 +118,7 @@ const DECAY_INTERVAL_MS: u64 = 100;
 const INTERVAL_WAIT_MS: u64 = 150;
 
 /// Headroom: 16 MiB = `LargeCachePolicy::LowHeadroom`, one of the two shipped
-/// non-default profiles R32-8's stride fix targets (`src/alloc_core/profile.rs`).
+/// non-default profiles R32-8's stride fix targets (`crates/core/sefer-policy/src/policy/profile.rs`).
 const HEADROOM_BYTES: usize = 16 * 1024 * 1024;
 
 /// One large object's requested size. 2 MiB ≫ `SMALL_MAX` (~253 KiB under plain

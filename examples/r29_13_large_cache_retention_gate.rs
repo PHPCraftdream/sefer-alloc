@@ -12,8 +12,8 @@
 //! gate report measuring its actual idle-RSS floor for a long-lived thread.
 //! This is that gate.
 //!
-//! The mechanism, read from source (`src/alloc_core/large_cache_config.rs:48`,
-//! `src/alloc_core/alloc_core_large_cache.rs:320-380`):
+//! The mechanism, read from source (`crates/core/sefer-policy/src/large_cache_config.rs:50`,
+//! `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs:622-770`):
 //! - `maybe_decay_large_cache` early-returns (never even reads the clock)
 //!   when `large_cache_used_bytes <= headroom_bytes` — decay cannot fire
 //!   below the floor.
@@ -23,7 +23,7 @@
 //! - Decay is event-driven only (fires from the large alloc/dealloc slow
 //!   paths); there is no background thread, so pure idle reclaims nothing.
 //! - The only unconditional reclamation is `HeapCore::trim_for_recycle`
-//!   (`evict_all` at `src/alloc_core/alloc_core_large_cache.rs:418`), which
+//!   (`evict_all` at `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs:103`), which
 //!   runs only at thread exit (`src/global/tls_heap.rs`) — this gate's whole
 //!   point is to measure the floor BEFORE that fires, i.e. with long-lived,
 //!   non-exiting threads.
@@ -31,9 +31,9 @@
 //! ## Workload — LARGE objects, not small churn
 //!
 //! Under plain `production` (no `medium-classes`), `SMALL_MAX` = 16 KiB (see
-//! `src/alloc_core/size_classes.rs`) — anything larger is classified `Large`
+//! `crates/core/sefer-segment/src/support/size_classes.rs`) — anything larger is classified `Large`
 //! and goes through `alloc_large`/the large-cache admission path
-//! (`src/alloc_core/alloc_core.rs` large-dealloc branch). This probe uses
+//! (`crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs:386` large-dealloc branch). This probe uses
 //! 34 MiB objects, 8 distinct sizes per thread (one per base large-cache
 //! slot — `LARGE_CACHE_SLOTS = 8`, no `large-cache-extended` sidecar in plain
 //! `production`), so a fully-populated cache holds `8 * 34 MiB = 272 MiB` —

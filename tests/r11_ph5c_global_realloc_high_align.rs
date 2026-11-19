@@ -12,7 +12,7 @@
 //! - `alloc_zeroed` at high align returns zeroed memory.
 //! - The kind switch genuinely happens on both legs: the Small leg uses a
 //!   size far below the small-class table top (512 B) and the Large leg a
-//!   size `>= SEGMENT` (the huge threshold, `src/alloc_core/platform/
+//!   size `>= SEGMENT` (the huge threshold, `crates/core/sefer-segment/src/support/
 //!   size_classes.rs::HUGE_THRESHOLD`), so `class_for(size, align)` returns
 //!   `None` and `HeapCore` MUST take the Large leg — routing per
 //!   `src/registry/heap_core/alloc/hot.rs` (high align does NOT force Large:

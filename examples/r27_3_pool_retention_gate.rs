@@ -22,7 +22,7 @@
 //! ## Decay note (read from source, not guessed)
 //!
 //! The small-segment pool shares the large-cache decay interval
-//! (`maybe_decay_small_pool`, `src/alloc_core/alloc_core_small_pool.rs`,
+//! (`maybe_decay_small_pool`, `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs:529`,
 //! reuses `self.decay_config.decay_interval`; default 1000 ms from
 //! `large_cache_config.rs` `DEFAULT_DECAY_INTERVAL_MS`). It is EVENT-DRIVEN:
 //! it fires inline on the `reserve_small_segment` cold path during allocation

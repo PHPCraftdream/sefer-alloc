@@ -261,7 +261,7 @@ impl AllocCore {
 
     /// TEST-ONLY (`docs/CORRECTNESS_OPEN_ITEMS.md` item 143): the
     /// process-wide count of failed segment-reservation constructors —
-    /// see [`os::SEGMENTS_RESERVE_FAILED_TOTAL`](crate::alloc_core::os::SEGMENTS_RESERVE_FAILED_TOTAL)
+    /// see `os::SEGMENTS_RESERVE_FAILED_TOTAL`
     /// for the full rationale.
     ///
     /// A capacity test fills until `alloc` returns null, but null is

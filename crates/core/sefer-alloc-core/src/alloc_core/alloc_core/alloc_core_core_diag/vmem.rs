@@ -42,8 +42,8 @@ impl AllocCore {
     /// Unix/miri). The sum of the single-call fast path (`align <= 64 KiB` and
     /// `commit_len == size`) and the two-call traditional path (everything
     /// else). See
-    /// [`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`] and
-    /// [`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`] in `aligned_vmem` for the
+    /// `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` and
+    /// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS` in `aligned_vmem` for the
     /// split-path breakdown, and `aligned_vmem::windows_reserve_commit_single_calls()`
     /// / `aligned_vmem::windows_reserve_commit_two_call_pairs()` for the
     /// individual counters. Reads 0 unless `bench-internals` is on.

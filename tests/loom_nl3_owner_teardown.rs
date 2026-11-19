@@ -1,7 +1,7 @@
 //! NL3 lease recycle/trim handoff model. Actual sidecar/cut/scan publication source
 //! and the modeled Release/Acquire lease handoff are covered. This does not model
 //! production raw-pointer reclaim, which still reads the state byte in
-//! `src/alloc_core/small/alloc_core_small_reclaim.rs`; no concurrent AllocCore Drop/registry
+//! `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_reclaim.rs`; no concurrent AllocCore Drop/registry
 //! teardown is modeled. `UnsafeCell` free identities/credits are model bookkeeping.
 #![cfg(all(
     loom,

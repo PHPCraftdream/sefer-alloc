@@ -107,8 +107,8 @@ fn root_rustdoc_ci_covers_all_and_docs_rs_features_with_strict_warnings() {
     );
 }
 
-/// Every full Rust source path in manifest comments must resolve to a file.
-/// The filesystem is the oracle; adding a fictitious path makes this fail.
+/// Every `src/...` or `crates/.../src/...` path in manifest comments must
+/// resolve to a file; the filesystem is the oracle.
 #[test]
 fn cargo_toml_comment_source_paths_exist() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -116,20 +116,20 @@ fn cargo_toml_comment_source_paths_exist() {
     let mut checked = 0usize;
     let mut offenders = Vec::new();
     for (line_number, line) in cargo.lines().enumerate() {
+        // Maximal ASCII path tokens; a full `crates/.../src/...` token is one
+        // path, never a bare `src/` suffix relative to the repo root.
         let Some(comment) = line.trim_start().strip_prefix('#') else {
             continue;
         };
-        for (start, _) in comment.match_indices("src/") {
-            // Match the manifest's ASCII path spelling, stopping before prose
-            // punctuation or a line-number suffix. Byte offsets stay UTF-8 safe.
-            let rest = &comment[start..];
-            let end = rest
-                .bytes()
-                .position(|b| {
-                    !(b.is_ascii_alphanumeric() || matches!(b, b'_' | b'/' | b'.' | b'-'))
-                })
-                .unwrap_or(rest.len());
-            let token = &rest[..end];
+        for token in comment
+            .split(|c: char| !c.is_ascii_alphanumeric() && !matches!(c, '_' | '/' | '.' | '-'))
+        {
+            let relevant = token.starts_with("src/")
+                || (token.starts_with("crates/") && token.contains("/src/"));
+            if !relevant {
+                continue;
+            }
+            // Token ends at prose punctuation; first `.rs` wins over suffixes.
             let Some(rs_end) = token.find(".rs") else {
                 continue;
             };

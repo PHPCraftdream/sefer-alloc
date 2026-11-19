@@ -101,7 +101,7 @@ pub(crate) const fn align_up_const(n: usize, a: usize) -> usize {
 #[path = "../crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs"]
 mod terminal_words;
 
-// CANONICAL implementation (not the root `src/alloc_core/large/` re-export
+// CANONICAL implementation (not the `crates/core/sefer-alloc-core/src/alloc_core/large/mod.rs` `reservation_state` facade
 // shim): `reservation_state.rs` resolves `super::{AtomicU64, Ordering}` —
 // loom's, above. The moved file reads the codec through the crate path
 // `crate::segment::segment_header`; alias it to the harness shim below.

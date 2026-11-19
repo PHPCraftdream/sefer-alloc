@@ -164,14 +164,11 @@ impl AllocCore {
         self.invalidate_numa_node_cache();
     }
 
-    /// Iterate over all registered segment bases (read-only). A registry-walk
-    /// primitive used by cross-thread-free routing and (historically) the
-    /// Phase 12.4 abandonment walk (now removed — task #97 / R4-5).
+    /// Iterate over all registered segment bases (read-only).
     ///
-    /// R6-T38 (closed the downgrade follow-up of task #136): without
-    /// `internals` the walk is `pub(crate)` — its only production callers
-    /// are in-crate (`registry::heap_core::HeapCore::segment_bases` and the
-    /// drain/diag paths). An `internals` build keeps it public for tests.
+    /// R6-T38: `pub(crate)` with no in-crate callers — retained so the method
+    /// still exists in a non-`internals` build and external probes fail with
+    /// E0624 (privacy) instead of E0599 (no method).
     ///
     /// R2-01 (task #2003): the return type is `+ '_` — bound to `&self`'s
     /// lifetime. Before this, edition 2021's return-position-`impl-Trait`
@@ -183,18 +180,12 @@ impl AllocCore {
     /// iterator from a function that drops its local `AllocCore` compiled
     /// cleanly pre-fix). `+ '_` closes it: the iterator can no longer
     /// outlive the `AllocCore` it borrows from.
-    // R6-T16: readers are the bench-internals/internals diag paths and the
-    // internals harness only.
-    #[cfg_attr(
-        not(any(feature = "internals", feature = "bench-internals")),
-        allow(dead_code)
-    )]
     #[cfg(all(
         not(feature = "internals"),
         any(feature = "alloc-global", feature = "alloc-xthread")
     ))]
-    #[doc(hidden)] // P2.2 cross-crate boundary: called by the root crate's HeapCore wrapper
-    pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
+    #[allow(dead_code)]
+    pub(crate) fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
         self.table.bases()
     }
 
@@ -202,10 +193,6 @@ impl AllocCore {
     /// `internals` build, with the same `+ '_` lifetime bind (R2-01).
     // R6-T16: readers are the bench-internals/internals diag paths and the
     // internals harness only.
-    #[cfg_attr(
-        not(any(feature = "internals", feature = "bench-internals")),
-        allow(dead_code)
-    )]
     #[cfg(all(
         feature = "internals",
         any(feature = "alloc-global", feature = "alloc-xthread")

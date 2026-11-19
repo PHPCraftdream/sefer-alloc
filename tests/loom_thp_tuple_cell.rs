@@ -1,5 +1,5 @@
 //! Actual-source model of the write-once large-THP tuple cell: the production
-//! `ThpTupleCell` (`src/alloc_core/config/policy/large_thp_runtime/
+//! `ThpTupleCell` (`crates/core/sefer-policy/src/policy/large_thp_runtime/
 //! thp_tuple_cell.rs`) compiled onto loom atomics, together with the REAL
 //! pure codec and gradient files (`thp_tuple.rs`, `large_thp_*.rs`) — no
 //! stubbed logic anywhere.

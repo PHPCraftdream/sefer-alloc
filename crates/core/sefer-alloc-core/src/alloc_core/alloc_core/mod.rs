@@ -13,7 +13,7 @@
 //! ## API
 //!
 //! - [`AllocCore::new`] — bootstrap the primordial segment (the ONLY place
-//!   that hand-carves self-hosted metadata; see [`bootstrap`]).
+//!   that hand-carves self-hosted metadata; see `bootstrap`).
 //! - [`alloc`](AllocCore::alloc) / [`dealloc`](AllocCore::dealloc) /
 //!   [`realloc`](AllocCore::realloc) / [`alloc_zeroed`](AllocCore::alloc_zeroed)
 //!   — the single-threaded allocator entry points. `alloc`/`alloc_zeroed`

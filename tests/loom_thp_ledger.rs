@@ -1,5 +1,5 @@
 //! Actual-source model of the large-THP budget ledger: the production
-//! `ThpBudgetLedger` (`src/alloc_core/config/policy/large_thp_runtime/
+//! `ThpBudgetLedger` (`crates/core/sefer-policy/src/policy/large_thp_runtime/
 //! thp_budget_ledger.rs`) compiled onto loom atomics, together with the REAL
 //! pure advice geometry (`thp_advice.rs`, `thp_advice_outcome.rs`, the
 //! `large_thp_*` pure files) — no stubbed logic anywhere.

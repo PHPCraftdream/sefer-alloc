@@ -42,9 +42,9 @@
 //! create/destroy cycles that materialise a sidecar accumulated unrecoverable
 //! VM spans without bound (R2-12).
 //!
-//! Since R2-12, [`reserve`]/[`reserve_zeroed_with`] reserve through
+//! Since R2-12, `reserve`/`reserve_zeroed_with` reserve through
 //! `aligned_vmem::reserve_aligned` and return the span wrapped in an
-//! [`AccountedSidecar`] — a kind-tagged RAII token holding the
+//! `AccountedSidecar` — a kind-tagged RAII token holding the
 //! `aligned_vmem::Reservation`. The owning `AllocCore` stores the token
 //! alongside the sidecar pointer and dropping the core drops the token,
 //! releasing the span back to the OS exactly once (the release is counted by
@@ -55,7 +55,7 @@
 //! are reclaimed after unlink when the last descriptor pin is dropped.
 //!
 //! Because the span can now be released while the process lives, the
-//! references [`deref`]/[`deref_mut`] hand out are OWNER-TIED, not
+//! references `deref`/`deref_mut` hand out are OWNER-TIED, not
 //! `'static`: the caller passes the owning value it borrowed the pointer
 //! from and the returned reference's lifetime is bounded by that owner, so
 //! the type system structurally prevents a reference from outliving the
@@ -71,24 +71,18 @@
 //! ## API shape
 //!
 //! `AllocCore` stores each sidecar as a plain `*mut T` field (not
-//! [`AccountedSidecar`] itself): the field's `null` value IS the "not yet
+//! `AccountedSidecar` itself): the field's `null` value IS the "not yet
 //! materialised" sentinel that `AllocCore::new`/`Drop`/every call site
 //! already branches on, and `AllocCore` needs `Copy`-free but `Drop`-free raw
 //! storage it can leave null without running a destructor. Wrapping that in
 //! an `Option<...>` would only rename the same null check without removing
 //! it. So this module exposes free functions operating on `*mut T` directly
-//! — [`reserve`] (produces the pointer + token, typed-init included) and
-//! [`deref`]/[`deref_mut`] (the `unsafe fn` boundary) — plus the token type
+//! — `reserve` (produces the pointer + token, typed-init included) and
+//! `deref`/`deref_mut` (the `unsafe fn` boundary) — plus the token type
 //! the caller stores alongside the pointer. The pairing invariant (token is
 //! `Some` iff the pointer is non-null) is maintained at the two
 //! materialisation sites and consumed by `AllocCore`'s own `Drop`; see the
 //! field docs in `alloc_core::alloc_core`.
-//!
-//! [`reserve`]: crate::alloc_core::platform::sidecar::reserve
-//! [`reserve_zeroed_with`]: crate::alloc_core::platform::sidecar::reserve_zeroed_with
-//! [`AccountedSidecar`]: crate::alloc_core::platform::sidecar::AccountedSidecar
-//! [`deref`]: crate::alloc_core::platform::sidecar::deref
-//! [`deref_mut`]: crate::alloc_core::platform::sidecar::deref_mut
 
 // Named `unsafe` seam (tier 1): the four documented reasons to hold
 // `unsafe` here are (1) `ptr::write`-constructing a fully-typed `T` into the

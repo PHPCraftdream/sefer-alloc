@@ -15,7 +15,7 @@
 //! of that class anywhere, and no carve room left in the cursor's tail), a
 //! brand new segment is reserved and becomes the new cursor — and the old,
 //! now-empty cursor is never revisited: nothing else ever finalizes it. The
-//! fix (`reserve_small_segment`, `src/alloc_core/small/alloc_core_small/reserve.rs`)
+//! fix (`reserve_small_segment`, `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/reserve.rs`)
 //! checks the OUTGOING cursor with the same eligibility test
 //! `finalize_orphaned_empty_segments` uses (`kind == Small`, `live_count ==
 //! 0`, not decommitted, not already pooled) and finalizes it right there.

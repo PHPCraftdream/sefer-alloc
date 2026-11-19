@@ -11,7 +11,7 @@
 //!
 //! ## Why this should mostly be a wash under `production`
 //!
-//! `AllocCore::alloc_large` (`src/alloc_core/alloc_core_large.rs`) rounds
+//! `AllocCore::alloc_large` (`crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs`) rounds
 //! every request up to a whole `SEGMENT` (4 MiB) multiple UNLESS the opt-in
 //! `exact-span-large` feature is enabled — and `production` does NOT include
 //! `exact-span-large` (see `Cargo.toml`'s `production = [...]` bundle). So

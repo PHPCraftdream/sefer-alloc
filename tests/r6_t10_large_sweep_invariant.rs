@@ -77,7 +77,7 @@ fn large_alloc_probes_boundedly_and_never_loses_remote_publication() {
     // so it is EXCLUDED from the bounded-probe accounting. Iterations 2..=6
     // are pure cache hits (each alloc takes the size_a span the previous
     // dealloc deposited; the byte budget is unbounded by default —
-    // LargeCacheConfig `n: None`, src/alloc_core/config/large_cache_config.rs).
+    // LargeCacheConfig `n: None`, crates/core/sefer-policy/src/large_cache_config.rs).
     let warm = heap.alloc(size_a);
     assert!(!warm.is_null());
     // SAFETY: the block returned immediately above; freed once here.

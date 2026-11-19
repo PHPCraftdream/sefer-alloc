@@ -219,13 +219,13 @@ mod alloc_core {
             std::process::abort()
         }
     }
-    // Full production geometry (`src/alloc_core/platform/os.rs`): LIB
+    // Full production geometry (`crates/core/sefer-alloc-core/src/alloc_core/platform/os.rs`): LIB
     // builds under `--cfg loom` compile the same constant, so the model
     // MUST NOT shrink it (see the header). Pending words: 4096.
     pub(crate) mod os {
         pub const SEGMENT: usize = 4 * 1024 * 1024;
     }
-    // Real production values (`src/alloc_core/platform/size_classes.rs`):
+    // Real production values (`crates/core/sefer-segment/src/support/size_classes.rs`):
     // MIN_BLOCK = 16; SMALL_CLASS_COUNT = 49 without `medium-classes`.
     pub(crate) mod size_classes {
         pub const MIN_BLOCK: usize = 16;
@@ -423,7 +423,7 @@ mod bitmap_record;
 #[path = "../crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs"]
 mod bitmap_scan;
 #[allow(dead_code)]
-// CANONICAL implementation (not the root `src/alloc_core/large/` re-export
+// CANONICAL implementation (not the `crates/core/sefer-alloc-core/src/alloc_core/large/mod.rs` `reservation_state` facade
 // shim): resolves `super::{AtomicU64, Ordering}` — loom's, above.
 #[path = "../crates/core/sefer-segment/src/support/reservation_state.rs"]
 mod reservation_state;

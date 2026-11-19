@@ -39,7 +39,7 @@ mod alloc_core {
             pub fn shadow_reject(_site: &'static [u8]) {}
         }
     }
-    // Mirrors `alloc_core::fatal` (`src/alloc_core/platform/fatal.rs`) for the
+    // Mirrors `sefer_platform::fatal` (`crates/platform/sefer-platform/src/fatal.rs`) for the
     // source-included primitives.
     pub mod fatal {
         pub fn fatal(msg: &'static [u8]) -> ! {

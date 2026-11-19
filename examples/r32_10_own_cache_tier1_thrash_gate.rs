@@ -71,7 +71,7 @@
 //!    workload silently stopped exercising the intended mechanism).
 //! 2. **The actual claim under test**: `HeapCore::dbg_contains_base_tier1_hits`/
 //!    `dbg_contains_base_tier1_misses` (new this task,
-//!    `src/alloc_core/segment_table.rs`'s `contains_base`) report the REAL
+//!    `crates/core/sefer-segment/src/segment/segment_table/impl_group/segment_table_impl.rs`'s `contains_base`) report the REAL
 //!    Tier-1 hit rate this workload drove through the real production
 //!    ownership check, cross-checked against `EXPECTED_CALLS_PER_REALLOC`
 //!    (asserted, not assumed). This is the missing instrument
@@ -98,7 +98,7 @@
 //! cargo run --release --example r32_10_own_cache_tier1_thrash_gate --features "production bench-internals"
 //! ```
 //!
-//! `OWN_CACHE_SIZE` itself (`src/alloc_core/segment_table.rs`) is a
+//! `OWN_CACHE_SIZE` itself (`crates/core/sefer-segment/src/segment/segment_table/impl_group/table_constants.rs`) is a
 //! compile-time `pub(crate) const`, so measuring "before" (4) vs "after"
 //! (the new value) requires two SEPARATE builds — this file measures
 //! whichever `OWN_CACHE_SIZE` is compiled into the crate at build time; the

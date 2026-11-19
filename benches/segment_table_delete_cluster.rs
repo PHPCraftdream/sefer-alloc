@@ -1,6 +1,6 @@
 //! R5-R5 (round5 performance review §6.2, §8.2 item 2, §10 Stage C) —
 //! `SegmentTable`'s backward-shift deletion (R4-8/N3,
-//! `src/alloc_core/segment_table.rs::hash_remove`) cost as a function of
+//! `crates/core/sefer-segment/src/segment/segment_table/impl_group/hash.rs::hash_remove`) cost as a function of
 //! **probe-cluster length**.
 //!
 //! ## What this measures and why

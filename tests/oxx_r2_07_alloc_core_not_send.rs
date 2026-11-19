@@ -2,8 +2,8 @@
 //! construction applied a second time, `Sync`).
 //!
 //! Several doc comments in `src/alloc_core/` used to assert `AllocCore` "is
-//! `Send`" (`src/alloc_core/alloc_core/mod.rs`,
-//! `src/alloc_core/alloc_core/alloc_core_impl.rs`) — false: `AllocCore` holds
+//! `Send`" (`crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mod.rs`,
+//! `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_impl.rs`) — false: `AllocCore` holds
 //! raw pointers (`*mut u8` segment bases, `directory_sidecar`, the large-cache
 //! sidecar, etc.) and carries no `unsafe impl Send`/`unsafe impl Sync`, so it
 //! is neither. This is a *static*, compile-time pin, not a runtime assertion:
@@ -60,7 +60,7 @@ impl<T: ?Sized + Sync> AmbiguousIfSync<u8> for T {}
 #[test]
 fn alloc_core_is_not_sync() {
     // Same trick, `Sync` instead of `Send` — `AllocCore`'s own doc comment
-    // (`src/alloc_core/alloc_core/mod.rs`) also claims NOT `Sync`; pinned
+    // (`crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mod.rs`) also claims NOT `Sync`; pinned
     // here for the same reason.
     <AllocCore as AmbiguousIfSync<_>>::some_item();
 }

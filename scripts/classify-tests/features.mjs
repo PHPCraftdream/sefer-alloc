@@ -190,7 +190,7 @@ export function deriveFirstConfigWinMarkers(srcDir, candidates, grepFirstHit) {
  * config_conflicts       src/global/alloc_stats.rs:183 (AllocStats field)
  *
  * DROPPED marker: `publish_pending`
- *   src/alloc_core/segment/segment_route/route_protocol/large_state.rs:25 defines the Large-reservation
+ *   crates/core/sefer-segment/src/segment/segment_route/route_protocol/large_state.rs:25 defines the Large-reservation
  *   route sidecar publication CAS (LIVE(g)->PENDING(g)). It is NOT a
  *   first-config-wins API, so files calling it need not be unmergeable for
  *   config reasons. Removed from candidates and from MARKER_PROVENANCE.
@@ -221,7 +221,7 @@ export const FIRST_CONFIG_WIN_CANDIDATES = [
  */
 export const MARKER_PROVENANCE = {
   with_config: 'src/global/sefer_alloc/core.rs:277',
-  live_config_matches: 'src/alloc_core/alloc_core/lifecycle.rs:254 + src/registry/heap_core/core.rs:388',
+  live_config_matches: 'crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/lifecycle.rs:285 + src/registry/heap_core/core.rs:400',
   claim_with_config: '(no src/ hit; auto-dropped by derive)',
   claim_lease_with_config: 'src/registry/heap_core/core.rs (derive output)',
   current_for_alloc_with_config: 'src/global/tls_heap.rs:411',

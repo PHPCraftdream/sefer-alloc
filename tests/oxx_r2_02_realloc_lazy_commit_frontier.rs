@@ -63,7 +63,7 @@ const SEGMENT: usize = SegmentLayout::SEGMENT;
 /// guard (`SEGMENT - off`) let this through. Also above the largest
 /// possible `SMALL_MAX` across every shipped feature combination (up to
 /// ~1.75 MiB under the extended `medium-classes` class list — see
-/// `src/alloc_core/platform/size_classes.rs`'s module doc), so
+/// `crates/core/sefer-segment/src/support/size_classes.rs`'s module doc), so
 /// `class_for` always classifies it `Large` regardless of `medium-classes`:
 /// the OPT-F Small-same-class in-place fast path never intercepts this
 /// call before it reaches the guard-checked move leg under test.

@@ -98,9 +98,9 @@ XA intrusive inbox — reference-прототип: маленькая control me
 |---|---|---|
 | 0 Contract | этот документ | BLOCKER и oracle перечислены; никаких Rust-правок |
 | 1 Lease | `src/registry/heap_slot.rs`, `src/registry/heap_registry/**`, `src/registry/bootstrap/**` | typed lease, только `Ok` CAS; FREE scan не materializes |
-| 1 Layout/lifetime API | `src/alloc_core/segment/segment_header/**`, `src/alloc_core/small/**`, `src/alloc_core/alloc_core/**`, нужные low-level pointer seams | atomics физически отделены; ledger transitions для всех путей |
+| 1 Layout/lifetime API | `crates/core/sefer-segment/src/segment/segment_header/**`, `crates/core/sefer-alloc-core/src/alloc_core/small/**`, `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/**`, нужные low-level pointer seams | atomics физически отделены; ledger transitions для всех путей |
 | 2 Small primitive | новый `src/alloc_core/segment/remote_inbox/**` и собственные primitive tests | relative prepend/detach, last-access proof; без редактирования shared `mod.rs` |
-| 2 Large primitive | `src/alloc_core/large/**` и собственные Large tests | phase/generation/cache/release |
+| 2 Large primitive | `crates/core/sefer-alloc-core/src/alloc_core/large/**` и собственные Large tests | phase/generation/cache/release |
 | 3 Service | новый `src/global/reclaimer/**` и собственные platform tests | explicit fallible startup, round-robin, worker failure |
 | 4 Integration | `src/registry/heap_core/**`, `src/registry/heap_core_xthread/**`, удаляемые `src/registry/heap_overflow/**`, global dispatch/TLS/fallback; **все** shared `mod.rs`, feature wiring и `Cargo.toml` | ровно один authoritative ingress; public trim, fallback и claim-time drain |
 | 5 Acceptance | отдельные integration/model/perf tests и docs | feature matrix, negative controls, измерения, независимый audit |

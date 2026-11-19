@@ -52,7 +52,7 @@ impl AllocCore {
         // SAFETY: `base` is the live table-owned segment (diag read-only).
         Some(unsafe { crate::alloc_core::segment_header::SegmentMeta::new(base) }.live_count_of())
     }
-    /// TEST-ONLY (E1, task W4): drive [`carve_batch`](Self::carve_batch)
+    /// TEST-ONLY (E1, task W4): drive `Self::carve_batch`
     /// directly (it is a private internal), so the equivalence regression test
     /// can carve a run and inspect the exact block set without going through the
     /// magazine. Returns the number of blocks carved into `out`.

@@ -6,7 +6,7 @@
 //!
 //! The PRIMARY oracle below pins CONCRETE expected values for representative
 //! classes, derived BY HAND from the table literal in
-//! `src/alloc_core/platform/size_classes.rs` (`SIZE_CLASS_TABLE`, built by
+//! `crates/core/sefer-segment/src/support/size_classes.rs` (`SIZE_CLASS_TABLE`, built by
 //! `size_classes::build_table` from the 40-class geometric run + `EXTRAS`
 //! at :118 — 49 entries; `production` does NOT enable `medium-classes`, so
 //! the indices below are the ones CI's production-feature test jobs see).

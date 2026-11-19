@@ -28,7 +28,7 @@
 //! and never materialise. This binary now installs
 //! `SeferAlloc::with_config(LargeCacheConfig::new().budget_bytes(usize::MAX))`
 //! (the documented "recover unbounded" idiom,
-//! `src/alloc_core/large_cache_config.rs:130-136`) so the materialisation
+//! `crates/core/sefer-policy/src/large_cache_config.rs:132-138`) so the materialisation
 //! burst can actually succeed — the shared workload's own in-run oracle
 //! (`run_narrow_ab_workload`) hard-asserts this resolved to an unbounded
 //! budget and that the sidecar genuinely materialised, rather than assuming

@@ -11,7 +11,7 @@
 //! between clock reads in sparse-traffic regimes, but `run_decay_step` fired
 //! only ONE step per read — so the retention gap accumulated to 4 segments
 //! and persisted for 95% of the run. R34-11 adds a **bounded catch-up loop**
-//! (`DECAY_CATCHUP_MAX_STEPS = 8`, `src/alloc_core/alloc_core_large_cache.rs`):
+//! (`DECAY_CATCHUP_MAX_STEPS = 8`, `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs`):
 //! once the clock IS read and the interval has elapsed, fire as many steps as
 //! intervals are due (capped at 8). This does NOT change when the clock is
 //! read (the stride throttle is untouched → R32-8's benefit is preserved),

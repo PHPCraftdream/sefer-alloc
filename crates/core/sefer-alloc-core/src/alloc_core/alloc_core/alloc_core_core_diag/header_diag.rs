@@ -172,7 +172,7 @@ impl AllocCore {
     /// true discriminant before ANY typed header copy, including read-only
     /// [`large_geometry_for_test`](Self::large_geometry_for_test),
     /// [`dbg_unregister`](Self::dbg_unregister),
-    /// [`dbg_recycle`](Self::dbg_recycle), teardown, or `AllocCore::drop`.
+    /// `dbg_recycle`, teardown, or `AllocCore::drop`.
     /// This obligation also applies on unwinding: do not let `Drop` observe an
     /// invalid byte if an assertion or other operation panics before restore.
     ///

@@ -43,7 +43,7 @@
     feature = "bench-internals"
 ))]
 // `alloc-decommit` is required because Scenario B's Large cache is compiled
-// only under it (src/alloc_core/large/alloc_core_large.rs); in CI this test
+// only under it (crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs); in CI this test
 // runs in check-matrix row `test-r8-production` and, with the cache-hit
 // counter assertion, in the `production alloc-stats bench-internals
 // internals` test step.

@@ -224,7 +224,7 @@ fn item2_one_segment_serves_multiple_medium_blocks_of_the_same_class() {
 
     // `AllocCore::new` already reserves the PRIMORDIAL segment, and the
     // primordial ALSO serves as the first small segment (`small_cur` starts
-    // pointed at it — see `alloc_core.rs::new_inner`) — so the very first
+    // pointed at it — see `alloc_core/lifecycle_parts/lifecycle.rs:309::new_inner`) — so the very first
     // 256 KiB alloc is carved from the primordial's remaining payload rather
     // than triggering a NEW OS reservation.
     //

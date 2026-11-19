@@ -375,18 +375,15 @@ impl HeapCore {
     /// Iterate over the segment bases this heap owns (read-only). Delegates to
     /// the substrate's segment-table iterator.
     ///
-    /// `#[doc(hidden)] pub` so integration tests can obtain a real segment
-    /// base (the test-only pub surface of the registry, documented in
-    /// `mod.rs`).
+    /// R6-T38: `internals`-gated. Without `internals`, `AllocCore::segment_bases`
+    /// is `pub(crate)` there, so external probes fail with E0624 (privacy)
+    /// when naming `AllocCore`'s method, not E0599 (no method).
     ///
     /// R2-01 (task #2003): `+ '_` threads the same lifetime bind through
     /// this re-export — see `AllocCore::segment_bases`'s doc comment for the
     /// full UAF rationale this closes.
     // R6-T16: its readers are the bench-internals/internals diag paths only.
-    #[cfg_attr(
-        not(any(feature = "internals", feature = "bench-internals")),
-        allow(dead_code)
-    )]
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
         self.core.segment_bases()

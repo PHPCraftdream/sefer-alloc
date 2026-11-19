@@ -448,13 +448,13 @@ const alloc = hops.at(-1).stmts;
 P(`- The \`alloc_core::\` path itself is ${alloc.map((s) => `${/^pub\(crate\)/.test(s.text) ? 'crate-private' : s.attrs.some((a) => /doc\s*\(\s*hidden\s*\)/.test(a)) ? 'pub + doc-hidden' : 'pub'} at ${s.file}:${s.line}`).join(' / ')} (see the table); the root re-export above is what makes the type nameable without \`internals\`.`);
 let headAttr = 'unavailable (git show failed)';
 try {
-  const head = execFileSync('git', ['show', 'HEAD:src/alloc_core/config/policy/large_thp/large_thp_request_group.rs'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const head = execFileSync('git', ['show', `HEAD:${ENUM_FILE}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   const hc = blank(head);
   headAttr = /#\[non_exhaustive\]\s*(?:#\[[^\]]*\]\s*)*pub\s+enum\s+LargeThpRequestGroup/.test(hc) ? '`#[non_exhaustive]` present' : '`#[non_exhaustive]` absent';
 } catch { /* leave default */ }
 const nowCode = blank(readFileSync(ENUM_FILE, 'utf8'));
 const nowAttr = /#\[non_exhaustive\]/.test(nowCode) ? '`#[non_exhaustive]` present' : '`#[non_exhaustive]` absent';
-P(`- Enum attribute at \`HEAD\` (old root location): ${headAttr}; in the working tree (\`${ENUM_FILE}\`): ${nowAttr}.`);
+P(`- Enum attribute at \`HEAD\` (\`HEAD:${ENUM_FILE}\`): ${headAttr}; in the working tree (\`${ENUM_FILE}\`): ${nowAttr}.`);
 P('');
 
 console.log(out.join('\n'));

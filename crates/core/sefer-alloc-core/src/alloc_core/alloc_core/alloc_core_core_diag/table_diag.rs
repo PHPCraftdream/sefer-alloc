@@ -128,7 +128,7 @@ impl AllocCore {
     /// hash-slot probe steps any SINGLE `SegmentTable::hash_remove` call has
     /// taken since the last [`AllocCore::dbg_reset_hash_remove_max_scan_steps`]
     /// — see
-    /// [`segment_table::HASH_REMOVE_MAX_SCAN_STEPS`](crate::alloc_core::segment_table::HASH_REMOVE_MAX_SCAN_STEPS)
+    /// `segment_table::HASH_REMOVE_MAX_SCAN_STEPS`
     /// for the full rationale. Deterministic replacement for the wall-clock
     /// "no single dealloc is a dramatic outlier" check in
     /// `tests/regression_segment_table_tombstone_rebuild.rs`. Reads 0 unless
@@ -197,7 +197,7 @@ impl AllocCore {
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): process-wide count of
     /// mutable `SegmentTable::canonical_base_of_mut` lookups that HIT the
     /// Tier-1 direct-mapped `own_cache` (including `contains_base`) — see
-    /// [`CONTAINS_BASE_TIER1_HITS`](crate::alloc_core::alloc_core::counters::CONTAINS_BASE_TIER1_HITS)'s
+    /// `CONTAINS_BASE_TIER1_HITS`'s
     /// own doc for the full rationale (the missing path-activation oracle
     /// `docs/perf/OPEN_ITEMS.md` item 1's own text left as an open clause).
     /// Reads 0 unless `bench-internals` is on.
@@ -211,7 +211,7 @@ impl AllocCore {
 
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): the Tier-2-fallback
     /// complement of [`AllocCore::dbg_contains_base_tier1_hits`] — see
-    /// [`CONTAINS_BASE_TIER1_MISSES`](crate::alloc_core::alloc_core::counters::CONTAINS_BASE_TIER1_MISSES)'s
+    /// `CONTAINS_BASE_TIER1_MISSES`'s
     /// own doc. Reads 0 unless `bench-internals` is on.
     #[doc(hidden)]
     #[cfg(feature = "bench-internals")]
@@ -233,9 +233,9 @@ impl AllocCore {
     }
 
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): reset both
-    /// [`CONTAINS_BASE_TIER1_HITS`](crate::alloc_core::alloc_core::counters::CONTAINS_BASE_TIER1_HITS)
+    /// `CONTAINS_BASE_TIER1_HITS`
     /// and
-    /// [`CONTAINS_BASE_TIER1_MISSES`](crate::alloc_core::alloc_core::counters::CONTAINS_BASE_TIER1_MISSES)
+    /// `CONTAINS_BASE_TIER1_MISSES`
     /// to 0. Test/bench hook only — lets a measurement window start from a
     /// clean count instead of accumulating across the whole process
     /// lifetime, mirroring [`AllocCore::dbg_reset_hash_remove_max_scan_steps`]'s

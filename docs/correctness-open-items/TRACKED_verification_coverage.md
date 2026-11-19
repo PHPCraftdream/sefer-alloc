@@ -334,7 +334,7 @@ Item 188 is CLOSED (2026-10-13); it is not a current record here — its closure
     > - **Status:** OPEN, declared test gap.
     > - **Current:** `tests/j13b_thp_remote_free_reclaim.rs` covers the owner-side reclaim that deposits into the Large cache. The cache-refusing branch of `reclaim_large_segment` (terminal release with the header's charge through `release_large_mapping`) has no root test of its own.
     > - **Next trigger:** a root test that forces the cache to refuse a remotely freed charged Large block and asserts `charged_total == returned_total`.
-    > - **Evidence:** `src/alloc_core/large/alloc_core_large.rs` (`reclaim_large_segment`), `tests/j13b_thp_remote_free_reclaim.rs`.
+    > - **Evidence:** `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs` (`reclaim_large_segment`), `tests/j13b_thp_remote_free_reclaim.rs`.
 
 271. **[T, filed 2026-11-08] J13b header growth invalidates current-source PASS for historical kind-aware evidence R-Ph3b.**
 

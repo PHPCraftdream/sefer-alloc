@@ -169,7 +169,7 @@ impl ReservedSmallSegment {
     /// being able to construct a SECOND handle from the returned address:
     /// this only reads the pointer, it does not mint a new
     /// `ReservedSmallSegment`. The double-release guarantee is unaffected —
-    /// that guarantee comes from [`Self::into_base`] consuming `self` by
+    /// that guarantee comes from `Self::into_base` consuming `self` by
     /// value, not from hiding the pointer value itself.
     ///
     /// Named `dbg_base` (R31-14b, task #484, closing P2-12 filed in

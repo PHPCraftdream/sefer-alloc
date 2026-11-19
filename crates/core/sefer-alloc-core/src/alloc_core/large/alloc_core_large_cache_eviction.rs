@@ -123,7 +123,7 @@ impl AllocCore {
     ///
     /// R32-8 (task #499, F9): `maybe_decay_large_cache` now throttles how
     /// often it consults the clock at all once past the headroom fast-exit
-    /// (see [`DECAY_CLOCK_CHECK_STRIDE`] and that function's own doc). This
+    /// (see `DECAY_CLOCK_CHECK_STRIDE` and that function's own doc). This
     /// forcing seam BYPASSES that throttle — it primes
     /// `large_cache_decay_op_count` to exactly one call short of the stride
     /// boundary, so the immediately-following `maybe_decay_large_cache` call

@@ -57,7 +57,7 @@ impl AllocCore {
     /// cross-class Small/Primordial grow attempts that reach OPT-H's
     /// (proposed, not-yet-implemented — see
     /// `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md`) precondition-1 check
-    /// in [`crate::alloc_core::AllocCore::realloc_inplace_fast_path_known_base`].
+    /// in `AllocCore::realloc_inplace_fast_path_known_base`.
     /// This is the Stage-1 hit-rate DENOMINATOR; pairs with
     /// [`dbg_opt_h_hits`](Self::dbg_opt_h_hits). Relaxed load — diagnostic
     /// only. Reads 0 unless `alloc-stats` is on (the increment site is

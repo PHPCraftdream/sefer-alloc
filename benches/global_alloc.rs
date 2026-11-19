@@ -1017,7 +1017,7 @@ fn bench_working_set_cycle(c: &mut Criterion) {
 
         // dbg_segments_released_total / dbg_decommit_count (via `stats()`)
         // are process-wide monotonic counters (see
-        // `src/alloc_core/alloc_core.rs` `dbg_decommit_count`,
+        // `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs:615` `dbg_decommit_count`,
         // `dbg_segments_released_total`) — not resettable, so we snapshot
         // before/after the whole `bench_function` call (all `sample_size`
         // iterations) and report the delta as a diagnostic, not a strict
@@ -1318,7 +1318,7 @@ const BATCH_CEILING_COUNTS: &[usize] = &[8, 16, 32, 64, BATCH_CEILING_OPS];
 ///   call frees the whole buffer in a single call (vs.
 ///   [`BATCH_CEILING_OPS`] separate `dealloc` calls). Both primitives
 ///   produce a byte-identical end state to the scalar per-block path (see
-///   their doc comments in `src/alloc_core/alloc_core_small_magazine.rs`) --
+///   their doc comments in `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs`) --
 ///   only the call-count amortisation differs, which is exactly the
 ///   mechanism a public batch API would exploit.
 ///
@@ -1440,7 +1440,7 @@ fn bench_batch_ceiling(c: &mut Criterion) {
 /// first timed sample):
 /// - **(d) `batch_core_warm`**: ONE `refill_class_bump` + ONE `flush_class`
 ///   per iteration on the persistent warm `AllocCore`. Verified in
-///   `src/alloc_core/alloc_core_small_magazine.rs` — `refill_class_bump`
+///   `crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs` — `refill_class_bump`
 ///   DRAINS the warm freelist first (`drain_freelist_batch`), bump-carving
 ///   only the remainder — so a warmed `AllocCore` IS genuinely warm for the
 ///   batch primitive. This is the structural fact R9-9's caveat was uncertain

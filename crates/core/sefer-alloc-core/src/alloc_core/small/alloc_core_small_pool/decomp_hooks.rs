@@ -30,7 +30,7 @@ impl AllocCore {
     /// overflow tier could avoid.
     ///
     /// R30-1 (task #450): routes through
-    /// [`reserve_small_segment_impl`](Self::reserve_small_segment_impl) —
+    /// `Self::reserve_small_segment_impl` —
     /// the cursor-free half of `reserve_small_segment` — NOT
     /// `reserve_small_segment` itself. `reserve_small_segment`'s last
     /// statement publishes the freshly reserved segment as the live
@@ -179,7 +179,7 @@ impl AllocCore {
 
     /// task #504 (F11 step 2): release a segment reserved via
     /// [`dbg_decomp_win_reserve_only`] — thin wrapper over
-    /// [`os::release_segment`], mirroring [`dbg_decomp_os_roundtrip`]'s own
+    /// `os::release_segment`, mirroring [`dbg_decomp_os_roundtrip`]'s own
     /// release call.
     ///
     /// # Safety
@@ -200,7 +200,7 @@ impl AllocCore {
     /// [`dbg_decomp_release`](Self::dbg_decomp_release).
     ///
     /// R30-1 (task #450): routes through
-    /// [`reserve_small_segment_impl`](Self::reserve_small_segment_impl),
+    /// `Self::reserve_small_segment_impl`,
     /// NOT `reserve_small_segment` — same reasoning as
     /// [`dbg_decomp_full_cycle`](Self::dbg_decomp_full_cycle)'s doc comment.
     /// This hook's own paired release
@@ -355,7 +355,7 @@ impl AllocCore {
 
     /// R31-6 (task #469): re-commit the payload pages of a segment previously
     /// decommitted via [`dbg_decomp_decommit_payload`](Self::dbg_decomp_decommit_payload) —
-    /// thin wrapper over [`os::recommit_pages`]. On Windows this is a REAL
+    /// thin wrapper over `os::recommit_pages`. On Windows this is a REAL
     /// `VirtualAlloc(MEM_COMMIT)` (Windows `MEM_DECOMMIT` actually unmaps the
     /// backing pages, unlike POSIX `MADV_DONTNEED`, which leaves the mapping
     /// intact and merely drops the physical backing — re-access is implicitly

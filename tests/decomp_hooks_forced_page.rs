@@ -6,7 +6,7 @@
 //!
 //! `AllocCore::dbg_decomp_decommit_payload` /
 //! `AllocCore::dbg_decomp_recommit_payload`
-//! (`src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`) computed their payload start
+//! (`crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`) computed their payload start
 //! from `SegLayout::small_meta_end()` — a `const fn` aligned only to the
 //! compile-time `PAGE` (4 KiB; measured tight value 270336).
 //! `os::decommit_pages` documents "offsets MUST be page-aligned", and

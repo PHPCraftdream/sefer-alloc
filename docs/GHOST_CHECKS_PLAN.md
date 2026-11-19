@@ -89,7 +89,7 @@ miri/kani). Если краснеет только один из двух, пр�
 | P7 | sidecar bitmap: publish / guarded cut / scan | `crates/core/sefer-segment/src/segment/remote_bitmap/*` | `loom_sidecar_bitmap_actual.rs`, `loom_b4_scan_skip_empty_publish.rs` (A); `loom_sidecar_bitmap.rs` (S); пин `r11_ph5b_c5_sidecar_ordering_pinned.rs` | A+S | R0-21 |
 | P8 | small sidecar: публикация указателя листа, время жизни pin | `src/registry/segment_route/small_sidecar.rs`, `leaf_classes.rs` | `loom_r11_small_sidecar.rs` | S | R0-22 |
 | P9 | terminal Large: phase word | `src/registry/segment_route/pin.rs` (`publish_large`) и состояние Large-резервации | `loom_terminal_large.rs` | S | R0-21 |
-| P10 | terminal owner drain: кредиты владельца ‖ cut | `src/alloc_core/alloc_core/sidecar_drain.rs` | `loom_terminal_owner_drain.rs` | S | R0-21, R5b-10 |
+| P10 | terminal owner drain: кредиты владельца ‖ cut | `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/sidecar_drain.rs` | `loom_terminal_owner_drain.rs` | S | R0-21, R5b-10 |
 | P11 | членство в active-kind индексе ‖ terminal publication | таблица сегментов (уточнить в G0) | `loom_active_kind_index.rs` | S | — |
 | P12 | склад (depot) через recycle слота | `src/registry/heap_core/state/depot.rs`, `ownership.rs` | `loom_depot_recycle_handoff.rs`; kani `depot_proofs` | S | — |
 | P13 | очередь с pending-флагом («false full») | уточнить в G0 | `loom_r11_epoch_false_full.rs` | S | — |

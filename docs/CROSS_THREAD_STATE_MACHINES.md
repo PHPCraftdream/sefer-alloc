@@ -278,28 +278,28 @@ do not conflate them:
   `terminal_words.rs:48-51`). The owner drives it under its exclusive
   authority — a registry heap lease or a standalone core's `&mut`
   (`LargeReservationState` doc,
-  `src/alloc_core/large/reservation_state.rs:9-18`):
+  `crates/core/sefer-segment/src/support/reservation_state.rs:9-18`):
   `Live → Consuming` via `claim_live`
-  (`reservation_state.rs:86-101`; call sites
-  `src/alloc_core/large/alloc_core_large.rs:730-735`,
-  `src/alloc_core/alloc_core/lifecycle.rs:525-526`), then either
+  (`reservation_state.rs:91-117`; call sites
+  `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs:856-861`,
+  `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/lifecycle.rs:596-599`), then either
   `Consuming → Cached` (`cache_consumed`,
-  `reservation_state.rs:104-106`, used at `alloc_core_large.rs:805`) or
+  `reservation_state.rs:121-123`, used at `alloc_core_large.rs:947`) or
   `Consuming → Released` (`release_consumed`,
-  `reservation_state.rs:110-112`, `alloc_core_large.rs:830`,
-  `lifecycle.rs:529`). Cached reuse advances the **generation without
+  `reservation_state.rs:127-129`, `alloc_core_large.rs:975`,
+  `lifecycle.rs:600`). Cached reuse advances the **generation without
   wrap**: `Cached(g) → Initializing(g+1)` via `begin_reuse`, which
   returns `None` at `MAX_LARGE_GENERATION = u64::MAX >> PHASE_BITS`
-  (`reservation_state.rs:128-143`; `terminal_words.rs:32,74-84`), then
+  (`reservation_state.rs:157-172`; `terminal_words.rs:32,74-84`), then
   `Initializing → Live` after the owner completes layout/table reset
-  (`finish_reuse`, `reservation_state.rs:147-149`). Eviction/rollback
+  (`finish_reuse`, `reservation_state.rs:177-179`). Eviction/rollback
   edges: `Cached → Released` (`release_cached`,
-  `reservation_state.rs:116-118`; call sites
-  `alloc_core_large.rs:258-263`,
-  `alloc_core_large_cache_eviction.rs:50,241`,
-  `lifecycle.rs:60-66`) and `Initializing → Released` on cache-hit
+  `reservation_state.rs:134-136`; call sites
+  `alloc_core_large.rs:386-391`,
+  `alloc_core_large_cache_eviction.rs:78,316`,
+  `lifecycle.rs:66-73`) and `Initializing → Released` on cache-hit
   rollback before user issuance (`release_initializing`,
-  `reservation_state.rs:120-124`; `alloc_core_large.rs:459-464`).
+  `reservation_state.rs:150-152`; `alloc_core_large.rs:482-487`).
 - **The INDEPENDENT `LargeState`-backed route descriptor word** — a
   `System`-allocated descriptor (`LargeState`,
   `src/registry/segment_route/large_state.rs:8-64`; allocated by `System`
@@ -308,31 +308,31 @@ do not conflate them:
   `large_state.rs:14-17`). This is the production
   **foreign-publication** path: a remote producer performs the terminal
   strong CAS `LIVE(g) → PENDING(g)` with success `AcqRel` / failure
-  `Acquire` (`publish_pending`, `reservation_state.rs:42-51`; reached
+  `Acquire` (`publish_pending`, `reservation_state.rs:44-59`; reached
   only through `registry::segment_route`, per
-  `reservation_state.rs:39-40`, via `RoutePin::publish_large`,
+  `reservation_state.rs:41`, via `RoutePin::publish_large`,
   `src/registry/segment_route/pin.rs:57-62`, and
   `LargeState::publish_pending`, `large_state.rs:24-28`). The owner's
   table-scan claim is `RouteSlots::claim_large_pending`
   (`src/alloc_core/segment/segment_table/route_slots.rs:189-200`),
   driving `PENDING(g) → CONSUMING(g)` via `LargeState::claim_pending`
   (`large_state.rs:30-32`; `claim_pending`,
-  `reservation_state.rs:58-73`; reached through
+  `reservation_state.rs:67-88`; reached through
   `RouteRegistration::claim_large_pending`,
   `src/registry/segment_route/registration.rs:51-53`). `AllocCore` then
   separately claims the **PHYSICAL** reservation word
   `LIVE(g) → CONSUMING(g)` (`claim_live`,
-  `alloc_core_large.rs:730-735`), unregisters the **TABLE** entry
-  (`alloc_core_large.rs:740`; segment removal in
+  `alloc_core_large.rs:856-861`), unregisters the **TABLE** entry
+  (`alloc_core_large.rs:889`; segment removal in
   `src/alloc_core/segment/segment_table/segment_table_impl.rs:514-516`)
   and drops the `RouteRegistration` (`RouteRegistration::drop →
   directory.remove`, `registration.rs:78-81`) **before** caching the
-  physical reservation (`alloc_core_large.rs:805-821`). The unlinked old
+  physical reservation (`alloc_core_large.rs:938-965`). The unlinked old
   descriptor survives only while old pins hold refcounts, then is freed
   (`EntryHandle::drop`, `directory.rs:210-225`). Reuse advances the
   **PHYSICAL** word `Cached(g) → Initializing(g+1) → Live(g+1)`
-  (`alloc_core_large.rs:249-264`; `finish_large_reuse` at
-  `alloc_core_large.rs:483`, via `terminal_words.rs:145-160`) and
+  (`alloc_core_large.rs:380-403`; `finish_large_reuse` at
+  `alloc_core_large.rs:512`, via `terminal_words.rs:145-160`) and
   registers a FRESH descriptor — `LargeState::new()` again starts at
   `Live` with generation 1 (`directory.rs:69-75`) — plus a new
   registration incarnation.
@@ -356,11 +356,11 @@ do not conflate them:
   counted descriptor and sidecar capability, not a reservation credit;
   no allocator-origin root is accessible through a producer pin"
   (`pin.rs:4-5`; same distinction in
-  `reservation_state.rs:17-18` and
+  `reservation_state.rs:19-20` and
   `src/registry/segment_route/small_sidecar.rs:105-109`). What keeps the
   physical reservation alive is the producer's unique *allocation*
   credit, transferred to the owner by the successful `Pending` CAS
-  (`reservation_state.rs:29-38`).
+  (`reservation_state.rs:31-40`).
 - **The pin `Drop` is storage-only.** After terminal publication the
   pin "touches only the independently allocated descriptor/sidecar"
   (`pin.rs:37-38`); it never reads or writes the reservation — a
@@ -396,7 +396,7 @@ says so explicitly, `pin.rs:44`). A pre-existing old pin retains its old
 independent descriptor after unlink; that is not automatically a current
 capability. What ordinarily prevents premature reuse is the valid unsafe
 caller's **unique allocation credit**, held until terminal publication
-(`reservation_state.rs:29-38`). Generation/incarnation numbers alone do
+(`reservation_state.rs:31-40`). Generation/incarnation numbers alone do
 **not** prevent double free. A `RoutePin` exposes the incarnation as a
 number only (`pin.rs:17-19`) — it is a capability over the *descriptor*,
 not over reservation memory, and grants no address/root
@@ -406,7 +406,7 @@ immutable descriptor).
 ### 9.3 Terminal publication at the last user allocation touch
 
 For Large, the successful terminal CAS is the producer's **last descriptor-state
-access**, not an access to reservation bytes (`reservation_state.rs:35-38`).
+access**, not an access to reservation bytes (`reservation_state.rs:37-40`).
 It transfers the unique allocation credit; the caller must not access or
 free the allocation or reservation afterwards, nor access the terminal
 publication state again (`pin.rs:40-44,53-56`). The consumed `RoutePin`'s
@@ -471,17 +471,17 @@ independent descriptor refcounts.
 After descriptor `Pending → Consuming`, the owner separately claims the
 physical word `Live → Consuming` and unlinks the route. Only that physical
 word then takes `Consuming → Cached` or `Consuming → Released`, while mapped
-and before OS release (`alloc_core_large.rs:730–740,805–830`).
+and before OS release (`alloc_core_large.rs:856-889,938-977`).
 Cache hit reissues via `Cached → Initializing(g+1) → Live(g+1)`
-(generation advance without wrap; `reservation_state.rs:128-149`,
-physical call sites `alloc_core_large.rs:251` and `terminal_words.rs:145-160`).
+(generation advance without wrap; `reservation_state.rs:157-179`,
+physical call sites `alloc_core_large.rs:382` and `terminal_words.rs:145-160`).
 Cache-hit failure before issuance rolls back to `Initializing → Released`
-(`reservation_state.rs:120-124`); eviction of a cached entry is
-`Cached → Released` (`reservation_state.rs:114-118`).
+(`reservation_state.rs:150-152`); eviction of a cached entry is
+`Cached → Released` (`reservation_state.rs:134-136`).
 Generation saturation is handled by returning `None` from
 `next_large_generation` at `MAX_LARGE_GENERATION` (`terminal_words.rs:74-84`)
 — the reservation is retired rather than wrapping
-(`reservation_state.rs:126-133`); the packing function asserts the
+(`reservation_state.rs:157-172`); the packing function asserts the
 bound (`terminal_words.rs:49`).
 
 ### 9.7 Correctness residual — item 164 (P1-box) is owner-accepted, NOT fixed
