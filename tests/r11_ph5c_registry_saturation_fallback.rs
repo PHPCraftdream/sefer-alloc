@@ -38,7 +38,7 @@
 //!   poking slot identities.
 //! - Not built under `numa-aware`: there every `HeapCore`'s primordial is an
 //!   EAGER full-commit 4 MiB reservation (lazy commit is off to keep NUMA
-//!   placement, `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/bootstrap.rs`), so draining the
+//!   placement, `src/alloc_core/alloc_core/bootstrap.rs`), so draining the
 //!   registry commits ~`MAX_HEAPS` x 4 MiB (~9 GiB) of host commit charge —
 //!   a machine-load test, not a routing test. Routing is NUMA-independent.
 //! - Not built on eager-primordial Windows configs either (`windows &&

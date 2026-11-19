@@ -1,6 +1,6 @@
 //! R1-04: `Drop for AllocCore` must not overflow a small-stack thread.
 //!
-//! Before the fix, `Drop for AllocCore` (`crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/lifecycle.rs`)
+//! Before the fix, `Drop for AllocCore` (`src/alloc_core/alloc_core/lifecycle.rs`)
 //! collected every live segment's `(reservation, reservation_len)` into a
 //! `[(*mut u8, usize); MAX_SEGMENTS]` stack array (`MAX_SEGMENTS = 4096` ->
 //! 65 536 B) before freeing any of them, so the primordial segment (which
