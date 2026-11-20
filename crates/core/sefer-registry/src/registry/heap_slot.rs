@@ -1,0 +1,417 @@
+//! [`HeapSlot`] — one entry of the registry's slot array (the "fractal slot
+//! table" of §1 of `ALLOC_PLAN_PHASE12-13.md`: the heap pool itself becomes a
+//! slot table).
+//!
+//! Each slot is a fixed-size record in a lazy registry chunk. Its state runs
+//! `EMPTY → INITIALIZING → LIVE → FREE`, then `FREE → LIVE` or
+//! `FREE → MAINTENANCE → FREE`. Only a successful CAS grants mutation access.
+//! `generation` is NOT the M8/M9 coherence key: the segment-header owner
+//! stamp (`pack_owner`, `alloc_core/segment/segment_header/mod.rs`) packs the
+//! slot's `id` with a generation field that is always 0 (the adoption
+//! substrate that once bumped it was removed — task #97 / R4-5). This
+//! slot's own `generation` is production-dead: it is written on every
+//! `claim_lease`/`claim_lease_with_config` but read by nothing outside the `#[doc(hidden)]`
+//! test/diagnostic accessors (`dbg_slot_generation` and friends,
+//! `registry/bootstrap/registry.rs`).
+//!
+//! **It is NOT read on the TLS alloc path.** The stale-TLS-pointer hazard
+//! (a thread's cached `*mut HeapCore` outliving its slot's `recycle`) is
+//! guarded by a different, cheaper mechanism: `global::tls_heap`'s `TORN`
+//! sentinel (task #129). The owning thread's `LeaseReleaseGuard::drop` stamps its
+//! OWN thread-local cache to `TORN` before it recycles the slot, and every
+//! resolver checks for `TORN` before dereferencing. This is a same-thread
+//! poison-then-check, not a cross-thread generation compare — it needs no
+//! read of this slot's `generation` at resolve time. See
+//! `global::tls_heap`'s "TLS teardown and the TORN sentinel" module doc for the full
+//! argument.
+//!
+//! ## Why `MaybeUninit` (not a live `HeapCore`)
+//!
+//! `HeapCore::new` bootstraps a full segment substrate
+//! (`AllocCore::new` reserves a 4 MiB primordial
+//! segment). We CANNOT materialise a live
+//! `HeapCore` per slot at registry-init time: that would reserve
+//! `MAX_HEAPS × 4 MiB` of OS memory up front. Instead each slot holds a
+//! [`MaybeUninit<HeapCore>`]; the slot starts `EMPTY` with an *uninitialised*
+//! heap value, and `claim` lazily `HeapCore::new`s into the slot on its first
+//! `EMPTY → INITIALIZING` transition. On a later `recycle → reclaim` the slot's
+//! `HeapCore` is already live and is reused as-is (its `AllocCore` and its
+//! segments persist; only `id` may be refreshed). This is the standard
+//! lazy-materialise pattern for a slot pool whose values are expensive to
+//! construct.
+//!
+//! ## Why `UnsafeCell`
+//!
+//! `MaybeUninit` alone does not permit handing out `&mut HeapCore` through a
+//! `&HeapSlot` (shared reference); `UnsafeCell` interior-mutates that access.
+//! The single-writer invariant (the owning thread is the sole mutator of its
+//! heap's bins) makes this sound without runtime borrow checking; the 12.3
+//! raw-pointer TLS will rely on exactly this.
+
+// The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
+// `src/lib.rs`); the registry is a documented atomic seam (the slot table's
+// `Sync` impl is the `unsafe` surface of Phase 12.2). `allow` lifts the
+// crate-level `deny` for this file only — `unsafe` anywhere else in the crate
+// is a hard error. The ONLY `unsafe` here is the `unsafe impl Sync` on
+// `HeapSlot`, carrying a `// SAFETY:` proof (the registry's atomic
+// single-writer protocol). There is deliberately NO `unsafe impl Send` — see
+// the M6 note above that impl at the bottom of the file (a by-value
+// cross-thread move is neither needed nor proven; `Sync` alone carries the
+// process-global sharing).
+//
+// ## M7 note — field visibility and the soundness boundary
+//
+// The slot's `Sync` proof (and every neighbouring registry SAFETY proof)
+// relies on the CAS-gated single-writer protocol on `state`/`heap`. Safe code
+// that could flip `state` LIVE→FREE or write `heap` directly would
+// break that invariant with NO `unsafe` keyword at the violation site — this
+// is the general "safe membrane over a seam" limit spelled out in
+// `src/lib.rs`. EVERY slot field is therefore `pub(crate)` (reachable only
+// inside the crate's confined registry code). Task #93 / R4-MS-4 narrowed the
+// last two holdouts — `state` and `generation` — down from `pub` to
+// `pub(crate)`: while they were `pub`, safe downstream code could execute the
+// `OWNED → FREE` transition itself,
+// handing a LIVE `HeapCore` to a second thread and breaking the very
+// single-writer invariant below. Integration tests that still need to
+// read/preset these fields go through the narrow `#[doc(hidden)]` accessors on
+// `Registry` (`dbg_slot_state`/`dbg_slot_generation`/`dbg_slot_preset_generation`,
+// in `bootstrap`) — read accessors are safe, the ONE writer is `unsafe fn`.
+#![allow(unsafe_code)]
+
+use core::cell::UnsafeCell;
+use core::mem::MaybeUninit;
+use core::sync::atomic::AtomicU64;
+use core::sync::atomic::{AtomicBool, AtomicU8};
+
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+use super::heap_core::Depot;
+use super::heap_core::HeapCore;
+
+/// The lease-state machine of a registry slot (the values carried by
+/// `HeapSlot::state`). `#[repr(u8)]`: the discriminants ARE the memory
+/// format — the exact numbers the `state: AtomicU8` has always stored
+/// (0..=4, unchanged); `as u8` stores a variant, `TryFrom<u8>` reads a
+/// loaded value back. One canonical spelling per state: the former
+/// `STATE_OWNED` constant was an alias of `STATE_LIVE` — `Live` is the
+/// single name now — and the former `STATE_INITIALIZING` constant shared
+/// its name with the fallback bootstrap's initializing constant (same
+/// name, DIFFERENT value); that collision is gone because the two state
+/// machines are now distinct types (`SlotState` vs
+/// `global::fallback::FallbackInitState`).
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SlotState {
+    /// Zeroed, never-materialised slot.
+    Empty = 0,
+    /// An owner has exclusive mutation authority.
+    Live = 1,
+    /// First claimant is constructing the core; no other thread may use it.
+    Initializing = 2,
+    /// Initialised core available for a new owner or maintenance worker.
+    Free = 3,
+    /// A maintenance worker has exclusive mutation authority.
+    Maintenance = 4,
+}
+
+impl TryFrom<u8> for SlotState {
+    type Error = u8;
+
+    /// Exact inverse of the `as u8` cast: accepts exactly the discriminants
+    /// above. The guards compare against the variants' own `as u8`, so
+    /// renumbering a variant cannot silently desynchronise this impl.
+    #[inline]
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            v if v == Self::Empty as u8 => Ok(Self::Empty),
+            v if v == Self::Live as u8 => Ok(Self::Live),
+            v if v == Self::Initializing as u8 => Ok(Self::Initializing),
+            v if v == Self::Free as u8 => Ok(Self::Free),
+            v if v == Self::Maintenance as u8 => Ok(Self::Maintenance),
+            unknown => Err(unknown),
+        }
+    }
+}
+
+/// Stable process-lifetime counters read without borrowing the owner's core.
+/// Cache-line isolation keeps diagnostic readers off owner-hot storage.
+#[repr(C, align(64))]
+pub(crate) struct HeapSlotRemote {
+    /// DIAGNOSTIC (task W3): this slot's process-lifetime magazine (tcache)
+    /// HIT counter. Lives in the SLOT — which is `Sync` and designed to be
+    /// shared — rather than inside the owner's `HeapCore`, closing a formal
+    /// aliasing gap: the process-wide aggregator
+    /// ([`super::heap_registry::tcache_hits_total`]) reads this via the
+    /// `&HeapSlot` it already holds, WITHOUT ever materialising a shared
+    /// `&HeapCore` over a struct the owning thread concurrently holds a
+    /// protected `&mut` into (a foreign-read of a protected `Unique` — UB
+    /// under Stacked Borrows). The owning thread increments this through a
+    /// stable `&'static AtomicU64` handed to its `HeapCore` at
+    /// `super::heap_registry::HeapRegistry::claim_lease` time (the slot lives in
+    /// the `'static` registry array, so the reference is sound for the
+    /// process lifetime).
+    ///
+    /// Zero-initialised: an un-bound slot reads 0, so it contributes nothing
+    /// to the aggregate even before `initialised` is published. Written only
+    /// by the slot's current owner (single writer); read Relaxed by that
+    /// owner and by the cross-thread aggregator.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub(crate) tcache_hits: AtomicU64,
+
+    /// DIAGNOSTIC (task W3): this slot's process-lifetime large-segment cache
+    /// HIT counter. Same design and rationale as `tcache_hits`
+    /// (moved into the shared slot to close the Stacked-Borrows aliasing gap);
+    /// read by [`super::heap_registry::large_cache_hits_total`] from the
+    /// `&HeapSlot`, written by the owner through a stable `&'static AtomicU64`.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) large_cache_hits: AtomicU64,
+}
+
+/// One registry slot. `#[repr(C, align(64))]`: `repr(C)` so the bootstrap can
+/// compute the slot array's footprint deterministically and lay it down at a
+/// fixed offset in the primordial segment (unchanged from before this task);
+/// `align(64)` (PERF-PASS-4, G8/ML2, task #52) so the per-slot stride is a
+/// multiple of the cache-line size — the un-padded pre-task stride (7024
+/// bytes) was NOT a multiple of 64, so consecutive slots' cache-line
+/// boundaries drifted out of phase across the 4096-slot array, meaning a
+/// remote CAS near one slot's tail could ALSO dirty the next slot's `state`/
+/// `generation` header fields. Rounding the stride to a 64-multiple costs at
+/// most 63 bytes of padding per slot (+64 KiB across the whole registry —
+/// negligible; the registry's pages are lazily committed by the OS, so an
+/// idle process never touches the extra padding bytes at all). See
+/// `HeapSlotRemote`'s doc comment for the paired fix (grouping the
+/// remote-access fields onto their OWN 64-byte-aligned line, disjoint from
+/// this slot's owner-hot fields).
+#[repr(C, align(64))]
+pub struct HeapSlot {
+    /// Lease state. The claim/recycle/maintenance CAS target.
+    ///
+    /// `pub(crate)` (task #93 / R4-MS-4): while this was `pub`, safe downstream
+    /// code could `state.store(SlotState::Free as u8, ..)` on a LIVE slot, breaking the
+    /// single-writer invariant the
+    /// `unsafe impl Sync` below depends on (R4-MS-4). Integration tests read it
+    /// through the narrow `Registry::dbg_slot_state` accessor (`bootstrap`).
+    pub(crate) state: AtomicU8,
+    /// Bumped on every successful (re)claim. Starts at 0; the first claim
+    /// sees generation 1, the first recycle-then-claim sees 2, etc.
+    ///
+    /// **Production-dead.** Despite the name overlap, this is NOT the M8/M9
+    /// owner-stamp coherence key — that key is `pack_owner`'s segment-header
+    /// stamp (`alloc_core/segment/segment_header/mod.rs`), which packs the
+    /// slot's `id` with a generation field hardcoded to 0 (the adoption
+    /// substrate that once bumped it was removed — task #97 / R4-5). This
+    /// field is written on every `claim_lease`/`claim_lease_with_config` but read by
+    /// nothing outside the `#[doc(hidden)]` test/diagnostic accessors below.
+    /// In particular it is NOT consulted by the 12.3 stale-TLS-pointer check
+    /// — that check uses the `TORN` sentinel in `global::tls_heap` instead
+    /// (a same-thread poison-then-check, not a cross-thread generation
+    /// compare; see that module's doc).
+    ///
+    /// **Atomic** (not a plain `u32` as in the §2.1 sketch) so the
+    /// diagnostic accessors below can read it from a different thread than
+    /// the writer (the claimer) without a data race, even though it has no
+    /// production reader today. `Release` on the bump (in `claim`) pairs
+    /// with an `Acquire` load on the read side.
+    ///
+    /// **Width — `AtomicU64` (task W7a):** a `u32` generation wraps at `2^32`
+    /// recycles (`FREE → LIVE → FREE` cycles = thread deaths). On a
+    /// thread-per-request server that is reachable over weeks/months, at which
+    /// point a wrapped generation could re-collide with a value a stale
+    /// `(index, generation)` owner key still holds — reintroducing the ABA on
+    /// slot RECYCLE→reCLAIM this field exists to defeat. `u64` wraps at `2^64`
+    /// (∼10^19 recycles) — unreachable in any process lifetime. The widening
+    /// is Ir-neutral (this field is off every hot alloc/dealloc path — it is
+    /// bumped once per claim on the cold registry-protocol path only).
+    ///
+    /// `pub(crate)` (task #93 / R4-MS-4): a `pub` field let safe downstream
+    /// code forge owner epochs or preset a LIVE slot's generation directly.
+    /// Integration tests read it via `Registry::dbg_slot_generation`, and the
+    /// ONE write site (`tests/regression_counter_wrap.rs`'s u64-wrap
+    /// counterfactual) goes through the `unsafe fn
+    /// Registry::dbg_slot_preset_generation` accessor, whose `# Safety` carries
+    /// the no-concurrent-claim precondition that makes the direct write sound.
+    pub(crate) generation: AtomicU64,
+    /// The heap value, lazily materialised by `claim` on the slot's first
+    /// `EMPTY → INITIALIZING` transition and reused on later reclaims. Wrapped in
+    /// `UnsafeCell` so `claim` can return `&mut HeapCore` through a shared
+    /// `&HeapSlot`, and `MaybeUninit` so a `FREE` slot carries no live
+    /// (expensive-to-construct) `HeapCore`.
+    pub(crate) heap: UnsafeCell<MaybeUninit<HeapCore>>,
+    /// B4 depot (DP-3): parked full magazines of this slot's heap, kept
+    /// outside `HeapCore` (stack-pressure pin). OS-zeroed = empty. Bound once
+    /// into the heap by `bind_slot_counters`; reached only via `&mut HeapCore`.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub(crate) depot: UnsafeCell<Depot>,
+    /// Release-published "heap is materialised" flag (task #133 hardening).
+    ///
+    /// Starts `false` and becomes `true` EXACTLY ONCE, at the end of the
+    /// slot's first successful construction, immediately after
+    /// `heap_ptr.write(hc)` completes) — see `HeapRegistry::claim_lease` /
+    /// `claim_lease_with_config`. NEVER reset back to `false` afterwards: once a
+    /// slot's `HeapCore` is materialised it is reused as-is across every
+    /// later `recycle` → `claim` cycle (it is never dropped or
+    /// re-`MaybeUninit`'d — see `heap`'s doc comment above), so once this
+    /// flag is `true` it stays `true` for the process lifetime of the slot.
+    ///
+    /// **Why this exists — the bug it fixes:** `count` (bumped by
+    /// `bump_count`, BEFORE the CAS to LIVE and BEFORE `HeapCore::new()`
+    /// runs) and `generation` (bumped to 1 by `claim` BEFORE
+    /// `heap_ptr.write(hc)`) are both insufficient gates for a reader that
+    /// wants to safely dereference `heap` from a DIFFERENT thread than the
+    /// claimer: a diagnostic walk (`tcache_hits_total` /
+    /// `large_cache_hits_total`) that used `idx < count` or `generation >=
+    /// 1` as its "safe to read" condition could observe a slot mid-claim —
+    /// `count` already bumped, generation already 1, but `HeapCore::new()`
+    /// (which reserves an OS segment — not fast) still in flight and
+    /// `heap_ptr.write(hc)` not yet executed. Reading `heap` in that window
+    /// is a read of `MaybeUninit::uninit()` racing a concurrent non-atomic
+    /// write — undefined behaviour, not merely stale data.
+    ///
+    /// **The fix:** the writer publishes readiness with a `Release` store
+    /// to this flag ONLY after `heap_ptr.write(hc)` returns; the reader
+    /// gates its dereference of `heap` on an `Acquire` load observing
+    /// `true`. This Release/Acquire pair establishes happens-before from
+    /// the write of `hc` into the `UnsafeCell` to the reader's subsequent
+    /// access — the standard "publish a fully-constructed value" pattern.
+    /// A reader that observes `false` skips the slot entirely (treats it as
+    /// "not yet materialised, contributes nothing to the aggregate" — sound
+    /// because a slot that has never been claimed has never incremented any
+    /// per-heap counter either).
+    pub(crate) initialised: AtomicBool,
+
+    /// Stable diagnostic counters, isolated from exclusive owner storage.
+    pub(crate) remote: HeapSlotRemote,
+}
+
+impl HeapSlot {
+    /// CAS the slot's state from `expected` to `new` with the given ordering.
+    /// Returns `Ok` on success. The linearization point of claim/recycle.
+    /// Typed over [`SlotState`]: the atomic still stores the `as u8` casts of
+    /// the exact same values; the types make it impossible to mix in the
+    /// fallback's bootstrap states or raw bytes at a call site.
+    #[inline]
+    pub(crate) fn cas_state(
+        &self,
+        expected: SlotState,
+        new: SlotState,
+        success: core::sync::atomic::Ordering,
+        failure: core::sync::atomic::Ordering,
+    ) -> Result<u8, u8> {
+        self.state
+            .compare_exchange(expected as u8, new as u8, success, failure)
+    }
+}
+
+// SAFETY (Sync): `HeapSlot` is shared across threads (the registry array is
+// process-global). Synchronisation is provided by its atomic `state` and
+// the single-writer invariant on `heap` (the `UnsafeCell`):
+// at most one thread — the owner or maintenance CAS winner — may mutate
+// `heap` at any time, and that winner has observed the
+// CAS that excludes all other writers. Reads of `heap` (the `*mut HeapCore`
+// handed out by `claim`) are sound because the slot array is immovable and
+// lives for the process lifetime (the primordial registry segment is never
+// freed). This is exactly the soundness argument for `UnsafeCell` under a
+// single-writer discipline; the registry's atomic protocol is what establishes
+// the single writer. `MaybeUninit` adds no new hazard: the registry's contract
+// is that `heap` is read only by the INITIALIZING winner or while state is
+// LIVE/MAINTENANCE (the latter two require prior full initialisation).
+// `depot` (B4 DP-3) follows the same single-writer rule: it is bound into the
+// heap before `initialised` is published and is touched only through that
+// heap's `&mut HeapCore`; no `&HeapSlot` reader and no remote producer reads it.
+//
+// This single-writer invariant ADDITIONALLY rests on `state`, `generation`,
+// and every `Registry` control atomic being `pub(crate)`
+// (task #93 / R4-MS-4): safe code OUTSIDE the crate cannot execute the
+// `LIVE → FREE` transition, so it cannot smuggle a
+// second owner past the CAS gate. While those fields were `pub`, a safe
+// downstream crate could re-claim a LIVE slot under a thread that still held
+// a cached TLS `*mut HeapCore`, materialising two `&mut HeapCore` over one
+// `UnsafeCell` — exactly the aliasing this proof rules out.
+// R6-T52 (R6-MS-5): the semantic-`Send` premise this `Sync` impl relies on
+// (handing `&mut HeapCore` to another thread) is pinned by the compile-time
+// field audit immediately below.
+//
+// R6-T52 (`docs/agent_reviews_round6/memory_safety_review.md` R6-MS-5):
+// compile-time audit of the semantic-`Send` premise behind the `Sync` impl
+// below (`HeapLease`/`MaintenanceLease` hand `&mut HeapCore` across
+// threads). The destructuring names EVERY field with NO `..`, so a newly
+// added field fails the build with E0027 ("pattern does not mention
+// field") and the author must extend this audit instead of silently
+// crossing threads inside a `Sync` slot.
+//
+// Excluded (bound to `_`): raw pointers into THIS core's own OS
+// reservations, System route-slot arrays, or segment blocks — no
+// thread-affine resource: no `Rc`, no TLS, no thread handles; the
+// NUMA-node cache is a plain value invalidated at claim time, R11-5.
+//   - `core: AllocCore` (segment roots, table slots, large-cache sidecar)
+//   - `tcache: Tcache` (`PerClass::slots: [*mut u8; TCACHE_CAP]`)
+//   - `depot: Option<&'static mut Depot>` (owner-only binding to this slot's
+//     parked-magazine pointer arrays and depot-overflow control)
+//   - `depot_budget: u32` (resolved depot-overflow budget, G1-K7)
+// The `#[cfg]` arms mirror `HeapCore`'s field gates exactly (see
+// `heap_core/core.rs`).
+const _: fn(&HeapCore) = |hc| {
+    fn assert_send<T: Send>(_: &T) {}
+    let HeapCore {
+        id,
+        core: _,
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        background_cursor,
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            feature = "fastbin"
+        ))]
+        large_hot_cursor,
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            tcache: _,
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            depot: _,
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "fastbin",
+            feature = "alloc-decommit"
+        ))]
+        depot_budget,
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+        tcache_hits,
+    } = hc;
+    assert_send(id);
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    assert_send(background_cursor);
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "alloc-xthread",
+        feature = "fastbin"
+    ))]
+    assert_send(large_hot_cursor);
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    assert_send(tcache_hits);
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit"
+    ))]
+    assert_send(depot_budget);
+};
+unsafe impl Sync for HeapSlot {}
+
+// NOTE (no `unsafe impl Send`): `HeapSlot` is deliberately NOT `Send` (task
+// #21 / review M6). The previous `unsafe impl Send for HeapSlot` proved the
+// wrong statement — its SAFETY text argued about sending a *`&HeapSlot`* to
+// another thread, which is what `Send + Sync` on the atomic fields plus the
+// `Sync` impl above already provide (a `&T` is `Send` iff `T: Sync`). What
+// `Send` on `HeapSlot` itself actually authorises is moving a `HeapSlot`
+// *by value* to another thread — carrying a possibly-LIVE `HeapCore`
+// (`AllocCore`'s raw segment pointers) with
+// it. Nobody wrote (or needs) a proof for that: a by-value move bypasses the
+// entire `claim` CAS single-writer discipline every neighbouring SAFETY proof
+// depends on, and no code path in the crate ever moves a `HeapSlot` by value
+// across threads — the registry array is `'static` and immovable, reached
+// only through `&`/`&mut`. The process-global sharing the registry needs is
+// carried by `Sync` alone (`Registry`'s `Sync` requires only
+// `[HeapSlot; N]: Sync`, i.e. `HeapSlot: Sync`, NOT `Send`). Removing the
+// impl lets the `HeapCore` raw pointers make `HeapSlot` auto-`!Send`, so a
+// future by-value cross-thread send (e.g. a shadow `Vec<HeapSlot>` shipped to
+// a worker) becomes a compile error rather than a silent auto-blessed hazard.
+// This does not regress any real caller (full `cargo build`/`cargo test`
+// green with the impl removed).

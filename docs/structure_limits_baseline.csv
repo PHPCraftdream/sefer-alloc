@@ -30,4 +30,4 @@ file,tests/tagged_index_stack_ab_runner_scratch_guard.rs,1221,grandfathered when
 folder,crates/platform/aligned-vmem/src,20,grandfathered when the structure limits landed (2026-10-12)
 folder,crates/platform/aligned-vmem/src/api,11,grandfathered when the structure limits landed (2026-10-12)
 folder,crates/verify/globalalloc-model/src,9,grandfathered when the structure limits landed (2026-10-12)
-folder,src/global,9,grandfathered when the structure limits landed (2026-10-12)
+folder,src/global,8,grandfathered when the structure limits landed (2026-10-12)

@@ -16,12 +16,12 @@
 // Derives (from repo data only):
 //   - targets/non-targets via Cargo autotests rules (scripts/classify-tests/)
 //   - per-file flags via comment-stripped classification
-//   - first-config-wins markers from src/ provenance
+//   - first-config-wins markers from root and sefer-registry Rust sources
 //   - external pins (workflows, actions, scripts, docs) + published counts
 //   - mergeability slugs, groups, pilot, relaxation ladder, intersections
 // Asserts (hard errors):
 //   - git identity commands succeed; tracked files under tests/, Cargo.toml,
-//     src/ are clean per `git status --porcelain` (untracked allowed)
+//     src/, and crates/core/sefer-registry/ are clean per Git status (untracked allowed)
 //   - targets + non-targets cover every tests/ file exactly once
 //   - every explicit [[test]] table resolves to an existing file
 //   - group members == mergeable set; sum(saved_links) == mergeable - groups
@@ -32,7 +32,7 @@
 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -65,28 +65,31 @@ const mode = modes[0];
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // ---------------------------------------------------------------- identity
-function git(argsv) {
+function git(argsv, { raw = false } = {}) {
   const r = spawnSync('git', argsv, { cwd: repoRoot, encoding: 'utf8' });
   if (r.status !== 0) throw new Error(`git ${argsv.join(' ')} failed: ${r.stderr}`);
-  return r.stdout.trim();
+  return raw ? r.stdout : r.stdout.trim();
 }
 
 const headSha = git(['rev-parse', 'HEAD']);
 const treeSha = git(['rev-parse', 'HEAD^{tree}']);
-const porcelain = git(['status', '--porcelain', '--untracked-files=normal']);
+const porcelain = git(['status', '--porcelain', '-z', '--untracked-files=normal'], { raw: true });
+const registryCrate = 'crates/core/sefer-registry/';
 
-// Tracked files under tests/, Cargo.toml, src/ must be clean; untracked new
-// files are allowed (this worktree legitimately adds classification scripts).
+// Porcelain -z lists the destination first, then the original path for R/C.
+// A rename out of the registry crate removes an input; a copy does not.
 const dirty = [];
-for (const line of porcelain.split(/\r?\n/)) {
-  if (!line) continue;
-  const status = line.slice(0, 2);
-  let path = line.slice(3);
-  const arrow = path.indexOf(' -> ');
-  if (arrow !== -1) path = path.slice(arrow + 4);
+const entries = porcelain.split('\0');
+for (let i = 0; i < entries.length - 1; i++) {
+  const status = entries[i].slice(0, 2);
+  const path = entries[i].slice(3);
+  const original = /[RC]/.test(status) ? entries[++i] : '';
   if (status === '??') continue; // untracked allowed
-  if (path === 'Cargo.toml' || path.startsWith('tests/') || path.startsWith('src/')) {
+  if (path === 'Cargo.toml' || path.startsWith('tests/') || path.startsWith('src/') ||
+      path.startsWith(registryCrate)) {
     dirty.push(`${status} ${path}`);
+  } else if (status.includes('R') && original.startsWith(registryCrate)) {
+    dirty.push(`${status} ${original} -> ${path}`);
   }
 }
 if (dirty.length > 0 && !process.env.CLASSIFY_TESTS_ALLOW_DIRTY) {
@@ -136,6 +139,10 @@ for (const t of targets) {
 // ---------------------------------------------------------------- markers
 const srcDir = join(repoRoot, 'src');
 const srcFiles = listSrcRustFiles(srcDir);
+// Match the fallback marker scan, including fallback.rs beside registry/.
+const registrySrc = `${registryCrate}src`;
+const registrySrcDir = join(repoRoot, registrySrc);
+const registrySrcFiles = existsSync(registrySrcDir) ? listSrcRustFiles(registrySrcDir) : [];
 const grepFirstHit = (dir, marker) => {
   void dir;
   const re = markerRegex(marker);
@@ -168,6 +175,7 @@ const trackedInputPaths = [...new Set([
   'Cargo.toml',
   ...allFiles.map((f) => `tests/${f}`),
   ...srcFiles.map((f) => `src/${f}`),
+  ...registrySrcFiles.map((f) => `${registrySrc}/${f}`),
   ...pins.surfaceFiles.map((f) => f.file),
   ...[...trackedPaths].filter((p) => p.startsWith('scripts/classify-tests/') && p.endsWith('.mjs')),
 ])].filter((p) => trackedPaths.has(p)).sort();

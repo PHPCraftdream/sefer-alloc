@@ -74,7 +74,7 @@ and is reported as a finding.
 
 Fuzzes the **fastbin magazine** (tcache) path — the 0.3.0 churn hot path that
 `global_alloc_ops` does NOT reach (`AllocCore` sits *below* the magazine). It
-drives [`sefer_alloc::SeferAlloc`](../src/global/sefer_alloc.rs), the flagship
+drives [`sefer_alloc::SeferAlloc`](../src/global/sefer_alloc/mod.rs), the flagship
 `production` `GlobalAlloc` face, with a bounded stream of `alloc` /
 `alloc_zeroed` / `dealloc` / `realloc` ops of MIXED SMALL size-classes
 (1 B .. 8 KiB, so allocations stay on the magazine-managed classes) and small
@@ -143,7 +143,7 @@ the final array on drop. [`SegmentTable::attach_owner`](../crates/core/sefer-seg
 retains an existing routes array rather than replacing it on reattachment.
 [`AllocCore`'s lifecycle documentation](../crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/lifecycle.rs)
 explains that registry heaps retain their cores for process lifetime;
-[`registry bootstrap`](../src/registry/bootstrap/mod.rs) uses mmap-backed chunks
+[`registry bootstrap`](../crates/core/sefer-registry/src/registry/bootstrap/mod.rs) uses mmap-backed chunks
 on Unix. The working explanation is that LSan cannot see the retained array's
 root in that mmap memory. **This root-visibility diagnosis remains a hypothesis**:
 the local observation establishes the allocation site, not LSan's root traversal.

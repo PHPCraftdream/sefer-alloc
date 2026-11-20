@@ -24,7 +24,7 @@
     }
   ],
   "mutant": {
-    "file": "src/registry/heap_registry/maintenance.rs",
+    "file": "crates/core/sefer-registry/src/registry/heap_registry/maintenance.rs",
     "find": "        let visits = budget.min(count);\n        let start = *cursor % count;",
     "replace": "        let visits = count; // mutant 9: budget ignored\n        let start = *cursor % count;",
     "steps": [

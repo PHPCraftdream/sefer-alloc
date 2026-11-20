@@ -96,7 +96,7 @@ models or workloads were executed.
 | `always` | every change: fmt, commit-prefix-lint, evidence-registry, deny, licenses, docs-consistency, j13b-judge-preparation (path-selected steps) |
 | `fast` | `src/**`, `crates/**`, `tests/**`, `benches/**`, `examples/**`, `fuzz/**`, `Cargo.*`, build scripts (`check-matrix`, `run-check-matrix`, `lib`, `check-all`), and any unrecognised path |
 | `seam` | `src/**`, `crates/**`, `Cargo.*`, tests named `*loom*`/`*miri*`/`*kani*` or listed by `scripts/loom.mjs`/`miri*.mjs`, those manifests, the actual-source owner, operation core, persistent actors and training guard (`examples/_shared/j13b_owned_block.rs`, `examples/_shared/j13b_window_kernel.rs`, `examples/_shared/j13b_payload_actors.rs`, `examples/_shared/j13b_owner_training.rs`), and the OS/model boundary producer `examples/_shared/j13b_os_probe.rs` and its adaptive window executor `examples/_shared/j13b_adaptive_windows.rs` |
-| `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**` (kept only as the deletion trigger of the P2.2 move) and its new location `crates/core/sefer-alloc-core/src/alloc_core/platform/**` (within the sefer-alloc-core crate — not the whole crate), tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`, `sefer-platform`), and `examples/_shared/j13b_os_probe.rs` and its adaptive window executor `examples/_shared/j13b_adaptive_windows.rs` |
+| `os` | `Cargo.lock`/toolchain/`.cargo`, a root `Cargo.toml` edit that is not only bench/example/test targets, `src/alloc_core/platform/**` (kept only as the deletion trigger of the P2.2 move) and its new location `crates/core/sefer-alloc-core/src/alloc_core/platform/**` (within the sefer-alloc-core crate — not the whole crate), `crates/core/sefer-registry/src/fallback.rs` (Windows exit lock protocol; not the whole registry crate), tests named `*windows*`/`*macos*`/`*numa*`/`*platform*`, the platform crates (`aligned-vmem`, `numa-shim`, `proc-*`, `sefer-platform`), and `examples/_shared/j13b_os_probe.rs` and its adaptive window executor `examples/_shared/j13b_adaptive_windows.rs` |
 | `crate_*` | `crates/<theme>/<name>/**`: the gates of that one workspace crate (its dependents also get `fast`+`seam`) |
 | everything | `schedule`, `workflow_dispatch`, and a `CI: full` trailer in the message of any commit of the range (PR: base..merge commit; push: before..sha) |
 
@@ -156,7 +156,7 @@ crates plus their transitive reverse dependents (workspace consumers).
 - **Sprint close**: the closing commit carries `CI: full`, and `node scripts/verify-sprint-close.mjs <sha>` confirms a
   green FULL run on exactly that SHA (every tiered job ran and succeeded; only the weekly-only and dispatch-only
   jobs may be skipped). The nightly is a safety net, not the close proof.
-- Recommended, owner to confirm: a PR that changes an unsafe seam (`src/alloc_core/**`, `src/registry/**`,
+- Recommended, owner to confirm: a PR that changes an unsafe seam (`crates/core/sefer-alloc-core/src/**`, `crates/core/sefer-registry/src/**`,
   `src/global/**`) carries a `CI: full` commit before merge when it is about to be merged on its own.
 
 The rule in `CLAUDE.md` "confirm CI went green on the landing SHA" now reads: green **for the class of the
@@ -327,6 +327,7 @@ the smoke row covers those scenarios.
 | `sefer-platform-gates` | sefer-platform package gates | `crate_sefer_platform`: changes under its crate |
 | `sefer-policy-gates` | sefer-policy package gates | `crate_sefer_policy`: changes under its crate |
 | `sefer-region-gates` | sefer-region package gates | `crate_sefer_region`: changes under its crate |
+| `sefer-registry-gates` | sefer-registry package gates | `crate_sefer_registry`: changes under its crate |
 | `sefer-segment-gates` | sefer-segment package gates | `crate_sefer_segment`: changes under its crate |
 | `size-classes-gates` | size-classes package gates | `crate_size_classes`: changes under its crate |
 | `tagged-index-stack-gates` | tagged-index-stack package gates | `crate_tagged_index_stack`: changes under its crate |

@@ -174,7 +174,7 @@ impl SeferAlloc {
                         continue;
                     }
                     // SAFETY: the batch caller transfers each live instance once.
-                    unsafe { crate::registry::HeapCore::publish_foreign(ptr, layout) };
+                    unsafe { sefer_registry::registry::HeapCore::publish_foreign(ptr, layout) };
                 }
             }
         }

@@ -220,6 +220,7 @@ fn no_unaccounted_reserve_aligned_calls() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     collect_rs(&root.join("src"), &mut files);
+    collect_rs(&root.join("crates/core/sefer-registry/src"), &mut files);
     let platform_src = root.join("crates/platform/sefer-platform/src");
     if platform_src.is_dir() {
         collect_rs(&platform_src, &mut files);

@@ -251,6 +251,7 @@ dependencies = [
  "sefer-platform",
  "sefer-policy",
  "sefer-region",
+ "sefer-registry",
  "sefer-segment",
  "size-classes",
  "tagged-index-stack",
@@ -299,6 +300,18 @@ name = "sefer-region"
 version = "0.2.0"
 dependencies = [
  "slotmap",
+]
+
+[[package]]
+name = "sefer-registry"
+version = "0.1.0"
+dependencies = [
+ "aligned-vmem",
+ "once-ptr-cell",
+ "sefer-alloc-core",
+ "sefer-ghost",
+ "sefer-platform",
+ "sefer-segment",
 ]
 
 [[package]]

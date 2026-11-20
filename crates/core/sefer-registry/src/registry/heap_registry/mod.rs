@@ -1,0 +1,72 @@
+//! [`HeapRegistry`] — the global self-hosting heap slot table (§2.1 of
+//! `ALLOC_PLAN_PHASE12-13.md`): claim/recycle over the process-global
+//! [`Registry`](super::bootstrap::Registry) slot array.
+//!
+//! This is the lock-free fundament of Phase 12: every thread's heap is a SLOT
+//! in this registry, not a TLS-owned `Box`. A thread claims a slot on first
+//! use, caches a raw `*mut HeapCore` to it in TLS (12.3), and on thread exit
+//! recycles the slot (whole-heap reuse — Phase 12.5: the `HeapCore` and its
+//! segments stay with the slot, and the next claimer reuses them in full).
+//! FREE discovery scans materialised chunks. No intrusive free list remains;
+//! only a successful slot-state CAS grants owner or maintenance authority.
+
+// R1-07 (src review round 1): this file is `mod.rs` — decls and re-exports
+// only, per the "mod.rs — reexports only, no code" rule — so it carries NO
+// `#![allow(unsafe_code)]` of its own. The former module-level allow
+// duplicated child allowances. `claim` owns the tier-1 unsafe pointer handoff
+// from a slot's `UnsafeCell`; `counters` and `stack` are safe composition.
+mod claim;
+mod counters;
+mod maintenance;
+mod stack;
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub use super::bootstrap::saturation::SaturationHint;
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub use super::bootstrap::FreeSlotHint;
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub use stack::pick_with_hint_spill;
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub use stack::pick_with_saturation;
+
+pub use claim::HeapRegistry;
+// The TLS owner in the allocator facade holds the lease across calls.
+#[doc(hidden)]
+pub use claim::HeapLease;
+// R1-10 (src review round 1): the fallback heap's own process-static
+// magazine/large-cache hit counters, bound by `global::fallback` at init
+// (there is no registry slot to bind for it) — see `counters::
+// FALLBACK_TCACHE_HITS`'s doc comment.
+#[cfg_attr(
+    not(all(feature = "alloc-decommit", not(feature = "fastbin"))),
+    allow(unused_imports)
+)]
+#[cfg(feature = "alloc-decommit")]
+pub use counters::large_cache_hits_total;
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+pub use counters::tcache_and_large_cache_hits_total;
+#[cfg_attr(
+    not(all(feature = "fastbin", not(feature = "alloc-decommit"))),
+    allow(unused_imports)
+)]
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+pub use counters::tcache_hits_total;
+#[cfg(feature = "alloc-decommit")]
+pub(crate) use counters::FALLBACK_LARGE_CACHE_HITS;
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+pub(crate) use counters::FALLBACK_TCACHE_HITS;
+pub use counters::{config_conflicts_total, heaps_claimed_high_water};
+#[cfg(feature = "internals")]
+pub use counters::{dbg_claim_then_simulate_oom, dbg_slot_initialised};
+// R2-11 (task #2013): test-only hook to deterministically reproduce the
+// `bump_count`-then-`slot()` window `walk_initialised_slots` used to race
+// into — see `counters::dbg_bump_count_without_materialising`'s doc comment.
+#[cfg(feature = "internals")]
+pub use counters::dbg_bump_count_without_materialising;

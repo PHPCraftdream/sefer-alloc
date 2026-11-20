@@ -8,7 +8,7 @@ blanked, braces give the item path); G1's `crates/verify/ghost-lint` on `syn` re
 ## 1. Ordering sites
 
 770 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
-`HeapSlot::cas_state` whose arguments name an ordering) in 103 files of `src/**` and
+`HeapSlot::cas_state` whose arguments name an ordering) in 104 files of `src/**` and
 `crates/**/src/**`; each is claimed by exactly one of 61 scopes.
 
 | class | sites | of all sites |
@@ -59,7 +59,7 @@ harness; `non-atomic` — named scanner false positives.
 | P16 | summary-hint C''' (not shipped) | none | 0 | 1 | 0 | — | n/a | archive | - |
 | P17 | bootstrap const OncePtrCell stand-in under loom | T | 7 | 0 | 0 | — | is the loom twin | R7 | G7 |
 | P18 | cfg(loom) twins in crates and leaf init | T | 20 | 2 | 0 | — | crate tests run the real crate under loom | R7 | G7 |
-| P19 | fallback heap one-time init + fallback lock (global/fallback.rs) | A | 11 | 1 | 0 | — | yes: tests/loom_fallback_actual.rs compiles fallback.rs onto per-execution loom stand-ins for its statics (sync names through super) | ghost | G6 |
+| P19 | fallback heap one-time init + fallback lock (crates/core/sefer-registry/src/fallback.rs) | A | 11 | 1 | 0 | — | yes: tests/loom_fallback_actual.rs compiles fallback.rs onto per-execution loom stand-ins for its statics (sync names through super) | ghost | G6 |
 | P20 | maintenance service start/worker state | none | 6 | 0 | 0 | — | no: process-wide static STATE plus std Mutex/Condvar wait_timeout_while and a detached std::thread worker in an infinite periodic loop | rules + integration tests | G6 |
 | P21 | exact-object shard lock + live hint | A | 7 | 1 | 0 | — | yes: tests/loom_exact_shard_actual.rs compiles exact_shard.rs onto loom primitives (sync names through super) | ghost | G6 |
 | P22 | route ShardLock (spin lock over the directory shard) | S | 5 | 1 | 0 | — | yes: one AtomicBool | translate (with P5) | G2 |
@@ -120,7 +120,7 @@ Decision: **rules + actual-source model + deterministic forced-CAS rejection tes
 
 ### P1 — HeapLease FREE->LIVE claim / LIVE->FREE Release drop
 
-Prod: `src/registry/heap_registry/claim.rs::claim_impl`, `src/registry/heap_registry/claim.rs::drop`, `src/registry/heap_slot.rs::cas_state`.
+Prod: `crates/core/sefer-registry/src/registry/heap_registry/claim.rs::claim_impl`, `crates/core/sefer-registry/src/registry/heap_registry/claim.rs::drop`, `crates/core/sefer-registry/src/registry/heap_slot.rs::cas_state`.
 
 - I1 exactly one thread wins FREE->LIVE for a slot; a losing CAS performs no metadata write, no drain and no drop
 - I2 every owner write to slot metadata happens-before the next claimant's first read: LIVE->FREE is a Release CAS paired with the claimant's Acquire success ordering
@@ -131,7 +131,7 @@ Decision: **keep+R8** — G3: HeapSlot::cas_state only passes the orderings thro
 
 ### P2 — MaintenanceLease FREE->MAINTENANCE
 
-Prod: `src/registry/heap_registry/claim.rs::try_maintenance_at`, `src/registry/heap_registry/claim.rs::drop`.
+Prod: `crates/core/sefer-registry/src/registry/heap_registry/claim.rs::try_maintenance_at`, `crates/core/sefer-registry/src/registry/heap_registry/claim.rs::drop`.
 
 - I1 a failed FREE->MAINTENANCE CAS never creates a second metadata mutator
 - I2 MAINTENANCE->FREE is a Release CAS; the next LIVE claimant observes every maintenance write
@@ -141,7 +141,7 @@ Decision: **keep+R8** — G4: R1 on the FREE -> MAINTENANCE claim (try_maintenan
 
 ### P3 — publish || recycle || drain (TORN stamp, trim, drop, claimant drain)
 
-Prod: `src/registry/heap_core/state/ownership.rs::trim_for_recycle`, `src/registry/heap_core_xthread/sidecar_drain.rs`, `src/registry/heap_registry/claim.rs::drop`.
+Prod: `crates/core/sefer-registry/src/registry/heap_core/state/ownership.rs::trim_for_recycle`, `crates/core/sefer-registry/src/registry/heap_core_xthread/sidecar_drain.rs`, `crates/core/sefer-registry/src/registry/heap_registry/claim.rs::drop`.
 
 - I1 a publication made before, during or after the owner's trim is consumed exactly once (trim or claimant drain) or survives pending for the next owner
 - I2 trim_for_recycle drains before the LIVE->FREE Release
@@ -153,7 +153,7 @@ Decision: **keep+R8** — G3: L1/L2 (R4b-13/14) are caught by the Ph4b model thr
 
 ### P4 — registry claim/selector, free-set, spill, saturation
 
-Prod: `src/registry/heap_registry/stack.rs`, `src/registry/bootstrap/free_slot_hint.rs`, `src/registry/bootstrap/saturation.rs`, `src/registry/heap_registry/claim.rs::claim_impl`.
+Prod: `crates/core/sefer-registry/src/registry/heap_registry/stack.rs`, `crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs`, `crates/core/sefer-registry/src/registry/bootstrap/saturation.rs`, `crates/core/sefer-registry/src/registry/heap_registry/claim.rs::claim_impl`.
 
 - I1 count only grows (bump_count CAS) and every slot below count is initialised before it is published (initialised Release / Acquire)
 - I2 a free-set bit is set only after the slot is FREE (publish Release) and a taker clears it with AcqRel before claiming
@@ -240,7 +240,7 @@ Decision: **keep+R5+R3** — G6b: membership words stay plain owner u64s (R10); 
 
 ### P12 — depot across slot recycle
 
-Prod: `src/registry/heap_core/state/depot.rs`, `src/registry/heap_core/state/depot_paths.rs`, `src/registry/heap_core/state/ownership.rs::trim_for_recycle`.
+Prod: `crates/core/sefer-registry/src/registry/heap_core/state/depot.rs`, `crates/core/sefer-registry/src/registry/heap_core/state/depot_paths.rs`, `crates/core/sefer-registry/src/registry/heap_core/state/ownership.rs::trim_for_recycle`.
 
 - I1 the depot is empty at LIVE->FREE (drained in trim_for_recycle before the Release)
 - I2 only the current lease holder touches the depot
@@ -287,7 +287,7 @@ Decision: **archive** — owner decision 2026-10-27: kept as an archived model o
 
 ### P17 — bootstrap const OncePtrCell stand-in under loom
 
-Prod: `src/registry/bootstrap/loom_shim.rs`, `src/registry/bootstrap/ensure.rs`, `src/registry/bootstrap/registry.rs`.
+Prod: `crates/core/sefer-registry/src/registry/bootstrap/loom_shim.rs`, `crates/core/sefer-registry/src/registry/bootstrap/ensure.rs`, `crates/core/sefer-registry/src/registry/bootstrap/registry.rs`.
 
 - I1 the loom stand-in performs the same atomic sequence and orderings as crates/primitives/once-ptr-cell (load Acquire, CAS Acquire/Relaxed, store Release, rollback store Release)
 
@@ -302,9 +302,9 @@ Prod: `crates/primitives/once-ptr-cell/src/imp.rs`, `crates/primitives/tagged-in
 
 Decision: **R7** — G7: the crate twins are import-level (core vs loom atomics) around one shared implementation, so the loom tests run the shipped code; the only cfg(loom) twin items are the non-const constructors, pinned by R7 (no ordered op in either). leaf_classes initialises loom atomics in a cfg(loom) loop inside promote (covered by the promote R2 inventory, G6a); route_pin_cache CACHE twins are R10 (G6b); aligned-vmem mock is a cfg(mock) fault-injection layer, not a loom twin.
 
-### P19 — fallback heap one-time init + fallback lock (global/fallback.rs)
+### P19 — fallback heap one-time init + fallback lock (crates/core/sefer-registry/src/fallback.rs)
 
-Prod: `src/global/fallback.rs::heap_ptr_impl`, `src/global/fallback.rs::try_with_heap`, `src/global/fallback.rs::acquire`, `src/global/fallback.rs::drop`.
+Prod: `crates/core/sefer-registry/src/fallback.rs::heap_ptr_impl`, `crates/core/sefer-registry/src/fallback.rs::try_with_heap`, `crates/core/sefer-registry/src/fallback.rs::acquire`, `crates/core/sefer-registry/src/fallback.rs::drop`.
 
 - I1 INIT_STATE: exactly one initialiser wins the CAS (Acquire/Relaxed); the heap is published with a Release store, readers load Acquire; a panicking init rolls back with Release
 - I2 LOCK: test-and-set spin lock, CAS Acquire on acquire, Release store on drop

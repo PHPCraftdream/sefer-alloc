@@ -8,7 +8,7 @@ use sefer_alloc::registry::heap_registry::{pick_with_hint_spill, SaturationHint}
 
 const MAX_HEAPS: usize = 4096;
 #[allow(dead_code, unused_imports)]
-#[path = "../src/registry/bootstrap/free_slot_hint.rs"]
+#[path = "../crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs"]
 mod real_free_slot_hint;
 use real_free_slot_hint::FreeSlotHint;
 

@@ -354,7 +354,7 @@ impl SeferAlloc {
     #[inline]
     pub(super) fn with_fallback_heap<F, R>(&self, f: F) -> Option<R>
     where
-        F: FnOnce(&mut crate::registry::HeapCore) -> R,
+        F: FnOnce(&mut sefer_registry::registry::HeapCore) -> R,
     {
         #[cfg(feature = "alloc-decommit")]
         {

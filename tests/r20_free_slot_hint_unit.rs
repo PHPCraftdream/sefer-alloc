@@ -8,7 +8,7 @@ const MAX_HEAPS: usize = 4096;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 #[allow(dead_code, unused_imports)]
-#[path = "../src/registry/bootstrap/free_slot_hint.rs"]
+#[path = "../crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs"]
 mod real_free_slot_hint;
 use real_free_slot_hint::FreeSlotHint;
 

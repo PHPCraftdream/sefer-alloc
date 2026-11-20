@@ -7,7 +7,7 @@ mod registry {
     }
 
     pub(crate) mod fallback_hook {
-        include!("../src/registry/fallback_hook.rs");
+        include!("../crates/core/sefer-registry/src/registry/fallback_hook.rs");
     }
 }
 
@@ -64,7 +64,7 @@ fn unavailable_fallback_does_not_invoke_closure_or_initialize() {
 
 #[test]
 fn facade_registers_the_hook_before_ready_publication() {
-    let source = include_str!("../src/global/fallback.rs");
+    let source = include_str!("../crates/core/sefer-registry/src/fallback.rs");
     let registration = source
         .find(".register(fallback_hook_callback)")
         .expect("facade hook registration must remain present");

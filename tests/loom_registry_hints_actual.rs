@@ -71,9 +71,9 @@ impl AtomicU64 {
     }
 }
 
-#[path = "../src/registry/bootstrap/free_slot_hint.rs"]
+#[path = "../crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs"]
 mod free_slot_hint;
-#[path = "../src/registry/bootstrap/saturation.rs"]
+#[path = "../crates/core/sefer-registry/src/registry/bootstrap/saturation.rs"]
 mod saturation;
 
 use free_slot_hint::FreeSlotHint;

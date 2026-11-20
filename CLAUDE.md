@@ -42,8 +42,7 @@ Core instructions, mandatory for all code in this repository. They
      their enclosing module is `#[doc(hidden)]`, exposing a test hook so an
      integration test in `tests/` can reach an otherwise-internal surface (the
      established "test-only export pattern"; see the `#[doc(hidden)]` notes in
-     `src/lib.rs`, `src/alloc_core/mod.rs`, `src/registry/mod.rs`,
-     `src/registry/tagged_ptr.rs`). These are not stable public API.
+     `src/lib.rs`, `src/alloc_core/mod.rs`, and the `src/registry/mod.rs` facade). These are not stable public API.
   2. **protocol-constant clusters attached to their one primary type** — a set
      of `pub` protocol constants that belong to a single owning type and live
      with it (e.g. `RemoteFreeRing` with its `RING_CAP` / `DBG_RING_OVERFLOW`
@@ -641,7 +640,7 @@ Core instructions, mandatory for all code in this repository. They
   line to begin with optional whitespace then the attribute, so `//` comments
   that merely mention the attribute do not match (the unanchored
   `grep -rln 'allow(unsafe_code)' ...` form has false positives, e.g. in
-  `src/lib.rs` and `src/registry/heap_overflow/`). Any formal audit
+  `src/lib.rs`). Any formal audit
   compares against this command's output, and an `unsafe` token not covered by
   a tier-1 module or a tier-2 item-level allow is a hard compile error in every
   feature configuration. The sanctioned exception categories (doc-hidden
@@ -654,7 +653,7 @@ Core instructions, mandatory for all code in this repository. They
   pointer are `unsafe fn` + `bench-internals`-gated, full stop**
   (R25-1/task #395: `HeapCore::dbg_overflow_bitmap_clear_pass` in the
   pre-reorg flat `src/registry/heap_core_diag.rs` (today's
-  `src/registry/heap_core/diag/`) was a *safe* `pub fn` that derived a segment
+  `crates/core/sefer-registry/src/registry/heap_core/diag/`) was a *safe* `pub fn` that derived a segment
   base from an arbitrary caller pointer via the bitmask
   `os::segment_base_of_ptr` — zero validation — then wrote allocator metadata
   (`clear_magazine`) at the derived offset; gated only on `alloc-global +
@@ -669,7 +668,7 @@ Core instructions, mandatory for all code in this repository. They
      `pub unsafe fn` with a documented `# Safety` contract — "measurement-only"
      is not an exemption the moment the function is reachable as `pub` outside
      `#[cfg(test)]`. `dbg_dealloc_own_thread_with_base`
-     (`src/registry/heap_core/diag/diag_probes.rs`) is the positive pattern to
+     (`crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs`) is the positive pattern to
      follow (`dbg_overflow_bitmap_clear_pass` itself was removed by the fix).
   2. Any hook with no production caller MUST default to gating behind the
      `bench-internals` feature, not `alloc-global`/`fastbin`/other
@@ -748,7 +747,8 @@ Core instructions, mandatory for all code in this repository. They
   (`docs/reviews/2026-07-28-r25-readonly-review.md`) then found the RSS axis
   invalid: `HeapRegistry`'s slot lifecycle is first-claim-wins for a slot's
   whole process lifetime (`claim_with_config` re-claim of an
-  already-materialised slot keeps the OLD config silently,
+  already-materialised slot keeps the OLD config silently; historical source
+  citations for that claim path refer to the layout at `2c4c83317`:
   `src/registry/heap_registry/claim.rs:150` / ~190-232; `recycle` returns slots to
   `free_slots`, `:283`; `pick_slot` pops recycled slots first, `:259-261`), so
   arm N+1's threads could silently reuse arm N's already-configured slot and
@@ -762,7 +762,8 @@ Core instructions, mandatory for all code in this repository. They
   pieces of evidence above — subprocess-per-arm isolation (structural: a fresh
   process has an empty registry, so cross-arm reuse is impossible by
   construction) plus a per-arm hard-assert of resolved cap via the new safe
-  `HeapCore::dbg_pool_cap()` accessor (`src/registry/heap_core/diag/queries.rs:377`)
+  `HeapCore::dbg_pool_cap()` accessor (current declaration:
+  `crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs:563`)
   and `config_conflicts_total()` delta == 0. R26-1's corrected finding was
   materially different — the RSS "win" did not reproduce (RSS-neutral, not
   RSS-beneficial) — the concrete cost: a production-default-change
@@ -781,7 +782,7 @@ Core instructions, mandatory for all code in this repository. They
   vs. recycled free-list pops (`AllocCore::dbg_small_zero_pass_count`,
   `src/alloc_core/alloc_core/alloc_core_core_diag/`); large-cache hits vs. misses
   (`AllocCore`/`HeapCore::dbg_large_cache_hits`,
-  `src/alloc_core/large/alloc_core_large_cache.rs` / `src/registry/heap_core/diag/queries.rs`);
+  `crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs` / `crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs`);
   decommit/release/reserve call counts; promotion events; directory hits
   vs. fallback scans; and pool cap actually resolved AND victim actually
   activated — this last pair is the boundary case where R26-4's own
@@ -942,7 +943,7 @@ Core instructions, mandatory for all code in this repository. They
   (bypassing the magazine) instead of `HeapCore::alloc_zeroed` (the actual
   chain `SeferAlloc`'s `#[global_allocator]` uses, which retains virginity
   across an entire magazine refill via `PerClass::virgin_mask` —
-  `src/registry/heap_core/alloc/hot.rs`). Caught and reopened in R31-0 (task
+  `crates/core/sefer-registry/src/registry/heap_core/alloc/hot.rs`). Caught and reopened in R31-0 (task
   #471, commit `dece4a7`). Filed as an owned item in
   `docs/perf/OPEN_ITEMS.md` (item 32) so a fresh round inherits this without
   reading a review doc first, per this file's own "Round start: check BOTH

@@ -23,11 +23,7 @@ mod alloc_stats;
 #[cfg(feature = "exact-object-proto")]
 #[doc(hidden)]
 pub mod exact_object;
-pub(crate) mod fallback;
-// `fallback` takes its sync primitives from here (a loom model binds loom ones).
-use core::hint::spin_loop;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
-use std::thread::yield_now;
+pub(crate) use sefer_registry::fallback;
 mod maintenance_service;
 mod maintenance_start_error;
 mod process_exit;
@@ -41,7 +37,7 @@ pub mod tls_heap;
 
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub use fallback::dbg_exit_lock_giveups;
+pub use sefer_platform::dbg_exit_lock_giveups::dbg_exit_lock_giveups;
 
 pub use alloc_stats::AllocStats;
 #[doc(hidden)]

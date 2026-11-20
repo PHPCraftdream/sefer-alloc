@@ -4,12 +4,14 @@
 //! segment) are a safe no-op", contradicting its own `# Safety` section a few
 //! lines below, which excludes foreign/unmapped/already-released pointers
 //! from the contract. Under `alloc-xthread`,
-//! `src/registry/heap_core_xthread/routing.rs`'s `dealloc_foreign_routing`
+//! `crates/core/sefer-registry/src/registry/heap_core_xthread/routing.rs`'s
+//! `dealloc_foreign_routing`
 //! reaches `SegmentHeader::magic_at(base)`, which reads the address and can
 //! fault if it is unmapped — so the blanket "safe no-op" claim was false for
 //! an out-of-contract caller, not just imprecise.
 //!
-//! This test pins two things in `src/registry/heap_core/free/dealloc.rs`:
+//! This test pins two things in
+//! `crates/core/sefer-registry/src/registry/heap_core/free/dealloc.rs`:
 //! the old blanket-claim phrase is gone, and the corrected wording (null is
 //! the only always-safe no-op; a foreign/unmapped pointer violates the
 //! contract) is present.
@@ -22,7 +24,7 @@ use std::path::Path;
 
 fn dealloc_rs_text() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src")
+        .join("crates/core/sefer-registry/src")
         .join("registry")
         .join("heap_core")
         .join("free")
