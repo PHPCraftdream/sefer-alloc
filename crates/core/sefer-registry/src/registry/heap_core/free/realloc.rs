@@ -135,6 +135,7 @@ impl HeapCore {
     ///
     /// Null `ptr` is always safe (early return).
     #[allow(unsafe_code)] // R6-MS-1/2: `unsafe fn` boundary (caller-pointer contract).
+    #[inline]
     pub unsafe fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();

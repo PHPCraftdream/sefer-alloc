@@ -7,6 +7,7 @@ use crate::registry::heap_core::HeapCore;
 impl HeapCore {
     /// Called by cold trim while the caller still owns the heap. Foreign
     /// publication never borrows this core or accesses reservation metadata.
+    #[inline]
     pub(crate) fn drain_sidecar_ingress(&mut self) -> usize {
         self.core.drain_sidecar_ingress()
     }

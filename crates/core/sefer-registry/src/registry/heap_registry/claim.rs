@@ -196,6 +196,7 @@ impl HeapRegistry {
     /// authority stays with the caller until its `Drop` publishes FREE.
     #[must_use]
     #[doc(hidden)]
+    #[inline]
     pub fn claim_lease() -> Option<HeapLease> {
         // No re-claim-time check: a plain `claim_lease` carries no config to
         // conflict with, so the "already initialised" hook is a no-op.
@@ -208,6 +209,7 @@ impl HeapRegistry {
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     #[doc(hidden)]
+    #[inline]
     pub fn claim_lease_with_config(
         config: crate::alloc_core::LargeCacheConfig,
     ) -> Option<HeapLease> {
