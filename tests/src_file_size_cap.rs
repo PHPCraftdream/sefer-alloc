@@ -28,6 +28,7 @@ fn no_source_file_exceeds_the_line_cap() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     collect_rs(&root.join("src"), &mut files);
+    collect_rs(&root.join("crates/core/sefer-registry/src"), &mut files);
     collect_rs(&root.join("crates/core/sefer-alloc-core/src"), &mut files);
     assert!(
         files.len() > 100,

@@ -1093,6 +1093,7 @@ dependencies = [
  "sefer-platform",
  "sefer-policy",
  "sefer-region",
+ "sefer-registry",
  "sefer-segment",
  "serde_json",
  "size-classes",
@@ -1148,6 +1149,18 @@ dependencies = [
  "bench-scale-tool",
  "captrack",
  "slotmap",
+]
+
+[[package]]
+name = "sefer-registry"
+version = "0.1.0"
+dependencies = [
+ "aligned-vmem",
+ "once-ptr-cell",
+ "sefer-alloc-core",
+ "sefer-ghost",
+ "sefer-platform",
+ "sefer-segment",
 ]
 
 [[package]]

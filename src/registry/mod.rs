@@ -1,98 +1,70 @@
-//! Phase 12.2 — the global heap registry (§2.1 of
-//! `ALLOC_PLAN_PHASE12-13.md`): a self-hosting slot table of heaps, gated
-//! behind `alloc-global` (it becomes the substrate of `SeferAlloc` in 12.3).
-//!
-//! The registry is the keystone inversion of Phase 12: heaps become SLOTS in
-//! a global, self-hosting table (the `Region` slot-table discipline, reflected
-//! one level deeper — the heap pool itself becomes a slot table). A thread
-//! does NOT own its heap; it caches a raw `*mut HeapCore` to a registry slot
-//! in TLS (12.3). On thread exit, `LeaseReleaseGuard::drop` does NOT abandon or
-//! walk segments — it recycles the slot (`LIVE → FREE`) with the `HeapCore`
-//! and all its segments staying whole; a later thread that claims the recycled
-//! slot reuses the same `HeapCore` as-is (whole-slot reuse, Phase 12.5).
-//!
-//! ## `#[doc(hidden)]` — not public API
-//!
-//! The registry module and its selected items are doc-hidden implementation
-//! surfaces. Visibility is limited by each item's current Rust visibility and
-//! cfg gates; this is not a stable public API.
-//!
-//! ## Re-exports only
-//!
-//! Per the one-export-per-file rule, no logic lives here. The files:
-//!
-//! - [`heap_core`] — the thin, slot-resident heap value (`HeapCore`).
-//! - [`heap_slot`] — one slot (`HeapSlot`): state / generation / heap / link.
-//! - `bootstrap::chunk` — lazily materialized fixed-size slot-array chunk
-//!   (`RegistryChunk`), limiting committed registry metadata to used chunks.
-//! - [`bootstrap`] — process-global registry initialization and per-chunk
-//!   state management.
-//! - [`heap_registry`] — the claim/recycle API (whole-slot reuse).
-//!
-//! [`heap_core`]: self::heap_core
-//! [`heap_slot`]: self::heap_slot
-//! [`bootstrap`]: self::bootstrap
-//! [`heap_registry`]: self::heap_registry
+//! Doc-hidden registry facade. The implementation and nominal types live in
+//! `sefer-registry`; this module preserves the root paths and feature gates.
+
+#![cfg_attr(not(feature = "internals"), allow(unused_imports))]
 
 #[doc(hidden)]
-pub mod bootstrap;
-pub(crate) mod fallback_hook;
+pub mod bootstrap {
+    #[cfg(feature = "internals")]
+    pub use sefer_registry::registry::bootstrap::{
+        count_for_test, dbg_num_chunks, dbg_rollback_chunk_sentinel_reenterable,
+        dbg_set_inject_chunk_oom, dbg_slot_or_none, FreeSlotHint, RollbackProbe,
+    };
+    pub use sefer_registry::registry::bootstrap::{ensure, Registry, MAX_HEAPS};
+}
+
 #[doc(hidden)]
-pub mod heap_core;
-mod heap_core_xthread;
+pub mod heap_core {
+    pub use sefer_registry::registry::heap_core::HeapCore;
+}
+
 #[doc(hidden)]
-pub mod heap_registry;
-#[doc(hidden)]
-pub mod heap_slot;
-#[cfg_attr(not(feature = "internals"), allow(unused_imports))] // tests reach registry::segment_route under internals
+pub mod heap_registry {
+    #[cfg(feature = "alloc-decommit")]
+    pub use super::large_cache_hits_total;
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "alloc-decommit"
+    ))]
+    pub use super::tcache_and_large_cache_hits_total;
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub use super::tcache_hits_total;
+    pub use super::{config_conflicts_total, heaps_claimed_high_water, HeapRegistry};
+    #[cfg(feature = "internals")]
+    pub use sefer_registry::registry::heap_registry::{
+        dbg_bump_count_without_materialising, dbg_claim_then_simulate_oom, dbg_slot_initialised,
+    };
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub use sefer_registry::registry::heap_registry::{
+        pick_with_hint_spill, pick_with_saturation, FreeSlotHint, HeapLease, SaturationHint,
+    };
+}
+
 #[cfg(feature = "alloc-global")]
 #[doc(hidden)]
 pub use crate::alloc_core::segment_route;
+#[doc(hidden)]
+pub use sefer_registry::registry::heap_slot;
 
+#[cfg(feature = "internals")]
 #[doc(hidden)]
-pub use heap_core::HeapCore;
-// R6-T16: read by `stats()` under `alloc-decommit`; external diagnostics
-// reach it under `internals`. Suppress the unused-import lint elsewhere.
-#[cfg_attr(
-    not(any(feature = "alloc-decommit", feature = "internals")),
-    allow(unused_imports)
-)]
-#[doc(hidden)]
-pub use heap_registry::config_conflicts_total;
-#[doc(hidden)]
-pub use heap_registry::heaps_claimed_high_water;
-// R6-T16: the lib-side consumer reads this only in the
-// `alloc-decommit ∧ ¬fastbin` branch of `cache_hit_totals`; suppress the
-// unused-import lint exactly there instead of narrowing the re-export's cfg.
-#[cfg_attr(
-    not(all(feature = "alloc-decommit", not(feature = "fastbin"))),
-    allow(unused_imports)
-)]
+pub use sefer_registry::registry::heap_registry::HeapLease;
 #[cfg(feature = "alloc-decommit")]
 #[doc(hidden)]
-pub use heap_registry::large_cache_hits_total;
+pub use sefer_registry::registry::large_cache_hits_total;
 #[cfg(all(
     feature = "alloc-global",
     feature = "fastbin",
     feature = "alloc-decommit"
 ))]
 #[doc(hidden)]
-pub use heap_registry::tcache_and_large_cache_hits_total;
-// R6-T16: the lib-side consumer reads this only in the
-// `fastbin ∧ ¬alloc-decommit` branch of `cache_hit_totals`; suppress the
-// unused-import lint exactly there instead of narrowing the re-export's cfg.
-#[cfg_attr(
-    not(all(feature = "fastbin", not(feature = "alloc-decommit"))),
-    allow(unused_imports)
-)]
+pub use sefer_registry::registry::tcache_and_large_cache_hits_total;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
-pub use heap_registry::tcache_hits_total;
-#[cfg(feature = "internals")]
+pub use sefer_registry::registry::tcache_hits_total;
 #[doc(hidden)]
-pub use heap_registry::HeapLease;
+pub use sefer_registry::registry::{config_conflicts_total, heaps_claimed_high_water};
 #[doc(hidden)]
-pub use heap_registry::HeapRegistry;
-#[doc(hidden)]
-#[cfg_attr(not(feature = "internals"), allow(unused_imports))] // tests/registry_basic.rs
-pub use heap_slot::HeapSlot;
+pub use sefer_registry::registry::{HeapCore, HeapRegistry, HeapSlot};

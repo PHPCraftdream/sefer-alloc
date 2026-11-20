@@ -191,11 +191,11 @@ fn no_panic_doc_is_qualified() {
 // Function identity uses the preceding fn declaration; scoped to these files. Unknown
 // feature predicates remain visible (both feature branches are audited).
 const RELEASE_SCAN_FILES: &[&str] = &[
-    "registry/heap_core/free/dealloc_own_base.rs",
-    "registry/heap_core/free/dealloc.rs",
-    "registry/heap_core/state/tcache_flush.rs",
-    "registry/heap_core/state/ownership.rs",
-    "registry/heap_core/alloc/hot.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/free/dealloc_own_base.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/free/dealloc.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/state/tcache_flush.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/state/ownership.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/alloc/hot.rs",
     "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache.rs",
     "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/realloc_fastpath.rs",
     // Fresh reservation initialization and alloc-decommit Large lifecycle.

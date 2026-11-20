@@ -10,7 +10,7 @@
     }
   ],
   "mutant": {
-    "file": "src/global/fallback.rs",
+    "file": "crates/core/sefer-registry/src/fallback.rs",
     "find": "            let forced_oom = dbg_forced_oom();\n            let new_heap = if forced_oom {\n                None",
     "replace": "            let forced_oom = false;\n            let new_heap = if forced_oom {\n                None",
     "steps": [

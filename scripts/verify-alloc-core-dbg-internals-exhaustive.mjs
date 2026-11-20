@@ -19,17 +19,17 @@ import { scanFile, listRust, idFor, rustMask, attributesRequire, effectiveFileGa
 // Each row names its exact consumer sites, traced on this tree.
 const ALLOWLIST = [
   ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs::canonical_root_for',
-    'facade seam: called by root src/global/sefer_alloc/diag.rs, src/registry/heap_core/alloc/hot.rs, src/registry/heap_core/free/dealloc_own_base.rs (debug asserts), src/registry/heap_core/diag/queries.rs — production + diagnostics consumption'],
+    'facade seam: called by root src/global/sefer_alloc/diag.rs, crates/core/sefer-registry/src/registry/heap_core/alloc/hot.rs, crates/core/sefer-registry/src/registry/heap_core/free/dealloc_own_base.rs (debug asserts), crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs — production + diagnostics consumption'],
   ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs::canonical_block_of',
-    'facade seam: called by root src/registry/heap_core/free/dealloc_batch.rs (dealloc_batch_small foreign-pointer guard) plus in-crate dealloc/realloc/sidecar test hooks — production consumption'],
+    'facade seam: called by crates/core/sefer-registry/src/registry/heap_core/free/dealloc_batch.rs (dealloc_batch_small foreign-pointer guard) plus in-crate dealloc/realloc/sidecar test hooks — production consumption'],
   ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/mem_impl.rs::owned_block_of',
-    'facade seam: called by root src/registry/heap_core_xthread/routing.rs, src/registry/heap_core/free/realloc.rs, src/registry/heap_core/diag/diag_probes.rs — production + diagnostics consumption'],
+    'facade seam: called by crates/core/sefer-registry/src/registry/heap_core_xthread/routing.rs, crates/core/sefer-registry/src/registry/heap_core/free/realloc.rs, crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs — production + diagnostics consumption'],
   ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/sidecar_drain.rs::dbg_large_sidecar_full_rescues',
-    'diag counter seam: forwarded by root src/registry/heap_core_xthread/sidecar_drain.rs dbg_large_sidecar_full_rescues() — diagnostics (bench-internals) consumption'],
+    'diag counter seam: forwarded by crates/core/sefer-registry/src/registry/heap_core_xthread/sidecar_drain.rs dbg_large_sidecar_full_rescues() — diagnostics (bench-internals) consumption'],
   ['crates/core/sefer-alloc-core/src/alloc_core/alloc_core/sidecar_drain.rs::dbg_large_hot_budget',
-    'diag counter seam: forwarded by root src/registry/heap_core_xthread/sidecar_drain.rs dbg_large_hot_budget() — diagnostics (bench-internals) consumption'],
+    'diag counter seam: forwarded by crates/core/sefer-registry/src/registry/heap_core_xthread/sidecar_drain.rs dbg_large_hot_budget() — diagnostics (bench-internals) consumption'],
   ['crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs::refill_class_bump_internal',
-    'internal forwarding seam: called cross-crate by root src/registry/heap_core/alloc/batch.rs batch refill — production hot-path consumption'],
+    'internal forwarding seam: called cross-crate by crates/core/sefer-registry/src/registry/heap_core/alloc/batch.rs batch refill — production hot-path consumption'],
 ];
 // Mirror the hook scanner's surface: named hooks + safe raw-pointer fns are the hidden-API surface;
 // unsafe raw-pointer fns outside the gates are the documented unsafe API (gated ones like flush_class are named anyway).

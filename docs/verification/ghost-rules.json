@@ -89,9 +89,9 @@
       "id": "P1",
       "name": "HeapLease FREE->LIVE claim / LIVE->FREE Release drop",
       "prod": [
-        "src/registry/heap_registry/claim.rs::claim_impl",
-        "src/registry/heap_registry/claim.rs::drop",
-        "src/registry/heap_slot.rs::cas_state"
+        "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::claim_impl",
+        "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::drop",
+        "crates/core/sefer-registry/src/registry/heap_slot.rs::cas_state"
       ],
       "invariants": [
         "I1 exactly one thread wins FREE->LIVE for a slot; a losing CAS performs no metadata write, no drain and no drop",
@@ -120,8 +120,8 @@
       "id": "P2",
       "name": "MaintenanceLease FREE->MAINTENANCE",
       "prod": [
-        "src/registry/heap_registry/claim.rs::try_maintenance_at",
-        "src/registry/heap_registry/claim.rs::drop"
+        "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::try_maintenance_at",
+        "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::drop"
       ],
       "invariants": [
         "I1 a failed FREE->MAINTENANCE CAS never creates a second metadata mutator",
@@ -144,9 +144,9 @@
       "id": "P3",
       "name": "publish || recycle || drain (TORN stamp, trim, drop, claimant drain)",
       "prod": [
-        "src/registry/heap_core/state/ownership.rs::trim_for_recycle",
-        "src/registry/heap_core_xthread/sidecar_drain.rs",
-        "src/registry/heap_registry/claim.rs::drop"
+        "crates/core/sefer-registry/src/registry/heap_core/state/ownership.rs::trim_for_recycle",
+        "crates/core/sefer-registry/src/registry/heap_core_xthread/sidecar_drain.rs",
+        "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::drop"
       ],
       "invariants": [
         "I1 a publication made before, during or after the owner's trim is consumed exactly once (trim or claimant drain) or survives pending for the next owner",
@@ -174,10 +174,10 @@
       "id": "P4",
       "name": "registry claim/selector, free-set, spill, saturation",
       "prod": [
-        "src/registry/heap_registry/stack.rs",
-        "src/registry/bootstrap/free_slot_hint.rs",
-        "src/registry/bootstrap/saturation.rs",
-        "src/registry/heap_registry/claim.rs::claim_impl"
+        "crates/core/sefer-registry/src/registry/heap_registry/stack.rs",
+        "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs",
+        "crates/core/sefer-registry/src/registry/bootstrap/saturation.rs",
+        "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::claim_impl"
       ],
       "invariants": [
         "I1 count only grows (bump_count CAS) and every slot below count is initialised before it is published (initialised Release / Acquire)",
@@ -387,9 +387,9 @@
       "id": "P12",
       "name": "depot across slot recycle",
       "prod": [
-        "src/registry/heap_core/state/depot.rs",
-        "src/registry/heap_core/state/depot_paths.rs",
-        "src/registry/heap_core/state/ownership.rs::trim_for_recycle"
+        "crates/core/sefer-registry/src/registry/heap_core/state/depot.rs",
+        "crates/core/sefer-registry/src/registry/heap_core/state/depot_paths.rs",
+        "crates/core/sefer-registry/src/registry/heap_core/state/ownership.rs::trim_for_recycle"
       ],
       "invariants": [
         "I1 the depot is empty at LIVE->FREE (drained in trim_for_recycle before the Release)",
@@ -492,9 +492,9 @@
       "id": "P17",
       "name": "bootstrap const OncePtrCell stand-in under loom",
       "prod": [
-        "src/registry/bootstrap/loom_shim.rs",
-        "src/registry/bootstrap/ensure.rs",
-        "src/registry/bootstrap/registry.rs"
+        "crates/core/sefer-registry/src/registry/bootstrap/loom_shim.rs",
+        "crates/core/sefer-registry/src/registry/bootstrap/ensure.rs",
+        "crates/core/sefer-registry/src/registry/bootstrap/registry.rs"
       ],
       "invariants": [
         "I1 the loom stand-in performs the same atomic sequence and orderings as crates/primitives/once-ptr-cell (load Acquire, CAS Acquire/Relaxed, store Release, rollback store Release)"
@@ -535,12 +535,12 @@
     },
     {
       "id": "P19",
-      "name": "fallback heap one-time init + fallback lock (global/fallback.rs)",
+      "name": "fallback heap one-time init + fallback lock (crates/core/sefer-registry/src/fallback.rs)",
       "prod": [
-        "src/global/fallback.rs::heap_ptr_impl",
-        "src/global/fallback.rs::try_with_heap",
-        "src/global/fallback.rs::acquire",
-        "src/global/fallback.rs::drop"
+        "crates/core/sefer-registry/src/fallback.rs::heap_ptr_impl",
+        "crates/core/sefer-registry/src/fallback.rs::try_with_heap",
+        "crates/core/sefer-registry/src/fallback.rs::acquire",
+        "crates/core/sefer-registry/src/fallback.rs::drop"
       ],
       "invariants": [
         "I1 INIT_STATE: exactly one initialiser wins the CAS (Acquire/Relaxed); the heap is published with a Release store, readers load Acquire; a panicking init rolls back with Release",
@@ -892,7 +892,7 @@
       "class": "protocol",
       "protocol": "P1",
       "files": [
-        "src/registry/heap_slot.rs"
+        "crates/core/sefer-registry/src/registry/heap_slot.rs"
       ],
       "fn": "^cas_state$",
       "reason": "the one CAS on HeapSlot::state; orderings come from call sites"
@@ -902,7 +902,7 @@
       "class": "protocol",
       "protocol": "P1",
       "files": [
-        "src/registry/heap_registry/claim.rs"
+        "crates/core/sefer-registry/src/registry/heap_registry/claim.rs"
       ],
       "fn": "^(claim_impl|drop|push_back_after_oom|claim_lease_with_config)$",
       "receiver_not": "^(reuse_hint|reg\\.reuse_hint|ensure\\(\\)\\.reuse_hint|super::counters::.*|CONFIG_CONFLICTS|DBG_INJECT_CTOR_OOM)$",
@@ -913,7 +913,7 @@
       "class": "protocol",
       "protocol": "P2",
       "files": [
-        "src/registry/heap_registry/claim.rs"
+        "crates/core/sefer-registry/src/registry/heap_registry/claim.rs"
       ],
       "fn": "^try_maintenance_at$",
       "reason": "FREE->MAINTENANCE claim"
@@ -923,7 +923,7 @@
       "class": "protocol",
       "protocol": "P4",
       "files": [
-        "src/registry/heap_registry/claim.rs"
+        "crates/core/sefer-registry/src/registry/heap_registry/claim.rs"
       ],
       "receiver": "reuse_hint$",
       "reason": "reuse hint swap (Relaxed by design: a hint, validated by the state CAS)"
@@ -933,8 +933,8 @@
       "class": "protocol",
       "protocol": "P4",
       "files": [
-        "src/registry/heap_registry/stack.rs",
-        "src/registry/heap_registry/maintenance.rs"
+        "crates/core/sefer-registry/src/registry/heap_registry/stack.rs",
+        "crates/core/sefer-registry/src/registry/heap_registry/maintenance.rs"
       ],
       "reason": "count/initialised/state scans, bump_count, hint spill"
     },
@@ -943,7 +943,7 @@
       "class": "protocol",
       "protocol": "P4",
       "files": [
-        "src/registry/bootstrap/free_slot_hint.rs"
+        "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs"
       ],
       "reason": "free-set bitmap + summary"
     },
@@ -952,7 +952,7 @@
       "class": "protocol",
       "protocol": "P4",
       "files": [
-        "src/registry/bootstrap/saturation.rs"
+        "crates/core/sefer-registry/src/registry/bootstrap/saturation.rs"
       ],
       "reason": "saturation hint"
     },
@@ -961,7 +961,7 @@
       "class": "protocol",
       "protocol": "P4",
       "files": [
-        "src/registry/heap_registry/counters.rs"
+        "crates/core/sefer-registry/src/registry/heap_registry/counters.rs"
       ],
       "fn": "^walk_initialised_slots$",
       "reason": "stats walk relies on count/initialised Acquire publication"
@@ -1134,7 +1134,7 @@
       "class": "twin",
       "protocol": "P17",
       "files": [
-        "src/registry/bootstrap/loom_shim.rs"
+        "crates/core/sefer-registry/src/registry/bootstrap/loom_shim.rs"
       ],
       "reason": "cfg(loom) OncePtrCell stand-in"
     },
@@ -1162,7 +1162,7 @@
       "class": "protocol",
       "protocol": "P19",
       "files": [
-        "src/global/fallback.rs"
+        "crates/core/sefer-registry/src/fallback.rs"
       ],
       "receiver": "^(INIT_STATE|LOCK)$",
       "reason": "fallback init + lock"
@@ -1294,10 +1294,10 @@
       "id": "counter/per-heap",
       "class": "counter",
       "files": [
-        "src/registry/heap_core/alloc/hot.rs",
-        "src/registry/heap_core/alloc/batch.rs",
-        "src/registry/heap_core/state/tcache_flush.rs",
-        "src/registry/heap_registry/counters.rs",
+        "crates/core/sefer-registry/src/registry/heap_core/alloc/hot.rs",
+        "crates/core/sefer-registry/src/registry/heap_core/alloc/batch.rs",
+        "crates/core/sefer-registry/src/registry/heap_core/state/tcache_flush.rs",
+        "crates/core/sefer-registry/src/registry/heap_registry/counters.rs",
         "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs",
         "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs",
         "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/perf_diag.rs"
@@ -1369,7 +1369,7 @@
       "id": "counter/registry-high-water",
       "class": "counter",
       "files": [
-        "src/registry/heap_registry/counters.rs"
+        "crates/core/sefer-registry/src/registry/heap_registry/counters.rs"
       ],
       "fn": "^heaps_claimed_high_water$",
       "reason": "stats read of the registry count: Relaxed is enough for a high-water report"
@@ -2399,7 +2399,7 @@
       "id": "heap-lease/drop-release",
       "kind": "R1",
       "protocol": "P1",
-      "file": "src/registry/heap_registry/claim.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
       "fn": "HeapLease::drop",
       "site": {
         "name": "cas_state",
@@ -2426,7 +2426,7 @@
       "mutants": [
         {
           "id": "L1-relaxed-drop",
-          "file": "src/registry/heap_registry/claim.rs",
+          "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
           "from": "                SlotState::Live,\n                SlotState::Free,\n                Ordering::Release,\n",
           "to": "                SlotState::Live,\n                SlotState::Free,\n                Ordering::Relaxed,\n",
           "also": [
@@ -2455,7 +2455,7 @@
         },
         {
           "id": "relaxed-drop-depot",
-          "file": "src/registry/heap_registry/claim.rs",
+          "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
           "from": "                SlotState::Live,\n                SlotState::Free,\n                Ordering::Release,\n",
           "to": "                SlotState::Live,\n                SlotState::Free,\n                Ordering::Relaxed,\n",
           "also": [
@@ -2488,7 +2488,7 @@
       "id": "heap-lease/drop-lost-cas-fatal",
       "kind": "R4",
       "protocol": "P1",
-      "file": "src/registry/heap_registry/claim.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
       "fn": "HeapLease::drop",
       "action": {
         "name": "fatal",
@@ -2511,7 +2511,7 @@
       "id": "heap-lease/claim-free-live",
       "kind": "R1",
       "protocol": "P1",
-      "file": "src/registry/heap_registry/claim.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
       "fn": "HeapRegistry::claim_impl",
       "site": {
         "name": "cas_state",
@@ -2538,7 +2538,7 @@
       "mutants": [
         {
           "id": "L2-claim-without-acquire",
-          "file": "src/registry/heap_registry/claim.rs",
+          "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
           "from": "                            SlotState::Free,\n                            SlotState::Live,\n                            Ordering::AcqRel,\n",
           "to": "                            SlotState::Free,\n                            SlotState::Live,\n                            Ordering::Release,\n",
           "also": [
@@ -2571,7 +2571,7 @@
       "id": "heap-lease/claim-empty-init",
       "kind": "R1",
       "protocol": "P1",
-      "file": "src/registry/heap_registry/claim.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
       "fn": "HeapRegistry::claim_impl",
       "site": {
         "name": "cas_state",
@@ -2598,7 +2598,7 @@
       "id": "heap-lease/claim-recover-init",
       "kind": "R1",
       "protocol": "P1",
-      "file": "src/registry/heap_registry/claim.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
       "fn": "HeapRegistry::claim_impl",
       "site": {
         "name": "cas_state",
@@ -2625,7 +2625,7 @@
       "id": "heap-lease/claim-publish-live",
       "kind": "R1",
       "protocol": "P1",
-      "file": "src/registry/heap_registry/claim.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
       "fn": "HeapRegistry::claim_impl",
       "site": {
         "name": "cas_state",
@@ -2652,7 +2652,7 @@
       "id": "heap-lease/oom-rollback-release",
       "kind": "R1",
       "protocol": "P1",
-      "file": "src/registry/heap_registry/claim.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
       "fn": "push_back_after_oom",
       "site": {
         "name": "cas_state",
@@ -2971,7 +2971,7 @@
       "id": "maintenance-lease/claim-acqrel",
       "kind": "R1",
       "protocol": "P2",
-      "file": "src/registry/heap_registry/claim.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
       "fn": "HeapRegistry::try_maintenance_at",
       "site": {
         "name": "cas_state",
@@ -2998,7 +2998,7 @@
       "id": "maintenance-lease/drop-release",
       "kind": "R1",
       "protocol": "P2",
-      "file": "src/registry/heap_registry/claim.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
       "fn": "MaintenanceLease::drop",
       "site": {
         "name": "cas_state",
@@ -3023,7 +3023,7 @@
       "mutants": [
         {
           "id": "relaxed-maintenance-drop",
-          "file": "src/registry/heap_registry/claim.rs",
+          "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
           "from": "                SlotState::Maintenance,\n                SlotState::Free,\n                Ordering::Release,\n",
           "to": "                SlotState::Maintenance,\n                SlotState::Free,\n                Ordering::Relaxed,\n",
           "also": [
@@ -3056,7 +3056,7 @@
       "id": "maintenance-lease/drop-lost-cas-fatal",
       "kind": "R4",
       "protocol": "P2",
-      "file": "src/registry/heap_registry/claim.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
       "fn": "MaintenanceLease::drop",
       "action": {
         "name": "fatal",
@@ -3110,7 +3110,7 @@
       "id": "depot/flush-reloads-parked",
       "kind": "R3",
       "protocol": "P12",
-      "file": "src/registry/heap_core/state/tcache_flush.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_core/state/tcache_flush.rs",
       "fn": "HeapCore::flush_all_tcache",
       "before": {
         "name": "flush_class_internal"
@@ -3134,7 +3134,7 @@
       "mutants": [
         {
           "id": "flush-skips-depot",
-          "file": "src/registry/heap_core/state/tcache_flush.rs",
+          "file": "crates/core/sefer-registry/src/registry/heap_core/state/tcache_flush.rs",
           "from": "                if !self.depot_reload(c) {\n                    break;\n                }\n",
           "to": "                break;\n",
           "checker": {
@@ -3158,7 +3158,7 @@
       "kind": "R5",
       "protocol": "P12",
       "files": [
-        "src/registry/heap_core/**"
+        "crates/core/sefer-registry/src/registry/heap_core/**"
       ],
       "target": {
         "name": "as_deref_mut",
@@ -3195,7 +3195,7 @@
       "id": "depot/overflow-release-after-drain",
       "kind": "R3",
       "protocol": "P12",
-      "file": "src/registry/heap_core/state/tcache_flush.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_core/state/tcache_flush.rs",
       "fn": "HeapCore::flush_all_tcache",
       "before": {
         "name": "depot_reload"
@@ -3218,7 +3218,7 @@
       "mutants": [
         {
           "id": "release-before-drain",
-          "file": "src/registry/heap_core/state/tcache_flush.rs",
+          "file": "crates/core/sefer-registry/src/registry/heap_core/state/tcache_flush.rs",
           "from": "        use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;\n",
           "to": "        use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;\n        #[cfg(feature = \"alloc-decommit\")]\n        self.depot_release_overflow_pages();\n",
           "checker": {
@@ -3241,7 +3241,7 @@
       "id": "depot/overflow-reset-after-release",
       "kind": "R3",
       "protocol": "P12",
-      "file": "src/registry/heap_core/state/depot_overflow.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_core/state/depot_overflow.rs",
       "fn": "DepotOverflow::release_pages",
       "before": {
         "name": "decommit_depot_overflow"
@@ -3265,7 +3265,7 @@
       "mutants": [
         {
           "id": "skip-reset",
-          "file": "src/registry/heap_core/state/depot_overflow.rs",
+          "file": "crates/core/sefer-registry/src/registry/heap_core/state/depot_overflow.rs",
           "from": "            c += 1;\n        }\n        self.reset_rings();\n",
           "to": "            c += 1;\n        }\n",
           "checker": {
@@ -3289,7 +3289,7 @@
       "kind": "R5",
       "protocol": "P12",
       "files": [
-        "src/registry/heap_core/**"
+        "crates/core/sefer-registry/src/registry/heap_core/**"
       ],
       "target": {
         "name": "depot_tick"
@@ -3319,7 +3319,7 @@
       "kind": "R5",
       "protocol": "P12",
       "files": [
-        "src/registry/heap_core/**"
+        "crates/core/sefer-registry/src/registry/heap_core/**"
       ],
       "target": {
         "name": "depot_reload_tick"
@@ -3347,7 +3347,7 @@
       "kind": "R5",
       "protocol": "P12",
       "files": [
-        "src/registry/heap_core/**"
+        "crates/core/sefer-registry/src/registry/heap_core/**"
       ],
       "target": {
         "name": "park_simple"
@@ -3374,7 +3374,7 @@
       "kind": "R5",
       "protocol": "P12",
       "files": [
-        "src/registry/heap_core/**"
+        "crates/core/sefer-registry/src/registry/heap_core/**"
       ],
       "target": {
         "name": "reload_simple"
@@ -3401,7 +3401,7 @@
       "kind": "R5",
       "protocol": "P12",
       "files": [
-        "src/registry/heap_core/**"
+        "crates/core/sefer-registry/src/registry/heap_core/**"
       ],
       "target": {
         "name": "depot_segment_tick"
@@ -3429,7 +3429,7 @@
       "kind": "R5",
       "protocol": "P12",
       "files": [
-        "src/registry/heap_core/**"
+        "crates/core/sefer-registry/src/registry/heap_core/**"
       ],
       "target": {
         "name": "reload_overflow_tick"
@@ -3456,7 +3456,7 @@
       "kind": "R5",
       "protocol": "P12",
       "files": [
-        "src/registry/heap_core/**"
+        "crates/core/sefer-registry/src/registry/heap_core/**"
       ],
       "target": {
         "name": "depot",
@@ -3509,7 +3509,7 @@
       "id": "free-set/publish-word",
       "kind": "R1",
       "protocol": "P4",
-      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "file": "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs",
       "fn": "FreeSlotHint::publish",
       "site": {
         "name": "fetch_or",
@@ -3537,7 +3537,7 @@
       "id": "free-set/publish-summary",
       "kind": "R1",
       "protocol": "P4",
-      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "file": "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs",
       "fn": "FreeSlotHint::publish",
       "site": {
         "name": "fetch_or",
@@ -3563,7 +3563,7 @@
       "mutants": [
         {
           "id": "publish-without-summary",
-          "file": "src/registry/bootstrap/free_slot_hint.rs",
+          "file": "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs",
           "from": "        self.summary.fetch_or(1u64 << word, Ordering::Release);\n    }\n\n    #[cold]",
           "to": "    }\n\n    #[cold]",
           "checker": {
@@ -3589,7 +3589,7 @@
       "id": "free-set/take-acqrel",
       "kind": "R1",
       "protocol": "P4",
-      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "file": "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs",
       "fn": "FreeSlotHint::take_nonempty",
       "site": {
         "name": "fetch_and",
@@ -3617,7 +3617,7 @@
       "id": "free-set/summary-clear-acqrel",
       "kind": "R1",
       "protocol": "P4",
-      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "file": "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs",
       "fn": "FreeSlotHint::clear_summary_recheck",
       "site": {
         "name": "fetch_and",
@@ -3645,7 +3645,7 @@
       "id": "free-set/recheck-republish",
       "kind": "R4",
       "protocol": "P4",
-      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "file": "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs",
       "fn": "FreeSlotHint::clear_summary_recheck",
       "action": {
         "name": "fetch_or",
@@ -3668,7 +3668,7 @@
       "mutants": [
         {
           "id": "clear-without-recheck",
-          "file": "src/registry/bootstrap/free_slot_hint.rs",
+          "file": "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs",
           "from": "        if self.words[word].load(Ordering::Acquire) != 0 {\n            self.summary.fetch_or(1u64 << word, Ordering::Release);\n        }\n",
           "to": "",
           "checker": {
@@ -3694,7 +3694,7 @@
       "id": "free-set/forget-acqrel",
       "kind": "R1",
       "protocol": "P4",
-      "file": "src/registry/bootstrap/free_slot_hint.rs",
+      "file": "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs",
       "fn": "FreeSlotHint::forget",
       "site": {
         "name": "fetch_and"
@@ -3719,7 +3719,7 @@
       "id": "saturation/rmw-read",
       "kind": "R1",
       "protocol": "P4",
-      "file": "src/registry/bootstrap/saturation.rs",
+      "file": "crates/core/sefer-registry/src/registry/bootstrap/saturation.rs",
       "fn": "SaturationHint::is_saturated",
       "site": {
         "name": "fetch_or"
@@ -3745,7 +3745,7 @@
       "id": "saturation/publish-acqrel",
       "kind": "R1",
       "protocol": "P4",
-      "file": "src/registry/bootstrap/saturation.rs",
+      "file": "crates/core/sefer-registry/src/registry/bootstrap/saturation.rs",
       "fn": "SaturationHint::publish_claimable",
       "site": {
         "name": "fetch_update"
@@ -3773,7 +3773,7 @@
       "id": "saturation/mark-cas",
       "kind": "R1",
       "protocol": "P4",
-      "file": "src/registry/bootstrap/saturation.rs",
+      "file": "crates/core/sefer-registry/src/registry/bootstrap/saturation.rs",
       "fn": "SaturationHint::try_mark_saturated",
       "site": {
         "name": "compare_exchange"
@@ -3799,7 +3799,7 @@
       "mutants": [
         {
           "id": "mark-without-cas",
-          "file": "src/registry/bootstrap/saturation.rs",
+          "file": "crates/core/sefer-registry/src/registry/bootstrap/saturation.rs",
           "from": "            let _ = self.0.compare_exchange(\n                snapshot,\n                snapshot | 1,\n                Ordering::AcqRel,\n                Ordering::Acquire,\n            );\n",
           "to": "            self.0.store(snapshot | 1, Ordering::Release);\n",
           "checker": {
@@ -3825,7 +3825,7 @@
       "id": "registry/bump-count-cas",
       "kind": "R1",
       "protocol": "P4",
-      "file": "src/registry/heap_registry/stack.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/stack.rs",
       "fn": "bump_count",
       "site": {
         "name": "compare_exchange_weak"
@@ -3852,7 +3852,7 @@
       "id": "registry/hint-take-spill",
       "kind": "R1",
       "protocol": "P4",
-      "file": "src/registry/heap_registry/stack.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_registry/stack.rs",
       "fn": "pick_with_hint_spill",
       "site": {
         "name": "swap",
@@ -4511,7 +4511,8 @@
       "protocol": "P8",
       "files": [
         "src/**",
-        "crates/core/sefer-alloc-core/src/**"
+        "crates/core/sefer-alloc-core/src/**",
+        "crates/core/sefer-registry/src/**"
       ],
       "forbid": true,
       "target": {
@@ -4538,7 +4539,8 @@
       "files": [
         "src/**",
         "crates/core/sefer-segment/src/**",
-        "crates/core/sefer-alloc-core/src/**"
+        "crates/core/sefer-alloc-core/src/**",
+        "crates/core/sefer-registry/src/**"
       ],
       "target": {
         "name": "from_leaves",
@@ -4740,7 +4742,7 @@
       "id": "pin-cache/insert-non-fallback",
       "kind": "R4",
       "protocol": "P6",
-      "file": "src/registry/heap_core_xthread/routing.rs",
+      "file": "crates/core/sefer-registry/src/registry/heap_core_xthread/routing.rs",
       "fn": "HeapCore::publish_foreign_uncached",
       "action": {
         "name": "cache_insert"
@@ -4765,7 +4767,8 @@
       "files": [
         "src/**",
         "crates/core/sefer-segment/src/**",
-        "crates/core/sefer-alloc-core/src/**"
+        "crates/core/sefer-alloc-core/src/**",
+        "crates/core/sefer-registry/src/**"
       ],
       "target": {
         "name": "cache_insert",
@@ -4815,7 +4818,8 @@
       "files": [
         "src/**",
         "crates/core/sefer-segment/src/**",
-        "crates/core/sefer-alloc-core/src/**"
+        "crates/core/sefer-alloc-core/src/**",
+        "crates/core/sefer-registry/src/**"
       ],
       "target": {
         "name": "set_live_count",
@@ -4845,7 +4849,8 @@
       "files": [
         "src/**",
         "crates/core/sefer-segment/src/**",
-        "crates/core/sefer-alloc-core/src/**"
+        "crates/core/sefer-alloc-core/src/**",
+        "crates/core/sefer-registry/src/**"
       ],
       "target": {
         "name": "add_live",
@@ -4875,7 +4880,8 @@
       "files": [
         "src/**",
         "crates/core/sefer-segment/src/**",
-        "crates/core/sefer-alloc-core/src/**"
+        "crates/core/sefer-alloc-core/src/**",
+        "crates/core/sefer-registry/src/**"
       ],
       "target": {
         "name": "inc_live",
@@ -4904,7 +4910,8 @@
       "files": [
         "src/**",
         "crates/core/sefer-segment/src/**",
-        "crates/core/sefer-alloc-core/src/**"
+        "crates/core/sefer-alloc-core/src/**",
+        "crates/core/sefer-registry/src/**"
       ],
       "target": {
         "name": "sub_live",
@@ -4933,7 +4940,8 @@
       "files": [
         "src/**",
         "crates/core/sefer-segment/src/**",
-        "crates/core/sefer-alloc-core/src/**"
+        "crates/core/sefer-alloc-core/src/**",
+        "crates/core/sefer-registry/src/**"
       ],
       "target": {
         "name": "dec_live",
@@ -5030,7 +5038,8 @@
       "files": [
         "src/**",
         "crates/core/sefer-segment/src/**",
-        "crates/core/sefer-alloc-core/src/**"
+        "crates/core/sefer-alloc-core/src/**",
+        "crates/core/sefer-registry/src/**"
       ],
       "target": {
         "name": "set",
@@ -5060,7 +5069,8 @@
       "files": [
         "src/**",
         "crates/core/sefer-segment/src/**",
-        "crates/core/sefer-alloc-core/src/**"
+        "crates/core/sefer-alloc-core/src/**",
+        "crates/core/sefer-registry/src/**"
       ],
       "target": {
         "name": "clear",
@@ -5933,7 +5943,7 @@
       "id": "fallback/init-cas",
       "kind": "R1",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "heap_ptr_impl",
       "site": {
         "name": "compare_exchange",
@@ -5960,7 +5970,7 @@
       "id": "fallback/publish-release",
       "kind": "R1",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "heap_ptr_impl",
       "site": {
         "name": "store",
@@ -5983,7 +5993,7 @@
       "mutants": [
         {
           "id": "relaxed-ready",
-          "file": "src/global/fallback.rs",
+          "file": "crates/core/sefer-registry/src/fallback.rs",
           "from": "                    INIT_STATE.store(FallbackInitState::Ready as u8, Ordering::Release);\n",
           "to": "                    INIT_STATE.store(FallbackInitState::Ready as u8, Ordering::Relaxed);\n",
           "checker": {
@@ -6010,7 +6020,7 @@
       "id": "fallback/ready-acquire",
       "kind": "R1",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "heap_ptr_impl",
       "site": {
         "name": "load",
@@ -6036,7 +6046,7 @@
       "id": "fallback/try-ready-acquire",
       "kind": "R1",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "try_with_heap",
       "site": {
         "name": "load",
@@ -6062,7 +6072,7 @@
       "id": "fallback/rollback-release",
       "kind": "R1",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "InitStateGuard::drop",
       "site": {
         "name": "store",
@@ -6088,7 +6098,7 @@
       "id": "fallback/lock-acquire",
       "kind": "R1",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "LockGuard::acquire",
       "site": {
         "name": "compare_exchange",
@@ -6112,7 +6122,7 @@
       "mutants": [
         {
           "id": "relaxed-lock",
-          "file": "src/global/fallback.rs",
+          "file": "crates/core/sefer-registry/src/fallback.rs",
           "from": "            if LOCK\n                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)",
           "to": "            if LOCK\n                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)",
           "checker": {
@@ -6139,7 +6149,7 @@
       "id": "fallback/lock-try",
       "kind": "R1",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "LockGuard::try_acquire",
       "site": {
         "name": "compare_exchange",
@@ -6166,7 +6176,7 @@
       "id": "fallback/unlock-release",
       "kind": "R1",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "LockGuard::drop",
       "site": {
         "name": "store",
@@ -6189,7 +6199,7 @@
       "mutants": [
         {
           "id": "relaxed-unlock",
-          "file": "src/global/fallback.rs",
+          "file": "crates/core/sefer-registry/src/fallback.rs",
           "from": "        LOCK.store(false, Ordering::Release);\n",
           "to": "        LOCK.store(false, Ordering::Relaxed);\n",
           "checker": {
@@ -6216,7 +6226,7 @@
       "id": "fallback/write-before-ready",
       "kind": "R3",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "heap_ptr_impl",
       "before": {
         "name": "write"
@@ -6243,7 +6253,7 @@
       "id": "fallback/try-requires-ready",
       "kind": "R4",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "try_with_heap",
       "action": {
         "name": "try_acquire"
@@ -6265,7 +6275,7 @@
       "id": "fallback/ghost-init",
       "kind": "R6",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "heap_ptr_impl",
       "ghost": "fallback/init-won",
       "count": 1,
@@ -6285,7 +6295,7 @@
       "id": "fallback/ghost-acquired",
       "kind": "R6",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "LockGuard::acquired",
       "ghost": "fallback/held",
       "count": 1,
@@ -6305,7 +6315,7 @@
       "id": "fallback/ghost-release",
       "kind": "R6",
       "protocol": "P19",
-      "file": "src/global/fallback.rs",
+      "file": "crates/core/sefer-registry/src/fallback.rs",
       "fn": "LockGuard::drop",
       "ghost": "fallback/held",
       "count": 1,
@@ -6322,7 +6332,7 @@
       "mutants": [
         {
           "id": "release-without-ghost-event",
-          "file": "src/global/fallback.rs",
+          "file": "crates/core/sefer-registry/src/fallback.rs",
           "from": "        crate::ghost::ghost_event!(\"fallback/held\", 0, -1);\n",
           "to": "",
           "checker": {
@@ -6513,7 +6523,7 @@
       "kind": "R7",
       "protocol": "P17",
       "a": {
-        "file": "src/registry/bootstrap/loom_shim.rs",
+        "file": "crates/core/sefer-registry/src/registry/bootstrap/loom_shim.rs",
         "fn": "OncePtrCell::get"
       },
       "b": {
@@ -6538,7 +6548,7 @@
       "kind": "R7",
       "protocol": "P17",
       "a": {
-        "file": "src/registry/bootstrap/loom_shim.rs",
+        "file": "crates/core/sefer-registry/src/registry/bootstrap/loom_shim.rs",
         "fn": "OncePtrCell::get_or_try_init"
       },
       "b": {
@@ -6563,7 +6573,7 @@
       "kind": "R7",
       "protocol": "P17",
       "a": {
-        "file": "src/registry/bootstrap/loom_shim.rs",
+        "file": "crates/core/sefer-registry/src/registry/bootstrap/loom_shim.rs",
         "fn": "RollbackGuard::drop"
       },
       "b": {

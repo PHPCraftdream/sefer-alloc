@@ -20,8 +20,9 @@ use core::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
+use sefer_registry::registry::{HeapCore, HeapRegistry};
+
 use super::{fallback, MaintenanceStartError};
-use crate::registry::{HeapCore, HeapRegistry};
 
 const IDLE: u8 = 0;
 const STARTING: u8 = 1;

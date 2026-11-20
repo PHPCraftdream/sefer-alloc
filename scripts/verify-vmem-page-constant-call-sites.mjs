@@ -591,12 +591,12 @@ function negativeContext(blanked, nameStart, closeParen) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Production provenance rule (task #1080) — see the header section. Active
-// only for files whose repo-relative path starts with `src/`. `qualify`
+// only for production source paths. `qualify`
 // decides whether ONE scanned argument carries acceptable provenance;
 // `mode` is 'strict' (reserve arg 3) or 'pagefree' (every other position).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const isProdPath = (rel) => rel.startsWith('src/') || rel.startsWith('crates/core/sefer-alloc-core/src/'); // P2.2: prod = root src/ + crate src/
+const isProdPath = (rel) => /^(?:src|crates\/core\/(?:sefer-alloc-core|sefer-registry)\/src)\//.test(rel);
 const PROD_DEPTH_BUDGET = 4;
 const RE_LAZY_INITIAL_COMMIT = /^(?:[A-Za-z_][A-Za-z0-9_]*::)*lazy_initial_commit\s*\(/;
 const RE_PAGE_SIZE_CALL = /^(?:[A-Za-z_][A-Za-z0-9_]*::)*page_size\s*\(\s*\)$/;

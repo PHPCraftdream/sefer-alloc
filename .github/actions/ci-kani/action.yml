@@ -38,3 +38,8 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo kani -p sefer-alloc-core --all-features
+    # Check the extracted package under Kani; root proofs stay in place until P2.4.
+    - name: cargo kani (sefer-registry package check)
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo kani -p sefer-registry --all-features

@@ -42,6 +42,10 @@ fn src_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
 }
 
+fn registry_crate_src_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-registry/src")
+}
+
 // P2.2: alloc-core implementation moved to the sefer-alloc-core crate (root mod.rs facade stays in src/).
 fn alloc_core_crate_src_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-alloc-core/src")
@@ -154,6 +158,7 @@ fn no_crate_heap_module_path() {
     rs_files(&src_dir(), &mut files);
     assert!(!files.is_empty(), "no source files found");
     rs_files(&alloc_core_crate_src_dir(), &mut files);
+    rs_files(&registry_crate_src_dir(), &mut files);
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -176,11 +181,15 @@ fn no_crate_heap_module_path() {
 #[test]
 fn no_removed_heap_type_doc_mentions() {
     // The ONLY file allowed to mention the removed `Heap` type (past-tense module doc).
-    let allowed = src_dir().join("registry").join("heap_core").join("core.rs");
+    let allowed = registry_crate_src_dir()
+        .join("registry")
+        .join("heap_core")
+        .join("core.rs");
 
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
     rs_files(&alloc_core_crate_src_dir(), &mut files);
+    rs_files(&registry_crate_src_dir(), &mut files);
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -246,15 +255,15 @@ fn no_stale_abandon_adopt_substrate_references() {
     // a module-doc sentence that explicitly frames it as removed/historical
     // (grep-verified at the time this guard was written; see the file diffs
     // for the exact "previously ... was removed" phrasing).
-    let allowed: &[&str] = &["global/tls_heap.rs", "registry/bootstrap/mod.rs"];
-    let allowed_paths: Vec<PathBuf> = allowed
-        .iter()
-        .map(|rel| src_dir().join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)))
-        .collect();
+    let allowed_paths = [
+        src_dir().join("global/tls_heap.rs"),
+        registry_crate_src_dir().join("registry/bootstrap/mod.rs"),
+    ];
 
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
     rs_files(&alloc_core_crate_src_dir(), &mut files);
+    rs_files(&registry_crate_src_dir(), &mut files);
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -360,26 +369,16 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
     );
 
     // Check both sides of the documented split against executable source.
-    let bootstrap = fs::read_to_string(
-        manifest
-            .join("src")
-            .join("registry")
-            .join("bootstrap")
-            .join("registry.rs"),
-    )
-    .expect("read src/registry/bootstrap/registry.rs");
+    let bootstrap =
+        fs::read_to_string(registry_crate_src_dir().join("registry/bootstrap/registry.rs"))
+            .expect("read registry/bootstrap/registry.rs");
     assert!(
         bootstrap.contains("alloc_core::fatal::fatal"),
         "the documented OOM termination must go through the diagnostic `fatal` helper"
     );
-    let claim = fs::read_to_string(
-        manifest
-            .join("src")
-            .join("registry")
-            .join("heap_registry")
-            .join("claim.rs"),
-    )
-    .expect("read claim.rs");
+    let claim =
+        fs::read_to_string(registry_crate_src_dir().join("registry/heap_registry/claim.rs"))
+            .expect("read claim.rs");
     assert!(
         claim.contains("reg.slot_or_none(idx)"),
         "new claims must use fallible chunk lookup"
@@ -615,11 +614,10 @@ fn parse_perclass_prose_offset(region: &str, field: &str, all_fields: &[&str]) -
 /// regardless of features).
 #[test]
 fn perclass_doc_offsets_match_const_asserts() {
-    let path = src_dir()
+    let path = registry_crate_src_dir()
         .join("registry")
         .join("heap_core")
-        .join("state")
-        .join("tcache.rs");
+        .join("state/tcache.rs");
     let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
 
     // The three fields whose offsets are both prose-documented AND pinned by a
@@ -2162,6 +2160,12 @@ fn no_owned_sidecar_references_anywhere() {
          walk is broken and the negative coverage would be vacuous"
     );
     files.extend(member_files);
+    let before = files.len();
+    rs_files(&registry_crate_src_dir(), &mut files);
+    assert!(
+        files.len() > before,
+        "no source files found under crates/core/sefer-registry/src"
+    );
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -2324,11 +2328,7 @@ fn oxx_r2_07_alloc_core_mod_seam_inventory_is_accurate() {
 
 #[test]
 fn oxx_r2_07_realloc_unsafe_fn_claims_are_accurate() {
-    let path = src_dir()
-        .join("registry")
-        .join("heap_core")
-        .join("free")
-        .join("realloc.rs");
+    let path = registry_crate_src_dir().join("registry/heap_core/free/realloc.rs");
     let flat = doc_prose(&path);
     for stale in &[
         "This is a SAFE `pub fn`; a bogus",
@@ -2372,7 +2372,7 @@ fn r9_current_stats_and_unsafe_inventory_docs_use_live_routes() {
     let lifecycle = include_str!(
         "../crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/lifecycle.rs"
     );
-    let hot = include_str!("../src/registry/heap_core/alloc/hot.rs");
+    let hot = include_str!("../crates/core/sefer-registry/src/registry/heap_core/alloc/hot.rs");
 
     for stale in ["dirty_by_class", "remote_free_ring"] {
         assert!(

@@ -250,28 +250,31 @@
 //        that `global::process_exit` is NOT a seam: since P1.4 it is a thin
 //        `pub use` re-export of `sefer_platform::process_exit` — the FFI
 //        query of Windows loader shutdown state lives there, see below.)
-//      * `global::fallback`     — primordial fallback heap seam —
+//
+//    Six tier-1 seams moved to `sefer-registry` in P2.3. The root registry
+//    facade and fallback re-export do not add unsafe seams:
+//      * `crates/core/sefer-registry/src/fallback.rs`     — primordial fallback heap seam —
 //                             `static mut MaybeUninit<HeapCore>` + atomic-init
 //                             state-machine + spinlock-guarded `&mut` handout.
 //                             (under `alloc-global`)
-//      * `registry::bootstrap::registry` — primordial-segment carve / SegmentTable
+//      * `crates/core/sefer-registry/src/registry/bootstrap/registry.rs` — primordial-segment carve / SegmentTable
 //                             bootstrap seam — `Registry` struct, raw-pointer
 //                             footprint carving of the metadata region, and
 //                             the process-global `static REGISTRY`.
 //                             (under `alloc-global`)
-//      * `registry::bootstrap::ensure` — the process-global `ensure()` accessor
+//      * `crates/core/sefer-registry/src/registry/bootstrap/ensure.rs` — the process-global `ensure()` accessor
 //                             and the per-chunk materialisation slow path
 //                             (`ensure_chunk_slow`). (under `alloc-global`)
-//      * `registry::bootstrap::loom_shim` — `--cfg loom`-only const-capable
+//      * `crates/core/sefer-registry/src/registry/bootstrap/loom_shim.rs` — `--cfg loom`-only const-capable
 //                             `OncePtrCell` stand-in needed by `static REGISTRY`;
 //                             `unsafe impl Send/Sync` + `NonNull::new_unchecked`.
 //                             The cell shim is not on a modeled
 //                             interleaving. (under `alloc-global`,
 //                             AND only when built with `--cfg loom`)
-//      * `registry::heap_slot`     — `Sync` impl + `UnsafeCell` hand-off;
+//      * `crates/core/sefer-registry/src/registry/heap_slot.rs`     — `Sync` impl + `UnsafeCell` hand-off;
 //                             `HeapSlot` is deliberately not `Send`.
 //                             (under `alloc-global`)
-//      * `registry::heap_registry::claim` — `*mut HeapCore` pointer handoff out
+//      * `crates/core/sefer-registry/src/registry/heap_registry/claim.rs` — `*mut HeapCore` pointer handoff out
 //                             of a slot (the `FREE → LIVE` claim). (under `alloc-global`)
 //
 //    The six tier-1 seams below moved to the `sefer-segment` crate (P21
@@ -366,7 +369,7 @@
 //      safe code is UB (the OS reservation is freed twice).
 //    * `os::{decommit_pages, recommit_pages}` — safe fns; the range-containment
 //      invariant is the caller's, unchecked.
-//    * `registry::heap_slot::HeapSlot` — its `state`/`heap` single-writer
+//    * `sefer_registry::registry::heap_slot::HeapSlot` — its `state`/`heap` single-writer
 //      invariant (which the slot's `Sync` proof and the `claim_lease` /
 //      lease-drop (LIVE→FREE) protocol depend on) is a prose contract; a safe CAS of `state` LIVE→FREE
 //      from the wrong place breaks it. (Non-test fields are `pub(crate)` to keep

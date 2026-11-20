@@ -215,7 +215,7 @@ impl ExactShard {
                 spins += 1;
                 spin_loop();
             } else if crate::global::process_exit_in_progress() {
-                crate::global::fallback::record_exit_lock_giveup();
+                sefer_platform::record_exit_lock_giveup::record_exit_lock_giveup();
                 return false;
             } else {
                 yield_now();

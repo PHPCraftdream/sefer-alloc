@@ -42,6 +42,7 @@ export const CRATE_GROUPS = {
   'sefer-platform': 'crate_sefer_platform',
   'sefer-policy': 'crate_sefer_policy',
   'sefer-region': 'crate_sefer_region',
+  'sefer-registry': 'crate_sefer_registry',
   'sefer-segment': 'crate_sefer_segment',
   'size-classes': 'crate_size_classes',
   'tagged-index-stack': 'crate_tagged_index_stack',
@@ -54,6 +55,10 @@ const OS_CRATES = new Set(['aligned-vmem', 'numa-shim', 'proc-memstat', 'proc-pr
 // broaden `os` to the whole alloc-core crate). The pre-move `src/alloc_core/
 // platform/**` rule below stays as the deletion trigger of the same move.
 const ALLOC_CORE_PLATFORM_RE = /^crates\/core\/sefer-alloc-core\/src\/alloc_core\/platform\//;
+// The extracted fallback owns the Windows exit lock protocol even though
+// sefer-platform provides the OS probe. Do not select os for the whole registry.
+const REGISTRY_FALLBACK_PATH = 'crates/core/sefer-registry/src/fallback.rs';
+const isOsCratePath = (crate, path) => OS_CRATES.has(crate) || ALLOC_CORE_PLATFORM_RE.test(path) || path === REGISTRY_FALLBACK_PATH;
 
 // Edits of the workflow and of this planner run the build/test group (and the planner self-test);
 // the full set needs an explicit `CI: full` trailer, a manual dispatch or the schedule.
@@ -86,7 +91,7 @@ export function classifyPath(path, seamTests = new Set(), cargoBenchOnly = false
   if (m) {
     const g = new Set(['fast', 'seam']); // the root crate depends on every workspace crate
     if (CRATE_GROUPS[m[2]]) g.add(CRATE_GROUPS[m[2]]);
-    if (OS_CRATES.has(m[2]) || ALLOC_CORE_PLATFORM_RE.test(p)) g.add('os');
+    if (isOsCratePath(m[2], p)) g.add('os');
     return g;
   }
   if (/^src\/alloc_core\/platform\//.test(p)) return new Set(['fast', 'seam', 'os']);
@@ -144,7 +149,7 @@ export function plan({ files, event, trailerFull = false, seamTests = new Set(),
     const crate = crateForPath(p, crateGraph);
     if (crateGraph && crate) {
       changedCrates.add(crate);
-      if (OS_CRATES.has(crate) || ALLOC_CORE_PLATFORM_RE.test(p)) crateOnly.os = true;
+      if (isOsCratePath(crate, p)) crateOnly.os = true;
       crateOnly.fast = true;
       crateOnly.seam = true;
       const g = crateGroups[crate];
@@ -338,6 +343,10 @@ function selftest() {
   eq(on(P(['tests/numa_seam.rs'])), 'always,fast,os', 'numa test');
   // root src: fast + seam; platform dir adds os.
   eq(on(P(['src/registry/heap_registry/claim.rs'])), 'always,fast,seam', 'src');
+  eq(on(P(['src/global/fallback.rs'])), 'always,fast,seam', 'legacy root fallback keeps its groups');
+  eq(on(P(['crates/core/sefer-registry/src/registry/heap_registry/claim.rs'])), 'always,crate_sefer_registry,fast,seam', 'extracted registry without graph');
+  eq(on(P([REGISTRY_FALLBACK_PATH])), 'always,crate_sefer_registry,fast,os,seam', 'extracted fallback selects os without graph');
+  eq(on(P(['.github/actions/ci-sefer-registry-gates/action.yml'])), 'always,crate_sefer_registry', 'registry composite selects its package job');
   eq(on(P(['src/alloc_core/platform/x.rs'])), 'always,fast,os,seam', 'platform src (old path kept as the deletion trigger)');
   eq(on(P(['crates/core/sefer-alloc-core/src/alloc_core/platform/os.rs'])), 'always,crate_sefer_alloc_core,fast,os,seam', 'platform src (P2.2 moved path keeps os, crate-local)');
   // dependency / toolchain surface: fast+seam+os (MSRV, cross-OS).
@@ -473,6 +482,13 @@ function selftest() {
   const GA_GROUPS = { ...CRATE_GROUPS_FIX, 'sefer-alloc-core': 'crate_sefer_alloc_core' };
   eq(on(PG(['crates/core/sefer-alloc-core/src/alloc_core/platform/os.rs'], GA, 'pull_request', GA_GROUPS)), 'always,crate_sefer_alloc_core,fast,os,seam', 'moved platform src keeps os with graph');
   eq(on(PG(['crates/core/sefer-alloc-core/src/alloc_core/mod.rs'], GA, 'pull_request', GA_GROUPS)), 'always,crate_sefer_alloc_core,fast,seam', 'non-platform alloc-core file does not add os with graph');
+  // P2.3: exercise the metadata-graph branch with a root dependency.
+  GA.packages.set('sefer-registry', { dir: 'crates/core/sefer-registry', deps: new Set(), dependents: new Set(['sefer-alloc']) });
+  GA.packages.get('sefer-alloc').deps.add('sefer-registry');
+  eq(on(PG(['crates/core/sefer-registry/src/registry/heap_registry/claim.rs'], GA, 'pull_request', CRATE_GROUPS)), 'always,crate_sefer_registry,fast,seam', 'registry code does not select os with graph');
+  eq(on(PG([REGISTRY_FALLBACK_PATH], GA, 'pull_request', CRATE_GROUPS)), 'always,crate_sefer_registry,fast,os,seam', 'fallback selects os with graph');
+  eq(on(PG(['src/registry/heap_registry/claim.rs'], GA, 'pull_request', CRATE_GROUPS)), 'always,fast,seam', 'legacy registry keeps its groups with graph');
+  eq(on(PG(['src/global/fallback.rs'], GA, 'pull_request', CRATE_GROUPS)), 'always,fast,seam', 'legacy fallback keeps its groups with graph');
   console.log(JSON.stringify({ version: 1, status: 'PASS', scope: 'ci-plan selftest', checks: n }));
 }
 

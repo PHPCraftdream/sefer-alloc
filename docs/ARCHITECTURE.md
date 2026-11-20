@@ -134,6 +134,7 @@ audit story. The four original extractions, plus `sefer-policy` (P1.3) and `sefe
 sefer-alloc
  ├── sefer-policy    (crates/core/sefer-policy)         — allocator POLICY layer: config types, policy builders, Large-THP policy runtime (feature: alloc-decommit)
  ├── sefer-alloc-core (crates/core/sefer-alloc-core)      — the extracted AllocCore segment substrate: former `src/alloc_core` tree, module tree unchanged (P22) (feature: alloc-core)
+ ├── sefer-registry (crates/core/sefer-registry)          — heap registry, leases, cross-thread routing and primordial fallback (P2.3; feature: alloc-global)
  ├── sefer-region    (crates/containers/sefer-region)       — Handle<T>/Region<T>/SyncRegion<T>
  ├── aligned-vmem    (crates/platform/aligned-vmem)         — OS virtual-memory aperture  (feature: alloc-core)
  ├── sefer-platform  (crates/platform/sefer-platform)       — fatal/process-exit + SEGMENT OS aperture (feature: alloc-core)
@@ -141,7 +142,7 @@ sefer-alloc
  └── malloc-bench-rs (crates/bench/malloc-bench-rs) — portable GlobalAlloc bench harness (standalone)
 ```
 
-The workspace now has seventeen companion crates (P1.3 added `sefer-policy`, the extracted `src/alloc_core/config` policy layer; P1.4 added `sefer-platform`, the extracted fatal/process-exit/segment OS aperture; P21 added `sefer-segment`, the extracted segment/route substrate; P22 added `sefer-alloc-core`, the extracted `src/alloc_core` segment substrate, module tree unchanged); the complete current list is in
+The workspace has eighteen companion members, including the repository-only `ghost-lint` tool. P2.3 extracted the heap registry and primordial fallback to `sefer-registry`; `src/registry/mod.rs` remains the root re-export facade. Root TLS and `GlobalAlloc` dispatch stay in `sefer-alloc`. See the workspace layout in
 [README §Workspace](../README.md#workspace-seventeen-independently-publishable-companion-crates).
 Each original extraction is a real crates.io crate. The
 extraction **improved the audit story**: the two OS-unsafe sub-problems are now
@@ -159,21 +160,22 @@ small, single-responsibility crates that can be audited in complete isolation.
 | `malloc-bench-rs` | `crates/bench/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
 | `sefer-policy` | `crates/core/sefer-policy/` | `#![forbid(unsafe_code)]` — zero own unsafe, zero raw pointers; the former `src/alloc_core/config` policy layer (moved P1.3). |
 | `sefer-segment` | `crates/core/sefer-segment/` | `#![allow(unsafe_code)]` in 8 tier-1 seam files (route directory/blocks, shard lock, small sidecar, leaf classes, route slots, continuation bounds, node) — the former `src/alloc_core/segment` substrate (moved P21). |
-| `sefer-alloc-core` | `crates/core/sefer-alloc-core/` | `#![allow(unsafe_code)]` in 5 tier-1 seam files (`alloc_core/platform/{os,node,sidecar}.rs`, `alloc_core/alloc_core/mem/large_control/sample_owned_large_residency.rs`, `alloc_core/large/large_cache_extended.rs`) — the former `src/alloc_core` tree with its module tree, file names and paths unchanged (moved P22); the root `src/alloc_core/mod.rs` remains a pure re-export conduit. |
+| `sefer-alloc-core` | `crates/core/sefer-alloc-core/` | `#![allow(unsafe_code)]` in 5 tier-1 seam files (`crates/core/sefer-alloc-core/src/alloc_core/platform/{os,node,sidecar}.rs`, `crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mem/large_control/sample_owned_large_residency.rs`, `crates/core/sefer-alloc-core/src/alloc_core/large/large_cache_extended.rs`) — the former `src/alloc_core` tree with its module tree, file names and paths unchanged (moved P22); the root `src/alloc_core/mod.rs` remains a pure re-export conduit. |
+| `sefer-registry` | `crates/core/sefer-registry/` | Six tier-1 seams moved in P2.3: `crates/core/sefer-registry/src/fallback.rs`, `crates/core/sefer-registry/src/registry/bootstrap/{registry,ensure,loom_shim}.rs`, `crates/core/sefer-registry/src/registry/heap_slot.rs`, and `crates/core/sefer-registry/src/registry/heap_registry/claim.rs`. The Loom bootstrap shim is only active under `--cfg loom`. |
 | `sefer-region` | `crates/containers/sefer-region/` | `#![forbid(unsafe_code)]` — zero own unsafe (shown for contrast; does **not** match the grep above); slotmap's core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/containers/sefer-region/README.md` "## Safety"). |
 
 **Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):
 
-The current tree has **33** tier-1 `#![allow(unsafe_code)]` files (10 in
-`src/`, 23 in `crates/`) and **357** item-scoped allows across **69** files.
-The ordinary `production` build activates 18 tier-1 seam files (6 in `src/`, 6 in `sefer-segment`, 2 in `sefer-platform`, 4 in `sefer-alloc-core`);
+The current tree has **33** tier-1 `#![allow(unsafe_code)]` files (4 in
+`src/`, 29 in `crates/`) and **365** tier-2 item-scoped allows across **69** files.
+The ordinary `production` build activates 18 tier-1 seam files (1 in `src/`, 5 in `sefer-registry`, 6 in `sefer-segment`, 2 in `sefer-platform`, 4 in `sefer-alloc-core`);
 `--cfg loom` adds its bootstrap shim, while `batch-api`,
 `large-cache-extended` and `experimental` add optional seams. See
 [README §Where unsafe lives](../README.md#where-unsafe-lives-the-complete-list)
 for the path-by-path current inventory. In particular,
-`registry::segment_route::directory` owns System-backed route entries and
+`sefer_segment::segment::segment_route::directory` owns System-backed route entries and
 pins; the maintenance lease's confined unsafe handoff lives in
-`registry::heap_registry::claim`. The `maintenance` module itself is safe
+`sefer_registry::registry::heap_registry::claim`. The `maintenance` module itself is safe
 composition. Neither the removed overflow sidecar nor the old
 remote inbox is an active seam. `numa-aware` adds no internal unsafe seam;
 its wrapper delegates to `numa-shim`.

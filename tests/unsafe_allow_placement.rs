@@ -133,6 +133,15 @@ fn no_mod_rs_carries_module_level_allow() {
         "no source files found under crates/core/sefer-alloc-core/src/ — P2.2 crate layout changed?"
     );
     assert!(!files.is_empty(), "no source files found under src/");
+    let before = files.len();
+    rs_files(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-registry/src"),
+        &mut files,
+    );
+    assert!(
+        files.len() > before,
+        "no source files found under crates/core/sefer-registry/src"
+    );
 
     let offenders: Vec<PathBuf> = files
         .into_iter()
@@ -164,6 +173,15 @@ fn every_file_with_unsafe_carries_its_own_allow() {
         "no source files found under crates/core/sefer-alloc-core/src/ — P2.2 crate layout changed?"
     );
     assert!(!files.is_empty(), "no source files found under src/");
+    let before = files.len();
+    rs_files(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-registry/src"),
+        &mut files,
+    );
+    assert!(
+        files.len() > before,
+        "no source files found under crates/core/sefer-registry/src"
+    );
 
     let mut offenders = Vec::new();
     for path in files {

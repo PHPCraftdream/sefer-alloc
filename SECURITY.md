@@ -87,7 +87,7 @@ The following are **not** considered security vulnerabilities:
   violation, not a vulnerability, unless the observable behaviour is worse
   than documented (the code explicitly does not guarantee detection of
   duplicate own-thread frees — see
-  `src/registry/heap_core/free/dealloc_own_base.rs`).
+  `crates/core/sefer-registry/src/registry/heap_core/free/dealloc_own_base.rs`).
 
 - Performance degradation without a safety impact.
 - Findings that require arbitrary code execution on the host already (e.g.,

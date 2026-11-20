@@ -221,8 +221,8 @@ build, not only this one.** Under it, this crate's atomics become
 usage example — fails to compile anywhere in that build. Always scope the
 flag to this crate (`-p once-ptr-cell`, as above), or supply a `#[cfg(loom)]`
 const-capable stand-in in your own crate if you need to set the flag
-workspace-wide — see [`sefer-alloc`'s own
-`loom_shim`](https://github.com/PHPCraftdream/sefer-alloc/blob/main/src/registry/bootstrap.rs)
+workspace-wide — see [`sefer-registry`'s
+`loom_shim`](https://github.com/PHPCraftdream/sefer-alloc/blob/main/crates/core/sefer-registry/src/registry/bootstrap/loom_shim.rs)
 for a worked example.
 
 ## Test-probe API stability

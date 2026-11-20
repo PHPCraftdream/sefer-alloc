@@ -308,7 +308,7 @@ mod large_state_proofs {
 
 #[cfg(all(kani, feature = "alloc-global", feature = "internals"))]
 mod saturation_proofs {
-    use crate::registry::bootstrap::saturation::SaturationHint;
+    use sefer_registry::registry::heap_registry::SaturationHint;
 
     #[kani::proof]
     #[kani::unwind(5)]
@@ -352,7 +352,7 @@ mod saturation_proofs {
 
 #[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
 mod depot_proofs {
-    use crate::registry::heap_core::{Depot, DEPOT_CLASSES, DEPOT_K, TCACHE_CAP};
+    use sefer_registry::registry::heap_core::{Depot, DEPOT_CLASSES, DEPOT_K, TCACHE_CAP};
 
     fn any_magazine() -> [*mut u8; TCACHE_CAP] {
         let mut m = [core::ptr::null_mut(); TCACHE_CAP];
@@ -377,7 +377,7 @@ mod depot_proofs {
         let mut i = 0;
         while i < attempts {
             let before = n;
-            let ok = d.depot_park(c, &mut n, &mag);
+            let ok = d.kani_depot_park(c, &mut n, &mag);
             assert_eq!(ok, (before as usize) < DEPOT_K[c] as usize);
             assert_eq!(n, if ok { before + 1 } else { before });
             assert!(n as usize <= DEPOT_K[c] as usize);
@@ -400,25 +400,25 @@ mod depot_proofs {
         let a = any_magazine();
         let b = any_magazine();
         let o = any_magazine();
-        assert!(d.depot_park(other, &mut n_other, &o));
-        assert!(d.depot_park(c, &mut n, &a));
+        assert!(d.kani_depot_park(other, &mut n_other, &o));
+        assert!(d.kani_depot_park(c, &mut n, &a));
         let two = DEPOT_K[c] >= 2;
         if two {
-            assert!(d.depot_park(c, &mut n, &b));
+            assert!(d.kani_depot_park(c, &mut n, &b));
         }
         let mut out = [core::ptr::null_mut(); TCACHE_CAP];
         if two {
-            assert!(d.depot_reload(c, &mut n, &mut out));
+            assert!(d.kani_depot_reload(c, &mut n, &mut out));
             assert!(out == b);
         }
-        assert!(d.depot_reload(c, &mut n, &mut out));
+        assert!(d.kani_depot_reload(c, &mut n, &mut out));
         assert!(out == a);
         let sentinel = any_magazine();
         let mut untouched = sentinel;
-        assert!(!d.depot_reload(c, &mut n, &mut untouched));
+        assert!(!d.kani_depot_reload(c, &mut n, &mut untouched));
         assert!(untouched == sentinel);
         assert_eq!(n, 0);
-        assert!(d.depot_reload(other, &mut n_other, &mut out));
+        assert!(d.kani_depot_reload(other, &mut n_other, &mut out));
         assert!(out == o);
     }
 }
@@ -432,7 +432,7 @@ mod depot_proofs {
 mod depot_overflow_proofs {
     use crate::alloc_core::size_classes::SIZE_CLASS_TABLE;
     use crate::alloc_core::LargeCacheConfig;
-    use crate::registry::heap_core::{
+    use sefer_registry::registry::heap_core::{
         DepotOverflow, ALL_SMALL, DEPOT_CLASSES, DEPOT_K, TCACHE_CAP,
     };
 
@@ -449,6 +449,7 @@ mod depot_overflow_proofs {
     /// class while bytes are parked.
     #[kani::proof]
     #[kani::unwind(18)]
+    #[allow(unsafe_code)]
     fn overflow_ring_matches_a_queue() {
         let mut buf = [[core::ptr::null_mut::<u8>(); TCACHE_CAP]; CAP];
         let c: usize = kani::any();
@@ -456,7 +457,10 @@ mod depot_overflow_proofs {
         let budget: usize = kani::any();
         kani::assume(budget <= 1 << 30);
         let mb = SIZE_CLASS_TABLE[c] * TCACHE_CAP;
-        let mut o = DepotOverflow::kani_on_buffer(buf.as_mut_ptr().cast(), c, CAP as u16);
+        // SAFETY: `buf` provides CAP initialized, pointer-aligned stack records
+        // exclusively to this ring while it is live; `c` is a valid depot class.
+        let mut o =
+            unsafe { DepotOverflow::kani_on_buffer(buf.as_mut_ptr().cast(), c, CAP as u16) };
         let mut model = [0usize; STEPS];
         let (mut front, mut back) = (0usize, 0usize);
         let mut out = [core::ptr::null_mut::<u8>(); TCACHE_CAP];
@@ -477,7 +481,11 @@ mod depot_overflow_proofs {
                 let id = step + 1;
                 let mag = [id as *mut u8; TCACHE_CAP];
                 let room = n < CAP && o.bytes() + mb <= budget;
-                assert_eq!(o.park(c, n, &mag, budget), room);
+                // SAFETY: `c` is the ring's class and `n` is tracked by the queue
+                // model. The live stack ring is already reserved and fully backed;
+                // the budget only limits admission.
+                let parked = unsafe { o.kani_park(c, n, &mag, budget) };
+                assert_eq!(parked, room);
                 if room {
                     model[back] = id;
                     back += 1;
@@ -487,11 +495,15 @@ mod depot_overflow_proofs {
                     }
                 }
             } else if op % 4 == 1 && n > 0 {
-                o.reload(c, n, &mut out);
+                // SAFETY: the model tracks `n > 0` live records in class `c`'s
+                // backed ring, and `out` is a separate writable magazine.
+                unsafe { o.kani_reload(c, n, &mut out) };
                 back -= 1;
                 assert!(out == [model[back] as *mut u8; TCACHE_CAP]);
             } else if n > 0 {
-                o.pop_oldest(c, n, &mut out);
+                // SAFETY: the model tracks `n > 0` live records in class `c`'s
+                // backed ring, including its oldest; `out` is separate storage.
+                unsafe { o.kani_pop_oldest(c, n, &mut out) };
                 assert!(out == [model[front] as *mut u8; TCACHE_CAP]);
                 front += 1;
             }
@@ -561,6 +573,7 @@ mod depot_overflow_proofs {
     /// controls, same record bytes. When it refuses, nothing changes.
     #[kani::proof]
     #[kani::unwind(20)]
+    #[allow(unsafe_code)]
     fn park_simple_is_park_then_tick() {
         let c: usize = kani::any();
         kani::assume(c < DEPOT_CLASSES);
@@ -568,15 +581,26 @@ mod depot_overflow_proofs {
         kani::assume(budget <= 1 << 30);
         let mut buf_a = marked_buffer();
         let mut buf_b = marked_buffer();
-        let mut a = DepotOverflow::kani_symbolic(buf_a.as_mut_ptr().cast(), c, FCAP as u16);
-        let mut b = a.kani_copy(buf_b.as_mut_ptr().cast());
-        let before = a.kani_copy(buf_a.as_mut_ptr().cast());
+        let base_a = buf_a.as_mut_ptr().cast();
+        // SAFETY: `buf_a` provides FCAP live, initialized, pointer-aligned
+        // stack records exclusive to `a` during accesses; `c` is valid.
+        let mut a = unsafe { DepotOverflow::kani_symbolic(base_a, c, FCAP as u16) };
+        // SAFETY: `buf_b` is a separate live, initialized, aligned FCAP-record
+        // array, exclusive to the comparison ring during record accesses.
+        let mut b = unsafe { a.kani_copy(buf_b.as_mut_ptr().cast()) };
+        // SAFETY: the saved copy is only used to compare control fields, never
+        // to access records, so `a` retains exclusive record access to `buf_a`.
+        let before = unsafe { a.kani_copy(base_a) };
         let n = a.len(c);
         let mag = [kani::any::<usize>() as *mut u8; TCACHE_CAP];
         if a.park_simple(c, &mag, budget) {
             assert!(n >= 1 && n + 1 < FCAP);
             assert_eq!(a.armed(), ALL_SMALL);
-            assert!(b.park(c, n, &mag, budget));
+            // SAFETY: `n` is still `b`'s length in class `c`. Fast-park acceptance
+            // proves room and a sufficient commit watermark, copied into `b`;
+            // its live stack buffer needs no reservation or commit change.
+            let parked = unsafe { b.kani_park(c, n, &mag, budget) };
+            assert!(parked);
             assert!(!b.tick());
             assert!(a.kani_same_controls(&b));
             assert!(same_records(&buf_a, &buf_b));
@@ -595,6 +619,7 @@ mod depot_overflow_proofs {
     /// controls nor the destination magazine change.
     #[kani::proof]
     #[kani::unwind(20)]
+    #[allow(unsafe_code)]
     fn reload_simple_is_reload_then_tick() {
         let c: usize = kani::any();
         kani::assume(c < DEPOT_CLASSES);
@@ -602,16 +627,25 @@ mod depot_overflow_proofs {
         kani::assume(budget <= 1 << 30);
         let mut buf_a = marked_buffer();
         let mut buf_b = marked_buffer();
-        let mut a = DepotOverflow::kani_symbolic(buf_a.as_mut_ptr().cast(), c, FCAP as u16);
-        let mut b = a.kani_copy(buf_b.as_mut_ptr().cast());
-        let before = a.kani_copy(buf_a.as_mut_ptr().cast());
+        let base_a = buf_a.as_mut_ptr().cast();
+        // SAFETY: `buf_a` provides FCAP live, initialized, pointer-aligned
+        // stack records exclusive to `a` during accesses; `c` is valid.
+        let mut a = unsafe { DepotOverflow::kani_symbolic(base_a, c, FCAP as u16) };
+        // SAFETY: `buf_b` is a separate live, initialized, aligned FCAP-record
+        // array, exclusive to the comparison ring during record accesses.
+        let mut b = unsafe { a.kani_copy(buf_b.as_mut_ptr().cast()) };
+        // SAFETY: the saved copy is only used to compare control fields, never
+        // to access records, so `a` retains exclusive record access to `buf_a`.
+        let before = unsafe { a.kani_copy(base_a) };
         let n = a.len(c);
         let mut out_a = [core::ptr::null_mut::<u8>(); TCACHE_CAP];
         let mut out_b = [core::ptr::null_mut::<u8>(); TCACHE_CAP];
         match a.reload_simple(c, &mut out_a) {
             Some(more) => {
                 assert!(n >= 1);
-                b.reload(c, n, &mut out_b);
+                // SAFETY: `b` retains the original class `c` length `n > 0`
+                // and its live records are initialized in `buf_b`.
+                unsafe { b.kani_reload(c, n, &mut out_b) };
                 assert!(!b.ingress_due());
                 assert_eq!(b.take_unstarved(budget), 0);
                 assert!(!b.tick());

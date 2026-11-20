@@ -8,17 +8,17 @@
     { "order": 3, "name": "policy", "crates": ["sefer-policy"], "modules": [] },
     { "order": 4, "name": "segment_route", "crates": ["sefer-segment", "sefer-route"], "modules": [] },
     { "order": 6, "name": "alloc-core", "crates": ["sefer-alloc-core"], "modules": [] },
-    { "order": 7, "name": "registry", "crates": ["sefer-registry"], "modules": ["registry.bootstrap", "registry.heap_core", "registry.heap_core_xthread", "registry.heap_registry", "registry.heap_slot", "registry.fallback_hook"] },
+    { "order": 7, "name": "registry", "crates": ["sefer-registry"], "modules": [] },
     { "order": 8, "name": "facade", "crates": ["sefer-alloc"], "modules": ["global", "root", "kani_proofs"] }
   ],
   "conduits": [
     { "modules": ["alloc_core", "registry"], "status": "conduit", "note": "group-wiring mod.rs files that only re-export across several future-crate boundaries (A0 report, Unmapped-layer modules). A1: the conduit's own re-export edges are never back-edges; references THROUGH it resolve to the defining module in the graph, so they are counted against the defining module's layer, not the conduit's." }
   ],
   "$p21-extraction-note": "P2.1: the segment/route implementation tree (former src/alloc_core/segment/**) was extracted into the crates sefer-segment/sefer-route; the src graph no longer contains alloc_core.segment* modules (only crate-internal reexports through the alloc_core conduit, which DEVIATION 11 resolves to the defining module — i.e. outside the src graph). Layer 4 therefore keeps its crates but no src module prefixes; the sefer-segment/sefer-route boundary rows and the claim-1/claim-4 alloc_core.segment* prefix checks are correspondingly vacuous (claims report not-found) and were removed from boundaries.",
+  "$p23-extraction-note": "P2.3: registry implementation and global.fallback moved to sefer-registry. The default graph scans only root src; registry remains a conduit, and the extracted implementation has no root layer or boundary prefixes. Claims 3 and 4 retain their historical root prefixes and report not-found after extraction; this does not verify cross-crate edges.",
   "boundaries": [
     { "crate": "sefer-ghost", "prefixes": ["ghost"] },
     { "crate": "sefer-concurrent", "prefixes": ["concurrent"] },
-    { "crate": "sefer-registry", "prefixes": ["registry.bootstrap", "registry.heap_core", "registry.heap_core_xthread", "registry.heap_registry", "registry.heap_slot"] },
     { "crate": "sefer-alloc", "prefixes": ["global", "root", "kani_proofs"] }
   ],
   "expected_back_edges": [

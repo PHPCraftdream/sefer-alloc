@@ -140,7 +140,8 @@ fn same_core_release_still_succeeds() {
 }
 
 /// Same hazard through the `HeapCore` delegation layer
-/// (`src/registry/heap_core/diag/diag_probes.rs`), not just the `AllocCore`
+/// (`crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs`),
+/// not just the `AllocCore`
 /// layer directly — confirms
 /// the fix's owner-id check is not bypassed by going through the thin
 /// forwarding wrapper `HeapCore::dbg_decomp_release` delegates to.
@@ -159,13 +160,15 @@ fn same_core_release_still_succeeds() {
 fn heap_core_delegation_is_a_pure_forward_to_alloc_core() {
     // This is a documentation-as-test assertion: read
     // `HeapCore::dbg_decomp_release`'s body in
-    // `src/registry/heap_core/diag/diag_probes.rs` and confirm it is exactly
+    // `crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs`
+    // and confirm it is exactly
     // `unsafe { self.core.dbg_decomp_release(handle) }` with no additional
     // logic — if that ever changes to do more than forward, this comment
     // (and the claim it documents) goes stale and this test's rationale
     // above should be revisited to add a real registry-bound two-heap
     // counterfactual.
-    let source = include_str!("../src/registry/heap_core/diag/diag_probes.rs");
+    let source =
+        include_str!("../crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs");
     let marker = "pub unsafe fn dbg_decomp_release(&mut self, handle: crate::alloc_core::ReservedSmallSegment) {";
     let idx = source
         .find(marker)
