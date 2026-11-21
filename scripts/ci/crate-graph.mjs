@@ -240,7 +240,7 @@ function collectRustFiles(rootDir, dirs) {
  * @returns {{ packages: Map<string, {dir: string, deps: Set<string>, dependents: Set<string>, refDeps: Set<string>}>, root: string } | null}
  */
 export function loadCrateGraph(rootDir) {
-  const r = spawnSync('cargo', ['metadata', '--no-deps', '--format-version', '1'], {
+  const r = spawnSync('cargo', ['metadata', '--locked', '--no-deps', '--format-version', '1'], {
     cwd: rootDir, encoding: 'utf8', maxBuffer: 1 << 28,
   });
   if (r.status !== 0 || !r.stdout) {

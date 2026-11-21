@@ -1,0 +1,61 @@
+name: Workspace rustdoc lint
+description: Lint workspace docs and the configurations declared for docs.rs
+runs:
+  using: composite
+  steps:
+    # The caller installs stable and lints the root package inline.
+    # Some manifests pass --cfg docsrs, enabling nightly-only doc_cfg.
+    - uses: dtolnay/rust-toolchain@nightly
+    - name: Lint all features and declared docs.rs configurations
+      shell: bash
+      env:
+        RUSTDOCFLAGS: -D warnings
+      run: |
+        python3 -I - <<'PY'
+        import json
+        import os
+        import subprocess
+
+        metadata = json.loads(subprocess.check_output([
+            "cargo", "+stable", "metadata", "--locked", "--no-deps", "--format-version", "1",
+        ]))
+        members = set(metadata["workspace_members"])
+        failed = False
+
+        def lint(label, command, env=None):
+            global failed
+            print(f"::group::{label}", flush=True)
+            failed |= subprocess.run(command, env=env, check=False).returncode != 0
+            print("::endgroup::", flush=True)
+
+        for package in metadata["packages"]:
+            if package["id"] not in members or package["name"] == "sefer-alloc":
+                continue
+            name = package["name"]
+            common = ["--locked", "--no-deps", "-p", name]
+            lint(f"{name}: all features", ["cargo", "+stable", "doc", *common, "--all-features"])
+
+            docs = (package["metadata"] or {}).get("docs", {}).get("rs")
+            if docs is None:
+                continue
+            rustdoc_args = docs.get("rustdoc-args", [])
+            if docs.get("all-features", False):
+                if not rustdoc_args:
+                    continue  # Identical to the all-features row above.
+                features = ["--all-features"]
+            else:
+                features = []
+                # docs.rs includes defaults unless its manifest explicitly opts out.
+                if docs.get("no-default-features", False):
+                    features.append("--no-default-features")
+                if docs.get("features"):
+                    features += ["--features", ",".join(docs["features"])]
+
+            if rustdoc_args:
+                # Encoded flags preserve argument boundaries and supersede RUSTDOCFLAGS.
+                env = dict(os.environ, CARGO_ENCODED_RUSTDOCFLAGS="\x1f".join([*rustdoc_args, "-D", "warnings"]))
+                lint(f"{name}: docs.rs", ["cargo", "+nightly", "doc", *common, *features], env)
+            else:
+                lint(f"{name}: docs.rs", ["cargo", "+stable", "doc", *common, *features])
+        raise SystemExit(int(failed))
+        PY
