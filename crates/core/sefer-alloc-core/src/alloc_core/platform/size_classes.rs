@@ -4,7 +4,7 @@
 // widened to `#[doc(hidden)] pub` at the new crate boundary. The canonical
 // source stays `sefer_segment::support::size_classes_impl`; consumers are
 // retargeted there in the P2.2 visibility pass.
-#[cfg(any(kani, all(feature = "alloc-global", feature = "fastbin")))]
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
 pub use sefer_segment::support::size_classes_impl::SIZE_CLASS_TABLE;
 #[doc(hidden)]

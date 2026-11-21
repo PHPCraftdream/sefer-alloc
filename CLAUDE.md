@@ -52,12 +52,10 @@ Core instructions, mandatory for all code in this repository. They
      (e.g. `crates/platform/numa-shim/src/lib.rs`, `crates/bench/malloc-bench-rs/src/lib.rs`), "the whole crate is one module"; it
      publishing several public items is normal, because the crate as a whole is
      the single focused library — that is its one responsibility.
-  4. **`#[cfg(kani)]` proof harnesses in `src/`** (e.g. `src/kani_proofs.rs`) —
-     Kani proof harnesses need `pub(crate)` internals (e.g.
-     `crate::alloc_core::node::Node`, `crate::concurrent::epoch::hand::AtomicSlot`)
-     that are invisible from `tests/` (integration tests see only `pub`), so
-     they legitimately live in `src/` behind `#[cfg(kani)]` rather than in the
-     `tests/` tree.
+  4. **`#[cfg(kani)]` proof harnesses in the owning crate’s `src/`** (e.g.
+     `crates/containers/sefer-concurrent/src/kani_proofs.rs`) — Kani harnesses
+     need `pub(crate)` internals that integration tests cannot access. Keep
+     them in the crate that owns those internals, not in the root facade.
 - **`mod.rs` — reexports only, no code.** The `mod.rs` file contains
   exclusively `mod`/`pub mod`/`pub use` declarations. No logic, types,
   functions, or tests belong in `mod.rs` — it only wires modules together.

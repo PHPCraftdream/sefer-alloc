@@ -72,3 +72,7 @@ impl SaturationHint {
         }
     }
 }
+
+#[cfg(all(kani, feature = "alloc-global", feature = "internals"))]
+#[path = "../../saturation_proofs.rs"]
+mod saturation_proofs;

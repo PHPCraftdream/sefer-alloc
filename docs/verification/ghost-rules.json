@@ -1076,7 +1076,7 @@
       "id": "P9/kani",
       "class": "kani",
       "files": [
-        "src/kani_proofs.rs"
+        "crates/core/sefer-segment/src/segment/segment_header/large_state_proofs.rs"
       ],
       "reason": "proof harness reads"
     },

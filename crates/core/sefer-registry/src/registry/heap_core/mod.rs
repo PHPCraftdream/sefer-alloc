@@ -13,25 +13,7 @@ pub(crate) mod diag;
 mod free;
 mod state;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-#[cfg(not(kani))]
 pub(crate) use self::state::depot::Depot;
-#[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
-#[doc(hidden)]
-pub use self::state::depot::Depot;
-#[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
-#[doc(hidden)]
-pub use self::state::depot::{DEPOT_CLASSES, DEPOT_K};
-#[cfg(all(
-    kani,
-    feature = "alloc-global",
-    feature = "fastbin",
-    feature = "alloc-decommit"
-))]
-#[doc(hidden)]
-pub use self::state::depot_overflow::{DepotOverflow, ALL_SMALL};
-#[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
-#[doc(hidden)]
-pub use self::state::tcache::TCACHE_CAP;
 
 pub use self::core::HeapCore;
 #[cfg(feature = "bench-internals")]

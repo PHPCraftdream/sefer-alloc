@@ -48,8 +48,7 @@ pub use sefer_alloc_core::alloc_core::policy::{LargeCachePolicy, Profile, SmallP
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 pub use sefer_alloc_core::alloc_core::reserved_small_segment::ReservedSmallSegment;
 #[cfg(feature = "alloc-core")]
-// The root facade only needs this module for internals callers and Kani proofs.
-#[cfg(any(feature = "internals", kani))]
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use sefer_alloc_core::alloc_core::segment_header;
 #[cfg(feature = "alloc-core")]
@@ -98,13 +97,6 @@ pub use sefer_alloc_core::alloc_core::{dbg_sidecar_reservation_stats, SidecarRes
 #[cfg(feature = "alloc-core")]
 #[cfg(feature = "alloc-global")]
 pub(crate) use sefer_alloc_core::alloc_core::fatal;
-#[cfg(all(
-    kani,
-    feature = "alloc-global",
-    feature = "fastbin",
-    feature = "alloc-decommit"
-))]
-pub(crate) use sefer_alloc_core::alloc_core::size_classes;
 #[cfg(feature = "alloc-global")]
 pub(crate) use sefer_alloc_core::alloc_core::LARGE_REMOTE_RETIREMENTS;
 #[cfg(feature = "alloc-core")]

@@ -199,7 +199,7 @@
 //     trait/bridge surface, and the caller-facing push boundary
 //     (`StackOps::push_index` and `ArrayIndexStack::push`, both `unsafe fn`
 //     requiring link-domain, liveness, and exclusive-ownership obligations).
-//     Root packing proofs use it under `cfg(kani)`; sefer's runtime does not.
+//     The root Loom registry free-slot model uses it under `cfg(loom)`.
 //
 //   proc-probe    (crates/platform/proc-probe/src/lib.rs)    — #![forbid(unsafe_code)]
 //     The RESULT key=value stdout protocol + a re-export of proc-memstat's
@@ -600,9 +600,6 @@ pub use size_classes::InvalidAlign;
 
 #[cfg(feature = "alloc-global")]
 pub use global::{AllocStats, MaintenanceStartError, SeferAlloc};
-
-#[cfg(kani)]
-mod kani_proofs;
 
 // Ghost checks (docs/GHOST_CHECKS_PLAN.md §3): `ghost_assert!` / `ghost_event!`
 // exist only in checking builds (loom, miri, kani, `--cfg sefer_ghost`) and expand

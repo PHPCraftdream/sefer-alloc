@@ -28,7 +28,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { cargoTestStepSeconds, durationSeconds } from './ci-job-durations.mjs';
-import { isAlwaysAll, isDataFile } from './select-tests.mjs';
+import { isAlwaysAll, isDataFile, isToolOnly } from './select-tests.mjs';
 import { loadCrateGraph, crateForPath, affectedCrates, rootAffected } from './ci/crate-graph.mjs';
 import { plan as ciPlan, parseJobs } from './ci-plan.mjs';
 
@@ -132,13 +132,13 @@ export function classifyConditionalRange(range, selection) {
  * exported rule predicates (isAlwaysAll, isDataFile, crateForPath, affectedCrates,
  * rootAffected) in select()'s decision order, but without maps/targets/sources:
  * map-covered and data-file changes can only be reported as map-dependent, never
- * claimed as subsets. `src/kani_proofs.rs` mirrors select-tests TOOL_ONLY (skipped).
+ * claimed as subsets. Tool-only paths are skipped, as in select-tests.
  */
 export function crateSelectShadow(files, graph) {
   const crateOnly = [];
   for (const f of files) {
     if (isAlwaysAll(f)) return { kind: 'all-manifest' };
-    if (f === 'src/kani_proofs.rs') continue;
+    if (isToolOnly(f)) continue;
     if (isDataFile(f)) return { kind: 'map-dependent' };
     const c = crateForPath(f, graph);
     if (c && c !== graph.root) { crateOnly.push(c); continue; }

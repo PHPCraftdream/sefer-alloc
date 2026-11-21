@@ -30,7 +30,15 @@ export function isDataFile(path) {
 /** A test (or a support file it executes) that touches the file system, the manifest dir or a child process. */
 const READS_FILES = /(CARGO_MANIFEST_DIR|include_str!|include_bytes!|include\s*!\s*\(|read_to_string|fs::read|File::open|read_dir|Command::new|#\s*\[\s*path\s*=)/;
 /** Compiled only by tools that are not tests (kani); a change selects no test. */
-const TOOL_ONLY = new Set(['src/kani_proofs.rs']);
+const TOOL_ONLY = new Set([
+  'src/kani_proofs.rs', // legacy path for deletions and historical diffs
+  'crates/core/sefer-registry/src/proofs/depot_overflow_proofs.rs',
+  'crates/core/sefer-registry/src/proofs/depot_proofs.rs',
+  'crates/core/sefer-registry/src/saturation_proofs.rs',
+  'crates/core/sefer-segment/src/node_proofs.rs',
+  'crates/core/sefer-segment/src/segment/segment_header/large_state_proofs.rs',
+]);
+export function isToolOnly(path) { return TOOL_ONLY.has(path); }
 const RUST_SRC = /^(src\/|crates\/[^/]+\/[^/]+\/src\/).*\.rs$/;
 
 const all = reason => ({ mode: 'all', reason });
@@ -79,7 +87,7 @@ export function select({ files, maps, targets, sources, full, crateGraph = null 
   for (const raw of files) {
     const f = raw.replace(/\\/g, '/');
     if (ALWAYS_ALL.test(f)) return all(`${f} changes every build`);
-    if (TOOL_ONLY.has(f)) continue;
+    if (isToolOnly(f)) continue;
     if (byPath.has(f)) { pick(f, 'changed itself'); continue; }
     if (covering.has(f)) { for (const t of covering.get(f)) pick(t, `executes ${f}`); continue; }
     if (isDataFile(f)) { for (const t of fileReaders()) pick(t, `reads files (${f} changed)`); continue; }
@@ -248,7 +256,19 @@ function selftest() {
   for (const f of ['Cargo.toml', 'Cargo.lock', 'build.rs', '.cargo/config.toml', 'src/new_file.rs', 'tests/x.rs', 'crates/q/w/src/lib.rs', 'weird.bin']) {
     assert.match(names(sel(['src/n.rs', f])), /^ALL:/, f);
   }
-  assert.equal(names(sel(['src/kani_proofs.rs'])), 'tests/e.rs'); // kani-only file: no test affected
+  // Pin the proof paths independently of TOOL_ONLY so a missing entry fails.
+  for (const f of [
+    'src/kani_proofs.rs',
+    'crates/core/sefer-registry/src/proofs/depot_overflow_proofs.rs',
+    'crates/core/sefer-registry/src/proofs/depot_proofs.rs',
+    'crates/core/sefer-registry/src/saturation_proofs.rs',
+    'crates/core/sefer-segment/src/node_proofs.rs',
+    'crates/core/sefer-segment/src/segment/segment_header/large_state_proofs.rs',
+  ]) assert.equal(names(sel([f])), 'tests/e.rs', f);
+  for (const f of [
+    'crates/core/sefer-segment/src/lib.rs',
+    'crates/core/sefer-registry/src/registry/heap_core/state/depot.rs',
+  ]) assert.equal(sel([f]).mode, 'all', f);
   assert.match(names(select({ files: ['src/n.rs'], maps: [row1], targets, sources, full: true })), /^ALL:full/);
   assert.match(names(select({ files: ['src/n.rs'], maps: [], targets, sources, full: false })), /^ALL:no test-impact map/);
   assert.match(names(select({ files: null, maps: [row1], targets, sources, full: false })), /^ALL:changed files unknown/);

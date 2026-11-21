@@ -9,7 +9,7 @@
     { "order": 4, "name": "segment_route", "crates": ["sefer-segment", "sefer-route"], "modules": [] },
     { "order": 6, "name": "alloc-core", "crates": ["sefer-alloc-core"], "modules": [] },
     { "order": 7, "name": "registry", "crates": ["sefer-registry"], "modules": [] },
-    { "order": 8, "name": "facade", "crates": ["sefer-alloc"], "modules": ["global", "root", "kani_proofs"] }
+    { "order": 8, "name": "facade", "crates": ["sefer-alloc"], "modules": ["global", "root"] }
   ],
   "conduits": [
     { "modules": ["alloc_core", "registry"], "status": "conduit", "note": "group-wiring mod.rs files that only re-export across several future-crate boundaries (A0 report, Unmapped-layer modules). A1: the conduit's own re-export edges are never back-edges; references THROUGH it resolve to the defining module in the graph, so they are counted against the defining module's layer, not the conduit's." }
@@ -19,13 +19,13 @@
   "boundaries": [
     { "crate": "sefer-ghost", "prefixes": ["ghost"] },
     { "crate": "sefer-concurrent", "prefixes": ["concurrent"] },
-    { "crate": "sefer-alloc", "prefixes": ["global", "root", "kani_proofs"] }
+    { "crate": "sefer-alloc", "prefixes": ["global", "root"] }
   ],
   "expected_back_edges": [
     { "id": "claim-1-alloc-core-to-segment-route", "claim": "alloc_core -> alloc_core::segment_route (RouteScan, RouteDirectory, RouteRegistration, HeapIngress)", "source": "plan section 1 row 'registry <-> global / alloc_core -> registry cycles'", "from_prefixes": ["alloc_core"], "to_prefixes": ["alloc_core.segment_route"], "expect": "code-edge", "expect_min_sites": 10 },
     { "id": "claim-3-xthread-routing-try-with-heap", "claim": "heap_core_xthread/routing.rs:92 -> global::fallback::try_with_heap", "source": "plan section 1", "from_prefixes": ["registry.heap_core_xthread"], "to_prefixes": ["global.fallback"], "expect": "code-edge", "expect_file": "routing.rs", "expect_line": 92 },
     { "id": "claim-4-segment-route-to-route-pin-cache", "claim": "segment_route -> heap_core_xthread::route_pin_cache", "source": "plan section 1", "from_prefixes": ["alloc_core.segment_route"], "to_prefixes": ["registry.heap_core_xthread"], "expect": "code-edge", "expect_min_sites": 5 },
     { "id": "claim-5-alloc-core-to-global-doc-only", "claim": "alloc_core -> global is a doc reference only", "source": "plan section 1", "from_prefixes": ["alloc_core"], "to_prefixes": ["global"], "expect": "doc-only" },
-    { "id": "claim-6-concurrent-leaf", "claim": "concurrent is a leaf; its mention in src/lib.rs is a comment, not code", "source": "plan section 1 row 'concurrent is a clean leaf'", "from_prefixes": ["alloc_core", "registry", "global", "root", "ghost", "kani_proofs"], "to_prefixes": ["concurrent"], "expect": "no-incoming-code-edge", "expect_doc_comment": { "file": "src/lib.rs", "contains": "concurrent::epoch::hand" } }
+    { "id": "claim-6-concurrent-leaf", "claim": "concurrent is a leaf; its mention in src/lib.rs is a comment, not code", "source": "plan section 1 row 'concurrent is a clean leaf'", "from_prefixes": ["alloc_core", "registry", "global", "root", "ghost"], "to_prefixes": ["concurrent"], "expect": "no-incoming-code-edge", "expect_doc_comment": { "file": "src/lib.rs", "contains": "concurrent::epoch::hand" } }
   ]
 }

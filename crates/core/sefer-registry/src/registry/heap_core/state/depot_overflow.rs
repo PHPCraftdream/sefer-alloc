@@ -43,7 +43,7 @@ const _: () = assert!(DEPOT_CLASSES <= 32);
 const _: () = assert!(SMALL_CLASS_COUNT <= 64);
 
 /// Every small class (bit `c`): the classes a segment refill can tick for.
-pub const ALL_SMALL: u64 = if SMALL_CLASS_COUNT == 64 {
+pub(crate) const ALL_SMALL: u64 = if SMALL_CLASS_COUNT == 64 {
     u64::MAX
 } else {
     (1u64 << SMALL_CLASS_COUNT) - 1
@@ -70,7 +70,7 @@ pub(crate) struct OverflowStats {
 /// Overflow control; all-zero = empty and unreserved. The per-event fields
 /// lead (`repr(C)`), so the common tick touches one line.
 #[repr(C)]
-pub struct DepotOverflow {
+pub(crate) struct DepotOverflow {
     base: *mut u8,
     bytes: usize,
     /// Small classes whose `PerClass::marks` carries `MARK_TICK` (bit `c`).
@@ -98,30 +98,6 @@ pub struct DepotOverflow {
 
 const fn mag_bytes(c: usize) -> usize {
     SIZE_CLASS_TABLE[c] * TCACHE_CAP
-}
-
-#[cfg(kani)]
-#[allow(unsafe_code)]
-impl DepotOverflow {
-    /// # Safety
-    /// The class, count, backing storage and budget must satisfy the ring
-    /// invariants: n is the current length, and the budget must not require
-    /// changing the reservation behind a caller-owned backing buffer.
-    pub unsafe fn kani_park(&mut self, c: usize, n: usize, mag: &Mag, budget: usize) -> bool {
-        self.park(c, n, mag, budget)
-    }
-
-    /// # Safety
-    /// Class c must have exactly n > 0 live records in valid backing storage.
-    pub unsafe fn kani_reload(&mut self, c: usize, n: usize, out: &mut Mag) {
-        self.reload(c, n, out);
-    }
-
-    /// # Safety
-    /// Class c must have exactly n > 0 live records in valid backing storage.
-    pub unsafe fn kani_pop_oldest(&mut self, c: usize, n: usize, out: &mut Mag) {
-        self.pop_oldest(c, n, out);
-    }
 }
 
 impl DepotOverflow {
@@ -169,7 +145,7 @@ impl DepotOverflow {
     /// exclusively accessible to this ring while any record is accessed.
     #[cfg(kani)]
     #[allow(unsafe_code)]
-    pub unsafe fn kani_on_buffer(base: *mut u8, c: usize, cap: u16) -> Self {
+    unsafe fn kani_on_buffer(base: *mut u8, c: usize, cap: u16) -> Self {
         let mut o = Self::empty();
         o.base = base;
         o.cap[c] = cap;
@@ -190,7 +166,7 @@ impl DepotOverflow {
     /// exclusively accessible to this ring while any record is accessed.
     #[cfg(kani)]
     #[allow(unsafe_code)]
-    pub unsafe fn kani_symbolic(base: *mut u8, c: usize, cap: u16) -> Self {
+    unsafe fn kani_symbolic(base: *mut u8, c: usize, cap: u16) -> Self {
         let mut o = Self::empty();
         o.base = base;
         o.cap[c] = cap;
@@ -243,7 +219,7 @@ impl DepotOverflow {
     /// exclusively accessible to this ring while any record is accessed.
     #[cfg(kani)]
     #[allow(unsafe_code)]
-    pub unsafe fn kani_copy(&self, base: *mut u8) -> Self {
+    unsafe fn kani_copy(&self, base: *mut u8) -> Self {
         Self {
             base,
             bytes: self.bytes,
@@ -269,7 +245,7 @@ impl DepotOverflow {
     /// Kani-only: every control field of `self` equals `other`'s (the base
     /// pointers aside).
     #[cfg(kani)]
-    pub fn kani_same_controls(&self, other: &Self) -> bool {
+    fn kani_same_controls(&self, other: &Self) -> bool {
         // Element-wise, not `==` on the arrays: array equality lowers to a
         // `memcmp` loop that needs an unwind bound of its byte length.
         let mut k = 0;
@@ -301,7 +277,7 @@ impl DepotOverflow {
     /// After a successful park: the small classes not yet armed (bit `c`) —
     /// the caller sets their `MARK_TICK` — and every class is armed from here.
     #[inline(always)]
-    pub fn arm(&mut self) -> u64 {
+    pub(crate) fn arm(&mut self) -> u64 {
         debug_assert!(self.bytes != 0, "arm follows a park");
         if self.armed == ALL_SMALL {
             return 0;
@@ -314,7 +290,7 @@ impl DepotOverflow {
 
     /// A segment refill of class `c` found the overflow empty: `c` stops
     /// ticking until the next park re-arms it.
-    pub fn disarm(&mut self, c: usize) {
+    pub(crate) fn disarm(&mut self, c: usize) {
         debug_assert_eq!(self.bytes, 0, "only an empty overflow disarms");
         self.armed &= !(1u64 << c);
         self.stats.disarms += 1;
@@ -322,7 +298,7 @@ impl DepotOverflow {
 
     /// The small classes currently armed (bit `c`).
     #[cfg_attr(not(any(feature = "internals", debug_assertions)), allow(dead_code))]
-    pub fn armed(&self) -> u64 {
+    pub(crate) fn armed(&self) -> u64 {
         self.armed
     }
 
@@ -350,7 +326,7 @@ impl DepotOverflow {
 
     /// Bytes of blocks currently parked in the overflow.
     #[cfg_attr(not(feature = "internals"), allow(dead_code))]
-    pub fn bytes(&self) -> usize {
+    pub(crate) fn bytes(&self) -> usize {
         self.bytes
     }
 
@@ -367,7 +343,7 @@ impl DepotOverflow {
     }
 
     /// Ring capacity of class `c` for budget `budget` (records).
-    pub const fn cap_for(budget: usize, c: usize) -> usize {
+    pub(crate) const fn cap_for(budget: usize, c: usize) -> usize {
         budget / mag_bytes(c)
     }
 
@@ -465,7 +441,7 @@ impl DepotOverflow {
     }
 
     /// Class `c`'s overflow length (records).
-    pub fn len(&self, c: usize) -> usize {
+    pub(crate) fn len(&self, c: usize) -> usize {
         self.len[c] as usize
     }
 
@@ -538,7 +514,7 @@ impl DepotOverflow {
     /// `true`; otherwise it changes nothing and returns `false`, and the
     /// caller takes the generic path.
     #[inline(always)]
-    pub fn park_simple(&mut self, c: usize, mag: &Mag, budget: usize) -> bool {
+    pub(crate) fn park_simple(&mut self, c: usize, mag: &Mag, budget: usize) -> bool {
         let n = self.len[c] as usize;
         let mb = mag_bytes(c);
         if n == 0
@@ -579,7 +555,7 @@ impl DepotOverflow {
     /// (`more`: records remain); otherwise it changes nothing and returns
     /// `None`.
     #[inline(always)]
-    pub fn reload_simple(&mut self, c: usize, out: &mut Mag) -> Option<bool> {
+    pub(crate) fn reload_simple(&mut self, c: usize, out: &mut Mag) -> Option<bool> {
         let n = self.len[c] as usize;
         if n == 0
             || self.debt_mask != 0
@@ -643,7 +619,7 @@ impl DepotOverflow {
 
     /// Count one reload from the overflow; `true` every 8th, when the caller
     /// runs the bounded remote-ingress check it otherwise skips.
-    pub fn ingress_due(&mut self) -> bool {
+    pub(crate) fn ingress_due(&mut self) -> bool {
         self.reloads_since_ingress += 1;
         if self.reloads_since_ingress >= INGRESS_PERIOD {
             self.reloads_since_ingress = 0;
@@ -656,7 +632,7 @@ impl DepotOverflow {
     /// Count one cold event; `true` when decay work is due (an epoch ended
     /// or debt is outstanding) and the caller must run `Self::decay_step`.
     #[inline(always)]
-    pub fn tick(&mut self) -> bool {
+    pub(crate) fn tick(&mut self) -> bool {
         if self.bytes == 0 {
             return false;
         }
@@ -709,7 +685,7 @@ impl DepotOverflow {
 
     /// Latched classes that may park again under `budget` (room for one more
     /// magazine of theirs, ring not full); their bits are cleared.
-    pub fn take_unstarved(&mut self, budget: usize) -> u32 {
+    pub(crate) fn take_unstarved(&mut self, budget: usize) -> u32 {
         if self.starved == 0 || self.reserve_failed {
             return 0;
         }
@@ -775,3 +751,12 @@ impl DepotOverflow {
         self.reloads_since_ingress = 0;
     }
 }
+
+#[cfg(all(
+    kani,
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+#[path = "../../../proofs/depot_overflow_proofs.rs"]
+mod depot_overflow_proofs;

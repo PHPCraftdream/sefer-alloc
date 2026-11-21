@@ -63,3 +63,6 @@ pub use terminal_words::{
     large_generation, large_phase, next_large_generation, next_large_generation_bounded,
     pack_large_state, LargePhase, MAX_LARGE_GENERATION,
 };
+
+#[cfg(all(kani, feature = "alloc-core"))]
+mod large_state_proofs;

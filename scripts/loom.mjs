@@ -1,7 +1,7 @@
 // Loom sweep of sidecar terminal publication, owner drain, registry leases,
 // and the independent workspace concurrency types. Every root model has an
 // exact feature set; cfg loom additionally requires tagged-index-stack/loom in
-// EVERY root build (the crate is a cfg(any(loom, kani)) target dependency).
+// EVERY root build (the crate is a cfg(loom) target dependency).
 //
 // Usage (from repo root):
 //   node scripts/loom.mjs

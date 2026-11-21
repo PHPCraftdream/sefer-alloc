@@ -32,6 +32,12 @@ J13b source-path selector. Intentional future command/graph changes require a re
 update of the affected receipt digests, not removal of the gate or regeneration in CI.
 `--record` is deliberately limited to the original pre-extraction workflow shape.
 
+The `kani` job stays in the `seam` tier. P2.4 runs 12 `sefer-segment` and 8
+`sefer-registry` harnesses with `-p <package> --all-features`, retains the
+`sefer-concurrent` row, and removes the former root proof and temporary
+`sefer-alloc-core` package-check rows. Historical timings in
+[CI_LONG_JOBS.md](perf/CI_LONG_JOBS.md) are not timings for this split.
+
 `scripts/ci/effective-workflow.mjs` is a restricted static reader, not a YAML execution
 engine. Local action calls must be unconditional single-key calls after checkout.
 Action inputs/outputs, nested local actions, unsupported contexts, missing files and
@@ -200,8 +206,12 @@ summary and to the artifact `test-selection`. Rules are conservative for paths t
 - A changed test target selects itself. Otherwise, a changed file present in any map's `tests` entries selects
   every target mapped to that file across rows. This covering attribution wins before reader-data fallback.
   A target absent from every row's map is always selected, regardless of the changed paths.
-- `src/kani_proofs.rs` is ignored because it is compiled by no test. An uncovered Rust file under `src/**`,
-  `crates/*/*/src/**`, or `tests/**` selects all; a non-Rust file under `tests/**` is reader data instead.
+- The five Kani-only segment and registry proof modules are ignored by test selection, as is the former
+  `src/kani_proofs.rs` path for deletions and historical diffs. As with that legacy path, proof-only changes
+  do not select Rust tests just because those tests read source files from disk. The separate structural limit
+  check (`verify-structure-limits.mjs`) runs in always-on `docs-consistency` and also in `check-matrix`.
+  An uncovered Rust file under `src/**`, `crates/*/*/src/**`, or `tests/**` selects all;
+  a non-Rust file under `tests/**` is reader data instead.
 - Reader data includes `docs/**`, `scripts/**`, `.github/**`, root-level `*.md|csv|json|txt`, non-`.rs`
   files under `tests/**`, Rust files under root `benches/**` or `examples/**`, and Rust files under
   `crates/*/*/benches/**` or `crates/*/*/examples/**`. When no map entry covers such a path, the selector picks

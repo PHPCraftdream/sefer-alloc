@@ -215,9 +215,9 @@ split the same day.)
 167. **[T] loom/kani-модели `tagged-index-stack` не имеют production-имплементора: покрыт протокол крата, а не поставляемого кода (R12-08, вариант (а)).** (Filed 2026-10-06, fxx round 12, §5.6.)
 
     - **Status:** PARTIAL / OPEN — Kani `pack_proofs` removal DONE (2026-10-11); the verification-only Loom mirror remains. No shipping registry stack coverage is claimed.
-    - **Current-number-or-verdict:** `tagged-index-stack` is outside the `production` graph (`[target.'cfg(any(loom, kani))'.dependencies]`, commit `ea47a10c`). `pack_proofs` is removed from `src/kani_proofs.rs`; `StackHead`/`StackStorage`/`StackOps` in `src/registry/bootstrap/loom_shim.rs` remain. Prior Loom run receipts are historical; no Loom rerun was performed here.
+    - **Current-number-or-verdict:** `tagged-index-stack` remains outside the `production` graph (commit `ea47a10c`); the root manifest now declares it only under `[target.'cfg(loom)'.dependencies]`. The registry retains its const-capable Loom shim, while the separate Loom free-slot model exercises the crate stack via `StackHead`/`StackStorage`/`StackOps`. No new Kani coverage for `tagged-index-stack` is claimed. Prior Loom run receipts are historical; no Loom rerun was performed here.
     - **Next trigger:** a Loom-job/mirror edit or return of the stack to the registry: complete variant (b) by removing the unused Loom stack mirror if it is still not shipping. New real-protocol proofs and their model blocker belong to item 205, not this card.
-    - **Evidence:** `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md` R12-08 и §5.6; `src/registry/bootstrap/loom_shim.rs`, `src/kani_proofs.rs`; `Cargo.toml` (`[target.'cfg(any(loom, kani))'.dependencies]`).
+    - **Evidence:** `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md` R12-08 и §5.6; `Cargo.toml` (`[target.'cfg(loom)'.dependencies]`), `crates/core/sefer-registry/src/registry/bootstrap/loom_shim.rs`, and `tests/loom_registry_free_slots.rs`.
 
 171. **[T, filed 2026-10-06, R14] Miri rejects the existing experimental `EpochRegion` path while initializing `crossbeam-epoch 0.9.20`'s default collector.**
 
