@@ -13,18 +13,24 @@
 //! Two structural guards, both doc/source-only (read source text, never
 //! link the crate, so this test runs in every feature configuration):
 //!
-//! (a) [`no_mod_rs_carries_module_level_allow`] — no `mod.rs` under `src/`
-//!     or the P2.2 `crates/core/sefer-alloc-core/src/` tree may carry a
-//!     module-level `#![allow(unsafe_code)]`. `mod.rs` is
+//! Both guards scan `src/` and the P2 implementation trees:
+//! `crates/core/sefer-segment/src/`, `crates/core/sefer-alloc-core/src/`,
+//! and `crates/core/sefer-registry/src/`.
+//! `sefer-policy` forbids unsafe code; its `unsafe` macro tokens are not its own unsafe code.
+//! `sefer-platform` is a separate OS seam without the allocator crate's deny-and-lift contract.
+//!
+//! (a) [`no_mod_rs_carries_module_level_allow`] — no `mod.rs` in these
+//!     trees may carry a module-level `#![allow(unsafe_code)]`. `mod.rs` is
 //!     reexports-only by this project's own convention (`CLAUDE.md`'s
 //!     "mod.rs — reexports only, no code"), so it never legitimately needs
 //!     to lift the crate-level `#![deny(unsafe_code)]` itself; the seam
 //!     belongs to whichever child file actually contains the `unsafe` it
 //!     protects.
 //! (b) [`every_file_with_unsafe_carries_its_own_allow`] — every
-//!     `src/**/*.rs` file that contains an `unsafe` token (outside line
-//!     comments) must carry its OWN tier-1 (`#![allow(unsafe_code)]`) or
-//!     tier-2 (`#[allow(unsafe_code)]`) allow somewhere in the file. A file
+//!     Rust source file in these trees that contains an `unsafe` token
+//!     (outside line comments) must carry its OWN tier-1
+//!     (`#![allow(unsafe_code)]`) or tier-2 (`#[allow(unsafe_code)]`) allow
+//!     somewhere in the file. A file
 //!     relying on an ancestor `mod.rs`'s blanket allow would otherwise
 //!     compile silently today and stop compiling the moment that ancestor's
 //!     allow is removed (exactly what happened to `loom_shim.rs` here) —
@@ -126,13 +132,22 @@ fn has_tier2_allow(text: &str) -> bool {
 fn no_mod_rs_carries_module_level_allow() {
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
+    assert!(!files.is_empty(), "no source files found under src/");
     let before = files.len();
     rs_files(&alloc_core_crate_src_dir(), &mut files);
     assert!(
         files.len() > before,
         "no source files found under crates/core/sefer-alloc-core/src/ — P2.2 crate layout changed?"
     );
-    assert!(!files.is_empty(), "no source files found under src/");
+    let before = files.len();
+    rs_files(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-segment/src"),
+        &mut files,
+    );
+    assert!(
+        files.len() > before,
+        "no source files found under crates/core/sefer-segment/src"
+    );
     let before = files.len();
     rs_files(
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-registry/src"),
@@ -166,13 +181,22 @@ fn no_mod_rs_carries_module_level_allow() {
 fn every_file_with_unsafe_carries_its_own_allow() {
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
+    assert!(!files.is_empty(), "no source files found under src/");
     let before = files.len();
     rs_files(&alloc_core_crate_src_dir(), &mut files);
     assert!(
         files.len() > before,
         "no source files found under crates/core/sefer-alloc-core/src/ — P2.2 crate layout changed?"
     );
-    assert!(!files.is_empty(), "no source files found under src/");
+    let before = files.len();
+    rs_files(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-segment/src"),
+        &mut files,
+    );
+    assert!(
+        files.len() > before,
+        "no source files found under crates/core/sefer-segment/src"
+    );
     let before = files.len();
     rs_files(
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-registry/src"),

@@ -29,12 +29,11 @@
 //! / `tests/no_stale_doc_references.rs`: there is no reservation-failure
 //! fault injector for this call (only commit-failure injection exists), so a
 //! behavioral test cannot exercise the `None` arm directly. Instead this
-//! scans `src/**/*.rs` plus `crates/platform/sefer-platform/src/**/*.rs`,
-//! `crates/core/sefer-policy/src/**/*.rs` and — since P2.2 moved the
-//! alloc-core implementation there — `crates/core/sefer-alloc-core/src/**/*.rs`
-//! (the moved caller crates); the other
-//! `crates/` trees remain unscanned, including `aligned-vmem` itself — the
-//! primitive being called, not a caller. It finds every raw
+//! scans Rust files under `src`, `crates/platform/sefer-platform/src`,
+//! `crates/core/sefer-policy/src`, `crates/core/sefer-alloc-core/src`,
+//! `crates/core/sefer-registry/src`, and `crates/core/sefer-segment/src`.
+//! The other `crates/` trees remain unscanned, including `aligned-vmem`
+//! itself — the primitive being called, not a caller. The scanner finds every raw
 //! `reserve_aligned(`/`reserve_aligned_lazy(` call and requires each one to
 //! be inside an explicitly reviewed, justified wrapper function (the
 //! `ALLOWLIST` below) whose body demonstrably increments
@@ -235,6 +234,14 @@ fn no_unaccounted_reserve_aligned_calls() {
     if alloc_core_src.is_dir() {
         collect_rs(&alloc_core_src, &mut files);
     }
+    let segment_src = root.join("crates/core/sefer-segment/src");
+    let files_before_segment = files.len();
+    collect_rs(&segment_src, &mut files);
+    assert!(
+        files.len() > files_before_segment,
+        "scanner found no Rust files under {}",
+        segment_src.display()
+    );
     assert!(
         files.len() > 100,
         "scanner found only {} files — src/ layout changed?",

@@ -1,10 +1,9 @@
 //! R1-11 tripwire (src review round 1,
 //! `docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md`): the repo's
-//! 1000-line file-size cap (cited by `src/registry/heap_core_xthread/overflow.rs`
-//! and `stall.rs`) had no check, and `src/registry/heap_overflow.rs` grew to
-//! 1367 lines unnoticed. Root-crate `src/` plus the P2.2-moved implementation
-//! in `crates/core/sefer-alloc-core/src` only — no other seam is scanned. The
-//! cap is this crate's convention, not the published `crates/*/*/` seams'.
+//! 1000-line file-size cap went unchecked and a registry source file exceeded
+//! it. The cap covers the root facade and the implementation sources
+//! of `sefer-alloc-core`, `sefer-registry`, `sefer-segment`, and `sefer-policy`.
+//! Other workspace seams are covered by the workspace structure ratchet.
 //! Source-text only, so it runs in every feature configuration.
 
 use std::fs;
@@ -30,6 +29,17 @@ fn no_source_file_exceeds_the_line_cap() {
     collect_rs(&root.join("src"), &mut files);
     collect_rs(&root.join("crates/core/sefer-registry/src"), &mut files);
     collect_rs(&root.join("crates/core/sefer-alloc-core/src"), &mut files);
+    for source_root in [
+        "crates/core/sefer-segment/src",
+        "crates/core/sefer-policy/src",
+    ] {
+        let before = files.len();
+        collect_rs(&root.join(source_root), &mut files);
+        assert!(
+            files.len() > before,
+            "scanner found no Rust files in {source_root}"
+        );
+    }
     assert!(
         files.len() > 100,
         "scanner found only {} files",
