@@ -15,9 +15,9 @@ const fn depot_classes() -> usize {
     }
     n
 }
-pub const DEPOT_CLASSES: usize = depot_classes();
+pub(crate) const DEPOT_CLASSES: usize = depot_classes();
 pub(crate) const DEPOT_K_MAX: u8 = 8;
-pub const DEPOT_K: [u8; DEPOT_CLASSES] = {
+pub(crate) const DEPOT_K: [u8; DEPOT_CLASSES] = {
     let mut k = [2u8; DEPOT_CLASSES];
     let small = [8u8, 8, 8, 8, 8, 8, 7, 1];
     let mut c = 0;
@@ -86,7 +86,7 @@ const _: () = {
 /// `mags` first, at K5's offset, ahead of the G1-K7 overflow control.
 /// All-zero is the valid empty state (the registry slot is OS-zeroed).
 #[repr(C)]
-pub struct Depot {
+pub(crate) struct Depot {
     mags: [[Mag; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
     #[cfg(feature = "alloc-decommit")]
     pub(crate) ovf: crate::registry::heap_core::state::depot_overflow::DepotOverflow,
@@ -110,7 +110,7 @@ const _: () = assert!(
 impl Depot {
     /// Kani-only: the all-zero empty depot an OS-zeroed registry slot holds.
     #[cfg(kani)]
-    pub const fn empty() -> Self {
+    const fn empty() -> Self {
         Self {
             mags: [[[core::ptr::null_mut(); TCACHE_CAP]; DEPOT_K_MAX as usize]; DEPOT_CLASSES],
             #[cfg(feature = "alloc-decommit")]
@@ -144,13 +144,6 @@ impl Depot {
     }
 }
 
-#[cfg(kani)]
-impl Depot {
-    pub fn kani_depot_park(&mut self, c: usize, n: &mut u8, magazine: &Mag) -> bool {
-        self.depot_park(c, n, magazine)
-    }
-
-    pub fn kani_depot_reload(&mut self, c: usize, n: &mut u8, magazine: &mut Mag) -> bool {
-        self.depot_reload(c, n, magazine)
-    }
-}
+#[cfg(all(kani, feature = "alloc-global", feature = "fastbin"))]
+#[path = "../../../proofs/depot_proofs.rs"]
+mod depot_proofs;

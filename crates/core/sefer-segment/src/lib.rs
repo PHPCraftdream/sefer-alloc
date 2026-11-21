@@ -57,3 +57,6 @@ pub use segment::segment_layout::SegmentLayout;
 #[cfg(feature = "alloc-global")]
 pub use segment::segment_route;
 pub use segment::segment_table;
+
+#[cfg(all(kani, feature = "alloc-core"))]
+mod node_proofs;

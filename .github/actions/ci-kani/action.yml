@@ -12,34 +12,19 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo kani setup
-    - name: cargo kani (all harnesses)
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
-      run: cargo kani --features "alloc-core experimental alloc-global internals fastbin alloc-decommit"
     - name: cargo kani (sefer-concurrent harnesses)
       # P1.2 moved the epoch `hand_proofs` (AtomicSlot vacant-slot facts) into
       # the sefer-concurrent crate together with the internals they prove
-      # against; the root invocation above no longer sees them.
+      # against.
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo kani -p sefer-concurrent
-    # P2.1 moves segment proof harnesses with their crate; root harnesses do
-    # not cover package-scoped proofs after the extraction.
+    # P2.4: run the 12 segment and 8 registry proofs in their owning crates.
     - name: cargo kani (sefer-segment harnesses)
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo kani -p sefer-segment --all-features
-    # Alloc-core proofs still live in the ROOT crate's src/kani_proofs.rs
-    # until the P2.4 workflow split moves them with the crate; this row is a
-    # PACKAGE CHECK of sefer-alloc-core under kani, not migrated proofs. The
-    # kani LANE itself stays in this composite (invoked root-scoped from
-    # ci.yml) until P2.4; do not remove this step before that lands.
-    - name: cargo kani (sefer-alloc-core harnesses)
-      # ci-default-shell: preserve original implicit runner shell
-      shell: bash -e {0}
-      run: cargo kani -p sefer-alloc-core --all-features
-    # Check the extracted package under Kani; root proofs stay in place until P2.4.
-    - name: cargo kani (sefer-registry package check)
+    - name: cargo kani (sefer-registry harnesses)
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo kani -p sefer-registry --all-features

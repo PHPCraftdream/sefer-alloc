@@ -62,7 +62,7 @@ use crate::alloc_core::size_classes::{SizeClasses, SMALL_CLASS_COUNT};
 /// sized for the largest per-class refill (`TCACHE_CAP` itself, for the
 /// smallest classes) plus headroom for `push`-side accumulation up to a full
 /// magazine before an overflow flush.
-pub const TCACHE_CAP: usize = 16;
+pub(crate) const TCACHE_CAP: usize = 16;
 
 // R14-10 (task #295, P3): `PerClass::virgin_mask` below is a single `u16`
 // carrying ONE bit per physical `slots` index — that only covers every slot

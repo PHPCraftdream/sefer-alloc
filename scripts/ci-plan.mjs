@@ -489,6 +489,17 @@ function selftest() {
   eq(on(PG([REGISTRY_FALLBACK_PATH], GA, 'pull_request', CRATE_GROUPS)), 'always,crate_sefer_registry,fast,os,seam', 'fallback selects os with graph');
   eq(on(PG(['src/registry/heap_registry/claim.rs'], GA, 'pull_request', CRATE_GROUPS)), 'always,fast,seam', 'legacy registry keeps its groups with graph');
   eq(on(PG(['src/global/fallback.rs'], GA, 'pull_request', CRATE_GROUPS)), 'always,fast,seam', 'legacy fallback keeps its groups with graph');
+  // P2.4: proof-only edits still select the owning package and the Kani seam job.
+  for (const [crate, graph, proof] of [
+    ['sefer-segment', G2, 'node_proofs.rs'],
+    ['sefer-registry', GA, 'proofs/depot_proofs.rs'],
+  ]) {
+    const path = `crates/core/${crate}/src/${proof}`;
+    const want = `always,${CRATE_GROUPS[crate]},fast,seam`;
+    eq(on(P([path])), want, `${crate} proofs without graph`);
+    eq(on(PG([path], graph, 'pull_request', CRATE_GROUPS)), want, `${crate} proofs with graph`);
+  }
+  eq(on(P(['.github/actions/ci-kani/action.yml'])), 'always,seam', 'Kani composite selects seam');
   console.log(JSON.stringify({ version: 1, status: 'PASS', scope: 'ci-plan selftest', checks: n }));
 }
 
