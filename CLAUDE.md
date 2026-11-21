@@ -64,8 +64,10 @@ Core instructions, mandatory for all code in this repository. They
   code file (`.rs .mjs .js .py .sh`, anywhere outside `docs/`) has at most **1000
   lines**. `scripts/verify-structure-limits.mjs` enforces both in `npm run check`
   and in the `check-matrix` CI job; `tests/src_file_size_cap.rs` stays as the
-  strict zero-tolerance check for the root `src/`. Debt that existed when the
-  rule landed is a ratchet in `docs/structure_limits_baseline.csv`: a new
+  strict zero-tolerance check for the facade and the `src/` trees of
+  `sefer-alloc-core`, `sefer-registry`, `sefer-segment`, and `sefer-policy`, not
+  other workspace seams. Debt that existed when the rule landed is a ratchet
+  in `docs/structure_limits_baseline.csv`: a new
   violation, growth, or a shrink that does not lower the baseline is red, so the
   debt can only fall. Fix a violation by splitting (a pure move) — never by
   raising a limit or by adding a baseline row. `tests/`, `examples/`, `benches/`,
